@@ -130,7 +130,7 @@ int main(int argc, char *argv[])
         na_bmi_init("bmi_tcp", listen_addr, BMI_INIT_SERVER);
     }
 
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < 16; i++) {
         void *recv_buf = NULL;
         na_size_t recv_buf_len = 0;
         na_addr_t source;
@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
         xdr_encode(recv_buf, recv_buf_len, &op_status);
         na_send(recv_buf, recv_buf_len, source, tag, &req, NULL);
         na_wait(req, NULL, NA_BMI_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-        na_free(source);
+        na_addr_free(source);
         source = NULL;
         free(recv_buf);
         recv_buf = NULL;

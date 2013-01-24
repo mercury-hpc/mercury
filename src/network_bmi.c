@@ -1,8 +1,5 @@
 /*
  * network_bmi.c
- *
- *  Created on: Nov 5, 2012
- *      Author: soumagne
  */
 
 #include "network_bmi.h"
@@ -19,8 +16,8 @@
 
 static void na_bmi_finalize(void);
 static na_size_t na_bmi_get_unexpected_size(void);
-static int na_bmi_lookup(const char *name, na_addr_t *target);
-static int na_bmi_free(na_addr_t target);
+static int na_bmi_addr_lookup(const char *name, na_addr_t *addr);
+static int na_bmi_addr_free(na_addr_t addr);
 static int na_bmi_send_unexpected(const void *buf, na_size_t buf_len, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 static int na_bmi_recv_unexpected(void *buf, na_size_t *buf_len, na_addr_t *source,
@@ -33,19 +30,20 @@ static int na_bmi_mem_register(void *buf, na_size_t buf_len, unsigned long flags
 static int na_bmi_mem_deregister(na_mem_handle_t mem_handle);
 static int na_bmi_mem_handle_serialize(void *buf, na_size_t buf_len, na_mem_handle_t mem_handle);
 static int na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_len);
+static int na_bmi_mem_handle_free(na_mem_handle_t mem_handle);
 static int na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request);
 static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request);
-static int na_bmi_wait(na_request_t request, int *flag, int timeout, na_status_t *status);
+static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status);
 
-static network_class_t na_bmi_g = {
+static na_network_class_t na_bmi_g = {
         na_bmi_finalize,               /* finalize */
         na_bmi_get_unexpected_size,    /* get_unexpected_size */
-        na_bmi_lookup,                 /* lookup */
-        na_bmi_free,                   /* free */
+        na_bmi_addr_lookup,            /* addr_lookup */
+        na_bmi_addr_free,              /* addr_free */
         na_bmi_send_unexpected,        /* send_unexpected */
         na_bmi_recv_unexpected,        /* recv_unexpected */
         na_bmi_send,                   /* send */
@@ -54,12 +52,13 @@ static network_class_t na_bmi_g = {
         na_bmi_mem_deregister,         /* mem_deregister */
         na_bmi_mem_handle_serialize,   /* mem_handle_serialize */
         na_bmi_mem_handle_deserialize, /* mem_handle_deserialize */
+        na_bmi_mem_handle_free,        /* mem_handle_free */
         na_bmi_put,                    /* put */
         na_bmi_get,                    /* get */
         na_bmi_wait                    /* wait */
 };
 
-typedef struct bmi_request_t {
+typedef struct bmi_request {
     bmi_op_id_t op_id;       /* BMI op ID */
     bool completed;          /* 1 if operation has completed */
     void *user_ptr;          /* Extra info passed to BMI to identify request */
@@ -119,39 +118,39 @@ static void na_bmi_finalize(void)
 
 static na_size_t na_bmi_get_unexpected_size()
 {
-    na_size_t max_unexpected_size = 4*1024*1024;
+    na_size_t max_unexpected_size = 4*1024;
     return max_unexpected_size;
 }
 
-static int na_bmi_lookup(const char *name, na_addr_t *target)
+static int na_bmi_addr_lookup(const char *name, na_addr_t *addr)
 {
     int bmi_ret, ret = NA_SUCCESS;
-    BMI_addr_t *bmi_target = NULL;
+    BMI_addr_t *bmi_addr = NULL;
 
-    /* Perform an address lookup on the ION */
-    bmi_target = malloc(sizeof(BMI_addr_t));
-    bmi_ret = BMI_addr_lookup(bmi_target, name);
+    /* Perform an address addr_lookup on the ION */
+    bmi_addr = malloc(sizeof(BMI_addr_t));
+    bmi_ret = BMI_addr_lookup(bmi_addr, name);
 
     if (bmi_ret < 0) {
         NA_ERROR_DEFAULT("BMI_addr_lookup() failed");
-        free(bmi_target);
-        bmi_target = NULL;
+        free(bmi_addr);
+        bmi_addr = NULL;
         ret = NA_FAIL;
     } else {
-        if (target) *target = (na_addr_t) bmi_target;
+        if (addr) *addr = (na_addr_t) bmi_addr;
     }
     return ret;
 }
 
-static int na_bmi_free(na_addr_t target)
+static int na_bmi_addr_free(na_addr_t addr)
 {
-    BMI_addr_t *bmi_target = (BMI_addr_t*) target;
+    BMI_addr_t *bmi_addr = (BMI_addr_t*) addr;
     int ret = NA_SUCCESS;
 
     /* Cleanup peer_addr */
-    if (bmi_target) {
-        free(bmi_target);
-        bmi_target = NULL;
+    if (bmi_addr) {
+        free(bmi_addr);
+        bmi_addr = NULL;
     } else {
         NA_ERROR_DEFAULT("Already freed");
         ret = NA_FAIL;
@@ -295,62 +294,46 @@ static int na_bmi_recv(void *buf, na_size_t buf_len, na_addr_t source,
     return ret;
 }
 
-//static int na_bmi_test(na_request_t request, int *flag, na_status_t *status)
-//{
-//    int ret = NA_SUCCESS;
-//    bmi_request_t *bmi_request = (bmi_request_t*) request;
-//
-//    pthread_mutex_lock(&request_mutex);
-//
-//    if (flag) *flag = (int) bmi_request->completed;
-//
-//    /* Fill status and free request if completed */
-//    if (bmi_request->completed) {
-//        if (status && status != NA_STATUS_IGNORE) status->count = bmi_request->actual_size;
-//        free(bmi_request);
-//        bmi_request = NULL;
-//    }
-//
-//    pthread_mutex_unlock(&request_mutex);
-//
-//    return ret;
-//}
-
-int na_bmi_mem_register(void *buf, na_size_t buf_len, unsigned long flags, na_mem_handle_t *mem_handle)
+static int na_bmi_mem_register(void *buf, na_size_t buf_len, unsigned long flags, na_mem_handle_t *mem_handle)
 {
     return 0;
 }
 
-int na_bmi_mem_deregister(na_mem_handle_t mem_handle)
+static int na_bmi_mem_deregister(na_mem_handle_t mem_handle)
 {
     return 0;
 }
 
-int na_bmi_mem_handle_serialize(void *buf, na_size_t buf_len, na_mem_handle_t mem_handle)
+static int na_bmi_mem_handle_serialize(void *buf, na_size_t buf_len, na_mem_handle_t mem_handle)
 {
     return 0;
 }
 
-int na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_len)
+static int na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_len)
 {
     return 0;
 }
 
-int na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
+static int na_bmi_mem_handle_free(na_mem_handle_t mem_handle)
+{
+    return 0;
+}
+
+static int na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
     return 0;
 }
 
-int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
+static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
     return 0;
 }
 
-static int na_bmi_wait(na_request_t request, int *flag, int timeout, na_status_t *status)
+static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 {
     bmi_request_t *bmi_wait_request = (bmi_request_t*) request;
     int remaining = timeout;
@@ -359,7 +342,11 @@ static int na_bmi_wait(na_request_t request, int *flag, int timeout, na_status_t
 
     /* Only the thread that has created the request should wait and free that request
      * even if the request may have been marked as completed by other threads */
-    assert(bmi_wait_request);
+    if (!bmi_wait_request) {
+        NA_ERROR_DEFAULT("NULL request");
+        ret = NA_FAIL;
+        return ret;
+    }
 
     /* TODO ensure that request is well protected */
     pthread_mutex_lock(&request_mutex);
@@ -446,13 +433,15 @@ static int na_bmi_wait(na_request_t request, int *flag, int timeout, na_status_t
 
     pthread_mutex_lock(&request_mutex);
 
-    if (flag) *flag = (int) bmi_wait_request->completed;
+    if (status && status != NA_STATUS_IGNORE) {
+        status->completed = bmi_wait_request->completed;
 
-    /* Fill status and free request if completed */
-    if (bmi_wait_request->completed) {
-        if (status && status != NA_STATUS_IGNORE) status->count = bmi_wait_request->actual_size;
-        free(bmi_wait_request);
-        bmi_wait_request = NULL;
+        /* Fill status and free request if completed */
+        if (bmi_wait_request->completed) {
+            status->count = bmi_wait_request->actual_size;
+            free(bmi_wait_request);
+            bmi_wait_request = NULL;
+        }
     }
 
     pthread_mutex_unlock(&request_mutex);

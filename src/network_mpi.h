@@ -1,8 +1,5 @@
 /*
  * network_mpi.h
- *
- *  Created on: Nov 5, 2012
- *      Author: soumagne
  */
 
 #ifndef NETWORK_MPI_H
@@ -21,6 +18,7 @@ enum {
 extern "C" {
 #endif
 
+/* Initialize the MPI plugin */
 void na_mpi_init(MPI_Comm *intra_comm, int flags);
 
 #ifdef __cplusplus

@@ -1,8 +1,5 @@
 /*
  * generic_client.c
- *
- *  Created on: Nov 5, 2012
- *      Author: soumagne
  */
 
 #include "generic_client.h"
@@ -229,7 +226,7 @@ int generic_client_init(generic_na_id_t na_id) {
     }
 
     /* Perform an address lookup on the ION */
-    na_lookup(ion_name, &ion_target);
+    na_addr_lookup(ion_name, &ion_target);
 
     /* Initialize TLS tags */
     pthread_key_create(&ptk_tag, 0);
@@ -244,7 +241,7 @@ int generic_client_finalize(void) {
 
     /* Cleanup peer_addr */
     if(ion_target) {
-        na_free(ion_target);
+        na_addr_free(ion_target);
         ion_target = NULL;
     }
     na_finalize();
@@ -310,8 +307,12 @@ int generic_client_forward(generic_op_id_t generic_op_id, generic_op_status_t *g
     generic_request->out_param = (void*) generic_op_status;
     *generic_request_id = (generic_request_id_t) generic_request;
 
-    na_send_unexpected(send_buf, send_buf_len, ion_target, send_tag, &generic_request->send_request, NULL);
-    na_recv(recv_buf, recv_buf_len, ion_target, recv_tag, &generic_request->recv_request, NULL);
+//    if (metadata) {
+        na_send_unexpected(send_buf, send_buf_len, ion_target, send_tag, &generic_request->send_request, NULL);
+        na_recv(recv_buf, recv_buf_len, ion_target, recv_tag, &generic_request->recv_request, NULL);
+//    } else {
+//        na_mem_register()
+//    }
     return 0;
 }
 

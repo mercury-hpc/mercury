@@ -1,14 +1,20 @@
 /*
  * generic_client.h
- *
- *  Created on: Nov 6, 2012
- *      Author: soumagne
  */
 
 #ifndef GENERIC_CLIENT_H
 #define GENERIC_CLIENT_H
 
 #include <stdint.h>
+
+typedef enum fs_post_state {
+        FS_POST_PENDING,
+        FS_POST_COMPLETED,
+        FS_POST_ERROR,
+        FS_POST_TIMEOUT,
+/*        FS_POST_TERMINATED, */
+        FS_POST_REMAINING_DATA
+} fs_post_state_t;
 
 /* Op id describes the various generic operations (setattr, getattr etc.) */
 typedef uint32_t generic_op_id_t;
@@ -26,6 +32,9 @@ typedef enum {
     NA_BMI,
     NA_MPI
 } generic_na_id_t;
+
+/* addr of remote server */
+typedef void* iofsl_addr_t;
 
 #ifdef __cplusplus
 extern "C" {
