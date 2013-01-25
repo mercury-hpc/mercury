@@ -12,6 +12,8 @@
 
 int main(int argc, char *argv[])
 {
+    na_network_class_t *network_class = NULL;
+
     char *recv_buf = NULL;
     char *send_buf = NULL;
 
@@ -45,15 +47,16 @@ int main(int argc, char *argv[])
     }
 
     if (strcmp("MPI", argv[1]) == 0) {
-        na_mpi_init(NULL, MPI_INIT_SERVER);
+        network_class = na_mpi_init(NULL, MPI_INIT_SERVER);
     } else {
         char *listen_addr = getenv(ION_ENV);
         if (!listen_addr) {
             fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
             return EXIT_FAILURE;
         }
-        na_bmi_init("bmi_tcp", listen_addr, BMI_INIT_SERVER);
+        network_class = na_bmi_init("bmi_tcp", listen_addr, BMI_INIT_SERVER);
     }
+    na_register(network_class);
 
     /* Allocate send and recv bufs */
     send_buf = malloc(na_get_unexpected_size());

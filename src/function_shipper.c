@@ -4,6 +4,7 @@
 
 #include "function_shipper.h"
 #include "network_abstraction.h"
+#include "function_map.h"
 #include "iofsl_compat.h"
 
 #include <stdio.h>
@@ -12,16 +13,22 @@
 #include <assert.h>
 
 /* Private structs */
-typedef struct fs_priv_request_t {
-    na_request_t send_request;
-    na_request_t recv_request;
+typedef struct fs_priv_request {
+    fs_id_t      id;
     void *       send_buf;
     void *       recv_buf;
-    void *       out_param;
+    void *       out_struct;
+    na_request_t send_request;
+    na_request_t recv_request;
 } fs_priv_request_t;
 
-static char *ion_name;
-static na_addr_t ion_target = 0;
+typedef struct fs_func_info {
+    int (*enc_routine)(void *buf, int buf_len, void *in_struct);
+    int (*dec_routine)(void *out_struct, void *buf, int buf_len);
+} fs_func_info_t;
+
+/* Function map */
+func_map_t *func_map;
 
 /* TLS key for tag */
 static pthread_key_t ptk_tag;
@@ -57,6 +64,23 @@ static na_tag_t gen_tag(void)
     return tag;
 }
 
+/* Hash function name for unique ID to register */
+static inline unsigned int string_hash(const char *string)
+{
+    /* This is the djb2 string hash function */
+
+    unsigned int result = 5381;
+    unsigned char *p;
+
+    p = (unsigned char *) string;
+
+    while (*p != '\0') {
+        result = (result << 5) + result + *p;
+        ++p;
+    }
+    return result;
+}
+
 /*---------------------------------------------------------------------------
  * Function:    fs_init
  *
@@ -66,15 +90,14 @@ static na_tag_t gen_tag(void)
  *
  *---------------------------------------------------------------------------
  */
-int fs_init()
+int fs_init(na_network_class_t *network_class)
 {
-    /* Perform an address lookup on the ION */
-    na_addr_lookup(ion_name, &ion_target);
-
     /* Initialize TLS tags */
     pthread_key_create(&ptk_tag, 0);
     next_tag = 1;
 
+    /* Create new function map */
+    func_map = func_map_new();
     return 0;
 }
 
@@ -89,15 +112,46 @@ int fs_init()
  */
 int fs_finalize(void)
 {
-    /* Cleanup peer_addr */
-    if(ion_target) {
-        na_addr_free(ion_target);
-        ion_target = NULL;
-    }
     na_finalize();
+
+    /* Delete function map */
+    func_map_free(func_map);
+    func_map = NULL;
 
     /* Free TLS key */
     pthread_key_delete(ptk_tag);
+    return 0;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    fs_peer_lookup
+ *
+ * Purpose:     Lookup a peer
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int fs_peer_lookup(const char *name, fs_peer_t *peer)
+{
+    /* Perform an address lookup on the ION */
+    na_addr_lookup(name, (na_addr_t*)peer);
+    return 0;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    fs_peer_free
+ *
+ * Purpose:     Free the peer
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int fs_peer_free(fs_peer_t peer)
+{
+    /* Cleanup peer_addr */
+    na_addr_free((na_addr_t)peer);
     return 0;
 }
 
@@ -110,13 +164,22 @@ int fs_finalize(void)
  *
  *---------------------------------------------------------------------------
  */
-fs_id_t fs_register(const char *name,
-        int (*enc_routine)(void *buf, int buf_len, void *struct_in),
-        int (*dec_routine)(void *struct_out, void *buf, int buf_len))
+fs_id_t fs_register(const char *func_name,
+        int (*enc_routine)(void *buf, int buf_len, void *in_struct),
+        int (*dec_routine)(void *out_struct, void *buf, int buf_len))
 {
-//    xdr_encode = generic_xdr_encode;
-//    xdr_decode = generic_xdr_decode;
-    return 0;
+    fs_id_t id;
+    fs_func_info_t *func_info;
+
+    /* Generate a key from the string */
+    id = string_hash(func_name);
+
+    /* Fill a func info struct and store it into the function map */
+    func_info = malloc(sizeof(fs_func_info_t));
+    func_info->enc_routine = enc_routine;
+    func_info->dec_routine = dec_routine;
+    func_map_insert(func_map, &id, func_info);
+    return id;
 }
 
 /*---------------------------------------------------------------------------
@@ -128,19 +191,19 @@ fs_id_t fs_register(const char *name,
  *
  *---------------------------------------------------------------------------
  */
-int fs_forward(fs_addr_t addr, fs_id_t id, void *struct_in, void *struct_out,
+int fs_forward(fs_peer_t peer, fs_id_t id, void *in_struct, void *out_struct,
         fs_request_t *request)
 {
+    fs_func_info_t *func_info;
+
     void *send_buf = NULL;
     void *recv_buf = NULL;
-    na_size_t send_buf_len;
-    na_size_t recv_buf_len;
+
+    na_size_t send_buf_len = na_get_unexpected_size();
+    na_size_t recv_buf_len = na_get_unexpected_size();
 
     static int tag_incr = 0;
     na_tag_t send_tag, recv_tag;
-
-    fs_id_t zoidfs_op_id = PROTO_GENERIC; /* TODO keep that for now */
-    fs_status_t zoidfs_op_status;
 
     fs_priv_request_t *priv_request = NULL;
 
@@ -149,11 +212,8 @@ int fs_forward(fs_addr_t addr, fs_id_t id, void *struct_in, void *struct_out,
     tag_incr++;
     if (send_tag > FS_MAXTAG) tag_incr = 0;
 
-//    send_buf_len = generic_xdr_size_processor(OP_ID_T, &zoidfs_op_id)
-//                + generic_xdr_size_processor(OP_ID_T, &generic_op_id);
-//
-//    recv_buf_len = generic_xdr_size_processor(OP_STATUS_T, &zoidfs_op_status)
-//                    + generic_xdr_size_processor(OP_STATUS_T, generic_op_status);
+    /* Retrieve decoding function from function map */
+    func_info = func_map_lookup(func_map, &id);
 
     send_buf = malloc(send_buf_len);
     if (!send_buf) {
@@ -164,22 +224,19 @@ int fs_forward(fs_addr_t addr, fs_id_t id, void *struct_in, void *struct_out,
         fprintf(stderr, "recv buffer allocation failed.\n");
     }
 
-    /* Encode the function parameters using XDR */
-//    xdr_encode(send_buf, send_buf_len, &generic_op_id);
+    /* Encode the function parameters */
+    func_info->enc_routine(send_buf, send_buf_len, in_struct);
 
     /* Post the send message and pre-post the recv message */
     priv_request = malloc(sizeof(fs_priv_request_t));
+    priv_request->id = id;
     priv_request->send_buf = send_buf;
     priv_request->recv_buf = recv_buf;
-    priv_request->out_param = struct_out;
+    priv_request->out_struct = out_struct;
     *request = (fs_request_t) priv_request;
 
-//    if (metadata) {
-        na_send_unexpected(send_buf, send_buf_len, ion_target, send_tag, &priv_request->send_request, NULL);
-        na_recv(recv_buf, recv_buf_len, ion_target, recv_tag, &priv_request->recv_request, NULL);
-//    } else {
-//        na_mem_register()
-//    }
+    na_send_unexpected(send_buf, send_buf_len, (na_addr_t)peer, send_tag, &priv_request->send_request, NULL);
+    na_recv(recv_buf, recv_buf_len, (na_addr_t)peer, recv_tag, &priv_request->recv_request, NULL);
     return 0;
 }
 
@@ -196,15 +253,15 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
 {
     fs_priv_request_t *priv_request = (fs_priv_request_t*) request;
     na_status_t recv_status;
-    int ret = NA_SUCCESS;
+    fs_func_info_t *func_info;
+    int ret = FS_SUCCESS;
 
     ret = na_wait(priv_request->send_request, timeout, NA_STATUS_IGNORE);
     ret = na_wait(priv_request->recv_request, timeout, &recv_status);
 
     /* Decode depending on op ID */
-//    fs_decode()
-//    xdr_decode(generic_request->recv_buf, recv_status.count,
-//            generic_request->out_param);
+    func_info = func_map_lookup(func_map, &priv_request->id);
+    func_info->dec_routine(priv_request->out_struct, priv_request->recv_buf, recv_status.count);
 
     free(priv_request->send_buf);
     free(priv_request->recv_buf);

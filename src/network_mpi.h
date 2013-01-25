@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 /* Initialize the MPI plugin */
-void na_mpi_init(MPI_Comm *intra_comm, int flags);
+na_network_class_t *na_mpi_init(MPI_Comm *intra_comm, int flags);
 
 #ifdef __cplusplus
 }

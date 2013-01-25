@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 /* Initialize the BMI plugin */
-void na_bmi_init(const char *method_list, const char *listen_addr, int flags);
+na_network_class_t *na_bmi_init(const char *method_list, const char *listen_addr, int flags);
 
 #ifdef __cplusplus
 }

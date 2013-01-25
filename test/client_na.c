@@ -13,6 +13,7 @@
 int main(int argc, char *argv[])
 {
     char *ion_name;
+    na_network_class_t *network_class = NULL;
     na_addr_t ion_target = 0;
 
     na_tag_t send_tag = 100;
@@ -44,7 +45,7 @@ int main(int argc, char *argv[])
 
     if (strcmp("MPI", argv[1]) == 0) {
         FILE *config;
-        na_mpi_init(NULL, 0);
+        network_class = na_mpi_init(NULL, 0);
         if ((config = fopen("port.cfg", "r")) != NULL) {
             char mpi_port_name[MPI_MAX_PORT_NAME];
             fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
@@ -53,12 +54,13 @@ int main(int argc, char *argv[])
             setenv(ION_ENV, mpi_port_name, 1);
         }
     } else {
-        na_bmi_init(NULL, NULL, 0);
+        network_class = na_bmi_init(NULL, NULL, 0);
     }
     ion_name = getenv(ION_ENV);
     if (!ion_name) {
         fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
     }
+    na_register(network_class);
 
     /* Perform an address lookup on the ION */
     na_addr_lookup(ion_name, &ion_target);

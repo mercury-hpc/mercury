@@ -71,7 +71,7 @@ static pthread_mutex_t testcontext_mutex;
 static pthread_cond_t  testcontext_cond;
 static bool            is_testing_context;
 
-void na_bmi_init(const char *method_list, const char *listen_addr, int flags)
+na_network_class_t *na_bmi_init(const char *method_list, const char *listen_addr, int flags)
 {
     int bmi_ret;
 
@@ -94,7 +94,7 @@ void na_bmi_init(const char *method_list, const char *listen_addr, int flags)
     pthread_cond_init(&testcontext_cond, NULL);
     is_testing_context = 0;
 
-    na_register(&na_bmi_g);
+    return &na_bmi_g;
 }
 
 static void na_bmi_finalize(void)

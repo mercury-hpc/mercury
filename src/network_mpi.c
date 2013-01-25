@@ -3,7 +3,7 @@
  */
 
 #include "network_mpi.h"
-#include "hash_table.h"
+#include "mem_handle_map.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -94,7 +94,7 @@ static mpi_addr_t server_remote_addr;           /* Remote address */
 #if MPI_VERSION >= 3
 static MPI_Win mpi_dynamic_win;                 /* Dynamic window */
 #endif
-static ht_table_t *mem_map = NULL;              /* Map mem addresses to mem handles */
+static mh_map_t *mem_handle_map = NULL;         /* Map mem addresses to mem handles */
 
 #define NA_MPI_ONESIDED_TAG        0x80 /* Default tag used for one-sided over two-sided */
 
@@ -135,7 +135,7 @@ static void* na_mpi_onesided_service(void *args)
 
         pthread_mutex_lock(&mem_map_mutex);
 
-        mpi_mem_handle = (void*) ht_lookup(mem_map, onesided_info.base);
+        mpi_mem_handle = mh_map_lookup(mem_handle_map, onesided_info.base);
 
         if (!mpi_mem_handle) {
             NA_ERROR_DEFAULT("Could not find memory handle, registered?");
@@ -174,7 +174,7 @@ static void* na_mpi_onesided_service(void *args)
  *
  *---------------------------------------------------------------------------
  */
-void na_mpi_init(MPI_Comm *intra_comm, int flags)
+na_network_class_t *na_mpi_init(MPI_Comm *intra_comm, int flags)
 {
     /* MPI_Init */
     MPI_Initialized(&mpi_ext_initialized);
@@ -204,7 +204,7 @@ void na_mpi_init(MPI_Comm *intra_comm, int flags)
     }
 
     /* Create hash table for memory registration */
-    mem_map = ht_new();
+    mem_handle_map = mh_map_new();
 
     /* If server open a port */
     if (flags == MPI_INIT_SERVER) {
@@ -235,7 +235,7 @@ void na_mpi_init(MPI_Comm *intra_comm, int flags)
         // printf("my rank is: %d\n", my_rank);
 #endif
     }
-    na_register(&na_mpi_g);
+    return &na_mpi_g;
 }
 
 /*---------------------------------------------------------------------------
@@ -274,6 +274,9 @@ static void na_mpi_finalize(void)
         MPI_Comm_disconnect(&server_remote_addr.comm);
         MPI_Close_port(mpi_port_name);
     }
+
+    /* Free hash table for memory registration */
+    mh_map_free(mem_handle_map);
 
     /* Free the private dup'ed comm */
     MPI_Comm_free(&mpi_intra_comm);
@@ -564,7 +567,7 @@ int na_mpi_mem_register(void *buf, na_size_t buf_size, unsigned long flags, na_m
 #if MPI_VERSION < 3
     pthread_mutex_lock(&mem_map_mutex);
     /* store this handle */
-    if (ht_insert(mem_map, mpi_mem_handle->base, mpi_mem_handle) < 0) {
+    if (mh_map_insert(mem_handle_map, mpi_mem_handle->base, mpi_mem_handle) < 0) {
         NA_ERROR_DEFAULT("Could not register memory handle");
         ret = NA_FAIL;
     }
@@ -598,7 +601,7 @@ int na_mpi_mem_deregister(na_mem_handle_t mem_handle)
 #if MPI_VERSION < 3
     pthread_mutex_lock(&mem_map_mutex);
     /* remove the handle */
-    if (ht_remove(mem_map, mpi_mem_handle->base) < 0) {
+    if (mh_map_remove(mem_handle_map, mpi_mem_handle->base) < 0) {
         NA_ERROR_DEFAULT("Could not deregister memory handle");
         ret = NA_FAIL;
     }

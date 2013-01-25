@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-project(IOFSL_SHIPPER C CXX)
+project(IOFSL_SHIPPER C)
 
 #------------------------------------------------------------------------------
 # Version information 
@@ -129,15 +129,20 @@ add_definitions(-DBOOST_PP_VARIADICS=1)
 include_directories(
   ${IOFSL_SHIPPER_SOURCE_DIR}
   ${IOFSL_SHIPPER_SOURCE_DIR}/src
+  ${IOFSL_SHIPPER_SOURCE_DIR}/src/util
   ${IOFSL_SHIPPER_BINARY_DIR}
   ${IOFSL_SHIPPER_BINARY_DIR}/src
+)
+
+set(IOFSL_SHIPPER_UTIL_SRCS
+  src/util/hash-table.c
 )
 
 set(IOFSL_SHIPPER_NA_SRCS
   src/network_abstraction.c
   src/network_bmi.c
   src/network_mpi.c
-  src/hash_table.cxx
+  src/mem_handle_map.c
 )
 
 set(IOFSL_SHIPPER_BDS_SRCS
@@ -146,6 +151,7 @@ set(IOFSL_SHIPPER_BDS_SRCS
 
 set(IOFSL_SHIPPER_FS_SRCS
   src/function_shipper.c
+  src/function_map.c
 )
 
 #if(APPLE)
@@ -155,7 +161,7 @@ set(IOFSL_SHIPPER_FS_SRCS
 #------------------------------------------------------------------------------
 # Set sources
 #------------------------------------------------------------------------------
-add_library(iofsl_shipper_na ${IOFSL_SHIPPER_NA_SRCS})
+add_library(iofsl_shipper_na ${IOFSL_SHIPPER_NA_SRCS} ${IOFSL_SHIPPER_UTIL_SRCS})
 target_link_libraries(iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
 
 add_library(iofsl_shipper_bds ${IOFSL_SHIPPER_BDS_SRCS})
