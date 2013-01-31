@@ -5,23 +5,18 @@
 #ifndef IOFSL_COMPAT_H
 #define IOFSL_COMPAT_H
 
-#include <rpc/types.h>
-#include <rpc/xdr.h>
+#include <stddef.h>
+
+typedef enum {
+    ENCODE,
+    DECODE
+} iofsl_compat_op_t;
 
 #define ION_ENV "ZOIDFS_ION_NAME"
 
-/* TODO (keep that for now) Define the ZOIDFS operations */
-enum {
-    PROTO_GENERIC = 16, /* TODO map to zoidfs proto */
-
-    /* First invalid operation id */
-    PROTO_MAX
-};
-
-typedef struct {
-    XDR  xdr;
-    int  xdr_init;
-} generic_xdr_t;
-
+void iofsl_compat_xdr_process_id(void *buf, unsigned int actual_size, iofsl_compat_op_t op);
+void iofsl_compat_xdr_process_status(void *buf, unsigned int actual_size, iofsl_compat_op_t op);
+size_t iofsl_compat_xdr_get_size_id(void);
+size_t iofsl_compat_xdr_get_size_status(void);
 
 #endif /* IOFSL_COMPAT_H */

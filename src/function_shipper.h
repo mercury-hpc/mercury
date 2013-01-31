@@ -9,11 +9,11 @@
 
 #include <stdbool.h>
 
-typedef unsigned int fs_id_t;              /* Op id of the operation */
-typedef bool         fs_status_t;          /* Status of the operation */
-typedef void *       fs_peer_t;            /* Remote peer id */
-typedef void *       fs_request_t;         /* Request object */
-typedef void *       fs_addr_t;            /* Addr of remote server */
+typedef unsigned int fs_id_t;          /* Op id of the operation */
+typedef bool         fs_status_t;      /* Status of the operation */
+typedef void *       fs_peer_t;        /* Remote peer id */
+typedef void *       fs_request_t;     /* Request object */
+typedef void *       fs_addr_t;        /* Addr of remote server */
 
 #define FS_STATUS_IGNORE (fs_status_t *)1
 

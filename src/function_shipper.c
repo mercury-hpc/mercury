@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <pthread.h>
 #include <assert.h>
 
@@ -92,6 +93,8 @@ static inline unsigned int string_hash(const char *string)
  */
 int fs_init(na_network_class_t *network_class)
 {
+    na_register(network_class);
+
     /* Initialize TLS tags */
     pthread_key_create(&ptk_tag, 0);
     next_tag = 1;
@@ -168,18 +171,19 @@ fs_id_t fs_register(const char *func_name,
         int (*enc_routine)(void *buf, int buf_len, void *in_struct),
         int (*dec_routine)(void *out_struct, void *buf, int buf_len))
 {
-    fs_id_t id;
+    fs_id_t *id;
     fs_func_info_t *func_info;
 
     /* Generate a key from the string */
-    id = string_hash(func_name);
+    id = malloc(sizeof(fs_id_t));
+    *id = string_hash(func_name);
 
     /* Fill a func info struct and store it into the function map */
     func_info = malloc(sizeof(fs_func_info_t));
     func_info->enc_routine = enc_routine;
     func_info->dec_routine = dec_routine;
-    func_map_insert(func_map, &id, func_info);
-    return id;
+    func_map_insert(func_map, id, func_info);
+    return *id;
 }
 
 /*---------------------------------------------------------------------------
@@ -214,6 +218,10 @@ int fs_forward(fs_peer_t peer, fs_id_t id, void *in_struct, void *out_struct,
 
     /* Retrieve decoding function from function map */
     func_info = func_map_lookup(func_map, &id);
+    if (!func_info) {
+        FS_ERROR_DEFAULT("func_map_lookup failed");
+        return FS_FAIL;
+    }
 
     send_buf = malloc(send_buf_len);
     if (!send_buf) {
@@ -224,8 +232,15 @@ int fs_forward(fs_peer_t peer, fs_id_t id, void *in_struct, void *out_struct,
         fprintf(stderr, "recv buffer allocation failed.\n");
     }
 
+    /* Add IOFSL op id to parameters (used for IOFSL compat) */
+    iofsl_compat_xdr_process_id(send_buf, send_buf_len, ENCODE);
+
+    /* Add generic op id now  (do a simple memcpy) */
+    memcpy(send_buf + iofsl_compat_xdr_get_size_id(), &id, sizeof(fs_id_t));
+
     /* Encode the function parameters */
-    func_info->enc_routine(send_buf, send_buf_len, in_struct);
+    func_info->enc_routine(send_buf + iofsl_compat_xdr_get_size_id() + sizeof(fs_id_t),
+            send_buf_len - iofsl_compat_xdr_get_size_id() - sizeof(fs_id_t), in_struct);
 
     /* Post the send message and pre-post the recv message */
     priv_request = malloc(sizeof(fs_priv_request_t));
@@ -235,8 +250,10 @@ int fs_forward(fs_peer_t peer, fs_id_t id, void *in_struct, void *out_struct,
     priv_request->out_struct = out_struct;
     *request = (fs_request_t) priv_request;
 
-    na_send_unexpected(send_buf, send_buf_len, (na_addr_t)peer, send_tag, &priv_request->send_request, NULL);
-    na_recv(recv_buf, recv_buf_len, (na_addr_t)peer, recv_tag, &priv_request->recv_request, NULL);
+//    printf("Sending on tag %d\n", send_tag);
+//    printf("Receiving on tag %d\n", recv_tag);
+    na_send_unexpected(send_buf, send_buf_len, peer, send_tag, &priv_request->send_request, NULL);
+    na_recv(recv_buf, recv_buf_len, peer, recv_tag, &priv_request->recv_request, NULL);
     return 0;
 }
 
@@ -259,9 +276,14 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
     ret = na_wait(priv_request->send_request, timeout, NA_STATUS_IGNORE);
     ret = na_wait(priv_request->recv_request, timeout, &recv_status);
 
+    /* Check op status from parameters (used for IOFSL compat) */
+    iofsl_compat_xdr_process_status(priv_request->recv_buf, recv_status.count, DECODE);
+
     /* Decode depending on op ID */
     func_info = func_map_lookup(func_map, &priv_request->id);
-    func_info->dec_routine(priv_request->out_struct, priv_request->recv_buf, recv_status.count);
+    func_info->dec_routine(priv_request->out_struct,
+            priv_request->recv_buf + iofsl_compat_xdr_get_size_status(),
+            recv_status.count - iofsl_compat_xdr_get_size_status());
 
     free(priv_request->send_buf);
     free(priv_request->recv_buf);

@@ -154,9 +154,12 @@ set(IOFSL_SHIPPER_FS_SRCS
   src/function_map.c
 )
 
-#if(APPLE)
-#  set(IOFSL_SHIPPER_SRCS ${IOFSL_SHIPPER_SRCS} src/xdr_sizeof.c)
-#endif(APPLE)
+set(IOFSL_COMPAT_SRCS
+  src/iofsl_compat.c
+)
+if(APPLE)
+  set(IOFSL_COMPAT_SRCS ${IOFSL_COMPAT_SRCS} src/xdr_sizeof.c)
+endif(APPLE)
 
 #------------------------------------------------------------------------------
 # Set sources
@@ -167,7 +170,7 @@ target_link_libraries(iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
 add_library(iofsl_shipper_bds ${IOFSL_SHIPPER_BDS_SRCS})
 target_link_libraries(iofsl_shipper_bds iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
 
-add_library(iofsl_shipper_fs ${IOFSL_SHIPPER_FS_SRCS})
+add_library(iofsl_shipper_fs ${IOFSL_SHIPPER_FS_SRCS} ${IOFSL_COMPAT_SRCS})
 target_link_libraries(iofsl_shipper_fs iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
 
 #-----------------------------------------------------------------------------
