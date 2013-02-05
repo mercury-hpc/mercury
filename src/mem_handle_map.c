@@ -3,8 +3,8 @@
  */
 
 #include "mem_handle_map.h"
-
 #include "hash-table.h"
+#include "shipper_error.h"
 
 #include <stdlib.h>
 
@@ -23,7 +23,7 @@ static inline unsigned int pointer_hash(void *location)
  *
  * Purpose:     Create a new map
  *
- * Returns:
+ * Returns:     Pointer to table
  *
  *---------------------------------------------------------------------------
  */
@@ -44,8 +44,6 @@ mh_map_t *mh_map_new()
  *
  * Purpose:     Free the map
  *
- * Returns:
- *
  *---------------------------------------------------------------------------
  */
 void mh_map_free(mh_map_t *map)
@@ -65,8 +63,14 @@ void mh_map_free(mh_map_t *map)
  */
 int mh_map_insert(mh_map_t *map, mh_key_t key, mh_value_t value)
 {
-   // TODO return right return value
-   return hash_table_insert(map, key, value);
+    int ret = S_SUCCESS;
+
+    if (!hash_table_insert(map, key, value)) {
+        S_ERROR_DEFAULT("hash_table_insert failed");
+        ret = S_FAIL;
+    }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -80,9 +84,14 @@ int mh_map_insert(mh_map_t *map, mh_key_t key, mh_value_t value)
  */
 int mh_map_remove(mh_map_t *map, mh_key_t key)
 {
-    // TODO return right return value
-    /* Remove an entry */
-    return hash_table_remove(map, key);
+    int ret = S_SUCCESS;
+
+    if (!hash_table_remove(map, key)) {
+        S_ERROR_DEFAULT("hash_table_remove failed");
+        ret = S_FAIL;
+    }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -90,13 +99,12 @@ int mh_map_remove(mh_map_t *map, mh_key_t key)
  *
  * Purpose:     Look up entry
  *
- * Returns:
+ * Returns:     Value that corresponds to the key
  *
  *---------------------------------------------------------------------------
  */
 mh_value_t mh_map_lookup(mh_map_t *map, mh_key_t key)
 {
-    /* Lookup value */
     return hash_table_lookup(map, key);
 }
 
@@ -105,7 +113,7 @@ mh_value_t mh_map_lookup(mh_map_t *map, mh_key_t key)
  *
  * Purpose:     Get number of entries
  *
- * Returns:
+ * Returns:     Size of the table
  *
  *---------------------------------------------------------------------------
  */

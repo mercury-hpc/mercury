@@ -16,6 +16,9 @@
 typedef void * bds_handle_t;       /* Bulk data handle */
 typedef void * bds_block_handle_t; /* Block handle for bulk data */
 
+#define BDS_MAX_HANDLE_SIZE 32 /* TODO Arbitrary value / may need to be increased depending on implementations */
+#define BDS_MAX_IDLE_TIME NA_MAX_IDLE_TIME
+
 #ifdef __cplusplus
 extern "C" {
 #endif

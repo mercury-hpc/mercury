@@ -3,6 +3,7 @@
  */
 
 #include "network_bmi.h"
+#include "shipper_error.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,14 +79,14 @@ na_network_class_t *na_bmi_init(const char *method_list, const char *listen_addr
     /* Initialize BMI */
     bmi_ret = BMI_initialize(method_list, listen_addr, flags);
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_initialize() failed");
+        S_ERROR_DEFAULT("BMI_initialize() failed");
     }
 
     /* Create a new BMI context */
     bmi_ret = BMI_open_context(&bmi_context);
 
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_open_context() failed");
+        S_ERROR_DEFAULT("BMI_open_context() failed");
     }
 
     /* Initialize cond variable */
@@ -108,7 +109,7 @@ static void na_bmi_finalize(void)
     bmi_ret = BMI_finalize();
 
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_finalize() failed");
+        S_ERROR_DEFAULT("BMI_finalize() failed");
     }
 
     pthread_mutex_destroy(&request_mutex);
@@ -124,7 +125,7 @@ static na_size_t na_bmi_get_unexpected_size()
 
 static int na_bmi_addr_lookup(const char *name, na_addr_t *addr)
 {
-    int bmi_ret, ret = NA_SUCCESS;
+    int bmi_ret, ret = S_SUCCESS;
     BMI_addr_t *bmi_addr = NULL;
 
     /* Perform an address addr_lookup on the ION */
@@ -132,10 +133,10 @@ static int na_bmi_addr_lookup(const char *name, na_addr_t *addr)
     bmi_ret = BMI_addr_lookup(bmi_addr, name);
 
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_addr_lookup() failed");
+        S_ERROR_DEFAULT("BMI_addr_lookup() failed");
         free(bmi_addr);
         bmi_addr = NULL;
-        ret = NA_FAIL;
+        ret = S_FAIL;
     } else {
         if (addr) *addr = (na_addr_t) bmi_addr;
     }
@@ -145,15 +146,15 @@ static int na_bmi_addr_lookup(const char *name, na_addr_t *addr)
 static int na_bmi_addr_free(na_addr_t addr)
 {
     BMI_addr_t *bmi_addr = (BMI_addr_t*) addr;
-    int ret = NA_SUCCESS;
+    int ret = S_SUCCESS;
 
     /* Cleanup peer_addr */
     if (bmi_addr) {
         free(bmi_addr);
         bmi_addr = NULL;
     } else {
-        NA_ERROR_DEFAULT("Already freed");
-        ret = NA_FAIL;
+        S_ERROR_DEFAULT("Already freed");
+        ret = S_FAIL;
     }
     return ret;
 }
@@ -161,7 +162,7 @@ static int na_bmi_addr_free(na_addr_t addr)
 static int na_bmi_send_unexpected(const void *buf, na_size_t buf_len, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
-    int bmi_ret, ret = NA_SUCCESS;
+    int bmi_ret, ret = S_SUCCESS;
     bmi_size_t bmi_buf_len = (bmi_size_t) buf_len;
     BMI_addr_t *bmi_peer_addr = (BMI_addr_t*) dest;
     bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
@@ -178,10 +179,10 @@ static int na_bmi_send_unexpected(const void *buf, na_size_t buf_len, na_addr_t 
             BMI_EXT_ALLOC, bmi_tag, bmi_request, bmi_context, NULL);
 
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_post_sendunexpected() failed");
+        S_ERROR_DEFAULT("BMI_post_sendunexpected() failed");
         free(bmi_request);
         bmi_request = NULL;
-        ret = NA_FAIL;
+        ret = S_FAIL;
     } else {
         pthread_mutex_lock(&request_mutex);
         /* Mark request as done if immediate bmi completion detected */
@@ -195,7 +196,7 @@ static int na_bmi_send_unexpected(const void *buf, na_size_t buf_len, na_addr_t 
 static int na_bmi_recv_unexpected(void *buf, na_size_t *buf_len, na_addr_t *source,
         na_tag_t *tag, na_request_t *request, void *op_arg)
 {
-    int ret = NA_SUCCESS;
+    int ret = S_SUCCESS;
     int bmi_ret, outcount = 0;
     struct BMI_unexpected_info request_info;
 
@@ -204,9 +205,9 @@ static int na_bmi_recv_unexpected(void *buf, na_size_t *buf_len, na_addr_t *sour
     } while (bmi_ret == 0 && outcount == 0);
 
     if (bmi_ret < 0 || request_info.error_code != 0) {
-        NA_ERROR_DEFAULT("Request recv failure (bad state)");
-        NA_ERROR_DEFAULT("BMI_testunexpected failed");
-        ret = NA_FAIL;
+        S_ERROR_DEFAULT("Request recv failure (bad state)");
+        S_ERROR_DEFAULT("BMI_testunexpected failed");
+        ret = S_FAIL;
     } else {
         if (outcount) {
             if (source) {
@@ -219,8 +220,8 @@ static int na_bmi_recv_unexpected(void *buf, na_size_t *buf_len, na_addr_t *sour
             if (buf) memcpy(buf, request_info.buffer, request_info.size);
             BMI_unexpected_free(request_info.addr, request_info.buffer);
         } else {
-            NA_ERROR_DEFAULT("No pending message found");
-            ret = NA_FAIL;
+            S_ERROR_DEFAULT("No pending message found");
+            ret = S_FAIL;
         }
     }
     return ret;
@@ -229,7 +230,7 @@ static int na_bmi_recv_unexpected(void *buf, na_size_t *buf_len, na_addr_t *sour
 static int na_bmi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
-    int ret = NA_SUCCESS, bmi_ret;
+    int ret = S_SUCCESS, bmi_ret;
     bmi_size_t bmi_buf_len = (bmi_size_t) buf_len;
     BMI_addr_t *bmi_peer_addr = (BMI_addr_t*) dest;
     bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
@@ -246,24 +247,26 @@ static int na_bmi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
             BMI_EXT_ALLOC, bmi_tag, bmi_request, bmi_context, NULL);
 
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_post_send() failed");
+        S_ERROR_DEFAULT("BMI_post_send() failed");
         free(bmi_request);
         bmi_request = NULL;
-        ret = NA_FAIL;
-    } else {
-        pthread_mutex_lock(&request_mutex);
-        /* Mark request as done if immediate BMI completion detected */
-        bmi_request->completed = ret ? 1 : 0;
-        *request = (na_request_t) bmi_request;
-        pthread_mutex_unlock(&request_mutex);
+        ret = S_FAIL;
+        return ret;
     }
+
+    pthread_mutex_lock(&request_mutex);
+    /* Mark request as done if immediate BMI completion detected */
+    bmi_request->completed = ret ? 1 : 0;
+    *request = (na_request_t) bmi_request;
+    pthread_mutex_unlock(&request_mutex);
+
     return ret;
 }
 
 static int na_bmi_recv(void *buf, na_size_t buf_len, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
-    int bmi_ret, ret = NA_SUCCESS;
+    int bmi_ret, ret = S_SUCCESS;
     bmi_size_t bmi_buf_len = (bmi_size_t) buf_len;
     BMI_addr_t *bmi_peer_addr = (BMI_addr_t*) source;
     bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
@@ -280,17 +283,19 @@ static int na_bmi_recv(void *buf, na_size_t buf_len, na_addr_t source,
             &bmi_request->actual_size, BMI_EXT_ALLOC, bmi_tag, bmi_request, bmi_context, NULL);
 
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_post_recv() failed");
+        S_ERROR_DEFAULT("BMI_post_recv() failed");
         free(bmi_request);
         bmi_request = NULL;
-        ret = NA_FAIL;
-    } else {
-        pthread_mutex_lock(&request_mutex);
-        /* Mark request as done if immediate BMI completion detected */
-        bmi_request->completed = bmi_ret ? 1 : 0;
-        *request = (na_request_t) bmi_request;
-        pthread_mutex_unlock(&request_mutex);
+        ret = S_FAIL;
+        return ret;
     }
+
+    pthread_mutex_lock(&request_mutex);
+    /* Mark request as done if immediate BMI completion detected */
+    bmi_request->completed = bmi_ret ? 1 : 0;
+    *request = (na_request_t) bmi_request;
+    pthread_mutex_unlock(&request_mutex);
+
     return ret;
 }
 
@@ -337,14 +342,14 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *
 {
     bmi_request_t *bmi_wait_request = (bmi_request_t*) request;
     int remaining = timeout;
-    int ret = NA_SUCCESS;
+    int ret = S_SUCCESS;
     bool wait_request_completed = 0;
 
     /* Only the thread that has created the request should wait and free that request
      * even if the request may have been marked as completed by other threads */
     if (!bmi_wait_request) {
-        NA_ERROR_DEFAULT("NULL request");
-        ret = NA_FAIL;
+        S_ERROR_DEFAULT("NULL request");
+        ret = S_FAIL;
         return ret;
     }
 
@@ -374,7 +379,7 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *
         pthread_mutex_unlock(&testcontext_mutex);
 
         if (ETIMEDOUT == pthread_cond_ret) {
-            ret = NA_FAIL;
+            ret = S_FAIL;
             break;
         }
         remaining -= (ts1.tv_sec - ts2.tv_sec) * 1000 + (ts1.tv_nsec - ts2.tv_nsec) / 1000000;
@@ -404,23 +409,24 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *
             remaining -= (t2.tv_sec - t1.tv_sec) * 1000 + (t2.tv_usec - t1.tv_usec) / 1000;
 
             if (bmi_ret < 0 || error_code != 0) {
-                NA_ERROR_DEFAULT("BMI_testcontext failed");
-                ret = NA_FAIL;
-            } else {
-                if (bmi_user_ptr) {
-                    bmi_request_t *bmi_request;
+                S_ERROR_DEFAULT("BMI_testcontext failed");
+                ret = S_FAIL;
+                return ret;
+            }
 
-                    pthread_mutex_lock(&request_mutex);
-                    bmi_request = (bmi_request_t *) bmi_user_ptr;
-                    assert(bmi_op_id == bmi_request->op_id);
-                    /* Mark the request as completed */
-                    bmi_request->completed = 1;
-                    /* Our request may have been marked as completed as well */
-                    wait_request_completed = bmi_wait_request->completed;
-                    /* Only set the actual size if it's a receive request */
-                    bmi_request->actual_size = bmi_actual_size;
-                    pthread_mutex_unlock(&request_mutex);
-                }
+            if (bmi_user_ptr) {
+                bmi_request_t *bmi_request;
+
+                pthread_mutex_lock(&request_mutex);
+                bmi_request = (bmi_request_t *) bmi_user_ptr;
+                assert(bmi_op_id == bmi_request->op_id);
+                /* Mark the request as completed */
+                bmi_request->completed = 1;
+                /* Our request may have been marked as completed as well */
+                wait_request_completed = bmi_wait_request->completed;
+                /* Only set the actual size if it's a receive request */
+                bmi_request->actual_size = bmi_actual_size;
+                pthread_mutex_unlock(&request_mutex);
             }
         }
 

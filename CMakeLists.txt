@@ -158,7 +158,7 @@ set(IOFSL_COMPAT_SRCS
   src/iofsl_compat.c
 )
 if(APPLE)
-  set(IOFSL_COMPAT_SRCS ${IOFSL_COMPAT_SRCS} src/xdr_sizeof.c)
+  set(IOFSL_COMPAT_SRCS ${IOFSL_COMPAT_SRCS} src/util/xdr_sizeof.c)
 endif(APPLE)
 
 #------------------------------------------------------------------------------

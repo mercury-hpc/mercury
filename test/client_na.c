@@ -5,6 +5,7 @@
 #include "iofsl_compat.h"
 #include "network_mpi.h"
 #include "network_bmi.h"
+#include "shipper_error.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,9 @@ int main(int argc, char *argv[])
 
     char *send_buf = NULL;
     char *recv_buf = NULL;
+
+    na_size_t send_buf_len;
+    na_size_t recv_buf_len;
 
     int *bulk_buf = NULL;
     int bulk_size = 1024*1024;
@@ -60,22 +64,23 @@ int main(int argc, char *argv[])
     if (!ion_name) {
         fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
     }
-    na_register(network_class);
 
     /* Perform an address lookup on the ION */
-    na_addr_lookup(ion_name, &ion_target);
+    na_addr_lookup(network_class, ion_name, &ion_target);
 
     /* Allocate send and recv bufs */
-    send_buf = malloc(na_get_unexpected_size());
-    recv_buf = malloc(na_get_unexpected_size());
+    send_buf_len = na_get_unexpected_size(network_class);
+    recv_buf_len = send_buf_len;
+    send_buf = malloc(send_buf_len);
+    recv_buf = malloc(recv_buf_len);
 
     /* Send a message to addr */
     sprintf(send_buf, "Hello ION!\n");
-    na_send_unexpected(send_buf, na_get_unexpected_size(), ion_target, send_tag, &send_request, NULL);
-    na_recv(recv_buf, na_get_unexpected_size(), ion_target, recv_tag, &recv_request, NULL);
+    na_send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
+    na_recv(network_class, recv_buf, recv_buf_len, ion_target, recv_tag, &recv_request, NULL);
 
-    na_wait(send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-    na_wait(recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    na_wait(network_class, send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    na_wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
     printf("Received from ION: %s\n", recv_buf);
 
     /* Prepare bulk_buf */
@@ -86,31 +91,31 @@ int main(int argc, char *argv[])
 
     /* Register memory */
     printf("Registering local memory...\n");
-    na_mem_register(bulk_buf, sizeof(int) * bulk_size, NA_MEM_TARGET_GET, &local_mem_handle);
+    na_mem_register(network_class, bulk_buf, sizeof(int) * bulk_size, NA_MEM_TARGET_GET, &local_mem_handle);
 
     /* Serialize mem handle */
     printf("Serializing local memory handle...\n");
-    na_mem_handle_serialize(send_buf, na_get_unexpected_size(), local_mem_handle);
+    na_mem_handle_serialize(network_class, send_buf, send_buf_len, local_mem_handle);
 
     /* Send mem handle */
     printf("Sending local memory handle...\n");
-    na_send(send_buf, na_get_unexpected_size(), ion_target, bulk_tag, &bulk_request, NULL);
+    na_send(network_class, send_buf, send_buf_len, ion_target, bulk_tag, &bulk_request, NULL);
 
     /* Recv completion ack */
     printf("Receiving end of transfer ack...\n");
-    na_recv(recv_buf, na_get_unexpected_size(), ion_target, ack_tag, &ack_request, NULL);
+    na_recv(network_class, recv_buf, recv_buf_len, ion_target, ack_tag, &ack_request, NULL);
 
-    na_wait(bulk_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-    na_wait(ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    na_wait(network_class, bulk_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    na_wait(network_class, ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
 
     printf("Finalizing...\n");
 
     /* Free memory and addresses */
-    na_mem_deregister(local_mem_handle);
+    na_mem_deregister(network_class, local_mem_handle);
     free(bulk_buf);
     bulk_buf = NULL;
 
-    na_addr_free(ion_target);
+    na_addr_free(network_class, ion_target);
     ion_target = NULL;
 
     free(recv_buf);
@@ -119,6 +124,6 @@ int main(int argc, char *argv[])
     free(send_buf);
     send_buf = NULL;
 
-    na_finalize();
+    na_finalize(network_class);
     return EXIT_SUCCESS;
 }

@@ -7,6 +7,7 @@
 #include "function_shipper.h"
 #include "bulk_data_shipper.h"
 #include "iofsl_compat.h"
+#include "shipper_error.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +26,7 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
 /* Can be automatically generated using macros */
 typedef struct bla_write_in {
     int  fildes;
-    char bds_handle_buf[1024];
+    char bds_handle_buf[BDS_MAX_HANDLE_SIZE];
 } bla_write_in_t;
 
 typedef struct bla_write_out {
@@ -34,12 +35,12 @@ typedef struct bla_write_out {
 
 int bla_write_enc(void *buf, int buf_len, void *in_struct)
 {
-    int ret = FS_SUCCESS;
+    int ret = S_SUCCESS;
     bla_write_in_t *bla_write_in_struct = (bla_write_in_t*) in_struct;
 
     if (buf_len < sizeof(bla_write_in_t)) {
-        NA_ERROR_DEFAULT("Buffer size too small for serializing parameter");
-        ret = FS_FAIL;
+        S_ERROR_DEFAULT("Buffer size too small for serializing parameter");
+        ret = S_FAIL;
     } else {
         /* Here safe to do a simple memcpy */
         /* TODO may also want to add a checksum or something */
@@ -50,28 +51,18 @@ int bla_write_enc(void *buf, int buf_len, void *in_struct)
 
 int bla_write_dec(void *out_struct, void *buf, int buf_len)
 {
-    int ret = FS_SUCCESS;
+    int ret = S_SUCCESS;
     bla_write_out_t *bla_write_out_struct = out_struct;
 
     if (buf_len < sizeof(bla_write_out_t)) {
-        NA_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
-        ret = NA_FAIL;
+        S_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
+        ret = S_FAIL;
     } else {
         /* Here safe to do a simple memcpy */
         /* TODO may also want to add a checksum or something */
         memcpy(bla_write_out_struct, buf, sizeof(bla_write_out_t));
     }
     return ret;
-}
-
-void bla_write_set_in_struct(int fildes, bla_write_in_t *in_struct)
-{
-    in_struct->fildes = fildes;
-}
-
-void bla_write_get_out_param(bla_write_out_t out_struct, int *bla_write_ret)
-{
-    *bla_write_ret = out_struct.bla_write_ret;
 }
 
 /******************************************************************************/
@@ -126,6 +117,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
     }
     fs_init(network_class);
+    bds_init(network_class);
 
     /* Look up peer id */
     fs_peer_lookup(ion_name, &peer);
@@ -137,7 +129,7 @@ int main(int argc, char *argv[])
     bds_handle_create(bulk_buf, sizeof(int) * bulk_size, &bla_bulk_handle);
 
     /* Fill input structure */
-    bla_write_set_in_struct(fildes, &bla_write_in_struct);
+    bla_write_in_struct.fildes = fildes;
 
     /* Serialize memory handle */
     bds_handle_serialize(bla_write_in_struct.bds_handle_buf, sizeof(bla_write_in_struct.bds_handle_buf),
@@ -147,20 +139,24 @@ int main(int argc, char *argv[])
     fs_forward(peer, bla_write_id, &bla_write_in_struct, &bla_write_out_struct, &bla_write_request);
 
     /* Wait for call to be executed and return value to be sent back */
-    fs_wait(bla_write_request, NA_MAX_IDLE_TIME, FS_STATUS_IGNORE);
+    fs_wait(bla_write_request, FS_MAX_IDLE_TIME, FS_STATUS_IGNORE);
 
     /* Get output parameter */
-    bla_write_get_out_param(bla_write_out_struct, &bla_write_ret);
+    bla_write_ret = bla_write_out_struct.bla_write_ret;
 
     printf("bla_write returned: %d\n", bla_write_ret);
 
     /* Free memory handle */
     bds_handle_free(bla_bulk_handle);
 
+    /* Free bulk data */
+    free(bulk_buf);
+
     /* Free peer id */
     fs_peer_free(peer);
 
     /* Finalize interface */
     fs_finalize();
+    bds_finalize();
     return EXIT_SUCCESS;
 }

@@ -3,8 +3,8 @@
  */
 
 #include "function_map.h"
-
 #include "hash-table.h"
+#include "shipper_error.h"
 
 #include <stdlib.h>
 
@@ -33,7 +33,7 @@ unsigned int int_hash(void *vlocation)
  *
  * Purpose:     Create a new map
  *
- * Returns:
+ * Returns:     Pointer to table
  *
  *---------------------------------------------------------------------------
  */
@@ -44,7 +44,7 @@ func_map_t *func_map_new()
     map = hash_table_new(int_hash, int_equal);
 
     /* Automatically free all the values with the hash map */
-    hash_table_register_free_functions(map, NULL, NULL);
+    hash_table_register_free_functions(map, free, free);
 
     return map;
 }
@@ -53,8 +53,6 @@ func_map_t *func_map_new()
  * Function:    func_map_free
  *
  * Purpose:     Free the map
- *
- * Returns:
  *
  *---------------------------------------------------------------------------
  */
@@ -75,8 +73,14 @@ void func_map_free(func_map_t *map)
  */
 int func_map_insert(func_map_t *map, func_key_t key, func_value_t value)
 {
-   // TODO return right return value
-   return hash_table_insert(map, key, value);
+    int ret = S_SUCCESS;
+
+    if (!hash_table_insert(map, key, value)) {
+        S_ERROR_DEFAULT("hash_table_insert failed");
+        ret = S_FAIL;
+    }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -90,9 +94,14 @@ int func_map_insert(func_map_t *map, func_key_t key, func_value_t value)
  */
 int func_map_remove(func_map_t *map, func_key_t key)
 {
-    // TODO return right return value
-    /* Remove an entry */
-    return hash_table_remove(map, key);
+    int ret = S_SUCCESS;
+
+    if (!hash_table_remove(map, key)) {
+        S_ERROR_DEFAULT("hash_table_remove failed");
+        ret = S_FAIL;
+    }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -100,13 +109,12 @@ int func_map_remove(func_map_t *map, func_key_t key)
  *
  * Purpose:     Look up entry
  *
- * Returns:
+ * Returns:     Value that corresponds to the key
  *
  *---------------------------------------------------------------------------
  */
 func_value_t func_map_lookup(func_map_t *map, func_key_t key)
 {
-    /* Lookup value */
     return hash_table_lookup(map, key);
 }
 
@@ -115,7 +123,7 @@ func_value_t func_map_lookup(func_map_t *map, func_key_t key)
  *
  * Purpose:     Get number of entries
  *
- * Returns:
+ * Returns:     Size of the table
  *
  *---------------------------------------------------------------------------
  */

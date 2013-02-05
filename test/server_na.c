@@ -17,6 +17,7 @@ int main(int argc, char *argv[])
     char *recv_buf = NULL;
     char *send_buf = NULL;
 
+    na_size_t send_buf_len;
     na_size_t recv_buf_len = 0;
 
     na_tag_t recv_tag = 0;
@@ -27,7 +28,7 @@ int main(int argc, char *argv[])
     na_request_t send_request = NULL;
 
     int *bulk_buf = NULL;
-    int bulk_size = 1024*1024;
+    int bulk_size = 1024 * 1024;
     na_mem_handle_t local_mem_handle = NULL;
     na_mem_handle_t remote_mem_handle = NULL;
 
@@ -56,22 +57,22 @@ int main(int argc, char *argv[])
         }
         network_class = na_bmi_init("bmi_tcp", listen_addr, BMI_INIT_SERVER);
     }
-    na_register(network_class);
 
     /* Allocate send and recv bufs */
-    send_buf = malloc(na_get_unexpected_size());
-    recv_buf = malloc(na_get_unexpected_size());
+    send_buf_len = na_get_unexpected_size(network_class);
+    send_buf = malloc(send_buf_len);
+    recv_buf = malloc(send_buf_len);
 
     /* Recv a message from a client (blocking for now) */
-    na_recv_unexpected(recv_buf, &recv_buf_len, &recv_addr, &recv_tag, NULL, NULL);
+    na_recv_unexpected(network_class, recv_buf, &recv_buf_len, &recv_addr, &recv_tag, NULL, NULL);
     printf("Received from CN: %s\n", recv_buf);
 
     /* Respond back */
     sprintf(send_buf, "Hello CN!\n");
     send_tag = recv_tag + 1;
-    na_send(send_buf, na_get_unexpected_size(), recv_addr, send_tag, &send_request, NULL);
+    na_send(network_class, send_buf, send_buf_len, recv_addr, send_tag, &send_request, NULL);
 
-    na_wait(send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    na_wait(network_class, send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
 
     /* Prepare bulk_buf */
     bulk_buf = malloc(sizeof(int) * bulk_size);
@@ -81,24 +82,25 @@ int main(int argc, char *argv[])
 
     /* Register memory */
     printf("Registering local memory...\n");
-    na_mem_register(bulk_buf, sizeof(int) * bulk_size, NA_MEM_ORIGIN_PUT, &local_mem_handle);
+    na_mem_register(network_class, bulk_buf, sizeof(int) * bulk_size, NA_MEM_ORIGIN_PUT, &local_mem_handle);
 
     /* Recv memory handle */
+    recv_buf_len = send_buf_len;
     printf("Receiving remote memory handle...\n");
-    na_recv(recv_buf, na_get_unexpected_size(), recv_addr, bulk_tag, &bulk_request, NULL);
+    na_recv(network_class, recv_buf, recv_buf_len, recv_addr, bulk_tag, &bulk_request, NULL);
 
-    na_wait(bulk_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    na_wait(network_class, bulk_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
 
     /* Deserialize memory handle */
     printf("Deserializing remote memory handle...\n");
-    na_mem_handle_deserialize(&remote_mem_handle, recv_buf, na_get_unexpected_size());
+    na_mem_handle_deserialize(network_class, &remote_mem_handle, recv_buf, recv_buf_len);
 
     /* Do a get */
-    printf("Getting %d bytes from remote...\n", bulk_size  * (int) sizeof(int));
+    printf("Getting %d bytes from remote...\n", (int) (bulk_size * sizeof(int)));
 
-    na_get(local_mem_handle, 0, remote_mem_handle, 0, bulk_size * sizeof(int), recv_addr, &get_request);
+    na_get(network_class, local_mem_handle, 0, remote_mem_handle, 0, bulk_size * sizeof(int), recv_addr, &get_request);
 
-    na_wait(get_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    na_wait(network_class, get_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
 
     /* Check bulk buf */
     for (i = 0; i < bulk_size; i++) {
@@ -112,18 +114,18 @@ int main(int argc, char *argv[])
 
     /* Send completion ack */
     printf("Sending end of transfer ack...\n");
-    na_send(send_buf, na_get_unexpected_size(), recv_addr, ack_tag, &ack_request, NULL);
-    na_wait(ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    na_send(network_class, send_buf, send_buf_len, recv_addr, ack_tag, &ack_request, NULL);
+    na_wait(network_class, ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
 
     printf("Finalizing...\n");
 
     /* Free memory and addresses */
-    na_mem_handle_free(remote_mem_handle);
-    na_mem_deregister(local_mem_handle);
+    na_mem_handle_free(network_class, remote_mem_handle);
+    na_mem_deregister(network_class, local_mem_handle);
     free(bulk_buf);
     bulk_buf = NULL;
 
-    na_addr_free(recv_addr);
+    na_addr_free(network_class, recv_addr);
     recv_addr = NULL;
 
     free(recv_buf);
@@ -132,6 +134,6 @@ int main(int argc, char *argv[])
     free(send_buf);
     send_buf = NULL;
 
-    na_finalize();
+    na_finalize(network_class);
     return EXIT_SUCCESS;
 }
