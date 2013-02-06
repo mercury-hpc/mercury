@@ -2,9 +2,8 @@
  * server_na.c
  */
 
-#include "iofsl_compat.h"
-#include "network_mpi.h"
-#include "network_bmi.h"
+#include "network_abstraction.h"
+#include "shipper_test.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,21 +41,7 @@ int main(int argc, char *argv[])
     int i, error = 0;
 
     /* Initialize the interface */
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <BMI|MPI>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    if (strcmp("MPI", argv[1]) == 0) {
-        network_class = na_mpi_init(NULL, MPI_INIT_SERVER);
-    } else {
-        char *listen_addr = getenv(ION_ENV);
-        if (!listen_addr) {
-            fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
-            return EXIT_FAILURE;
-        }
-        network_class = na_bmi_init("bmi_tcp", listen_addr, BMI_INIT_SERVER);
-    }
+    network_class = shipper_test_server_init(argc, argv);
 
     /* Allocate send and recv bufs */
     send_buf_len = na_get_unexpected_size(network_class);
@@ -82,7 +67,7 @@ int main(int argc, char *argv[])
 
     /* Register memory */
     printf("Registering local memory...\n");
-    na_mem_register(network_class, bulk_buf, sizeof(int) * bulk_size, NA_MEM_ORIGIN_PUT, &local_mem_handle);
+    na_mem_register(network_class, bulk_buf, sizeof(int) * bulk_size, NA_MEM_READWRITE, &local_mem_handle);
 
     /* Recv memory handle */
     recv_buf_len = send_buf_len;

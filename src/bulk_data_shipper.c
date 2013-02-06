@@ -7,22 +7,24 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
 
 typedef struct bds_priv_handle {
-    void *          data;
     na_size_t       size;
-    na_addr_t       remote_addr;
-    na_mem_handle_t local_mem_handle;
-    na_mem_handle_t remote_mem_handle;
+    na_mem_handle_t mem_handle;
+    bool            registered;
 } bds_priv_handle_t;
 
 typedef struct bds_priv_block_handle {
-    void *       data;
-    na_size_t    size;
-    na_request_t bulk_request;
+    void *          data;
+    na_size_t       size;
+    na_mem_handle_t mem_handle;
+    na_request_t    bulk_request;
 } bds_priv_block_handle_t;
 
 static na_network_class_t *bds_network_class = NULL;
+static na_addr_t bds_remote_addr;
 
 /*---------------------------------------------------------------------------
  * Function:    bds_init
@@ -33,7 +35,7 @@ static na_network_class_t *bds_network_class = NULL;
  *
  *---------------------------------------------------------------------------
  */
-int bds_init(na_network_class_t *network_class)
+int bds_init(na_network_class_t *network_class, na_addr_t remote_addr)
 {
     int ret = S_SUCCESS;
 
@@ -44,6 +46,7 @@ int bds_init(na_network_class_t *network_class)
     }
 
     bds_network_class = network_class;
+    bds_remote_addr = remote_addr;
 
     return S_SUCCESS;
 }
@@ -68,6 +71,7 @@ int bds_finalize(void)
     }
 
     bds_network_class = NULL;
+    bds_remote_addr = NULL;
 
     return S_SUCCESS;
 }
@@ -87,17 +91,15 @@ int bds_handle_create(void *buf, size_t buf_size, bds_handle_t *handle)
     bds_priv_handle_t *priv_handle;
 
     priv_handle = malloc(sizeof(bds_priv_handle_t));
-    priv_handle->data = buf;
     priv_handle->size = buf_size;
-    priv_handle->remote_addr = NULL;
-    priv_handle->remote_mem_handle = NULL;
 
-    ret = na_mem_register(bds_network_class, buf, buf_size, NA_MEM_TARGET_GET, &priv_handle->local_mem_handle);
+    ret = na_mem_register(bds_network_class, buf, buf_size, NA_MEM_READWRITE, &priv_handle->mem_handle);
     if (ret != S_SUCCESS) {
         S_ERROR_DEFAULT("na_mem_register failed");
         free(priv_handle);
         priv_handle = NULL;
     } else {
+        priv_handle->registered = 1;
         *handle = (bds_handle_t) priv_handle;
     }
 
@@ -118,13 +120,25 @@ int bds_handle_free(bds_handle_t *handle)
     int ret;
     bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
 
-    ret = na_mem_deregister(bds_network_class, priv_handle->local_mem_handle);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("na_mem_deregister failed");
-    } else {
-        free(priv_handle);
-        priv_handle = NULL;
+    if (!priv_handle) {
+        S_ERROR_DEFAULT("Already freed");
+        ret = S_FAIL;
+        return ret;
     }
+
+    if (priv_handle->registered) {
+        ret = na_mem_deregister(bds_network_class, priv_handle->mem_handle);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("na_mem_deregister failed");
+        }
+    } else {
+        ret = na_mem_handle_free(bds_network_class, priv_handle->mem_handle);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("na_mem_handle_free failed");
+        }
+    }
+    free(priv_handle);
+    priv_handle = NULL;
 
     return ret;
 }
@@ -140,10 +154,18 @@ int bds_handle_free(bds_handle_t *handle)
  */
 int bds_handle_serialize(void *buf, na_size_t buf_len, bds_handle_t handle)
 {
-    int ret;
+    int ret = S_SUCCESS;
     bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
 
-    ret = na_mem_handle_serialize(bds_network_class, buf, buf_len, priv_handle->local_mem_handle);
+    if (buf_len < sizeof(bds_priv_handle_t)) {
+        S_ERROR_DEFAULT("Buffer size too small for serializing parameter");
+        ret = S_FAIL;
+    } else {
+        /* Here add the size of the data */
+        memcpy(buf, &priv_handle->size, sizeof(na_size_t));
+        ret = na_mem_handle_serialize(bds_network_class, buf + sizeof(na_size_t),
+                buf_len - sizeof(na_size_t), priv_handle->mem_handle);
+    }
 
     return ret;
 }
@@ -159,19 +181,24 @@ int bds_handle_serialize(void *buf, na_size_t buf_len, bds_handle_t handle)
  */
 int bds_handle_deserialize(bds_handle_t *handle, const void *buf, na_size_t buf_len)
 {
-    int ret;
+    int ret = S_SUCCESS;
     bds_priv_handle_t *priv_handle = NULL;
 
-    priv_handle = malloc(sizeof(bds_priv_handle_t));
-    priv_handle->data = NULL;
-    priv_handle->size = 0;
-    priv_handle->local_mem_handle = NULL;
-    priv_handle->remote_addr = NULL;
-    ret = na_mem_handle_deserialize(bds_network_class, &priv_handle->remote_mem_handle, buf, buf_len);
+    if (buf_len < sizeof(bds_priv_handle_t)) {
+        S_ERROR_DEFAULT("Buffer size too small for serializing parameter");
+        ret = S_FAIL;
+    } else {
+        priv_handle = malloc(sizeof(bds_priv_handle_t));
+        memcpy(&priv_handle->size, buf, sizeof(na_size_t));
+        ret = na_mem_handle_deserialize(bds_network_class, &priv_handle->mem_handle,
+                buf + sizeof(na_size_t), buf_len - sizeof(na_size_t));
+        priv_handle->registered = 0;
+    }
 
     if (ret == S_SUCCESS) {
         *handle = priv_handle;
     }
+
     return ret;
 }
 
@@ -186,16 +213,30 @@ int bds_handle_deserialize(bds_handle_t *handle, const void *buf, na_size_t buf_
  */
 int bds_write(bds_handle_t handle, bds_block_handle_t *block_handle)
 {
-//    int ret;
-//    bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
-//    bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;
+    int ret;
+    bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
+    bds_priv_block_handle_t *priv_block_handle = NULL;
 
-//    /* Offsets are not used for now */
-//    ret = na_put(bds_network_class, priv_handle->local_mem_handle, 0, priv_handle->remote_mem_handle, 0,
-//            priv_handle->size, priv_handle->remote_addr, &priv_block_handle->bulk_request);
+    /* Create and register a new block handle that will be used to receive data */
+    priv_block_handle = malloc(sizeof(bds_priv_block_handle_t));
+    priv_block_handle->size = priv_handle->size; /* Take the whole size for now */
+    priv_block_handle->data = malloc(priv_block_handle->size);
+    priv_block_handle->bulk_request = NULL;
 
-//    return ret;
-    return S_SUCCESS;
+    na_mem_register(bds_network_class, priv_block_handle->data,
+            priv_block_handle->size, NA_MEM_READWRITE, &priv_block_handle->mem_handle);
+
+    /* Offsets are not used for now */
+    ret = na_put(bds_network_class,
+            priv_block_handle->mem_handle, 0,
+            priv_handle->mem_handle, 0,
+            priv_block_handle->size, bds_remote_addr, &priv_block_handle->bulk_request);
+
+    if (ret == S_SUCCESS) {
+        *block_handle = priv_block_handle;
+    }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -209,25 +250,30 @@ int bds_write(bds_handle_t handle, bds_block_handle_t *block_handle)
  */
 int bds_read(bds_handle_t handle, bds_block_handle_t *block_handle)
 {
-//    int ret;
-//    bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
-//    bds_priv_block_handle_t *priv_block_handle = NULL;
-//    na_size_t block_size;
+    int ret;
+    bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
+    bds_priv_block_handle_t *priv_block_handle = NULL;
 
-//    /* Create and register a new block handle that will be used to receive data */
-//    priv_block_handle = malloc(bds_priv_block_handle_t);
-//    priv_block_handle->size = priv_handle->size; /* Take the whole size for now */
-//    priv_block_handle->data = malloc(priv_block_handle->size);
-//    priv_block_handle->bulk_request = NULL;
+    /* Create and register a new block handle that will be used to receive data */
+    priv_block_handle = malloc(sizeof(bds_priv_block_handle_t));
+    priv_block_handle->size = priv_handle->size; /* Take the whole size for now */
+    priv_block_handle->data = malloc(priv_block_handle->size);
+    priv_block_handle->bulk_request = NULL;
 
-//    na_mem_register(bds_network_class, priv_block_handle->data, priv_block_handle->size, NA_MEM_ORIGIN_GET, &priv_block_handle->)
+    na_mem_register(bds_network_class, priv_block_handle->data,
+            priv_block_handle->size, NA_MEM_READWRITE, &priv_block_handle->mem_handle);
 
     /* Offsets are not used for now */
-//    ret = na_get(bds_network_class, , 0, priv_handle->remote_mem_handle, 0,
-//            , , &priv_block_handle->bulk_request);
+    ret = na_get(bds_network_class,
+            priv_block_handle->mem_handle, 0,
+            priv_handle->mem_handle, 0,
+            priv_block_handle->size, bds_remote_addr, &priv_block_handle->bulk_request);
 
-//    return ret;
-    return S_SUCCESS;
+    if (ret == S_SUCCESS) {
+        *block_handle = priv_block_handle;
+    }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -246,6 +292,10 @@ int bds_wait(bds_block_handle_t block_handle, unsigned int timeout)
     bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;
 
     ret = na_wait(bds_network_class, priv_block_handle->bulk_request, timeout, &block_status);
+
+    if (ret == S_SUCCESS) {
+        priv_block_handle->bulk_request = NULL;
+    }
 
     return ret;
 }
@@ -325,6 +375,9 @@ int bds_block_handle_free(bds_block_handle_t *block_handle)
     bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;
 
     if (priv_block_handle) {
+        ret = na_mem_deregister(bds_network_class, priv_block_handle->mem_handle);
+        if (priv_block_handle->data) free(priv_block_handle->data);
+        priv_block_handle->data = NULL;
         free(priv_block_handle);
         priv_block_handle = NULL;
     } else {

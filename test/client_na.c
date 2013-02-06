@@ -2,10 +2,9 @@
  * client_na.c
  */
 
-#include "iofsl_compat.h"
-#include "network_mpi.h"
-#include "network_bmi.h"
+#include "network_abstraction.h"
 #include "shipper_error.h"
+#include "shipper_test.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,24 +41,7 @@ int main(int argc, char *argv[])
     int i;
 
     /* Initialize the interface */
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <BMI|MPI>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    if (strcmp("MPI", argv[1]) == 0) {
-        FILE *config;
-        network_class = na_mpi_init(NULL, 0);
-        if ((config = fopen("port.cfg", "r")) != NULL) {
-            char mpi_port_name[MPI_MAX_PORT_NAME];
-            fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
-            printf("Using MPI port name: %s.\n", mpi_port_name);
-            fclose(config);
-            setenv(ION_ENV, mpi_port_name, 1);
-        }
-    } else {
-        network_class = na_bmi_init(NULL, NULL, 0);
-    }
+    network_class = shipper_test_client_init(argc, argv);
     ion_name = getenv(ION_ENV);
     if (!ion_name) {
         fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
@@ -91,7 +73,7 @@ int main(int argc, char *argv[])
 
     /* Register memory */
     printf("Registering local memory...\n");
-    na_mem_register(network_class, bulk_buf, sizeof(int) * bulk_size, NA_MEM_TARGET_GET, &local_mem_handle);
+    na_mem_register(network_class, bulk_buf, sizeof(int) * bulk_size, NA_MEM_READ_ONLY, &local_mem_handle);
 
     /* Serialize mem handle */
     printf("Serializing local memory handle...\n");

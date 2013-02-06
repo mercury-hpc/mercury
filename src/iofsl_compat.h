@@ -12,8 +12,6 @@ typedef enum {
     DECODE
 } iofsl_compat_op_t;
 
-#define ION_ENV "ZOIDFS_ION_NAME"
-
 #ifdef __cplusplus
 extern "C" {
 #endif

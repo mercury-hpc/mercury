@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 /* Initialize the bulk data shipper and select a network protocol */
-int bds_init(na_network_class_t *network_class);
+int bds_init(na_network_class_t *network_class, na_addr_t peer);
 
 /* Finalize */
 int bds_finalize(void);

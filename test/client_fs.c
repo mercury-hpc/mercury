@@ -2,11 +2,9 @@
  * client_fs.c
  */
 
-#include "network_bmi.h"
-#include "network_mpi.h"
 #include "function_shipper.h"
-#include "iofsl_compat.h"
 #include "shipper_error.h"
+#include "shipper_test.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,28 +72,11 @@ int main(int argc, char *argv[])
     bla_initialize_out_t bla_initialize_out_struct;
     fs_request_t bla_initialize_request;
 
-    int bla_initialize_comm = MPI_COMM_WORLD;
+    int bla_initialize_comm = 12345;
     int bla_initialize_ret = 0;
 
     /* Initialize the interface */
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <BMI|MPI>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    if (strcmp("MPI", argv[1]) == 0) {
-        FILE *config;
-        network_class = na_mpi_init(NULL, 0);
-        if ((config = fopen("port.cfg", "r")) != NULL) {
-            char mpi_port_name[MPI_MAX_PORT_NAME];
-            fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
-            printf("Using MPI port name: %s.\n", mpi_port_name);
-            fclose(config);
-            setenv(ION_ENV, mpi_port_name, 1);
-        }
-    } else {
-        network_class = na_bmi_init(NULL, NULL, 0);
-    }
+    network_class = shipper_test_client_init(argc, argv);
     ion_name = getenv(ION_ENV);
     if (!ion_name) {
         fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);

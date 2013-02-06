@@ -2,12 +2,10 @@
  * server_bds.c
  */
 
-#include "network_bmi.h"
-#include "network_mpi.h"
 #include "function_shipper.h"
 #include "bulk_data_shipper.h"
-#include "iofsl_compat.h"
 #include "shipper_error.h"
+#include "shipper_test.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,13 +17,13 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
 {
     size_t i;
     const char message[] = "Hi, I'm bla_write";
-    int error;
+    int error = 0;
     int *bulk_buf = (int*) buf;
 
     printf("%s\n", message);
 
     /* Check bulk buf */
-    for (i = 0; i < nbyte; i++) {
+    for (i = 0; i < (nbyte / sizeof(int)); i++) {
         if (bulk_buf[i] != i) {
             fprintf(stderr, "Error detected in bulk transfer, bulk_buf[%lu] = %d, was expecting %lu!\n", i, bulk_buf[i], i);
             error = 1;
@@ -134,24 +132,9 @@ int main(int argc, char *argv[])
     fs_peer_t func_peer;
 
     /* Initialize the interface */
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <BMI|MPI>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    if (strcmp("MPI", argv[1]) == 0) {
-        network_class = na_mpi_init(NULL, MPI_INIT_SERVER);
-    } else {
-        char *listen_addr = getenv(ION_ENV);
-        if (!listen_addr) {
-            fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
-            return EXIT_FAILURE;
-        }
-        network_class = na_bmi_init("bmi_tcp", listen_addr, BMI_INIT_SERVER);
-    }
+    network_class = shipper_test_server_init(argc, argv);
 
     fs_init(network_class);
-    bds_init(network_class);
 
     /* Register routine */
     fs_server_register("bla_write", bla_write_dec, bla_write_exe, bla_write_enc);
@@ -159,11 +142,17 @@ int main(int argc, char *argv[])
     /* Receive a new function call */
     fs_server_receive(&func_peer, &func_id, &func_tag, &func_in_struct);
 
+    /* Initialize the bulk data interface */
+    bds_init(network_class, func_peer);
+
     /* Execute the call */
     fs_server_execute(func_id, func_in_struct, &func_out_struct);
 
     /* Respond back */
     fs_server_respond(func_peer, func_id, func_tag, func_out_struct);
+
+    /* Finalize the bulk data interface */
+    bds_finalize();
 
     printf("Finalizing...\n");
 
@@ -175,6 +164,5 @@ int main(int argc, char *argv[])
     free(func_out_struct);
 
     fs_finalize();
-    bds_finalize();
     return EXIT_SUCCESS;
 }

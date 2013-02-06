@@ -2,11 +2,9 @@
  * server_fs.c
  */
 
-#include "network_bmi.h"
-#include "network_mpi.h"
 #include "function_shipper.h"
-#include "iofsl_compat.h"
 #include "shipper_error.h"
+#include "shipper_test.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -93,21 +91,7 @@ int main(int argc, char *argv[])
     fs_peer_t func_peer;
 
     /* Initialize the interface */
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <BMI|MPI>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    if (strcmp("MPI", argv[1]) == 0) {
-        network_class = na_mpi_init(NULL, MPI_INIT_SERVER);
-    } else {
-        char *listen_addr = getenv(ION_ENV);
-        if (!listen_addr) {
-            fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
-            return EXIT_FAILURE;
-        }
-        network_class = na_bmi_init("bmi_tcp", listen_addr, BMI_INIT_SERVER);
-    }
+    network_class = shipper_test_server_init(argc, argv);
 
     fs_init(network_class);
 

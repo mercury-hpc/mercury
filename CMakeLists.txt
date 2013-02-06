@@ -78,50 +78,55 @@ include(FindThreads)
 #------------------------------------------------------------------------------
 
 # BMI
-find_package(BMI REQUIRED)
-if(BMI_FOUND)
-  include_directories(${BMI_INCLUDE_DIR})
-  set(IOFSL_SHIPPER_EXT_DEPENCIES
-    ${IOFSL_SHIPPER_EXT_DEPENCIES}
-    ${BMI_LIBRARIES}
-  )
-  include(CheckCSourceCompiles)
-  set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${BMI_LIBRARIES})
-  set(CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES} ${BMI_INCLUDE_DIR})
-  check_c_source_compiles("#include <bmi.h>
-    int main(int argc, char **argv) {
-      BMI_set_info(0,BMI_ZOID_POST_TIMEOUT,0);
-    }
-   " HAVE_BMI_ZOID_TIMEOUT)
-endif(BMI_FOUND)
+option(IOFSL_SHIPPER_USE_BMI "Use BMI." OFF)
+if(IOFSL_SHIPPER_USE_BMI)
+  find_package(BMI REQUIRED)
+  if(BMI_FOUND)
+    set(IOFSL_SHIPPER_HAS_BMI 1)
+    include_directories(${BMI_INCLUDE_DIR})
+    set(IOFSL_SHIPPER_EXT_DEPENCIES
+      ${IOFSL_SHIPPER_EXT_DEPENCIES}
+      ${BMI_LIBRARIES}
+    )
+    include(CheckCSourceCompiles)
+    set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${BMI_LIBRARIES})
+    set(CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES} ${BMI_INCLUDE_DIR})
+    check_c_source_compiles("#include <bmi.h>
+      int main(int argc, char **argv) {
+        BMI_set_info(0,BMI_ZOID_POST_TIMEOUT,0);
+      }
+     " HAVE_BMI_ZOID_TIMEOUT)
+  endif(BMI_FOUND)
+endif(IOFSL_SHIPPER_USE_BMI)
 
 # MPI
-option(USE_MPI "Use MPI." OFF)
-if(USE_MPI)
+option(IOFSL_SHIPPER_USE_MPI "Use MPI." OFF)
+if(IOFSL_SHIPPER_USE_MPI)
   find_package(MPI)
   if(MPI_FOUND)
-    set(HAVE_MPI 1)
+    set(IOFSL_SHIPPER_HAS_MPI 1)
     include_directories(${MPI_INCLUDE_PATH})
     set(IOFSL_SHIPPER_EXT_DEPENCIES
       ${IOFSL_SHIPPER_EXT_DEPENCIES}
       ${MPI_LIBRARIES}
     )
+  # we may want to add an option for MPI_VERSION >= 3
   endif(MPI_FOUND)
-endif(USE_MPI)
-
-# we may want to add an option for MPI_VERSION >= 3
-
+endif(IOFSL_SHIPPER_USE_MPI)
 
 # Boost (for preprocessor macros)
-add_definitions(-DBOOST_PP_VARIADICS=1)
+option(IOFSL_SHIPPER_USE_BOOST_PP "Use BOOST preprocessor macros." OFF)
+if(IOFSL_SHIPPER_USE_BOOST_PP)
+  add_definitions(-DBOOST_PP_VARIADICS=1)
+endif(IOFSL_SHIPPER_USE_BOOST_PP)
 
 #------------------------------------------------------------------------------
 # Configure module header files
 #------------------------------------------------------------------------------
-#configure_file(
-#  ${CMAKE_SOURCE_DIR}/CMake/iofwd_config.h.in
-#  ${IOFSL_BINARY_DIR}/src/iofwd_config.h
-#)
+configure_file(
+  ${CMAKE_SOURCE_DIR}/CMake/shipper_config.h.in
+  ${IOFSL_SHIPPER_BINARY_DIR}/src/shipper_config.h
+)
 
 #------------------------------------------------------------------------------
 # Set sources
@@ -140,10 +145,22 @@ set(IOFSL_SHIPPER_UTIL_SRCS
 
 set(IOFSL_SHIPPER_NA_SRCS
   src/network_abstraction.c
-  src/network_bmi.c
-  src/network_mpi.c
   src/mem_handle_map.c
 )
+
+if(BMI_FOUND)
+  set(IOFSL_SHIPPER_NA_SRCS
+    ${IOFSL_SHIPPER_NA_SRCS}
+    src/network_bmi.c
+  )
+endif(BMI_FOUND)
+
+if(MPI_FOUND)
+  set(IOFSL_SHIPPER_NA_SRCS
+    ${IOFSL_SHIPPER_NA_SRCS}
+    src/network_mpi.c
+  )
+endif(MPI_FOUND)
 
 set(IOFSL_SHIPPER_BDS_SRCS
   src/bulk_data_shipper.c

@@ -89,7 +89,6 @@ typedef struct mpi_onesided_info {
     void    *base;         /* Initial address of memory */
     MPI_Aint disp;         /* Offset from initial address */
     int      count;        /* Number of entries */
-    bool     term;         /* Terminate one-sided thread */
     mpi_onesided_op_t op;  /* Operation requested */
 } mpi_onesided_info_t;
 #endif
@@ -127,16 +126,16 @@ static void* na_mpi_onesided_service(void *args)
         mpi_onesided_info_t onesided_info;
         MPI_Comm mpi_onesided_comm = mpi_remote_addr->onesided_comm;
         mpi_mem_handle_t *mpi_mem_handle = NULL;
+        bool error = 0;
 
         mpi_ret = MPI_Recv(&onesided_info, sizeof(onesided_info), MPI_BYTE,
                 MPI_ANY_SOURCE, MPI_ANY_TAG, mpi_onesided_comm, &mpi_status);
         if (mpi_ret != MPI_SUCCESS) {
             S_ERROR_DEFAULT("MPI_Recv() failed");
-            service_done = 1;
-            break;
+            error = 1;
         }
 
-        if (onesided_info.term) {
+        if (error || (onesided_info.op == MPI_ONESIDED_END)) {
             service_done = 1;
             break;
         }
@@ -154,15 +153,15 @@ static void* na_mpi_onesided_service(void *args)
             break;
         }
 
-        switch (mpi_mem_handle->attr) {
+        switch (onesided_info.op) {
             /* Remote wants to do a put so wait in a recv */
-            case NA_MEM_TARGET_PUT:
+            case MPI_ONESIDED_PUT:
                 MPI_Recv(mpi_mem_handle->base + onesided_info.disp, onesided_info.count,
                         MPI_BYTE, mpi_status.MPI_SOURCE, NA_MPI_ONESIDED_TAG,
                         mpi_onesided_comm, MPI_STATUS_IGNORE);
                 break;
                 /* Remote wants to do a get so do a send */
-            case NA_MEM_TARGET_GET:
+            case MPI_ONESIDED_GET:
                 MPI_Send(mpi_mem_handle->base + onesided_info.disp, onesided_info.count,
                         MPI_BYTE, mpi_status.MPI_SOURCE, NA_MPI_ONESIDED_TAG,
                         mpi_onesided_comm);
@@ -216,8 +215,10 @@ na_network_class_t *na_mpi_init(MPI_Comm *intra_comm, int flags)
         MPI_Comm_dup(MPI_COMM_WORLD, &mpi_intra_comm);
     }
 
+#if MPI_VERSION < 3
     /* Create hash table for memory registration */
     mem_handle_map = mh_map_new();
+#endif
 
     /* If server open a port */
     if (flags == MPI_INIT_SERVER) {
@@ -270,7 +271,7 @@ static void na_mpi_finalize(void)
         onesided_info.base = NULL;
         onesided_info.count = 0;
         onesided_info.disp = 0;
-        onesided_info.term = 1;
+        onesided_info.op = MPI_ONESIDED_END;
 
         MPI_Comm_remote_size(server_remote_addr.onesided_comm, &num_clients);
         for (i = 0; i < num_clients; i++) {
@@ -288,8 +289,10 @@ static void na_mpi_finalize(void)
         MPI_Close_port(mpi_port_name);
     }
 
+#if MPI_VERSION < 3
     /* Free hash table for memory registration */
     mh_map_free(mem_handle_map);
+#endif
 
     /* Free the private dup'ed comm */
     MPI_Comm_free(&mpi_intra_comm);
@@ -738,7 +741,7 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     /* TODO check that local memory is registered */
     // ht_lookup(mem_map, mpi_local_mem_handle->base);
 
-    if (mpi_remote_mem_handle->attr != NA_MEM_TARGET_PUT) {
+    if (mpi_remote_mem_handle->attr != NA_MEM_READWRITE) {
         S_ERROR_DEFAULT("Registered memory requires write permission");
         ret = S_FAIL;
         return ret;
@@ -753,7 +756,7 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     onesided_info.base = mpi_remote_mem_handle->base;
     onesided_info.disp = mpi_remote_offset;
     onesided_info.count = mpi_length;
-    onesided_info.term = 0;
+    onesided_info.op = MPI_ONESIDED_PUT;
 
     MPI_Send(&onesided_info, sizeof(mpi_onesided_info_t), MPI_BYTE, mpi_remote_addr->rank,
             NA_MPI_ONESIDED_TAG, mpi_remote_addr->onesided_comm);
@@ -814,12 +817,6 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     /* TODO check that local memory is registered */
     // ht_lookup(mem_map, mpi_local_mem_handle->base);
 
-    if (mpi_remote_mem_handle->attr != NA_MEM_TARGET_GET) {
-        S_ERROR_DEFAULT("Registered memory requires read permission");
-        ret = S_FAIL;
-        return ret;
-    }
-
     mpi_request = malloc(sizeof(MPI_Request));
     *mpi_request = 0;
 
@@ -829,7 +826,7 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     onesided_info.base = mpi_remote_mem_handle->base;
     onesided_info.disp = mpi_remote_offset;
     onesided_info.count = mpi_length;
-    onesided_info.term = 0;
+    onesided_info.op = MPI_ONESIDED_GET;
 
     MPI_Send(&onesided_info, sizeof(mpi_onesided_info_t), MPI_BYTE, mpi_remote_addr->rank,
             NA_MPI_ONESIDED_TAG, mpi_remote_addr->onesided_comm);

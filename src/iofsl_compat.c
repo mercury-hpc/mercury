@@ -6,6 +6,7 @@
 #include "iofsl_compat.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <rpc/types.h>
 #include <rpc/xdr.h>
 

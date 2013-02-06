@@ -1,0 +1,24 @@
+/*
+ * shipper_config.h
+ */
+
+#ifndef SHIPPER_CONFIG_H
+#define SHIPPER_CONFIG_H
+
+#cmakedefine IOFSL_SHIPPER_HAS_BMI
+#cmakedefine IOFSL_SHIPPER_HAS_MPI
+
+#cmakedefine IOFSL_SHIPPER_BUILD_SHARED_LIBS
+
+#ifdef IOFSL_SHIPPER_BUILD_SHARED_LIBS
+  #ifdef IOFSL_SHIPPER_EXPORTS
+    #define IOFSL_SHIPPER_EXPORT IOFSL_SHIPPER_ABI_EXPORT 
+  #else
+    #define IOFSL_SHIPPER_EXPORT IOFSL_SHIPPER_ABI_IMPORT 
+  #endif
+#else
+  #define IOFSL_SHIPPER_EXPORT
+#endif
+
+#endif /* SHIPPER_CONFIG_H */
+

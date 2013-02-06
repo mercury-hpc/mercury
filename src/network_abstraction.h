@@ -27,10 +27,8 @@ typedef void * na_mem_handle_t;
 typedef ptrdiff_t na_offset_t;
 
 /* The memory attributes associated with the region */
-#define NA_MEM_TARGET_PUT 0x00
-#define NA_MEM_ORIGIN_PUT 0x01
-#define NA_MEM_TARGET_GET 0x02
-#define NA_MEM_ORIGIN_GET 0x03
+#define NA_MEM_READWRITE  0x00
+#define NA_MEM_READ_ONLY  0x01
 
 typedef struct na_network_class {
     /*  Lookup callbacks */
