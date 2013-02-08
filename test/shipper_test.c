@@ -1,17 +1,26 @@
 /*
  * shipper_test.c
- *
  */
 
 #include "shipper_test.h"
 #include "shipper_config.h"
 #include "network_bmi.h"
 #include "network_mpi.h"
+#include "shipper_test_config.h"
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
+/*---------------------------------------------------------------------------
+ * Function:    shipper_test_client_init
+ *
+ * Purpose:
+ *
+ * Returns:
+ *
+ *---------------------------------------------------------------------------
+ */
 na_network_class_t *shipper_test_client_init(int argc, char *argv[])
 {
     na_network_class_t *network_class = NULL;
@@ -21,6 +30,7 @@ na_network_class_t *shipper_test_client_init(int argc, char *argv[])
         return NULL;
     }
 
+#ifdef IOFSL_SHIPPER_HAS_MPI
     if (strcmp("MPI", argv[1]) == 0) {
         FILE *config;
         network_class = na_mpi_init(NULL, 0);
@@ -31,14 +41,28 @@ na_network_class_t *shipper_test_client_init(int argc, char *argv[])
             fclose(config);
             setenv(ION_ENV, mpi_port_name, 1);
         }
-    } else {
+    }
+#endif
+
+#ifdef IOFSL_SHIPPER_HAS_BMI
+    if (strcmp("BMI", argv[1]) == 0) {
         network_class = na_bmi_init(NULL, NULL, 0);
     }
+#endif
 
     return network_class;
 }
 
-na_network_class_t *shipper_test_server_init(int argc, char *argv[])
+/*---------------------------------------------------------------------------
+ * Function:    shipper_test_server_init
+ *
+ * Purpose:
+ *
+ * Returns:
+ *
+ *---------------------------------------------------------------------------
+ */
+na_network_class_t *shipper_test_server_init(int argc, char *argv[], unsigned int *max_number_of_peers)
 {
     na_network_class_t *network_class = NULL;
 
@@ -47,9 +71,15 @@ na_network_class_t *shipper_test_server_init(int argc, char *argv[])
         return NULL;
     }
 
+#ifdef IOFSL_SHIPPER_HAS_MPI
     if (strcmp("MPI", argv[1]) == 0) {
         network_class = na_mpi_init(NULL, MPI_INIT_SERVER);
-    } else {
+    }
+#endif
+
+
+#ifdef IOFSL_SHIPPER_HAS_BMI
+    if (strcmp("BMI", argv[1]) == 0) {
         char *listen_addr = getenv(ION_ENV);
         if (!listen_addr) {
             fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
@@ -57,6 +87,8 @@ na_network_class_t *shipper_test_server_init(int argc, char *argv[])
         }
         network_class = na_bmi_init("bmi_tcp", listen_addr, BMI_INIT_SERVER);
     }
+#endif
 
+    *max_number_of_peers = MPIEXEC_MAX_NUMPROCS;
     return network_class;
 }

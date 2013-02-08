@@ -24,16 +24,23 @@ typedef struct fs_priv_request {
     na_request_t recv_request;
 } fs_priv_request_t;
 
-typedef struct fs_func_info {
-    int (*enc_routine)(void *buf, int buf_len, void *in_struct);
-    int (*dec_routine)(void *out_struct, void *buf, int buf_len);
-} fs_func_info_t;
+typedef struct fs_client_info {
+    int (*enc_routine)(void *buf, int buf_len, const void *in_struct);
+    int (*dec_routine)(void *out_struct, const void *buf, int buf_len);
+} fs_client_info_t;
 
-typedef struct fs_server_func_info {
-    int (*dec_routine)(void **in_struct, void *buf, int buf_len);
-    int (*exe_routine)(void *in_struct, void **out_struct);
-    int (*enc_routine)(void *buf, int buf_len, void *out_struct);
-} fs_server_func_info_t;
+typedef struct fs_server_info {
+    size_t size_in_struct;
+    size_t size_out_struct;
+    int (*dec_routine)(void *in_struct, const void *buf, int buf_len);
+    int (*exe_routine)(const void *in_struct, void *out_struct, fs_info_t info);
+    int (*enc_routine)(void *buf, int buf_len, const void *out_struct);
+} fs_server_info_t;
+
+typedef struct fs_priv_info {
+    na_addr_t addr;
+    na_tag_t  tag;
+} fs_priv_info_t;
 
 /* Function map */
 func_map_t *func_map;
@@ -198,16 +205,16 @@ int fs_peer_free(fs_peer_t peer)
  *
  * Purpose:     Register a function name and provide a unique ID
  *
- * Returns:     Non-negative on success or negative on failure
+ * Returns:     Unsigned integer
  *
  *---------------------------------------------------------------------------
  */
 fs_id_t fs_register(const char *func_name,
-        int (*enc_routine)(void *buf, int buf_len, void *in_struct),
-        int (*dec_routine)(void *out_struct, void *buf, int buf_len))
+        int (*enc_routine)(void *buf, int buf_len, const void *in_struct),
+        int (*dec_routine)(void *out_struct, const void *buf, int buf_len))
 {
     fs_id_t *id;
-    fs_func_info_t *func_info;
+    fs_client_info_t *func_info;
 
     /* Generate a key from the string */
     id = malloc(sizeof(fs_id_t));
@@ -215,7 +222,7 @@ fs_id_t fs_register(const char *func_name,
     *id = string_hash(func_name);
 
     /* Fill a func info struct and store it into the function map */
-    func_info = malloc(sizeof(fs_func_info_t));
+    func_info = malloc(sizeof(fs_client_info_t));
 
     func_info->enc_routine = enc_routine;
     func_info->dec_routine = dec_routine;
@@ -233,11 +240,11 @@ fs_id_t fs_register(const char *func_name,
  *
  *---------------------------------------------------------------------------
  */
-int fs_forward(fs_peer_t peer, fs_id_t id, void *in_struct, void *out_struct,
+int fs_forward(fs_peer_t peer, fs_id_t id, const void *in_struct, void *out_struct,
         fs_request_t *request)
 {
     int ret = S_SUCCESS;
-    fs_func_info_t *func_info;
+    fs_client_info_t *func_info;
 
     void *send_buf = NULL;
     void *recv_buf = NULL;
@@ -339,7 +346,7 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
 {
     fs_priv_request_t *priv_request = (fs_priv_request_t*) request;
     na_status_t recv_status;
-    fs_func_info_t *func_info;
+    fs_client_info_t *func_info;
     int ret = S_SUCCESS;
 
     ret = na_wait(fs_network_class, priv_request->send_request, timeout, NA_STATUS_IGNORE);
@@ -388,21 +395,22 @@ int fs_wait_all(int count, fs_request_t array_of_requests[],
 }
 
 /*---------------------------------------------------------------------------
- * Function:    fs_wait_all
+ * Function:    fs_server_register
  *
- * Purpose:     Wait for all operations to complete
+ * Purpose:     Register a function name and provide a unique ID
  *
- * Returns:     Non-negative on success or negative on failure
+ * Returns:     Unsigned integer
  *
  *---------------------------------------------------------------------------
  */
 fs_id_t fs_server_register(const char *func_name,
-        int (*dec_routine)(void **in_struct, void *buf, int buf_len),
-        int (*exe_routine)(void *in_struct, void **out_struct),
-        int (*enc_routine)(void *buf, int buf_len, void *out_struct))
+        size_t size_in_struct, size_t size_out_struct,
+        int (*dec_routine)(void *in_struct, const void *buf, int buf_len),
+        int (*exe_routine)(const void *in_struct, void *out_struct, fs_info_t info),
+        int (*enc_routine)(void *buf, int buf_len, const void *out_struct))
 {
     fs_id_t *id;
-    fs_server_func_info_t *server_func_info;
+    fs_server_info_t *server_func_info;
 
     /* Generate a key from the string */
     id = malloc(sizeof(fs_id_t));
@@ -410,8 +418,10 @@ fs_id_t fs_server_register(const char *func_name,
     *id = string_hash(func_name);
 
     /* Fill a func info struct and store it into the function map */
-    server_func_info = malloc(sizeof(fs_server_func_info_t));
+    server_func_info = malloc(sizeof(fs_server_info_t));
 
+    server_func_info->size_in_struct = size_in_struct;
+    server_func_info->size_out_struct = size_out_struct;
     server_func_info->dec_routine = dec_routine;
     server_func_info->exe_routine = exe_routine;
     server_func_info->enc_routine = enc_routine;
@@ -421,28 +431,33 @@ fs_id_t fs_server_register(const char *func_name,
 }
 
 /*---------------------------------------------------------------------------
- * Function:    fs_wait_all
+ * Function:    fs_server_receive
  *
- * Purpose:     Wait for all operations to complete
+ * Purpose:     Receive a new function call
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-int fs_server_receive(fs_peer_t *peer, fs_id_t *id, fs_tag_t *tag, void **in_struct)
+int fs_server_receive(fs_id_t *id, fs_info_t *info, void **in_struct)
 {
     void *recv_buf = NULL;
     na_size_t recv_buf_len = 0;
-    fs_server_func_info_t *server_func_info;
+    fs_server_info_t *server_func_info;
+    fs_priv_info_t *priv_info = NULL;
+    void *priv_in_struct = NULL;
 
     int ret = S_SUCCESS;
+
+    /* Keep info from received call */
+    priv_info = malloc(sizeof(fs_priv_info_t));
 
     /* Do not expect message bigger than unexpected size (otherwise something went wrong) */
     recv_buf_len = na_get_unexpected_size(fs_network_class);
     recv_buf = malloc(recv_buf_len);
 
     /* Recv a message from a client (blocking for now) */
-    na_recv_unexpected(fs_network_class, recv_buf, &recv_buf_len, (na_addr_t*)peer, (na_tag_t*)tag, NULL, NULL);
+    na_recv_unexpected(fs_network_class, recv_buf, &recv_buf_len, &priv_info->addr, &priv_info->tag, NULL, NULL);
 
     /* Decode IOFSL id (used for compat) */
     iofsl_compat_xdr_process_id(recv_buf, recv_buf_len, DECODE);
@@ -458,29 +473,36 @@ int fs_server_receive(fs_peer_t *peer, fs_id_t *id, fs_tag_t *tag, void **in_str
         return ret;
     }
 
+    priv_in_struct = malloc(server_func_info->size_in_struct);
+
     /* Decode input parameters */
-    server_func_info->dec_routine(in_struct,
+    server_func_info->dec_routine(priv_in_struct,
             recv_buf + iofsl_compat_xdr_get_size_id() + sizeof(fs_id_t),
             recv_buf_len - iofsl_compat_xdr_get_size_id() - sizeof(fs_id_t));
 
     /* Free recv buf */
     free(recv_buf);
 
+    *info  = (fs_info_t) priv_info;
+    *in_struct = priv_in_struct;
+
     return ret;
 }
 
 /*---------------------------------------------------------------------------
- * Function:    fs_wait_all
+ * Function:    fs_server_execute
  *
- * Purpose:     Wait for all operations to complete
+ * Purpose:     Execute the function call
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-int fs_server_execute(fs_id_t id, void *in_struct, void **out_struct)
+int fs_server_execute(fs_id_t id, fs_info_t info, const void *in_struct, void **out_struct)
 {
-    fs_server_func_info_t *server_func_info;
+    fs_server_info_t *server_func_info;
+    fs_priv_info_t *priv_info = (fs_priv_info_t *) info;
+    void *priv_out_struct = NULL;
     int ret = S_SUCCESS;
 
     /* Retrieve exe function from function map */
@@ -491,29 +513,34 @@ int fs_server_execute(fs_id_t id, void *in_struct, void **out_struct)
         return ret;
     }
 
-    /* Execute function and fill output parameters */
-    server_func_info->exe_routine(in_struct, out_struct);
+    /* Allocate the output structure */
+    priv_out_struct = malloc(server_func_info->size_out_struct);
 
+    /* Execute function and fill output parameters */
+    server_func_info->exe_routine(in_struct, priv_out_struct, priv_info);
+
+    *out_struct = priv_out_struct;
     return ret;
 }
 
 /*---------------------------------------------------------------------------
- * Function:    fs_wait_all
+ * Function:    fs_server_respond
  *
- * Purpose:     Wait for all operations to complete
+ * Purpose:     Send the response back to the caller
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-int fs_server_respond(fs_peer_t peer, fs_id_t id, fs_tag_t tag, void *out_struct)
+int fs_server_respond(fs_id_t id, fs_info_t info, const void *out_struct)
 {
     void *send_buf = NULL;
     na_size_t send_buf_len = 0;
 
     na_request_t send_request = NULL;
 
-    fs_server_func_info_t *server_func_info;
+    fs_server_info_t *server_func_info;
+    fs_priv_info_t *priv_info = (fs_priv_info_t *) info;
 
     int ret = S_SUCCESS;
 
@@ -537,12 +564,19 @@ int fs_server_respond(fs_peer_t peer, fs_id_t id, fs_tag_t tag, void *out_struct
             send_buf_len - iofsl_compat_xdr_get_size_status(), out_struct);
 
     /* Respond back */
-    na_send(fs_network_class, send_buf, send_buf_len, (na_addr_t)peer, (na_tag_t)tag, &send_request, NULL);
+    na_send(fs_network_class, send_buf, send_buf_len, priv_info->addr, priv_info->tag, &send_request, NULL);
 
     na_wait(fs_network_class, send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
 
     /* Free send buf */
     free(send_buf);
+
+    /* Free info */
+    na_addr_free(fs_network_class, priv_info->addr);
+    priv_info->addr = NULL;
+
+    free(priv_info);
+    priv_info = NULL;
 
     return ret;
 }

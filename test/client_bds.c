@@ -31,7 +31,7 @@ typedef struct bla_write_out {
     size_t bla_write_ret;
 } bla_write_out_t;
 
-int bla_write_enc(void *buf, int buf_len, void *in_struct)
+int bla_write_enc(void *buf, int buf_len, const void *in_struct)
 {
     int ret = S_SUCCESS;
     bla_write_in_t *bla_write_in_struct = (bla_write_in_t*) in_struct;
@@ -47,7 +47,7 @@ int bla_write_enc(void *buf, int buf_len, void *in_struct)
     return ret;
 }
 
-int bla_write_dec(void *out_struct, void *buf, int buf_len)
+int bla_write_dec(void *out_struct, const void *buf, int buf_len)
 {
     int ret = S_SUCCESS;
     bla_write_out_t *bla_write_out_struct = out_struct;
@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
     }
 
     fs_init(network_class);
-    bds_init(network_class, NULL);
+    bds_init(network_class);
 
     /* Look up peer id */
     fs_peer_lookup(ion_name, &peer);

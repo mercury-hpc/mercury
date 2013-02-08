@@ -193,7 +193,7 @@ target_link_libraries(iofsl_shipper_fs iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPE
 #-----------------------------------------------------------------------------
 # Testing
 #-----------------------------------------------------------------------------
-option(BUILD_TESTING "Build testing." ON)
+option(BUILD_TESTING "Build testing." OFF)
 if(BUILD_TESTING)
   enable_testing()
 #  include(CTest)

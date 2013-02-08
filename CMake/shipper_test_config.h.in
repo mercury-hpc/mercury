@@ -1,0 +1,11 @@
+/*
+ * shipper_test_config.h
+ */
+
+#ifndef SHIPPER_TEST_CONFIG_H
+#define SHIPPER_TEST_CONFIG_H
+
+#cmakedefine MPIEXEC_MAX_NUMPROCS @MPIEXEC_MAX_NUMPROCS@
+
+#endif /* SHIPPER_TEST_CONFIG_H */
+

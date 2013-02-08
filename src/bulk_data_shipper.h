@@ -15,6 +15,7 @@
 
 typedef void * bds_handle_t;       /* Bulk data handle */
 typedef void * bds_block_handle_t; /* Block handle for bulk data */
+typedef void * bds_info_t;         /* Info internally used */
 
 #define BDS_MAX_HANDLE_SIZE 32 /* TODO Arbitrary value / may need to be increased depending on implementations */
 #define BDS_MAX_IDLE_TIME NA_MAX_IDLE_TIME
@@ -24,7 +25,7 @@ extern "C" {
 #endif
 
 /* Initialize the bulk data shipper and select a network protocol */
-int bds_init(na_network_class_t *network_class, na_addr_t peer);
+int bds_init(na_network_class_t *network_class);
 
 /* Finalize */
 int bds_finalize(void);
@@ -42,10 +43,10 @@ int bds_handle_serialize(void *buf, na_size_t buf_len, bds_handle_t handle);
 int bds_handle_deserialize(bds_handle_t *handle, const void *buf, na_size_t buf_len);
 
 /* Write data */
-int bds_write(bds_handle_t handle, bds_block_handle_t *block_handle);
+int bds_write(bds_handle_t handle, bds_info_t info, bds_block_handle_t *block_handle);
 
 /* Read data */
-int bds_read(bds_handle_t handle, bds_block_handle_t *block_handle);
+int bds_read(bds_handle_t handle, bds_info_t info, bds_block_handle_t *block_handle);
 
 /* Wait for bulk data operation to complete */
 int bds_wait(bds_block_handle_t block_handle, unsigned int timeout);
