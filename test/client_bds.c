@@ -31,7 +31,7 @@ typedef struct bla_write_out {
     size_t bla_write_ret;
 } bla_write_out_t;
 
-int bla_write_enc(void *buf, int buf_len, const void *in_struct)
+int bla_write_enc(void *buf, size_t buf_len, const void *in_struct)
 {
     int ret = S_SUCCESS;
     bla_write_in_t *bla_write_in_struct = (bla_write_in_t*) in_struct;
@@ -47,7 +47,7 @@ int bla_write_enc(void *buf, int buf_len, const void *in_struct)
     return ret;
 }
 
-int bla_write_dec(void *out_struct, const void *buf, int buf_len)
+int bla_write_dec(void *out_struct, const void *buf, size_t buf_len)
 {
     int ret = S_SUCCESS;
     bla_write_out_t *bla_write_out_struct = out_struct;
@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
     fs_request_t bla_write_request;
     int bla_write_ret = 0;
 
-    bds_handle_t bla_bulk_handle;
+    bds_handle_t bla_bulk_handle = NULL;
 
     int i;
 

@@ -159,6 +159,12 @@ int bds_handle_serialize(void *buf, na_size_t buf_len, bds_handle_t handle)
     int ret = S_SUCCESS;
     bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
 
+    if (!priv_handle) {
+        S_ERROR_DEFAULT("NULL memory handle passed");
+        ret = S_FAIL;
+        return ret;
+    }
+
     if (buf_len < sizeof(bds_priv_handle_t)) {
         S_ERROR_DEFAULT("Buffer size too small for serializing parameter");
         ret = S_FAIL;
@@ -185,6 +191,12 @@ int bds_handle_deserialize(bds_handle_t *handle, const void *buf, na_size_t buf_
 {
     int ret = S_SUCCESS;
     bds_priv_handle_t *priv_handle = NULL;
+
+    if (!handle) {
+        S_ERROR_DEFAULT("NULL pointer to memory handle passed");
+        ret = S_FAIL;
+        return ret;
+    }
 
     if (buf_len < sizeof(bds_priv_handle_t)) {
         S_ERROR_DEFAULT("Buffer size too small for serializing parameter");
@@ -219,6 +231,12 @@ int bds_write(bds_handle_t handle, bds_info_t info, bds_block_handle_t *block_ha
     bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
     bds_priv_info_t *priv_info = (bds_priv_info_t*) info;
     bds_priv_block_handle_t *priv_block_handle = NULL;
+
+    if (!priv_handle) {
+        S_ERROR_DEFAULT("NULL memory handle passed");
+        ret = S_FAIL;
+        return ret;
+    }
 
     /* Create and register a new block handle that will be used to receive data */
     priv_block_handle = malloc(sizeof(bds_priv_block_handle_t));
@@ -258,6 +276,12 @@ int bds_read(bds_handle_t handle, bds_info_t info, bds_block_handle_t *block_han
     bds_priv_info_t *priv_info = (bds_priv_info_t*) info;
     bds_priv_block_handle_t *priv_block_handle = NULL;
 
+    if (!priv_handle) {
+        S_ERROR_DEFAULT("NULL memory handle passed");
+        ret = S_FAIL;
+        return ret;
+    }
+
     /* Create and register a new block handle that will be used to receive data */
     priv_block_handle = malloc(sizeof(bds_priv_block_handle_t));
     priv_block_handle->size = priv_handle->size; /* Take the whole size for now */
@@ -294,6 +318,12 @@ int bds_wait(bds_block_handle_t block_handle, unsigned int timeout)
     int ret;
     na_status_t block_status;
     bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;
+
+    if (!priv_block_handle) {
+        S_ERROR_DEFAULT("NULL memory handle passed");
+        ret = S_FAIL;
+        return ret;
+    }
 
     ret = na_wait(bds_network_class, priv_block_handle->bulk_request, timeout, &block_status);
 

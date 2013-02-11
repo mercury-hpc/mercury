@@ -28,7 +28,7 @@ typedef struct bla_initialize_out {
     int bla_initialize_ret;
 } bla_initialize_out_t;
 
-int bla_initialize_enc(void *buf, int buf_len, const void *in_struct)
+int bla_initialize_enc(void *buf, size_t buf_len, const void *in_struct)
 {
     int ret = S_SUCCESS;
     bla_initialize_in_t *bla_initialize_in_struct = (bla_initialize_in_t*) in_struct;
@@ -44,7 +44,7 @@ int bla_initialize_enc(void *buf, int buf_len, const void *in_struct)
     return ret;
 }
 
-int bla_initialize_dec(void *out_struct, const void *buf, int buf_len)
+int bla_initialize_dec(void *out_struct, const void *buf, size_t buf_len)
 {
     int ret = S_SUCCESS;
     bla_initialize_out_t *bla_initialize_out_struct = out_struct;

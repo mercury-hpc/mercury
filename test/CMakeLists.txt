@@ -1,21 +1,21 @@
 #------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
 #------------------------------------------------------------------------------
-#set(KWSYS_NAMESPACE Shipper_sys)
+#set(KWSYS_NAMESPACE iofsl_shipper_sys)
 #set(KWSYS_USE_SystemTools 1)
 #set(KWSYS_USE_Process 1)
 #set(KWSYS_USE_RegularExpression 1)
 #add_subdirectory(kwsys)
 #include_directories(${CMAKE_CURRENT_BINARY_DIR}/kwsys)
 
-#configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ShipperTestDriverConfig.h.in
-#  ${CMAKE_CURRENT_BINARY_DIR}/ShipperTestDriverConfig.h @ONLY ESCAPE_QUOTES)
-#include_directories(${CMAKE_CURRENT_BINARY_DIR})
+configure_file(
+  ${CMAKE_SOURCE_DIR}/CMake/shipper_test_config.h.in
+  ${IOFSL_SHIPPER_BINARY_DIR}/test/shipper_test_config.h
+)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
-#add_executable(ShipperTestDriver
-#  ${CMAKE_CURRENT_SOURCE_DIR}/ShipperTestDriver.cxx
-#)
-#target_link_libraries(ShipperTestDriver Shipper_sys)
+#add_executable(shipper_test_driver shipper_test_driver.cxx)
+#target_link_libraries(shipper_test_driver iofsl_shipper_sys)
 
 #------------------------------------------------------------------------------
 # Set up test options and macros
@@ -25,25 +25,12 @@ set(IOFSL_SHIPPER_comm bmi mpi)
 function(add_shipper_test full_test_name server client)
   foreach(comm ${IOFSL_SHIPPER_comm})
     add_test("${full_test_name}_${comm}"
-      ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ShipperTestDriver
-      --server ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${server} ${comm}
+      ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shipper_test_driver
+      --server ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${server}
       --client ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${client} ${comm}
     )
   endforeach(comm)
 endfunction(add_shipper_test)
-
-#------------------------------------------------------------------------------
-# Configure module header files
-#------------------------------------------------------------------------------
-configure_file(
-  ${CMAKE_SOURCE_DIR}/CMake/shipper_test_config.h.in
-  ${IOFSL_SHIPPER_BINARY_DIR}/test/shipper_test_config.h
-)
-
-include_directories(
-  ${IOFSL_SHIPPER_SOURCE_DIR}/test
-  ${IOFSL_SHIPPER_BINARY_DIR}/test
-)
 
 #------------------------------------------------------------------------------
 # iofsl_shipper_test : Lib used by tests contains main test initialization etc

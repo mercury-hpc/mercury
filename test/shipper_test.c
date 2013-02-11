@@ -26,12 +26,12 @@ na_network_class_t *shipper_test_client_init(int argc, char *argv[])
     na_network_class_t *network_class = NULL;
 
     if (argc != 2) {
-        fprintf(stderr, "Usage: %s <BMI|MPI>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <bmi|mpi>\n", argv[0]);
         return NULL;
     }
 
 #ifdef IOFSL_SHIPPER_HAS_MPI
-    if (strcmp("MPI", argv[1]) == 0) {
+    if (strcmp("mpi", argv[1]) == 0) {
         FILE *config;
         network_class = na_mpi_init(NULL, 0);
         if ((config = fopen("port.cfg", "r")) != NULL) {
@@ -45,7 +45,7 @@ na_network_class_t *shipper_test_client_init(int argc, char *argv[])
 #endif
 
 #ifdef IOFSL_SHIPPER_HAS_BMI
-    if (strcmp("BMI", argv[1]) == 0) {
+    if (strcmp("bmi", argv[1]) == 0) {
         network_class = na_bmi_init(NULL, NULL, 0);
     }
 #endif
@@ -67,19 +67,19 @@ na_network_class_t *shipper_test_server_init(int argc, char *argv[], unsigned in
     na_network_class_t *network_class = NULL;
 
     if (argc != 2) {
-        fprintf(stderr, "Usage: %s <BMI|MPI>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <bmi|mpi>\n", argv[0]);
         return NULL;
     }
 
 #ifdef IOFSL_SHIPPER_HAS_MPI
-    if (strcmp("MPI", argv[1]) == 0) {
+    if (strcmp("mpi", argv[1]) == 0) {
         network_class = na_mpi_init(NULL, MPI_INIT_SERVER);
     }
 #endif
 
 
 #ifdef IOFSL_SHIPPER_HAS_BMI
-    if (strcmp("BMI", argv[1]) == 0) {
+    if (strcmp("bmi", argv[1]) == 0) {
         char *listen_addr = getenv(ION_ENV);
         if (!listen_addr) {
             fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);

@@ -22,6 +22,11 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
 
     printf("%s\n", message);
 
+    if (nbyte == 0) {
+        S_ERROR_DEFAULT("Error detected in bulk transfer, nbyte is zero!\n");
+        error = 1;
+    }
+
     /* Check bulk buf */
     for (i = 0; i < (nbyte / sizeof(int)); i++) {
         if (bulk_buf[i] != i) {
@@ -46,7 +51,7 @@ typedef struct bla_write_out {
     size_t bla_write_ret;
 } bla_write_out_t;
 
-int bla_write_dec(void *in_struct, const void *buf, int buf_len)
+int bla_write_dec(void *in_struct, const void *buf, size_t buf_len)
 {
     int ret = S_SUCCESS;
     bla_write_in_t *bla_write_in_struct = (bla_write_in_t*) in_struct;
@@ -63,7 +68,7 @@ int bla_write_dec(void *in_struct, const void *buf, int buf_len)
     return ret;
 }
 
-int bla_write_enc(void *buf, int buf_len, const void *out_struct)
+int bla_write_enc(void *buf, size_t buf_len, const void *out_struct)
 {
     int ret = S_SUCCESS;
     bla_write_out_t *bla_write_out_struct = (bla_write_out_t*) out_struct;
@@ -90,8 +95,8 @@ int bla_write_exe(const void *in_struct, void *out_struct, fs_info_t info)
     size_t bla_write_nbytes;
     int bla_write_ret;
 
-    bds_handle_t bla_write_bds_handle;
-    bds_block_handle_t bla_write_bds_block_handle;
+    bds_handle_t bla_write_bds_handle = NULL;
+    bds_block_handle_t bla_write_bds_block_handle = NULL;
 
     /* Get input parameters and data */
     fildes = bla_write_in_struct->fildes;
@@ -142,6 +147,7 @@ int main(int argc, char *argv[])
         /* Receive a new function call */
         fs_server_receive(&func_id, &func_info, &func_in_struct);
 
+        /* TODO Get dependency here ? */
         /* Execute the call */
         fs_server_execute(func_id, func_info, func_in_struct, &func_out_struct);
 

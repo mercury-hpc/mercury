@@ -28,7 +28,7 @@ typedef struct bla_initialize_out {
     int bla_initialize_ret;
 } bla_initialize_out_t;
 
-int bla_initialize_dec(void *in_struct, const void *buf, int buf_len)
+int bla_initialize_dec(void *in_struct, const void *buf, size_t buf_len)
 {
     int ret = S_SUCCESS;
     bla_initialize_in_t *bla_initialize_in_struct = (bla_initialize_in_t*) in_struct;
@@ -44,7 +44,7 @@ int bla_initialize_dec(void *in_struct, const void *buf, int buf_len)
     return ret;
 }
 
-int bla_initialize_enc(void *buf, int buf_len, const void *out_struct)
+int bla_initialize_enc(void *buf, size_t buf_len, const void *out_struct)
 {
     int ret = S_SUCCESS;
     bla_initialize_out_t *bla_initialize_out_struct = (bla_initialize_out_t*) out_struct;
@@ -101,6 +101,7 @@ int main(int argc, char *argv[])
         /* Receive a new function call */
         fs_server_receive(&func_id, &func_info, &func_in_struct);
 
+        /* TODO Get dependency here ? */
         /* Execute the call */
         fs_server_execute(func_id, func_info, func_in_struct, &func_out_struct);
 

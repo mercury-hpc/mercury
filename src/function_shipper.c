@@ -25,16 +25,16 @@ typedef struct fs_priv_request {
 } fs_priv_request_t;
 
 typedef struct fs_client_info {
-    int (*enc_routine)(void *buf, int buf_len, const void *in_struct);
-    int (*dec_routine)(void *out_struct, const void *buf, int buf_len);
+    int (*enc_routine)(void *buf, size_t buf_len, const void *in_struct);
+    int (*dec_routine)(void *out_struct, const void *buf, size_t buf_len);
 } fs_client_info_t;
 
 typedef struct fs_server_info {
     size_t size_in_struct;
     size_t size_out_struct;
-    int (*dec_routine)(void *in_struct, const void *buf, int buf_len);
+    int (*dec_routine)(void *in_struct, const void *buf, size_t buf_len);
     int (*exe_routine)(const void *in_struct, void *out_struct, fs_info_t info);
-    int (*enc_routine)(void *buf, int buf_len, const void *out_struct);
+    int (*enc_routine)(void *buf, size_t buf_len, const void *out_struct);
 } fs_server_info_t;
 
 typedef struct fs_priv_info {
@@ -210,8 +210,8 @@ int fs_peer_free(fs_peer_t peer)
  *---------------------------------------------------------------------------
  */
 fs_id_t fs_register(const char *func_name,
-        int (*enc_routine)(void *buf, int buf_len, const void *in_struct),
-        int (*dec_routine)(void *out_struct, const void *buf, int buf_len))
+        int (*enc_routine)(void *buf, size_t buf_len, const void *in_struct),
+        int (*dec_routine)(void *out_struct, const void *buf, size_t buf_len))
 {
     fs_id_t *id;
     fs_client_info_t *func_info;
@@ -336,6 +336,25 @@ int fs_forward(fs_peer_t peer, fs_id_t id, const void *in_struct, void *out_stru
 /*---------------------------------------------------------------------------
  * Function:    fs_wait
  *
+ * Purpose:     Forward a call that has an execution dependency
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int fs_forward_depend(fs_peer_t peer, fs_id_t id,
+        int num_parents, fs_request_t array_of_parent_requests[],
+        const void *in_struct, void *out_struct, fs_request_t *request)
+{
+    int ret = S_SUCCESS;
+
+    fs_forward(peer, id, in_struct, out_struct, request);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    fs_wait
+ *
  * Purpose:     Wait for an operation request to complete
  *
  * Returns:     Non-negative on success or negative on failure
@@ -405,9 +424,9 @@ int fs_wait_all(int count, fs_request_t array_of_requests[],
  */
 fs_id_t fs_server_register(const char *func_name,
         size_t size_in_struct, size_t size_out_struct,
-        int (*dec_routine)(void *in_struct, const void *buf, int buf_len),
+        int (*dec_routine)(void *in_struct, const void *buf, size_t buf_len),
         int (*exe_routine)(const void *in_struct, void *out_struct, fs_info_t info),
-        int (*enc_routine)(void *buf, int buf_len, const void *out_struct))
+        int (*enc_routine)(void *buf, size_t buf_len, const void *out_struct))
 {
     fs_id_t *id;
     fs_server_info_t *server_func_info;
