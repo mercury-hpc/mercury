@@ -60,6 +60,7 @@ private:
   // MPIServerNumProcessFlag & MPIRenderServerNumProcessFlag
   std::string MPINumProcessFlag;
   std::string MPIServerNumProcessFlag;
+  std::string MPIClientNumProcessFlag;
 
   std::string CurrentPrintLineName;
 

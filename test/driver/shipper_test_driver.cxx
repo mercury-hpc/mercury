@@ -72,12 +72,11 @@ void ShipperTestDriver::CollectConfiguredOptions()
   cerr << "Error: MPIEXEC must be set.\n";
   return;
 #endif
-  int serverNumProc = 1;
+  int maxNumProc = 1;
 
-// This must be disabled for now
-//# ifdef MPIEXEC_MAX_NUMPROCS
-//  serverNumProc = MPIEXEC_MAX_NUMPROCS;
-//# endif
+# ifdef MPIEXEC_MAX_NUMPROCS
+  maxNumProc = MPIEXEC_MAX_NUMPROCS;
+# endif
 # ifdef MPIEXEC_NUMPROC_FLAG
   this->MPINumProcessFlag = MPIEXEC_NUMPROC_FLAG;
 # else
@@ -90,9 +89,10 @@ void ShipperTestDriver::CollectConfiguredOptions()
 # ifdef MPIEXEC_POSTFLAGS
   this->SeparateArguments(MPIEXEC_POSTFLAGS, this->MPIPostFlags);
 # endif
-  char buf[1024];
-  sprintf(buf, "%d", serverNumProc);
-  this->MPIServerNumProcessFlag = buf;
+  char buf[32];
+  sprintf(buf, "%d", maxNumProc);
+  this->MPIServerNumProcessFlag = "1";
+  this->MPIClientNumProcessFlag = buf;
 }
 //----------------------------------------------------------------------------
 /// This adds the debug/build configuration crap for the executable on windows.
@@ -255,6 +255,7 @@ int ShipperTestDriver::OutputStringHasError(const char* pname, string& output)
 {
   const char* possibleMPIErrors[] = {
     "error",
+    "Error",
     "Missing:",
     "core dumped",
     "process in local group is dead",
@@ -383,7 +384,7 @@ int ShipperTestDriver::Main(int argc, char* argv[])
   const char* clientExe = this->ClientExecutable.c_str();
   this->CreateCommandLine(clientCommand,
                           clientExe,
-                          this->MPIServerNumProcessFlag.c_str(),
+                          this->MPIClientNumProcessFlag.c_str(),
                           this->ArgStart, argc, argv);
   this->ReportCommand(&clientCommand[0], "client");
   iofsl_shipper_sysProcess_SetCommand(client, &clientCommand[0]);

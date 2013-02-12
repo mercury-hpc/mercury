@@ -83,6 +83,10 @@ int main(int argc, char *argv[])
     unsigned int number_of_peers;
     unsigned int i;
 
+    /* Used by Test Driver */
+    printf("Waiting for client...\n");
+    fflush(stdout);
+
     /* Initialize the interface */
     network_class = shipper_test_server_init(argc, argv, &number_of_peers);
 

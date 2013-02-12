@@ -24,6 +24,10 @@ int main(int argc, char *argv[])
     unsigned int number_of_peers;
     unsigned int peer;
 
+    /* Used by Test Driver */
+    printf("Waiting for client...\n");
+    fflush(stdout);
+
     /* Initialize the interface */
     network_class = shipper_test_server_init(argc, argv, &number_of_peers);
 
@@ -93,12 +97,12 @@ int main(int argc, char *argv[])
         /* Check bulk buf */
         for (i = 0; i < bulk_size; i++) {
             if (bulk_buf[i] != i) {
-                fprintf(stderr, "Error detected in bulk transfer, bulk_buf[%d] = %d, was expecting %d!\n", i, bulk_buf[i], i);
+                printf("Error detected in bulk transfer, bulk_buf[%d] = %d, was expecting %d!\n", i, bulk_buf[i], i);
                 error = 1;
                 break;
             }
         }
-        if (!error) printf("No error found during transfer!\n");
+        if (!error) printf("Successfully transfered %lu bytes!\n", bulk_size * sizeof(int));
 
         /* Send completion ack */
         printf("Sending end of transfer ack...\n");

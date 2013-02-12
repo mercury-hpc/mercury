@@ -30,12 +30,12 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
     /* Check bulk buf */
     for (i = 0; i < (nbyte / sizeof(int)); i++) {
         if (bulk_buf[i] != i) {
-            fprintf(stderr, "Error detected in bulk transfer, bulk_buf[%lu] = %d, was expecting %lu!\n", i, bulk_buf[i], i);
+            printf("Error detected in bulk transfer, bulk_buf[%lu] = %d, was expecting %lu!\n", i, bulk_buf[i], i);
             error = 1;
             break;
         }
     }
-    if (!error) printf("No error found during transfer!\n");
+    if (!error) printf("Successfully transfered %lu bytes!\n", nbyte);
 
     return nbyte;
 }
@@ -127,6 +127,10 @@ int main(int argc, char *argv[])
     na_network_class_t *network_class = NULL;
     unsigned int number_of_peers;
     unsigned int i;
+
+    /* Used by Test Driver */
+    printf("Waiting for client...\n");
+    fflush(stdout);
 
     /* Initialize the interface */
     network_class = shipper_test_server_init(argc, argv, &number_of_peers);
