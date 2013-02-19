@@ -5,60 +5,39 @@
 #include "function_shipper.h"
 #include "shipper_error.h"
 #include "shipper_test.h"
+#include "generic_macros.h"
+#include "generic_proc.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Dummy function that needs to be shipped */
-int bla_initialize(int comm)
-{
-    const char message[] = "Hi, I'm bla_initialize";
-    printf("%s\n", message);
-    return strlen(message);
-}
+/* 1. Dummy function that needs to be shipped:
+ * int bla_open(const char *path, bla_handle_t handle, int *event_id)
+ */
 
-/******************************************************************************/
-/* Can be automatically generated using macros */
-typedef struct bla_initialize_in {
-    int comm;
-} bla_initialize_in_t;
+/* 2. Additional struct type used by remote function */
+typedef struct {
+    uint64_t    cookie;
+} bla_handle_t;
 
-typedef struct bla_initialize_out {
-    int bla_initialize_ret;
-} bla_initialize_out_t;
+/*****************************************************************************/
+/* 3. Generate processor for bla_handle_t struct
+ * IOFSL_SHIPPER_GEN_PROC( struct type name, members )
+ *****************************************************************************/
+IOFSL_SHIPPER_GEN_ENC_PROC( bla_handle_t, ((uint64_t)(cookie)) )
 
-int bla_initialize_enc(void *buf, size_t buf_len, const void *in_struct)
-{
-    int ret = S_SUCCESS;
-    bla_initialize_in_t *bla_initialize_in_struct = (bla_initialize_in_t*) in_struct;
-
-    if (buf_len < sizeof(bla_initialize_in_t)) {
-        S_ERROR_DEFAULT("Buffer size too small for serializing parameter");
-        ret = S_FAIL;
-    } else {
-        /* Here safe to do a simple memcpy */
-        /* TODO may also want to add a checksum or something */
-        memcpy(buf, bla_initialize_in_struct, sizeof(bla_initialize_in_t));
-    }
-    return ret;
-}
-
-int bla_initialize_dec(void *out_struct, const void *buf, size_t buf_len)
-{
-    int ret = S_SUCCESS;
-    bla_initialize_out_t *bla_initialize_out_struct = out_struct;
-
-    if (buf_len < sizeof(bla_initialize_out_t)) {
-        S_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
-        ret = S_FAIL;
-    } else {
-        /* Here safe to do a simple memcpy */
-        /* TODO may also want to add a checksum or something */
-        memcpy(bla_initialize_out_struct, buf, sizeof(bla_initialize_out_t));
-    }
-    return ret;
-}
+/*****************************************************************************/
+/* 4. Generate input / output structure and encoding / decoding functions
+ *    for bla_open call
+ * IOFSL_SHIPPER_GEN( return type, function name, input parameters, output parameters )
+ *****************************************************************************/
+IOFSL_SHIPPER_GEN_CLIENT(
+        int32_t,
+        bla_open,
+        ((fs_string_t)(path)) ((bla_handle_t)(handle)),
+        ((int32_t)(event_id))
+)
 
 /******************************************************************************/
 int main(int argc, char *argv[])
@@ -67,13 +46,16 @@ int main(int argc, char *argv[])
     fs_peer_t peer;
     na_network_class_t *network_class = NULL;
 
-    fs_id_t bla_initialize_id;
-    bla_initialize_in_t  bla_initialize_in_struct;
-    bla_initialize_out_t bla_initialize_out_struct;
-    fs_request_t bla_initialize_request;
+    fs_id_t bla_open_id;
+    bla_open_in_t  bla_open_in_struct;
+    bla_open_out_t bla_open_out_struct;
+    fs_request_t bla_open_request;
 
-    int bla_initialize_comm = 12345;
-    int bla_initialize_ret = 0;
+    const char *bla_open_path = "/scratch/hdf/test.h5";
+    bla_handle_t bla_open_handle;
+    int bla_open_ret = 0;
+    int bla_open_event_id = 0;
+    bla_open_handle.cookie = 12345;
 
     /* Initialize the interface */
     network_class = shipper_test_client_init(argc, argv);
@@ -87,22 +69,25 @@ int main(int argc, char *argv[])
     fs_peer_lookup(ion_name, &peer);
 
     /* Register function and encoding/decoding functions */
-    bla_initialize_id = fs_register("bla_initialize", &bla_initialize_enc, &bla_initialize_dec);
+    bla_open_id = fs_register("bla_open", &bla_open_enc, &bla_open_dec);
 
     /* Fill input structure */
-    bla_initialize_in_struct.comm = bla_initialize_comm;
+    bla_open_in_struct.path.length = strlen(bla_open_path) + 1;
+    strcpy(bla_open_in_struct.path.buffer, bla_open_path);
+    bla_open_in_struct.handle = bla_open_handle;
 
     /* Forward call to peer */
-    printf("Fowarding bla_initialize, op id: %u...\n", bla_initialize_id);
-    fs_forward(peer, bla_initialize_id, &bla_initialize_in_struct,
-            &bla_initialize_out_struct, &bla_initialize_request);
+    printf("Fowarding bla_open, op id: %u...\n", bla_open_id);
+    fs_forward(peer, bla_open_id, &bla_open_in_struct,
+            &bla_open_out_struct, &bla_open_request);
 
     /* Wait for call to be executed and return value to be sent back */
-    fs_wait(bla_initialize_request, FS_MAX_IDLE_TIME, FS_STATUS_IGNORE);
+    fs_wait(bla_open_request, FS_MAX_IDLE_TIME, FS_STATUS_IGNORE);
 
     /* Get output parameter */
-    bla_initialize_ret = bla_initialize_out_struct.bla_initialize_ret;
-    printf("bla_initialize returned: %d\n", bla_initialize_ret);
+    bla_open_ret = bla_open_out_struct.bla_open_ret;
+    bla_open_event_id = bla_open_out_struct.event_id;
+    printf("bla_open returned: %d with event_id: %d\n", bla_open_ret, bla_open_event_id);
 
     /* Free peer id */
     fs_peer_free(peer);

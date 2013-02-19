@@ -45,7 +45,8 @@ na_size_t na_get_unexpected_size(na_network_class_t *network_class)
  *
  *---------------------------------------------------------------------------
  */
-int na_addr_lookup(na_network_class_t *network_class, const char *name, na_addr_t *addr)
+int na_addr_lookup(na_network_class_t *network_class, const char *name,
+        na_addr_t *addr)
 {
     assert(network_class);
     return network_class->addr_lookup(name, addr);
@@ -144,7 +145,8 @@ int na_recv(na_network_class_t *network_class,
  *---------------------------------------------------------------------------
  */
 int na_mem_register(na_network_class_t *network_class,
-        void *buf, na_size_t buf_len, unsigned long flags, na_mem_handle_t *mem_handle)
+        void *buf, na_size_t buf_len, unsigned long flags,
+        na_mem_handle_t *mem_handle)
 {
     assert(network_class);
     return network_class->mem_register(buf, buf_len, flags, mem_handle);

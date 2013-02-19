@@ -7,22 +7,25 @@
 
 #include <stddef.h>
 
-typedef enum {
-    ENCODE,
-    DECODE
-} iofsl_compat_op_t;
+#include "generic_proc.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void iofsl_compat_xdr_process_id(void *buf, unsigned int actual_size, iofsl_compat_op_t op);
+/* Encode/decode IOFSL ID */
+void iofsl_compat_proc_enc_id(void *buf, size_t buf_len);
+void iofsl_compat_proc_dec_id(const void *buf, size_t buf_len);
 
-void iofsl_compat_xdr_process_status(void *buf, unsigned int actual_size, iofsl_compat_op_t op);
+/* Encode/decode IOFSL return status */
+void iofsl_compat_proc_enc_status(void *buf, size_t buf_len);
+void iofsl_compat_proc_dec_status(const void *buf, size_t buf_len);
 
-size_t iofsl_compat_xdr_get_size_id(void);
+/* Get required size for encoding ID */
+size_t iofsl_compat_get_size_id(void);
 
-size_t iofsl_compat_xdr_get_size_status(void);
+/* Get required size for encoding return status */
+size_t iofsl_compat_get_size_status(void);
 
 #ifdef __cplusplus
 }

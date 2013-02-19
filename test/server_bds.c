@@ -56,31 +56,37 @@ int bla_write_dec(void *in_struct, const void *buf, size_t buf_len)
     int ret = S_SUCCESS;
     bla_write_in_t *bla_write_in_struct = (bla_write_in_t*) in_struct;
 
-    if (buf_len < sizeof(bla_write_in_t)) {
+    if (buf_len < sizeof(bla_write_out_t)) {
         S_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
         ret = S_FAIL;
-    } else {
-        /* Here safe to do a simple memcpy */
-        /* TODO may also want to add a checksum or something */
-        memcpy(bla_write_in_struct, buf, sizeof(bla_write_in_t));
+        return ret;
     }
+
+    /* TODO may also want to add a checksum or something */
+    memcpy(bla_write_in_struct, buf, sizeof(bla_write_in_t));
 
     return ret;
 }
 
-int bla_write_enc(void *buf, size_t buf_len, const void *out_struct)
+int bla_write_enc(void *buf, size_t *buf_len, const void *out_struct)
 {
     int ret = S_SUCCESS;
-    bla_write_out_t *bla_write_out_struct = (bla_write_out_t*) out_struct;
+    const bla_write_out_t *bla_write_out_struct = (bla_write_out_t*) out_struct;
 
-    if (buf_len < sizeof(bla_write_out_t)) {
+    if (!buf || (*buf_len == 0)) {
+        *buf_len = sizeof(bla_write_out_t);
+        ret = S_FAIL;
+        return ret;
+    }
+
+    if (*buf_len < sizeof(bla_write_out_t)) {
         S_ERROR_DEFAULT("Buffer size too small for serializing parameter");
         ret = S_FAIL;
-    } else {
-        /* Here safe to do a simple memcpy */
-        /* TODO may also want to add a checksum or something */
-        memcpy(buf, bla_write_out_struct, sizeof(bla_write_out_t));
+        return ret;
     }
+
+    /* TODO may also want to add a checksum or something */
+    memcpy(buf, bla_write_out_struct, sizeof(bla_write_out_t));
 
     return ret;
 }

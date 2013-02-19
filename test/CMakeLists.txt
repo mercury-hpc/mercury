@@ -31,8 +31,7 @@ add_library(iofsl_shipper_test STATIC
   shipper_test.c
 )
 target_link_libraries(iofsl_shipper_test
-  iofsl_shipper_fs
-  iofsl_shipper_bds
+  iofsl_shipper_na
 )
 
 #------------------------------------------------------------------------------

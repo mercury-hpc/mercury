@@ -36,7 +36,7 @@ int fs_peer_free(fs_peer_t peer);
 
 /* Register a function name and provide a unique ID */
 fs_id_t fs_register(const char *func_name,
-        int (*enc_routine)(void *buf, size_t buf_len, const void *in_struct),
+        int (*enc_routine)(void *buf, size_t *buf_len, const void *in_struct),
         int (*dec_routine)(void *out_struct, const void *buf, size_t buf_len));
 
 /* Forward a call to a remote server */
@@ -64,7 +64,7 @@ fs_id_t fs_server_register(const char *func_name,
         size_t size_in_struct, size_t size_out_struct,
         int (*dec_routine)(void *in_struct, const void *buf, size_t buf_len),
         int (*exe_routine)(const void *in_struct, void *out_struct, fs_info_t info),
-        int (*enc_routine)(void *buf, size_t buf_len, const void *out_struct));
+        int (*enc_routine)(void *buf, size_t *buf_len, const void *out_struct));
 
 /* Receive a call from a remote client */
 int fs_server_receive(fs_id_t *id, fs_info_t *info, void **in_struct);

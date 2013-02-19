@@ -87,15 +87,31 @@ int bds_finalize(void)
  *
  *---------------------------------------------------------------------------
  */
-int bds_handle_create(void *buf, size_t buf_size, bds_handle_t *handle)
+int bds_handle_create(void *buf, size_t buf_size, unsigned long flags,
+        bds_handle_t *handle)
 {
     int ret;
     bds_priv_handle_t *priv_handle;
+    unsigned long na_flags;
+
+    switch (flags) {
+        case BDS_READWRITE:
+            na_flags = NA_MEM_READWRITE;
+            break;
+        case BDS_READ_ONLY:
+            na_flags = NA_MEM_READ_ONLY;
+            break;
+        default:
+            S_ERROR_DEFAULT("Unrecognized handle flag");
+            ret = S_FAIL;
+            return ret;
+    }
 
     priv_handle = malloc(sizeof(bds_priv_handle_t));
     priv_handle->size = buf_size;
 
-    ret = na_mem_register(bds_network_class, buf, buf_size, NA_MEM_READWRITE, &priv_handle->mem_handle);
+    ret = na_mem_register(bds_network_class, buf, buf_size, na_flags,
+            &priv_handle->mem_handle);
     if (ret != S_SUCCESS) {
         S_ERROR_DEFAULT("na_mem_register failed");
         free(priv_handle);
@@ -238,14 +254,14 @@ int bds_write(bds_handle_t handle, bds_info_t info, bds_block_handle_t *block_ha
         return ret;
     }
 
-    /* Create and register a new block handle that will be used to receive data */
+    /* Create and register a new block handle that will be used to send data */
     priv_block_handle = malloc(sizeof(bds_priv_block_handle_t));
     priv_block_handle->size = priv_handle->size; /* Take the whole size for now */
     priv_block_handle->data = malloc(priv_block_handle->size);
     priv_block_handle->bulk_request = NULL;
 
     na_mem_register(bds_network_class, priv_block_handle->data,
-            priv_block_handle->size, NA_MEM_READWRITE, &priv_block_handle->mem_handle);
+            priv_block_handle->size, NA_MEM_READ_ONLY, &priv_block_handle->mem_handle);
 
     /* Offsets are not used for now */
     ret = na_put(bds_network_class,

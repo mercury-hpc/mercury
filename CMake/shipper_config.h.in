@@ -7,6 +7,8 @@
 
 #cmakedefine IOFSL_SHIPPER_HAS_BMI
 #cmakedefine IOFSL_SHIPPER_HAS_MPI
+#cmakedefine IOFSL_SHIPPER_HAS_BOOST
+#cmakedefine IOFSL_SHIPPER_HAS_XDR
 
 #cmakedefine IOFSL_SHIPPER_BUILD_SHARED_LIBS
 

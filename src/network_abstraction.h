@@ -107,7 +107,8 @@ int na_recv(na_network_class_t *network_class,
 
 /* Register memory for RMA operations */
 int na_mem_register(na_network_class_t *network_class,
-        void *buf, na_size_t buf_len, unsigned long flags, na_mem_handle_t *mem_handle);
+        void *buf, na_size_t buf_len, unsigned long flags,
+        na_mem_handle_t *mem_handle);
 
 /* Deregister memory */
 int na_mem_deregister(na_network_class_t *network_class,

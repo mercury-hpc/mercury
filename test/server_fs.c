@@ -5,73 +5,56 @@
 #include "function_shipper.h"
 #include "shipper_error.h"
 #include "shipper_test.h"
+#include "generic_macros.h"
+#include "generic_proc.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct {
+    uint64_t    cookie;
+} bla_handle_t;
+
 /* Dummy function that needs to be shipped */
-int bla_initialize(int comm)
+int bla_open(const char *path, bla_handle_t handle, int *event_id)
 {
-    const char message[] = "Hi, I'm bla_initialize";
-    printf("%s (%d)\n", message, (int) strlen(message));
-    return strlen(message);
+    printf("Called bla_open of %s with cookie %lu\n", path, handle.cookie);
+    *event_id = 232;
+    return S_SUCCESS;
 }
+
+/*****************************************************************************/
+/* 3. Generate processor for bla_handle_t struct
+ * IOFSL_SHIPPER_GEN_PROC( struct type name, members )
+ *****************************************************************************/
+IOFSL_SHIPPER_GEN_DEC_PROC( bla_handle_t, ((uint64_t)(cookie)) )
+
+/*****************************************************************************/
+/* 4. Generate input / output structure and encoding / decoding functions
+ *    for bla_open call
+ * IOFSL_SHIPPER_GEN( return type, function name, input parameters, output parameters )
+ *****************************************************************************/
+IOFSL_SHIPPER_GEN_SERVER(
+        int32_t,
+        bla_open,
+        ((fs_string_t)(path)) ((bla_handle_t)(handle)),
+        ((int32_t)(event_id))
+)
 
 /******************************************************************************/
-/* Can be automatically generated using macros */
-typedef struct bla_initialize_in {
-    int comm;
-} bla_initialize_in_t;
-
-typedef struct bla_initialize_out {
-    int bla_initialize_ret;
-} bla_initialize_out_t;
-
-int bla_initialize_dec(void *in_struct, const void *buf, size_t buf_len)
+int bla_open_exe(const void *in_struct, void *out_struct, fs_info_t info)
 {
     int ret = S_SUCCESS;
-    bla_initialize_in_t *bla_initialize_in_struct = (bla_initialize_in_t*) in_struct;
+    bla_open_in_t *bla_open_in_struct = (bla_open_in_t*) in_struct;
+    bla_open_out_t *bla_open_out_struct = (bla_open_out_t*) out_struct;
+    int bla_open_ret = 0;
 
-    if (buf_len < sizeof(bla_initialize_in_t)) {
-        S_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
-        ret = S_FAIL;
-    } else {
-        /* Here safe to do a simple memcpy */
-        /* TODO may also want to add a checksum or something */
-        memcpy(bla_initialize_in_struct, buf, sizeof(bla_initialize_in_t));
-    }
-    return ret;
-}
+    bla_open_ret = bla_open(bla_open_in_struct->path.buffer,
+            bla_open_in_struct->handle,
+            &bla_open_out_struct->event_id);
 
-int bla_initialize_enc(void *buf, size_t buf_len, const void *out_struct)
-{
-    int ret = S_SUCCESS;
-    bla_initialize_out_t *bla_initialize_out_struct = (bla_initialize_out_t*) out_struct;
-
-    if (buf_len < sizeof(bla_initialize_out_t)) {
-        S_ERROR_DEFAULT("Buffer size too small for serializing parameter");
-        ret = S_FAIL;
-    } else {
-        /* Here safe to do a simple memcpy */
-        /* TODO may also want to add a checksum or something */
-        memcpy(buf, bla_initialize_out_struct, sizeof(bla_initialize_out_t));
-    }
-    return ret;
-}
-
-int bla_initialize_exe(const void *in_struct, void *out_struct, fs_info_t info)
-{
-    int ret = S_SUCCESS;
-    bla_initialize_in_t *bla_initialize_in_struct = (bla_initialize_in_t*) in_struct;
-    bla_initialize_out_t *bla_initialize_out_struct = (bla_initialize_out_t*) out_struct;
-    int comm;
-    int bla_initialize_ret;
-
-    comm = bla_initialize_in_struct->comm;
-    bla_initialize_ret = bla_initialize(comm);
-
-    bla_initialize_out_struct->bla_initialize_ret = bla_initialize_ret;
+    bla_open_out_struct->bla_open_ret = bla_open_ret;
 
     return ret;
 }
@@ -93,8 +76,8 @@ int main(int argc, char *argv[])
     fs_init(network_class);
 
     /* Register routine */
-    fs_server_register("bla_initialize", sizeof(bla_initialize_in_t), sizeof(bla_initialize_out_t),
-            bla_initialize_dec, bla_initialize_exe, bla_initialize_enc);
+    fs_server_register("bla_open", sizeof(bla_open_in_t), sizeof(bla_open_out_t),
+            bla_open_dec, bla_open_exe, bla_open_enc);
 
     for (i = 0; i < number_of_peers; i++) {
         void     *func_in_struct;

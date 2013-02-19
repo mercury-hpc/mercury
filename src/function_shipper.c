@@ -25,7 +25,7 @@ typedef struct fs_priv_request {
 } fs_priv_request_t;
 
 typedef struct fs_client_info {
-    int (*enc_routine)(void *buf, size_t buf_len, const void *in_struct);
+    int (*enc_routine)(void *buf, size_t *buf_len, const void *in_struct);
     int (*dec_routine)(void *out_struct, const void *buf, size_t buf_len);
 } fs_client_info_t;
 
@@ -34,7 +34,7 @@ typedef struct fs_server_info {
     size_t size_out_struct;
     int (*dec_routine)(void *in_struct, const void *buf, size_t buf_len);
     int (*exe_routine)(const void *in_struct, void *out_struct, fs_info_t info);
-    int (*enc_routine)(void *buf, size_t buf_len, const void *out_struct);
+    int (*enc_routine)(void *buf, size_t *buf_len, const void *out_struct);
 } fs_server_info_t;
 
 typedef struct fs_priv_info {
@@ -210,7 +210,7 @@ int fs_peer_free(fs_peer_t peer)
  *---------------------------------------------------------------------------
  */
 fs_id_t fs_register(const char *func_name,
-        int (*enc_routine)(void *buf, size_t buf_len, const void *in_struct),
+        int (*enc_routine)(void *buf, size_t *buf_len, const void *in_struct),
         int (*dec_routine)(void *out_struct, const void *buf, size_t buf_len))
 {
     fs_id_t *id;
@@ -247,9 +247,14 @@ int fs_forward(fs_peer_t peer, fs_id_t id, const void *in_struct, void *out_stru
     fs_client_info_t *func_info;
 
     void *send_buf = NULL;
+    void *send_buf_ptr;
     void *recv_buf = NULL;
 
-    na_size_t send_buf_len = na_get_unexpected_size(fs_network_class);
+    /* Send buf len will be determined once the encoding function is called */
+    na_size_t send_buf_len = 0;
+    na_size_t min_send_buf_len = 0;
+    na_size_t enc_buf_len = 0;
+    /* Recv buf len is the size of an unexpected message by default */
     na_size_t recv_buf_len = na_get_unexpected_size(fs_network_class);
 
     static int tag_incr = 0;
@@ -257,10 +262,31 @@ int fs_forward(fs_peer_t peer, fs_id_t id, const void *in_struct, void *out_stru
 
     fs_priv_request_t *priv_request = NULL;
 
-    send_tag = gen_tag() + tag_incr;
-    recv_tag = gen_tag() + tag_incr;
-    tag_incr++;
-    if (send_tag > FS_MAXTAG) tag_incr = 0;
+    /* Retrieve encoding function from function map */
+    func_info = func_map_lookup(func_map, &id);
+    if (!func_info) {
+        S_ERROR_DEFAULT("func_map_lookup failed");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    /* Get the minimum encoding size */
+    func_info->enc_routine(NULL, &min_send_buf_len, NULL);
+    if (min_send_buf_len == 0) {
+        S_ERROR_DEFAULT("encoding function requires a non-zero buffer length");
+        ret = S_FAIL;
+        return ret;
+    }
+    /* We need some extra space to add IOFSL ids */
+    min_send_buf_len += iofsl_compat_get_size_id() + sizeof(fs_id_t);
+
+    if (min_send_buf_len < na_get_unexpected_size(fs_network_class)) {
+        send_buf_len = na_get_unexpected_size(fs_network_class);
+    } else {
+        S_ERROR_DEFAULT("Buffer length currently not supported");
+        ret = S_FAIL;
+        return ret;
+    }
 
     send_buf = malloc(send_buf_len);
     if (!send_buf) {
@@ -278,24 +304,24 @@ int fs_forward(fs_peer_t peer, fs_id_t id, const void *in_struct, void *out_stru
     }
 
     /* Add IOFSL op id to parameters (used for IOFSL compat) */
-    iofsl_compat_xdr_process_id(send_buf, send_buf_len, ENCODE);
+    iofsl_compat_proc_enc_id(send_buf, send_buf_len);
+    send_buf_ptr = send_buf + iofsl_compat_get_size_id();
+    enc_buf_len = send_buf_len - iofsl_compat_get_size_id();
 
-    /* Add generic op id now  (do a simple memcpy) */
-    memcpy(send_buf + iofsl_compat_xdr_get_size_id(), &id, sizeof(fs_id_t));
-
-    /* Retrieve encoding function from function map */
-    func_info = func_map_lookup(func_map, &id);
-    if (!func_info) {
-        S_ERROR_DEFAULT("func_map_lookup failed");
-        ret = S_FAIL;
-        return ret;
-    }
+    /* Add generic op id now (do a simple memcpy) */
+    memcpy(send_buf_ptr, &id, sizeof(fs_id_t));
+    send_buf_ptr += sizeof(fs_id_t);
+    enc_buf_len -= sizeof(fs_id_t);
 
     /* Encode the function parameters */
-    func_info->enc_routine(send_buf + iofsl_compat_xdr_get_size_id() + sizeof(fs_id_t),
-            send_buf_len - iofsl_compat_xdr_get_size_id() - sizeof(fs_id_t), in_struct);
+    func_info->enc_routine(send_buf_ptr, &enc_buf_len, in_struct);
 
     /* Post the send message and pre-post the recv message */
+    send_tag = gen_tag() + tag_incr;
+    recv_tag = gen_tag() + tag_incr;
+    tag_incr++;
+    if (send_tag > FS_MAXTAG) tag_incr = 0;
+
     priv_request = malloc(sizeof(fs_priv_request_t));
 
     priv_request->id = id;
@@ -373,7 +399,7 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
     ret = na_wait(fs_network_class, priv_request->recv_request, timeout, &recv_status);
 
     /* Check op status from parameters (used for IOFSL compat) */
-    iofsl_compat_xdr_process_status(priv_request->recv_buf, recv_status.count, DECODE);
+    iofsl_compat_proc_dec_status(priv_request->recv_buf, recv_status.count);
 
     /* Decode depending on op ID */
     func_info = func_map_lookup(func_map, &priv_request->id);
@@ -384,8 +410,8 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
     }
 
     func_info->dec_routine(priv_request->out_struct,
-            priv_request->recv_buf + iofsl_compat_xdr_get_size_status(),
-            recv_status.count - iofsl_compat_xdr_get_size_status());
+            priv_request->recv_buf + iofsl_compat_get_size_status(),
+            recv_status.count - iofsl_compat_get_size_status());
 
     /* Free request */
     free(priv_request->send_buf);
@@ -426,7 +452,7 @@ fs_id_t fs_server_register(const char *func_name,
         size_t size_in_struct, size_t size_out_struct,
         int (*dec_routine)(void *in_struct, const void *buf, size_t buf_len),
         int (*exe_routine)(const void *in_struct, void *out_struct, fs_info_t info),
-        int (*enc_routine)(void *buf, size_t buf_len, const void *out_struct))
+        int (*enc_routine)(void *buf, size_t *buf_len, const void *out_struct))
 {
     fs_id_t *id;
     fs_server_info_t *server_func_info;
@@ -479,10 +505,10 @@ int fs_server_receive(fs_id_t *id, fs_info_t *info, void **in_struct)
     na_recv_unexpected(fs_network_class, recv_buf, &recv_buf_len, &priv_info->addr, &priv_info->tag, NULL, NULL);
 
     /* Decode IOFSL id (used for compat) */
-    iofsl_compat_xdr_process_id(recv_buf, recv_buf_len, DECODE);
+    iofsl_compat_proc_dec_id(recv_buf, recv_buf_len);
 
     /* Get generic op id */
-    memcpy(id, recv_buf + iofsl_compat_xdr_get_size_id(), sizeof(fs_id_t));
+    memcpy(id, recv_buf + iofsl_compat_get_size_id(), sizeof(fs_id_t));
 
     /* Retrieve decoding function from function map */
     server_func_info = func_map_lookup(func_map, id);
@@ -496,8 +522,8 @@ int fs_server_receive(fs_id_t *id, fs_info_t *info, void **in_struct)
 
     /* Decode input parameters */
     server_func_info->dec_routine(priv_in_struct,
-            recv_buf + iofsl_compat_xdr_get_size_id() + sizeof(fs_id_t),
-            recv_buf_len - iofsl_compat_xdr_get_size_id() - sizeof(fs_id_t));
+            recv_buf + iofsl_compat_get_size_id() + sizeof(fs_id_t),
+            recv_buf_len - iofsl_compat_get_size_id() - sizeof(fs_id_t));
 
     /* Free recv buf */
     free(recv_buf);
@@ -554,7 +580,12 @@ int fs_server_execute(fs_id_t id, fs_info_t info, const void *in_struct, void **
 int fs_server_respond(fs_id_t id, fs_info_t info, const void *out_struct)
 {
     void *send_buf = NULL;
+    void *send_buf_ptr;
+
+    /* Send buf len will be determined once the encoding function is called */
     na_size_t send_buf_len = 0;
+    na_size_t min_send_buf_len = 0;
+    na_size_t enc_buf_len = 0;
 
     na_request_t send_request = NULL;
 
@@ -562,13 +593,6 @@ int fs_server_respond(fs_id_t id, fs_info_t info, const void *out_struct)
     fs_priv_info_t *priv_info = (fs_priv_info_t *) info;
 
     int ret = S_SUCCESS;
-
-    /* Do not expect message bigger than unexpected size (otherwise something went wrong) */
-    send_buf_len = na_get_unexpected_size(fs_network_class);
-    send_buf = malloc(send_buf_len);
-
-    /* Simulate IOFSL behavior and add op status */
-    iofsl_compat_xdr_process_status(send_buf, send_buf_len, ENCODE);
 
     /* Retrieve encoding function from function map */
     server_func_info = func_map_lookup(func_map, &id);
@@ -578,9 +602,38 @@ int fs_server_respond(fs_id_t id, fs_info_t info, const void *out_struct)
         return ret;
     }
 
+    /* Get the minimum encoding size */
+    server_func_info->enc_routine(NULL, &min_send_buf_len, NULL);
+    if (min_send_buf_len == 0) {
+        S_ERROR_DEFAULT("encoding function requires a non-zero buffer length");
+        ret = S_FAIL;
+        return ret;
+    }
+    /* We need some extra space to add IOFSL stuff */
+    min_send_buf_len += iofsl_compat_get_size_status();
+
+    if (min_send_buf_len < na_get_unexpected_size(fs_network_class)) {
+        send_buf_len = na_get_unexpected_size(fs_network_class);
+    } else {
+        S_ERROR_DEFAULT("Buffer length currently not supported");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    send_buf = malloc(send_buf_len);
+    if (!send_buf) {
+        S_ERROR_DEFAULT("send buffer allocation failed.\n");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    /* Simulate IOFSL behavior and add op status */
+    iofsl_compat_proc_enc_status(send_buf, send_buf_len);
+    send_buf_ptr = send_buf + iofsl_compat_get_size_status();
+    enc_buf_len = send_buf_len - iofsl_compat_get_size_status();
+
     /* Encode output parameters */
-    server_func_info->enc_routine(send_buf + iofsl_compat_xdr_get_size_status(),
-            send_buf_len - iofsl_compat_xdr_get_size_status(), out_struct);
+    server_func_info->enc_routine(send_buf_ptr, &enc_buf_len, out_struct);
 
     /* Respond back */
     na_send(fs_network_class, send_buf, send_buf_len, priv_info->addr, priv_info->tag, &send_request, NULL);

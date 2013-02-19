@@ -71,7 +71,7 @@ static inline bool_t iofsl_compat_xdr_op_status_t(XDR *xdrs, iofsl_compat_op_sta
     return(xdr_int32_t(xdrs, op_status));
 }
 
-static unsigned int iofsl_compat_xdr_size_processor(iofsl_compat_data_t data_t, void *data)
+static unsigned int iofsl_compat_xdr_size_proc(iofsl_compat_data_t data_t, void *data)
 {
     unsigned int size = 0;
     if(data) {
@@ -94,7 +94,7 @@ static unsigned int iofsl_compat_xdr_size_processor(iofsl_compat_data_t data_t, 
 /*
  * xdr processing for generic messages
  */
-static int iofsl_compat_xdr_processor(iofsl_compat_data_t data_t, void *data, iofsl_compat_xdr_t *xdr)
+static int iofsl_compat_xdr_proc(iofsl_compat_data_t data_t, void *data, iofsl_compat_xdr_t *xdr)
 {
     switch(data_t) {
         case OP_ID_T:
@@ -114,56 +114,110 @@ static int iofsl_compat_xdr_processor(iofsl_compat_data_t data_t, void *data, io
     return 0;
 }
 
-void iofsl_compat_xdr_process_id(void *buf, unsigned int actual_size, iofsl_compat_op_t op)
+/*---------------------------------------------------------------------------
+ * Function:    iofsl_compat_proc_enc_id
+ *
+ * Purpose:     Encode IOFSL ID
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+void iofsl_compat_proc_enc_id(void *buf, size_t buf_len)
 {
     iofsl_compat_xdr_t compat_xdr;
     iofsl_compat_op_id_t op_id = PROTO_GENERIC; /* TODO keep that for now */
 
-    switch (op) {
-        case ENCODE:
-            xdrmem_create(&compat_xdr.xdr, buf, actual_size, XDR_ENCODE);
-            break;
-        case DECODE:
-            xdrmem_create(&compat_xdr.xdr, buf, actual_size, XDR_DECODE);
-            break;
-        default:
-            fprintf(stderr, "%s(): processing error, unknown op type, %s:%i.\n", __func__, __FILE__, __LINE__);
-            return;
-    }
+    xdrmem_create(&compat_xdr.xdr, buf, buf_len, XDR_ENCODE);
     compat_xdr.xdr_init = 1;
-    iofsl_compat_xdr_processor(OP_ID_T, &op_id, &compat_xdr);
-    if (op == DECODE) printf("IOFSL compat op id: %d\n", op_id);
+    iofsl_compat_xdr_proc(OP_ID_T, &op_id, &compat_xdr);
 }
 
-void iofsl_compat_xdr_process_status(void *buf, unsigned int actual_size, iofsl_compat_op_t op)
+/*---------------------------------------------------------------------------
+ * Function:    iofsl_compat_proc_dec_id
+ *
+ * Purpose:     Decode IOFSL ID
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+void iofsl_compat_proc_dec_id(const void *buf, size_t buf_len)
+{
+    iofsl_compat_xdr_t compat_xdr;
+    iofsl_compat_op_id_t op_id = PROTO_GENERIC; /* TODO keep that for now */
+
+    xdrmem_create(&compat_xdr.xdr, (void*)buf, buf_len, XDR_DECODE);
+    compat_xdr.xdr_init = 1;
+    iofsl_compat_xdr_proc(OP_ID_T, &op_id, &compat_xdr);
+    /* printf("IOFSL compat op id: %d\n", op_id); */
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    iofsl_compat_proc_enc_status
+ *
+ * Purpose:     Encode IOFSL return status
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+void iofsl_compat_proc_enc_status(void *buf, size_t buf_len)
 {
     iofsl_compat_xdr_t compat_xdr;
     iofsl_compat_op_status_t op_status = 0;
 
-    switch (op) {
-        case ENCODE:
-            xdrmem_create(&compat_xdr.xdr, buf, actual_size, XDR_ENCODE);
-            break;
-        case DECODE:
-            xdrmem_create(&compat_xdr.xdr, buf, actual_size, XDR_DECODE);
-            break;
-        default:
-            fprintf(stderr, "%s(): processing error, unknown op type, %s:%i.\n", __func__, __FILE__, __LINE__);
-            return;
-    }
+    xdrmem_create(&compat_xdr.xdr, buf, buf_len, XDR_ENCODE);
     compat_xdr.xdr_init = 1;
-    iofsl_compat_xdr_processor(OP_STATUS_T, &op_status, &compat_xdr);
-    if (op == DECODE) printf("IOFSL compat op status: %d\n", op_status);
+    iofsl_compat_xdr_proc(OP_STATUS_T, &op_status, &compat_xdr);
 }
 
-size_t iofsl_compat_xdr_get_size_id()
+/*---------------------------------------------------------------------------
+ * Function:    iofsl_compat_proc_dec_status
+ *
+ * Purpose:     Decode IOFSL return status
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+void iofsl_compat_proc_dec_status(const void *buf, size_t buf_len)
+{
+    iofsl_compat_xdr_t compat_xdr;
+    iofsl_compat_op_status_t op_status = 0;
+
+    xdrmem_create(&compat_xdr.xdr, (void*)buf, buf_len, XDR_DECODE);
+    compat_xdr.xdr_init = 1;
+    iofsl_compat_xdr_proc(OP_STATUS_T, &op_status, &compat_xdr);
+    /* printf("IOFSL compat op status: %d\n", op_status); */
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    iofsl_compat_get_size_id
+ *
+ * Purpose:     Get required size for encoding ID
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+size_t iofsl_compat_get_size_id()
 {
     iofsl_compat_op_id_t op_id;
-    return iofsl_compat_xdr_size_processor(OP_ID_T, &op_id);
+    return iofsl_compat_xdr_size_proc(OP_ID_T, &op_id);
 }
 
-size_t iofsl_compat_xdr_get_size_status()
+/*---------------------------------------------------------------------------
+ * Function:    iofsl_compat_get_size_status
+ *
+ * Purpose:     Get required size for encoding return status
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+size_t iofsl_compat_get_size_status()
 {
     iofsl_compat_op_status_t op_status;
-    return iofsl_compat_xdr_size_processor(OP_STATUS_T, &op_status);
+    return iofsl_compat_xdr_size_proc(OP_STATUS_T, &op_status);
 }

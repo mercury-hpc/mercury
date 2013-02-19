@@ -117,8 +117,19 @@ endif(IOFSL_SHIPPER_USE_MPI)
 # Boost (for preprocessor macros)
 option(IOFSL_SHIPPER_USE_BOOST_PP "Use BOOST preprocessor macros." OFF)
 if(IOFSL_SHIPPER_USE_BOOST_PP)
-  add_definitions(-DBOOST_PP_VARIADICS=1)
+  find_package(Boost 1.50)
+  if(Boost_FOUND)
+    set(IOFSL_SHIPPER_HAS_BOOST 1)
+    include_directories(${Boost_INCLUDE_DIRS})
+#    add_definitions(-DBOOST_PP_VARIADICS=1)
+  endif(Boost_FOUND)
 endif(IOFSL_SHIPPER_USE_BOOST_PP)
+
+# XDR
+option(IOFSL_SHIPPER_USE_XDR "Use XDR for generic encoding." OFF)
+if(IOFSL_SHIPPER_USE_XDR)
+  set(IOFSL_SHIPPER_HAS_XDR 1)
+endif(IOFSL_SHIPPER_USE_XDR)
 
 #------------------------------------------------------------------------------
 # Configure module header files
@@ -169,6 +180,7 @@ set(IOFSL_SHIPPER_BDS_SRCS
 set(IOFSL_SHIPPER_FS_SRCS
   src/function_shipper.c
   src/function_map.c
+  src/generic_proc.c
 )
 
 set(IOFSL_COMPAT_SRCS

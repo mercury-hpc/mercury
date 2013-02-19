@@ -19,6 +19,8 @@ typedef void * bds_info_t;         /* Info internally used */
 
 #define BDS_MAX_HANDLE_SIZE 32 /* TODO Arbitrary value / may need to be increased depending on implementations */
 #define BDS_MAX_IDLE_TIME NA_MAX_IDLE_TIME
+#define BDS_READWRITE NA_MEM_READWRITE
+#define BDS_READ_ONLY NA_MEM_READ_ONLY
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,7 +33,8 @@ int bds_init(na_network_class_t *network_class);
 int bds_finalize(void);
 
 /* Create bulk data handle from buffer (register memory, etc) */
-int bds_handle_create(void *buf, size_t buf_len, bds_handle_t *handle);
+int bds_handle_create(void *buf, size_t buf_len, unsigned long flags,
+        bds_handle_t *handle);
 
 /* Free bulk data handle */
 int bds_handle_free(bds_handle_t *handle);
