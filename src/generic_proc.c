@@ -6,6 +6,7 @@
 #include "generic_proc.h"
 
 #include <stdlib.h>
+#include <unistd.h>
 
 /*---------------------------------------------------------------------------
  * Function:    fs_proc_create
@@ -77,7 +78,7 @@ int fs_proc_free(fs_proc_t proc)
 /*---------------------------------------------------------------------------
  * Function:    fs_proc_get_size
  *
- * Purpose:     Get number of bytes available for processing
+ * Purpose:     Get total buffer size used for processing
  *
  * Returns:     Non-negative on success or negative on failure
  *
@@ -85,7 +86,110 @@ int fs_proc_free(fs_proc_t proc)
  */
 size_t fs_proc_get_size(fs_proc_t proc)
 {
-//    fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
-//    return priv_proc->buf_len;
-    return 0;
+    fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
+    size_t size = 0;
+
+    if (priv_proc) size = priv_proc->buf_len;
+
+    return size;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    fs_proc_set_size
+ *
+ * Purpose:     Request a new buffer size
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int fs_proc_set_size(fs_proc_t proc, size_t buf_len)
+{
+    fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
+    size_t new_buf_len;
+    int pagesize;
+    int ret = S_FAIL;
+
+    pagesize = getpagesize();
+    new_buf_len = (size_t)(buf_len / pagesize) * pagesize;
+
+    if (priv_proc && (new_buf_len > priv_proc->buf_len)) {
+        ptrdiff_t current_pos;
+
+        current_pos = priv_proc->buf_ptr - priv_proc->buf;
+
+        priv_proc->buf = realloc(priv_proc->buf, new_buf_len);
+
+        if (priv_proc->buf) {
+            priv_proc->buf_ptr = priv_proc->buf + current_pos;
+            priv_proc->buf_len = new_buf_len;
+            priv_proc->buf_size_left = priv_proc->buf_len - current_pos;
+            ret = S_SUCCESS;
+        } else {
+            S_ERROR_DEFAULT("Could not reallocate proc buffer");
+        }
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    fs_proc_get_size_left
+ *
+ * Purpose:     Get number of bytes available for processing
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+size_t fs_proc_get_size_left(fs_proc_t proc)
+{
+    fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
+    size_t size = 0;
+
+    if (priv_proc) size = priv_proc->buf_size_left;
+
+    return size;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    fs_proc_get_buf_ptr
+ *
+ * Purpose:     Get pointer to current buffer (for manual encoding)
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+void * fs_proc_get_buf_ptr(fs_proc_t proc)
+{
+    fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
+    void *ptr = NULL;
+
+    if (priv_proc) ptr = priv_proc->buf_ptr;
+
+    return ptr;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    fs_proc_set_buf_ptr
+ *
+ * Purpose:     Set new buffer pointer (for manual encoding)
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int fs_proc_set_buf_ptr(fs_proc_t proc, void *buf_ptr)
+{
+    fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
+    int ret = S_FAIL;
+
+    if (priv_proc) {
+        priv_proc->buf_ptr = buf_ptr;
+        ret = S_SUCCESS;
+    }
+
+    return ret;
+
 }

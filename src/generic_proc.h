@@ -55,14 +55,26 @@ typedef const char * fs_string_t;
 extern "C" {
 #endif
 
-/* Create a new encoding/decoding processor */
+/* Create a new encoding/decoding processor from a given buffer */
 int fs_proc_create(void *buf, size_t buf_len, fs_proc_op_t op, fs_proc_t *proc);
 
 /* Free the processor */
 int fs_proc_free(fs_proc_t proc);
 
-/* Get number of bytes available for processing */
+/* Get total buffer size used for processing */
 size_t fs_proc_get_size(fs_proc_t proc);
+
+/* Request a new buffer size */
+int fs_proc_set_size(fs_proc_t proc, size_t buf_len);
+
+/* Get number of bytes available for processing */
+size_t fs_proc_get_size_left(fs_proc_t proc);
+
+/* Get pointer to current buffer (for manual encoding) */
+void * fs_proc_get_buf_ptr(fs_proc_t proc);
+
+/* Set new buffer pointer (for manual encoding) */
+int fs_proc_set_buf_ptr(fs_proc_t proc, void *buf_ptr);
 
 /*---------------------------------------------------------------------------
  * Function:    fs_proc_string_hash
