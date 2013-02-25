@@ -13,6 +13,41 @@
 #define GEN_GET_TYPE(field) BOOST_PP_SEQ_HEAD(field)
 #define GEN_GET_NAME(field) BOOST_PP_SEQ_CAT(BOOST_PP_SEQ_TAIL(field))
 
+#define GEN_STRUCT_FIELD(r, data, param) GEN_GET_TYPE(param) GEN_GET_NAME(param);
+
+#define IOFSL_SHIPPER_GEN_STRUCT(struct_type_name, fields) \
+typedef struct \
+{   \
+    BOOST_PP_SEQ_FOR_EACH(GEN_STRUCT_FIELD, , fields) \
+    \
+} struct_type_name;
+
+#define GEN_PROC(r, struct_name, field) \
+    ret = BOOST_PP_CAT(fs_proc_, GEN_GET_TYPE(field)(proc, &struct_name->GEN_GET_NAME(field))); \
+    if (ret != S_SUCCESS) { \
+      S_ERROR_DEFAULT("Proc error"); \
+      ret = S_FAIL; \
+      return ret; \
+    }
+
+#define IOFSL_SHIPPER_GEN_STRUCT_PROC(struct_type_name, fields) \
+static inline int BOOST_PP_CAT(fs_proc_, struct_type_name) \
+    (fs_proc_t proc, void *data) \
+{   \
+    int ret = S_SUCCESS; \
+    struct_type_name *struct_data = (struct_type_name *) data; \
+    \
+    BOOST_PP_SEQ_FOR_EACH(GEN_PROC, struct_data, fields) \
+    \
+    return ret; \
+}
+
+#define IOFSL_SHIPPER_GEN_PROC(struct_type_name, fields) \
+        IOFSL_SHIPPER_GEN_STRUCT(struct_type_name, fields) \
+        IOFSL_SHIPPER_GEN_STRUCT_PROC(struct_type_name, fields)
+
+/*****************************************************************************/
+
 #define GEN_ENCODER(r, enc_struct_name, field) GEN_ENC_PROC(enc_struct_name, field)
 #define GEN_ENC_PROC(enc_struct_name, field) BOOST_PP_CAT(fs_proc_enc_, \
         GEN_GET_TYPE(field)(enc_proc, &enc_struct_name->GEN_GET_NAME(field)));
@@ -20,6 +55,7 @@
 #define GEN_DECODER(r, dec_struct_name, field) GEN_DEC_PROC(dec_struct_name, field)
 #define GEN_DEC_PROC(dec_struct_name, field) BOOST_PP_CAT(fs_proc_dec_, \
         GEN_GET_TYPE(field)(dec_proc, &dec_struct_name->GEN_GET_NAME(field)));
+
 
 #define IOFSL_SHIPPER_GEN_ENC_PROC(struct_type_name, fields) \
 static inline int BOOST_PP_CAT(fs_proc_enc_, struct_type_name) \
@@ -42,20 +78,6 @@ static inline int BOOST_PP_CAT(fs_proc_dec_, struct_type_name) \
     \
     return ret; \
 }
-
-#define IOFSL_SHIPPER_GEN_PROC(struct_type_name, fields) \
-        IOFSL_SHIPPER_GEN_ENC_PROC(struct_type_name, fields) \
-        IOFSL_SHIPPER_GEN_DEC_PROC(struct_type_name, fields)
-
-/*****************************************************************************/
-#define GEN_STRUCT_FIELD(r, data, param) GEN_GET_TYPE(param) GEN_GET_NAME(param);
-
-#define IOFSL_SHIPPER_GEN_STRUCT(struct_type_name, fields) \
-typedef struct \
-{   \
-    BOOST_PP_SEQ_FOR_EACH(GEN_STRUCT_FIELD, , fields) \
-    \
-} struct_type_name;
 
 #define IOFSL_SHIPPER_GEN_ENC(enc_func_name, enc_struct_type, enc_struct_name, func_params) \
 static int enc_func_name (void *buf, size_t *buf_len, const void *struct_ptr) \

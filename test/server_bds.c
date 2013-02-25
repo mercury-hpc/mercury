@@ -2,9 +2,10 @@
  * server_bds.c
  */
 
-#include "function_shipper.h"
+#include "function_shipper_handler.h"
 #include "bulk_data_shipper.h"
-#include "shipper_error.h"
+#include "bulk_data_proc.h"
+#include "generic_macros.h"
 #include "shipper_test.h"
 
 #include <stdio.h>
@@ -40,87 +41,50 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
     return nbyte;
 }
 
+/*****************************************************************************/
+/* Generate processor for input/output structs
+ * IOFSL_SHIPPER_GEN_PROC( struct type name, members )
+ *****************************************************************************/
+IOFSL_SHIPPER_GEN_PROC( bla_write_in_t, ((int32_t)(fildes)) ((bds_handle_t)(bds_handle)) )
+IOFSL_SHIPPER_GEN_PROC( bla_write_out_t, ((uint64_t)(ret)) )
+
 /******************************************************************************/
-/* Can be automatically generated using macros */
-typedef struct bla_write_in {
-    int  fildes;
-    char bds_handle_buf[BDS_MAX_HANDLE_SIZE];
-} bla_write_in_t;
-
-typedef struct bla_write_out {
-    size_t bla_write_ret;
-} bla_write_out_t;
-
-int bla_write_dec(void *in_struct, const void *buf, size_t buf_len)
+int fs_bla_write(fs_handle_t handle)
 {
     int ret = S_SUCCESS;
-    bla_write_in_t *bla_write_in_struct = (bla_write_in_t*) in_struct;
 
-    if (buf_len < sizeof(bla_write_out_t)) {
-        S_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
-        ret = S_FAIL;
-        return ret;
-    }
+    bla_write_in_t  bla_write_in_struct;
+    bla_write_out_t bla_write_out_struct;
 
-    /* TODO may also want to add a checksum or something */
-    memcpy(bla_write_in_struct, buf, sizeof(bla_write_in_t));
+    na_addr_t source = fs_handler_get_addr(handle);
+    bds_handle_t bla_write_bds_handle = NULL;
+    bds_block_handle_t bla_write_bds_block_handle = NULL;
 
-    return ret;
-}
-
-int bla_write_enc(void *buf, size_t *buf_len, const void *out_struct)
-{
-    int ret = S_SUCCESS;
-    const bla_write_out_t *bla_write_out_struct = (bla_write_out_t*) out_struct;
-
-    if (!buf || (*buf_len == 0)) {
-        *buf_len = sizeof(bla_write_out_t);
-        ret = S_FAIL;
-        return ret;
-    }
-
-    if (*buf_len < sizeof(bla_write_out_t)) {
-        S_ERROR_DEFAULT("Buffer size too small for serializing parameter");
-        ret = S_FAIL;
-        return ret;
-    }
-
-    /* TODO may also want to add a checksum or something */
-    memcpy(buf, bla_write_out_struct, sizeof(bla_write_out_t));
-
-    return ret;
-}
-
-int bla_write_exe(const void *in_struct, void *out_struct, fs_info_t info)
-{
-    int ret = S_SUCCESS;
-    bla_write_in_t *bla_write_in_struct = (bla_write_in_t*) in_struct;
-    bla_write_out_t *bla_write_out_struct = (bla_write_out_t*) out_struct;
-    int fildes;
+    int bla_write_fildes;
     void *bla_write_buf;
     size_t bla_write_nbytes;
     int bla_write_ret;
 
-    bds_handle_t bla_write_bds_handle = NULL;
-    bds_block_handle_t bla_write_bds_block_handle = NULL;
-
     /* Get input parameters and data */
-    fildes = bla_write_in_struct->fildes;
-    bds_handle_deserialize(&bla_write_bds_handle, bla_write_in_struct->bds_handle_buf, BDS_MAX_HANDLE_SIZE);
+    bla_write_fildes = bla_write_in_struct.fildes;
+    bla_write_bds_handle = bla_write_in_struct.bds_handle;
 
     /* Read bulk data here and wait for the data to be here  */
-    bds_read(bla_write_bds_handle, info, &bla_write_bds_block_handle);
+    bds_read(bla_write_bds_handle, source, &bla_write_bds_block_handle);
     bds_wait(bla_write_bds_block_handle, BDS_MAX_IDLE_TIME);
 
     /* Call bla_write */
     bla_write_buf = bds_block_handle_get_data(bla_write_bds_block_handle);
     bla_write_nbytes = bds_block_handle_get_size(bla_write_bds_block_handle);
-    bla_write_ret = bla_write(fildes, bla_write_buf, bla_write_nbytes);
+    bla_write_ret = bla_write(bla_write_fildes, bla_write_buf, bla_write_nbytes);
 
     /* Fill output structure */
-    bla_write_out_struct->bla_write_ret = bla_write_ret;
+    bla_write_out_struct.ret = bla_write_ret;
 
-    /* Free handles */
+    /* Free handle and send response back */
+    fs_handler_complete(handle, &bla_write_out_struct);
+
+    /* Free bulk handles */
     bds_block_handle_free(bla_write_bds_block_handle);
     bds_handle_free(bla_write_bds_handle);
 
@@ -141,42 +105,22 @@ int main(int argc, char *argv[])
     /* Initialize the interface */
     network_class = shipper_test_server_init(argc, argv, &number_of_peers);
 
-    fs_init(network_class);
+    fs_handler_init(network_class);
     bds_init(network_class);
 
     /* Register routine */
-    fs_server_register("bla_write", sizeof(bla_write_in_t), sizeof(bla_write_out_t),
-            bla_write_dec, bla_write_exe, bla_write_enc);
+    fs_handler_register("bla_write", fs_bla_write, fs_proc_bla_write_in_t, fs_proc_bla_write_out_t);
 
     for (i = 0; i < number_of_peers; i++) {
-        void *func_in_struct;
-        void *func_out_struct;
-        fs_id_t   func_id;
-        fs_info_t func_info;
-
-        /* Receive a new function call */
-        fs_server_receive(&func_id, &func_info, &func_in_struct);
-
-        /* TODO Get dependency here ? */
-        /* Execute the call */
-        fs_server_execute(func_id, func_info, func_in_struct, &func_out_struct);
-
-        /* Respond back */
-        fs_server_respond(func_id, func_info, func_out_struct);
-
-        /* Free memory and addresses */
-        free(func_in_struct);
-        func_in_struct = NULL;
-
-        free(func_out_struct);
-        func_out_struct = NULL;
+        /* Receive new function calls */
+        fs_handler_receive();
     }
 
     printf("Finalizing...\n");
 
     /* Finalize the interface */
     bds_finalize();
-    fs_finalize();
+    fs_handler_finalize();
 
     return EXIT_SUCCESS;
 }

@@ -23,11 +23,6 @@ typedef struct bds_priv_block_handle {
     na_request_t    bulk_request;
 } bds_priv_block_handle_t;
 
-typedef struct bds_priv_info {
-    na_addr_t addr;
-    na_tag_t  tag;
-} bds_priv_info_t;
-
 static na_network_class_t *bds_network_class = NULL;
 
 /*---------------------------------------------------------------------------
@@ -241,11 +236,10 @@ int bds_handle_deserialize(bds_handle_t *handle, const void *buf, na_size_t buf_
  *
  *---------------------------------------------------------------------------
  */
-int bds_write(bds_handle_t handle, bds_info_t info, bds_block_handle_t *block_handle)
+int bds_write(bds_handle_t handle, na_addr_t addr, bds_block_handle_t *block_handle)
 {
     int ret;
     bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
-    bds_priv_info_t *priv_info = (bds_priv_info_t*) info;
     bds_priv_block_handle_t *priv_block_handle = NULL;
 
     if (!priv_handle) {
@@ -267,7 +261,7 @@ int bds_write(bds_handle_t handle, bds_info_t info, bds_block_handle_t *block_ha
     ret = na_put(bds_network_class,
             priv_block_handle->mem_handle, 0,
             priv_handle->mem_handle, 0,
-            priv_block_handle->size, priv_info->addr, &priv_block_handle->bulk_request);
+            priv_block_handle->size, addr, &priv_block_handle->bulk_request);
 
     if (ret == S_SUCCESS) {
         *block_handle = priv_block_handle;
@@ -285,11 +279,10 @@ int bds_write(bds_handle_t handle, bds_info_t info, bds_block_handle_t *block_ha
  *
  *---------------------------------------------------------------------------
  */
-int bds_read(bds_handle_t handle, bds_info_t info, bds_block_handle_t *block_handle)
+int bds_read(bds_handle_t handle, na_addr_t addr, bds_block_handle_t *block_handle)
 {
     int ret;
     bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
-    bds_priv_info_t *priv_info = (bds_priv_info_t*) info;
     bds_priv_block_handle_t *priv_block_handle = NULL;
 
     if (!priv_handle) {
@@ -311,7 +304,7 @@ int bds_read(bds_handle_t handle, bds_info_t info, bds_block_handle_t *block_han
     ret = na_get(bds_network_class,
             priv_block_handle->mem_handle, 0,
             priv_handle->mem_handle, 0,
-            priv_block_handle->size, priv_info->addr, &priv_block_handle->bulk_request);
+            priv_block_handle->size, addr, &priv_block_handle->bulk_request);
 
     if (ret == S_SUCCESS) {
         *block_handle = priv_block_handle;

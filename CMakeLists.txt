@@ -175,10 +175,12 @@ endif(MPI_FOUND)
 
 set(IOFSL_SHIPPER_BDS_SRCS
   src/bulk_data_shipper.c
+  src/bulk_data_proc.c
 )
 
 set(IOFSL_SHIPPER_FS_SRCS
   src/function_shipper.c
+  src/function_shipper_handler.c
   src/function_map.c
   src/generic_proc.c
 )
