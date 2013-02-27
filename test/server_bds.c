@@ -66,6 +66,7 @@ int fs_bla_write(fs_handle_t handle)
     int bla_write_ret;
 
     /* Get input parameters and data */
+    fs_handler_get_input(handle, &bla_write_in_struct);
     bla_write_fildes = bla_write_in_struct.fildes;
     bla_write_bds_handle = bla_write_in_struct.bds_handle;
 

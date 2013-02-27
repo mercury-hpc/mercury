@@ -8,6 +8,84 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+/* Initialize a new proc buffer */
+static inline int fs_proc_buf_init(fs_proc_buf_t *proc_buf, void *buf, size_t alignment, size_t buf_len)
+{
+    int ret = S_SUCCESS;
+
+    if (!buf && buf_len) {
+        if (proc_buf->buf) {
+            S_ERROR_DEFAULT("Proc buffer was already initialized");
+            ret = S_FAIL;
+            return ret;
+        }
+
+        /* Allocate a new buffer */
+        posix_memalign(&proc_buf->buf, alignment, buf_len);
+        memset(proc_buf->buf, 0, buf_len);
+        proc_buf->is_mine = 1;
+    } else {
+        proc_buf->buf = buf;
+        proc_buf->is_mine = 0;
+    }
+
+    proc_buf->size = buf_len;
+    proc_buf->buf_ptr = proc_buf->buf;
+    proc_buf->size_left = proc_buf->size;
+    proc_buf->is_used = 0;
+
+    return ret;
+}
+
+/* Reallocate a proc buffer */
+static inline int fs_proc_buf_realloc(fs_proc_buf_t *proc_buf, size_t buf_len)
+{
+    int ret = S_SUCCESS;
+    ptrdiff_t current_pos;
+
+    if (!proc_buf->buf) {
+        S_ERROR_DEFAULT("Cannot reallocate non-allocated proc buffer");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    /* Save current position */
+    current_pos = proc_buf->buf_ptr - proc_buf->buf;
+
+    /* Reallocate buffer */
+    proc_buf->buf = realloc(proc_buf->buf, buf_len);
+
+    proc_buf->size = buf_len;
+    proc_buf->buf_ptr = proc_buf->buf + current_pos;
+    proc_buf->size_left = proc_buf->size - current_pos;
+
+    return ret;
+}
+
+/* Free a proc buffer */
+static inline int fs_proc_buf_free(fs_proc_buf_t *proc_buf)
+{
+    int ret = S_SUCCESS;
+
+    if (!proc_buf) {
+        S_ERROR_DEFAULT("NULL proc buffer");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    if (proc_buf->is_mine) {
+        if (!proc_buf->buf) {
+            S_ERROR_DEFAULT("Already freed");
+            ret = S_FAIL;
+            return ret;
+        }
+        free (proc_buf->buf);
+        proc_buf->buf = NULL;
+    }
+
+    return ret;
+}
+
 /*---------------------------------------------------------------------------
  * Function:    fs_proc_create
  *
@@ -20,6 +98,7 @@
 int fs_proc_create(void *buf, size_t buf_len, fs_proc_op_t op, fs_proc_t *proc)
 {
     fs_priv_proc_t *priv_proc = NULL;
+    size_t page_size;
     int ret = S_SUCCESS;
 
     priv_proc = malloc(sizeof(fs_priv_proc_t));
@@ -37,13 +116,17 @@ int fs_proc_create(void *buf, size_t buf_len, fs_proc_op_t op, fs_proc_t *proc)
             ret = S_FAIL;
             return ret;
     }
-#else
-    priv_proc->buf = buf;
-    priv_proc->buf_len = buf_len;
-    priv_proc->buf_ptr = buf;
-    priv_proc->buf_size_left = buf_len;
-    priv_proc->buf_is_mine = 0;
 #endif
+    priv_proc->proc_buf.buf = NULL;
+    priv_proc->extra_buf.buf = NULL;
+
+    page_size = getpagesize();
+    fs_proc_buf_init(&priv_proc->proc_buf, buf, page_size, buf_len);
+    priv_proc->proc_buf.is_used = 1;
+
+    /* Do not allocate extra buffer yet */
+    fs_proc_buf_init(&priv_proc->extra_buf, NULL, 0, 0);
+
     *proc = (fs_priv_proc_t*) priv_proc;
 
     return ret;
@@ -69,6 +152,11 @@ int fs_proc_free(fs_proc_t proc)
         return ret;
     }
 
+    /* Free proc buffers if needed */
+    fs_proc_buf_free(&priv_proc->proc_buf);
+    fs_proc_buf_free(&priv_proc->extra_buf);
+
+    /* Free proc */
     free(priv_proc);
     priv_proc = NULL;
 
@@ -78,7 +166,7 @@ int fs_proc_free(fs_proc_t proc)
 /*---------------------------------------------------------------------------
  * Function:    fs_proc_get_size
  *
- * Purpose:     Get total buffer size used for processing
+ * Purpose:     Get total buffer size available for processing
  *
  * Returns:     Non-negative on success or negative on failure
  *
@@ -89,7 +177,7 @@ size_t fs_proc_get_size(fs_proc_t proc)
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     size_t size = 0;
 
-    if (priv_proc) size = priv_proc->buf_len;
+    if (priv_proc) size = priv_proc->proc_buf.size + priv_proc->extra_buf.size;
 
     return size;
 }
@@ -103,31 +191,27 @@ size_t fs_proc_get_size(fs_proc_t proc)
  *
  *---------------------------------------------------------------------------
  */
-int fs_proc_set_size(fs_proc_t proc, size_t buf_len)
+int fs_proc_set_size(fs_proc_t proc, size_t req_buf_len)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     size_t new_buf_len;
-    int pagesize;
+    size_t page_size;
     int ret = S_FAIL;
 
-    pagesize = getpagesize();
-    new_buf_len = (size_t)(buf_len / pagesize) * pagesize;
+    page_size = getpagesize();
+    new_buf_len = ((size_t)(req_buf_len / page_size) + 1) * page_size;
 
-    if (priv_proc && (new_buf_len > priv_proc->buf_len)) {
-        ptrdiff_t current_pos;
+    if (new_buf_len > fs_proc_get_size(proc)) {
 
-        current_pos = priv_proc->buf_ptr - priv_proc->buf;
-
-        priv_proc->buf = realloc(priv_proc->buf, new_buf_len);
-
-        if (priv_proc->buf) {
-            priv_proc->buf_ptr = priv_proc->buf + current_pos;
-            priv_proc->buf_len = new_buf_len;
-            priv_proc->buf_size_left = priv_proc->buf_len - current_pos;
-            ret = S_SUCCESS;
+        /* If was not using extra buffer switch buffer and init extra buffer */
+        if (!priv_proc->extra_buf.is_used) {
+            ret = fs_proc_buf_init(&priv_proc->extra_buf, NULL, page_size, new_buf_len);
+            priv_proc->extra_buf.is_used = 1;
         } else {
-            S_ERROR_DEFAULT("Could not reallocate proc buffer");
+            /* Resize extra buffer */
+            ret = fs_proc_buf_realloc(&priv_proc->extra_buf, new_buf_len);
         }
+
     }
 
     return ret;
@@ -136,7 +220,7 @@ int fs_proc_set_size(fs_proc_t proc, size_t buf_len)
 /*---------------------------------------------------------------------------
  * Function:    fs_proc_get_size_left
  *
- * Purpose:     Get number of bytes available for processing
+ * Purpose:     Get total buffer size available for processing
  *
  * Returns:     Non-negative on success or negative on failure
  *
@@ -147,7 +231,7 @@ size_t fs_proc_get_size_left(fs_proc_t proc)
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     size_t size = 0;
 
-    if (priv_proc) size = priv_proc->buf_size_left;
+    if (priv_proc) size = priv_proc->proc_buf.size_left + priv_proc->extra_buf.size_left;
 
     return size;
 }
@@ -166,7 +250,10 @@ void * fs_proc_get_buf_ptr(fs_proc_t proc)
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     void *ptr = NULL;
 
-    if (priv_proc) ptr = priv_proc->buf_ptr;
+    if (priv_proc) {
+        ptr = (priv_proc->extra_buf.is_used) ? priv_proc->extra_buf.buf_ptr
+                : priv_proc->proc_buf.buf_ptr;
+    }
 
     return ptr;
 }
@@ -186,7 +273,23 @@ int fs_proc_set_buf_ptr(fs_proc_t proc, void *buf_ptr)
     int ret = S_FAIL;
 
     if (priv_proc) {
-        priv_proc->buf_ptr = buf_ptr;
+        fs_proc_buf_t *proc_buf;
+        ptrdiff_t new_pos, lim_pos;
+
+        proc_buf = (priv_proc->extra_buf.is_used) ? &priv_proc->extra_buf : &priv_proc->proc_buf;
+
+        /* Work out new position */
+        new_pos = buf_ptr - proc_buf->buf_ptr;
+        lim_pos = (ptrdiff_t)proc_buf->buf - proc_buf->size;
+        if (new_pos >= lim_pos) {
+            S_ERROR_DEFAULT("Out of memory");
+            ret = S_FAIL;
+            return ret;
+        }
+
+        proc_buf->buf_ptr += new_pos;
+        proc_buf->size_left -= new_pos;
+
         ret = S_SUCCESS;
     }
 

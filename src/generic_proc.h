@@ -36,16 +36,22 @@ typedef enum {
     FS_DECODE
 } fs_proc_op_t;
 
-typedef struct fs_priv_proc {
-    fs_proc_op_t op;
-#ifdef IOFSL_SHIPPER_HAS_XDR
-    XDR      xdr;
-#else
+typedef struct fs_proc_buf {
     void    *buf;
-    size_t   buf_len;
     void    *buf_ptr;
-    size_t   buf_size_left;
-    bool     buf_is_mine;
+    size_t   size;
+    size_t   size_left;
+    bool     is_mine;
+    bool     is_used;
+} fs_proc_buf_t;
+
+typedef struct fs_priv_proc {
+    fs_proc_op_t  op;
+    fs_proc_buf_t proc_buf;
+    fs_proc_buf_t extra_buf;
+#ifdef IOFSL_SHIPPER_HAS_XDR
+    XDR           proc_xdr;
+    XDR           extra_xdr;
 #endif
 } fs_priv_proc_t;
 
@@ -61,13 +67,13 @@ int fs_proc_create(void *buf, size_t buf_len, fs_proc_op_t op, fs_proc_t *proc);
 /* Free the processor */
 int fs_proc_free(fs_proc_t proc);
 
-/* Get total buffer size used for processing */
+/* Get total buffer size available for processing */
 size_t fs_proc_get_size(fs_proc_t proc);
 
 /* Request a new buffer size */
 int fs_proc_set_size(fs_proc_t proc, size_t buf_len);
 
-/* Get number of bytes available for processing */
+/* Get size left for processing (info) */
 size_t fs_proc_get_size_left(fs_proc_t proc);
 
 /* Get pointer to current buffer (for manual encoding) */
@@ -110,25 +116,32 @@ FS_INLINE int fs_proc_string_hash(const char *string)
  *
  *---------------------------------------------------------------------------
  */
-#ifndef IOFSL_SHIPPER_HAS_XDR
 FS_INLINE int fs_proc_memcpy(fs_proc_t proc, void *data, size_t data_size)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
-    int ret = S_FAIL;
+    fs_proc_buf_t *proc_buf;
     const void *src;
     void *dest;
+    int ret = S_SUCCESS;
 
-    if (priv_proc->buf_size_left > data_size) {
-        src = (priv_proc->op == FS_ENCODE) ? (const void *) data : (const void *) priv_proc->buf_ptr ;
-        dest = (priv_proc->op == FS_ENCODE) ? priv_proc->buf_ptr : data;
-        memcpy(dest, src, data_size);
-        priv_proc->buf_ptr += data_size;
-        priv_proc->buf_size_left -= data_size;
-        ret = S_SUCCESS;
+    /* Use extra buffer if already being used */
+    proc_buf = (priv_proc->extra_buf.is_used) ? &priv_proc->extra_buf : &priv_proc->proc_buf;
+
+    /* If not enough space allocate extra space if encoding or just get extra buffer if decoding */
+    if (proc_buf->size_left < data_size) {
+        fs_proc_set_size(proc, priv_proc->proc_buf.size + priv_proc->extra_buf.size + data_size);
+        proc_buf = &priv_proc->extra_buf;
     }
+
+    /* Process data */
+    src = (priv_proc->op == FS_ENCODE) ? (const void *) data : (const void *) proc_buf->buf_ptr;
+    dest = (priv_proc->op == FS_ENCODE) ? proc_buf->buf_ptr : data;
+    memcpy(dest, src, data_size);
+    proc_buf->buf_ptr   += data_size;
+    proc_buf->size_left -= data_size;
+
     return ret;
 }
-#endif
 
 /*---------------------------------------------------------------------------
  * Function:    fs_proc_int8_t
