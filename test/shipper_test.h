@@ -7,7 +7,7 @@
 
 #include "network_abstraction.h"
 
-#define ION_ENV "ZOIDFS_ION_NAME"
+#define ION_ENV "ZOIDFS_ION_NAME" /* TODO used for compatibility with IOFSL */
 
 #ifdef __cplusplus
 extern "C" {

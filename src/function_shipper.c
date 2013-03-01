@@ -275,38 +275,85 @@ int fs_forward(na_addr_t addr, fs_id_t id, const void *in_struct, void *out_stru
 int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
 {
     fs_priv_request_t *priv_request = (fs_priv_request_t*) request;
+    na_status_t        send_status;
     na_status_t        recv_status;
-    fs_proc_info_t  *proc_info;
+    fs_proc_info_t    *proc_info;
 
     int ret = S_SUCCESS;
 
-    ret = na_wait(fs_network_class, priv_request->send_request, timeout, NA_STATUS_IGNORE);
-
-    ret = na_wait(fs_network_class, priv_request->recv_request, timeout, &recv_status);
-
-    /* Decode depending on op ID */
-    proc_info = func_map_lookup(func_map, &priv_request->id);
-    if (!proc_info) {
-        S_ERROR_DEFAULT("func_map_lookup failed");
+    if (!priv_request) {
+        S_ERROR_DEFAULT("NULL request");
         ret = S_FAIL;
         return ret;
     }
 
-    /* Check op status from parameters (used for IOFSL compat) */
-    iofsl_compat_proc_status(priv_request->dec_proc);
+    if (priv_request->send_request) {
+        ret = na_wait(fs_network_class, priv_request->send_request, timeout, &send_status);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("Error while waiting");
+            /* TODO what do we do at that point ? */
+        }
+        if (!send_status.completed) {
+            if (timeout == NA_MAX_IDLE_TIME) {
+                S_ERROR_DEFAULT("Reached MAX_IDLE_TIME and the request has not completed yet");
+            }
+            if (status && (status != FS_STATUS_IGNORE)) {
+                *status = 0;
+            }
+        } else {
+            /* Request has been freed so set it to NULL */
+            priv_request->send_request = NULL;
+        }
+    }
 
-    /* Decode function parameters */
-    proc_info->dec_routine(priv_request->dec_proc, priv_request->out_struct);
+    if (!priv_request->send_request && priv_request->recv_request) {
+        ret = na_wait(fs_network_class, priv_request->recv_request, timeout, &recv_status);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("Error while waiting");
+            /* TODO what do we do at that point ? */
+        }
+        if (!recv_status.completed) {
+            if (timeout == NA_MAX_IDLE_TIME) {
+                S_ERROR_DEFAULT("Reached MAX_IDLE_TIME and the request has not completed yet");
+            }
+            if (status && (status != FS_STATUS_IGNORE)) {
+                *status = 0;
+            }
+        } else {
+            /* Request has been freed so set it to NULL */
+            priv_request->recv_request = NULL;
+        }
+    }
 
-    /* Free the encoding proc */
-    fs_proc_free(priv_request->enc_proc);
+    if (!priv_request->send_request && !priv_request->recv_request) {
+        /* Decode depending on op ID */
+        proc_info = func_map_lookup(func_map, &priv_request->id);
+        if (!proc_info) {
+            S_ERROR_DEFAULT("func_map_lookup failed");
+            ret = S_FAIL;
+            return ret;
+        }
 
-    /* Free the decoding proc */
-    fs_proc_free(priv_request->dec_proc);
+        /* Check op status from parameters (used for IOFSL compat) */
+        iofsl_compat_proc_status(priv_request->dec_proc);
 
-    /* Free request */
-    free(priv_request);
-    priv_request = NULL;
+        /* Decode function parameters */
+        proc_info->dec_routine(priv_request->dec_proc, priv_request->out_struct);
+
+        /* Free the encoding proc */
+        fs_proc_free(priv_request->enc_proc);
+
+        /* Free the decoding proc */
+        fs_proc_free(priv_request->dec_proc);
+
+        /* Free request */
+        free(priv_request);
+        priv_request = NULL;
+
+        if (status && (status != FS_STATUS_IGNORE)) {
+            *status = 1;
+        }
+    }
 
     return ret;
 }

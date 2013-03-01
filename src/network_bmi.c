@@ -341,7 +341,7 @@ static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
 static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 {
     bmi_request_t *bmi_wait_request = (bmi_request_t*) request;
-    int remaining = timeout;
+    unsigned int remaining = timeout;
     int ret = S_SUCCESS;
     bool wait_request_completed = 0;
 
@@ -358,7 +358,8 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *
     wait_request_completed = bmi_wait_request->completed;
     pthread_mutex_unlock(&request_mutex);
 
-    while (!wait_request_completed && remaining > 0) {
+    if (!wait_request_completed)
+    do {
         struct timespec ts1, ts2;
         ldiv_t ld;
         int pthread_cond_ret = 0;
@@ -435,7 +436,7 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *
         pthread_cond_signal(&testcontext_cond);
 
         pthread_mutex_unlock(&testcontext_mutex);
-    }
+    } while (!wait_request_completed && remaining > 0);
 
     pthread_mutex_lock(&request_mutex);
 

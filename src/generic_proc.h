@@ -46,12 +46,13 @@ typedef struct fs_proc_buf {
 } fs_proc_buf_t;
 
 typedef struct fs_priv_proc {
-    fs_proc_op_t  op;
-    fs_proc_buf_t proc_buf;
-    fs_proc_buf_t extra_buf;
+    fs_proc_op_t   op;
+    fs_proc_buf_t *current_buf;
+    fs_proc_buf_t  proc_buf;
+    fs_proc_buf_t  extra_buf;
 #ifdef IOFSL_SHIPPER_HAS_XDR
-    XDR           proc_xdr;
-    XDR           extra_xdr;
+    XDR            proc_xdr;
+    XDR            extra_xdr;
 #endif
 } fs_priv_proc_t;
 
@@ -349,15 +350,15 @@ FS_INLINE int fs_proc_raw  (fs_proc_t proc, void *buf, size_t buf_len)
 FS_INLINE int fs_proc_fs_string_t(fs_proc_t proc, fs_string_t *string)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
-    uint32_t string_len;
+    uint32_t string_len = 0;
     char *string_buf = NULL;
     int ret = S_FAIL;
 
     if (priv_proc->op == FS_ENCODE) {
         string_len = strlen(*string) + 1;
-        string_buf = malloc(string_len);
-        strcpy(string_buf, *string);
+        string_buf = (char*) *string;
     }
+
     ret = fs_proc_uint32_t(priv_proc, &string_len);
     if (ret != S_SUCCESS) {
         S_ERROR_DEFAULT("Proc error");
@@ -378,8 +379,6 @@ FS_INLINE int fs_proc_fs_string_t(fs_proc_t proc, fs_string_t *string)
 
     if (priv_proc->op == FS_DECODE) {
         *string = string_buf;
-    } else {
-        if (string_buf) free(string_buf);
     }
 
     return ret;

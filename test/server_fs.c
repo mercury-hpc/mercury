@@ -3,25 +3,12 @@
  */
 
 #include "function_shipper_handler.h"
-#include "generic_macros.h"
 #include "shipper_test.h"
+#include "test_fs.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-/*****************************************************************************/
-/* 1. Generate processor for additional struct type
- * IOFSL_SHIPPER_GEN_PROC( struct type name, members )
- *****************************************************************************/
-IOFSL_SHIPPER_GEN_PROC( bla_handle_t, ((uint64_t)(cookie)) )
-
-/*****************************************************************************/
-/* 2. Generate processor for input/output structs
- * IOFSL_SHIPPER_GEN_PROC( struct type name, members )
- *****************************************************************************/
-IOFSL_SHIPPER_GEN_PROC( bla_open_in_t, ((fs_string_t)(path)) ((bla_handle_t)(handle)) )
-IOFSL_SHIPPER_GEN_PROC( bla_open_out_t, ((int32_t)(ret)) ((int32_t)(event_id)) )
 
 /* Dummy function that needs to be shipped */
 int bla_open(const char *path, bla_handle_t handle, int *event_id)
@@ -82,7 +69,7 @@ int main(int argc, char *argv[])
     fs_handler_init(network_class);
 
     /* Register routine */
-    fs_handler_register("bla_open", fs_bla_open, fs_proc_bla_open_in_t, fs_proc_bla_open_out_t);
+    IOFSL_SHIPPER_HANDLER_REGISTER(bla_open, fs_bla_open, bla_open_in_t, bla_open_out_t);
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */

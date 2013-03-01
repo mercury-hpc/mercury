@@ -883,6 +883,12 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
     MPI_Request *mpi_request = (MPI_Request*) request;
     MPI_Status mpi_status;
 
+    if (!mpi_request) {
+        S_ERROR_DEFAULT("NULL request");
+        ret = S_FAIL;
+        return ret;
+    }
+
     if (timeout == 0) {
         int mpi_flag = 0;
         mpi_ret = MPI_Test(mpi_request, &mpi_flag, &mpi_status);
@@ -892,7 +898,10 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
             return ret;
         }
         if (!mpi_flag) {
-            ret = S_FAIL;
+            if (status && status != NA_STATUS_IGNORE) {
+                status->completed = 0;
+            }
+            ret = S_SUCCESS;
             return ret;
         }
     } else {
@@ -907,6 +916,7 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         status->completed = 1;
         status->count = (na_size_t) mpi_status.count;
     }
+
     free(mpi_request);
     mpi_request = NULL;
 
