@@ -15,7 +15,7 @@
 #include <string.h>
 #include <unistd.h>
 
-static void na_bmi_finalize(void);
+static int na_bmi_finalize(void);
 static na_size_t na_bmi_get_unexpected_size(void);
 static int na_bmi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_bmi_addr_free(na_addr_t addr);
@@ -98,9 +98,9 @@ na_network_class_t *na_bmi_init(const char *method_list, const char *listen_addr
     return &na_bmi_g;
 }
 
-static void na_bmi_finalize(void)
+static int na_bmi_finalize(void)
 {
-    int bmi_ret;
+    int bmi_ret, ret = S_SUCCESS;
 
     /* Close BMI context */
     BMI_close_context(bmi_context);
@@ -110,11 +110,14 @@ static void na_bmi_finalize(void)
 
     if (bmi_ret < 0) {
         S_ERROR_DEFAULT("BMI_finalize() failed");
+        ret = S_FAIL;
     }
 
     pthread_mutex_destroy(&request_mutex);
     pthread_mutex_destroy(&testcontext_mutex);
     pthread_cond_destroy(&testcontext_cond);
+
+    return ret;
 }
 
 static na_size_t na_bmi_get_unexpected_size()

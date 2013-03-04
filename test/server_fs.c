@@ -2,15 +2,14 @@
  * server_fs.c
  */
 
-#include "function_shipper_handler.h"
-#include "shipper_test.h"
 #include "test_fs.h"
+#include "shipper_test.h"
+#include "function_shipper_handler.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
-/* Dummy function that needs to be shipped */
+/* Actual definition of the function that needs to be executed */
 int bla_open(const char *path, bla_handle_t handle, int *event_id)
 {
     printf("Called bla_open of %s with cookie %lu\n", path, handle.cookie);
@@ -32,7 +31,12 @@ int fs_bla_open(fs_handle_t handle)
     int bla_open_ret;
 
     /* Get input parameters and data */
-    fs_handler_get_input(handle, &bla_open_in_struct);
+    ret = fs_handler_get_input(handle, &bla_open_in_struct);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not get function call input\n");
+        return ret;
+    }
+
     bla_open_path = bla_open_in_struct.path;
     bla_open_handle = bla_open_in_struct.handle;
 
@@ -44,9 +48,13 @@ int fs_bla_open(fs_handle_t handle)
     bla_open_out_struct.ret = bla_open_ret;
 
     /* Free handle and send response back */
-    fs_handler_complete(handle, &bla_open_out_struct);
+    ret = fs_handler_complete(handle, &bla_open_out_struct);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not complete function call\n");
+        return ret;
+    }
 
-    /* Free string */
+    /* TODO do that automatically in the complete */
     fs_free_fs_string_t(bla_open_in_struct.path);
 
     return ret;
@@ -58,6 +66,7 @@ int main(int argc, char *argv[])
     na_network_class_t *network_class = NULL;
     unsigned int number_of_peers;
     unsigned int i;
+    int fs_ret;
 
     /* Used by Test Driver */
     printf("Waiting for client...\n");
@@ -66,18 +75,31 @@ int main(int argc, char *argv[])
     /* Initialize the interface */
     network_class = shipper_test_server_init(argc, argv, &number_of_peers);
 
-    fs_handler_init(network_class);
+    fs_ret = fs_handler_init(network_class);
+    if (fs_ret != S_SUCCESS) {
+        fprintf(stderr, "Could not initialize function shipper handler\n");
+        return EXIT_FAILURE;
+    }
 
     /* Register routine */
     IOFSL_SHIPPER_HANDLER_REGISTER(bla_open, fs_bla_open, bla_open_in_t, bla_open_out_t);
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */
-        fs_handler_receive();
+        fs_ret = fs_handler_receive();
+        if (fs_ret != S_SUCCESS) {
+            fprintf(stderr, "Could not receive function call\n");
+            return EXIT_FAILURE;
+        }
     }
 
     printf("Finalizing...\n");
 
-    fs_handler_finalize();
+    fs_ret = fs_handler_finalize();
+    if (fs_ret != S_SUCCESS) {
+        fprintf(stderr, "Could not finalize function shipper handler\n");
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

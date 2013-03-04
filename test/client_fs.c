@@ -2,14 +2,12 @@
  * client_fs.c
  */
 
-#include "function_shipper.h"
-#include "generic_macros.h"
-#include "shipper_test.h"
 #include "test_fs.h"
+#include "shipper_test.h"
+#include "function_shipper.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 /******************************************************************************/
 int main(int argc, char *argv[])
@@ -39,13 +37,19 @@ int main(int argc, char *argv[])
     ion_name = getenv(ION_ENV);
     if (!ion_name) {
         fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
+        return EXIT_FAILURE;
     }
-    fs_init(network_class);
+
+    fs_ret = fs_init(network_class);
+    if (fs_ret != S_SUCCESS) {
+        fprintf(stderr, "Could not initialize function shipper\n");
+        return EXIT_FAILURE;
+    }
 
     /* Look up addr id */
     fs_ret = na_addr_lookup(network_class, ion_name, &addr);
     if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not find %s\n", ion_name);
+        fprintf(stderr, "Could not find addr %s\n", ion_name);
         return EXIT_FAILURE;
     }
 
@@ -57,7 +61,7 @@ int main(int argc, char *argv[])
     bla_open_in_struct.handle = bla_open_handle;
 
     /* Forward call to remote addr and get a new request */
-    printf("Fowarding bla_open, op id: %u...\n", bla_open_id);
+    printf("Forwarding bla_open, op id: %u...\n", bla_open_id);
     fs_ret = fs_forward(addr, bla_open_id, &bla_open_in_struct,
             &bla_open_out_struct, &bla_open_request);
     if (fs_ret != S_SUCCESS) {
@@ -86,9 +90,18 @@ int main(int argc, char *argv[])
     printf("bla_open returned: %d with event_id: %d\n", bla_open_ret, bla_open_event_id);
 
     /* Free addr id */
-    na_addr_free(network_class, addr);
+    fs_ret = na_addr_free(network_class, addr);
+    if (fs_ret != S_SUCCESS) {
+        fprintf(stderr, "Could not free addr\n");
+        return EXIT_FAILURE;
+    }
 
     /* Finalize interface */
-    fs_finalize();
+    fs_ret = fs_finalize();
+    if (fs_ret != S_SUCCESS) {
+        fprintf(stderr, "Could not finalize function shipper\n");
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

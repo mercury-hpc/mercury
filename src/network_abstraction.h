@@ -32,7 +32,7 @@ typedef ptrdiff_t na_offset_t;
 
 typedef struct na_network_class {
     /*  Lookup callbacks */
-    void (*finalize)(void);
+    int (*finalize)(void);
     na_size_t (*get_unexpected_size)(void);
     int (*addr_lookup)(const char *name, na_addr_t *addr);
     int (*addr_free)(na_addr_t addr);
@@ -72,7 +72,7 @@ extern "C" {
 #endif
 
 /* Finalize the network abstraction layer */
-void na_finalize(na_network_class_t *network_class);
+int na_finalize(na_network_class_t *network_class);
 
 /* Get the maximum size of an unexpected message */
 na_size_t na_get_unexpected_size(na_network_class_t *network_class);

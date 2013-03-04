@@ -14,7 +14,7 @@
 #include <assert.h>
 #include <string.h>
 
-static void na_mpi_finalize(void);
+static int na_mpi_finalize(void);
 static na_size_t na_mpi_get_unexpected_size(void);
 static int na_mpi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_mpi_addr_free(na_addr_t addr);
@@ -193,7 +193,7 @@ na_network_class_t *na_mpi_init(MPI_Comm *intra_comm, int flags)
     MPI_Initialized(&mpi_ext_initialized);
 
     if (!mpi_ext_initialized) {
-        printf("Internally initializing MPI...\n");
+        /* printf("Internally initializing MPI...\n"); */
         if (flags != MPI_INIT_SERVER) {
 #if MPI_VERSION < 3
             int provided;
@@ -227,7 +227,7 @@ na_network_class_t *na_mpi_init(MPI_Comm *intra_comm, int flags)
         FILE *config;
         is_server = 1;
         MPI_Open_port(MPI_INFO_NULL, mpi_port_name);
-        printf("Using MPI port name: %s.\n", mpi_port_name);
+        /* printf("Using MPI port name: %s.\n", mpi_port_name); */
         config = fopen("port.cfg", "w+");
         fwrite(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
         fclose(config);
@@ -261,9 +261,9 @@ na_network_class_t *na_mpi_init(MPI_Comm *intra_comm, int flags)
  *
  *---------------------------------------------------------------------------
  */
-static void na_mpi_finalize(void)
+static int na_mpi_finalize(void)
 {
-    int mpi_ext_finalized;
+    int mpi_ext_finalized, ret = S_SUCCESS;
 
     /* If server opened a port */
     if (is_server) {
@@ -301,11 +301,16 @@ static void na_mpi_finalize(void)
 
     /* MPI_Finalize */
     MPI_Finalized(&mpi_ext_finalized);
-    if (mpi_ext_finalized) fprintf(stderr, "MPI already finalized\n");
+    if (mpi_ext_finalized) {
+        S_ERROR_DEFAULT("MPI already finalized");
+        ret = S_FAIL;
+    }
     if (!mpi_ext_initialized && !mpi_ext_finalized) {
-        printf("Internally finalizing MPI...\n");
+        /* printf("Internally finalizing MPI...\n"); */
         MPI_Finalize();
     }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -351,7 +356,7 @@ static int na_mpi_addr_lookup(const char *name, na_addr_t *addr)
         ret = S_FAIL;
     } else {
         int remote_size;
-        printf("Connected!\n");
+        /* printf("Connected!\n"); */
         MPI_Comm_remote_size(mpi_addr->comm, &remote_size);
         if (remote_size != 1) {
             S_ERROR_DEFAULT("Connected to more than one server?");

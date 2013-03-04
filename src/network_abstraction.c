@@ -15,10 +15,10 @@
  *
  *---------------------------------------------------------------------------
  */
-void na_finalize(na_network_class_t *network_class)
+int na_finalize(na_network_class_t *network_class)
 {
     assert(network_class);
-    network_class->finalize();
+    return network_class->finalize();
 }
 
 /*---------------------------------------------------------------------------
