@@ -5,8 +5,8 @@ project(IOFSL_SHIPPER C)
 # Version information 
 #------------------------------------------------------------------------------
 set(IOFSL_SHIPPER_VERSION_MAJOR "0")
-set(IOFSL_SHIPPER_VERSION_MINOR "0")
-set(IOFSL_SHIPPER_VERSION_PATCH "1")
+set(IOFSL_SHIPPER_VERSION_MINOR "5")
+set(IOFSL_SHIPPER_VERSION_PATCH "0")
 set(IOFSL_SHIPPER_PACKAGE "iofsl_shipper")
 set(IOFSL_SHIPPER_PACKAGE_NAME "IOFSL_SHIPPER")
 set(IOFSL_SHIPPER_PACKAGE_VERSION "${IOFSL_SHIPPER_VERSION_MAJOR}.${IOFSL_SHIPPER_VERSION_MINOR}.${IOFSL_SHIPPER_VERSION_PATCH}")
@@ -31,17 +31,27 @@ if(NOT IOFSL_SHIPPER_INSTALL_DATA_DIR)
   set(IOFSL_SHIPPER_INSTALL_DATA_DIR share)
 endif(NOT IOFSL_SHIPPER_INSTALL_DATA_DIR)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
-    ${PROJECT_BINARY_DIR}/bin CACHE PATH "Single Directory for all Executables."
-)
-set(EXECUTABLE_OUTPUT_PATH ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY
-    ${PROJECT_BINARY_DIR}/bin CACHE PATH "Single Directory for all Libraries"
-)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY
-    ${PROJECT_BINARY_DIR}/bin CACHE PATH "Single Directory for all static libraries."
-)
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${IOFSL_SHIPPER_SOURCE_DIR}/CMake)
+if(NOT IOFSL_SHIPPER_EXTERNALLY_CONFIGURED)
+  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
+      ${PROJECT_BINARY_DIR}/bin CACHE PATH "Single Directory for all Executables."
+  )
+  set(EXECUTABLE_OUTPUT_PATH ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+  set(CMAKE_LIBRARY_OUTPUT_DIRECTORY
+      ${PROJECT_BINARY_DIR}/bin CACHE PATH "Single Directory for all Libraries"
+  )
+  set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY
+      ${PROJECT_BINARY_DIR}/bin CACHE PATH "Single Directory for all static libraries."
+  )
+  set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${IOFSL_SHIPPER_SOURCE_DIR}/CMake)
+endif(NOT IOFSL_SHIPPER_EXTERNALLY_CONFIGURED)
+
+#-----------------------------------------------------------------------------
+# Targets built within this project are exported at Install time for use
+# by other projects.
+#-----------------------------------------------------------------------------
+if(NOT IOFSL_SHIPPER_EXPORTED_TARGETS)
+  set(IOFSL_SHIPPER_EXPORTED_TARGETS "shipper_targets")
+endif(NOT IOFSL_SHIPPER_EXPORTED_TARGETS)
 
 #------------------------------------------------------------------------------
 # Choose static or shared libraries.
@@ -72,6 +82,55 @@ include(CheckLibraryExists)
 check_library_exists(glib-2.0 g_atomic_int_set "" HAVE_GLIB)
 check_library_exists(pthread pthread_create "" HAVE_LIBPTHREAD)
 include(FindThreads)
+
+#-------------------------------------------------------------------------------
+macro(set_lib_options libtarget libname libtype)
+  if(${libtype} MATCHES "SHARED")
+    if(WIN32 AND NOT MINGW)
+      set(LIB_RELEASE_NAME "${libname}")
+      set(LIB_DEBUG_NAME "${libname}_D")
+      set(LIB_VERSION ${IOFSL_SHIPPER_PACKAGE_VERSION_MAJOR})
+    else(WIN32 AND NOT MINGW)
+      set(LIB_RELEASE_NAME "${libname}")
+      set(LIB_DEBUG_NAME "${libname}_debug")
+      set(LIB_VERSION ${IOFSL_SHIPPER_PACKAGE_VERSION})
+    endif(WIN32 AND NOT MINGW)
+  else(${libtype} MATCHES "SHARED")
+    if(WIN32 AND NOT MINGW)
+      set(LIB_RELEASE_NAME "lib${libname}")
+      set(LIB_DEBUG_NAME "lib${libname}_D")
+    else(WIN32 AND NOT MINGW)
+      # if the generator supports configuration types or if the CMAKE_BUILD_TYPE has a value
+      if(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE)
+        set(LIB_RELEASE_NAME "${libname}")
+        set(LIB_DEBUG_NAME "${libname}_debug")
+      else(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE)
+        set(LIB_RELEASE_NAME "lib${libname}")
+        set(LIB_DEBUG_NAME "lib${libname}_debug")
+      endif(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE)
+    endif(WIN32 AND NOT MINGW)
+  endif(${libtype} MATCHES "SHARED")
+
+  set_target_properties(${libtarget}
+      PROPERTIES
+      DEBUG_OUTPUT_NAME          ${LIB_DEBUG_NAME}
+      RELEASE_OUTPUT_NAME        ${LIB_RELEASE_NAME}
+      MINSIZEREL_OUTPUT_NAME     ${LIB_RELEASE_NAME}
+      RELWITHDEBINFO_OUTPUT_NAME ${LIB_RELEASE_NAME}
+      VERSION                    ${LIB_VERSION}
+      SOVERSION                  ${LIB_VERSION}
+  )
+
+  #----- Use MSVC Naming conventions for Shared Libraries
+  if(MINGW AND ${libtype} MATCHES "SHARED")
+    set_target_properties(${libtarget}
+        PROPERTIES
+        IMPORT_SUFFIX ".lib"
+        IMPORT_PREFIX ""
+        PREFIX ""
+    )
+  endif(MINGW AND ${libtype} MATCHES "SHARED")
+endmacro(set_lib_options)
 
 #------------------------------------------------------------------------------
 # External dependencies
@@ -121,7 +180,6 @@ if(IOFSL_SHIPPER_USE_BOOST_PP)
   if(Boost_FOUND)
     set(IOFSL_SHIPPER_HAS_BOOST 1)
     include_directories(${Boost_INCLUDE_DIRS})
-#    add_definitions(-DBOOST_PP_VARIADICS=1)
   endif(Boost_FOUND)
 endif(IOFSL_SHIPPER_USE_BOOST_PP)
 
@@ -159,19 +217,19 @@ set(IOFSL_SHIPPER_NA_SRCS
   src/mem_handle_map.c
 )
 
-if(BMI_FOUND)
+if(IOFSL_SHIPPER_USE_BMI AND BMI_FOUND)
   set(IOFSL_SHIPPER_NA_SRCS
     ${IOFSL_SHIPPER_NA_SRCS}
     src/network_bmi.c
   )
-endif(BMI_FOUND)
+endif(IOFSL_SHIPPER_USE_BMI AND BMI_FOUND)
 
-if(MPI_FOUND)
+if(IOFSL_SHIPPER_USE_MPI AND MPI_FOUND)
   set(IOFSL_SHIPPER_NA_SRCS
     ${IOFSL_SHIPPER_NA_SRCS}
     src/network_mpi.c
   )
-endif(MPI_FOUND)
+endif(IOFSL_SHIPPER_USE_MPI AND MPI_FOUND)
 
 set(IOFSL_SHIPPER_BDS_SRCS
   src/bulk_data_shipper.c
@@ -188,31 +246,163 @@ set(IOFSL_SHIPPER_FS_SRCS
 set(IOFSL_COMPAT_SRCS
   src/iofsl_compat.c
 )
-if(APPLE)
-  set(IOFSL_COMPAT_SRCS ${IOFSL_COMPAT_SRCS} src/util/xdr_sizeof.c)
-endif(APPLE)
+
+# No longer required
+#if(APPLE)
+#  set(IOFSL_COMPAT_SRCS ${IOFSL_COMPAT_SRCS} src/util/xdr_sizeof.c)
+#endif(APPLE)
 
 #------------------------------------------------------------------------------
-# Set sources
+# IOFSL Shipper libraries
 #------------------------------------------------------------------------------
+# NA
 add_library(iofsl_shipper_na ${IOFSL_SHIPPER_NA_SRCS} ${IOFSL_SHIPPER_UTIL_SRCS})
 target_link_libraries(iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
+set_lib_options(iofsl_shipper_na "iofsl_shipper_na" ${IOFSL_SHIPPER_LIBTYPE})
 
-add_library(iofsl_shipper_bds ${IOFSL_SHIPPER_BDS_SRCS})
-target_link_libraries(iofsl_shipper_bds iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
-
+# FS
 add_library(iofsl_shipper_fs ${IOFSL_SHIPPER_FS_SRCS} ${IOFSL_COMPAT_SRCS})
 target_link_libraries(iofsl_shipper_fs iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
+set_lib_options(iofsl_shipper_fs "iofsl_shipper_fs" ${IOFSL_SHIPPER_LIBTYPE})
+
+# BDS
+add_library(iofsl_shipper_bds ${IOFSL_SHIPPER_BDS_SRCS})
+target_link_libraries(iofsl_shipper_bds iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
+set_lib_options(iofsl_shipper_bds "iofsl_shipper_bds" ${IOFSL_SHIPPER_LIBTYPE})
+
+set(IOFSL_SHIPPER_EXPORTED_LIBS iofsl_shipper_na iofsl_shipper_fs iofsl_shipper_bds)
 
 #-----------------------------------------------------------------------------
 # Testing
 #-----------------------------------------------------------------------------
 option(BUILD_TESTING "Build testing." OFF)
-if(BUILD_TESTING)
+if(NOT IOFSL_SHIPPER_EXTERNALLY_CONFIGURED AND BUILD_TESTING)
   enable_testing()
 #  include(CTest)
   add_subdirectory(test)
-endif(BUILD_TESTING)
+endif(NOT IOFSL_SHIPPER_EXTERNALLY_CONFIGURED AND BUILD_TESTING)
 
+#-----------------------------------------------------------------------------
+# Specify project header files to be installed
+#-----------------------------------------------------------------------------
+set(IOFSL_SHIPPER_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/function_shipper.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/bulk_data_shipper.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/function_shipper_handler.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/generic_proc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/shipper_error.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/network_abstraction.h
+  ${CMAKE_CURRENT_BINARY_DIR}/src/shipper_config.h
+)
 
-# TODO INSTALL RULES
+if(IOFSL_SHIPPER_USE_BMI AND BMI_FOUND)
+  set(IOFSL_SHIPPER_HEADERS
+    ${IOFSL_SHIPPER_HEADERS}
+    src/network_bmi.h
+  )
+endif(IOFSL_SHIPPER_USE_BMI AND BMI_FOUND)
+
+if(IOFSL_SHIPPER_USE_MPI AND MPI_FOUND)
+  set(IOFSL_SHIPPER_HEADERS
+    ${IOFSL_SHIPPER_HEADERS}
+    src/network_mpi.h
+  )
+endif(IOFSL_SHIPPER_USE_MPI AND MPI_FOUND)
+
+if(IOFSL_SHIPPER_USE_BOOST_PP AND Boost_FOUND)
+  set(IOFSL_SHIPPER_HEADERS
+    ${IOFSL_SHIPPER_HEADERS}
+    src/generic_macros.h
+  )
+endif(IOFSL_SHIPPER_USE_BOOST_PP AND Boost_FOUND)
+
+#-----------------------------------------------------------------------------
+# Add file(s) to CMake Install
+#-----------------------------------------------------------------------------
+install(
+  FILES
+    ${IOFSL_SHIPPER_HEADERS}
+  DESTINATION
+    ${IOFSL_SHIPPER_INSTALL_INCLUDE_DIR}
+  COMPONENT
+    headers
+)
+
+#-----------------------------------------------------------------------------
+# Add Target(s) to CMake Install
+#-----------------------------------------------------------------------------
+install(
+  TARGETS
+    ${IOFSL_SHIPPER_EXPORTED_LIBS}
+  EXPORT
+    ${IOFSL_SHIPPER_EXPORTED_TARGETS}
+  LIBRARY DESTINATION ${IOFSL_SHIPPER_INSTALL_LIB_DIR}
+  ARCHIVE DESTINATION ${IOFSL_SHIPPER_INSTALL_LIB_DIR}
+  RUNTIME DESTINATION ${IOFSL_SHIPPER_INSTALL_BIN_DIR}
+)
+
+#-----------------------------------------------------------------------------
+# Add Target(s) to CMake Install for import into other projects
+#-----------------------------------------------------------------------------
+install(
+  EXPORT
+    ${IOFSL_SHIPPER_EXPORTED_TARGETS}
+  DESTINATION
+    ${IOFSL_SHIPPER_INSTALL_DATA_DIR}/cmake/iofsl_shipper
+  FILE
+    shipper_targets.cmake
+)
+
+#-----------------------------------------------------------------------------
+# Export all exported targets to the build tree for use by parent project
+#-----------------------------------------------------------------------------
+if(NOT IOFSL_SHIPPER_EXTERNALLY_CONFIGURED)
+EXPORT (
+  TARGETS
+    ${IOFSL_SHIPPER_EXPORTED_LIBS}
+  FILE
+    shipper_targets.cmake
+)
+endif(NOT IOFSL_SHIPPER_EXTERNALLY_CONFIGURED)
+
+#-----------------------------------------------------------------------------
+# Configure the config.cmake file for the build directory
+#-----------------------------------------------------------------------------
+set(IOFSL_SHIPPER_INCLUDES_BUILD_TIME
+  ${IOFSL_SHIPPER_SOURCE_DIR}/src
+)
+
+configure_file(
+  ${IOFSL_SHIPPER_SOURCE_DIR}/CMake/shipper_config.cmake.build.in
+  ${IOFSL_SHIPPER_BINARY_DIR}/shipper_config.cmake @ONLY
+)
+
+#-----------------------------------------------------------------------------
+# Configure the config.cmake file for the install directory
+#-----------------------------------------------------------------------------
+configure_file(
+  ${IOFSL_SHIPPER_SOURCE_DIR}/CMake/shipper_config.cmake.install.in
+  ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/shipper_config.cmake @ONLY
+)
+
+install(
+  FILES
+    ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/shipper_config.cmake
+  DESTINATION
+    ${IOFSL_SHIPPER_INSTALL_DATA_DIR}/cmake/iofsl_shipper
+)
+
+#-----------------------------------------------------------------------------
+# Configure the hdf5-config-version .cmake file for the install directory
+#-----------------------------------------------------------------------------
+configure_file(
+  ${IOFSL_SHIPPER_SOURCE_DIR}/CMake/shipper_config_version.cmake.in
+  ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/shipper_config_version.cmake @ONLY
+)
+
+install(
+  FILES
+    ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/shipper_config_version.cmake
+  DESTINATION
+    ${IOFSL_SHIPPER_INSTALL_DATA_DIR}/cmake/iofsl_shipper
+)

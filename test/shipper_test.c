@@ -6,7 +6,7 @@
 #include "shipper_config.h"
 #include "network_bmi.h"
 #include "network_mpi.h"
-#include "shipper_test_config.h"
+#include "shipper_config_test.h"
 
 #include <stdlib.h>
 #include <stdio.h>

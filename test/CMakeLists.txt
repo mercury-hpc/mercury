@@ -2,8 +2,8 @@
 # Compile kwsys library and setup TestDriver
 #------------------------------------------------------------------------------
 configure_file(
-  ${CMAKE_SOURCE_DIR}/CMake/shipper_test_config.h.in
-  ${IOFSL_SHIPPER_BINARY_DIR}/test/shipper_test_config.h
+  ${CMAKE_SOURCE_DIR}/CMake/shipper_config_test.h.in
+  ${IOFSL_SHIPPER_BINARY_DIR}/test/shipper_config_test.h
 )
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
