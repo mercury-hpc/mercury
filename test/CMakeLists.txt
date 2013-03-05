@@ -12,7 +12,19 @@ add_subdirectory(driver)
 #------------------------------------------------------------------------------
 # Set up test options and macros
 #------------------------------------------------------------------------------
-set(IOFSL_SHIPPER_comm bmi mpi)
+if(IOFSL_SHIPPER_USE_BMI AND BMI_FOUND)
+  set(IOFSL_SHIPPER_comm
+    ${IOFSL_SHIPPER_comm}
+    bmi
+  )
+endif(IOFSL_SHIPPER_USE_BMI AND BMI_FOUND)
+
+if(IOFSL_SHIPPER_USE_MPI AND MPI_FOUND)
+  set(IOFSL_SHIPPER_comm
+    ${IOFSL_SHIPPER_comm}
+    mpi
+  )
+endif(IOFSL_SHIPPER_USE_MPI AND MPI_FOUND)
 
 function(add_shipper_test full_test_name server client)
   foreach(comm ${IOFSL_SHIPPER_comm})
