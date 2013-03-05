@@ -28,6 +28,9 @@ typedef struct {
     uint64_t cookie;
 } bla_handle_t;
 
+/* Dummy function that needs to be shipped (already defined) */
+int bla_open(const char *path, bla_handle_t handle, int *event_id);
+
 /* Define fs_proc_bla_handle_t */
 static inline int fs_proc_bla_handle_t(fs_proc_t proc, void *data)
 {
