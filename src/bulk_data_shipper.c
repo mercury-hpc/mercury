@@ -128,7 +128,7 @@ int bds_handle_create(void *buf, size_t buf_size, unsigned long flags,
  *
  *---------------------------------------------------------------------------
  */
-int bds_handle_free(bds_handle_t *handle)
+int bds_handle_free(bds_handle_t handle)
 {
     int ret;
     bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
@@ -412,7 +412,7 @@ void bds_block_handle_set_size(bds_block_handle_t block_handle, size_t size)
  *
  *---------------------------------------------------------------------------
  */
-int bds_block_handle_free(bds_block_handle_t *block_handle)
+int bds_block_handle_free(bds_block_handle_t block_handle)
 {
     int ret = S_SUCCESS;
     bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;

@@ -35,7 +35,7 @@ int bds_handle_create(void *buf, size_t buf_len, unsigned long flags,
         bds_handle_t *handle);
 
 /* Free bulk data handle */
-int bds_handle_free(bds_handle_t *handle);
+int bds_handle_free(bds_handle_t handle);
 
 /* Serialize bulk data handle into buf */
 int bds_handle_serialize(void *buf, na_size_t buf_len, bds_handle_t handle);
@@ -62,7 +62,7 @@ size_t bds_block_handle_get_size(bds_block_handle_t block_handle);
 void bds_block_handle_set_size(bds_block_handle_t block_handle, size_t size);
 
 /* Free block handle */
-int bds_block_handle_free(bds_block_handle_t *block_handle);
+int bds_block_handle_free(bds_block_handle_t block_handle);
 
 #ifdef __cplusplus
 }

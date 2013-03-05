@@ -233,7 +233,6 @@ endif(IOFSL_SHIPPER_USE_MPI AND MPI_FOUND)
 
 set(IOFSL_SHIPPER_BDS_SRCS
   src/bulk_data_shipper.c
-  src/bulk_data_proc.c
 )
 
 set(IOFSL_SHIPPER_FS_SRCS
@@ -241,16 +240,8 @@ set(IOFSL_SHIPPER_FS_SRCS
   src/function_shipper_handler.c
   src/function_map.c
   src/generic_proc.c
-)
-
-set(IOFSL_COMPAT_SRCS
   src/iofsl_compat.c
 )
-
-# No longer required
-#if(APPLE)
-#  set(IOFSL_COMPAT_SRCS ${IOFSL_COMPAT_SRCS} src/util/xdr_sizeof.c)
-#endif(APPLE)
 
 #------------------------------------------------------------------------------
 # IOFSL Shipper libraries
@@ -260,15 +251,15 @@ add_library(iofsl_shipper_na ${IOFSL_SHIPPER_NA_SRCS} ${IOFSL_SHIPPER_UTIL_SRCS}
 target_link_libraries(iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
 set_lib_options(iofsl_shipper_na "iofsl_shipper_na" ${IOFSL_SHIPPER_LIBTYPE})
 
-# FS
-add_library(iofsl_shipper_fs ${IOFSL_SHIPPER_FS_SRCS} ${IOFSL_COMPAT_SRCS})
-target_link_libraries(iofsl_shipper_fs iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
-set_lib_options(iofsl_shipper_fs "iofsl_shipper_fs" ${IOFSL_SHIPPER_LIBTYPE})
-
 # BDS
 add_library(iofsl_shipper_bds ${IOFSL_SHIPPER_BDS_SRCS})
 target_link_libraries(iofsl_shipper_bds iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
 set_lib_options(iofsl_shipper_bds "iofsl_shipper_bds" ${IOFSL_SHIPPER_LIBTYPE})
+
+# FS
+add_library(iofsl_shipper_fs ${IOFSL_SHIPPER_FS_SRCS})
+target_link_libraries(iofsl_shipper_fs iofsl_shipper_bds iofsl_shipper_na ${IOFSL_SHIPPER_EXT_DEPENCIES})
+set_lib_options(iofsl_shipper_fs "iofsl_shipper_fs" ${IOFSL_SHIPPER_LIBTYPE})
 
 set(IOFSL_SHIPPER_EXPORTED_LIBS iofsl_shipper_na iofsl_shipper_fs iofsl_shipper_bds)
 

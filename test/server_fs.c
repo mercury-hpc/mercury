@@ -47,15 +47,12 @@ int fs_bla_open(fs_handle_t handle)
     bla_open_out_struct.event_id = bla_open_event_id;
     bla_open_out_struct.ret = bla_open_ret;
 
-    /* Free handle and send response back */
+    /* Free handle and send response back (and free input struct fields) */
     ret = fs_handler_complete(handle, &bla_open_out_struct);
     if (ret != S_SUCCESS) {
         fprintf(stderr, "Could not complete function call\n");
         return ret;
     }
-
-    /* TODO do that automatically in the complete */
-    fs_free_fs_string_t(bla_open_in_struct.path);
 
     return ret;
 }

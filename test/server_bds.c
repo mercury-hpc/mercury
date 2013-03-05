@@ -88,22 +88,19 @@ int fs_bla_write(fs_handle_t handle)
     /* Fill output structure */
     bla_write_out_struct.ret = bla_write_ret;
 
-    /* Free handle and send response back */
+    /* Free handle and send response back (and free input struct fields) */
     ret = fs_handler_complete(handle, &bla_write_out_struct);
     if (ret != S_SUCCESS) {
         fprintf(stderr, "Could not complete function call\n");
         return ret;
     }
 
-    /* Free bulk handles */
+    /* Free block handle */
     ret = bds_block_handle_free(bla_write_bds_block_handle);
     if (ret != S_SUCCESS) {
         fprintf(stderr, "Could not free block call\n");
         return ret;
     }
-
-    /* TODO do that automatically in the complete */
-    bds_handle_free(bla_write_bds_handle);
 
     return ret;
 }

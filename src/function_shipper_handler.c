@@ -148,6 +148,9 @@ int fs_handler_get_input(fs_handle_t handle, void *in_struct)
         /* Free the decoding proc */
         fs_proc_free(priv_handle->dec_proc);
         priv_handle->dec_proc = NULL;
+
+        /* Keep reference to in_struct */
+        priv_handle->in_struct = in_struct;
     }
 
     return ret;
@@ -253,6 +256,7 @@ int fs_handler_complete(fs_handle_t handle, const void *out_struct)
     na_size_t send_buf_len = na_get_unexpected_size(handler_network_class);
 
     fs_proc_t       enc_proc;
+    fs_proc_t       free_proc;
     fs_priv_proc_t *priv_enc_proc;
 
     na_request_t send_request = NULL;
@@ -294,9 +298,10 @@ int fs_handler_complete(fs_handle_t handle, const void *out_struct)
     na_addr_free(handler_network_class, priv_handle->addr);
     priv_handle->addr = NULL;
 
-    /* Free in_struct */
-    free(priv_handle->in_struct);
-    priv_handle->in_struct = NULL;
+    /* Free in_struct (create a new free proc) */
+    fs_proc_create(NULL, send_buf_len, FS_FREE, &free_proc);
+    proc_info->dec_routine(free_proc, priv_handle->in_struct);
+    fs_proc_free(free_proc);
 
     free(priv_handle);
     priv_handle = NULL;

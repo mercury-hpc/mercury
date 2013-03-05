@@ -7,7 +7,6 @@
 
 #include "generic_macros.h"
 #include "generic_proc.h"
-#include "bulk_data_proc.h"
 
 /* Dummy function that needs to be shipped */
 size_t bla_write(int fildes, const void *buf, size_t nbyte);

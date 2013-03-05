@@ -119,6 +119,7 @@ int fs_proc_create(void *buf, size_t buf_len, fs_proc_op_t op, fs_proc_t *proc)
 #endif
     priv_proc->proc_buf.buf = NULL;
     priv_proc->extra_buf.buf = NULL;
+    priv_proc->current_buf = &priv_proc->proc_buf;
 
     page_size = getpagesize();
     fs_proc_buf_init(&priv_proc->proc_buf, buf, page_size, buf_len);
@@ -206,6 +207,7 @@ int fs_proc_set_size(fs_proc_t proc, size_t req_buf_len)
         /* If was not using extra buffer switch buffer and init extra buffer */
         if (!priv_proc->extra_buf.is_used) {
             ret = fs_proc_buf_init(&priv_proc->extra_buf, NULL, page_size, new_buf_len);
+            priv_proc->current_buf = &priv_proc->extra_buf;
             priv_proc->extra_buf.is_used = 1;
         } else {
             /* Resize extra buffer */
@@ -251,8 +253,7 @@ void * fs_proc_get_buf_ptr(fs_proc_t proc)
     void *ptr = NULL;
 
     if (priv_proc) {
-        ptr = (priv_proc->extra_buf.is_used) ? priv_proc->extra_buf.buf_ptr
-                : priv_proc->proc_buf.buf_ptr;
+        ptr = priv_proc->current_buf->buf_ptr;
     }
 
     return ptr;
@@ -273,22 +274,19 @@ int fs_proc_set_buf_ptr(fs_proc_t proc, void *buf_ptr)
     int ret = S_FAIL;
 
     if (priv_proc) {
-        fs_proc_buf_t *proc_buf;
         ptrdiff_t new_pos, lim_pos;
 
-        proc_buf = (priv_proc->extra_buf.is_used) ? &priv_proc->extra_buf : &priv_proc->proc_buf;
-
         /* Work out new position */
-        new_pos = buf_ptr - proc_buf->buf_ptr;
-        lim_pos = (ptrdiff_t)proc_buf->buf - proc_buf->size;
-        if (new_pos >= lim_pos) {
+        new_pos = buf_ptr - priv_proc->current_buf->buf_ptr;
+        lim_pos = (ptrdiff_t)priv_proc->current_buf->buf - priv_proc->current_buf->size;
+        if (new_pos > lim_pos) {
             S_ERROR_DEFAULT("Out of memory");
             ret = S_FAIL;
             return ret;
         }
 
-        proc_buf->buf_ptr += new_pos;
-        proc_buf->size_left -= new_pos;
+        priv_proc->current_buf->buf_ptr += new_pos;
+        priv_proc->current_buf->size_left -= new_pos;
 
         ret = S_SUCCESS;
     }
