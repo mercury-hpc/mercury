@@ -4,8 +4,12 @@
 
 #include "shipper_test.h"
 #include "shipper_config.h"
+#ifdef IOFSL_SHIPPER_HAS_BMI
 #include "network_bmi.h"
+#endif
+#ifdef IOFSL_SHIPPER_HAS_MPI
 #include "network_mpi.h"
+#endif
 #include "shipper_config_test.h"
 
 #include <stdlib.h>
