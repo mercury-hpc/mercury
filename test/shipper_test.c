@@ -87,6 +87,10 @@ na_network_class_t *shipper_test_server_init(int argc, char *argv[], unsigned in
     }
 #endif
 
+#ifdef IOFSL_SHIPPER_HAS_MPI
     *max_number_of_peers = MPIEXEC_MAX_NUMPROCS;
+#else
+    *max_number_of_peers = 1;
+#endif
     return network_class;
 }
