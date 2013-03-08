@@ -1,11 +1,12 @@
 /*
- * bulk_data_shipper.h
+ * Copyright (C) 2013 Argonne National Laboratory, Department of Energy,
+ *                    and UChicago Argonne, LLC.
+ * Copyright (C) 2013 The HDF Group.
+ * All rights reserved.
  *
- * Bulk data routines (called by client)
- * init/finalize/handle_create/handle_serialize/handle_free
- *
- * Bulk data routines (called by server)
- * init/handle_deserialize/write/wait/get_data/get_size/set_size/handle_free
+ * The full copyright notice, including terms governing use, modification,
+ * and redistribution, is contained in the COPYING file that can be
+ * found at the root of the source code distribution tree.
  */
 
 #ifndef BULK_DATA_SHIPPER_H
