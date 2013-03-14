@@ -220,7 +220,7 @@ int fs_forward(na_addr_t addr, fs_id_t id, const void *in_struct, void *out_stru
 //    printf("Proc size left: %lu\n", fs_proc_get_size_left(priv_request->enc_proc));
 
     /* Encode the function parameters */
-    proc_info->enc_routine(priv_request->enc_proc, (void*)in_struct);
+    if (proc_info->enc_routine) proc_info->enc_routine(priv_request->enc_proc, (void*)in_struct);
 
     /* The size of the encoding buffer may have changed at this point
      * --> if the buffer is too large, we need to do:
@@ -345,7 +345,7 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
         iofsl_compat_proc_status(priv_request->dec_proc);
 
         /* Decode function parameters */
-        proc_info->dec_routine(priv_request->dec_proc, priv_request->out_struct);
+        if (proc_info->dec_routine) proc_info->dec_routine(priv_request->dec_proc, priv_request->out_struct);
 
         /* Free the encoding proc */
         fs_proc_free(priv_request->enc_proc);

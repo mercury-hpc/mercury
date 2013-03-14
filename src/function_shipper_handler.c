@@ -150,7 +150,7 @@ int fs_handler_get_input(fs_handle_t handle, void *in_struct)
         }
 
         /* Decode input parameters */
-        proc_info->dec_routine(priv_handle->dec_proc, in_struct);
+        if (proc_info->dec_routine) proc_info->dec_routine(priv_handle->dec_proc, in_struct);
 
         /* Free the decoding proc */
         fs_proc_free(priv_handle->dec_proc);
@@ -289,7 +289,7 @@ int fs_handler_complete(fs_handle_t handle, const void *out_struct)
     iofsl_compat_proc_status(enc_proc);
 
     /* Encode output parameters */
-    proc_info->enc_routine(enc_proc, (void*)out_struct);
+    if (proc_info->enc_routine) proc_info->enc_routine(enc_proc, (void*)out_struct);
 
     /* Respond back */
     na_send(handler_network_class, priv_enc_proc->proc_buf.buf, send_buf_len,
@@ -307,7 +307,7 @@ int fs_handler_complete(fs_handle_t handle, const void *out_struct)
 
     /* Free in_struct (create a new free proc) */
     fs_proc_create(NULL, send_buf_len, FS_FREE, &free_proc);
-    proc_info->dec_routine(free_proc, priv_handle->in_struct);
+    if (proc_info->dec_routine) proc_info->dec_routine(free_proc, priv_handle->in_struct);
     fs_proc_free(free_proc);
 
     free(priv_handle);
