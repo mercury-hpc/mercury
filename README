@@ -1,2 +1,103 @@
-Git repository for the Mercury Library
+IOFSL function shipper
+----------------------
+
+These are the release notes for the IOFSL function shipper (as of 03/22/2013).
+
+WHAT IS THE IOFSL FUNCTION SHIPPER?
+
+   The IOFSL function shipping framework allows I/O calls to be remotely
+   executed in a scalable and asynchronous manner. The interface is designed
+   to be as generic as possible to allow any I/O function call to be
+   forwarded to a remote server. The network implementation is abstracted so
+   that alternate mechanisms can be implemented and selected, making use of
+   various transport mechanisms available on the system.
+
+   It is distributed under the XXXX Copyright - see the accompanying COPYING
+   file for more details.
+
+ARCHITECTURE SUPPORTED:
+
+   Architectures supported by MPI implementations are supported by the function
+   shipping network abstraction layer. Note that only the MPI plugin fully
+   implements the network abstraction layer and is currently supported.
+   The BMI plugin provided only implements basic function shipping without
+   bulk data transfer. Note also that additional network abstraction plugins
+   will be incrementally added to support additional network protocols.
+
+DOCUMENTATION:
+
+ - Please see the accompanying design implementation documentation for
+   additional and useful details.
+
+SOFTWARE REQUIREMENTS:
+
+   Compiling and running the IOFSL function shipper requires up-to-date
+   versions of various software packages. Beware that using excessively old
+   versions of these packages can cause indirect errors that are very
+   difficult to track down. To make use of the MPI plugin, the IOFSL function
+   shipper requires a "well-configured" MPI implementation (MPICH2 1.4.1 or
+   higher / OpenMPI 1.6 or higher). For automatic code generation features
+   (which are used for generating encoding and decoding parameters), the
+   BOOST preprocessor subset must be included (Boost 1.50 or higher is
+   recommended).
+
+BUILDING the IOFSL function shipper:
+
+ - If you install the full sources, put the tarball in a directory where you
+   have permissions (eg. your home directory) and unpack it:
+
+     gzip -cd iofsl_shipper-X.tar.gz | tar xvf -
+
+   or
+
+     bzip2 -dc iofsl_shipper-X.tar.bz2 | tar xvf -
+
+   Replace "X" with the version number of the package.
+
+ - The IOFSL function shipper makes use of the CMake build-system. It is
+   highly recommended to do an out-of-source build. Create a new build
+   directory and run the ccmake command from it:
+
+     mkdir build
+     cd build
+     ccmake /path/to/the/iofsl/shipper/source/directory
+
+ - Type 'c' multiple times and choose suitable options. Once you are done, type
+   'g' to generate makefiles. Recommended options are:
+   BUILD_SHARED_LIBS                ON
+   BUILD_TESTING                    ON
+   CMAKE_INSTALL_PREFIX             /path/to/install/directory
+   IOFSL_SHIPPER_USE_BOOST_PP       ON
+   IOFSL_SHIPPER_USE_MPI            ON
+
+ - Verbose compile/build output:
+
+   This is done by inserting "VERBOSE=1" in the "make" command.  E.g.:
+
+     make VERBOSE=1
+
+INSTALLING the IOFSL function shipper:
+
+ - Assuming that the CMAKE_INSTALL_PREFIX has been set (see previous step),
+   simply do (from the build directory):
+   
+     make install
+     
+TESTING:
+
+ - Tests can be run to check that basic function shipping (metadata and bulk
+   bulk data transfers) are correctly working. CTest is used to run the tests,
+   simply run (from the build directory):
+
+     ctest .
+
+ - Verbose testing:
+
+   This is done by inserting "-V" in the "ctest" command.  E.g.:
+
+     ctest -V .
+
+   Extra verbose information can be displayed by inserting "-VV". E.g.:
+
+     ctest -VV .
 
