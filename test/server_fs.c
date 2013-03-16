@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    IOFSL_SHIPPER_HANDLER_REGISTER(bla_open, fs_bla_open, bla_open_in_t, bla_open_out_t);
+    IOFSL_SHIPPER_HANDLER_REGISTER("bla_open", fs_bla_open, bla_open_in_t, bla_open_out_t);
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */

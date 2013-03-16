@@ -164,6 +164,25 @@ int bds_handle_free(bds_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------
+ * Function:    bds_handle_get_size
+ *
+ * Purpose:     Get data size from handle
+ *
+ *---------------------------------------------------------------------------
+ */
+size_t bds_handle_get_size(bds_handle_t handle)
+{
+    size_t ret = 0;
+    bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
+
+    if (priv_handle) {
+        ret = priv_handle->size;
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
  * Function:    bds_handle_serialize
  *
  * Purpose:     Serialize bulk data handle into buf
@@ -243,11 +262,11 @@ int bds_handle_deserialize(bds_handle_t *handle, const void *buf, na_size_t buf_
  *
  *---------------------------------------------------------------------------
  */
-int bds_write(bds_handle_t handle, na_addr_t addr, bds_block_handle_t *block_handle)
+int bds_write(bds_handle_t handle, na_addr_t addr, bds_block_handle_t block_handle)
 {
     int ret;
     bds_priv_handle_t *priv_handle = (bds_priv_handle_t*) handle;
-    bds_priv_block_handle_t *priv_block_handle = NULL;
+    bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;
 
     if (!priv_handle) {
         S_ERROR_DEFAULT("NULL memory handle passed");
@@ -255,24 +274,17 @@ int bds_write(bds_handle_t handle, na_addr_t addr, bds_block_handle_t *block_han
         return ret;
     }
 
-    /* Create and register a new block handle that will be used to send data */
-    priv_block_handle = malloc(sizeof(bds_priv_block_handle_t));
-    priv_block_handle->size = priv_handle->size; /* Take the whole size for now */
-    priv_block_handle->data = malloc(priv_block_handle->size);
-    priv_block_handle->bulk_request = NULL;
-
-    na_mem_register(bds_network_class, priv_block_handle->data,
-            priv_block_handle->size, NA_MEM_READ_ONLY, &priv_block_handle->mem_handle);
+    if (priv_block_handle->bulk_request != NULL) {
+        S_ERROR_DEFAULT("Block handle is being used for another operation");
+        ret = S_FAIL;
+        return ret;
+    }
 
     /* Offsets are not used for now */
     ret = na_put(bds_network_class,
             priv_block_handle->mem_handle, 0,
             priv_handle->mem_handle, 0,
             priv_block_handle->size, addr, &priv_block_handle->bulk_request);
-
-    if (ret == S_SUCCESS) {
-        *block_handle = priv_block_handle;
-    }
 
     return ret;
 }
@@ -351,63 +363,50 @@ int bds_wait(bds_block_handle_t block_handle, unsigned int timeout)
 }
 
 /*---------------------------------------------------------------------------
- * Function:    bds_block_handle_get_data
+ * Function:    bds_block_handle_create
  *
- * Purpose:     Get data pointer from handle
- *
- * Returns:
- *
- *---------------------------------------------------------------------------
- */
-void* bds_block_handle_get_data(bds_block_handle_t block_handle)
-{
-    void *ret = NULL;
-    bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;
-
-    if (priv_block_handle) {
-        ret = priv_block_handle->data;
-    }
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------
- * Function:    bds_block_handle_get_size
- *
- * Purpose:     Get data size from block handle
- *
- * Returns:
- *
- *---------------------------------------------------------------------------
- */
-size_t bds_block_handle_get_size(bds_block_handle_t block_handle)
-{
-    size_t ret = 0;
-    bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;
-
-    if (priv_block_handle) {
-        ret = priv_block_handle->size;
-    }
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------
- * Function:    bds_block_handle_set_size
- *
- * Purpose:     Set data size to block handle
+ * Purpose:     Create bulk data handle from buffer (register memory, etc)
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-void bds_block_handle_set_size(bds_block_handle_t block_handle, size_t size)
+int bds_block_handle_create(void *buf, size_t block_size, unsigned long flags,
+        bds_block_handle_t *block_handle)
 {
-    bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;
+    int ret;
+    bds_priv_block_handle_t *priv_block_handle;
+    unsigned long na_flags;
 
-    if (priv_block_handle) {
-        priv_block_handle->size = size;
+    switch (flags) {
+        case BDS_READWRITE:
+            na_flags = NA_MEM_READWRITE;
+            break;
+        case BDS_READ_ONLY:
+            na_flags = NA_MEM_READ_ONLY;
+            break;
+        default:
+            S_ERROR_DEFAULT("Unrecognized handle flag");
+            ret = S_FAIL;
+            return ret;
     }
+
+    priv_block_handle = malloc(sizeof(bds_priv_block_handle_t));
+    priv_block_handle->data = buf;
+    priv_block_handle->size = block_size;
+    priv_block_handle->bulk_request = NULL;
+
+    ret = na_mem_register(bds_network_class, buf, block_size, na_flags,
+            &priv_block_handle->mem_handle);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("na_mem_register failed");
+        free(priv_block_handle);
+        priv_block_handle = NULL;
+    } else {
+        *block_handle = (bds_block_handle_t) priv_block_handle;
+    }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -433,6 +432,44 @@ int bds_block_handle_free(bds_block_handle_t block_handle)
     } else {
         S_ERROR_DEFAULT("Already freed");
         ret = S_FAIL;
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    bds_block_handle_get_data
+ *
+ * Purpose:     Get data pointer from handle
+ *
+ *---------------------------------------------------------------------------
+ */
+void* bds_block_handle_get_data(bds_block_handle_t block_handle)
+{
+    void *ret = NULL;
+    bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;
+
+    if (priv_block_handle) {
+        ret = priv_block_handle->data;
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    bds_block_handle_get_size
+ *
+ * Purpose:     Get data size from block handle
+ *
+ *---------------------------------------------------------------------------
+ */
+size_t bds_block_handle_get_size(bds_block_handle_t block_handle)
+{
+    size_t ret = 0;
+    bds_priv_block_handle_t *priv_block_handle = (bds_priv_block_handle_t*) block_handle;
+
+    if (priv_block_handle) {
+        ret = priv_block_handle->size;
     }
 
     return ret;

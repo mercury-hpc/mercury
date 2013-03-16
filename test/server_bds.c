@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    IOFSL_SHIPPER_HANDLER_REGISTER(bla_write, fs_bla_write, bla_write_in_t, bla_write_out_t);
+    IOFSL_SHIPPER_HANDLER_REGISTER("bla_write", fs_bla_write, bla_write_in_t, bla_write_out_t);
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */

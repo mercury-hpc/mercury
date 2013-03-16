@@ -38,6 +38,9 @@ int bds_handle_create(void *buf, size_t buf_len, unsigned long flags,
 /* Free bulk data handle */
 int bds_handle_free(bds_handle_t handle);
 
+/* Get data size from handle */
+size_t bds_handle_get_size(bds_handle_t handle);
+
 /* Serialize bulk data handle into buf */
 int bds_handle_serialize(void *buf, na_size_t buf_len, bds_handle_t handle);
 
@@ -45,7 +48,7 @@ int bds_handle_serialize(void *buf, na_size_t buf_len, bds_handle_t handle);
 int bds_handle_deserialize(bds_handle_t *handle, const void *buf, na_size_t buf_len);
 
 /* Write data */
-int bds_write(bds_handle_t handle, na_addr_t dest, bds_block_handle_t *block_handle);
+int bds_write(bds_handle_t handle, na_addr_t dest, bds_block_handle_t block_handle);
 
 /* Read data */
 int bds_read(bds_handle_t handle, na_addr_t source, bds_block_handle_t *block_handle);
@@ -53,17 +56,18 @@ int bds_read(bds_handle_t handle, na_addr_t source, bds_block_handle_t *block_ha
 /* Wait for bulk data operation to complete */
 int bds_wait(bds_block_handle_t block_handle, unsigned int timeout);
 
+/* Create bulk data handle from buffer (register memory, etc) */
+int bds_block_handle_create(void *buf, size_t block_size, unsigned long flags,
+        bds_block_handle_t *handle);
+
+/* Free block handle */
+int bds_block_handle_free(bds_block_handle_t block_handle);
+
 /* Get data pointer from handle */
 void* bds_block_handle_get_data(bds_block_handle_t block_handle);
 
 /* Get data size from block handle */
 size_t bds_block_handle_get_size(bds_block_handle_t block_handle);
-
-/* Set data size to block handle */
-void bds_block_handle_set_size(bds_block_handle_t block_handle, size_t size);
-
-/* Free block handle */
-int bds_block_handle_free(bds_block_handle_t block_handle);
 
 #ifdef __cplusplus
 }

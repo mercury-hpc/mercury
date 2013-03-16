@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register function and encoding/decoding functions */
-    bla_write_id = IOFSL_SHIPPER_REGISTER(bla_write, bla_write_in_t, bla_write_out_t);
+    bla_write_id = IOFSL_SHIPPER_REGISTER("bla_write", bla_write_in_t, bla_write_out_t);
 
     /* Register memory */
     fs_ret = bds_handle_create(bulk_buf, sizeof(int) * bulk_size, BDS_READ_ONLY,

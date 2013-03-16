@@ -91,6 +91,20 @@ if(IOFSL_SHIPPER_ENABLE_COVERAGE)
 endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
+# POSIX test
+add_executable(client_posix client_posix.c)
+target_link_libraries(client_posix iofsl_shipper_bds iofsl_shipper_fs iofsl_shipper_test)
+if(IOFSL_SHIPPER_ENABLE_COVERAGE)
+  set_coverage_flags(client_posix)
+endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
+
+add_executable(server_posix server_posix.c)
+target_link_libraries(server_posix iofsl_shipper_bds iofsl_shipper_fs iofsl_shipper_test)
+if(IOFSL_SHIPPER_ENABLE_COVERAGE)
+  set_coverage_flags(server_posix)
+endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
+
+#------------------------------------------------------------------------------
 if(MPIEXEC)
   set(IOFSL_SHIPPER_tests
     fs

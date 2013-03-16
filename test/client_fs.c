@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register function and encoding/decoding functions */
-    bla_open_id = IOFSL_SHIPPER_REGISTER(bla_open, bla_open_in_t, bla_open_out_t);
+    bla_open_id = IOFSL_SHIPPER_REGISTER("bla_open", bla_open_in_t, bla_open_out_t);
 
     /* Fill input structure */
     bla_open_in_struct.path = bla_open_path;

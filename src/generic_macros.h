@@ -55,21 +55,21 @@ static inline int BOOST_PP_CAT(fs_proc_, struct_type_name) \
         IOFSL_SHIPPER_GEN_STRUCT_PROC(struct_type_name, fields)
 
 #define IOFSL_SHIPPER_REGISTER(func_name, in_struct_type_name, out_struct_type_name) \
-        fs_register(#func_name, BOOST_PP_CAT(fs_proc_, in_struct_type_name), \
+        fs_register(func_name, BOOST_PP_CAT(fs_proc_, in_struct_type_name), \
                 BOOST_PP_CAT(fs_proc_, out_struct_type_name))
 
 #define IOFSL_SHIPPER_HANDLER_REGISTER(func_name, fs_func_name, in_struct_type_name, out_struct_type_name) \
-        fs_handler_register(#func_name, fs_func_name, BOOST_PP_CAT(fs_proc_, in_struct_type_name), \
+        fs_handler_register(func_name, fs_func_name, BOOST_PP_CAT(fs_proc_, in_struct_type_name), \
                 BOOST_PP_CAT(fs_proc_, out_struct_type_name))
 
 #else /* IOFSL_SHIPPER_HAS_BOOST */
 
 #define IOFSL_SHIPPER_REGISTER(func_name, in_struct_type_name, out_struct_type_name) \
-        fs_register(#func_name, fs_proc_ ## in_struct_type_name, \
+        fs_register(func_name, fs_proc_ ## in_struct_type_name, \
                 fs_proc_ ## out_struct_type_name)
 
 #define IOFSL_SHIPPER_HANDLER_REGISTER(func_name, fs_func_name, in_struct_type_name, out_struct_type_name) \
-        fs_handler_register(#func_name, fs_func_name, fs_proc_ ## in_struct_type_name, \
+        fs_handler_register(func_name, fs_func_name, fs_proc_ ## in_struct_type_name, \
                 fs_proc_ ## out_struct_type_name)
 
 #endif /* IOFSL_SHIPPER_HAS_BOOST */
