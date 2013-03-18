@@ -29,7 +29,7 @@
  *
  *---------------------------------------------------------------------------
  */
-na_network_class_t *shipper_test_client_init(int argc, char *argv[])
+na_network_class_t *shipper_test_client_init(int argc, char *argv[], int *rank)
 {
     na_network_class_t *network_class = NULL;
 
@@ -42,6 +42,7 @@ na_network_class_t *shipper_test_client_init(int argc, char *argv[])
     if (strcmp("mpi", argv[1]) == 0) {
         FILE *config;
         network_class = na_mpi_init(NULL, 0);
+        if (rank) MPI_Comm_rank(MPI_COMM_WORLD, rank);
         if ((config = fopen("port.cfg", "r")) != NULL) {
             char mpi_port_name[MPI_MAX_PORT_NAME];
             fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
@@ -55,6 +56,7 @@ na_network_class_t *shipper_test_client_init(int argc, char *argv[])
 #ifdef IOFSL_SHIPPER_HAS_BMI
     if (strcmp("bmi", argv[1]) == 0) {
         network_class = na_bmi_init(NULL, NULL, 0);
+        if (rank) *rank = 0;
     }
 #endif
 

@@ -110,6 +110,7 @@ if(MPIEXEC)
     fs
     na
     bds
+    posix
   )
   foreach(IOFSL_SHIPPER_test ${IOFSL_SHIPPER_tests})
       add_shipper_test(shipper_${IOFSL_SHIPPER_test}

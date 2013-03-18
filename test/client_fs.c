@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    network_class = shipper_test_client_init(argc, argv);
+    network_class = shipper_test_client_init(argc, argv, NULL);
     ion_name = getenv(ION_ENV);
     if (!ion_name) {
         fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);

@@ -17,12 +17,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 na_addr_t addr;
 na_network_class_t *network_class = NULL;
 fs_id_t open_id, write_id, read_id, close_id;
 
-int client_posix_init(int argc, char *argv[])
+int client_posix_init(int argc, char *argv[], int *rank)
 {
     int fs_ret;
     int ret = S_SUCCESS;
@@ -31,7 +32,7 @@ int client_posix_init(int argc, char *argv[])
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    network_class = shipper_test_client_init(argc, argv);
+    network_class = shipper_test_client_init(argc, argv, rank);
 
     ion_name = getenv(ION_ENV);
     if (!ion_name) {
@@ -313,21 +314,23 @@ int main(int argc, char *argv[])
 {
     int fs_ret, ret;
     mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-    const char *filename = "/tmp/posix_test";
+    char filename[256];
     int fd = 0;
     int *read_buf = NULL;
     int *write_buf = NULL;
     size_t n_ints = 1024*1024;
     int i, error = 0;
+    int rank;
     size_t nbyte;
 
     printf("Initializing...\n");
 
-    fs_ret = client_posix_init(argc, argv);
+    fs_ret = client_posix_init(argc, argv, &rank);
     if (fs_ret != S_SUCCESS) {
         fprintf(stderr, "Error in client_posix_init\n");
         return EXIT_FAILURE;
     }
+    sprintf(filename, "/tmp/posix_test%d", rank);
 
     /* Prepare buffers */
     write_buf = malloc(sizeof(int) * n_ints);
