@@ -109,7 +109,7 @@ int server_posix_write(fs_handle_t handle)
     bds_block_handle_t bds_block_handle = NULL;
 
     int fd;
-    const void *buf;
+    void *buf;
     size_t count;
     ssize_t ret;
 
@@ -128,7 +128,12 @@ int server_posix_write(fs_handle_t handle)
     fd = write_in_struct.fd;
 
     /* Read bulk data here and wait for the data to be here  */
-    fs_ret = bds_read(bds_handle, source, &bds_block_handle);
+    count = bds_handle_get_size(bds_handle);
+    buf = malloc(count);
+
+    bds_block_handle_create(buf, count, BDS_READWRITE, &bds_block_handle);
+
+    fs_ret = bds_read(bds_handle, source, bds_block_handle);
     if (fs_ret != S_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return fs_ret;
@@ -139,10 +144,6 @@ int server_posix_write(fs_handle_t handle)
         fprintf(stderr, "Could not complete bulk data read\n");
         return fs_ret;
     }
-
-    /* Call write */
-    buf = bds_block_handle_get_data(bds_block_handle);
-    count = bds_block_handle_get_size(bds_block_handle);
 
     /* Check bulk buf */
     buf_ptr = buf;
@@ -172,6 +173,8 @@ int server_posix_write(fs_handle_t handle)
         fprintf(stderr, "Could not free block call\n");
         return fs_ret;
     }
+
+    free(buf);
 
     return fs_ret;
 }
@@ -254,6 +257,8 @@ int server_posix_read(fs_handle_t handle)
         fprintf(stderr, "Could not free block call\n");
         return fs_ret;
     }
+
+    free(buf);
 
     return fs_ret;
 }

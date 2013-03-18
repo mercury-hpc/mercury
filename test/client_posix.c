@@ -23,6 +23,15 @@ na_addr_t addr;
 na_network_class_t *network_class = NULL;
 fs_id_t open_id, write_id, read_id, close_id;
 
+#undef open
+#define open client_posix_open
+#undef read
+#define read client_posix_read
+#undef write
+#define write client_posix_write
+#undef close
+#define close client_posix_close
+
 int client_posix_init(int argc, char *argv[], int *rank)
 {
     int fs_ret;
@@ -330,7 +339,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error in client_posix_init\n");
         return EXIT_FAILURE;
     }
-    sprintf(filename, "/tmp/posix_test%d", rank);
+    sprintf(filename, "posix_test%d", rank);
 
     /* Prepare buffers */
     write_buf = malloc(sizeof(int) * n_ints);
@@ -340,55 +349,55 @@ int main(int argc, char *argv[])
         read_buf[i] = 0;
     }
 
-    printf("Creating file...\n");
+    printf("(%d) Creating file...\n", rank);
 
-    fd = client_posix_open(filename, O_WRONLY | O_CREAT | O_TRUNC, mode);
+    fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, mode);
     if (fd < 0) {
         fprintf(stderr, "Error in fs_open\n");
         return EXIT_FAILURE;
     }
 
-    printf("Writing data...\n");
+    printf("(%d) Writing data...\n", rank);
 
-    nbyte = client_posix_write(fd, write_buf, sizeof(int) * n_ints);
+    nbyte = write(fd, write_buf, sizeof(int) * n_ints);
     if (nbyte <= 0) {
         fprintf(stderr, "Error detected in client_posix_write\n");
         return EXIT_FAILURE;
     }
 
-    printf("Closing file...\n");
+    printf("(%d) Closing file...\n", rank);
 
-    ret = client_posix_close(fd);
+    ret = close(fd);
     if (ret < 0) {
         fprintf(stderr, "Error detected in client_posix_close\n");
         return EXIT_FAILURE;
     }
 
-    printf("Opening file...\n");
+    printf("(%d) Opening file...\n", rank);
 
-    fd = client_posix_open(filename, O_RDONLY, mode);
+    fd = open(filename, O_RDONLY, mode);
     if (fd < 0) {
         fprintf(stderr, "Error in fs_open\n");
         return EXIT_FAILURE;
     }
 
-    printf("Reading data...\n");
+    printf("(%d) Reading data...\n", rank);
 
-    nbyte = client_posix_read(fd, read_buf, sizeof(int) * n_ints);
+    nbyte = read(fd, read_buf, sizeof(int) * n_ints);
     if (nbyte < 0) {
         fprintf(stderr, "Error detected in client_posix_read\n");
         return EXIT_FAILURE;
     }
 
-    printf("Closing file...\n");
+    printf("(%d) Closing file...\n", rank);
 
-    ret = client_posix_close(fd);
+    ret = close(fd);
     if (ret < 0) {
         fprintf(stderr, "Error detected in client_posix_close\n");
         return EXIT_FAILURE;
     }
 
-    printf("Checking data...\n");
+    printf("(%d) Checking data...\n", rank);
 
     /* Check bulk buf */
     for (i = 0; i < n_ints; i++) {
@@ -404,7 +413,7 @@ int main(int argc, char *argv[])
     free(write_buf);
     free(read_buf);
 
-    printf("Finalizing...\n");
+    printf("(%d) Finalizing...\n", rank);
 
     fs_ret = client_posix_finalize();
     if (fs_ret != S_SUCCESS) {

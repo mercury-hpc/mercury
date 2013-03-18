@@ -73,8 +73,14 @@ int fs_bla_write(fs_handle_t handle)
     bla_write_fildes = bla_write_in_struct.fildes;
     bla_write_bds_handle = bla_write_in_struct.bds_handle;
 
-    /* Read bulk data here and wait for the data to be here  */
-    ret = bds_read(bla_write_bds_handle, source, &bla_write_bds_block_handle);
+    /* Creat a new block handle to read the data */
+    bla_write_nbytes = bds_handle_get_size(bla_write_bds_handle);
+    bla_write_buf = malloc(bla_write_nbytes);
+
+    bds_block_handle_create(bla_write_buf, bla_write_nbytes, BDS_READWRITE, &bla_write_bds_block_handle);
+   
+    /* Read bulk data here and wait for the data to be here  */ 
+    ret = bds_read(bla_write_bds_handle, source, bla_write_bds_block_handle);
     if (ret != S_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
@@ -87,9 +93,6 @@ int fs_bla_write(fs_handle_t handle)
     }
 
     /* Call bla_write */
-    bla_write_buf = bds_block_handle_get_data(bla_write_bds_block_handle);
-    bla_write_nbytes = bds_block_handle_get_size(bla_write_bds_block_handle);
-
     bla_write_ret = bla_write(bla_write_fildes, bla_write_buf, bla_write_nbytes);
 
     /* Fill output structure */
@@ -108,6 +111,8 @@ int fs_bla_write(fs_handle_t handle)
         fprintf(stderr, "Could not free block call\n");
         return ret;
     }
+
+    free(bla_write_buf);
 
     return ret;
 }

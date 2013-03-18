@@ -51,7 +51,7 @@ int bds_handle_deserialize(bds_handle_t *handle, const void *buf, na_size_t buf_
 int bds_write(bds_handle_t handle, na_addr_t dest, bds_block_handle_t block_handle);
 
 /* Read data */
-int bds_read(bds_handle_t handle, na_addr_t source, bds_block_handle_t *block_handle);
+int bds_read(bds_handle_t handle, na_addr_t source, bds_block_handle_t block_handle);
 
 /* Wait for bulk data operation to complete */
 int bds_wait(bds_block_handle_t block_handle, unsigned int timeout);
@@ -63,8 +63,7 @@ int bds_block_handle_create(void *buf, size_t block_size, unsigned long flags,
 /* Free block handle */
 int bds_block_handle_free(bds_block_handle_t block_handle);
 
-/* Get data pointer from handle */
-void* bds_block_handle_get_data(bds_block_handle_t block_handle);
+
 
 /* Get data size from block handle */
 size_t bds_block_handle_get_size(bds_block_handle_t block_handle);
