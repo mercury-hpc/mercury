@@ -149,7 +149,7 @@ int main(int argc, char *argv[])
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */
-        fs_ret = fs_handler_receive();
+        fs_ret = fs_handler_process(FS_HANDLER_MAX_IDLE_TIME);
         if (fs_ret != S_SUCCESS) {
             fprintf(stderr, "Could not receive function call\n");
             return EXIT_FAILURE;

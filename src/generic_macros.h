@@ -74,4 +74,10 @@ static inline int BOOST_PP_CAT(fs_proc_, struct_type_name) \
 
 #endif /* IOFSL_SHIPPER_HAS_BOOST */
 
+#define IOFSL_SHIPPER_REGISTER_FINALIZE() \
+        fs_register("IOFSL_SHIPPER_REGISTER_FINALIZE", NULL, NULL)
+
+#define IOFSL_SHIPPER_HANDLER_REGISTER_FINALIZE(fs_func_name) \
+        fs_handler_register("IOFSL_SHIPPER_REGISTER_FINALIZE", fs_func_name, NULL, NULL)
+
 #endif /* GENERIC_MACROS_H */

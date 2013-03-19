@@ -21,7 +21,7 @@
 
 na_addr_t addr;
 na_network_class_t *network_class = NULL;
-fs_id_t open_id, write_id, read_id, close_id;
+fs_id_t open_id, write_id, read_id, close_id, finalize_id;
 
 #undef open
 #define open client_posix_open
@@ -77,6 +77,7 @@ int client_posix_init(int argc, char *argv[], int *rank)
     write_id = IOFSL_SHIPPER_REGISTER("write", write_in_t, write_out_t);
     read_id = IOFSL_SHIPPER_REGISTER("read", read_in_t, read_out_t);
     close_id = IOFSL_SHIPPER_REGISTER("close", close_in_t, close_out_t);
+    finalize_id = IOFSL_SHIPPER_REGISTER_FINALIZE();
 
     return ret;
 }
@@ -85,6 +86,32 @@ int client_posix_finalize()
 {
     int fs_ret;
     int ret = S_SUCCESS;
+    fs_request_t request;
+    fs_status_t status;
+    int finalize_ret;
+
+    /* Forward call to remote addr and get a new request */
+    fs_ret = fs_forward(addr, finalize_id, NULL, NULL, &request);
+    if (fs_ret != S_SUCCESS) {
+        fprintf(stderr, "Could not forward call\n");
+        finalize_ret = S_FAIL;
+        return finalize_ret;
+    }
+
+    /* Wait for call to be executed and return value to be sent back
+     * (Request is freed when the call completes)
+     */
+    fs_ret = fs_wait(request, FS_MAX_IDLE_TIME, &status);
+    if (fs_ret != S_SUCCESS) {
+        fprintf(stderr, "Error during wait\n");
+        finalize_ret = S_FAIL;
+        return finalize_ret;
+    }
+    if (!status) {
+        fprintf(stderr, "Operation did not complete\n");
+        finalize_ret = S_FAIL;
+        return finalize_ret;
+    }
 
     /* Free addr id */
     fs_ret = na_addr_free(network_class, addr);
@@ -402,12 +429,13 @@ int main(int argc, char *argv[])
     /* Check bulk buf */
     for (i = 0; i < n_ints; i++) {
         if (read_buf[i] != write_buf[i]) {
-            printf("Error detected in bulk transfer, read_buf[%d] = %d, was expecting %d!\n", i, read_buf[i], write_buf[i]);
+            printf("(%d) Error detected in bulk transfer, read_buf[%d] = %d, was expecting %d!\n",
+                    rank, i, read_buf[i], write_buf[i]);
             error = 1;
             break;
         }
     }
-    if (!error) printf("Successfully transferred %lu bytes!\n", nbyte);
+    if (!error) printf("(%d) Successfully transferred %lu bytes!\n", rank, nbyte);
 
     /* Free bulk data */
     free(write_buf);

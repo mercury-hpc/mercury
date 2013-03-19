@@ -377,5 +377,13 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
 int fs_wait_all(int count, fs_request_t array_of_requests[],
         unsigned int timeout, fs_status_t array_of_statuses[])
 {
-    return S_SUCCESS;
+    int ret = S_SUCCESS;
+    int i;
+
+    /* TODO For now just loop over requests */
+    for (i = 0; i < count; i++) {
+        ret = fs_wait(array_of_requests[i], timeout, &array_of_statuses[i]);
+    }
+
+    return ret;
 }

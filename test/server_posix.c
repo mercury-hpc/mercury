@@ -21,6 +21,32 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+unsigned int finalizing = 0;
+
+int server_finalize(fs_handle_t handle)
+{
+    int fs_ret = S_SUCCESS;
+
+    /* Get input parameters and data */
+    fs_ret = fs_handler_get_input(handle, NULL);
+    if (fs_ret != S_SUCCESS) {
+        fprintf(stderr, "Could not get function call input\n");
+        return fs_ret;
+    }
+
+    finalizing++;
+
+    /* Free handle and send response back (and free input struct fields) */
+    fs_ret = fs_handler_complete(handle, NULL);
+    if (fs_ret != S_SUCCESS) {
+        fprintf(stderr, "Could not complete function call\n");
+        return fs_ret;
+    }
+
+    return fs_ret;
+}
+
+
 int server_posix_open(fs_handle_t handle)
 {
     int fs_ret = S_SUCCESS;
@@ -268,7 +294,6 @@ int main(int argc, char *argv[])
 {
     na_network_class_t *network_class = NULL;
     unsigned int number_of_peers;
-    unsigned int i;
     int fs_ret;
 
     /* Used by Test Driver */
@@ -295,10 +320,11 @@ int main(int argc, char *argv[])
     IOFSL_SHIPPER_HANDLER_REGISTER("write", server_posix_write, write_in_t, write_out_t);
     IOFSL_SHIPPER_HANDLER_REGISTER("read", server_posix_read, read_in_t, read_out_t);
     IOFSL_SHIPPER_HANDLER_REGISTER("close", server_posix_close, close_in_t, close_out_t);
+    IOFSL_SHIPPER_HANDLER_REGISTER_FINALIZE(server_finalize);
 
-    for (i = 0; i < number_of_peers * 6; i++) {
+    while (finalizing != number_of_peers) {
         /* Receive new function calls */
-        fs_ret = fs_handler_receive();
+        fs_ret = fs_handler_process(FS_HANDLER_MAX_IDLE_TIME);
         if (fs_ret != S_SUCCESS) {
             fprintf(stderr, "Could not receive function call\n");
             return EXIT_FAILURE;

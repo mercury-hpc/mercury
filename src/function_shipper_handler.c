@@ -191,7 +191,7 @@ const na_addr_t fs_handler_get_addr (fs_handle_t handle)
  *
  *---------------------------------------------------------------------------
  */
-int fs_handler_receive(void)
+int fs_handler_process(unsigned int timeout)
 {
     na_size_t         recv_buf_len;
     fs_priv_handle_t *priv_handle = NULL;

@@ -17,6 +17,8 @@
 
 typedef void * fs_handle_t;
 
+#define FS_HANDLER_MAX_IDLE_TIME NA_MAX_IDLE_TIME
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -40,7 +42,7 @@ int fs_handler_get_input (fs_handle_t handle, void *in_struct);
 const na_addr_t fs_handler_get_addr (fs_handle_t handle);
 
 /* Receive a call from a remote client */
-int fs_handler_receive(void);
+int fs_handler_process(unsigned int timeout);
 
 /* Forward the response back to the remote client and free handle */
 int fs_handler_complete(fs_handle_t handle, const void *out_struct);
