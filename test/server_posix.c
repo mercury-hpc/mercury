@@ -71,7 +71,7 @@ int server_posix_open(fs_handle_t handle)
     mode = open_in_struct.mode;
 
     /* Call bla_open */
-//    printf("Calling open with path: %s\n", path);
+    printf("Calling open with path: %s\n", path);
     ret = open(path, flags, mode);
 
     /* Fill output structure */
@@ -107,7 +107,7 @@ int server_posix_close(fs_handle_t handle)
     fd = close_in_struct.fd;
 
     /* Call bla_open */
-//    printf("Calling close with fd: %d\n", fd);
+    printf("Calling close with fd: %d\n", fd);
     ret = close(fd);
 
     /* Fill output structure */
@@ -180,7 +180,7 @@ int server_posix_write(fs_handle_t handle)
         }
     }
 
-//    printf("Calling write with fd: %d\n", fd);
+    printf("Calling write with fd: %d\n", fd);
     ret = write(fd, buf, count);
 
     /* Fill output structure */
@@ -239,7 +239,7 @@ int server_posix_read(fs_handle_t handle)
     count = bds_handle_get_size(bds_handle);
     buf = malloc(count);
 
-//    printf("Calling read with fd: %d\n", fd);
+    printf("Calling read with fd: %d\n", fd);
     ret = read(fd, buf, count);
 
     /* Check bulk buf */
