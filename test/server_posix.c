@@ -46,7 +46,6 @@ int server_finalize(fs_handle_t handle)
     return fs_ret;
 }
 
-
 int server_posix_open(fs_handle_t handle)
 {
     int fs_ret = S_SUCCESS;

@@ -5,15 +5,14 @@ These are the release notes for the IOFSL function shipper (as of 03/22/2013).
 
 WHAT IS THE IOFSL FUNCTION SHIPPER?
 
-   The IOFSL function shipping framework allows I/O calls to be remotely
-   executed in a scalable and asynchronous manner. The interface is designed
-   to be as generic as possible to allow any I/O function call to be
-   forwarded to a remote server. The network implementation is abstracted so
-   that alternate mechanisms can be implemented and selected, making use of
+   The function shipper allows I/O calls to be remotely executed in a
+   scalable and asynchronous manner. The interface is designed to be as
+   generic as possible to allow any I/O function call to be forwarded to
+   the I/O nodes. The network implementation is abstracted so that
+   alternate mechanisms can be implemented and selected, making use of the
    various transport mechanisms available on the system.
 
-   It is distributed under the XXXX Copyright - see the accompanying COPYING
-   file for more details.
+   Please see the accompanying COPYING file for license details.
 
 ARCHITECTURE SUPPORTED:
 
@@ -22,7 +21,7 @@ ARCHITECTURE SUPPORTED:
    implements the network abstraction layer and is currently supported.
    The BMI plugin provided only implements basic function shipping without
    bulk data transfer. Note also that additional network abstraction plugins
-   will be incrementally added to support additional network protocols.
+   will be added in future releases to support additional network protocols.
 
 DOCUMENTATION:
 
@@ -35,16 +34,16 @@ SOFTWARE REQUIREMENTS:
    versions of various software packages. Beware that using excessively old
    versions of these packages can cause indirect errors that are very
    difficult to track down. To make use of the MPI plugin, the IOFSL function
-   shipper requires a "well-configured" MPI implementation (MPICH2 1.4.1 or
-   higher / OpenMPI 1.6 or higher). For automatic code generation features
-   (which are used for generating encoding and decoding parameters), the
-   BOOST preprocessor subset must be included (Boost 1.50 or higher is
-   recommended).
+   shipper requires a _well-configured_ MPI implementation (MPICH2 1.4.1 or
+   higher / OpenMPI 1.6 or higher). For optional automatic code generation
+   features (which are used for generating encoding and decoding routines),
+   the preprocessor subset of the BOOST library must be included (Boost 1.50
+   or higher is recommended).
 
 BUILDING the IOFSL function shipper:
 
  - If you install the full sources, put the tarball in a directory where you
-   have permissions (eg. your home directory) and unpack it:
+   have permissions (e.g., your home directory) and unpack it:
 
      gzip -cd iofsl_shipper-X.tar.gz | tar xvf -
 
@@ -55,22 +54,31 @@ BUILDING the IOFSL function shipper:
    Replace "X" with the version number of the package.
 
  - The IOFSL function shipper makes use of the CMake build-system. It is
-   highly recommended to do an out-of-source build. Create a new build
-   directory and run the ccmake command from it:
+   highly recommended that you do an out-of-source build. In order to do that,
+   you will have to create a new build directory and run the 'ccmake' command
+   from it:
 
      mkdir build
      cd build
      ccmake /path/to/the/iofsl/shipper/source/directory
 
- - Type 'c' multiple times and choose suitable options. Once you are done, type
-   'g' to generate makefiles. Recommended options are:
-   BUILD_SHARED_LIBS                ON
-   BUILD_TESTING                    ON
-   CMAKE_INSTALL_PREFIX             /path/to/install/directory
-   IOFSL_SHIPPER_USE_BOOST_PP       ON
-   IOFSL_SHIPPER_USE_MPI            ON
+ - Type 'c' multiple times and choose suitable options. Recommended options
+   are:
 
- - Verbose compile/build output:
+     BUILD_SHARED_LIBS                ON
+     BUILD_TESTING                    ON
+     CMAKE_INSTALL_PREFIX             /path/to/install/directory
+     IOFSL_SHIPPER_USE_BOOST_PP       ON
+     IOFSL_SHIPPER_USE_MPI            ON
+
+   Setting include directory and library paths may require you to toggle to
+   the advanced mode by typing 't'. Once you are done and do not see any
+   errors, type 'g' to generate makefiles. Once you exit the CMake
+   configuration screen and are ready to build the targets, do:
+
+      make
+
+ - (Optional) Verbose compile/build output:
 
    This is done by inserting "VERBOSE=1" in the "make" command.  E.g.:
 
@@ -78,20 +86,21 @@ BUILDING the IOFSL function shipper:
 
 INSTALLING the IOFSL function shipper:
 
- - Assuming that the CMAKE_INSTALL_PREFIX has been set (see previous step),
-   simply do (from the build directory):
+ - Assuming that the CMAKE_INSTALL_PREFIX has been set (see previous step)
+   and that you have write permissions to the destination directory, do
+   from the build directory:
    
      make install
      
 TESTING:
 
  - Tests can be run to check that basic function shipping (metadata and bulk
-   bulk data transfers) are correctly working. CTest is used to run the tests,
-   simply run (from the build directory):
+   data transfers) is properly working. CTest is used to run the tests,
+   simply run from the build directory:
 
      ctest .
 
- - Verbose testing:
+ - (Optional) Verbose testing:
 
    This is done by inserting "-V" in the "ctest" command.  E.g.:
 
@@ -101,3 +110,28 @@ TESTING:
 
      ctest -VV .
 
+ - Tests run with one server process and X client processes. To change the
+   number of client processes that are being used, the MPIEXEC_MAX_NUMPROCS
+   variable needs to be modified (toggle to advanced mode if you do not see
+   it). The default value is 2.
+   Note that you will need to run 'make' again after the makefile generation
+   to use the new value. Note also that this variable will need to be changed
+   if you run the tests manually and use a different number of client
+   processes.
+
+ - (Optional) To run the tests manually with the MPI plugin open up two
+   terminal windows, one for the server and one for the client. From the same
+   directory where you have write permissions (so that the port configuration
+   can be written by the server and read by the client) do:
+
+     mpirun -np 1 /path/to/binary/server_TESTNAME mpi
+
+   and in the other:
+
+     mpirun -np 2 /path/to/binary/client_TESTNAME mpi
+
+   Replace "TESTNAME" by "na", "fs", "bds" or "posix":
+   * "na" tests the network abstraction layer
+   * "fs" tests the function shipping layer
+   * "bds" tests the bulk data shipper layer
+   * "posix" combines previous tests and issues POSIX calls remotely
