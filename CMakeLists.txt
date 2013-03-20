@@ -50,7 +50,7 @@ endif(NOT IOFSL_SHIPPER_EXTERNALLY_CONFIGURED)
 # by other projects.
 #-----------------------------------------------------------------------------
 if(NOT IOFSL_SHIPPER_EXPORTED_TARGETS)
-  set(IOFSL_SHIPPER_EXPORTED_TARGETS "shipper_targets")
+  set(IOFSL_SHIPPER_EXPORTED_TARGETS "iofsl_shipper-targets")
 endif(NOT IOFSL_SHIPPER_EXPORTED_TARGETS)
 
 #------------------------------------------------------------------------------
@@ -341,7 +341,7 @@ install(
   DESTINATION
     ${IOFSL_SHIPPER_INSTALL_DATA_DIR}/cmake/iofsl_shipper
   FILE
-    shipper_targets.cmake
+    ${IOFSL_SHIPPER_EXPORTED_TARGETS}.cmake
 )
 
 #-----------------------------------------------------------------------------
@@ -352,7 +352,7 @@ EXPORT (
   TARGETS
     ${IOFSL_SHIPPER_EXPORTED_LIBS}
   FILE
-    shipper_targets.cmake
+    ${IOFSL_SHIPPER_EXPORTED_TARGETS}.cmake
 )
 endif(NOT IOFSL_SHIPPER_EXTERNALLY_CONFIGURED)
 
@@ -364,21 +364,21 @@ set(IOFSL_SHIPPER_INCLUDES_BUILD_TIME
 )
 
 configure_file(
-  ${IOFSL_SHIPPER_SOURCE_DIR}/CMake/shipper_config.cmake.build.in
-  ${IOFSL_SHIPPER_BINARY_DIR}/shipper_config.cmake @ONLY
+  ${IOFSL_SHIPPER_SOURCE_DIR}/CMake/iofsl_shipper-config.cmake.build.in
+  ${IOFSL_SHIPPER_BINARY_DIR}/iofsl_shipper-config.cmake @ONLY
 )
 
 #-----------------------------------------------------------------------------
 # Configure the config.cmake file for the install directory
 #-----------------------------------------------------------------------------
 configure_file(
-  ${IOFSL_SHIPPER_SOURCE_DIR}/CMake/shipper_config.cmake.install.in
-  ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/shipper_config.cmake @ONLY
+  ${IOFSL_SHIPPER_SOURCE_DIR}/CMake/iofsl_shipper-config.cmake.install.in
+  ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/iofsl_shipper-config.cmake @ONLY
 )
 
 install(
   FILES
-    ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/shipper_config.cmake
+    ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/iofsl_shipper-config.cmake
   DESTINATION
     ${IOFSL_SHIPPER_INSTALL_DATA_DIR}/cmake/iofsl_shipper
 )
@@ -387,13 +387,13 @@ install(
 # Configure the hdf5-config-version .cmake file for the install directory
 #-----------------------------------------------------------------------------
 configure_file(
-  ${IOFSL_SHIPPER_SOURCE_DIR}/CMake/shipper_config_version.cmake.in
-  ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/shipper_config_version.cmake @ONLY
+  ${IOFSL_SHIPPER_SOURCE_DIR}/CMake/iofsl_shipper-config-version.cmake.in
+  ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/iofsl_shipper-config-version.cmake @ONLY
 )
 
 install(
   FILES
-    ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/shipper_config_version.cmake
+    ${IOFSL_SHIPPER_BINARY_DIR}/CMakeFiles/iofsl_shipper-config-version.cmake
   DESTINATION
     ${IOFSL_SHIPPER_INSTALL_DATA_DIR}/cmake/iofsl_shipper
 )

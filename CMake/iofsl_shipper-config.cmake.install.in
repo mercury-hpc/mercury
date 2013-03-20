@@ -26,6 +26,6 @@ set(IOFSL_SHIPPER_VERSION_PATCH   @IOFSL_SHIPPER_VERSION_PATCH@)
 # project which has already build IOFSL_SHIPPER as a subproject
 #-----------------------------------------------------------------------------
 if(NOT TARGET "IOFSL_SHIPPER" AND NOT IOFSL_SHIPPER_INSTALL_SKIP_TARGETS)
-  include(${SELF_DIR}/shipper_targets.cmake)
+  include(${SELF_DIR}/iofsl_shipper-targets.cmake)
 endif(NOT TARGET "IOFSL_SHIPPER" AND NOT IOFSL_SHIPPER_INSTALL_SKIP_TARGETS)
 
