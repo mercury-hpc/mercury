@@ -492,7 +492,9 @@ static int na_mpi_recv_unexpected(void *buf, na_size_t *buf_len,
             S_ERROR_DEFAULT("MPI_Recv() failed");
             ret = S_FAIL;
         } else {
-            if (buf) memcpy(buf, mpi_buf, recv_status.count);
+            int count;
+            MPI_Get_count(&recv_status, MPI_BYTE, &count);
+            if (buf) memcpy(buf, mpi_buf, count);
         }
         free(mpi_buf);
         mpi_buf = NULL;
@@ -925,8 +927,10 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         }
     }
     if (status && status != NA_STATUS_IGNORE) {
+        int count;
+        MPI_Get_count(&mpi_status, MPI_BYTE, &count);
         status->completed = 1;
-        status->count = (na_size_t) mpi_status.count;
+        status->count = (na_size_t) count;
     }
 
     free(mpi_request);
