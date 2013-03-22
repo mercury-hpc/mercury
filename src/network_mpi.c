@@ -20,6 +20,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
+#include <stdint.h>
 
 static int na_mpi_finalize(void);
 static na_size_t na_mpi_get_unexpected_size(void);
@@ -102,6 +103,12 @@ typedef struct mpi_onesided_info {
 } mpi_onesided_info_t;
 #endif
 
+typedef struct mpi_req {
+    MPI_Request request;
+    uint8_t     ack;
+    MPI_Request ack_request;
+} mpi_req_t;
+
 /* Private variables */
 static int mpi_ext_initialized;                 /* MPI initialized */
 static MPI_Comm mpi_intra_comm = MPI_COMM_NULL; /* Private plugin intra-comm */
@@ -115,6 +122,7 @@ static MPI_Win mpi_dynamic_win;                 /* Dynamic window */
 #endif
 
 #define NA_MPI_ONESIDED_TAG        0x80 /* Default tag used for one-sided over two-sided */
+#define NA_MPI_ONESIDED_ACK_TAG    0x81
 
 #if MPI_VERSION < 3
 pthread_t mpi_onesided_service;
@@ -163,11 +171,15 @@ static void* na_mpi_onesided_service(void *args)
         }
 
         switch (onesided_info.op) {
+            uint8_t ack = 1;
             /* Remote wants to do a put so wait in a recv */
             case MPI_ONESIDED_PUT:
                 MPI_Recv(mpi_mem_handle->base + onesided_info.disp, onesided_info.count,
                         MPI_BYTE, mpi_status.MPI_SOURCE, NA_MPI_ONESIDED_TAG,
                         mpi_onesided_comm, MPI_STATUS_IGNORE);
+                /* Send an ack to ensure that the data has been received */
+                MPI_Send(&ack, 1, MPI_UINT8_T, mpi_status.MPI_SOURCE, NA_MPI_ONESIDED_ACK_TAG,
+                        mpi_onesided_comm);
                 break;
                 /* Remote wants to do a get so do a send */
             case MPI_ONESIDED_GET:
@@ -522,12 +534,14 @@ static int na_mpi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
     int mpi_buf_len = (int) buf_len;
     int mpi_tag = (int) tag;
     mpi_addr_t *mpi_addr = (mpi_addr_t*) dest;
-    MPI_Request *mpi_request;
+    mpi_req_t *mpi_request;
 
-    mpi_request = malloc(sizeof(MPI_Request));
-    *mpi_request = 0;
+    mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request->ack = 0;
+    mpi_request->ack_request = MPI_REQUEST_NULL;
+    mpi_request->request = MPI_REQUEST_NULL;
 
-    mpi_ret = MPI_Isend(mpi_buf, mpi_buf_len, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, mpi_request);
+    mpi_ret = MPI_Isend(mpi_buf, mpi_buf_len, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         S_ERROR_DEFAULT("MPI_Isend() failed");
         free(mpi_request);
@@ -556,12 +570,14 @@ static int na_mpi_recv(void *buf, na_size_t buf_len, na_addr_t source,
     int mpi_buf_len = (int) buf_len;
     int mpi_tag = (int) tag;
     mpi_addr_t *mpi_addr = (mpi_addr_t*) source;
-    MPI_Request *mpi_request;
+    mpi_req_t *mpi_request;
 
-    mpi_request = malloc(sizeof(MPI_Request));
-    *mpi_request = 0;
+    mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request->ack = 0;
+    mpi_request->ack_request = MPI_REQUEST_NULL;
+    mpi_request->request = MPI_REQUEST_NULL;
 
-    mpi_ret = MPI_Irecv(mpi_buf, mpi_buf_len, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, mpi_request);
+    mpi_ret = MPI_Irecv(mpi_buf, mpi_buf_len, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         S_ERROR_DEFAULT("MPI_Irecv() failed");
         free(mpi_request);
@@ -755,7 +771,7 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     MPI_Aint mpi_remote_offset = (MPI_Aint) remote_offset;
     int mpi_length = (int) length; /* TODO careful here that we don't send more than 2GB */
     mpi_addr_t *mpi_remote_addr = (mpi_addr_t*) remote_addr;
-    MPI_Request *mpi_request;
+    mpi_req_t *mpi_request;
 
     /* TODO check that local memory is registered */
     // ht_lookup(mem_map, mpi_local_mem_handle->base);
@@ -766,8 +782,10 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         return ret;
     }
 
-    mpi_request = malloc(sizeof(MPI_Request));
-    *mpi_request = 0;
+    mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request->ack = 0;
+    mpi_request->ack_request = MPI_REQUEST_NULL;
+    mpi_request->request = MPI_REQUEST_NULL;
 
 #if MPI_VERSION < 3
     /* Send to one-sided thread key to access mem_handle */
@@ -782,13 +800,24 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 
     /* Simply do an asynchronous send */
     mpi_ret = MPI_Isend(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, NA_MPI_ONESIDED_TAG, mpi_remote_addr->onesided_comm, mpi_request);
+            mpi_remote_addr->rank, NA_MPI_ONESIDED_TAG, mpi_remote_addr->onesided_comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         S_ERROR_DEFAULT("MPI_Isend() failed");
         free(mpi_request);
         mpi_request = NULL;
         ret = S_FAIL;
     }
+
+    /* Pre-post an ack request */
+    mpi_ret = MPI_Irecv(&mpi_request->ack, 1, MPI_UINT8_T, mpi_remote_addr->rank,
+            NA_MPI_ONESIDED_ACK_TAG, mpi_remote_addr->onesided_comm, &mpi_request->ack_request);
+    if (mpi_ret != MPI_SUCCESS) {
+        S_ERROR_DEFAULT("MPI_Irecv() failed");
+        free(mpi_request);
+        mpi_request = NULL;
+        ret = S_FAIL;
+    }
+
 #else
     MPI_Win_lock(MPI_LOCK_EXCLUSIVE, mpi_remote_addr->rank, 0, mpi_dynamic_win);
 
@@ -831,13 +860,15 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     MPI_Aint mpi_remote_offset = (MPI_Aint) remote_offset;
     int mpi_length = (int) length; /* TODO careful here that we don't send more than 2GB */
     mpi_addr_t *mpi_remote_addr = (mpi_addr_t*) remote_addr;
-    MPI_Request *mpi_request;
+    mpi_req_t *mpi_request;
 
     /* TODO check that local memory is registered */
     // ht_lookup(mem_map, mpi_local_mem_handle->base);
 
-    mpi_request = malloc(sizeof(MPI_Request));
-    *mpi_request = 0;
+    mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request->ack = 0;
+    mpi_request->ack_request = MPI_REQUEST_NULL;
+    mpi_request->request = MPI_REQUEST_NULL;
 
 #if MPI_VERSION < 3
     /* Send to one-sided thread key to access mem_handle */
@@ -852,7 +883,7 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 
     /* Simply do an asynchronous recv */
     mpi_ret = MPI_Irecv(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, NA_MPI_ONESIDED_TAG, mpi_remote_addr->onesided_comm, mpi_request);
+            mpi_remote_addr->rank, NA_MPI_ONESIDED_TAG, mpi_remote_addr->onesided_comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         S_ERROR_DEFAULT("MPI_Irecv() failed");
         free(mpi_request);
@@ -894,7 +925,7 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         na_status_t *status)
 {
     int mpi_ret, ret = S_SUCCESS;
-    MPI_Request *mpi_request = (MPI_Request*) request;
+    mpi_req_t *mpi_request = (mpi_req_t*) request;
     MPI_Status mpi_status;
 
     if (!mpi_request) {
@@ -905,7 +936,7 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
 
     if (timeout == 0) {
         int mpi_flag = 0;
-        mpi_ret = MPI_Test(mpi_request, &mpi_flag, &mpi_status);
+        mpi_ret = MPI_Test(&mpi_request->request, &mpi_flag, &mpi_status);
         if (mpi_ret != MPI_SUCCESS) {
             S_ERROR_DEFAULT("MPI_Test() failed");
             ret = S_FAIL;
@@ -919,7 +950,7 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
             return ret;
         }
     } else {
-        mpi_ret = MPI_Wait(mpi_request, &mpi_status);
+        mpi_ret = MPI_Wait(&mpi_request->request, &mpi_status);
         if (mpi_ret != MPI_SUCCESS) {
             S_ERROR_DEFAULT("MPI_Wait() failed");
             ret = S_FAIL;
@@ -933,6 +964,14 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         status->count = (na_size_t) count;
     }
 
+    if (mpi_request->ack_request != MPI_REQUEST_NULL) {
+        mpi_ret = MPI_Wait(&mpi_request->ack_request, &mpi_status);
+        if (mpi_ret != MPI_SUCCESS) {
+            S_ERROR_DEFAULT("MPI_Wait() failed");
+            ret = S_FAIL;
+            return ret;
+        }
+    }
     free(mpi_request);
     mpi_request = NULL;
 
