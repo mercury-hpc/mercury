@@ -35,6 +35,15 @@ static func_map_t *handler_func_map;
 /* Network class */
 static na_network_class_t *handler_network_class = NULL;
 
+/* Use manual proc */
+static bool use_manual_proc = 0;
+
+/* Debug Temporary for using user-defined manual proc routines and avoid call to automatic free */
+int fs_handler_use_manual_proc()
+{
+    use_manual_proc = 1;
+    return S_SUCCESS;
+}
 
 /*---------------------------------------------------------------------------
  * Function:    fs_handler_init
@@ -306,9 +315,11 @@ int fs_handler_complete(fs_handle_t handle, const void *out_struct)
     priv_handle->addr = NULL;
 
     /* Free in_struct (create a new free proc) */
-    fs_proc_create(NULL, send_buf_len, FS_FREE, &free_proc);
-    if (proc_info->dec_routine) proc_info->dec_routine(free_proc, priv_handle->in_struct);
-    fs_proc_free(free_proc);
+    if (!use_manual_proc) {
+        fs_proc_create(NULL, send_buf_len, FS_FREE, &free_proc);
+        if (proc_info->dec_routine) proc_info->dec_routine(free_proc, priv_handle->in_struct);
+        fs_proc_free(free_proc);
+    }
 
     free(priv_handle);
     priv_handle = NULL;

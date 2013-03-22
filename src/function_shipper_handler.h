@@ -47,6 +47,10 @@ int fs_handler_process(unsigned int timeout);
 /* Forward the response back to the remote client and free handle */
 int fs_handler_complete(fs_handle_t handle, const void *out_struct);
 
+/* Debug Temporary for using user-defined manual proc routines and avoid call to
+ * automatic free */
+int fs_handler_use_manual_proc();
+
 #ifdef __cplusplus
 }
 #endif
