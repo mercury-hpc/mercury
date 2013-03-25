@@ -65,10 +65,10 @@ BUILDING the IOFSL function shipper:
  - Type 'c' multiple times and choose suitable options. Recommended options
    are:
 
-     BUILD_SHARED_LIBS                ON
+     BUILD_SHARED_LIBS                OFF
      BUILD_TESTING                    ON
      CMAKE_INSTALL_PREFIX             /path/to/install/directory
-     IOFSL_SHIPPER_USE_BOOST_PP       ON
+     IOFSL_SHIPPER_USE_BOOST_PP       ON (Optional)
      IOFSL_SHIPPER_USE_MPI            ON
 
    Setting include directory and library paths may require you to toggle to
