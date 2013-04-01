@@ -73,7 +73,6 @@ static na_network_class_t na_mpi_g = {
 #undef MPI_VERSION
 #define MPI_VERSION 2
 
-
 /* Private structs */
 typedef struct mpi_addr {
     MPI_Comm  comm;          /* Communicator */

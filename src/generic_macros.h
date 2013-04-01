@@ -58,9 +58,8 @@ static inline int BOOST_PP_CAT(fs_proc_, struct_type_name) \
         fs_register(func_name, BOOST_PP_CAT(fs_proc_, in_struct_type_name), \
                 BOOST_PP_CAT(fs_proc_, out_struct_type_name))
 
-#define IOFSL_SHIPPER_HANDLER_REGISTER(func_name, fs_func_name, in_struct_type_name, out_struct_type_name) \
-        fs_handler_register(func_name, fs_func_name, BOOST_PP_CAT(fs_proc_, in_struct_type_name), \
-                BOOST_PP_CAT(fs_proc_, out_struct_type_name))
+#define IOFSL_SHIPPER_HANDLER_REGISTER(func_name, fs_func_name) \
+        fs_handler_register(func_name, fs_func_name)
 
 #else /* IOFSL_SHIPPER_HAS_BOOST */
 
@@ -68,9 +67,8 @@ static inline int BOOST_PP_CAT(fs_proc_, struct_type_name) \
         fs_register(func_name, fs_proc_ ## in_struct_type_name, \
                 fs_proc_ ## out_struct_type_name)
 
-#define IOFSL_SHIPPER_HANDLER_REGISTER(func_name, fs_func_name, in_struct_type_name, out_struct_type_name) \
-        fs_handler_register(func_name, fs_func_name, fs_proc_ ## in_struct_type_name, \
-                fs_proc_ ## out_struct_type_name)
+#define IOFSL_SHIPPER_HANDLER_REGISTER(func_name, fs_func_name) \
+        fs_handler_register(func_name, fs_func_name)
 
 #endif /* IOFSL_SHIPPER_HAS_BOOST */
 
@@ -78,6 +76,6 @@ static inline int BOOST_PP_CAT(fs_proc_, struct_type_name) \
         fs_register("IOFSL_SHIPPER_REGISTER_FINALIZE", NULL, NULL)
 
 #define IOFSL_SHIPPER_HANDLER_REGISTER_FINALIZE(fs_func_name) \
-        fs_handler_register("IOFSL_SHIPPER_REGISTER_FINALIZE", fs_func_name, NULL, NULL)
+        fs_handler_register("IOFSL_SHIPPER_REGISTER_FINALIZE", fs_func_name)
 
 #endif /* GENERIC_MACROS_H */

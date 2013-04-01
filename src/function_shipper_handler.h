@@ -19,6 +19,8 @@ typedef void * fs_handle_t;
 
 #define FS_HANDLER_MAX_IDLE_TIME NA_MAX_IDLE_TIME
 
+#define FS_HANDLE_NULL ((fs_handle_t)0)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,25 +33,25 @@ int fs_handler_finalize(void);
 
 /* Register a function name and provide a unique ID */
 void fs_handler_register(const char *func_name,
-        int (*fs_routine) (fs_handle_t handle),
-        int (*dec_routine)(fs_proc_t proc, void *in_struct),
-        int (*enc_routine)(fs_proc_t proc, void *out_struct));
-
-/* Get input from handle */
-int fs_handler_get_input (fs_handle_t handle, void *in_struct);
+        int (*fs_routine) (fs_handle_t handle));
 
 /* Get remote addr from handle */
 const na_addr_t fs_handler_get_addr (fs_handle_t handle);
 
-/* Receive a call from a remote client */
+/* Get input from handle */
+int fs_handler_get_input (fs_handle_t handle, void **in_buf, size_t *in_buf_size);
+
+/* Get output from handle */
+int fs_handler_get_output (fs_handle_t handle, void **out_buf, size_t *out_buf_size);
+
+/* Receive a call from a remote client and process request */
 int fs_handler_process(unsigned int timeout);
 
-/* Forward the response back to the remote client and free handle */
-int fs_handler_complete(fs_handle_t handle, const void *out_struct);
+/* Send the response back to the remote client and free handle */
+int fs_handler_respond(fs_handle_t handle, const void *extra_out_buf, size_t extra_out_buf_size);
 
-/* Debug Temporary for using user-defined manual proc routines and avoid call to
- * automatic free */
-int fs_handler_use_manual_proc();
+/* Free the handle (N.B. called in fs_handler_respond) */
+int fs_handler_free(fs_handle_t handle);
 
 #ifdef __cplusplus
 }

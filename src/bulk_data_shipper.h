@@ -18,8 +18,12 @@ typedef void * bds_handle_t;       /* Bulk data handle */
 typedef void * bds_block_handle_t; /* Block handle for bulk data */
 
 #define BDS_MAX_IDLE_TIME NA_MAX_IDLE_TIME
+
 #define BDS_READWRITE NA_MEM_READWRITE
 #define BDS_READ_ONLY NA_MEM_READ_ONLY
+
+#define BDS_HANDLE_NULL       ((bds_handle_t)0)
+#define BDS_BLOCK_HANDLE_NULL ((bds_block_handle_t)0)
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,8 +66,6 @@ int bds_block_handle_create(void *buf, size_t block_size, unsigned long flags,
 
 /* Free block handle */
 int bds_block_handle_free(bds_block_handle_t block_handle);
-
-
 
 /* Get data size from block handle */
 size_t bds_block_handle_get_size(bds_block_handle_t block_handle);

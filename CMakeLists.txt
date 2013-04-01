@@ -240,7 +240,6 @@ set(IOFSL_SHIPPER_FS_SRCS
   src/function_shipper_handler.c
   src/function_map.c
   src/generic_proc.c
-  src/iofsl_compat.c
 )
 
 #------------------------------------------------------------------------------

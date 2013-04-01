@@ -51,8 +51,15 @@ int fs_bla_write(fs_handle_t handle)
 {
     int ret = S_SUCCESS;
 
+    void           *bla_write_in_buf;
+    size_t          bla_write_in_buf_size;
     bla_write_in_t  bla_write_in_struct;
+
+    void           *bla_write_out_buf;
+    size_t          bla_write_out_buf_size;
     bla_write_out_t bla_write_out_struct;
+
+    fs_proc_t proc;
 
     na_addr_t source = fs_handler_get_addr(handle);
     bds_handle_t bla_write_bds_handle = NULL;
@@ -64,16 +71,22 @@ int fs_bla_write(fs_handle_t handle)
     int bla_write_ret;
 
     /* Get input parameters and data */
-    ret = fs_handler_get_input(handle, &bla_write_in_struct);
+    ret = fs_handler_get_input(handle, &bla_write_in_buf, &bla_write_in_buf_size);
     if (ret != S_SUCCESS) {
-        fprintf(stderr, "Could not get function call input\n");
+        fprintf(stderr, "Could not get input buffer\n");
         return ret;
     }
 
+    /* Create a new decoding proc */
+    fs_proc_create(bla_write_in_buf, bla_write_in_buf_size, FS_DECODE, &proc);
+    fs_proc_bla_write_in_t(proc, &bla_write_in_struct);
+    fs_proc_free(proc);
+
+    /* Get parameters */
     bla_write_fildes = bla_write_in_struct.fildes;
     bla_write_bds_handle = bla_write_in_struct.bds_handle;
 
-    /* Creat a new block handle to read the data */
+    /* Create a new block handle to read the data */
     bla_write_nbytes = bds_handle_get_size(bla_write_bds_handle);
     bla_write_buf = malloc(bla_write_nbytes);
 
@@ -98,10 +111,17 @@ int fs_bla_write(fs_handle_t handle)
     /* Fill output structure */
     bla_write_out_struct.ret = bla_write_ret;
 
-    /* Free handle and send response back (and free input struct fields) */
-    ret = fs_handler_complete(handle, &bla_write_out_struct);
+    /* Create a new encoding proc */
+    fs_handler_get_output(handle, &bla_write_out_buf, &bla_write_out_buf_size);
+
+    fs_proc_create(bla_write_out_buf, bla_write_out_buf_size, FS_ENCODE, &proc);
+    fs_proc_bla_write_out_t(proc, &bla_write_out_struct);
+    fs_proc_free(proc);
+
+    /* Free handle and send response back */
+    ret = fs_handler_respond(handle, NULL, 0);
     if (ret != S_SUCCESS) {
-        fprintf(stderr, "Could not complete function call\n");
+        fprintf(stderr, "Could not respond\n");
         return ret;
     }
 
@@ -113,6 +133,11 @@ int fs_bla_write(fs_handle_t handle)
     }
 
     free(bla_write_buf);
+
+    /* Also free memory allocated during decoding */
+    fs_proc_create(NULL, 0, FS_FREE, &proc);
+    fs_proc_bla_write_in_t(proc, &bla_write_in_struct);
+    fs_proc_free(proc);
 
     return ret;
 }
@@ -145,7 +170,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    IOFSL_SHIPPER_HANDLER_REGISTER("bla_write", fs_bla_write, bla_write_in_t, bla_write_out_t);
+    IOFSL_SHIPPER_HANDLER_REGISTER("bla_write", fs_bla_write);
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */

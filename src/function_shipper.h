@@ -21,8 +21,11 @@ typedef uint32_t     fs_id_t;          /* Op id of the operation */
 typedef bool         fs_status_t;      /* Status of the operation */
 typedef void *       fs_request_t;     /* Request object */
 
-#define FS_STATUS_IGNORE (fs_status_t *)1
+#define FS_STATUS_IGNORE ((fs_status_t *)1)
+
 #define FS_MAX_IDLE_TIME NA_MAX_IDLE_TIME
+
+#define FS_REQUEST_NULL ((fs_request_t)0)
 
 #ifdef __cplusplus
 extern "C" {

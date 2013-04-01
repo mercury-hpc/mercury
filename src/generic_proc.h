@@ -15,6 +15,7 @@
 #include "shipper_error.h"
 #include "shipper_config.h"
 #include "bulk_data_shipper.h"
+#include "iofsl_compat.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -22,22 +23,23 @@
 #include <string.h>
 #include <stdbool.h>
 
-#ifndef FS_INLINE
+#ifndef FS_PROC_INLINE
 # if __GNUC__ && !__GNUC_STDC_INLINE__
-#   define FS_INLINE extern inline
+#   define FS_PROC_INLINE extern inline
 # else
-#  define FS_INLINE inline
+#  define FS_PROC_INLINE inline
 # endif
 #endif
 
 /* TODO using ifdef IOFSL_SHIPPER_HAS_XDR is dangerous for inline functions */
-
 #ifdef IOFSL_SHIPPER_HAS_XDR
 #include <rpc/types.h>
 #include <rpc/xdr.h>
 #endif
 
 typedef void * fs_proc_t;
+
+#define FS_PROC_NULL ((fs_proc_t)0)
 
 /*
  * Proc operations.  FS_ENCODE causes the type to be encoded into the
@@ -51,13 +53,22 @@ typedef enum {
     FS_FREE
 } fs_proc_op_t;
 
+/*
+ * 0      FS_PROC_HEADER_SIZE              size
+ * |______________|__________________________|
+ * |    Header    |        Encoded Data      |
+ * |______________|__________________________|
+ */
+
 typedef struct fs_proc_buf {
-    void    *buf;
-    void    *buf_ptr;
-    size_t   size;
-    size_t   size_left;
+    void    *buf;       /* Pointer to allocated buffer */
+    void    *buf_ptr;   /* Pointer to current position */
+    size_t   size;      /* Total buffer size */
+    size_t   size_left; /* Available size for user */
     bool     is_mine;
-    bool     is_used;
+#ifdef IOFSL_SHIPPER_HAS_XDR
+    XDR      xdr;
+#endif
 } fs_proc_buf_t;
 
 typedef struct fs_priv_proc {
@@ -65,40 +76,49 @@ typedef struct fs_priv_proc {
     fs_proc_buf_t *current_buf;
     fs_proc_buf_t  proc_buf;
     fs_proc_buf_t  extra_buf;
-#ifdef IOFSL_SHIPPER_HAS_XDR
-    XDR            proc_xdr;
-    XDR            extra_xdr;
-#endif
 } fs_priv_proc_t;
 
 typedef const char * fs_string_t;
 
-#define BDS_MAX_HANDLE_SIZE 32 /* TODO Arbitrary value / may need to be increased depending on implementations */
+#define BDS_MAX_HANDLE_SIZE 32 /* TODO Arbitrary value */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Create a new encoding/decoding processor from a given buffer */
-int fs_proc_create(void *buf, size_t buf_len, fs_proc_op_t op, fs_proc_t *proc);
+/* Can be used to allocate a buffer that will be used by the generic proc
+ * (use free to free it)
+ */
+int fs_proc_buf_alloc(void **mem_ptr, size_t size);
 
-/* Free the processor */
+/* Create/Free a new encoding/decoding processor from a given buffer */
+int fs_proc_create(void *buf, size_t buf_size, fs_proc_op_t op, fs_proc_t *proc);
 int fs_proc_free(fs_proc_t proc);
 
-/* Get total buffer size available for processing */
+/* Get/Request buffer size for processing */
 size_t fs_proc_get_size(fs_proc_t proc);
-
-/* Request a new buffer size */
-int fs_proc_set_size(fs_proc_t proc, size_t buf_len);
+int fs_proc_set_size(fs_proc_t proc, size_t buf_size);
 
 /* Get size left for processing (info) */
 size_t fs_proc_get_size_left(fs_proc_t proc);
 
-/* Get pointer to current buffer (for manual encoding) */
+/* Get/Set current buffer position */
 void * fs_proc_get_buf_ptr(fs_proc_t proc);
-
-/* Set new buffer pointer (for manual encoding) */
 int fs_proc_set_buf_ptr(fs_proc_t proc, void *buf_ptr);
+
+/* Get required space for storing header data */
+size_t fs_proc_get_header_size(void);
+
+/* Get extra buffer */
+void * fs_proc_get_extra_buf(fs_proc_t proc);
+
+/* Get extra buffer size */
+size_t fs_proc_get_extra_size(fs_proc_t proc);
+
+/* Set extra buffer to mine (if other calls mine, buffer is no longer freed
+ * after fs_proc_free)
+ */
+int fs_proc_set_extra_buf_is_mine(fs_proc_t proc, bool mine);
 
 /*---------------------------------------------------------------------------
  * Function:    fs_proc_string_hash
@@ -109,7 +129,7 @@ int fs_proc_set_buf_ptr(fs_proc_t proc, void *buf_ptr);
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_string_hash(const char *string)
+FS_PROC_INLINE unsigned int fs_proc_string_hash(const char *string)
 {
     /* This is the djb2 string hash function */
 
@@ -134,7 +154,7 @@ FS_INLINE int fs_proc_string_hash(const char *string)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_memcpy(fs_proc_t proc, void *data, size_t data_size)
+FS_PROC_INLINE int fs_proc_memcpy(fs_proc_t proc, void *data, size_t data_size)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     const void *src;
@@ -152,7 +172,7 @@ FS_INLINE int fs_proc_memcpy(fs_proc_t proc, void *data, size_t data_size)
     src = (priv_proc->op == FS_ENCODE) ? (const void *) data : (const void *) priv_proc->current_buf->buf_ptr;
     dest = (priv_proc->op == FS_ENCODE) ? priv_proc->current_buf->buf_ptr : data;
     memcpy(dest, src, data_size);
-    priv_proc->current_buf->buf_ptr   += data_size;
+    priv_proc->current_buf->buf_ptr = (char*) priv_proc->current_buf->buf_ptr + data_size;
     priv_proc->current_buf->size_left -= data_size;
 
     return ret;
@@ -167,12 +187,12 @@ FS_INLINE int fs_proc_memcpy(fs_proc_t proc, void *data, size_t data_size)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_int8_t  (fs_proc_t proc, int8_t *data)
+FS_PROC_INLINE int fs_proc_int8_t  (fs_proc_t proc, int8_t *data)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     int ret = S_FAIL;
 #ifdef IOFSL_SHIPPER_HAS_XDR
-    ret = xdr_int8_t(&priv_proc->xdr, data) ? S_SUCCESS : S_FAIL;
+    ret = xdr_int8_t(&priv_proc->current_buf->xdr, data) ? S_SUCCESS : S_FAIL;
 #else
     ret = fs_proc_memcpy(priv_proc, data, sizeof(int8_t));
 #endif
@@ -188,12 +208,12 @@ FS_INLINE int fs_proc_int8_t  (fs_proc_t proc, int8_t *data)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_uint8_t  (fs_proc_t proc, uint8_t *data)
+FS_PROC_INLINE int fs_proc_uint8_t  (fs_proc_t proc, uint8_t *data)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     int ret = S_FAIL;
 #ifdef IOFSL_SHIPPER_HAS_XDR
-    ret = xdr_uint8_t(&priv_proc->xdr, data) ? S_SUCCESS : S_FAIL;
+    ret = xdr_uint8_t(&priv_proc->current_buf->xdr, data) ? S_SUCCESS : S_FAIL;
 #else
     ret = fs_proc_memcpy(priv_proc, data, sizeof(uint8_t));
 #endif
@@ -209,12 +229,12 @@ FS_INLINE int fs_proc_uint8_t  (fs_proc_t proc, uint8_t *data)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_int16_t  (fs_proc_t proc, int16_t *data)
+FS_PROC_INLINE int fs_proc_int16_t  (fs_proc_t proc, int16_t *data)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     int ret = S_FAIL;
 #ifdef IOFSL_SHIPPER_HAS_XDR
-    ret = xdr_int16_t(&priv_proc->xdr, data) ? S_SUCCESS : S_FAIL;
+    ret = xdr_int16_t(&priv_proc->current_buf->xdr, data) ? S_SUCCESS : S_FAIL;
 #else
     ret = fs_proc_memcpy(priv_proc, data, sizeof(int16_t));
 #endif
@@ -230,12 +250,12 @@ FS_INLINE int fs_proc_int16_t  (fs_proc_t proc, int16_t *data)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_uint16_t  (fs_proc_t proc, uint16_t *data)
+FS_PROC_INLINE int fs_proc_uint16_t  (fs_proc_t proc, uint16_t *data)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     int ret = S_FAIL;
 #ifdef IOFSL_SHIPPER_HAS_XDR
-    ret = xdr_uint16_t(&priv_proc->xdr, data) ? S_SUCCESS : S_FAIL;
+    ret = xdr_uint16_t(&priv_proc->current_buf->xdr, data) ? S_SUCCESS : S_FAIL;
 #else
     ret = fs_proc_memcpy(priv_proc, data, sizeof(uint16_t));
 #endif
@@ -251,12 +271,12 @@ FS_INLINE int fs_proc_uint16_t  (fs_proc_t proc, uint16_t *data)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_int32_t  (fs_proc_t proc, int32_t *data)
+FS_PROC_INLINE int fs_proc_int32_t  (fs_proc_t proc, int32_t *data)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     int ret = S_FAIL;
 #ifdef IOFSL_SHIPPER_HAS_XDR
-    ret = xdr_int32_t(&priv_proc->xdr, data) ? S_SUCCESS : S_FAIL;
+    ret = xdr_int32_t(&priv_proc->current_buf->xdr, data) ? S_SUCCESS : S_FAIL;
 #else
     ret = fs_proc_memcpy(priv_proc, data, sizeof(int32_t));
 #endif
@@ -272,12 +292,12 @@ FS_INLINE int fs_proc_int32_t  (fs_proc_t proc, int32_t *data)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_uint32_t  (fs_proc_t proc, uint32_t *data)
+FS_PROC_INLINE int fs_proc_uint32_t  (fs_proc_t proc, uint32_t *data)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     int ret = S_FAIL;
 #ifdef IOFSL_SHIPPER_HAS_XDR
-    ret = xdr_uint32_t(&priv_proc->xdr, data) ? S_SUCCESS : S_FAIL;
+    ret = xdr_uint32_t(&priv_proc->current_buf->xdr, data) ? S_SUCCESS : S_FAIL;
 #else
     ret = fs_proc_memcpy(priv_proc, data, sizeof(uint32_t));
 #endif
@@ -293,12 +313,12 @@ FS_INLINE int fs_proc_uint32_t  (fs_proc_t proc, uint32_t *data)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_int64_t  (fs_proc_t proc, int64_t *data)
+FS_PROC_INLINE int fs_proc_int64_t  (fs_proc_t proc, int64_t *data)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     int ret = S_FAIL;
 #ifdef IOFSL_SHIPPER_HAS_XDR
-    ret = xdr_int64_t(&priv_proc->xdr, data) ? S_SUCCESS : S_FAIL;
+    ret = xdr_int64_t(&priv_proc->current_buf->xdr, data) ? S_SUCCESS : S_FAIL;
 #else
     ret = fs_proc_memcpy(priv_proc, data, sizeof(int64_t));
 #endif
@@ -314,12 +334,12 @@ FS_INLINE int fs_proc_int64_t  (fs_proc_t proc, int64_t *data)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_uint64_t  (fs_proc_t proc, uint64_t *data)
+FS_PROC_INLINE int fs_proc_uint64_t  (fs_proc_t proc, uint64_t *data)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     int ret = S_FAIL;
 #ifdef IOFSL_SHIPPER_HAS_XDR
-    ret = xdr_uint64_t(&priv_proc->xdr, data) ? S_SUCCESS : S_FAIL;
+    ret = xdr_uint64_t(&priv_proc->current_buf->xdr, data) ? S_SUCCESS : S_FAIL;
 #else
     ret = fs_proc_memcpy(priv_proc, data, sizeof(uint64_t));
 #endif
@@ -335,13 +355,14 @@ FS_INLINE int fs_proc_uint64_t  (fs_proc_t proc, uint64_t *data)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_raw  (fs_proc_t proc, void *buf, size_t buf_len)
+FS_PROC_INLINE int fs_proc_raw  (fs_proc_t proc, void *buf, size_t buf_size)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     uint8_t *buf_ptr;
+    uint8_t *buf_ptr_lim = (uint8_t*) buf + buf_size;
     int ret = S_FAIL;
 
-    for (buf_ptr = buf; buf_ptr < (uint8_t*)buf + buf_len; buf_ptr++) {
+    for (buf_ptr = (uint8_t*) buf; buf_ptr < buf_ptr_lim; buf_ptr++) {
         ret = fs_proc_uint8_t(priv_proc, buf_ptr);
         if (ret != S_SUCCESS) {
             S_ERROR_DEFAULT("Proc error");
@@ -361,7 +382,7 @@ FS_INLINE int fs_proc_raw  (fs_proc_t proc, void *buf, size_t buf_len)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_fs_string_t(fs_proc_t proc, fs_string_t *string)
+FS_PROC_INLINE int fs_proc_fs_string_t(fs_proc_t proc, fs_string_t *string)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     uint32_t string_len = 0;
@@ -392,7 +413,7 @@ FS_INLINE int fs_proc_fs_string_t(fs_proc_t proc, fs_string_t *string)
                 ret = S_FAIL;
                 return ret;
             }
-            string_buf = malloc(string_len);
+            string_buf = (char*) malloc(string_len);
             ret = fs_proc_raw(priv_proc, string_buf, string_len);
             if (ret != S_SUCCESS) {
                 S_ERROR_DEFAULT("Proc error");
@@ -428,23 +449,27 @@ FS_INLINE int fs_proc_fs_string_t(fs_proc_t proc, fs_string_t *string)
  *
  *---------------------------------------------------------------------------
  */
-FS_INLINE int fs_proc_bds_handle_t(fs_proc_t proc, bds_handle_t *handle)
+FS_PROC_INLINE int fs_proc_bds_handle_t(fs_proc_t proc, bds_handle_t *handle)
 {
     fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
     int ret = S_FAIL;
 
     switch (priv_proc->op) {
+        void *new_buf_ptr;
+
         case FS_ENCODE:
             /* If not enough space allocate extra space if encoding or just get extra buffer if decoding */
             if (priv_proc->current_buf->size_left < BDS_MAX_HANDLE_SIZE) {
                 fs_proc_set_size(proc, priv_proc->proc_buf.size + priv_proc->extra_buf.size + BDS_MAX_HANDLE_SIZE);
             }
             ret = bds_handle_serialize(priv_proc->current_buf->buf_ptr, BDS_MAX_HANDLE_SIZE, *handle);
-            fs_proc_set_buf_ptr(proc, priv_proc->current_buf->buf_ptr + BDS_MAX_HANDLE_SIZE);
+            new_buf_ptr = (char*) priv_proc->current_buf->buf_ptr + BDS_MAX_HANDLE_SIZE;
+            fs_proc_set_buf_ptr(proc, new_buf_ptr);
             break;
         case FS_DECODE:
             ret = bds_handle_deserialize(handle, priv_proc->current_buf->buf_ptr, BDS_MAX_HANDLE_SIZE);
-            fs_proc_set_buf_ptr(proc, priv_proc->current_buf->buf_ptr + BDS_MAX_HANDLE_SIZE);
+            new_buf_ptr = (char*) priv_proc->current_buf->buf_ptr + BDS_MAX_HANDLE_SIZE;
+            fs_proc_set_buf_ptr(proc, new_buf_ptr);
             break;
         case FS_FREE:
             ret = bds_handle_free(*handle);
@@ -453,10 +478,109 @@ FS_INLINE int fs_proc_bds_handle_t(fs_proc_t proc, bds_handle_t *handle)
         default:
             break;
     }
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Proc error");
+        ret = S_FAIL;
+    }
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    fs_proc_header_function
+ *
+ * Purpose:     Private information for function shipping
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+FS_PROC_INLINE int fs_proc_header_request (fs_proc_t proc, uint32_t *op_id,
+        uint8_t *extra_buf_used)
+{
+    fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
+    fs_proc_buf_t  *current_buf;
+    void *current_buf_ptr;
+    uint32_t iofsl_op_id = PROTO_GENERIC;
+    int ret = S_FAIL;
+
+    current_buf = priv_proc->current_buf;
+    current_buf_ptr = fs_proc_get_buf_ptr(proc);
+    priv_proc->current_buf = &priv_proc->proc_buf;
+    fs_proc_set_buf_ptr(proc, priv_proc->proc_buf.buf);
+
+    /* Add IOFSL op id to parameters (used for IOFSL compat) */
+    ret = fs_proc_uint32_t(proc, &iofsl_op_id);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Proc error");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    /* Add generic op id now */
+    ret = fs_proc_uint32_t(proc, op_id);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Proc error");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    /* Has an extra buffer */
+    ret = fs_proc_uint8_t(proc, extra_buf_used);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Proc error");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    priv_proc->current_buf = current_buf;
+    fs_proc_set_buf_ptr(proc, current_buf_ptr);
 
     return ret;
 }
 
+/*---------------------------------------------------------------------------
+ * Function:    fs_proc_header_response
+ *
+ * Purpose:     Private information for response
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+FS_PROC_INLINE int fs_proc_header_response (fs_proc_t proc, uint8_t *extra_buf_used)
+{
+    fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
+    fs_proc_buf_t  *current_buf;
+    void *current_buf_ptr;
+    int32_t iofsl_op_status = 0;
+    int ret = S_FAIL;
+
+    current_buf = priv_proc->current_buf;
+    current_buf_ptr = fs_proc_get_buf_ptr(proc);
+    priv_proc->current_buf = &priv_proc->proc_buf;
+    fs_proc_set_buf_ptr(proc, priv_proc->proc_buf.buf);
+
+    /* Add IOFSL op id to parameters (used for IOFSL compat) */
+    ret = fs_proc_int32_t(proc, &iofsl_op_status);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Proc error");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    /* Has an extra buffer */
+    fs_proc_uint8_t(proc, extra_buf_used);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Proc error");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    priv_proc->current_buf = current_buf;
+    fs_proc_set_buf_ptr(proc, current_buf_ptr);
+
+    return ret;
+}
 
 #ifdef __cplusplus
 }

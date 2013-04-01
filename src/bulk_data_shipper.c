@@ -418,9 +418,6 @@ int bds_block_handle_free(bds_block_handle_t block_handle)
 
     if (priv_block_handle) {
         ret = na_mem_deregister(bds_network_class, priv_block_handle->mem_handle);
-        /* No longer free the data block here */
-        //if (priv_block_handle->data) free(priv_block_handle->data);
-        //priv_block_handle->data = NULL;
         free(priv_block_handle);
         priv_block_handle = NULL;
     } else {

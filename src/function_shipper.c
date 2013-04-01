@@ -22,12 +22,20 @@
 
 /* Private structs */
 typedef struct fs_priv_request {
-    fs_id_t      id;
-    fs_proc_t    enc_proc;
-    fs_proc_t    dec_proc;
-    void *       out_struct;
-    na_request_t send_request;
-    na_request_t recv_request;
+    fs_id_t       id;
+
+    void         *send_buf;
+    na_size_t     send_buf_size;
+    na_request_t  send_request;
+    void         *extra_send_buf;
+    na_size_t     extra_send_buf_size;
+    bds_handle_t  extra_send_buf_handle;
+
+    void         *recv_buf;
+    na_size_t     recv_buf_size;
+    na_request_t  recv_request;
+
+    void         *out_struct;
 } fs_priv_request_t;
 
 typedef struct fs_proc_info {
@@ -90,6 +98,10 @@ int fs_init(na_network_class_t *network_class)
 
     /* Create new function map */
     func_map = func_map_new();
+    if (!func_map) {
+        S_ERROR_DEFAULT("Could not create function map");
+        ret = S_FAIL;
+    }
 
     return ret;
 }
@@ -113,7 +125,12 @@ int fs_finalize(void)
         return ret;
     }
 
-    na_finalize(fs_network_class);
+    ret = na_finalize(fs_network_class);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Could not finalize");
+        ret = S_FAIL;
+        return ret;
+    }
 
     /* Delete function map */
     func_map_free(func_map);
@@ -153,7 +170,12 @@ fs_id_t fs_register(const char *func_name,
 
     proc_info->enc_routine = enc_routine;
     proc_info->dec_routine = dec_routine;
-    func_map_insert(func_map, id, proc_info);
+    if (func_map_insert(func_map, id, proc_info) != S_SUCCESS) {
+        S_ERROR_DEFAULT("Could not insert func ID");
+        free(proc_info);
+        free(id);
+        return 0;
+    }
 
     return *id;
 }
@@ -171,19 +193,14 @@ int fs_forward(na_addr_t addr, fs_id_t id, const void *in_struct, void *out_stru
         fs_request_t *request)
 {
     int ret = S_SUCCESS;
+
     fs_proc_info_t *proc_info;
-
-    fs_priv_proc_t *priv_enc_proc;
-    fs_priv_proc_t *priv_dec_proc;
-    uint8_t extra_buf_used = 0;
-    uint64_t extra_buf_size;
-
-    /* buf len is the size of an unexpected message by default */
-    na_size_t send_buf_len = na_get_unexpected_size(fs_network_class);
-    na_size_t recv_buf_len = na_get_unexpected_size(fs_network_class);
+    fs_proc_t enc_proc = FS_PROC_NULL;
+    uint8_t extra_send_buf_used = 0;
 
     static int tag_incr = 0;
     na_tag_t   send_tag, recv_tag;
+
     fs_priv_request_t *priv_request = NULL;
 
     /* Retrieve encoding function from function map */
@@ -191,52 +208,102 @@ int fs_forward(na_addr_t addr, fs_id_t id, const void *in_struct, void *out_stru
     if (!proc_info) {
         S_ERROR_DEFAULT("func_map_lookup failed");
         ret = S_FAIL;
-        return ret;
+        goto done;
     }
 
     priv_request = malloc(sizeof(fs_priv_request_t));
 
     priv_request->id = id;
+
+    /* Send Buffer */
+    priv_request->send_buf_size = na_get_unexpected_size(fs_network_class);
+    ret = fs_proc_buf_alloc(&priv_request->send_buf, priv_request->send_buf_size);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Could not allocate send buffer");
+        ret = S_FAIL;
+        goto done;
+    }
+    priv_request->send_request = NA_REQUEST_NULL;
+
+    /* Recv Buffer */
+    priv_request->recv_buf_size = na_get_unexpected_size(fs_network_class);
+    ret = fs_proc_buf_alloc(&priv_request->recv_buf, priv_request->recv_buf_size);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Could not allocate send buffer");
+        ret = S_FAIL;
+        goto done;
+    }
+    priv_request->recv_request = NA_REQUEST_NULL;
+
+    /* Extra send buffer set to NULL by default */
+    priv_request->extra_send_buf = NULL;
+    priv_request->extra_send_buf_size = 0;
+    priv_request->extra_send_buf_handle = BDS_HANDLE_NULL;
+
+    /* Keep pointer to output structure */
     priv_request->out_struct = out_struct;
 
     /* Create a new encoding proc */
-    fs_proc_create(NULL, send_buf_len, FS_ENCODE, &priv_request->enc_proc);
-    priv_enc_proc = (fs_priv_proc_t*) priv_request->enc_proc;
+    ret = fs_proc_create(priv_request->send_buf, priv_request->send_buf_size,
+            FS_ENCODE, &enc_proc);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Could not create proc");
+        ret = S_FAIL;
+        goto done;
+    }
 
-    /* Add IOFSL op id to parameters (used for IOFSL compat) */
-    iofsl_compat_proc_id(priv_request->enc_proc);
-
-    /* Add generic op id now (do a simple memcpy) */
-    fs_proc_uint32_t(priv_request->enc_proc, &id);
-
-    /* Need to keep here some extra space in case we need to add extra buf info */
-    fs_proc_uint8_t(priv_request->enc_proc, &extra_buf_used);
-
-    /* Need to keep here some extra space in case we need to add extra buf_size */
-    extra_buf_size = 0;
-    fs_proc_uint64_t(priv_request->enc_proc, &extra_buf_size);
-
-//    printf("Proc size: %lu\n", fs_proc_get_size(priv_request->enc_proc));
-//    printf("Proc size left: %lu\n", fs_proc_get_size_left(priv_request->enc_proc));
+    /* Leave some space for the header */
+    ret = fs_proc_set_buf_ptr(enc_proc, priv_request->send_buf + fs_proc_get_header_size());
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Could not move proc to user data");
+        ret = S_FAIL;
+        goto done;
+    }
 
     /* Encode the function parameters */
-    if (proc_info->enc_routine) proc_info->enc_routine(priv_request->enc_proc, (void*)in_struct);
+    if (proc_info->enc_routine) {
+        ret = proc_info->enc_routine(enc_proc, (void*)in_struct);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("Could not encode parameters");
+            ret = S_FAIL;
+        }
+    }
 
     /* The size of the encoding buffer may have changed at this point
      * --> if the buffer is too large, we need to do:
      *  - 1: send an unexpected message with info + eventual bulk data descriptor
-     *  - 2: send the remaining data in extra buf using either point to point or bulk transfer
+     *  - 2: send the remaining data in extra buf using bulk data transfer
      */
-    if (fs_proc_get_size(priv_request->enc_proc) > na_get_unexpected_size(fs_network_class)) {
-        /* Use bulk transfer */
-
-    } else {
-
+    if (fs_proc_get_size(enc_proc) > na_get_unexpected_size(fs_network_class)) {
+        priv_request->extra_send_buf = fs_proc_get_extra_buf(enc_proc);
+        priv_request->extra_send_buf_size = fs_proc_get_extra_size(enc_proc);
+        ret = bds_handle_create(priv_request->extra_send_buf,
+                priv_request->extra_send_buf_size, BDS_READ_ONLY,
+                &priv_request->extra_send_buf_handle);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("Could not create bulk data handle");
+            goto done;
+        }
+        fs_proc_set_extra_buf_is_mine(enc_proc, 1);
+        extra_send_buf_used = 1;
     }
 
-    /* Create a new decoding proc now to prepost decoding buffer */
-    fs_proc_create(NULL, recv_buf_len, FS_DECODE, &priv_request->dec_proc);
-    priv_dec_proc = (fs_priv_proc_t*) priv_request->dec_proc;
+    /* Encode header */
+    ret = fs_proc_header_request(enc_proc, &id, &extra_send_buf_used);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Could not encode header");
+        ret = S_FAIL;
+        goto done;
+    }
+
+    if (extra_send_buf_used) {
+        ret = fs_proc_bds_handle_t(enc_proc, &priv_request->extra_send_buf_handle);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("Could not encode handle");
+            ret = S_FAIL;
+            goto done;
+        }
+    }
 
     /* Post the send message and pre-post the recv message */
     send_tag = gen_tag() + tag_incr;
@@ -244,30 +311,54 @@ int fs_forward(na_addr_t addr, fs_id_t id, const void *in_struct, void *out_stru
     tag_incr++;
     if (send_tag > FS_MAXTAG) tag_incr = 0;
 
-    ret = na_send_unexpected(fs_network_class, priv_enc_proc->proc_buf.buf,
-            send_buf_len, addr, send_tag, &priv_request->send_request, NULL);
+    ret = na_send_unexpected(fs_network_class, priv_request->send_buf,
+            priv_request->send_buf_size, addr, send_tag,
+            &priv_request->send_request, NULL);
     if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Could not send buffer");
         ret = S_FAIL;
-        fs_proc_free(priv_request->enc_proc);
-        fs_proc_free(priv_request->dec_proc);
-        free(priv_request);
-        priv_request = NULL;
-        return ret;
+        goto done;
     }
-    ret = na_recv(fs_network_class, priv_dec_proc->proc_buf.buf,
-            recv_buf_len, addr, recv_tag, &priv_request->recv_request, NULL);
+
+    ret = na_recv(fs_network_class, priv_request->recv_buf,
+            priv_request->recv_buf_size, addr, recv_tag,
+            &priv_request->recv_request, NULL);
     if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Could not pre-post buffer");
         ret = S_FAIL;
-        fs_proc_free(priv_request->enc_proc);
-        fs_proc_free(priv_request->dec_proc);
-        free(priv_request);
-        priv_request = NULL;
-        return ret;
+        goto done;
     }
 
     *request = (fs_request_t) priv_request;
 
-    return ret;
+done:
+    if (enc_proc != FS_PROC_NULL) fs_proc_free(enc_proc);
+    enc_proc = FS_PROC_NULL;
+
+    if (ret != S_SUCCESS) {
+        if (priv_request != NULL) {
+            if (priv_request->send_buf) {
+                free(priv_request->send_buf);
+                priv_request->send_buf = NULL;
+            }
+            if (priv_request->recv_buf) {
+                free(priv_request->recv_buf);
+                priv_request->recv_buf = NULL;
+            }
+            if (priv_request->extra_send_buf) {
+                free(priv_request->extra_send_buf);
+                priv_request->extra_send_buf = NULL;
+            }
+            if (priv_request->extra_send_buf_handle != BDS_HANDLE_NULL) {
+                bds_handle_free(priv_request->extra_send_buf_handle);
+                priv_request->extra_send_buf_handle = BDS_HANDLE_NULL;
+            }
+            free(priv_request);
+            priv_request = NULL;
+        }
+     }
+
+     return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -294,14 +385,15 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
         return ret;
     }
 
-    if (priv_request->send_request) {
+    if (priv_request->send_request != NA_REQUEST_NULL) {
         ret = na_wait(fs_network_class, priv_request->send_request, timeout, &send_status);
         if (ret != S_SUCCESS) {
             S_ERROR_DEFAULT("Error while waiting");
-            /* TODO what do we do at that point ? */
+            ret = S_FAIL;
+            return ret;
         }
         if (!send_status.completed) {
-            if (timeout == NA_MAX_IDLE_TIME) {
+            if (timeout == FS_MAX_IDLE_TIME) {
                 S_ERROR_DEFAULT("Reached MAX_IDLE_TIME and the request has not completed yet");
             }
             if (status && (status != FS_STATUS_IGNORE)) {
@@ -309,18 +401,31 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
             }
         } else {
             /* Request has been freed so set it to NULL */
-            priv_request->send_request = NULL;
+            priv_request->send_request = NA_REQUEST_NULL;
+
+            /* Everything has been sent so free unused resources */
+            if (priv_request->send_buf) free (priv_request->send_buf);
+            priv_request->send_buf = NULL;
+            priv_request->send_buf_size = 0;
+            if (priv_request->extra_send_buf) free(priv_request->extra_send_buf);
+            priv_request->extra_send_buf = NULL;
+            priv_request->extra_send_buf_size = 0;
+            if (priv_request->extra_send_buf_handle != BDS_HANDLE_NULL)
+                bds_handle_free(priv_request->extra_send_buf_handle);
+            priv_request->extra_send_buf_handle = BDS_HANDLE_NULL;
         }
     }
 
-    if (!priv_request->send_request && priv_request->recv_request) {
+    if ((priv_request->send_request == NA_REQUEST_NULL) &&
+            (priv_request->recv_request != NA_REQUEST_NULL)) {
         ret = na_wait(fs_network_class, priv_request->recv_request, timeout, &recv_status);
         if (ret != S_SUCCESS) {
             S_ERROR_DEFAULT("Error while waiting");
-            /* TODO what do we do at that point ? */
+            ret = S_FAIL;
+            return ret;
         }
         if (!recv_status.completed) {
-            if (timeout == NA_MAX_IDLE_TIME) {
+            if (timeout == FS_MAX_IDLE_TIME) {
                 S_ERROR_DEFAULT("Reached MAX_IDLE_TIME and the request has not completed yet");
             }
             if (status && (status != FS_STATUS_IGNORE)) {
@@ -328,11 +433,15 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
             }
         } else {
             /* Request has been freed so set it to NULL */
-            priv_request->recv_request = NULL;
+            priv_request->recv_request = NA_REQUEST_NULL;
         }
     }
 
-    if (!priv_request->send_request && !priv_request->recv_request) {
+    if ((priv_request->send_request == NA_REQUEST_NULL) &&
+            (priv_request->recv_request == NA_REQUEST_NULL)) {
+        fs_proc_t dec_proc;
+        uint8_t extra_recv_buf_used;
+
         /* Decode depending on op ID */
         proc_info = func_map_lookup(func_map, &priv_request->id);
         if (!proc_info) {
@@ -341,17 +450,50 @@ int fs_wait(fs_request_t request, unsigned int timeout, fs_status_t *status)
             return ret;
         }
 
-        /* Check op status from parameters (used for IOFSL compat) */
-        iofsl_compat_proc_status(priv_request->dec_proc);
+        ret = fs_proc_create(priv_request->recv_buf, priv_request->recv_buf_size,
+                FS_DECODE, &dec_proc);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("Could not create proc");
+            ret = S_FAIL;
+            return ret;
+        }
+
+        ret = fs_proc_header_response(dec_proc, &extra_recv_buf_used);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("Could not decode header");
+            ret = S_FAIL;
+            return ret;
+        }
+
+        if (extra_recv_buf_used) {
+            /* TODO Receive extra buffer now */
+        } else {
+            /* Set buffer to user data */
+            ret = fs_proc_set_buf_ptr(dec_proc, priv_request->recv_buf + fs_proc_get_header_size());
+            if (ret != S_SUCCESS) {
+                S_ERROR_DEFAULT("Could not move proc to user data");
+                ret = S_FAIL;
+                return ret;
+            }
+        }
 
         /* Decode function parameters */
-        if (proc_info->dec_routine) proc_info->dec_routine(priv_request->dec_proc, priv_request->out_struct);
-
-        /* Free the encoding proc */
-        fs_proc_free(priv_request->enc_proc);
+        if (proc_info->dec_routine) {
+            ret = proc_info->dec_routine(dec_proc, priv_request->out_struct);
+            if (ret != S_SUCCESS) {
+                S_ERROR_DEFAULT("Could not decode return parameters");
+                ret = S_FAIL;
+                return ret;
+            }
+        }
 
         /* Free the decoding proc */
-        fs_proc_free(priv_request->dec_proc);
+        fs_proc_free(dec_proc);
+
+        /* Everything has been decode so free unused resources */
+        if (priv_request->recv_buf) free (priv_request->recv_buf);
+        priv_request->recv_buf = NULL;
+        priv_request->recv_buf_size = 0;
 
         /* Free request */
         free(priv_request);

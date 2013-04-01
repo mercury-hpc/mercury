@@ -25,63 +25,84 @@ unsigned int finalizing = 0;
 
 int server_finalize(fs_handle_t handle)
 {
-    int fs_ret = S_SUCCESS;
-
-    /* Get input parameters and data */
-    fs_ret = fs_handler_get_input(handle, NULL);
-    if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not get function call input\n");
-        return fs_ret;
-    }
+    int ret = S_SUCCESS;
 
     finalizing++;
 
-    /* Free handle and send response back (and free input struct fields) */
-    fs_ret = fs_handler_complete(handle, NULL);
-    if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not complete function call\n");
-        return fs_ret;
+    /* Free handle and send response back */
+    ret = fs_handler_respond(handle, NULL, 0);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
     }
 
-    return fs_ret;
+    return ret;
 }
 
 int server_posix_open(fs_handle_t handle)
 {
     int fs_ret = S_SUCCESS;
 
-    open_in_t  open_in_struct;
-    open_out_t open_out_struct;
+    void          *open_in_buf;
+    size_t         open_in_buf_size;
+    open_in_t      open_in_struct;
+
+    void          *open_out_buf;
+    size_t         open_out_buf_size;
+    open_out_t     open_out_struct;
+
+    fs_proc_t proc;
 
     const char *path;
     int flags;
     mode_t mode;
     int ret;
 
-    /* Get input parameters and data */
-    fs_ret = fs_handler_get_input(handle, &open_in_struct);
-    if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not get function call input\n");
-        return fs_ret;
+    /* Get input buffer */
+    ret = fs_handler_get_input(handle, &open_in_buf, &open_in_buf_size);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not get input buffer\n");
+        return ret;
     }
+
+    /* Create a new decoding proc */
+    fs_proc_create(open_in_buf, open_in_buf_size, FS_DECODE, &proc);
+    fs_proc_open_in_t(proc, &open_in_struct);
+    fs_proc_free(proc);
 
     path = open_in_struct.path;
     flags = open_in_struct.flags;
     mode = open_in_struct.mode;
 
-    /* Call bla_open */
+    /* Call open */
     printf("Calling open with path: %s\n", path);
     ret = open(path, flags, mode);
 
     /* Fill output structure */
     open_out_struct.ret = ret;
 
-    /* Free handle and send response back (and free input struct fields) */
-    fs_ret = fs_handler_complete(handle, &open_out_struct);
-    if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not complete function call\n");
-        return fs_ret;
+    /* Create a new encoding proc */
+    ret = fs_handler_get_output(handle, &open_out_buf, &open_out_buf_size);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not get output buffer\n");
+        return ret;
     }
+
+    fs_proc_create(open_out_buf, open_out_buf_size, FS_ENCODE, &proc);
+    fs_proc_open_out_t(proc, &open_out_struct);
+    fs_proc_free(proc);
+
+    /* Free handle and send response back */
+    ret = fs_handler_respond(handle, NULL, 0);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    /* Also free memory allocated during decoding */
+    fs_proc_create(NULL, 0, FS_FREE, &proc);
+    fs_proc_open_in_t(proc, &open_in_struct);
+    fs_proc_free(proc);
 
     return fs_ret;
 }
@@ -90,34 +111,62 @@ int server_posix_close(fs_handle_t handle)
 {
     int fs_ret = S_SUCCESS;
 
-    close_in_t  close_in_struct;
-    close_out_t close_out_struct;
+    void          *close_in_buf;
+    size_t         close_in_buf_size;
+    close_in_t     close_in_struct;
+
+    void          *close_out_buf;
+    size_t         close_out_buf_size;
+    close_out_t    close_out_struct;
+
+    fs_proc_t proc;
 
     int fd;
     int ret;
 
-    /* Get input parameters and data */
-    fs_ret = fs_handler_get_input(handle, &close_in_struct);
-    if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not get function call input\n");
-        return fs_ret;
+    /* Get input buffer */
+    ret = fs_handler_get_input(handle, &close_in_buf, &close_in_buf_size);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not get input buffer\n");
+        return ret;
     }
+
+    /* Create a new decoding proc */
+    fs_proc_create(close_in_buf, close_in_buf_size, FS_DECODE, &proc);
+    fs_proc_close_in_t(proc, &close_in_struct);
+    fs_proc_free(proc);
 
     fd = close_in_struct.fd;
 
-    /* Call bla_open */
+    /* Call close */
     printf("Calling close with fd: %d\n", fd);
     ret = close(fd);
 
     /* Fill output structure */
     close_out_struct.ret = ret;
 
-    /* Free handle and send response back (and free input struct fields) */
-    fs_ret = fs_handler_complete(handle, &close_out_struct);
-    if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not complete function call\n");
-        return fs_ret;
+    /* Create a new encoding proc */
+    ret = fs_handler_get_output(handle, &close_out_buf, &close_out_buf_size);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not get output buffer\n");
+        return ret;
     }
+
+    fs_proc_create(close_out_buf, close_out_buf_size, FS_ENCODE, &proc);
+    fs_proc_close_out_t(proc, &close_out_struct);
+    fs_proc_free(proc);
+
+    /* Free handle and send response back */
+    ret = fs_handler_respond(handle, NULL, 0);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    /* Also free memory allocated during decoding */
+    fs_proc_create(NULL, 0, FS_FREE, &proc);
+    fs_proc_close_in_t(proc, &close_in_struct);
+    fs_proc_free(proc);
 
     return fs_ret;
 }
@@ -126,8 +175,15 @@ int server_posix_write(fs_handle_t handle)
 {
     int fs_ret = S_SUCCESS;
 
-    write_in_t  write_in_struct;
-    write_out_t write_out_struct;
+    void          *write_in_buf;
+    size_t         write_in_buf_size;
+    write_in_t     write_in_struct;
+
+    void          *write_out_buf;
+    size_t         write_out_buf_size;
+    write_out_t    write_out_struct;
+
+    fs_proc_t proc;
 
     na_addr_t source = fs_handler_get_addr(handle);
     bds_handle_t bds_handle = NULL;
@@ -142,12 +198,17 @@ int server_posix_write(fs_handle_t handle)
     int i;
     const int *buf_ptr;
 
-    /* Get input parameters and data */
-    fs_ret = fs_handler_get_input(handle, &write_in_struct);
-    if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not get function call input\n");
-        return fs_ret;
+    /* Get input buffer */
+    ret = fs_handler_get_input(handle, &write_in_buf, &write_in_buf_size);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not get input buffer\n");
+        return ret;
     }
+
+    /* Create a new decoding proc */
+    fs_proc_create(write_in_buf, write_in_buf_size, FS_DECODE, &proc);
+    fs_proc_write_in_t(proc, &write_in_struct);
+    fs_proc_free(proc);
 
     bds_handle = write_in_struct.bds_handle;
     fd = write_in_struct.fd;
@@ -185,12 +246,28 @@ int server_posix_write(fs_handle_t handle)
     /* Fill output structure */
     write_out_struct.ret = ret;
 
-    /* Free handle and send response back (and free input struct fields) */
-    fs_ret = fs_handler_complete(handle, &write_out_struct);
-    if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not complete function call\n");
-        return fs_ret;
+    /* Create a new encoding proc */
+    ret = fs_handler_get_output(handle, &write_out_buf, &write_out_buf_size);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not get output buffer\n");
+        return ret;
     }
+
+    fs_proc_create(write_out_buf, write_out_buf_size, FS_ENCODE, &proc);
+    fs_proc_write_out_t(proc, &write_out_struct);
+    fs_proc_free(proc);
+
+    /* Free handle and send response back */
+    ret = fs_handler_respond(handle, NULL, 0);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    /* Also free memory allocated during decoding */
+    fs_proc_create(NULL, 0, FS_FREE, &proc);
+    fs_proc_write_in_t(proc, &write_in_struct);
+    fs_proc_free(proc);
 
     /* Free block handle */
     fs_ret = bds_block_handle_free(bds_block_handle);
@@ -208,8 +285,15 @@ int server_posix_read(fs_handle_t handle)
 {
     int fs_ret = S_SUCCESS;
 
-    read_in_t  read_in_struct;
-    read_out_t read_out_struct;
+    void         *read_in_buf;
+    size_t        read_in_buf_size;
+    read_in_t     read_in_struct;
+
+    void         *read_out_buf;
+    size_t        read_out_buf_size;
+    read_out_t    read_out_struct;
+
+    fs_proc_t proc;
 
     na_addr_t dest = fs_handler_get_addr(handle);
     bds_handle_t bds_handle = NULL;
@@ -224,12 +308,17 @@ int server_posix_read(fs_handle_t handle)
     int i;
     const int *buf_ptr;
 
-    /* Get input parameters and data */
-    fs_ret = fs_handler_get_input(handle, &read_in_struct);
-    if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not get function call input\n");
-        return fs_ret;
+    /* Get input buffer */
+    ret = fs_handler_get_input(handle, &read_in_buf, &read_in_buf_size);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not get input buffer\n");
+        return ret;
     }
+
+    /* Create a new decoding proc */
+    fs_proc_create(read_in_buf, read_in_buf_size, FS_DECODE, &proc);
+    fs_proc_read_in_t(proc, &read_in_struct);
+    fs_proc_free(proc);
 
     bds_handle = read_in_struct.bds_handle;
     fd = read_in_struct.fd;
@@ -269,12 +358,28 @@ int server_posix_read(fs_handle_t handle)
     /* Fill output structure */
     read_out_struct.ret = ret;
 
-    /* Free handle and send response back (and free input struct fields) */
-    fs_ret = fs_handler_complete(handle, &read_out_struct);
-    if (fs_ret != S_SUCCESS) {
-        fprintf(stderr, "Could not complete function call\n");
-        return fs_ret;
+    /* Create a new encoding proc */
+    ret = fs_handler_get_output(handle, &read_out_buf, &read_out_buf_size);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not get output buffer\n");
+        return ret;
     }
+
+    fs_proc_create(read_out_buf, read_out_buf_size, FS_ENCODE, &proc);
+    fs_proc_read_out_t(proc, &read_out_struct);
+    fs_proc_free(proc);
+
+    /* Free handle and send response back */
+    ret = fs_handler_respond(handle, NULL, 0);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    /* Also free memory allocated during decoding */
+    fs_proc_create(NULL, 0, FS_FREE, &proc);
+    fs_proc_read_in_t(proc, &read_in_struct);
+    fs_proc_free(proc);
 
     /* Free block handle */
     fs_ret = bds_block_handle_free(bds_block_handle);
@@ -315,10 +420,10 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    IOFSL_SHIPPER_HANDLER_REGISTER("open", server_posix_open, open_in_t, open_out_t);
-    IOFSL_SHIPPER_HANDLER_REGISTER("write", server_posix_write, write_in_t, write_out_t);
-    IOFSL_SHIPPER_HANDLER_REGISTER("read", server_posix_read, read_in_t, read_out_t);
-    IOFSL_SHIPPER_HANDLER_REGISTER("close", server_posix_close, close_in_t, close_out_t);
+    IOFSL_SHIPPER_HANDLER_REGISTER("open", server_posix_open);
+    IOFSL_SHIPPER_HANDLER_REGISTER("write", server_posix_write);
+    IOFSL_SHIPPER_HANDLER_REGISTER("read", server_posix_read);
+    IOFSL_SHIPPER_HANDLER_REGISTER("close", server_posix_close);
     IOFSL_SHIPPER_HANDLER_REGISTER_FINALIZE(server_finalize);
 
     while (finalizing != number_of_peers) {

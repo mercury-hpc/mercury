@@ -29,21 +29,36 @@ int fs_bla_open(fs_handle_t handle)
 {
     int ret = S_SUCCESS;
 
+    void          *bla_open_in_buf;
+    size_t         bla_open_in_buf_size;
     bla_open_in_t  bla_open_in_struct;
+
+    void          *bla_open_out_buf;
+    size_t         bla_open_out_buf_size;
+    void          *bla_open_out_extra_buf = NULL;
+    size_t         bla_open_out_extra_buf_size = 0;
     bla_open_out_t bla_open_out_struct;
+
+    fs_proc_t proc;
 
     const char *bla_open_path;
     bla_handle_t bla_open_handle;
     int bla_open_event_id;
     int bla_open_ret;
 
-    /* Get input parameters and data */
-    ret = fs_handler_get_input(handle, &bla_open_in_struct);
+    /* Get input buffer */
+    ret = fs_handler_get_input(handle, &bla_open_in_buf, &bla_open_in_buf_size);
     if (ret != S_SUCCESS) {
-        fprintf(stderr, "Could not get function call input\n");
+        fprintf(stderr, "Could not get input buffer\n");
         return ret;
     }
 
+    /* Create a new decoding proc */
+    fs_proc_create(bla_open_in_buf, bla_open_in_buf_size, FS_DECODE, &proc);
+    fs_proc_bla_open_in_t(proc, &bla_open_in_struct);
+    fs_proc_free(proc);
+
+    /* Get parameters */
     bla_open_path = bla_open_in_struct.path;
     bla_open_handle = bla_open_in_struct.handle;
 
@@ -54,12 +69,33 @@ int fs_bla_open(fs_handle_t handle)
     bla_open_out_struct.event_id = bla_open_event_id;
     bla_open_out_struct.ret = bla_open_ret;
 
-    /* Free handle and send response back (and free input struct fields) */
-    ret = fs_handler_complete(handle, &bla_open_out_struct);
+    /* Create a new encoding proc */
+    ret = fs_handler_get_output(handle, &bla_open_out_buf, &bla_open_out_buf_size);
     if (ret != S_SUCCESS) {
-        fprintf(stderr, "Could not complete function call\n");
+        fprintf(stderr, "Could not get output buffer\n");
         return ret;
     }
+
+    fs_proc_create(bla_open_out_buf, bla_open_out_buf_size, FS_ENCODE, &proc);
+    fs_proc_bla_open_out_t(proc, &bla_open_out_struct);
+    if (fs_proc_get_extra_buf(proc)) {
+        bla_open_out_extra_buf = fs_proc_get_extra_buf(proc);
+        bla_open_out_extra_buf_size = fs_proc_get_extra_size(proc);
+        fs_proc_set_extra_buf_is_mine(proc, 1);
+    }
+    fs_proc_free(proc);
+
+    /* Free handle and send response back */
+    ret = fs_handler_respond(handle, bla_open_out_extra_buf, bla_open_out_extra_buf_size);
+    if (ret != S_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    /* Also free memory allocated during decoding */
+    fs_proc_create(NULL, 0, FS_FREE, &proc);
+    fs_proc_bla_open_in_t(proc, &bla_open_in_struct);
+    fs_proc_free(proc);
 
     return ret;
 }
@@ -86,7 +122,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    IOFSL_SHIPPER_HANDLER_REGISTER("bla_open", fs_bla_open, bla_open_in_t, bla_open_out_t);
+    IOFSL_SHIPPER_HANDLER_REGISTER("bla_open", fs_bla_open);
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */

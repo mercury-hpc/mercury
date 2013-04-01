@@ -28,7 +28,10 @@ typedef struct na_status {
 } na_status_t;
 
 #define NA_MAX_IDLE_TIME (3600*1000)
-#define NA_STATUS_IGNORE (na_status_t *)1
+#define NA_STATUS_IGNORE ((na_status_t *)1)
+
+#define NA_ADDR_NULL    ((na_addr_t)0)
+#define NA_REQUEST_NULL ((na_request_t)0)
 
 typedef void * na_mem_handle_t;
 typedef ptrdiff_t na_offset_t;
