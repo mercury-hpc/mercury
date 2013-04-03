@@ -135,6 +135,26 @@ int fs_proc_free(fs_proc_t proc)
 }
 
 /*---------------------------------------------------------------------------
+ * Function:    fs_proc_get_op
+ *
+ * Purpose:     Get current operation mode used for processor
+ *              (Only valid if proc is created)
+ *
+ * Returns:     FS_ENCODE/FS_DECODE/FS_FREE
+ *
+ *---------------------------------------------------------------------------
+ */
+fs_proc_op_t fs_proc_get_op(fs_proc_t proc)
+{
+    fs_priv_proc_t *priv_proc = (fs_priv_proc_t*) proc;
+    fs_proc_op_t proc_op = 0;
+
+    if (priv_proc) proc_op = priv_proc->op;
+
+    return proc_op;
+}
+
+/*---------------------------------------------------------------------------
  * Function:    fs_proc_get_size
  *
  * Purpose:     Get buffer size available for processing

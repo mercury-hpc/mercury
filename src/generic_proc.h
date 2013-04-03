@@ -95,6 +95,9 @@ int fs_proc_buf_alloc(void **mem_ptr, size_t size);
 int fs_proc_create(void *buf, size_t buf_size, fs_proc_op_t op, fs_proc_t *proc);
 int fs_proc_free(fs_proc_t proc);
 
+/* Get current operation mode used for processor (Only valid if proc is created) */
+fs_proc_op_t fs_proc_get_op(fs_proc_t proc);
+
 /* Get/Request buffer size for processing */
 size_t fs_proc_get_size(fs_proc_t proc);
 int fs_proc_set_size(fs_proc_t proc, size_t buf_size);
@@ -149,6 +152,7 @@ FS_PROC_INLINE unsigned int fs_proc_string_hash(const char *string)
  * Function:    fs_proc_memcpy
  *
  * Purpose:     Generic processing routines using memcpy
+ *              NB. Only uses memcpy / use fs_proc_raw for more generic proc
  *
  * Returns:     Non-negative on success or negative on failure
  *
