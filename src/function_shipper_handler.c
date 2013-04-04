@@ -10,35 +10,48 @@
  */
 
 #include "function_shipper_handler.h"
-#include "function_shipper.h"
 #include "function_map.h"
+#include "handle_list.h"
 #include "iofsl_compat.h"
 #include "shipper_error.h"
+
+#include <pthread.h>
 
 /* Private structs */
 typedef struct fs_proc_info {
     int (*fs_routine) (fs_handle_t handle);
 } fs_proc_info_t;
 
+typedef struct fs_response_info {
+    na_request_t request;
+    void *buf;
+} fs_response_info_t;
+
 typedef struct fs_priv_handle {
-    fs_id_t    id;
+    fs_id_t       id;
 
-    na_addr_t  addr;
-    na_tag_t   tag;
+    na_addr_t     addr;
+    na_tag_t      tag;
 
-    void      *recv_buf;
-    na_size_t  recv_buf_size;
-    void      *extra_recv_buf;
-    na_size_t  extra_recv_buf_size;
+    void         *recv_buf;
+    na_size_t     recv_buf_size;
+    na_request_t  recv_request;
+    void         *extra_recv_buf;
+    na_size_t     extra_recv_buf_size;
 
-    void      *send_buf;
-    na_size_t  send_buf_size;
-    void      *extra_send_buf;
-    na_size_t  extra_send_buf_size;
+    void         *send_buf;
+    na_size_t     send_buf_size;
+    na_request_t  send_request;
+    void         *extra_send_buf;
+    na_size_t     extra_send_buf_size;
 } fs_priv_handle_t;
 
 /* Function map */
 static func_map_t *handler_func_map;
+
+/* List of processed handles */
+static handle_entry_t *handle_list;
+static pthread_mutex_t handle_list_mutex;
 
 /* Network class */
 static na_network_class_t *handler_network_class = NULL;
@@ -145,6 +158,8 @@ int fs_handler_init(na_network_class_t *network_class)
         ret = S_FAIL;
     }
 
+    pthread_mutex_init(&handle_list_mutex, NULL);
+
     return ret;
 }
 
@@ -174,6 +189,8 @@ int fs_handler_finalize(void)
     handler_func_map = NULL;
 
     handler_network_class = NULL;
+
+    pthread_mutex_destroy(&handle_list_mutex);
 
     return ret;
 }
@@ -309,45 +326,86 @@ int fs_handler_process(unsigned int timeout)
     fs_proc_t dec_proc = FS_PROC_NULL;
     uint8_t extra_recv_buf_used = 0;
 
-//    na_request_t recv_request = NULL; TODO will need to use that later
+    na_status_t recv_status;
 
     int ret = S_SUCCESS;
 
-    /* Create a new handle */
-    priv_handle = malloc(sizeof(fs_priv_handle_t));
-    priv_handle->id = 0;
-    priv_handle->addr = NA_ADDR_NULL;
-    priv_handle->tag = 0;
+    /* Check if any resources from previous async operations can be freed */
+    pthread_mutex_lock(&handle_list_mutex); /* Need to prevent concurrent accesses */
 
-    priv_handle->recv_buf = NULL;
-    priv_handle->recv_buf_size = 0;
-    priv_handle->extra_recv_buf = NULL;
-    priv_handle->extra_recv_buf_size = 0;
+    if (handle_list_get_size(handle_list)) {
+        /* Iterate over entries and test for their completion */
+        handle_entry_t *entry = handle_list;
+        fs_priv_handle_t *completing_handle;
 
-    priv_handle->send_buf = NULL;
-    priv_handle->send_buf_size = 0;
-    priv_handle->extra_send_buf = NULL;
-    priv_handle->extra_send_buf_size = 0;
+        while (entry) {
+            fs_status_t send_status;
 
-    /* Recv buffer must match the size of unexpected buffer */
-    priv_handle->recv_buf_size = na_get_unexpected_size(handler_network_class);
-
-    ret = fs_proc_buf_alloc(&priv_handle->recv_buf, priv_handle->recv_buf_size);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Could not allocate recv buffer");
-        ret = S_FAIL;
-        goto done;
+            completing_handle = (fs_priv_handle_t*) handle_list_value(entry);
+            fs_handler_wait_response(completing_handle, 0, &send_status);
+            if (send_status) {
+                handle_list_remove_entry(&handle_list, entry);
+            }
+            entry = handle_list_next(entry);
+        }
     }
 
-    /* Recv a message from a client (TODO blocking for now) */
-    ret = na_recv_unexpected(handler_network_class, priv_handle->recv_buf,
-            &priv_handle->recv_buf_size, &priv_handle->addr, &priv_handle->tag,
-            NULL, NULL);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Could not recv buffer");
-        ret = S_FAIL;
-        goto done;
+    pthread_mutex_unlock(&handle_list_mutex);
+
+    /* If we don't have an existing handle for the incoming request create
+     * a new one */
+    if (!priv_handle) {
+        /* Create a new handle */
+        priv_handle = malloc(sizeof(fs_priv_handle_t));
+        priv_handle->id = 0;
+        priv_handle->addr = NA_ADDR_NULL;
+        priv_handle->tag = 0;
+
+        priv_handle->recv_buf = NULL;
+        priv_handle->recv_buf_size = 0;
+        priv_handle->recv_request = NA_REQUEST_NULL;
+        priv_handle->extra_recv_buf = NULL;
+        priv_handle->extra_recv_buf_size = 0;
+
+        priv_handle->send_buf = NULL;
+        priv_handle->send_buf_size = 0;
+        priv_handle->send_request = NA_REQUEST_NULL;
+        priv_handle->extra_send_buf = NULL;
+        priv_handle->extra_send_buf_size = 0;
+
+        /* Recv buffer must match the size of unexpected buffer */
+        priv_handle->recv_buf_size = na_get_unexpected_size(handler_network_class);
+
+        ret = fs_proc_buf_alloc(&priv_handle->recv_buf, priv_handle->recv_buf_size);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("Could not allocate recv buffer");
+            ret = S_FAIL;
+            goto done;
+        }
+
+        /* Start receiving a message from a client */
+        ret = na_recv_unexpected(handler_network_class, priv_handle->recv_buf,
+                &priv_handle->recv_buf_size, &priv_handle->addr, &priv_handle->tag,
+                &priv_handle->recv_request, NULL);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("Could not recv buffer");
+            ret = S_FAIL;
+            goto done;
+        }
     }
+
+    /* Wait/Test the completion of the unexpected recv */
+//    ret = na_wait(handler_network_class, priv_handle->recv_request, timeout,
+//            &recv_status);
+//    if (ret != S_SUCCESS) {
+//        S_ERROR_DEFAULT("Error while waiting");
+//        ret = S_FAIL;
+//        goto done;
+//    }
+    /* If not completed yet just exit */
+//    if (!recv_status.completed) {
+//        goto done;
+//    }
 
     /* Create a new decoding proc */
     ret = fs_proc_create(priv_handle->recv_buf, priv_handle->recv_buf_size,
@@ -399,7 +457,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------
- * Function:    fs_handler_respond
+ * Function:    fs_handler_start_response
  *
  * Purpose:     Send the response back to the remote client and free handle
  *
@@ -407,7 +465,7 @@ done:
  *
  *---------------------------------------------------------------------------
  */
-int fs_handler_respond(fs_handle_t handle, const void *extra_out_buf, size_t extra_out_buf_size)
+int fs_handler_start_response(fs_handle_t handle, const void *extra_out_buf, size_t extra_out_buf_size)
 {
     fs_priv_handle_t *priv_handle = (fs_priv_handle_t *) handle;
     fs_proc_info_t   *proc_info;
@@ -415,9 +473,13 @@ int fs_handler_respond(fs_handle_t handle, const void *extra_out_buf, size_t ext
     fs_proc_t enc_proc = FS_PROC_NULL;
     uint8_t extra_send_buf_used = 0;
 
-    na_request_t send_request = NA_REQUEST_NULL;
-
     int ret = S_SUCCESS;
+
+    if (!priv_handle) {
+        S_ERROR_DEFAULT("NULL handle");
+        ret = S_FAIL;
+        goto done;
+    }
 
     /* if get_output has not been called, call it to create to send_buf */
     ret = fs_handler_get_output(handle, NULL, NULL);
@@ -467,28 +529,78 @@ int fs_handler_respond(fs_handle_t handle, const void *extra_out_buf, size_t ext
 
     /* Respond back */
     ret = na_send(handler_network_class, priv_handle->send_buf, priv_handle->send_buf_size,
-            priv_handle->addr, priv_handle->tag, &send_request, NULL);
+            priv_handle->addr, priv_handle->tag, &priv_handle->send_request, NULL);
     if (ret != S_SUCCESS) {
         S_ERROR_DEFAULT("Could not send buffer");
         ret = S_FAIL;
         goto done;
     }
 
-    ret = na_wait(handler_network_class, send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Error while waiting");
-        ret = S_FAIL;
-        goto done;
-    }
+    /* TODO Also add extra buffer response */
 
 done:
     if (enc_proc != FS_PROC_NULL) fs_proc_free(enc_proc);
     enc_proc = FS_PROC_NULL;
 
     if (ret == S_SUCCESS && priv_handle) {
+        pthread_mutex_lock(&handle_list_mutex);
+
+        ret = handle_list_append(&handle_list, (handle_value_t)priv_handle);
+        if (ret != S_SUCCESS) {
+            S_ERROR_DEFAULT("Could not append handle to list");
+            ret = S_FAIL;
+        }
+
+        pthread_mutex_unlock(&handle_list_mutex);
+    }
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    fs_handler_wait_response
+ *
+ * Purpose:     Wait for a response to complete
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int fs_handler_wait_response(fs_handle_t handle, unsigned int timeout, fs_status_t *status)
+{
+    fs_priv_handle_t *priv_handle = (fs_priv_handle_t *) handle;
+    na_status_t na_status;
+    int ret = S_SUCCESS;
+
+    if (!priv_handle) {
+        S_ERROR_DEFAULT("NULL handle");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    if (priv_handle->send_request == NA_REQUEST_NULL) {
+        S_ERROR_DEFAULT("NULL send request, does not need to wait");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    /* Wait for send_request to complete */
+    ret = na_wait(handler_network_class, priv_handle->send_request,
+            timeout, &na_status);
+    if (ret != S_SUCCESS) {
+        S_ERROR_DEFAULT("Error while waiting");
+        ret = S_FAIL;
+        return ret;
+    }
+
+    if (na_status.completed) {
         fs_handler_free(priv_handle);
         priv_handle = NULL;
     }
+
+    if (status && (status != FS_STATUS_IGNORE)) {
+        *status = na_status.completed;
+    }
+
     return ret;
 }
 
@@ -511,6 +623,8 @@ int fs_handler_free(fs_handle_t handle)
         ret = S_FAIL;
         return ret;
     }
+
+    // TODO Check send_request and recv_request here as well
 
     if (priv_handle->addr != NA_ADDR_NULL) {
         na_addr_free(handler_network_class, priv_handle->addr);

@@ -12,8 +12,7 @@
 #ifndef FUNCTION_SHIPPER_HANDLER_H
 #define FUNCTION_SHIPPER_HANDLER_H
 
-#include "network_abstraction.h"
-#include "generic_proc.h"
+#include "function_shipper.h"
 
 typedef void * fs_handle_t;
 
@@ -36,19 +35,22 @@ void fs_handler_register(const char *func_name,
         int (*fs_routine) (fs_handle_t handle));
 
 /* Get remote addr from handle */
-const na_addr_t fs_handler_get_addr (fs_handle_t handle);
+const na_addr_t fs_handler_get_addr(fs_handle_t handle);
 
 /* Get input from handle */
-int fs_handler_get_input (fs_handle_t handle, void **in_buf, size_t *in_buf_size);
+int fs_handler_get_input(fs_handle_t handle, void **in_buf, size_t *in_buf_size);
 
 /* Get output from handle */
-int fs_handler_get_output (fs_handle_t handle, void **out_buf, size_t *out_buf_size);
+int fs_handler_get_output(fs_handle_t handle, void **out_buf, size_t *out_buf_size);
 
 /* Receive a call from a remote client and process request */
 int fs_handler_process(unsigned int timeout);
 
 /* Send the response back to the remote client and free handle */
-int fs_handler_respond(fs_handle_t handle, const void *extra_out_buf, size_t extra_out_buf_size);
+int fs_handler_start_response(fs_handle_t handle, const void *extra_out_buf, size_t extra_out_buf_size);
+
+/* Wait for a response to complete */
+int fs_handler_wait_response(fs_handle_t handle, unsigned int timeout, fs_status_t *status);
 
 /* Free the handle (N.B. called in fs_handler_respond) */
 int fs_handler_free(fs_handle_t handle);

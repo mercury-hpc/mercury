@@ -86,7 +86,7 @@ int fs_bla_open(fs_handle_t handle)
     fs_proc_free(proc);
 
     /* Free handle and send response back */
-    ret = fs_handler_respond(handle, bla_open_out_extra_buf, bla_open_out_extra_buf_size);
+    ret = fs_handler_start_response(handle, bla_open_out_extra_buf, bla_open_out_extra_buf_size);
     if (ret != S_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;

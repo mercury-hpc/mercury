@@ -30,7 +30,7 @@ int server_finalize(fs_handle_t handle)
     finalizing++;
 
     /* Free handle and send response back */
-    ret = fs_handler_respond(handle, NULL, 0);
+    ret = fs_handler_start_response(handle, NULL, 0);
     if (ret != S_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
@@ -93,7 +93,7 @@ int server_posix_open(fs_handle_t handle)
     fs_proc_free(proc);
 
     /* Free handle and send response back */
-    ret = fs_handler_respond(handle, NULL, 0);
+    ret = fs_handler_start_response(handle, NULL, 0);
     if (ret != S_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
@@ -157,7 +157,7 @@ int server_posix_close(fs_handle_t handle)
     fs_proc_free(proc);
 
     /* Free handle and send response back */
-    ret = fs_handler_respond(handle, NULL, 0);
+    ret = fs_handler_start_response(handle, NULL, 0);
     if (ret != S_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
@@ -258,7 +258,7 @@ int server_posix_write(fs_handle_t handle)
     fs_proc_free(proc);
 
     /* Free handle and send response back */
-    ret = fs_handler_respond(handle, NULL, 0);
+    ret = fs_handler_start_response(handle, NULL, 0);
     if (ret != S_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
@@ -370,7 +370,7 @@ int server_posix_read(fs_handle_t handle)
     fs_proc_free(proc);
 
     /* Free handle and send response back */
-    ret = fs_handler_respond(handle, NULL, 0);
+    ret = fs_handler_start_response(handle, NULL, 0);
     if (ret != S_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;

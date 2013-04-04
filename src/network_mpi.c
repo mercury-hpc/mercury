@@ -956,6 +956,8 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
             return ret;
         }
     }
+
+    /* Here we know that the request has completed */
     if (status && status != NA_STATUS_IGNORE) {
         int count;
         MPI_Get_count(&mpi_status, MPI_BYTE, &count);
@@ -963,6 +965,7 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         status->count = (na_size_t) count;
     }
 
+    /* If the request needed an ack, TODO wait here for now */
     if (mpi_request->ack_request != MPI_REQUEST_NULL) {
         mpi_ret = MPI_Wait(&mpi_request->ack_request, &mpi_status);
         if (mpi_ret != MPI_SUCCESS) {

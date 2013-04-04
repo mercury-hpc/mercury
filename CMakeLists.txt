@@ -210,6 +210,7 @@ include_directories(
 
 set(IOFSL_SHIPPER_UTIL_SRCS
   src/util/hash-table.c
+  src/util/list.c
 )
 
 set(IOFSL_SHIPPER_NA_SRCS
@@ -239,6 +240,7 @@ set(IOFSL_SHIPPER_FS_SRCS
   src/function_shipper.c
   src/function_shipper_handler.c
   src/function_map.c
+  src/handle_list.c
   src/generic_proc.c
 )
 
