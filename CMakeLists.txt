@@ -144,7 +144,7 @@ option(BUILD_TESTING "Build testing." OFF)
 if(NOT MERCURY_EXTERNALLY_CONFIGURED AND BUILD_TESTING)
   enable_testing()
 #  include(CTest)
-  add_subdirectory(test)
+  add_subdirectory(Testing)
 endif(NOT MERCURY_EXTERNALLY_CONFIGURED AND BUILD_TESTING)
 
 #-----------------------------------------------------------------------------

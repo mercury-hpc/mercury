@@ -1,0 +1,3 @@
+[submodule "Testing/driver/kwsys"]
+	path = Testing/driver/kwsys
+	url = git://public.kitware.com/KWSys.git
