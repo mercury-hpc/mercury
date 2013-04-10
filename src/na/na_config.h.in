@@ -8,15 +8,23 @@
  * found at the root of the source code distribution tree.
  */
 
-#ifndef IOFSL_COMPAT_H
-#define IOFSL_COMPAT_H
+#ifndef NA_CONFIG_H
+#define NA_CONFIG_H
 
-/* TODO (keep that for now) Define the ZOIDFS operations */
-enum {
-    PROTO_GENERIC = 16, /* TODO map to zoidfs proto */
+#cmakedefine NA_HAS_BMI
+#cmakedefine NA_HAS_MPI
 
-    /* First invalid operation id */
-    PROTO_MAX
-};
+#cmakedefine NA_BUILD_SHARED_LIBS
 
-#endif /* IOFSL_COMPAT_H */
+#ifdef NA_BUILD_SHARED_LIBS
+  #ifdef NA_EXPORTS
+    #define NA_EXPORT NA_ABI_EXPORT 
+  #else
+    #define NA_EXPORT NA_ABI_IMPORT 
+  #endif
+#else
+  #define NA_EXPORT
+#endif
+
+#endif /* NA_CONFIG_H */
+

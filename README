@@ -1,12 +1,12 @@
-IOFSL function shipper
-----------------------
+MERCURY
+-------
 
-These are the release notes for the IOFSL function shipper (as of 03/22/2013).
+These are the release notes for Mercury (as of 03/22/2013).
 
-WHAT IS THE IOFSL FUNCTION SHIPPER?
+WHAT IS MERCURY?
 
-   The function shipper allows I/O calls to be remotely executed in a
-   scalable and asynchronous manner. The interface is designed to be as
+   Mercury is a function shipper that allows I/O calls to be remotely executed
+   in a scalable and asynchronous manner. The interface is designed to be as
    generic as possible to allow any I/O function call to be forwarded to
    the I/O nodes. The network implementation is abstracted so that
    alternate mechanisms can be implemented and selected, making use of the
@@ -30,37 +30,35 @@ DOCUMENTATION:
 
 SOFTWARE REQUIREMENTS:
 
-   Compiling and running the IOFSL function shipper requires up-to-date
-   versions of various software packages. Beware that using excessively old
-   versions of these packages can cause indirect errors that are very
-   difficult to track down. To make use of the MPI plugin, the IOFSL function
-   shipper requires a _well-configured_ MPI implementation (MPICH2 1.4.1 or
-   higher / OpenMPI 1.6 or higher). For optional automatic code generation
-   features (which are used for generating encoding and decoding routines),
-   the preprocessor subset of the BOOST library must be included (Boost 1.50
-   or higher is recommended).
+   Compiling and running Mercury requires up-to-date versions of various
+   software packages. Beware that using excessively old versions of these
+   packages can cause indirect errors that are very difficult to track down.
+   To make use of the MPI plugin, Mercury requires a _well-configured_ MPI
+   implementation (MPICH2 1.4.1 or higher / OpenMPI 1.6 or higher). For
+   optional automatic code generation features (which are used for generating
+   encoding and decoding routines), the preprocessor subset of the BOOST
+   library must be included (Boost 1.50 or higher is recommended).
 
-BUILDING the IOFSL function shipper:
+BUILDING:
 
  - If you install the full sources, put the tarball in a directory where you
    have permissions (e.g., your home directory) and unpack it:
 
-     gzip -cd iofsl_shipper-X.tar.gz | tar xvf -
+     gzip -cd mercury-X.tar.gz | tar xvf -
 
    or
 
-     bzip2 -dc iofsl_shipper-X.tar.bz2 | tar xvf -
+     bzip2 -dc mercury-X.tar.bz2 | tar xvf -
 
    Replace "X" with the version number of the package.
 
- - The IOFSL function shipper makes use of the CMake build-system. It is
-   highly recommended that you do an out-of-source build. In order to do that,
-   you will have to create a new build directory and run the 'ccmake' command
-   from it:
+ - Mercury makes use of the CMake build-system. It is highly recommended that
+   you do an out-of-source build. In order to do that, you will have to create
+   a new build directory and run the 'ccmake' command from it:
 
      mkdir build
      cd build
-     ccmake /path/to/the/iofsl/shipper/source/directory
+     ccmake /path/to/the/mercury/source/directory
 
  - Type 'c' multiple times and choose suitable options. Recommended options
    are:
@@ -68,8 +66,8 @@ BUILDING the IOFSL function shipper:
      BUILD_SHARED_LIBS                OFF
      BUILD_TESTING                    ON
      CMAKE_INSTALL_PREFIX             /path/to/install/directory
-     IOFSL_SHIPPER_USE_BOOST_PP       ON (Optional)
-     IOFSL_SHIPPER_USE_MPI            ON
+     MERCURY_USE_BOOST_PP             ON (Optional)
+     NA_USE_MPI                       ON
 
    Setting include directory and library paths may require you to toggle to
    the advanced mode by typing 't'. Once you are done and do not see any
@@ -84,7 +82,7 @@ BUILDING the IOFSL function shipper:
 
      make VERBOSE=1
 
-INSTALLING the IOFSL function shipper:
+INSTALLING:
 
  - Assuming that the CMAKE_INSTALL_PREFIX has been set (see previous step)
    and that you have write permissions to the destination directory, do

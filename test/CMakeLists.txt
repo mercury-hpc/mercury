@@ -2,118 +2,123 @@
 # Compile kwsys library and setup TestDriver
 #------------------------------------------------------------------------------
 configure_file(
-  ${CMAKE_SOURCE_DIR}/CMake/shipper_config_test.h.in
-  ${IOFSL_SHIPPER_BINARY_DIR}/test/shipper_config_test.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_test_config.h.in
+  ${CMAKE_CURRENT_BINARY_DIR}/mercury_test_config.h
 )
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_BINARY_DIR}
+  ${MERCURY_INCLUDES_BUILD_TIME}
+)
 
 add_subdirectory(driver)
 
 #------------------------------------------------------------------------------
 # Set up test options and macros
 #------------------------------------------------------------------------------
-if(IOFSL_SHIPPER_USE_BMI AND BMI_FOUND)
-  set(IOFSL_SHIPPER_comm
-    ${IOFSL_SHIPPER_comm}
+if(NA_USE_BMI)
+  include_directories(${NA_BMI_INCLUDE_DIR})
+  set(MERCURY_comm
+    ${MERCURY_comm}
     bmi
   )
-endif(IOFSL_SHIPPER_USE_BMI AND BMI_FOUND)
+endif(NA_USE_BMI)
 
-if(IOFSL_SHIPPER_USE_MPI AND MPI_FOUND)
-  set(IOFSL_SHIPPER_comm
-    ${IOFSL_SHIPPER_comm}
+if(NA_USE_MPI)
+  include_directories(${NA_MPI_INCLUDE_DIR})
+  set(MERCURY_comm
+    ${MERCURY_comm}
     mpi
   )
-endif(IOFSL_SHIPPER_USE_MPI AND MPI_FOUND)
+endif(NA_USE_MPI)
 
-function(add_shipper_test full_test_name server client)
-  foreach(comm ${IOFSL_SHIPPER_comm})
+function(add_mercury_test full_test_name server client)
+  foreach(comm ${MERCURY_comm})
     add_test("${full_test_name}_${comm}"
-      ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shipper_test_driver
+      ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/mercury_test_driver
       --server ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${server}
       --client ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${client} ${comm}
     )
   endforeach(comm)
-endfunction(add_shipper_test)
+endfunction(add_mercury_test)
 
 #------------------------------------------------------------------------------
-# iofsl_shipper_test : Lib used by tests contains main test initialization etc
+# mercury_test : Lib used by tests contains main test initialization etc
 #------------------------------------------------------------------------------
-add_library(iofsl_shipper_test STATIC
-  shipper_test.c
+add_library(mercury_test STATIC
+  mercury_test.c
 )
-target_link_libraries(iofsl_shipper_test
-  iofsl_shipper_na
-)
+target_link_libraries(mercury_test na)
 
 #------------------------------------------------------------------------------
 # Set up test
 #------------------------------------------------------------------------------
 # Function shipper test
 add_executable(client_fs client_fs.c)
-target_link_libraries(client_fs iofsl_shipper_fs iofsl_shipper_test)
-if(IOFSL_SHIPPER_ENABLE_COVERAGE)
+target_link_libraries(client_fs mercury mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_fs)
-endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
+endif(MERCURY_ENABLE_COVERAGE)
 
 add_executable(server_fs server_fs.c)
-target_link_libraries(server_fs iofsl_shipper_fs iofsl_shipper_test)
-if(IOFSL_SHIPPER_ENABLE_COVERAGE)
+target_link_libraries(server_fs mercury mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_fs)
-endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
+endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
 # Network abstraction test
 add_executable(client_na client_na.c)
-target_link_libraries(client_na iofsl_shipper_na iofsl_shipper_test)
-if(IOFSL_SHIPPER_ENABLE_COVERAGE)
+target_link_libraries(client_na mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_na)
-endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
+endif(MERCURY_ENABLE_COVERAGE)
 
 add_executable(server_na server_na.c)
-target_link_libraries(server_na iofsl_shipper_na iofsl_shipper_test)
-if(IOFSL_SHIPPER_ENABLE_COVERAGE)
+target_link_libraries(server_na mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_na)
-endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
+endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
 # Bulk data shipper test
 add_executable(client_bds client_bds.c)
-target_link_libraries(client_bds iofsl_shipper_bds iofsl_shipper_fs iofsl_shipper_test)
-if(IOFSL_SHIPPER_ENABLE_COVERAGE)
+target_link_libraries(client_bds mercury mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_bds)
-endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
+endif(MERCURY_ENABLE_COVERAGE)
 
 add_executable(server_bds server_bds.c)
-target_link_libraries(server_bds iofsl_shipper_bds iofsl_shipper_fs iofsl_shipper_test)
-if(IOFSL_SHIPPER_ENABLE_COVERAGE)
+target_link_libraries(server_bds mercury mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_bds)
-endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
+endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
 # POSIX test
 add_executable(client_posix client_posix.c)
-target_link_libraries(client_posix iofsl_shipper_bds iofsl_shipper_fs iofsl_shipper_test)
-if(IOFSL_SHIPPER_ENABLE_COVERAGE)
+target_link_libraries(client_posix mercury mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_posix)
-endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
+endif(MERCURY_ENABLE_COVERAGE)
 
 add_executable(server_posix server_posix.c)
-target_link_libraries(server_posix iofsl_shipper_bds iofsl_shipper_fs iofsl_shipper_test)
-if(IOFSL_SHIPPER_ENABLE_COVERAGE)
+target_link_libraries(server_posix mercury mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_posix)
-endif(IOFSL_SHIPPER_ENABLE_COVERAGE)
+endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
 if(MPIEXEC)
-  set(IOFSL_SHIPPER_tests
+  set(MERCURY_tests
     fs
     na
     bds
     posix
   )
-  foreach(IOFSL_SHIPPER_test ${IOFSL_SHIPPER_tests})
-      add_shipper_test(shipper_${IOFSL_SHIPPER_test}
-        server_${IOFSL_SHIPPER_test} client_${IOFSL_SHIPPER_test})
-  endforeach(IOFSL_SHIPPER_test)
+  foreach(MERCURY_test ${MERCURY_tests})
+      add_mercury_test(shipper_${MERCURY_test}
+        server_${MERCURY_test} client_${MERCURY_test})
+  endforeach(MERCURY_test)
 endif(MPIEXEC)

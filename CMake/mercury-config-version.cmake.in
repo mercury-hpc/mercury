@@ -1,0 +1,13 @@
+#-----------------------------------------------------------------------------
+# Version file for install directory
+#-----------------------------------------------------------------------------
+set(PACKAGE_VERSION @MERCURY_PACKAGE_VERSION@)
+
+if("${PACKAGE_FIND_VERSION_MAJOR}" EQUAL @MERCURY_VERSION_MAJOR@)
+  if("${PACKAGE_FIND_VERSION_MINOR}" EQUAL @MERCURY_VERSION_MINOR@)
+    set(PACKAGE_VERSION_COMPATIBLE 1)
+    if("${PACKAGE_FIND_VERSION_PATCH}" EQUAL @MERCURY_VERSION_PATCH@)
+      set(PACKAGE_VERSION_EXACT 1)
+    endif("${PACKAGE_FIND_VERSION_PATCH}" EQUAL @MERCURY_VERSION_PATCH@)
+  endif("${PACKAGE_FIND_VERSION_MINOR}" EQUAL @MERCURY_VERSION_MINOR@)
+endif("${PACKAGE_FIND_VERSION_MAJOR}" EQUAL @MERCURY_VERSION_MAJOR@)

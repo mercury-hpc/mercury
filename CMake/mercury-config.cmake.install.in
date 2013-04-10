@@ -1,0 +1,31 @@
+#-----------------------------------------------------------------------------
+# Config file for compiling against the build directory
+#-----------------------------------------------------------------------------
+get_filename_component(SELF_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+
+#-----------------------------------------------------------------------------
+# User Options
+#-----------------------------------------------------------------------------
+set(MERCURY_USE_BOOST_PP @MERCURY_USE_BOOST_PP@)
+
+#-----------------------------------------------------------------------------
+# Directories
+#-----------------------------------------------------------------------------
+set(MERCURY_INCLUDE_DIR "@MERCURY_INSTALL_INCLUDE_DIR@")
+
+#-----------------------------------------------------------------------------
+# Version Strings
+#-----------------------------------------------------------------------------
+set(MERCURY_VERSION_STRING  @MERCURY_PACKAGE_VERSION@)
+set(MERCURY_VERSION_MAJOR   @MERCURY_VERSION_MAJOR@)
+set(MERCURY_VERSION_MINOR   @MERCURY_VERSION_MINOR@)
+set(MERCURY_VERSION_PATCH   @MERCURY_VERSION_PATCH@)
+
+#-----------------------------------------------------------------------------
+# Don't include targets if this file is being picked up by another
+# project which has already build MERCURY as a subproject
+#-----------------------------------------------------------------------------
+if(NOT TARGET "MERCURY" AND NOT MERCURY_INSTALL_SKIP_TARGETS)
+  include(${SELF_DIR}/mercury-targets.cmake)
+endif(NOT TARGET "MERCURY" AND NOT MERCURY_INSTALL_SKIP_TARGETS)
+

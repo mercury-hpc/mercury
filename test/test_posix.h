@@ -1,7 +1,6 @@
 /*
  * Copyright (C) 2013 Argonne National Laboratory, Department of Energy,
- *                    and UChicago Argonne, LLC.
- * Copyright (C) 2013 The HDF Group.
+ *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -12,10 +11,10 @@
 #ifndef TEST_FS_H
 #define TEST_FS_H
 
-#include "generic_macros.h"
-#include "generic_proc.h"
+#include "mercury_macros.h"
+#include "mercury_proc.h"
 
-#ifdef IOFSL_SHIPPER_HAS_BOOST
+#ifdef MERCURY_HAS_BOOST
 /* Dummy function that needs to be shipped (already defined) */
 /*
  * 1. int open(const char *pathname, int flags, mode_t mode);
@@ -25,57 +24,57 @@
  */
 
 /* Generate processor and struct for required input/output structs
- * IOFSL_SHIPPER_GEN_PROC( struct_type_name, fields )
+ * MERCURY_GEN_PROC( struct_type_name, fields )
  */
 
 /* open */
-IOFSL_SHIPPER_GEN_PROC( open_in_t, ((fs_string_t)(path)) ((int32_t)(flags)) ((uint32_t)(mode)) )
-IOFSL_SHIPPER_GEN_PROC( open_out_t, ((int32_t)(ret)) )
+MERCURY_GEN_PROC( open_in_t, ((hg_string_t)(path)) ((int32_t)(flags)) ((uint32_t)(mode)) )
+MERCURY_GEN_PROC( open_out_t, ((int32_t)(ret)) )
 
 /* close */
-IOFSL_SHIPPER_GEN_PROC( close_in_t, ((int32_t)(fd)) )
-IOFSL_SHIPPER_GEN_PROC( close_out_t, ((int32_t)(ret)) )
+MERCURY_GEN_PROC( close_in_t, ((int32_t)(fd)) )
+MERCURY_GEN_PROC( close_out_t, ((int32_t)(ret)) )
 
 /* write */
-IOFSL_SHIPPER_GEN_PROC( write_in_t, ((int32_t)(fd)) ((bds_handle_t)(bds_handle)) )
-IOFSL_SHIPPER_GEN_PROC( write_out_t, ((int64_t)(ret)) )
+MERCURY_GEN_PROC( write_in_t, ((int32_t)(fd)) ((hg_bulk_t)(bulk_handle)) )
+MERCURY_GEN_PROC( write_out_t, ((int64_t)(ret)) )
 
 /* read */
-IOFSL_SHIPPER_GEN_PROC( read_in_t, ((int32_t)(fd)) ((bds_handle_t)(bds_handle)) )
-IOFSL_SHIPPER_GEN_PROC( read_out_t, ((int64_t)(ret)) )
+MERCURY_GEN_PROC( read_in_t, ((int32_t)(fd)) ((hg_bulk_t)(bulk_handle)) )
+MERCURY_GEN_PROC( read_out_t, ((int64_t)(ret)) )
 
 #else
 /* Define open_in_t */
 typedef struct {
-    fs_string_t path;
+    hg_string_t path;
     int32_t flags;
     uint32_t mode;
 } open_in_t;
 
-/* Define fs_proc_open_in_t */
-static inline int fs_proc_open_in_t(fs_proc_t proc, void *data)
+/* Define hg_proc_open_in_t */
+static inline int hg_proc_open_in_t(hg_proc_t proc, void *data)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
     open_in_t *struct_data = (open_in_t *) data;
 
-    ret = fs_proc_fs_string_t(proc, &struct_data->path);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_hg_string_t(proc, &struct_data->path);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
-    ret = fs_proc_int32_t(proc, &struct_data->flags);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_int32_t(proc, &struct_data->flags);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
-    ret = fs_proc_uint32_t(proc, &struct_data->mode);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_uint32_t(proc, &struct_data->mode);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
@@ -87,16 +86,16 @@ typedef struct {
     int32_t ret;
 } open_out_t;
 
-/* Define fs_proc_open_out_t */
-static inline int fs_proc_open_out_t(fs_proc_t proc, void *data)
+/* Define hg_proc_open_out_t */
+static inline int hg_proc_open_out_t(hg_proc_t proc, void *data)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
     open_out_t *struct_data = (open_out_t *) data;
 
-    ret = fs_proc_int32_t(proc, &struct_data->ret);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_int32_t(proc, &struct_data->ret);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
@@ -108,16 +107,16 @@ typedef struct {
     int32_t fd;
 } close_in_t;
 
-/* Define fs_proc_open_in_t */
-static inline int fs_proc_close_in_t(fs_proc_t proc, void *data)
+/* Define hg_proc_open_in_t */
+static inline int hg_proc_close_in_t(hg_proc_t proc, void *data)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
     close_in_t *struct_data = (close_in_t *) data;
 
-    ret = fs_proc_int32_t(proc, &struct_data->fd);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_int32_t(proc, &struct_data->fd);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
@@ -129,16 +128,16 @@ typedef struct {
     int32_t ret;
 } close_out_t;
 
-/* Define fs_proc_open_out_t */
-static inline int fs_proc_close_out_t(fs_proc_t proc, void *data)
+/* Define hg_proc_open_out_t */
+static inline int hg_proc_close_out_t(hg_proc_t proc, void *data)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
     close_out_t *struct_data = (close_out_t *) data;
 
-    ret = fs_proc_int32_t(proc, &struct_data->ret);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_int32_t(proc, &struct_data->ret);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
@@ -148,26 +147,26 @@ static inline int fs_proc_close_out_t(fs_proc_t proc, void *data)
 /* Define write_in_t */
 typedef struct {
     int32_t fd;
-    bds_handle_t bds_handle;
+    hg_bulk_t bulk_handle;
 } write_in_t;
 
-/* Define fs_proc_write_in_t */
-static inline int fs_proc_write_in_t(fs_proc_t proc, void *data)
+/* Define hg_proc_write_in_t */
+static inline int hg_proc_write_in_t(hg_proc_t proc, void *data)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
     write_in_t *struct_data = (write_in_t *) data;
 
-    ret = fs_proc_int32_t(proc, &struct_data->fd);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_int32_t(proc, &struct_data->fd);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
-    ret = fs_proc_bds_handle_t(proc, &struct_data->bds_handle);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_hg_bulk_t(proc, &struct_data->bulk_handle);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
@@ -179,16 +178,16 @@ typedef struct {
     int64_t ret;
 } write_out_t;
 
-/* Define fs_proc_write_out_t */
-static inline int fs_proc_write_out_t(fs_proc_t proc, void *data)
+/* Define hg_proc_write_out_t */
+static inline int hg_proc_write_out_t(hg_proc_t proc, void *data)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
     write_out_t *struct_data = (write_out_t *) data;
 
-    ret = fs_proc_int64_t(proc, &struct_data->ret);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_int64_t(proc, &struct_data->ret);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
@@ -198,26 +197,26 @@ static inline int fs_proc_write_out_t(fs_proc_t proc, void *data)
 /* Define read_in_t */
 typedef struct {
     int32_t fd;
-    bds_handle_t bds_handle;
+    hg_bulk_t bulk_handle;
 } read_in_t;
 
-/* Define fs_proc_read_in_t */
-static inline int fs_proc_read_in_t(fs_proc_t proc, void *data)
+/* Define hg_proc_read_in_t */
+static inline int hg_proc_read_in_t(hg_proc_t proc, void *data)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
     read_in_t *struct_data = (read_in_t *) data;
 
-    ret = fs_proc_int32_t(proc, &struct_data->fd);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_int32_t(proc, &struct_data->fd);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
-    ret = fs_proc_bds_handle_t(proc, &struct_data->bds_handle);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_hg_bulk_t(proc, &struct_data->bulk_handle);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
@@ -229,16 +228,16 @@ typedef struct {
     int64_t ret;
 } read_out_t;
 
-/* Define fs_proc_read_out_t */
-static inline int fs_proc_read_out_t(fs_proc_t proc, void *data)
+/* Define hg_proc_read_out_t */
+static inline int hg_proc_read_out_t(hg_proc_t proc, void *data)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
     read_out_t *struct_data = (read_out_t *) data;
 
-    ret = fs_proc_int64_t(proc, &struct_data->ret);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_int64_t(proc, &struct_data->ret);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 

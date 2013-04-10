@@ -1,7 +1,6 @@
 /*
  * Copyright (C) 2013 Argonne National Laboratory, Department of Energy,
- *                    and UChicago Argonne, LLC.
- * Copyright (C) 2013 The HDF Group.
+ *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -12,42 +11,42 @@
 #ifndef BDS_TEST_H
 #define BDS_TEST_H
 
-#include "generic_macros.h"
-#include "generic_proc.h"
+#include "mercury_macros.h"
+#include "mercury_proc.h"
 
 /* Dummy function that needs to be shipped */
 size_t bla_write(int fildes, const void *buf, size_t nbyte);
 
-#ifdef IOFSL_SHIPPER_HAS_BOOST
+#ifdef MERCURY_HAS_BOOST
 /* Generate processor and struct for required input/output structs
- * IOFSL_SHIPPER_GEN_PROC( struct_type_name, fields )
+ * MERCURY_GEN_PROC( struct_type_name, fields )
  */
-IOFSL_SHIPPER_GEN_PROC( bla_write_in_t, ((int32_t)(fildes)) ((bds_handle_t)(bds_handle)) )
-IOFSL_SHIPPER_GEN_PROC( bla_write_out_t, ((uint64_t)(ret)) )
+MERCURY_GEN_PROC( bla_write_in_t, ((int32_t)(fildes)) ((hg_bulk_t)(bulk_handle)) )
+MERCURY_GEN_PROC( bla_write_out_t, ((uint64_t)(ret)) )
 #else
 /* Define bla_write_in_t */
 typedef struct {
     int32_t fildes;
-    bds_handle_t bds_handle;
+    hg_bulk_t bulk_handle;
 } bla_write_in_t;
 
-/* Define fs_proc_bla_write_in_t */
-static inline int fs_proc_bla_write_in_t(fs_proc_t proc, void *data)
+/* Define hg_proc_bla_write_in_t */
+static inline int hg_proc_bla_write_in_t(hg_proc_t proc, void *data)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
     bla_write_in_t *struct_data = (bla_write_in_t *) data;
 
-    ret = fs_proc_int32_t(proc, &struct_data->fildes);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_int32_t(proc, &struct_data->fildes);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
-    ret = fs_proc_bds_handle_t(proc, &struct_data->bds_handle);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_hg_bulk_t(proc, &struct_data->bulk_handle);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 
@@ -59,16 +58,16 @@ typedef struct {
     uint64_t ret;
 } bla_write_out_t;
 
-/* Define fs_proc_bla_write_out_t */
-static inline int fs_proc_bla_write_out_t(fs_proc_t proc, void *data)
+/* Define hg_proc_bla_write_out_t */
+static inline int hg_proc_bla_write_out_t(hg_proc_t proc, void *data)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
     bla_write_out_t *struct_data = (bla_write_out_t *) data;
 
-    ret = fs_proc_uint64_t(proc, &struct_data->ret);
-    if (ret != S_SUCCESS) {
-        S_ERROR_DEFAULT("Proc error");
-        ret = S_FAIL;
+    ret = hg_proc_uint64_t(proc, &struct_data->ret);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
         return ret;
     }
 

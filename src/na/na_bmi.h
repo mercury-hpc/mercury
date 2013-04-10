@@ -8,15 +8,22 @@
  * found at the root of the source code distribution tree.
  */
 
-#ifndef IOFSL_COMPAT_H
-#define IOFSL_COMPAT_H
+#ifndef NA_BMI_H
+#define NA_BMI_H
 
-/* TODO (keep that for now) Define the ZOIDFS operations */
-enum {
-    PROTO_GENERIC = 16, /* TODO map to zoidfs proto */
+#include "na.h"
 
-    /* First invalid operation id */
-    PROTO_MAX
-};
+#include <bmi.h>
 
-#endif /* IOFSL_COMPAT_H */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Initialize the BMI plugin */
+na_class_t *NA_BMI_Init(const char *method_list, const char *listen_addr, int flags);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NETWORK_BMI_H */

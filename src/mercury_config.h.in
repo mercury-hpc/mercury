@@ -8,15 +8,22 @@
  * found at the root of the source code distribution tree.
  */
 
-#ifndef IOFSL_COMPAT_H
-#define IOFSL_COMPAT_H
+#ifndef MERCURY_CONFIG_H
+#define MERCURY_CONFIG_H
 
-/* TODO (keep that for now) Define the ZOIDFS operations */
-enum {
-    PROTO_GENERIC = 16, /* TODO map to zoidfs proto */
+#cmakedefine MERCURY_HAS_BOOST
+#cmakedefine MERCURY_HAS_XDR
 
-    /* First invalid operation id */
-    PROTO_MAX
-};
+#cmakedefine MERCURY_BUILD_SHARED_LIBS
 
-#endif /* IOFSL_COMPAT_H */
+#ifdef MERCURY_BUILD_SHARED_LIBS
+  #ifdef MERCURY_EXPORTS
+    #define MERCURY_EXPORT MERCURY_ABI_EXPORT
+  #else
+    #define MERCURY_EXPORT MERCURY_ABI_IMPORT
+  #endif
+#else
+  #define MERCURY_EXPORT
+#endif
+
+#endif /* MERCURY_CONFIG_H */

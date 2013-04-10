@@ -1,7 +1,6 @@
 /*
  * Copyright (C) 2013 Argonne National Laboratory, Department of Energy,
- *                    and UChicago Argonne, LLC.
- * Copyright (C) 2013 The HDF Group.
+ *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -10,9 +9,9 @@
  */
 
 #include "test_posix.h"
-#include "shipper_test.h"
-#include "function_shipper.h"
-#include "bulk_data_shipper.h"
+#include "mercury_test.h"
+#include "mercury.h"
+#include "mercury_bulk.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,8 +19,8 @@
 #include <sys/stat.h>
 
 na_addr_t addr;
-na_network_class_t *network_class = NULL;
-fs_id_t open_id, write_id, read_id, close_id, finalize_id;
+na_class_t *network_class = NULL;
+hg_id_t open_id, write_id, read_id, close_id, finalize_id;
 
 #undef open
 #define open client_posix_open
@@ -34,105 +33,105 @@ fs_id_t open_id, write_id, read_id, close_id, finalize_id;
 
 int client_posix_init(int argc, char *argv[], int *rank)
 {
-    int fs_ret;
-    int ret = S_SUCCESS;
+    int hg_ret, na_ret;
+    int ret = HG_SUCCESS;
     char *ion_name;
 
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    network_class = shipper_test_client_init(argc, argv, rank);
+    network_class = HG_Test_client_init(argc, argv, rank);
 
     ion_name = getenv(ION_ENV);
     if (!ion_name) {
         fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
-        ret = S_FAIL;
+        ret = HG_FAIL;
         return ret;
     }
 
-    fs_ret = fs_init(network_class);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Init(network_class);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not initialize function shipper\n");
-        ret = S_FAIL;
+        ret = HG_FAIL;
         return ret;
     }
 
-    fs_ret = bds_init(network_class);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Bulk_init(network_class);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not initialize bulk data shipper\n");
-        ret = S_FAIL;
+        ret = HG_FAIL;
         return ret;
     }
 
     /* Look up addr id */
-    fs_ret = na_addr_lookup(network_class, ion_name, &addr);
-    if (fs_ret != S_SUCCESS) {
+    na_ret = NA_Addr_lookup(network_class, ion_name, &addr);
+    if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not find addr %s\n", ion_name);
-        ret = S_FAIL;
+        ret = HG_FAIL;
         return ret;
     }
 
     /* Register function and encoding/decoding functions */
-    open_id = IOFSL_SHIPPER_REGISTER("open", open_in_t, open_out_t);
-    write_id = IOFSL_SHIPPER_REGISTER("write", write_in_t, write_out_t);
-    read_id = IOFSL_SHIPPER_REGISTER("read", read_in_t, read_out_t);
-    close_id = IOFSL_SHIPPER_REGISTER("close", close_in_t, close_out_t);
-    finalize_id = IOFSL_SHIPPER_REGISTER_FINALIZE();
+    open_id = MERCURY_REGISTER("open", open_in_t, open_out_t);
+    write_id = MERCURY_REGISTER("write", write_in_t, write_out_t);
+    read_id = MERCURY_REGISTER("read", read_in_t, read_out_t);
+    close_id = MERCURY_REGISTER("close", close_in_t, close_out_t);
+    finalize_id = MERCURY_REGISTER_FINALIZE();
 
     return ret;
 }
 
 int client_posix_finalize()
 {
-    int fs_ret;
-    int ret = S_SUCCESS;
-    fs_request_t request;
-    fs_status_t status;
+    int hg_ret, na_ret;
+    int ret = HG_SUCCESS;
+    hg_request_t request;
+    hg_status_t status;
     int finalize_ret;
 
     /* Forward call to remote addr and get a new request */
-    fs_ret = fs_forward(addr, finalize_id, NULL, NULL, &request);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Forward(addr, finalize_id, NULL, NULL, &request);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
-        finalize_ret = S_FAIL;
+        finalize_ret = HG_FAIL;
         return finalize_ret;
     }
 
     /* Wait for call to be executed and return value to be sent back
      * (Request is freed when the call completes)
      */
-    fs_ret = fs_wait(request, FS_MAX_IDLE_TIME, &status);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error during wait\n");
-        finalize_ret = S_FAIL;
+        finalize_ret = HG_FAIL;
         return finalize_ret;
     }
     if (!status) {
         fprintf(stderr, "Operation did not complete\n");
-        finalize_ret = S_FAIL;
+        finalize_ret = HG_FAIL;
         return finalize_ret;
     }
 
     /* Free addr id */
-    fs_ret = na_addr_free(network_class, addr);
-    if (fs_ret != S_SUCCESS) {
+    na_ret = NA_Addr_free(network_class, addr);
+    if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not free addr\n");
-        ret = S_FAIL;
+        ret = HG_FAIL;
         return ret;
     }
 
     /* Finalize interface */
-    fs_ret = fs_finalize();
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Finalize();
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not finalize function shipper\n");
-        ret = S_FAIL;
+        ret = HG_FAIL;
         return ret;
     }
 
-    fs_ret = bds_finalize();
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Bulk_finalize();
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not finalize bulk data shipper\n");
-        ret = S_FAIL;
+        ret = HG_FAIL;
         return ret;
     }
 
@@ -143,9 +142,9 @@ int client_posix_open(const char *pathname, int flags, mode_t mode)
 {
     open_in_t  open_in_struct;
     open_out_t open_out_struct;
-    fs_request_t request;
-    fs_status_t status;
-    int fs_ret;
+    hg_request_t request;
+    hg_status_t status;
+    int hg_ret;
     int open_ret;
 
     /* Fill input structure */
@@ -154,26 +153,26 @@ int client_posix_open(const char *pathname, int flags, mode_t mode)
     open_in_struct.mode = mode;
 
     /* Forward call to remote addr and get a new request */
-    fs_ret = fs_forward(addr, open_id, &open_in_struct,
+    hg_ret = HG_Forward(addr, open_id, &open_in_struct,
             &open_out_struct, &request);
-    if (fs_ret != S_SUCCESS) {
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
-        open_ret = S_FAIL;
+        open_ret = HG_FAIL;
         return open_ret;
     }
 
     /* Wait for call to be executed and return value to be sent back
      * (Request is freed when the call completes)
      */
-    fs_ret = fs_wait(request, FS_MAX_IDLE_TIME, &status);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error during wait\n");
-        open_ret = S_FAIL;
+        open_ret = HG_FAIL;
         return open_ret;
     }
     if (!status) {
         fprintf(stderr, "Operation did not complete\n");
-        open_ret = S_FAIL;
+        open_ret = HG_FAIL;
         return open_ret;
     }
 
@@ -187,35 +186,35 @@ int client_posix_close(int fd)
 {
     close_in_t  close_in_struct;
     close_out_t close_out_struct;
-    fs_request_t request;
-    fs_status_t status;
-    int fs_ret;
+    hg_request_t request;
+    hg_status_t status;
+    int hg_ret;
     int close_ret;
 
     /* Fill input structure */
     close_in_struct.fd = fd;
 
     /* Forward call to remote addr and get a new request */
-    fs_ret = fs_forward(addr, close_id, &close_in_struct,
+    hg_ret = HG_Forward(addr, close_id, &close_in_struct,
             &close_out_struct, &request);
-    if (fs_ret != S_SUCCESS) {
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
-        close_ret = S_FAIL;
+        close_ret = HG_FAIL;
         return close_ret;
     }
 
     /* Wait for call to be executed and return value to be sent back
      * (Request is freed when the call completes)
      */
-    fs_ret = fs_wait(request, FS_MAX_IDLE_TIME, &status);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error during wait\n");
-        close_ret = S_FAIL;
+        close_ret = HG_FAIL;
         return close_ret;
     }
     if (!status) {
         fprintf(stderr, "Operation did not complete\n");
-        close_ret = S_FAIL;
+        close_ret = HG_FAIL;
         return close_ret;
     }
 
@@ -230,52 +229,52 @@ ssize_t client_posix_write(int fd, const void *buf, size_t count)
     write_in_t  write_in_struct;
     write_out_t write_out_struct;
 
-    bds_handle_t bds_handle;
-    fs_request_t request;
-    fs_status_t status;
-    int fs_ret;
+    hg_bulk_t bulk_handle;
+    hg_request_t request;
+    hg_status_t status;
+    int hg_ret;
     int write_ret;
 
     /* Register memory */
-    fs_ret = bds_handle_create((void*)buf, count, BDS_READ_ONLY, &bds_handle);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Bulk_handle_create((void*)buf, count, HG_BULK_READ_ONLY, &bulk_handle);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
-        write_ret = S_FAIL;
+        write_ret = HG_FAIL;
         return write_ret;
     }
 
     /* Fill input structure */
-    write_in_struct.bds_handle = bds_handle;
+    write_in_struct.bulk_handle = bulk_handle;
     write_in_struct.fd = fd;
 
     /* Forward call to remote addr and get a new request */
-    fs_ret = fs_forward(addr, write_id, &write_in_struct, &write_out_struct, &request);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Forward(addr, write_id, &write_in_struct, &write_out_struct, &request);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
-        write_ret = S_FAIL;
+        write_ret = HG_FAIL;
         return write_ret;
     }
 
     /* Wait for call to be executed and return value to be sent back
      * (Request is freed when the call completes)
      */
-    fs_ret = fs_wait(request, FS_MAX_IDLE_TIME, &status);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error during wait\n");
-        write_ret = S_FAIL;
+        write_ret = HG_FAIL;
         return write_ret;
     }
     if (!status) {
         fprintf(stderr, "Operation did not complete\n");
-        write_ret = S_FAIL;
+        write_ret = HG_FAIL;
         return write_ret;
     }
 
     /* Free memory handle */
-    fs_ret = bds_handle_free(bds_handle);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Bulk_handle_free(bulk_handle);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free bulk data handle\n");
-        write_ret = S_FAIL;
+        write_ret = HG_FAIL;
         return write_ret;
     }
 
@@ -290,52 +289,52 @@ ssize_t client_posix_read(int fd, void *buf, size_t count)
     read_in_t  read_in_struct;
     read_out_t read_out_struct;
 
-    bds_handle_t bds_handle;
-    fs_request_t request;
-    fs_status_t status;
-    int fs_ret;
+    hg_bulk_t bulk_handle;
+    hg_request_t request;
+    hg_status_t status;
+    int hg_ret;
     int read_ret;
 
     /* Register memory */
-    fs_ret = bds_handle_create(buf, count, BDS_READWRITE, &bds_handle);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Bulk_handle_create(buf, count, HG_BULK_READWRITE, &bulk_handle);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
-        read_ret = S_FAIL;
+        read_ret = HG_FAIL;
         return read_ret;
     }
 
     /* Fill input structure */
-    read_in_struct.bds_handle = bds_handle;
+    read_in_struct.bulk_handle = bulk_handle;
     read_in_struct.fd = fd;
 
     /* Forward call to remote addr and get a new request */
-    fs_ret = fs_forward(addr, read_id, &read_in_struct, &read_out_struct, &request);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Forward(addr, read_id, &read_in_struct, &read_out_struct, &request);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
-        read_ret = S_FAIL;
+        read_ret = HG_FAIL;
         return read_ret;
     }
 
     /* Wait for call to be executed and return value to be sent back
      * (Request is freed when the call completes)
      */
-    fs_ret = fs_wait(request, FS_MAX_IDLE_TIME, &status);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error during wait\n");
-        read_ret = S_FAIL;
+        read_ret = HG_FAIL;
         return read_ret;
     }
     if (!status) {
         fprintf(stderr, "Operation did not complete\n");
-        read_ret = S_FAIL;
+        read_ret = HG_FAIL;
         return read_ret;
     }
 
     /* Free memory handle */
-    fs_ret = bds_handle_free(bds_handle);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Bulk_handle_free(bulk_handle);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free bulk data handle\n");
-        read_ret = S_FAIL;
+        read_ret = HG_FAIL;
         return read_ret;
     }
 
@@ -348,7 +347,7 @@ ssize_t client_posix_read(int fd, void *buf, size_t count)
 /******************************************************************************/
 int main(int argc, char *argv[])
 {
-    int fs_ret, ret;
+    int hg_ret, ret;
     mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
     char filename[256];
     int fd = 0;
@@ -361,8 +360,8 @@ int main(int argc, char *argv[])
 
     printf("Initializing...\n");
 
-    fs_ret = client_posix_init(argc, argv, &rank);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = client_posix_init(argc, argv, &rank);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error in client_posix_init\n");
         return EXIT_FAILURE;
     }
@@ -443,8 +442,8 @@ int main(int argc, char *argv[])
 
     printf("(%d) Finalizing...\n", rank);
 
-    fs_ret = client_posix_finalize();
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = client_posix_finalize();
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error in client_posix_finalize\n");
         return EXIT_FAILURE;
     }

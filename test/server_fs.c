@@ -1,7 +1,6 @@
 /*
  * Copyright (C) 2013 Argonne National Laboratory, Department of Energy,
- *                    and UChicago Argonne, LLC.
- * Copyright (C) 2013 The HDF Group.
+ *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -10,8 +9,8 @@
  */
 
 #include "test_fs.h"
-#include "shipper_test.h"
-#include "function_shipper_handler.h"
+#include "mercury_test.h"
+#include "mercury_handler.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,13 +20,13 @@ int bla_open(const char *path, bla_handle_t handle, int *event_id)
 {
     printf("Called bla_open of %s with cookie %lu\n", path, handle.cookie);
     *event_id = 232;
-    return S_SUCCESS;
+    return HG_SUCCESS;
 }
 
 /******************************************************************************/
-int fs_bla_open(fs_handle_t handle)
+int fs_bla_open(hg_handle_t handle)
 {
-    int ret = S_SUCCESS;
+    int ret = HG_SUCCESS;
 
     void          *bla_open_in_buf;
     size_t         bla_open_in_buf_size;
@@ -39,7 +38,7 @@ int fs_bla_open(fs_handle_t handle)
     size_t         bla_open_out_extra_buf_size = 0;
     bla_open_out_t bla_open_out_struct;
 
-    fs_proc_t proc;
+    hg_proc_t proc;
 
     const char *bla_open_path;
     bla_handle_t bla_open_handle;
@@ -47,16 +46,16 @@ int fs_bla_open(fs_handle_t handle)
     int bla_open_ret;
 
     /* Get input buffer */
-    ret = fs_handler_get_input(handle, &bla_open_in_buf, &bla_open_in_buf_size);
-    if (ret != S_SUCCESS) {
+    ret = HG_Handler_get_input(handle, &bla_open_in_buf, &bla_open_in_buf_size);
+    if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input buffer\n");
         return ret;
     }
 
     /* Create a new decoding proc */
-    fs_proc_create(bla_open_in_buf, bla_open_in_buf_size, FS_DECODE, &proc);
-    fs_proc_bla_open_in_t(proc, &bla_open_in_struct);
-    fs_proc_free(proc);
+    hg_proc_create(bla_open_in_buf, bla_open_in_buf_size, HG_DECODE, &proc);
+    hg_proc_bla_open_in_t(proc, &bla_open_in_struct);
+    hg_proc_free(proc);
 
     /* Get parameters */
     bla_open_path = bla_open_in_struct.path;
@@ -70,32 +69,32 @@ int fs_bla_open(fs_handle_t handle)
     bla_open_out_struct.ret = bla_open_ret;
 
     /* Create a new encoding proc */
-    ret = fs_handler_get_output(handle, &bla_open_out_buf, &bla_open_out_buf_size);
-    if (ret != S_SUCCESS) {
+    ret = HG_Handler_get_output(handle, &bla_open_out_buf, &bla_open_out_buf_size);
+    if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get output buffer\n");
         return ret;
     }
 
-    fs_proc_create(bla_open_out_buf, bla_open_out_buf_size, FS_ENCODE, &proc);
-    fs_proc_bla_open_out_t(proc, &bla_open_out_struct);
-    if (fs_proc_get_extra_buf(proc)) {
-        bla_open_out_extra_buf = fs_proc_get_extra_buf(proc);
-        bla_open_out_extra_buf_size = fs_proc_get_extra_size(proc);
-        fs_proc_set_extra_buf_is_mine(proc, 1);
+    hg_proc_create(bla_open_out_buf, bla_open_out_buf_size, HG_ENCODE, &proc);
+    hg_proc_bla_open_out_t(proc, &bla_open_out_struct);
+    if (hg_proc_get_extra_buf(proc)) {
+        bla_open_out_extra_buf = hg_proc_get_extra_buf(proc);
+        bla_open_out_extra_buf_size = hg_proc_get_extra_size(proc);
+        hg_proc_set_extra_buf_is_mine(proc, 1);
     }
-    fs_proc_free(proc);
+    hg_proc_free(proc);
 
     /* Free handle and send response back */
-    ret = fs_handler_start_response(handle, bla_open_out_extra_buf, bla_open_out_extra_buf_size);
-    if (ret != S_SUCCESS) {
+    ret = HG_Handler_start_response(handle, bla_open_out_extra_buf, bla_open_out_extra_buf_size);
+    if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
 
     /* Also free memory allocated during decoding */
-    fs_proc_create(NULL, 0, FS_FREE, &proc);
-    fs_proc_bla_open_in_t(proc, &bla_open_in_struct);
-    fs_proc_free(proc);
+    hg_proc_create(NULL, 0, HG_FREE, &proc);
+    hg_proc_bla_open_in_t(proc, &bla_open_in_struct);
+    hg_proc_free(proc);
 
     return ret;
 }
@@ -103,31 +102,31 @@ int fs_bla_open(fs_handle_t handle)
 /******************************************************************************/
 int main(int argc, char *argv[])
 {
-    na_network_class_t *network_class = NULL;
+    na_class_t *network_class = NULL;
     unsigned int number_of_peers;
     unsigned int i;
-    int fs_ret;
+    int hg_ret;
 
     /* Used by Test Driver */
     printf("Waiting for client...\n");
     fflush(stdout);
 
     /* Initialize the interface */
-    network_class = shipper_test_server_init(argc, argv, &number_of_peers);
+    network_class = HG_Test_server_init(argc, argv, &number_of_peers);
 
-    fs_ret = fs_handler_init(network_class);
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Handler_init(network_class);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not initialize function shipper handler\n");
         return EXIT_FAILURE;
     }
 
     /* Register routine */
-    IOFSL_SHIPPER_HANDLER_REGISTER("bla_open", fs_bla_open);
+    MERCURY_HANDLER_REGISTER("bla_open", fs_bla_open);
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */
-        fs_ret = fs_handler_process(FS_HANDLER_MAX_IDLE_TIME);
-        if (fs_ret != S_SUCCESS) {
+        hg_ret = HG_Handler_process(HG_HANDLER_MAX_IDLE_TIME);
+        if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not receive function call\n");
             return EXIT_FAILURE;
         }
@@ -135,8 +134,8 @@ int main(int argc, char *argv[])
 
     printf("Finalizing...\n");
 
-    fs_ret = fs_handler_finalize();
-    if (fs_ret != S_SUCCESS) {
+    hg_ret = HG_Handler_finalize();
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not finalize function shipper handler\n");
         return EXIT_FAILURE;
     }

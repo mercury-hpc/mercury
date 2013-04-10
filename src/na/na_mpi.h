@@ -8,15 +8,27 @@
  * found at the root of the source code distribution tree.
  */
 
-#ifndef IOFSL_COMPAT_H
-#define IOFSL_COMPAT_H
+#ifndef NA_MPI_H
+#define NA_MPI_H
 
-/* TODO (keep that for now) Define the ZOIDFS operations */
+#include "na.h"
+
+/* MPI initialization flags */
 enum {
-    PROTO_GENERIC = 16, /* TODO map to zoidfs proto */
-
-    /* First invalid operation id */
-    PROTO_MAX
+    MPI_INIT_SERVER = 1 /* set up to listen for unexpected messages */
 };
 
-#endif /* IOFSL_COMPAT_H */
+#include <mpi.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Initialize the MPI plugin */
+na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NA_MPI_H */
