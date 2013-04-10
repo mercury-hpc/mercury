@@ -70,7 +70,7 @@ int fs_bla_write(hg_handle_t handle)
     int bla_write_ret;
 
     /* Get input parameters and data */
-    ret = HG_Handler_get_input(handle, &bla_write_in_buf, &bla_write_in_buf_size);
+    ret = HG_Handler_get_input_buf(handle, &bla_write_in_buf, &bla_write_in_buf_size);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input buffer\n");
         return ret;
@@ -111,7 +111,7 @@ int fs_bla_write(hg_handle_t handle)
     bla_write_out_struct.ret = bla_write_ret;
 
     /* Create a new encoding proc */
-    HG_Handler_get_output(handle, &bla_write_out_buf, &bla_write_out_buf_size);
+    HG_Handler_get_output_buf(handle, &bla_write_out_buf, &bla_write_out_buf_size);
 
     hg_proc_create(bla_write_out_buf, bla_write_out_buf_size, HG_ENCODE, &proc);
     hg_proc_bla_write_out_t(proc, &bla_write_out_struct);
@@ -169,7 +169,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    MERCURY_HANDLER_REGISTER("bla_write", fs_bla_write);
+    MERCURY_HANDLER_REGISTER_CALLBACK("bla_write", fs_bla_write);
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */

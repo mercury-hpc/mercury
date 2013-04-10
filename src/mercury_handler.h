@@ -31,16 +31,18 @@ int HG_Handler_finalize(void);
 
 /* Register a function name and provide a unique ID */
 void HG_Handler_register(const char *func_name,
-        int (*hg_routine) (hg_handle_t handle));
+        int (*callback_routine) (hg_handle_t handle),
+        int (*dec_routine)(hg_proc_t proc, void *in_struct),
+        int (*enc_routine)(hg_proc_t proc, void *out_struct));
 
 /* Get remote addr from handle */
 const na_addr_t HG_Handler_get_addr(hg_handle_t handle);
 
 /* Get input from handle */
-int HG_Handler_get_input(hg_handle_t handle, void **in_buf, size_t *in_buf_size);
+int HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf, size_t *in_buf_size);
 
 /* Get output from handle */
-int HG_Handler_get_output(hg_handle_t handle, void **out_buf, size_t *out_buf_size);
+int HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf, size_t *out_buf_size);
 
 /* Receive a call from a remote client and process request */
 int HG_Handler_process(unsigned int timeout);
@@ -53,6 +55,18 @@ int HG_Handler_wait_response(hg_handle_t handle, unsigned int timeout, hg_status
 
 /* Free the handle (N.B. called in hg_handler_respond) */
 int HG_Handler_free(hg_handle_t handle);
+
+/* NB. The following routines are added for convenience */
+
+/* Get input structure from handle (requires registration of decoding function)
+ * => HG_Handler_get_input_buf + decode
+ */
+int HG_Handler_get_input(hg_handle_t handle, void *in_struct);
+
+/* Start sending output structure from handle (requires registration of encoding function)
+ * => HG_Handler_get_output_buf + encode + HG_Handler_start_response
+ */
+int HG_Handler_start_output(hg_handle_t handle, void *out_struct);
 
 #ifdef __cplusplus
 }

@@ -57,8 +57,10 @@ static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
         HG_Register(func_name, BOOST_PP_CAT(hg_proc_, in_struct_type_name), \
                 BOOST_PP_CAT(hg_proc_, out_struct_type_name))
 
-#define MERCURY_HANDLER_REGISTER(func_name, func_callback) \
-        HG_Handler_register(func_name, func_callback)
+#define MERCURY_HANDLER_REGISTER(func_name, func_callback, in_struct_type_name, out_struct_type_name) \
+        HG_Handler_register(func_name, func_callback, \
+                BOOST_PP_CAT(hg_proc_, in_struct_type_name), \
+                BOOST_PP_CAT(hg_proc_, out_struct_type_name))
 
 #else /* MERCURY_HAS_BOOST */
 
@@ -66,15 +68,20 @@ static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
         HG_Register(func_name, hg_proc_ ## in_struct_type_name, \
                 hg_proc_ ## out_struct_type_name)
 
-#define MERCURY_HANDLER_REGISTER(func_name, func_callback) \
-        HG_Handler_register(func_name, func_callback)
+#define MERCURY_HANDLER_REGISTER(func_name, func_callback, in_struct_type_name, out_struct_type_name) \
+        HG_Handler_register(func_name, func_callback, \
+                hg_proc_ ## in_struct_type_name, \
+                hg_proc_ ## out_struct_type_name)
 
 #endif /* MERCURY_HAS_BOOST */
+
+#define MERCURY_HANDLER_REGISTER_CALLBACK(func_name, func_callback) \
+        HG_Handler_register(func_name, func_callback, NULL, NULL)
 
 #define MERCURY_REGISTER_FINALIZE() \
         HG_Register("MERCURY_REGISTER_FINALIZE", NULL, NULL)
 
 #define MERCURY_HANDLER_REGISTER_FINALIZE(func_callback) \
-        HG_Handler_register("MERCURY_REGISTER_FINALIZE", func_callback)
+        HG_Handler_register("MERCURY_REGISTER_FINALIZE", func_callback, NULL, NULL)
 
 #endif /* MERCURY_MACROS_H */

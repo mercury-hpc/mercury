@@ -29,7 +29,7 @@ int server_finalize(hg_handle_t handle)
     finalizing++;
 
     /* Free handle and send response back */
-    ret = HG_Handler_start_response(handle, NULL, 0);
+    ret = HG_Handler_start_output(handle, NULL);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
@@ -42,32 +42,20 @@ int server_posix_open(hg_handle_t handle)
 {
     int hg_ret = HG_SUCCESS;
 
-    void          *open_in_buf;
-    size_t         open_in_buf_size;
     open_in_t      open_in_struct;
-
-    void          *open_out_buf;
-    size_t         open_out_buf_size;
     open_out_t     open_out_struct;
-
-    hg_proc_t proc;
 
     const char *path;
     int flags;
     mode_t mode;
     int ret;
 
-    /* Get input buffer */
-    ret = HG_Handler_get_input(handle, &open_in_buf, &open_in_buf_size);
+    /* Get input struct */
+    ret = HG_Handler_get_input(handle, &open_in_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get input buffer\n");
+        fprintf(stderr, "Could not get input struct\n");
         return ret;
     }
-
-    /* Create a new decoding proc */
-    hg_proc_create(open_in_buf, open_in_buf_size, HG_DECODE, &proc);
-    hg_proc_open_in_t(proc, &open_in_struct);
-    hg_proc_free(proc);
 
     path = open_in_struct.path;
     flags = open_in_struct.flags;
@@ -80,28 +68,12 @@ int server_posix_open(hg_handle_t handle)
     /* Fill output structure */
     open_out_struct.ret = ret;
 
-    /* Create a new encoding proc */
-    ret = HG_Handler_get_output(handle, &open_out_buf, &open_out_buf_size);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get output buffer\n");
-        return ret;
-    }
-
-    hg_proc_create(open_out_buf, open_out_buf_size, HG_ENCODE, &proc);
-    hg_proc_open_out_t(proc, &open_out_struct);
-    hg_proc_free(proc);
-
     /* Free handle and send response back */
-    ret = HG_Handler_start_response(handle, NULL, 0);
+    ret = HG_Handler_start_output(handle, &open_out_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
-
-    /* Also free memory allocated during decoding */
-    hg_proc_create(NULL, 0, HG_FREE, &proc);
-    hg_proc_open_in_t(proc, &open_in_struct);
-    hg_proc_free(proc);
 
     return hg_ret;
 }
@@ -110,30 +82,18 @@ int server_posix_close(hg_handle_t handle)
 {
     int hg_ret = HG_SUCCESS;
 
-    void          *close_in_buf;
-    size_t         close_in_buf_size;
     close_in_t     close_in_struct;
-
-    void          *close_out_buf;
-    size_t         close_out_buf_size;
     close_out_t    close_out_struct;
-
-    hg_proc_t proc;
 
     int fd;
     int ret;
 
-    /* Get input buffer */
-    ret = HG_Handler_get_input(handle, &close_in_buf, &close_in_buf_size);
+    /* Get input struct */
+    ret = HG_Handler_get_input(handle, &close_in_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get input buffer\n");
+        fprintf(stderr, "Could not get input struct\n");
         return ret;
     }
-
-    /* Create a new decoding proc */
-    hg_proc_create(close_in_buf, close_in_buf_size, HG_DECODE, &proc);
-    hg_proc_close_in_t(proc, &close_in_struct);
-    hg_proc_free(proc);
 
     fd = close_in_struct.fd;
 
@@ -144,28 +104,12 @@ int server_posix_close(hg_handle_t handle)
     /* Fill output structure */
     close_out_struct.ret = ret;
 
-    /* Create a new encoding proc */
-    ret = HG_Handler_get_output(handle, &close_out_buf, &close_out_buf_size);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get output buffer\n");
-        return ret;
-    }
-
-    hg_proc_create(close_out_buf, close_out_buf_size, HG_ENCODE, &proc);
-    hg_proc_close_out_t(proc, &close_out_struct);
-    hg_proc_free(proc);
-
     /* Free handle and send response back */
-    ret = HG_Handler_start_response(handle, NULL, 0);
+    ret = HG_Handler_start_output(handle, &close_out_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
-
-    /* Also free memory allocated during decoding */
-    hg_proc_create(NULL, 0, HG_FREE, &proc);
-    hg_proc_close_in_t(proc, &close_in_struct);
-    hg_proc_free(proc);
 
     return hg_ret;
 }
@@ -174,15 +118,8 @@ int server_posix_write(hg_handle_t handle)
 {
     int hg_ret = HG_SUCCESS;
 
-    void          *write_in_buf;
-    size_t         write_in_buf_size;
     write_in_t     write_in_struct;
-
-    void          *write_out_buf;
-    size_t         write_out_buf_size;
     write_out_t    write_out_struct;
-
-    hg_proc_t proc;
 
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
@@ -197,17 +134,12 @@ int server_posix_write(hg_handle_t handle)
     int i;
     const int *buf_ptr;
 
-    /* Get input buffer */
-    ret = HG_Handler_get_input(handle, &write_in_buf, &write_in_buf_size);
+    /* Get input struct */
+    ret = HG_Handler_get_input(handle, &write_in_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get input buffer\n");
+        fprintf(stderr, "Could not get input struct\n");
         return ret;
     }
-
-    /* Create a new decoding proc */
-    hg_proc_create(write_in_buf, write_in_buf_size, HG_DECODE, &proc);
-    hg_proc_write_in_t(proc, &write_in_struct);
-    hg_proc_free(proc);
 
     bulk_handle = write_in_struct.bulk_handle;
     fd = write_in_struct.fd;
@@ -245,28 +177,12 @@ int server_posix_write(hg_handle_t handle)
     /* Fill output structure */
     write_out_struct.ret = ret;
 
-    /* Create a new encoding proc */
-    ret = HG_Handler_get_output(handle, &write_out_buf, &write_out_buf_size);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get output buffer\n");
-        return ret;
-    }
-
-    hg_proc_create(write_out_buf, write_out_buf_size, HG_ENCODE, &proc);
-    hg_proc_write_out_t(proc, &write_out_struct);
-    hg_proc_free(proc);
-
     /* Free handle and send response back */
-    ret = HG_Handler_start_response(handle, NULL, 0);
+    ret = HG_Handler_start_output(handle, &write_out_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
-
-    /* Also free memory allocated during decoding */
-    hg_proc_create(NULL, 0, HG_FREE, &proc);
-    hg_proc_write_in_t(proc, &write_in_struct);
-    hg_proc_free(proc);
 
     /* Free block handle */
     hg_ret = HG_Bulk_block_handle_free(bulk_block_handle);
@@ -284,15 +200,8 @@ int server_posix_read(hg_handle_t handle)
 {
     int hg_ret = HG_SUCCESS;
 
-    void         *read_in_buf;
-    size_t        read_in_buf_size;
     read_in_t     read_in_struct;
-
-    void         *read_out_buf;
-    size_t        read_out_buf_size;
     read_out_t    read_out_struct;
-
-    hg_proc_t proc;
 
     na_addr_t dest = HG_Handler_get_addr(handle);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
@@ -307,17 +216,12 @@ int server_posix_read(hg_handle_t handle)
     int i;
     const int *buf_ptr;
 
-    /* Get input buffer */
-    ret = HG_Handler_get_input(handle, &read_in_buf, &read_in_buf_size);
+    /* Get input struct */
+    ret = HG_Handler_get_input(handle, &read_in_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get input buffer\n");
+        fprintf(stderr, "Could not get input struct\n");
         return ret;
     }
-
-    /* Create a new decoding proc */
-    hg_proc_create(read_in_buf, read_in_buf_size, HG_DECODE, &proc);
-    hg_proc_read_in_t(proc, &read_in_struct);
-    hg_proc_free(proc);
 
     bulk_handle = read_in_struct.bulk_handle;
     fd = read_in_struct.fd;
@@ -357,28 +261,12 @@ int server_posix_read(hg_handle_t handle)
     /* Fill output structure */
     read_out_struct.ret = ret;
 
-    /* Create a new encoding proc */
-    ret = HG_Handler_get_output(handle, &read_out_buf, &read_out_buf_size);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get output buffer\n");
-        return ret;
-    }
-
-    hg_proc_create(read_out_buf, read_out_buf_size, HG_ENCODE, &proc);
-    hg_proc_read_out_t(proc, &read_out_struct);
-    hg_proc_free(proc);
-
     /* Free handle and send response back */
-    ret = HG_Handler_start_response(handle, NULL, 0);
+    ret = HG_Handler_start_output(handle, &read_out_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
-
-    /* Also free memory allocated during decoding */
-    hg_proc_create(NULL, 0, HG_FREE, &proc);
-    hg_proc_read_in_t(proc, &read_in_struct);
-    hg_proc_free(proc);
 
     /* Free block handle */
     hg_ret = HG_Bulk_block_handle_free(bulk_block_handle);
@@ -419,10 +307,10 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    MERCURY_HANDLER_REGISTER("open", server_posix_open);
-    MERCURY_HANDLER_REGISTER("write", server_posix_write);
-    MERCURY_HANDLER_REGISTER("read", server_posix_read);
-    MERCURY_HANDLER_REGISTER("close", server_posix_close);
+    MERCURY_HANDLER_REGISTER("open", server_posix_open, open_in_t, open_out_t);
+    MERCURY_HANDLER_REGISTER("write", server_posix_write, write_in_t, write_out_t);
+    MERCURY_HANDLER_REGISTER("read", server_posix_read, read_in_t, read_out_t);
+    MERCURY_HANDLER_REGISTER("close", server_posix_close, close_in_t, close_out_t);
     MERCURY_HANDLER_REGISTER_FINALIZE(server_finalize);
 
     while (finalizing != number_of_peers) {

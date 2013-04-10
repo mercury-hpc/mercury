@@ -16,7 +16,9 @@
 
 /* Private structs */
 typedef struct hg_proc_info {
-    int (*hg_routine) (hg_handle_t handle);
+    int (*callback_routine) (hg_handle_t handle);
+    int (*dec_routine)(hg_proc_t proc, void *in_struct);
+    int (*enc_routine)(hg_proc_t proc, void *out_struct);
 } hg_proc_info_t;
 
 typedef struct hg_response_info {
@@ -41,6 +43,8 @@ typedef struct hg_priv_handle {
     na_request_t  send_request;
     void         *extra_send_buf;
     na_size_t     extra_send_buf_size;
+
+    void         *in_struct;
 } hg_priv_handle_t;
 
 /* Function map */
@@ -212,7 +216,9 @@ int HG_Handler_finalize(void)
  *---------------------------------------------------------------------------
  */
 void HG_Handler_register(const char *func_name,
-        int (*hg_routine) (hg_handle_t handle))
+        int (*callback_routine) (hg_handle_t handle),
+        int (*dec_routine)(hg_proc_t proc, void *in_struct),
+        int (*enc_routine)(hg_proc_t proc, void *out_struct))
 {
     hg_id_t *id;
     hg_proc_info_t *proc_info;
@@ -225,7 +231,10 @@ void HG_Handler_register(const char *func_name,
     /* Fill a func info struct and store it into the function map */
     proc_info = malloc(sizeof(hg_proc_info_t));
 
-    proc_info->hg_routine  = hg_routine;
+    proc_info->callback_routine = callback_routine;
+    proc_info->dec_routine = dec_routine;
+    proc_info->enc_routine = enc_routine;
+
     if (!hg_hash_table_insert(handler_func_map, id, proc_info)) {
         HG_ERROR_DEFAULT("Could not insert func ID");
         free(proc_info);
@@ -253,7 +262,7 @@ const na_addr_t HG_Handler_get_addr (hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------
- * Function:    HG_Handler_get_input
+ * Function:    HG_Handler_get_input_buf
  *
  * Purpose:     Get input from handle
  *
@@ -261,7 +270,7 @@ const na_addr_t HG_Handler_get_addr (hg_handle_t handle)
  *
  *---------------------------------------------------------------------------
  */
-int HG_Handler_get_input(hg_handle_t handle, void **in_buf, size_t *in_buf_size)
+int HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf, size_t *in_buf_size)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
@@ -284,7 +293,7 @@ int HG_Handler_get_input(hg_handle_t handle, void **in_buf, size_t *in_buf_size)
 }
 
 /*---------------------------------------------------------------------------
- * Function:    HG_Handler_get_output
+ * Function:    HG_Handler_get_output_buf
  *
  * Purpose:     Get output from handle
  *
@@ -292,7 +301,7 @@ int HG_Handler_get_input(hg_handle_t handle, void **in_buf, size_t *in_buf_size)
  *
  *---------------------------------------------------------------------------
  */
-int HG_Handler_get_output(hg_handle_t handle, void **out_buf, size_t *out_buf_size)
+int HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf, size_t *out_buf_size)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
@@ -386,6 +395,8 @@ int HG_Handler_process(unsigned int timeout)
         priv_handle->extra_send_buf = NULL;
         priv_handle->extra_send_buf_size = 0;
 
+        priv_handle->in_struct = NULL;
+
         /* Recv buffer must match the size of unexpected buffer */
         priv_handle->recv_buf_size = NA_Get_unexpected_size(handler_na_class);
 
@@ -456,7 +467,7 @@ int HG_Handler_process(unsigned int timeout)
     }
 
     /* Execute function and fill output parameters */
-    proc_info->hg_routine((hg_handle_t) priv_handle);
+    proc_info->callback_routine((hg_handle_t) priv_handle);
 
 done:
     if (dec_proc != HG_PROC_NULL) hg_proc_free(dec_proc);
@@ -495,7 +506,7 @@ int HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf, siz
     }
 
     /* if get_output has not been called, call it to create to send_buf */
-    ret = HG_Handler_get_output(handle, NULL, NULL);
+    ret = HG_Handler_get_output_buf(handle, NULL, NULL);
      if (ret != HG_SUCCESS) {
          HG_ERROR_DEFAULT("Could not get output");
          ret = HG_FAIL;
@@ -665,6 +676,166 @@ int HG_Handler_free(hg_handle_t handle)
 
     free(priv_handle);
     priv_handle = NULL;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    HG_Handler_get_input
+ *
+ * Purpose:     Get input structure from handle
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int HG_Handler_get_input(hg_handle_t handle, void *in_struct)
+{
+    hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
+    int ret = HG_SUCCESS;
+
+    void *in_buf;
+    size_t in_buf_size;
+    hg_proc_info_t *proc_info;
+    hg_proc_t proc;
+
+    if (!in_struct) {
+        HG_ERROR_DEFAULT("NULL pointer to input struct");
+        ret = HG_FAIL;
+        return ret;
+    } else {
+        /* Keep reference to in_struct to eventually free decoded params later */
+        priv_handle->in_struct = in_struct;
+    }
+
+    /* Get input buffer */
+    ret = HG_Handler_get_input_buf(handle, &in_buf, &in_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get input buffer");
+        return ret;
+    }
+
+    /* Retrieve decode function from function map */
+    proc_info = hg_hash_table_lookup(handler_func_map, &priv_handle->id);
+    if (!proc_info) {
+        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    /* Create a new decoding proc */
+    ret = hg_proc_create(in_buf, in_buf_size, HG_DECODE, &proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not create proc");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    /* Decode input parameters */
+    ret = proc_info->dec_routine(proc, in_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not decode input parameters");
+        ret = HG_FAIL;
+    }
+
+    /* Free proc */
+    hg_proc_free(proc);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    HG_Handler_start_output
+ *
+ * Purpose:     Start sending output structure from handle
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int HG_Handler_start_output(hg_handle_t handle, void *out_struct)
+{
+    hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
+    int ret = HG_SUCCESS;
+
+    void *out_buf;
+    size_t out_buf_size;
+    void *out_extra_buf = NULL;
+    size_t out_extra_buf_size = 0;
+    hg_proc_info_t *proc_info;
+    hg_proc_t proc;
+
+    /* Get output buffer */
+    ret = HG_Handler_get_output_buf(handle, &out_buf, &out_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get output buffer");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    /* Retrieve decode function from function map */
+    proc_info = hg_hash_table_lookup(handler_func_map, &priv_handle->id);
+    if (!proc_info) {
+        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    if (out_struct && proc_info->enc_routine) {
+        /* Create a new encoding proc */
+        ret = hg_proc_create(out_buf, out_buf_size, HG_ENCODE, &proc);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not create proc");
+            ret = HG_FAIL;
+            return ret;
+        }
+
+        /* Encode output parameters */
+        ret = proc_info->enc_routine(proc, out_struct);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not encode output parameters");
+            ret = HG_FAIL;
+        }
+
+
+        /* Get eventual extra buffer */
+        if (hg_proc_get_extra_buf(proc)) {
+            out_extra_buf = hg_proc_get_extra_buf(proc);
+            out_extra_buf_size = hg_proc_get_extra_size(proc);
+            hg_proc_set_extra_buf_is_mine(proc, 1);
+        }
+
+        /* Free proc */
+        hg_proc_free(proc);
+    }
+
+    /* Free handle and send response back */
+    ret = HG_Handler_start_response(handle, out_extra_buf, out_extra_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not respond");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    if (priv_handle->in_struct && proc_info->dec_routine) {
+        /* Create a new free proc */
+        ret = hg_proc_create(NULL, 0, HG_FREE, &proc);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not create proc");
+            ret = HG_FAIL;
+            return ret;
+        }
+
+        /* Free memory allocated during input decoding */
+        ret = proc_info->dec_routine(proc, priv_handle->in_struct);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not free allocated parameters");
+            ret = HG_FAIL;
+        }
+
+        /* Free proc */
+        hg_proc_free(proc);
+    }
 
     return ret;
 }
