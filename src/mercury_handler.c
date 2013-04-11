@@ -53,11 +53,60 @@ extern int hg_int_equal(void *vlocation1, void *vlocation2);
 extern unsigned int hg_int_hash(void *vlocation);
 
 /* List of processed handles */
-static hg_list_entry_t *handle_list;
-static pthread_mutex_t handle_list_mutex;
+static hg_list_entry_t *response_handle_list;
+static pthread_mutex_t response_handle_list_mutex;
 
 /* Network class */
 static na_class_t *handler_na_class = NULL;
+
+/*---------------------------------------------------------------------------
+ * Function:    HG_Handler_process_response
+ *
+ * Purpose:     Process list of handles and wait timeout for response completion
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+static int HG_Handler_process_response_list(unsigned int timeout)
+{
+    int ret = HG_SUCCESS;
+
+    /* Check if any resources from previous async operations can be freed */
+    pthread_mutex_lock(&response_handle_list_mutex); /* Need to prevent concurrent accesses */
+
+    if (hg_list_length(response_handle_list)) {
+        /* Iterate over entries and test for their completion */
+        hg_list_entry_t *entry = response_handle_list;
+        hg_priv_handle_t *response_handle;
+
+        printf("List length: %d\n", hg_list_length(response_handle_list));
+        while (entry) {
+            hg_status_t response_status;
+            hg_list_entry_t *next_entry = hg_list_next(entry);
+
+            response_handle = (hg_priv_handle_t*) hg_list_data(entry);
+            ret = HG_Handler_wait_response(response_handle, timeout, &response_status);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not wait for response to complete");
+                ret = HG_FAIL;
+                break;
+            }
+
+            if (response_status) {
+                if (!hg_list_remove_entry(&response_handle_list, entry)) {
+                    HG_ERROR_DEFAULT("Could not remove entry");
+                }
+            }
+
+            entry = next_entry;
+        }
+    }
+
+    pthread_mutex_unlock(&response_handle_list_mutex);
+
+    return ret;
+}
 
 /*---------------------------------------------------------------------------
  * Function:    HG_Handler_process_extra_recv_buf
@@ -164,7 +213,7 @@ int HG_Handler_init(na_class_t *network_class)
     /* Automatically free all the values with the hash map */
     hg_hash_table_register_free_functions(handler_func_map, free, free);
 
-    pthread_mutex_init(&handle_list_mutex, NULL);
+    pthread_mutex_init(&response_handle_list_mutex, NULL);
 
     return ret;
 }
@@ -188,6 +237,14 @@ int HG_Handler_finalize(void)
         return ret;
     }
 
+    /* Wait for previous responses to complete */
+    ret = HG_Handler_process_response_list(HG_MAX_IDLE_TIME);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not process response list");
+        ret = HG_FAIL;
+        return ret;
+    }
+
     na_ret = NA_Finalize(handler_na_class);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not finalize");
@@ -201,7 +258,7 @@ int HG_Handler_finalize(void)
 
     handler_na_class = NULL;
 
-    pthread_mutex_destroy(&handle_list_mutex);
+    pthread_mutex_destroy(&response_handle_list_mutex);
 
     return ret;
 }
@@ -350,29 +407,13 @@ int HG_Handler_process(unsigned int timeout)
 
     int ret = HG_SUCCESS, na_ret;
 
-    /* Check if any resources from previous async operations can be freed */
-    pthread_mutex_lock(&handle_list_mutex); /* Need to prevent concurrent accesses */
-
-    if (hg_list_length(handle_list)) {
-        /* Iterate over entries and test for their completion */
-        hg_list_entry_t *entry = handle_list;
-        hg_priv_handle_t *completing_handle;
-
-        while (entry) {
-            hg_status_t send_status;
-
-            completing_handle = (hg_priv_handle_t*) hg_list_data(entry);
-            HG_Handler_wait_response(completing_handle, 0, &send_status);
-            if (send_status) {
-                if (!hg_list_remove_entry(&handle_list, entry)) {
-                    HG_ERROR_DEFAULT("Could not remove entry");
-                }
-            }
-            entry = hg_list_next(entry);
-        }
+    /* Check if previous responses have completed without waiting */
+    ret = HG_Handler_process_response_list(0);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not process response list");
+        ret = HG_FAIL;
+        goto done;
     }
-
-    pthread_mutex_unlock(&handle_list_mutex);
 
     /* If we don't have an existing handle for the incoming request create
      * a new one */
@@ -463,7 +504,7 @@ int HG_Handler_process(unsigned int timeout)
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     /* Execute function and fill output parameters */
@@ -567,14 +608,14 @@ done:
     enc_proc = HG_PROC_NULL;
 
     if (ret == HG_SUCCESS && priv_handle) {
-        pthread_mutex_lock(&handle_list_mutex);
+        pthread_mutex_lock(&response_handle_list_mutex);
 
-        if (!hg_list_append(&handle_list, (hg_list_value_t)priv_handle)) {
+        if (!hg_list_append(&response_handle_list, (hg_list_value_t)priv_handle)) {
             HG_ERROR_DEFAULT("Could not append handle to list");
             ret = HG_FAIL;
         }
 
-        pthread_mutex_unlock(&handle_list_mutex);
+        pthread_mutex_unlock(&response_handle_list_mutex);
     }
     return ret;
 }
