@@ -55,6 +55,9 @@ if(NA_USE_MPI)
 endif(NA_USE_MPI)
 
 set(NA_DEP_INCLUDE_DIRS ${BMI_INCLUDE_DIR} ${MPI_INCLUDE_PATH} PARENT_SCOPE)
+if(MERCURY_CREATE_SINGLE_LIB)
+  set(NA_DEP_LIBRARIES ${NA_EXT_DEPENCIES} PARENT_SCOPE)
+endif(MERCURY_CREATE_SINGLE_LIB)
 
 #------------------------------------------------------------------------------
 # Configure module header files
@@ -90,19 +93,40 @@ if(NA_USE_MPI)
   )
 endif(NA_USE_MPI)
 
-#------------------------------------------------------------------------------
-# Libraries
-#------------------------------------------------------------------------------
-# NA
-add_library(na ${NA_SRCS})
-target_link_libraries(na ${NA_EXT_DEPENCIES})
-set_lib_options(na "na" ${NA_LIBTYPE})
+if(MERCURY_CREATE_SINGLE_LIB)
+  set(NA_SRCS
+    ${NA_SRCS}
+    PARENT_SCOPE
+  )
+else(MERCURY_CREATE_SINGLE_LIB)
+  #----------------------------------------------------------------------------
+  # Libraries
+  #----------------------------------------------------------------------------
+  # NA
+  add_library(na ${NA_SRCS})
+  target_link_libraries(na ${NA_EXT_DEPENCIES})
+  set_lib_options(na "na" ${NA_LIBTYPE})
+
+  #---------------------------------------------------------------------------
+  # Add Target(s) to CMake Install
+  #---------------------------------------------------------------------------
+  install(
+    TARGETS
+      na
+    EXPORT
+      ${MERCURY_EXPORTED_TARGETS}
+    LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+    ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+    RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
+  )
+endif(MERCURY_CREATE_SINGLE_LIB)
 
 #-----------------------------------------------------------------------------
 # Specify project header files to be installed
 #-----------------------------------------------------------------------------
 set(NA_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/na.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_error.h
 )
 
 if(NA_USE_BMI)
@@ -129,17 +153,4 @@ install(
     ${MERCURY_INSTALL_INCLUDE_DIR}
   COMPONENT
     headers
-)
-
-#-----------------------------------------------------------------------------
-# Add Target(s) to CMake Install
-#-----------------------------------------------------------------------------
-install(
-  TARGETS
-    na
-  EXPORT
-    ${MERCURY_EXPORTED_TARGETS}
-  LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-  ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-  RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
 )

@@ -1,3 +1,6 @@
+# Create single library
+option(MERCURY_CREATE_SINGLE_LIB "Create one single mercury library." OFF)
+
 #------------------------------------------------------------------------------
 # External dependencies
 #------------------------------------------------------------------------------
@@ -30,7 +33,9 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/util
   ${CMAKE_CURRENT_BINARY_DIR}/util
 )
-set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} mercury_util)
+if(NOT MERCURY_CREATE_SINGLE_LIB)
+  set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} mercury_util)
+endif(NOT MERCURY_CREATE_SINGLE_LIB)
 
 # NA
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
@@ -38,7 +43,11 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/na
   ${CMAKE_CURRENT_BINARY_DIR}/na
 )
-set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} na)
+if(NOT MERCURY_CREATE_SINGLE_LIB)
+  set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} na)
+else(NOT MERCURY_CREATE_SINGLE_LIB)
+  include_directories(${NA_DEP_INCLUDE_DIRS})
+endif(NOT MERCURY_CREATE_SINGLE_LIB)
 
 #------------------------------------------------------------------------------
 # Configure module header files
@@ -58,12 +67,11 @@ include_directories(
 
 # Used by config.cmake and Testing
 set(MERCURY_INCLUDES_BUILD_TIME
-  ${MERCURY_SOURCE_DIR}/src
-  ${MERCURY_SOURCE_DIR}/src/na
-  ${MERCURY_SOURCE_DIR}/src/util
-  ${MERCURY_BINARY_DIR}/src
-  ${MERCURY_BINARY_DIR}/src/na
-  ${MERCURY_BINARY_DIR}/src/util
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_BINARY_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/na
+  ${CMAKE_CURRENT_BINARY_DIR}/na
+  ${CMAKE_CURRENT_SOURCE_DIR}/util
   ${NA_DEP_INCLUDE_DIRS}
   ${MERCURY_DEP_INCLUDE_DIRS}
   PARENT_SCOPE
@@ -80,8 +88,13 @@ set(MERCURY_SRCS
 # Libraries
 #------------------------------------------------------------------------------
 # MERCURY
-add_library(mercury ${MERCURY_SRCS} ${MERCURY_UTIL_SRCS})
-target_link_libraries(mercury mercury_util na ${MERCURY_EXT_DEPENCIES})
+if(MERCURY_CREATE_SINGLE_LIB)
+  set(MERCURY_SRCS ${MERCURY_SRCS} ${MERCURY_UTIL_SRCS} ${NA_SRCS})
+  set(MERCURY_EXT_DEPENCIES ${NA_DEP_LIBRARIES})
+endif(MERCURY_CREATE_SINGLE_LIB)
+
+add_library(mercury ${MERCURY_SRCS})
+target_link_libraries(mercury ${MERCURY_EXPORTED_LIBS} ${MERCURY_EXT_DEPENCIES})
 set_lib_options(mercury "mercury" ${MERCURY_LIBTYPE})
 
 set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} mercury)
@@ -97,6 +110,7 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_error.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_macros.h
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_config.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/iofsl_compat.h
 )
 
 #-----------------------------------------------------------------------------

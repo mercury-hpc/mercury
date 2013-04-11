@@ -49,20 +49,20 @@ endfunction(add_mercury_test)
 add_library(mercury_test STATIC
   mercury_test.c
 )
-target_link_libraries(mercury_test na)
+target_link_libraries(mercury_test mercury)
 
 #------------------------------------------------------------------------------
 # Set up test
 #------------------------------------------------------------------------------
 # Function shipper test
 add_executable(client_fs client_fs.c)
-target_link_libraries(client_fs mercury mercury_test)
+target_link_libraries(client_fs mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_fs)
 endif(MERCURY_ENABLE_COVERAGE)
 
 add_executable(server_fs server_fs.c)
-target_link_libraries(server_fs mercury mercury_test)
+target_link_libraries(server_fs mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_fs)
 endif(MERCURY_ENABLE_COVERAGE)
@@ -84,13 +84,13 @@ endif(MERCURY_ENABLE_COVERAGE)
 #------------------------------------------------------------------------------
 # Bulk data shipper test
 add_executable(client_bds client_bds.c)
-target_link_libraries(client_bds mercury mercury_test)
+target_link_libraries(client_bds mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_bds)
 endif(MERCURY_ENABLE_COVERAGE)
 
 add_executable(server_bds server_bds.c)
-target_link_libraries(server_bds mercury mercury_test)
+target_link_libraries(server_bds mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_bds)
 endif(MERCURY_ENABLE_COVERAGE)
@@ -98,13 +98,13 @@ endif(MERCURY_ENABLE_COVERAGE)
 #------------------------------------------------------------------------------
 # POSIX test
 add_executable(client_posix client_posix.c)
-target_link_libraries(client_posix mercury mercury_test)
+target_link_libraries(client_posix mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_posix)
 endif(MERCURY_ENABLE_COVERAGE)
 
 add_executable(server_posix server_posix.c)
-target_link_libraries(server_posix mercury mercury_test)
+target_link_libraries(server_posix mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_posix)
 endif(MERCURY_ENABLE_COVERAGE)
