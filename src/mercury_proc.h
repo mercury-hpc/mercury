@@ -30,8 +30,8 @@
 # endif
 #endif
 
-/* TODO using ifdef IOFSL_SHIPPER_HAS_XDR is dangerous for inline functions */
-#ifdef IOFSL_SHIPPER_HAS_XDR
+/* TODO may want a better solution than ifdef MERCURY_HAS_XDR */
+#ifdef MERCURY_HAS_XDR
 #include <rpc/types.h>
 #include <rpc/xdr.h>
 #endif
@@ -65,7 +65,7 @@ typedef struct hg_proc_buf {
     size_t   size;      /* Total buffer size */
     size_t   size_left; /* Available size for user */
     bool     is_mine;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
     XDR      xdr;
 #endif
 } hg_proc_buf_t;
@@ -194,7 +194,7 @@ HG_PROC_INLINE int hg_proc_int8_t  (hg_proc_t proc, int8_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
     ret = xdr_int8_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(int8_t));
@@ -215,7 +215,7 @@ HG_PROC_INLINE int hg_proc_uint8_t  (hg_proc_t proc, uint8_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
     ret = xdr_uint8_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(uint8_t));
@@ -236,7 +236,7 @@ HG_PROC_INLINE int hg_proc_int16_t  (hg_proc_t proc, int16_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
     ret = xdr_int16_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(int16_t));
@@ -257,7 +257,7 @@ HG_PROC_INLINE int hg_proc_uint16_t  (hg_proc_t proc, uint16_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
     ret = xdr_uint16_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(uint16_t));
@@ -278,7 +278,7 @@ HG_PROC_INLINE int hg_proc_int32_t  (hg_proc_t proc, int32_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
     ret = xdr_int32_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(int32_t));
@@ -299,7 +299,7 @@ HG_PROC_INLINE int hg_proc_uint32_t  (hg_proc_t proc, uint32_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
     ret = xdr_uint32_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(uint32_t));
@@ -320,7 +320,7 @@ HG_PROC_INLINE int hg_proc_int64_t  (hg_proc_t proc, int64_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
     ret = xdr_int64_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(int64_t));
@@ -341,7 +341,7 @@ HG_PROC_INLINE int hg_proc_uint64_t  (hg_proc_t proc, uint64_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
     ret = xdr_uint64_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(uint64_t));
@@ -456,34 +456,44 @@ HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
+    char buf[HG_BULK_MAX_HANDLE_SIZE];
 
     switch (priv_proc->op) {
-        void *new_buf_ptr;
-
         case HG_ENCODE:
-            /* If not enough space allocate extra space if encoding or just get extra buffer if decoding */
-            if (priv_proc->current_buf->size_left < HG_BULK_MAX_HANDLE_SIZE) {
-                hg_proc_set_size(proc, priv_proc->proc_buf.size + priv_proc->extra_buf.size + HG_BULK_MAX_HANDLE_SIZE);
+            ret = HG_Bulk_handle_serialize(buf, HG_BULK_MAX_HANDLE_SIZE, *handle);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not serialize bulk handle");
+                ret = HG_FAIL;
+                break;
             }
-            ret = HG_Bulk_handle_serialize(priv_proc->current_buf->buf_ptr, HG_BULK_MAX_HANDLE_SIZE, *handle);
-            new_buf_ptr = (char*) priv_proc->current_buf->buf_ptr + HG_BULK_MAX_HANDLE_SIZE;
-            hg_proc_set_buf_ptr(proc, new_buf_ptr);
+            ret = hg_proc_raw(proc, buf, HG_BULK_MAX_HANDLE_SIZE);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Proc error");
+                ret = HG_FAIL;
+            }
             break;
         case HG_DECODE:
-            ret = HG_Bulk_handle_deserialize(handle, priv_proc->current_buf->buf_ptr, HG_BULK_MAX_HANDLE_SIZE);
-            new_buf_ptr = (char*) priv_proc->current_buf->buf_ptr + HG_BULK_MAX_HANDLE_SIZE;
-            hg_proc_set_buf_ptr(proc, new_buf_ptr);
+            ret = hg_proc_raw(proc, buf, HG_BULK_MAX_HANDLE_SIZE);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Proc error");
+                ret = HG_FAIL;
+            }
+            ret = HG_Bulk_handle_deserialize(handle, buf, HG_BULK_MAX_HANDLE_SIZE);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not deserialize bulk handle");
+                ret = HG_FAIL;
+            }
             break;
         case HG_FREE:
             ret = HG_Bulk_handle_free(*handle);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not free bulk handle");
+                ret = HG_FAIL;
+            }
             *handle = NULL;
             break;
         default:
             break;
-    }
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
     }
     return ret;
 }

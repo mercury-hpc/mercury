@@ -67,7 +67,7 @@ int hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc)
     priv_proc->proc_buf.buf_ptr = buf;
     priv_proc->proc_buf.size_left = buf_size;
     priv_proc->proc_buf.is_mine = 0;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
     switch (op) {
         case HG_ENCODE:
             xdrmem_create(&priv_proc->proc_buf.xdr, buf, buf_size, XDR_ENCODE);
@@ -298,7 +298,7 @@ int hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
 
         priv_proc->current_buf->buf_ptr   = buf_ptr;
         priv_proc->current_buf->size_left = priv_proc->current_buf->size - (size_t)new_pos;
-#ifdef IOFSL_SHIPPER_HAS_XDR
+#ifdef MERCURY_HAS_XDR
         xdr_setpos(&priv_proc->current_buf->xdr, new_pos);
 #endif
         ret = HG_SUCCESS;
