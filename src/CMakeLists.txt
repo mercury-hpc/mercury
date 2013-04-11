@@ -19,6 +19,8 @@ if(MERCURY_USE_XDR)
   set(MERCURY_HAS_XDR 1)
 endif(MERCURY_USE_XDR)
 
+set(MERCURY_DEP_INCLUDE_DIRS ${Boost_INCLUDE_DIRS})
+
 #------------------------------------------------------------------------------
 # Internal dependencies
 #------------------------------------------------------------------------------
@@ -63,6 +65,7 @@ set(MERCURY_INCLUDES_BUILD_TIME
   ${MERCURY_BINARY_DIR}/src/na
   ${MERCURY_BINARY_DIR}/src/util
   ${NA_DEP_INCLUDE_DIRS}
+  ${MERCURY_DEP_INCLUDE_DIRS}
   PARENT_SCOPE
 )
 
