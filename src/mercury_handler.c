@@ -80,7 +80,6 @@ static int HG_Handler_process_response_list(unsigned int timeout)
         hg_list_entry_t *entry = response_handle_list;
         hg_priv_handle_t *response_handle;
 
-        printf("List length: %d\n", hg_list_length(response_handle_list));
         while (entry) {
             hg_status_t response_status;
             hg_list_entry_t *next_entry = hg_list_next(entry);
