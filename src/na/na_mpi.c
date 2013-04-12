@@ -101,7 +101,14 @@ typedef struct mpi_onesided_info {
 } mpi_onesided_info_t;
 #endif
 
+/* Used to differentiate Send requests from Recv requests */
+typedef enum mpi_req_type {
+    MPI_SEND_OP,
+    MPI_RECV_OP
+} mpi_req_type_t;
+
 typedef struct mpi_req {
+    mpi_req_type_t type;
     MPI_Request request;
     uint8_t     ack;
     MPI_Request ack_request;
@@ -545,6 +552,7 @@ static int na_mpi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
     mpi_req_t *mpi_request;
 
     mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request->type = MPI_SEND_OP;
     mpi_request->ack = 0;
     mpi_request->ack_request = MPI_REQUEST_NULL;
     mpi_request->request = MPI_REQUEST_NULL;
@@ -581,6 +589,7 @@ static int na_mpi_recv(void *buf, na_size_t buf_len, na_addr_t source,
     mpi_req_t *mpi_request;
 
     mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request->type = MPI_RECV_OP;
     mpi_request->ack = 0;
     mpi_request->ack_request = MPI_REQUEST_NULL;
     mpi_request->request = MPI_REQUEST_NULL;
@@ -791,6 +800,7 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     }
 
     mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request->type = MPI_SEND_OP;
     mpi_request->ack = 0;
     mpi_request->ack_request = MPI_REQUEST_NULL;
     mpi_request->request = MPI_REQUEST_NULL;
@@ -874,6 +884,7 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     // ht_lookup(mem_map, mpi_local_mem_handle->base);
 
     mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request->type = MPI_RECV_OP;
     mpi_request->ack = 0;
     mpi_request->ack_request = MPI_REQUEST_NULL;
     mpi_request->request = MPI_REQUEST_NULL;
@@ -968,10 +979,14 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
 
     /* Here we know that the request has completed */
     if (status && status != NA_STATUS_IGNORE) {
-        int count;
-        MPI_Get_count(&mpi_status, MPI_BYTE, &count);
+        if (mpi_request->type == MPI_RECV_OP) {
+            int count;
+            MPI_Get_count(&mpi_status, MPI_BYTE, &count);
+            status->count = (na_size_t) count;
+        } else {
+            status->count = 0;
+        }
         status->completed = 1;
-        status->count = (na_size_t) count;
     }
 
     /* If the request needed an ack, TODO wait here for now */
