@@ -26,8 +26,8 @@ static int na_bmi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_bmi_addr_free(na_addr_t addr);
 static int na_bmi_send_unexpected(const void *buf, na_size_t buf_len, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
-static int na_bmi_recv_unexpected(void *buf, na_size_t *buf_len, na_addr_t *source,
-        na_tag_t *tag, na_request_t *request, void *op_arg);
+static int na_bmi_recv_unexpected(void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
+        na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
 static int na_bmi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 static int na_bmi_recv(void *buf, na_size_t buf_len, na_addr_t source,
@@ -76,6 +76,8 @@ static pthread_mutex_t request_mutex;
 static pthread_mutex_t testcontext_mutex;
 static pthread_cond_t  testcontext_cond;
 static bool            is_testing_context;
+
+#define NA_BMI_UNEXPECTED_SIZE 4096
 
 na_class_t *NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
 {
@@ -127,7 +129,7 @@ static int na_bmi_finalize(void)
 
 static na_size_t na_bmi_get_unexpected_size()
 {
-    na_size_t max_unexpected_size = 4*1024;
+    na_size_t max_unexpected_size = NA_BMI_UNEXPECTED_SIZE;
     return max_unexpected_size;
 }
 
@@ -201,37 +203,58 @@ static int na_bmi_send_unexpected(const void *buf, na_size_t buf_len, na_addr_t 
     return ret;
 }
 
-static int na_bmi_recv_unexpected(void *buf, na_size_t *buf_len, na_addr_t *source,
-        na_tag_t *tag, na_request_t *request, void *op_arg)
+static int na_bmi_recv_unexpected(void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
+        na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
 {
     int ret = NA_SUCCESS;
     int bmi_ret, outcount = 0;
     struct BMI_unexpected_info request_info;
+    bmi_request_t *bmi_request = NULL;
 
-    do {
-        bmi_ret = BMI_testunexpected(1, &outcount, &request_info, 0);
-    } while (bmi_ret == 0 && outcount == 0);
+    if (!buf) {
+        NA_ERROR_DEFAULT("NULL buffer");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    bmi_ret = BMI_testunexpected(1, &outcount, &request_info, 0);
+
+    if (!outcount) return ret;
 
     if (bmi_ret < 0 || request_info.error_code != 0) {
         NA_ERROR_DEFAULT("Request recv failure (bad state)");
         NA_ERROR_DEFAULT("BMI_testunexpected failed");
         ret = NA_FAIL;
-    } else {
-        if (outcount) {
-            if (source) {
-                BMI_addr_t **peer_addr = (BMI_addr_t**) source;
-                *peer_addr = malloc(sizeof(BMI_addr_t));
-                **peer_addr = request_info.addr;
-            }
-            if (buf_len) *buf_len = (na_size_t) request_info.size;
-            if (tag) *tag = (na_tag_t) request_info.tag;
-            if (buf) memcpy(buf, request_info.buffer, request_info.size);
-            BMI_unexpected_free(request_info.addr, request_info.buffer);
-        } else {
-            NA_ERROR_DEFAULT("No pending message found");
-            ret = NA_FAIL;
-        }
+        return ret;
     }
+
+    if (request_info.size > (bmi_size_t) buf_len) {
+        NA_ERROR_DEFAULT("Buffer too small to recv unexpected data");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    if (actual_buf_len) *actual_buf_len = (na_size_t) request_info.size;
+    if (source) {
+        BMI_addr_t **peer_addr = (BMI_addr_t**) source;
+        *peer_addr = malloc(sizeof(BMI_addr_t));
+        **peer_addr = request_info.addr;
+    }
+    if (tag) *tag = (na_tag_t) request_info.tag;
+
+    /* Copy buffer and free request_info */
+    memcpy(buf, request_info.buffer, request_info.size);
+
+    bmi_request = malloc(sizeof(bmi_request_t));
+    bmi_request->op_id = 0;
+    bmi_request->completed = 1;
+    bmi_request->actual_size = request_info.size;
+    bmi_request->user_ptr = op_arg;
+
+    BMI_unexpected_free(request_info.addr, request_info.buffer);
+
+    *request = (na_request_t) bmi_request;
+
     return ret;
 }
 

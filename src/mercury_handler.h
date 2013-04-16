@@ -45,7 +45,7 @@ int HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf, size_t *in_buf_s
 int HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf, size_t *out_buf_size);
 
 /* Receive a call from a remote client and process request */
-int HG_Handler_process(unsigned int timeout);
+int HG_Handler_process(unsigned int timeout, hg_status_t *status);
 
 /* Send the response back to the remote client and free handle */
 int HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf, size_t extra_out_buf_size);

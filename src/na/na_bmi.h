@@ -26,4 +26,4 @@ na_class_t *NA_BMI_Init(const char *method_list, const char *listen_addr, int fl
 }
 #endif
 
-#endif /* NETWORK_BMI_H */
+#endif /* NA_BMI_H */

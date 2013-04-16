@@ -125,7 +125,7 @@ int main(int argc, char *argv[])
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */
-        hg_ret = HG_Handler_process(HG_HANDLER_MAX_IDLE_TIME);
+        hg_ret = HG_Handler_process(HG_HANDLER_MAX_IDLE_TIME, HG_STATUS_IGNORE);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not receive function call\n");
             return EXIT_FAILURE;

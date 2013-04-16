@@ -58,6 +58,7 @@ int main(int argc, char *argv[])
         na_mem_handle_t remote_mem_handle = NA_MEM_HANDLE_NULL;
 
         na_addr_t recv_addr = NA_ADDR_NULL;
+        na_request_t recv_request = NA_REQUEST_NULL;
         na_request_t send_request = NA_REQUEST_NULL;
 
         na_request_t bulk_request = NA_REQUEST_NULL;
@@ -65,10 +66,19 @@ int main(int argc, char *argv[])
         na_request_t get_request = NA_REQUEST_NULL;
         int i, error = 0;
 
-        /* Recv a message from a client (blocking for now) */
-        na_ret = NA_Recv_unexpected(network_class, recv_buf, &recv_buf_len, &recv_addr, &recv_tag, NULL, NULL);
+        /* Recv a message from a client */
+        do {
+            na_ret = NA_Recv_unexpected(network_class, recv_buf, send_buf_len,
+                    &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not recv message\n");
+                return EXIT_FAILURE;
+            }
+        } while (!recv_buf_len);
+
+        na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
         if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not recv message\n");
+            fprintf(stderr, "Error during wait\n");
             return EXIT_FAILURE;
         }
         printf("Received from CN: %s\n", recv_buf);

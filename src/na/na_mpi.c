@@ -27,7 +27,7 @@ static int na_mpi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_mpi_addr_free(na_addr_t addr);
 static int na_mpi_send_unexpected(const void *buf, na_size_t buf_len,
         na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg);
-static int na_mpi_recv_unexpected(void *buf, na_size_t *buf_len,
+static int na_mpi_recv_unexpected(void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
 static int na_mpi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
@@ -110,6 +110,7 @@ typedef enum mpi_req_type {
 typedef struct mpi_req {
     mpi_req_type_t type;
     MPI_Request request;
+    /* Only used if transfer requires additional ack (e.g., put) */
     uint8_t     ack;
     MPI_Request ack_request;
 } mpi_req_t;
@@ -133,6 +134,8 @@ static inline unsigned int pointer_hash(void *location)
 #else
 static MPI_Win mpi_dynamic_win;                 /* Dynamic window */
 #endif
+
+#define NA_MPI_UNEXPECTED_SIZE 4096
 
 #define NA_MPI_ONESIDED_TAG        0x80 /* Default tag used for one-sided over two-sided */
 #define NA_MPI_ONESIDED_ACK_TAG    0x81
@@ -356,7 +359,7 @@ static int na_mpi_finalize(void)
  */
 static na_size_t na_mpi_get_unexpected_size()
 {
-    na_size_t max_unexpected_size = 4*1024;
+    na_size_t max_unexpected_size = NA_MPI_UNEXPECTED_SIZE;
     return max_unexpected_size;
 }
 
@@ -479,55 +482,70 @@ static int na_mpi_send_unexpected(const void *buf, na_size_t buf_len,
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_recv_unexpected(void *buf, na_size_t *buf_len,
+static int na_mpi_recv_unexpected(void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
     MPI_Status mpi_status;
     int flag = 0;
 
-    do {
-        mpi_ret = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, server_remote_addr.comm, &flag, &mpi_status);
-    } while (flag == 0 && mpi_ret == MPI_SUCCESS);
+    int mpi_buf_len;
+    int mpi_source;
+    int mpi_tag;
+    mpi_req_t *mpi_request;
 
-    if (flag) {
-        void *mpi_buf;
-        int  *mpi_buf_len = (int*) buf_len;
-        int  *mpi_tag = (int*) tag;
-        int   mpi_source;
-        MPI_Status recv_status;
-
-        MPI_Get_count(&mpi_status, MPI_BYTE, mpi_buf_len);
-        mpi_buf = malloc(*mpi_buf_len);
-        mpi_source = mpi_status.MPI_SOURCE;
-        if (mpi_tag) *mpi_tag = mpi_status.MPI_TAG;
-
-        if (source) {
-            mpi_addr_t **peer_addr_ptr = (mpi_addr_t**) source;
-            mpi_addr_t *peer_addr;
-            *peer_addr_ptr = malloc(sizeof(mpi_addr_t));
-            peer_addr = *peer_addr_ptr;
-            peer_addr->comm = server_remote_addr.comm;
-            peer_addr->rank = mpi_source;
-            peer_addr->is_reference = 1;
-            peer_addr->onesided_comm = server_remote_addr.onesided_comm;
-        }
-
-        mpi_ret = MPI_Recv(mpi_buf, *mpi_buf_len, MPI_BYTE, mpi_source,
-                *mpi_tag, server_remote_addr.comm, &recv_status);
-        if (mpi_ret != MPI_SUCCESS) {
-            NA_ERROR_DEFAULT("MPI_Recv() failed");
-            ret = NA_FAIL;
-        } else {
-            int count;
-            MPI_Get_count(&recv_status, MPI_BYTE, &count);
-            if (buf) memcpy(buf, mpi_buf, count);
-        }
-        free(mpi_buf);
-        mpi_buf = NULL;
-    } else {
-        NA_ERROR_DEFAULT("No pending message found");
+    if (!buf) {
+        NA_ERROR_DEFAULT("NULL buffer");
         ret = NA_FAIL;
+        return ret;
+    }
+
+    mpi_ret = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, server_remote_addr.comm,
+            &flag, &mpi_status);
+    if (mpi_ret != MPI_SUCCESS) {
+        NA_ERROR_DEFAULT("MPI_Iprobe() failed");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    if (!flag) return ret;
+
+    MPI_Get_count(&mpi_status, MPI_BYTE, &mpi_buf_len);
+    if (mpi_buf_len > (int) buf_len) {
+        NA_ERROR_DEFAULT("Buffer too small to recv unexpected data");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    mpi_source = mpi_status.MPI_SOURCE;
+    mpi_tag = mpi_status.MPI_TAG;
+    if (actual_buf_len) *actual_buf_len = (na_size_t) mpi_buf_len;
+    if (source) {
+        mpi_addr_t **peer_addr_ptr = (mpi_addr_t**) source;
+        mpi_addr_t *peer_addr;
+        *peer_addr_ptr = malloc(sizeof(mpi_addr_t));
+        peer_addr = *peer_addr_ptr;
+        peer_addr->comm = server_remote_addr.comm;
+        peer_addr->rank = mpi_source;
+        peer_addr->is_reference = 1;
+        peer_addr->onesided_comm = server_remote_addr.onesided_comm;
+    }
+    if (tag) *tag = mpi_tag;
+
+    mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request->type = MPI_RECV_OP;
+    mpi_request->ack = 0;
+    mpi_request->ack_request = MPI_REQUEST_NULL;
+
+    mpi_ret = MPI_Irecv(buf, mpi_buf_len, MPI_BYTE, mpi_source,
+            mpi_tag, server_remote_addr.comm, &mpi_request->request);
+    if (mpi_ret != MPI_SUCCESS) {
+        NA_ERROR_DEFAULT("MPI_Irecv() failed");
+        ret = NA_FAIL;
+        free(mpi_request);
+        if (source) na_mpi_addr_free(*source);
+    } else {
+        *request = (na_request_t) mpi_request;
     }
     return ret;
 }
@@ -555,7 +573,6 @@ static int na_mpi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
     mpi_request->type = MPI_SEND_OP;
     mpi_request->ack = 0;
     mpi_request->ack_request = MPI_REQUEST_NULL;
-    mpi_request->request = MPI_REQUEST_NULL;
 
     mpi_ret = MPI_Isend(mpi_buf, mpi_buf_len, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
@@ -592,7 +609,6 @@ static int na_mpi_recv(void *buf, na_size_t buf_len, na_addr_t source,
     mpi_request->type = MPI_RECV_OP;
     mpi_request->ack = 0;
     mpi_request->ack_request = MPI_REQUEST_NULL;
-    mpi_request->request = MPI_REQUEST_NULL;
 
     mpi_ret = MPI_Irecv(mpi_buf, mpi_buf_len, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {

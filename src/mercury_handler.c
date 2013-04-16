@@ -13,6 +13,7 @@
 #include "mercury_list.h"
 
 #include <pthread.h>
+#include <sys/time.h>
 
 /* Private structs */
 typedef struct hg_proc_info {
@@ -53,6 +54,14 @@ extern int hg_int_equal(void *vlocation1, void *vlocation2);
 extern unsigned int hg_int_hash(void *vlocation);
 
 /* List of processed handles */
+static hg_list_entry_t *unexpected_handle_list;
+static pthread_mutex_t unexpected_handle_list_mutex;
+static inline int unexpected_handle_list_equal(void *location1, void *location2)
+{
+    return location1 == location2;
+}
+
+/* List of processed handles */
 static hg_list_entry_t *response_handle_list;
 static pthread_mutex_t response_handle_list_mutex;
 
@@ -60,7 +69,139 @@ static pthread_mutex_t response_handle_list_mutex;
 static na_class_t *handler_na_class = NULL;
 
 /*---------------------------------------------------------------------------
- * Function:    HG_Handler_process_response
+ * Function:    hg_handler_new
+ *
+ * Purpose:     Create new handle
+ *
+ * Returns:     Handle
+ *
+ *---------------------------------------------------------------------------
+ */
+static hg_handle_t hg_handler_new(void)
+{
+    hg_priv_handle_t *priv_handle;
+
+    priv_handle = malloc(sizeof(hg_priv_handle_t));
+    priv_handle->id = 0;
+    priv_handle->addr = NA_ADDR_NULL;
+    priv_handle->tag = 0;
+
+    priv_handle->recv_buf = NULL;
+    priv_handle->recv_buf_size = 0;
+    priv_handle->recv_request = NA_REQUEST_NULL;
+    priv_handle->extra_recv_buf = NULL;
+    priv_handle->extra_recv_buf_size = 0;
+
+    priv_handle->send_buf = NULL;
+    priv_handle->send_buf_size = 0;
+    priv_handle->send_request = NA_REQUEST_NULL;
+    priv_handle->extra_send_buf = NULL;
+    priv_handle->extra_send_buf_size = 0;
+
+    priv_handle->in_struct = NULL;
+
+    return (hg_handle_t) priv_handle;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    hg_handler_process_unexpected_list
+ *
+ * Purpose:     Check unexpected list and return first handle found
+ *
+ * Returns:     Handle
+ *
+ *---------------------------------------------------------------------------
+ */
+static hg_handle_t hg_handler_process_unexpected_list(void)
+{
+    hg_priv_handle_t *priv_handle = NULL;
+
+    pthread_mutex_lock(&unexpected_handle_list_mutex);
+    if (unexpected_handle_list) {
+        priv_handle = (hg_priv_handle_t*) hg_list_data(unexpected_handle_list);
+    }
+    pthread_mutex_unlock(&unexpected_handle_list_mutex);
+
+    return (hg_handle_t)priv_handle;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    hg_handler_add_unexpected_list
+ *
+ * Purpose:     Add handle to unexpected list
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+static int hg_handler_add_unexpected_list(hg_handle_t handle)
+{
+    hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
+    int ret = HG_SUCCESS;
+
+    pthread_mutex_lock(&unexpected_handle_list_mutex);
+    if (!hg_list_find_data(unexpected_handle_list, unexpected_handle_list_equal,
+            (hg_list_value_t)priv_handle)) {
+        if (!hg_list_append(&unexpected_handle_list, (hg_list_value_t)priv_handle)) {
+            HG_ERROR_DEFAULT("Could not append handle to list");
+            ret = HG_FAIL;
+        }
+    }
+    pthread_mutex_unlock(&unexpected_handle_list_mutex);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    hg_handler_del_unexpected_list
+ *
+ * Purpose:     Deletes handle from unexpected list
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+static int hg_handler_del_unexpected_list(hg_handle_t handle)
+{
+    hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
+    int ret = HG_SUCCESS;
+
+    pthread_mutex_lock(&unexpected_handle_list_mutex);
+    hg_list_remove_data(&unexpected_handle_list, unexpected_handle_list_equal,
+            (hg_list_value_t)priv_handle);
+    pthread_mutex_unlock(&unexpected_handle_list_mutex);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    hg_handler_add_response_list
+ *
+ * Purpose:     Add handle to response list
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+static int hg_handler_add_response_list(hg_handle_t handle)
+{
+    hg_priv_handle_t *priv_handle = (hg_priv_handle_t*) handle;
+    int ret = HG_SUCCESS;
+
+    pthread_mutex_lock(&response_handle_list_mutex);
+
+    if (!hg_list_append(&response_handle_list, (hg_list_value_t)priv_handle)) {
+        HG_ERROR_DEFAULT("Could not append handle to list");
+        ret = HG_FAIL;
+    }
+
+    pthread_mutex_unlock(&response_handle_list_mutex);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    hg_handler_process_response_list
  *
  * Purpose:     Process list of handles and wait timeout for response completion
  *
@@ -68,7 +209,7 @@ static na_class_t *handler_na_class = NULL;
  *
  *---------------------------------------------------------------------------
  */
-static int HG_Handler_process_response_list(unsigned int timeout)
+static int hg_handler_process_response_list(unsigned int timeout)
 {
     int ret = HG_SUCCESS;
 
@@ -108,7 +249,7 @@ static int HG_Handler_process_response_list(unsigned int timeout)
 }
 
 /*---------------------------------------------------------------------------
- * Function:    HG_Handler_process_extra_recv_buf
+ * Function:    hg_handler_process_extra_recv_buf
  *
  * Purpose:     Get extra buffer and associate it to handle
  *
@@ -116,7 +257,7 @@ static int HG_Handler_process_response_list(unsigned int timeout)
  *
  *---------------------------------------------------------------------------
  */
-static int HG_Handler_process_extra_recv_buf(hg_proc_t proc, hg_handle_t handle)
+static int hg_handler_process_extra_recv_buf(hg_proc_t proc, hg_handle_t handle)
 {
     int ret = HG_SUCCESS;
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
@@ -212,6 +353,7 @@ int HG_Handler_init(na_class_t *network_class)
     /* Automatically free all the values with the hash map */
     hg_hash_table_register_free_functions(handler_func_map, free, free);
 
+    pthread_mutex_init(&unexpected_handle_list_mutex, NULL);
     pthread_mutex_init(&response_handle_list_mutex, NULL);
 
     return ret;
@@ -237,7 +379,7 @@ int HG_Handler_finalize(void)
     }
 
     /* Wait for previous responses to complete */
-    ret = HG_Handler_process_response_list(HG_MAX_IDLE_TIME);
+    ret = hg_handler_process_response_list(HG_MAX_IDLE_TIME);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not process response list");
         ret = HG_FAIL;
@@ -257,6 +399,7 @@ int HG_Handler_finalize(void)
 
     handler_na_class = NULL;
 
+    pthread_mutex_destroy(&unexpected_handle_list_mutex);
     pthread_mutex_destroy(&response_handle_list_mutex);
 
     return ret;
@@ -326,7 +469,8 @@ const na_addr_t HG_Handler_get_addr (hg_handle_t handle)
  *
  *---------------------------------------------------------------------------
  */
-int HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf, size_t *in_buf_size)
+int HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf,
+        size_t *in_buf_size)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
@@ -357,7 +501,8 @@ int HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf, size_t *in_buf_s
  *
  *---------------------------------------------------------------------------
  */
-int HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf, size_t *out_buf_size)
+int HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
+        size_t *out_buf_size)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
@@ -394,20 +539,23 @@ int HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf, size_t *out_bu
  *
  *---------------------------------------------------------------------------
  */
-int HG_Handler_process(unsigned int timeout)
+int HG_Handler_process(unsigned int timeout, hg_status_t *status)
 {
+    unsigned int time_remaining = timeout;
     hg_priv_handle_t *priv_handle = NULL;
     hg_proc_info_t   *proc_info;
 
     hg_proc_t dec_proc = HG_PROC_NULL;
     uint8_t extra_recv_buf_used = 0;
 
-//    na_status_t recv_status;
+    na_status_t recv_status;
 
     int ret = HG_SUCCESS, na_ret;
 
+    if (status && status != HG_STATUS_IGNORE) *status = 0;
+
     /* Check if previous responses have completed without waiting */
-    ret = HG_Handler_process_response_list(0);
+    ret = hg_handler_process_response_list(0);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not process response list");
         ret = HG_FAIL;
@@ -416,26 +564,13 @@ int HG_Handler_process(unsigned int timeout)
 
     /* If we don't have an existing handle for the incoming request create
      * a new one */
+    priv_handle = hg_handler_process_unexpected_list();
+
     if (!priv_handle) {
+        na_size_t actual_buf_size = 0;
+
         /* Create a new handle */
-        priv_handle = malloc(sizeof(hg_priv_handle_t));
-        priv_handle->id = 0;
-        priv_handle->addr = NA_ADDR_NULL;
-        priv_handle->tag = 0;
-
-        priv_handle->recv_buf = NULL;
-        priv_handle->recv_buf_size = 0;
-        priv_handle->recv_request = NA_REQUEST_NULL;
-        priv_handle->extra_recv_buf = NULL;
-        priv_handle->extra_recv_buf_size = 0;
-
-        priv_handle->send_buf = NULL;
-        priv_handle->send_buf_size = 0;
-        priv_handle->send_request = NA_REQUEST_NULL;
-        priv_handle->extra_send_buf = NULL;
-        priv_handle->extra_send_buf_size = 0;
-
-        priv_handle->in_struct = NULL;
+        priv_handle = hg_handler_new();
 
         /* Recv buffer must match the size of unexpected buffer */
         priv_handle->recv_buf_size = NA_Get_unexpected_size(handler_na_class);
@@ -448,28 +583,59 @@ int HG_Handler_process(unsigned int timeout)
         }
 
         /* Start receiving a message from a client */
-        na_ret = NA_Recv_unexpected(handler_na_class, priv_handle->recv_buf,
-                &priv_handle->recv_buf_size, &priv_handle->addr, &priv_handle->tag,
-                &priv_handle->recv_request, NULL);
-        if (na_ret != NA_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not recv buffer");
+        do {
+            struct timeval t1, t2;
+
+            gettimeofday(&t1, NULL);
+
+            na_ret = NA_Recv_unexpected(handler_na_class, priv_handle->recv_buf,
+                    priv_handle->recv_buf_size, &actual_buf_size,
+                    &priv_handle->addr, &priv_handle->tag,
+                    &priv_handle->recv_request, NULL);
+            if (na_ret != NA_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not recv buffer");
+                ret = HG_FAIL;
+                goto done;
+            }
+
+            gettimeofday(&t2, NULL);
+            time_remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +
+                    (t2.tv_usec - t1.tv_usec) / 1000;
+
+        } while (time_remaining > 0 && !actual_buf_size);
+        if (!actual_buf_size) {
+            /* Timeout reached and has still not received anything */
             ret = HG_FAIL;
             goto done;
         }
     }
 
     /* Wait/Test the completion of the unexpected recv */
-//    na_ret = NA_Wait(handler_na_class, priv_handle->recv_request, timeout,
-//            &recv_status);
-//    if (na_ret != NA_SUCCESS) {
-//        HG_ERROR_DEFAULT("Error while waiting");
-//        ret = HG_FAIL;
-//        goto done;
-//    }
-    /* If not completed yet just exit */
-//    if (!recv_status.completed) {
-//        goto done;
-//    }
+    na_ret = NA_Wait(handler_na_class, priv_handle->recv_request,
+            time_remaining, &recv_status);
+    if (na_ret != NA_SUCCESS) {
+        HG_ERROR_DEFAULT("Error while waiting");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    /* If not completed yet store the handle and exit */
+    if (!recv_status.completed) {
+        ret = hg_handler_add_unexpected_list(priv_handle);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not add handle to unexpected list");
+            ret = HG_FAIL;
+        }
+        goto done;
+    } else {
+        ret = hg_handler_del_unexpected_list(priv_handle);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not remove handle from unexpected list");
+            ret = HG_FAIL;
+            goto done;
+        }
+        priv_handle->recv_request = NA_REQUEST_NULL;
+    }
 
     /* Create a new decoding proc */
     ret = hg_proc_create(priv_handle->recv_buf, priv_handle->recv_buf_size,
@@ -490,7 +656,7 @@ int HG_Handler_process(unsigned int timeout)
 
     if (extra_recv_buf_used) {
         /* This will make the extra_buf the recv_buf associated to the handle */
-        ret = HG_Handler_process_extra_recv_buf(dec_proc, priv_handle);
+        ret = hg_handler_process_extra_recv_buf(dec_proc, priv_handle);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not recv extra buffer");
             ret = HG_FAIL;
@@ -508,6 +674,8 @@ int HG_Handler_process(unsigned int timeout)
 
     /* Execute function and fill output parameters */
     proc_info->callback_routine((hg_handle_t) priv_handle);
+
+    if (status && status != HG_STATUS_IGNORE) *status = 1;
 
 done:
     if (dec_proc != HG_PROC_NULL) hg_proc_free(dec_proc);
@@ -529,7 +697,8 @@ done:
  *
  *---------------------------------------------------------------------------
  */
-int HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf, size_t extra_out_buf_size)
+int HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf,
+        size_t extra_out_buf_size)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     hg_proc_info_t   *proc_info;
@@ -607,14 +776,11 @@ done:
     enc_proc = HG_PROC_NULL;
 
     if (ret == HG_SUCCESS && priv_handle) {
-        pthread_mutex_lock(&response_handle_list_mutex);
-
-        if (!hg_list_append(&response_handle_list, (hg_list_value_t)priv_handle)) {
-            HG_ERROR_DEFAULT("Could not append handle to list");
+        ret = hg_handler_add_response_list(priv_handle);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not add handle to response list");
             ret = HG_FAIL;
         }
-
-        pthread_mutex_unlock(&response_handle_list_mutex);
     }
     return ret;
 }
@@ -628,7 +794,8 @@ done:
  *
  *---------------------------------------------------------------------------
  */
-int HG_Handler_wait_response(hg_handle_t handle, unsigned int timeout, hg_status_t *status)
+int HG_Handler_wait_response(hg_handle_t handle, unsigned int timeout,
+        hg_status_t *status)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     na_status_t na_status;

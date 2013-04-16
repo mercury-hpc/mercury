@@ -314,11 +314,11 @@ int main(int argc, char *argv[])
     MERCURY_HANDLER_REGISTER_FINALIZE(server_finalize);
 
     while (finalizing != number_of_peers) {
+        hg_status_t status;
         /* Receive new function calls */
-        hg_ret = HG_Handler_process(HG_HANDLER_MAX_IDLE_TIME);
-        if (hg_ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not receive function call\n");
-            return EXIT_FAILURE;
+        hg_ret = HG_Handler_process(0, &status);
+        if (hg_ret == HG_SUCCESS && status) {
+            printf("Call processed\n");
         }
     }
 

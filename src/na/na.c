@@ -100,11 +100,11 @@ int NA_Send_unexpected(na_class_t *network_class,
  *---------------------------------------------------------------------------
  */
 int NA_Recv_unexpected(na_class_t *network_class,
-        void *buf, na_size_t *buf_len, na_addr_t *source,
-        na_tag_t *tag, na_request_t *request, void *op_arg)
+        void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
+        na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
 {
     assert(network_class);
-    return network_class->recv_unexpected(buf, buf_len, source, tag, request, op_arg);
+    return network_class->recv_unexpected(buf, buf_len, actual_buf_len, source, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------

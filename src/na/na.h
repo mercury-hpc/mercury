@@ -53,8 +53,8 @@ typedef struct na_class {
     /* Metadata callbacks */
     int (*send_unexpected)(const void *buf, na_size_t buf_len, na_addr_t dest,
             na_tag_t tag, na_request_t *request, void *op_arg);
-    int (*recv_unexpected)(void *buf, na_size_t *buf_len, na_addr_t *source,
-            na_tag_t *tag, na_request_t *request, void *op_arg);
+    int (*recv_unexpected)(void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
+            na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
     int (*send)(const void *buf, na_size_t buf_len, na_addr_t dest,
             na_tag_t tag, na_request_t *request, void *op_arg);
     int (*recv)(void *buf, na_size_t buf_len, na_addr_t source,
@@ -105,8 +105,8 @@ int NA_Send_unexpected(na_class_t *network_class,
 
 /* Receive a message from source (unexpected asynchronous) */
 int NA_Recv_unexpected(na_class_t *network_class,
-        void *buf, na_size_t *buf_len, na_addr_t *source,
-        na_tag_t *tag, na_request_t *request, void *op_arg);
+        void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
+        na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
 
 /* Send a message to dest (asynchronous) */
 int NA_Send(na_class_t *network_class,
