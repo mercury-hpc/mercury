@@ -193,7 +193,7 @@ size_t HG_Bulk_handle_get_size(hg_bulk_t handle)
  *
  *---------------------------------------------------------------------------
  */
-int HG_Bulk_handle_serialize(void *buf, na_size_t buf_len, hg_bulk_t handle)
+int HG_Bulk_handle_serialize(void *buf, na_size_t buf_size, hg_bulk_t handle)
 {
     int ret = HG_SUCCESS, na_ret;
     hg_bulk_priv_t *priv_handle = (hg_bulk_priv_t*) handle;
@@ -204,7 +204,7 @@ int HG_Bulk_handle_serialize(void *buf, na_size_t buf_len, hg_bulk_t handle)
         return ret;
     }
 
-    if (buf_len < sizeof(hg_bulk_priv_t)) {
+    if (buf_size < sizeof(hg_bulk_priv_t)) {
         HG_ERROR_DEFAULT("Buffer size too small for serializing parameter");
         ret = HG_FAIL;
         return ret;
@@ -213,7 +213,7 @@ int HG_Bulk_handle_serialize(void *buf, na_size_t buf_len, hg_bulk_t handle)
     /* Here add the size of the data */
     memcpy(buf, &priv_handle->size, sizeof(na_size_t));
     na_ret = NA_Mem_handle_serialize(bulk_na_class, buf + sizeof(na_size_t),
-            buf_len - sizeof(na_size_t), priv_handle->mem_handle);
+            buf_size - sizeof(na_size_t), priv_handle->mem_handle);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not serialize memory handle");
         ret = HG_FAIL;
@@ -231,7 +231,7 @@ int HG_Bulk_handle_serialize(void *buf, na_size_t buf_len, hg_bulk_t handle)
  *
  *---------------------------------------------------------------------------
  */
-int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, na_size_t buf_len)
+int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, na_size_t buf_size)
 {
     int ret = HG_SUCCESS, na_ret;
     hg_bulk_priv_t *priv_handle = NULL;
@@ -242,7 +242,7 @@ int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, na_size_t buf
         return ret;
     }
 
-    if (buf_len < sizeof(hg_bulk_priv_t)) {
+    if (buf_size < sizeof(hg_bulk_priv_t)) {
         HG_ERROR_DEFAULT("Buffer size too small for serializing parameter");
         ret = HG_FAIL;
         return ret;
@@ -251,7 +251,7 @@ int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, na_size_t buf
     priv_handle = malloc(sizeof(hg_bulk_priv_t));
     memcpy(&priv_handle->size, buf, sizeof(na_size_t));
     na_ret = NA_Mem_handle_deserialize(bulk_na_class, &priv_handle->mem_handle,
-            buf + sizeof(na_size_t), buf_len - sizeof(na_size_t));
+            buf + sizeof(na_size_t), buf_size - sizeof(na_size_t));
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not deserialize memory handle");
         ret = HG_FAIL;

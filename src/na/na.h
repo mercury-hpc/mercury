@@ -51,23 +51,23 @@ typedef struct na_class {
     int (*addr_free)(na_addr_t addr);
 
     /* Metadata callbacks */
-    int (*send_unexpected)(const void *buf, na_size_t buf_len, na_addr_t dest,
+    int (*send_unexpected)(const void *buf, na_size_t buf_size, na_addr_t dest,
             na_tag_t tag, na_request_t *request, void *op_arg);
-    int (*recv_unexpected)(void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
+    int (*recv_unexpected)(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
             na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
-    int (*send)(const void *buf, na_size_t buf_len, na_addr_t dest,
+    int (*send)(const void *buf, na_size_t buf_size, na_addr_t dest,
             na_tag_t tag, na_request_t *request, void *op_arg);
-    int (*recv)(void *buf, na_size_t buf_len, na_addr_t source,
+    int (*recv)(void *buf, na_size_t buf_size, na_addr_t source,
             na_tag_t tag, na_request_t *request, void *op_arg);
 
     /* Bulk data callbacks */
-    int (*mem_register)(void *buf, na_size_t buf_len, unsigned long flags,
+    int (*mem_register)(void *buf, na_size_t buf_size, unsigned long flags,
             na_mem_handle_t *mem_handle);
     int (*mem_deregister)(na_mem_handle_t mem_handle);
-    int (*mem_handle_serialize)(void *buf, na_size_t buf_len,
+    int (*mem_handle_serialize)(void *buf, na_size_t buf_size,
             na_mem_handle_t mem_handle);
     int (*mem_handle_deserialize)(na_mem_handle_t *mem_handle,
-            const void *buf, na_size_t buf_len);
+            const void *buf, na_size_t buf_size);
     int (*mem_handle_free)(na_mem_handle_t mem_handle);
     int (*put)(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
             na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
@@ -78,6 +78,7 @@ typedef struct na_class {
 
     /* Progress callbacks */
     int (*wait)(na_request_t request, unsigned int timeout, na_status_t *status);
+    int (*progress)(unsigned int timeout, na_status_t *status);
 } na_class_t;
 
 #ifdef __cplusplus
@@ -100,27 +101,27 @@ int NA_Addr_free(na_class_t *network_class,
 
 /* Send a message to dest (unexpected asynchronous) */
 int NA_Send_unexpected(na_class_t *network_class,
-        const void *buf, na_size_t buf_len, na_addr_t dest,
+        const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 
 /* Receive a message from source (unexpected asynchronous) */
 int NA_Recv_unexpected(na_class_t *network_class,
-        void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
+        void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
 
 /* Send a message to dest (asynchronous) */
 int NA_Send(na_class_t *network_class,
-        const void *buf, na_size_t buf_len, na_addr_t dest,
+        const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 
 /* Receive a message from source (asynchronous) */
 int NA_Recv(na_class_t *network_class,
-        void *buf, na_size_t buf_len, na_addr_t source,
+        void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg);
 
 /* Register memory for RMA operations */
 int NA_Mem_register(na_class_t *network_class,
-        void *buf, na_size_t buf_len, unsigned long flags,
+        void *buf, na_size_t buf_size, unsigned long flags,
         na_mem_handle_t *mem_handle);
 
 /* Deregister memory */
@@ -129,11 +130,11 @@ int NA_Mem_deregister(na_class_t *network_class,
 
 /* Serialize memory handle for exchange over the network */
 int NA_Mem_handle_serialize(na_class_t *network_class,
-        void *buf, na_size_t buf_len, na_mem_handle_t mem_handle);
+        void *buf, na_size_t buf_size, na_mem_handle_t mem_handle);
 
 /* Deserialize memory handle */
 int NA_Mem_handle_deserialize(na_class_t *network_class,
-        na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_len);
+        na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
 
 /* Free memory handle */
 int NA_Mem_handle_free(na_class_t *network_class,
@@ -154,6 +155,10 @@ int NA_Get(na_class_t *network_class,
 /* Wait for a request to complete or until timeout (ms) is reached */
 int NA_Wait(na_class_t *network_class,
         na_request_t request, unsigned int timeout, na_status_t *status);
+
+/* Track remote completion */
+int NA_Progress(na_class_t *network_class,
+        unsigned int timeout, na_status_t *status);
 
 #ifdef __cplusplus
 }

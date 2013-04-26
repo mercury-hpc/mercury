@@ -36,7 +36,7 @@ int HG_Bulk_init(na_class_t *network_class);
 int HG_Bulk_finalize(void);
 
 /* Create bulk data handle from buffer (register memory, etc) */
-int HG_Bulk_handle_create(void *buf, size_t buf_len, unsigned long flags,
+int HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
         hg_bulk_t *handle);
 
 /* Free bulk data handle */
@@ -46,10 +46,10 @@ int HG_Bulk_handle_free(hg_bulk_t handle);
 size_t HG_Bulk_handle_get_size(hg_bulk_t handle);
 
 /* Serialize bulk data handle into buf */
-int HG_Bulk_handle_serialize(void *buf, na_size_t buf_len, hg_bulk_t handle);
+int HG_Bulk_handle_serialize(void *buf, na_size_t buf_size, hg_bulk_t handle);
 
 /* Deserialize bulk data handle from buf */
-int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, na_size_t buf_len);
+int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, na_size_t buf_size);
 
 /* Write data */
 int HG_Bulk_write(hg_bulk_t handle, na_addr_t dest, hg_bulk_block_t block_handle);

@@ -9,35 +9,32 @@
  */
 
 #include "na_mpi.h"
-//#include "mem_handle_map.h"
 #include "mercury_hash_table.h"
+#include "mercury_thread.h"
+#include "mercury_thread_mutex.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
-#include <errno.h>
 #include <stdbool.h>
-#include <assert.h>
 #include <string.h>
-#include <stdint.h>
 
 static int na_mpi_finalize(void);
 static na_size_t na_mpi_get_unexpected_size(void);
 static int na_mpi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_mpi_addr_free(na_addr_t addr);
-static int na_mpi_send_unexpected(const void *buf, na_size_t buf_len,
+static int na_mpi_send_unexpected(const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg);
-static int na_mpi_recv_unexpected(void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
+static int na_mpi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
-static int na_mpi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
+static int na_mpi_send(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
-static int na_mpi_recv(void *buf, na_size_t buf_len, na_addr_t source,
+static int na_mpi_recv(void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg);
-static int na_mpi_mem_register(void *buf, na_size_t buf_len, unsigned long flags,
+static int na_mpi_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
         na_mem_handle_t *mem_handle);
 static int na_mpi_mem_deregister(na_mem_handle_t mem_handle);
-static int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_len, na_mem_handle_t mem_handle);
-static int na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_len);
+static int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_handle);
+static int na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
 static int na_mpi_mem_handle_free(na_mem_handle_t mem_handle);
 static int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
@@ -64,7 +61,8 @@ static na_class_t na_mpi_g = {
         na_mpi_mem_handle_free,        /* mem_handle_free */
         na_mpi_put,                    /* put */
         na_mpi_get,                    /* get */
-        na_mpi_wait                    /* wait */
+        na_mpi_wait,                   /* wait */
+        NULL                           /* progress */
 };
 
 
@@ -111,7 +109,7 @@ typedef struct mpi_req {
     mpi_req_type_t type;
     MPI_Request request;
     /* Only used if transfer requires additional ack (e.g., put) */
-    uint8_t     ack;
+    unsigned char ack;
     MPI_Request ack_request;
 } mpi_req_t;
 
@@ -141,8 +139,16 @@ static MPI_Win mpi_dynamic_win;                 /* Dynamic window */
 #define NA_MPI_ONESIDED_ACK_TAG    0x81
 
 #if MPI_VERSION < 3
-pthread_t mpi_onesided_service;
-pthread_mutex_t mem_map_mutex;
+hg_thread_t mpi_onesided_service;
+hg_thread_mutex_t mem_map_mutex;
+
+/*---------------------------------------------------------------------------
+ * Function:    na_mpi_onesided_service
+ *
+ * Purpose:     Service to emulate one-sided over two-sided
+ *
+ *---------------------------------------------------------------------------
+ */
 static void* na_mpi_onesided_service(void *args)
 {
     int mpi_ret;
@@ -176,25 +182,25 @@ static void* na_mpi_onesided_service(void *args)
         /* Here better to keep the mutex locked the time we operate on mpi_mem_handle
          * since it's a pointer to a mem_handle
          */
-        pthread_mutex_lock(&mem_map_mutex);
+        hg_thread_mutex_lock(&mem_map_mutex);
 
         mpi_mem_handle = hg_hash_table_lookup(mem_handle_map, onesided_info.base);
 
         if (!mpi_mem_handle) {
             NA_ERROR_DEFAULT("Could not find memory handle, registered?");
-            pthread_mutex_unlock(&mem_map_mutex);
+            hg_thread_mutex_unlock(&mem_map_mutex);
             break;
         }
 
         switch (onesided_info.op) {
-            uint8_t ack = 1;
+            unsigned char ack = 1;
             /* Remote wants to do a put so wait in a recv */
             case MPI_ONESIDED_PUT:
                 MPI_Recv(mpi_mem_handle->base + onesided_info.disp, onesided_info.count,
                         MPI_BYTE, mpi_status.MPI_SOURCE, NA_MPI_ONESIDED_TAG,
                         mpi_onesided_comm, MPI_STATUS_IGNORE);
                 /* Send an ack to ensure that the data has been received */
-                MPI_Send(&ack, 1, MPI_UINT8_T, mpi_status.MPI_SOURCE, NA_MPI_ONESIDED_ACK_TAG,
+                MPI_Send(&ack, 1, MPI_UNSIGNED_CHAR, mpi_status.MPI_SOURCE, NA_MPI_ONESIDED_ACK_TAG,
                         mpi_onesided_comm);
                 break;
                 /* Remote wants to do a get so do a send */
@@ -208,7 +214,7 @@ static void* na_mpi_onesided_service(void *args)
                 break;
         }
 
-        pthread_mutex_unlock(&mem_map_mutex);
+        hg_thread_mutex_unlock(&mem_map_mutex);
     }
 
     return NULL;
@@ -295,6 +301,8 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
  * Function:    na_mpi_finalize
  *
  * Purpose:     Finalize the network abstraction layer
+ *
+ * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
@@ -404,8 +412,8 @@ static int na_mpi_addr_lookup(const char *name, na_addr_t *addr)
     /* To be thread-safe and create a new context, dup the remote comm to a new comm */
     MPI_Comm_dup(mpi_addr->comm, &mpi_addr->onesided_comm);
     /* TODO temporary to handle one-sided exchanges with remote server */
-    pthread_mutex_init(&mem_map_mutex, NULL);
-    pthread_create(&mpi_onesided_service, NULL, &na_mpi_onesided_service, (void*)mpi_addr);
+    hg_thread_mutex_init(&mem_map_mutex);
+    hg_thread_create(&mpi_onesided_service, &na_mpi_onesided_service, (void*)mpi_addr);
 #else
     MPI_Intercomm_merge(mpi_addr->comm, is_server, &mpi_addr->onesided_comm);
     /* Create dynamic window */
@@ -442,8 +450,8 @@ static int na_mpi_addr_free(na_addr_t addr)
     if (!mpi_addr->is_reference) {
 #if MPI_VERSION < 3
         /* Wait for one-sided thread to complete */
-        pthread_join(mpi_onesided_service, NULL);
-        pthread_mutex_destroy(&mem_map_mutex);
+        hg_thread_join(mpi_onesided_service);
+        hg_thread_mutex_destroy(&mem_map_mutex);
 #else
         /* Destroy dynamic window */
         MPI_Win_free(&mpi_dynamic_win);
@@ -466,11 +474,11 @@ static int na_mpi_addr_free(na_addr_t addr)
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_send_unexpected(const void *buf, na_size_t buf_len,
+static int na_mpi_send_unexpected(const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg)
 {
     /* There should not be any difference for MPI */
-    return na_mpi_send(buf, buf_len, dest, tag, request, op_arg);
+    return na_mpi_send(buf, buf_size, dest, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------
@@ -482,14 +490,14 @@ static int na_mpi_send_unexpected(const void *buf, na_size_t buf_len,
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_recv_unexpected(void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
+static int na_mpi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
     MPI_Status mpi_status;
     int flag = 0;
 
-    int mpi_buf_len;
+    int mpi_buf_size;
     int mpi_source;
     int mpi_tag;
     mpi_req_t *mpi_request;
@@ -510,8 +518,8 @@ static int na_mpi_recv_unexpected(void *buf, na_size_t buf_len, na_size_t *actua
 
     if (!flag) return ret;
 
-    MPI_Get_count(&mpi_status, MPI_BYTE, &mpi_buf_len);
-    if (mpi_buf_len > (int) buf_len) {
+    MPI_Get_count(&mpi_status, MPI_BYTE, &mpi_buf_size);
+    if (mpi_buf_size > (int) buf_size) {
         NA_ERROR_DEFAULT("Buffer too small to recv unexpected data");
         ret = NA_FAIL;
         return ret;
@@ -519,7 +527,7 @@ static int na_mpi_recv_unexpected(void *buf, na_size_t buf_len, na_size_t *actua
 
     mpi_source = mpi_status.MPI_SOURCE;
     mpi_tag = mpi_status.MPI_TAG;
-    if (actual_buf_len) *actual_buf_len = (na_size_t) mpi_buf_len;
+    if (actual_buf_size) *actual_buf_size = (na_size_t) mpi_buf_size;
     if (source) {
         mpi_addr_t **peer_addr_ptr = (mpi_addr_t**) source;
         mpi_addr_t *peer_addr;
@@ -537,7 +545,7 @@ static int na_mpi_recv_unexpected(void *buf, na_size_t buf_len, na_size_t *actua
     mpi_request->ack = 0;
     mpi_request->ack_request = MPI_REQUEST_NULL;
 
-    mpi_ret = MPI_Irecv(buf, mpi_buf_len, MPI_BYTE, mpi_source,
+    mpi_ret = MPI_Irecv(buf, mpi_buf_size, MPI_BYTE, mpi_source,
             mpi_tag, server_remote_addr.comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");
@@ -559,12 +567,12 @@ static int na_mpi_recv_unexpected(void *buf, na_size_t buf_len, na_size_t *actua
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
+static int na_mpi_send(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
     void *mpi_buf = (void*) buf;
-    int mpi_buf_len = (int) buf_len;
+    int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;
     mpi_addr_t *mpi_addr = (mpi_addr_t*) dest;
     mpi_req_t *mpi_request;
@@ -574,7 +582,7 @@ static int na_mpi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
     mpi_request->ack = 0;
     mpi_request->ack_request = MPI_REQUEST_NULL;
 
-    mpi_ret = MPI_Isend(mpi_buf, mpi_buf_len, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, &mpi_request->request);
+    mpi_ret = MPI_Isend(mpi_buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Isend() failed");
         free(mpi_request);
@@ -595,12 +603,12 @@ static int na_mpi_send(const void *buf, na_size_t buf_len, na_addr_t dest,
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_recv(void *buf, na_size_t buf_len, na_addr_t source,
+static int na_mpi_recv(void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
     void *mpi_buf = (void*) buf;
-    int mpi_buf_len = (int) buf_len;
+    int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;
     mpi_addr_t *mpi_addr = (mpi_addr_t*) source;
     mpi_req_t *mpi_request;
@@ -610,7 +618,7 @@ static int na_mpi_recv(void *buf, na_size_t buf_len, na_addr_t source,
     mpi_request->ack = 0;
     mpi_request->ack_request = MPI_REQUEST_NULL;
 
-    mpi_ret = MPI_Irecv(mpi_buf, mpi_buf_len, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, &mpi_request->request);
+    mpi_ret = MPI_Irecv(mpi_buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");
         free(mpi_request);
@@ -647,13 +655,13 @@ int na_mpi_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
     *mem_handle = (na_mem_handle_t) mpi_mem_handle;
 
 #if MPI_VERSION < 3
-    pthread_mutex_lock(&mem_map_mutex);
+    hg_thread_mutex_lock(&mem_map_mutex);
     /* store this handle */
     if (!hg_hash_table_insert(mem_handle_map, mpi_mem_handle->base, mpi_mem_handle)) {
         NA_ERROR_DEFAULT("Could not register memory handle");
         ret = NA_FAIL;
     }
-    pthread_mutex_unlock(&mem_map_mutex);
+    hg_thread_mutex_unlock(&mem_map_mutex);
 #else
     int mpi_ret;
 
@@ -681,13 +689,13 @@ int na_mpi_mem_deregister(na_mem_handle_t mem_handle)
     mpi_mem_handle_t *mpi_mem_handle = (mpi_mem_handle_t*) mem_handle;
 
 #if MPI_VERSION < 3
-    pthread_mutex_lock(&mem_map_mutex);
+    hg_thread_mutex_lock(&mem_map_mutex);
     /* remove the handle */
     if (!hg_hash_table_remove(mem_handle_map, mpi_mem_handle->base)) {
         NA_ERROR_DEFAULT("Could not deregister memory handle");
         ret = NA_FAIL;
     }
-    pthread_mutex_unlock(&mem_map_mutex);
+    hg_thread_mutex_unlock(&mem_map_mutex);
 #else
     int mpi_ret;
 
@@ -716,13 +724,13 @@ int na_mpi_mem_deregister(na_mem_handle_t mem_handle)
  *
  *---------------------------------------------------------------------------
  */
-int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_len,
+int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size,
         na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
     mpi_mem_handle_t *mpi_mem_handle = (mpi_mem_handle_t*) mem_handle;
 
-    if (buf_len < sizeof(mpi_mem_handle_t)) {
+    if (buf_size < sizeof(mpi_mem_handle_t)) {
         NA_ERROR_DEFAULT("Buffer size too small for serializing parameter");
         ret = NA_FAIL;
     } else {
@@ -743,12 +751,12 @@ int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_len,
  *---------------------------------------------------------------------------
  */
 int na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
-        const void *buf, na_size_t buf_len)
+        const void *buf, na_size_t buf_size)
 {
     int ret = NA_SUCCESS;
     mpi_mem_handle_t *mpi_mem_handle;
 
-    if (buf_len < sizeof(mpi_mem_handle_t)) {
+    if (buf_size < sizeof(mpi_mem_handle_t)) {
         NA_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
         ret = NA_FAIL;
     } else {
@@ -843,7 +851,7 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     }
 
     /* Pre-post an ack request */
-    mpi_ret = MPI_Irecv(&mpi_request->ack, 1, MPI_UINT8_T, mpi_remote_addr->rank,
+    mpi_ret = MPI_Irecv(&mpi_request->ack, 1, MPI_UNSIGNED_CHAR, mpi_remote_addr->rank,
             NA_MPI_ONESIDED_ACK_TAG, mpi_remote_addr->onesided_comm, &mpi_request->ack_request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");

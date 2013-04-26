@@ -83,11 +83,11 @@ int NA_Addr_free(na_class_t *network_class, na_addr_t addr)
  *---------------------------------------------------------------------------
  */
 int NA_Send_unexpected(na_class_t *network_class,
-        const void *buf, na_size_t buf_len, na_addr_t dest,
+        const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     assert(network_class);
-    return network_class->send_unexpected(buf, buf_len, dest, tag, request, op_arg);
+    return network_class->send_unexpected(buf, buf_size, dest, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------
@@ -100,11 +100,11 @@ int NA_Send_unexpected(na_class_t *network_class,
  *---------------------------------------------------------------------------
  */
 int NA_Recv_unexpected(na_class_t *network_class,
-        void *buf, na_size_t buf_len, na_size_t *actual_buf_len,
+        void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
 {
     assert(network_class);
-    return network_class->recv_unexpected(buf, buf_len, actual_buf_len, source, tag, request, op_arg);
+    return network_class->recv_unexpected(buf, buf_size, actual_buf_size, source, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------
@@ -117,11 +117,11 @@ int NA_Recv_unexpected(na_class_t *network_class,
  *---------------------------------------------------------------------------
  */
 int NA_Send(na_class_t *network_class,
-        const void *buf, na_size_t buf_len, na_addr_t dest,
+        const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     assert(network_class);
-    return network_class->send(buf, buf_len, dest, tag, request, op_arg);
+    return network_class->send(buf, buf_size, dest, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------
@@ -134,11 +134,11 @@ int NA_Send(na_class_t *network_class,
  *---------------------------------------------------------------------------
  */
 int NA_Recv(na_class_t *network_class,
-        void *buf, na_size_t buf_len, na_addr_t source,
+        void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     assert(network_class);
-    return network_class->recv(buf, buf_len, source, tag, request, op_arg);
+    return network_class->recv(buf, buf_size, source, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------
@@ -151,11 +151,11 @@ int NA_Recv(na_class_t *network_class,
  *---------------------------------------------------------------------------
  */
 int NA_Mem_register(na_class_t *network_class,
-        void *buf, na_size_t buf_len, unsigned long flags,
+        void *buf, na_size_t buf_size, unsigned long flags,
         na_mem_handle_t *mem_handle)
 {
     assert(network_class);
-    return network_class->mem_register(buf, buf_len, flags, mem_handle);
+    return network_class->mem_register(buf, buf_size, flags, mem_handle);
 }
 
 /*---------------------------------------------------------------------------
@@ -184,10 +184,10 @@ int NA_Mem_deregister(na_class_t *network_class,
  *---------------------------------------------------------------------------
  */
 int NA_Mem_handle_serialize(na_class_t *network_class,
-        void *buf, na_size_t buf_len, na_mem_handle_t mem_handle)
+        void *buf, na_size_t buf_size, na_mem_handle_t mem_handle)
 {
     assert(network_class);
-    return network_class->mem_handle_serialize(buf, buf_len, mem_handle);
+    return network_class->mem_handle_serialize(buf, buf_size, mem_handle);
 }
 
 /*---------------------------------------------------------------------------
@@ -200,10 +200,10 @@ int NA_Mem_handle_serialize(na_class_t *network_class,
  *---------------------------------------------------------------------------
  */
 int NA_Mem_handle_deserialize(na_class_t *network_class,
-        na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_len)
+        na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size)
 {
     assert(network_class);
-    return network_class->mem_handle_deserialize(mem_handle, buf, buf_len);
+    return network_class->mem_handle_deserialize(mem_handle, buf, buf_size);
 }
 
 /*---------------------------------------------------------------------------
@@ -276,4 +276,20 @@ int NA_Wait(na_class_t *network_class,
 {
     assert(network_class);
     return network_class->wait(request, timeout, status);
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    NA_Progress
+ *
+ * Purpose:     Track remote completion
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int NA_Progress(na_class_t *network_class,
+        unsigned int timeout, na_status_t *status)
+{
+    assert(network_class);
+    return network_class->progress(timeout, status);
 }

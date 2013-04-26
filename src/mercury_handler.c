@@ -11,8 +11,8 @@
 #include "mercury_handler.h"
 #include "mercury_hash_table.h"
 #include "mercury_list.h"
+#include "mercury_thread_mutex.h"
 
-#include <pthread.h>
 #include <sys/time.h>
 
 /* Private structs */
@@ -55,7 +55,7 @@ extern unsigned int hg_int_hash(void *vlocation);
 
 /* List of processed handles */
 static hg_list_entry_t *unexpected_handle_list;
-static pthread_mutex_t unexpected_handle_list_mutex;
+static hg_thread_mutex_t unexpected_handle_list_mutex;
 static inline int unexpected_handle_list_equal(void *location1, void *location2)
 {
     return location1 == location2;
@@ -63,7 +63,7 @@ static inline int unexpected_handle_list_equal(void *location1, void *location2)
 
 /* List of processed handles */
 static hg_list_entry_t *response_handle_list;
-static pthread_mutex_t response_handle_list_mutex;
+static hg_thread_mutex_t response_handle_list_mutex;
 
 /* Network class */
 static na_class_t *handler_na_class = NULL;
@@ -116,11 +116,11 @@ static hg_handle_t hg_handler_process_unexpected_list(void)
 {
     hg_priv_handle_t *priv_handle = NULL;
 
-    pthread_mutex_lock(&unexpected_handle_list_mutex);
+    hg_thread_mutex_lock(&unexpected_handle_list_mutex);
     if (unexpected_handle_list) {
         priv_handle = (hg_priv_handle_t*) hg_list_data(unexpected_handle_list);
     }
-    pthread_mutex_unlock(&unexpected_handle_list_mutex);
+    hg_thread_mutex_unlock(&unexpected_handle_list_mutex);
 
     return (hg_handle_t)priv_handle;
 }
@@ -139,7 +139,7 @@ static int hg_handler_add_unexpected_list(hg_handle_t handle)
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
 
-    pthread_mutex_lock(&unexpected_handle_list_mutex);
+    hg_thread_mutex_lock(&unexpected_handle_list_mutex);
     if (!hg_list_find_data(unexpected_handle_list, unexpected_handle_list_equal,
             (hg_list_value_t)priv_handle)) {
         if (!hg_list_append(&unexpected_handle_list, (hg_list_value_t)priv_handle)) {
@@ -147,7 +147,7 @@ static int hg_handler_add_unexpected_list(hg_handle_t handle)
             ret = HG_FAIL;
         }
     }
-    pthread_mutex_unlock(&unexpected_handle_list_mutex);
+    hg_thread_mutex_unlock(&unexpected_handle_list_mutex);
 
     return ret;
 }
@@ -166,10 +166,10 @@ static int hg_handler_del_unexpected_list(hg_handle_t handle)
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
 
-    pthread_mutex_lock(&unexpected_handle_list_mutex);
+    hg_thread_mutex_lock(&unexpected_handle_list_mutex);
     hg_list_remove_data(&unexpected_handle_list, unexpected_handle_list_equal,
             (hg_list_value_t)priv_handle);
-    pthread_mutex_unlock(&unexpected_handle_list_mutex);
+    hg_thread_mutex_unlock(&unexpected_handle_list_mutex);
 
     return ret;
 }
@@ -188,14 +188,14 @@ static int hg_handler_add_response_list(hg_handle_t handle)
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t*) handle;
     int ret = HG_SUCCESS;
 
-    pthread_mutex_lock(&response_handle_list_mutex);
+    hg_thread_mutex_lock(&response_handle_list_mutex);
 
     if (!hg_list_append(&response_handle_list, (hg_list_value_t)priv_handle)) {
         HG_ERROR_DEFAULT("Could not append handle to list");
         ret = HG_FAIL;
     }
 
-    pthread_mutex_unlock(&response_handle_list_mutex);
+    hg_thread_mutex_unlock(&response_handle_list_mutex);
 
     return ret;
 }
@@ -214,7 +214,7 @@ static int hg_handler_process_response_list(unsigned int timeout)
     int ret = HG_SUCCESS;
 
     /* Check if any resources from previous async operations can be freed */
-    pthread_mutex_lock(&response_handle_list_mutex); /* Need to prevent concurrent accesses */
+    hg_thread_mutex_lock(&response_handle_list_mutex); /* Need to prevent concurrent accesses */
 
     if (hg_list_length(response_handle_list)) {
         /* Iterate over entries and test for their completion */
@@ -243,7 +243,7 @@ static int hg_handler_process_response_list(unsigned int timeout)
         }
     }
 
-    pthread_mutex_unlock(&response_handle_list_mutex);
+    hg_thread_mutex_unlock(&response_handle_list_mutex);
 
     return ret;
 }
@@ -353,8 +353,8 @@ int HG_Handler_init(na_class_t *network_class)
     /* Automatically free all the values with the hash map */
     hg_hash_table_register_free_functions(handler_func_map, free, free);
 
-    pthread_mutex_init(&unexpected_handle_list_mutex, NULL);
-    pthread_mutex_init(&response_handle_list_mutex, NULL);
+    hg_thread_mutex_init(&unexpected_handle_list_mutex);
+    hg_thread_mutex_init(&response_handle_list_mutex);
 
     return ret;
 }
@@ -399,8 +399,8 @@ int HG_Handler_finalize(void)
 
     handler_na_class = NULL;
 
-    pthread_mutex_destroy(&unexpected_handle_list_mutex);
-    pthread_mutex_destroy(&response_handle_list_mutex);
+    hg_thread_mutex_destroy(&unexpected_handle_list_mutex);
+    hg_thread_mutex_destroy(&response_handle_list_mutex);
 
     return ret;
 }
