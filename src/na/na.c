@@ -281,7 +281,7 @@ int NA_Wait(na_class_t *network_class,
 /*---------------------------------------------------------------------------
  * Function:    NA_Progress
  *
- * Purpose:     Track remote completion
+ * Purpose:     Track completion of RMA operations and make progress
  *
  * Returns:     Non-negative on success or negative on failure
  *

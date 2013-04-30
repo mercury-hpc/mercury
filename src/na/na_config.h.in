@@ -14,6 +14,8 @@
 #cmakedefine NA_HAS_BMI
 #cmakedefine NA_HAS_MPI
 
+#cmakedefine NA_HAS_CLIENT_THREAD
+
 #cmakedefine NA_BUILD_SHARED_LIBS
 
 #ifdef NA_BUILD_SHARED_LIBS

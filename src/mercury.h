@@ -12,6 +12,7 @@
 #define MERCURY_H
 
 #include "na.h"
+#include "mercury_config.h"
 #include "mercury_error.h"
 #include "mercury_proc.h"
 

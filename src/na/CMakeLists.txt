@@ -59,6 +59,11 @@ if(MERCURY_CREATE_SINGLE_LIB)
   set(NA_DEP_LIBRARIES ${NA_EXT_DEPENCIES} PARENT_SCOPE)
 endif(MERCURY_CREATE_SINGLE_LIB)
 
+option(NA_USE_CLIENT_THREAD "Allow use of thread for making progress on client." ON)
+if(NA_USE_CLIENT_THREAD)
+  set(NA_HAS_CLIENT_THREAD 1)
+endif(NA_USE_CLIENT_THREAD)
+
 #------------------------------------------------------------------------------
 # Configure module header files
 #------------------------------------------------------------------------------

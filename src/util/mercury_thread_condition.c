@@ -12,6 +12,7 @@
 #include "mercury_error.h"
 
 #ifndef _WIN32
+#include <sys/time.h>
 #include <stdlib.h>
 #endif
 
@@ -117,15 +118,32 @@ int hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, u
 #ifdef _WIN32
     if (!SleepConditionVariableCS(cond, mutex, timeout)) ret = HG_FAIL;
 #else
-    struct timespec timeoutspec;
+    int pret;
+    struct timeval now;
+    struct timespec abs_timeout;
+    long int abs_timeout_us;
     ldiv_t ld;
 
-    /* Convert from ms to timespec */
-    ld = ldiv(timeout, 1000);
-    timeoutspec.tv_sec = ld.quot;
-    timeoutspec.tv_nsec = ld.rem * 1000000L;
+    /* Need to convert timeout (ms) to absolute time */
+    gettimeofday(&now, NULL);
+    abs_timeout_us = now.tv_usec + timeout * 1000L;
+    /* Get sec / nsec */
+    ld = ldiv(abs_timeout_us, 1000000L);
+    abs_timeout.tv_sec = now.tv_sec + ld.quot;
+    abs_timeout.tv_nsec = ld.rem * 1000L;
 
-    if (pthread_cond_timedwait(cond, mutex, &timeoutspec)) ret = HG_FAIL;
+    pret = pthread_cond_timedwait(cond, mutex, &abs_timeout);
+    if (pret) {
+        switch (pret) {
+            case ETIMEDOUT:
+                HG_ERROR_DEFAULT("Timeout");
+                break;
+            default:
+                HG_ERROR_DEFAULT("Unknown error return");
+                break;
+        }
+        ret = HG_FAIL;
+    }
 #endif
 
     return ret;

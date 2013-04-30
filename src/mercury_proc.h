@@ -11,8 +11,8 @@
 #ifndef MERCURY_PROC_H
 #define MERCURY_PROC_H
 
-#include "mercury_error.h"
 #include "mercury_config.h"
+#include "mercury_error.h"
 #include "mercury_bulk.h"
 #include "iofsl_compat.h"
 

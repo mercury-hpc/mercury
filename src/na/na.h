@@ -11,6 +11,7 @@
 #ifndef NA_H
 #define NA_H
 
+#include "na_config.h"
 #include "na_error.h"
 
 #include <stddef.h>

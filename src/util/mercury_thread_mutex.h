@@ -17,6 +17,7 @@
   typedef CRITICAL_SECTION hg_thread_mutex_t;
 #else
   #include <pthread.h>
+  #include <errno.h>
   typedef pthread_mutex_t hg_thread_mutex_t;
 #endif
 
