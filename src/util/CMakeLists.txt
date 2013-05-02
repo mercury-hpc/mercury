@@ -1,7 +1,9 @@
 #------------------------------------------------------------------------------
 # Set sources
 #------------------------------------------------------------------------------
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/..
+  )
 
 set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.c
@@ -37,3 +39,4 @@ else(MERCURY_CREATE_SINGLE_LIB)
     RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
   )
 endif(MERCURY_CREATE_SINGLE_LIB)
+
