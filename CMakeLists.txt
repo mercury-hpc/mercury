@@ -67,22 +67,6 @@ else(BUILD_SHARED_LIBS)
   set(MERCURY_LIBTYPE STATIC)
 endif(BUILD_SHARED_LIBS)
 
-#------------------------------------------------------------------------------
-# Check headers / symbols / sizes
-#------------------------------------------------------------------------------
-#include(CheckTypeSize)
-#check_type_size(size_t SIZEOF_SIZE_T)
-#check_type_size(int64_t SIZEOF_INT64_T)
-#check_type_size(uint8_t SIZEOF_UINT8_T)
-
-#include(CheckIncludeFile)
-#check_include_file("execinfo.h" HAVE_EXECINFO_H)
-
-#include(CheckLibraryExists)
-#check_library_exists(glib-2.0 g_atomic_int_set "" HAVE_GLIB)
-#check_library_exists(pthread pthread_create "" HAVE_LIBPTHREAD)
-#include(FindThreads)
-
 #-------------------------------------------------------------------------------
 macro(set_lib_options libtarget libname libtype)
   if(${libtype} MATCHES "SHARED")

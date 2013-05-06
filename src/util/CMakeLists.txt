@@ -1,4 +1,18 @@
 #------------------------------------------------------------------------------
+# External dependencies
+#------------------------------------------------------------------------------
+# Threads
+include(FindThreads)
+set(MERCURY_UTIL_EXT_DEPENCIES
+  ${MERCURY_UTIL_EXT_DEPENCIES}
+  ${CMAKE_THREAD_LIBS_INIT}
+)
+
+if(MERCURY_CREATE_SINGLE_LIB)
+  set(MERCURY_UTIL_DEP_LIBRARIES ${MERCURY_UTIL_EXT_DEPENCIES} PARENT_SCOPE)
+endif(MERCURY_CREATE_SINGLE_LIB)
+
+#------------------------------------------------------------------------------
 # Set sources
 #------------------------------------------------------------------------------
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}
@@ -24,6 +38,7 @@ else(MERCURY_CREATE_SINGLE_LIB)
   #----------------------------------------------------------------------------
   # UTIL
   add_library(mercury_util ${MERCURY_UTIL_SRCS})
+  target_link_libraries(mercury_util ${MERCURY_UTIL_EXT_DEPENCIES})
   set_lib_options(mercury_util "mercury_util" ${MERCURY_LIBTYPE})
 
   #---------------------------------------------------------------------------

@@ -2,6 +2,20 @@
 option(MERCURY_CREATE_SINGLE_LIB "Create one single mercury library." OFF)
 
 #------------------------------------------------------------------------------
+# Check headers / symbols / sizes
+#------------------------------------------------------------------------------
+#include(CheckTypeSize)
+#check_type_size(size_t SIZEOF_SIZE_T)
+#check_type_size(int64_t SIZEOF_INT64_T)
+#check_type_size(uint8_t SIZEOF_UINT8_T)
+
+#include(CheckIncludeFile)
+#check_include_file("execinfo.h" HAVE_EXECINFO_H)
+
+#include(CheckLibraryExists)
+#check_library_exists(glib-2.0 g_atomic_int_set "" HAVE_GLIB)
+
+#------------------------------------------------------------------------------
 # External dependencies
 #------------------------------------------------------------------------------
 # Boost (for preprocessor macros)
@@ -90,7 +104,11 @@ set(MERCURY_SRCS
 # MERCURY
 if(MERCURY_CREATE_SINGLE_LIB)
   set(MERCURY_SRCS ${MERCURY_SRCS} ${MERCURY_UTIL_SRCS} ${NA_SRCS})
-  set(MERCURY_EXT_DEPENCIES ${NA_DEP_LIBRARIES})
+  set(MERCURY_EXT_DEPENCIES
+    ${MERCURY_EXT_DEPENCIES}
+    ${NA_DEP_LIBRARIES}
+    ${MERCURY_UTIL_DEP_LIBRARIES}
+  )
 endif(MERCURY_CREATE_SINGLE_LIB)
 
 add_library(mercury ${MERCURY_SRCS})

@@ -13,6 +13,12 @@ endif(BUILD_SHARED_LIBS)
 #------------------------------------------------------------------------------
 # External dependencies
 #------------------------------------------------------------------------------
+# mercury_util
+include_directories(${MERCURY_SOURCE_DIR}/src/util)
+if(NOT MERCURY_CREATE_SINGLE_LIB)
+  set(NA_EXT_DEPENCIES ${NA_EXT_DEPENCIES} mercury_util)
+endif(NOT MERCURY_CREATE_SINGLE_LIB)
+
 # BMI
 option(NA_USE_BMI "Use BMI." OFF)
 if(NA_USE_BMI)
@@ -25,8 +31,6 @@ if(NA_USE_BMI)
       ${BMI_LIBRARIES}
     )
     include(CheckCSourceCompiles)
-    set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${BMI_LIBRARIES})
-    set(CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES} ${BMI_INCLUDE_DIR})
     check_c_source_compiles("#include <bmi.h>
       int main(int argc, char **argv) {
         BMI_set_info(0,BMI_ZOID_POST_TIMEOUT,0);
@@ -92,9 +96,6 @@ if(NA_USE_BMI)
 endif(NA_USE_BMI)
 
 if(NA_USE_MPI)
-  # needed for now to store memory handles
-  include_directories(${MERCURY_SOURCE_DIR}/src/util)
-  set(NA_EXT_DEPENCIES ${NA_EXT_DEPENCIES} mercury_util)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.c
