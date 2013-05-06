@@ -19,10 +19,10 @@ add_subdirectory(driver)
 #------------------------------------------------------------------------------
 function(add_mercury_test full_test_name server client)
   foreach(comm ${NA_PLUGINS})
-    add_test("${full_test_name}_${comm}"
-      ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/mercury_test_driver
-      --server ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${server}
-      --client ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${client} ${comm}
+    add_test(NAME "${full_test_name}_${comm}"
+      COMMAND $<TARGET_FILE:mercury_test_driver>
+      --server $<TARGET_FILE:${server}>
+      --client $<TARGET_FILE:${client}> ${comm}
     )
   endforeach(comm)
 endfunction(add_mercury_test)
