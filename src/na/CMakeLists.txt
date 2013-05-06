@@ -75,7 +75,10 @@ configure_file(
 #------------------------------------------------------------------------------
 # Set sources
 #------------------------------------------------------------------------------
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_BINARY_DIR}
+)
 
 set(NA_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/na.c
