@@ -95,6 +95,6 @@ set(dashboard_git_url $ENV{GIT_URL})
 #set(ENV{CXX} /usr/bin/g++)
 #set(ENV{FC}  /usr/bin/gfortran)
 
-include(mercury_common.cmake)
+include($ENV{PWD}/Testing/mercury_common.cmake)
 
 #######################################################################
