@@ -24,6 +24,7 @@ function(add_mercury_test full_test_name server client)
       --server $<TARGET_FILE:${server}>
       --client $<TARGET_FILE:${client}> ${comm}
     )
+    message("Add test ${full_test_name}_${comm}")
   endforeach(comm)
 endfunction(add_mercury_test)
 
