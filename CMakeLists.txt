@@ -143,7 +143,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src)
 option(BUILD_TESTING "Build testing." OFF)
 if(NOT MERCURY_EXTERNALLY_CONFIGURED AND BUILD_TESTING)
   enable_testing()
-#  include(CTest)
+  include(CTest)
   add_subdirectory(Testing)
 endif(NOT MERCURY_EXTERNALLY_CONFIGURED AND BUILD_TESTING)
 
@@ -184,3 +184,20 @@ install(
   DESTINATION
     ${MERCURY_INSTALL_DATA_DIR}/cmake/mercury
 )
+
+#-----------------------------------------------------------------------------
+# CPack
+#-----------------------------------------------------------------------------
+set(CPACK_PACKAGE_DESCRIPTION_FILE ${MERCURY_SOURCE_DIR}/README)
+set(CPACK_RESOURCE_FILE_LICENSE ${MERCURY_SOURCE_DIR}/COPYING)
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "The Function Shipper for I/O Forwarding")
+set(CPACK_PACKAGE_NAME "Mercury")
+set(CPACK_PACKAGE_VENDOR "Argonne National Laboratories / The HDF Group")
+set(CPACK_PACKAGE_VERSION_MAJOR ${MERCURY_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${MERCURY_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${MERCURY_VERSION_PATCH})
+set(CPACK_GENERATOR "TBZ2")
+set(CPACK_SOURCE_PACKAGE_FILE_NAME ${MERCURY_PACKAGE_TARNAME}-${MERCURY_PACKAGE_VERSION})
+set(CPACK_SOURCE_IGNORE_FILES ".git*;/GitSetup/;/.git/;.swp$;.#;/#;.*~")
+set(CPACK_SOURCE_STRIP_FILES "")
+include(CPack)
