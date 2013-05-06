@@ -18,7 +18,6 @@ add_subdirectory(driver)
 # Set up test options and macros
 #------------------------------------------------------------------------------
 if(NA_USE_BMI)
-  include_directories(${NA_BMI_INCLUDE_DIR})
   set(MERCURY_comm
     ${MERCURY_comm}
     bmi
@@ -26,7 +25,6 @@ if(NA_USE_BMI)
 endif(NA_USE_BMI)
 
 if(NA_USE_MPI)
-  include_directories(${NA_MPI_INCLUDE_DIR})
   set(MERCURY_comm
     ${MERCURY_comm}
     mpi
@@ -110,15 +108,14 @@ if(MERCURY_ENABLE_COVERAGE)
 endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
-if(MPIEXEC)
-  set(MERCURY_tests
-    fs
-    na
-    bds
-    posix
-  )
-  foreach(MERCURY_test ${MERCURY_tests})
-      add_mercury_test(shipper_${MERCURY_test}
-        server_${MERCURY_test} client_${MERCURY_test})
-  endforeach(MERCURY_test)
-endif(MPIEXEC)
+# Set list of tests
+set(MERCURY_tests
+  fs
+  na
+  bds
+  posix
+)
+foreach(MERCURY_test ${MERCURY_tests})
+    add_mercury_test(shipper_${MERCURY_test}
+      server_${MERCURY_test} client_${MERCURY_test})
+endforeach(MERCURY_test)
