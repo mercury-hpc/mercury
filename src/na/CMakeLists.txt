@@ -24,6 +24,7 @@ option(NA_USE_BMI "Use BMI." OFF)
 if(NA_USE_BMI)
   find_package(BMI REQUIRED)
   if(BMI_FOUND)
+    set(NA_PLUGINS ${NA_PLUGINS} bmi)
     set(NA_HAS_BMI 1)
     include_directories(${BMI_INCLUDE_DIR})
     set(NA_EXT_DEPENCIES
@@ -47,6 +48,7 @@ if(NA_USE_MPI)
   find_package(MPI)
   if(MPI_FOUND)
     set(NA_HAS_MPI 1)
+    set(NA_PLUGINS ${NA_PLUGINS} mpi)
     include_directories(${MPI_INCLUDE_PATH})
     set(NA_EXT_DEPENCIES
       ${NA_EXT_DEPENCIES}
@@ -58,6 +60,7 @@ if(NA_USE_MPI)
   endif(MPI_FOUND)
 endif(NA_USE_MPI)
 
+set(NA_PLUGINS ${NA_PLUGINS} PARENT_SCOPE)
 set(NA_DEP_INCLUDE_DIRS ${BMI_INCLUDE_DIR} ${MPI_INCLUDE_PATH} PARENT_SCOPE)
 if(MERCURY_CREATE_SINGLE_LIB)
   set(NA_DEP_LIBRARIES ${NA_EXT_DEPENCIES} PARENT_SCOPE)

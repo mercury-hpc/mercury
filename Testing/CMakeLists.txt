@@ -17,22 +17,8 @@ add_subdirectory(driver)
 #------------------------------------------------------------------------------
 # Set up test options and macros
 #------------------------------------------------------------------------------
-if(NA_USE_BMI)
-  set(MERCURY_comm
-    ${MERCURY_comm}
-    bmi
-  )
-endif(NA_USE_BMI)
-
-if(NA_USE_MPI)
-  set(MERCURY_comm
-    ${MERCURY_comm}
-    mpi
-  )
-endif(NA_USE_MPI)
-
 function(add_mercury_test full_test_name server client)
-  foreach(comm ${MERCURY_comm})
+  foreach(comm ${NA_PLUGINS})
     add_test("${full_test_name}_${comm}"
       ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/mercury_test_driver
       --server ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${server}
