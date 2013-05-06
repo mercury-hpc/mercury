@@ -31,7 +31,7 @@ set(CTEST_BUILD_CONFIGURATION ${MERCURY_BUILD_CONFIGURATION})
 # Number of jobs to build
 set(CTEST_BUILD_FLAGS "-j2")
 # Build name referenced in cdash
-set(CTEST_BUILD_NAME "$ENV{MACHTYPE}-${lower_mercury_dashboard_model}")
+set(CTEST_BUILD_NAME "jenkins-x64-${lower_mercury_dashboard_model}")
 if($ENV{MERCURY_BUILD_STATIC_LIBRARIES})
   message("Building static libraries")
   set(CTEST_BUILD_NAME "${CTEST_BUILD_NAME}-static")
