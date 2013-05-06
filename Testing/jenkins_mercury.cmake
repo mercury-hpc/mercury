@@ -82,9 +82,9 @@ BUILD_TESTING:BOOL=ON
 
 MERCURY_USE_BOOST_PP:BOOL=ON
 MERCURY_USE_XDR:BOOL=OFF
-NA_USE_BMI:BOOL=ON                                           
-NA_USE_MPI:BOOL=ON                                           
-MPIEXEC_MAX_NUMPROCS:STRING=4
+NA_USE_BMI:BOOL=OFF                                           
+NA_USE_MPI:BOOL=OFF                                          
+MPIEXEC_MAX_NUMPROCS:STRING=2
 ")
 
 set(dashboard_git_url $ENV{GIT_URL})
