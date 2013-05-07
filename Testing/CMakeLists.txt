@@ -103,6 +103,6 @@ set(MERCURY_tests
   posix
 )
 foreach(MERCURY_test ${MERCURY_tests})
-    add_mercury_test(shipper_${MERCURY_test}
+    add_mercury_test(mercury_${MERCURY_test}
       server_${MERCURY_test} client_${MERCURY_test})
 endforeach(MERCURY_test)

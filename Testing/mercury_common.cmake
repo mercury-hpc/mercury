@@ -339,9 +339,10 @@ while(NOT dashboard_done)
     ctest_build(APPEND)
     ctest_submit(PARTS Build)
 
-    ctest_test(INCLUDE_LABEL "MERCURY" ${CTEST_TEST_ARGS} APPEND)
+#    ctest_test(INCLUDE_LABEL "mercury" ${CTEST_TEST_ARGS} APPEND)
+    ctest_test(${CTEST_TEST_ARGS} APPEND)
     ctest_submit(PARTS Test)
-    set(safe_message_skip 1) # Block furhter messages
+    set(safe_message_skip 1) # Block further messages
 
     if(dashboard_do_coverage)
       ctest_coverage()
