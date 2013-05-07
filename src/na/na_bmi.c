@@ -70,12 +70,16 @@ static na_class_t na_bmi_g = {
         na_bmi_progress                /* progress */
 };
 
-typedef struct bmi_request {
-    bmi_op_id_t op_id;       /* BMI op ID */
-    bool completed;          /* 1 if operation has completed */
-    void *user_ptr;          /* Extra info passed to BMI to identify request */
-    bmi_size_t actual_size;  /* Actual buffer size (must only be a pointer if we return it in the receive) */
-} bmi_request_t;
+typedef struct bmi_request bmi_request_t;
+
+struct bmi_request {
+    bmi_op_id_t op_id;        /* BMI op ID */
+    bool completed;           /* 1 if operation has completed */
+    void *user_ptr;           /* Extra info passed to BMI to identify request */
+    bmi_size_t actual_size;   /* Actual buffer size (must only be a pointer if we return it in the receive) */
+    bool ack;                 /* Additional ack for one-sided put request */
+    na_request_t ack_request; /* Additional request for one-sided put request */
+};
 
 typedef struct bmi_mem_handle {
     void *base;                 /* Initial address of memory */
@@ -118,24 +122,26 @@ static inline unsigned int pointer_hash(void *location)
 #define NA_BMI_UNEXPECTED_SIZE 4096
 
 /* Default tag used for one-sided over two-sided */
-#define NA_BMI_ONESIDED_TAG    0x80
+#define NA_BMI_ONESIDED_TAG        0x80
+#define NA_BMI_ONESIDED_DATA_TAG   0x81
+#define NA_BMI_ONESIDED_ACK_TAG    0x82
 
 #ifdef NA_HAS_CLIENT_THREAD
 static hg_thread_mutex_t finalizing_mutex;
 static bool              finalizing;
-static hg_thread_t       onesided_service;
+static hg_thread_t       progress_service;
 #endif
 static hg_thread_mutex_t mem_map_mutex;
 
 /*---------------------------------------------------------------------------
- * Function:    na_bmi_onesided_service
+ * Function:    na_bmi_progress_service
  *
  * Purpose:     One-sided service to emulate one-sided over two-sided
  *
  *---------------------------------------------------------------------------
  */
 #ifdef NA_HAS_CLIENT_THREAD
-static void* na_bmi_onesided_service(void *args)
+static void* na_bmi_progress_service(void *args)
 {
     bool service_done = 0;
 
@@ -200,7 +206,7 @@ na_class_t *NA_BMI_Init(const char *method_list, const char *listen_addr, int fl
     hg_thread_mutex_init(&finalizing_mutex);
     if (!is_server) {
         /* TODO temporary to handle one-sided exchanges with remote server */
-        hg_thread_create(&onesided_service, &na_bmi_onesided_service, NULL);
+        hg_thread_create(&progress_service, &na_bmi_progress_service, NULL);
     }
 #endif
 
@@ -226,7 +232,7 @@ static int na_bmi_finalize(void)
         finalizing = 1;
         hg_thread_mutex_unlock(&finalizing_mutex);
         /* Wait for one-sided thread to complete */
-        hg_thread_join(onesided_service);
+        hg_thread_join(progress_service);
     }
     hg_thread_mutex_destroy(&finalizing_mutex);
 #endif
@@ -345,6 +351,7 @@ static int na_bmi_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t
     bmi_request->completed = 0;
     bmi_request->actual_size = 0;
     bmi_request->user_ptr = op_arg;
+    bmi_request->ack_request = NA_REQUEST_NULL;
 
     /* Post the BMI unexpected send request */
     bmi_ret = BMI_post_sendunexpected(&bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
@@ -433,6 +440,7 @@ static int na_bmi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actu
     bmi_request->completed = 1;
     bmi_request->actual_size = request_info->size;
     bmi_request->user_ptr = op_arg;
+    bmi_request->ack_request = NA_REQUEST_NULL;
 
     *request = (na_request_t) bmi_request;
 
@@ -481,6 +489,7 @@ static int na_bmi_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     bmi_request->completed = 0;
     bmi_request->actual_size = 0;
     bmi_request->user_ptr = op_arg;
+    bmi_request->ack_request = NA_REQUEST_NULL;
 
     /* Post the BMI send request */
     bmi_ret = BMI_post_send(&bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
@@ -526,6 +535,7 @@ static int na_bmi_recv(void *buf, na_size_t buf_size, na_addr_t source,
     bmi_request->completed = 0;
     bmi_request->actual_size = 0; /* (bmi_size_t*) actual_size; */
     bmi_request->user_ptr = op_arg;
+    bmi_request->ack_request = NA_REQUEST_NULL;
 
     /* Post the BMI recv request */
     bmi_ret = BMI_post_recv(&bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
@@ -714,6 +724,7 @@ static int na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset
     bmi_mem_handle_t *bmi_remote_mem_handle = (bmi_mem_handle_t*) remote_mem_handle;
     bmi_size_t bmi_remote_offset = (bmi_size_t) remote_offset;
     bmi_size_t bmi_length = (bmi_size_t) length;
+    bmi_request_t *bmi_request;
 
     bmi_onesided_info_t onesided_info;
     na_request_t onesided_request;
@@ -752,9 +763,24 @@ static int na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset
         return ret;
     }
 
-    /* Simply do an asynchronous send */
+    /* Do an asynchronous send */
     ret = na_bmi_send(bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
-            remote_addr, NA_BMI_ONESIDED_TAG, request, NULL);
+            remote_addr, NA_BMI_ONESIDED_DATA_TAG, request, NULL);
+    if (ret != NA_SUCCESS) {
+        NA_ERROR_DEFAULT("Could not send data");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    /* Wrap an ack request around the original request */
+    bmi_request = (bmi_request_t *) *request;
+    ret = na_bmi_recv(&bmi_request->ack, sizeof(bool),
+            remote_addr, NA_BMI_ONESIDED_ACK_TAG, &bmi_request->ack_request, NULL);
+    if (ret != NA_SUCCESS) {
+        NA_ERROR_DEFAULT("Could not recv ack");
+        ret = NA_FAIL;
+        return ret;
+    }
 
     return ret;
 }
@@ -812,7 +838,7 @@ static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
 
     /* Simply do an asynchronous recv */
     ret = na_bmi_recv(bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
-            remote_addr, NA_BMI_ONESIDED_TAG, request, NULL);
+            remote_addr, NA_BMI_ONESIDED_DATA_TAG, request, NULL);
 
     return ret;
 }
@@ -981,11 +1007,33 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout,
     hg_thread_mutex_lock(&request_mutex);
 
     if (status && status != NA_STATUS_IGNORE) {
-        status->completed = bmi_wait_request->completed;
+        status->completed = 0;
     }
 
     if (bmi_wait_request->completed) {
+        /* Wait for the ack request too */
+        if (bmi_wait_request->ack_request != NA_REQUEST_NULL) {
+            na_status_t ack_status;
+            hg_thread_mutex_unlock(&request_mutex);
+            ret = na_bmi_wait(bmi_wait_request->ack_request, timeout, &ack_status);
+            if (ret != NA_SUCCESS) {
+                NA_ERROR_DEFAULT("Could not wait for ack request");
+                ret = NA_FAIL;
+                return ret;
+            }
+            if (!ack_status.completed) {
+                NA_ERROR_DEFAULT("Ack not completed");
+                return ret;
+            }
+            if (!bmi_wait_request->ack) {
+                NA_ERROR_DEFAULT("Got wrong ack");
+                ret = NA_FAIL;
+                return ret;
+            }
+            hg_thread_mutex_lock(&request_mutex);
+        }
         if (status && status != NA_STATUS_IGNORE) {
+            status->completed = 1;
             status->count = bmi_wait_request->actual_size;
         }
         free(bmi_wait_request);
@@ -1020,6 +1068,10 @@ static int na_bmi_progress(unsigned int timeout, na_status_t *status)
 
     na_status_t onesided_status;
     bmi_mem_handle_t *bmi_mem_handle = NULL;
+
+    bool ack;
+    na_request_t onesided_data_request;
+    na_request_t onesided_ack_request;
 
     /* Wait for an initial request from client */
     if (onesided_request == NA_REQUEST_NULL) {
@@ -1079,6 +1131,12 @@ static int na_bmi_progress(unsigned int timeout, na_status_t *status)
         onesided_request = NA_REQUEST_NULL;
     }
 
+    if (remote_tag != NA_BMI_ONESIDED_TAG) {
+        NA_ERROR_DEFAULT("Bad remote tag");
+        ret = NA_FAIL;
+        return ret;
+    }
+
     /* Here better to keep the mutex locked the time we operate on
      * bmi_mem_handle since it's a pointer to a mem_handle */
     hg_thread_mutex_lock(&mem_map_mutex);
@@ -1093,15 +1151,22 @@ static int na_bmi_progress(unsigned int timeout, na_status_t *status)
     }
 
     switch (onesided_info.op) {
-        na_request_t onesided_data_request;
-
         /* Remote wants to do a put so wait in a recv */
         case BMI_ONESIDED_PUT:
             ret = na_bmi_recv(bmi_mem_handle->base + onesided_info.disp,
-                    onesided_info.count, remote_addr, remote_tag,
+                    onesided_info.count, remote_addr, NA_BMI_ONESIDED_DATA_TAG,
                     &onesided_data_request, NULL);
             if (ret != NA_SUCCESS) {
                 NA_ERROR_DEFAULT("Could not recv data");
+                ret = NA_FAIL;
+                break;
+            }
+            /* Send an ack to tell the server that the data is here */
+            ack = 1;
+            ret = na_bmi_send(&ack, sizeof(bool), remote_addr, NA_BMI_ONESIDED_ACK_TAG,
+                    &onesided_ack_request, NULL);
+            if (ret != NA_SUCCESS) {
+                NA_ERROR_DEFAULT("Could not send ack");
                 ret = NA_FAIL;
                 break;
             }
@@ -1111,13 +1176,18 @@ static int na_bmi_progress(unsigned int timeout, na_status_t *status)
                 ret = NA_FAIL;
                 return ret;
             }
-            /* TODO Send an ack to ensure that the data has been received ? */
+            ret = na_bmi_wait(onesided_ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+            if (ret != NA_SUCCESS) {
+                NA_ERROR_DEFAULT("Error while waiting");
+                ret = NA_FAIL;
+                return ret;
+            }
             break;
 
         /* Remote wants to do a get so do a send */
         case BMI_ONESIDED_GET:
             ret = na_bmi_send(bmi_mem_handle->base + onesided_info.disp,
-                    onesided_info.count, remote_addr, remote_tag,
+                    onesided_info.count, remote_addr, NA_BMI_ONESIDED_DATA_TAG,
                     &onesided_data_request, NULL);
             if (ret != NA_SUCCESS) {
                 NA_ERROR_DEFAULT("Could not send data");
