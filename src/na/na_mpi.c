@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <sys/time.h>
 
 static int na_mpi_finalize(void);
 static na_size_t na_mpi_get_unexpected_size(void);
@@ -44,6 +45,7 @@ static int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
         na_size_t length, na_addr_t remote_addr, na_request_t *request);
 static int na_mpi_wait(na_request_t request, unsigned int timeout,
         na_status_t *status);
+static int na_mpi_progress(unsigned int timeout, na_status_t *status);
 
 static na_class_t na_mpi_g = {
         na_mpi_finalize,               /* finalize */
@@ -62,7 +64,7 @@ static na_class_t na_mpi_g = {
         na_mpi_put,                    /* put */
         na_mpi_get,                    /* get */
         na_mpi_wait,                   /* wait */
-        NULL                           /* progress */
+        na_mpi_progress                /* progress */
 };
 
 
@@ -75,7 +77,6 @@ typedef struct mpi_addr {
     MPI_Comm  comm;          /* Communicator */
     int       rank;          /* Rank in this communicator */
     bool      is_reference;  /* Reference to existing address */
-    MPI_Comm  onesided_comm; /* Additional communicator for one-sided operations */
 } mpi_addr_t;
 
 typedef struct mpi_mem_handle {
@@ -87,8 +88,7 @@ typedef struct mpi_mem_handle {
 #if MPI_VERSION < 3
 typedef enum mpi_onesided_op {
     MPI_ONESIDED_PUT,       /* Request a put operation */
-    MPI_ONESIDED_GET,       /* Request a get operation */
-    MPI_ONESIDED_END        /* Request end of one-sided operations */
+    MPI_ONESIDED_GET        /* Request a get operation */
 } mpi_onesided_op_t;
 
 typedef struct mpi_onesided_info {
@@ -108,9 +108,6 @@ typedef enum mpi_req_type {
 typedef struct mpi_req {
     mpi_req_type_t type;
     MPI_Request request;
-    /* Only used if transfer requires additional ack (e.g., put) */
-    unsigned char ack;
-    MPI_Request ack_request;
 } mpi_req_t;
 
 /* Private variables */
@@ -119,6 +116,8 @@ static MPI_Comm mpi_intra_comm = MPI_COMM_NULL; /* Private plugin intra-comm */
 static char mpi_port_name[MPI_MAX_PORT_NAME];   /* Connection port */
 static bool is_server = 0;                      /* Used in server mode */
 static mpi_addr_t server_remote_addr;           /* Remote address */
+static MPI_Comm mpi_onesided_comm = MPI_COMM_NULL;
+
 #if MPI_VERSION < 3
 static hg_hash_table_t *mem_handle_map = NULL;  /* Map mem addresses to mem handles */
 static inline int pointer_equal(void *location1, void *location2)
@@ -136,89 +135,47 @@ static MPI_Win mpi_dynamic_win;                 /* Dynamic window */
 #define NA_MPI_UNEXPECTED_SIZE 4096
 
 #define NA_MPI_ONESIDED_TAG        0x80 /* Default tag used for one-sided over two-sided */
-#define NA_MPI_ONESIDED_ACK_TAG    0x81
+#define NA_MPI_ONESIDED_DATA_TAG   0x81
 
 #if MPI_VERSION < 3
-hg_thread_t mpi_onesided_service;
+#ifdef NA_HAS_CLIENT_THREAD
+static hg_thread_mutex_t finalizing_mutex;
+static bool              finalizing;
+static hg_thread_t       progress_service;
+#endif
 hg_thread_mutex_t mem_map_mutex;
 
 /*---------------------------------------------------------------------------
- * Function:    na_mpi_onesided_service
+ * Function:    na_mpi_progress_service
  *
- * Purpose:     Service to emulate one-sided over two-sided
+ * Purpose:     Service to make one-sided progress
  *
  *---------------------------------------------------------------------------
  */
-static void* na_mpi_onesided_service(void *args)
+#ifdef NA_HAS_CLIENT_THREAD
+static void* na_mpi_progress_service(void *args)
 {
-    int mpi_ret;
     bool service_done = 0;
-    mpi_addr_t *mpi_remote_addr = (mpi_addr_t*) args;
-
-    if (!mpi_remote_addr) {
-        NA_ERROR_DEFAULT("NULL address");
-        return NULL;
-    }
 
     while (!service_done) {
-        MPI_Status mpi_status;
-        mpi_onesided_info_t onesided_info;
-        MPI_Comm mpi_onesided_comm = mpi_remote_addr->onesided_comm;
-        mpi_mem_handle_t *mpi_mem_handle = NULL;
-        bool error = 0;
+        int na_ret;
 
-        mpi_ret = MPI_Recv(&onesided_info, sizeof(onesided_info), MPI_BYTE,
-                MPI_ANY_SOURCE, MPI_ANY_TAG, mpi_onesided_comm, &mpi_status);
-        if (mpi_ret != MPI_SUCCESS) {
-            NA_ERROR_DEFAULT("MPI_Recv() failed");
-            error = 1;
-        }
+        hg_thread_mutex_lock(&finalizing_mutex);
+        service_done = (finalizing) ? 1 : 0;
+        hg_thread_mutex_unlock(&finalizing_mutex);
 
-        if (error || (onesided_info.op == MPI_ONESIDED_END)) {
-            service_done = 1;
+        na_ret = na_mpi_progress(0, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            NA_ERROR_DEFAULT("Could not make progress");
             break;
         }
 
-        /* Here better to keep the mutex locked the time we operate on mpi_mem_handle
-         * since it's a pointer to a mem_handle
-         */
-        hg_thread_mutex_lock(&mem_map_mutex);
-
-        mpi_mem_handle = hg_hash_table_lookup(mem_handle_map, onesided_info.base);
-
-        if (!mpi_mem_handle) {
-            NA_ERROR_DEFAULT("Could not find memory handle, registered?");
-            hg_thread_mutex_unlock(&mem_map_mutex);
-            break;
-        }
-
-        switch (onesided_info.op) {
-            unsigned char ack = 1;
-            /* Remote wants to do a put so wait in a recv */
-            case MPI_ONESIDED_PUT:
-                MPI_Recv(mpi_mem_handle->base + onesided_info.disp, onesided_info.count,
-                        MPI_BYTE, mpi_status.MPI_SOURCE, NA_MPI_ONESIDED_TAG,
-                        mpi_onesided_comm, MPI_STATUS_IGNORE);
-                /* Send an ack to ensure that the data has been received */
-                MPI_Send(&ack, 1, MPI_UNSIGNED_CHAR, mpi_status.MPI_SOURCE, NA_MPI_ONESIDED_ACK_TAG,
-                        mpi_onesided_comm);
-                break;
-                /* Remote wants to do a get so do a send */
-            case MPI_ONESIDED_GET:
-                MPI_Send(mpi_mem_handle->base + onesided_info.disp, onesided_info.count,
-                        MPI_BYTE, mpi_status.MPI_SOURCE, NA_MPI_ONESIDED_TAG,
-                        mpi_onesided_comm);
-                break;
-            default:
-                NA_ERROR_DEFAULT("Operation not supported");
-                break;
-        }
-
-        hg_thread_mutex_unlock(&mem_map_mutex);
+        if (service_done) break;
     }
 
     return NULL;
 }
+#endif
 #endif
 
 /*---------------------------------------------------------------------------
@@ -234,7 +191,6 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     MPI_Initialized(&mpi_ext_initialized);
 
     if (!mpi_ext_initialized) {
-        /* printf("Internally initializing MPI...\n"); */
         if (flags != MPI_INIT_SERVER) {
 #if MPI_VERSION < 3
             int provided;
@@ -259,6 +215,7 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     }
 
 #if MPI_VERSION < 3
+    hg_thread_mutex_init(&mem_map_mutex);
     /* Create hash table for memory registration */
     mem_handle_map = hg_hash_table_new(pointer_hash, pointer_equal);
     /* Automatically free all the values with the hash map */
@@ -270,7 +227,6 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
         FILE *config;
         is_server = 1;
         MPI_Open_port(MPI_INFO_NULL, mpi_port_name);
-        /* printf("Using MPI port name: %s.\n", mpi_port_name); */
         config = fopen("port.cfg", "w+");
         fwrite(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
         fclose(config);
@@ -282,16 +238,11 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
 
 #if MPI_VERSION < 3
         /* To be thread-safe and create a new context, dup the remote comm to a new comm */
-        MPI_Comm_dup(server_remote_addr.comm, &server_remote_addr.onesided_comm);
+        MPI_Comm_dup(server_remote_addr.comm, &mpi_onesided_comm);
 #else
-        MPI_Intercomm_merge(server_remote_addr.comm, is_server, &server_remote_addr.onesided_comm);
+        MPI_Intercomm_merge(server_remote_addr.comm, is_server, &mpi_onesided_comm);
         /* Create dynamic window */
-        MPI_Win_create_dynamic(MPI_INFO_NULL, server_remote_addr.onesided_comm, &mpi_dynamic_win);
-        ///////////////////////////////////////////////
-        /// DEBUG
-        // int my_rank;
-        // MPI_Comm_rank(mpi_addr->onesided_comm, &my_rank);
-        // printf("my rank is: %d\n", my_rank);
+        MPI_Win_create_dynamic(MPI_INFO_NULL, mpi_onesided_comm, &mpi_dynamic_win);
 #endif
     }
     return &na_mpi_g;
@@ -312,25 +263,11 @@ static int na_mpi_finalize(void)
 
     /* If server opened a port */
     if (is_server) {
-#if MPI_VERSION < 3
-        int num_clients, i;
-        mpi_onesided_info_t onesided_info;
-        onesided_info.base = NULL;
-        onesided_info.count = 0;
-        onesided_info.disp = 0;
-        onesided_info.op = MPI_ONESIDED_END;
-
-        MPI_Comm_remote_size(server_remote_addr.onesided_comm, &num_clients);
-        for (i = 0; i < num_clients; i++) {
-            /* Send to one-sided thread a termination request (should be handled with disconnection) */
-            MPI_Send(&onesided_info, sizeof(mpi_onesided_info_t), MPI_BYTE, i,
-                    NA_MPI_ONESIDED_TAG, server_remote_addr.onesided_comm);
-        }
-#else
+        MPI_Comm_free(&mpi_onesided_comm);
+#if MPI_VERSION >= 3
         /* Destroy dynamic window */
         MPI_Win_free(&mpi_dynamic_win);
 #endif
-        MPI_Comm_free(&server_remote_addr.onesided_comm);
         /* TODO Server disconnects here but that should be handled separately really */
         MPI_Comm_disconnect(&server_remote_addr.comm);
         MPI_Close_port(mpi_port_name);
@@ -339,6 +276,7 @@ static int na_mpi_finalize(void)
 #if MPI_VERSION < 3
     /* Free hash table for memory registration */
     hg_hash_table_free(mem_handle_map);
+    hg_thread_mutex_destroy(&mem_map_mutex);
 #endif
 
     /* Free the private dup'ed comm */
@@ -351,7 +289,6 @@ static int na_mpi_finalize(void)
         ret = NA_FAIL;
     }
     if (!mpi_ext_initialized && !mpi_ext_finalized) {
-        /* printf("Internally finalizing MPI...\n"); */
         MPI_Finalize();
     }
 
@@ -393,7 +330,8 @@ static int na_mpi_addr_lookup(const char *name, na_addr_t *addr)
     mpi_addr->rank = 0; /* TODO Only one rank for server but this may need to be improved */
 
     /* Try to connect */
-    mpi_ret = MPI_Comm_connect(port_name, MPI_INFO_NULL, 0, mpi_intra_comm, &mpi_addr->comm);
+    mpi_ret = MPI_Comm_connect(port_name, MPI_INFO_NULL, 0, mpi_intra_comm,
+            &mpi_addr->comm);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("Could not connect");
         free(mpi_addr);
@@ -401,28 +339,25 @@ static int na_mpi_addr_lookup(const char *name, na_addr_t *addr)
         ret = NA_FAIL;
     } else {
         int remote_size;
-        /* printf("Connected!\n"); */
         MPI_Comm_remote_size(mpi_addr->comm, &remote_size);
         if (remote_size != 1) {
             NA_ERROR_DEFAULT("Connected to more than one server?");
         }
         if (addr) *addr = (na_addr_t) mpi_addr;
     }
+
 #if MPI_VERSION < 3
+#ifdef NA_HAS_CLIENT_THREAD
     /* To be thread-safe and create a new context, dup the remote comm to a new comm */
-    MPI_Comm_dup(mpi_addr->comm, &mpi_addr->onesided_comm);
+    MPI_Comm_dup(mpi_addr->comm, &mpi_onesided_comm);
+    hg_thread_mutex_init(&finalizing_mutex);
     /* TODO temporary to handle one-sided exchanges with remote server */
-    hg_thread_mutex_init(&mem_map_mutex);
-    hg_thread_create(&mpi_onesided_service, &na_mpi_onesided_service, (void*)mpi_addr);
+    hg_thread_create(&progress_service, &na_mpi_progress_service, NULL);
+#endif
 #else
-    MPI_Intercomm_merge(mpi_addr->comm, is_server, &mpi_addr->onesided_comm);
+    MPI_Intercomm_merge(mpi_addr->comm, is_server, &mpi_onesided_comm);
     /* Create dynamic window */
-    MPI_Win_create_dynamic(MPI_INFO_NULL, mpi_addr->onesided_comm, &mpi_dynamic_win);
-    ///////////////////////////////////////////////
-    /// DEBUG
-    // int my_rank;
-    // MPI_Comm_rank(mpi_addr->onesided_comm, &my_rank);
-    // printf("my rank is: %d\n", my_rank);
+    MPI_Win_create_dynamic(MPI_INFO_NULL, mpi_onesided_comm, &mpi_dynamic_win);
 #endif
     return ret;
 }
@@ -449,14 +384,21 @@ static int na_mpi_addr_free(na_addr_t addr)
 
     if (!mpi_addr->is_reference) {
 #if MPI_VERSION < 3
+#ifdef NA_HAS_CLIENT_THREAD
+    if (!is_server) {
+        hg_thread_mutex_lock(&finalizing_mutex);
+        finalizing = 1;
+        hg_thread_mutex_unlock(&finalizing_mutex);
         /* Wait for one-sided thread to complete */
-        hg_thread_join(mpi_onesided_service);
-        hg_thread_mutex_destroy(&mem_map_mutex);
+        hg_thread_join(progress_service);
+    }
+    hg_thread_mutex_destroy(&finalizing_mutex);
+#endif
 #else
         /* Destroy dynamic window */
         MPI_Win_free(&mpi_dynamic_win);
 #endif
-        MPI_Comm_free(&mpi_addr->onesided_comm);
+        MPI_Comm_free(&mpi_onesided_comm);
         MPI_Comm_disconnect(&mpi_addr->comm);
     }
     free(mpi_addr);
@@ -500,6 +442,7 @@ static int na_mpi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actu
     int mpi_buf_size;
     int mpi_source;
     int mpi_tag;
+    MPI_Comm mpi_unexpected_comm;
     mpi_req_t *mpi_request;
 
     if (!buf) {
@@ -508,7 +451,20 @@ static int na_mpi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actu
         return ret;
     }
 
-    mpi_ret = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, server_remote_addr.comm,
+    /* TODO do that for now until addresses are better handled */
+    if (is_server) {
+        mpi_unexpected_comm = server_remote_addr.comm;
+    } else {
+#if MPI_VERSION < 3
+        mpi_unexpected_comm = mpi_onesided_comm;
+#else
+        NA_ERROR_DEFAULT("Unexpected receive on client not allowed");
+        ret = NA_FAIL;
+        return ret;
+#endif
+    }
+
+    mpi_ret = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, mpi_unexpected_comm,
             &flag, &mpi_status);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Iprobe() failed");
@@ -533,20 +489,17 @@ static int na_mpi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actu
         mpi_addr_t *peer_addr;
         *peer_addr_ptr = malloc(sizeof(mpi_addr_t));
         peer_addr = *peer_addr_ptr;
-        peer_addr->comm = server_remote_addr.comm;
+        peer_addr->comm = mpi_unexpected_comm;
         peer_addr->rank = mpi_source;
         peer_addr->is_reference = 1;
-        peer_addr->onesided_comm = server_remote_addr.onesided_comm;
     }
     if (tag) *tag = mpi_tag;
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
-    mpi_request->ack = 0;
-    mpi_request->ack_request = MPI_REQUEST_NULL;
 
     mpi_ret = MPI_Irecv(buf, mpi_buf_size, MPI_BYTE, mpi_source,
-            mpi_tag, server_remote_addr.comm, &mpi_request->request);
+            mpi_tag, mpi_unexpected_comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");
         ret = NA_FAIL;
@@ -579,10 +532,9 @@ static int na_mpi_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_SEND_OP;
-    mpi_request->ack = 0;
-    mpi_request->ack_request = MPI_REQUEST_NULL;
 
-    mpi_ret = MPI_Isend(mpi_buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, &mpi_request->request);
+    mpi_ret = MPI_Isend(mpi_buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank,
+            mpi_tag, mpi_addr->comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Isend() failed");
         free(mpi_request);
@@ -615,10 +567,9 @@ static int na_mpi_recv(void *buf, na_size_t buf_size, na_addr_t source,
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
-    mpi_request->ack = 0;
-    mpi_request->ack_request = MPI_REQUEST_NULL;
 
-    mpi_ret = MPI_Irecv(mpi_buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank, mpi_tag, mpi_addr->comm, &mpi_request->request);
+    mpi_ret = MPI_Irecv(mpi_buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank,
+            mpi_tag, mpi_addr->comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");
         free(mpi_request);
@@ -814,8 +765,14 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     mpi_addr_t *mpi_remote_addr = (mpi_addr_t*) remote_addr;
     mpi_req_t *mpi_request;
 
-    /* TODO check that local memory is registered */
-    // ht_lookup(mem_map, mpi_local_mem_handle->base);
+#if MPI_VERSION < 3
+    /* Check that local memory is registered */
+    if (!hg_hash_table_lookup(mem_handle_map, mpi_local_mem_handle->base)) {
+        NA_ERROR_DEFAULT("Could not find memory handle, registered?");
+        ret = NA_FAIL;
+        return ret;
+    }
+#endif
 
     if (mpi_remote_mem_handle->attr != NA_MEM_READWRITE) {
         NA_ERROR_DEFAULT("Registered memory requires write permission");
@@ -825,8 +782,6 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_SEND_OP;
-    mpi_request->ack = 0;
-    mpi_request->ack_request = MPI_REQUEST_NULL;
     mpi_request->request = MPI_REQUEST_NULL;
 
 #if MPI_VERSION < 3
@@ -838,23 +793,13 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     onesided_info.op = MPI_ONESIDED_PUT;
 
     MPI_Send(&onesided_info, sizeof(mpi_onesided_info_t), MPI_BYTE, mpi_remote_addr->rank,
-            NA_MPI_ONESIDED_TAG, mpi_remote_addr->onesided_comm);
+            NA_MPI_ONESIDED_TAG, mpi_onesided_comm);
 
-    /* Simply do an asynchronous send */
-    mpi_ret = MPI_Isend(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, NA_MPI_ONESIDED_TAG, mpi_remote_addr->onesided_comm, &mpi_request->request);
+    /* Simply do a non blocking synchronous send */
+    mpi_ret = MPI_Issend(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
+            mpi_remote_addr->rank, NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Isend() failed");
-        free(mpi_request);
-        mpi_request = NULL;
-        ret = NA_FAIL;
-    }
-
-    /* Pre-post an ack request */
-    mpi_ret = MPI_Irecv(&mpi_request->ack, 1, MPI_UNSIGNED_CHAR, mpi_remote_addr->rank,
-            NA_MPI_ONESIDED_ACK_TAG, mpi_remote_addr->onesided_comm, &mpi_request->ack_request);
-    if (mpi_ret != MPI_SUCCESS) {
-        NA_ERROR_DEFAULT("MPI_Irecv() failed");
         free(mpi_request);
         mpi_request = NULL;
         ret = NA_FAIL;
@@ -864,7 +809,7 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     MPI_Win_lock(MPI_LOCK_EXCLUSIVE, mpi_remote_addr->rank, 0, mpi_dynamic_win);
 
     mpi_ret = MPI_Rput(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, mpi_remote_offset, mpi_length, MPI_BYTE, mpi_dynamic_win, mpi_request);
+            mpi_remote_addr->rank, mpi_remote_offset, mpi_length, MPI_BYTE, mpi_dynamic_win, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Rput() failed");
         free(mpi_request);
@@ -904,13 +849,23 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     mpi_addr_t *mpi_remote_addr = (mpi_addr_t*) remote_addr;
     mpi_req_t *mpi_request;
 
-    /* TODO check that local memory is registered */
-    // ht_lookup(mem_map, mpi_local_mem_handle->base);
+#if MPI_VERSION < 3
+    /* Check that local memory is registered */
+    if (!hg_hash_table_lookup(mem_handle_map, mpi_local_mem_handle->base)) {
+        NA_ERROR_DEFAULT("Could not find memory handle, registered?");
+        ret = NA_FAIL;
+        return ret;
+    }
+#endif
+
+    if (mpi_remote_mem_handle->attr != (NA_MEM_READ_ONLY || NA_MEM_READWRITE)) {
+        NA_ERROR_DEFAULT("Registered memory requires read permission");
+        ret = NA_FAIL;
+        return ret;
+    }
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
-    mpi_request->ack = 0;
-    mpi_request->ack_request = MPI_REQUEST_NULL;
     mpi_request->request = MPI_REQUEST_NULL;
 
 #if MPI_VERSION < 3
@@ -922,11 +877,11 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     onesided_info.op = MPI_ONESIDED_GET;
 
     MPI_Send(&onesided_info, sizeof(mpi_onesided_info_t), MPI_BYTE, mpi_remote_addr->rank,
-            NA_MPI_ONESIDED_TAG, mpi_remote_addr->onesided_comm);
+            NA_MPI_ONESIDED_TAG, mpi_onesided_comm);
 
     /* Simply do an asynchronous recv */
     mpi_ret = MPI_Irecv(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, NA_MPI_ONESIDED_TAG, mpi_remote_addr->onesided_comm, &mpi_request->request);
+            mpi_remote_addr->rank, NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");
         free(mpi_request);
@@ -937,7 +892,7 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     MPI_Win_lock(MPI_LOCK_SHARED, mpi_remote_addr->rank, 0, mpi_dynamic_win);
 
     mpi_ret = MPI_Rget(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, mpi_remote_offset, mpi_length, MPI_BYTE, mpi_dynamic_win, mpi_request);
+            mpi_remote_addr->rank, mpi_remote_offset, mpi_length, MPI_BYTE, mpi_dynamic_win, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Rget() failed");
         free(mpi_request);
@@ -1013,17 +968,162 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         status->completed = 1;
     }
 
-    /* If the request needed an ack, TODO wait here for now */
-    if (mpi_request->ack_request != MPI_REQUEST_NULL) {
-        mpi_ret = MPI_Wait(&mpi_request->ack_request, &mpi_status);
-        if (mpi_ret != MPI_SUCCESS) {
-            NA_ERROR_DEFAULT("MPI_Wait() failed");
-            ret = NA_FAIL;
-            return ret;
-        }
-    }
     free(mpi_request);
     mpi_request = NULL;
 
     return ret;
 }
+
+/*---------------------------------------------------------------------------
+ * Function:    na_mpi_progress
+ *
+ * Purpose:     Track completion of RMA operations and make progress
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+#if MPI_VERSION < 3
+static int na_mpi_progress(unsigned int timeout, na_status_t *status)
+{
+    int time_remaining = timeout;
+    int ret = NA_SUCCESS;
+    int mpi_ret;
+
+    /* TODO may want to have it dynamically allocated if multiple threads call
+     * progress on the client but should that happen? */
+    static mpi_onesided_info_t onesided_info;
+    static na_size_t onesided_actual_size = 0;
+    static na_addr_t remote_addr = NA_ADDR_NULL;
+    static na_tag_t remote_tag = 0;
+    static na_request_t onesided_request = NA_REQUEST_NULL;
+    mpi_addr_t *mpi_addr;
+    na_status_t onesided_status;
+    mpi_mem_handle_t *mpi_mem_handle = NULL;
+
+    /* Wait for an initial request from client */
+    if (onesided_request == NA_REQUEST_NULL) {
+        do {
+            struct timeval t1, t2;
+            onesided_actual_size = 0;
+            remote_addr = NA_ADDR_NULL;
+            remote_tag = 0;
+
+            gettimeofday(&t1, NULL);
+
+            ret = na_mpi_recv_unexpected(&onesided_info, sizeof(mpi_onesided_info_t),
+                    &onesided_actual_size, &remote_addr,
+                    &remote_tag, &onesided_request, NULL);
+            if (ret != NA_SUCCESS) {
+                NA_ERROR_DEFAULT("Could not recv buffer");
+                ret = NA_FAIL;
+                return ret;
+            }
+
+            gettimeofday(&t2, NULL);
+            time_remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +
+                    (t2.tv_usec - t1.tv_usec) / 1000;
+
+        } while (time_remaining > 0 && !onesided_actual_size);
+        if (!onesided_actual_size) {
+            /* Timeout reached and has still not received anything */
+            if (status && status != NA_STATUS_IGNORE) {
+                status->completed = 0;
+                status->count = 0;
+            }
+            ret = NA_SUCCESS;
+            return ret;
+        }
+        if (onesided_actual_size != sizeof(onesided_info)) {
+            NA_ERROR_DEFAULT("recv_buf_size does not match onesided_info");
+            ret = NA_FAIL;
+            return ret;
+        }
+    }
+
+    ret = na_mpi_wait(onesided_request, timeout, &onesided_status);
+    if (ret != NA_SUCCESS) {
+        NA_ERROR_DEFAULT("Error while waiting");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    if (!onesided_status.completed) {
+        if (status && status != NA_STATUS_IGNORE) {
+            status->completed = 0;
+            status->count = 0;
+        }
+        ret = NA_SUCCESS;
+        return ret;
+    } else {
+        onesided_request = NA_REQUEST_NULL;
+    }
+
+    if (remote_tag != NA_MPI_ONESIDED_TAG) {
+        NA_ERROR_DEFAULT("Bad remote tag");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    /* Here better to keep the mutex locked the time we operate on
+     * mpi_mem_handle since it's a pointer to a mem_handle */
+    hg_thread_mutex_lock(&mem_map_mutex);
+
+    mpi_mem_handle = hg_hash_table_lookup(mem_handle_map, onesided_info.base);
+
+    if (!mpi_mem_handle) {
+        NA_ERROR_DEFAULT("Could not find memory handle, registered?");
+        hg_thread_mutex_unlock(&mem_map_mutex);
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    mpi_addr = (mpi_addr_t*) remote_addr;
+
+    switch (onesided_info.op) {
+
+        /* Remote wants to do a put so wait in a recv */
+        case MPI_ONESIDED_PUT:
+            mpi_ret = MPI_Recv(mpi_mem_handle->base + onesided_info.disp,
+                    onesided_info.count, MPI_BYTE, mpi_addr->rank,
+                    NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm, MPI_STATUS_IGNORE);
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_ERROR_DEFAULT("Could not recv data");
+                ret = NA_FAIL;
+            }
+            break;
+
+            /* Remote wants to do a get so do a send */
+        case MPI_ONESIDED_GET:
+            mpi_ret = MPI_Send(mpi_mem_handle->base + onesided_info.disp,
+                    onesided_info.count, MPI_BYTE, mpi_addr->rank,
+                    NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm);
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_ERROR_DEFAULT("Could not send data");
+                ret = NA_FAIL;
+            }
+            break;
+
+        default:
+            NA_ERROR_DEFAULT("Operation not supported");
+            break;
+    }
+
+    hg_thread_mutex_unlock(&mem_map_mutex);
+
+    if (status && status != NA_STATUS_IGNORE) {
+        status->completed = 1;
+        status->count = onesided_info.count;
+    }
+    na_mpi_addr_free(remote_addr);
+    remote_addr = NA_ADDR_NULL;
+
+    return ret;
+}
+#else
+static int na_mpi_progress(unsigned int timeout, na_status_t *status)
+{
+    NA_ERROR_DEFAULT("Not implemented");
+    return NA_FAIL;
+}
+#endif
