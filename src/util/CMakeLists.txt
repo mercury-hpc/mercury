@@ -40,6 +40,9 @@ else(MERCURY_CREATE_SINGLE_LIB)
   add_library(mercury_util ${MERCURY_UTIL_SRCS})
   target_link_libraries(mercury_util ${MERCURY_UTIL_EXT_DEPENCIES})
   set_lib_options(mercury_util "mercury_util" ${MERCURY_LIBTYPE})
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(mercury_util)
+  endif(MERCURY_ENABLE_COVERAGE)
 
   #---------------------------------------------------------------------------
   # Add Target(s) to CMake Install

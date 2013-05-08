@@ -117,6 +117,25 @@ macro(set_lib_options libtarget libname libtype)
 endmacro(set_lib_options)
 
 #-----------------------------------------------------------------------------
+# Coverage
+#-----------------------------------------------------------------------------
+option(MERCURY_ENABLE_COVERAGE "Enable coverage." OFF)
+if(MERCURY_ENABLE_COVERAGE)
+  set(COVERAGE_FLAGS "-fprofile-arcs -ftest-coverage" CACHE STRING
+    "Flags to the coverage program that CTest uses to perform coverage inspection"
+  )
+  mark_as_advanced(COVERAGE_FLAGS)
+endif(MERCURY_ENABLE_COVERAGE)
+
+macro(set_coverage_flags target)
+  set_target_properties(${target}
+    PROPERTIES
+      COMPILE_FLAGS ${COVERAGE_FLAGS}
+      LINK_FLAGS ${COVERAGE_FLAGS}
+  )
+endmacro(set_coverage_flags)
+
+#-----------------------------------------------------------------------------
 # Source
 #-----------------------------------------------------------------------------
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src)

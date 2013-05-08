@@ -116,6 +116,9 @@ endif(MERCURY_CREATE_SINGLE_LIB)
 add_library(mercury ${MERCURY_SRCS})
 target_link_libraries(mercury ${MERCURY_EXPORTED_LIBS} ${MERCURY_EXT_DEPENCIES})
 set_lib_options(mercury "mercury" ${MERCURY_LIBTYPE})
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(mercury)
+endif(MERCURY_ENABLE_COVERAGE)
 
 set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} mercury)
 
