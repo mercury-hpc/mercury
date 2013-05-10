@@ -37,6 +37,10 @@ typedef struct na_status {
 
 typedef void * na_mem_handle_t;
 typedef ptrdiff_t na_offset_t;
+typedef struct na_segment {
+    void      *address; /* address of the segment */
+    na_size_t  size;    /* size of the segment in bytes */
+} na_segment_t;
 
 #define NA_MEM_HANDLE_NULL ((na_mem_handle_t)0)
 
@@ -45,13 +49,15 @@ typedef ptrdiff_t na_offset_t;
 #define NA_MEM_READ_ONLY  0x01
 
 typedef struct na_class {
-    /*  Lookup callbacks */
+    /* Finalize callback */
     int (*finalize)(void);
-    na_size_t (*get_unexpected_size)(void);
+
+    /* Addr callbacks */
     int (*addr_lookup)(const char *name, na_addr_t *addr);
     int (*addr_free)(na_addr_t addr);
 
     /* Metadata callbacks */
+    na_size_t (*get_unexpected_size)(void);
     int (*send_unexpected)(const void *buf, na_size_t buf_size, na_addr_t dest,
             na_tag_t tag, na_request_t *request, void *op_arg);
     int (*recv_unexpected)(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
@@ -64,12 +70,19 @@ typedef struct na_class {
     /* Bulk data callbacks */
     int (*mem_register)(void *buf, na_size_t buf_size, unsigned long flags,
             na_mem_handle_t *mem_handle);
+    int (*mem_register_segments)(na_segment_t *segments, na_size_t segment_count,
+            unsigned long flags, na_mem_handle_t *mem_handle);
     int (*mem_deregister)(na_mem_handle_t mem_handle);
+
+    /* Bulk handle serialization callbacks */
+    na_size_t (*mem_handle_get_serialize_size)(void);
     int (*mem_handle_serialize)(void *buf, na_size_t buf_size,
             na_mem_handle_t mem_handle);
     int (*mem_handle_deserialize)(na_mem_handle_t *mem_handle,
             const void *buf, na_size_t buf_size);
     int (*mem_handle_free)(na_mem_handle_t mem_handle);
+
+    /* Bulk transfer callbacks */
     int (*put)(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
             na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
             na_size_t length, na_addr_t remote_addr, na_request_t *request);
@@ -89,9 +102,6 @@ extern "C" {
 /* Finalize the network abstraction layer */
 int NA_Finalize(na_class_t *network_class);
 
-/* Get the maximum size of an unexpected message */
-na_size_t NA_Get_unexpected_size(na_class_t *network_class);
-
 /* Lookup an addr from a peer address/name */
 int NA_Addr_lookup(na_class_t *network_class,
         const char *name, na_addr_t *addr);
@@ -99,6 +109,9 @@ int NA_Addr_lookup(na_class_t *network_class,
 /* Free the addr from the list of peers */
 int NA_Addr_free(na_class_t *network_class,
         na_addr_t addr);
+
+/* Get the maximum size of an unexpected message */
+na_size_t NA_Get_unexpected_size(na_class_t *network_class);
 
 /* Send a message to dest (unexpected asynchronous) */
 int NA_Send_unexpected(na_class_t *network_class,
@@ -125,9 +138,17 @@ int NA_Mem_register(na_class_t *network_class,
         void *buf, na_size_t buf_size, unsigned long flags,
         na_mem_handle_t *mem_handle);
 
+/* Register segmented memory for RMA operations */
+int NA_Mem_register_segments(na_class_t *network_class,
+        na_segment_t *segments, na_size_t segment_count, unsigned long flags,
+        na_mem_handle_t *mem_handle);
+
 /* Deregister memory */
 int NA_Mem_deregister(na_class_t *network_class,
         na_mem_handle_t mem_handle);
+
+/* Get size required to serialize handle */
+na_size_t NA_Mem_handle_get_serialize_size(na_class_t *network_class);
 
 /* Serialize memory handle for exchange over the network */
 int NA_Mem_handle_serialize(na_class_t *network_class,

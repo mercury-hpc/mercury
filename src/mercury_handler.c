@@ -264,6 +264,7 @@ static int hg_handler_process_extra_recv_buf(hg_proc_t proc, hg_handle_t handle)
 
     hg_bulk_t extra_buf_handle = HG_BULK_NULL;
     hg_bulk_block_t extra_buf_block_handle = HG_BULK_BLOCK_NULL;
+    hg_bulk_request_t extra_buf_request;
 
     ret = hg_proc_hg_bulk_t(proc, &extra_buf_handle);
     if (ret != HG_SUCCESS) {
@@ -286,14 +287,15 @@ static int hg_handler_process_extra_recv_buf(hg_proc_t proc, hg_handle_t handle)
     }
 
     /* Read bulk data here and wait for the data to be here  */
-    ret = HG_Bulk_read(extra_buf_handle, priv_handle->addr, extra_buf_block_handle);
+    ret = HG_Bulk_read_all(priv_handle->addr, extra_buf_handle,
+            extra_buf_block_handle, &extra_buf_request);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not read bulk data");
         ret = HG_FAIL;
         goto done;
     }
 
-    ret = HG_Bulk_wait(extra_buf_block_handle, HG_BULK_MAX_IDLE_TIME);
+    ret = HG_Bulk_wait(extra_buf_request, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not complete bulk data read");
         ret = HG_FAIL;
@@ -450,7 +452,7 @@ void HG_Handler_register(const char *func_name,
  *
  *---------------------------------------------------------------------------
  */
-const na_addr_t HG_Handler_get_addr (hg_handle_t handle)
+na_addr_t HG_Handler_get_addr (hg_handle_t handle)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     na_addr_t ret = NULL;
@@ -541,7 +543,7 @@ int HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
  */
 int HG_Handler_process(unsigned int timeout, hg_status_t *status)
 {
-    unsigned int time_remaining = timeout;
+    int time_remaining = timeout;
     hg_priv_handle_t *priv_handle = NULL;
     hg_proc_info_t   *proc_info;
 

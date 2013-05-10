@@ -136,12 +136,6 @@ hg_list_entry_t *hg_list_nth_entry(hg_list_entry_t *list, unsigned int n)
 	hg_list_entry_t *entry;
 	unsigned int i;
 
-	/* Negative values are always out of range */
-
-	if (n < 0) {
-		return NULL;
-	}
-
 	/* Iterate through n list entries to reach the desired entry.
 	 * Make sure we do not reach the end of the list. */
 

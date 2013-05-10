@@ -80,6 +80,20 @@ if(MERCURY_ENABLE_COVERAGE)
 endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
+# Non-contiguous bulk data shipper test
+add_executable(client_bds_seg client_bds_seg.c)
+target_link_libraries(client_bds_seg mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(client_bds_seg)
+endif(MERCURY_ENABLE_COVERAGE)
+
+add_executable(server_bds_seg server_bds_seg.c)
+target_link_libraries(server_bds_seg mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(server_bds_seg)
+endif(MERCURY_ENABLE_COVERAGE)
+
+#------------------------------------------------------------------------------
 # POSIX test
 add_executable(client_posix client_posix.c)
 target_link_libraries(client_posix mercury_test)
@@ -99,6 +113,7 @@ set(MERCURY_tests
   fs
   na
   bds
+  bds_seg
   posix
 )
 foreach(MERCURY_test ${MERCURY_tests})

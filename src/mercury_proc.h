@@ -456,33 +456,49 @@ HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-    char buf[HG_BULK_MAX_HANDLE_SIZE];
+    char *buf;
+    uint32_t buf_size;
 
     switch (priv_proc->op) {
         case HG_ENCODE:
-            ret = HG_Bulk_handle_serialize(buf, HG_BULK_MAX_HANDLE_SIZE, *handle);
+            buf_size = HG_Bulk_handle_get_serialize_size(*handle);
+            buf = malloc(buf_size);
+            ret = HG_Bulk_handle_serialize(buf, buf_size, *handle);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Could not serialize bulk handle");
                 ret = HG_FAIL;
                 break;
             }
-            ret = hg_proc_raw(proc, buf, HG_BULK_MAX_HANDLE_SIZE);
+            ret = hg_proc_uint32_t(proc, &buf_size);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
             }
+            ret = hg_proc_raw(proc, buf, buf_size);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Proc error");
+                ret = HG_FAIL;
+            }
+            free(buf);
             break;
         case HG_DECODE:
-            ret = hg_proc_raw(proc, buf, HG_BULK_MAX_HANDLE_SIZE);
+            ret = hg_proc_uint32_t(proc, &buf_size);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
             }
-            ret = HG_Bulk_handle_deserialize(handle, buf, HG_BULK_MAX_HANDLE_SIZE);
+            buf = malloc(buf_size);
+            ret = hg_proc_raw(proc, buf, buf_size);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Proc error");
+                ret = HG_FAIL;
+            }
+            ret = HG_Bulk_handle_deserialize(handle, buf, buf_size);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Could not deserialize bulk handle");
                 ret = HG_FAIL;
             }
+            free(buf);
             break;
         case HG_FREE:
             ret = HG_Bulk_handle_free(*handle);

@@ -28,21 +28,6 @@ int NA_Finalize(na_class_t *network_class)
 }
 
 /*---------------------------------------------------------------------------
- * Function:    NA_Get_unexpected_size
- *
- * Purpose:     Get the maximum size of an unexpected message
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-na_size_t NA_Get_unexpected_size(na_class_t *network_class)
-{
-    assert(network_class);
-    return network_class->get_unexpected_size();
-}
-
-/*---------------------------------------------------------------------------
  * Function:    NA_Addr_lookup
  *
  * Purpose:     Lookup an addr from a peer address/name
@@ -71,6 +56,19 @@ int NA_Addr_free(na_class_t *network_class, na_addr_t addr)
 {
     assert(network_class);
     return network_class->addr_free(addr);
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    NA_Get_unexpected_size
+ *
+ * Purpose:     Get the maximum size of an unexpected message
+ *
+ *---------------------------------------------------------------------------
+ */
+na_size_t NA_Get_unexpected_size(na_class_t *network_class)
+{
+    assert(network_class);
+    return network_class->get_unexpected_size();
 }
 
 /*---------------------------------------------------------------------------
@@ -159,6 +157,25 @@ int NA_Mem_register(na_class_t *network_class,
 }
 
 /*---------------------------------------------------------------------------
+ * Function:    NA_Mem_register_segments
+ *
+ * Purpose:     Register segmented memory for RMA operations
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int NA_Mem_register_segments(na_class_t *network_class,
+        na_segment_t *segments, na_size_t segment_count, unsigned long flags,
+        na_mem_handle_t *mem_handle)
+{
+    assert(network_class);
+    return network_class->mem_register_segments(segments, segment_count, flags,
+            mem_handle);
+}
+
+
+/*---------------------------------------------------------------------------
  * Function:    NA_Mem_deregister
  *
  * Purpose:     Deregister memory
@@ -172,6 +189,19 @@ int NA_Mem_deregister(na_class_t *network_class,
 {
     assert(network_class);
     return network_class->mem_deregister(mem_handle);
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    NA_Mem_handle_get_serialize_size
+ *
+ * Purpose:     Get size required to serialize handle
+ *
+ *---------------------------------------------------------------------------
+ */
+na_size_t NA_Mem_handle_get_serialize_size(na_class_t *network_class)
+{
+    assert(network_class);
+    return network_class->mem_handle_get_serialize_size();
 }
 
 /*---------------------------------------------------------------------------

@@ -36,7 +36,7 @@ void HG_Handler_register(const char *func_name,
         int (*enc_routine)(hg_proc_t proc, void *out_struct));
 
 /* Get remote addr from handle */
-const na_addr_t HG_Handler_get_addr(hg_handle_t handle);
+na_addr_t HG_Handler_get_addr(hg_handle_t handle);
 
 /* Get input from handle */
 int HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf, size_t *in_buf_size);

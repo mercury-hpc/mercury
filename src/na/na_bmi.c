@@ -25,9 +25,9 @@
 #include <unistd.h>
 
 static int na_bmi_finalize(void);
-static na_size_t na_bmi_get_unexpected_size(void);
 static int na_bmi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_bmi_addr_free(na_addr_t addr);
+static na_size_t na_bmi_get_unexpected_size(void);
 static int na_bmi_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 static int na_bmi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
@@ -38,6 +38,7 @@ static int na_bmi_recv(void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg);
 static int na_bmi_mem_register(void *buf, na_size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle);
 static int na_bmi_mem_deregister(na_mem_handle_t mem_handle);
+static na_size_t na_bmi_mem_handle_get_serialize_size(void);
 static int na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_handle);
 static int na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
 static int na_bmi_mem_handle_free(na_mem_handle_t mem_handle);
@@ -52,15 +53,17 @@ static int na_bmi_progress(unsigned int timeout, na_status_t *status);
 
 static na_class_t na_bmi_g = {
         na_bmi_finalize,               /* finalize */
-        na_bmi_get_unexpected_size,    /* get_unexpected_size */
         na_bmi_addr_lookup,            /* addr_lookup */
         na_bmi_addr_free,              /* addr_free */
+        na_bmi_get_unexpected_size,    /* get_unexpected_size */
         na_bmi_send_unexpected,        /* send_unexpected */
         na_bmi_recv_unexpected,        /* recv_unexpected */
         na_bmi_send,                   /* send */
         na_bmi_recv,                   /* recv */
         na_bmi_mem_register,           /* mem_register */
+        NULL,                          /* mem_register_segments */
         na_bmi_mem_deregister,         /* mem_deregister */
+        na_bmi_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
         na_bmi_mem_handle_serialize,   /* mem_handle_serialize */
         na_bmi_mem_handle_deserialize, /* mem_handle_deserialize */
         na_bmi_mem_handle_free,        /* mem_handle_free */
@@ -261,19 +264,6 @@ static int na_bmi_finalize(void)
 }
 
 /*---------------------------------------------------------------------------
- * Function:    na_bmi_get_unexpected_size
- *
- * Purpose:     Get the maximum size of an unexpected message
- *
- *---------------------------------------------------------------------------
- */
-static na_size_t na_bmi_get_unexpected_size()
-{
-    na_size_t max_unexpected_size = NA_BMI_UNEXPECTED_SIZE;
-    return max_unexpected_size;
-}
-
-/*---------------------------------------------------------------------------
  * Function:    na_bmi_addr_lookup
  *
  * Purpose:     addr_lookup a addr from a peer address/name
@@ -326,6 +316,19 @@ static int na_bmi_addr_free(na_addr_t addr)
         ret = NA_FAIL;
     }
     return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    na_bmi_get_unexpected_size
+ *
+ * Purpose:     Get the maximum size of an unexpected message
+ *
+ *---------------------------------------------------------------------------
+ */
+static na_size_t na_bmi_get_unexpected_size()
+{
+    na_size_t max_unexpected_size = NA_BMI_UNEXPECTED_SIZE;
+    return max_unexpected_size;
 }
 
 /*---------------------------------------------------------------------------
@@ -631,6 +634,18 @@ static int na_bmi_mem_deregister(na_mem_handle_t mem_handle)
 }
 
 /*---------------------------------------------------------------------------
+ * Function:    na_bmi_mem_handle_get_serialize_size
+ *
+ * Purpose:     Get size required to serialize handle
+ *
+ *---------------------------------------------------------------------------
+ */
+static na_size_t na_bmi_mem_handle_get_serialize_size(void)
+{
+    return sizeof(bmi_mem_handle_t);
+}
+
+/*---------------------------------------------------------------------------
  * Function:    na_bmi_mem_handle_serialize
  *
  * Purpose:     Serialize memory handle for exchange over the network
@@ -812,6 +827,12 @@ static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
     /* Check that local memory is registered */
     if (!hg_hash_table_lookup(mem_handle_map, bmi_local_mem_handle->base)) {
         NA_ERROR_DEFAULT("Could not find memory handle, registered?");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    if (bmi_remote_mem_handle->attr != (NA_MEM_READ_ONLY || NA_MEM_READWRITE)) {
+        NA_ERROR_DEFAULT("Registered memory requires read permission");
         ret = NA_FAIL;
         return ret;
     }

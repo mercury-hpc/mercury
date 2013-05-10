@@ -354,9 +354,10 @@ int main(int argc, char *argv[])
     int *read_buf = NULL;
     int *write_buf = NULL;
     size_t n_ints = 1024*1024;
-    int i, error = 0;
+    unsigned int i;
+    int error = 0;
     int rank;
-    size_t nbyte;
+    ssize_t nbyte;
 
     printf("Initializing...\n");
 

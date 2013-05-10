@@ -20,9 +20,9 @@
 #include <sys/time.h>
 
 static int na_mpi_finalize(void);
-static na_size_t na_mpi_get_unexpected_size(void);
 static int na_mpi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_mpi_addr_free(na_addr_t addr);
+static na_size_t na_mpi_get_unexpected_size(void);
 static int na_mpi_send_unexpected(const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg);
 static int na_mpi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
@@ -34,6 +34,7 @@ static int na_mpi_recv(void *buf, na_size_t buf_size, na_addr_t source,
 static int na_mpi_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
         na_mem_handle_t *mem_handle);
 static int na_mpi_mem_deregister(na_mem_handle_t mem_handle);
+static na_size_t na_mpi_mem_handle_get_serialize_size(void);
 static int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_handle);
 static int na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
 static int na_mpi_mem_handle_free(na_mem_handle_t mem_handle);
@@ -49,15 +50,17 @@ static int na_mpi_progress(unsigned int timeout, na_status_t *status);
 
 static na_class_t na_mpi_g = {
         na_mpi_finalize,               /* finalize */
-        na_mpi_get_unexpected_size,    /* get_unexpected_size */
         na_mpi_addr_lookup,            /* addr_lookup */
         na_mpi_addr_free,              /* addr_free */
+        na_mpi_get_unexpected_size,    /* get_unexpected_size */
         na_mpi_send_unexpected,        /* send_unexpected */
         na_mpi_recv_unexpected,        /* recv_unexpected */
         na_mpi_send,                   /* send */
         na_mpi_recv,                   /* recv */
         na_mpi_mem_register,           /* mem_register */
+        NULL,                          /* mem_register_segments */
         na_mpi_mem_deregister,         /* mem_deregister */
+        na_mpi_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
         na_mpi_mem_handle_serialize,   /* mem_handle_serialize */
         na_mpi_mem_handle_deserialize, /* mem_handle_deserialize */
         na_mpi_mem_handle_free,        /* mem_handle_free */
@@ -667,6 +670,18 @@ int na_mpi_mem_deregister(na_mem_handle_t mem_handle)
 }
 
 /*---------------------------------------------------------------------------
+ * Function:    na_mpi_mem_handle_get_serialize_size
+ *
+ * Purpose:     Get size required to serialize handle
+ *
+ *---------------------------------------------------------------------------
+ */
+static na_size_t na_mpi_mem_handle_get_serialize_size(void)
+{
+    return sizeof(mpi_mem_handle_t);
+}
+
+/*---------------------------------------------------------------------------
  * Function:    na_mpi_mem_handle_serialize
  *
  * Purpose:     Serialize memory handle for exchange over the network
@@ -688,6 +703,7 @@ int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size,
         /* Here safe to do a simple memcpy */
         /* TODO may also want to add a checksum or something */
         memcpy(buf, mpi_mem_handle, sizeof(mpi_mem_handle_t));
+        fprintf(stderr, "MPI mem handle base: %lu, size: %lu\n", (long unsigned)mpi_mem_handle->base, mpi_mem_handle->size);
     }
     return ret;
 }
@@ -715,6 +731,7 @@ int na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
         /* Here safe to do a simple memcpy */
         memcpy(mpi_mem_handle, buf, sizeof(mpi_mem_handle_t));
         *mem_handle = (na_mem_handle_t) mpi_mem_handle;
+        fprintf(stderr, "MPI mem handle base: %lu, size: %lu\n", (long unsigned)mpi_mem_handle->base, mpi_mem_handle->size);
     }
     return ret;
 }
@@ -932,6 +949,7 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         return ret;
     }
 
+    fprintf(stderr, "request type: %d\n", mpi_request->type);
     if (timeout == 0) {
         int mpi_flag = 0;
         mpi_ret = MPI_Test(&mpi_request->request, &mpi_flag, &mpi_status);

@@ -124,6 +124,7 @@ int server_posix_write(hg_handle_t handle)
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     hg_bulk_block_t bulk_block_handle = HG_BULK_BLOCK_NULL;
+    hg_bulk_request_t bulk_request;
 
     int fd;
     void *buf;
@@ -144,19 +145,19 @@ int server_posix_write(hg_handle_t handle)
     bulk_handle = write_in_struct.bulk_handle;
     fd = write_in_struct.fd;
 
-    /* Read bulk data here and wait for the data to be here  */
+    /* Read bulk data here and wait for the data to be here */
     count = HG_Bulk_handle_get_size(bulk_handle);
     buf = malloc(count);
 
     HG_Bulk_block_handle_create(buf, count, HG_BULK_READWRITE, &bulk_block_handle);
 
-    hg_ret = HG_Bulk_read(bulk_handle, source, bulk_block_handle);
+    hg_ret = HG_Bulk_read_all(source, bulk_handle, bulk_block_handle, &bulk_request);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return hg_ret;
     }
 
-    hg_ret = HG_Bulk_wait(bulk_block_handle, HG_BULK_MAX_IDLE_TIME);
+    hg_ret = HG_Bulk_wait(bulk_request, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not complete bulk data read\n");
         return hg_ret;
@@ -164,7 +165,7 @@ int server_posix_write(hg_handle_t handle)
 
     /* Check bulk buf */
     buf_ptr = buf;
-    for (i = 0; i < (count / sizeof(int)); i++) {
+    for (i = 0; i < (int)(count / sizeof(int)); i++) {
         if (buf_ptr[i] != i) {
             printf("Error detected in bulk transfer, buf[%d] = %d, was expecting %d!\n", i, buf_ptr[i], i);
             break;
@@ -206,6 +207,7 @@ int server_posix_read(hg_handle_t handle)
     na_addr_t dest = HG_Handler_get_addr(handle);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     hg_bulk_block_t bulk_block_handle = HG_BULK_BLOCK_NULL;
+    hg_bulk_request_t bulk_request;
 
     int fd;
     void *buf;
@@ -235,7 +237,7 @@ int server_posix_read(hg_handle_t handle)
 
     /* Check bulk buf */
     buf_ptr = buf;
-    for (i = 0; i < (count / sizeof(int)); i++) {
+    for (i = 0; i < (int)(count / sizeof(int)); i++) {
         if (buf_ptr[i] != i) {
             printf("Error detected after read, buf[%d] = %d, was expecting %d!\n", i, buf_ptr[i], i);
             break;
@@ -245,14 +247,14 @@ int server_posix_read(hg_handle_t handle)
     /* Create a new block handle to write the data */
     HG_Bulk_block_handle_create(buf, ret, HG_BULK_READ_ONLY, &bulk_block_handle);
 
-    /* Write bulk data here and wait for the data to be there  */
-    hg_ret = HG_Bulk_write(bulk_handle, dest, bulk_block_handle);
+    /* Write bulk data here and wait for the data to be there */
+    hg_ret = HG_Bulk_write_all(dest, bulk_handle, bulk_block_handle, &bulk_request);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not write bulk data\n");
         return hg_ret;
     }
 
-    hg_ret = HG_Bulk_wait(bulk_block_handle, HG_BULK_MAX_IDLE_TIME);
+    hg_ret = HG_Bulk_wait(bulk_request, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not complete bulk data write\n");
         return hg_ret;
