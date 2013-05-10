@@ -19,16 +19,16 @@ set(MERCURY_PACKAGE_TARNAME "${MERCURY_PACKAGE}")
 # Setup install and output Directories
 #------------------------------------------------------------------------------
 if(NOT MERCURY_INSTALL_BIN_DIR)
-  set(MERCURY_INSTALL_BIN_DIR bin)
+  set(MERCURY_INSTALL_BIN_DIR ${CMAKE_INSTALL_PREFIX}/bin)
 endif(NOT MERCURY_INSTALL_BIN_DIR)
 if(NOT MERCURY_INSTALL_LIB_DIR)
-  set(MERCURY_INSTALL_LIB_DIR lib)
+  set(MERCURY_INSTALL_LIB_DIR ${CMAKE_INSTALL_PREFIX}/lib)
 endif(NOT MERCURY_INSTALL_LIB_DIR)
 if(NOT MERCURY_INSTALL_INCLUDE_DIR)
   set(MERCURY_INSTALL_INCLUDE_DIR ${CMAKE_INSTALL_PREFIX}/include)
 endif(NOT MERCURY_INSTALL_INCLUDE_DIR)
 if(NOT MERCURY_INSTALL_DATA_DIR)
-  set(MERCURY_INSTALL_DATA_DIR share)
+  set(MERCURY_INSTALL_DATA_DIR ${CMAKE_INSTALL_PREFIX}/share)
 endif(NOT MERCURY_INSTALL_DATA_DIR)
 
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
@@ -186,6 +186,21 @@ install(
     ${MERCURY_BINARY_DIR}/CMakeFiles/mercury-config-version.cmake
   DESTINATION
     ${MERCURY_INSTALL_DATA_DIR}/cmake/mercury
+)
+
+#-----------------------------------------------------------------------------
+# For automake compatibility, also a provide a pkgconfig file
+#-----------------------------------------------------------------------------
+configure_file(
+  ${MERCURY_SOURCE_DIR}/CMake/mercury.pc.in
+  ${MERCURY_BINARY_DIR}/CMakeFiles/mercury.pc @ONLY
+)
+
+install(
+  FILES
+    ${MERCURY_BINARY_DIR}/CMakeFiles/mercury.pc
+  DESTINATION
+    ${MERCURY_INSTALL_DATA_DIR}/pkgconfig
 )
 
 #-----------------------------------------------------------------------------

@@ -16,7 +16,7 @@ endif(BUILD_SHARED_LIBS)
 # mercury_util
 include_directories(${MERCURY_SOURCE_DIR}/src/util)
 if(NOT MERCURY_CREATE_SINGLE_LIB)
-  set(NA_EXT_DEPENCIES ${NA_EXT_DEPENCIES} mercury_util)
+  set(NA_EXT_LIB_DEPENDENCIES ${NA_EXT_LIB_DEPENDENCIES} mercury_util)
 endif(NOT MERCURY_CREATE_SINGLE_LIB)
 
 # BMI
@@ -27,9 +27,13 @@ if(NA_USE_BMI)
     set(NA_PLUGINS ${NA_PLUGINS} bmi)
     set(NA_HAS_BMI 1)
     include_directories(${BMI_INCLUDE_DIR})
-    set(NA_EXT_DEPENCIES
-      ${NA_EXT_DEPENCIES}
+    set(NA_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
       ${BMI_LIBRARIES}
+    )
+    set(NA_EXT_INCLUDE_DEPENDENCIES
+      ${NA_EXT_INCLUDE_DEPENDENCIES}
+      ${BMI_INCLUDE_DIR}
     )
     include(CheckCSourceCompiles)
     check_c_source_compiles("#include <bmi.h>
@@ -50,9 +54,13 @@ if(NA_USE_MPI)
     set(NA_HAS_MPI 1)
     set(NA_PLUGINS ${NA_PLUGINS} mpi)
     include_directories(${MPI_INCLUDE_PATH})
-    set(NA_EXT_DEPENCIES
-      ${NA_EXT_DEPENCIES}
+    set(NA_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
       ${MPI_LIBRARIES}
+    )
+    set(NA_EXT_INCLUDE_DEPENDENCIES
+      ${NA_EXT_INCLUDE_DEPENDENCIES}
+      ${MPI_INCLUDE_PATH}
     )
   # we may want to add an option for MPI_VERSION >= 3
   else(MPI_FOUND)
@@ -60,11 +68,6 @@ if(NA_USE_MPI)
   endif(MPI_FOUND)
 endif(NA_USE_MPI)
 
-set(NA_PLUGINS ${NA_PLUGINS} PARENT_SCOPE)
-set(NA_DEP_INCLUDE_DIRS ${BMI_INCLUDE_DIR} ${MPI_INCLUDE_PATH} PARENT_SCOPE)
-if(MERCURY_CREATE_SINGLE_LIB)
-  set(NA_DEP_LIBRARIES ${NA_EXT_DEPENCIES} PARENT_SCOPE)
-endif(MERCURY_CREATE_SINGLE_LIB)
 
 option(NA_USE_CLIENT_THREAD "Allow use of thread for making progress on client." ON)
 if(NA_USE_CLIENT_THREAD)
@@ -116,7 +119,7 @@ else(MERCURY_CREATE_SINGLE_LIB)
   #----------------------------------------------------------------------------
   # NA
   add_library(na ${NA_SRCS})
-  target_link_libraries(na ${NA_EXT_DEPENCIES})
+  target_link_libraries(na ${NA_EXT_LIB_DEPENDENCIES})
   set_lib_options(na "na" ${NA_LIBTYPE})
   if(MERCURY_ENABLE_COVERAGE)
     set_coverage_flags(na)
@@ -170,3 +173,10 @@ install(
   COMPONENT
     headers
 )
+
+#------------------------------------------------------------------------------
+# Set variables for parent scope
+#------------------------------------------------------------------------------
+set(NA_PLUGINS ${NA_PLUGINS} PARENT_SCOPE)
+set(NA_EXT_INCLUDE_DEPENDENCIES ${NA_EXT_INCLUDE_DEPENDENCIES} PARENT_SCOPE)
+set(NA_EXT_LIB_DEPENDENCIES ${NA_EXT_LIB_DEPENDENCIES} PARENT_SCOPE)

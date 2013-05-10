@@ -1,0 +1,14 @@
+# This gives access to the mercury header files
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=@CMAKE_INSTALL_PREFIX@
+libdir=@MERCURY_INSTALL_LIB_DIR@
+includedir=@MERCURY_INSTALL_INCLUDE_DIR@
+
+Name: mercury
+Description: The Function Shipper for I/O Forwarding
+Version: @MERCURY_PACKAGE_VERSION@
+URL: http://trac.mcs.anl.gov/projects/mercury
+Requires:
+Libs: -L${libdir} @MERCURY_LIBRARIES@
+Libs.private: @MERCURY_LIB_DEPENDENCIES@
+Cflags: -I${includedir} @MERCURY_INCLUDE_DEPENDENCIES@

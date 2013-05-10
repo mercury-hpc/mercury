@@ -37,7 +37,10 @@ if(MERCURY_USE_XDR)
   set(MERCURY_HAS_XDR 1)
 endif(MERCURY_USE_XDR)
 
-set(MERCURY_DEP_INCLUDE_DIRS ${Boost_INCLUDE_DIRS})
+set(MERCURY_EXT_INCLUDE_DEPENDENCIES
+  ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+  ${Boost_INCLUDE_DIRS}
+  )
 
 #------------------------------------------------------------------------------
 # Internal dependencies
@@ -54,16 +57,20 @@ endif(NOT MERCURY_CREATE_SINGLE_LIB)
 
 # NA
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
-set(NA_PLUGINS ${NA_PLUGINS} PARENT_SCOPE)
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/na
   ${CMAKE_CURRENT_BINARY_DIR}/na
 )
+set(MERCURY_EXT_INCLUDE_DEPENDENCIES
+  ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+  ${NA_EXT_INCLUDE_DEPENDENCIES}
+  )
 if(NOT MERCURY_CREATE_SINGLE_LIB)
   set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} na)
 else(NOT MERCURY_CREATE_SINGLE_LIB)
-  include_directories(${NA_DEP_INCLUDE_DIRS})
+  include_directories(${NA_EXT_INCLUDE_DEPENDENCIES})
 endif(NOT MERCURY_CREATE_SINGLE_LIB)
+
 
 #------------------------------------------------------------------------------
 # Configure module header files
@@ -81,18 +88,6 @@ include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-# Used by config.cmake and Testing
-set(MERCURY_INCLUDES_BUILD_TIME
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_CURRENT_BINARY_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/na
-  ${CMAKE_CURRENT_BINARY_DIR}/na
-  ${CMAKE_CURRENT_SOURCE_DIR}/util
-  ${NA_DEP_INCLUDE_DIRS}
-  ${MERCURY_DEP_INCLUDE_DIRS}
-  PARENT_SCOPE
-)
-
 set(MERCURY_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_handler.c
@@ -106,21 +101,21 @@ set(MERCURY_SRCS
 # MERCURY
 if(MERCURY_CREATE_SINGLE_LIB)
   set(MERCURY_SRCS ${MERCURY_SRCS} ${MERCURY_UTIL_SRCS} ${NA_SRCS})
-  set(MERCURY_EXT_DEPENCIES
-    ${MERCURY_EXT_DEPENCIES}
-    ${NA_DEP_LIBRARIES}
-    ${MERCURY_UTIL_DEP_LIBRARIES}
+  set(MERCURY_EXT_LIB_DEPENDENCIES
+    ${MERCURY_EXT_LIB_DEPENDENCIES}
+    ${NA_EXT_LIB_DEPENDENCIES}
+    ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
   )
 endif(MERCURY_CREATE_SINGLE_LIB)
 
 add_library(mercury ${MERCURY_SRCS})
-target_link_libraries(mercury ${MERCURY_EXPORTED_LIBS} ${MERCURY_EXT_DEPENCIES})
+target_link_libraries(mercury ${MERCURY_EXPORTED_LIBS} ${MERCURY_EXT_LIB_DEPENDENCIES})
 set_lib_options(mercury "mercury" ${MERCURY_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury)
 endif(MERCURY_ENABLE_COVERAGE)
 
-set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} mercury)
+set(MERCURY_EXPORTED_LIBS mercury ${MERCURY_EXPORTED_LIBS})
 
 #-----------------------------------------------------------------------------
 # Specify project header files to be installed
@@ -184,3 +179,50 @@ EXPORT (
     ${MERCURY_EXPORTED_TARGETS}.cmake
 )
 endif(NOT MERCURY_EXTERNALLY_CONFIGURED)
+
+#------------------------------------------------------------------------------
+# Set variables for parent scope
+#------------------------------------------------------------------------------
+set(NA_PLUGINS ${NA_PLUGINS} PARENT_SCOPE)
+
+# Used by config.cmake and Testing
+set(MERCURY_INCLUDES_BUILD_TIME
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_BINARY_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/na
+  ${CMAKE_CURRENT_BINARY_DIR}/na
+  ${CMAKE_CURRENT_SOURCE_DIR}/util
+  ${NA_EXT_INCLUDE_DEPENDENCIES}
+  ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+  PARENT_SCOPE
+)
+
+# Pkg-config configuration
+string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
+
+foreach(exported_lib ${MERCURY_EXPORTED_LIBS})
+  if(lower_cmake_build_type MATCHES "debug")
+    get_target_property(MERCURY_LIBRARY ${exported_lib} DEBUG_OUTPUT_NAME)
+  else(lower_cmake_build_type MATCHES "debug")
+    get_target_property(MERCURY_LIBRARY ${exported_lib} RELEASE_OUTPUT_NAME)
+  endif(lower_cmake_build_type MATCHES "debug")
+  set(MERCURY_LIBRARIES "${MERCURY_LIBRARIES} -l${MERCURY_LIBRARY}")
+endforeach(exported_lib)
+set(MERCURY_LIBRARIES ${MERCURY_LIBRARIES} PARENT_SCOPE)
+
+if(NOT MERCURY_EXT_LIB_DEPENDENCIES)
+  set(MERCURY_EXT_LIB_DEPENDENCIES
+    ${NA_EXT_LIB_DEPENDENCIES}
+    ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
+  )
+endif(NOT MERCURY_EXT_LIB_DEPENDENCIES)
+
+foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES})
+  set(MERCURY_LIB_DEPENDENCIES "${MERCURY_LIB_DEPENDENCIES} ${lib_dep}")
+endforeach(lib_dep)
+set(MERCURY_LIB_DEPENDENCIES ${MERCURY_LIB_DEPENDENCIES} PARENT_SCOPE)
+
+foreach(inc_dep ${MERCURY_EXT_INCLUDE_DEPENDENCIES})
+  set(MERCURY_INCLUDE_DEPENDENCIES "${MERCURY_INCLUDE_DEPENDENCIES} -I${inc_dep}")
+endforeach(inc_dep)
+set(MERCURY_INCLUDE_DEPENDENCIES ${MERCURY_INCLUDE_DEPENDENCIES} PARENT_SCOPE)
