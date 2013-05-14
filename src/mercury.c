@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdbool.h>
 
 /* Private structs */
 typedef struct hg_priv_request {
@@ -48,6 +49,7 @@ static pthread_key_t ptk_tag;
 static unsigned int next_tag = 0;
 static hg_thread_mutex_t tag_mutex;
 
+/* Pointer to network abstraction class */
 static na_class_t *hg_na_class = NULL;
 
 #define HG_MAXTAG 65536
@@ -218,7 +220,7 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
 
     hg_proc_info_t *proc_info;
     hg_proc_t enc_proc = HG_PROC_NULL;
-    uint8_t extra_send_buf_used = 0;
+    bool extra_send_buf_used = 0;
 
     static int tag_incr = 0;
     na_tag_t   send_tag, recv_tag;
@@ -238,7 +240,7 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
     priv_request->id = id;
 
     /* Send Buffer */
-    priv_request->send_buf_size = NA_Get_unexpected_size(hg_na_class);
+    priv_request->send_buf_size = NA_Msg_get_maximum_size(hg_na_class);
     ret = hg_proc_buf_alloc(&priv_request->send_buf, priv_request->send_buf_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not allocate send buffer");
@@ -248,7 +250,7 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
     priv_request->send_request = NA_REQUEST_NULL;
 
     /* Recv Buffer */
-    priv_request->recv_buf_size = NA_Get_unexpected_size(hg_na_class);
+    priv_request->recv_buf_size = NA_Msg_get_maximum_size(hg_na_class);
     ret = hg_proc_buf_alloc(&priv_request->recv_buf, priv_request->recv_buf_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not allocate send buffer");
@@ -296,7 +298,7 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
      *  - 1: send an unexpected message with info + eventual bulk data descriptor
      *  - 2: send the remaining data in extra buf using bulk data transfer
      */
-    if (hg_proc_get_size(enc_proc) > NA_Get_unexpected_size(hg_na_class)) {
+    if (hg_proc_get_size(enc_proc) > NA_Msg_get_maximum_size(hg_na_class)) {
         priv_request->extra_send_buf = hg_proc_get_extra_buf(enc_proc);
         priv_request->extra_send_buf_size = hg_proc_get_extra_size(enc_proc);
         ret = HG_Bulk_handle_create(priv_request->extra_send_buf,
@@ -311,20 +313,12 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
     }
 
     /* Encode header */
-    ret = hg_proc_header_request(enc_proc, &id, &extra_send_buf_used);
+    ret = hg_proc_header_request(enc_proc, &id, &extra_send_buf_used,
+            &priv_request->extra_send_buf_handle);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not encode header");
         ret = HG_FAIL;
         goto done;
-    }
-
-    if (extra_send_buf_used) {
-        ret = hg_proc_hg_bulk_t(enc_proc, &priv_request->extra_send_buf_handle);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not encode handle");
-            ret = HG_FAIL;
-            goto done;
-        }
     }
 
     /* Post the send message and pre-post the recv message */
@@ -333,7 +327,7 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
     tag_incr++;
     if (send_tag > HG_MAXTAG) tag_incr = 0;
 
-    na_ret = NA_Send_unexpected(hg_na_class, priv_request->send_buf,
+    na_ret = NA_Msg_send_unexpected(hg_na_class, priv_request->send_buf,
             priv_request->send_buf_size, addr, send_tag,
             &priv_request->send_request, NULL);
     if (na_ret != NA_SUCCESS) {
@@ -342,7 +336,7 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
         goto done;
     }
 
-    na_ret = NA_Recv(hg_na_class, priv_request->recv_buf,
+    na_ret = NA_Msg_recv(hg_na_class, priv_request->recv_buf,
             priv_request->recv_buf_size, addr, recv_tag,
             &priv_request->recv_request, NULL);
     if (na_ret != NA_SUCCESS) {
@@ -427,16 +421,10 @@ int HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
             /* Request has been freed so set it to NULL */
             priv_request->send_request = NA_REQUEST_NULL;
 
-            /* Everything has been sent so free unused resources */
+            /* Everything has been sent so free unused resources except eventual extra buffer */
             if (priv_request->send_buf) free (priv_request->send_buf);
             priv_request->send_buf = NULL;
             priv_request->send_buf_size = 0;
-            if (priv_request->extra_send_buf) free(priv_request->extra_send_buf);
-            priv_request->extra_send_buf = NULL;
-            priv_request->extra_send_buf_size = 0;
-            if (priv_request->extra_send_buf_handle != HG_BULK_NULL)
-                HG_Bulk_handle_free(priv_request->extra_send_buf_handle);
-            priv_request->extra_send_buf_handle = HG_BULK_NULL;
         }
     }
 
@@ -460,13 +448,21 @@ int HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         } else {
             /* Request has been freed so set it to NULL */
             priv_request->recv_request = NA_REQUEST_NULL;
+
+            /* We received the response back so safe to free the extra buf now */
+            if (priv_request->extra_send_buf) free(priv_request->extra_send_buf);
+            priv_request->extra_send_buf = NULL;
+            priv_request->extra_send_buf_size = 0;
+            if (priv_request->extra_send_buf_handle != HG_BULK_NULL)
+                HG_Bulk_handle_free(priv_request->extra_send_buf_handle);
+            priv_request->extra_send_buf_handle = HG_BULK_NULL;
         }
     }
 
     if ((priv_request->send_request == NA_REQUEST_NULL) &&
             (priv_request->recv_request == NA_REQUEST_NULL)) {
         hg_proc_t dec_proc;
-        uint8_t extra_recv_buf_used;
+        bool extra_recv_buf_used;
 
         /* Decode depending on op ID */
         proc_info = hg_hash_table_lookup(func_map, &priv_request->id);
@@ -516,7 +512,7 @@ int HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         /* Free the decoding proc */
         hg_proc_free(dec_proc);
 
-        /* Everything has been decode so free unused resources */
+        /* Everything has been decoded so free unused resources */
         if (priv_request->recv_buf) free (priv_request->recv_buf);
         priv_request->recv_buf = NULL;
         priv_request->recv_buf_size = 0;

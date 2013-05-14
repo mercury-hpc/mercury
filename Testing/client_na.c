@@ -62,19 +62,19 @@ int main(int argc, char *argv[])
     }
 
     /* Allocate send and recv bufs */
-    send_buf_len = NA_Get_unexpected_size(network_class);
+    send_buf_len = NA_Msg_get_maximum_size(network_class);
     recv_buf_len = send_buf_len;
     send_buf = malloc(send_buf_len);
     recv_buf = malloc(recv_buf_len);
 
     /* Send a message to addr */
     sprintf(send_buf, "Hello ION!\n");
-    na_ret = NA_Send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
+    na_ret = NA_Msg_send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not send unexpected message\n");
         return EXIT_FAILURE;
     }
-    na_ret = NA_Recv(network_class, recv_buf, recv_buf_len, ion_target, recv_tag, &recv_request, NULL);
+    na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, ion_target, recv_tag, &recv_request, NULL);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not recv message\n");
         return EXIT_FAILURE;
@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
 
     /* Send mem handle */
     printf("Sending local memory handle...\n");
-    na_ret = NA_Send(network_class, send_buf, send_buf_len, ion_target, bulk_tag, &bulk_request, NULL);
+    na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, ion_target, bulk_tag, &bulk_request, NULL);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not send memory handle\n");
         return EXIT_FAILURE;
@@ -124,7 +124,7 @@ int main(int argc, char *argv[])
 
     /* Recv completion ack */
     printf("Receiving end of transfer ack...\n");
-    na_ret = NA_Recv(network_class, recv_buf, recv_buf_len, ion_target, ack_tag, &ack_request, NULL);
+    na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, ion_target, ack_tag, &ack_request, NULL);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not receive acknowledgment\n");
         return EXIT_FAILURE;

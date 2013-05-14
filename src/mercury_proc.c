@@ -14,8 +14,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define HG_PROC_MAX_HEADER_SIZE 64
-
 /*---------------------------------------------------------------------------
  * Function:    hg_proc_buf_alloc
  *
@@ -167,7 +165,7 @@ size_t hg_proc_get_size(hg_proc_t proc)
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     size_t size = 0;
 
-    if (priv_proc) size = priv_proc->current_buf->size;
+    if (priv_proc) size = priv_proc->proc_buf.size + priv_proc->extra_buf.size;
 
     return size;
 }
@@ -186,45 +184,55 @@ int hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     size_t new_buf_size;
     size_t page_size;
-    int ret = HG_FAIL;
+    ptrdiff_t current_pos;
+    int ret = HG_SUCCESS;
 
     page_size = getpagesize();
     new_buf_size = ((size_t)(req_buf_size / page_size) + 1) * page_size;
 
-    if (new_buf_size > hg_proc_get_size(proc)) {
-        /* If was not using extra buffer init extra buffer */
+    if (new_buf_size <= hg_proc_get_size(proc)) {
+        HG_ERROR_DEFAULT("Buffer is already of the size requested");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    /* If was not using extra buffer init extra buffer */
+    if (!priv_proc->extra_buf.buf) {
+        /* Save current position */
+        current_pos = priv_proc->proc_buf.buf_ptr - priv_proc->proc_buf.buf;
+
+        /* Allocate buffer */
+        priv_proc->extra_buf.buf = malloc(new_buf_size);
         if (!priv_proc->extra_buf.buf) {
-            priv_proc->extra_buf.buf = malloc(new_buf_size);
-            if (!priv_proc->extra_buf.buf) {
-                HG_ERROR_DEFAULT("Could not allocate buffer");
-                ret = HG_FAIL;
-                return ret;
-            }
-            priv_proc->proc_buf.size = new_buf_size;
-            priv_proc->extra_buf.buf_ptr = priv_proc->extra_buf.buf;
-            priv_proc->extra_buf.size_left = priv_proc->extra_buf.size;
-            priv_proc->proc_buf.is_mine = 1;
-
-            /* Switch buffer */
-            priv_proc->current_buf = &priv_proc->extra_buf;
-        } else {
-            ptrdiff_t current_pos;
-
-            /* Save current position */
-            current_pos = priv_proc->extra_buf.buf_ptr - priv_proc->extra_buf.buf;
-
-            /* Reallocate buffer */
-            priv_proc->extra_buf.buf = realloc(priv_proc->extra_buf.buf, new_buf_size);
-            if (!priv_proc->extra_buf.buf) {
-                HG_ERROR_DEFAULT("Could not reallocate buffer");
-                ret = HG_FAIL;
-                return ret;
-            }
-
-            priv_proc->extra_buf.size = new_buf_size;
-            priv_proc->extra_buf.buf_ptr = priv_proc->extra_buf.buf + current_pos;
-            priv_proc->extra_buf.size_left = priv_proc->extra_buf.size - current_pos;
+            HG_ERROR_DEFAULT("Could not allocate buffer");
+            ret = HG_FAIL;
+            return ret;
         }
+
+        /* Copy proc_buf (should be small) */
+        memcpy(priv_proc->extra_buf.buf, priv_proc->proc_buf.buf, current_pos);
+        priv_proc->extra_buf.size = new_buf_size;
+        priv_proc->extra_buf.buf_ptr = priv_proc->extra_buf.buf + current_pos;
+        priv_proc->extra_buf.size_left = priv_proc->extra_buf.size - current_pos;
+        priv_proc->extra_buf.is_mine = 1;
+
+        /* Switch buffer */
+        priv_proc->current_buf = &priv_proc->extra_buf;
+    } else {
+        /* Save current position */
+        current_pos = priv_proc->extra_buf.buf_ptr - priv_proc->extra_buf.buf;
+
+        /* Reallocate buffer */
+        priv_proc->extra_buf.buf = realloc(priv_proc->extra_buf.buf, new_buf_size);
+        if (!priv_proc->extra_buf.buf) {
+            HG_ERROR_DEFAULT("Could not reallocate buffer");
+            ret = HG_FAIL;
+            return ret;
+        }
+
+        priv_proc->extra_buf.size = new_buf_size;
+        priv_proc->extra_buf.buf_ptr = priv_proc->extra_buf.buf + current_pos;
+        priv_proc->extra_buf.size_left = priv_proc->extra_buf.size - current_pos;
     }
 
     return ret;
@@ -310,20 +318,6 @@ int hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
 /*---------------------------------------------------------------------------
  * Function:    hg_proc_get_header_size
  *
- * Purpose:     Get required space for storing header data
- *
- * Returns:     Size of header
- *
- *---------------------------------------------------------------------------
- */
-size_t hg_proc_get_header_size(void)
-{
-    return HG_PROC_MAX_HEADER_SIZE;
-}
-
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_get_header_size
- *
  * Purpose:     Get extra buffer
  *
  * Returns:     Pointer to buffer or NULL
@@ -373,13 +367,13 @@ size_t hg_proc_get_extra_size(hg_proc_t proc)
  *
  *---------------------------------------------------------------------------
  */
-int hg_proc_set_extra_buf_is_mine(hg_proc_t proc, bool mine)
+int hg_proc_set_extra_buf_is_mine(hg_proc_t proc, bool theirs)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
 
     if (priv_proc->extra_buf.buf) {
-        priv_proc->extra_buf.is_mine = mine;
+        priv_proc->extra_buf.is_mine = !theirs;
         ret = HG_SUCCESS;
     }
 

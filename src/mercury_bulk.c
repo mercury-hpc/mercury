@@ -16,10 +16,14 @@
 #include <stdbool.h>
 
 typedef struct hg_priv_bulk {
-    size_t           size;             /* Total size of data registered */
-    na_mem_handle_t *mem_handle_list;  /* List of handles (single for contiguous or multiple for non-contiguous) */
-    size_t           mem_handle_count; /* Number of handles */
-    bool             registered;       /* The handle may be registered or simply deserialized */
+    size_t           total_size;       /* Total size of data registered */
+    size_t          *size_list;        /* List of segment sizes corresponding
+                                        * to each memory handle */
+    na_mem_handle_t *mem_handle_list;  /* List of handles (single for contiguous
+                                        * or multiple for non-contiguous) */
+    size_t           count;            /* Number of handles */
+    bool             registered;       /* The handle may be registered or simply
+                                        * deserialized */
 } hg_priv_bulk_t;
 
 typedef struct hg_priv_bulk_block {
@@ -29,10 +33,11 @@ typedef struct hg_priv_bulk_block {
 } hg_priv_bulk_block_t;
 
 typedef struct hg_priv_bulk_request {
-    na_request_t *request_list;
-    size_t        request_count;
+    na_request_t *request_list;  /* List of requests */
+    size_t        request_count; /* Number of requests */
 } hg_priv_bulk_request_t;
 
+/* Pointer to network abstraction class */
 static na_class_t *bulk_na_class = NULL;
 
 /*---------------------------------------------------------------------------
@@ -56,7 +61,7 @@ int HG_Bulk_init(na_class_t *network_class)
 
     bulk_na_class = network_class;
 
-    return HG_SUCCESS;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -80,7 +85,7 @@ int HG_Bulk_finalize(void)
 
     bulk_na_class = NULL;
 
-    return HG_SUCCESS;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -95,8 +100,8 @@ int HG_Bulk_finalize(void)
 int HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
         hg_bulk_t *handle)
 {
-    int ret, na_ret;
-    hg_priv_bulk_t *priv_handle;
+    int ret = HG_SUCCESS, na_ret;
+    hg_priv_bulk_t *priv_handle = NULL;
     unsigned long na_flags;
 
     switch (flags) {
@@ -109,27 +114,38 @@ int HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
         default:
             HG_ERROR_DEFAULT("Unrecognized handle flag");
             ret = HG_FAIL;
-            return ret;
+            goto done;
     }
 
     priv_handle = malloc(sizeof(hg_priv_bulk_t));
-    priv_handle->size = buf_size;
-    priv_handle->mem_handle_count = 1;
+    priv_handle->count = 1;
     priv_handle->mem_handle_list = malloc(sizeof(na_mem_handle_t));
+    priv_handle->total_size = buf_size;
+    priv_handle->size_list = malloc(sizeof(size_t));
+    priv_handle->size_list[0] = priv_handle->total_size;
 
     na_ret = NA_Mem_register(bulk_na_class, buf, buf_size, na_flags,
             &priv_handle->mem_handle_list[0]);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("na_mem_register failed");
-        free(priv_handle);
-        priv_handle = NULL;
         ret = HG_FAIL;
-    } else {
-        priv_handle->registered = 1;
-        *handle = (hg_bulk_t) priv_handle;
-        ret = HG_SUCCESS;
+        goto done;
     }
 
+    priv_handle->registered = 1;
+    *handle = (hg_bulk_t) priv_handle;
+
+done:
+    if (ret != HG_SUCCESS) {
+        if (priv_handle) {
+            if (priv_handle->size_list) free(priv_handle->size_list);
+            priv_handle->size_list = NULL;
+            if (priv_handle->mem_handle_list) free(priv_handle->mem_handle_list);
+            priv_handle->mem_handle_list = NULL;
+            free(priv_handle);
+        }
+        priv_handle = NULL;
+    }
     return ret;
 }
 
@@ -145,9 +161,9 @@ int HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
 int HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
         size_t segment_count, unsigned long flags, hg_bulk_t *handle)
 {
-    int ret, na_ret;
-    hg_priv_bulk_t *priv_handle;
-    size_t segment_index;
+    int ret = HG_SUCCESS, na_ret;
+    hg_priv_bulk_t *priv_handle = NULL;
+    size_t i;
     unsigned long na_flags;
 
     switch (flags) {
@@ -160,59 +176,68 @@ int HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
         default:
             HG_ERROR_DEFAULT("Unrecognized handle flag");
             ret = HG_FAIL;
-            return ret;
+            goto done;
     }
 
     priv_handle = malloc(sizeof(hg_priv_bulk_t));
-    priv_handle->size = 0;
-
-    for (segment_index = 0; segment_index < segment_count; segment_index++) {
-        priv_handle->size += bulk_segments[segment_index].size;
-    }
+    priv_handle->total_size = 0;
 
     /* The underlying layer may support non-contiguous mem registration */
     if (bulk_na_class->mem_register_segments) {
         /* In this case we only need one single handle */
-        priv_handle->mem_handle_count = 1;
+        priv_handle->count = 1;
         priv_handle->mem_handle_list = malloc(sizeof(na_mem_handle_t));
+        priv_handle->size_list = malloc(sizeof(size_t));
 
         na_ret = NA_Mem_register_segments(bulk_na_class,
                 (na_segment_t*)bulk_segments, segment_count,
                 na_flags, &priv_handle->mem_handle_list[0]);
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("na_mem_register failed");
-            free(priv_handle);
-            priv_handle = NULL;
             ret = HG_FAIL;
-            return ret;
+            goto done;
         }
+        for (i = 0; i < segment_count; i++) {
+            priv_handle->total_size += bulk_segments[i].size;
+        }
+        priv_handle->size_list[0] = priv_handle->total_size;
     } else {
         /* In this case we need multiple handles */
-        priv_handle->mem_handle_count = segment_count;
-        priv_handle->mem_handle_list = malloc(segment_count * sizeof(na_mem_handle_t));
+        priv_handle->count = segment_count;
+        priv_handle->mem_handle_list = malloc(priv_handle->count * sizeof(na_mem_handle_t));
+        priv_handle->size_list = malloc(priv_handle->count * sizeof(size_t));
 
         /* Loop over the list of segments and register them */
-        for (segment_index = 0; segment_index < segment_count; segment_index++) {
-            na_ret = NA_Mem_register(bulk_na_class, bulk_segments[segment_index].address,
-                    bulk_segments[segment_index].size, na_flags,
-                    &priv_handle->mem_handle_list[segment_index]);
+        for (i = 0; i < segment_count; i++) {
+            na_ret = NA_Mem_register(bulk_na_class, bulk_segments[i].address,
+                    bulk_segments[i].size, na_flags,
+                    &priv_handle->mem_handle_list[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_ERROR_DEFAULT("na_mem_register failed");
-                free(priv_handle);
-                priv_handle = NULL;
                 ret = HG_FAIL;
-                return ret;
+                goto done;
             }
+            priv_handle->size_list[i] = bulk_segments[i].size;
+            priv_handle->total_size += bulk_segments[i].size;
         }
     }
 
     priv_handle->registered = 1;
     *handle = (hg_bulk_t) priv_handle;
-    ret = HG_SUCCESS;
 
+done:
+    if (ret != HG_SUCCESS) {
+        if (priv_handle) {
+            if (priv_handle->size_list) free(priv_handle->size_list);
+            priv_handle->size_list = NULL;
+            if (priv_handle->mem_handle_list) free(priv_handle->mem_handle_list);
+            priv_handle->mem_handle_list = NULL;
+            free(priv_handle);
+        }
+        priv_handle = NULL;
+    }
     return ret;
 }
-
 
 /*---------------------------------------------------------------------------
  * Function:    HG_Bulk_handle_free
@@ -227,8 +252,8 @@ int HG_Bulk_handle_free(hg_bulk_t handle)
 {
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) handle;
-    int (*na_mem_handle_free)(na_class_t *network_class, na_mem_handle_t mem_handle);
-    size_t mem_handle_list_index;
+    int (*mem_handle_free)(na_class_t *network_class, na_mem_handle_t mem_handle);
+    size_t i;
 
     if (!priv_handle) {
         HG_ERROR_DEFAULT("Already freed");
@@ -237,22 +262,25 @@ int HG_Bulk_handle_free(hg_bulk_t handle)
     }
 
     if (priv_handle->registered) {
-        na_mem_handle_free = NA_Mem_deregister;
+        mem_handle_free = NA_Mem_deregister;
     } else {
-        na_mem_handle_free = NA_Mem_handle_free;
+        mem_handle_free = NA_Mem_handle_free;
     }
 
-    for (mem_handle_list_index = 0; mem_handle_list_index < priv_handle->mem_handle_count;
-            mem_handle_list_index++) {
-        na_ret = na_mem_handle_free(bulk_na_class,
-                priv_handle->mem_handle_list[mem_handle_list_index]);
+    for (i = 0; i < priv_handle->count; i++) {
+        na_ret = mem_handle_free(bulk_na_class,
+                priv_handle->mem_handle_list[i]);
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("na_mem_deregister failed");
             ret = HG_FAIL;
+            return ret;
         }
     }
-    free(priv_handle->mem_handle_list);
+
+    if (priv_handle->mem_handle_list) free(priv_handle->mem_handle_list);
     priv_handle->mem_handle_list = NULL;
+    if (priv_handle->size_list) free(priv_handle->size_list);
+    priv_handle->size_list = NULL;
     free(priv_handle);
     priv_handle = NULL;
 
@@ -272,7 +300,7 @@ size_t HG_Bulk_handle_get_size(hg_bulk_t handle)
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) handle;
 
     if (priv_handle) {
-        ret = priv_handle->size;
+        ret = priv_handle->total_size;
     }
 
     return ret;
@@ -289,12 +317,15 @@ size_t HG_Bulk_handle_get_serialize_size(hg_bulk_t handle)
 {
     size_t ret = 0;
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) handle;
+    size_t i;
 
     if (priv_handle) {
-        ret = sizeof(priv_handle->size) +
-                sizeof(priv_handle->mem_handle_count) +
-                priv_handle->mem_handle_count *
-                NA_Mem_handle_get_serialize_size(bulk_na_class);
+        ret = sizeof(priv_handle->total_size) + sizeof(priv_handle->count)
+                + priv_handle->count * sizeof(size_t);
+        for (i = 0; i < priv_handle->count; i++) {
+            ret += NA_Mem_handle_get_serialize_size(bulk_na_class,
+                    priv_handle->mem_handle_list[i]);
+        }
     }
 
     return ret;
@@ -314,8 +345,8 @@ int HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) handle;
     void *buf_ptr = buf;
-    size_t mem_handle_list_index;
     size_t buf_size_left = buf_size;
+    size_t i;
 
     if (!priv_handle) {
         HG_ERROR_DEFAULT("NULL memory handle passed");
@@ -329,33 +360,35 @@ int HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
         return ret;
     }
 
-    fprintf(stderr, "Buffer size: %d\n", buf_size);
-
     /* Add the size of the data */
-    memcpy(buf_ptr, &priv_handle->size, sizeof(size_t));
+    memcpy(buf_ptr, &priv_handle->total_size, sizeof(size_t));
     buf_ptr += sizeof(size_t);
     buf_size_left -= sizeof(size_t);
-    fprintf(stderr, "Handle size: %d\n", priv_handle->size);
-
 
     /* Add the number of handles */
-    memcpy(buf_ptr, &priv_handle->mem_handle_count, sizeof(size_t));
+    memcpy(buf_ptr, &priv_handle->count, sizeof(size_t));
     buf_ptr += sizeof(size_t);
     buf_size_left -= sizeof(size_t);
-    fprintf(stderr, "Handle count: %d\n", priv_handle->mem_handle_count);
 
-    for (mem_handle_list_index = 0; mem_handle_list_index < priv_handle->mem_handle_count;
-            mem_handle_list_index++) {
+    /* Add the list of sizes */
+    for (i = 0; i < priv_handle->count; i++) {
+        memcpy(buf_ptr, &priv_handle->size_list[i], sizeof(size_t));
+        buf_ptr += sizeof(size_t);
+        buf_size_left -= sizeof(size_t);
+    }
+
+    for (i = 0; i < priv_handle->count; i++) {
         na_ret = NA_Mem_handle_serialize(bulk_na_class, buf_ptr,
-                buf_size_left, priv_handle->mem_handle_list[mem_handle_list_index]);
+                buf_size_left, priv_handle->mem_handle_list[i]);
         if (na_ret != NA_SUCCESS) {
-
             HG_ERROR_DEFAULT("Could not serialize memory handle");
             ret = HG_FAIL;
             break;
         }
-        buf_ptr += NA_Mem_handle_get_serialize_size(bulk_na_class);
-        buf_size_left -= NA_Mem_handle_get_serialize_size(bulk_na_class);
+        buf_ptr += NA_Mem_handle_get_serialize_size(bulk_na_class,
+                priv_handle->mem_handle_list[i]);
+        buf_size_left -= NA_Mem_handle_get_serialize_size(bulk_na_class,
+                priv_handle->mem_handle_list[i]);
     }
 
     return ret;
@@ -375,8 +408,8 @@ int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_si
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_t *priv_handle = NULL;
     const void *buf_ptr = buf;
-    size_t mem_handle_list_index;
     size_t buf_size_left = buf_size;
+    size_t i;
 
     if (!handle) {
         HG_ERROR_DEFAULT("NULL pointer to memory handle passed");
@@ -387,30 +420,36 @@ int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_si
     priv_handle = malloc(sizeof(hg_priv_bulk_t));
 
     /* Get the size of the data */
-    memcpy(&priv_handle->size, buf_ptr, sizeof(size_t));
+    memcpy(&priv_handle->total_size, buf_ptr, sizeof(size_t));
     buf_ptr += sizeof(size_t);
     buf_size_left -= sizeof(size_t);
-    fprintf(stderr, "Handle size: %d\n", priv_handle->size);
 
     /* Get the number of handles */
-    memcpy(&priv_handle->mem_handle_count, buf_ptr, sizeof(size_t));
+    memcpy(&priv_handle->count, buf_ptr, sizeof(size_t));
     buf_ptr += sizeof(size_t);
     buf_size_left -= sizeof(size_t);
-    fprintf(stderr, "Handle count: %d\n", priv_handle->mem_handle_count);
 
-    priv_handle->mem_handle_list = malloc(priv_handle->mem_handle_count *
-           sizeof(na_mem_handle_t));
-    for (mem_handle_list_index = 0; mem_handle_list_index < priv_handle->mem_handle_count;
-            mem_handle_list_index++) {
-        na_ret = NA_Mem_handle_deserialize(bulk_na_class, &priv_handle->mem_handle_list[mem_handle_list_index],
+    /* Add the list of sizes */
+    priv_handle->size_list = malloc(priv_handle->count * sizeof(size_t));
+    for (i = 0; i < priv_handle->count; i++) {
+        memcpy(&priv_handle->size_list[i], buf_ptr, sizeof(size_t));
+        buf_ptr += sizeof(size_t);
+        buf_size_left -= sizeof(size_t);
+    }
+
+    priv_handle->mem_handle_list = malloc(priv_handle->count * sizeof(na_mem_handle_t));
+    for (i = 0; i < priv_handle->count; i++) {
+        na_ret = NA_Mem_handle_deserialize(bulk_na_class, &priv_handle->mem_handle_list[i],
                 buf_ptr, buf_size_left);
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("Could not deserialize memory handle");
             ret = HG_FAIL;
             return ret;
         }
-        buf_ptr += NA_Mem_handle_get_serialize_size(bulk_na_class);
-        buf_size_left -= NA_Mem_handle_get_serialize_size(bulk_na_class);
+        buf_ptr += NA_Mem_handle_get_serialize_size(bulk_na_class,
+                priv_handle->mem_handle_list[i]);
+        buf_size_left -= NA_Mem_handle_get_serialize_size(bulk_na_class,
+                priv_handle->mem_handle_list[i]);
     }
 
     /* The handle is not registered, only deserialized */
@@ -432,8 +471,8 @@ int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_si
 int HG_Bulk_block_handle_create(void *buf, size_t block_size, unsigned long flags,
         hg_bulk_block_t *block_handle)
 {
-    int ret, na_ret;
-    hg_priv_bulk_block_t *priv_block_handle;
+    int ret = HG_SUCCESS, na_ret;
+    hg_priv_bulk_block_t *priv_block_handle = NULL;
     unsigned long na_flags;
 
     switch (flags) {
@@ -460,10 +499,10 @@ int HG_Bulk_block_handle_create(void *buf, size_t block_size, unsigned long flag
         free(priv_block_handle);
         priv_block_handle = NULL;
         ret = HG_FAIL;
-    } else {
-        *block_handle = (hg_bulk_block_t) priv_block_handle;
-        ret = HG_SUCCESS;
+        return ret;
     }
+
+    *block_handle = (hg_bulk_block_t) priv_block_handle;
 
     return ret;
 }
@@ -493,6 +532,7 @@ int HG_Bulk_block_handle_free(hg_bulk_block_t block_handle)
         ret = HG_FAIL;
         return ret;
     }
+
     free(priv_block_handle);
     priv_block_handle = NULL;
 
@@ -519,6 +559,55 @@ size_t HG_Bulk_block_handle_get_size(hg_bulk_block_t block_handle)
 }
 
 /*---------------------------------------------------------------------------
+ * Function:    hg_bulk_find_handle_list_info
+ *
+ * Purpose:     Get info for bulk transfer
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+static int hg_bulk_find_handle_list_info(hg_bulk_t bulk_handle,
+        ptrdiff_t bulk_offset, size_t block_size, size_t *handle_index_start,
+        ptrdiff_t *handle_offset, size_t *request_count)
+{
+    int ret = HG_SUCCESS;
+    hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) bulk_handle;
+    size_t new_index_start = 0;
+    ptrdiff_t new_handle_offset = bulk_offset, next_offset;
+    size_t new_request_count;
+    size_t new_size;
+    size_t i;
+
+    /* Get start index and handle offset */
+    next_offset = 0;
+    for (i = 0; i < priv_handle->count; i++) {
+        next_offset += priv_handle->size_list[i];
+        if (bulk_offset < next_offset) {
+            new_index_start = i;
+            break;
+        }
+        new_handle_offset -= next_offset;
+    }
+
+    /* Get request count, i.e. the number of requests needed to transfer data */
+    new_request_count = 1;
+    new_size = 0;
+    for (i = new_index_start; i < priv_handle->count; i++) {
+        new_size += priv_handle->size_list[i];
+        if (i == new_index_start) new_size -= new_handle_offset;
+        if (new_size >= block_size) break;
+        new_request_count++;
+    }
+
+    *handle_index_start = new_index_start;
+    *handle_offset = new_handle_offset;
+    *request_count = new_request_count;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
  * Function:    HG_Bulk_write
  *
  * Purpose:     Write data
@@ -534,11 +623,13 @@ int HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) bulk_handle;
     hg_priv_bulk_block_t *priv_block_handle = (hg_priv_bulk_block_t*) block_handle;
-    size_t mem_handle_list_index;
-    na_offset_t local_offset = (na_offset_t) block_offset;
-    na_size_t actual_block_size = (na_size_t) block_size;
-    na_offset_t remote_offset = (na_offset_t) bulk_offset;
+    ptrdiff_t local_offset, remote_offset;
+    size_t transfer_size;
+    size_t remaining_size = block_size;
     hg_priv_bulk_request_t *priv_bulk_request = NULL;
+    size_t request_count;
+    size_t handle_list_index_start;
+    size_t i;
 
     if (!priv_handle) {
         HG_ERROR_DEFAULT("NULL memory handle passed");
@@ -546,24 +637,36 @@ int HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
         return ret;
     }
 
+    /* Translate bulk_offset */
+    hg_bulk_find_handle_list_info(bulk_handle, bulk_offset, block_size,
+            &handle_list_index_start, &remote_offset, &request_count);
+
+    /* Translate block offset */
+    local_offset = block_offset;
+
     priv_bulk_request = malloc(sizeof(hg_priv_bulk_request_t));
-    priv_bulk_request->request_count = 1;
-    priv_bulk_request->request_list = malloc(priv_bulk_request->request_count *
-            sizeof(na_request_t));
+    priv_bulk_request->request_count = request_count;
+    priv_bulk_request->request_list = malloc(request_count * sizeof(na_request_t));
 
-    for (mem_handle_list_index = 0; mem_handle_list_index < priv_handle->mem_handle_count;
-            mem_handle_list_index++) {
-
-        /* Work out local / remote offset / actual_block_size */
+    for (i = handle_list_index_start; i < handle_list_index_start + request_count; i++) {
+        /* Transfer size is (size available from handle - offset) or (remaining size) if smaller */
+        transfer_size = priv_handle->size_list[i] - remote_offset;
+        transfer_size = (remaining_size < transfer_size) ? remaining_size : transfer_size;
 
         na_ret = NA_Put(bulk_na_class,
                 priv_block_handle->mem_handle, local_offset,
-                priv_handle->mem_handle_list[mem_handle_list_index], remote_offset,
-                actual_block_size, addr, &priv_bulk_request->request_list[mem_handle_list_index]);
+                priv_handle->mem_handle_list[i], remote_offset,
+                transfer_size, addr, &priv_bulk_request->request_list[i]);
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("Could not put data");
             ret = HG_FAIL;
         }
+        /* We started from the index that contains bulk_offset so further remote_offset are 0 */
+        remote_offset = 0;
+        /* Increase the local offset from the size of data we just transferred */
+        local_offset += transfer_size;
+        /* Decrease remaining size from the size of data we just transferred */
+        remaining_size -= transfer_size;
     }
 
     *bulk_request = (hg_bulk_request_t) priv_bulk_request;
@@ -587,7 +690,7 @@ int HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) bulk_handle;
 
     ret = HG_Bulk_write(addr, bulk_handle, 0,
-            block_handle, 0, priv_handle->size, bulk_request);
+            block_handle, 0, priv_handle->total_size, bulk_request);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not write data");
         ret = HG_FAIL;
@@ -605,18 +708,20 @@ int HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
  *
  *---------------------------------------------------------------------------
  */
-int HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
-        hg_bulk_block_t block_handle, size_t block_offset, size_t block_size,
+int HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
+        hg_bulk_block_t block_handle, ptrdiff_t block_offset, size_t block_size,
         hg_bulk_request_t *bulk_request)
 {
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) bulk_handle;
     hg_priv_bulk_block_t *priv_block_handle = (hg_priv_bulk_block_t*) block_handle;
-    size_t mem_handle_list_index;
-    na_offset_t local_offset = (na_offset_t) block_offset;
-    na_size_t actual_block_size = (na_size_t) block_size;
-    na_offset_t remote_offset = (na_offset_t) bulk_offset;
+    ptrdiff_t local_offset, remote_offset;
+    size_t transfer_size;
+    size_t remaining_size = block_size;
     hg_priv_bulk_request_t *priv_bulk_request = NULL;
+    size_t request_count;
+    size_t handle_list_index_start;
+    size_t i;
 
     if (!priv_handle) {
         HG_ERROR_DEFAULT("NULL memory handle passed");
@@ -624,24 +729,36 @@ int HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
         return ret;
     }
 
+    /* Translate bulk_offset */
+    hg_bulk_find_handle_list_info(bulk_handle, bulk_offset, block_size,
+            &handle_list_index_start, &remote_offset, &request_count);
+
+    /* Translate block offset */
+    local_offset = block_offset;
+
     priv_bulk_request = malloc(sizeof(hg_priv_bulk_request_t));
-    priv_bulk_request->request_count = priv_handle->mem_handle_count;
-    priv_bulk_request->request_list = malloc(priv_bulk_request->request_count *
-            sizeof(na_request_t));
+    priv_bulk_request->request_count = request_count;
+    priv_bulk_request->request_list = malloc(request_count * sizeof(na_request_t));
 
-    for (mem_handle_list_index = 0; mem_handle_list_index < priv_handle->mem_handle_count;
-            mem_handle_list_index++) {
-
-        /* Work out local / remote offset / actual_block_size */
+    for (i = handle_list_index_start; i < handle_list_index_start + request_count; i++) {
+        /* Transfer size is (size available from handle - offset) or (remaining size) if smaller */
+        transfer_size = priv_handle->size_list[i] - remote_offset;
+        transfer_size = (remaining_size < transfer_size) ? remaining_size : transfer_size;
 
         na_ret = NA_Get(bulk_na_class,
                 priv_block_handle->mem_handle, local_offset,
-                priv_handle->mem_handle_list[mem_handle_list_index], remote_offset,
-                actual_block_size, addr, &priv_bulk_request->request_list[mem_handle_list_index]);
+                priv_handle->mem_handle_list[i], remote_offset,
+                transfer_size, addr, &priv_bulk_request->request_list[i]);
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("Could not get data");
             ret = HG_FAIL;
         }
+        /* We started from the index that contains bulk_offset so further remote_offset are 0 */
+        remote_offset = 0;
+        /* Increase the local offset from the size of data we just transferred */
+        local_offset += transfer_size;
+        /* Decrease remaining size from the size of data we just transferred */
+        remaining_size -= transfer_size;
     }
 
     *bulk_request = (hg_bulk_request_t) priv_bulk_request;
@@ -665,7 +782,7 @@ int HG_Bulk_read_all(na_addr_t addr, hg_bulk_t bulk_handle,
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) bulk_handle;
 
     ret = HG_Bulk_read(addr, bulk_handle, 0,
-            block_handle, 0, priv_handle->size, bulk_request);
+            block_handle, 0, priv_handle->total_size, bulk_request);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not read data");
         ret = HG_FAIL;
@@ -699,24 +816,20 @@ int HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
         return ret;
     }
 
-    fprintf(stderr, "Got %d requests\n", priv_bulk_request->request_count);
     /* Loop over request list and wait if request is not NULL otherwise
      * consider it as already completed */
-    do {
-        completed_count = 0;
     for (request_index = 0; request_index < priv_bulk_request->request_count;
             request_index++) {
         if (priv_bulk_request->request_list[request_index] != NA_REQUEST_NULL) {
             na_ret = NA_Wait(bulk_na_class,
                     priv_bulk_request->request_list[request_index],
-                    0, &request_status);
+                    timeout, &request_status);
             if (na_ret != NA_SUCCESS) {
                 HG_ERROR_DEFAULT("Error during wait");
                 ret = HG_FAIL;
                 break;
             }
             if (request_status.completed) {
-                fprintf(stderr, "request completed!\n");
                 /* Request has been freed in NA_Wait */
                 priv_bulk_request->request_list[request_index] = NA_REQUEST_NULL;
                 completed_count++;
@@ -726,7 +839,6 @@ int HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
             completed_count++;
         }
     }
-    } while (completed_count != priv_bulk_request->request_count);
 
     if (completed_count == priv_bulk_request->request_count) {
         /* Everything completed */
@@ -743,5 +855,6 @@ int HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
             *status = 0;
         }
     }
+
     return ret;
 }

@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
     network_class = HG_Test_server_init(argc, argv, &number_of_peers);
 
     /* Allocate send/recv/bulk bufs */
-    send_buf_len = NA_Get_unexpected_size(network_class);
+    send_buf_len = NA_Msg_get_maximum_size(network_class);
     send_buf = malloc(send_buf_len);
     recv_buf = malloc(send_buf_len);
     bulk_buf = malloc(sizeof(int) * bulk_size);
@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
 
         /* Recv a message from a client */
         do {
-            na_ret = NA_Recv_unexpected(network_class, recv_buf, send_buf_len,
+            na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
                     &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
             if (na_ret != NA_SUCCESS) {
                 fprintf(stderr, "Could not recv message\n");
@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
         /* Respond back */
         sprintf(send_buf, "Hello CN!\n");
         send_tag = recv_tag + 1;
-        na_ret = NA_Send(network_class, send_buf, send_buf_len, recv_addr, send_tag, &send_request, NULL);
+        na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, recv_addr, send_tag, &send_request, NULL);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not send message\n");
             return EXIT_FAILURE;
@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
         /* Recv memory handle */
         recv_buf_len = send_buf_len;
         printf("Receiving remote memory handle...\n");
-        na_ret = NA_Recv(network_class, recv_buf, recv_buf_len, recv_addr, bulk_tag, &bulk_request, NULL);
+        na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, bulk_tag, &bulk_request, NULL);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not recv memory handle\n");
             return EXIT_FAILURE;
@@ -160,7 +160,7 @@ int main(int argc, char *argv[])
 
         /* Send completion ack */
         printf("Sending end of transfer ack...\n");
-        na_ret = NA_Send(network_class, send_buf, send_buf_len, recv_addr, ack_tag, &ack_request, NULL);
+        na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, recv_addr, ack_tag, &ack_request, NULL);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not send acknowledgment\n");
             return EXIT_FAILURE;

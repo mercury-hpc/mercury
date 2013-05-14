@@ -61,82 +61,82 @@ int NA_Addr_free(na_class_t *network_class, na_addr_t addr)
 /*---------------------------------------------------------------------------
  * Function:    NA_Get_unexpected_size
  *
- * Purpose:     Get the maximum size of an unexpected message
+ * Purpose:     Get the maximum size of a message
  *
  *---------------------------------------------------------------------------
  */
-na_size_t NA_Get_unexpected_size(na_class_t *network_class)
+na_size_t NA_Msg_get_maximum_size(na_class_t *network_class)
 {
     assert(network_class);
-    return network_class->get_unexpected_size();
+    return network_class->msg_get_maximum_size();
 }
 
 /*---------------------------------------------------------------------------
- * Function:    NA_Send_unexpected
+ * Function:    NA_Msg_send_unexpected
  *
- * Purpose:     Send a message to dest (unexpected asynchronous)
+ * Purpose:     Send an unexpected message to dest
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-int NA_Send_unexpected(na_class_t *network_class,
+int NA_Msg_send_unexpected(na_class_t *network_class,
         const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     assert(network_class);
-    return network_class->send_unexpected(buf, buf_size, dest, tag, request, op_arg);
+    return network_class->msg_send_unexpected(buf, buf_size, dest, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------
- * Function:    NA_Recv_unexpected
+ * Function:    NA_Msg_recv_unexpected
  *
- * Purpose:     Receive a message from source (unexpected asynchronous)
+ * Purpose:     Receive an unexpected message
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-int NA_Recv_unexpected(na_class_t *network_class,
+int NA_Msg_recv_unexpected(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
 {
     assert(network_class);
-    return network_class->recv_unexpected(buf, buf_size, actual_buf_size, source, tag, request, op_arg);
+    return network_class->msg_recv_unexpected(buf, buf_size, actual_buf_size, source, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------
- * Function:    NA_Send
+ * Function:    NA_Msg_send
  *
- * Purpose:     Send a message to dest (asynchronous)
+ * Purpose:     Send an expected message to dest
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-int NA_Send(na_class_t *network_class,
+int NA_Msg_send(na_class_t *network_class,
         const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     assert(network_class);
-    return network_class->send(buf, buf_size, dest, tag, request, op_arg);
+    return network_class->msg_send(buf, buf_size, dest, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------
- * Function:    NA_Recv
+ * Function:    NA_Msg_recv
  *
- * Purpose:     Receive a message from source (asynchronous)
+ * Purpose:     Receive an expected message from source
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-int NA_Recv(na_class_t *network_class,
+int NA_Msg_recv(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     assert(network_class);
-    return network_class->recv(buf, buf_size, source, tag, request, op_arg);
+    return network_class->msg_recv(buf, buf_size, source, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------
@@ -198,16 +198,16 @@ int NA_Mem_deregister(na_class_t *network_class,
  *
  *---------------------------------------------------------------------------
  */
-na_size_t NA_Mem_handle_get_serialize_size(na_class_t *network_class)
+na_size_t NA_Mem_handle_get_serialize_size(na_class_t *network_class, na_mem_handle_t mem_handle)
 {
     assert(network_class);
-    return network_class->mem_handle_get_serialize_size();
+    return network_class->mem_handle_get_serialize_size(mem_handle);
 }
 
 /*---------------------------------------------------------------------------
  * Function:    NA_Mem_handle_serialize
  *
- * Purpose:     Serialize memory handle for exchange over the network
+ * Purpose:     Serialize memory handle into a buffer
  *
  * Returns:     Non-negative on success or negative on failure
  *
@@ -223,7 +223,7 @@ int NA_Mem_handle_serialize(na_class_t *network_class,
 /*---------------------------------------------------------------------------
  * Function:    NA_Mem_handle_deserialize
  *
- * Purpose:     Deserialize memory handle
+ * Purpose:     Deserialize memory handle from buffer
  *
  * Returns:     Non-negative on success or negative on failure
  *

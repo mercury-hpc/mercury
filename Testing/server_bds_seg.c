@@ -46,7 +46,7 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
     return nbyte;
 }
 
-/******************************************************************************/
+/*****************************************************************************/
 int fs_bla_write(hg_handle_t handle)
 {
     int ret = HG_SUCCESS;
@@ -95,6 +95,8 @@ int fs_bla_write(hg_handle_t handle)
             &bla_write_bulk_block_handle);
    
     /* Read bulk data here and wait for the data to be here  */ 
+//     HG_Bulk_read(source, bla_write_bulk_handle, 0,
+//            bla_write_bulk_block_handle, 0, bla_write_nbytes, &bla_write_bulk_request);
     ret = HG_Bulk_read_all(source, bla_write_bulk_handle,
             bla_write_bulk_block_handle, &bla_write_bulk_request);
     if (ret != HG_SUCCESS) {
@@ -145,7 +147,7 @@ int fs_bla_write(hg_handle_t handle)
     return ret;
 }
 
-/******************************************************************************/
+/*****************************************************************************/
 int main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;

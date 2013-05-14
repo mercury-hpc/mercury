@@ -17,34 +17,32 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-typedef void * na_addr_t;
-typedef size_t na_size_t;
-typedef int    na_tag_t;
-typedef void * na_request_t;
-typedef struct na_status {
-    bool      completed;   /* true if operation has completed */
-    na_size_t count;       /* if completed is true, number of bytes transmitted */
-    //na_addr_t source;    /* if completed is true, source of operation */
-    //na_tag_t  tag;       /* if completed is true, tag of operation */
-    //int       error;     /* TODO may also want error handling here */
+typedef void * na_addr_t;    /* Abstract network address */
+typedef size_t na_size_t;    /* Size */
+typedef int    na_tag_t;     /* Tag */
+typedef void * na_request_t; /* Abstract request */
+typedef struct na_status {   /* Operation status */
+    bool      completed;     /* - true if operation has completed */
+    na_size_t count;         /* - number of bytes transmitted */
 } na_status_t;
 
-#define NA_MAX_IDLE_TIME (3600*1000)
-#define NA_STATUS_IGNORE ((na_status_t *)1)
+typedef void * na_mem_handle_t; /* Absract memory handle */
+typedef ptrdiff_t na_offset_t;  /* Offset */
+typedef struct na_segment {     /* Segment */
+    void      *address;         /* - address of the segment */
+    na_size_t  size;            /* - size of the segment in bytes */
+} na_segment_t;
 
 #define NA_ADDR_NULL    ((na_addr_t)0)
 #define NA_REQUEST_NULL ((na_request_t)0)
-
-typedef void * na_mem_handle_t;
-typedef ptrdiff_t na_offset_t;
-typedef struct na_segment {
-    void      *address; /* address of the segment */
-    na_size_t  size;    /* size of the segment in bytes */
-} na_segment_t;
-
+#define NA_STATUS_IGNORE ((na_status_t *)1)
 #define NA_MEM_HANDLE_NULL ((na_mem_handle_t)0)
 
-/* The memory attributes associated with the region */
+/* Max timeout */
+#define NA_MAX_IDLE_TIME (3600*1000)
+
+/* The memory attributes associated with the memory handle
+ * can be defined as read/write or read only */
 #define NA_MEM_READWRITE  0x00
 #define NA_MEM_READ_ONLY  0x01
 
@@ -52,37 +50,66 @@ typedef struct na_class {
     /* Finalize callback */
     int (*finalize)(void);
 
-    /* Addr callbacks */
+    /* Network address callbacks
+     * *************************
+     * Look up a remote peer address and establish a connection.
+     * NB. only clients need to call lookup */
     int (*addr_lookup)(const char *name, na_addr_t *addr);
     int (*addr_free)(na_addr_t addr);
 
-    /* Metadata callbacks */
-    na_size_t (*get_unexpected_size)(void);
-    int (*send_unexpected)(const void *buf, na_size_t buf_size, na_addr_t dest,
+    /* Message callbacks (used for metadata transfer)
+     * **********************************************
+     * Unexpected and expected callbacks can be used to
+     * transfer small messages of "maximum size" bytes between peers.
+     * Unexpected sends do not require a matching receive to complete.
+     * Unexpected receives may wait on ANY_TAG and ANY_SOURCE depending on the
+     * implementation.
+     * NB. An expected send should not be considered as a ready send in the
+     * sense that a matching recv may or may not have been posted already */
+    na_size_t (*msg_get_maximum_size)(void);
+    int (*msg_send_unexpected)(const void *buf, na_size_t buf_size, na_addr_t dest,
             na_tag_t tag, na_request_t *request, void *op_arg);
-    int (*recv_unexpected)(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
+    int (*msg_recv_unexpected)(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
             na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
-    int (*send)(const void *buf, na_size_t buf_size, na_addr_t dest,
+    int (*msg_send)(const void *buf, na_size_t buf_size, na_addr_t dest,
             na_tag_t tag, na_request_t *request, void *op_arg);
-    int (*recv)(void *buf, na_size_t buf_size, na_addr_t source,
+    int (*msg_recv)(void *buf, na_size_t buf_size, na_addr_t source,
             na_tag_t tag, na_request_t *request, void *op_arg);
 
-    /* Bulk data callbacks */
+    /* Memory registration callbacks
+     * *****************************
+     * Memory pieces must be registered before one-sided transfers can be
+     * initiated.
+     * Register can be used to register a contiguous piece of memory.
+     * Register_segments can be used to register fragmented pieces and get
+     * a single memory handle, this should be implemented only if the network
+     * transport supports it. */
     int (*mem_register)(void *buf, na_size_t buf_size, unsigned long flags,
             na_mem_handle_t *mem_handle);
     int (*mem_register_segments)(na_segment_t *segments, na_size_t segment_count,
             unsigned long flags, na_mem_handle_t *mem_handle);
     int (*mem_deregister)(na_mem_handle_t mem_handle);
 
-    /* Bulk handle serialization callbacks */
-    na_size_t (*mem_handle_get_serialize_size)(void);
+    /* Memory handle serialization callbacks
+     * *************************************
+     * One-sided transfers require prior exchange of memory handles between
+     * peers, serialization callbacks can be used to "pack" a memory handle and
+     * send it across the network.
+     * NB. Memory handles can be variable size, therefore the space required
+     * to serialize a handle into a buffer can be obtained using
+     * mem_handle_get_serialize_size */
+    na_size_t (*mem_handle_get_serialize_size)(na_mem_handle_t mem_handle);
     int (*mem_handle_serialize)(void *buf, na_size_t buf_size,
             na_mem_handle_t mem_handle);
     int (*mem_handle_deserialize)(na_mem_handle_t *mem_handle,
             const void *buf, na_size_t buf_size);
     int (*mem_handle_free)(na_mem_handle_t mem_handle);
 
-    /* Bulk transfer callbacks */
+    /* One-sided transfer callbacks (used for for bulk data operations)
+     * ****************************************************************
+     * Initiate a put or get to/from the registered memory regions with the
+     * given offset/size.
+     * NB. Memory must be registered and handles exchanged between peers. */
     int (*put)(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
             na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
             na_size_t length, na_addr_t remote_addr, na_request_t *request);
@@ -90,7 +117,12 @@ typedef struct na_class {
             na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
             na_size_t length, na_addr_t remote_addr, na_request_t *request);
 
-    /* Progress callbacks */
+    /* Progress callbacks
+     * ******************
+     * Wait for the completion of a request issued by a non-blocking operation.
+     * NB. Progress may be used to get a notification event that ensures
+     * the completion of a one-sided operation or may be used to make progress
+     * for plugins that need to emulate one-sided over two-sided operations. */
     int (*wait)(na_request_t request, unsigned int timeout, na_status_t *status);
     int (*progress)(unsigned int timeout, na_status_t *status);
 } na_class_t;
@@ -110,26 +142,26 @@ int NA_Addr_lookup(na_class_t *network_class,
 int NA_Addr_free(na_class_t *network_class,
         na_addr_t addr);
 
-/* Get the maximum size of an unexpected message */
-na_size_t NA_Get_unexpected_size(na_class_t *network_class);
+/* Get the maximum size of a message */
+na_size_t NA_Msg_get_maximum_size(na_class_t *network_class);
 
-/* Send a message to dest (unexpected asynchronous) */
-int NA_Send_unexpected(na_class_t *network_class,
+/* Send an unexpected message to dest */
+int NA_Msg_send_unexpected(na_class_t *network_class,
         const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 
-/* Receive a message from source (unexpected asynchronous) */
-int NA_Recv_unexpected(na_class_t *network_class,
+/* Receive an unexpected message */
+int NA_Msg_recv_unexpected(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
 
-/* Send a message to dest (asynchronous) */
-int NA_Send(na_class_t *network_class,
+/* Send an expected message to dest */
+int NA_Msg_send(na_class_t *network_class,
         const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 
-/* Receive a message from source (asynchronous) */
-int NA_Recv(na_class_t *network_class,
+/* Receive an expected message from source */
+int NA_Msg_recv(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg);
 
@@ -148,13 +180,14 @@ int NA_Mem_deregister(na_class_t *network_class,
         na_mem_handle_t mem_handle);
 
 /* Get size required to serialize handle */
-na_size_t NA_Mem_handle_get_serialize_size(na_class_t *network_class);
+na_size_t NA_Mem_handle_get_serialize_size(na_class_t *network_class,
+        na_mem_handle_t mem_handle);
 
-/* Serialize memory handle for exchange over the network */
+/* Serialize memory handle into a buffer */
 int NA_Mem_handle_serialize(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_mem_handle_t mem_handle);
 
-/* Deserialize memory handle */
+/* Deserialize memory handle from buffer */
 int NA_Mem_handle_deserialize(na_class_t *network_class,
         na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
 
@@ -178,7 +211,7 @@ int NA_Get(na_class_t *network_class,
 int NA_Wait(na_class_t *network_class,
         na_request_t request, unsigned int timeout, na_status_t *status);
 
-/* Track remote completion */
+/* Track completion of RMA operations and make progress */
 int NA_Progress(na_class_t *network_class,
         unsigned int timeout, na_status_t *status);
 

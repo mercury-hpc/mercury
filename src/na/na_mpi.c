@@ -22,19 +22,19 @@
 static int na_mpi_finalize(void);
 static int na_mpi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_mpi_addr_free(na_addr_t addr);
-static na_size_t na_mpi_get_unexpected_size(void);
-static int na_mpi_send_unexpected(const void *buf, na_size_t buf_size,
+static na_size_t na_mpi_msg_get_maximum_size(void);
+static int na_mpi_msg_send_unexpected(const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg);
-static int na_mpi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
+static int na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
-static int na_mpi_send(const void *buf, na_size_t buf_size, na_addr_t dest,
+static int na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
-static int na_mpi_recv(void *buf, na_size_t buf_size, na_addr_t source,
+static int na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg);
 static int na_mpi_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
         na_mem_handle_t *mem_handle);
 static int na_mpi_mem_deregister(na_mem_handle_t mem_handle);
-static na_size_t na_mpi_mem_handle_get_serialize_size(void);
+static na_size_t na_mpi_mem_handle_get_serialize_size(na_mem_handle_t mem_handle);
 static int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_handle);
 static int na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
 static int na_mpi_mem_handle_free(na_mem_handle_t mem_handle);
@@ -52,11 +52,11 @@ static na_class_t na_mpi_g = {
         na_mpi_finalize,               /* finalize */
         na_mpi_addr_lookup,            /* addr_lookup */
         na_mpi_addr_free,              /* addr_free */
-        na_mpi_get_unexpected_size,    /* get_unexpected_size */
-        na_mpi_send_unexpected,        /* send_unexpected */
-        na_mpi_recv_unexpected,        /* recv_unexpected */
-        na_mpi_send,                   /* send */
-        na_mpi_recv,                   /* recv */
+        na_mpi_msg_get_maximum_size,   /* msg_get_maximum_size */
+        na_mpi_msg_send_unexpected,    /* msg_send_unexpected */
+        na_mpi_msg_recv_unexpected,    /* msg_recv_unexpected */
+        na_mpi_msg_send,               /* msg_send */
+        na_mpi_msg_recv,               /* msg_recv */
         na_mpi_mem_register,           /* mem_register */
         NULL,                          /* mem_register_segments */
         na_mpi_mem_deregister,         /* mem_deregister */
@@ -70,7 +70,6 @@ static na_class_t na_mpi_g = {
         na_mpi_progress                /* progress */
 };
 
-
 /* FIXME Force MPI version to 2 for now */
 #undef MPI_VERSION
 #define MPI_VERSION 2
@@ -83,9 +82,9 @@ typedef struct mpi_addr {
 } mpi_addr_t;
 
 typedef struct mpi_mem_handle {
-    void *base;                 /* Initial address of memory */
-    MPI_Aint size;              /* Size of memory */
-    unsigned long attr;         /* Flag of operation access */
+    void *base;                /* Initial address of memory */
+    /* MPI_Aint size; */       /* Size of memory, NB don't use it for now */
+    unsigned attr;             /* Flag of operation access */
 } mpi_mem_handle_t;
 
 #if MPI_VERSION < 3
@@ -299,22 +298,9 @@ static int na_mpi_finalize(void)
 }
 
 /*---------------------------------------------------------------------------
- * Function:    na_mpi_get_unexpected_size
- *
- * Purpose:     Get the maximum size of an unexpected message
- *
- *---------------------------------------------------------------------------
- */
-static na_size_t na_mpi_get_unexpected_size()
-{
-    na_size_t max_unexpected_size = NA_MPI_UNEXPECTED_SIZE;
-    return max_unexpected_size;
-}
-
-/*---------------------------------------------------------------------------
  * Function:    na_mpi_addr_lookup
  *
- * Purpose:     addr_lookup a addr from a peer address/name
+ * Purpose:     Lookup an addr from a peer address/name
  *
  * Returns:     Non-negative on success or negative on failure
  *
@@ -411,31 +397,44 @@ static int na_mpi_addr_free(na_addr_t addr)
 }
 
 /*---------------------------------------------------------------------------
- * Function:    na_mpi_send_unexpected
+ * Function:    na_mpi_msg_get_maximum_size
  *
- * Purpose:     Send a message to dest (unexpected asynchronous)
- *
- * Returns:     Non-negative on success or negative on failure
+ * Purpose:     Get the maximum size of a message
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_send_unexpected(const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg)
+static na_size_t na_mpi_msg_get_maximum_size(void)
 {
-    /* There should not be any difference for MPI */
-    return na_mpi_send(buf, buf_size, dest, tag, request, op_arg);
+    na_size_t max_unexpected_size = NA_MPI_UNEXPECTED_SIZE;
+    return max_unexpected_size;
 }
 
 /*---------------------------------------------------------------------------
- * Function:    na_mpi_recv_unexpected
+ * Function:    na_mpi_msg_send_unexpected
  *
- * Purpose:     Receive a message from source (unexpected asynchronous)
+ * Purpose:     Send an unexpected message to dest
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
+static int na_mpi_msg_send_unexpected(const void *buf, na_size_t buf_size,
+        na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg)
+{
+    /* There should not be any difference for MPI */
+    return na_mpi_msg_send(buf, buf_size, dest, tag, request, op_arg);
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    na_mpi_msg_recv_unexpected
+ *
+ * Purpose:     Receive an unexpected message
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+static int na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
@@ -515,15 +514,15 @@ static int na_mpi_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actu
 }
 
 /*---------------------------------------------------------------------------
- * Function:    na_mpi_send
+ * Function:    na_mpi_msg_send
  *
- * Purpose:     Send a message to dest (asynchronous)
+ * Purpose:     Send an expected message to dest
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_send(const void *buf, na_size_t buf_size, na_addr_t dest,
+static int na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
@@ -550,15 +549,15 @@ static int na_mpi_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 }
 
 /*---------------------------------------------------------------------------
- * Function:    na_mpi_recv
+ * Function:    na_mpi_msg_recv
  *
- * Purpose:     Receive a message from source (asynchronous)
+ * Purpose:     Receive an expected message from source
  *
  * Returns:     Non-negative on success or negative on failure
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_recv(void *buf, na_size_t buf_size, na_addr_t source,
+static int na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
@@ -598,12 +597,12 @@ int na_mpi_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
 {
     int ret = NA_SUCCESS;
     void *mpi_buf_base = buf;
-    MPI_Aint mpi_buf_size = (MPI_Aint) buf_size;
+    /* MPI_Aint mpi_buf_size = (MPI_Aint) buf_size; */
     mpi_mem_handle_t *mpi_mem_handle;
 
     mpi_mem_handle = malloc(sizeof(mpi_mem_handle_t));
     mpi_mem_handle->base = mpi_buf_base;
-    mpi_mem_handle->size = mpi_buf_size;
+    /* mpi_mem_handle->size = mpi_buf_size; */
     mpi_mem_handle->attr = flags;
 
     *mem_handle = (na_mem_handle_t) mpi_mem_handle;
@@ -631,7 +630,7 @@ int na_mpi_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
 /*---------------------------------------------------------------------------
  * Function:    na_mpi_mem_deregister
  *
- * Purpose:     Deregister memory for RMA operations
+ * Purpose:     Deregister memory
  *
  * Returns:     Non-negative on success or negative on failure
  *
@@ -676,7 +675,7 @@ int na_mpi_mem_deregister(na_mem_handle_t mem_handle)
  *
  *---------------------------------------------------------------------------
  */
-static na_size_t na_mpi_mem_handle_get_serialize_size(void)
+static na_size_t na_mpi_mem_handle_get_serialize_size(na_mem_handle_t mem_handle)
 {
     return sizeof(mpi_mem_handle_t);
 }
@@ -684,7 +683,7 @@ static na_size_t na_mpi_mem_handle_get_serialize_size(void)
 /*---------------------------------------------------------------------------
  * Function:    na_mpi_mem_handle_serialize
  *
- * Purpose:     Serialize memory handle for exchange over the network
+ * Purpose:     Serialize memory handle into a buffer
  *
  * Returns:     Non-negative on success or negative on failure
  *
@@ -703,7 +702,6 @@ int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size,
         /* Here safe to do a simple memcpy */
         /* TODO may also want to add a checksum or something */
         memcpy(buf, mpi_mem_handle, sizeof(mpi_mem_handle_t));
-        fprintf(stderr, "MPI mem handle base: %lu, size: %lu\n", (long unsigned)mpi_mem_handle->base, mpi_mem_handle->size);
     }
     return ret;
 }
@@ -711,7 +709,7 @@ int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size,
 /*---------------------------------------------------------------------------
  * Function:    na_mpi_mem_handle_deserialize
  *
- * Purpose:     Deserialize memory handle for exchange over the network
+ * Purpose:     Deserialize memory handle from buffer
  *
  * Returns:     Non-negative on success or negative on failure
  *
@@ -731,7 +729,6 @@ int na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
         /* Here safe to do a simple memcpy */
         memcpy(mpi_mem_handle, buf, sizeof(mpi_mem_handle_t));
         *mem_handle = (na_mem_handle_t) mpi_mem_handle;
-        fprintf(stderr, "MPI mem handle base: %lu, size: %lu\n", (long unsigned)mpi_mem_handle->base, mpi_mem_handle->size);
     }
     return ret;
 }
@@ -739,7 +736,7 @@ int na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
 /*---------------------------------------------------------------------------
  * Function:    na_mpi_mem_handle_free
  *
- * Purpose:     Free memory handle created by deserialize
+ * Purpose:     Free memory handle
  *
  * Returns:     Non-negative on success or negative on failure
  *
@@ -949,7 +946,6 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         return ret;
     }
 
-    fprintf(stderr, "request type: %d\n", mpi_request->type);
     if (timeout == 0) {
         int mpi_flag = 0;
         mpi_ret = MPI_Test(&mpi_request->request, &mpi_flag, &mpi_status);
@@ -1029,7 +1025,7 @@ static int na_mpi_progress(unsigned int timeout, na_status_t *status)
 
             gettimeofday(&t1, NULL);
 
-            ret = na_mpi_recv_unexpected(&onesided_info, sizeof(mpi_onesided_info_t),
+            ret = na_mpi_msg_recv_unexpected(&onesided_info, sizeof(mpi_onesided_info_t),
                     &onesided_actual_size, &remote_addr,
                     &remote_tag, &onesided_request, NULL);
             if (ret != NA_SUCCESS) {
@@ -1082,6 +1078,10 @@ static int na_mpi_progress(unsigned int timeout, na_status_t *status)
         ret = NA_FAIL;
         return ret;
     }
+
+    /* fprintf(stderr, "Treating request: base %lu, count %lu, disp %lu\n",
+            (unsigned long)onesided_info.base, (unsigned long)onesided_info.count,
+            (unsigned long)onesided_info.disp); */
 
     /* Here better to keep the mutex locked the time we operate on
      * mpi_mem_handle since it's a pointer to a mem_handle */

@@ -16,7 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/******************************************************************************/
+/*****************************************************************************/
 int main(int argc, char *argv[])
 {
     char *ion_name;
@@ -29,9 +29,9 @@ int main(int argc, char *argv[])
     hg_request_t bla_write_request;
 
     int fildes = 12345;
-    int bulk_buf[8][131072];
-    int bulk_size_x = 8;
-    int bulk_size_y = 131072;
+    int bulk_buf[1024][1024];
+    int bulk_size_x = 1024;
+    int bulk_size_y = 1024;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     hg_bulk_segment_t *bulk_segments = NULL;
     int bla_write_ret = 0;
@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
     /* Prepare bulk_buf */
     for (i = 0; i < bulk_size_x; i++) {
         for (j = 0; j < bulk_size_y; j++) {
-        bulk_buf[i][j] = i*bulk_size_y + j;
+            bulk_buf[i][j] = i * bulk_size_y + j;
         }
     }
 
@@ -93,6 +93,8 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    free(bulk_segments);
+
     /* Fill input structure */
     bla_write_in_struct.fildes = fildes;
     bla_write_in_struct.bulk_handle = bulk_handle;
@@ -131,8 +133,6 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Could not free bulk data handle\n");
         return EXIT_FAILURE;
     }
-
-    free(bulk_segments);
 
     /* Free addr id */
     na_ret = NA_Addr_free(network_class, addr);

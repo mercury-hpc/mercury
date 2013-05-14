@@ -58,6 +58,7 @@ typedef enum {
  * |    Header    |        Encoded Data      |
  * |______________|__________________________|
  */
+#define HG_PROC_MAX_HEADER_SIZE 64
 
 typedef struct hg_proc_buf {
     void    *buf;       /* Pointer to allocated buffer */
@@ -78,8 +79,6 @@ typedef struct hg_priv_proc {
 } hg_priv_proc_t;
 
 typedef const char * hg_string_t;
-
-#define HG_BULK_MAX_HANDLE_SIZE 32 /* TODO Arbitrary value */
 
 #ifdef __cplusplus
 extern "C" {
@@ -107,9 +106,6 @@ size_t hg_proc_get_size_left(hg_proc_t proc);
 /* Get/Set current buffer position */
 void * hg_proc_get_buf_ptr(hg_proc_t proc);
 int hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr);
-
-/* Get required space for storing header data */
-size_t hg_proc_get_header_size(void);
 
 /* Get extra buffer */
 void * hg_proc_get_extra_buf(hg_proc_t proc);
@@ -166,18 +162,44 @@ HG_PROC_INLINE int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
 
     if (priv_proc->op == HG_FREE) return ret;
 
-    /* If not enough space allocate extra space if encoding or just get extra buffer if decoding */
+    /* If not enough space allocate extra space if encoding or
+     * just get extra buffer if decoding */
     if (priv_proc->current_buf->size_left < data_size) {
-        hg_proc_set_size(proc, priv_proc->proc_buf.size + priv_proc->extra_buf.size + data_size);
+        hg_proc_set_size(proc, priv_proc->proc_buf.size +
+                priv_proc->extra_buf.size + data_size);
     }
 
     /* Process data */
-    src = (priv_proc->op == HG_ENCODE) ? (const void *) data : (const void *) priv_proc->current_buf->buf_ptr;
-    dest = (priv_proc->op == HG_ENCODE) ? priv_proc->current_buf->buf_ptr : data;
+    src = (priv_proc->op == HG_ENCODE) ? (const void *) data :
+            (const void *) priv_proc->current_buf->buf_ptr;
+    dest = (priv_proc->op == HG_ENCODE) ? priv_proc->current_buf->buf_ptr :
+            data;
     memcpy(dest, src, data_size);
-    priv_proc->current_buf->buf_ptr = (char*) priv_proc->current_buf->buf_ptr + data_size;
+    priv_proc->current_buf->buf_ptr = (char*) priv_proc->current_buf->buf_ptr
+            + data_size;
     priv_proc->current_buf->size_left -= data_size;
 
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    hg_proc_bool_t
+ *
+ * Purpose:     Generic processing routines
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+HG_PROC_INLINE int hg_proc_bool_t(hg_proc_t proc, bool *data)
+{
+    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    int ret = HG_FAIL;
+#ifdef MERCURY_HAS_XDR
+    ret = xdr_bool(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
+#else
+    ret = hg_proc_memcpy(priv_proc, data, sizeof(bool));
+#endif
     return ret;
 }
 
@@ -190,7 +212,7 @@ HG_PROC_INLINE int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_int8_t  (hg_proc_t proc, int8_t *data)
+HG_PROC_INLINE int hg_proc_int8_t(hg_proc_t proc, int8_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -211,7 +233,7 @@ HG_PROC_INLINE int hg_proc_int8_t  (hg_proc_t proc, int8_t *data)
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_uint8_t  (hg_proc_t proc, uint8_t *data)
+HG_PROC_INLINE int hg_proc_uint8_t(hg_proc_t proc, uint8_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -232,7 +254,7 @@ HG_PROC_INLINE int hg_proc_uint8_t  (hg_proc_t proc, uint8_t *data)
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_int16_t  (hg_proc_t proc, int16_t *data)
+HG_PROC_INLINE int hg_proc_int16_t(hg_proc_t proc, int16_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -253,7 +275,7 @@ HG_PROC_INLINE int hg_proc_int16_t  (hg_proc_t proc, int16_t *data)
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_uint16_t  (hg_proc_t proc, uint16_t *data)
+HG_PROC_INLINE int hg_proc_uint16_t(hg_proc_t proc, uint16_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -274,7 +296,7 @@ HG_PROC_INLINE int hg_proc_uint16_t  (hg_proc_t proc, uint16_t *data)
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_int32_t  (hg_proc_t proc, int32_t *data)
+HG_PROC_INLINE int hg_proc_int32_t(hg_proc_t proc, int32_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -295,7 +317,7 @@ HG_PROC_INLINE int hg_proc_int32_t  (hg_proc_t proc, int32_t *data)
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_uint32_t  (hg_proc_t proc, uint32_t *data)
+HG_PROC_INLINE int hg_proc_uint32_t(hg_proc_t proc, uint32_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -316,7 +338,7 @@ HG_PROC_INLINE int hg_proc_uint32_t  (hg_proc_t proc, uint32_t *data)
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_int64_t  (hg_proc_t proc, int64_t *data)
+HG_PROC_INLINE int hg_proc_int64_t(hg_proc_t proc, int64_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -337,7 +359,7 @@ HG_PROC_INLINE int hg_proc_int64_t  (hg_proc_t proc, int64_t *data)
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_uint64_t  (hg_proc_t proc, uint64_t *data)
+HG_PROC_INLINE int hg_proc_uint64_t(hg_proc_t proc, uint64_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -358,7 +380,7 @@ HG_PROC_INLINE int hg_proc_uint64_t  (hg_proc_t proc, uint64_t *data)
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_raw  (hg_proc_t proc, void *buf, size_t buf_size)
+HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     uint8_t *buf_ptr;
@@ -457,7 +479,7 @@ HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
     char *buf;
-    uint32_t buf_size;
+    uint64_t buf_size = 0;
 
     switch (priv_proc->op) {
         case HG_ENCODE:
@@ -467,44 +489,52 @@ HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Could not serialize bulk handle");
                 ret = HG_FAIL;
-                break;
+                return ret;
             }
-            ret = hg_proc_uint32_t(proc, &buf_size);
+            ret = hg_proc_uint64_t(proc, &buf_size);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
+                return ret;
             }
             ret = hg_proc_raw(proc, buf, buf_size);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
+                return ret;
             }
             free(buf);
+            buf = NULL;
             break;
         case HG_DECODE:
-            ret = hg_proc_uint32_t(proc, &buf_size);
+            ret = hg_proc_uint64_t(proc, &buf_size);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
+                return ret;
             }
             buf = malloc(buf_size);
             ret = hg_proc_raw(proc, buf, buf_size);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
+                return ret;
             }
             ret = HG_Bulk_handle_deserialize(handle, buf, buf_size);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Could not deserialize bulk handle");
                 ret = HG_FAIL;
+                return ret;
             }
             free(buf);
+            buf = NULL;
             break;
         case HG_FREE:
             ret = HG_Bulk_handle_free(*handle);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Could not free bulk handle");
                 ret = HG_FAIL;
+                return ret;
             }
             *handle = NULL;
             break;
@@ -512,6 +542,21 @@ HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
             break;
     }
     return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    hg_proc_get_header_size
+ *
+ * Purpose:     Get required space for storing header data
+ *
+ * Returns:     Size of header
+ *
+ *---------------------------------------------------------------------------
+ */
+HG_PROC_INLINE size_t hg_proc_get_header_size(void)
+{
+    /* TODO this may need to more accurately defined in the future */
+    return HG_PROC_MAX_HEADER_SIZE;
 }
 
 /*---------------------------------------------------------------------------
@@ -523,8 +568,8 @@ HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_header_request (hg_proc_t proc, uint32_t *op_id,
-        uint8_t *extra_buf_used)
+HG_PROC_INLINE int hg_proc_header_request(hg_proc_t proc, uint32_t *op_id,
+        bool *extra_buf_used, hg_bulk_t *extra_handle)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     hg_proc_buf_t  *current_buf;
@@ -532,6 +577,8 @@ HG_PROC_INLINE int hg_proc_header_request (hg_proc_t proc, uint32_t *op_id,
     uint32_t iofsl_op_id = PROTO_GENERIC;
     int ret = HG_FAIL;
 
+    /* If we have switched buffers we need to go back to the buffer that
+     * contains the header */
     current_buf = priv_proc->current_buf;
     current_buf_ptr = hg_proc_get_buf_ptr(proc);
     priv_proc->current_buf = &priv_proc->proc_buf;
@@ -554,11 +601,20 @@ HG_PROC_INLINE int hg_proc_header_request (hg_proc_t proc, uint32_t *op_id,
     }
 
     /* Has an extra buffer */
-    ret = hg_proc_uint8_t(proc, extra_buf_used);
+    ret = hg_proc_bool_t(proc, extra_buf_used);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Proc error");
         ret = HG_FAIL;
         return ret;
+    }
+
+    if (*extra_buf_used) {
+        ret = hg_proc_hg_bulk_t(proc, extra_handle);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Proc error");
+            ret = HG_FAIL;
+            return ret;
+        }
     }
 
     priv_proc->current_buf = current_buf;
@@ -576,7 +632,7 @@ HG_PROC_INLINE int hg_proc_header_request (hg_proc_t proc, uint32_t *op_id,
  *
  *---------------------------------------------------------------------------
  */
-HG_PROC_INLINE int hg_proc_header_response (hg_proc_t proc, uint8_t *extra_buf_used)
+HG_PROC_INLINE int hg_proc_header_response(hg_proc_t proc, bool *extra_buf_used)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     hg_proc_buf_t  *current_buf;
@@ -598,7 +654,7 @@ HG_PROC_INLINE int hg_proc_header_response (hg_proc_t proc, uint8_t *extra_buf_u
     }
 
     /* Has an extra buffer */
-    hg_proc_uint8_t(proc, extra_buf_used);
+    hg_proc_bool_t(proc, extra_buf_used);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Proc error");
         ret = HG_FAIL;

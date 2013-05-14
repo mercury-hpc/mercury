@@ -180,7 +180,7 @@ static int hash_table_enlarge(hg_hash_table_t *hash_table)
 	unsigned int old_prime_index;
 	hg_hash_table_entry_t *rover;
 	hg_hash_table_entry_t *next;
-	unsigned int index;
+	unsigned int entry_index;
 	unsigned int i;
 	
 	/* Store a copy of the old table */
@@ -214,12 +214,12 @@ static int hash_table_enlarge(hg_hash_table_t *hash_table)
 
 			/* Find the index into the new table */
 			
-			index = hash_table->hash_func(rover->key) % hash_table->table_size;
+			entry_index = hash_table->hash_func(rover->key) % hash_table->table_size;
 			
 			/* Link this entry into the chain */
 
-			rover->next = hash_table->table[index];
-			hash_table->table[index] = rover;
+			rover->next = hash_table->table[entry_index];
+			hash_table->table[entry_index] = rover;
 			
 			/* Advance to next in the chain */
 
@@ -238,7 +238,7 @@ int hg_hash_table_insert(hg_hash_table_t *hash_table, hg_hash_table_key_t key, h
 {
 	hg_hash_table_entry_t *rover;
 	hg_hash_table_entry_t *newentry;
-	unsigned int index;
+	unsigned int entry_index;
 	
 	/* If there are too many items in the table with respect to the table
 	 * size, the number of hash collisions increases and performance
@@ -258,12 +258,12 @@ int hg_hash_table_insert(hg_hash_table_t *hash_table, hg_hash_table_key_t key, h
 
 	/* Generate the hash of the key and hence the index into the table */
 
-	index = hash_table->hash_func(key) % hash_table->table_size;
+	entry_index = hash_table->hash_func(key) % hash_table->table_size;
 
 	/* Traverse the chain at this location and look for an existing
 	 * entry with the same key */
 
-	rover = hash_table->table[index];
+	rover = hash_table->table[entry_index];
 
 	while (rover != NULL) {
 		if (hash_table->equal_func(rover->key, key) != 0) {
@@ -307,8 +307,8 @@ int hg_hash_table_insert(hg_hash_table_t *hash_table, hg_hash_table_key_t key, h
 
 	/* Link into the list */
 
-	newentry->next = hash_table->table[index];
-	hash_table->table[index] = newentry;
+	newentry->next = hash_table->table[entry_index];
+	hash_table->table[entry_index] = newentry;
 
 	/* Maintain the count of the number of entries */
 
@@ -322,16 +322,16 @@ int hg_hash_table_insert(hg_hash_table_t *hash_table, hg_hash_table_key_t key, h
 hg_hash_table_value_t hg_hash_table_lookup(hg_hash_table_t *hash_table, hg_hash_table_key_t key)
 {
 	hg_hash_table_entry_t *rover;
-	unsigned int index;
+	unsigned int entry_index;
 
 	/* Generate the hash of the key and hence the index into the table */
 	
-	index = hash_table->hash_func(key) % hash_table->table_size;
+	entry_index = hash_table->hash_func(key) % hash_table->table_size;
 
 	/* Walk the chain at this index until the corresponding entry is
 	 * found */
 
-	rover = hash_table->table[index];
+	rover = hash_table->table[entry_index];
 
 	while (rover != NULL) {
 		if (hash_table->equal_func(key, rover->key) != 0) {
@@ -352,12 +352,12 @@ int hg_hash_table_remove(hg_hash_table_t *hash_table, hg_hash_table_key_t key)
 {
 	hg_hash_table_entry_t **rover;
 	hg_hash_table_entry_t *entry;
-	unsigned int index;
+	unsigned int entry_index;
 	int result;
 
 	/* Generate the hash of the key and hence the index into the table */
 	
-	index = hash_table->hash_func(key) % hash_table->table_size;
+	entry_index = hash_table->hash_func(key) % hash_table->table_size;
 
 	/* Rover points at the pointer which points at the current entry
 	 * in the chain being inspected.  ie. the entry in the table, or
@@ -365,7 +365,7 @@ int hg_hash_table_remove(hg_hash_table_t *hash_table, hg_hash_table_key_t key)
 	 * allows us to unlink the entry when we find it. */
 
 	result = 0;
-	rover = &hash_table->table[index];
+	rover = &hash_table->table[entry_index];
 
 	while (*rover != NULL) {
 
