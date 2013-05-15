@@ -5,7 +5,7 @@ project(MERCURY C)
 # Version information 
 #------------------------------------------------------------------------------
 set(MERCURY_VERSION_MAJOR "0")
-set(MERCURY_VERSION_MINOR "6")
+set(MERCURY_VERSION_MINOR "7")
 set(MERCURY_VERSION_PATCH "0")
 set(MERCURY_PACKAGE "mercury")
 set(MERCURY_PACKAGE_NAME "MERCURY")
