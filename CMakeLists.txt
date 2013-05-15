@@ -45,6 +45,14 @@ if(NOT MERCURY_EXTERNALLY_CONFIGURED)
   set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_SOURCE_DIR}/CMake)
 endif(NOT MERCURY_EXTERNALLY_CONFIGURED)
 
+#------------------------------------------------------------------------------
+# Default build type
+#------------------------------------------------------------------------------
+if(NOT CMAKE_BUILD_TYPE)
+  message(STATUS "No build type selected, default to Release")
+  set(CMAKE_BUILD_TYPE "Release")
+endif()
+
 #-----------------------------------------------------------------------------
 # Targets built within this project are exported at Install time for use
 # by other projects.
