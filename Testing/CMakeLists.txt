@@ -27,6 +27,16 @@ function(add_mercury_test full_test_name server client)
   endforeach(comm)
 endfunction(add_mercury_test)
 
+function(add_mercury_opt_test full_test_name server client opt)
+  foreach(comm ${NA_PLUGINS})
+    add_test(NAME "${full_test_name}_${opt}_${comm}"
+      COMMAND $<TARGET_FILE:mercury_test_driver>
+      --server $<TARGET_FILE:${server}>
+      --client $<TARGET_FILE:${client}> ${comm} ${opt}
+    )
+  endforeach(comm)
+endfunction(add_mercury_opt_test)
+
 #------------------------------------------------------------------------------
 # mercury_test : Lib used by tests contains main test initialization etc
 #------------------------------------------------------------------------------
@@ -117,6 +127,16 @@ set(MERCURY_tests
   posix
 )
 foreach(MERCURY_test ${MERCURY_tests})
-    add_mercury_test(mercury_${MERCURY_test}
-      server_${MERCURY_test} client_${MERCURY_test})
+  add_mercury_test(mercury_${MERCURY_test}
+    server_${MERCURY_test} client_${MERCURY_test})
+endforeach(MERCURY_test)
+
+set(MERCURY_opt_tests
+  bds_seg
+)
+foreach(MERCURY_test ${MERCURY_opt_tests})
+  add_mercury_opt_test(mercury_${MERCURY_test} server_${MERCURY_test}
+    client_${MERCURY_test} "extra")
+  add_mercury_opt_test(mercury_${MERCURY_test} server_${MERCURY_test}
+    client_${MERCURY_test} "variable")
 endforeach(MERCURY_test)

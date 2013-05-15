@@ -32,9 +32,9 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
 {
     na_class_t *network_class = NULL;
 
-    if (argc != 2) {
+    if (argc < 2) {
         fprintf(stderr, "Usage: %s <bmi|mpi>\n", argv[0]);
-        return NULL;
+        exit(0);
     }
 
 #ifdef NA_HAS_MPI
@@ -72,9 +72,9 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
 {
     na_class_t *network_class = NULL;
 
-    if (argc != 2) {
+    if (argc < 2) {
         fprintf(stderr, "Usage: %s <bmi|mpi>\n", argv[0]);
-        return NULL;
+        exit(0);
     }
 
 #ifdef NA_HAS_MPI
