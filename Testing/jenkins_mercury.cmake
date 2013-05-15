@@ -8,7 +8,7 @@
 set(MERCURY_BUILD_CONFIGURATION "Debug")
 
 # MERCURY_DASHBOARD_MODEL=Experimental | Nightly | Continuous
-set(MERCURY_DASHBOARD_MODEL "Continuous")
+set(MERCURY_DASHBOARD_MODEL "Nightly")
 
 # Disable loop when MERCURY_DASHBOARD_MODEL=Continuous
 message("Disabling looping (if applicable)")
