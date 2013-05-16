@@ -55,6 +55,7 @@ int main(int argc, char *argv[])
     if (argc == 3) {
         /* This will create a list of variable size segments */
         if (strcmp(argv[2], "variable") == 0) {
+            printf("Using variable size segments!\n");
             /* bulk_size_x >= 2 */
             /* 524288 + 262144 + 131072 + 65536 + 32768 + 16384 + 8192 + 8192 */
             bulk_size_x = 8;
@@ -66,9 +67,16 @@ int main(int argc, char *argv[])
             bulk_size_y_var[bulk_size_x - 1] = bulk_size_y_var[bulk_size_x - 2];
         }
         /* This will use an extra encoding buffer */
-        if (strcmp(argv[2], "extra") == 0) {
+        else if (strcmp(argv[2], "extra") == 0) {
+            printf("Using large number of segments!\n");
             bulk_size_x = 1024;
             bulk_size_y = bulk_size / bulk_size_x;
+        }
+        else {
+            fprintf(stderr, "Error: Option not recognized, valid options are:\n"
+                    "  - variable\n"
+                    "  - extra\n");
+            return EXIT_FAILURE;
         }
     } else {
         /* This will create a list of fixed size segments */

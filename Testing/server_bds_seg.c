@@ -64,7 +64,10 @@ int fs_bla_write(hg_handle_t handle)
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bla_write_bulk_handle = HG_BULK_NULL;
     hg_bulk_block_t bla_write_bulk_block_handle = HG_BULK_BLOCK_NULL;
-    hg_bulk_request_t bla_write_bulk_request;
+    size_t bla_write_nbytes_read;
+    ptrdiff_t bla_write_offset;
+    hg_bulk_request_t bla_write_bulk_request1;
+    hg_bulk_request_t bla_write_bulk_request2;
 
     int bla_write_fildes;
     void *bla_write_buf;
@@ -94,17 +97,35 @@ int fs_bla_write(hg_handle_t handle)
     HG_Bulk_block_handle_create(bla_write_buf, bla_write_nbytes, HG_BULK_READWRITE,
             &bla_write_bulk_block_handle);
    
-    /* Read bulk data here and wait for the data to be here  */ 
-//     HG_Bulk_read(source, bla_write_bulk_handle, 0,
-//            bla_write_bulk_block_handle, 0, bla_write_nbytes, &bla_write_bulk_request);
-    ret = HG_Bulk_read_all(source, bla_write_bulk_handle,
-            bla_write_bulk_block_handle, &bla_write_bulk_request);
+    /* For testing purposes try to read the data in two blocks of different sizes */
+    bla_write_nbytes_read = bla_write_nbytes / 2 + 16;
+    printf("Start reading first chunk of %lu bytes...\n", bla_write_nbytes_read);
+    ret = HG_Bulk_read(source, bla_write_bulk_handle, 0,
+            bla_write_bulk_block_handle, 0, bla_write_nbytes_read, &bla_write_bulk_request1);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not read bulk data\n");
+        return ret;
+    }
+    bla_write_offset = bla_write_nbytes_read;
+    bla_write_nbytes_read = bla_write_nbytes - bla_write_nbytes_read;
+    printf("Start reading second chunk of %lu bytes...\n", bla_write_nbytes_read);
+    ret = HG_Bulk_read(source, bla_write_bulk_handle, bla_write_offset,
+            bla_write_bulk_block_handle, bla_write_offset,
+            bla_write_nbytes_read, &bla_write_bulk_request2);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
     }
 
-    ret = HG_Bulk_wait(bla_write_bulk_request, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+    printf("Waiting for first chunk...\n");
+    ret = HG_Bulk_wait(bla_write_bulk_request1, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete bulk data read\n");
+        return ret;
+    }
+
+    printf("Waiting for second chunk...\n");
+    ret = HG_Bulk_wait(bla_write_bulk_request2, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not complete bulk data read\n");
         return ret;

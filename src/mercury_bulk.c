@@ -435,6 +435,9 @@ int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_si
         memcpy(&priv_handle->size_list[i], buf_ptr, sizeof(size_t));
         buf_ptr += sizeof(size_t);
         buf_size_left -= sizeof(size_t);
+        /*
+        fprintf(stderr, "Segment[%lu] = %lu bytes\n", i, priv_handle->size_list[i]);
+        */
     }
 
     priv_handle->mem_handle_list = malloc(priv_handle->count * sizeof(na_mem_handle_t));
@@ -583,11 +586,15 @@ static int hg_bulk_find_handle_list_info(hg_bulk_t bulk_handle,
     next_offset = 0;
     for (i = 0; i < priv_handle->count; i++) {
         next_offset += priv_handle->size_list[i];
+        /*
+        fprintf(stderr, "bulk_offset: %lu next_offset: %lu new_handle_offset: %lu\n",
+                bulk_offset, next_offset, new_handle_offset);
+        */
         if (bulk_offset < next_offset) {
             new_index_start = i;
             break;
         }
-        new_handle_offset -= next_offset;
+        new_handle_offset -= priv_handle->size_list[i];
     }
 
     /* Get request count, i.e. the number of requests needed to transfer data */
@@ -630,6 +637,7 @@ int HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
     size_t request_count;
     size_t handle_list_index_start;
     size_t i;
+    size_t request_index = 0;
 
     if (!priv_handle) {
         HG_ERROR_DEFAULT("NULL memory handle passed");
@@ -640,6 +648,11 @@ int HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
     /* Translate bulk_offset */
     hg_bulk_find_handle_list_info(bulk_handle, bulk_offset, block_size,
             &handle_list_index_start, &remote_offset, &request_count);
+    /*
+    fprintf(stderr, "handle list index start: %lu\n"
+            "remote offset: %lu\n"
+            "request_count: %lu\n", handle_list_index_start, remote_offset, request_count);
+    */
 
     /* Translate block offset */
     local_offset = block_offset;
@@ -656,7 +669,7 @@ int HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
         na_ret = NA_Put(bulk_na_class,
                 priv_block_handle->mem_handle, local_offset,
                 priv_handle->mem_handle_list[i], remote_offset,
-                transfer_size, addr, &priv_bulk_request->request_list[i]);
+                transfer_size, addr, &priv_bulk_request->request_list[request_index]);
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("Could not put data");
             ret = HG_FAIL;
@@ -667,6 +680,8 @@ int HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
         local_offset += transfer_size;
         /* Decrease remaining size from the size of data we just transferred */
         remaining_size -= transfer_size;
+        /* Increase request index */
+        request_index++;
     }
 
     *bulk_request = (hg_bulk_request_t) priv_bulk_request;
@@ -722,6 +737,7 @@ int HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
     size_t request_count;
     size_t handle_list_index_start;
     size_t i;
+    size_t request_index = 0;
 
     if (!priv_handle) {
         HG_ERROR_DEFAULT("NULL memory handle passed");
@@ -732,6 +748,11 @@ int HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
     /* Translate bulk_offset */
     hg_bulk_find_handle_list_info(bulk_handle, bulk_offset, block_size,
             &handle_list_index_start, &remote_offset, &request_count);
+    /*
+    fprintf(stderr, "handle list index start: %lu\n"
+            "remote offset: %lu\n"
+            "request_count: %lu\n", handle_list_index_start, remote_offset, request_count);
+    */
 
     /* Translate block offset */
     local_offset = block_offset;
@@ -748,7 +769,7 @@ int HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
         na_ret = NA_Get(bulk_na_class,
                 priv_block_handle->mem_handle, local_offset,
                 priv_handle->mem_handle_list[i], remote_offset,
-                transfer_size, addr, &priv_bulk_request->request_list[i]);
+                transfer_size, addr, &priv_bulk_request->request_list[request_index]);
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("Could not get data");
             ret = HG_FAIL;
@@ -759,6 +780,8 @@ int HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
         local_offset += transfer_size;
         /* Decrease remaining size from the size of data we just transferred */
         remaining_size -= transfer_size;
+        /* Increase request index */
+        request_index++;
     }
 
     *bulk_request = (hg_bulk_request_t) priv_bulk_request;
