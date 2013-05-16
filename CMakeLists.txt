@@ -51,7 +51,7 @@ endif(NOT MERCURY_EXTERNALLY_CONFIGURED)
 if(NOT CMAKE_BUILD_TYPE)
   message(STATUS "No build type selected, default to Release")
   set(CMAKE_BUILD_TYPE "Release")
-endif()
+endif(NOT CMAKE_BUILD_TYPE)
 
 #-----------------------------------------------------------------------------
 # Targets built within this project are exported at Install time for use
