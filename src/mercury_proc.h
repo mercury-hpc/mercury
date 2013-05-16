@@ -118,6 +118,26 @@ size_t hg_proc_get_extra_size(hg_proc_t proc);
  */
 int hg_proc_set_extra_buf_is_mine(hg_proc_t proc, bool mine);
 
+/* Inline prototypes */
+HG_PROC_INLINE unsigned int hg_proc_string_hash(const char *string);
+HG_PROC_INLINE int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
+HG_PROC_INLINE int hg_proc_bool_t(hg_proc_t proc, bool *data);
+HG_PROC_INLINE int hg_proc_int8_t(hg_proc_t proc, int8_t *data);
+HG_PROC_INLINE int hg_proc_uint8_t(hg_proc_t proc, uint8_t *data);
+HG_PROC_INLINE int hg_proc_int16_t(hg_proc_t proc, int16_t *data);
+HG_PROC_INLINE int hg_proc_uint16_t(hg_proc_t proc, uint16_t *data);
+HG_PROC_INLINE int hg_proc_int32_t(hg_proc_t proc, int32_t *data);
+HG_PROC_INLINE int hg_proc_uint32_t(hg_proc_t proc, uint32_t *data);
+HG_PROC_INLINE int hg_proc_int64_t(hg_proc_t proc, int64_t *data);
+HG_PROC_INLINE int hg_proc_uint64_t(hg_proc_t proc, uint64_t *data);
+HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size);
+HG_PROC_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string);
+HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle);
+HG_PROC_INLINE size_t hg_proc_get_header_size(void);
+HG_PROC_INLINE int hg_proc_header_request(hg_proc_t proc, uint32_t *op_id,
+        bool *extra_buf_used, hg_bulk_t *extra_handle);
+HG_PROC_INLINE int hg_proc_header_response(hg_proc_t proc, bool *extra_buf_used);
+
 /*---------------------------------------------------------------------------
  * Function:    hg_proc_string_hash
  *
@@ -132,9 +152,9 @@ HG_PROC_INLINE unsigned int hg_proc_string_hash(const char *string)
     /* This is the djb2 string hash function */
 
     unsigned int result = 5381;
-    unsigned char *p;
+    const unsigned char *p;
 
-    p = (unsigned char *) string;
+    p = (const unsigned char *) string;
 
     while (*p != '\0') {
         result = (result << 5) + result + *p;
@@ -410,7 +430,7 @@ HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
 HG_PROC_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
-    uint32_t string_len = 0;
+    uint64_t string_len = 0;
     char *string_buf = NULL;
     int ret = HG_FAIL;
 
@@ -418,7 +438,7 @@ HG_PROC_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string)
         case HG_ENCODE:
             string_len = strlen(*string) + 1;
             string_buf = (char*) *string;
-            ret = hg_proc_uint32_t(priv_proc, &string_len);
+            ret = hg_proc_uint64_t(priv_proc, &string_len);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
@@ -432,7 +452,7 @@ HG_PROC_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string)
             }
             break;
         case HG_DECODE:
-            ret = hg_proc_uint32_t(priv_proc, &string_len);
+            ret = hg_proc_uint64_t(priv_proc, &string_len);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
@@ -478,7 +498,7 @@ HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-    char *buf;
+    void *buf;
     uint64_t buf_size = 0;
 
     switch (priv_proc->op) {
