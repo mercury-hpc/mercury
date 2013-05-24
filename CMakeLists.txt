@@ -208,7 +208,7 @@ install(
   FILES
     ${MERCURY_BINARY_DIR}/CMakeFiles/mercury.pc
   DESTINATION
-    ${MERCURY_INSTALL_DATA_DIR}/pkgconfig
+    ${MERCURY_INSTALL_LIB_DIR}/pkgconfig
 )
 
 #-----------------------------------------------------------------------------
