@@ -991,7 +991,7 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout,
             }
 
             bmi_ret = BMI_testcontext(1, &bmi_op_id, &outcount, &error_code,
-                    &bmi_actual_size, &bmi_user_ptr, remaining, bmi_context);
+                    &bmi_actual_size, &bmi_user_ptr, 0, bmi_context);
 
             gettimeofday(&t2, NULL);
             remaining -= (t2.tv_sec - t1.tv_sec) * 1000 + (t2.tv_usec - t1.tv_usec) / 1000;
