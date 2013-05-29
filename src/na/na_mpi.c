@@ -110,6 +110,9 @@ typedef enum mpi_req_type {
 typedef struct mpi_req {
     mpi_req_type_t type;
     MPI_Request request;
+#if MPI_VERSION < 3
+    MPI_Request data_request;
+#endif
 } mpi_req_t;
 
 /* Private variables */
@@ -499,6 +502,9 @@ static int na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
+#if MPI_VERSION < 3
+    mpi_request->data_request = MPI_REQUEST_NULL;
+#endif
 
     mpi_ret = MPI_Irecv(buf, mpi_buf_size, MPI_BYTE, mpi_source,
             mpi_tag, mpi_unexpected_comm, &mpi_request->request);
@@ -534,6 +540,9 @@ static int na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_SEND_OP;
+#if MPI_VERSION < 3
+    mpi_request->data_request = MPI_REQUEST_NULL;
+#endif
 
     mpi_ret = MPI_Isend(mpi_buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank,
             mpi_tag, mpi_addr->comm, &mpi_request->request);
@@ -569,6 +578,9 @@ static int na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
+#if MPI_VERSION < 3
+    mpi_request->data_request = MPI_REQUEST_NULL;
+#endif
 
     mpi_ret = MPI_Irecv(mpi_buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank,
             mpi_tag, mpi_addr->comm, &mpi_request->request);
@@ -780,6 +792,8 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     mpi_req_t *mpi_request;
 
 #if MPI_VERSION < 3
+    mpi_onesided_info_t onesided_info;
+
     /* Check that local memory is registered */
     if (!hg_hash_table_lookup(mem_handle_map, mpi_local_mem_handle->base)) {
         NA_ERROR_DEFAULT("Could not find memory handle, registered?");
@@ -799,19 +813,20 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     mpi_request->request = MPI_REQUEST_NULL;
 
 #if MPI_VERSION < 3
+    mpi_request->data_request = MPI_REQUEST_NULL;
+
     /* Send to one-sided thread key to access mem_handle */
-    mpi_onesided_info_t onesided_info;
     onesided_info.base = mpi_remote_mem_handle->base;
     onesided_info.disp = mpi_remote_offset;
     onesided_info.count = mpi_length;
     onesided_info.op = MPI_ONESIDED_PUT;
 
-    MPI_Send(&onesided_info, sizeof(mpi_onesided_info_t), MPI_BYTE, mpi_remote_addr->rank,
-            NA_MPI_ONESIDED_TAG, mpi_onesided_comm);
+    MPI_Isend(&onesided_info, sizeof(mpi_onesided_info_t), MPI_BYTE, mpi_remote_addr->rank,
+            NA_MPI_ONESIDED_TAG, mpi_onesided_comm, &mpi_request->request);
 
     /* Simply do a non blocking synchronous send */
     mpi_ret = MPI_Issend(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm, &mpi_request->request);
+            mpi_remote_addr->rank, NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm, &mpi_request->data_request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Isend() failed");
         free(mpi_request);
@@ -864,6 +879,8 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     mpi_req_t *mpi_request;
 
 #if MPI_VERSION < 3
+    mpi_onesided_info_t onesided_info;
+
     /* Check that local memory is registered */
     if (!hg_hash_table_lookup(mem_handle_map, mpi_local_mem_handle->base)) {
         NA_ERROR_DEFAULT("Could not find memory handle, registered?");
@@ -883,19 +900,20 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     mpi_request->request = MPI_REQUEST_NULL;
 
 #if MPI_VERSION < 3
+    mpi_request->data_request = MPI_REQUEST_NULL;
+
     /* Send to one-sided thread key to access mem_handle */
-    mpi_onesided_info_t onesided_info;
     onesided_info.base = mpi_remote_mem_handle->base;
     onesided_info.disp = mpi_remote_offset;
     onesided_info.count = mpi_length;
     onesided_info.op = MPI_ONESIDED_GET;
 
-    MPI_Send(&onesided_info, sizeof(mpi_onesided_info_t), MPI_BYTE, mpi_remote_addr->rank,
-            NA_MPI_ONESIDED_TAG, mpi_onesided_comm);
+    MPI_Isend(&onesided_info, sizeof(mpi_onesided_info_t), MPI_BYTE, mpi_remote_addr->rank,
+            NA_MPI_ONESIDED_TAG, mpi_onesided_comm, &mpi_request->request);
 
     /* Simply do an asynchronous recv */
     mpi_ret = MPI_Irecv(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm, &mpi_request->request);
+            mpi_remote_addr->rank, NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm, &mpi_request->data_request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");
         free(mpi_request);
@@ -938,6 +956,7 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
 {
     int mpi_ret, ret = NA_SUCCESS;
     mpi_req_t *mpi_request = (mpi_req_t*) request;
+    int remaining = timeout;
     MPI_Status mpi_status;
 
     if (!mpi_request) {
@@ -946,31 +965,60 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         return ret;
     }
 
-    if (timeout == 0) {
+    do {
         int mpi_flag = 0;
-        mpi_ret = MPI_Test(&mpi_request->request, &mpi_flag, &mpi_status);
-        if (mpi_ret != MPI_SUCCESS) {
-            NA_ERROR_DEFAULT("MPI_Test() failed");
-            ret = NA_FAIL;
-            return ret;
-        }
-        if (!mpi_flag) {
-            if (status && status != NA_STATUS_IGNORE) {
-                status->completed = 0;
+        struct timeval t1, t2;
+
+        gettimeofday(&t1, NULL);
+
+        /* Test main request */
+        if (mpi_request->request != MPI_REQUEST_NULL) {
+            mpi_ret = MPI_Test(&mpi_request->request, &mpi_flag, &mpi_status);
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_ERROR_DEFAULT("MPI_Test() failed");
+                ret = NA_FAIL;
+                return ret;
             }
-            ret = NA_SUCCESS;
-            return ret;
+            if (mpi_flag) mpi_request->request = MPI_REQUEST_NULL;
         }
-    } else {
-        mpi_ret = MPI_Wait(&mpi_request->request, &mpi_status);
-        if (mpi_ret != MPI_SUCCESS) {
-            NA_ERROR_DEFAULT("MPI_Wait() failed");
-            ret = NA_FAIL;
-            return ret;
+
+#if MPI_VERSION < 3
+        /* Test data request if exists */
+        if (mpi_request->data_request != MPI_REQUEST_NULL) {
+            mpi_ret = MPI_Test(&mpi_request->data_request, &mpi_flag, &mpi_status);
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_ERROR_DEFAULT("MPI_Test() failed");
+                ret = NA_FAIL;
+                return ret;
+            }
+            if (mpi_flag) mpi_request->data_request = MPI_REQUEST_NULL;
         }
+#endif
+
+        gettimeofday(&t2, NULL);
+        remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +
+                (t2.tv_usec - t1.tv_usec) / 1000;
+
+    } while (( (mpi_request->request != MPI_REQUEST_NULL) ||
+#if MPI_VERSION < 3
+               (mpi_request->data_request != MPI_REQUEST_NULL)
+#endif
+             ) && remaining > 0);
+
+    /* If the request has not completed return */
+    if ( (mpi_request->request != MPI_REQUEST_NULL) ||
+#if MPI_VERSION < 3
+         (mpi_request->data_request != MPI_REQUEST_NULL)
+#endif
+         ) {
+        if (status && status != NA_STATUS_IGNORE) {
+            status->completed = 0;
+        }
+        ret = NA_SUCCESS;
+        return ret;
     }
 
-    /* Here we know that the request has completed */
+    /* If the request has completed free the request */
     if (status && status != NA_STATUS_IGNORE) {
         if (mpi_request->type == MPI_RECV_OP) {
             int count;
