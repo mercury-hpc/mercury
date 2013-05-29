@@ -157,7 +157,7 @@ int main(int argc, char *argv[])
     bla_write_in_struct.bulk_handle = bulk_handle;
 
     /* Forward call to remote addr and get a new request */
-    printf("Forwarding bla_write, op id: %u...\n", bla_write_id);
+    /* printf("Forwarding bla_write, op id: %u...\n", bla_write_id); */
     hg_ret = HG_Forward(addr, bla_write_id,
             &bla_write_in_struct, &bla_write_out_struct, &bla_write_request);
     if (hg_ret != HG_SUCCESS) {
@@ -177,12 +177,12 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Operation did not complete\n");
         return EXIT_FAILURE;
     } else {
-        printf("Call completed\n");
+        /* printf("Call completed\n"); */
     }
 
     /* Get output parameters */
     bla_write_ret = bla_write_out_struct.ret;
-    printf("bla_write returned: %d\n", bla_write_ret);
+    /* printf("bla_write returned: %d\n", bla_write_ret); */
 
     /* Free memory handle */
     hg_ret = HG_Bulk_handle_free(bulk_handle);
