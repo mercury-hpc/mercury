@@ -8,8 +8,8 @@
  * found at the root of the source code distribution tree.
  */
 
-#ifndef TEST_FS_H
-#define TEST_FS_H
+#ifndef TEST_POSIX_H
+#define TEST_POSIX_H
 
 #include "mercury_macros.h"
 #include "mercury_proc.h"
@@ -246,4 +246,4 @@ static inline int hg_proc_read_out_t(hg_proc_t proc, void *data)
 
 #endif
 
-#endif /* TEST_FS_H */
+#endif /* TEST_POSIX_H */

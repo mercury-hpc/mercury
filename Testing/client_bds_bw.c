@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 
     int fildes = 12345;
     int **bulk_buf;
-    int bulk_size = 1024*1024;
+    int bulk_size = 1024*1024*16;
     int bulk_size_x = 16;
     int bulk_size_y = 0;
     int *bulk_size_y_var = NULL;
@@ -54,7 +54,12 @@ int main(int argc, char *argv[])
 
     if (argc == 3) {
         /* This will create a list of variable size segments */
-        if (strcmp(argv[2], "variable") == 0) {
+        if (strcmp(argv[2], "contiguous") == 0) {
+            bulk_size_x = 1;
+            bulk_size_y = bulk_size;
+        }
+        /* This will create a list of variable size segments */
+        else if (strcmp(argv[2], "variable") == 0) {
             printf("Using variable size segments!\n");
             /* bulk_size_x >= 2 */
             /* 524288 + 262144 + 131072 + 65536 + 32768 + 16384 + 8192 + 8192 */
@@ -157,7 +162,7 @@ int main(int argc, char *argv[])
     bla_write_in_struct.bulk_handle = bulk_handle;
 
     /* Forward call to remote addr and get a new request */
-    printf("Forwarding bla_write, op id: %u...\n", bla_write_id);
+    /* printf("Forwarding bla_write, op id: %u...\n", bla_write_id); */
     hg_ret = HG_Forward(addr, bla_write_id,
             &bla_write_in_struct, &bla_write_out_struct, &bla_write_request);
     if (hg_ret != HG_SUCCESS) {
@@ -177,12 +182,14 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Operation did not complete\n");
         return EXIT_FAILURE;
     } else {
-        printf("Call completed\n");
+        /* printf("Call completed\n"); */
     }
 
     /* Get output parameters */
     bla_write_ret = bla_write_out_struct.ret;
-    printf("bla_write returned: %d\n", bla_write_ret);
+    if (bla_write_ret != (bulk_size * (int)sizeof(int))) {
+        fprintf(stderr, "Data not correctly processed\n");
+    }
 
     /* Free memory handle */
     hg_ret = HG_Bulk_handle_free(bulk_handle);

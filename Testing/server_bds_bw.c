@@ -16,36 +16,38 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <unistd.h>
+
+#define SLEEP_TIME 200 /* 200ms should be enough */
+#define AVERAGE 5
+#define PIPELINE_SIZE 1
+
+static unsigned int number_of_peers;
 
 /* Actual definition of the function that needs to be executed */
-size_t bla_write(int fildes, const void *buf, size_t nbyte)
+void bla_write_pipeline(void)
+{
+    int msleep_time = SLEEP_TIME / PIPELINE_SIZE;
+    /* printf("# Now sleeping %d ms\n", msleep_time); */
+    usleep(msleep_time * 1000);
+}
+
+size_t bla_write_check(const void *buf, size_t nbyte)
 {
     int i;
-    int error = 0;
     int *bulk_buf = (int*) buf;
-
-    printf("Executing bla_write with fildes %d...\n", fildes);
-
-    if (nbyte == 0) {
-        HG_ERROR_DEFAULT("Error detected in bulk transfer, nbyte is zero!\n");
-        error = 1;
-    }
-
-    printf("Checking data...\n");
 
     /* Check bulk buf */
     for (i = 0; i < (int)(nbyte / sizeof(int)); i++) {
         if (bulk_buf[i] != i) {
             printf("Error detected in bulk transfer, bulk_buf[%d] = %d, "
                     "was expecting %d!\n", i, bulk_buf[i], i);
-            error = 1;
             break;
         }
     }
-    if (!error) printf("Successfully transfered %lu bytes!\n", nbyte);
-
     return nbyte;
 }
+
 
 /*****************************************************************************/
 int fs_bla_write(hg_handle_t handle)
@@ -67,13 +69,23 @@ int fs_bla_write(hg_handle_t handle)
     hg_bulk_block_t bla_write_bulk_block_handle = HG_BULK_BLOCK_NULL;
     size_t bla_write_nbytes_read;
     ptrdiff_t bla_write_offset;
-    hg_bulk_request_t bla_write_bulk_request1;
-    hg_bulk_request_t bla_write_bulk_request2;
+    hg_bulk_request_t bla_write_bulk_request[PIPELINE_SIZE];
+    int pipeline_iter;
 
-    int bla_write_fildes;
     void *bla_write_buf;
     size_t bla_write_nbytes;
     int bla_write_ret;
+
+    /* For timing */
+    static int first_call = 1; /* Only used for dummy printf */
+    int avg_iter;
+    double nmbytes;
+    struct timeval tv1, tv2;
+    double td1, td2;
+    double time_read = 0;
+    double read_bandwidth;
+
+    if (first_call) printf("# Received new request\n");
 
     /* Get input parameters and data */
     ret = HG_Handler_get_input_buf(handle, &bla_write_in_buf, &bla_write_in_buf_size);
@@ -88,7 +100,7 @@ int fs_bla_write(hg_handle_t handle)
     hg_proc_free(proc);
 
     /* Get parameters */
-    bla_write_fildes = bla_write_in_struct.fildes;
+    /* unused bla_write_fildes = bla_write_in_struct.fildes; */
     bla_write_bulk_handle = bla_write_in_struct.bulk_handle;
 
     /* Create a new block handle to read the data */
@@ -98,46 +110,62 @@ int fs_bla_write(hg_handle_t handle)
     HG_Bulk_block_handle_create(bla_write_buf, bla_write_nbytes, HG_BULK_READWRITE,
             &bla_write_bulk_block_handle);
 
-    /* For testing purposes try to read the data in two blocks of different sizes */
-    bla_write_nbytes_read = bla_write_nbytes / 2 + 16;
+    /* Timing info */
+    nmbytes = bla_write_nbytes / (1024 * 1024);
+    if (first_call) printf("# Reading Bulk Data (%f MB)\n", nmbytes);
+    if (first_call) printf("%-*s%*s", 10, "# NumProcs", 20, "Bandwidth (MB/s)\n");
 
-    printf("Start reading first chunk of %lu bytes...\n", bla_write_nbytes_read);
-    ret = HG_Bulk_read(source, bla_write_bulk_handle, 0,
-            bla_write_bulk_block_handle, 0, bla_write_nbytes_read, &bla_write_bulk_request1);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not read bulk data\n");
-        return ret;
+    if (!PIPELINE_SIZE) fprintf(stderr, "PIPELINE_SIZE must be > 0!\n");
+
+    for (avg_iter = 0; avg_iter < AVERAGE; avg_iter++) {
+        /* Will do PIPELINE_SIZE reads */
+        bla_write_nbytes_read = bla_write_nbytes / PIPELINE_SIZE;
+
+        gettimeofday(&tv1, NULL);
+
+        /* Start all the reads */
+        for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
+            bla_write_offset = pipeline_iter * bla_write_nbytes_read;
+            ret = HG_Bulk_read(source, bla_write_bulk_handle, bla_write_offset,
+                    bla_write_bulk_block_handle, bla_write_offset, bla_write_nbytes_read,
+                    &bla_write_bulk_request[pipeline_iter]);
+            if (ret != HG_SUCCESS) {
+                fprintf(stderr, "Could not read bulk data\n");
+                return ret;
+            }
+        }
+
+        /* Alternate wait and read to receives pieces */
+        for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
+            bla_write_offset = pipeline_iter * bla_write_nbytes_read;
+            ret = HG_Bulk_wait(bla_write_bulk_request[pipeline_iter],
+                    HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+            if (ret != HG_SUCCESS) {
+                fprintf(stderr, "Could not complete bulk data read\n");
+                return ret;
+            }
+            /* Call bla_write */
+            bla_write_pipeline();
+        }
+
+        gettimeofday(&tv2, NULL);
+
+        td1 = tv1.tv_sec + tv1.tv_usec / 1000000.0;
+        td2 = tv2.tv_sec + tv2.tv_usec / 1000000.0;
+
+        time_read += td2 - td1;
     }
-    bla_write_offset = bla_write_nbytes_read;
-    bla_write_nbytes_read = bla_write_nbytes - bla_write_nbytes_read;
 
-    printf("Start reading second chunk of %lu bytes...\n", bla_write_nbytes_read);
-    ret = HG_Bulk_read(source, bla_write_bulk_handle, bla_write_offset,
-            bla_write_bulk_block_handle, bla_write_offset,
-            bla_write_nbytes_read, &bla_write_bulk_request2);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not read bulk data\n");
-        return ret;
-    }
+    time_read = time_read / AVERAGE;
+    read_bandwidth = nmbytes / time_read;
 
-    printf("Waiting for first chunk...\n");
-    ret = HG_Bulk_wait(bla_write_bulk_request1, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not complete bulk data read\n");
-        return ret;
-    }
+    /* At this point we have received everything so work out the bandwidth */
+    printf("%-*d%*.*f\n", 10, number_of_peers, 20, 2, read_bandwidth);
 
-    printf("Waiting for second chunk...\n");
-    ret = HG_Bulk_wait(bla_write_bulk_request2, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not complete bulk data read\n");
-        return ret;
-    }
+    /* Check data */
+    bla_write_ret = bla_write_check(bla_write_buf, bla_write_nbytes);
 
-    /* Call bla_write */
-    bla_write_ret = bla_write(bla_write_fildes, bla_write_buf, bla_write_nbytes);
-
-    /* Fill output structure */
+            /* Fill output structure */
     bla_write_out_struct.ret = bla_write_ret;
 
     /* Create a new encoding proc */
@@ -168,7 +196,7 @@ int fs_bla_write(hg_handle_t handle)
     hg_proc_bla_write_in_t(proc, &bla_write_in_struct);
     hg_proc_free(proc);
 
-    printf("\n");
+    first_call = 0;
 
     return ret;
 }
@@ -177,11 +205,11 @@ int fs_bla_write(hg_handle_t handle)
 int main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
-    unsigned int i, number_of_peers;
+    unsigned int i;
     int hg_ret;
 
     /* Used by Test Driver */
-    printf("Waiting for client...\n");
+    printf("# Waiting for client...\n");
     fflush(stdout);
 
     /* Initialize the interface */
@@ -211,7 +239,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    printf("Finalizing...\n");
+    printf("# Finalizing...\n");
 
     /* Finalize the interface */
     hg_ret = HG_Bulk_finalize();

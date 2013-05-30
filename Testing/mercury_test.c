@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
 /*---------------------------------------------------------------------------
  *
@@ -45,7 +46,7 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
         if ((config = fopen("port.cfg", "r")) != NULL) {
             char mpi_port_name[MPI_MAX_PORT_NAME];
             fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
-            //printf("Using MPI port name: %s.\n", mpi_port_name);
+            /* printf("Using MPI port name: %s.\n", mpi_port_name); */
             fclose(config);
             setenv(ION_ENV, mpi_port_name, 1);
         }
