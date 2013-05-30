@@ -214,9 +214,20 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
 
     /* Assign MPI intra comm */
     if (intra_comm && (*intra_comm != MPI_COMM_NULL)) {
+        /* Assume that the application splits MPI_COMM_WORLD if necessary */
         MPI_Comm_dup(*intra_comm, &mpi_intra_comm);
     } else {
+#ifdef NA_MPI_HAS_STATIC_CONNECTION
+        int color;
+        int global_rank;
+
+        MPI_Comm_rank(MPI_COMM_WORLD, &global_rank);
+        /* Color is 1 for server, 2 for client */
+        color = (flags == MPI_INIT_SERVER) ? 1 : 2;
+        MPI_Comm_split(MPI_COMM_WORLD, color, global_rank, &mpi_intra_comm);
+#else
         MPI_Comm_dup(MPI_COMM_WORLD, &mpi_intra_comm);
+#endif
     }
 
 #if MPI_VERSION < 3
@@ -229,8 +240,16 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
 
     /* If server open a port */
     if (flags == MPI_INIT_SERVER) {
+#ifdef NA_MPI_HAS_STATIC_CONNECTION
+        int global_size, intra_size;
+
+        MPI_Comm_size(MPI_COMM_WORLD, &global_size);
+        MPI_Comm_size(mpi_intra_comm, &intra_size);
+        MPI_Intercomm_create(mpi_intra_comm, 0, MPI_COMM_WORLD, global_size -
+            (global_size - intra_size), 0, &server_remote_addr.comm);
+#else
         FILE *config;
-        is_server = 1;
+
         MPI_Open_port(MPI_INFO_NULL, mpi_port_name);
         config = fopen("port.cfg", "w+");
         fwrite(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
@@ -238,6 +257,7 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
 
         /* TODO server waits for connection here but that should be handled separately really */
         MPI_Comm_accept(mpi_port_name, MPI_INFO_NULL, 0, mpi_intra_comm, &server_remote_addr.comm);
+#endif
         server_remote_addr.is_reference = 0;
         server_remote_addr.rank = -1; /* the address returned does not bind to a specific process */
 
@@ -249,6 +269,7 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
         /* Create dynamic window */
         MPI_Win_create_dynamic(MPI_INFO_NULL, mpi_onesided_comm, &mpi_dynamic_win);
 #endif
+        is_server = 1;
     }
     return &na_mpi_g;
 }
@@ -269,13 +290,19 @@ static int na_mpi_finalize(void)
     /* If server opened a port */
     if (is_server) {
         MPI_Comm_free(&mpi_onesided_comm);
+
 #if MPI_VERSION >= 3
         /* Destroy dynamic window */
         MPI_Win_free(&mpi_dynamic_win);
 #endif
+
+#ifdef NA_MPI_HAS_STATIC_CONNECTION
+        MPI_Comm_free(&server_remote_addr.comm);
+#else
         /* TODO Server disconnects here but that should be handled separately really */
         MPI_Comm_disconnect(&server_remote_addr.comm);
         MPI_Close_port(mpi_port_name);
+#endif
     }
 
 #if MPI_VERSION < 3
@@ -322,8 +349,13 @@ static int na_mpi_addr_lookup(const char *name, na_addr_t *addr)
     mpi_addr->rank = 0; /* TODO Only one rank for server but this may need to be improved */
 
     /* Try to connect */
+#ifdef NA_MPI_HAS_STATIC_CONNECTION
+    mpi_ret = MPI_Intercomm_create(mpi_intra_comm, 0, MPI_COMM_WORLD, 0,
+        0, &mpi_addr->comm);
+#else
     mpi_ret = MPI_Comm_connect(port_name, MPI_INFO_NULL, 0, mpi_intra_comm,
             &mpi_addr->comm);
+#endif
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("Could not connect");
         free(mpi_addr);
@@ -391,7 +423,11 @@ static int na_mpi_addr_free(na_addr_t addr)
         MPI_Win_free(&mpi_dynamic_win);
 #endif
         MPI_Comm_free(&mpi_onesided_comm);
+#ifdef NA_MPI_HAS_STATIC_CONNECTION
+        MPI_Comm_free(&mpi_addr->comm);
+#else
         MPI_Comm_disconnect(&mpi_addr->comm);
+#endif
     }
     free(mpi_addr);
     mpi_addr = NULL;
