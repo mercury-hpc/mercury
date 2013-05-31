@@ -12,6 +12,7 @@
 #include "mercury_hash_table.h"
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_thread_condition.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -123,6 +124,10 @@ static bool is_server = 0;                      /* Used in server mode */
 static mpi_addr_t server_remote_addr;           /* Remote address */
 static MPI_Comm mpi_onesided_comm = MPI_COMM_NULL;
 
+static int is_mpi_testing = 0;
+static hg_thread_cond_t mpi_test_cond;
+static hg_thread_mutex_t mpi_test_mutex;
+
 #if MPI_VERSION < 3
 static hg_hash_table_t *mem_handle_map = NULL;  /* Map mem addresses to mem handles */
 static inline int pointer_equal(void *location1, void *location2)
@@ -196,7 +201,8 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     MPI_Initialized(&mpi_ext_initialized);
 
     if (!mpi_ext_initialized) {
-        if (flags != MPI_INIT_SERVER) {
+        /* FIXME do MPI_Init_thread everytime for now */
+//        if (flags != MPI_INIT_SERVER) {
 #if MPI_VERSION < 3
             int provided;
             /* Need a MPI_THREAD_MULTIPLE level if onesided thread required */
@@ -207,9 +213,10 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
 #else
             MPI_Init(NULL, NULL);
 #endif
-        } else {
-            MPI_Init(NULL, NULL);
-        }
+//        }
+//        else {
+//            MPI_Init(NULL, NULL);
+//        }
     }
 
     /* Assign MPI intra comm */
@@ -237,6 +244,8 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     /* Automatically free all the values with the hash map */
     hg_hash_table_register_free_functions(mem_handle_map, NULL, NULL);
 #endif
+    hg_thread_mutex_init(&mpi_test_mutex);
+    hg_thread_cond_init(&mpi_test_cond);
 
     /* If server open a port */
     if (flags == MPI_INIT_SERVER) {
@@ -305,6 +314,8 @@ static int na_mpi_finalize(void)
 #endif
     }
 
+    hg_thread_mutex_destroy(&mpi_test_mutex);
+    hg_thread_cond_destroy(&mpi_test_cond);
 #if MPI_VERSION < 3
     /* Free hash table for memory registration */
     hg_hash_table_free(mem_handle_map);
@@ -1002,11 +1013,25 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
     }
 
     do {
+        int hg_thread_cond_ret;
         int mpi_flag = 0;
         struct timeval t1, t2;
 
         gettimeofday(&t1, NULL);
 
+        hg_thread_mutex_lock(&mpi_test_mutex);
+        while (is_mpi_testing) {
+            /*
+            hg_thread_cond_ret = hg_thread_cond_timedwait(&testcontext_cond,
+                    &testcontext_mutex, remaining);
+             */
+            hg_thread_cond_ret = hg_thread_cond_wait(&mpi_test_cond,
+                    &mpi_test_mutex);
+        }
+        is_mpi_testing = 1;
+        hg_thread_mutex_unlock(&mpi_test_mutex);
+
+        hg_thread_mutex_lock(&mpi_test_mutex);
         /* Test main request */
         if (mpi_request->request != MPI_REQUEST_NULL) {
             mpi_ret = MPI_Test(&mpi_request->request, &mpi_flag, &mpi_status);
@@ -1030,6 +1055,10 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
             if (mpi_flag) mpi_request->data_request = MPI_REQUEST_NULL;
         }
 #endif
+
+        is_mpi_testing = 0;
+        hg_thread_cond_signal(&mpi_test_cond);
+        hg_thread_mutex_unlock(&mpi_test_mutex);
 
         gettimeofday(&t2, NULL);
         remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +

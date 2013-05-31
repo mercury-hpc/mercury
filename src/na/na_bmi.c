@@ -946,8 +946,12 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout,
         hg_thread_mutex_lock(&testcontext_mutex);
 
         while (is_testing_context) {
+            /*
             hg_thread_cond_ret = hg_thread_cond_timedwait(&testcontext_cond,
                     &testcontext_mutex, remaining);
+             */
+            hg_thread_cond_ret = hg_thread_cond_wait(&testcontext_cond,
+                    &testcontext_mutex);
         }
         is_testing_context = 1;
 

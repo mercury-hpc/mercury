@@ -12,6 +12,8 @@
 #include "mercury_test.h"
 #include "mercury_handler.h"
 #include "mercury_bulk.h"
+#include "mercury_thread.h"
+#include "mercury_thread_mutex.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,14 +22,16 @@
 
 #define AVERAGE 5
 #define PIPELINE_SIZE 4
-#define MIN_BUFFER_SIZE 2<<8 /* Stop at 1KB buffer size */
+#define MIN_BUFFER_SIZE 2<<10 /* Stop at 4KB buffer size */
 
-/* #define USE_PROGRESS_THREAD */
-/* #define USE_MPI_PROGRESS */
+#define SPAWN_REQUEST_THREAD
+#define FORCE_MPI_PROGRESS
 
 static unsigned int number_of_peers;
-double raw_time_read = 0;
-size_t bla_write_nbytes;
+static unsigned int number_of_executed_requests = 0;
+static hg_thread_mutex_t executed_requests_mutex;
+static double raw_time_read = 0;
+static size_t bla_write_nbytes;
 
 /* Actual definition of the function that needs to be executed */
 void bla_write_pipeline(size_t chunk_size,
@@ -41,6 +45,8 @@ void bla_write_pipeline(size_t chunk_size,
 
     time_remaining = msleep_time;
 
+#ifdef FORCE_MPI_PROGRESS
+    /* Force MPI progress for time_remaining ms */
     if (bulk_request != HG_BULK_REQUEST_NULL) {
         gettimeofday(&t1, NULL);
 
@@ -53,6 +59,7 @@ void bla_write_pipeline(size_t chunk_size,
         time_remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +
                 (t2.tv_usec - t1.tv_usec) / 1000;
     }
+#endif
 
     if (!nosleep && time_remaining > 0) {
         usleep(time_remaining * 1000);
@@ -77,7 +84,7 @@ size_t bla_write_check(const void *buf, size_t nbyte)
 
 
 /*****************************************************************************/
-int fs_bla_write(hg_handle_t handle)
+int bla_write_rpc(hg_handle_t handle)
 {
     int ret = HG_SUCCESS;
 
@@ -338,12 +345,41 @@ int fs_bla_write(hg_handle_t handle)
     return ret;
 }
 
+/* Thread to handle request */
+void *bla_write_rpc_thread(void *arg)
+{
+    hg_handle_t handle = (hg_handle_t) arg;
+    bla_write_rpc(handle);
+
+    hg_thread_mutex_lock(&executed_requests_mutex);
+    number_of_executed_requests++;
+    hg_thread_mutex_unlock(&executed_requests_mutex);
+    return NULL;
+}
+
+int bla_write_rpc_spawn(hg_handle_t handle)
+{
+    int ret = HG_SUCCESS;
+
+#ifdef SPAWN_REQUEST_THREAD
+    hg_thread_t thread;
+    hg_thread_create(&thread, bla_write_rpc_thread, handle);
+#else
+    bla_write_rpc_thread(handle);
+#endif
+
+    return ret;
+}
+
+
 /*****************************************************************************/
 int main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
     unsigned int i;
     int hg_ret;
+
+    hg_thread_mutex_init(&executed_requests_mutex);
 
     /* Used by Test Driver */
     printf("# Waiting for client...\n");
@@ -365,16 +401,20 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    MERCURY_HANDLER_REGISTER_CALLBACK("bla_write", fs_bla_write);
+    MERCURY_HANDLER_REGISTER_CALLBACK("bla_write", bla_write_rpc_spawn);
 
-    for (i = 0; i < number_of_peers; i++) {
+    hg_thread_mutex_lock(&executed_requests_mutex);
+    while (number_of_executed_requests != number_of_peers) {
+        hg_thread_mutex_unlock(&executed_requests_mutex);
+        hg_status_t status;
         /* Receive new function calls */
-        hg_ret = HG_Handler_process(HG_HANDLER_MAX_IDLE_TIME, HG_STATUS_IGNORE);
-        if (hg_ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not receive function call\n");
-            return EXIT_FAILURE;
+        hg_ret = HG_Handler_process(1, &status);
+        if (hg_ret == HG_SUCCESS && status) {
+            printf("# Request processed\n");
         }
+        hg_thread_mutex_lock(&executed_requests_mutex);
     }
+    hg_thread_mutex_unlock(&executed_requests_mutex);
 
     printf("# Finalizing...\n");
 
@@ -390,6 +430,8 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Could not finalize function shipper handler\n");
         return EXIT_FAILURE;
     }
+
+    hg_thread_mutex_destroy(&executed_requests_mutex);
 
     return EXIT_SUCCESS;
 }
