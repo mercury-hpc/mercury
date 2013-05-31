@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 
     int fildes = 12345;
     int **bulk_buf;
-    int bulk_size = 1024*1024*16;
+    int bulk_size = 1024*1024*4;
     int bulk_size_x = 16;
     int bulk_size_y = 0;
     int *bulk_size_y_var = NULL;
