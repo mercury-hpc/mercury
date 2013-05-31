@@ -20,6 +20,7 @@
 
 #define AVERAGE 5
 #define PIPELINE_SIZE 4
+#define MIN_BUFFER_SIZE 2<<8 /* Stop at 1KB buffer size */
 
 /* #define USE_PROGRESS_THREAD */
 /* #define USE_MPI_PROGRESS */
@@ -213,7 +214,7 @@ int fs_bla_write(hg_handle_t handle)
     if (!PIPELINE_SIZE) fprintf(stderr, "PIPELINE_SIZE must be > 0!\n");
 
     for (pipeline_buffer_size = bla_write_nbytes / PIPELINE_SIZE;
-            pipeline_buffer_size > 2048;
+            pipeline_buffer_size > MIN_BUFFER_SIZE;
             pipeline_buffer_size /= 2) {
         time_read = 0;
 
