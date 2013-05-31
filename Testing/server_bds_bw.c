@@ -21,12 +21,16 @@
 #define AVERAGE 5
 #define PIPELINE_SIZE 4
 
+/* #define USE_PROGRESS_THREAD */
+/* #define USE_MPI_PROGRESS */
+
 static unsigned int number_of_peers;
 double raw_time_read = 0;
 size_t bla_write_nbytes;
 
 /* Actual definition of the function that needs to be executed */
-void bla_write_pipeline(size_t chunk_size, hg_bulk_request_t bulk_request, hg_bulk_status_t *status)
+void bla_write_pipeline(size_t chunk_size,
+        hg_bulk_request_t bulk_request, hg_bulk_status_t *status, bool nosleep)
 {
     int ret;
     /* Convert raw_time_read to ms */
@@ -49,8 +53,7 @@ void bla_write_pipeline(size_t chunk_size, hg_bulk_request_t bulk_request, hg_bu
                 (t2.tv_usec - t1.tv_usec) / 1000;
     }
 
-    if (time_remaining > 0) {
-        /* printf("# Now sleeping %f ms\n", msleep_time); */
+    if (!nosleep && time_remaining > 0) {
         usleep(time_remaining * 1000);
     }
 }
@@ -165,7 +168,6 @@ int fs_bla_write(hg_handle_t handle)
 
     raw_time_read = raw_time_read / AVERAGE;
     raw_read_bandwidth = nmbytes / raw_time_read;
-    /* if (first_call) printf("# Raw read bandwith: %.*f MB/s\n", 2, raw_read_bandwidth); */
     if (first_call) printf("# Raw read time: %f s (%.*f MB/s)\n", raw_time_read, 2, raw_read_bandwidth);
 
     /* Work out BW without pipeline and with processing data */
@@ -191,7 +193,7 @@ int fs_bla_write(hg_handle_t handle)
         }
 
         /* Call bla_write */
-        bla_write_pipeline(bla_write_nbytes, HG_BULK_REQUEST_NULL, HG_BULK_STATUS_IGNORE);
+        bla_write_pipeline(bla_write_nbytes, HG_BULK_REQUEST_NULL, HG_BULK_STATUS_IGNORE, 0);
 
         gettimeofday(&tv2, NULL);
 
@@ -203,7 +205,6 @@ int fs_bla_write(hg_handle_t handle)
 
     proc_time_read = proc_time_read / AVERAGE;
     proc_read_bandwidth = nmbytes / proc_time_read;
-    /* if (first_call) printf("# Proc read bandwidth: %.*f MB/s\n", 2, proc_read_bandwidth); */
     if (first_call) printf("# Proc read time: %f s (%.*f MB/s)\n", proc_time_read, 2, proc_read_bandwidth);
 
     if (first_call) printf("%-*s%*s%*s", 18, "# Buffer Size (KB) ", 20, "Time (s)", 20, "Bandwidth (MB/s)");
@@ -263,7 +264,7 @@ int fs_bla_write(hg_handle_t handle)
                     /* Call bla_write */
                     pipeline_next = (pipeline_iter < PIPELINE_SIZE - 1) ?
                             pipeline_iter + 1 : 0;
-                    bla_write_pipeline(chunk_size, bla_write_bulk_request[pipeline_next], &status);
+                    bla_write_pipeline(chunk_size, bla_write_bulk_request[pipeline_next], &status, 0);
                     if (status) bla_write_bulk_request[pipeline_next] = HG_BULK_REQUEST_NULL;
 
                     /* Start another read (which is PIPELINE_SIZE far) */
@@ -288,7 +289,6 @@ int fs_bla_write(hg_handle_t handle)
             td2 = tv2.tv_sec + tv2.tv_usec / 1000000.0;
 
             time_read += td2 - td1;
-            /* printf("timeread: %f\n", time_read); */
         }
 
         time_read = time_read / AVERAGE;
