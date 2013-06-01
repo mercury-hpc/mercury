@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
     /* Prepare bulk_buf */
     nbytes = bulk_size * sizeof(int);
     nmbytes = nbytes / (1024 * 1024);
-    if (client_rank == 0) printf("# Reading Bulk Data (%f MB)\n", nmbytes);
+    if (client_rank == 0) printf("# Reading Bulk Data (%f MB) with %d clients\n", nmbytes, client_size);
 
     bulk_buf = malloc(nbytes);
     for (i = 0; i < bulk_size; i++) {
@@ -170,7 +170,7 @@ int main(int argc, char *argv[])
         }
 
         time_read = time_read / AVERAGE;
-        read_bandwidth = nmbytes / time_read;
+        read_bandwidth = nmbytes * client_size / time_read;
 
         /* At this point we have received everything so work out the bandwidth */
         printf("%-*d%*f%*.*f\n", 18, (int)pipeline_buffer_size / 1024, 20,
