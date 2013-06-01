@@ -117,6 +117,18 @@ if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_bds_bw)
 endif(MERCURY_ENABLE_COVERAGE)
 
+add_executable(client_bds_bw1 client_bds_bw1.c)
+target_link_libraries(client_bds_bw1 mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(client_bds_bw1)
+endif(MERCURY_ENABLE_COVERAGE)
+
+add_executable(server_bds_bw1 server_bds_bw1.c)
+target_link_libraries(server_bds_bw1 mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(server_bds_bw1)
+endif(MERCURY_ENABLE_COVERAGE)
+
 #------------------------------------------------------------------------------
 # POSIX test
 add_executable(client_posix client_posix.c)
