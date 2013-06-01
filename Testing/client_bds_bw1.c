@@ -20,7 +20,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#define BULK_BUF_SIZE 1024*1024*4
+#define BULK_BUF_SIZE 1024*1024*128
 
 /* TODO Test only supports MPI for now */
 
@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
     /* Prepare bulk_buf */
     nbytes = bulk_size * sizeof(int);
     nmbytes = nbytes / (1024 * 1024);
-    if (client_rank == 0) printf("# Reading Bulk Data (%f MB) with %d clients\n", nmbytes, client_size);
+    if (client_rank == 0) printf("# Reading Bulk Data (%f MB) with %d clients (average %d)\n", nmbytes, client_size, AVERAGE);
 
     bulk_buf = malloc(nbytes);
     for (i = 0; i < bulk_size; i++) {
@@ -114,14 +114,14 @@ int main(int argc, char *argv[])
     if (client_rank == 0) printf("%-*s%*s%*s", 18, "# Buffer Size (KB) ", 20, "Time (s)", 20, "Bandwidth (MB/s)");
     if (client_rank == 0) printf("\n");
 
-    for (pipeline_buffer_size = nbytes / PIPELINE_SIZE;
-            pipeline_buffer_size > MIN_BUFFER_SIZE;
-            pipeline_buffer_size /= 2) {
+//    for (pipeline_buffer_size = nbytes / PIPELINE_SIZE;
+//            pipeline_buffer_size > MIN_BUFFER_SIZE;
+//            pipeline_buffer_size /= 2) {
         int avg_iter;
         double time_read = 0;
         double read_bandwidth;
 
-        bla_write_in_struct.pipeline_buffer_size = pipeline_buffer_size;
+        bla_write_in_struct.pipeline_buffer_size = nbytes;
 
         for (avg_iter = 0; avg_iter < AVERAGE; avg_iter++) {
             struct timeval tv1, tv2;
@@ -175,7 +175,7 @@ int main(int argc, char *argv[])
         /* At this point we have received everything so work out the bandwidth */
         printf("%-*d%*f%*.*f\n", 18, (int)pipeline_buffer_size / 1024, 20,
                 time_read, 20, 2, read_bandwidth);
-    }
+//    }
 
     /* Free memory handle */
     hg_ret = HG_Bulk_handle_free(bulk_handle);
