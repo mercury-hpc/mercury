@@ -26,6 +26,7 @@
 
 #define SPAWN_REQUEST_THREAD
 #define FORCE_MPI_PROGRESS
+#define FORCE_PIPELINE_SLEEP
 
 static unsigned int number_of_peers;
 static unsigned int number_of_executed_requests = 0;
@@ -272,7 +273,11 @@ int bla_write_rpc(hg_handle_t handle)
                     /* Call bla_write */
                     pipeline_next = (pipeline_iter < PIPELINE_SIZE - 1) ?
                             pipeline_iter + 1 : 0;
+#ifdef FORCE_PIPELINE_SLEEP
                     bla_write_pipeline(chunk_size, bla_write_bulk_request[pipeline_next], &status, 0);
+#else
+                    bla_write_pipeline(chunk_size, bla_write_bulk_request[pipeline_next], &status, 1);
+#endif
                     if (status) bla_write_bulk_request[pipeline_next] = HG_BULK_REQUEST_NULL;
 
                     /* Start another read (which is PIPELINE_SIZE far) */
