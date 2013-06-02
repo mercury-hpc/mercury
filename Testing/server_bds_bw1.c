@@ -112,7 +112,7 @@ int bla_write_rpc(hg_handle_t handle)
 
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bla_write_bulk_handle = HG_BULK_NULL;
-    hg_bulk_block_t bla_write_bulk_block_handle = HG_BULK_BLOCK_NULL;
+    hg_bulk_block_t bla_write_bulk_block_handle[PIPELINE_SIZE];
     hg_bulk_request_t bla_write_bulk_request[PIPELINE_SIZE];
     int pipeline_iter;
     size_t pipeline_buffer_size;
@@ -120,7 +120,7 @@ int bla_write_rpc(hg_handle_t handle)
     size_t total_bytes_read = 0;
     size_t chunk_size;
 
-    void *bla_write_buf;
+    void *bla_write_buf[PIPELINE_SIZE];
     int bla_write_ret = 0;
 
     /* Get input parameters and data */
@@ -142,19 +142,21 @@ int bla_write_rpc(hg_handle_t handle)
 
     /* Create a new block handle to read the data */
     bla_write_nbytes = HG_Bulk_handle_get_size(bla_write_bulk_handle);
-    bla_write_buf = malloc(bla_write_nbytes);
-
-    HG_Bulk_block_handle_create(bla_write_buf, bla_write_nbytes, HG_BULK_READWRITE,
-            &bla_write_bulk_block_handle);
-
     chunk_size = (PIPELINE_SIZE == 1) ? bla_write_nbytes : pipeline_buffer_size;
+
+    for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
+        bla_write_buf[pipeline_iter] = malloc(pipeline_buffer_size);
+        HG_Bulk_block_handle_create(bla_write_buf[pipeline_iter],
+                pipeline_buffer_size, HG_BULK_READWRITE,
+                &bla_write_bulk_block_handle[pipeline_iter]);
+    }
 
     /* Initialize pipeline */
     for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
         size_t write_offset = start_offset + pipeline_iter * chunk_size;
 
         ret = HG_Bulk_read(source, bla_write_bulk_handle, write_offset,
-                bla_write_bulk_block_handle, write_offset, chunk_size,
+                bla_write_bulk_block_handle[pipeline_iter], 0, chunk_size,
                 &bla_write_bulk_request[pipeline_iter]);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not read bulk data\n");
@@ -195,7 +197,7 @@ int bla_write_rpc(hg_handle_t handle)
             write_offset += chunk_size * PIPELINE_SIZE;
             if (write_offset < bla_write_nbytes) {
                 ret = HG_Bulk_read(source, bla_write_bulk_handle, write_offset,
-                        bla_write_bulk_block_handle, write_offset, chunk_size,
+                        bla_write_bulk_block_handle[pipeline_iter], 0, chunk_size,
                         &bla_write_bulk_request[pipeline_iter]);
                 if (ret != HG_SUCCESS) {
                     fprintf(stderr, "Could not read bulk data\n");
@@ -228,14 +230,16 @@ int bla_write_rpc(hg_handle_t handle)
         return ret;
     }
 
-    /* Free block handle */
-    ret = HG_Bulk_block_handle_free(bla_write_bulk_block_handle);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free block call\n");
-        return ret;
-    }
+    for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
+        /* Free block handle */
+        ret = HG_Bulk_block_handle_free(bla_write_bulk_block_handle[pipeline_iter]);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not free block call\n");
+            return ret;
+        }
 
-    free(bla_write_buf);
+        free(bla_write_buf[pipeline_iter]);
+    }
 
     /* Also free memory allocated during decoding */
     hg_proc_create(NULL, 0, HG_FREE, &proc);
@@ -250,7 +254,6 @@ void *bla_write_rpc_thread(void *arg)
 {
     hg_handle_t handle = (hg_handle_t) arg;
     bla_write_rpc(handle);
-
     return NULL;
 }
 

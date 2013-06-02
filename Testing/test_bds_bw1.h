@@ -15,7 +15,7 @@
 #include "mercury_proc.h"
 
 #define AVERAGE 5
-#define PIPELINE_SIZE 1
+#define PIPELINE_SIZE 4
 #define MIN_BUFFER_SIZE 2<<10 /* Stop at 4KB buffer size */
 
 /* Dummy function that needs to be shipped */

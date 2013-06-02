@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #define BULK_BUF_SIZE 1024*1024*128
+#define MAX_BUFFER_SIZE 4096*1024
 
 /* TODO Test only supports MPI for now */
 
@@ -42,7 +43,7 @@ int main(int argc, char *argv[])
     int bla_write_ret = 0;
     size_t nbytes;
     double nmbytes;
-    size_t pipeline_buffer_size;
+    size_t pipeline_buffer_size = MAX_BUFFER_SIZE;
 
     hg_status_t bla_open_status;
     int hg_ret, na_ret;
@@ -121,7 +122,7 @@ int main(int argc, char *argv[])
         double time_read = 0;
         double read_bandwidth;
 
-        bla_write_in_struct.pipeline_buffer_size = nbytes;
+        bla_write_in_struct.pipeline_buffer_size = pipeline_buffer_size;
 
         for (avg_iter = 0; avg_iter < AVERAGE; avg_iter++) {
             struct timeval tv1, tv2;
