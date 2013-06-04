@@ -12,6 +12,7 @@
 #define SHIPPER_TEST_H
 
 #include "na.h"
+#include "mercury_test_config.h"
 
 #define ION_ENV "ZOIDFS_ION_NAME" /* TODO used for compatibility with IOFSL */
 

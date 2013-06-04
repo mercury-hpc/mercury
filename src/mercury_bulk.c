@@ -344,7 +344,7 @@ int HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
 {
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) handle;
-    void *buf_ptr = buf;
+    char *buf_ptr = buf;
     size_t buf_size_left = buf_size;
     size_t i;
 
@@ -407,7 +407,7 @@ int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_si
 {
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_t *priv_handle = NULL;
-    const void *buf_ptr = buf;
+    const char *buf_ptr = buf;
     size_t buf_size_left = buf_size;
     size_t i;
 

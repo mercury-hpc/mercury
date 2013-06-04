@@ -492,7 +492,7 @@ int HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf,
             priv_handle->extra_recv_buf_size : priv_handle->recv_buf_size;
 
     /* We don't want the user to mess with the header so don't let him see it */
-    if (in_buf) *in_buf = user_input_buf + hg_proc_get_header_size();
+    if (in_buf) *in_buf = (char*) user_input_buf + hg_proc_get_header_size();
     if (in_buf_size) *in_buf_size = user_input_buf_size - hg_proc_get_header_size();
 
     return ret;
@@ -531,7 +531,7 @@ int HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
         }
     }
     /* We don't want the user to mess with the header so don't let him see it */
-    if (out_buf) *out_buf = priv_handle->send_buf + hg_proc_get_header_size();
+    if (out_buf) *out_buf = (char*) priv_handle->send_buf + hg_proc_get_header_size();
     if (out_buf_size) *out_buf_size = priv_handle->send_buf_size - hg_proc_get_header_size();
 
     return ret;

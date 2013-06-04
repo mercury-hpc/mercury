@@ -9,14 +9,12 @@
  */
 
 #include "mercury_test.h"
-#include "na_config.h"
 #ifdef NA_HAS_BMI
 #include "na_bmi.h"
 #endif
 #ifdef NA_HAS_MPI
 #include "na_mpi.h"
 #endif
-#include "mercury_test_config.h"
 
 #include <stdlib.h>
 #include <stdio.h>

@@ -147,6 +147,7 @@ static hg_thread_mutex_t mem_map_mutex;
 static void* na_bmi_progress_service(void *args)
 {
     bool service_done = 0;
+    (void) args; /* unused */
 
     while (!service_done) {
         int na_ret;
@@ -575,8 +576,9 @@ static int na_bmi_mem_register(void *buf, na_size_t buf_size, unsigned long flag
 {
     int ret = NA_SUCCESS;
     void *bmi_buf_base = buf;
-    bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
     bmi_mem_handle_t *bmi_mem_handle;
+    /* bmi_size_t bmi_buf_size = (bmi_size_t) buf_size; */
+    (void) buf_size; /* unused */
 
     bmi_mem_handle = malloc(sizeof(bmi_mem_handle_t));
     bmi_mem_handle->base = bmi_buf_base;
@@ -642,6 +644,7 @@ static int na_bmi_mem_deregister(na_mem_handle_t mem_handle)
  */
 static na_size_t na_bmi_mem_handle_get_serialize_size(na_mem_handle_t mem_handle)
 {
+    (void) mem_handle; /* unused */
     return sizeof(bmi_mem_handle_t);
 }
 
@@ -779,7 +782,7 @@ static int na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset
     }
 
     /* Do an asynchronous send */
-    ret = na_bmi_msg_send(bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
+    ret = na_bmi_msg_send((char*) bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
             remote_addr, NA_BMI_ONESIDED_DATA_TAG, request, NULL);
     if (ret != NA_SUCCESS) {
         NA_ERROR_DEFAULT("Could not send data");
@@ -858,7 +861,7 @@ static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
     }
 
     /* Simply do an asynchronous recv */
-    ret = na_bmi_msg_recv(bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
+    ret = na_bmi_msg_recv((char*) bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
             remote_addr, NA_BMI_ONESIDED_DATA_TAG, request, NULL);
 
     return ret;
@@ -1178,7 +1181,7 @@ static int na_bmi_progress(unsigned int timeout, na_status_t *status)
     switch (onesided_info.op) {
         /* Remote wants to do a put so wait in a recv */
         case BMI_ONESIDED_PUT:
-            ret = na_bmi_msg_recv(bmi_mem_handle->base + onesided_info.disp,
+            ret = na_bmi_msg_recv((char*) bmi_mem_handle->base + onesided_info.disp,
                     onesided_info.count, remote_addr, NA_BMI_ONESIDED_DATA_TAG,
                     &onesided_data_request, NULL);
             if (ret != NA_SUCCESS) {
@@ -1211,7 +1214,7 @@ static int na_bmi_progress(unsigned int timeout, na_status_t *status)
 
         /* Remote wants to do a get so do a send */
         case BMI_ONESIDED_GET:
-            ret = na_bmi_msg_send(bmi_mem_handle->base + onesided_info.disp,
+            ret = na_bmi_msg_send((char*) bmi_mem_handle->base + onesided_info.disp,
                     onesided_info.count, remote_addr, NA_BMI_ONESIDED_DATA_TAG,
                     &onesided_data_request, NULL);
             if (ret != NA_SUCCESS) {

@@ -31,7 +31,6 @@ int main(int argc, char *argv[])
     bla_handle_t bla_open_handle;
     int bla_open_ret = 0;
     int bla_open_event_id = 0;
-    bla_open_handle.cookie = 12345;
 
     hg_status_t bla_open_status;
     int hg_ret, na_ret;
@@ -63,6 +62,7 @@ int main(int argc, char *argv[])
     bla_open_id = MERCURY_REGISTER("bla_open", bla_open_in_t, bla_open_out_t);
 
     /* Fill input structure */
+    bla_open_handle.cookie = 12345;
     bla_open_in_struct.path = bla_open_path;
     bla_open_in_struct.handle = bla_open_handle;
 

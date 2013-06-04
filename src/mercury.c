@@ -277,7 +277,7 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
     }
 
     /* Leave some space for the header */
-    ret = hg_proc_set_buf_ptr(enc_proc, priv_request->send_buf + hg_proc_get_header_size());
+    ret = hg_proc_set_buf_ptr(enc_proc, (char*) priv_request->send_buf + hg_proc_get_header_size());
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not move proc to user data");
         ret = HG_FAIL;
@@ -491,7 +491,7 @@ int HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
             /* TODO Receive extra buffer now */
         } else {
             /* Set buffer to user data */
-            ret = hg_proc_set_buf_ptr(dec_proc, priv_request->recv_buf + hg_proc_get_header_size());
+            ret = hg_proc_set_buf_ptr(dec_proc, (char*) priv_request->recv_buf + hg_proc_get_header_size());
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Could not move proc to user data");
                 ret = HG_FAIL;

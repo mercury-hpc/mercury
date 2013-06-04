@@ -166,6 +166,7 @@ hg_thread_mutex_t mem_map_mutex;
 static void* na_mpi_progress_service(void *args)
 {
     bool service_done = 0;
+    (void) args; /* unused */
 
     while (!service_done) {
         int na_ret;
@@ -201,22 +202,16 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     MPI_Initialized(&mpi_ext_initialized);
 
     if (!mpi_ext_initialized) {
-        /* FIXME do MPI_Init_thread everytime for now */
-//        if (flags != MPI_INIT_SERVER) {
 #if MPI_VERSION < 3
-            int provided;
-            /* Need a MPI_THREAD_MULTIPLE level if onesided thread required */
-            MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
-            if (provided != MPI_THREAD_MULTIPLE) {
-                NA_ERROR_DEFAULT("MPI_THREAD_MULTIPLE cannot be set");
-            }
+        int provided;
+        /* Need a MPI_THREAD_MULTIPLE level if onesided thread required */
+        MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
+        if (provided != MPI_THREAD_MULTIPLE) {
+            NA_ERROR_DEFAULT("MPI_THREAD_MULTIPLE cannot be set");
+        }
 #else
-            MPI_Init(NULL, NULL);
+        MPI_Init(NULL, NULL);
 #endif
-//        }
-//        else {
-//            MPI_Init(NULL, NULL);
-//        }
     }
 
     /* Assign MPI intra comm */
@@ -496,6 +491,7 @@ static int na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
     int mpi_tag;
     MPI_Comm mpi_unexpected_comm;
     mpi_req_t *mpi_request;
+    (void) op_arg; /* unused */
 
     if (!buf) {
         NA_ERROR_DEFAULT("NULL buffer");
@@ -584,6 +580,7 @@ static int na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     int mpi_tag = (int) tag;
     mpi_addr_t *mpi_addr = (mpi_addr_t*) dest;
     mpi_req_t *mpi_request;
+    (void) op_arg; /* unused */
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_SEND_OP;
@@ -622,6 +619,7 @@ static int na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     int mpi_tag = (int) tag;
     mpi_addr_t *mpi_addr = (mpi_addr_t*) source;
     mpi_req_t *mpi_request;
+    (void) op_arg; /* unused */
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
@@ -656,8 +654,9 @@ int na_mpi_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
 {
     int ret = NA_SUCCESS;
     void *mpi_buf_base = buf;
-    /* MPI_Aint mpi_buf_size = (MPI_Aint) buf_size; */
     mpi_mem_handle_t *mpi_mem_handle;
+    /* MPI_Aint mpi_buf_size = (MPI_Aint) buf_size; */
+    (void) buf_size; /* unused */
 
     mpi_mem_handle = malloc(sizeof(mpi_mem_handle_t));
     mpi_mem_handle->base = mpi_buf_base;
@@ -736,6 +735,7 @@ int na_mpi_mem_deregister(na_mem_handle_t mem_handle)
  */
 static na_size_t na_mpi_mem_handle_get_serialize_size(na_mem_handle_t mem_handle)
 {
+    (void) mem_handle; /* unused */
     return sizeof(mpi_mem_handle_t);
 }
 
@@ -872,7 +872,7 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
             NA_MPI_ONESIDED_TAG, mpi_onesided_comm, &mpi_request->request);
 
     /* Simply do a non blocking synchronous send */
-    mpi_ret = MPI_Issend(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
+    mpi_ret = MPI_Issend((char*) mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
             mpi_remote_addr->rank, NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm, &mpi_request->data_request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Isend() failed");
@@ -884,7 +884,7 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 #else
     MPI_Win_lock(MPI_LOCK_EXCLUSIVE, mpi_remote_addr->rank, 0, mpi_dynamic_win);
 
-    mpi_ret = MPI_Rput(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
+    mpi_ret = MPI_Rput((char*) mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
             mpi_remote_addr->rank, mpi_remote_offset, mpi_length, MPI_BYTE, mpi_dynamic_win, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Rput() failed");
@@ -959,7 +959,7 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
             NA_MPI_ONESIDED_TAG, mpi_onesided_comm, &mpi_request->request);
 
     /* Simply do an asynchronous recv */
-    mpi_ret = MPI_Irecv(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
+    mpi_ret = MPI_Irecv((char*) mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
             mpi_remote_addr->rank, NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm, &mpi_request->data_request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");
@@ -970,7 +970,7 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 #else
     MPI_Win_lock(MPI_LOCK_SHARED, mpi_remote_addr->rank, 0, mpi_dynamic_win);
 
-    mpi_ret = MPI_Rget(mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
+    mpi_ret = MPI_Rget((char*) mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
             mpi_remote_addr->rank, mpi_remote_offset, mpi_length, MPI_BYTE, mpi_dynamic_win, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Rget() failed");
@@ -1013,7 +1013,7 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
     }
 
     do {
-        int hg_thread_cond_ret;
+        int hg_thread_cond_ret = 0;
         int mpi_flag = 0;
         struct timeval t1, t2;
 
@@ -1030,6 +1030,12 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         }
         is_mpi_testing = 1;
         hg_thread_mutex_unlock(&mpi_test_mutex);
+
+        if (hg_thread_cond_ret < 0) {
+            NA_ERROR_DEFAULT("hg_thread_cond_timedwait failed");
+            ret = NA_FAIL;
+            break;
+        }
 
         hg_thread_mutex_lock(&mpi_test_mutex);
         /* Test main request */
@@ -1215,7 +1221,7 @@ static int na_mpi_progress(unsigned int timeout, na_status_t *status)
 
         /* Remote wants to do a put so wait in a recv */
         case MPI_ONESIDED_PUT:
-            mpi_ret = MPI_Recv(mpi_mem_handle->base + onesided_info.disp,
+            mpi_ret = MPI_Recv((char*) mpi_mem_handle->base + onesided_info.disp,
                     onesided_info.count, MPI_BYTE, mpi_addr->rank,
                     NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm, MPI_STATUS_IGNORE);
             if (mpi_ret != MPI_SUCCESS) {
@@ -1226,7 +1232,7 @@ static int na_mpi_progress(unsigned int timeout, na_status_t *status)
 
             /* Remote wants to do a get so do a send */
         case MPI_ONESIDED_GET:
-            mpi_ret = MPI_Send(mpi_mem_handle->base + onesided_info.disp,
+            mpi_ret = MPI_Send((char*) mpi_mem_handle->base + onesided_info.disp,
                     onesided_info.count, MPI_BYTE, mpi_addr->rank,
                     NA_MPI_ONESIDED_DATA_TAG, mpi_onesided_comm);
             if (mpi_ret != MPI_SUCCESS) {
