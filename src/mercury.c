@@ -220,7 +220,7 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
 
     hg_proc_info_t *proc_info;
     hg_proc_t enc_proc = HG_PROC_NULL;
-    bool extra_send_buf_used = 0;
+    uint8_t extra_send_buf_used = 0;
 
     static int tag_incr = 0;
     na_tag_t   send_tag, recv_tag;
@@ -462,7 +462,7 @@ int HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
     if ((priv_request->send_request == NA_REQUEST_NULL) &&
             (priv_request->recv_request == NA_REQUEST_NULL)) {
         hg_proc_t dec_proc;
-        bool extra_recv_buf_used;
+        uint8_t extra_recv_buf_used;
 
         /* Decode depending on op ID */
         proc_info = hg_hash_table_lookup(func_map, &priv_request->id);

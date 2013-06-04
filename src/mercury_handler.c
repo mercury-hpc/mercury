@@ -553,7 +553,7 @@ int HG_Handler_process(unsigned int timeout, hg_status_t *status)
     hg_proc_info_t   *proc_info;
 
     hg_proc_t dec_proc = HG_PROC_NULL;
-    bool extra_recv_buf_used = 0;
+    uint8_t extra_recv_buf_used = 0;
     hg_bulk_t extra_recv_buf_handle = HG_BULK_NULL;
 
     na_status_t recv_status;
@@ -714,7 +714,7 @@ int HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf,
     hg_proc_info_t   *proc_info;
 
     hg_proc_t enc_proc = HG_PROC_NULL;
-    bool extra_send_buf_used = 0;
+    uint8_t extra_send_buf_used = 0;
 
     int ret = HG_SUCCESS, na_ret;
 
