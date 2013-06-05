@@ -299,6 +299,11 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
      *  - 2: send the remaining data in extra buf using bulk data transfer
      */
     if (hg_proc_get_size(enc_proc) > NA_Msg_get_maximum_size(hg_na_class)) {
+#ifdef MERCURY_HAS_XDR
+        HG_ERROR_DEFAULT("Extra encoding using XDR is not yet supported");
+        ret = HG_FAIL;
+        goto done;
+#else
         priv_request->extra_send_buf = hg_proc_get_extra_buf(enc_proc);
         priv_request->extra_send_buf_size = hg_proc_get_extra_size(enc_proc);
         ret = HG_Bulk_handle_create(priv_request->extra_send_buf,
@@ -310,6 +315,7 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
         }
         hg_proc_set_extra_buf_is_mine(enc_proc, 1);
         extra_send_buf_used = 1;
+#endif
     }
 
     /* Encode header */
