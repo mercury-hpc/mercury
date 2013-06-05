@@ -13,7 +13,6 @@
 
 #cmakedefine NA_HAS_BMI
 #cmakedefine NA_HAS_MPI
-#cmakedefine NA_MPI_HAS_STATIC_CONNECTION
 
 #cmakedefine NA_HAS_CLIENT_THREAD
 

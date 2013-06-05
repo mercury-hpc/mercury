@@ -15,7 +15,9 @@
 
 /* MPI initialization flags */
 enum {
-    MPI_INIT_SERVER = 1 /* set up to listen for unexpected messages */
+    MPI_INIT_SERVER = 1,    /* set up to listen for unexpected messages */
+    MPI_INIT_SERVER_STATIC, /* set up static inter-communicator */
+    MPI_INIT_STATIC         /* set up static inter-communicator */
 };
 
 #include <mpi.h>
