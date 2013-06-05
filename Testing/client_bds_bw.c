@@ -29,18 +29,14 @@ int main(int argc, char *argv[])
     hg_request_t bla_write_request;
 
     int fildes = 12345;
-    int **bulk_buf;
-    int bulk_size = 1024*1024*4;
-    int bulk_size_x = 16;
-    int bulk_size_y = 0;
-    int *bulk_size_y_var = NULL;
+    int *bulk_buf;
+    size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE / sizeof(int);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    hg_bulk_segment_t *bulk_segments = NULL;
-    int bla_write_ret = 0;
+    size_t bla_write_ret = 0;
 
     hg_status_t bla_open_status;
     int hg_ret, na_ret;
-    int i, j;
+    size_t i;
 
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
@@ -50,42 +46,6 @@ int main(int argc, char *argv[])
     if (!ion_name) {
         fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
         return EXIT_FAILURE;
-    }
-
-    if (argc == 3) {
-        /* This will create a list of variable size segments */
-        if (strcmp(argv[2], "contiguous") == 0) {
-            bulk_size_x = 1;
-            bulk_size_y = bulk_size;
-        }
-        /* This will create a list of variable size segments */
-        else if (strcmp(argv[2], "variable") == 0) {
-            printf("Using variable size segments!\n");
-            /* bulk_size_x >= 2 */
-            /* 524288 + 262144 + 131072 + 65536 + 32768 + 16384 + 8192 + 8192 */
-            bulk_size_x = 8;
-            bulk_size_y_var = malloc(bulk_size_x * sizeof(int));
-            bulk_size_y_var[0] = bulk_size / 2;
-            for (i = 1; i < bulk_size_x - 1; i++) {
-                bulk_size_y_var[i] = bulk_size_y_var[i-1] / 2;
-            }
-            bulk_size_y_var[bulk_size_x - 1] = bulk_size_y_var[bulk_size_x - 2];
-        }
-        /* This will use an extra encoding buffer */
-        else if (strcmp(argv[2], "extra") == 0) {
-            printf("Using large number of segments!\n");
-            bulk_size_x = 1024;
-            bulk_size_y = bulk_size / bulk_size_x;
-        }
-        else {
-            fprintf(stderr, "Error: Option not recognized, valid options are:\n"
-                    "  - variable\n"
-                    "  - extra\n");
-            return EXIT_FAILURE;
-        }
-    } else {
-        /* This will create a list of fixed size segments */
-        bulk_size_y = bulk_size / bulk_size_x;
     }
 
     hg_ret = HG_Init(network_class);
@@ -112,50 +72,18 @@ int main(int argc, char *argv[])
 
 
     /* Prepare bulk_buf */
-    bulk_buf = malloc(bulk_size_x * sizeof(int*));
-    if (bulk_size_y_var) {
-        int val = 0;
-        for (i = 0; i < bulk_size_x; i++) {
-            bulk_buf[i] = malloc(bulk_size_y_var[i] * sizeof(int));
-            for (j = 0; j < bulk_size_y_var[i]; j++) {
-                bulk_buf[i][j] = val;
-                val++;
-            }
-        }
-    } else {
-        for (i = 0; i < bulk_size_x; i++) {
-            bulk_buf[i] = malloc(bulk_size_y * sizeof(int));
-            for (j = 0; j < bulk_size_y; j++) {
-                bulk_buf[i][j] = i * bulk_size_y + j;
-            }
-        }
+    bulk_buf = malloc(bulk_size * sizeof(int));
+    for (i = 0; i < bulk_size; i++) {
+        bulk_buf[i] = (int) i;
     }
 
     /* Register memory */
-    bulk_segments = malloc(bulk_size_x * sizeof(hg_bulk_segment_t));
-    if (bulk_size_y_var) {
-        for (i = 0; i < bulk_size_x ; i++) {
-            bulk_segments[i].address = bulk_buf[i];
-            bulk_segments[i].size = bulk_size_y_var[i] * sizeof(int);
-        }
-    } else {
-        for (i = 0; i < bulk_size_x ; i++) {
-            bulk_segments[i].address = bulk_buf[i];
-            bulk_segments[i].size = bulk_size_y * sizeof(int);
-        }
-    }
-
-    hg_ret = HG_Bulk_handle_create_segments(bulk_segments, bulk_size_x,
+    hg_ret = HG_Bulk_handle_create(bulk_buf, bulk_size * sizeof(int),
             HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         return EXIT_FAILURE;
     }
-
-    free(bulk_segments);
-    bulk_segments = NULL;
-    if (bulk_size_y_var) free(bulk_size_y_var);
-    bulk_size_y_var = NULL;
 
     /* Fill input structure */
     bla_write_in_struct.fildes = fildes;
@@ -199,13 +127,8 @@ int main(int argc, char *argv[])
     }
 
     /* Free bulk_buf */
-    for (i = 0; i < bulk_size_x; i++) {
-        free(bulk_buf[i]);
-        bulk_buf[i] = NULL;
-    }
     free(bulk_buf);
     bulk_buf = NULL;
-
 
     /* Free addr id */
     na_ret = NA_Addr_free(network_class, addr);

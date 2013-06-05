@@ -39,15 +39,23 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
 #ifdef NA_HAS_MPI
     if (strcmp("mpi", argv[1]) == 0) {
         FILE *config;
-        network_class = NA_MPI_Init(NULL, 0);
-        if (rank) MPI_Comm_rank(MPI_COMM_WORLD, rank);
-        if ((config = fopen("port.cfg", "r")) != NULL) {
-            char mpi_port_name[MPI_MAX_PORT_NAME];
-            fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
-            /* printf("Using MPI port name: %s.\n", mpi_port_name); */
-            fclose(config);
-            setenv(ION_ENV, mpi_port_name, 1);
+
+        if (argc > 2 && (strcmp("static", argv[2]) == 0)) {
+            network_class = NA_MPI_Init(NULL, MPI_INIT_STATIC);
+        } else {
+            network_class = NA_MPI_Init(NULL, 0);
+            if ((config = fopen("port.cfg", "r")) != NULL) {
+                size_t nread;
+                char mpi_port_name[MPI_MAX_PORT_NAME];
+
+                nread = fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
+                if (!nread) fprintf(stderr, "Could not read port name\n");
+                fclose(config);
+                setenv(ION_ENV, mpi_port_name, 1);
+            }
         }
+
+        if (rank) MPI_Comm_rank(MPI_COMM_WORLD, rank);
     }
 #endif
 
@@ -78,7 +86,11 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
 
 #ifdef NA_HAS_MPI
     if (strcmp("mpi", argv[1]) == 0) {
-        network_class = NA_MPI_Init(NULL, MPI_INIT_SERVER);
+        if (argc > 2 && (strcmp("static", argv[2]) == 0)) {
+            network_class = NA_MPI_Init(NULL, MPI_INIT_SERVER_STATIC);
+        } else {
+            network_class = NA_MPI_Init(NULL, MPI_INIT_SERVER);
+        }
     }
 #endif
 

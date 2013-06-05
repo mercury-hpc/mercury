@@ -19,7 +19,7 @@
 /* Actual definition of the function that needs to be executed */
 size_t bla_write(int fildes, const void *buf, size_t nbyte)
 {
-    int i;
+    size_t i;
     int error = 0;
     int *bulk_buf = (int*) buf;
 
@@ -33,10 +33,10 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
     printf("Checking data...\n");
 
     /* Check bulk buf */
-    for (i = 0; i < (int)(nbyte / sizeof(int)); i++) {
-        if (bulk_buf[i] != i) {
-            printf("Error detected in bulk transfer, bulk_buf[%d] = %d, "
-                    "was expecting %d!\n", i, bulk_buf[i], i);
+    for (i = 0; i < (nbyte / sizeof(int)); i++) {
+        if (bulk_buf[i] != (int) i) {
+            printf("Error detected in bulk transfer, bulk_buf[%lu] = %d, "
+                    "was expecting %d!\n", i, bulk_buf[i], (int) i);
             error = 1;
             break;
         }
@@ -69,7 +69,7 @@ int fs_bla_write(hg_handle_t handle)
     int bla_write_fildes;
     void *bla_write_buf;
     size_t bla_write_nbytes;
-    int bla_write_ret;
+    size_t bla_write_ret;
 
     /* Get input parameters and data */
     ret = HG_Handler_get_input_buf(handle, &bla_write_in_buf, &bla_write_in_buf_size);

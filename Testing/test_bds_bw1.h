@@ -14,9 +14,8 @@
 #include "mercury_macros.h"
 #include "mercury_proc.h"
 
-#define AVERAGE 5
 #define PIPELINE_SIZE 4
-#define MIN_BUFFER_SIZE 2<<10 /* Stop at 4KB buffer size */
+#define MIN_BUFFER_SIZE 2<<11 /* Stop at 4KB buffer size */
 
 /* Dummy function that needs to be shipped */
 size_t bla_write(int fildes, const void *buf, size_t nbyte);

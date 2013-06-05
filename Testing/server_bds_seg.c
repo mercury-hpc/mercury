@@ -20,7 +20,7 @@
 /* Actual definition of the function that needs to be executed */
 size_t bla_write(int fildes, const void *buf, size_t nbyte)
 {
-    int i;
+    size_t i;
     int error = 0;
     int *bulk_buf = (int*) buf;
 
@@ -34,10 +34,10 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
     printf("Checking data...\n");
 
     /* Check bulk buf */
-    for (i = 0; i < (int)(nbyte / sizeof(int)); i++) {
-        if (bulk_buf[i] != i) {
-            printf("Error detected in bulk transfer, bulk_buf[%d] = %d, "
-                    "was expecting %d!\n", i, bulk_buf[i], i);
+    for (i = 0; i < (nbyte / sizeof(int)); i++) {
+        if (bulk_buf[i] != (int) i) {
+            printf("Error detected in bulk transfer, bulk_buf[%lu] = %d, "
+                    "was expecting %d!\n", i, bulk_buf[i], (int) i);
             error = 1;
             break;
         }
@@ -52,15 +52,8 @@ int fs_bla_write(hg_handle_t handle)
 {
     int ret = HG_SUCCESS;
 
-    void           *bla_write_in_buf;
-    size_t          bla_write_in_buf_size;
     bla_write_in_t  bla_write_in_struct;
-
-    void           *bla_write_out_buf;
-    size_t          bla_write_out_buf_size;
     bla_write_out_t bla_write_out_struct;
-
-    hg_proc_t proc;
 
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bla_write_bulk_handle = HG_BULK_NULL;
@@ -76,16 +69,11 @@ int fs_bla_write(hg_handle_t handle)
     int bla_write_ret;
 
     /* Get input parameters and data */
-    ret = HG_Handler_get_input_buf(handle, &bla_write_in_buf, &bla_write_in_buf_size);
+    ret = HG_Handler_get_input(handle, &bla_write_in_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get input buffer\n");
+        fprintf(stderr, "Could not get input\n");
         return ret;
     }
-
-    /* Create a new decoding proc */
-    hg_proc_create(bla_write_in_buf, bla_write_in_buf_size, HG_DECODE, &proc);
-    hg_proc_bla_write_in_t(proc, &bla_write_in_struct);
-    hg_proc_free(proc);
 
     /* Get parameters */
     bla_write_fildes = bla_write_in_struct.fildes;
@@ -140,15 +128,8 @@ int fs_bla_write(hg_handle_t handle)
     /* Fill output structure */
     bla_write_out_struct.ret = bla_write_ret;
 
-    /* Create a new encoding proc */
-    HG_Handler_get_output_buf(handle, &bla_write_out_buf, &bla_write_out_buf_size);
-
-    hg_proc_create(bla_write_out_buf, bla_write_out_buf_size, HG_ENCODE, &proc);
-    hg_proc_bla_write_out_t(proc, &bla_write_out_struct);
-    hg_proc_free(proc);
-
     /* Free handle and send response back */
-    ret = HG_Handler_start_response(handle, NULL, 0);
+    ret = HG_Handler_start_output(handle, &bla_write_out_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
@@ -162,11 +143,6 @@ int fs_bla_write(hg_handle_t handle)
     }
 
     free(bla_write_buf);
-
-    /* Also free memory allocated during decoding */
-    hg_proc_create(NULL, 0, HG_FREE, &proc);
-    hg_proc_bla_write_in_t(proc, &bla_write_in_struct);
-    hg_proc_free(proc);
 
     printf("\n");
 
@@ -200,7 +176,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    MERCURY_HANDLER_REGISTER_CALLBACK("bla_write", fs_bla_write);
+    MERCURY_HANDLER_REGISTER("bla_write", fs_bla_write, bla_write_in_t, bla_write_out_t);
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */

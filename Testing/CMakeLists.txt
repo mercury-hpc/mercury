@@ -14,6 +14,12 @@ include_directories(
 
 add_subdirectory(driver)
 
+set(MERCURY_TESTING_BUFFER_SIZE "16" CACHE STRING
+  "Total buffer size (in MB) used for testing.")
+
+set(MERCURY_TESTING_MAX_LOOP "1" CACHE STRING
+  "Loop n times for average bandwidth/time measures.")
+
 #------------------------------------------------------------------------------
 # Set up test options and macros
 #------------------------------------------------------------------------------
@@ -36,6 +42,17 @@ function(add_mercury_opt_test full_test_name server client opt)
     )
   endforeach(comm)
 endfunction(add_mercury_opt_test)
+
+function(add_mercury_static_test full_test_name server client)
+  foreach(comm ${NA_PLUGINS})
+    add_test(NAME "${full_test_name}_${comm}_static"
+      COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
+      ${MPIEXEC_PREFLAGS} $<TARGET_FILE:${server}>
+      ${H5FDdsm_TESTING_LENGTH} ${comm} "static" : ${MPIEXEC_NUMPROC_FLAG}
+      ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} $<TARGET_FILE:${client}> ${comm} "static"
+    )
+  endforeach(comm)
+endfunction(add_mercury_static_test)
 
 #------------------------------------------------------------------------------
 # mercury_test : Lib used by tests contains main test initialization etc
@@ -168,4 +185,9 @@ foreach(MERCURY_test ${MERCURY_opt_tests})
     client_${MERCURY_test} "extra")
   add_mercury_opt_test(mercury_${MERCURY_test} server_${MERCURY_test}
     client_${MERCURY_test} "variable")
+endforeach(MERCURY_test)
+
+foreach(MERCURY_test ${MERCURY_tests})
+  add_mercury_static_test(mercury_${MERCURY_test}
+    server_${MERCURY_test} client_${MERCURY_test})
 endforeach(MERCURY_test)

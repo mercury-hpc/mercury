@@ -30,13 +30,13 @@ int main(int argc, char *argv[])
 
     int fildes = 12345;
     int *bulk_buf = NULL;
-    int bulk_size = 1024*1024;
+    size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE / sizeof(int);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    int bla_write_ret = 0;
+    size_t bla_write_ret = 0;
 
     hg_status_t bla_open_status;
     int hg_ret, na_ret;
-    int i;
+    size_t i;
 
     /* Prepare bulk_buf */
     bulk_buf = malloc(sizeof(int) * bulk_size);
@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
 
     /* Get output parameters */
     bla_write_ret = bla_write_out_struct.ret;
-    printf("bla_write returned: %d\n", bla_write_ret);
+    printf("bla_write returned: %lu\n", bla_write_ret);
 
     /* Free memory handle */
     hg_ret = HG_Bulk_handle_free(bulk_handle);

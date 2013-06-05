@@ -10,7 +10,6 @@
 
 #include "test_bds_bw1.h"
 #include "mercury_test.h"
-#include "na_config.h"
 #include "na_mpi.h"
 #include "mercury.h"
 #include "mercury_bulk.h"
@@ -19,9 +18,6 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <unistd.h>
-
-#define BULK_BUF_SIZE 1024*1024*128
-#define MAX_BUFFER_SIZE 4096*1024
 
 /* TODO Test only supports MPI for now */
 
@@ -38,16 +34,16 @@ int main(int argc, char *argv[])
 
     int fildes = 12345;
     int *bulk_buf;
-    int bulk_size = BULK_BUF_SIZE;
+    size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE / sizeof(int);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    int bla_write_ret = 0;
+    size_t bla_write_ret = 0;
     size_t nbytes;
     double nmbytes;
-    size_t pipeline_buffer_size = MAX_BUFFER_SIZE;
+    size_t pipeline_buffer_size;
 
     hg_status_t bla_open_status;
     int hg_ret, na_ret;
-    int i;
+    size_t i;
 
     MPI_Comm split_comm;
     int color;
@@ -55,8 +51,9 @@ int main(int argc, char *argv[])
     int client_rank, client_size;
 
     int provided;
+
     /* Need a MPI_THREAD_MULTIPLE level if onesided thread required */
-    MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
 
     MPI_Comm_rank(MPI_COMM_WORLD, &global_rank);
     /* Color is 1 for server, 2 for client */
@@ -65,7 +62,7 @@ int main(int argc, char *argv[])
     MPI_Comm_rank(split_comm, &client_rank);
     MPI_Comm_size(split_comm, &client_size);
 
-    network_class = NA_MPI_Init(&split_comm, 0);
+    network_class = NA_MPI_Init(&split_comm, MPI_INIT_STATIC);
 
     hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {
@@ -93,11 +90,14 @@ int main(int argc, char *argv[])
     /* Prepare bulk_buf */
     nbytes = bulk_size * sizeof(int);
     nmbytes = nbytes / (1024 * 1024);
-    if (client_rank == 0) printf("# Reading Bulk Data (%f MB) with %d clients (average %d)\n", nmbytes, client_size, AVERAGE);
+    if (client_rank == 0) {
+        printf("# Reading Bulk Data (%f MB) with %d client(s) -- loop %d time(s)\n",
+                nmbytes, client_size, MERCURY_TESTING_MAX_LOOP);
+    }
 
     bulk_buf = malloc(nbytes);
     for (i = 0; i < bulk_size; i++) {
-        bulk_buf[i] = i;
+        bulk_buf[i] = (int) i;
     }
 
     /* Register memory */
@@ -112,19 +112,21 @@ int main(int argc, char *argv[])
     bla_write_in_struct.fildes = fildes;
     bla_write_in_struct.bulk_handle = bulk_handle;
 
-    if (client_rank == 0) printf("%-*s%*s%*s", 18, "# Buffer Size (KB) ", 20, "Time (s)", 20, "Bandwidth (MB/s)");
+    if (client_rank == 0) printf("%-*s%*s%*s%*s%*s%*s%*s", 12, "# Size (kB) ",
+            10, "Time (s)", 10, "Min (s)", 10, "Max (s)",
+            12, "BW (MB/s)", 12, "Min (MB/s)", 12, "Max (MB/s)");
     if (client_rank == 0) printf("\n");
 
-//    for (pipeline_buffer_size = nbytes / PIPELINE_SIZE;
-//            pipeline_buffer_size > MIN_BUFFER_SIZE;
-//            pipeline_buffer_size /= 2) {
+    for (pipeline_buffer_size = nbytes / PIPELINE_SIZE;
+            pipeline_buffer_size >= MIN_BUFFER_SIZE;
+            pipeline_buffer_size /= 2) {
         int avg_iter;
-        double time_read = 0;
-        double read_bandwidth;
+        double time_read = 0, min_time_read = 0, max_time_read = 0;
+        double read_bandwidth, min_read_bandwidth, max_read_bandwidth;
 
         bla_write_in_struct.pipeline_buffer_size = pipeline_buffer_size;
 
-        for (avg_iter = 0; avg_iter < AVERAGE; avg_iter++) {
+        for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
             struct timeval tv1, tv2;
             double td1, td2;
 
@@ -164,19 +166,25 @@ int main(int argc, char *argv[])
 
             /* Get output parameters */
             bla_write_ret = bla_write_out_struct.ret;
-            if (bla_write_ret != (bulk_size * (int)sizeof(int))) {
+            if (bla_write_ret != (bulk_size * sizeof(int))) {
                 fprintf(stderr, "Data not correctly processed\n");
             }
             time_read += td2 - td1;
+            if (!min_time_read) min_time_read = time_read;
+            min_time_read = ((td2 - td1) < min_time_read) ? (td2 - td1) : min_time_read;
+            max_time_read = ((td2 - td1) > max_time_read) ? (td2 - td1) : max_time_read;
         }
 
-        time_read = time_read / AVERAGE;
+        time_read = time_read / MERCURY_TESTING_MAX_LOOP;
         read_bandwidth = nmbytes * client_size / time_read;
+        min_read_bandwidth = nmbytes * client_size / max_time_read;
+        max_read_bandwidth = nmbytes * client_size / min_time_read;
 
         /* At this point we have received everything so work out the bandwidth */
-        printf("%-*d%*f%*.*f\n", 18, (int)pipeline_buffer_size / 1024, 20,
-                time_read, 20, 2, read_bandwidth);
-//    }
+        printf("%-*d%*f%*f%*f%*.*f%*.*f%*.*f\n", 12, (int) pipeline_buffer_size / 1024,
+                10, time_read, 10, min_time_read, 10, max_time_read,
+                12, 2, read_bandwidth, 12, 2, min_read_bandwidth, 12, 2, max_read_bandwidth);
+    }
 
     /* Free memory handle */
     hg_ret = HG_Bulk_handle_free(bulk_handle);
@@ -225,6 +233,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    MPI_Comm_free(&split_comm);
     MPI_Finalize();
 
     return EXIT_SUCCESS;

@@ -10,56 +10,39 @@
 
 #include "test_bds_bw1.h"
 #include "mercury_test.h"
+#include "na_mpi.h"
 #include "mercury_handler.h"
 #include "mercury_bulk.h"
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_list.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/time.h>
-#include <unistd.h>
 
 #define SPAWN_REQUEST_THREAD /* want to spawn threads */
-#define FORCE_MPI_PROGRESS /* want to have mpi progress */
-//#define FORCE_PIPELINE_SLEEP /* don't want the sleep */
+#define FORCE_MPI_PROGRESS   /* want to have mpi progress */
 
 static bool finalizing = 0;
 
-static double raw_time_read = 0;
-static size_t bla_write_nbytes;
+#ifdef SPAWN_REQUEST_THREAD
+static hg_list_entry_t *thread_list;
+#endif
 
 /* Actual definition of the function that needs to be executed */
-void bla_write_pipeline(size_t chunk_size,
-        hg_bulk_request_t bulk_request, hg_bulk_status_t *status, bool nosleep)
+void bla_write_progress(hg_bulk_request_t bulk_request, hg_bulk_status_t *status)
 {
-    int ret;
-    /* Convert raw_time_read to ms */
-    double msleep_time = chunk_size * raw_time_read * 1000 / bla_write_nbytes;
-    struct timeval t1, t2;
-    double time_remaining;
-
-    time_remaining = msleep_time;
-
 #ifdef FORCE_MPI_PROGRESS
     /* Force MPI progress for time_remaining ms */
     if (bulk_request != HG_BULK_REQUEST_NULL) {
-        gettimeofday(&t1, NULL);
+        int ret;
 
-        ret = HG_Bulk_wait(bulk_request, time_remaining, status);
+        ret = HG_Bulk_wait(bulk_request, 0, status);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Error while waiting\n");
         }
-
-        gettimeofday(&t2, NULL);
-        time_remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +
-                (t2.tv_usec - t1.tv_usec) / 1000;
     }
 #endif
-
-    if (!nosleep && time_remaining > 0) {
-        usleep(time_remaining * 1000);
-    }
 }
 
 size_t bla_write_check(const void *buf, size_t nbyte)
@@ -100,20 +83,14 @@ int bla_write_rpc(hg_handle_t handle)
 {
     int ret = HG_SUCCESS;
 
-    void           *bla_write_in_buf;
-    size_t          bla_write_in_buf_size;
     bla_write_in_t  bla_write_in_struct;
-
-    void           *bla_write_out_buf;
-    size_t          bla_write_out_buf_size;
     bla_write_out_t bla_write_out_struct;
-
-    hg_proc_t proc;
 
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bla_write_bulk_handle = HG_BULK_NULL;
     hg_bulk_block_t bla_write_bulk_block_handle[PIPELINE_SIZE];
     hg_bulk_request_t bla_write_bulk_request[PIPELINE_SIZE];
+    size_t bla_write_nbytes;
     int pipeline_iter;
     size_t pipeline_buffer_size;
     size_t start_offset = 0;
@@ -121,19 +98,14 @@ int bla_write_rpc(hg_handle_t handle)
     size_t chunk_size;
 
     void *bla_write_buf[PIPELINE_SIZE];
-    int bla_write_ret = 0;
+    size_t bla_write_ret = 0;
 
     /* Get input parameters and data */
-    ret = HG_Handler_get_input_buf(handle, &bla_write_in_buf, &bla_write_in_buf_size);
+    ret = HG_Handler_get_input(handle, &bla_write_in_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get input buffer\n");
+        fprintf(stderr, "Could not get input\n");
         return ret;
     }
-
-    /* Create a new decoding proc */
-    hg_proc_create(bla_write_in_buf, bla_write_in_buf_size, HG_DECODE, &proc);
-    hg_proc_bla_write_in_t(proc, &bla_write_in_struct);
-    hg_proc_free(proc);
 
     /* Get parameters */
     /* unused bla_write_fildes = bla_write_in_struct.fildes; */
@@ -186,12 +158,9 @@ int bla_write_rpc(hg_handle_t handle)
             /* Call bla_write */
             pipeline_next = (pipeline_iter < PIPELINE_SIZE - 1) ?
                     pipeline_iter + 1 : 0;
-#ifdef FORCE_PIPELINE_SLEEP
-            bla_write_pipeline(chunk_size, bla_write_bulk_request[pipeline_next], &status, 0);
-#else
-            bla_write_pipeline(chunk_size, bla_write_bulk_request[pipeline_next], &status, 1);
-#endif
-            if (status) bla_write_bulk_request[pipeline_next] = HG_BULK_REQUEST_NULL;
+            bla_write_progress(bla_write_bulk_request[pipeline_next], &status);
+            if (status) bla_write_bulk_request[pipeline_next] =
+                    HG_BULK_REQUEST_NULL;
 
             /* Start another read (which is PIPELINE_SIZE far) */
             write_offset += chunk_size * PIPELINE_SIZE;
@@ -209,29 +178,22 @@ int bla_write_rpc(hg_handle_t handle)
         start_offset += chunk_size * PIPELINE_SIZE;
     }
 
-    /* Check data */
-    //bla_write_ret = bla_write_check(bla_write_buf, bla_write_nbytes);
+    /* Do not check data as we measure on the client */
+    /* bla_write_ret = bla_write_check(bla_write_buf, bla_write_nbytes); */
     bla_write_ret = bla_write_nbytes;
 
     /* Fill output structure */
     bla_write_out_struct.ret = bla_write_ret;
 
-    /* Create a new encoding proc */
-    HG_Handler_get_output_buf(handle, &bla_write_out_buf, &bla_write_out_buf_size);
-
-    hg_proc_create(bla_write_out_buf, bla_write_out_buf_size, HG_ENCODE, &proc);
-    hg_proc_bla_write_out_t(proc, &bla_write_out_struct);
-    hg_proc_free(proc);
-
     /* Free handle and send response back */
-    ret = HG_Handler_start_response(handle, NULL, 0);
+    ret = HG_Handler_start_output(handle, &bla_write_out_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not respond\n");
+        fprintf(stderr, "Could not start response\n");
         return ret;
     }
 
+    /* Free block handles */
     for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
-        /* Free block handle */
         ret = HG_Bulk_block_handle_free(bla_write_bulk_block_handle[pipeline_iter]);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not free block call\n");
@@ -241,11 +203,6 @@ int bla_write_rpc(hg_handle_t handle)
         free(bla_write_buf[pipeline_iter]);
     }
 
-    /* Also free memory allocated during decoding */
-    hg_proc_create(NULL, 0, HG_FREE, &proc);
-    hg_proc_bla_write_in_t(proc, &bla_write_in_struct);
-    hg_proc_free(proc);
-
     return ret;
 }
 
@@ -253,7 +210,9 @@ int bla_write_rpc(hg_handle_t handle)
 void *bla_write_rpc_thread(void *arg)
 {
     hg_handle_t handle = (hg_handle_t) arg;
+
     bla_write_rpc(handle);
+
     return NULL;
 }
 
@@ -263,7 +222,9 @@ int bla_write_rpc_spawn(hg_handle_t handle)
 
 #ifdef SPAWN_REQUEST_THREAD
     hg_thread_t thread;
+
     hg_thread_create(&thread, bla_write_rpc_thread, handle);
+    hg_list_append(&thread_list, (hg_list_value_t)thread);
 #else
     bla_write_rpc_thread(handle);
 #endif
@@ -277,14 +238,26 @@ int main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
     int hg_ret;
-    unsigned int cmake_number_of_peers;
+    MPI_Comm split_comm;
+    int color, global_rank, provided;
+#ifdef SPAWN_REQUEST_THREAD
+    hg_list_iter_t list_iterator;
+#endif
 
     /* Used by Test Driver */
     printf("# Waiting for client...\n");
     fflush(stdout);
 
     /* Initialize the interface */
-    network_class = HG_Test_server_init(argc, argv, &cmake_number_of_peers);
+    /* Need a MPI_THREAD_MULTIPLE level for threads */
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &global_rank);
+    /* Color is 1 for server, 2 for client */
+    color = 1;
+    MPI_Comm_split(MPI_COMM_WORLD, color, global_rank, &split_comm);
+
+    network_class = NA_MPI_Init(&split_comm, MPI_INIT_SERVER_STATIC);
 
     hg_ret = HG_Handler_init(network_class);
     if (hg_ret != HG_SUCCESS) {
@@ -299,7 +272,8 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    MERCURY_HANDLER_REGISTER_CALLBACK("bla_write", bla_write_rpc_spawn);
+    MERCURY_HANDLER_REGISTER("bla_write", bla_write_rpc_spawn,
+            bla_write_in_t, bla_write_out_t);
     MERCURY_HANDLER_REGISTER_FINALIZE(server_finalize);
 
     while (!finalizing) {
@@ -314,6 +288,18 @@ int main(int argc, char *argv[])
 
     printf("# Finalizing...\n");
 
+#ifdef SPAWN_REQUEST_THREAD
+    /* Wait for all threads to have joined */
+    hg_list_iterate(&thread_list, &list_iterator);
+    while (hg_list_iter_has_more(&list_iterator)) {
+        hg_thread_t thread;
+
+        thread = (hg_thread_t) hg_list_iter_next(&list_iterator);
+        hg_thread_join(thread);
+        hg_list_iter_remove(&list_iterator);
+    }
+#endif
+
     /* Finalize the interface */
     hg_ret = HG_Bulk_finalize();
     if (hg_ret != HG_SUCCESS) {
@@ -326,6 +312,9 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Could not finalize function shipper handler\n");
         return EXIT_FAILURE;
     }
+
+    MPI_Comm_free(&split_comm);
+    MPI_Finalize();
 
     return EXIT_SUCCESS;
 }

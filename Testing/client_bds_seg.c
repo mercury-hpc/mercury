@@ -30,17 +30,17 @@ int main(int argc, char *argv[])
 
     int fildes = 12345;
     int **bulk_buf;
-    int bulk_size = 1024*1024;
-    int bulk_size_x = 16;
-    int bulk_size_y = 0;
-    int *bulk_size_y_var = NULL;
+    size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE / sizeof(int);
+    size_t bulk_size_x = 16;
+    size_t bulk_size_y = 0;
+    size_t *bulk_size_y_var = NULL;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     hg_bulk_segment_t *bulk_segments = NULL;
-    int bla_write_ret = 0;
+    size_t bla_write_ret = 0;
 
     hg_status_t bla_open_status;
     int hg_ret, na_ret;
-    int i, j;
+    size_t i, j;
 
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
@@ -52,33 +52,26 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (argc == 3) {
-        /* This will create a list of variable size segments */
-        if (strcmp(argv[2], "variable") == 0) {
-            printf("Using variable size segments!\n");
-            /* bulk_size_x >= 2 */
-            /* 524288 + 262144 + 131072 + 65536 + 32768 + 16384 + 8192 + 8192 */
-            bulk_size_x = 8;
-            bulk_size_y_var = malloc(bulk_size_x * sizeof(int));
-            bulk_size_y_var[0] = bulk_size / 2;
-            for (i = 1; i < bulk_size_x - 1; i++) {
-                bulk_size_y_var[i] = bulk_size_y_var[i-1] / 2;
-            }
-            bulk_size_y_var[bulk_size_x - 1] = bulk_size_y_var[bulk_size_x - 2];
+    /* This will create a list of variable size segments */
+    if (argc > 2 && strcmp(argv[2], "variable") == 0) {
+        printf("Using variable size segments!\n");
+        /* bulk_size_x >= 2 */
+        /* 524288 + 262144 + 131072 + 65536 + 32768 + 16384 + 8192 + 8192 */
+        bulk_size_x = 8;
+        bulk_size_y_var = malloc(bulk_size_x * sizeof(size_t));
+        bulk_size_y_var[0] = bulk_size / 2;
+        for (i = 1; i < bulk_size_x - 1; i++) {
+            bulk_size_y_var[i] = bulk_size_y_var[i-1] / 2;
         }
-        /* This will use an extra encoding buffer */
-        else if (strcmp(argv[2], "extra") == 0) {
-            printf("Using large number of segments!\n");
-            bulk_size_x = 1024;
-            bulk_size_y = bulk_size / bulk_size_x;
-        }
-        else {
-            fprintf(stderr, "Error: Option not recognized, valid options are:\n"
-                    "  - variable\n"
-                    "  - extra\n");
-            return EXIT_FAILURE;
-        }
-    } else {
+        bulk_size_y_var[bulk_size_x - 1] = bulk_size_y_var[bulk_size_x - 2];
+    }
+    /* This will use an extra encoding buffer */
+    else if (argc > 2 && strcmp(argv[2], "extra") == 0) {
+        printf("Using large number of segments!\n");
+        bulk_size_x = 1024;
+        bulk_size_y = bulk_size / bulk_size_x;
+    }
+    else {
         /* This will create a list of fixed size segments */
         bulk_size_y = bulk_size / bulk_size_x;
     }
@@ -104,7 +97,6 @@ int main(int argc, char *argv[])
 
     /* Register function and encoding/decoding functions */
     bla_write_id = MERCURY_REGISTER("bla_write", bla_write_in_t, bla_write_out_t);
-
 
     /* Prepare bulk_buf */
     bulk_buf = malloc(bulk_size_x * sizeof(int*));
@@ -182,7 +174,7 @@ int main(int argc, char *argv[])
 
     /* Get output parameters */
     bla_write_ret = bla_write_out_struct.ret;
-    printf("bla_write returned: %d\n", bla_write_ret);
+    printf("bla_write returned: %lu\n", bla_write_ret);
 
     /* Free memory handle */
     hg_ret = HG_Bulk_handle_free(bulk_handle);

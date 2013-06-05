@@ -12,25 +12,20 @@
 #include "mercury_test.h"
 #include "mercury_handler.h"
 #include "mercury_bulk.h"
-#include "mercury_thread.h"
-#include "mercury_thread_mutex.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
 #include <unistd.h>
 
-#define AVERAGE 5
 #define PIPELINE_SIZE 4
-#define MIN_BUFFER_SIZE 2<<10 /* Stop at 4KB buffer size */
+#define MIN_BUFFER_SIZE 2<<11 /* Stop at 4KB buffer size */
 
-#define SPAWN_REQUEST_THREAD
 #define FORCE_MPI_PROGRESS
 #define FORCE_PIPELINE_SLEEP
 
 static unsigned int number_of_peers;
 static unsigned int number_of_executed_requests = 0;
-static hg_thread_mutex_t executed_requests_mutex;
 static double raw_time_read = 0;
 static size_t bla_write_nbytes;
 
@@ -69,14 +64,14 @@ void bla_write_pipeline(size_t chunk_size,
 
 size_t bla_write_check(const void *buf, size_t nbyte)
 {
-    int i;
+    size_t i;
     int *bulk_buf = (int*) buf;
 
     /* Check bulk buf */
-    for (i = 0; i < (int)(nbyte / sizeof(int)); i++) {
-        if (bulk_buf[i] != i) {
-            printf("Error detected in bulk transfer, bulk_buf[%d] = %d, "
-                    "was expecting %d!\n", i, bulk_buf[i], i);
+    for (i = 0; i < (nbyte / sizeof(int)); i++) {
+        if (bulk_buf[i] != (int) i) {
+            printf("Error detected in bulk transfer, bulk_buf[%lu] = %d, "
+                    "was expecting %d!\n", i, bulk_buf[i], (int) i);
             break;
         }
     }
@@ -89,15 +84,8 @@ int bla_write_rpc(hg_handle_t handle)
 {
     int ret = HG_SUCCESS;
 
-    void           *bla_write_in_buf;
-    size_t          bla_write_in_buf_size;
     bla_write_in_t  bla_write_in_struct;
-
-    void           *bla_write_out_buf;
-    size_t          bla_write_out_buf_size;
     bla_write_out_t bla_write_out_struct;
-
-    hg_proc_t proc;
 
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bla_write_bulk_handle = HG_BULK_NULL;
@@ -107,28 +95,23 @@ int bla_write_rpc(hg_handle_t handle)
     size_t pipeline_buffer_size;
 
     void *bla_write_buf;
-    int bla_write_ret = 0;
+    size_t bla_write_ret = 0;
 
     /* For timing */
     static int first_call = 1; /* Only used for dummy printf */
-    int avg_iter;
     double nmbytes;
-    double proc_time_read = 0, time_read = 0;
-    double raw_read_bandwidth, proc_read_bandwidth, read_bandwidth;
+    int avg_iter;
+    double proc_time_read = 0;
+    double raw_read_bandwidth, proc_read_bandwidth;
 
     if (first_call) printf("# Received new request\n");
 
     /* Get input parameters and data */
-    ret = HG_Handler_get_input_buf(handle, &bla_write_in_buf, &bla_write_in_buf_size);
+    ret = HG_Handler_get_input(handle, &bla_write_in_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get input buffer\n");
+        fprintf(stderr, "Could not get input\n");
         return ret;
     }
-
-    /* Create a new decoding proc */
-    hg_proc_create(bla_write_in_buf, bla_write_in_buf_size, HG_DECODE, &proc);
-    hg_proc_bla_write_in_t(proc, &bla_write_in_struct);
-    hg_proc_free(proc);
 
     /* Get parameters */
     /* unused bla_write_fildes = bla_write_in_struct.fildes; */
@@ -146,7 +129,7 @@ int bla_write_rpc(hg_handle_t handle)
     if (first_call) printf("# Reading Bulk Data (%f MB)\n", nmbytes);
 
     /* Work out BW without pipeline and without processing data */
-    for (avg_iter = 0; avg_iter < AVERAGE; avg_iter++) {
+    for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
         struct timeval tv1, tv2;
         double td1, td2;
 
@@ -175,12 +158,12 @@ int bla_write_rpc(hg_handle_t handle)
         raw_time_read += td2 - td1;
     }
 
-    raw_time_read = raw_time_read / AVERAGE;
+    raw_time_read = raw_time_read / MERCURY_TESTING_MAX_LOOP;
     raw_read_bandwidth = nmbytes / raw_time_read;
     if (first_call) printf("# Raw read time: %f s (%.*f MB/s)\n", raw_time_read, 2, raw_read_bandwidth);
 
     /* Work out BW without pipeline and with processing data */
-    for (avg_iter = 0; avg_iter < AVERAGE; avg_iter++) {
+    for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
         struct timeval tv1, tv2;
         double td1, td2;
 
@@ -212,11 +195,13 @@ int bla_write_rpc(hg_handle_t handle)
         proc_time_read += td2 - td1;
     }
 
-    proc_time_read = proc_time_read / AVERAGE;
+    proc_time_read = proc_time_read / MERCURY_TESTING_MAX_LOOP;
     proc_read_bandwidth = nmbytes / proc_time_read;
     if (first_call) printf("# Proc read time: %f s (%.*f MB/s)\n", proc_time_read, 2, proc_read_bandwidth);
 
-    if (first_call) printf("%-*s%*s%*s", 18, "# Buffer Size (KB) ", 20, "Time (s)", 20, "Bandwidth (MB/s)");
+    if (first_call) printf("%-*s%*s%*s%*s%*s%*s%*s", 12, "# Size (kB) ",
+            10, "Time (s)", 10, "Min (s)", 10, "Max (s)",
+            12, "BW (MB/s)", 12, "Min (MB/s)", 12, "Max (MB/s)");
     if (first_call) printf("\n");
 
     if (!PIPELINE_SIZE) fprintf(stderr, "PIPELINE_SIZE must be > 0!\n");
@@ -224,9 +209,10 @@ int bla_write_rpc(hg_handle_t handle)
     for (pipeline_buffer_size = bla_write_nbytes / PIPELINE_SIZE;
             pipeline_buffer_size > MIN_BUFFER_SIZE;
             pipeline_buffer_size /= 2) {
-        time_read = 0;
+        double time_read = 0, min_time_read = 0, max_time_read = 0;
+        double read_bandwidth, min_read_bandwidth, max_read_bandwidth;
 
-        for (avg_iter = 0; avg_iter < AVERAGE; avg_iter++) {
+        for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
             size_t start_offset = 0;
             size_t total_bytes_read = 0;
             size_t chunk_size;
@@ -302,13 +288,20 @@ int bla_write_rpc(hg_handle_t handle)
             td2 = tv2.tv_sec + tv2.tv_usec / 1000000.0;
 
             time_read += td2 - td1;
+            if (!min_time_read) min_time_read = time_read;
+            min_time_read = ((td2 - td1) < min_time_read) ? (td2 - td1) : min_time_read;
+            max_time_read = ((td2 - td1) > max_time_read) ? (td2 - td1) : max_time_read;
         }
 
-        time_read = time_read / AVERAGE;
+        time_read = time_read / MERCURY_TESTING_MAX_LOOP;
         read_bandwidth = nmbytes / time_read;
+        min_read_bandwidth = nmbytes / max_time_read;
+        max_read_bandwidth = nmbytes / min_time_read;
 
         /* At this point we have received everything so work out the bandwidth */
-        printf("%-*d%*f%*.*f\n", 18, (int)pipeline_buffer_size / 1024, 20, time_read, 20, 2, read_bandwidth);
+        printf("%-*d%*f%*f%*f%*.*f%*.*f%*.*f\n", 12, (int) pipeline_buffer_size / 1024,
+                10, time_read, 10, min_time_read, 10, max_time_read,
+                12, 2, read_bandwidth, 12, 2, min_read_bandwidth, 12, 2, max_read_bandwidth);
 
         /* Check data */
         bla_write_ret = bla_write_check(bla_write_buf, bla_write_nbytes);
@@ -317,15 +310,8 @@ int bla_write_rpc(hg_handle_t handle)
     /* Fill output structure */
     bla_write_out_struct.ret = bla_write_ret;
 
-    /* Create a new encoding proc */
-    HG_Handler_get_output_buf(handle, &bla_write_out_buf, &bla_write_out_buf_size);
-
-    hg_proc_create(bla_write_out_buf, bla_write_out_buf_size, HG_ENCODE, &proc);
-    hg_proc_bla_write_out_t(proc, &bla_write_out_struct);
-    hg_proc_free(proc);
-
     /* Free handle and send response back */
-    ret = HG_Handler_start_response(handle, NULL, 0);
+    ret = HG_Handler_start_output(handle, &bla_write_out_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
@@ -340,51 +326,16 @@ int bla_write_rpc(hg_handle_t handle)
 
     free(bla_write_buf);
 
-    /* Also free memory allocated during decoding */
-    hg_proc_create(NULL, 0, HG_FREE, &proc);
-    hg_proc_bla_write_in_t(proc, &bla_write_in_struct);
-    hg_proc_free(proc);
-
     first_call = 0;
 
     return ret;
 }
 
-/* Thread to handle request */
-void *bla_write_rpc_thread(void *arg)
-{
-    hg_handle_t handle = (hg_handle_t) arg;
-    bla_write_rpc(handle);
-
-    hg_thread_mutex_lock(&executed_requests_mutex);
-    number_of_executed_requests++;
-    hg_thread_mutex_unlock(&executed_requests_mutex);
-    return NULL;
-}
-
-int bla_write_rpc_spawn(hg_handle_t handle)
-{
-    int ret = HG_SUCCESS;
-
-#ifdef SPAWN_REQUEST_THREAD
-    hg_thread_t thread;
-    hg_thread_create(&thread, bla_write_rpc_thread, handle);
-#else
-    bla_write_rpc_thread(handle);
-#endif
-
-    return ret;
-}
-
-
 /*****************************************************************************/
 int main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
-    unsigned int i;
     int hg_ret;
-
-    hg_thread_mutex_init(&executed_requests_mutex);
 
     /* Used by Test Driver */
     printf("# Waiting for client...\n");
@@ -406,20 +357,19 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    MERCURY_HANDLER_REGISTER_CALLBACK("bla_write", bla_write_rpc_spawn);
+    MERCURY_HANDLER_REGISTER("bla_write", bla_write_rpc,
+            bla_write_in_t, bla_write_out_t);
 
-    hg_thread_mutex_lock(&executed_requests_mutex);
     while (number_of_executed_requests != number_of_peers) {
-        hg_thread_mutex_unlock(&executed_requests_mutex);
         hg_status_t status;
+
         /* Receive new function calls */
         hg_ret = HG_Handler_process(1, &status);
         if (hg_ret == HG_SUCCESS && status) {
             printf("# Request processed\n");
+            number_of_executed_requests++;
         }
-        hg_thread_mutex_lock(&executed_requests_mutex);
     }
-    hg_thread_mutex_unlock(&executed_requests_mutex);
 
     printf("# Finalizing...\n");
 
@@ -435,8 +385,6 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Could not finalize function shipper handler\n");
         return EXIT_FAILURE;
     }
-
-    hg_thread_mutex_destroy(&executed_requests_mutex);
 
     return EXIT_SUCCESS;
 }
