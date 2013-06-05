@@ -29,7 +29,7 @@ int hg_proc_buf_alloc(void **mem_ptr, size_t size)
     int ret = HG_SUCCESS;
     size_t alignment;
 
-    alignment = getpagesize();
+    alignment = sysconf(_SC_PAGE_SIZE);
 
     posix_memalign(mem_ptr, alignment, size);
     memset(*mem_ptr, 0, size);
@@ -187,7 +187,7 @@ int hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
     ptrdiff_t current_pos;
     int ret = HG_SUCCESS;
 
-    page_size = getpagesize();
+    page_size = sysconf(_SC_PAGE_SIZE);
     new_buf_size = ((size_t)(req_buf_size / page_size) + 1) * page_size;
 
     if (new_buf_size <= hg_proc_get_size(proc)) {
