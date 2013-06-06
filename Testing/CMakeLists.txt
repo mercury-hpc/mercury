@@ -1,4 +1,13 @@
 #------------------------------------------------------------------------------
+# Set up test options
+#------------------------------------------------------------------------------
+set(MERCURY_TESTING_BUFFER_SIZE "16" CACHE STRING
+  "Total buffer size (in MB) used for testing.")
+
+set(MERCURY_TESTING_MAX_LOOP "1" CACHE STRING
+  "Loop n times for average bandwidth/time measures.")
+
+#------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
 #------------------------------------------------------------------------------
 configure_file(
@@ -14,14 +23,8 @@ include_directories(
 
 add_subdirectory(driver)
 
-set(MERCURY_TESTING_BUFFER_SIZE "16" CACHE STRING
-  "Total buffer size (in MB) used for testing.")
-
-set(MERCURY_TESTING_MAX_LOOP "1" CACHE STRING
-  "Loop n times for average bandwidth/time measures.")
-
 #------------------------------------------------------------------------------
-# Set up test options and macros
+# Set up test macros
 #------------------------------------------------------------------------------
 function(add_mercury_test full_test_name server client)
   foreach(comm ${NA_PLUGINS})
