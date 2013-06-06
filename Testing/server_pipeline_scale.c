@@ -8,7 +8,7 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "test_bds_bw1.h"
+#include "test_pipeline_scale.h"
 #include "mercury_test.h"
 #include "na_mpi.h"
 #include "mercury_handler.h"

@@ -8,8 +8,8 @@
  * found at the root of the source code distribution tree.
  */
 
-#ifndef TEST_FS_H
-#define TEST_FS_H
+#ifndef TEST_RPC_H
+#define TEST_RPC_H
 
 #include "mercury_macros.h"
 #include "mercury_proc.h"
@@ -112,4 +112,4 @@ static inline int hg_proc_bla_open_out_t(hg_proc_t proc, void *data)
 }
 #endif
 
-#endif /* TEST_FS_H */
+#endif /* TEST_RPC_H */

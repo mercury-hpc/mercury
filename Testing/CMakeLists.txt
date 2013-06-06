@@ -71,16 +71,16 @@ endif(MERCURY_ENABLE_COVERAGE)
 # Set up test
 #------------------------------------------------------------------------------
 # Function shipper test
-add_executable(client_fs client_fs.c)
-target_link_libraries(client_fs mercury_test)
+add_executable(client_rpc client_rpc.c)
+target_link_libraries(client_rpc mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_fs)
+  set_coverage_flags(client_rpc)
 endif(MERCURY_ENABLE_COVERAGE)
 
-add_executable(server_fs server_fs.c)
-target_link_libraries(server_fs mercury_test)
+add_executable(server_rpc server_rpc.c)
+target_link_libraries(server_rpc mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_fs)
+  set_coverage_flags(server_rpc)
 endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
@@ -99,56 +99,58 @@ endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
 # Bulk data shipper test
-add_executable(client_bds client_bds.c)
-target_link_libraries(client_bds mercury_test)
+add_executable(client_bulk client_bulk.c)
+target_link_libraries(client_bulk mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_bds)
+  set_coverage_flags(client_bulk)
 endif(MERCURY_ENABLE_COVERAGE)
 
-add_executable(server_bds server_bds.c)
-target_link_libraries(server_bds mercury_test)
+add_executable(server_bulk server_bulk.c)
+target_link_libraries(server_bulk mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_bds)
+  set_coverage_flags(server_bulk)
 endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
 # Non-contiguous bulk data shipper test
-add_executable(client_bds_seg client_bds_seg.c)
-target_link_libraries(client_bds_seg mercury_test)
+add_executable(client_bulk_seg client_bulk_seg.c)
+target_link_libraries(client_bulk_seg mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_bds_seg)
+  set_coverage_flags(client_bulk_seg)
 endif(MERCURY_ENABLE_COVERAGE)
 
-add_executable(server_bds_seg server_bds_seg.c)
-target_link_libraries(server_bds_seg mercury_test)
+add_executable(server_bulk_seg server_bulk_seg.c)
+target_link_libraries(server_bulk_seg mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_bds_seg)
+  set_coverage_flags(server_bulk_seg)
 endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
-# Bandwidth bulk data shipper test
-add_executable(client_bds_bw client_bds_bw.c)
-target_link_libraries(client_bds_bw mercury_test)
+# Bandwidth bulk data shipper test using pipelining
+add_executable(client_pipeline client_pipeline.c)
+target_link_libraries(client_pipeline mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_bds_bw)
+  set_coverage_flags(client_pipeline)
 endif(MERCURY_ENABLE_COVERAGE)
 
-add_executable(server_bds_bw server_bds_bw.c)
-target_link_libraries(server_bds_bw mercury_test)
+add_executable(server_pipeline server_pipeline.c)
+target_link_libraries(server_pipeline mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_bds_bw)
+  set_coverage_flags(server_pipeline)
 endif(MERCURY_ENABLE_COVERAGE)
 
-add_executable(client_bds_bw1 client_bds_bw1.c)
-target_link_libraries(client_bds_bw1 mercury_test)
+#------------------------------------------------------------------------------
+# Scaling bandwidth bulk data shipper test using pipelining
+add_executable(client_pipeline_scale client_pipeline_scale.c)
+target_link_libraries(client_pipeline_scale mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_bds_bw1)
+  set_coverage_flags(client_pipeline_scale)
 endif(MERCURY_ENABLE_COVERAGE)
 
-add_executable(server_bds_bw1 server_bds_bw1.c)
-target_link_libraries(server_bds_bw1 mercury_test)
+add_executable(server_pipeline_scale server_pipeline_scale.c)
+target_link_libraries(server_pipeline_scale mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_bds_bw1)
+  set_coverage_flags(server_pipeline_scale)
 endif(MERCURY_ENABLE_COVERAGE)
 
 #------------------------------------------------------------------------------
@@ -168,11 +170,11 @@ endif(MERCURY_ENABLE_COVERAGE)
 #------------------------------------------------------------------------------
 # Set list of tests
 set(MERCURY_tests
-  fs
+  rpc
   na
-  bds
-  bds_seg
-  bds_bw
+  bulk
+  bulk_seg
+  pipeline
   posix
 )
 foreach(MERCURY_test ${MERCURY_tests})
@@ -181,7 +183,7 @@ foreach(MERCURY_test ${MERCURY_tests})
 endforeach(MERCURY_test)
 
 set(MERCURY_opt_tests
-  bds_seg
+  bulk_seg
 )
 foreach(MERCURY_test ${MERCURY_opt_tests})
   add_mercury_opt_test(mercury_${MERCURY_test} server_${MERCURY_test}

@@ -8,7 +8,7 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "test_bds.h"
+#include "test_bulk.h"
 #include "mercury_test.h"
 #include "mercury.h"
 #include "mercury_bulk.h"
