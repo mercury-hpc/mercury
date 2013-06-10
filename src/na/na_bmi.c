@@ -834,12 +834,6 @@ static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
         return ret;
     }
 
-    if (bmi_remote_mem_handle->attr != (NA_MEM_READ_ONLY || NA_MEM_READWRITE)) {
-        NA_ERROR_DEFAULT("Registered memory requires read permission");
-        ret = NA_FAIL;
-        return ret;
-    }
-
     /* Send to one-sided thread key to access mem_handle */
     onesided_info.base = bmi_remote_mem_handle->base;
     onesided_info.disp = bmi_remote_offset;

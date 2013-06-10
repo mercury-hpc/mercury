@@ -958,12 +958,6 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     }
 #endif
 
-    if (mpi_remote_mem_handle->attr != (NA_MEM_READ_ONLY || NA_MEM_READWRITE)) {
-        NA_ERROR_DEFAULT("Registered memory requires read permission");
-        ret = NA_FAIL;
-        return ret;
-    }
-
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
     mpi_request->request = MPI_REQUEST_NULL;
