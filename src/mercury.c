@@ -52,6 +52,8 @@ static hg_thread_mutex_t tag_mutex;
 /* Pointer to network abstraction class */
 static na_class_t *hg_na_class = NULL;
 
+static bool hg_dont_atexit = 0;
+
 #define HG_MAXTAG 65536
 
 /* Hash functions for function map */
@@ -91,6 +93,20 @@ static inline na_tag_t gen_tag(void)
     return tag;
 }
 
+static void hg_auto_finalize(void)
+{
+    if (hg_na_class) {
+        int hg_ret;
+
+        printf("Auto finalize is called\n");
+        /* Finalize interface */
+        hg_ret = HG_Finalize();
+        if (hg_ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not finalize mercury interface");
+        }
+    }
+}
+
 /*---------------------------------------------------------------------------
  * Function:    HG_Init
  *
@@ -103,6 +119,12 @@ static inline na_tag_t gen_tag(void)
 int HG_Init(na_class_t *network_class)
 {
     int ret = HG_SUCCESS;
+
+    if (!network_class) {
+        HG_ERROR_DEFAULT("Invalid specified network_class");
+        ret = HG_FAIL;
+        return ret;
+    }
 
     if (hg_na_class) {
         HG_ERROR_DEFAULT("Already initialized");
@@ -125,6 +147,17 @@ int HG_Init(na_class_t *network_class)
     }
     /* Automatically free all the values with the hash map */
     hg_hash_table_register_free_functions(func_map, free, free);
+
+    /*
+     * Install atexit() library cleanup routine unless hg_dont_atexit is set.
+     * Once we add something to the atexit() list it stays there permanently,
+     * so we set H5_dont_atexit_g after we add it to prevent adding it again
+     * later if the library is closed and reopened.
+     */
+    if (!hg_dont_atexit) {
+        (void) atexit(hg_auto_finalize);
+        hg_dont_atexit = 1;
+    }
 
     return ret;
 }
@@ -169,6 +202,31 @@ int HG_Finalize(void)
 }
 
 /*---------------------------------------------------------------------------
+ * Function:    HG_Initialized
+ *
+ * Purpose:     Indicate whether HG_Init has been called and return associated network class
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int HG_Initialized(bool *flag, na_class_t **network_class)
+{
+    int ret = HG_SUCCESS;
+
+    if (!flag) {
+        HG_ERROR_DEFAULT("NULL flag");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    *flag = (hg_na_class) ? 1 : 0;
+    if (network_class) *network_class = (*flag) ? hg_na_class : 0;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------
  * Function:    HG_Register
  *
  * Purpose:     Register a function name and provide a unique ID
@@ -202,6 +260,34 @@ hg_id_t HG_Register(const char *func_name,
     }
 
     return *id;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    HG_Registered
+ *
+ * Purpose:     Indicate whether HG_Register has been called and return associated ID
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int HG_Registered(const char *func_name, bool *flag, hg_id_t *id)
+{
+    int ret = HG_SUCCESS;
+    hg_id_t func_id;
+
+    if (!flag) {
+        HG_ERROR_DEFAULT("NULL flag");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    func_id = hg_proc_string_hash(func_name);
+
+    *flag = (hg_hash_table_lookup(func_map, &func_id) != HG_HASH_TABLE_NULL) ? 1 : 0;
+    if (id) *id = (*flag) ? func_id : 0;
+
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------

@@ -40,6 +40,21 @@ typedef struct hg_priv_bulk_request {
 /* Pointer to network abstraction class */
 static na_class_t *bulk_na_class = NULL;
 
+static bool bulk_dont_atexit = 0;
+
+static void hg_bulk_auto_finalize(void)
+{
+    if (bulk_na_class) {
+        int hg_ret;
+
+        /* Finalize interface */
+        hg_ret = HG_Bulk_finalize();
+        if (hg_ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not finalize mercury bulk interface");
+        }
+    }
+}
+
 /*---------------------------------------------------------------------------
  * Function:    HG_Bulk_init
  *
@@ -53,6 +68,12 @@ int HG_Bulk_init(na_class_t *network_class)
 {
     int ret = HG_SUCCESS;
 
+    if (!network_class) {
+        HG_ERROR_DEFAULT("Invalid specified network_class");
+        ret = HG_FAIL;
+        return ret;
+    }
+
     if (bulk_na_class) {
         HG_ERROR_DEFAULT("Already initialized");
         ret = HG_FAIL;
@@ -60,6 +81,17 @@ int HG_Bulk_init(na_class_t *network_class)
     }
 
     bulk_na_class = network_class;
+
+    /*
+     * Install atexit() library cleanup routine unless hg_dont_atexit is set.
+     * Once we add something to the atexit() list it stays there permanently,
+     * so we set H5_dont_atexit_g after we add it to prevent adding it again
+     * later if the library is closed and reopened.
+     */
+    if (!bulk_dont_atexit) {
+        (void) atexit(hg_bulk_auto_finalize);
+        bulk_dont_atexit = 1;
+    }
 
     return ret;
 }
@@ -86,6 +118,31 @@ int HG_Bulk_finalize(void)
     bulk_na_class = NULL;
 
     return ret;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    HG_Bulk_initialized
+ *
+ * Purpose:     Indicate whether HG_Init has been called and return associated network class
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int HG_Bulk_initialized(bool *flag, na_class_t **network_class)
+{
+    int ret = HG_SUCCESS;
+
+    if (!flag) {
+        HG_ERROR_DEFAULT("NULL flag");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    *flag = (bulk_na_class) ? 1 : 0;
+    if (network_class) *network_class = (*flag) ? bulk_na_class : 0;
+
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------

@@ -38,10 +38,16 @@ int HG_Init(na_class_t *network_class);
 /* Finalize the function shipper */
 int HG_Finalize(void);
 
+/* Indicate whether HG_Init has been called and return associated network class */
+int HG_Initialized(bool *flag, na_class_t **network_class);
+
 /* Register a function name and provide a unique ID */
 hg_id_t HG_Register(const char *func_name,
         int (*enc_routine)(hg_proc_t proc, void *in_struct),
         int (*dec_routine)(hg_proc_t proc, void *out_struct));
+
+/* Indicate whether HG_Register has been called and return associated ID */
+int HG_Registered(const char *func_name, bool *flag, hg_id_t *id);
 
 /* Forward a call to a remote server */
 int HG_Forward(na_addr_t addr, hg_id_t id,

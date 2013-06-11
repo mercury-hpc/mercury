@@ -45,6 +45,9 @@ int HG_Bulk_init(na_class_t *network_class);
 /* Finalize */
 int HG_Bulk_finalize(void);
 
+/* Indicate whether HG_Bulk_init has been called and return associated network class */
+int HG_Bulk_initialized(bool *flag, na_class_t **network_class);
+
 /* Create bulk data handle from buffer (register memory, etc) */
 int HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
         hg_bulk_t *handle);

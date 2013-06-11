@@ -336,6 +336,12 @@ int HG_Handler_init(na_class_t *network_class)
 {
     int ret = HG_SUCCESS;
 
+    if (!network_class) {
+        HG_ERROR_DEFAULT("Invalid specified network_class");
+        ret = HG_FAIL;
+        return ret;
+    }
+
     if (handler_na_class) {
         HG_ERROR_DEFAULT("Already initialized");
         ret = HG_FAIL;
