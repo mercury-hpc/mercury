@@ -122,7 +122,8 @@ static MPI_Comm mpi_intra_comm = MPI_COMM_NULL; /* Private plugin intra-comm */
 static char mpi_port_name[MPI_MAX_PORT_NAME];   /* Connection port */
 static bool is_server = 0;                      /* Used in server mode */
 static bool use_static_intercomm = 0;           /* Use static inter-communicator */
-static mpi_addr_t server_remote_addr;           /* Remote address */
+static mpi_addr_t *client_remote_addr = NULL;   /* Client remote address */
+static mpi_addr_t server_remote_addr;           /* Server remote address */
 static MPI_Comm mpi_onesided_comm = MPI_COMM_NULL;
 
 static int is_mpi_testing = 0;
@@ -327,6 +328,9 @@ static int na_mpi_finalize(void)
             MPI_Comm_disconnect(&server_remote_addr.comm);
             MPI_Close_port(mpi_port_name);
         }
+    } else {
+        /* Automatically free addr */
+        if (client_remote_addr) na_mpi_addr_free(client_remote_addr);
     }
 
     hg_thread_mutex_destroy(&mpi_test_mutex);
@@ -368,6 +372,12 @@ static int na_mpi_addr_lookup(const char *name, na_addr_t *addr)
     char *port_name = (char*) name;
     mpi_addr_t *mpi_addr;
 
+    if (client_remote_addr) {
+        /* Already connected (TODO only allow connection to one server at this time) */
+        if (addr) *addr = (na_addr_t) client_remote_addr;
+        return ret;
+    }
+
     /* Allocate the addr */
     mpi_addr = malloc(sizeof(mpi_addr_t));
     mpi_addr->comm = MPI_COMM_NULL;
@@ -395,6 +405,7 @@ static int na_mpi_addr_lookup(const char *name, na_addr_t *addr)
             NA_ERROR_DEFAULT("Connected to more than one server?");
         }
         if (addr) *addr = (na_addr_t) mpi_addr;
+        client_remote_addr = mpi_addr;
     }
 
 #if MPI_VERSION < 3
@@ -456,6 +467,8 @@ static int na_mpi_addr_free(na_addr_t addr)
         } else {
             MPI_Comm_disconnect(&mpi_addr->comm);
         }
+        /* We're disconnected now */
+        client_remote_addr = NULL;
     }
     free(mpi_addr);
     mpi_addr = NULL;
