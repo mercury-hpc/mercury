@@ -49,9 +49,9 @@ int main(int argc, char *argv[])
 
     /* Initialize the interface */
     network_class = HG_Test_client_init(argc, argv, NULL);
-    ion_name = getenv(ION_ENV);
+    ion_name = getenv(MERCURY_PORT_NAME);
     if (!ion_name) {
-        fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
+        fprintf(stderr, "getenv(\"%s\") failed\n", MERCURY_PORT_NAME);
     }
 
     /* Perform an address lookup on the ION */

@@ -51,7 +51,7 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
                 nread = fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
                 if (!nread) fprintf(stderr, "Could not read port name\n");
                 fclose(config);
-                setenv(ION_ENV, mpi_port_name, 1);
+                setenv(MERCURY_PORT_NAME, mpi_port_name, 1);
             }
         }
 
@@ -97,9 +97,9 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
 
 #ifdef NA_HAS_BMI
     if (strcmp("bmi", argv[1]) == 0) {
-        char *listen_addr = getenv(ION_ENV);
+        char *listen_addr = getenv(MERCURY_PORT_NAME);
         if (!listen_addr) {
-            fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
+            fprintf(stderr, "getenv(\"%s\") failed.\n", MERCURY_PORT_NAME);
             return NULL;
         }
         network_class = NA_BMI_Init("bmi_tcp", listen_addr, BMI_INIT_SERVER);

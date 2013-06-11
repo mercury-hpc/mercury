@@ -10,6 +10,7 @@
 
 #include "test_pipeline_scale.h"
 #include "mercury_test.h"
+#ifdef NA_HAS_MPI
 #include "na_mpi.h"
 #include "mercury.h"
 #include "mercury_bulk.h"
@@ -238,3 +239,5 @@ int main(int argc, char *argv[])
 
     return EXIT_SUCCESS;
 }
+
+#endif /* NA_HAS_MPI */

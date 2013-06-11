@@ -13,8 +13,7 @@
 
 #include "na.h"
 #include "mercury_test_config.h"
-
-#define ION_ENV "ZOIDFS_ION_NAME" /* TODO used for compatibility with IOFSL */
+#include "mercury_config.h"
 
 #ifdef __cplusplus
 extern "C" {
