@@ -11,10 +11,43 @@
 #ifndef TEST_POSIX_H
 #define TEST_POSIX_H
 
-#include "mercury_macros.h"
 #include "mercury_proc.h"
+#include "mercury_macros.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+//#define MERCURY_HAS_ADVANCED_MACROS
 
 #ifdef MERCURY_HAS_BOOST
+
+#ifdef MERCURY_HAS_ADVANCED_MACROS
+
+MERCURY_GEN_STUB_SYNC( open_rpc, open_cb,
+        int32_t, HG_FAIL,
+        open, (hg_string_t) (int32_t) (uint32_t), ,
+        HG_GEN_WITHOUT_BULK, )
+
+MERCURY_GEN_STUB_SYNC( close_rpc, close_cb,
+        int32_t, HG_FAIL,
+        close, (int32_t), ,
+        HG_GEN_WITHOUT_BULK, )
+
+MERCURY_GEN_STUB_SYNC( write_rpc, write_cb,
+        int64_t, HG_FAIL,
+        write, (int32_t), ,
+        HG_GEN_WITH_BULK, HG_GEN_CONSUME_BULK )
+
+MERCURY_GEN_STUB_SYNC( read_rpc, read_cb,
+        int64_t, HG_FAIL,
+        read, (int32_t), ,
+        HG_GEN_WITH_BULK, HG_GEN_PRODUCE_BULK )
+
+#else
+
 /* Dummy function that needs to be shipped (already defined) */
 /*
  * 1. int open(const char *pathname, int flags, mode_t mode);
@@ -43,7 +76,9 @@ MERCURY_GEN_PROC( write_out_t, ((int64_t)(ret)) )
 MERCURY_GEN_PROC( read_in_t, ((int32_t)(fd)) ((hg_bulk_t)(bulk_handle)) )
 MERCURY_GEN_PROC( read_out_t, ((int64_t)(ret)) )
 
-#else
+#endif /* MERCURY_HAS_ADVANCED_MACROS */
+
+#else /* MERCURY_HAS_BOOST */
 /* Define open_in_t */
 typedef struct {
     hg_string_t path;

@@ -13,25 +13,12 @@
 #include "mercury.h"
 #include "mercury_bulk.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-
+#ifndef MERCURY_HAS_ADVANCED_MACROS
 na_addr_t addr;
 na_class_t *network_class = NULL;
 hg_id_t open_id, write_id, read_id, close_id, finalize_id;
 
-#undef open
-#define open client_posix_open
-#undef read
-#define read client_posix_read
-#undef write
-#define write client_posix_write
-#undef close
-#define close client_posix_close
-
-int client_posix_init(int argc, char *argv[], int *rank)
+int init_rpc(int argc, char *argv[], int *rank)
 {
     int hg_ret, na_ret;
     int ret = HG_SUCCESS;
@@ -42,11 +29,9 @@ int client_posix_init(int argc, char *argv[], int *rank)
      */
     network_class = HG_Test_client_init(argc, argv, rank);
 
-    ion_name = getenv(ION_ENV);
+    ion_name = getenv(MERCURY_PORT_NAME);
     if (!ion_name) {
-        fprintf(stderr, "getenv(\"%s\") failed.\n", ION_ENV);
-        ret = HG_FAIL;
-        return ret;
+        fprintf(stderr, "getenv(\"%s\") failed.\n", MERCURY_PORT_NAME);
     }
 
     hg_ret = HG_Init(network_class);
@@ -81,7 +66,7 @@ int client_posix_init(int argc, char *argv[], int *rank)
     return ret;
 }
 
-int client_posix_finalize()
+int finalize_rpc()
 {
     int hg_ret, na_ret;
     int ret = HG_SUCCESS;
@@ -138,7 +123,7 @@ int client_posix_finalize()
     return ret;
 }
 
-int client_posix_open(const char *pathname, int flags, mode_t mode)
+int open_rpc(const char *pathname, int flags, mode_t mode)
 {
     open_in_t  open_in_struct;
     open_out_t open_out_struct;
@@ -182,7 +167,7 @@ int client_posix_open(const char *pathname, int flags, mode_t mode)
     return open_ret;
 }
 
-int client_posix_close(int fd)
+int close_rpc(int fd)
 {
     close_in_t  close_in_struct;
     close_out_t close_out_struct;
@@ -224,7 +209,7 @@ int client_posix_close(int fd)
     return close_ret;
 }
 
-ssize_t client_posix_write(int fd, const void *buf, size_t count)
+ssize_t write_rpc(int fd, const void *buf, size_t count)
 {
     write_in_t  write_in_struct;
     write_out_t write_out_struct;
@@ -284,7 +269,7 @@ ssize_t client_posix_write(int fd, const void *buf, size_t count)
     return write_ret;
 }
 
-ssize_t client_posix_read(int fd, void *buf, size_t count)
+ssize_t read_rpc(int fd, void *buf, size_t count)
 {
     read_in_t  read_in_struct;
     read_out_t read_out_struct;
@@ -344,10 +329,21 @@ ssize_t client_posix_read(int fd, void *buf, size_t count)
     return read_ret;
 }
 
+#endif
+
+#undef open
+#define open open_rpc
+#undef read
+#define read read_rpc
+#undef write
+#define write write_rpc
+#undef close
+#define close close_rpc
+
 /******************************************************************************/
 int main(int argc, char *argv[])
 {
-    int hg_ret, ret;
+    int ret;
     mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
     char filename[256];
     int fd = 0;
@@ -359,13 +355,19 @@ int main(int argc, char *argv[])
     int rank;
     ssize_t nbyte;
 
-    printf("Initializing...\n");
+#ifndef MERCURY_HAS_ADVANCED_MACROS
+    int hg_ret;
 
-    hg_ret = client_posix_init(argc, argv, &rank);
+    printf("Initializing...\n");
+    hg_ret = init_rpc(argc, argv, &rank);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error in client_posix_init\n");
         return EXIT_FAILURE;
     }
+#else
+//    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, NULL);
+//    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
     sprintf(filename, "posix_test%d", rank);
 
     /* Prepare buffers */
@@ -441,13 +443,17 @@ int main(int argc, char *argv[])
     free(write_buf);
     free(read_buf);
 
+#ifndef MERCURY_HAS_ADVANCED_MACROS
     printf("(%d) Finalizing...\n", rank);
 
-    hg_ret = client_posix_finalize();
+    hg_ret = finalize_rpc();
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error in client_posix_finalize\n");
         return EXIT_FAILURE;
     }
+#else
+//    MPI_Finalize();
+#endif
 
     return EXIT_SUCCESS;
 }

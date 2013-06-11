@@ -38,6 +38,8 @@ int server_finalize(hg_handle_t handle)
     return ret;
 }
 
+#ifndef MERCURY_HAS_ADVANCED_MACROS
+
 int server_posix_open(hg_handle_t handle)
 {
     int hg_ret = HG_SUCCESS;
@@ -282,6 +284,8 @@ int server_posix_read(hg_handle_t handle)
     return hg_ret;
 }
 
+#endif /* MERCURY_HAS_ADVANCED_MACROS */
+
 /******************************************************************************/
 int main(int argc, char *argv[])
 {
@@ -308,12 +312,21 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+#ifdef MERCURY_HAS_ADVANCED_MACROS
+    /* Register routine */
+    MERCURY_HANDLER_REGISTER_CALLBACK("open", open_cb);
+    MERCURY_HANDLER_REGISTER_CALLBACK("close", close_cb);
+    MERCURY_HANDLER_REGISTER_CALLBACK("write", write_cb);
+    MERCURY_HANDLER_REGISTER_CALLBACK("read", read_cb);
+    MERCURY_HANDLER_REGISTER_FINALIZE(server_finalize);
+#else
     /* Register routine */
     MERCURY_HANDLER_REGISTER("open", server_posix_open, open_in_t, open_out_t);
     MERCURY_HANDLER_REGISTER("write", server_posix_write, write_in_t, write_out_t);
     MERCURY_HANDLER_REGISTER("read", server_posix_read, read_in_t, read_out_t);
     MERCURY_HANDLER_REGISTER("close", server_posix_close, close_in_t, close_out_t);
     MERCURY_HANDLER_REGISTER_FINALIZE(server_finalize);
+#endif
 
     while (finalizing != number_of_peers) {
         hg_status_t status;
