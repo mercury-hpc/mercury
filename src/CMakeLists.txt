@@ -25,7 +25,6 @@ if(MERCURY_USE_BOOST_PP)
   if(Boost_FOUND)
     set(MERCURY_HAS_BOOST 1)
     include_directories(${Boost_INCLUDE_DIRS})
-    set(MERCURY_BOOST_INCLUDE_DIR ${Boost_INCLUDE_DIRS} PARENT_SCOPE)
   else(Boost_FOUND)
     message(FATAL_ERROR "Could not find Boost, please check Boost_INCLUDE_DIR.")
   endif(Boost_FOUND)
@@ -185,14 +184,20 @@ endif(NOT MERCURY_EXTERNALLY_CONFIGURED)
 #------------------------------------------------------------------------------
 set(NA_PLUGINS ${NA_PLUGINS} PARENT_SCOPE)
 
-# Used by config.cmake and Testing
+# Used by config.cmake.build.in and Testing
 set(MERCURY_INCLUDES_BUILD_TIME
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/na
   ${CMAKE_CURRENT_BINARY_DIR}/na
   ${CMAKE_CURRENT_SOURCE_DIR}/util
-  ${NA_EXT_INCLUDE_DEPENDENCIES}
+  ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+  PARENT_SCOPE
+)
+
+# Used by config.cmake.install.in
+set(MERCURY_INCLUDES_INSTALL_TIME
+  ${MERCURY_INSTALL_INCLUDE_DIR}
   ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
   PARENT_SCOPE
 )
