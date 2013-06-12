@@ -364,9 +364,6 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error in client_posix_init\n");
         return EXIT_FAILURE;
     }
-#else
-//    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, NULL);
-//    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 #endif
     sprintf(filename, "posix_test%d", rank);
 
@@ -451,8 +448,6 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error in client_posix_finalize\n");
         return EXIT_FAILURE;
     }
-#else
-//    MPI_Finalize();
 #endif
 
     return EXIT_SUCCESS;

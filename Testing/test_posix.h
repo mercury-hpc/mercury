@@ -26,6 +26,8 @@
 
 #ifdef MERCURY_HAS_ADVANCED_MACROS
 
+MERCURY_GEN_CLIENT_STUB_FINALIZE()
+
 MERCURY_GEN_STUB_SYNC( open_rpc, open_cb,
         int32_t, HG_FAIL,
         open, (hg_string_t) (int32_t) (uint32_t), ,

@@ -52,6 +52,8 @@ static hg_thread_mutex_t tag_mutex;
 /* Pointer to network abstraction class */
 static na_class_t *hg_na_class = NULL;
 
+/* Pointer to function called at termination */
+static void (*hg_atfinalize)(void) = NULL;
 static bool hg_dont_atexit = 0;
 
 #define HG_MAXTAG 65536
@@ -93,12 +95,14 @@ static inline na_tag_t gen_tag(void)
     return tag;
 }
 
-static void hg_auto_finalize(void)
+/* Automatically called at exit */
+static void hg_atexit(void)
 {
     if (hg_na_class) {
         int hg_ret;
 
         printf("Auto finalize is called\n");
+
         /* Finalize interface */
         hg_ret = HG_Finalize();
         if (hg_ret != HG_SUCCESS) {
@@ -155,7 +159,7 @@ int HG_Init(na_class_t *network_class)
      * later if the library is closed and reopened.
      */
     if (!hg_dont_atexit) {
-        (void) atexit(hg_auto_finalize);
+        (void) atexit(hg_atexit);
         hg_dont_atexit = 1;
     }
 
@@ -180,6 +184,9 @@ int HG_Finalize(void)
         ret = HG_FAIL;
         return ret;
     }
+
+    /* Call extra finalize callback if required */
+    if (hg_atfinalize) hg_atfinalize();
 
     na_ret = NA_Finalize(hg_na_class);
     if (na_ret != NA_SUCCESS) {
@@ -224,6 +231,24 @@ int HG_Initialized(bool *flag, na_class_t **network_class)
     if (network_class) *network_class = (*flag) ? hg_na_class : 0;
 
     return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    HG_Atfinalize
+ *
+ * Purpose:     Register a function to be called at mercury termination
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int HG_Atfinalize(void (*function)(void))
+{
+    int ret = HG_SUCCESS;
+
+    hg_atfinalize = function;
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------

@@ -41,6 +41,9 @@ int HG_Finalize(void);
 /* Indicate whether HG_Init has been called and return associated network class */
 int HG_Initialized(bool *flag, na_class_t **network_class);
 
+/* Register a function to be called at mercury termination */
+int HG_Atfinalize(void (*function)(void));
+
 /* Register a function name and provide a unique ID */
 hg_id_t HG_Register(const char *func_name,
         int (*enc_routine)(hg_proc_t proc, void *in_struct),

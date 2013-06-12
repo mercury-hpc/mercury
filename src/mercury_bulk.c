@@ -42,7 +42,8 @@ static na_class_t *bulk_na_class = NULL;
 
 static bool bulk_dont_atexit = 0;
 
-static void hg_bulk_auto_finalize(void)
+/* Automatically called at exit */
+static void hg_bulk_atexit(void)
 {
     if (bulk_na_class) {
         int hg_ret;
@@ -89,7 +90,7 @@ int HG_Bulk_init(na_class_t *network_class)
      * later if the library is closed and reopened.
      */
     if (!bulk_dont_atexit) {
-        (void) atexit(hg_bulk_auto_finalize);
+        (void) atexit(hg_bulk_atexit);
         bulk_dont_atexit = 1;
     }
 
