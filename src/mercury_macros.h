@@ -54,7 +54,7 @@ typedef struct \
 
 /* Generate proc for struct */
 #define HG_GEN_STRUCT_PROC(struct_type_name, fields) \
-inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
+static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
     (hg_proc_t proc, void *data) \
 {   \
     int ret = HG_SUCCESS; \
