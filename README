@@ -1,27 +1,26 @@
 MERCURY
 -------
 
-These are the release notes for Mercury (as of 03/22/2013).
+These are the release notes for Mercury (as of 06/12/2013).
 
 WHAT IS MERCURY?
 
-   Mercury is a function shipper that allows I/O calls to be remotely executed
-   in a scalable and asynchronous manner. The interface is designed to be as
-   generic as possible to allow any I/O function call to be forwarded to
-   the I/O nodes. The network implementation is abstracted so that
-   alternate mechanisms can be implemented and selected, making use of the
-   various transport mechanisms available on the system.
+   Mercury is a RPC framework specifically designed for use in HPC systems
+   that allows asynchronous transfer of parameters and execution requests
+   and direct support of large data arguments. The interface is generic
+   to allow any function call to be shipped. The network implementation
+   is abstracted, allowing easy porting to future systems and efficient use
+   of existing native transport mechanisms.
 
    Please see the accompanying COPYING file for license details.
 
-ARCHITECTURE SUPPORTED:
+ARCHITECTURES SUPPORTED:
 
-   Architectures supported by MPI implementations are supported by the function
-   shipping network abstraction layer. Note that only the MPI plugin fully
-   implements the network abstraction layer and is currently supported.
-   The BMI plugin provided only implements basic function shipping without
-   bulk data transfer. Note also that additional network abstraction plugins
-   will be added in future releases to support additional network protocols.
+   Architectures supported by MPI implementations are supported by the
+   network abstraction layer. Both MPI and BMI plugins fully
+   implement the network abstraction layer and are currently supported.
+   Additional plugins are currently in development and will be added in
+   future releases to support additional network protocols.
 
 DOCUMENTATION:
 
@@ -52,9 +51,15 @@ BUILDING:
 
    Replace "X" with the version number of the package.
 
+ - (Optional) If you checked out the sources using git and want to build
+   the testing suite (which requires the kwsys submodule), you need to issue
+   from the root of the source directory the following command:
+
+     git submodule update --init
+
  - Mercury makes use of the CMake build-system. It is highly recommended that
-   you do an out-of-source build. In order to do that, you will have to create
-   a new build directory and run the 'ccmake' command from it:
+   you do an out-of-source build. In order to do that, you must create a new
+   build directory and run the 'ccmake' command from it:
 
      mkdir build
      cd build
@@ -63,10 +68,13 @@ BUILDING:
  - Type 'c' multiple times and choose suitable options. Recommended options
    are:
 
-     BUILD_SHARED_LIBS                OFF
+     BUILD_SHARED_LIBS                OFF (or ON if the library you link
+                                      against does not require static libraries)
      BUILD_TESTING                    ON
      CMAKE_INSTALL_PREFIX             /path/to/install/directory
+     MERCURY_CREATE_SINGLE_LIB        ON
      MERCURY_USE_BOOST_PP             ON (Optional)
+     MERCURY_USE_XDR                  OFF
      NA_USE_MPI                       ON
 
    Setting include directory and library paths may require you to toggle to
@@ -112,8 +120,8 @@ TESTING:
    number of client processes that are being used, the MPIEXEC_MAX_NUMPROCS
    variable needs to be modified (toggle to advanced mode if you do not see
    it). The default value is 2.
-   Note that you will need to run 'make' again after the makefile generation
-   to use the new value. Note also that this variable will need to be changed
+   Note that you need to run 'make' again after the makefile generation
+   to use the new value. Note also that this variable needs to be changed
    if you run the tests manually and use a different number of client
    processes.
 
@@ -128,8 +136,10 @@ TESTING:
 
      mpirun -np 2 /path/to/binary/client_TESTNAME mpi
 
-   Replace "TESTNAME" by "na", "fs", "bds" or "posix":
-   * "na" tests the network abstraction layer
-   * "fs" tests the function shipping layer
-   * "bds" tests the bulk data shipper layer
+   Replace "TESTNAME" by "na", "rpc", "bulk", "bulk_seg", "pipeline" or "posix":
+   * "na" tests data transfers through the network abstraction layer
+   * "rpc" tests RPC execution without bulk data transfer
+   * "bulk" tests contiguous transfer of bulk data
+   * "bulk_seg" tests non-contiguous transfer of bulk data
+   * "pipeline" tests pipelining of bulk data using multiple block sizes
    * "posix" combines previous tests and issues POSIX calls remotely
