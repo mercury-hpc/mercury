@@ -1,7 +1,7 @@
 MERCURY
 -------
 
-These are the release notes for Mercury (as of 06/12/2013).
+These are the release notes for Mercury (as of 06/17/2013).
 
 WHAT IS MERCURY?
 
@@ -71,9 +71,10 @@ BUILDING:
      BUILD_SHARED_LIBS                OFF (or ON if the library you link
                                       against does not require static libraries)
      BUILD_TESTING                    ON
+     Boost_INCLUDE_DIR                /path/to/include/directory
      CMAKE_INSTALL_PREFIX             /path/to/install/directory
      MERCURY_CREATE_SINGLE_LIB        ON
-     MERCURY_USE_BOOST_PP             ON (Optional)
+     MERCURY_USE_BOOST_PP             ON
      MERCURY_USE_XDR                  OFF
      NA_USE_MPI                       ON
 
