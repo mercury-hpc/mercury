@@ -17,12 +17,14 @@
   typedef LPTHREAD_START_ROUTINE hg_thread_func_t;
   typedef DWORD hg_thread_ret_t;
   #define MERCURY_THREAD_RETURN_TYPE hg_thread_ret_t WINAPI
+  typedef DWORD hg_thread_key_t;
 #else
   #include <pthread.h>
   typedef pthread_t hg_thread_t;
   typedef void *(*hg_thread_func_t)(void *);
   typedef void *hg_thread_ret_t;
   #define MERCURY_THREAD_RETURN_TYPE hg_thread_ret_t
+  typedef pthread_key_t hg_thread_key_t;
 #endif
 
 #ifdef __cplusplus
@@ -40,6 +42,18 @@ int hg_thread_join(hg_thread_t thread);
 
 /* Terminate the thread */
 int hg_thread_cancel(hg_thread_t thread);
+
+/* Create a thread-specific data key visible to all threads in the process */
+int hg_thread_key_create(hg_thread_key_t *key);
+
+/* Delete a thread-specific data key previously returned by hg_thread_key_create() */
+int hg_thread_key_delete(hg_thread_key_t key);
+
+/* Get value from specified key */
+void *hg_thread_getspecific(hg_thread_key_t key);
+
+/* Set value to specified key */
+int hg_thread_setspecific(hg_thread_key_t key, const void *value);
 
 #ifdef __cplusplus
 }

@@ -10,6 +10,7 @@
 
 #include "mercury.h"
 #include "mercury_hash_table.h"
+#include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
 
 #include <stdio.h>
@@ -45,7 +46,7 @@ typedef struct hg_proc_info {
 static hg_hash_table_t *func_map;
 
 /* TLS key for tag */
-static pthread_key_t ptk_tag;
+static hg_thread_key_t ptk_tag;
 static unsigned int next_tag = 0;
 static hg_thread_mutex_t tag_mutex;
 
@@ -84,12 +85,12 @@ static inline na_tag_t gen_tag(void)
 {
     long int tag;
 
-    tag = (long int) pthread_getspecific(ptk_tag);
+    tag = (long int) hg_thread_getspecific(ptk_tag);
     if (!tag) {
         hg_thread_mutex_lock(&tag_mutex);
         tag = ++next_tag;
         hg_thread_mutex_unlock(&tag_mutex);
-        pthread_setspecific(ptk_tag, (void*) tag);
+        hg_thread_setspecific(ptk_tag, (void*) tag);
     }
     assert(tag < HG_MAXTAG);
     return tag;
@@ -140,7 +141,7 @@ int HG_Init(na_class_t *network_class)
 
     /* Initialize TLS tags */
     hg_thread_mutex_init(&tag_mutex);
-    pthread_key_create(&ptk_tag, 0);
+    hg_thread_key_create(&ptk_tag);
     next_tag = 1;
 
     /* Create new function map */
@@ -201,7 +202,7 @@ int HG_Finalize(void)
 
     /* Free TLS key */
     hg_thread_mutex_destroy(&tag_mutex);
-    pthread_key_delete(ptk_tag);
+    hg_thread_key_delete(ptk_tag);
 
     hg_na_class = NULL;
 
