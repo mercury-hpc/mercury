@@ -29,7 +29,7 @@ if(MERCURY_CREATE_SINGLE_LIB)
     ${MERCURY_UTIL_SRCS}
     PARENT_SCOPE
   )
-else(MERCURY_CREATE_SINGLE_LIB)
+else()
   #----------------------------------------------------------------------------
   # Libraries
   #----------------------------------------------------------------------------
@@ -39,7 +39,7 @@ else(MERCURY_CREATE_SINGLE_LIB)
   set_lib_options(mercury_util "mercury_util" ${MERCURY_LIBTYPE})
   if(MERCURY_ENABLE_COVERAGE)
     set_coverage_flags(mercury_util)
-  endif(MERCURY_ENABLE_COVERAGE)
+  endif()
 
   #---------------------------------------------------------------------------
   # Add Target(s) to CMake Install
@@ -53,7 +53,7 @@ else(MERCURY_CREATE_SINGLE_LIB)
     ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
     RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
   )
-endif(MERCURY_CREATE_SINGLE_LIB)
+endif()
 
 #------------------------------------------------------------------------------
 # Set variables for parent scope

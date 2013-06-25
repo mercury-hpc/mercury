@@ -2,6 +2,7 @@
 option(MERCURY_CREATE_SINGLE_LIB "Create one single mercury library." OFF)
 
 #------------------------------------------------------------------------------
+# TODO We probably want to do that at some point
 # Check headers / symbols / sizes
 #------------------------------------------------------------------------------
 #include(CheckTypeSize)
@@ -21,20 +22,20 @@ option(MERCURY_CREATE_SINGLE_LIB "Create one single mercury library." OFF)
 # Boost (for preprocessor macros)
 option(MERCURY_USE_BOOST_PP "Use BOOST preprocessor macros." OFF)
 if(MERCURY_USE_BOOST_PP)
-  find_package(Boost 1.50)
+  find_package(Boost 1.48.0 REQUIRED)
   if(Boost_FOUND)
     set(MERCURY_HAS_BOOST 1)
     include_directories(${Boost_INCLUDE_DIRS})
-  else(Boost_FOUND)
+  else()
     message(FATAL_ERROR "Could not find Boost, please check Boost_INCLUDE_DIR.")
-  endif(Boost_FOUND)
-endif(MERCURY_USE_BOOST_PP)
+  endif()
+endif()
 
 # XDR
 option(MERCURY_USE_XDR "Use XDR for generic encoding." OFF)
 if(MERCURY_USE_XDR)
   set(MERCURY_HAS_XDR 1)
-endif(MERCURY_USE_XDR)
+endif()
 
 set(MERCURY_EXT_INCLUDE_DEPENDENCIES
   ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
@@ -52,7 +53,7 @@ include_directories(
 )
 if(NOT MERCURY_CREATE_SINGLE_LIB)
   set(MERCURY_EXPORTED_LIBS mercury_util ${MERCURY_EXPORTED_LIBS})
-endif(NOT MERCURY_CREATE_SINGLE_LIB)
+endif()
 
 # NA
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
@@ -66,9 +67,9 @@ set(MERCURY_EXT_INCLUDE_DEPENDENCIES
   )
 if(NOT MERCURY_CREATE_SINGLE_LIB)
   set(MERCURY_EXPORTED_LIBS na ${MERCURY_EXPORTED_LIBS})
-else(NOT MERCURY_CREATE_SINGLE_LIB)
+else()
   include_directories(${NA_EXT_INCLUDE_DEPENDENCIES})
-endif(NOT MERCURY_CREATE_SINGLE_LIB)
+endif()
 
 
 #------------------------------------------------------------------------------
@@ -105,14 +106,14 @@ if(MERCURY_CREATE_SINGLE_LIB)
     ${NA_EXT_LIB_DEPENDENCIES}
     ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
   )
-endif(MERCURY_CREATE_SINGLE_LIB)
+endif()
 
 add_library(mercury ${MERCURY_SRCS})
 target_link_libraries(mercury ${MERCURY_EXPORTED_LIBS} ${MERCURY_EXT_LIB_DEPENDENCIES})
 set_lib_options(mercury "mercury" ${MERCURY_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 set(MERCURY_EXPORTED_LIBS mercury ${MERCURY_EXPORTED_LIBS})
 
@@ -177,7 +178,7 @@ EXPORT (
   FILE
     ${MERCURY_EXPORTED_TARGETS}.cmake
 )
-endif(NOT MERCURY_EXTERNALLY_CONFIGURED)
+endif()
 
 #------------------------------------------------------------------------------
 # Set variables for parent scope
@@ -208,11 +209,11 @@ string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
 foreach(exported_lib ${MERCURY_EXPORTED_LIBS})
   if(lower_cmake_build_type MATCHES "debug")
     get_target_property(MERCURY_LIBRARY ${exported_lib} DEBUG_OUTPUT_NAME)
-  else(lower_cmake_build_type MATCHES "debug")
+  else()
     get_target_property(MERCURY_LIBRARY ${exported_lib} RELEASE_OUTPUT_NAME)
-  endif(lower_cmake_build_type MATCHES "debug")
+  endif()
   set(MERCURY_LIBRARIES "${MERCURY_LIBRARIES} -l${MERCURY_LIBRARY}")
-endforeach(exported_lib)
+endforeach()
 set(MERCURY_LIBRARIES ${MERCURY_LIBRARIES} PARENT_SCOPE)
 
 if(NOT MERCURY_EXT_LIB_DEPENDENCIES)
@@ -220,14 +221,14 @@ if(NOT MERCURY_EXT_LIB_DEPENDENCIES)
     ${NA_EXT_LIB_DEPENDENCIES}
     ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
   )
-endif(NOT MERCURY_EXT_LIB_DEPENDENCIES)
+endif()
 
 foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES})
   set(MERCURY_LIB_DEPENDENCIES "${MERCURY_LIB_DEPENDENCIES} ${lib_dep}")
-endforeach(lib_dep)
+endforeach()
 set(MERCURY_LIB_DEPENDENCIES ${MERCURY_LIB_DEPENDENCIES} PARENT_SCOPE)
 
 foreach(inc_dep ${MERCURY_EXT_INCLUDE_DEPENDENCIES})
   set(MERCURY_INCLUDE_DEPENDENCIES "${MERCURY_INCLUDE_DEPENDENCIES} -I${inc_dep}")
-endforeach(inc_dep)
+endforeach()
 set(MERCURY_INCLUDE_DEPENDENCIES ${MERCURY_INCLUDE_DEPENDENCIES} PARENT_SCOPE)

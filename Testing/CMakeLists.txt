@@ -33,8 +33,8 @@ function(add_mercury_test full_test_name server client)
       --server $<TARGET_FILE:${server}>
       --client $<TARGET_FILE:${client}> ${comm}
     )
-  endforeach(comm)
-endfunction(add_mercury_test)
+  endforeach()
+endfunction()
 
 function(add_mercury_opt_test full_test_name server client opt)
   foreach(comm ${NA_PLUGINS})
@@ -43,8 +43,8 @@ function(add_mercury_opt_test full_test_name server client opt)
       --server $<TARGET_FILE:${server}>
       --client $<TARGET_FILE:${client}> ${comm} ${opt}
     )
-  endforeach(comm)
-endfunction(add_mercury_opt_test)
+  endforeach()
+endfunction()
 
 function(add_mercury_static_test full_test_name server client)
   foreach(comm ${NA_PLUGINS})
@@ -54,8 +54,8 @@ function(add_mercury_static_test full_test_name server client)
       ${H5FDdsm_TESTING_LENGTH} ${comm} "static" : ${MPIEXEC_NUMPROC_FLAG}
       ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} $<TARGET_FILE:${client}> ${comm} "static"
     )
-  endforeach(comm)
-endfunction(add_mercury_static_test)
+  endforeach()
+endfunction()
 
 #------------------------------------------------------------------------------
 # mercury_test : Lib used by tests contains main test initialization etc
@@ -65,7 +65,7 @@ target_link_libraries(mercury_test mercury)
 set_lib_options(mercury_test "mercury_test" ${MERCURY_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_test)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 #------------------------------------------------------------------------------
 # Set up test
@@ -75,13 +75,13 @@ add_executable(client_rpc client_rpc.c)
 target_link_libraries(client_rpc mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_rpc)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 add_executable(server_rpc server_rpc.c)
 target_link_libraries(server_rpc mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_rpc)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 #------------------------------------------------------------------------------
 # Network abstraction test
@@ -89,13 +89,13 @@ add_executable(client_na client_na.c)
 target_link_libraries(client_na mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_na)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 add_executable(server_na server_na.c)
 target_link_libraries(server_na mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_na)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 #------------------------------------------------------------------------------
 # Bulk data shipper test
@@ -103,13 +103,13 @@ add_executable(client_bulk client_bulk.c)
 target_link_libraries(client_bulk mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_bulk)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 add_executable(server_bulk server_bulk.c)
 target_link_libraries(server_bulk mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_bulk)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 #------------------------------------------------------------------------------
 # Non-contiguous bulk data shipper test
@@ -117,13 +117,13 @@ add_executable(client_bulk_seg client_bulk_seg.c)
 target_link_libraries(client_bulk_seg mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_bulk_seg)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 add_executable(server_bulk_seg server_bulk_seg.c)
 target_link_libraries(server_bulk_seg mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_bulk_seg)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 #------------------------------------------------------------------------------
 # Bandwidth bulk data shipper test using pipelining
@@ -131,13 +131,13 @@ add_executable(client_pipeline client_pipeline.c)
 target_link_libraries(client_pipeline mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_pipeline)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 add_executable(server_pipeline server_pipeline.c)
 target_link_libraries(server_pipeline mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_pipeline)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 #------------------------------------------------------------------------------
 # Scaling bandwidth bulk data shipper test using pipelining
@@ -145,13 +145,13 @@ add_executable(client_pipeline_scale client_pipeline_scale.c)
 target_link_libraries(client_pipeline_scale mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_pipeline_scale)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 add_executable(server_pipeline_scale server_pipeline_scale.c)
 target_link_libraries(server_pipeline_scale mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_pipeline_scale)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 #------------------------------------------------------------------------------
 # POSIX test
@@ -159,13 +159,13 @@ add_executable(client_posix client_posix.c)
 target_link_libraries(client_posix mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(client_posix)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 add_executable(server_posix server_posix.c)
 target_link_libraries(server_posix mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_posix)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 #------------------------------------------------------------------------------
 # Set list of tests
@@ -180,7 +180,7 @@ set(MERCURY_tests
 foreach(MERCURY_test ${MERCURY_tests})
   add_mercury_test(mercury_${MERCURY_test}
     server_${MERCURY_test} client_${MERCURY_test})
-endforeach(MERCURY_test)
+endforeach()
 
 set(MERCURY_opt_tests
   bulk_seg
@@ -190,9 +190,9 @@ foreach(MERCURY_test ${MERCURY_opt_tests})
     client_${MERCURY_test} "extra")
   add_mercury_opt_test(mercury_${MERCURY_test} server_${MERCURY_test}
     client_${MERCURY_test} "variable")
-endforeach(MERCURY_test)
+endforeach()
 
 foreach(MERCURY_test ${MERCURY_tests})
   add_mercury_static_test(mercury_${MERCURY_test}
     server_${MERCURY_test} client_${MERCURY_test})
-endforeach(MERCURY_test)
+endforeach()

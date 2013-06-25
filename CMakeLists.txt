@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.5 FATAL_ERROR)
 project(MERCURY C)
 
 #------------------------------------------------------------------------------
@@ -20,17 +20,34 @@ set(MERCURY_PACKAGE_TARNAME "${MERCURY_PACKAGE}")
 #------------------------------------------------------------------------------
 if(NOT MERCURY_INSTALL_BIN_DIR)
   set(MERCURY_INSTALL_BIN_DIR ${CMAKE_INSTALL_PREFIX}/bin)
-endif(NOT MERCURY_INSTALL_BIN_DIR)
+endif()
 if(NOT MERCURY_INSTALL_LIB_DIR)
   set(MERCURY_INSTALL_LIB_DIR ${CMAKE_INSTALL_PREFIX}/lib)
-endif(NOT MERCURY_INSTALL_LIB_DIR)
+endif()
 if(NOT MERCURY_INSTALL_INCLUDE_DIR)
   set(MERCURY_INSTALL_INCLUDE_DIR ${CMAKE_INSTALL_PREFIX}/include)
-endif(NOT MERCURY_INSTALL_INCLUDE_DIR)
+endif()
 if(NOT MERCURY_INSTALL_DATA_DIR)
   set(MERCURY_INSTALL_DATA_DIR ${CMAKE_INSTALL_PREFIX}/share)
-endif(NOT MERCURY_INSTALL_DATA_DIR)
+endif()
 
+#------------------------------------------------------------------------------
+# Setup CMake Environment
+#------------------------------------------------------------------------------
+# Setup cmake policies.
+foreach(policy CMP0012 CMP0013 CMP0014)
+  if(POLICY ${policy})
+    cmake_policy(SET ${policy} NEW)
+  endif()
+endforeach()
+
+foreach(policy CMP0017)
+  if(POLICY ${policy})
+    cmake_policy(SET ${policy} OLD)
+  endif()
+endforeach()
+
+#------------------------------------------------------------------------------
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
       ${PROJECT_BINARY_DIR}/bin CACHE PATH "Single Directory for all Executables."
@@ -42,16 +59,29 @@ if(NOT MERCURY_EXTERNALLY_CONFIGURED)
   set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY
       ${PROJECT_BINARY_DIR}/bin CACHE PATH "Single Directory for all static libraries."
   )
-  set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_SOURCE_DIR}/CMake)
-endif(NOT MERCURY_EXTERNALLY_CONFIGURED)
+endif()
+set(MERCURY_CMAKE_DIR "${MERCURY_SOURCE_DIR}/CMake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_CMAKE_DIR})
 
 #------------------------------------------------------------------------------
-# Default build type
+# Disallow in-source build
 #------------------------------------------------------------------------------
-if(NOT CMAKE_BUILD_TYPE)
-  message(STATUS "No build type selected, default to Release")
-  set(CMAKE_BUILD_TYPE "Release")
-endif(NOT CMAKE_BUILD_TYPE)
+if("${MERCURY_SOURCE_DIR}" STREQUAL "${MERCURY_BINARY_DIR}")
+  message(FATAL_ERROR
+    "Mercury requires an out of source Build. "
+    "Please create a separate binary directory and run CMake there.")
+endif()
+
+#------------------------------------------------------------------------------
+# Set a default build type if none was specified
+#------------------------------------------------------------------------------
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  message(STATUS "Setting build type to 'Release' as none was specified.")
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+  # Set the possible values of build type for cmake-gui
+  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release"
+    "MinSizeRel" "RelWithDebInfo")
+endif()
 
 #-----------------------------------------------------------------------------
 # Targets built within this project are exported at Install time for use
@@ -59,7 +89,7 @@ endif(NOT CMAKE_BUILD_TYPE)
 #-----------------------------------------------------------------------------
 if(NOT MERCURY_EXPORTED_TARGETS)
   set(MERCURY_EXPORTED_TARGETS "mercury-targets")
-endif(NOT MERCURY_EXPORTED_TARGETS)
+endif()
 
 #------------------------------------------------------------------------------
 # Choose static or shared libraries.
@@ -70,38 +100,38 @@ option(BUILD_SHARED_LIBS "Build with shared libraries." OFF)
 if(BUILD_SHARED_LIBS)
   set(MERCURY_BUILD_SHARED_LIBS 1)
   set(MERCURY_LIBTYPE SHARED)
-else(BUILD_SHARED_LIBS)
+else()
   set(MERCURY_BUILD_SHARED_LIBS 0)
   set(MERCURY_LIBTYPE STATIC)
-endif(BUILD_SHARED_LIBS)
+endif()
 
 #-------------------------------------------------------------------------------
-macro(set_lib_options libtarget libname libtype)
+function(set_lib_options libtarget libname libtype)
   if(${libtype} MATCHES "SHARED")
     if(WIN32 AND NOT MINGW)
       set(LIB_RELEASE_NAME "${libname}")
       set(LIB_DEBUG_NAME "${libname}_D")
       set(LIB_VERSION ${MERCURY_PACKAGE_VERSION_MAJOR})
-    else(WIN32 AND NOT MINGW)
+    else()
       set(LIB_RELEASE_NAME "${libname}")
       set(LIB_DEBUG_NAME "${libname}_debug")
       set(LIB_VERSION ${MERCURY_PACKAGE_VERSION})
-    endif(WIN32 AND NOT MINGW)
-  else(${libtype} MATCHES "SHARED")
+    endif()
+  else()
     if(WIN32 AND NOT MINGW)
       set(LIB_RELEASE_NAME "lib${libname}")
       set(LIB_DEBUG_NAME "lib${libname}_D")
-    else(WIN32 AND NOT MINGW)
+    else()
       # if the generator supports configuration types or if the CMAKE_BUILD_TYPE has a value
       if(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE)
         set(LIB_RELEASE_NAME "${libname}")
         set(LIB_DEBUG_NAME "${libname}_debug")
-      else(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE)
+      else()
         set(LIB_RELEASE_NAME "lib${libname}")
         set(LIB_DEBUG_NAME "lib${libname}_debug")
-      endif(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE)
-    endif(WIN32 AND NOT MINGW)
-  endif(${libtype} MATCHES "SHARED")
+      endif()
+    endif()
+  endif()
 
   set_target_properties(${libtarget}
       PROPERTIES
@@ -121,8 +151,8 @@ macro(set_lib_options libtarget libname libtype)
         IMPORT_PREFIX ""
         PREFIX ""
     )
-  endif(MINGW AND ${libtype} MATCHES "SHARED")
-endmacro(set_lib_options)
+  endif()
+endfunction()
 
 #-----------------------------------------------------------------------------
 # Coverage
@@ -133,7 +163,7 @@ if(MERCURY_ENABLE_COVERAGE)
     "Flags to the coverage program that CTest uses to perform coverage inspection"
   )
   mark_as_advanced(COVERAGE_FLAGS)
-endif(MERCURY_ENABLE_COVERAGE)
+endif()
 
 macro(set_coverage_flags target)
   set_target_properties(${target}
@@ -141,7 +171,7 @@ macro(set_coverage_flags target)
       COMPILE_FLAGS ${COVERAGE_FLAGS}
       LINK_FLAGS ${COVERAGE_FLAGS}
   )
-endmacro(set_coverage_flags)
+endmacro()
 
 #-----------------------------------------------------------------------------
 # Source
@@ -156,7 +186,7 @@ if(NOT MERCURY_EXTERNALLY_CONFIGURED AND BUILD_TESTING)
   enable_testing()
   include(CTest)
   add_subdirectory(Testing)
-endif(NOT MERCURY_EXTERNALLY_CONFIGURED AND BUILD_TESTING)
+endif()
 
 #-----------------------------------------------------------------------------
 # Configure the config.cmake file for the build directory
