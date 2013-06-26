@@ -1,11 +1,11 @@
 MERCURY
 -------
 
-These are the release notes for Mercury (as of 06/17/2013).
+These are the release notes for Mercury (as of 06/26/2013).
 
 WHAT IS MERCURY?
 
-   Mercury is a RPC framework specifically designed for use in HPC systems
+   Mercury is an RPC framework specifically designed for use in HPC systems
    that allows asynchronous transfer of parameters and execution requests
    and direct support of large data arguments. The interface is generic
    to allow any function call to be shipped. The network implementation
@@ -36,7 +36,7 @@ SOFTWARE REQUIREMENTS:
    implementation (MPICH2 1.4.1 or higher / OpenMPI 1.6 or higher). For
    optional automatic code generation features (which are used for generating
    encoding and decoding routines), the preprocessor subset of the BOOST
-   library must be included (Boost 1.50 or higher is recommended).
+   library must be included (Boost 1.48 or higher is recommended).
 
 BUILDING:
 
@@ -57,13 +57,14 @@ BUILDING:
 
      git submodule update --init
 
- - Mercury makes use of the CMake build-system. It is highly recommended that
-   you do an out-of-source build. In order to do that, you must create a new
-   build directory and run the 'ccmake' command from it:
+ - Mercury makes use of the CMake build-system and requires that you do an
+   out-of-source build. In order to do that, you must create a new build
+   directory and run the 'ccmake' command from it:
 
+     cd mercury-X
      mkdir build
      cd build
-     ccmake /path/to/the/mercury/source/directory
+     ccmake .. (where ".." is the relative path to the mercury-X directory)
 
  - Type 'c' multiple times and choose suitable options. Recommended options
    are:
@@ -87,7 +88,7 @@ BUILDING:
 
  - (Optional) Verbose compile/build output:
 
-   This is done by inserting "VERBOSE=1" in the "make" command.  E.g.:
+   This is done by inserting "VERBOSE=1" in the "make" command. E.g.:
 
      make VERBOSE=1
 
