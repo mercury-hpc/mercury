@@ -69,6 +69,29 @@ if(NA_USE_BMI)
   endif()
 endif()
 
+
+# SSM
+option(NA_USE_SSM "Use SSM." OFF)
+if(NA_USE_SSM)
+  find_package(SSM REQUIRED)
+  if(SSM_FOUND)
+    set(NA_PLUGINS ${NA_PLUGINS} ssm)
+    set(NA_HAS_SSM 1)
+    include_directories(${SSM_INCLUDE_DIR})
+    set(NA_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
+      ${SSM_LIBRARIES}
+    )
+    set(NA_EXT_INCLUDE_DEPENDENCIES
+      ${NA_EXT_INCLUDE_DEPENDENCIES}
+      ${SSM_INCLUDE_DIR}
+    )
+  else()
+     message(FATAL_ERROR "Could not find SSM.")
+  endif()
+endif()
+
+
 # MPI
 option(NA_USE_MPI "Use MPI." OFF)
 if(NA_USE_MPI)
