@@ -68,6 +68,11 @@ if(MERCURY_ENABLE_COVERAGE)
 endif()
 
 #------------------------------------------------------------------------------
+# NA tests
+#------------------------------------------------------------------------------
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
+
+#------------------------------------------------------------------------------
 # Set up test
 #------------------------------------------------------------------------------
 # Function shipper test
@@ -81,20 +86,6 @@ add_executable(server_rpc server_rpc.c)
 target_link_libraries(server_rpc mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_rpc)
-endif()
-
-#------------------------------------------------------------------------------
-# Network abstraction test
-add_executable(client_na client_na.c)
-target_link_libraries(client_na mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_na)
-endif()
-
-add_executable(server_na server_na.c)
-target_link_libraries(server_na mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_na)
 endif()
 
 #------------------------------------------------------------------------------
@@ -171,7 +162,6 @@ endif()
 # Set list of tests
 set(MERCURY_tests
   rpc
-  na
   bulk
   bulk_seg
   pipeline
