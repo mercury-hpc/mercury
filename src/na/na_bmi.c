@@ -14,13 +14,13 @@
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
+#include "mercury_time.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <assert.h>
-#include <sys/time.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -936,9 +936,9 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout,
     if (!wait_request_completed)
     do {
         int hg_thread_cond_ret = 0;
-        struct timeval t1_wait, t2_wait;
+        hg_time_t t1_wait, t2_wait, t_wait;
 
-        gettimeofday(&t1_wait, NULL);
+        hg_time_get_current(&t1_wait);
 
         hg_thread_mutex_lock(&testcontext_mutex);
 
@@ -960,10 +960,9 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout,
             break;
         }
 
-        gettimeofday(&t2_wait, NULL);
-
-        remaining -= (t2_wait.tv_sec - t1_wait.tv_sec) * 1000 +
-                (t2_wait.tv_usec - t1_wait.tv_usec) / 1000;
+        hg_time_get_current(&t2_wait);
+        t_wait = hg_time_subtract(t2_wait, t1_wait);
+        remaining -= t_wait.tv_sec * 1000 + t_wait.tv_usec / 1000;
 
         /* Only one calling thread at a time should reach that point */
         hg_thread_mutex_lock(&testcontext_mutex);
@@ -979,9 +978,9 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout,
             bmi_op_id_t bmi_op_id = 0;
             bmi_size_t  bmi_actual_size = 0;
             void *bmi_user_ptr = NULL;
-            struct timeval t1, t2;
+            hg_time_t t1, t2, t;
 
-            gettimeofday(&t1, NULL);
+            hg_time_get_current(&t1);
 
             /* Always try to receive unexpected messages before calling testcontext */
             ret = na_bmi_process_unexpected();
@@ -994,8 +993,9 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout,
             bmi_ret = BMI_testcontext(1, &bmi_op_id, &outcount, &error_code,
                     &bmi_actual_size, &bmi_user_ptr, 0, bmi_context);
 
-            gettimeofday(&t2, NULL);
-            remaining -= (t2.tv_sec - t1.tv_sec) * 1000 + (t2.tv_usec - t1.tv_usec) / 1000;
+            hg_time_get_current(&t2);
+            t = hg_time_subtract(t2, t1);
+            remaining -= t.tv_sec * 1000 + t.tv_usec / 1000;
 
             if (bmi_ret < 0 || error_code != 0) {
                 NA_ERROR_DEFAULT("BMI_testcontext failed");
@@ -1098,12 +1098,12 @@ static int na_bmi_progress(unsigned int timeout, na_status_t *status)
     /* Wait for an initial request from client */
     if (onesided_request == NA_REQUEST_NULL) {
         do {
-            struct timeval t1, t2;
+            hg_time_t t1, t2, t;
             onesided_actual_size = 0;
             remote_addr = NA_ADDR_NULL;
             remote_tag = 0;
 
-            gettimeofday(&t1, NULL);
+            hg_time_get_current(&t1);
 
             ret = na_bmi_msg_recv_unexpected(&onesided_info, sizeof(bmi_onesided_info_t),
                     &onesided_actual_size, &remote_addr,
@@ -1114,9 +1114,9 @@ static int na_bmi_progress(unsigned int timeout, na_status_t *status)
                 return ret;
             }
 
-            gettimeofday(&t2, NULL);
-            time_remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +
-                    (t2.tv_usec - t1.tv_usec) / 1000;
+            hg_time_get_current(&t2);
+            t = hg_time_subtract(t2, t1);
+            time_remaining -= t.tv_sec * 1000 + t.tv_usec / 1000;
 
         } while (time_remaining > 0 && !onesided_actual_size);
         if (!onesided_actual_size) {

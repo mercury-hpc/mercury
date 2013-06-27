@@ -22,6 +22,7 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.c
 )
 
 if(MERCURY_CREATE_SINGLE_LIB)

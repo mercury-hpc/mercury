@@ -12,8 +12,8 @@
 #include "mercury_hash_table.h"
 #include "mercury_list.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_time.h"
 
-#include <sys/time.h>
 #include <stdbool.h>
 
 /* Private structs */
@@ -598,9 +598,9 @@ int HG_Handler_process(unsigned int timeout, hg_status_t *status)
 
         /* Start receiving a message from a client */
         do {
-            struct timeval t1, t2;
+            hg_time_t t1, t2, t;
 
-            gettimeofday(&t1, NULL);
+            hg_time_get_current(&t1);
 
             na_ret = NA_Msg_recv_unexpected(handler_na_class, priv_handle->recv_buf,
                     priv_handle->recv_buf_size, &actual_buf_size,
@@ -612,9 +612,9 @@ int HG_Handler_process(unsigned int timeout, hg_status_t *status)
                 goto done;
             }
 
-            gettimeofday(&t2, NULL);
-            time_remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +
-                    (t2.tv_usec - t1.tv_usec) / 1000;
+            hg_time_get_current(&t2);
+            t = hg_time_subtract(t2, t1);
+            time_remaining -= t.tv_sec * 1000 + t.tv_usec / 1000;
 
         } while (time_remaining > 0 && !actual_buf_size);
 

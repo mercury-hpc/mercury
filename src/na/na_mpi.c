@@ -13,12 +13,12 @@
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
+#include "mercury_time.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-#include <sys/time.h>
 
 static int na_mpi_finalize(void);
 static int na_mpi_addr_lookup(const char *name, na_addr_t *addr);
@@ -1044,9 +1044,9 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
     do {
         int hg_thread_cond_ret = 0;
         int mpi_flag = 0;
-        struct timeval t1, t2;
+        hg_time_t t1, t2, t;
 
-        gettimeofday(&t1, NULL);
+        hg_time_get_current(&t1);
 
         hg_thread_mutex_lock(&mpi_test_mutex);
         while (is_mpi_testing) {
@@ -1095,9 +1095,9 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         hg_thread_cond_signal(&mpi_test_cond);
         hg_thread_mutex_unlock(&mpi_test_mutex);
 
-        gettimeofday(&t2, NULL);
-        remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +
-                (t2.tv_usec - t1.tv_usec) / 1000;
+        hg_time_get_current(&t2);
+        t = hg_time_subtract(t2, t1);
+        remaining -= t.tv_sec * 1000 + t.tv_usec / 1000;
 
     } while (( (mpi_request->request != MPI_REQUEST_NULL) ||
 #if MPI_VERSION < 3
@@ -1166,12 +1166,12 @@ static int na_mpi_progress(unsigned int timeout, na_status_t *status)
     /* Wait for an initial request from client */
     if (onesided_request == NA_REQUEST_NULL) {
         do {
-            struct timeval t1, t2;
             onesided_actual_size = 0;
             remote_addr = NA_ADDR_NULL;
             remote_tag = 0;
+            hg_time_t t1, t2, t;
 
-            gettimeofday(&t1, NULL);
+            hg_time_get_current(&t1);
 
             ret = na_mpi_msg_recv_unexpected(&onesided_info, sizeof(mpi_onesided_info_t),
                     &onesided_actual_size, &remote_addr,
@@ -1182,9 +1182,9 @@ static int na_mpi_progress(unsigned int timeout, na_status_t *status)
                 return ret;
             }
 
-            gettimeofday(&t2, NULL);
-            time_remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +
-                    (t2.tv_usec - t1.tv_usec) / 1000;
+            hg_time_get_current(&t2);
+            t = hg_time_subtract(t2, t1);
+            time_remaining -= t.tv_sec * 1000 + t.tv_usec / 1000;
 
         } while (time_remaining > 0 && !onesided_actual_size);
         if (!onesided_actual_size) {
