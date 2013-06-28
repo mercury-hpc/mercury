@@ -52,9 +52,14 @@ typedef struct na_class {
 
     /* Network address callbacks
      * *************************
-     * Look up a remote peer address and establish a connection.
-     * NB. only clients need to call lookup */
+     */
+
+    
+    /** Look up a remote peer address. Addresses need to be freed
+     *  using addr_free */
     int (*addr_lookup)(const char *name, na_addr_t *addr);
+
+    /** Free address */
     int (*addr_free)(na_addr_t addr);
 
     /* Message callbacks (used for metadata transfer)
@@ -131,10 +136,11 @@ typedef struct na_class {
 extern "C" {
 #endif
 
-/* Finalize the network abstraction layer */
+/** Finalize the network abstraction layer */
 int NA_Finalize(na_class_t *network_class);
 
-/* Lookup an addr from a peer address/name */
+/** Lookup an addr from a peer address/name. Addresses need to be 
+ *  freed by calling NA_Addr_free */
 int NA_Addr_lookup(na_class_t *network_class,
         const char *name, na_addr_t *addr);
 
@@ -142,7 +148,7 @@ int NA_Addr_lookup(na_class_t *network_class,
 int NA_Addr_free(na_class_t *network_class,
         na_addr_t addr);
 
-/* Get the maximum size of a message */
+/* Get the maximum size of messages supported by send/recv */
 na_size_t NA_Msg_get_maximum_size(na_class_t *network_class);
 
 /* Send an unexpected message to dest */
@@ -155,12 +161,15 @@ int NA_Msg_recv_unexpected(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
 
-/* Send an expected message to dest */
+/* Send an expected message to dest. Note that expected messages require
+ * an expected receive to be posted at the destination before sending the
+ * message, otherwise the destination is allowed to drop the message without
+ * notification. */
 int NA_Msg_send(na_class_t *network_class,
         const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 
-/* Receive an expected message from source */
+/* Receive an expected message from source. */
 int NA_Msg_recv(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg);
@@ -211,7 +220,7 @@ int NA_Get(na_class_t *network_class,
 int NA_Wait(na_class_t *network_class,
         na_request_t request, unsigned int timeout, na_status_t *status);
 
-/* Track completion of RMA operations and make progress */
+/* Try to progress communication for at most timeout ms */
 int NA_Progress(na_class_t *network_class,
         unsigned int timeout, na_status_t *status);
 
