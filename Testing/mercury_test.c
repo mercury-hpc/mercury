@@ -32,7 +32,7 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
     na_class_t *network_class = NULL;
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <bmi|mpi>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <bmi|mpi|ssm>\n", argv[0]);
         exit(0);
     }
 
@@ -66,6 +66,16 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
     }
 #endif
 
+#ifdef NA_HAS_SSM
+    if (strcmp("ssm", argv[1]) == 0) {
+        if (argc != 4) {
+            fprintf(stderr, "Usage: %s ssm port <tcp|udp|ib>");
+            exit(0);
+        }
+        network_class = NA_SSM_Init(NULL, "tcp", argv[2], 0);
+    }
+#endif
+
     return network_class;
 }
 
@@ -80,7 +90,7 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
     na_class_t *network_class = NULL;
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <bmi|mpi>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <bmi|mpi|ssm>\n", argv[0]);
         exit(0);
     }
 
@@ -103,6 +113,17 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
             return NULL;
         }
         network_class = NA_BMI_Init("bmi_tcp", listen_addr, BMI_INIT_SERVER);
+    }
+#endif
+
+#ifdef NA_HAS_SSM
+    puts("HAS_SSM");
+    if (strcmp("ssm", argv[1]) == 0) {
+        if (argc != 3) {
+            fprintf(stderr, "Usage: %s ssm <tcp|udp|ib>://destaddr:port");
+            exit(0);
+        }
+        network_class = NA_SSM_Init(argv[2], NULL, 0, 0);
     }
 #endif
 

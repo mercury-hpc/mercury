@@ -13,6 +13,8 @@
 
 #include "na.h"
 
+#define DEBUG 1
+
 /* MPI initialization flags */
 
 #ifdef __cplusplus
@@ -20,7 +22,7 @@ extern "C" {
 #endif
 
 /* Initialize the MPI plugin */
-na_class_t *NA_SSM_Init(char *proto, int port, void *addr_args, int flags);
+na_class_t *NA_SSM_Init(char *URI, char *proto, int port, int flags);
 
 
 

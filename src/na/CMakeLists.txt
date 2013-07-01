@@ -147,6 +147,13 @@ if(NA_USE_BMI)
   )
 endif()
 
+if(NA_USE_SSM)
+  set(NA_SRCS
+    ${NA_SRCS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_ssm.c
+  )
+endif()
+
 if(NA_USE_MPI)
   set(NA_SRCS
     ${NA_SRCS}
@@ -198,6 +205,13 @@ if(NA_USE_BMI)
   set(NA_HEADERS
     ${NA_HEADERS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_bmi.h
+  )
+endif()
+
+if(NA_USE_SSM)
+  set(NA_HEADERS
+    ${NA_HEADERS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_ssm.h
   )
 endif()
 
