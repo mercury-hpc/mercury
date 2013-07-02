@@ -13,7 +13,6 @@
 
 #include "na.h"
 
-#define DEBUG 1
 
 /* MPI initialization flags */
 

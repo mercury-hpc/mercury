@@ -16,6 +16,8 @@
 #include "na_mpi.h"
 #endif
 
+#include "na_ssm.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -36,6 +38,7 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
         exit(0);
     }
 
+    puts("INIT");
 #ifdef NA_HAS_MPI
     if (strcmp("mpi", argv[1]) == 0) {
         FILE *config;
@@ -60,13 +63,16 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
 #endif
 
 #ifdef NA_HAS_BMI
+    puts("BMI");
     if (strcmp("bmi", argv[1]) == 0) {
         network_class = NA_BMI_Init(NULL, NULL, 0);
         if (rank) *rank = 0;
     }
 #endif
 
-#ifdef NA_HAS_SSM
+
+    puts("SSM");
+#if 1
     if (strcmp("ssm", argv[1]) == 0) {
         if (argc != 4) {
             fprintf(stderr, "Usage: %s ssm port <tcp|udp|ib>");

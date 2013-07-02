@@ -25,6 +25,7 @@
 #include <ssm.h>
 #include <ssmptcp.h>
 
+#define DEBUG 1
 static int na_ssm_finalize(void);
 static int na_ssm_addr_lookup(const char *name, na_addr_t *addr);
 static int na_ssm_addr_free(na_addr_t addr);
