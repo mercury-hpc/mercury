@@ -8,12 +8,12 @@
 # Also defined, but not for general use are:
 #  SSM_LIBRARY, the full path to the ssm library.
 
-FIND_PATH( SSM_INCLUDE_DIR ssm.h
+FIND_PATH( SSM_INCLUDE_DIR ssm.h ssmptcp.h ssm/dumb.h
   /usr/local/include
   /usr/include
 )
 
-FIND_LIBRARY( SSM_LIBRARY NAMES ssm
+FIND_LIBRARY( SSM_LIBRARY NAMES ssm ssmptcp ssmlm
   /usr/lib
   /usr/local/lib
 )

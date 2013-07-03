@@ -75,7 +75,7 @@ option(NA_USE_SSM "Use SSM." OFF)
 if(NA_USE_SSM)
   find_package(SSM REQUIRED)
   if(SSM_FOUND)
-    set(NA_PLUGINS ${NA_PLUGINS} ssm)
+    set(NA_PLUGINS ${NA_PLUGINS} ssm ssmptcp ssmlm)
     set(NA_HAS_SSM 1)
     include_directories(${SSM_INCLUDE_DIR})
     set(NA_EXT_LIB_DEPENDENCIES

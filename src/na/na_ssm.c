@@ -279,7 +279,7 @@ na_class_t *NA_SSM_Init(char *URI, char *proto, int port, int flags)
     if(URI != NULL){
         //paser
         na_ssm_destinfo_t dinfo;
-        aDdr_parser(URI, &dinfo);
+        addr_parser(URI, &dinfo);
         proto = dinfo.proto;
         port = dinfo.port;
         is_client = 1;
@@ -553,7 +553,7 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
 
     if (ssm_ret < 0) {
         NA_ERROR_DEFAULT("ssm_post() failed");
-        ree(ssm_request);
+        free(ssm_request);
         //bmi_request = NULL;
         ret = NA_FAIL;
         return ret;

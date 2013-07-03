@@ -13,6 +13,9 @@
 
 #include "na.h"
 
+#include <ssm/dumb.h>
+#include <ssm.h>
+#include <ssmptcp.h>
 
 /* MPI initialization flags */
 

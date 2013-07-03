@@ -15,8 +15,9 @@
 #ifdef NA_HAS_MPI
 #include "na_mpi.h"
 #endif
-
+#ifdef NA_HAS_SSM
 #include "na_ssm.h"
+#endif
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -71,8 +72,9 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
 #endif
 
 
+#ifdef NA_HAS_SSM
     puts("SSM");
-#if 1
+//ifdef NA_HAS_SSM
     if (strcmp("ssm", argv[1]) == 0) {
         if (argc != 4) {
             fprintf(stderr, "Usage: %s ssm port <tcp|udp|ib>");
