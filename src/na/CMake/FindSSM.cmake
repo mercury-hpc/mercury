@@ -8,15 +8,16 @@
 # Also defined, but not for general use are:
 #  SSM_LIBRARY, the full path to the ssm library.
 
-FIND_PATH( SSM_INCLUDE_DIR ssm.h ssmptcp.h ssm/dumb.h
+FIND_PATH( SSM_INCLUDE_DIR NAMES ssm.h ssmptcp.h ssm/dumb.h
   /usr/local/include
   /usr/include
 )
 
-FIND_LIBRARY( SSM_LIBRARY NAMES ssm ssmptcp ssmlm
-  /usr/lib
-  /usr/local/lib
+FIND_LIBRARY( SSM_LIBRARY NAMES ssmlm ssmptcp ssm
+  PATHS /usr/local/lib /usr/lib
 )
+set(SSM_LIBRARY, "hoge")
+message(STATUS, ${SSM_LIBRARY})
 
 SET( SSM_FOUND "NO" )
 IF(SSM_INCLUDE_DIR)
