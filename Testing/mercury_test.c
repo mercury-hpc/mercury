@@ -39,7 +39,6 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
         exit(0);
     }
 
-    puts("INIT");
 #ifdef NA_HAS_MPI
     if (strcmp("mpi", argv[1]) == 0) {
         FILE *config;
@@ -64,7 +63,6 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
 #endif
 
 #ifdef NA_HAS_BMI
-    puts("BMI");
     if (strcmp("bmi", argv[1]) == 0) {
         network_class = NA_BMI_Init(NULL, NULL, 0);
         if (rank) *rank = 0;
@@ -73,13 +71,12 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
 
 
 #ifdef NA_HAS_SSM
-    puts("SSM");
-//ifdef NA_HAS_SSM
     if (strcmp("ssm", argv[1]) == 0) {
-        if (argc != 4) {
-            fprintf(stderr, "Usage: %s ssm port <tcp|udp|ib>");
+        if (argc != 3) {
+            fprintf(stderr, "Usage: %s ssm <tcp|udp|ib>://destaddr:port", argv[0]);
             exit(0);
         }
+        /* TODO: Protofol is fixed */
         network_class = NA_SSM_Init(NULL, "tcp", argv[2], 0);
     }
 #endif
@@ -125,13 +122,12 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
 #endif
 
 #ifdef NA_HAS_SSM
-    puts("HAS_SSM");
     if (strcmp("ssm", argv[1]) == 0) {
-        if (argc != 3) {
-            fprintf(stderr, "Usage: %s ssm <tcp|udp|ib>://destaddr:port");
+        if (argc != 4) {
+            fprintf(stderr, "Usage: %s ssm port <tcp|udp|ib>\n", argv[0]);
             exit(0);
         }
-        network_class = NA_SSM_Init(argv[2], NULL, 0, 0);
+        network_class = NA_SSM_Init(NULL, argv[3], atoi(argv[2]), 0);
     }
 #endif
 

@@ -289,18 +289,32 @@ na_class_t *NA_SSM_Init(char *URI, char *proto, int port, int flags)
         is_server = 1;
     }
 
+#if DEBUG
+    printf("Port = %d\n", port);
+#endif
     if (strcmp(proto, "tcp") == 0) {
         itp = ssmptcp_new_tp(port, SSM_NOF);
+        if(itp == NULL){
+            printf("ssmptcp_new_tp() failed\n");
+            return -1;
+        }
         ssm = ssm_start(itp, NULL, flags);
+        if(ssm == NULL){
+            printf("ssm_start() failed\n");
+            return -1;
+        }
         /* TODO Error handling */
+    } else {
+        printf("Unknown protocol");
+        exit(0);
     }
 
     //XXX Temp Impl for unexpected messages
     msgbuf = (char *) malloc (NA_SSM_UNEXPECTED_SIZE);
-    mr_msg = ssm_mr_create(NULL, msgbuf, NA_SSM_UNEXPECTED_SIZE);
+    //mr_msg = ssm_mr_create(NULL, msgbuf, NA_SSM_UNEXPECTED_SIZE);
     ssm_cb_t cb = {
         .pcb = unexp_msg_recv_cb,
-        .cbdata = NULL,
+        .cbdata = NULL
     };
     me_msg = ssm_link(ssm, NA_SSM_UNEXPECTED_MATCHBIT, 0x0, SSM_POS_HEAD, NULL, &cb, SSM_NOF);
 
