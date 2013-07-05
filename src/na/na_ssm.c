@@ -93,7 +93,7 @@ typedef struct na_ssm_addr{
 typedef struct na_ssm_mem_handle{
     //ssm_md md;    //NULL
     ssm_mr mr;
-    ssm_bits matchbits;
+    ssm_bits matchbits; //XXX delete
 } na_ssm_mem_handle_t;
 
 
@@ -356,9 +356,8 @@ na_class_t *NA_SSM_Init(char *URI, char *proto, int port, int flags)
  */
 static int na_ssm_finalize(void)
 {
-    free(msgbuf);   //XXX temp
 	ssm_stop(ssm);
-
+    free(msgbuf);   //XXX temp
 }
 
 /*---------------------------------------------------------------------------
@@ -382,7 +381,7 @@ static int na_ssm_addr_lookup(const char *name, na_addr_t *addr)
     na_ssm_addr_t *ssm_addr = (na_ssm_addr_t *)malloc(sizeof(na_ssm_addr_t));
     //ssm_addr->addrs = ssm_addr(ssm);
     ssm_addr->addr = ssm_addr_create(ssm, &addrargs);
-    addr = (na_addr_t *)ssm_addr;
+    *addr = (na_addr_t *)ssm_addr;
     return 0;
 }
 
@@ -464,13 +463,12 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     ssm_msg_tag_t ssm_tag = (ssm_msg_tag_t) tag;
 
     na_ssm_request_t *ssm_request = NULL;
+    /* use addr as unique id*/
     ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
     ssm_request->type = SSM_SEND_OP;
     ssm_request->matchbits = tag;
     ssm_request->user_ptr = op_arg;
     //TODO lock (req_id)
-    ssm_request->req_id = req_id;
-    req_id++;
     //TODO unlock (req_id)
     
 //    ssm_request_t *bmi_request = NULL;
@@ -486,7 +484,8 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 //    bmi_ret = BMI_post_send(&bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
 //            BMI_EXT_ALLOC, bmi_tag, bmi_request, bmi_context, NULL);
     
-    na_ssm_mem_handle_t *mem_handle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
+    na_ssm_mem_handle_t *mem_handle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t)); //XXX delete
+    
 
     mem_handle->mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
     ssm_cb_t cb = {
@@ -551,7 +550,7 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
 //    bmi_request->user_ptr = op_arg;
 //    bmi_request->ack_request = NA_REQUEST_NULL;
     /* Register Memory */
-    na_ssm_mem_handle_t *mem_handle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
+    na_ssm_mem_handle_t *mem_handle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t)); //XXX delete
     mem_handle->mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
     /* Prepare callback function */
     ssm_cb_t cb = {
