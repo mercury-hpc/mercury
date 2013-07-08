@@ -9,6 +9,9 @@
  */
 
 #include "na_mpi.h"
+#include "na_private.h"
+#include "na_error.h"
+
 #include "mercury_hash_table.h"
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
@@ -132,11 +135,13 @@ static hg_thread_mutex_t mpi_test_mutex;
 
 #if MPI_VERSION < 3
 static hg_hash_table_t *mem_handle_map = NULL;  /* Map mem addresses to mem handles */
-static inline int pointer_equal(void *location1, void *location2)
+static inline int
+pointer_equal(void *location1, void *location2)
 {
     return location1 == location2;
 }
-static inline unsigned int pointer_hash(void *location)
+static inline unsigned int
+pointer_hash(void *location)
 {
     return (unsigned int) (unsigned long) location;
 }
@@ -165,10 +170,10 @@ hg_thread_mutex_t mem_map_mutex;
  *---------------------------------------------------------------------------
  */
 #ifdef NA_HAS_CLIENT_THREAD
-static void* na_mpi_progress_service(void *args)
+static void *
+na_mpi_progress_service(void NA_UNUSED *args)
 {
     bool service_done = 0;
-    (void) args; /* unused */
 
     while (!service_done) {
         int na_ret;
@@ -198,7 +203,8 @@ static void* na_mpi_progress_service(void *args)
  *
  *---------------------------------------------------------------------------
  */
-na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
+na_class_t *
+NA_MPI_Init(MPI_Comm *intra_comm, int flags)
 {
     /* Check flags */
     switch (flags) {
@@ -308,7 +314,8 @@ na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags)
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_finalize(void)
+static int
+na_mpi_finalize(void)
 {
     int mpi_ext_finalized, ret = NA_SUCCESS;
 
@@ -366,7 +373,8 @@ static int na_mpi_finalize(void)
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_addr_lookup(const char *name, na_addr_t *addr)
+static int
+na_mpi_addr_lookup(const char *name, na_addr_t *addr)
 {
     int mpi_ret, ret = NA_SUCCESS;
     char *port_name = (char*) name;
@@ -433,7 +441,8 @@ static int na_mpi_addr_lookup(const char *name, na_addr_t *addr)
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_addr_free(na_addr_t addr)
+static int
+na_mpi_addr_free(na_addr_t addr)
 {
     mpi_addr_t *mpi_addr = (mpi_addr_t*) addr;
     int ret = NA_SUCCESS;
@@ -483,9 +492,11 @@ static int na_mpi_addr_free(na_addr_t addr)
  *
  *---------------------------------------------------------------------------
  */
-static na_size_t na_mpi_msg_get_maximum_size(void)
+static na_size_t
+na_mpi_msg_get_maximum_size(void)
 {
     na_size_t max_unexpected_size = NA_MPI_UNEXPECTED_SIZE;
+
     return max_unexpected_size;
 }
 
@@ -498,7 +509,8 @@ static na_size_t na_mpi_msg_get_maximum_size(void)
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_msg_send_unexpected(const void *buf, na_size_t buf_size,
+static int
+na_mpi_msg_send_unexpected(const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg)
 {
     /* There should not be any difference for MPI */
@@ -514,8 +526,9 @@ static int na_mpi_msg_send_unexpected(const void *buf, na_size_t buf_size,
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
-        na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
+static int
+na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
+        na_addr_t *source, na_tag_t *tag, na_request_t *request, void NA_UNUSED *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
     MPI_Status mpi_status;
@@ -526,7 +539,6 @@ static int na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
     int mpi_tag;
     MPI_Comm mpi_unexpected_comm;
     mpi_req_t *mpi_request;
-    (void) op_arg; /* unused */
 
     if (!buf) {
         NA_ERROR_DEFAULT("NULL buffer");
@@ -606,8 +618,9 @@ static int na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
-        na_tag_t tag, na_request_t *request, void *op_arg)
+static int
+na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
+        na_tag_t tag, na_request_t *request, void NA_UNUSED *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
     void *mpi_buf = (void*) buf;
@@ -615,7 +628,6 @@ static int na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     int mpi_tag = (int) tag;
     mpi_addr_t *mpi_addr = (mpi_addr_t*) dest;
     mpi_req_t *mpi_request;
-    (void) op_arg; /* unused */
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_SEND_OP;
@@ -645,8 +657,9 @@ static int na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
-        na_tag_t tag, na_request_t *request, void *op_arg)
+static int
+na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
+        na_tag_t tag, na_request_t *request, void NA_UNUSED *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
     void *mpi_buf = (void*) buf;
@@ -654,7 +667,6 @@ static int na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     int mpi_tag = (int) tag;
     mpi_addr_t *mpi_addr = (mpi_addr_t*) source;
     mpi_req_t *mpi_request;
-    (void) op_arg; /* unused */
 
     mpi_request = malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
@@ -684,14 +696,14 @@ static int na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
  *
  *---------------------------------------------------------------------------
  */
-int na_mpi_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
+static int
+na_mpi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags,
         na_mem_handle_t *mem_handle)
 {
     int ret = NA_SUCCESS;
     void *mpi_buf_base = buf;
     mpi_mem_handle_t *mpi_mem_handle;
     /* MPI_Aint mpi_buf_size = (MPI_Aint) buf_size; */
-    (void) buf_size; /* unused */
 
     mpi_mem_handle = malloc(sizeof(mpi_mem_handle_t));
     mpi_mem_handle->base = mpi_buf_base;
@@ -729,7 +741,8 @@ int na_mpi_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
  *
  *---------------------------------------------------------------------------
  */
-int na_mpi_mem_deregister(na_mem_handle_t mem_handle)
+static int
+na_mpi_mem_deregister(na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
     mpi_mem_handle_t *mpi_mem_handle = (mpi_mem_handle_t*) mem_handle;
@@ -768,9 +781,9 @@ int na_mpi_mem_deregister(na_mem_handle_t mem_handle)
  *
  *---------------------------------------------------------------------------
  */
-static na_size_t na_mpi_mem_handle_get_serialize_size(na_mem_handle_t mem_handle)
+static na_size_t
+na_mpi_mem_handle_get_serialize_size(na_mem_handle_t NA_UNUSED mem_handle)
 {
-    (void) mem_handle; /* unused */
     return sizeof(mpi_mem_handle_t);
 }
 
@@ -783,7 +796,8 @@ static na_size_t na_mpi_mem_handle_get_serialize_size(na_mem_handle_t mem_handle
  *
  *---------------------------------------------------------------------------
  */
-int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size,
+static int
+na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size,
         na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
@@ -809,7 +823,8 @@ int na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size,
  *
  *---------------------------------------------------------------------------
  */
-int na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
+static int
+na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
         const void *buf, na_size_t buf_size)
 {
     int ret = NA_SUCCESS;
@@ -836,7 +851,8 @@ int na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
  *
  *---------------------------------------------------------------------------
  */
-int na_mpi_mem_handle_free(na_mem_handle_t mem_handle)
+static int
+na_mpi_mem_handle_free(na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
     mpi_mem_handle_t *mpi_mem_handle = (mpi_mem_handle_t*) mem_handle;
@@ -860,7 +876,8 @@ int na_mpi_mem_handle_free(na_mem_handle_t mem_handle)
  *
  *---------------------------------------------------------------------------
  */
-int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
+static int
+na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
@@ -947,7 +964,8 @@ int na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
  *
  *---------------------------------------------------------------------------
  */
-int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
+static int
+na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
@@ -1027,8 +1045,8 @@ int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
  *
  *---------------------------------------------------------------------------
  */
-static int na_mpi_wait(na_request_t request, unsigned int timeout,
-        na_status_t *status)
+static int
+na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 {
     int mpi_ret, ret = NA_SUCCESS;
     mpi_req_t *mpi_request = (mpi_req_t*) request;
@@ -1146,7 +1164,8 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
  *---------------------------------------------------------------------------
  */
 #if MPI_VERSION < 3
-static int na_mpi_progress(unsigned int timeout, na_status_t *status)
+static int
+na_mpi_progress(unsigned int timeout, na_status_t *status)
 {
     int time_remaining = timeout;
     int ret = NA_SUCCESS;
@@ -1287,7 +1306,8 @@ static int na_mpi_progress(unsigned int timeout, na_status_t *status)
     return ret;
 }
 #else
-static int na_mpi_progress(unsigned int timeout, na_status_t *status)
+static int
+na_mpi_progress(unsigned int timeout, na_status_t *status)
 {
     NA_ERROR_DEFAULT("Not implemented");
     return NA_FAIL;

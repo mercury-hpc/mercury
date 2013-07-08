@@ -14,6 +14,9 @@
 #include "na.h"
 #include "mercury_error.h"
 
+/* TODO Make that more portable */
+#include <stddef.h>
+
 typedef void * hg_bulk_t;         /* Bulk data handle */
 typedef void * hg_bulk_block_t;   /* Block handle for bulk data */
 typedef void * hg_bulk_request_t; /* Request object */

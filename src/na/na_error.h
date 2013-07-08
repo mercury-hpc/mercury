@@ -13,12 +13,6 @@
 
 #include <stdio.h>
 
-/* Error return codes */
-#define NA_SUCCESS  1
-#define NA_FAIL    -1
-#define NA_TRUE     1
-#define NA_FALSE    0
-
 /* Default error macro */
 #define NA_ERROR_DEFAULT(x) {              \
   fprintf(stderr, "Error "                \

@@ -12,27 +12,25 @@
 #define NA_H
 
 #include "na_config.h"
-#include "na_error.h"
 
-#include <stddef.h>
-#include <stdbool.h>
-
-typedef void * na_addr_t;    /* Abstract network address */
-typedef size_t na_size_t;    /* Size */
-typedef int    na_tag_t;     /* Tag */
-typedef void * na_request_t; /* Abstract request */
-typedef struct na_status {   /* Operation status */
-    bool      completed;     /* - true if operation has completed */
-    na_size_t count;         /* - number of bytes transmitted */
+typedef struct na_class na_class_t; /* Abstract network class */
+typedef void *      na_addr_t;      /* Abstract network address */
+typedef na_uint64_t na_size_t;      /* Size */
+typedef na_int32_t  na_tag_t;       /* Tag */
+typedef void *      na_request_t;   /* Abstract request */
+typedef struct      na_status {     /* Operation status */
+    na_bool_t completed;            /* - true if operation has completed */
+    na_size_t count;                /* - number of bytes transmitted */
 } na_status_t;
 
-typedef void * na_mem_handle_t; /* Absract memory handle */
-typedef ptrdiff_t na_offset_t;  /* Offset */
-typedef struct na_segment {     /* Segment */
-    void      *address;         /* - address of the segment */
-    na_size_t  size;            /* - size of the segment in bytes */
+typedef void *     na_mem_handle_t; /* Absract memory handle */
+typedef na_int64_t na_offset_t;     /* Offset */
+typedef struct     na_segment {     /* Segment */
+    na_ptr_t   address;             /* - address of the segment */
+    na_size_t  size;                /* - size of the segment in bytes */
 } na_segment_t;
 
+/* Constant values */
 #define NA_ADDR_NULL    ((na_addr_t)0)
 #define NA_REQUEST_NULL ((na_request_t)0)
 #define NA_STATUS_IGNORE ((na_status_t *)1)
@@ -46,182 +44,320 @@ typedef struct na_segment {     /* Segment */
 #define NA_MEM_READWRITE  0x00
 #define NA_MEM_READ_ONLY  0x01
 
-typedef struct na_class {
-    /* Finalize callback */
-    int (*finalize)(void);
-
-    /* Network address callbacks
-     * *************************
-     */
-
-    
-    /** Look up a remote peer address. Addresses need to be freed
-     *  using addr_free */
-    int (*addr_lookup)(const char *name, na_addr_t *addr);
-
-    /** Free address */
-    int (*addr_free)(na_addr_t addr);
-
-    /* Message callbacks (used for metadata transfer)
-     * **********************************************
-     * Unexpected and expected callbacks can be used to
-     * transfer small messages of "maximum size" bytes between peers.
-     * Unexpected sends do not require a matching receive to complete.
-     * Unexpected receives may wait on ANY_TAG and ANY_SOURCE depending on the
-     * implementation.
-     * NB. An expected send should not be considered as a ready send in the
-     * sense that a matching recv may or may not have been posted already */
-    na_size_t (*msg_get_maximum_size)(void);
-    int (*msg_send_unexpected)(const void *buf, na_size_t buf_size, na_addr_t dest,
-            na_tag_t tag, na_request_t *request, void *op_arg);
-    int (*msg_recv_unexpected)(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
-            na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
-    int (*msg_send)(const void *buf, na_size_t buf_size, na_addr_t dest,
-            na_tag_t tag, na_request_t *request, void *op_arg);
-    int (*msg_recv)(void *buf, na_size_t buf_size, na_addr_t source,
-            na_tag_t tag, na_request_t *request, void *op_arg);
-
-    /* Memory registration callbacks
-     * *****************************
-     * Memory pieces must be registered before one-sided transfers can be
-     * initiated.
-     * Register can be used to register a contiguous piece of memory.
-     * Register_segments can be used to register fragmented pieces and get
-     * a single memory handle, this should be implemented only if the network
-     * transport supports it. */
-    int (*mem_register)(void *buf, na_size_t buf_size, unsigned long flags,
-            na_mem_handle_t *mem_handle);
-    int (*mem_register_segments)(na_segment_t *segments, na_size_t segment_count,
-            unsigned long flags, na_mem_handle_t *mem_handle);
-    int (*mem_deregister)(na_mem_handle_t mem_handle);
-
-    /* Memory handle serialization callbacks
-     * *************************************
-     * One-sided transfers require prior exchange of memory handles between
-     * peers, serialization callbacks can be used to "pack" a memory handle and
-     * send it across the network.
-     * NB. Memory handles can be variable size, therefore the space required
-     * to serialize a handle into a buffer can be obtained using
-     * mem_handle_get_serialize_size */
-    na_size_t (*mem_handle_get_serialize_size)(na_mem_handle_t mem_handle);
-    int (*mem_handle_serialize)(void *buf, na_size_t buf_size,
-            na_mem_handle_t mem_handle);
-    int (*mem_handle_deserialize)(na_mem_handle_t *mem_handle,
-            const void *buf, na_size_t buf_size);
-    int (*mem_handle_free)(na_mem_handle_t mem_handle);
-
-    /* One-sided transfer callbacks (used for for bulk data operations)
-     * ****************************************************************
-     * Initiate a put or get to/from the registered memory regions with the
-     * given offset/size.
-     * NB. Memory must be registered and handles exchanged between peers. */
-    int (*put)(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-            na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-            na_size_t length, na_addr_t remote_addr, na_request_t *request);
-    int (*get)(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-            na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-            na_size_t length, na_addr_t remote_addr, na_request_t *request);
-
-    /* Progress callbacks
-     * ******************
-     * Wait for the completion of a request issued by a non-blocking operation.
-     * NB. Progress may be used to get a notification event that ensures
-     * the completion of a one-sided operation or may be used to make progress
-     * for plugins that need to emulate one-sided over two-sided operations. */
-    int (*wait)(na_request_t request, unsigned int timeout, na_status_t *status);
-    int (*progress)(unsigned int timeout, na_status_t *status);
-} na_class_t;
+/* Error return codes */
+#define NA_SUCCESS  1
+#define NA_FAIL    -1
+#define NA_TRUE     1
+#define NA_FALSE    0
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/** Finalize the network abstraction layer */
-int NA_Finalize(na_class_t *network_class);
+/**
+ * Finalize the network abstraction layer.
+ *
+ * \param network_class [IN]    pointer to network class
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Finalize(na_class_t *network_class);
 
-/** Lookup an addr from a peer address/name. Addresses need to be 
- *  freed by calling NA_Addr_free */
-int NA_Addr_lookup(na_class_t *network_class,
-        const char *name, na_addr_t *addr);
+/**
+ * Lookup an addr from a peer address/name. Addresses need to be
+ * freed by calling NA_Addr_free.
+ *
+ * \param network_class [IN] pointer to network class
+ * \param name [IN]          lookup name
+ * \param addr [OUT]         pointer to returned abstract address
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Addr_lookup(na_class_t *network_class, const char *name, na_addr_t *addr);
 
-/* Free the addr from the list of peers */
-int NA_Addr_free(na_class_t *network_class,
-        na_addr_t addr);
+/**
+ * Free the addr from the list of peers.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param addr [IN]             abstract address
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Addr_free(na_class_t *network_class, na_addr_t addr);
 
-/* Get the maximum size of messages supported by send/recv */
-na_size_t NA_Msg_get_maximum_size(na_class_t *network_class);
+/**
+ * Get the maximum size of messages supported by send/recv.
+ *
+ * \param network_class [IN] pointer to network class
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_size_t
+NA_Msg_get_maximum_size(na_class_t *network_class);
 
-/* Send an unexpected message to dest */
-int NA_Msg_send_unexpected(na_class_t *network_class,
+/**
+ * Send an unexpected message to dest.
+ * Unexpected sends do not require a matching receive to complete.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param buf [IN]              pointer to send buffer
+ * \param buf_size [IN]         buffer size
+ * \param dest [IN]             abstract address of destination
+ * \param tag [IN]              tag attached to message
+ * \param request [OUT]         pointer to returned abstract request
+ * \param op_arg [IN/OUT]       optional arguments
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Msg_send_unexpected(na_class_t *network_class,
         const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 
-/* Receive an unexpected message */
-int NA_Msg_recv_unexpected(na_class_t *network_class,
+/**
+ * Receive an unexpected message.
+ * Unexpected receives may wait on ANY_TAG and ANY_SOURCE depending on the
+ * implementation.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param buf [IN]              pointer to buffer used to receive message
+ * \param buf_size [IN]         buffer size
+ * \param actual_buf_size [OUT] actual size of the received buffer
+ * \param source [OUT]          pointer to abstract address of source
+ * \param tag [OUT]             pointer to returned tag attached to message
+ * \param request [OUT]         pointer to returned abstract request
+ * \param op_arg [IN/OUT]       optional arguments
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Msg_recv_unexpected(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
 
-/* Send an expected message to dest. Note that expected messages require
+/**
+ * Send an expected message to dest. Note that expected messages require
  * an expected receive to be posted at the destination before sending the
  * message, otherwise the destination is allowed to drop the message without
- * notification. */
-int NA_Msg_send(na_class_t *network_class,
+ * notification.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param buf [IN]              pointer to send buffer
+ * \param buf_size [IN]         buffer size
+ * \param dest [IN]             abstract address of destination
+ * \param tag [IN]              tag attached to message
+ * \param request [OUT]         pointer to returned abstract request
+ * \param op_arg [IN/OUT]       optional arguments
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Msg_send(na_class_t *network_class,
         const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 
-/* Receive an expected message from source. */
-int NA_Msg_recv(na_class_t *network_class,
+/**
+ * Receive an expected message from source.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param buf [IN]              pointer to receive buffer
+ * \param buf_size [IN]         buffer size
+ * \param source [IN]           abstract address of source
+ * \param tag [IN]              matching tag used to receive message
+ * \param request [OUT]         pointer to returned abstract request
+ * \param op_arg [IN/OUT]       optional arguments
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Msg_recv(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg);
 
-/* Register memory for RMA operations */
-int NA_Mem_register(na_class_t *network_class,
+/**
+ * Register memory for RMA operations.
+ * Memory pieces must be registered before one-sided transfers can be
+ * initiated.
+ * Register can be used to register a contiguous piece of memory.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param buf [IN]              pointer to buffer that needs to be registered
+ * \param buf_size [IN]         buffer size
+ * \param flags [IN]            permission flag:
+ *                                - NA_MEM_READWRITE
+ *                                - NA_MEM_READ_ONLY
+ * \param mem_handle [OUT]      pointer to returned abstract memory handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Mem_register(na_class_t *network_class,
         void *buf, na_size_t buf_size, unsigned long flags,
         na_mem_handle_t *mem_handle);
 
-/* Register segmented memory for RMA operations */
-int NA_Mem_register_segments(na_class_t *network_class,
+/**
+ * Register segmented memory for RMA operations.
+ * Register_segments can be used to register fragmented pieces and get
+ * a single memory handle, this is implemented only if the network
+ * transport supports it.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param segments [IN]         pointer to array of na_segment_t composed of:
+ *                                - address of the segment that needs to be
+ *                                  registered
+ *                                - size of the segment in bytes
+ * \param segment_count [IN]    segment count
+ * \param flags [IN]            permission flag:
+ *                                - NA_MEM_READWRITE
+ *                                - NA_MEM_READ_ONLY
+ * \param mem_handle [OUT]      pointer to returned abstract memory handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Mem_register_segments(na_class_t *network_class,
         na_segment_t *segments, na_size_t segment_count, unsigned long flags,
         na_mem_handle_t *mem_handle);
 
-/* Deregister memory */
-int NA_Mem_deregister(na_class_t *network_class,
+/**
+ * Unregister memory.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param mem_handle [IN]       abstract memory handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Mem_deregister(na_class_t *network_class, na_mem_handle_t mem_handle);
+
+/**
+ * Get size required to serialize handle.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param mem_handle [IN]       abstract memory handle
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_size_t
+NA_Mem_handle_get_serialize_size(na_class_t *network_class,
         na_mem_handle_t mem_handle);
 
-/* Get size required to serialize handle */
-na_size_t NA_Mem_handle_get_serialize_size(na_class_t *network_class,
-        na_mem_handle_t mem_handle);
-
-/* Serialize memory handle into a buffer */
-int NA_Mem_handle_serialize(na_class_t *network_class,
+/**
+ * Serialize memory handle into a buffer.
+ * One-sided transfers require prior exchange of memory handles between
+ * peers, serialization callbacks can be used to "pack" a memory handle and
+ * send it across the network.
+ * NB. Memory handles can be variable size, therefore the space required
+ * to serialize a handle into a buffer can be obtained using
+ * NA_Mem_handle_get_serialize_size.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param buf [IN/OUT]          pointer to buffer used for serialization
+ * \param buf_size [IN]         buffer size
+ * \param mem_handle [IN]       abstract memory handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Mem_handle_serialize(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_mem_handle_t mem_handle);
 
-/* Deserialize memory handle from buffer */
-int NA_Mem_handle_deserialize(na_class_t *network_class,
+/**
+ * Deserialize memory handle from buffer.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param mem_handle [OUT]      pointer to abstract memory handle
+ * \param buf [IN]              pointer to buffer used for deserialization
+ * \param buf_size [IN]         buffer size
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Mem_handle_deserialize(na_class_t *network_class,
         na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
 
-/* Free memory handle */
-int NA_Mem_handle_free(na_class_t *network_class,
-        na_mem_handle_t mem_handle);
+/**
+ * Free memory handle.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param mem_handle [IN]       abstract memory handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Mem_handle_free(na_class_t *network_class, na_mem_handle_t mem_handle);
 
-/* Put data to remote target */
-int NA_Put(na_class_t *network_class,
+/**
+ * Put data to remote target.
+ * Initiate a put or get to/from the registered memory regions with the
+ * given offset/size.
+ * NB. Memory must be registered and handles exchanged between peers.
+ *
+ * \param network_class [IN]     pointer to network class
+ * \param local_mem_handle [IN]  abstract local memory handle
+ * \param local_offset [IN]      local offset
+ * \param remote_mem_handle [IN] abstract remote memory handle
+ * \param remote_offset [IN]     remote offset
+ * \param data_size [IN]         size of data that needs to be transferred
+ * \param remote_addr [IN]       abstract address of remote destination
+ * \param request [OUT]          pointer to returned abstract request
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Put(na_class_t *network_class,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t length, na_addr_t remote_addr, na_request_t *request);
+        na_size_t data_size, na_addr_t remote_addr, na_request_t *request);
 
-/* Get data from remote target */
-int NA_Get(na_class_t *network_class,
+/**
+ * Get data from remote target.
+ *
+ * \param network_class [IN]     pointer to network class
+ * \param local_mem_handle [IN]  abstract local memory handle
+ * \param local_offset [IN]      local offset
+ * \param remote_mem_handle [IN] abstract remote memory handle
+ * \param remote_offset [IN]     remote offset
+ * \param data_size [IN]         size of data that needs to be transferred
+ * \param remote_addr [IN]       abstract address of remote source
+ * \param request [OUT]          pointer to returned abstract request
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Get(na_class_t *network_class,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t length, na_addr_t remote_addr, na_request_t *request);
+        na_size_t data_size, na_addr_t remote_addr, na_request_t *request);
 
-/* Wait for a request to complete or until timeout (ms) is reached */
-int NA_Wait(na_class_t *network_class,
+/**
+ * Wait for a request to complete or until timeout is reached.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param request [IN]          abstract request
+ * \param timeout [IN]          timeout (in milliseconds)
+ * \param status [OUT]          pointer to returned status
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Wait(na_class_t *network_class,
         na_request_t request, unsigned int timeout, na_status_t *status);
 
-/* Try to progress communication for at most timeout ms */
-int NA_Progress(na_class_t *network_class,
+/**
+ * Try to progress communication for at most timeout.
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param timeout [IN]          timeout (in milliseconds)
+ * \param status [OUT]          pointer to returned status
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Progress(na_class_t *network_class,
         unsigned int timeout, na_status_t *status);
 
 #ifdef __cplusplus

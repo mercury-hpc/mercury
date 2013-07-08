@@ -9,6 +9,9 @@
  */
 
 #include "na_bmi.h"
+#include "na_private.h"
+#include "na_error.h"
+
 #include "mercury_hash_table.h"
 #include "mercury_list.h"
 #include "mercury_thread.h"
@@ -113,11 +116,13 @@ static hg_thread_cond_t  testcontext_cond;
 static bool              is_testing_context;
 /* Map mem addresses to mem handles */
 static hg_hash_table_t  *mem_handle_map = NULL;
-static inline int pointer_equal(void *location1, void *location2)
+static inline int
+pointer_equal(void *location1, void *location2)
 {
     return location1 == location2;
 }
-static inline unsigned int pointer_hash(void *location)
+static inline unsigned int
+pointer_hash(void *location)
 {
     return (unsigned int) (unsigned long) location;
 }
@@ -144,10 +149,10 @@ static hg_thread_mutex_t mem_map_mutex;
  *---------------------------------------------------------------------------
  */
 #ifdef NA_HAS_CLIENT_THREAD
-static void* na_bmi_progress_service(void *args)
+static void*
+na_bmi_progress_service(void NA_UNUSED *args)
 {
     bool service_done = 0;
-    (void) args; /* unused */
 
     while (!service_done) {
         int na_ret;
@@ -176,7 +181,8 @@ static void* na_bmi_progress_service(void *args)
  *
  *---------------------------------------------------------------------------
  */
-na_class_t *NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
+na_class_t *
+NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
 {
     int bmi_ret;
 
@@ -226,7 +232,8 @@ na_class_t *NA_BMI_Init(const char *method_list, const char *listen_addr, int fl
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_finalize(void)
+static int
+na_bmi_finalize(void)
 {
     int bmi_ret, ret = NA_SUCCESS;
 
@@ -273,7 +280,8 @@ static int na_bmi_finalize(void)
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_addr_lookup(const char *name, na_addr_t *addr)
+static int
+na_bmi_addr_lookup(const char *name, na_addr_t *addr)
 {
     int bmi_ret, ret = NA_SUCCESS;
     BMI_addr_t *bmi_addr = NULL;
@@ -303,7 +311,8 @@ static int na_bmi_addr_lookup(const char *name, na_addr_t *addr)
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_addr_free(na_addr_t addr)
+static int
+na_bmi_addr_free(na_addr_t addr)
 {
     BMI_addr_t *bmi_addr = (BMI_addr_t*) addr;
     int ret = NA_SUCCESS;
@@ -326,7 +335,8 @@ static int na_bmi_addr_free(na_addr_t addr)
  *
  *---------------------------------------------------------------------------
  */
-static na_size_t na_bmi_msg_get_maximum_size(void)
+static na_size_t
+na_bmi_msg_get_maximum_size(void)
 {
     na_size_t max_unexpected_size = NA_BMI_UNEXPECTED_SIZE;
     return max_unexpected_size;
@@ -341,7 +351,8 @@ static na_size_t na_bmi_msg_get_maximum_size(void)
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
+static int
+na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     int bmi_ret, ret = NA_SUCCESS;
@@ -385,7 +396,8 @@ static int na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_ad
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
+static int
+na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
 {
     int ret = NA_SUCCESS;
@@ -479,7 +491,8 @@ done:
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
+static int
+na_bmi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     int ret = NA_SUCCESS, bmi_ret;
@@ -525,7 +538,8 @@ static int na_bmi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
+static int
+na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     int bmi_ret, ret = NA_SUCCESS;
@@ -572,13 +586,13 @@ static int na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_mem_register(void *buf, na_size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle)
+static int
+na_bmi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags, na_mem_handle_t *mem_handle)
 {
     int ret = NA_SUCCESS;
     void *bmi_buf_base = buf;
     bmi_mem_handle_t *bmi_mem_handle;
     /* bmi_size_t bmi_buf_size = (bmi_size_t) buf_size; */
-    (void) buf_size; /* unused */
 
     bmi_mem_handle = malloc(sizeof(bmi_mem_handle_t));
     bmi_mem_handle->base = bmi_buf_base;
@@ -610,7 +624,8 @@ static int na_bmi_mem_register(void *buf, na_size_t buf_size, unsigned long flag
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_mem_deregister(na_mem_handle_t mem_handle)
+static int
+na_bmi_mem_deregister(na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
     bmi_mem_handle_t *bmi_mem_handle = (bmi_mem_handle_t*) mem_handle;
@@ -642,9 +657,9 @@ static int na_bmi_mem_deregister(na_mem_handle_t mem_handle)
  *
  *---------------------------------------------------------------------------
  */
-static na_size_t na_bmi_mem_handle_get_serialize_size(na_mem_handle_t mem_handle)
+static na_size_t
+na_bmi_mem_handle_get_serialize_size(na_mem_handle_t NA_UNUSED mem_handle)
 {
-    (void) mem_handle; /* unused */
     return sizeof(bmi_mem_handle_t);
 }
 
@@ -657,7 +672,8 @@ static na_size_t na_bmi_mem_handle_get_serialize_size(na_mem_handle_t mem_handle
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_handle)
+static int
+na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
     bmi_mem_handle_t *bmi_mem_handle = (bmi_mem_handle_t*) mem_handle;
@@ -682,7 +698,8 @@ static int na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_han
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size)
+static int
+na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size)
 {
     int ret = NA_SUCCESS;
     bmi_mem_handle_t *bmi_mem_handle;
@@ -708,7 +725,8 @@ static int na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_mem_handle_free(na_mem_handle_t mem_handle)
+static int
+na_bmi_mem_handle_free(na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
     bmi_mem_handle_t *bmi_mem_handle = (bmi_mem_handle_t*) mem_handle;
@@ -732,7 +750,8 @@ static int na_bmi_mem_handle_free(na_mem_handle_t mem_handle)
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
+static int
+na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
@@ -812,7 +831,8 @@ static int na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
+static int
+na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
@@ -870,7 +890,8 @@ static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_process_unexpected(void)
+static int
+na_bmi_process_unexpected(void)
 {
     int outcount;
     struct BMI_unexpected_info *request_info;
@@ -912,8 +933,8 @@ static int na_bmi_process_unexpected(void)
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_wait(na_request_t request, unsigned int timeout,
-        na_status_t *status)
+static int
+na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 {
     bmi_request_t *bmi_wait_request = (bmi_request_t*) request;
     int remaining = timeout;
@@ -1076,7 +1097,8 @@ static int na_bmi_wait(na_request_t request, unsigned int timeout,
  *
  *---------------------------------------------------------------------------
  */
-static int na_bmi_progress(unsigned int timeout, na_status_t *status)
+static int
+na_bmi_progress(unsigned int timeout, na_status_t *status)
 {
     int time_remaining = timeout;
     int ret = NA_SUCCESS;

@@ -26,8 +26,21 @@ enum {
 extern "C" {
 #endif
 
-/* Initialize the MPI plugin */
-na_class_t *NA_MPI_Init(MPI_Comm *intra_comm, int flags);
+/**
+ * Initialize the MPI plugin.
+ *
+ * \param intra_comm [IN]       (Optional) MPI communicator used for
+ *                              intra-communication within a local set of
+ *                              processes.
+ * \param flags [IN]            (Optional) supported flags:
+ *                                - MPI_INIT_SERVER
+ *                                - MPI_INIT_SERVER_STATIC
+ *                                - MPI_INIT_STATIC
+ *
+ * \return Pointer to network class
+ */
+NA_EXPORT na_class_t *
+NA_MPI_Init(MPI_Comm *intra_comm, int flags);
 
 #ifdef __cplusplus
 }

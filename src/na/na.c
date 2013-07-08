@@ -8,7 +8,7 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "na.h"
+#include "na_private.h"
 
 #include <assert.h>
 

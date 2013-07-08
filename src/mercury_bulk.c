@@ -10,6 +10,9 @@
 
 #include "mercury_bulk.h"
 
+/* TODO see if we can avoid to have to include that header */
+#include "na_private.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
