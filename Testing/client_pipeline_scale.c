@@ -234,6 +234,12 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    na_ret = NA_Finalize(network_class);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not finalize NA interface\n");
+        return EXIT_FAILURE;
+    }
+
     MPI_Comm_free(&split_comm);
     MPI_Finalize();
 

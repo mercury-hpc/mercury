@@ -120,6 +120,13 @@ int finalize_rpc()
         return ret;
     }
 
+    na_ret = NA_Finalize(network_class);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not finalize NA interface\n");
+        ret = HG_FAIL;
+        return ret;
+    }
+
     return ret;
 }
 

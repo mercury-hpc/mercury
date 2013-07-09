@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
     na_class_t *network_class = NULL;
     unsigned int number_of_peers;
     unsigned int i;
-    int hg_ret;
+    int hg_ret, na_ret;
 
     /* Used by Test Driver */
     printf("Waiting for client...\n");
@@ -137,6 +137,12 @@ int main(int argc, char *argv[])
     hg_ret = HG_Handler_finalize();
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not finalize function shipper handler\n");
+        return EXIT_FAILURE;
+    }
+
+    na_ret = NA_Finalize(network_class);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not finalize NA interface\n");
         return EXIT_FAILURE;
     }
 
