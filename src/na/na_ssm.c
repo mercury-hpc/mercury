@@ -127,6 +127,7 @@ typedef struct na_ssm_request {
     void *user_ptr;
     unsigned int req_id;
     ssm_tx tx;
+    ssm_cb_t cb;
 } na_ssm_request_t;
 
 
@@ -135,6 +136,8 @@ static ssm_id ssm;
 static ssm_mr mr_msg;
 static ssm_me me_msg;
 static char *msgbuf;    //XXX temp
+static int ssmport;
+static ssm_Iaddr iaddr;
 
 //for TCP, UDP or IB...
 typedef int (*na_ssm_connect)(void *addr, void *result_halder);
@@ -161,29 +164,41 @@ static hg_thread_t       progress_service;
 hg_thread_mutex_t mem_map_mutex;
 
 
-static int is_client;
-static int is_server;
+
+
+//static int is_client;
+//static int is_server;
 
 
 int addr_parser(const char *str, na_ssm_destinfo_t *addr)
 {
-    sscanf(str, "%15s://%63[^:]:%d", addr->proto, addr->hostname, addr->port);
+    if(str == NULL){
+        printf("error: addr_parse() str is null\n");
+        exit(0);
+    }
+#if DEBUG
+    printf("addr_parser(): string = %s\n", str);
+#endif
+    sscanf(str, "%15[^:]://%63[^:]:%d", addr->proto, addr->hostname, &addr->port);
     return 0;
 }
 
 
 void msg_send_cb(void *cbdat, void *evdat) {
-    na_ssm_mem_handle_t *mem_handle;
-    mem_handle = (na_ssm_mem_handle_t *)cbdat;
-    ssm_mr_destroy(mem_handle->mr); //XXX Error Handling
-    free(cbdat);
+#if DEBUG
+    puts("msg_send_cb()");
+#endif
 
     printf(".");
     fflush(stdout);
-    if(!DEBUG)      return;
     puts("----------");
     ssm_result r = evdat;
     (void)cbdat;
+    ssm_mr_destroy(r->mr); //XXX Error Handling
+    if(cbdat!=NULL){
+        free(cbdat);
+    }
+    if(!DEBUG)      return;
     printf("        cbdat = %p\n", cbdat);
     printf("ssm_id     id     = %p\n", r->id);
     printf("ssm_me     me     = %p\n", r->me);
@@ -263,7 +278,7 @@ static void* na_ssm_progress_service(void *args)
  *
  *---------------------------------------------------------------------------
  */
-na_class_t *NA_SSM_Init(char *URI, char *proto, int port, int flags)
+na_class_t *NA_SSM_Init(char *proto, int port, int flags)
 {
 #if DEBUG
     puts("NA_SSM_Init()");
@@ -276,22 +291,23 @@ na_class_t *NA_SSM_Init(char *URI, char *proto, int port, int flags)
     if (flags == 0 ){
         flags = SSM_NOF;
     }
-    if(URI != NULL){
-        //paser
-        na_ssm_destinfo_t dinfo;
-        addr_parser(URI, &dinfo);
-        proto = dinfo.proto;
-        port = dinfo.port;
-        is_client = 1;
-        is_server = 0;
-    } else {
-        is_client = 0;
-        is_server = 1;
-    }
+//    if(URI != NULL){
+//        //paser
+//        na_ssm_destinfo_t dinfo;
+//        addr_parser(URI, &dinfo);
+//        proto = dinfo.proto;
+//        port = dinfo.port;
+//        is_client = 1;
+//        is_server = 0;
+//    } else {
+//        is_client = 0;
+//        is_server = 1;
+//    }
 
 #if DEBUG
     printf("Port = %d\n", port);
 #endif
+    ssmport = port;
     if (strcmp(proto, "tcp") == 0) {
         itp = ssmptcp_new_tp(port, SSM_NOF);
         if(itp == NULL){
@@ -303,6 +319,7 @@ na_class_t *NA_SSM_Init(char *URI, char *proto, int port, int flags)
             printf("ssm_start() failed\n");
             return -1;
         }
+        iaddr = ssm_addr(ssm);
         /* TODO Error handling */
     } else {
         printf("Unknown protocol");
@@ -371,18 +388,34 @@ static int na_ssm_finalize(void)
  */
 static int na_ssm_addr_lookup(const char *name, na_addr_t *addr)
 {
+#if DEBUG
+    printf("na_ssm_addr_lookup()\n");
+    printf("\tname = %s, addr = %p \n", name, addr);
+#endif
     na_ssm_destinfo_t dest;
-    addr_parser(name, &dest);
+    //addr_parser(name, &dest);
     //
+    
+
     ssmptcp_addrargs_t addrargs = {
-        .host = dest.hostname,
-        .port = dest.port,
+        .host = name,/*dest.hostname,*/
+        .port = ssmport,/*dest.port,*/
     };
+
+    printf("\tlookup host = %s, port = %d\n", name, ssmport);
     na_ssm_addr_t *ssm_addr = (na_ssm_addr_t *)malloc(sizeof(na_ssm_addr_t));
     //ssm_addr->addrs = ssm_addr(ssm);
+    //ssm_addr->addr = ssm_addr_create(ssm, adr);
     ssm_addr->addr = ssm_addr_create(ssm, &addrargs);
-    *addr = (na_addr_t *)ssm_addr;
-    return 0;
+    printf("\taddr = %d\n", ssm_addr->addr);
+    //ssm_addr->addr = iaddr->create(iaddr, &addrargs);
+
+    if(ssm_addr->addr < 0){
+        printf("ERROR: ssm_addr_create() failed\n");
+        exit(0);
+    }
+    *addr = (na_addr_t)ssm_addr;
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------
@@ -396,6 +429,9 @@ static int na_ssm_addr_lookup(const char *name, na_addr_t *addr)
  */
 static int na_ssm_addr_free(na_addr_t addr)
 {
+#if DEBUG
+    fprintf(stderr, "na_ssm_addr_free(addr = %p)\n", addr);
+#endif
     //free(addr);
     na_ssm_addr_t *paddr = (na_ssm_addr_t *)addr;
     /* SSM addr destroy */
@@ -484,16 +520,21 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 //    bmi_ret = BMI_post_send(&bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
 //            BMI_EXT_ALLOC, bmi_tag, bmi_request, bmi_context, NULL);
     
-    na_ssm_mem_handle_t *mem_handle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t)); //XXX delete
+    //na_ssm_mem_handle_t *mem_handle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t)); //XXX delete
     
+#if DEBUG
+    printf("na_ssm_msg_send()\n");
+    printf("\tbuf = %p, buf_size = %d, dest = %d, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, ssm_peer_addr->addr, tag, request, op_arg);
+#endif
 
-    mem_handle->mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
-    ssm_cb_t cb = {
-        .pcb = msg_send_cb,
-        .cbdata = mem_handle,
-    };
+    ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
+    char aa[1024];
+    ssm_request->cb.pcb = msg_send_cb;
+    ssm_request->cb.cbdata = NULL;
+
+    char ab[1024];
     ssm_tx stx; 
-    stx = ssm_put(ssm, ssm_peer_addr, mem_handle->mr, NULL, ssm_tag, &cb, SSM_NOF);
+    stx = ssm_put(ssm, ssm_peer_addr->addr , mr, NULL, ssm_tag, &(ssm_request->cb), SSM_NOF);
 //    if (ssm_ret < 0) {
 //        NA_ERROR_DEFAULT("SSM_post_send() failed");
 //        //free(bmi_request);
@@ -503,7 +544,7 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 //    }
 
     ssm_request->tx = stx;
-    *request = (na_request_t) ssm_request;
+    *request = (na_request_t*) ssm_request;
 
 //    hg_thread_mutex_lock(&request_mutex);
 //    /* Mark request as done if immediate BMI completion detected */
@@ -526,6 +567,10 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
+#if DEBUG
+    printf("na_ssm_msg_recv()\n");
+    printf("\tbuf = %p, buf_size = %d, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, tag, request, op_arg);
+#endif
     int ssm_ret, ret = NA_SUCCESS;
     ssm_size_t ssm_buf_size = (ssm_size_t) buf_size;
     na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) source;
@@ -550,16 +595,13 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
 //    bmi_request->user_ptr = op_arg;
 //    bmi_request->ack_request = NA_REQUEST_NULL;
     /* Register Memory */
-    na_ssm_mem_handle_t *mem_handle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t)); //XXX delete
-    mem_handle->mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
+    ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
     /* Prepare callback function */
-    ssm_cb_t cb = {
-        .pcb = msg_recv_cb,
-        .cbdata = NULL,
-    };
+    ssm_request->cb.pcb = msg_send_cb;
+    ssm_request->cb.cbdata = NULL;
     /* Post the BMI recv request */
-    ssm_me me = ssm_link(ssm, ssm_tag, 0x0 /* mask */, SSM_POS_HEAD, NULL, &cb, SSM_NOF);
-    ssm_ret = ssm_post(ssm, me, mem_handle->mr, SSM_NOF);
+    ssm_me me = ssm_link(ssm, ssm_tag, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->cb), SSM_NOF);
+    ssm_ret = ssm_post(ssm, me, mr, SSM_NOF);
 //            bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
 //            &bmi_request->actual_size, BMI_EXT_ALLOC, bmi_tag, bmi_request,
 //            bmi_context, NULL);
@@ -655,6 +697,9 @@ static na_size_t na_ssm_mem_handle_get_serialize_size(na_mem_handle_t mem_handle
 int na_ssm_mem_handle_serialize(void *buf, na_size_t buf_size,
         na_mem_handle_t mem_handle)
 {
+#if DEBUG
+    fprintf(stderr, "na_ssm_msm_handle_serialize()\n");
+#endif
     int ret = NA_SUCCESS;
     na_ssm_mem_handle_t *ssm_mem_handle = (na_ssm_mem_handle_t*) mem_handle;
 
@@ -763,21 +808,46 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
         na_status_t *status)
 {
     //TODO: this is a temp impl. need to add handling of request
+#if DEBUG
+    
+    printf("ssm_wait()\n\trequest = %p, timeout = %d, status = %p\n", request, timeout, status);
+#endif
     struct timeval tv;
     int rt, ret;
     tv.tv_sec = timeout / 1000;
-    tv.tv_usec = timeout * 1000;
+    tv.tv_usec = (timeout % 1000)*1000;
+#if DEBUG
+    printf("\ttimeout sec = %d, usec = %d\n", tv.tv_sec, tv.tv_usec);
+#endif
     rt = ssm_wait(ssm, &tv);
-    //ret;
-    if (rt > 0){
-        status->completed = 1;
-        ret = 1;
-    } else if (rt == 0){
-        status->completed = 0;
-        ret = 1;
+    if( rt < 0){
+#if DEBUG
+        fprintf(stderr, "\tssm_wait() failed\n");
+#endif
+        return NA_FAIL;
+    }
+    //XXX
+    if (status && status != NA_STATUS_IGNORE) {
+#if DEBUG
+        printf("\treturn status code\n");
+        fflush(stdout);
+#endif
+        if (rt > 0){
+            status->completed = 1;
+            ret = 1;
+        } else if (rt == 0){
+            status->completed = 0;
+            ret = 1;
+        } else {
+            status->completed = 0;
+            ret = -1;
+        }
     } else {
-        status->completed = 0;
-        ret = -1;
+#if DEBUG
+        printf("\tno return status code\n");
+        fflush(stdout);
+#endif
+        ret = rt;
     }
     return ret;
 }

@@ -72,12 +72,11 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
 
 #ifdef NA_HAS_SSM
     if (strcmp("ssm", argv[1]) == 0) {
-        if (argc != 3) {
-            fprintf(stderr, "Usage: %s ssm <tcp|udp|ib>://destaddr:port", argv[0]);
+        if (argc != 4) {
+            fprintf(stderr, "Usage: %s ssm <tcp|udp|ib> port\n", argv[0]);
             exit(0);
         }
-        /* TODO: Protofol is fixed */
-        network_class = NA_SSM_Init(NULL, "tcp", argv[2], 0);
+        network_class = NA_SSM_Init(argv[2], atoi(argv[3]), 0);
     }
 #endif
 
@@ -124,10 +123,10 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
 #ifdef NA_HAS_SSM
     if (strcmp("ssm", argv[1]) == 0) {
         if (argc != 4) {
-            fprintf(stderr, "Usage: %s ssm port <tcp|udp|ib>\n", argv[0]);
+            fprintf(stderr, "Usage: %s ssm <tcp|udp|ib> port\n", argv[0]);
             exit(0);
         }
-        network_class = NA_SSM_Init(NULL, argv[3], atoi(argv[2]), 0);
+        network_class = NA_SSM_Init(argv[2], atoi(argv[3]), 0);
     }
 #endif
 

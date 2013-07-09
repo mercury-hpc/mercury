@@ -69,9 +69,16 @@ int main(int argc, char *argv[])
 
 
     sprintf(send_buf, "test\n");
+    puts("NA_Msg_send()");
     na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not send expected message\n");
+        return EXIT_FAILURE;
+    }
+
+    na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Error during wait\n");
         return EXIT_FAILURE;
     }
 

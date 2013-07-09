@@ -49,8 +49,8 @@ int main(int argc, char *argv[])
     for (peer = 0; peer < number_of_peers; peer++) {
         na_size_t recv_buf_len = 0;
 
-        na_tag_t recv_tag = 0;
-        na_tag_t send_tag = 0;
+        na_tag_t recv_tag = 100;
+        na_tag_t send_tag = 101;
         na_tag_t bulk_tag = 102;
         na_tag_t ack_tag = 103;
 
@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
         na_request_t get_request = NA_REQUEST_NULL;
         int i, error = 0;
         
-        na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, bulk_tag, &bulk_request, NULL);
+        na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, recv_tag, &bulk_request, NULL);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not recv\n");
             return EXIT_FAILURE;
