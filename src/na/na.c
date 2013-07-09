@@ -9,8 +9,39 @@
  */
 
 #include "na_private.h"
+#ifdef NA_HAS_MPI
+#include "na_mpi.h"
+#endif
+#ifdef NA_HAS_BMI
+#include "na_bmi.h"
+#endif
 
 #include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+
+/*---------------------------------------------------------------------------*/
+na_class_t *
+NA_Initialize(const char *method, const char *port_name, na_bool_t listen)
+{
+    na_class_t *network_class = NULL;
+
+#ifdef NA_HAS_MPI
+    if (strcmp("mpi", method) == 0) {
+        int flags = (listen) ? MPI_INIT_SERVER : 0;
+        network_class = NA_MPI_Init(NULL, flags);
+    }
+#endif
+
+#ifdef NA_HAS_BMI
+    if (strcmp("bmi", method) == 0) {
+        int flags = (listen) ? BMI_INIT_SERVER : 0;
+        network_class = NA_BMI_Init("bmi_tcp", port_name, flags);
+    }
+#endif
+
+    return network_class;
+}
 
 /*---------------------------------------------------------------------------*/
 int

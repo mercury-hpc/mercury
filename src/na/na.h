@@ -55,6 +55,20 @@ extern "C" {
 #endif
 
 /**
+ * Initialize the network abstraction layer.
+ *
+ * \param method [IN]           method name, available methods depend on
+ *                              configuration (e.g., "bmi", "mpi")
+ * \param port_name [IN]        port name string that may be used by underlying
+ *                              plugin
+ * \param listen [IN]           listen for incoming connections
+ *
+ * \return Pointer to network class
+ */
+NA_EXPORT na_class_t *
+NA_Initialize(const char *method, const char *port_name, na_bool_t listen);
+
+/**
  * Finalize the network abstraction layer.
  *
  * \param network_class [IN]    pointer to network class
@@ -68,9 +82,9 @@ NA_Finalize(na_class_t *network_class);
  * Lookup an addr from a peer address/name. Addresses need to be
  * freed by calling NA_Addr_free.
  *
- * \param network_class [IN] pointer to network class
- * \param name [IN]          lookup name
- * \param addr [OUT]         pointer to returned abstract address
+ * \param network_class [IN]    pointer to network class
+ * \param name [IN]             lookup name
+ * \param addr [OUT]            pointer to returned abstract address
  *
  * \return Non-negative on success or negative on failure
  */
@@ -91,7 +105,7 @@ NA_Addr_free(na_class_t *network_class, na_addr_t addr);
 /**
  * Get the maximum size of messages supported by send/recv.
  *
- * \param network_class [IN] pointer to network class
+ * \param network_class [IN]    pointer to network class
  *
  * \return Non-negative value
  */
@@ -101,7 +115,7 @@ NA_Msg_get_maximum_size(na_class_t *network_class);
 /**
  * Get the maximum tag value that can be used by send/recv.
  *
- * \param network_class [IN] pointer to network class
+ * \param network_class [IN]    pointer to network class
  *
  * \return Non-negative value
  */
