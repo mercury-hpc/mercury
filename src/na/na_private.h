@@ -13,6 +13,15 @@
 
 #include "na.h"
 
+/* Remove warnings when plugin does not use callback arguments */
+#ifdef __cplusplus
+    #define NA_UNUSED
+#elif __GNUC__ >= 4
+    #define NA_UNUSED __attribute__((unused))
+#else
+    #define NA_UNUSED
+#endif
+
 /* NA class definition */
 struct na_class {
     /* Finalize callback */

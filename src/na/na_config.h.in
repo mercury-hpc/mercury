@@ -67,13 +67,5 @@
     typedef uint64_t na_ptr_t;
 #endif
 
-#ifdef __cplusplus
-    #define NA_UNUSED
-#elif __GNUC__ >= 4
-    #define NA_UNUSED __attribute__((unused))
-#else
-    #define NA_UNUSED
-#endif
-
 #endif /* NA_CONFIG_H */
 
