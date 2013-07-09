@@ -26,11 +26,13 @@
 #include <assert.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
 
 static int na_bmi_finalize(void);
 static int na_bmi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_bmi_addr_free(na_addr_t addr);
 static na_size_t na_bmi_msg_get_maximum_size(void);
+static na_tag_t na_bmi_msg_get_maximum_tag(void);
 static int na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 static int na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
@@ -59,6 +61,7 @@ static na_class_t na_bmi_g = {
         na_bmi_addr_lookup,            /* addr_lookup */
         na_bmi_addr_free,              /* addr_free */
         na_bmi_msg_get_maximum_size,   /* msg_get_maximum_size */
+        na_bmi_msg_get_maximum_tag,    /* msg_get_maximum_tag */
         na_bmi_msg_send_unexpected,    /* msg_send_unexpected */
         na_bmi_msg_recv_unexpected,    /* msg_recv_unexpected */
         na_bmi_msg_send,               /* msg_send */
@@ -103,12 +106,18 @@ typedef struct bmi_onesided_info {
     bmi_size_t disp;       /* Offset from initial address */
     bmi_size_t count;      /* Number of entries */
     bmi_onesided_op_t op;  /* Operation requested */
+    na_tag_t tag;          /* Tag for the data transfer */
+    na_tag_t ack_tag;      /* Optional tag used for acknowledgment */
 } bmi_onesided_info_t;
 
 static bool is_server = 0; /* Used in server mode */
 static bmi_context_id    bmi_context;
 static hg_list_entry_t  *unexpected_list;
 static hg_thread_mutex_t unexpected_list_mutex;
+
+/* Mutex used for tag generation */
+/* TODO use atomic increment instead */
+static hg_thread_mutex_t tag_mutex;
 
 static hg_thread_mutex_t request_mutex;
 static hg_thread_mutex_t testcontext_mutex;
@@ -129,10 +138,11 @@ pointer_hash(void *location)
 
 #define NA_BMI_UNEXPECTED_SIZE 4096
 
+/* Max tag */
+#define NA_BMI_MAX_TAG (INT_MAX >> 2)
+
 /* Default tag used for one-sided over two-sided */
-#define NA_BMI_ONESIDED_TAG        0x80
-#define NA_BMI_ONESIDED_DATA_TAG   0x81
-#define NA_BMI_ONESIDED_ACK_TAG    0x82
+#define NA_BMI_ONESIDED_TAG (NA_BMI_MAX_TAG + 1)
 
 #ifdef NA_HAS_CLIENT_THREAD
 static hg_thread_mutex_t finalizing_mutex;
@@ -141,13 +151,7 @@ static hg_thread_t       progress_service;
 #endif
 static hg_thread_mutex_t mem_map_mutex;
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_progress_service
- *
- * Purpose:     Service to make one-sided progress
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 #ifdef NA_HAS_CLIENT_THREAD
 static void*
 na_bmi_progress_service(void NA_UNUSED *args)
@@ -174,13 +178,21 @@ na_bmi_progress_service(void NA_UNUSED *args)
 }
 #endif
 
-/*---------------------------------------------------------------------------
- * Function:    NA_BMI_Init
- *
- * Purpose:     Initialize the network abstraction layer
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
+static na_tag_t
+na_bmi_gen_onesided_tag(void)
+{
+    static long int tag = NA_BMI_ONESIDED_TAG + 1;
+
+    hg_thread_mutex_lock(&tag_mutex);
+    tag++;
+    if (tag == INT_MAX) tag = NA_BMI_ONESIDED_TAG + 1;
+    hg_thread_mutex_unlock(&tag_mutex);
+
+    return tag;
+}
+
+/*---------------------------------------------------------------------------*/
 na_class_t *
 NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
 {
@@ -208,6 +220,7 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
     /* Initialize cond variable */
     hg_thread_mutex_init(&unexpected_list_mutex);
     hg_thread_mutex_init(&request_mutex);
+    hg_thread_mutex_init(&tag_mutex);
     hg_thread_mutex_init(&testcontext_mutex);
     hg_thread_cond_init(&testcontext_cond);
     is_testing_context = 0;
@@ -223,15 +236,7 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
     return &na_bmi_g;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_finalize
- *
- * Purpose:     Finalize the network abstraction layer
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_finalize(void)
 {
@@ -266,20 +271,13 @@ na_bmi_finalize(void)
     hg_thread_mutex_destroy(&request_mutex);
     hg_thread_mutex_destroy(&testcontext_mutex);
     hg_thread_cond_destroy(&testcontext_cond);
+    hg_thread_mutex_destroy(&tag_mutex);
     hg_thread_mutex_destroy(&mem_map_mutex);
 
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_addr_lookup
- *
- * Purpose:     Lookup an addr from a peer address/name
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_addr_lookup(const char *name, na_addr_t *addr)
 {
@@ -302,15 +300,7 @@ na_bmi_addr_lookup(const char *name, na_addr_t *addr)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_addr_free
- *
- * Purpose:     Free the addr from the list of peers
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_addr_free(na_addr_t addr)
 {
@@ -328,13 +318,7 @@ na_bmi_addr_free(na_addr_t addr)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_msg_get_maximum_size
- *
- * Purpose:     Get the maximum size of a message
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static na_size_t
 na_bmi_msg_get_maximum_size(void)
 {
@@ -342,15 +326,16 @@ na_bmi_msg_get_maximum_size(void)
     return max_unexpected_size;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_msg_send_unexpected
- *
- * Purpose:     Send an unexpected message to dest
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
+static na_tag_t
+na_bmi_msg_get_maximum_tag(void)
+{
+    na_tag_t max_tag = NA_BMI_MAX_TAG;
+
+    return max_tag;
+}
+
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
@@ -387,15 +372,7 @@ na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_msg_recv_unexpected
- *
- * Purpose:     Receive an unexpected message
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
@@ -482,15 +459,7 @@ done:
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_msg_send
- *
- * Purpose:     Send an expected message to dest
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
@@ -529,15 +498,7 @@ na_bmi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_msg_recv
- *
- * Purpose:     Receive an expected message from source
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg)
@@ -577,15 +538,7 @@ na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_mem_register
- *
- * Purpose:     Register memory for RMA operations
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags, na_mem_handle_t *mem_handle)
 {
@@ -615,15 +568,7 @@ na_bmi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_mem_deregister
- *
- * Purpose:     Deregister memory
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_mem_deregister(na_mem_handle_t mem_handle)
 {
@@ -650,28 +595,14 @@ na_bmi_mem_deregister(na_mem_handle_t mem_handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_mem_handle_get_serialize_size
- *
- * Purpose:     Get size required to serialize handle
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static na_size_t
 na_bmi_mem_handle_get_serialize_size(na_mem_handle_t NA_UNUSED mem_handle)
 {
     return sizeof(bmi_mem_handle_t);
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_mem_handle_serialize
- *
- * Purpose:     Serialize memory handle into a buffer
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_handle)
 {
@@ -689,15 +620,7 @@ na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_h
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_mem_handle_deserialize
- *
- * Purpose:     Deserialize memory handle from buffer
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size)
 {
@@ -716,15 +639,7 @@ na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_s
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_mem_handle_free
- *
- * Purpose:     Free memory handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_mem_handle_free(na_mem_handle_t mem_handle)
 {
@@ -741,15 +656,7 @@ na_bmi_mem_handle_free(na_mem_handle_t mem_handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_put
- *
- * Purpose:     Put data to remote target
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
@@ -784,6 +691,8 @@ na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     onesided_info.disp = bmi_remote_offset;
     onesided_info.count = bmi_length;
     onesided_info.op = BMI_ONESIDED_PUT;
+    onesided_info.tag = na_bmi_gen_onesided_tag();
+    onesided_info.ack_tag = na_bmi_gen_onesided_tag();
 
     /* Send to one-sided thread key to access mem_handle */
     ret = na_bmi_msg_send_unexpected(&onesided_info, sizeof(bmi_onesided_info_t),
@@ -802,7 +711,7 @@ na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 
     /* Do an asynchronous send */
     ret = na_bmi_msg_send((char*) bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
-            remote_addr, NA_BMI_ONESIDED_DATA_TAG, request, NULL);
+            remote_addr, onesided_info.tag, request, NULL);
     if (ret != NA_SUCCESS) {
         NA_ERROR_DEFAULT("Could not send data");
         ret = NA_FAIL;
@@ -812,7 +721,7 @@ na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     /* Wrap an ack request around the original request */
     bmi_request = (bmi_request_t *) *request;
     ret = na_bmi_msg_recv(&bmi_request->ack, sizeof(bool),
-            remote_addr, NA_BMI_ONESIDED_ACK_TAG, &bmi_request->ack_request, NULL);
+            remote_addr, onesided_info.ack_tag, &bmi_request->ack_request, NULL);
     if (ret != NA_SUCCESS) {
         NA_ERROR_DEFAULT("Could not recv ack");
         ret = NA_FAIL;
@@ -822,15 +731,7 @@ na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_get
- *
- * Purpose:     Get data from remote target
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
@@ -859,6 +760,8 @@ na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     onesided_info.disp = bmi_remote_offset;
     onesided_info.count = bmi_length;
     onesided_info.op = BMI_ONESIDED_GET;
+    onesided_info.tag = na_bmi_gen_onesided_tag();
+    onesided_info.ack_tag = 0;
 
     ret = na_bmi_msg_send_unexpected(&onesided_info, sizeof(bmi_onesided_info_t),
             remote_addr, NA_BMI_ONESIDED_TAG, &onesided_request, NULL);
@@ -876,20 +779,12 @@ na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 
     /* Simply do an asynchronous recv */
     ret = na_bmi_msg_recv((char*) bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
-            remote_addr, NA_BMI_ONESIDED_DATA_TAG, request, NULL);
+            remote_addr, onesided_info.tag, request, NULL);
 
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_process_unexpected
- *
- * Purpose:     Process unexpected messages when making progress
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_process_unexpected(void)
 {
@@ -924,15 +819,7 @@ na_bmi_process_unexpected(void)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_wait
- *
- * Purpose:     Wait for a request to complete or until timeout (ms) is reached
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 {
@@ -1088,15 +975,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    na_bmi_progress
- *
- * Purpose:     Track completion of RMA operations and make progress
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
+/*---------------------------------------------------------------------------*/
 static int
 na_bmi_progress(unsigned int timeout, na_status_t *status)
 {
@@ -1198,7 +1077,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
         /* Remote wants to do a put so wait in a recv */
         case BMI_ONESIDED_PUT:
             ret = na_bmi_msg_recv((char*) bmi_mem_handle->base + onesided_info.disp,
-                    onesided_info.count, remote_addr, NA_BMI_ONESIDED_DATA_TAG,
+                    onesided_info.count, remote_addr, onesided_info.tag,
                     &onesided_data_request, NULL);
             if (ret != NA_SUCCESS) {
                 NA_ERROR_DEFAULT("Could not recv data");
@@ -1207,7 +1086,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
             }
             /* Send an ack to tell the server that the data is here */
             ack = 1;
-            ret = na_bmi_msg_send(&ack, sizeof(bool), remote_addr, NA_BMI_ONESIDED_ACK_TAG,
+            ret = na_bmi_msg_send(&ack, sizeof(bool), remote_addr, onesided_info.ack_tag,
                     &onesided_ack_request, NULL);
             if (ret != NA_SUCCESS) {
                 NA_ERROR_DEFAULT("Could not send ack");
@@ -1231,7 +1110,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
         /* Remote wants to do a get so do a send */
         case BMI_ONESIDED_GET:
             ret = na_bmi_msg_send((char*) bmi_mem_handle->base + onesided_info.disp,
-                    onesided_info.count, remote_addr, NA_BMI_ONESIDED_DATA_TAG,
+                    onesided_info.count, remote_addr, onesided_info.tag,
                     &onesided_data_request, NULL);
             if (ret != NA_SUCCESS) {
                 NA_ERROR_DEFAULT("Could not send data");

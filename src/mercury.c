@@ -45,9 +45,8 @@ typedef struct hg_proc_info {
 /* Function map */
 static hg_hash_table_t *func_map;
 
-/* TLS key for tag */
-static hg_thread_key_t ptk_tag;
-static unsigned int next_tag = 0;
+/* Mutex used for tag generation */
+/* TODO use atomic increment instead */
 static hg_thread_mutex_t tag_mutex;
 
 /* Pointer to network abstraction class */
@@ -56,8 +55,6 @@ static na_class_t *hg_na_class = NULL;
 /* Pointer to function called at termination */
 static void (*hg_atfinalize)(void) = NULL;
 static bool hg_dont_atexit = 0;
-
-#define HG_MAXTAG 65536
 
 /* Hash functions for function map */
 int hg_int_equal(void *vlocation1, void *vlocation2)
@@ -83,16 +80,13 @@ unsigned int hg_int_hash(void *vlocation)
 /* Generate a new tag */
 static inline na_tag_t gen_tag(void)
 {
-    long int tag;
+    static long int tag = 0;
 
-    tag = (long int) hg_thread_getspecific(ptk_tag);
-    if (!tag) {
-        hg_thread_mutex_lock(&tag_mutex);
-        tag = ++next_tag;
-        hg_thread_mutex_unlock(&tag_mutex);
-        hg_thread_setspecific(ptk_tag, (void*) tag);
-    }
-    assert(tag < HG_MAXTAG);
+    hg_thread_mutex_lock(&tag_mutex);
+    tag++;
+    if (tag == NA_Msg_get_maximum_tag(hg_na_class)) tag = 0;
+    hg_thread_mutex_unlock(&tag_mutex);
+
     return tag;
 }
 
@@ -139,10 +133,8 @@ int HG_Init(na_class_t *network_class)
 
     hg_na_class = network_class;
 
-    /* Initialize TLS tags */
+    /* Initialize mutex for tags */
     hg_thread_mutex_init(&tag_mutex);
-    hg_thread_key_create(&ptk_tag);
-    next_tag = 1;
 
     /* Create new function map */
     func_map = hg_hash_table_new(hg_int_hash, hg_int_equal);
@@ -200,9 +192,8 @@ int HG_Finalize(void)
     hg_hash_table_free(func_map);
     func_map = NULL;
 
-    /* Free TLS key */
+    /* Free tag mutex */
     hg_thread_mutex_destroy(&tag_mutex);
-    hg_thread_key_delete(ptk_tag);
 
     hg_na_class = NULL;
 
@@ -334,7 +325,6 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
     hg_proc_t enc_proc = HG_PROC_NULL;
     uint8_t extra_send_buf_used = 0;
 
-    static int tag_incr = 0;
     na_tag_t   send_tag, recv_tag;
 
     hg_priv_request_t *priv_request = NULL;
@@ -440,10 +430,8 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
     }
 
     /* Post the send message and pre-post the recv message */
-    send_tag = gen_tag() + tag_incr;
-    recv_tag = gen_tag() + tag_incr;
-    tag_incr++;
-    if (send_tag > HG_MAXTAG) tag_incr = 0;
+    send_tag = gen_tag();
+    recv_tag = send_tag;
 
     na_ret = NA_Msg_send_unexpected(hg_na_class, priv_request->send_buf,
             priv_request->send_buf_size, addr, send_tag,

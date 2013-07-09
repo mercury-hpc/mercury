@@ -99,6 +99,16 @@ NA_EXPORT na_size_t
 NA_Msg_get_maximum_size(na_class_t *network_class);
 
 /**
+ * Get the maximum tag value that can be used by send/recv.
+ *
+ * \param network_class [IN] pointer to network class
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_tag_t
+NA_Msg_get_maximum_tag(na_class_t *network_class);
+
+/**
  * Send an unexpected message to dest.
  * Unexpected sends do not require a matching receive to complete.
  *

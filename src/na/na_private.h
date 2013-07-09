@@ -33,6 +33,7 @@ struct na_class {
 
     /* Message callbacks (used for metadata transfer) */
     na_size_t (*msg_get_maximum_size)(void);
+    na_tag_t (*msg_get_maximum_tag)(void);
     int (*msg_send_unexpected)(const void *buf, na_size_t buf_size, na_addr_t dest,
             na_tag_t tag, na_request_t *request, void *op_arg);
     int (*msg_recv_unexpected)(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
