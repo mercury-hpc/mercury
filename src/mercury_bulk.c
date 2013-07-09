@@ -89,7 +89,7 @@ int HG_Bulk_init(na_class_t *network_class)
     /*
      * Install atexit() library cleanup routine unless hg_dont_atexit is set.
      * Once we add something to the atexit() list it stays there permanently,
-     * so we set H5_dont_atexit_g after we add it to prevent adding it again
+     * so we set bulk_dont_atexit after we add it to prevent adding it again
      * later if the library is closed and reopened.
      */
     if (!bulk_dont_atexit) {
@@ -147,6 +147,24 @@ int HG_Bulk_initialized(bool *flag, na_class_t **network_class)
     if (network_class) *network_class = (*flag) ? bulk_na_class : 0;
 
     return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    HG_Bulk_disable_auto_finalize
+ *
+ * Purpose:     Do not register HG_Bulk_finalize with atexit
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int HG_Bulk_disable_auto_finalize(void)
+{
+    int ret = HG_SUCCESS;
+
+    bulk_dont_atexit = 1;
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------

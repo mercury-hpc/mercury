@@ -78,7 +78,7 @@ unsigned int hg_int_hash(void *vlocation)
 }
 
 /* Generate a new tag */
-static inline na_tag_t gen_tag(void)
+static inline na_tag_t hg_gen_tag(void)
 {
     static long int tag = 0;
 
@@ -148,7 +148,7 @@ int HG_Init(na_class_t *network_class)
     /*
      * Install atexit() library cleanup routine unless hg_dont_atexit is set.
      * Once we add something to the atexit() list it stays there permanently,
-     * so we set H5_dont_atexit_g after we add it to prevent adding it again
+     * so we set hg_dont_atexit after we add it to prevent adding it again
      * later if the library is closed and reopened.
      */
     if (!hg_dont_atexit) {
@@ -170,7 +170,7 @@ int HG_Init(na_class_t *network_class)
  */
 int HG_Finalize(void)
 {
-    int ret = HG_SUCCESS, na_ret;
+    int ret = HG_SUCCESS;
 
     if (!hg_na_class) {
         HG_ERROR_DEFAULT("Already finalized");
@@ -180,13 +180,6 @@ int HG_Finalize(void)
 
     /* Call extra finalize callback if required */
     if (hg_atfinalize) hg_atfinalize();
-
-    na_ret = NA_Finalize(hg_na_class);
-    if (na_ret != NA_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not finalize");
-        ret = HG_FAIL;
-        return ret;
-    }
 
     /* Delete function map */
     hg_hash_table_free(func_map);
@@ -277,6 +270,24 @@ hg_id_t HG_Register(const char *func_name,
     }
 
     return *id;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    HG_Disable_auto_finalize
+ *
+ * Purpose:     Do not register HG_Finalize with atexit
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+int HG_Disable_auto_finalize(void)
+{
+    int ret = HG_SUCCESS;
+
+    hg_dont_atexit = 1;
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -430,7 +441,7 @@ int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_stru
     }
 
     /* Post the send message and pre-post the recv message */
-    send_tag = gen_tag();
+    send_tag = hg_gen_tag();
     recv_tag = send_tag;
 
     na_ret = NA_Msg_send_unexpected(hg_na_class, priv_request->send_buf,

@@ -377,7 +377,7 @@ int HG_Handler_init(na_class_t *network_class)
  */
 int HG_Handler_finalize(void)
 {
-    int ret = HG_SUCCESS, na_ret;
+    int ret = HG_SUCCESS;
 
     if (!handler_na_class) {
         HG_ERROR_DEFAULT("Already finalized");
@@ -389,13 +389,6 @@ int HG_Handler_finalize(void)
     ret = hg_handler_process_response_list(HG_MAX_IDLE_TIME);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not process response list");
-        ret = HG_FAIL;
-        return ret;
-    }
-
-    na_ret = NA_Finalize(handler_na_class);
-    if (na_ret != NA_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not finalize");
         ret = HG_FAIL;
         return ret;
     }
