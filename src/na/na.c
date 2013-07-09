@@ -201,3 +201,11 @@ NA_Progress(na_class_t *network_class,
     assert(network_class);
     return network_class->progress(timeout, status);
 }
+
+/*---------------------------------------------------------------------------*/
+int
+NA_Request_free(na_class_t *network_class, na_request_t request)
+{
+    assert(network_class);
+    return network_class->request_free(request);
+}

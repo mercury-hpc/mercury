@@ -370,6 +370,18 @@ NA_EXPORT int
 NA_Progress(na_class_t *network_class,
         unsigned int timeout, na_status_t *status);
 
+/**
+ * Free a request without waiting for it to complete (request may be active
+ * or inactive).
+ *
+ * \param network_class [IN]    pointer to network class
+ * \param request [IN]          abstract request
+ *
+ * \return Non-negative on success or negative on failure
+ */
+NA_EXPORT int
+NA_Request_free(na_class_t *network_class, na_request_t request);
+
 #ifdef __cplusplus
 }
 #endif

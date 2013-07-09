@@ -52,6 +52,7 @@ static int na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
 static int na_mpi_wait(na_request_t request, unsigned int timeout,
         na_status_t *status);
 static int na_mpi_progress(unsigned int timeout, na_status_t *status);
+static int na_mpi_request_free(na_request_t request);
 
 static na_class_t na_mpi_g = {
         na_mpi_finalize,               /* finalize */
@@ -73,7 +74,8 @@ static na_class_t na_mpi_g = {
         na_mpi_put,                    /* put */
         na_mpi_get,                    /* get */
         na_mpi_wait,                   /* wait */
-        na_mpi_progress                /* progress */
+        na_mpi_progress,               /* progress */
+        na_mpi_request_free            /* request_free */
 };
 
 /* FIXME Force MPI version to 2 for now */
@@ -1198,3 +1200,33 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
     return NA_FAIL;
 }
 #endif
+
+/*---------------------------------------------------------------------------*/
+static int
+na_mpi_request_free(na_request_t request)
+{
+    mpi_req_t *mpi_request = (mpi_req_t*) request;
+    int ret = NA_SUCCESS;
+
+    /* Do not want to free the request if another thread is testing it */
+    hg_thread_mutex_lock(&mpi_test_mutex);
+
+    if (!mpi_request) {
+        NA_ERROR_DEFAULT("NULL request");
+        ret = NA_FAIL;
+    } else {
+        if (mpi_request->request != MPI_REQUEST_NULL) {
+            MPI_Request_free(&mpi_request->request);
+        }
+        if (mpi_request->data_request != MPI_REQUEST_NULL) {
+            MPI_Request_free(&mpi_request->data_request);
+        }
+        free(mpi_request);
+        mpi_request = NULL;
+        /* TODO may need to do extra things here */
+    }
+
+    hg_thread_mutex_unlock(&mpi_test_mutex);
+
+    return ret;
+}

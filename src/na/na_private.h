@@ -69,6 +69,7 @@ struct na_class {
     /* Progress callbacks */
     int (*wait)(na_request_t request, unsigned int timeout, na_status_t *status);
     int (*progress)(unsigned int timeout, na_status_t *status);
+    int (*request_free)(na_request_t request);
 };
 
 #endif /* NA_PRIVATE_H */

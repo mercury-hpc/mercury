@@ -55,6 +55,7 @@ static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
         na_size_t length, na_addr_t remote_addr, na_request_t *request);
 static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status);
 static int na_bmi_progress(unsigned int timeout, na_status_t *status);
+static int na_bmi_request_free(na_request_t request);
 
 static na_class_t na_bmi_g = {
         na_bmi_finalize,               /* finalize */
@@ -76,7 +77,8 @@ static na_class_t na_bmi_g = {
         na_bmi_put,                    /* put */
         na_bmi_get,                    /* get */
         na_bmi_wait,                   /* wait */
-        na_bmi_progress                /* progress */
+        na_bmi_progress,               /* progress */
+        na_bmi_request_free            /* request_free */
 };
 
 typedef struct bmi_request bmi_request_t;
@@ -1138,6 +1140,30 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
     }
     na_bmi_addr_free(remote_addr);
     remote_addr = NA_ADDR_NULL;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_bmi_request_free(na_request_t request)
+{
+    bmi_request_t *bmi_request = (bmi_request_t*) request;
+    int ret = NA_SUCCESS;
+
+    /* Do not want to free the request if another thread is testing it */
+    hg_thread_mutex_lock(&request_mutex);
+
+    if (!bmi_request) {
+        NA_ERROR_DEFAULT("NULL request");
+        ret = NA_FAIL;
+    } else {
+        free(bmi_request);
+        bmi_request = NULL;
+        /* TODO may need to do extra things here */
+    }
+
+    hg_thread_mutex_unlock(&request_mutex);
 
     return ret;
 }
