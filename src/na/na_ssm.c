@@ -142,6 +142,7 @@ static ssm_me me_msg;
 static char *msgbuf;    //XXX temp
 static int ssmport;
 static ssm_Iaddr iaddr;
+static char c_proto[64];
 
 //for TCP, UDP or IB...
 typedef int (*na_ssm_connect)(void *addr, void *result_halder);
@@ -312,6 +313,7 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
     printf("Port = %d\n", port);
 #endif
     ssmport = port;
+    strncpy(c_proto, proto, sizeof(c_proto));
     if (strcmp(proto, "tcp") == 0) {
         itp = ssmptcp_new_tp(port, SSM_NOF);
         if(itp == NULL){
@@ -397,13 +399,20 @@ static int na_ssm_addr_lookup(const char *name, na_addr_t *addr)
     printf("\tname = %s, addr = %p \n", name, addr);
 #endif
     na_ssm_destinfo_t dest;
-    //addr_parser(name, &dest);
+    addr_parser(name, &dest);
     //
-    
+    if(strcmp(dest.proto, c_proto)){
+        fprintf(stderr, "ERROR: protocol does not match\n");
+        return NA_FAIL;
+    }
+    if(dest.port != ssmport){
+        fprintf(stderr, "ERROR: port does not match\n");
+        return NA_FAIL;
+    }
 
     ssmptcp_addrargs_t addrargs = {
-        .host = name,/*dest.hostname,*/
-        .port = ssmport,/*dest.port,*/
+        .host = dest.hostname,
+        .port = dest.port,
     };
 
     printf("\tlookup host = %s, port = %d\n", name, ssmport);
