@@ -14,6 +14,8 @@
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
+#include "na_private.h"
+#include "na_error.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +32,7 @@ static int na_ssm_finalize(void);
 static int na_ssm_addr_lookup(const char *name, na_addr_t *addr);
 static int na_ssm_addr_free(na_addr_t addr);
 static na_size_t na_ssm_msg_get_maximum_size(void);
+static na_tag_t na_ssm_msg_get_maximum_tag(void);
 static int na_ssm_msg_send_unexpected(const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg);
 static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
@@ -60,6 +63,7 @@ static na_class_t na_ssm_g = {
         na_ssm_addr_lookup,            /* addr_lookup */
         na_ssm_addr_free,              /* addr_free */
         na_ssm_msg_get_maximum_size,   /* msg_get_maximum_size */
+        na_ssm_msg_get_maximum_tag,
         na_ssm_msg_send_unexpected,    /* msg_send_unexpected */
         na_ssm_msg_recv_unexpected,    /* msg_recv_unexpected */
         na_ssm_msg_send,               /* msg_send */
@@ -452,6 +456,23 @@ static na_size_t na_ssm_msg_get_maximum_size(void)
     //TODO fix
     return NA_SSM_EXPECTED_SIZE;
 }
+
+
+/*---------------------------------------------------------------------------
+ * Function:    na_ssm_msg_get_maximum_tag
+ *
+ * Purpose:     Get the maximum tag of a message
+ *
+ *---------------------------------------------------------------------------
+ */
+static na_tag_t na_ssm_msg_get_maximum_tag(void)
+{
+    //TODO temp 
+    ssm_msg_tag_t t = 0;
+    t--;
+    return t;
+}
+
 
 /*---------------------------------------------------------------------------
  * Function:    na_ssm_msg_send_unexpected
