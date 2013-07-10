@@ -48,6 +48,7 @@ int main(int argc, char *argv[])
 
     for (peer = 0; peer < number_of_peers; peer++) {
         na_size_t recv_buf_len = 0;
+        recv_buf_len = send_buf_len;
 
         na_tag_t recv_tag = 100;
         na_tag_t send_tag = 101;
