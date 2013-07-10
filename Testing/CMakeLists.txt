@@ -132,16 +132,18 @@ endif()
 
 #------------------------------------------------------------------------------
 # Scaling bandwidth bulk data shipper test using pipelining
-add_executable(client_pipeline_scale client_pipeline_scale.c)
-target_link_libraries(client_pipeline_scale mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_pipeline_scale)
-endif()
+if(NA_USE_MPI)
+  add_executable(client_pipeline_scale client_pipeline_scale.c)
+  target_link_libraries(client_pipeline_scale mercury_test)
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(client_pipeline_scale)
+  endif()
 
-add_executable(server_pipeline_scale server_pipeline_scale.c)
-target_link_libraries(server_pipeline_scale mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_pipeline_scale)
+  add_executable(server_pipeline_scale server_pipeline_scale.c)
+  target_link_libraries(server_pipeline_scale mercury_test)
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(server_pipeline_scale)
+  endif()
 endif()
 
 #------------------------------------------------------------------------------

@@ -8,6 +8,14 @@ set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES
   ${CMAKE_THREAD_LIBS_INIT}
 )
 
+# Rt
+if(NOT WIN32)
+  set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES
+    ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
+    rt
+  )
+endif()
+
 #------------------------------------------------------------------------------
 # Set sources
 #------------------------------------------------------------------------------
