@@ -17,6 +17,7 @@
 typedef hg_uint32_t hg_id_t;          /* Operation ID of the operation */
 typedef hg_bool_t   hg_status_t;      /* Status of the operation */
 typedef void *      hg_request_t;     /* Abstract request */
+typedef void *      hg_context_t;     /* Abstract request context */
 typedef void *      hg_proc_t;        /* Abstract serialization processor */
 typedef void *      hg_handle_t;      /* Abstract RPC handle */
 typedef void *      hg_bulk_t;        /* Abstract bulk data handle */
