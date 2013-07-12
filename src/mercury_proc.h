@@ -11,16 +11,17 @@
 #ifndef MERCURY_PROC_H
 #define MERCURY_PROC_H
 
-#include "mercury_config.h"
+#include "mercury_types.h"
 #include "mercury_error.h"
 #include "mercury_bulk.h"
 #include "iofsl_compat.h"
 
-#include <stddef.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
+#ifdef MERCURY_HAS_XDR
+#include <rpc/types.h>
+#include <rpc/xdr.h>
+#endif
 
 #ifndef HG_PROC_INLINE
 # if __GNUC__ && !__GNUC_STDC_INLINE__
@@ -29,28 +30,6 @@
 #  define HG_PROC_INLINE inline
 # endif
 #endif
-
-/* TODO may want a better solution than ifdef MERCURY_HAS_XDR */
-#ifdef MERCURY_HAS_XDR
-#include <rpc/types.h>
-#include <rpc/xdr.h>
-#endif
-
-typedef void * hg_proc_t;
-
-#define HG_PROC_NULL ((hg_proc_t)0)
-
-/*
- * Proc operations.  HG_ENCODE causes the type to be encoded into the
- * stream.  HG_DECODE causes the type to be extracted from the stream.
- * HG_FREE can be used to release the space allocated by an HG_DECODE
- * request.
- */
-typedef enum {
-    HG_ENCODE,
-    HG_DECODE,
-    HG_FREE
-} hg_proc_op_t;
 
 /*
  * 0      HG_PROC_HEADER_SIZE              size
@@ -61,92 +40,187 @@ typedef enum {
 #define HG_PROC_MAX_HEADER_SIZE 64
 
 typedef struct hg_proc_buf {
-    void    *buf;       /* Pointer to allocated buffer */
-    void    *buf_ptr;   /* Pointer to current position */
-    size_t   size;      /* Total buffer size */
-    size_t   size_left; /* Available size for user */
-    bool     is_mine;
+    void *    buf;       /* Pointer to allocated buffer */
+    void *    buf_ptr;   /* Pointer to current position */
+    size_t    size;      /* Total buffer size */
+    size_t    size_left; /* Available size for user */
+    hg_bool_t is_mine;
 #ifdef MERCURY_HAS_XDR
     XDR      xdr;
 #endif
 } hg_proc_buf_t;
 
 typedef struct hg_priv_proc {
-    hg_proc_op_t   op;
-    hg_proc_buf_t *current_buf;
-    hg_proc_buf_t  proc_buf;
-    hg_proc_buf_t  extra_buf;
+    hg_proc_op_t    op;
+    hg_proc_buf_t * current_buf;
+    hg_proc_buf_t   proc_buf;
+    hg_proc_buf_t   extra_buf;
 } hg_priv_proc_t;
-
-typedef const char * hg_string_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Can be used to allocate a buffer that will be used by the generic proc
- * (use free to free it)
+/**
+ * Can be used to allocate a buffer that will be used by the generic processor.
+ * Buffer can be freed using "free".
+ *
+ * \param mem_ptr [IN]          pointer to memory address
+ * \param size [IN]             request buffer size
+ *
+ * \return Non-negative on success or negative on failure
  */
-int hg_proc_buf_alloc(void **mem_ptr, size_t size);
+HG_EXPORT int
+hg_proc_buf_alloc(void **mem_ptr, size_t size);
 
-/* Create/Free a new encoding/decoding processor from a given buffer */
-int hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc);
-int hg_proc_free(hg_proc_t proc);
+/**
+ * Create a new encoding/decoding processor.
+ *
+ * \param buf [IN]              pointer to buffer that will be used for
+ *                              serialization/deserialization
+ * \param buf_size [IN]         buffer size
+ * \param op [IN]               operation type: HG_ENCODE / HG_DECODE / HG_FREE
+ * \param proc [OUT]            pointer to abstract processor object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc);
 
-/* Get current operation mode used for processor (Only valid if proc is created) */
-hg_proc_op_t hg_proc_get_op(hg_proc_t proc);
+/**
+ * Free the processor.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+hg_proc_free(hg_proc_t proc);
 
-/* Get/Request buffer size for processing */
-size_t hg_proc_get_size(hg_proc_t proc);
-int hg_proc_set_size(hg_proc_t proc, size_t buf_size);
+/**
+ * Get the operation type associated to the processor.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Operation type
+ */
+HG_EXPORT hg_proc_op_t
+hg_proc_get_op(hg_proc_t proc);
 
-/* Get size left for processing (info) */
-size_t hg_proc_get_size_left(hg_proc_t proc);
+/**
+ * Get buffer size available for processing.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Non-negative size value
+ */
+HG_EXPORT size_t
+hg_proc_get_size(hg_proc_t proc);
 
-/* Get/Set current buffer position */
-void * hg_proc_get_buf_ptr(hg_proc_t proc);
-int hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr);
+/**
+ * Request a new buffer size. This will modify the size of the buffer attached
+ * to the processor or create an extra processing buffer.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param buf_size [IN]         buffer size
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+hg_proc_set_size(hg_proc_t proc, size_t buf_size);
 
-/* Get extra buffer */
-void * hg_proc_get_extra_buf(hg_proc_t proc);
+/**
+ * Get size left for processing.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Non-negative size value
+ */
+HG_EXPORT size_t
+hg_proc_get_size_left(hg_proc_t proc);
 
-/* Get extra buffer size */
-size_t hg_proc_get_extra_size(hg_proc_t proc);
+/**
+ * Get pointer to current buffer (for manual encoding).
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Buffer pointer
+ */
+HG_EXPORT void *
+hg_proc_get_buf_ptr(hg_proc_t proc);
 
-/* Set extra buffer to mine (if other calls mine, buffer is no longer freed
+/**
+ * Set new buffer pointer (for manual encoding).
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param buf_ptr [IN]          pointer to buffer used by the processor
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr);
+
+/**
+ * Get eventual extra buffer used by processor.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Pointer to buffer or NULL if no extra buffer has been used
+ */
+HG_EXPORT void *
+hg_proc_get_extra_buf(hg_proc_t proc);
+
+/**
+ * Get eventual size of the extra buffer used by processor.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Size of buffer or 0 if no extra buffer has been used
+ */
+HG_EXPORT size_t
+hg_proc_get_extra_size(hg_proc_t proc);
+
+/**
+ * Set extra buffer to mine (if other calls mine, buffer is no longer freed
  * after hg_proc_free)
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Non-negative on success or negative on failure
  */
-int hg_proc_set_extra_buf_is_mine(hg_proc_t proc, bool mine);
+HG_EXPORT int
+hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
 
-/* Inline prototypes */
+/**
+ * Inline prototypes (do not remove)
+ */
 HG_PROC_INLINE unsigned int hg_proc_string_hash(const char *string);
 HG_PROC_INLINE int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
-HG_PROC_INLINE int hg_proc_int8_t(hg_proc_t proc, int8_t *data);
-HG_PROC_INLINE int hg_proc_uint8_t(hg_proc_t proc, uint8_t *data);
-HG_PROC_INLINE int hg_proc_int16_t(hg_proc_t proc, int16_t *data);
-HG_PROC_INLINE int hg_proc_uint16_t(hg_proc_t proc, uint16_t *data);
-HG_PROC_INLINE int hg_proc_int32_t(hg_proc_t proc, int32_t *data);
-HG_PROC_INLINE int hg_proc_uint32_t(hg_proc_t proc, uint32_t *data);
-HG_PROC_INLINE int hg_proc_int64_t(hg_proc_t proc, int64_t *data);
-HG_PROC_INLINE int hg_proc_uint64_t(hg_proc_t proc, uint64_t *data);
+HG_PROC_INLINE int hg_proc_int8_t(hg_proc_t proc, hg_int8_t *data);
+HG_PROC_INLINE int hg_proc_uint8_t(hg_proc_t proc, hg_uint8_t *data);
+HG_PROC_INLINE int hg_proc_int16_t(hg_proc_t proc, hg_int16_t *data);
+HG_PROC_INLINE int hg_proc_uint16_t(hg_proc_t proc, hg_uint16_t *data);
+HG_PROC_INLINE int hg_proc_int32_t(hg_proc_t proc, hg_int32_t *data);
+HG_PROC_INLINE int hg_proc_uint32_t(hg_proc_t proc, hg_uint32_t *data);
+HG_PROC_INLINE int hg_proc_int64_t(hg_proc_t proc, hg_int64_t *data);
+HG_PROC_INLINE int hg_proc_uint64_t(hg_proc_t proc, hg_uint64_t *data);
 HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size);
 HG_PROC_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string);
 HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle);
 HG_PROC_INLINE size_t hg_proc_get_header_size(void);
-HG_PROC_INLINE int hg_proc_header_request(hg_proc_t proc, uint32_t *op_id,
+HG_PROC_INLINE int hg_proc_header_request(hg_proc_t proc, hg_uint32_t *op_id,
         uint8_t *extra_buf_used, hg_bulk_t *extra_handle);
-HG_PROC_INLINE int hg_proc_header_response(hg_proc_t proc, uint8_t *extra_buf_used);
+HG_PROC_INLINE int hg_proc_header_response(hg_proc_t proc, hg_uint8_t *extra_buf_used);
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_string_hash
+/**
+ * Hash function name for unique ID to register.
  *
- * Purpose:     Hash function name for unique ID to register
+ * \param string [IN]           string name
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative ID that corresponds to string name
  */
-HG_PROC_INLINE unsigned int hg_proc_string_hash(const char *string)
+HG_PROC_INLINE unsigned int
+hg_proc_string_hash(const char *string)
 {
     /* This is the djb2 string hash function */
 
@@ -162,17 +236,18 @@ HG_PROC_INLINE unsigned int hg_proc_string_hash(const char *string)
     return result;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_memcpy
+/**
+ * Generic processing routine using memcpy.
+ * NB. Only uses memcpy / use hg_proc_raw for more generic proc.
  *
- * Purpose:     Generic processing routines using memcpy
- *              NB. Only uses memcpy / use hg_proc_raw for more generic proc
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ * \param data_size [IN]        data size
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
+HG_PROC_INLINE int
+hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     const void *src;
@@ -201,191 +276,192 @@ HG_PROC_INLINE int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_int8_t
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_int8_t(hg_proc_t proc, int8_t *data)
+HG_PROC_INLINE int
+hg_proc_int8_t(hg_proc_t proc, hg_int8_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
 #ifdef MERCURY_HAS_XDR
     ret = xdr_int8_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
-    ret = hg_proc_memcpy(priv_proc, data, sizeof(int8_t));
+    ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_int8_t));
 #endif
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_uint8_t
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_uint8_t(hg_proc_t proc, uint8_t *data)
+HG_PROC_INLINE int
+hg_proc_uint8_t(hg_proc_t proc, hg_uint8_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
 #ifdef MERCURY_HAS_XDR
     ret = xdr_uint8_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
-    ret = hg_proc_memcpy(priv_proc, data, sizeof(uint8_t));
+    ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_uint8_t));
 #endif
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_int16_t
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_int16_t(hg_proc_t proc, int16_t *data)
+HG_PROC_INLINE int
+hg_proc_int16_t(hg_proc_t proc, hg_int16_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
 #ifdef MERCURY_HAS_XDR
     ret = xdr_int16_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
-    ret = hg_proc_memcpy(priv_proc, data, sizeof(int16_t));
+    ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_int16_t));
 #endif
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_uint16_t
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_uint16_t(hg_proc_t proc, uint16_t *data)
+HG_PROC_INLINE int
+hg_proc_uint16_t(hg_proc_t proc, hg_uint16_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
 #ifdef MERCURY_HAS_XDR
     ret = xdr_uint16_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
-    ret = hg_proc_memcpy(priv_proc, data, sizeof(uint16_t));
+    ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_uint16_t));
 #endif
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_int32_t
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_int32_t(hg_proc_t proc, int32_t *data)
+HG_PROC_INLINE int
+hg_proc_int32_t(hg_proc_t proc, hg_int32_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
 #ifdef MERCURY_HAS_XDR
     ret = xdr_int32_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
-    ret = hg_proc_memcpy(priv_proc, data, sizeof(int32_t));
+    ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_int32_t));
 #endif
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_uint32_t
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_uint32_t(hg_proc_t proc, uint32_t *data)
+HG_PROC_INLINE int
+hg_proc_uint32_t(hg_proc_t proc, hg_uint32_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
 #ifdef MERCURY_HAS_XDR
     ret = xdr_uint32_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
-    ret = hg_proc_memcpy(priv_proc, data, sizeof(uint32_t));
+    ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_uint32_t));
 #endif
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_int64_t
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_int64_t(hg_proc_t proc, int64_t *data)
+HG_PROC_INLINE int
+hg_proc_int64_t(hg_proc_t proc, hg_int64_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
 #ifdef MERCURY_HAS_XDR
     ret = xdr_int64_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
-    ret = hg_proc_memcpy(priv_proc, data, sizeof(int64_t));
+    ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_int64_t));
 #endif
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_uint64_t
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_uint64_t(hg_proc_t proc, uint64_t *data)
+HG_PROC_INLINE int
+hg_proc_uint64_t(hg_proc_t proc, hg_uint64_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
 #ifdef MERCURY_HAS_XDR
     ret = xdr_uint64_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
-    ret = hg_proc_memcpy(priv_proc, data, sizeof(uint64_t));
+    ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_uint64_t));
 #endif
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_raw
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param buf [IN/OUT]          pointer to buffer
+ * \param buf_size [IN]         buffer size
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
+HG_PROC_INLINE int
+hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
-    uint8_t *buf_ptr;
-    uint8_t *buf_ptr_lim = (uint8_t*) buf + buf_size;
+    hg_uint8_t *buf_ptr;
+    hg_uint8_t *buf_ptr_lim = (hg_uint8_t*) buf + buf_size;
     int ret = HG_FAIL;
 
-    for (buf_ptr = (uint8_t*) buf; buf_ptr < buf_ptr_lim; buf_ptr++) {
+    for (buf_ptr = (hg_uint8_t*) buf; buf_ptr < buf_ptr_lim; buf_ptr++) {
         ret = hg_proc_uint8_t(priv_proc, buf_ptr);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Proc error");
@@ -396,19 +472,19 @@ HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_hg_string_t
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param string [IN/OUT]       pointer to string
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string)
+HG_PROC_INLINE int
+hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
-    uint64_t string_len = 0;
+    hg_uint64_t string_len = 0;
     char *string_buf = NULL;
     int ret = HG_FAIL;
 
@@ -463,21 +539,21 @@ HG_PROC_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_hg_bulk_t
+/**
+ * Generic processing routine.
  *
- * Purpose:     Generic processing routines
+ * \param proc [IN/OUT]         abstract processor object
+ * \param handle [IN/OUT]       pointer to bulk handle
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
+HG_PROC_INLINE int
+hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
     void *buf;
-    uint64_t buf_size = 0;
+    hg_uint64_t buf_size = 0;
 
     switch (priv_proc->op) {
         case HG_ENCODE:
@@ -542,37 +618,39 @@ HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_get_header_size
+/**
+ * Get size reserved for header (separates user data from metadata used for
+ * encoding / decoding).
  *
- * Purpose:     Get required space for storing header data
- *
- * Returns:     Size of header
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative size value
  */
-HG_PROC_INLINE size_t hg_proc_get_header_size(void)
+HG_PROC_INLINE size_t
+hg_proc_get_header_size(void)
 {
     /* TODO this may need to more accurately defined in the future */
     return HG_PROC_MAX_HEADER_SIZE;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_header_function
+/**
+ * Process private information for sending/receiving RPC request.
  *
- * Purpose:     Private information for function shipping
+ * \param proc [IN/OUT]            abstract processor object
+ * \param op_id [IN/OUT]           pointer to operation ID
+ * \param extra_buf_used [IN/OUT]  pointer to boolean
+ * \param extra_handle [IN/OUT]    pointer to eventual bulk handle that
+ *                                 describes an extra buffer if it has been
+ *                                 used for encoding
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_header_request(hg_proc_t proc, uint32_t *op_id,
-        uint8_t *extra_buf_used, hg_bulk_t *extra_handle)
+HG_PROC_INLINE int
+hg_proc_header_request(hg_proc_t proc, hg_uint32_t *op_id,
+        hg_uint8_t *extra_buf_used, hg_bulk_t *extra_handle)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     hg_proc_buf_t  *current_buf;
     void *current_buf_ptr;
-    uint32_t iofsl_op_id = PROTO_GENERIC;
+    hg_uint32_t iofsl_op_id = PROTO_GENERIC;
     int ret = HG_FAIL;
 
     /* If we have switched buffers we need to go back to the buffer that
@@ -621,21 +699,21 @@ HG_PROC_INLINE int hg_proc_header_request(hg_proc_t proc, uint32_t *op_id,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_header_response
+/**
+ * Process private information for sending/receiving RPC response.
  *
- * Purpose:     Private information for response
+ * \param proc [IN/OUT]            abstract processor object
+ * \param extra_buf_used [IN/OUT]  pointer to boolean
  *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+ * \return Non-negative on success or negative on failure
  */
-HG_PROC_INLINE int hg_proc_header_response(hg_proc_t proc, uint8_t *extra_buf_used)
+HG_PROC_INLINE int
+hg_proc_header_response(hg_proc_t proc, hg_uint8_t *extra_buf_used)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     hg_proc_buf_t  *current_buf;
     void *current_buf_ptr;
-    int32_t iofsl_op_status = 0;
+    hg_int32_t iofsl_op_status = 0;
     int ret = HG_FAIL;
 
     current_buf = priv_proc->current_buf;

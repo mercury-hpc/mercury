@@ -19,19 +19,58 @@
   typedef pthread_cond_t hg_thread_cond_t;
 #endif
 
-/* Initialize the condition */
-int hg_thread_cond_init(hg_thread_cond_t *cond);
+/**
+ * Initialize the condition.
+ *
+ * \param cond [IN/OUT]         pointer to condition object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_cond_init(hg_thread_cond_t *cond);
 
-/* Destroy the condition */
-int hg_thread_cond_destroy(hg_thread_cond_t *cond);
+/**
+ * Destroy the condition.
+ *
+ * \param cond [IN/OUT]         pointer to condition object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_cond_destroy(hg_thread_cond_t *cond);
 
-/* Wake one thread waiting for the condition to change */
-int hg_thread_cond_signal(hg_thread_cond_t *cond);
+/**
+ * Wake one thread waiting for the condition to change.
+ *
+ * \param cond [IN/OUT]         pointer to condition object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_cond_signal(hg_thread_cond_t *cond);
 
-/* Wait for the condition to change */
-int hg_thread_cond_wait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex);
+/**
+ * Wait for the condition to change.
+ *
+ * \param cond [IN/OUT]         pointer to condition object
+ * \param mutex [IN/OUT]        pointer to mutex object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_cond_wait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex);
 
-/* Wait timeout (ms) for the condition to change */
-int hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsigned int timeout);
+/**
+ * Wait timeout ms for the condition to change.
+ *
+ * \param cond [IN/OUT]         pointer to condition object
+ * \param mutex [IN/OUT]        pointer to mutex object
+ * \param timeout [IN]          timeout (in milliseconds)
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex,
+        unsigned int timeout);
 
 #endif /* MERCURY_THREAD_CONDITION_H */

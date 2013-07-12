@@ -16,16 +16,9 @@
 #include <stdlib.h>
 #endif
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_cond_init
- *
- * Purpose:     Initialize the condition
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_cond_init(hg_thread_cond_t *cond)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_cond_init(hg_thread_cond_t *cond)
 {
     int ret = HG_SUCCESS;
 
@@ -38,16 +31,9 @@ int hg_thread_cond_init(hg_thread_cond_t *cond)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_cond_destroy
- *
- * Purpose:     Destroy the condition
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_cond_destroy(hg_thread_cond_t *cond)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_cond_destroy(hg_thread_cond_t *cond)
 {
     int ret = HG_SUCCESS;
 
@@ -58,16 +44,9 @@ int hg_thread_cond_destroy(hg_thread_cond_t *cond)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_cond_signal
- *
- * Purpose:     Wake one thread waiting for the condition to change
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_cond_signal(hg_thread_cond_t *cond)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_cond_signal(hg_thread_cond_t *cond)
 {
     int ret = HG_SUCCESS;
 
@@ -80,16 +59,9 @@ int hg_thread_cond_signal(hg_thread_cond_t *cond)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_cond_wait
- *
- * Purpose:     Wait for the condition to change
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_cond_wait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_cond_wait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex)
 {
     int ret = HG_SUCCESS;
 
@@ -102,16 +74,9 @@ int hg_thread_cond_wait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_cond_timedwait
- *
- * Purpose:     Wait timeout (ms) for the condition to change
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsigned int timeout)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsigned int timeout)
 {
     int ret = HG_SUCCESS;
 

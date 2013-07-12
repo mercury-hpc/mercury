@@ -14,17 +14,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_buf_alloc
- *
- * Purpose:     Can be used to allocate a buffer that will be used by the
- *              generic proc (use free to free it)
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_proc_buf_alloc(void **mem_ptr, size_t size)
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_buf_alloc(void **mem_ptr, size_t size)
 {
     int ret = HG_SUCCESS;
     size_t alignment;
@@ -37,16 +29,9 @@ int hg_proc_buf_alloc(void **mem_ptr, size_t size)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_create
- *
- * Purpose:     Create a new encoding/decoding processor
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc)
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc)
 {
     hg_priv_proc_t *priv_proc = NULL;
     int ret = HG_SUCCESS;
@@ -98,16 +83,9 @@ int hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_free
- *
- * Purpose:     Free the processor
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_proc_free(hg_proc_t proc)
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_free(hg_proc_t proc)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_SUCCESS;
@@ -131,17 +109,9 @@ int hg_proc_free(hg_proc_t proc)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_get_op
- *
- * Purpose:     Get current operation mode used for processor
- *              (Only valid if proc is created)
- *
- * Returns:     HG_ENCODE/HG_DECODE/HG_FREE
- *
- *---------------------------------------------------------------------------
- */
-hg_proc_op_t hg_proc_get_op(hg_proc_t proc)
+/*---------------------------------------------------------------------------*/
+hg_proc_op_t
+hg_proc_get_op(hg_proc_t proc)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     hg_proc_op_t proc_op = 0;
@@ -151,16 +121,9 @@ hg_proc_op_t hg_proc_get_op(hg_proc_t proc)
     return proc_op;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_get_size
- *
- * Purpose:     Get buffer size available for processing
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-size_t hg_proc_get_size(hg_proc_t proc)
+/*---------------------------------------------------------------------------*/
+size_t
+hg_proc_get_size(hg_proc_t proc)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     size_t size = 0;
@@ -170,16 +133,9 @@ size_t hg_proc_get_size(hg_proc_t proc)
     return size;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_set_size
- *
- * Purpose:     Request a new buffer size
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     size_t new_buf_size;
@@ -238,16 +194,9 @@ int hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_get_size_left
- *
- * Purpose:     Get buffer size available for processing
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-size_t hg_proc_get_size_left(hg_proc_t proc)
+/*---------------------------------------------------------------------------*/
+size_t
+hg_proc_get_size_left(hg_proc_t proc)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     size_t size = 0;
@@ -257,16 +206,9 @@ size_t hg_proc_get_size_left(hg_proc_t proc)
     return size;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_get_buf_ptr
- *
- * Purpose:     Get pointer to current buffer (for manual encoding)
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-void * hg_proc_get_buf_ptr(hg_proc_t proc)
+/*---------------------------------------------------------------------------*/
+void *
+hg_proc_get_buf_ptr(hg_proc_t proc)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     void *ptr = NULL;
@@ -278,16 +220,9 @@ void * hg_proc_get_buf_ptr(hg_proc_t proc)
     return ptr;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_set_buf_ptr
- *
- * Purpose:     Set new buffer pointer (for manual encoding)
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -315,16 +250,9 @@ int hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_get_header_size
- *
- * Purpose:     Get extra buffer
- *
- * Returns:     Pointer to buffer or NULL
- *
- *---------------------------------------------------------------------------
- */
-void * hg_proc_get_extra_buf(hg_proc_t proc)
+/*---------------------------------------------------------------------------*/
+void *
+hg_proc_get_extra_buf(hg_proc_t proc)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     void *extra_buf = NULL;
@@ -336,16 +264,9 @@ void * hg_proc_get_extra_buf(hg_proc_t proc)
     return extra_buf;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_get_extra_size
- *
- * Purpose:     Get size of extra buffer
- *
- * Returns:     Size of extra buffer or 0
- *
- *---------------------------------------------------------------------------
- */
-size_t hg_proc_get_extra_size(hg_proc_t proc)
+/*---------------------------------------------------------------------------*/
+size_t
+hg_proc_get_extra_size(hg_proc_t proc)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     size_t extra_size = 0;
@@ -357,17 +278,9 @@ size_t hg_proc_get_extra_size(hg_proc_t proc)
     return extra_size;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_proc_set_extra_buf_is_mine
- *
- * Purpose:     Set extra buffer to mine (if other calls mine, buffer is no
- *              longer freed after hg_proc_free)
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_proc_set_extra_buf_is_mine(hg_proc_t proc, bool theirs)
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t theirs)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;

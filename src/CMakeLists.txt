@@ -24,7 +24,7 @@ option(MERCURY_USE_BOOST_PP "Use BOOST preprocessor macros." OFF)
 if(MERCURY_USE_BOOST_PP)
   find_package(Boost 1.48.0 REQUIRED)
   if(Boost_FOUND)
-    set(MERCURY_HAS_BOOST 1)
+    set(HG_HAS_BOOST 1)
     include_directories(${Boost_INCLUDE_DIRS})
   else()
     message(FATAL_ERROR "Could not find Boost, please check Boost_INCLUDE_DIR.")
@@ -34,7 +34,7 @@ endif()
 # XDR
 option(MERCURY_USE_XDR "Use XDR for generic encoding." OFF)
 if(MERCURY_USE_XDR)
-  set(MERCURY_HAS_XDR 1)
+  set(HG_HAS_XDR 1)
 endif()
 
 set(MERCURY_EXT_INCLUDE_DEPENDENCIES
@@ -192,6 +192,7 @@ set(MERCURY_INCLUDES_BUILD_TIME
   ${CMAKE_CURRENT_SOURCE_DIR}/na
   ${CMAKE_CURRENT_BINARY_DIR}/na
   ${CMAKE_CURRENT_SOURCE_DIR}/util
+  ${CMAKE_CURRENT_BINARY_DIR}/util
   ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
   PARENT_SCOPE
 )

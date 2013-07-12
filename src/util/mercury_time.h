@@ -11,11 +11,8 @@
 #ifndef MERCURY_TIME_H
 #define MERCURY_TIME_H
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <time.h>
-#endif
+#include "mercury_util_config.h"
+
 typedef struct hg_time hg_time_t;
 struct hg_time
 {
@@ -23,22 +20,67 @@ struct hg_time
     long tv_usec;
 };
 
-/* Returns an elapsed time on the calling processor */
-int hg_time_get_current(hg_time_t *tv);
+/**
+ * Get an elapsed time on the calling processor.
+ *
+ * \param tv [OUT]              pointer to returned time structure
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_time_get_current(hg_time_t *tv);
 
-/* Convert hg_time_t to double */
-double hg_time_to_double(hg_time_t tv);
+/**
+ * Convert hg_time_t to double.
+ *
+ * \param tv [IN]               time structure
+ *
+ * \return Converted time in seconds
+ */
+HG_UTIL_EXPORT double
+hg_time_to_double(hg_time_t tv);
 
-/* Convert double to hg_time_t */
-hg_time_t hg_time_from_double(double d);
+/**
+ * Convert double to hg_time_t.
+ *
+ * \param d [IN]                time in seconds
+ *
+ * \return Converted time structure
+ */
+HG_UTIL_EXPORT hg_time_t
+hg_time_from_double(double d);
 
-/* Compare time */
-int hg_time_less(hg_time_t in1, hg_time_t in2);
+/**
+ * Compare time values.
+ *
+ * \param in1 [IN]              time structure
+ * \param in2 [IN]              time structure
+ *
+ * \return 1 if in1 < in2, 0 otherwise
+ */
+HG_UTIL_EXPORT int
+hg_time_less(hg_time_t in1, hg_time_t in2);
 
-/* Add times */
-hg_time_t hg_time_add(hg_time_t in1, hg_time_t in2);
+/**
+ * Add time values.
+ *
+ * \param in1 [IN]              time structure
+ * \param in2 [IN]              time structure
+ *
+ * \return Summed time structure
+ */
+HG_UTIL_EXPORT hg_time_t
+hg_time_add(hg_time_t in1, hg_time_t in2);
 
-/* Subtract times */
-hg_time_t hg_time_subtract(hg_time_t in1, hg_time_t in2);
+/**
+ * Subtract time values.
+ *
+ * \param in1 [IN]              time structure
+ * \param in2 [IN]              time structure
+ *
+ * \return Subtracted time structure
+ */
+HG_UTIL_EXPORT hg_time_t
+hg_time_subtract(hg_time_t in1, hg_time_t in2);
 
 #endif /* MERCURY_TIME_H */

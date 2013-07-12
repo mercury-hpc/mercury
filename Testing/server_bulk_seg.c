@@ -109,14 +109,14 @@ int fs_bla_write(hg_handle_t handle)
     }
 
     printf("Waiting for first chunk...\n");
-    ret = HG_Bulk_wait(bla_write_bulk_request1, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+    ret = HG_Bulk_wait(bla_write_bulk_request1, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not complete bulk data read\n");
         return ret;
     }
 
     printf("Waiting for second chunk...\n");
-    ret = HG_Bulk_wait(bla_write_bulk_request2, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+    ret = HG_Bulk_wait(bla_write_bulk_request2, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not complete bulk data read\n");
         return ret;
@@ -180,7 +180,7 @@ int main(int argc, char *argv[])
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */
-        hg_ret = HG_Handler_process(HG_HANDLER_MAX_IDLE_TIME, HG_STATUS_IGNORE);
+        hg_ret = HG_Handler_process(HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not receive function call\n");
             return EXIT_FAILURE;

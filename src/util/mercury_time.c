@@ -12,7 +12,14 @@
 #include "mercury_error.h"
 
 #ifdef _WIN32
-static LARGE_INTEGER get_FILETIME_offset()
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+
+#ifdef _WIN32
+static LARGE_INTEGER
+get_FILETIME_offset(void)
 {
     SYSTEMTIME s;
     FILETIME f;
@@ -34,16 +41,9 @@ static LARGE_INTEGER get_FILETIME_offset()
 }
 #endif
 
-/*---------------------------------------------------------------------------
- * Function:    hg_time_get_current
- *
- * Purpose:     Returns an elapsed time on the calling processor
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_time_get_current(hg_time_t *tv)
+/*---------------------------------------------------------------------------*/
+int
+hg_time_get_current(hg_time_t *tv)
 {
     int ret = HG_SUCCESS;
 
@@ -105,30 +105,16 @@ int hg_time_get_current(hg_time_t *tv)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_time_to_double
- *
- * Purpose:     Convert time to double
- *
- * Returns:     Converted time in seconds
- *
- *---------------------------------------------------------------------------
- */
-double hg_time_to_double(hg_time_t tv)
+/*---------------------------------------------------------------------------*/
+double
+hg_time_to_double(hg_time_t tv)
 {
     return (double) tv.tv_sec + (double) (tv.tv_usec) * 0.000001;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_time_from_double
- *
- * Purpose:     Convert double to time
- *
- * Returns:     Converted time in seconds
- *
- *---------------------------------------------------------------------------
- */
-hg_time_t hg_time_from_double(double d)
+/*---------------------------------------------------------------------------*/
+hg_time_t
+hg_time_from_double(double d)
 {
     hg_time_t tv;
 
@@ -138,31 +124,17 @@ hg_time_t hg_time_from_double(double d)
     return tv;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_time_less
- *
- * Purpose:     Compare time
- *
- * Returns:     1 if in1 < in2
- *
- *---------------------------------------------------------------------------
- */
-int hg_time_less(hg_time_t in1, hg_time_t in2)
+/*---------------------------------------------------------------------------*/
+int
+hg_time_less(hg_time_t in1, hg_time_t in2)
 {
     return ((in1.tv_sec < in2.tv_sec) ||
             ((in1.tv_sec == in2.tv_sec) && (in1.tv_usec < in2.tv_usec)));
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_time_add
- *
- * Purpose:     Add times
- *
- * Returns:     Time sum of in1 and in2
- *
- *---------------------------------------------------------------------------
- */
-hg_time_t hg_time_add(hg_time_t in1, hg_time_t in2)
+/*---------------------------------------------------------------------------*/
+hg_time_t
+hg_time_add(hg_time_t in1, hg_time_t in2)
 {
     hg_time_t out;
 
@@ -176,16 +148,9 @@ hg_time_t hg_time_add(hg_time_t in1, hg_time_t in2)
     return out;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_time_to_double
- *
- * Purpose:     Subtract times
- *
- * Returns:     Time subtraction of in1 and in2
- *
- *---------------------------------------------------------------------------
- */
-hg_time_t hg_time_subtract(hg_time_t in1, hg_time_t in2)
+/*---------------------------------------------------------------------------*/
+hg_time_t
+hg_time_subtract(hg_time_t in1, hg_time_t in2)
 {
     hg_time_t out;
 

@@ -11,103 +11,242 @@
 #ifndef MERCURY_BULK_H
 #define MERCURY_BULK_H
 
-#include "na.h"
-#include "mercury_error.h"
-
-/* TODO Make that more portable */
-#include <stddef.h>
-
-typedef void * hg_bulk_t;         /* Bulk data handle */
-typedef void * hg_bulk_block_t;   /* Block handle for bulk data */
-typedef void * hg_bulk_request_t; /* Request object */
-typedef bool   hg_bulk_status_t;  /* Status of the operation */
-
-typedef struct hg_bulk_segment {
-        void   *address; /* address of the segment */
-        size_t  size;    /* size of the segment in bytes */
-} hg_bulk_segment_t;
-
-#define HG_BULK_STATUS_IGNORE ((hg_bulk_status_t *)1)
-
-#define HG_BULK_MAX_IDLE_TIME NA_MAX_IDLE_TIME
-
-#define HG_BULK_READWRITE NA_MEM_READWRITE
-#define HG_BULK_READ_ONLY NA_MEM_READ_ONLY
-
-#define HG_BULK_NULL         ((hg_bulk_t)0)
-#define HG_BULK_BLOCK_NULL   ((hg_bulk_block_t)0)
-#define HG_BULK_REQUEST_NULL ((hg_bulk_request_t)0)
+#include "mercury_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Initialize the bulk data shipper and select a network protocol */
-int HG_Bulk_init(na_class_t *network_class);
+/**
+ * Initialize the function shipper bulk layer.
+ *
+ * \param network_class [IN]    pointer to network class
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_init(na_class_t *network_class);
 
-/* Finalize */
-int HG_Bulk_finalize(void);
+/**
+ * Finalize the function shipper bulk layer.
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_finalize(void);
 
-/* Indicate whether HG_Bulk_init has been called and return associated network class */
-int HG_Bulk_initialized(bool *flag, na_class_t **network_class);
+/**
+ * Indicate whether HG_Bulk_init has been called
+ * and return associated network class.
+ *
+ * \param flag [OUT]            pointer to boolean
+ * \param na_class_t [OUT]      pointer to returned network class pointer
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_initialized(hg_bool_t *flag, na_class_t **network_class);
 
-/* Do not register HG_Bulk_finalize with atexit */
-int HG_Bulk_disable_auto_finalize(void);
-
-/* Create bulk data handle from buffer (register memory, etc) */
-int HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
+/**
+ * Create abstract bulk handle from buffer (register memory, etc).
+ *
+ * \param buf [IN]              pointer to buffer
+ * \param buf_size [IN]         buffer size
+ * \param flags [IN]            permission flag:
+ *                                - HG_BULK_READWRITE
+ *                                - HG_BULK_READ_ONLY
+ * \param handle [OUT]          pointer to returned abstract bulk handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
         hg_bulk_t *handle);
 
-/* Create bulk data handle from arbitrary memory regions */
-int HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
+/**
+ * Create bulk handle from arbitrary memory regions.
+ *
+ * \param bulk_segments [IN]    pointer to array of segments
+ * \param segment_count [IN]    number of segments
+ * \param flags [IN]            permission flag:
+ *                                - HG_BULK_READWRITE
+ *                                - HG_BULK_READ_ONLY
+ * \param handle [OUT]          pointer to returned abstract bulk handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
         size_t segment_count, unsigned long flags, hg_bulk_t *handle);
 
-/* Free bulk data handle */
-int HG_Bulk_handle_free(hg_bulk_t handle);
+/**
+ * Free bulk handle.
+ *
+ * \param handle [IN/OUT]       abstract bulk handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_handle_free(hg_bulk_t handle);
 
-/* Get data size from handle */
-size_t HG_Bulk_handle_get_size(hg_bulk_t handle);
+/**
+ * Get total size of data associated to abstract bulk handle.
+ *
+ * \param handle [IN]           abstract bulk handle
+ *
+ * \return Non-negative value
+ */
+HG_EXPORT size_t
+HG_Bulk_handle_get_size(hg_bulk_t handle);
 
-/* Get size required to serialize handle */
-size_t HG_Bulk_handle_get_serialize_size(hg_bulk_t handle);
+/**
+ * Get size required to serialize abstract bulk handle.
+ *
+ * \param handle [IN]           abstract bulk handle
+ *
+ * \return Non-negative value
+ */
+HG_EXPORT size_t
+HG_Bulk_handle_get_serialize_size(hg_bulk_t handle);
 
-/* Serialize bulk data handle into buf */
-int HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle);
+/**
+ * Serialize bulk handle into a buffer.
+ *
+ * \param buf [IN/OUT]          pointer to buffer
+ * \param buf_size [IN]         buffer size
+ * \param handle [IN]           abstract bulk handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle);
 
-/* Deserialize bulk data handle from buf */
-int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size);
+/**
+ * Deserialize bulk handle from a buffer.
+ *
+ * \param handle [OUT]          abstract bulk handle
+ * \param buf [IN]              pointer to buffer
+ * \param buf_size [IN]         buffer size
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size);
 
-/* Create bulk data handle from buffer (register memory, etc) */
-int HG_Bulk_block_handle_create(void *buf, size_t buf_size, unsigned long flags,
+/**
+ * Create abstract bulk block handle from buffer (register memory, etc).
+ *
+ * \param buf [IN]              pointer to buffer
+ * \param buf_size [IN]         buffer size
+ * \param flags [IN]            permission flag:
+ *                                - HG_BULK_READWRITE
+ *                                - HG_BULK_READ_ONLY
+ * \param handle [OUT]          pointer to returned abstract bulk block handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_block_handle_create(void *buf, size_t buf_size, unsigned long flags,
         hg_bulk_block_t *handle);
 
-/* Free block handle */
-int HG_Bulk_block_handle_free(hg_bulk_block_t block_handle);
+/**
+ * Free bulk block handle.
+ *
+ * \param handle [IN/OUT]       abstract bulk block handle
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_block_handle_free(hg_bulk_block_t block_handle);
 
-/* Get data size from block handle */
-size_t HG_Bulk_block_handle_get_size(hg_bulk_block_t block_handle);
+/**
+ * Get size of data associated to abstract bulk block handle.
+ *
+ * \param handle [IN]           abstract bulk block handle
+ *
+ * \return Non-negative value
+ */
+HG_EXPORT size_t
+HG_Bulk_block_handle_get_size(hg_bulk_block_t handle);
 
-/* Write data */
-int HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
+/**
+ * Write data to remote address using abstract bulk and bulk block handles.
+ *
+ * \param addr [IN]             abstract network address of destination
+ * \param bulk_handle [IN]      abstract bulk handle
+ * \param bulk_offset [IN]      bulk offset
+ * \param block_handle [IN]     abstract bulk block handle
+ * \param block_offset [IN]     bulk block offset
+ * \param block_size [IN]       size of data to be transferred
+ * \param bulk_request [OUT]    pointer to returned bulk request
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
         hg_bulk_block_t block_handle, ptrdiff_t block_offset, size_t block_size,
         hg_bulk_request_t *bulk_request);
 
-/* Write all the data at the address contained in the bulk handle */
-int HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
+/**
+ * Write data to remote address using abstract bulk and bulk block handles.
+ * All the data described by the bulk handle will be transferred.
+ *
+ * \param addr [IN]             abstract network address of destination
+ * \param bulk_handle [IN]      abstract bulk handle
+ * \param block_handle [IN]     abstract bulk block handle
+ * \param bulk_request [OUT]    pointer to returned bulk request
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
         hg_bulk_block_t block_handle, hg_bulk_request_t *bulk_request);
 
-/* Read data */
-int HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
+/**
+ * Read data from remote address using abstract bulk and bulk block handles.
+ *
+ * \param addr [IN]             abstract network address of destination
+ * \param bulk_handle [IN]      abstract bulk handle
+ * \param bulk_offset [IN]      bulk offset
+ * \param block_handle [IN]     abstract bulk block handle
+ * \param block_offset [IN]     bulk block offset
+ * \param block_size [IN]       size of data to be transferred
+ * \param bulk_request [OUT]    pointer to returned bulk request
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
         hg_bulk_block_t block_handle, ptrdiff_t block_offset, size_t block_size,
         hg_bulk_request_t *bulk_request);
 
-/* Read all the data from the address contained in the bulk handle */
-int HG_Bulk_read_all(na_addr_t addr, hg_bulk_t bulk_handle,
+/**
+ * Read data from remote address using abstract bulk and bulk block handles.
+ * All the data described by the bulk handle will be transferred.
+ *
+ * \param addr [IN]             abstract network address of destination
+ * \param bulk_handle [IN]      abstract bulk handle
+ * \param block_handle [IN]     abstract bulk block handle
+ * \param bulk_request [OUT]    pointer to returned bulk request
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_read_all(na_addr_t addr, hg_bulk_t bulk_handle,
         hg_bulk_block_t block_handle, hg_bulk_request_t *bulk_request);
 
-/* Wait for bulk data operation to complete */
-int HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
-        hg_bulk_status_t *status);
+/**
+ * Wait for a bulk operation request to complete.
+ *
+ * \param bulk_request [IN]     bulk request
+ * \param timeout [IN]          timeout (in milliseconds)
+ * \param status [OUT]          pointer to returned status
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
+        hg_status_t *status);
 
 #ifdef __cplusplus
 }

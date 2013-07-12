@@ -11,7 +11,7 @@
 #ifndef MERCURY_THREAD_MUTEX_H
 #define MERCURY_THREAD_MUTEX_H
 
-
+#include "mercury_util_config.h"
 #ifdef _WIN32
   #include <windows.h>
   typedef CRITICAL_SECTION hg_thread_mutex_t;
@@ -25,20 +25,55 @@
 extern "C" {
 #endif
 
-/* Initialize the mutex */
-int hg_thread_mutex_init(hg_thread_mutex_t *mutex);
+/**
+ * Initialize the mutex.
+ *
+ * \param mutex [IN/OUT]        pointer to mutex object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_mutex_init(hg_thread_mutex_t *mutex);
 
-/* Destroy the mutex */
-int hg_thread_mutex_destroy(hg_thread_mutex_t *mutex);
+/**
+ * Destroy the mutex.
+ *
+ * \param mutex [IN/OUT]        pointer to mutex object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_mutex_destroy(hg_thread_mutex_t *mutex);
 
-/* Lock the mutex */
-int hg_thread_mutex_lock(hg_thread_mutex_t *mutex);
+/**
+ * Lock the mutex.
+ *
+ * \param mutex [IN/OUT]        pointer to mutex object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_mutex_lock(hg_thread_mutex_t *mutex);
 
-/* Try to lock the mutex */
-int hg_thread_mutex_try_lock(hg_thread_mutex_t *mutex);
+/**
+ * Try locking the mutex.
+ *
+ * \param mutex [IN/OUT]        pointer to mutex object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_mutex_try_lock(hg_thread_mutex_t *mutex);
 
-/* Unlock the mutex */
-int hg_thread_mutex_unlock(hg_thread_mutex_t *mutex);
+/**
+ * Unlock the mutex.
+ *
+ * \param mutex [IN/OUT]        pointer to mutex object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_mutex_unlock(hg_thread_mutex_t *mutex);
 
 #ifdef __cplusplus
 }

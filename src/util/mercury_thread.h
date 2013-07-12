@@ -11,6 +11,8 @@
 #ifndef MERCURY_THREAD_H
 #define MERCURY_THREAD_H
 
+#include "mercury_util_config.h"
+
 #ifdef _WIN32
   #include <windows.h>
   typedef HANDLE hg_thread_t;
@@ -31,29 +33,87 @@
 extern "C" {
 #endif
 
-/* Init thread IDs */
-void hg_thread_init(hg_thread_t *thread);
+/**
+ * Initialize the thread.
+ *
+ * \param thread [IN/OUT]       pointer to thread object
+ */
+HG_UTIL_EXPORT void
+hg_thread_init(hg_thread_t *thread);
 
-/* Create a new thread for the given function */
-int hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data);
+/**
+ * Create a new thread for the given function.
+ *
+ * \param thread [IN/OUT]       pointer to thread object
+ * \param f [IN]                pointer to function
+ * \param data [IN]             pointer to data than be passed to function f
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data);
 
-/* Wait for thread completion */
-int hg_thread_join(hg_thread_t thread);
+/**
+ * Wait for thread completion.
+ *
+ * \param thread [IN]           thread object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_join(hg_thread_t thread);
 
-/* Terminate the thread */
-int hg_thread_cancel(hg_thread_t thread);
+/**
+ * Terminate the thread.
+ *
+ * \param thread [IN]           thread object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_cancel(hg_thread_t thread);
 
-/* Create a thread-specific data key visible to all threads in the process */
-int hg_thread_key_create(hg_thread_key_t *key);
+/**
+ * Create a thread-specific data key visible to all threads in the process.
+ *
+ * \param key [OUT]             pointer to thread key object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_key_create(hg_thread_key_t *key);
 
-/* Delete a thread-specific data key previously returned by hg_thread_key_create() */
-int hg_thread_key_delete(hg_thread_key_t key);
+/**
+ * Delete a thread-specific data key previously returned by
+ * hg_thread_key_create().
+ *
+ * \param key [IN]              thread key object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_key_delete(hg_thread_key_t key);
 
-/* Get value from specified key */
-void *hg_thread_getspecific(hg_thread_key_t key);
+/**
+ * Get value from specified key.
+ *
+ * \param key [IN]              thread key object
+ *
+ * \return Pointer to data associated to the key
+ */
+HG_UTIL_EXPORT void *
+hg_thread_getspecific(hg_thread_key_t key);
 
-/* Set value to specified key */
-int hg_thread_setspecific(hg_thread_key_t key, const void *value);
+/**
+ * Set value to specified key.
+ *
+ * \param key [IN]              thread key object
+ * \param value [IN]            pointer to data that will be associated
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_setspecific(hg_thread_key_t key, const void *value);
 
 #ifdef __cplusplus
 }

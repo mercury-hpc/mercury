@@ -48,9 +48,9 @@ int main(int argc, char *argv[])
      * initializes the network interface with the selected plugin)
      */
     network_class = HG_Test_client_init(argc, argv, NULL);
-    ion_name = getenv(MERCURY_PORT_NAME);
+    ion_name = getenv(HG_PORT_NAME);
     if (!ion_name) {
-        fprintf(stderr, "getenv(\"%s\") failed\n", MERCURY_PORT_NAME);
+        fprintf(stderr, "getenv(\"%s\") failed\n", HG_PORT_NAME);
     }
 
     hg_ret = HG_Init(network_class);

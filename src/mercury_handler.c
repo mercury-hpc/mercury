@@ -9,12 +9,14 @@
  */
 
 #include "mercury_handler.h"
+#include "mercury_proc.h"
+
 #include "mercury_hash_table.h"
 #include "mercury_list.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_time.h"
 
-#include <stdbool.h>
+#include <stdlib.h>
 
 /* Private structs */
 typedef struct hg_proc_info {
@@ -22,11 +24,6 @@ typedef struct hg_proc_info {
     int (*dec_routine)(hg_proc_t proc, void *in_struct);
     int (*enc_routine)(hg_proc_t proc, void *out_struct);
 } hg_proc_info_t;
-
-typedef struct hg_response_info {
-    na_request_t request;
-    void *buf;
-} hg_response_info_t;
 
 typedef struct hg_priv_handle {
     hg_id_t       id;
@@ -69,16 +66,11 @@ static hg_thread_mutex_t response_handle_list_mutex;
 /* Pointer to network abstraction class */
 static na_class_t *handler_na_class = NULL;
 
-/*---------------------------------------------------------------------------
- * Function:    hg_handler_new
- *
- * Purpose:     Create new handle
- *
- * Returns:     Handle
- *
- *---------------------------------------------------------------------------
+/**
+ * Create new handle.
  */
-static hg_handle_t hg_handler_new(void)
+static hg_handle_t
+hg_handler_new(void)
 {
     hg_priv_handle_t *priv_handle;
 
@@ -104,16 +96,11 @@ static hg_handle_t hg_handler_new(void)
     return (hg_handle_t) priv_handle;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_handler_process_unexpected_list
- *
- * Purpose:     Check unexpected list and return first handle found
- *
- * Returns:     Handle
- *
- *---------------------------------------------------------------------------
+/**
+ * Check unexpected list and return first handle found.
  */
-static hg_handle_t hg_handler_process_unexpected_list(void)
+static hg_handle_t
+hg_handler_process_unexpected_list(void)
 {
     hg_priv_handle_t *priv_handle = NULL;
 
@@ -128,16 +115,11 @@ static hg_handle_t hg_handler_process_unexpected_list(void)
     return (hg_handle_t)priv_handle;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_handler_add_unexpected_list
- *
- * Purpose:     Add handle to unexpected list
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+/**
+ * Add handle to unexpected list.
  */
-static int hg_handler_add_unexpected_list(hg_handle_t handle)
+static int
+hg_handler_add_unexpected_list(hg_handle_t handle)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
@@ -157,16 +139,11 @@ static int hg_handler_add_unexpected_list(hg_handle_t handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_handler_del_unexpected_list
- *
- * Purpose:     Deletes handle from unexpected list
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+/**
+ * Deletes handle from unexpected list.
  */
-static int hg_handler_del_unexpected_list(hg_handle_t handle)
+static int
+hg_handler_del_unexpected_list(hg_handle_t handle)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
@@ -181,16 +158,11 @@ static int hg_handler_del_unexpected_list(hg_handle_t handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_handler_add_response_list
- *
- * Purpose:     Add handle to response list
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+/**
+ * Add handle to response list.
  */
-static int hg_handler_add_response_list(hg_handle_t handle)
+static int
+hg_handler_add_response_list(hg_handle_t handle)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t*) handle;
     int ret = HG_SUCCESS;
@@ -207,16 +179,11 @@ static int hg_handler_add_response_list(hg_handle_t handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_handler_process_response_list
- *
- * Purpose:     Process list of handles and wait timeout for response completion
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+/**
+ * Process list of handles and wait timeout ms for response completion.
  */
-static int hg_handler_process_response_list(unsigned int timeout)
+static int
+hg_handler_process_response_list(unsigned int timeout)
 {
     int ret = HG_SUCCESS;
 
@@ -255,16 +222,11 @@ static int hg_handler_process_response_list(unsigned int timeout)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_handler_process_extra_recv_buf
- *
- * Purpose:     Get extra buffer and associate it to handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+/**
+ * Get extra buffer and associate it to handle.
  */
-static int hg_handler_process_extra_recv_buf(hg_handle_t handle, hg_bulk_t extra_buf_handle)
+static int
+hg_handler_process_extra_recv_buf(hg_handle_t handle, hg_bulk_t extra_buf_handle)
 {
     int ret = HG_SUCCESS;
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
@@ -294,7 +256,7 @@ static int hg_handler_process_extra_recv_buf(hg_handle_t handle, hg_bulk_t extra
         goto done;
     }
 
-    ret = HG_Bulk_wait(extra_buf_request, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+    ret = HG_Bulk_wait(extra_buf_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not complete bulk data read");
         ret = HG_FAIL;
@@ -323,16 +285,9 @@ done:
    return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_init
- *
- * Purpose:     Initialize the function shipper and select a network protocol
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Handler_init(na_class_t *network_class)
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_init(na_class_t *network_class)
 {
     int ret = HG_SUCCESS;
 
@@ -366,16 +321,9 @@ int HG_Handler_init(na_class_t *network_class)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_finalize
- *
- * Purpose:     Finalize the function shipper
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Handler_finalize(void)
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_finalize(void)
 {
     int ret = HG_SUCCESS;
 
@@ -405,20 +353,14 @@ int HG_Handler_finalize(void)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_register
- *
- * Purpose:     Register a function name and provide a unique ID
- *
- * Returns:     Unsigned integer
- *
- *---------------------------------------------------------------------------
- */
-void HG_Handler_register(const char *func_name,
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_register(const char *func_name,
         int (*callback_routine) (hg_handle_t handle),
         int (*dec_routine)(hg_proc_t proc, void *in_struct),
         int (*enc_routine)(hg_proc_t proc, void *out_struct))
 {
+    int ret = HG_SUCCESS;
     hg_id_t *id;
     hg_proc_info_t *proc_info;
 
@@ -440,19 +382,15 @@ void HG_Handler_register(const char *func_name,
         proc_info = NULL;
         free(id);
         id = NULL;
+        ret = HG_FAIL;
     }
+
+    return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_get_addr
- *
- * Purpose:     Get remote addr from handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-na_addr_t HG_Handler_get_addr (hg_handle_t handle)
+/*---------------------------------------------------------------------------*/
+na_addr_t
+HG_Handler_get_addr (hg_handle_t handle)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     na_addr_t ret = NULL;
@@ -462,17 +400,9 @@ na_addr_t HG_Handler_get_addr (hg_handle_t handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_get_input_buf
- *
- * Purpose:     Get input from handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf,
-        size_t *in_buf_size)
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf, size_t *in_buf_size)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
@@ -497,16 +427,9 @@ int HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_get_output_buf
- *
- * Purpose:     Get output from handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
         size_t *out_buf_size)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
@@ -536,23 +459,16 @@ int HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_process
- *
- * Purpose:     Receive a call from a remote client and process request
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Handler_process(unsigned int timeout, hg_status_t *status)
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_process(unsigned int timeout, hg_status_t *status)
 {
     int time_remaining = timeout;
     hg_priv_handle_t *priv_handle = NULL;
     hg_proc_info_t   *proc_info;
 
     hg_proc_t dec_proc = HG_PROC_NULL;
-    uint8_t extra_recv_buf_used = 0;
+    hg_uint8_t extra_recv_buf_used = 0;
     hg_bulk_t extra_recv_buf_handle = HG_BULK_NULL;
 
     na_status_t recv_status;
@@ -697,16 +613,9 @@ done:
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_start_response
- *
- * Purpose:     Send the response back to the remote client and free handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf,
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf,
         size_t extra_out_buf_size)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
@@ -794,16 +703,9 @@ done:
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_wait_response
- *
- * Purpose:     Wait for a response to complete
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Handler_wait_response(hg_handle_t handle, unsigned int timeout,
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_wait_response(hg_handle_t handle, unsigned int timeout,
         hg_status_t *status)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
@@ -843,16 +745,9 @@ int HG_Handler_wait_response(hg_handle_t handle, unsigned int timeout,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_free
- *
- * Purpose:     Free the handle (N.B. called in hg_handler_respond)
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Handler_free(hg_handle_t handle)
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_free(hg_handle_t handle)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
@@ -894,16 +789,9 @@ int HG_Handler_free(hg_handle_t handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_get_input
- *
- * Purpose:     Get input structure from handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Handler_get_input(hg_handle_t handle, void *in_struct)
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_get_input(hg_handle_t handle, void *in_struct)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;
@@ -958,16 +846,9 @@ int HG_Handler_get_input(hg_handle_t handle, void *in_struct)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Handler_start_output
- *
- * Purpose:     Start sending output structure from handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Handler_start_output(hg_handle_t handle, void *out_struct)
+/*---------------------------------------------------------------------------*/
+int
+HG_Handler_start_output(hg_handle_t handle, void *out_struct)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
     int ret = HG_SUCCESS;

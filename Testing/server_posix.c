@@ -159,7 +159,7 @@ int server_posix_write(hg_handle_t handle)
         return hg_ret;
     }
 
-    hg_ret = HG_Bulk_wait(bulk_request, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+    hg_ret = HG_Bulk_wait(bulk_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not complete bulk data read\n");
         return hg_ret;
@@ -256,7 +256,7 @@ int server_posix_read(hg_handle_t handle)
         return hg_ret;
     }
 
-    hg_ret = HG_Bulk_wait(bulk_request, HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+    hg_ret = HG_Bulk_wait(bulk_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not complete bulk data write\n");
         return hg_ret;

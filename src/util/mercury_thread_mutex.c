@@ -11,16 +11,9 @@
 #include "mercury_thread_mutex.h"
 #include "mercury_error.h"
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_mutex_init
- *
- * Purpose:     Initialize the mutex
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_mutex_init(hg_thread_mutex_t *mutex)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_mutex_init(hg_thread_mutex_t *mutex)
 {
     int ret = HG_SUCCESS;
 
@@ -33,16 +26,9 @@ int hg_thread_mutex_init(hg_thread_mutex_t *mutex)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_mutex_destroy
- *
- * Purpose:     Destroy the mutex
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_mutex_destroy(hg_thread_mutex_t *mutex)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_mutex_destroy(hg_thread_mutex_t *mutex)
 {
     int ret = HG_SUCCESS;
 
@@ -55,16 +41,9 @@ int hg_thread_mutex_destroy(hg_thread_mutex_t *mutex)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_mutex_lock
- *
- * Purpose:     Lock the mutex
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_mutex_lock(hg_thread_mutex_t *mutex)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_mutex_lock(hg_thread_mutex_t *mutex)
 {
     int ret = HG_SUCCESS;
 
@@ -77,16 +56,9 @@ int hg_thread_mutex_lock(hg_thread_mutex_t *mutex)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_mutex_try_lock
- *
- * Purpose:     Try to lock the mutex
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_mutex_try_lock(hg_thread_mutex_t *mutex)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_mutex_try_lock(hg_thread_mutex_t *mutex)
 {
     int ret = HG_SUCCESS;
 
@@ -99,16 +71,9 @@ int hg_thread_mutex_try_lock(hg_thread_mutex_t *mutex)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_mutex_unlock
- *
- * Purpose:     Unlock the mutex
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_mutex_unlock(hg_thread_mutex_t *mutex)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_mutex_unlock(hg_thread_mutex_t *mutex)
 {
     int ret = HG_SUCCESS;
 

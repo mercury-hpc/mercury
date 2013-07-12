@@ -9,6 +9,8 @@
  */
 
 #include "mercury.h"
+#include "mercury_proc.h"
+
 #include "mercury_hash_table.h"
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
@@ -16,8 +18,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
-#include <stdbool.h>
 
 /* Private structs */
 typedef struct hg_priv_request {
@@ -54,10 +54,13 @@ static na_class_t *hg_na_class = NULL;
 
 /* Pointer to function called at termination */
 static void (*hg_atfinalize)(void) = NULL;
-static bool hg_dont_atexit = 0;
+static hg_bool_t hg_dont_atexit = 0;
 
-/* Hash functions for function map */
-int hg_int_equal(void *vlocation1, void *vlocation2)
+/**
+ * Hash functions for function map
+ */
+int
+hg_int_equal(void *vlocation1, void *vlocation2)
 {
     int *location1;
     int *location2;
@@ -68,7 +71,11 @@ int hg_int_equal(void *vlocation1, void *vlocation2)
     return *location1 == *location2;
 }
 
-unsigned int hg_int_hash(void *vlocation)
+/**
+ *
+ */
+unsigned int
+hg_int_hash(void *vlocation)
 {
     int *location;
 
@@ -77,8 +84,11 @@ unsigned int hg_int_hash(void *vlocation)
     return (unsigned int) *location;
 }
 
-/* Generate a new tag */
-static inline na_tag_t hg_gen_tag(void)
+/**
+ * Generate a new tag
+ */
+static inline na_tag_t
+hg_gen_tag(void)
 {
     static long int tag = 0;
 
@@ -90,8 +100,11 @@ static inline na_tag_t hg_gen_tag(void)
     return tag;
 }
 
-/* Automatically called at exit */
-static void hg_atexit(void)
+/**
+ * Automatically called at exit
+ */
+static void
+hg_atexit(void)
 {
     if (hg_na_class) {
         int hg_ret;
@@ -106,16 +119,9 @@ static void hg_atexit(void)
     }
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Init
- *
- * Purpose:     Initialize the function shipper and select a network protocol
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Init(na_class_t *network_class)
+/*---------------------------------------------------------------------------*/
+int
+HG_Init(na_class_t *network_class)
 {
     int ret = HG_SUCCESS;
 
@@ -159,16 +165,9 @@ int HG_Init(na_class_t *network_class)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Finalize
- *
- * Purpose:     Finalize the function shipper
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Finalize(void)
+/*---------------------------------------------------------------------------*/
+int
+HG_Finalize(void)
 {
     int ret = HG_SUCCESS;
 
@@ -193,16 +192,9 @@ int HG_Finalize(void)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Initialized
- *
- * Purpose:     Indicate whether HG_Init has been called and return associated network class
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Initialized(bool *flag, na_class_t **network_class)
+/*---------------------------------------------------------------------------*/
+int
+HG_Initialized(hg_bool_t *flag, na_class_t **network_class)
 {
     int ret = HG_SUCCESS;
 
@@ -218,16 +210,9 @@ int HG_Initialized(bool *flag, na_class_t **network_class)
     return HG_SUCCESS;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Atfinalize
- *
- * Purpose:     Register a function to be called at mercury termination
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Atfinalize(void (*function)(void))
+/*---------------------------------------------------------------------------*/
+int
+HG_Atfinalize(void (*function)(void))
 {
     int ret = HG_SUCCESS;
 
@@ -236,16 +221,9 @@ int HG_Atfinalize(void (*function)(void))
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Register
- *
- * Purpose:     Register a function name and provide a unique ID
- *
- * Returns:     Unsigned integer
- *
- *---------------------------------------------------------------------------
- */
-hg_id_t HG_Register(const char *func_name,
+/*---------------------------------------------------------------------------*/
+hg_id_t
+HG_Register(const char *func_name,
         int (*enc_routine)(hg_proc_t proc, void *in_struct),
         int (*dec_routine)(hg_proc_t proc, void *out_struct))
 {
@@ -272,34 +250,9 @@ hg_id_t HG_Register(const char *func_name,
     return *id;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Disable_auto_finalize
- *
- * Purpose:     Do not register HG_Finalize with atexit
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Disable_auto_finalize(void)
-{
-    int ret = HG_SUCCESS;
-
-    hg_dont_atexit = 1;
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------
- * Function:    HG_Registered
- *
- * Purpose:     Indicate whether HG_Register has been called and return associated ID
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Registered(const char *func_name, bool *flag, hg_id_t *id)
+/*---------------------------------------------------------------------------*/
+int
+HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id)
 {
     int ret = HG_SUCCESS;
     hg_id_t func_id;
@@ -318,23 +271,16 @@ int HG_Registered(const char *func_name, bool *flag, hg_id_t *id)
     return HG_SUCCESS;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Forward
- *
- * Purpose:     Forward a call to a remote server
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_struct,
+/*---------------------------------------------------------------------------*/
+int
+HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_struct,
         hg_request_t *request)
 {
     int ret = HG_SUCCESS, na_ret;
 
     hg_proc_info_t *proc_info;
     hg_proc_t enc_proc = HG_PROC_NULL;
-    uint8_t extra_send_buf_used = 0;
+    hg_uint8_t extra_send_buf_used = 0;
 
     na_tag_t   send_tag, recv_tag;
 
@@ -494,16 +440,9 @@ done:
      return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Wait
- *
- * Purpose:     Wait for an operation request to complete
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
+/*---------------------------------------------------------------------------*/
+int
+HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 {
     hg_priv_request_t *priv_request = (hg_priv_request_t*) request;
     na_status_t        send_status;
@@ -579,7 +518,7 @@ int HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
     if ((priv_request->send_request == NA_REQUEST_NULL) &&
             (priv_request->recv_request == NA_REQUEST_NULL)) {
         hg_proc_t dec_proc;
-        uint8_t extra_recv_buf_used;
+        hg_uint8_t extra_recv_buf_used;
 
         /* Decode depending on op ID */
         proc_info = hg_hash_table_lookup(func_map, &priv_request->id);
@@ -646,16 +585,9 @@ int HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Wait_all
- *
- * Purpose:     Wait for all operations to complete
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Wait_all(int count, hg_request_t array_of_requests[],
+/*---------------------------------------------------------------------------*/
+int
+HG_Wait_all(int count, hg_request_t array_of_requests[],
         unsigned int timeout, hg_status_t array_of_statuses[])
 {
     int ret = HG_SUCCESS;

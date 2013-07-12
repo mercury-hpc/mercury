@@ -31,7 +31,7 @@ static size_t bla_write_nbytes;
 
 /* Actual definition of the function that needs to be executed */
 void bla_write_pipeline(size_t chunk_size,
-        hg_bulk_request_t bulk_request, hg_bulk_status_t *status, bool nosleep)
+        hg_bulk_request_t bulk_request, hg_status_t *status, bool nosleep)
 {
     int ret;
     /* Convert raw_time_read to ms */
@@ -144,7 +144,7 @@ int bla_write_rpc(hg_handle_t handle)
         }
 
         ret = HG_Bulk_wait(bla_write_bulk_request[0],
-                HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+                HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not complete bulk data read\n");
             return ret;
@@ -178,14 +178,14 @@ int bla_write_rpc(hg_handle_t handle)
         }
 
         ret = HG_Bulk_wait(bla_write_bulk_request[0],
-                HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+                HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not complete bulk data read\n");
             return ret;
         }
 
         /* Call bla_write */
-        bla_write_pipeline(bla_write_nbytes, HG_BULK_REQUEST_NULL, HG_BULK_STATUS_IGNORE, 0);
+        bla_write_pipeline(bla_write_nbytes, HG_BULK_REQUEST_NULL, HG_STATUS_IGNORE, 0);
 
         gettimeofday(&tv2, NULL);
 
@@ -241,12 +241,12 @@ int bla_write_rpc(hg_handle_t handle)
                 /* Alternate wait and read to receives pieces */
                 for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
                     size_t write_offset = start_offset + pipeline_iter * chunk_size;
-                    hg_bulk_status_t status;
+                    hg_status_t status;
                     int pipeline_next;
 
                     if (bla_write_bulk_request[pipeline_iter] != HG_BULK_REQUEST_NULL) {
                         ret = HG_Bulk_wait(bla_write_bulk_request[pipeline_iter],
-                                HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE);
+                                HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
                         if (ret != HG_SUCCESS) {
                             fprintf(stderr, "Could not complete bulk data read\n");
                             return ret;

@@ -9,14 +9,13 @@
  */
 
 #include "mercury_bulk.h"
+#include "mercury_error.h"
 
 /* TODO see if we can avoid to have to include that header */
 #include "na_private.h"
 
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
-#include <stdbool.h>
 
 typedef struct hg_priv_bulk {
     size_t           total_size;       /* Total size of data registered */
@@ -25,7 +24,7 @@ typedef struct hg_priv_bulk {
     na_mem_handle_t *mem_handle_list;  /* List of handles (single for contiguous
                                         * or multiple for non-contiguous) */
     size_t           count;            /* Number of handles */
-    bool             registered;       /* The handle may be registered or simply
+    hg_bool_t        registered;       /* The handle may be registered or simply
                                         * deserialized */
 } hg_priv_bulk_t;
 
@@ -43,10 +42,13 @@ typedef struct hg_priv_bulk_request {
 /* Pointer to network abstraction class */
 static na_class_t *bulk_na_class = NULL;
 
-static bool bulk_dont_atexit = 0;
+static hg_bool_t bulk_dont_atexit = 0;
 
-/* Automatically called at exit */
-static void hg_bulk_atexit(void)
+/**
+ * Automatically called at exit
+ */
+static void
+hg_bulk_atexit(void)
 {
     if (bulk_na_class) {
         int hg_ret;
@@ -59,16 +61,9 @@ static void hg_bulk_atexit(void)
     }
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_init
- *
- * Purpose:     Initialize the bulk data shipper and select a network protocol
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_init(na_class_t *network_class)
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_init(na_class_t *network_class)
 {
     int ret = HG_SUCCESS;
 
@@ -100,16 +95,9 @@ int HG_Bulk_init(na_class_t *network_class)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_finalize
- *
- * Purpose:     Finalize
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_finalize(void)
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_finalize(void)
 {
     int ret = HG_SUCCESS;
 
@@ -124,16 +112,9 @@ int HG_Bulk_finalize(void)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_initialized
- *
- * Purpose:     Indicate whether HG_Init has been called and return associated network class
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_initialized(bool *flag, na_class_t **network_class)
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_initialized(hg_bool_t *flag, na_class_t **network_class)
 {
     int ret = HG_SUCCESS;
 
@@ -149,16 +130,9 @@ int HG_Bulk_initialized(bool *flag, na_class_t **network_class)
     return HG_SUCCESS;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_disable_auto_finalize
- *
- * Purpose:     Do not register HG_Bulk_finalize with atexit
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_disable_auto_finalize(void)
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_disable_auto_finalize(void)
 {
     int ret = HG_SUCCESS;
 
@@ -167,16 +141,9 @@ int HG_Bulk_disable_auto_finalize(void)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_handle_create
- *
- * Purpose:     Create bulk data handle from buffer (register memory, etc)
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
         hg_bulk_t *handle)
 {
     int ret = HG_SUCCESS, na_ret;
@@ -228,16 +195,9 @@ done:
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_handle_create_segments
- *
- * Purpose:     Create bulk data handle from buffer (register memory, etc)
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
         size_t segment_count, unsigned long flags, hg_bulk_t *handle)
 {
     int ret = HG_SUCCESS, na_ret;
@@ -318,16 +278,9 @@ done:
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_handle_free
- *
- * Purpose:     Free bulk data handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_handle_free(hg_bulk_t handle)
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_handle_free(hg_bulk_t handle)
 {
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) handle;
@@ -366,14 +319,9 @@ int HG_Bulk_handle_free(hg_bulk_t handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_handle_get_size
- *
- * Purpose:     Get data size from handle
- *
- *---------------------------------------------------------------------------
- */
-size_t HG_Bulk_handle_get_size(hg_bulk_t handle)
+/*---------------------------------------------------------------------------*/
+size_t
+HG_Bulk_handle_get_size(hg_bulk_t handle)
 {
     size_t ret = 0;
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) handle;
@@ -385,14 +333,9 @@ size_t HG_Bulk_handle_get_size(hg_bulk_t handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_handle_get_serialize_size
- *
- * Purpose:     Get size required to serialize handle
- *
- *---------------------------------------------------------------------------
- */
-size_t HG_Bulk_handle_get_serialize_size(hg_bulk_t handle)
+/*---------------------------------------------------------------------------*/
+size_t
+HG_Bulk_handle_get_serialize_size(hg_bulk_t handle)
 {
     size_t ret = 0;
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) handle;
@@ -410,16 +353,9 @@ size_t HG_Bulk_handle_get_serialize_size(hg_bulk_t handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_handle_serialize
- *
- * Purpose:     Serialize bulk data handle into buf
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
 {
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_t *priv_handle = (hg_priv_bulk_t*) handle;
@@ -473,16 +409,9 @@ int HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_handle_deserialize
- *
- * Purpose:     Deserialize bulk data handle from buf
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
 {
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_t *priv_handle = NULL;
@@ -541,16 +470,9 @@ int HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_si
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_block_handle_create
- *
- * Purpose:     Create bulk data handle from buffer (register memory, etc)
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_block_handle_create(void *buf, size_t block_size, unsigned long flags,
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_block_handle_create(void *buf, size_t block_size, unsigned long flags,
         hg_bulk_block_t *block_handle)
 {
     int ret = HG_SUCCESS, na_ret;
@@ -589,16 +511,9 @@ int HG_Bulk_block_handle_create(void *buf, size_t block_size, unsigned long flag
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_block_handle_free
- *
- * Purpose:     Free block handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_block_handle_free(hg_bulk_block_t block_handle)
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_block_handle_free(hg_bulk_block_t block_handle)
 {
     int ret = HG_SUCCESS, na_ret;
     hg_priv_bulk_block_t *priv_block_handle = (hg_priv_bulk_block_t*) block_handle;
@@ -621,14 +536,9 @@ int HG_Bulk_block_handle_free(hg_bulk_block_t block_handle)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_block_handle_get_size
- *
- * Purpose:     Get data size from block handle
- *
- *---------------------------------------------------------------------------
- */
-size_t HG_Bulk_block_handle_get_size(hg_bulk_block_t block_handle)
+/*---------------------------------------------------------------------------*/
+size_t
+HG_Bulk_block_handle_get_size(hg_bulk_block_t block_handle)
 {
     size_t ret = 0;
     hg_priv_bulk_block_t *priv_block_handle = (hg_priv_bulk_block_t*) block_handle;
@@ -639,17 +549,13 @@ size_t HG_Bulk_block_handle_get_size(hg_bulk_block_t block_handle)
 
     return ret;
 }
+/*---------------------------------------------------------------------------*/
 
-/*---------------------------------------------------------------------------
- * Function:    hg_bulk_find_handle_list_info
- *
- * Purpose:     Get info for bulk transfer
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
+/**
+ * Get info for bulk transfer
  */
-static int hg_bulk_find_handle_list_info(hg_bulk_t bulk_handle,
+static int
+hg_bulk_find_handle_list_info(hg_bulk_t bulk_handle,
         ptrdiff_t bulk_offset, size_t block_size, size_t *handle_index_start,
         ptrdiff_t *handle_offset, size_t *request_count)
 {
@@ -693,16 +599,9 @@ static int hg_bulk_find_handle_list_info(hg_bulk_t bulk_handle,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_write
- *
- * Purpose:     Write data
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
         hg_bulk_block_t block_handle, ptrdiff_t block_offset, size_t block_size,
         hg_bulk_request_t *bulk_request)
 {
@@ -768,16 +667,9 @@ int HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_write_all
- *
- * Purpose:     Write all the data at the address contained in the bulk handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
         hg_bulk_block_t block_handle, hg_bulk_request_t *bulk_request)
 {
     int ret = HG_SUCCESS;
@@ -793,16 +685,9 @@ int HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_read
- *
- * Purpose:     Read data
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
         hg_bulk_block_t block_handle, ptrdiff_t block_offset, size_t block_size,
         hg_bulk_request_t *bulk_request)
 {
@@ -868,16 +753,9 @@ int HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_read_all
- *
- * Purpose:     Read all the data from the address contained in the bulk handle
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_read_all(na_addr_t addr, hg_bulk_t bulk_handle,
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_read_all(na_addr_t addr, hg_bulk_t bulk_handle,
         hg_bulk_block_t block_handle, hg_bulk_request_t *bulk_request)
 {
     int ret = HG_SUCCESS;
@@ -893,17 +771,10 @@ int HG_Bulk_read_all(na_addr_t addr, hg_bulk_t bulk_handle,
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    HG_Bulk_wait
- *
- * Purpose:     Wait for bulk data operation to complete
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
-        hg_bulk_status_t *status)
+/*---------------------------------------------------------------------------*/
+int
+HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
+        hg_status_t *status)
 {
     int ret = HG_SUCCESS, na_ret;
     na_status_t request_status;
@@ -944,7 +815,7 @@ int HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
 
     if (completed_count == priv_bulk_request->request_count) {
         /* Everything completed */
-        if (status && (status != HG_BULK_STATUS_IGNORE)) {
+        if (status && (status != HG_STATUS_IGNORE)) {
             *status = 1;
         }
         free(priv_bulk_request->request_list);
@@ -953,7 +824,7 @@ int HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
         priv_bulk_request = NULL;
     } else {
         /* Not completed */
-        if (status && (status != HG_BULK_STATUS_IGNORE)) {
+        if (status && (status != HG_STATUS_IGNORE)) {
             *status = 0;
         }
     }

@@ -11,16 +11,9 @@
 #include "mercury_thread.h"
 #include "mercury_error.h"
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_init
- *
- * Purpose:     Initialize the mutex
- *
- * Returns:     None
- *
- *---------------------------------------------------------------------------
- */
-void hg_thread_init(hg_thread_t *thread)
+/*---------------------------------------------------------------------------*/
+void
+hg_thread_init(hg_thread_t *thread)
 {
 #ifdef _WIN32
     *thread = NULL;
@@ -29,16 +22,9 @@ void hg_thread_init(hg_thread_t *thread)
 #endif
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_create
- *
- * Purpose:     Create a new thread for the given function
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data)
 {
     int ret = HG_SUCCESS;
 
@@ -55,16 +41,9 @@ int hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_join
- *
- * Purpose:     Wait for thread completion
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_join(hg_thread_t thread)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_join(hg_thread_t thread)
 {
     int ret = HG_SUCCESS;
 
@@ -81,16 +60,9 @@ int hg_thread_join(hg_thread_t thread)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_cancel
- *
- * Purpose:     Terminate the thread
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_cancel(hg_thread_t thread)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_cancel(hg_thread_t thread)
 {
     int ret = HG_SUCCESS;
 
@@ -107,16 +79,9 @@ int hg_thread_cancel(hg_thread_t thread)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_key_create
- *
- * Purpose:     Create a thread-specific data key visible to all threads in the process
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_key_create(hg_thread_key_t *key)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_key_create(hg_thread_key_t *key)
 {
     int ret = HG_SUCCESS;
 
@@ -141,16 +106,9 @@ int hg_thread_key_create(hg_thread_key_t *key)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_key_delete
- *
- * Purpose:     Delete a thread-specific data key previously returned by hg_thread_key_create()
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_key_delete(hg_thread_key_t key)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_key_delete(hg_thread_key_t key)
 {
     int ret = HG_SUCCESS;
 
@@ -169,16 +127,9 @@ int hg_thread_key_delete(hg_thread_key_t key)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_getspecific
- *
- * Purpose:     Get value from specified key
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-void *hg_thread_getspecific(hg_thread_key_t key)
+/*---------------------------------------------------------------------------*/
+void *
+hg_thread_getspecific(hg_thread_key_t key)
 {
     void *ret;
 
@@ -191,16 +142,9 @@ void *hg_thread_getspecific(hg_thread_key_t key)
     return ret;
 }
 
-/*---------------------------------------------------------------------------
- * Function:    hg_thread_setspecific
- *
- * Purpose:     Set value to specified key
- *
- * Returns:     Non-negative on success or negative on failure
- *
- *---------------------------------------------------------------------------
- */
-int hg_thread_setspecific(hg_thread_key_t key, const void *value)
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_setspecific(hg_thread_key_t key, const void *value)
 {
     int ret = HG_SUCCESS;
 

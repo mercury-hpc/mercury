@@ -29,9 +29,9 @@ int init_rpc(int argc, char *argv[], int *rank)
      */
     network_class = HG_Test_client_init(argc, argv, rank);
 
-    ion_name = getenv(MERCURY_PORT_NAME);
+    ion_name = getenv(HG_PORT_NAME);
     if (!ion_name) {
-        fprintf(stderr, "getenv(\"%s\") failed.\n", MERCURY_PORT_NAME);
+        fprintf(stderr, "getenv(\"%s\") failed.\n", HG_PORT_NAME);
     }
 
     hg_ret = HG_Init(network_class);
