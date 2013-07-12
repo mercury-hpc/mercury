@@ -29,6 +29,7 @@ NA_Initialize(const char *method, const char *port_name, na_bool_t listen)
 #ifdef NA_HAS_MPI
     if (strcmp("mpi", method) == 0) {
         int flags = (listen) ? MPI_INIT_SERVER : 0;
+        (void) port_name; /* unused in this case */
         network_class = NA_MPI_Init(NULL, flags);
     }
 #endif
