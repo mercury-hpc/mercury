@@ -14,6 +14,7 @@
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
+#include "mercury_time.h"
 #include "na_private.h"
 #include "na_error.h"
 
@@ -57,6 +58,7 @@ static int na_ssm_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
 static int na_ssm_wait(na_request_t request, unsigned int timeout,
         na_status_t *status);
 static int na_ssm_progress(unsigned int timeout, na_status_t *status);
+static int na_ssm_request_free(na_request_t request);
 
 static na_class_t na_ssm_g = {
         na_ssm_finalize,               /* finalize */
@@ -78,7 +80,8 @@ static na_class_t na_ssm_g = {
         na_ssm_put,                    /* put */
         na_ssm_get,                    /* get */
         na_ssm_wait,                   /* wait */
-        na_ssm_progress                /* progress */
+        na_ssm_progress,                /* progress */
+        na_ssm_request_free
 };
 
 /* Private structs */
@@ -129,9 +132,9 @@ typedef struct na_ssm_request {
     ssm_req_type_t type;
     ssm_bits matchbits;
     void *user_ptr;
-    unsigned int req_id;
     ssm_tx tx;
     ssm_cb_t cb;
+    bool completed;
 } na_ssm_request_t;
 
 
@@ -150,7 +153,6 @@ static na_ssm_connect p_na_ssm_connect;
 
 static int mcnt = 1024;    //match bit counter //TODO fix, less than 1024 is reserved for internal send/recv processing
 
-static unsigned int req_id = 0;
 
 /* Used to differentiate Send requests from Recv requests */
 
@@ -163,47 +165,74 @@ static unsigned int req_id = 0;
 #define NA_SSM_ONESIDED_TAG        0x80 /* Default tag used for one-sided over two-sided */
 #define NA_SSM_ONESIDED_DATA_TAG   0x81
 
+
+#define NA_SSM_TAG_UNEXPECTED_OFFSET 0
+#define NA_SSM_TAG_EXPECTED_OFFSET (1<<62)
+#define NA_SSM_TAG_RMA_OFFSET (1<<63)
+
+#ifdef NA_HAS_CLIENT_THREAD
 static hg_thread_mutex_t finalizing_mutex;
 static bool              finalizing;
 static hg_thread_t       progress_service;
-hg_thread_mutex_t mem_map_mutex;
+#endif
 
+/* List for requests */
+static hg_thread_mutex_t unexpected_list_mutex;
+static hg_thread_cond_t comp_req_cond;
 
+/*---------------------------------------------------------------------------*/
 
+/* Mutex used for tag generation */
+/* TODO use atomic increment instead */
+static hg_thread_mutex_t tag_mutex;
 
-//static int is_client;
-//static int is_server;
+static hg_thread_mutex_t request_mutex;
+static hg_thread_mutex_t testcontext_mutex;
+static hg_thread_cond_t  testcontext_cond;
+static bool              is_testing_context;
+
+static inline int
+pointer_equal(void *location1, void *location2)
+{
+    return location1 == location2;
+}
+static inline unsigned int
+pointer_hash(void *location)
+{
+    return (unsigned int) (unsigned long) location;
+}
 
 
 int addr_parser(const char *str, na_ssm_destinfo_t *addr)
 {
     if(str == NULL){
-        printf("error: addr_parse() str is null\n");
+        fprintf(stderr, "error: addr_parser() str is null\n");
         exit(0);
     }
 #if DEBUG
     printf("addr_parser(): string = %s\n", str);
 #endif
-    sscanf(str, "%15[^:]://%63[^:]:%d", addr->proto, addr->hostname, &addr->port);
+    sscanf(str, "%15[^:]://%63[^:]:%d", addr->proto, addr->hostname, &(addr->port));
     return 0;
 }
 
 
-void msg_send_cb(void *cbdat, void *evdat) {
+static inline int mark_as_completed(na_ssm_request_t *req)
+{
+    hg_thread_mutex_lock(&request_mutex);
+    req->completed = 1;
+    hg_thread_mutex_unlock(&request_mutex);
+    return 1;
+}
+
+void msg_send_cb(void *cbdat, void *evdat) 
+{
 #if DEBUG
     puts("msg_send_cb()");
 #endif
-
-    printf(".");
-    fflush(stdout);
-    puts("----------");
     ssm_result r = evdat;
     (void)cbdat;
-    ssm_mr_destroy(r->mr); //XXX Error Handling
-    if(cbdat!=NULL){
-        free(cbdat);
-    }
-    if(!DEBUG)      return;
+#if DEBUG
     printf("        cbdat = %p\n", cbdat);
     printf("ssm_id     id     = %p\n", r->id);
     printf("ssm_me     me     = %p\n", r->me);
@@ -217,14 +246,30 @@ void msg_send_cb(void *cbdat, void *evdat) {
     printf("ssm_mr     mr     = %p\n", r->mr);
     printf("ssm_md     md     = %p\n", r->md);
     printf("uint64_t   bytes  = %lu\n", r->bytes);
+#endif
+    mark_as_completed(cbdat);
+    //wake up others
+    hg_thread_cond_signal(&comp_req_cond);
+    ssm_mr_destroy(r->mr); //XXX Error Handling
+    if(cbdat!=NULL){
+        free(cbdat);
+    }
 }
 
 void msg_recv_cb(void *cbdat, void *evdat) {
-    printf(".");
-    fflush(stdout);
-    if(!DEBUG)      return;
-    puts("----------");
+#if DEBUG
+    puts("msg_recv_cb()");
+#endif
     ssm_result r = evdat;
+    (void)cbdat;
+    mark_as_completed(cbdat);
+    //wake up others
+    hg_thread_cond_signal(&comp_req_cond);
+    ssm_mr_destroy(r->mr); //XXX Error Handling
+    if(cbdat!=NULL){
+        free(cbdat);
+    }
+    if(!DEBUG)      return;
     (void)cbdat;
     printf("        cbdat = %p\n", cbdat);
     printf("ssm_id     id     = %p\n", r->id);
@@ -345,18 +390,17 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
     //TODO add is_server (need?)
     //is_server = (flags == BMI_INIT_SERVER) ? 1 : 0;
 //
-//    /* Create hash table for memory registration */
-//    mem_handle_map = hg_hash_table_new(pointer_hash, pointer_equal);
 //    /* Automatically free all the values with the hash map */
 //    hg_hash_table_register_free_functions(mem_handle_map, NULL, NULL);
 //
-//    /* Initialize cond variable */
-//    hg_thread_mutex_init(&unexpected_list_mutex);
+    /* Initialize cond variable */
+    hg_thread_mutex_init(&unexpected_list_mutex);
 //    hg_thread_mutex_init(&request_mutex);
 //    hg_thread_mutex_init(&testcontext_mutex);
 //    hg_thread_cond_init(&testcontext_cond);
 //    is_testing_context = 0;
-//    hg_thread_mutex_init(&mem_map_mutex);
+    hg_thread_mutex_init(&request_mutex);
+    hg_thread_cond_init(&comp_req_cond);
 //#ifdef NA_HAS_CLIENT_THREAD
 //    hg_thread_mutex_init(&finalizing_mutex);
 //    if (!is_server) {
@@ -476,9 +520,7 @@ static na_size_t na_ssm_msg_get_maximum_size(void)
  */
 static na_tag_t na_ssm_msg_get_maximum_tag(void)
 {
-    //TODO temp 
-    ssm_msg_tag_t t = 0;
-    t--;
+    ssm_msg_tag_t t = (0xffffffffffffffff >> 2);
     return t;
 }
 
@@ -531,11 +573,10 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     na_ssm_request_t *ssm_request = NULL;
     /* use addr as unique id*/
     ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+    memset(ssm_request, 0, sizeof(na_ssm_request_t));
     ssm_request->type = SSM_SEND_OP;
-    ssm_request->matchbits = tag;
+    ssm_request->matchbits = tag + NA_SSM_TAG_EXPECTED_OFFSET;
     ssm_request->user_ptr = op_arg;
-    //TODO lock (req_id)
-    //TODO unlock (req_id)
     
 //    ssm_request_t *bmi_request = NULL;
 //
@@ -558,13 +599,14 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 #endif
 
     ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
-    char aa[1024];
     ssm_request->cb.pcb = msg_send_cb;
-    ssm_request->cb.cbdata = NULL;
+    ssm_request->cb.cbdata = ssm_request;
 
-    char ab[1024];
     ssm_tx stx; 
     stx = ssm_put(ssm, ssm_peer_addr->addr , mr, NULL, ssm_tag, &(ssm_request->cb), SSM_NOF);
+#if DEBUG
+    printf("\ttx = %p\n", stx);
+#endif
 //    if (ssm_ret < 0) {
 //        NA_ERROR_DEFAULT("SSM_post_send() failed");
 //        //free(bmi_request);
@@ -575,6 +617,7 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 
     ssm_request->tx = stx;
     *request = (na_request_t*) ssm_request;
+
 
 //    hg_thread_mutex_lock(&request_mutex);
 //    /* Mark request as done if immediate BMI completion detected */
@@ -607,13 +650,11 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     ssm_msg_tag_t ssm_tag = (ssm_msg_tag_t) tag;
     na_ssm_request_t *ssm_request = NULL;
     ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+    memset(ssm_request, 0, sizeof(na_ssm_request_t));
+    
     ssm_request->type = SSM_RECV_OP;
     ssm_request->matchbits = tag;
     ssm_request->user_ptr = op_arg;
-    //TODO lock (req_id)
-    ssm_request->req_id = req_id;
-    req_id++;
-    //TODO unlock (req_id)
     
 
 
@@ -628,7 +669,7 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
     /* Prepare callback function */
     ssm_request->cb.pcb = msg_send_cb;
-    ssm_request->cb.cbdata = NULL;
+    ssm_request->cb.cbdata = ssm_request;
     /* Post the BMI recv request */
     ssm_me me = ssm_link(ssm, ssm_tag, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->cb), SSM_NOF);
     ssm_ret = ssm_post(ssm, me, mr, SSM_NOF);
@@ -837,19 +878,47 @@ int na_ssm_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 static int na_ssm_wait(na_request_t request, unsigned int timeout,
         na_status_t *status)
 {
-    //TODO: this is a temp impl. need to add handling of request
+    hg_time_t t1, t2;
+    hg_time_get_current(&t1);
+    na_ssm_request_t *req;
+    na_ssm_request_t *prequest = (na_ssm_request_t *)request;
+    bool request_completed = 0;
 #if DEBUG
-    
     printf("ssm_wait()\n\trequest = %p, timeout = %d, status = %p\n", request, timeout, status);
 #endif
     struct timeval tv;
-    int rt, ret;
+    int rt, ret, ssmret;
+    rt = 0;
     tv.tv_sec = timeout / 1000;
     tv.tv_usec = (timeout % 1000)*1000;
 #if DEBUG
     printf("\ttimeout sec = %d, usec = %d\n", tv.tv_sec, tv.tv_usec);
 #endif
-    rt = ssm_wait(ssm, &tv);
+    if(prequest == NULL){
+        rt = ssm_wait(ssm, &tv);
+    } else {
+        hg_thread_mutex_lock(&request_mutex);
+        request_completed = prequest->completed;
+        hg_thread_mutex_unlock(&request_mutex);
+        if(request_completed){
+            rt = 1;
+        } else {
+            /* Need to wait the completion */
+            /* TODO: need to change tv. should be less than timeout, and
+             * repeat this.*/
+            ssmret = ssm_wait(ssm, &tv);
+            if(ssmret < 0 ){
+                NA_ERROR_DEFAULT("ssm_wait() failed");
+                rt = -1;
+            }
+            hg_thread_mutex_lock(&request_mutex);
+            request_completed = prequest->completed;
+            hg_thread_mutex_unlock(&request_mutex);
+            if(request_completed){
+                rt = 1;
+            }
+        }
+    }
     if( rt < 0){
 #if DEBUG
         fprintf(stderr, "\tssm_wait() failed\n");
@@ -894,3 +963,29 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
 static int na_ssm_progress(unsigned int timeout, na_status_t *status)
 {
 }
+
+
+/*---------------------------------------------------------------------------*/
+static int
+na_ssm_request_free(na_request_t request)
+{
+    na_ssm_request_t *ssm_request = (na_ssm_request_t*) request;
+    int ret = NA_SUCCESS;
+
+    /* Do not want to free the request if another thread is testing it */
+    hg_thread_mutex_lock(&request_mutex);
+
+    if (!ssm_request) {
+        NA_ERROR_DEFAULT("NULL request");
+        ret = NA_FAIL;
+    } else {
+        free(ssm_request);
+        ssm_request = NULL;
+        /* TODO may need to do extra things here */
+    }
+
+    hg_thread_mutex_unlock(&request_mutex);
+
+    return ret;
+}
+
