@@ -111,7 +111,7 @@ typedef struct na_ssm_mem_handle{
 
 typedef int ssm_size_t;
 typedef int ssm_tag_t;
-typedef int ssm_msg_tag_t;
+typedef unsigned long ssm_msg_tag_t;
 
 //typedef struct na_ssm_onesided_info {
 //    void    *base;         /* Initial address of memory */
@@ -142,7 +142,6 @@ static ssm_Itp itp;
 static ssm_id ssm;
 static ssm_mr mr_msg;
 static ssm_me me_msg;
-static char *msgbuf;    //XXX temp
 static int ssmport;
 static ssm_Iaddr iaddr;
 static char c_proto[64];
@@ -151,19 +150,18 @@ static char c_proto[64];
 typedef int (*na_ssm_connect)(void *addr, void *result_halder);
 static na_ssm_connect p_na_ssm_connect;
 
-static int mcnt = 1024;    //match bit counter //TODO fix, less than 1024 is reserved for internal send/recv processing
-
-
 /* Used to differentiate Send requests from Recv requests */
 
+
+/* Message Size */
 #define NA_SSM_UNEXPECTED_SIZE 4096
-#define NA_SSM_UNEXPECTED_MATCHBIT 11
-
 #define NA_SSM_EXPECTED_SIZE 4096
-#define NA_SSM_EXPECTED_MATCHBIT 10
 
-#define NA_SSM_ONESIDED_TAG        0x80 /* Default tag used for one-sided over two-sided */
-#define NA_SSM_ONESIDED_DATA_TAG   0x81
+#define NA_SSM_UNEXPECTED_BUFFERCOUNT 8
+char **buf_unexpected;
+
+//#define NA_SSM_ONESIDED_TAG        0x80 /* Default tag used for one-sided over two-sided */
+//#define NA_SSM_ONESIDED_DATA_TAG   0x81
 
 
 #define NA_SSM_TAG_UNEXPECTED_OFFSET 0
@@ -333,27 +331,9 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
 #if DEBUG
     puts("NA_SSM_Init()");
 #endif
-//	ssmptcp_addrargs_t addrargs = {
-//		.host = argv[2],
-//		.port = (uint16_t)atoi(argv[3]),
-//	};
-	//int rt = addr_parser(addr, &ssm_addr);
     if (flags == 0 ){
         flags = SSM_NOF;
     }
-//    if(URI != NULL){
-//        //paser
-//        na_ssm_destinfo_t dinfo;
-//        addr_parser(URI, &dinfo);
-//        proto = dinfo.proto;
-//        port = dinfo.port;
-//        is_client = 1;
-//        is_server = 0;
-//    } else {
-//        is_client = 0;
-//        is_server = 1;
-//    }
-
 #if DEBUG
     printf("Port = %d\n", port);
 #endif
@@ -377,14 +357,9 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
         exit(0);
     }
 
-    //XXX Temp Impl for unexpected messages
-    msgbuf = (char *) malloc (NA_SSM_UNEXPECTED_SIZE);
-    //mr_msg = ssm_mr_create(NULL, msgbuf, NA_SSM_UNEXPECTED_SIZE);
-    ssm_cb_t cb = {
-        .pcb = unexp_msg_recv_cb,
-        .cbdata = NULL
-    };
-    me_msg = ssm_link(ssm, NA_SSM_UNEXPECTED_MATCHBIT, 0x0, SSM_POS_HEAD, NULL, &cb, SSM_NOF);
+    /* POST buffers for unexpected recieve */
+    
+   
 
 
     //TODO add is_server (need?)
@@ -424,7 +399,6 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
 static int na_ssm_finalize(void)
 {
 	ssm_stop(ssm);
-    free(msgbuf);   //XXX temp
 }
 
 /*---------------------------------------------------------------------------
@@ -551,6 +525,45 @@ static int na_ssm_msg_send_unexpected(const void *buf, na_size_t buf_size,
 static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
         na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
 {
+#if DEBUG
+    printf("na_ssm_msg_recv_unexpected()\n");
+    printf("\tbuf = %p, buf_size = %d, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, tag, request, op_arg);
+#endif
+    int ssm_ret, ret = NA_SUCCESS;
+    ssm_size_t ssm_buf_size = (ssm_size_t) buf_size;
+    na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) source;
+    ssm_msg_tag_t ssm_tag = (ssm_msg_tag_t) tag;
+    na_ssm_request_t *ssm_request = NULL;
+    ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+    memset(ssm_request, 0, sizeof(na_ssm_request_t));
+    
+    ssm_request->type = SSM_RECV_OP;
+    ssm_request->matchbits = tag;
+    ssm_request->user_ptr = op_arg;
+
+    /* Allocate request */
+    /* Register Memory */
+    ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
+    /* Prepare callback function */
+    ssm_request->cb.pcb = msg_send_cb;
+    ssm_request->cb.cbdata = ssm_request;
+    /* Post the BMI recv request */
+    ssm_me me = ssm_link(ssm, ssm_tag, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->cb), SSM_NOF);
+    ssm_ret = ssm_post(ssm, me, mr, SSM_NOF);
+
+    if (ssm_ret < 0) {
+        NA_ERROR_DEFAULT("ssm_post() failed");
+        free(ssm_request);
+        ret = NA_FAIL;
+        return ret;
+    }
+    
+    *request = (na_request_t) ssm_request;
+
+    /* Mark request as done if immediate BMI completion detected */
+    /* maybe it doesn't happen with ssm */
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -655,16 +668,8 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     ssm_request->type = SSM_RECV_OP;
     ssm_request->matchbits = tag;
     ssm_request->user_ptr = op_arg;
-    
 
-
-
-//    /* Allocate request */
-//    bmi_request = malloc(sizeof(bmi_request_t));
-//    bmi_request->completed = 0;
-//    bmi_request->actual_size = 0; /* (bmi_size_t*) actual_size; */
-//    bmi_request->user_ptr = op_arg;
-//    bmi_request->ack_request = NA_REQUEST_NULL;
+    /* Allocate request */
     /* Register Memory */
     ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
     /* Prepare callback function */
@@ -673,25 +678,18 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     /* Post the BMI recv request */
     ssm_me me = ssm_link(ssm, ssm_tag, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->cb), SSM_NOF);
     ssm_ret = ssm_post(ssm, me, mr, SSM_NOF);
-//            bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
-//            &bmi_request->actual_size, BMI_EXT_ALLOC, bmi_tag, bmi_request,
-//            bmi_context, NULL);
 
     if (ssm_ret < 0) {
         NA_ERROR_DEFAULT("ssm_post() failed");
         free(ssm_request);
-        //bmi_request = NULL;
         ret = NA_FAIL;
         return ret;
     }
     
     *request = (na_request_t) ssm_request;
 
-//    hg_thread_mutex_lock(&request_mutex);
-//    /* Mark request as done if immediate BMI completion detected */
-//    bmi_request->completed = bmi_ret ? 1 : 0;
-//    *request = (na_request_t) bmi_request;
-//    hg_thread_mutex_unlock(&request_mutex);
+    /* Mark request as done if immediate BMI completion detected */
+    /* maybe it doesn't happen with ssm */
 
     return ret;
 }
@@ -713,7 +711,6 @@ int na_ssm_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
     pssm_mr = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
     mr = ssm_mr_create(NULL, buf, buf_size);
     pssm_mr->mr = mr;
-    pssm_mr->matchbits = (mcnt++);
 
     //TODO add this mr to hash table and error handle
     return NA_SUCCESS;
@@ -925,7 +922,7 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
 #endif
         return NA_FAIL;
     }
-    //XXX
+    //XXX status->count ??
     if (status && status != NA_STATUS_IGNORE) {
 #if DEBUG
         printf("\treturn status code\n");
