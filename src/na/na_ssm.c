@@ -125,7 +125,9 @@ typedef enum ssm_req_type {
     SSM_PUT_OP,
     SSM_GET_OP,
     SSM_SEND_OP,
-    SSM_RECV_OP
+    SSM_RECV_OP,
+    SSM_UNEXP_SEND_OP,
+    SSM_UNEXP_RECV_OP
 } ssm_req_type_t;
 
 typedef struct na_ssm_request {
@@ -189,6 +191,20 @@ static hg_thread_mutex_t testcontext_mutex;
 static hg_thread_cond_t  testcontext_cond;
 static bool              is_testing_context;
 
+/* List and mutex for unexpected messages */
+static hg_list_entry_t  *unexpected_list;
+static hg_thread_mutex_t unexpected_list_mutex;
+
+typedef struct na_ssm_unexpected_entry{
+    void *buf;
+    na_size_t size;
+    //na_request_t *request;
+    int status;
+    ssm_Haddr addr;
+    na_tag_t tag;
+} na_ssm_unexpected_entry_t;
+
+/* map functions */
 static inline int
 pointer_equal(void *location1, void *location2)
 {
@@ -530,35 +546,61 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
     printf("\tbuf = %p, buf_size = %d, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, tag, request, op_arg);
 #endif
     int ssm_ret, ret = NA_SUCCESS;
-    ssm_size_t ssm_buf_size = (ssm_size_t) buf_size;
-    na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) source;
-    ssm_msg_tag_t ssm_tag = (ssm_msg_tag_t) tag;
-    na_ssm_request_t *ssm_request = NULL;
-    ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
-    memset(ssm_request, 0, sizeof(na_ssm_request_t));
-    
-    ssm_request->type = SSM_RECV_OP;
-    ssm_request->matchbits = tag;
-    ssm_request->user_ptr = op_arg;
+    hg_list_entry_t *entry = NULL;
+    na_ssm_request_t *pssm_request = NULL;
+    na_ssm_unexpected_entry_t *ssm_unexpected_entry = NULL;
 
-    /* Allocate request */
-    /* Register Memory */
-    ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
-    /* Prepare callback function */
-    ssm_request->cb.pcb = msg_send_cb;
-    ssm_request->cb.cbdata = ssm_request;
-    /* Post the BMI recv request */
-    ssm_me me = ssm_link(ssm, ssm_tag, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->cb), SSM_NOF);
-    ssm_ret = ssm_post(ssm, me, mr, SSM_NOF);
-
-    if (ssm_ret < 0) {
-        NA_ERROR_DEFAULT("ssm_post() failed");
-        free(ssm_request);
+    if (!buf) {
+        NA_ERROR_DEFAULT("NULL buffer");
         ret = NA_FAIL;
         return ret;
     }
     
-    *request = (na_request_t) ssm_request;
+    hg_thread_mutex_lock(&unexpected_list_mutex);
+
+    if (hg_list_length(unexpected_list)) {
+        entry = unexpected_list;
+        ssm_unexpected_entry = (na_ssm_unexpected_entry_t *) hg_list_data(entry);
+    } else {
+        /* no message in the list */
+        /* XXX ssm_wait() ? */
+        return 0;   /* XXX */
+    }
+
+
+    if (ssm_unexpected_entry->status < 0) {
+        NA_ERROR_DEFAULT("unexpected recv failed");
+        /* XXX free */
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    if(ssm_unexpected_entry->size > (ssm_size_t)buf_size) {
+        NA_ERROR_DEFAULT("buf_size is less than its of unexpected message");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    if (actual_buf_size) {
+        *actual_buf_size = (na_size_t) ssm_unexpected_entry->size;
+    }
+
+    if(source){
+        *source = (na_addr_t) ssm_unexpected_entry->addr;
+    }
+    if(tag){
+        *tag = (na_tag_t) ssm_unexpected_entry->tag;
+    }
+
+    memcpy(buf, ssm_unexpected_entry->buf, ssm_unexpected_entry->size);
+
+    pssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+    pssm_request->type = SSM_UNEXP_RECV_OP;
+    pssm_request->matchbits = ssm_unexpected_entry->tag;
+    pssm_request->completed = 1;
+
+    
+    *request = (na_request_t) pssm_request;
 
     /* Mark request as done if immediate BMI completion detected */
     /* maybe it doesn't happen with ssm */
