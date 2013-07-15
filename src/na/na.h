@@ -114,6 +114,7 @@ NA_Msg_get_maximum_size(na_class_t *network_class);
 
 /**
  * Get the maximum tag value that can be used by send/recv.
+ * (both expected and unexpected)
  *
  * \param network_class [IN]    pointer to network class
  *
