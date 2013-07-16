@@ -472,6 +472,8 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
     hg_uint8_t extra_recv_buf_used = 0;
     hg_bulk_t extra_recv_buf_handle = HG_BULK_NULL;
 
+    hg_bool_t is_handle_from_list = 0;
+
     na_status_t recv_status;
 
     int ret = HG_SUCCESS, na_ret;
@@ -491,20 +493,26 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
     priv_handle = hg_handler_process_unexpected_list();
 
     if (!priv_handle) {
-        na_size_t actual_buf_size = 0;
-
         /* Create a new handle */
         priv_handle = hg_handler_new();
 
         /* Recv buffer must match the size of unexpected buffer */
         priv_handle->recv_buf_size = NA_Msg_get_maximum_size(handler_na_class);
 
+        /* Allocate a new receive buffer for the unexpected message */
         ret = hg_proc_buf_alloc(&priv_handle->recv_buf, priv_handle->recv_buf_size);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not allocate recv buffer");
             ret = HG_FAIL;
             goto done;
         }
+    } else {
+        is_handle_from_list = 1;
+    }
+
+    /* Start doing unexpected receives */
+    if (priv_handle->recv_request == NA_REQUEST_NULL) {
+        na_size_t actual_buf_size = 0;
 
         /* Start receiving a message from a client */
         do {
@@ -529,8 +537,14 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
         } while (time_remaining > 0 && !actual_buf_size);
 
         if (!actual_buf_size) {
-            /* Timeout reached and has still not received anything */
-            ret = HG_FAIL;
+            /* Timeout reached and has still not received anything store the handle and exit */
+            if (!is_handle_from_list) {
+                ret = hg_handler_add_unexpected_list(priv_handle);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Could not add handle to unexpected list");
+                    ret = HG_FAIL;
+                }
+            }
             goto done;
         }
     }
@@ -546,18 +560,22 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
 
     /* If not completed yet store the handle and exit */
     if (!recv_status.completed) {
-        ret = hg_handler_add_unexpected_list(priv_handle);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not add handle to unexpected list");
-            ret = HG_FAIL;
+        if (!is_handle_from_list) {
+            ret = hg_handler_add_unexpected_list(priv_handle);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not add handle to unexpected list");
+                ret = HG_FAIL;
+            }
         }
         goto done;
     } else {
-        ret = hg_handler_del_unexpected_list(priv_handle);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not remove handle from unexpected list");
-            ret = HG_FAIL;
-            goto done;
+        if (is_handle_from_list) {
+            ret = hg_handler_del_unexpected_list(priv_handle);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not remove handle from unexpected list");
+                ret = HG_FAIL;
+                goto done;
+            }
         }
         priv_handle->recv_request = NA_REQUEST_NULL;
     }
