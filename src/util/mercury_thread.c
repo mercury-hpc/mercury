@@ -149,7 +149,7 @@ hg_thread_setspecific(hg_thread_key_t key, const void *value)
     int ret = HG_SUCCESS;
 
 #ifdef _WIN32
-    if (!TlsSetValue(key, value)) {
+    if (!TlsSetValue(key, (LPVOID) value)) {
         HG_ERROR_DEFAULT("TlsSetValue failed");
         ret = HG_FAIL;
     }

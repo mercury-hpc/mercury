@@ -13,8 +13,19 @@
 
 #include <stdio.h>
 
+/* For compatibility */
+#if __STDC_VERSION__ < 199901L
+  #if __GNUC__ >= 2
+    #define __func__ __FUNCTION__
+  #else
+    #define __func__ "<unknown>"
+  #endif
+#elif _WIN32
+  #define __func__ __FUNCTION__
+#endif
+
 /* Default error macro */
-#define NA_ERROR_DEFAULT(x) {              \
+#define NA_ERROR_DEFAULT(x) {             \
   fprintf(stderr, "Error "                \
         "in %s:%d (%s): "                 \
         "%s.\n",                          \

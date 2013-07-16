@@ -87,7 +87,7 @@ hg_int_hash(void *vlocation)
 /**
  * Generate a new tag
  */
-static inline na_tag_t
+static HG_INLINE na_tag_t
 hg_gen_tag(void)
 {
     static long int tag = 0;
@@ -358,7 +358,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_struct,
      *  - 2: send the remaining data in extra buf using bulk data transfer
      */
     if (hg_proc_get_size(enc_proc) > NA_Msg_get_maximum_size(hg_na_class)) {
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
         HG_ERROR_DEFAULT("Extra encoding using XDR is not yet supported");
         ret = HG_FAIL;
         goto done;

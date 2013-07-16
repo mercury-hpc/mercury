@@ -131,6 +131,7 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_macros.h
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_config.h
   ${CMAKE_CURRENT_SOURCE_DIR}/iofsl_compat.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_error.h
 )
 
 #-----------------------------------------------------------------------------
@@ -207,31 +208,33 @@ set(MERCURY_INCLUDES_INSTALL_TIME
 )
 
 # Pkg-config configuration
-string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
+if(NOT WIN32)
+  string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
 
-foreach(exported_lib ${MERCURY_EXPORTED_LIBS})
-  if(lower_cmake_build_type MATCHES "debug")
-    get_target_property(MERCURY_LIBRARY ${exported_lib} DEBUG_OUTPUT_NAME)
-  else()
-    get_target_property(MERCURY_LIBRARY ${exported_lib} RELEASE_OUTPUT_NAME)
+  foreach(exported_lib ${MERCURY_EXPORTED_LIBS})
+    if(lower_cmake_build_type MATCHES "debug")
+      get_target_property(MERCURY_LIBRARY ${exported_lib} DEBUG_OUTPUT_NAME)
+    else()
+      get_target_property(MERCURY_LIBRARY ${exported_lib} RELEASE_OUTPUT_NAME)
+    endif()
+    set(MERCURY_LIBRARIES "${MERCURY_LIBRARIES} -l${MERCURY_LIBRARY}")
+  endforeach()
+  set(MERCURY_LIBRARIES ${MERCURY_LIBRARIES} PARENT_SCOPE)
+
+  if(NOT MERCURY_EXT_LIB_DEPENDENCIES)
+    set(MERCURY_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
+      ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
+    )
   endif()
-  set(MERCURY_LIBRARIES "${MERCURY_LIBRARIES} -l${MERCURY_LIBRARY}")
-endforeach()
-set(MERCURY_LIBRARIES ${MERCURY_LIBRARIES} PARENT_SCOPE)
 
-if(NOT MERCURY_EXT_LIB_DEPENDENCIES)
-  set(MERCURY_EXT_LIB_DEPENDENCIES
-    ${NA_EXT_LIB_DEPENDENCIES}
-    ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
-  )
+  foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES})
+    set(MERCURY_LIB_DEPENDENCIES "${MERCURY_LIB_DEPENDENCIES} ${lib_dep}")
+  endforeach()
+  set(MERCURY_LIB_DEPENDENCIES ${MERCURY_LIB_DEPENDENCIES} PARENT_SCOPE)
+
+  foreach(inc_dep ${MERCURY_EXT_INCLUDE_DEPENDENCIES})
+    set(MERCURY_INCLUDE_DEPENDENCIES "${MERCURY_INCLUDE_DEPENDENCIES} -I${inc_dep}")
+  endforeach()
+  set(MERCURY_INCLUDE_DEPENDENCIES ${MERCURY_INCLUDE_DEPENDENCIES} PARENT_SCOPE)
 endif()
-
-foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES})
-  set(MERCURY_LIB_DEPENDENCIES "${MERCURY_LIB_DEPENDENCIES} ${lib_dep}")
-endforeach()
-set(MERCURY_LIB_DEPENDENCIES ${MERCURY_LIB_DEPENDENCIES} PARENT_SCOPE)
-
-foreach(inc_dep ${MERCURY_EXT_INCLUDE_DEPENDENCIES})
-  set(MERCURY_INCLUDE_DEPENDENCIES "${MERCURY_INCLUDE_DEPENDENCIES} -I${inc_dep}")
-endforeach()
-set(MERCURY_INCLUDE_DEPENDENCIES ${MERCURY_INCLUDE_DEPENDENCIES} PARENT_SCOPE)

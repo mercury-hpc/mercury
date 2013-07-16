@@ -52,7 +52,8 @@ typedef struct hg_bulk_segment {
 typedef enum {
     HG_ENCODE,
     HG_DECODE,
-    HG_FREE
+    HG_FREE,
+    HG_INVALID
 } hg_proc_op_t;
 
 /* Error return codes */

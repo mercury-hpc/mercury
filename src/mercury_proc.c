@@ -11,8 +11,12 @@
 #define HG_PROC_INLINE /* Needed for inline functions */
 #include "mercury_proc.h"
 
+#ifdef _WIN32
+  #include <windows.h>
+#else
+  #include <unistd.h>
+#endif
 #include <stdlib.h>
-#include <unistd.h>
 
 /*---------------------------------------------------------------------------*/
 int
@@ -21,9 +25,15 @@ hg_proc_buf_alloc(void **mem_ptr, size_t size)
     int ret = HG_SUCCESS;
     size_t alignment;
 
+#ifdef _WIN32
+    SYSTEM_INFO system_info;
+    GetSystemInfo (&system_info);
+    alignment = system_info.dwPageSize;
+    *mem_ptr = _aligned_malloc(size, alignment);
+#else
     alignment = sysconf(_SC_PAGE_SIZE);
-
     posix_memalign(mem_ptr, alignment, size);
+#endif
     memset(*mem_ptr, 0, size);
 
     return ret;
@@ -42,7 +52,7 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc)
         return ret;
     }
 
-    priv_proc = malloc(sizeof(hg_priv_proc_t));
+    priv_proc = (hg_priv_proc_t*) malloc(sizeof(hg_priv_proc_t));
     priv_proc->op = op;
 
     priv_proc->proc_buf.buf = buf;
@@ -50,7 +60,7 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc)
     priv_proc->proc_buf.buf_ptr = buf;
     priv_proc->proc_buf.size_left = buf_size;
     priv_proc->proc_buf.is_mine = 0;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
     switch (op) {
         case HG_ENCODE:
             xdrmem_create(&priv_proc->proc_buf.xdr, buf, buf_size, XDR_ENCODE);
@@ -114,7 +124,7 @@ hg_proc_op_t
 hg_proc_get_op(hg_proc_t proc)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
-    hg_proc_op_t proc_op = 0;
+    hg_proc_op_t proc_op = HG_INVALID;
 
     if (priv_proc) proc_op = priv_proc->op;
 
@@ -143,7 +153,13 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
     ptrdiff_t current_pos;
     int ret = HG_SUCCESS;
 
+#ifdef _WIN32
+    SYSTEM_INFO system_info;
+    GetSystemInfo(&system_info);
+    page_size = system_info.dwPageSize;
+#else
     page_size = sysconf(_SC_PAGE_SIZE);
+#endif
     new_buf_size = ((size_t)(req_buf_size / page_size) + 1) * page_size;
 
     if (new_buf_size <= hg_proc_get_size(proc)) {
@@ -241,7 +257,7 @@ hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
 
         priv_proc->current_buf->buf_ptr   = buf_ptr;
         priv_proc->current_buf->size_left = priv_proc->current_buf->size - (size_t)new_pos;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
         xdr_setpos(&priv_proc->current_buf->xdr, new_pos);
 #endif
         ret = HG_SUCCESS;

@@ -36,7 +36,7 @@
 #cmakedefine NA_BUILD_SHARED_LIBS
 
 #ifdef NA_BUILD_SHARED_LIBS
-    #ifdef NA_EXPORTS
+    #ifdef na_EXPORTS
       #define NA_EXPORT NA_ABI_EXPORT
     #else
       #define NA_EXPORT NA_ABI_IMPORT
@@ -53,7 +53,6 @@
     typedef unsigned __int32 na_uint32_t;
     typedef unsigned __int8  na_uint8_t;
     typedef na_int8_t na_bool_t;
-    typedef __ptr64   na_ptr_t;
 #else
     #include <stdint.h>
     #include <stdbool.h>
@@ -64,7 +63,13 @@
     typedef uint32_t na_uint32_t;
     typedef uint8_t  na_uint8_t;
     typedef bool     na_bool_t;
-    typedef uint64_t na_ptr_t;
+#endif
+typedef na_uint64_t na_ptr_t;
+
+#ifdef _WIN32
+   #define NA_INLINE __inline
+#else
+   #define NA_INLINE __inline__
 #endif
 
 #endif /* NA_CONFIG_H */

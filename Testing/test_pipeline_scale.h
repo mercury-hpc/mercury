@@ -20,7 +20,7 @@
 /* Dummy function that needs to be shipped */
 size_t bla_write(int fildes, const void *buf, size_t nbyte);
 
-#ifdef MERCURY_HAS_BOOST
+#ifdef HG_HAS_BOOST
 /* Generate processor and struct for required input/output structs
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */

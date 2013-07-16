@@ -183,8 +183,8 @@ HG_Bulk_block_handle_get_size(hg_bulk_block_t handle);
  * \return Non-negative on success or negative on failure
  */
 HG_EXPORT int
-HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
-        hg_bulk_block_t block_handle, ptrdiff_t block_offset, size_t block_size,
+HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
+        hg_bulk_block_t block_handle, size_t block_offset, size_t block_size,
         hg_bulk_request_t *bulk_request);
 
 /**
@@ -216,8 +216,8 @@ HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
  * \return Non-negative on success or negative on failure
  */
 HG_EXPORT int
-HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, ptrdiff_t bulk_offset,
-        hg_bulk_block_t block_handle, ptrdiff_t block_offset, size_t block_size,
+HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
+        hg_bulk_block_t block_handle, size_t block_offset, size_t block_size,
         hg_bulk_request_t *bulk_request);
 
 /**

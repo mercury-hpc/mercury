@@ -18,17 +18,9 @@
 
 #include <stdlib.h>
 #include <string.h>
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
 #include <rpc/types.h>
 #include <rpc/xdr.h>
-#endif
-
-#ifndef HG_PROC_INLINE
-# if __GNUC__ && !__GNUC_STDC_INLINE__
-#   define HG_PROC_INLINE extern inline
-# else
-#  define HG_PROC_INLINE inline
-# endif
 #endif
 
 /*
@@ -45,7 +37,7 @@ typedef struct hg_proc_buf {
     size_t    size;      /* Total buffer size */
     size_t    size_left; /* Available size for user */
     hg_bool_t is_mine;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
     XDR      xdr;
 #endif
 } hg_proc_buf_t;
@@ -194,23 +186,32 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
 /**
  * Inline prototypes (do not remove)
  */
-HG_PROC_INLINE unsigned int hg_proc_string_hash(const char *string);
-HG_PROC_INLINE int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
-HG_PROC_INLINE int hg_proc_int8_t(hg_proc_t proc, hg_int8_t *data);
-HG_PROC_INLINE int hg_proc_uint8_t(hg_proc_t proc, hg_uint8_t *data);
-HG_PROC_INLINE int hg_proc_int16_t(hg_proc_t proc, hg_int16_t *data);
-HG_PROC_INLINE int hg_proc_uint16_t(hg_proc_t proc, hg_uint16_t *data);
-HG_PROC_INLINE int hg_proc_int32_t(hg_proc_t proc, hg_int32_t *data);
-HG_PROC_INLINE int hg_proc_uint32_t(hg_proc_t proc, hg_uint32_t *data);
-HG_PROC_INLINE int hg_proc_int64_t(hg_proc_t proc, hg_int64_t *data);
-HG_PROC_INLINE int hg_proc_uint64_t(hg_proc_t proc, hg_uint64_t *data);
-HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size);
-HG_PROC_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string);
-HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle);
-HG_PROC_INLINE size_t hg_proc_get_header_size(void);
-HG_PROC_INLINE int hg_proc_header_request(hg_proc_t proc, hg_uint32_t *op_id,
-        uint8_t *extra_buf_used, hg_bulk_t *extra_handle);
-HG_PROC_INLINE int hg_proc_header_response(hg_proc_t proc, hg_uint8_t *extra_buf_used);
+#ifndef HG_PROC_INLINE
+# if __GNUC__ && !__GNUC_STDC_INLINE__
+#  define HG_PROC_INLINE extern HG_INLINE
+# else
+#  define HG_PROC_INLINE HG_INLINE
+# endif
+#endif
+#define HG_PROC_INLINE_DECL HG_PROC_INLINE
+
+HG_PROC_INLINE_DECL unsigned int hg_proc_string_hash(const char *string);
+HG_PROC_INLINE_DECL int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
+HG_PROC_INLINE_DECL int hg_proc_int8_t(hg_proc_t proc, hg_int8_t *data);
+HG_PROC_INLINE_DECL int hg_proc_uint8_t(hg_proc_t proc, hg_uint8_t *data);
+HG_PROC_INLINE_DECL int hg_proc_int16_t(hg_proc_t proc, hg_int16_t *data);
+HG_PROC_INLINE_DECL int hg_proc_uint16_t(hg_proc_t proc, hg_uint16_t *data);
+HG_PROC_INLINE_DECL int hg_proc_int32_t(hg_proc_t proc, hg_int32_t *data);
+HG_PROC_INLINE_DECL int hg_proc_uint32_t(hg_proc_t proc, hg_uint32_t *data);
+HG_PROC_INLINE_DECL int hg_proc_int64_t(hg_proc_t proc, hg_int64_t *data);
+HG_PROC_INLINE_DECL int hg_proc_uint64_t(hg_proc_t proc, hg_uint64_t *data);
+HG_PROC_INLINE_DECL int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size);
+HG_PROC_INLINE_DECL int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string);
+HG_PROC_INLINE_DECL int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle);
+HG_PROC_INLINE_DECL size_t hg_proc_get_header_size(void);
+HG_PROC_INLINE_DECL int hg_proc_header_request(hg_proc_t proc, hg_uint32_t *op_id,
+        hg_uint8_t *extra_buf_used, hg_bulk_t *extra_handle);
+HG_PROC_INLINE_DECL int hg_proc_header_response(hg_proc_t proc, hg_uint8_t *extra_buf_used);
 
 /**
  * Hash function name for unique ID to register.
@@ -289,7 +290,7 @@ hg_proc_int8_t(hg_proc_t proc, hg_int8_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
     ret = xdr_int8_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_int8_t));
@@ -310,7 +311,7 @@ hg_proc_uint8_t(hg_proc_t proc, hg_uint8_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
     ret = xdr_uint8_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_uint8_t));
@@ -331,7 +332,7 @@ hg_proc_int16_t(hg_proc_t proc, hg_int16_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
     ret = xdr_int16_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_int16_t));
@@ -352,7 +353,7 @@ hg_proc_uint16_t(hg_proc_t proc, hg_uint16_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
     ret = xdr_uint16_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_uint16_t));
@@ -373,7 +374,7 @@ hg_proc_int32_t(hg_proc_t proc, hg_int32_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
     ret = xdr_int32_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_int32_t));
@@ -394,7 +395,7 @@ hg_proc_uint32_t(hg_proc_t proc, hg_uint32_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
     ret = xdr_uint32_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_uint32_t));
@@ -415,7 +416,7 @@ hg_proc_int64_t(hg_proc_t proc, hg_int64_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
     ret = xdr_int64_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_int64_t));
@@ -436,7 +437,7 @@ hg_proc_uint64_t(hg_proc_t proc, hg_uint64_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
-#ifdef MERCURY_HAS_XDR
+#ifdef HG_HAS_XDR
     ret = xdr_uint64_t(&priv_proc->current_buf->xdr, data) ? HG_SUCCESS : HG_FAIL;
 #else
     ret = hg_proc_memcpy(priv_proc, data, sizeof(hg_uint64_t));

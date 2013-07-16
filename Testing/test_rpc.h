@@ -14,7 +14,7 @@
 #include "mercury_macros.h"
 #include "mercury_proc.h"
 
-#ifdef MERCURY_HAS_BOOST
+#ifdef HG_HAS_BOOST
 /* 1. Generate processor and struct for additional struct types
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */

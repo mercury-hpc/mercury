@@ -22,7 +22,7 @@
 
 //#define MERCURY_HAS_ADVANCED_MACROS
 
-#ifdef MERCURY_HAS_BOOST
+#ifdef HG_HAS_BOOST
 
 #ifdef MERCURY_HAS_ADVANCED_MACROS
 
@@ -80,7 +80,7 @@ MERCURY_GEN_PROC( read_out_t, ((int64_t)(ret)) )
 
 #endif /* MERCURY_HAS_ADVANCED_MACROS */
 
-#else /* MERCURY_HAS_BOOST */
+#else /* HG_HAS_BOOST */
 /* Define open_in_t */
 typedef struct {
     hg_string_t path;

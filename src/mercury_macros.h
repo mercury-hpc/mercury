@@ -24,7 +24,7 @@
 #include "na_ssm.h"
 #endif
 
-#ifdef MERCURY_HAS_BOOST
+#ifdef HG_HAS_BOOST
 #include <boost/preprocessor.hpp>
 
 /********************** Utility macros **********************/
@@ -297,7 +297,7 @@ static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
             /* Is mercury library initialized */ \
             HG_Initialized(&hg_initialized, &network_class); \
             if (!hg_initialized) { \
-                char *na_plugin = getenv(MERCURY_NA_PLUGIN); \
+                char *na_plugin = getenv(HG_NA_PLUGIN); \
                 if (!na_plugin) na_plugin = "mpi"; \
                 if (strcmp("mpi", na_plugin) == 0) { \
                     FILE *config; \
@@ -311,7 +311,7 @@ static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
                         nread = fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config); \
                         if (!nread) HG_ERROR_DEFAULT("Could not read port name"); \
                         fclose(config); \
-                        setenv(MERCURY_PORT_NAME, mpi_port_name, 1); \
+                        setenv(HG_PORT_NAME, mpi_port_name, 1); \
                     } \
                 } \
                 hg_ret = HG_Init(network_class); \
@@ -325,7 +325,7 @@ static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
             BOOST_PP_IF(with_bulk, HG_BULK_INITIALIZE(ret_fail), BOOST_PP_EMPTY()) \
             \
             /* Get server_name if set */ \
-            server_name = getenv(MERCURY_PORT_NAME); \
+            server_name = getenv(HG_PORT_NAME); \
             /* Look up addr id */ \
             na_ret = NA_Addr_lookup(network_class, server_name, &addr); \
             if (na_ret != NA_SUCCESS) { \
@@ -507,7 +507,7 @@ static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
                 BOOST_PP_CAT(func_name, _out_t), HG_GEN_PARAM_NAME_SEQ(out_param_, out_types), \
                 with_bulk, consume_bulk )
 
-#else /* MERCURY_HAS_BOOST */
+#else /* HG_HAS_BOOST */
 
 #define MERCURY_REGISTER(func_name, in_struct_type_name, out_struct_type_name) \
         HG_Register(func_name, hg_proc_ ## in_struct_type_name, \
@@ -518,7 +518,7 @@ static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
                 hg_proc_ ## in_struct_type_name, \
                 hg_proc_ ## out_struct_type_name)
 
-#endif /* MERCURY_HAS_BOOST */
+#endif /* HG_HAS_BOOST */
 
 /* Register callback without encoding/decoding routines */
 #define MERCURY_HANDLER_REGISTER_CALLBACK(func_name, func_callback) \
@@ -549,7 +549,7 @@ void hg_finalize_server(void) \
     } \
     \
     /* Get server_name if set */ \
-    server_name = getenv(MERCURY_PORT_NAME); \
+    server_name = getenv(HG_PORT_NAME); \
     /* Look up addr id */ \
     na_ret = NA_Addr_lookup(network_class, server_name, &addr); \
     if (na_ret != NA_SUCCESS) { \

@@ -54,7 +54,8 @@ extern unsigned int hg_int_hash(void *vlocation);
 /* List of processed handles */
 static hg_list_entry_t *unexpected_handle_list;
 static hg_thread_mutex_t unexpected_handle_list_mutex;
-static inline int unexpected_handle_list_equal(void *location1, void *location2)
+static HG_INLINE int
+unexpected_handle_list_equal(void *location1, void *location2)
 {
     return location1 == location2;
 }
@@ -622,7 +623,7 @@ HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf,
     hg_proc_info_t   *proc_info;
 
     hg_proc_t enc_proc = HG_PROC_NULL;
-    uint8_t extra_send_buf_used = 0;
+    hg_uint8_t extra_send_buf_used = 0;
 
     int ret = HG_SUCCESS, na_ret;
 

@@ -20,7 +20,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
 
 static int na_mpi_finalize(void);
@@ -86,7 +85,7 @@ static na_class_t na_mpi_g = {
 typedef struct mpi_addr {
     MPI_Comm  comm;          /* Communicator */
     int       rank;          /* Rank in this communicator */
-    bool      is_reference;  /* Reference to existing address */
+    na_bool_t is_reference;  /* Reference to existing address */
 } mpi_addr_t;
 
 typedef struct mpi_mem_handle {
@@ -128,8 +127,8 @@ typedef struct mpi_req {
 static int mpi_ext_initialized;                 /* MPI initialized */
 static MPI_Comm mpi_intra_comm = MPI_COMM_NULL; /* Private plugin intra-comm */
 static char mpi_port_name[MPI_MAX_PORT_NAME];   /* Connection port */
-static bool is_server = 0;                      /* Used in server mode */
-static bool use_static_intercomm = 0;           /* Use static inter-communicator */
+static na_bool_t is_server = 0;                 /* Used in server mode */
+static na_bool_t use_static_intercomm = 0;      /* Use static inter-communicator */
 static mpi_addr_t *client_remote_addr = NULL;   /* Client remote address */
 static mpi_addr_t server_remote_addr;           /* Server remote address */
 static MPI_Comm mpi_onesided_comm = MPI_COMM_NULL;
@@ -144,12 +143,12 @@ static hg_thread_mutex_t mpi_tag_mutex;
 
 #if MPI_VERSION < 3
 static hg_hash_table_t *mem_handle_map = NULL;  /* Map mem addresses to mem handles */
-static inline int
+static NA_INLINE int
 pointer_equal(void *location1, void *location2)
 {
     return location1 == location2;
 }
-static inline unsigned int
+static NA_INLINE unsigned int
 pointer_hash(void *location)
 {
     return (unsigned int) (unsigned long) location;
@@ -169,7 +168,7 @@ static MPI_Win mpi_dynamic_win;                 /* Dynamic window */
 #if MPI_VERSION < 3
 #ifdef NA_HAS_CLIENT_THREAD
 static hg_thread_mutex_t finalizing_mutex;
-static bool              finalizing;
+static na_bool_t         finalizing;
 static hg_thread_t       progress_service;
 #endif
 hg_thread_mutex_t mem_map_mutex;
@@ -179,7 +178,7 @@ hg_thread_mutex_t mem_map_mutex;
 static void *
 na_mpi_progress_service(void NA_UNUSED *args)
 {
-    bool service_done = 0;
+    na_bool_t service_done = 0;
 
     while (!service_done) {
         int na_ret;
@@ -387,7 +386,7 @@ na_mpi_addr_lookup(const char *name, na_addr_t *addr)
     }
 
     /* Allocate the addr */
-    mpi_addr = malloc(sizeof(mpi_addr_t));
+    mpi_addr = (mpi_addr_t*) malloc(sizeof(mpi_addr_t));
     mpi_addr->comm = MPI_COMM_NULL;
     mpi_addr->is_reference = 0;
     mpi_addr->rank = 0; /* TODO Only one rank for server but this may need to be improved */
@@ -422,7 +421,7 @@ na_mpi_addr_lookup(const char *name, na_addr_t *addr)
     MPI_Comm_dup(mpi_addr->comm, &mpi_onesided_comm);
     hg_thread_mutex_init(&finalizing_mutex);
     /* TODO temporary to handle one-sided exchanges with remote server */
-    hg_thread_create(&progress_service, &na_mpi_progress_service, NULL);
+    hg_thread_create(&progress_service, (hg_thread_func_t) &na_mpi_progress_service, NULL);
 #endif
 #else
     MPI_Intercomm_merge(mpi_addr->comm, is_server, &mpi_onesided_comm);
@@ -561,7 +560,7 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     if (source) {
         mpi_addr_t **peer_addr_ptr = (mpi_addr_t**) source;
         mpi_addr_t *peer_addr;
-        *peer_addr_ptr = malloc(sizeof(mpi_addr_t));
+        *peer_addr_ptr = (mpi_addr_t*) malloc(sizeof(mpi_addr_t));
         peer_addr = *peer_addr_ptr;
         peer_addr->comm = mpi_unexpected_comm;
         peer_addr->rank = mpi_source;
@@ -569,7 +568,7 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     }
     if (tag) *tag = mpi_tag;
 
-    mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request = (mpi_req_t*) malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
 #if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
@@ -600,7 +599,7 @@ na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     mpi_addr_t *mpi_addr = (mpi_addr_t*) dest;
     mpi_req_t *mpi_request;
 
-    mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request = (mpi_req_t*) malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_SEND_OP;
 #if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
@@ -631,7 +630,7 @@ na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     mpi_addr_t *mpi_addr = (mpi_addr_t*) source;
     mpi_req_t *mpi_request;
 
-    mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request = (mpi_req_t*) malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
 #if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
@@ -660,7 +659,7 @@ na_mpi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags
     mpi_mem_handle_t *mpi_mem_handle;
     /* MPI_Aint mpi_buf_size = (MPI_Aint) buf_size; */
 
-    mpi_mem_handle = malloc(sizeof(mpi_mem_handle_t));
+    mpi_mem_handle = (mpi_mem_handle_t*) malloc(sizeof(mpi_mem_handle_t));
     mpi_mem_handle->base = mpi_buf_base;
     /* mpi_mem_handle->size = mpi_buf_size; */
     mpi_mem_handle->attr = flags;
@@ -759,7 +758,7 @@ na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
         NA_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
         ret = NA_FAIL;
     } else {
-        mpi_mem_handle = malloc(sizeof(mpi_mem_handle_t));
+        mpi_mem_handle = (mpi_mem_handle_t*) malloc(sizeof(mpi_mem_handle_t));
         /* Here safe to do a simple memcpy */
         memcpy(mpi_mem_handle, buf, sizeof(mpi_mem_handle_t));
         *mem_handle = (na_mem_handle_t) mpi_mem_handle;
@@ -816,7 +815,7 @@ na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         return ret;
     }
 
-    mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request = (mpi_req_t*) malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_SEND_OP;
     mpi_request->request = MPI_REQUEST_NULL;
 
@@ -891,7 +890,7 @@ na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     }
 #endif
 
-    mpi_request = malloc(sizeof(mpi_req_t));
+    mpi_request = (mpi_req_t*) malloc(sizeof(mpi_req_t));
     mpi_request->type = MPI_RECV_OP;
     mpi_request->request = MPI_REQUEST_NULL;
 
@@ -1072,10 +1071,11 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
     /* Wait for an initial request from client */
     if (onesided_request == NA_REQUEST_NULL) {
         do {
+            hg_time_t t1, t2, t;
+
             onesided_actual_size = 0;
             remote_addr = NA_ADDR_NULL;
             remote_tag = 0;
-            hg_time_t t1, t2, t;
 
             hg_time_get_current(&t1);
 
@@ -1141,7 +1141,7 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
      * mpi_mem_handle since it's a pointer to a mem_handle */
     hg_thread_mutex_lock(&mem_map_mutex);
 
-    mpi_mem_handle = hg_hash_table_lookup(mem_handle_map, onesided_info.base);
+    mpi_mem_handle = (mpi_mem_handle_t*) hg_hash_table_lookup(mem_handle_map, onesided_info.base);
 
     if (!mpi_mem_handle) {
         NA_ERROR_DEFAULT("Could not find memory handle, registered?");

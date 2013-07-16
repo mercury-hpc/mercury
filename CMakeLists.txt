@@ -229,17 +229,19 @@ install(
 #-----------------------------------------------------------------------------
 # For automake compatibility, also a provide a pkgconfig file
 #-----------------------------------------------------------------------------
-configure_file(
-  ${MERCURY_SOURCE_DIR}/CMake/mercury.pc.in
-  ${MERCURY_BINARY_DIR}/CMakeFiles/mercury.pc @ONLY
-)
+if(NOT WIN32)
+  configure_file(
+    ${MERCURY_SOURCE_DIR}/CMake/mercury.pc.in
+    ${MERCURY_BINARY_DIR}/CMakeFiles/mercury.pc @ONLY
+  )
 
-install(
-  FILES
-    ${MERCURY_BINARY_DIR}/CMakeFiles/mercury.pc
-  DESTINATION
-    ${MERCURY_INSTALL_LIB_DIR}/pkgconfig
-)
+  install(
+    FILES
+      ${MERCURY_BINARY_DIR}/CMakeFiles/mercury.pc
+    DESTINATION
+      ${MERCURY_INSTALL_LIB_DIR}/pkgconfig
+  )
+endif()
 
 #-----------------------------------------------------------------------------
 # CPack

@@ -30,7 +30,7 @@
 #cmakedefine HG_UTIL_BUILD_SHARED_LIBS
 
 #ifdef HG_UTIL_BUILD_SHARED_LIBS
-  #ifdef HG_UTIL_EXPORTS
+  #ifdef mercury_util_EXPORTS
     #define HG_UTIL_EXPORT HG_UTIL_ABI_EXPORT
   #else
     #define HG_UTIL_EXPORT HG_UTIL_ABI_IMPORT

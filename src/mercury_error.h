@@ -13,14 +13,27 @@
 
 #include <stdio.h>
 
-/* Error return codes */
-#define HG_SUCCESS  1
-#define HG_FAIL    -1
-#define HG_TRUE     1
-#define HG_FALSE    0
+/* TODO Error return codes should be moved */
+#ifndef HG_SUCCESS
+  #define HG_SUCCESS  1
+  #define HG_FAIL    -1
+  #define HG_TRUE     1
+  #define HG_FALSE    0
+#endif
+
+/* For compatibility */
+#if __STDC_VERSION__ < 199901L
+  #if __GNUC__ >= 2
+    #define __func__ __FUNCTION__
+  #else
+    #define __func__ "<unknown>"
+  #endif
+#elif _WIN32
+  #define __func__ __FUNCTION__
+#endif
 
 /* Default error macro */
-#define HG_ERROR_DEFAULT(x) {              \
+#define HG_ERROR_DEFAULT(x) {             \
   fprintf(stderr, "Error "                \
         "in %s:%d (%s): "                 \
         "%s.\n",                          \
