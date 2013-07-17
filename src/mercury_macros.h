@@ -57,7 +57,8 @@ typedef struct \
 
 /* Generate proc for struct */
 #define HG_GEN_STRUCT_PROC(struct_type_name, fields) \
-static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
+static HG_INLINE int \
+    BOOST_PP_CAT(hg_proc_, struct_type_name) \
     (hg_proc_t proc, void *data) \
 {   \
     int ret = HG_SUCCESS; \
@@ -138,7 +139,7 @@ static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
 #define HG_GEN_CONSUME_BULK 1
 
 /* Initialized parameter */
-#define HG_BULK_INIT_PARAM ((bool)(bulk_initialized))
+#define HG_BULK_INIT_PARAM ((hg_bool_t)(bulk_initialized))
 
 /* Extra input parameters for bulk data */
 #define HG_BULK_EXTRA_IN_PARAM ((void*)(bulk_buf)) ((uint64_t) (bulk_count))
@@ -289,9 +290,9 @@ static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
             BOOST_PP_IF(with_bulk, HG_GEN_DECL_VARS(HG_BULK_PARAM), BOOST_PP_EMPTY()) \
             hg_request_t request; \
             hg_status_t status; \
-            bool hg_initialized; \
+            hg_bool_t hg_initialized; \
             BOOST_PP_IF(with_bulk, HG_GEN_DECL_VARS(HG_BULK_INIT_PARAM), BOOST_PP_EMPTY()) \
-            bool func_registered; \
+            hg_bool_t func_registered; \
             int hg_ret, na_ret; \
             \
             /* Is mercury library initialized */ \
@@ -535,7 +536,7 @@ static inline int BOOST_PP_CAT(hg_proc_, struct_type_name) \
 void hg_finalize_server(void) \
 { \
     int hg_ret, na_ret; \
-    bool hg_initialized, func_registered; \
+    hg_bool_t hg_initialized, func_registered; \
     na_class_t *network_class; \
     char *server_name; \
     hg_request_t request; \
