@@ -13,21 +13,23 @@
 
 #include "na_config.h"
 
+#include <limits.h>
+
 typedef struct na_class na_class_t; /* Abstract network class */
 typedef void *      na_addr_t;      /* Abstract network address */
 typedef na_uint64_t na_size_t;      /* Size */
-typedef na_int32_t  na_tag_t;       /* Tag */
+typedef na_uint32_t na_tag_t;       /* Tag */
 typedef void *      na_request_t;   /* Abstract request */
 typedef struct      na_status {     /* Operation status */
     na_bool_t completed;            /* - true if operation has completed */
     na_size_t count;                /* - number of bytes transmitted */
 } na_status_t;
 
-typedef void *     na_mem_handle_t; /* Absract memory handle */
-typedef na_int64_t na_offset_t;     /* Offset */
-typedef struct     na_segment {     /* Segment */
-    na_ptr_t   address;             /* - address of the segment */
-    na_size_t  size;                /* - size of the segment in bytes */
+typedef void *      na_mem_handle_t; /* Absract memory handle */
+typedef na_uint64_t na_offset_t;     /* Offset */
+typedef struct      na_segment {     /* Segment */
+    na_ptr_t   address;              /* - address of the segment */
+    na_size_t  size;                 /* - size of the segment in bytes */
 } na_segment_t;
 
 /* Constant values */
@@ -38,6 +40,10 @@ typedef struct     na_segment {     /* Segment */
 
 /* Max timeout */
 #define NA_MAX_IDLE_TIME (3600*1000)
+
+/* Tag upper bound
+ * NB. This is not the user tag limit but only the limit imposed by the type */
+#define NA_TAG_UB UINT_MAX
 
 /* The memory attributes associated with the memory handle
  * can be defined as read/write or read only */

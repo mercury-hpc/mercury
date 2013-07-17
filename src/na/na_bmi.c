@@ -141,7 +141,7 @@ pointer_hash(void *location)
 #define NA_BMI_UNEXPECTED_SIZE 4096
 
 /* Max tag */
-#define NA_BMI_MAX_TAG (INT_MAX >> 2)
+#define NA_BMI_MAX_TAG (NA_TAG_UB >> 2)
 
 /* Default tag used for one-sided over two-sided */
 #define NA_BMI_ONESIDED_TAG (NA_BMI_MAX_TAG + 1)
