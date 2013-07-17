@@ -8,7 +8,9 @@
  * found at the root of the source code distribution tree.
  */
 
-#define HG_PROC_INLINE /* Needed for inline functions */
+#ifndef _WIN32
+  #define HG_PROC_INLINE
+#endif
 #include "mercury_proc.h"
 
 #ifdef _WIN32

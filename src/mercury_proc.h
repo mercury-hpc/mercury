@@ -187,31 +187,42 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
  * Inline prototypes (do not remove)
  */
 #ifndef HG_PROC_INLINE
-# if __GNUC__ && !__GNUC_STDC_INLINE__
-#  define HG_PROC_INLINE extern HG_INLINE
-# else
-#  define HG_PROC_INLINE HG_INLINE
-# endif
+  #if __GNUC__ && !__GNUC_STDC_INLINE__
+    #define HG_PROC_INLINE extern HG_INLINE
+  #else
+    #define HG_PROC_INLINE HG_INLINE
+  #endif
 #endif
-#define HG_PROC_INLINE_DECL HG_PROC_INLINE
 
-HG_PROC_INLINE_DECL unsigned int hg_proc_string_hash(const char *string);
-HG_PROC_INLINE_DECL int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
-HG_PROC_INLINE_DECL int hg_proc_int8_t(hg_proc_t proc, hg_int8_t *data);
-HG_PROC_INLINE_DECL int hg_proc_uint8_t(hg_proc_t proc, hg_uint8_t *data);
-HG_PROC_INLINE_DECL int hg_proc_int16_t(hg_proc_t proc, hg_int16_t *data);
-HG_PROC_INLINE_DECL int hg_proc_uint16_t(hg_proc_t proc, hg_uint16_t *data);
-HG_PROC_INLINE_DECL int hg_proc_int32_t(hg_proc_t proc, hg_int32_t *data);
-HG_PROC_INLINE_DECL int hg_proc_uint32_t(hg_proc_t proc, hg_uint32_t *data);
-HG_PROC_INLINE_DECL int hg_proc_int64_t(hg_proc_t proc, hg_int64_t *data);
-HG_PROC_INLINE_DECL int hg_proc_uint64_t(hg_proc_t proc, hg_uint64_t *data);
-HG_PROC_INLINE_DECL int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size);
-HG_PROC_INLINE_DECL int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string);
-HG_PROC_INLINE_DECL int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle);
-HG_PROC_INLINE_DECL size_t hg_proc_get_header_size(void);
-HG_PROC_INLINE_DECL int hg_proc_header_request(hg_proc_t proc, hg_uint32_t *op_id,
+HG_EXPORT HG_PROC_INLINE unsigned int hg_proc_string_hash(const char *string);
+HG_EXPORT HG_PROC_INLINE int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
+HG_EXPORT HG_PROC_INLINE int hg_proc_hg_int8_t(hg_proc_t proc, hg_int8_t *data);
+HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint8_t(hg_proc_t proc, hg_uint8_t *data);
+HG_EXPORT HG_PROC_INLINE int hg_proc_hg_int16_t(hg_proc_t proc, hg_int16_t *data);
+HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint16_t(hg_proc_t proc, hg_uint16_t *data);
+HG_EXPORT HG_PROC_INLINE int hg_proc_hg_int32_t(hg_proc_t proc, hg_int32_t *data);
+HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *data);
+HG_EXPORT HG_PROC_INLINE int hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data);
+HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data);
+HG_EXPORT HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size);
+HG_EXPORT HG_PROC_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string);
+HG_EXPORT HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle);
+HG_EXPORT HG_PROC_INLINE size_t hg_proc_get_header_size(void);
+HG_EXPORT HG_PROC_INLINE int hg_proc_header_request(hg_proc_t proc, hg_uint32_t *op_id,
         hg_uint8_t *extra_buf_used, hg_bulk_t *extra_handle);
-HG_PROC_INLINE_DECL int hg_proc_header_response(hg_proc_t proc, hg_uint8_t *extra_buf_used);
+HG_EXPORT HG_PROC_INLINE int hg_proc_header_response(hg_proc_t proc, hg_uint8_t *extra_buf_used);
+
+/**
+ * For convenience map stdint types to hg types
+ */
+#define hg_proc_int8_t   hg_proc_hg_int8_t
+#define hg_proc_uint8_t  hg_proc_hg_uint8_t
+#define hg_proc_int16_t  hg_proc_hg_int16_t
+#define hg_proc_uint16_t hg_proc_hg_uint16_t
+#define hg_proc_int32_t  hg_proc_hg_int32_t
+#define hg_proc_uint32_t hg_proc_hg_uint32_t
+#define hg_proc_int64_t  hg_proc_hg_int64_t
+#define hg_proc_uint64_t hg_proc_hg_uint64_t
 
 /**
  * Hash function name for unique ID to register.
@@ -286,7 +297,7 @@ hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
  * \return Non-negative on success or negative on failure
  */
 HG_PROC_INLINE int
-hg_proc_int8_t(hg_proc_t proc, hg_int8_t *data)
+hg_proc_hg_int8_t(hg_proc_t proc, hg_int8_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -307,7 +318,7 @@ hg_proc_int8_t(hg_proc_t proc, hg_int8_t *data)
  * \return Non-negative on success or negative on failure
  */
 HG_PROC_INLINE int
-hg_proc_uint8_t(hg_proc_t proc, hg_uint8_t *data)
+hg_proc_hg_uint8_t(hg_proc_t proc, hg_uint8_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -328,7 +339,7 @@ hg_proc_uint8_t(hg_proc_t proc, hg_uint8_t *data)
  * \return Non-negative on success or negative on failure
  */
 HG_PROC_INLINE int
-hg_proc_int16_t(hg_proc_t proc, hg_int16_t *data)
+hg_proc_hg_int16_t(hg_proc_t proc, hg_int16_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -349,7 +360,7 @@ hg_proc_int16_t(hg_proc_t proc, hg_int16_t *data)
  * \return Non-negative on success or negative on failure
  */
 HG_PROC_INLINE int
-hg_proc_uint16_t(hg_proc_t proc, hg_uint16_t *data)
+hg_proc_hg_uint16_t(hg_proc_t proc, hg_uint16_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -370,7 +381,7 @@ hg_proc_uint16_t(hg_proc_t proc, hg_uint16_t *data)
  * \return Non-negative on success or negative on failure
  */
 HG_PROC_INLINE int
-hg_proc_int32_t(hg_proc_t proc, hg_int32_t *data)
+hg_proc_hg_int32_t(hg_proc_t proc, hg_int32_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -391,7 +402,7 @@ hg_proc_int32_t(hg_proc_t proc, hg_int32_t *data)
  * \return Non-negative on success or negative on failure
  */
 HG_PROC_INLINE int
-hg_proc_uint32_t(hg_proc_t proc, hg_uint32_t *data)
+hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -412,7 +423,7 @@ hg_proc_uint32_t(hg_proc_t proc, hg_uint32_t *data)
  * \return Non-negative on success or negative on failure
  */
 HG_PROC_INLINE int
-hg_proc_int64_t(hg_proc_t proc, hg_int64_t *data)
+hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
@@ -433,7 +444,7 @@ hg_proc_int64_t(hg_proc_t proc, hg_int64_t *data)
  * \return Non-negative on success or negative on failure
  */
 HG_PROC_INLINE int
-hg_proc_uint64_t(hg_proc_t proc, hg_uint64_t *data)
+hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_FAIL;
