@@ -923,14 +923,6 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
         hg_proc_free(proc);
     }
 
-    /* Free handle and send response back */
-    ret = HG_Handler_start_response(handle, out_extra_buf, out_extra_buf_size);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not respond");
-        ret = HG_FAIL;
-        return ret;
-    }
-
     if (priv_handle->in_struct && proc_info->dec_routine) {
         /* Create a new free proc */
         ret = hg_proc_create(NULL, 0, HG_FREE, &proc);
@@ -949,6 +941,16 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
 
         /* Free proc */
         hg_proc_free(proc);
+    }
+
+    /* Start sending response back, this should be the last operation called
+     * that uses the handle as HG_Handler_process may free the handle as soon
+     * as the response completes */
+    ret = HG_Handler_start_response(handle, out_extra_buf, out_extra_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not respond");
+        ret = HG_FAIL;
+        return ret;
     }
 
     return ret;
