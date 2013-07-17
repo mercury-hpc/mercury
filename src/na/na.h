@@ -109,14 +109,26 @@ NA_EXPORT int
 NA_Addr_free(na_class_t *network_class, na_addr_t addr);
 
 /**
- * Get the maximum size of messages supported by send/recv.
+ * Get the maximum size of messages supported by expected send/recv.
+ * Small message size that may differ from the unexpected message size.
  *
  * \param network_class [IN]    pointer to network class
  *
  * \return Non-negative value
  */
 NA_EXPORT na_size_t
-NA_Msg_get_maximum_size(na_class_t *network_class);
+NA_Msg_get_max_expected_size(na_class_t *network_class);
+
+/**
+ * Get the maximum size of messages supported by unexpected send/recv.
+ * Small message size.
+ *
+ * \param network_class [IN]    pointer to network class
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_size_t
+NA_Msg_get_max_unexpected_size(na_class_t *network_class);
 
 /**
  * Get the maximum tag value that can be used by send/recv.
@@ -127,11 +139,14 @@ NA_Msg_get_maximum_size(na_class_t *network_class);
  * \return Non-negative value
  */
 NA_EXPORT na_tag_t
-NA_Msg_get_maximum_tag(na_class_t *network_class);
+NA_Msg_get_max_tag(na_class_t *network_class);
 
 /**
  * Send an unexpected message to dest.
  * Unexpected sends do not require a matching receive to complete.
+ * Note also that unexpected messages do not require an unexpected receive to
+ * be posted at the destination before sending the message and the destination
+ * is allowed to drop the message without notification.
  *
  * \param network_class [IN]    pointer to network class
  * \param buf [IN]              pointer to send buffer

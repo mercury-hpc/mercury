@@ -31,8 +31,9 @@
 static int na_bmi_finalize(void);
 static int na_bmi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_bmi_addr_free(na_addr_t addr);
-static na_size_t na_bmi_msg_get_maximum_size(void);
-static na_tag_t na_bmi_msg_get_maximum_tag(void);
+static na_size_t na_bmi_msg_get_max_expected_size(void);
+static na_size_t na_bmi_msg_get_max_unexpected_size(void);
+static na_tag_t na_bmi_msg_get_max_tag(void);
 static int na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 static int na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
@@ -58,27 +59,28 @@ static int na_bmi_progress(unsigned int timeout, na_status_t *status);
 static int na_bmi_request_free(na_request_t request);
 
 static na_class_t na_bmi_g = {
-        na_bmi_finalize,               /* finalize */
-        na_bmi_addr_lookup,            /* addr_lookup */
-        na_bmi_addr_free,              /* addr_free */
-        na_bmi_msg_get_maximum_size,   /* msg_get_maximum_size */
-        na_bmi_msg_get_maximum_tag,    /* msg_get_maximum_tag */
-        na_bmi_msg_send_unexpected,    /* msg_send_unexpected */
-        na_bmi_msg_recv_unexpected,    /* msg_recv_unexpected */
-        na_bmi_msg_send,               /* msg_send */
-        na_bmi_msg_recv,               /* msg_recv */
-        na_bmi_mem_register,           /* mem_register */
-        NULL,                          /* mem_register_segments */
-        na_bmi_mem_deregister,         /* mem_deregister */
+        na_bmi_finalize,                      /* finalize */
+        na_bmi_addr_lookup,                   /* addr_lookup */
+        na_bmi_addr_free,                     /* addr_free */
+        na_bmi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
+        na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
+        na_bmi_msg_get_max_tag,               /* msg_get_maximum_tag */
+        na_bmi_msg_send_unexpected,           /* msg_send_unexpected */
+        na_bmi_msg_recv_unexpected,           /* msg_recv_unexpected */
+        na_bmi_msg_send,                      /* msg_send */
+        na_bmi_msg_recv,                      /* msg_recv */
+        na_bmi_mem_register,                  /* mem_register */
+        NULL,                                 /* mem_register_segments */
+        na_bmi_mem_deregister,                /* mem_deregister */
         na_bmi_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
-        na_bmi_mem_handle_serialize,   /* mem_handle_serialize */
-        na_bmi_mem_handle_deserialize, /* mem_handle_deserialize */
-        na_bmi_mem_handle_free,        /* mem_handle_free */
-        na_bmi_put,                    /* put */
-        na_bmi_get,                    /* get */
-        na_bmi_wait,                   /* wait */
-        na_bmi_progress,               /* progress */
-        na_bmi_request_free            /* request_free */
+        na_bmi_mem_handle_serialize,          /* mem_handle_serialize */
+        na_bmi_mem_handle_deserialize,        /* mem_handle_deserialize */
+        na_bmi_mem_handle_free,               /* mem_handle_free */
+        na_bmi_put,                           /* put */
+        na_bmi_get,                           /* get */
+        na_bmi_wait,                          /* wait */
+        na_bmi_progress,                      /* progress */
+        na_bmi_request_free                   /* request_free */
 };
 
 typedef struct bmi_request bmi_request_t;
@@ -139,6 +141,7 @@ pointer_hash(void *location)
 }
 
 #define NA_BMI_UNEXPECTED_SIZE 4096
+#define NA_BMI_EXPECTED_SIZE   NA_BMI_UNEXPECTED_SIZE
 
 /* Max tag */
 #define NA_BMI_MAX_TAG (NA_TAG_UB >> 2)
@@ -322,7 +325,15 @@ na_bmi_addr_free(na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_bmi_msg_get_maximum_size(void)
+na_bmi_msg_get_max_expected_size(void)
+{
+    na_size_t max_expected_size = NA_BMI_EXPECTED_SIZE;
+    return max_expected_size;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_size_t
+na_bmi_msg_get_max_unexpected_size(void)
 {
     na_size_t max_unexpected_size = NA_BMI_UNEXPECTED_SIZE;
     return max_unexpected_size;
@@ -330,7 +341,7 @@ na_bmi_msg_get_maximum_size(void)
 
 /*---------------------------------------------------------------------------*/
 static na_tag_t
-na_bmi_msg_get_maximum_tag(void)
+na_bmi_msg_get_max_tag(void)
 {
     na_tag_t max_tag = NA_BMI_MAX_TAG;
 

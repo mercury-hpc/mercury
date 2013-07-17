@@ -444,7 +444,7 @@ HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
 
     if (!priv_handle->send_buf) {
         /* Recv buffer must match the size of unexpected buffer */
-        priv_handle->send_buf_size = NA_Msg_get_maximum_size(handler_na_class);
+        priv_handle->send_buf_size = NA_Msg_get_max_expected_size(handler_na_class);
 
         ret = hg_proc_buf_alloc(&priv_handle->send_buf, priv_handle->send_buf_size);
         if (ret != HG_SUCCESS) {
@@ -497,7 +497,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
         priv_handle = hg_handler_new();
 
         /* Recv buffer must match the size of unexpected buffer */
-        priv_handle->recv_buf_size = NA_Msg_get_maximum_size(handler_na_class);
+        priv_handle->recv_buf_size = NA_Msg_get_max_unexpected_size(handler_na_class);
 
         /* Allocate a new receive buffer for the unexpected message */
         ret = hg_proc_buf_alloc(&priv_handle->recv_buf, priv_handle->recv_buf_size);

@@ -70,18 +70,26 @@ NA_Addr_free(na_class_t *network_class, na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 na_size_t
-NA_Msg_get_maximum_size(na_class_t *network_class)
+NA_Msg_get_max_expected_size(na_class_t *network_class)
 {
     assert(network_class);
-    return network_class->msg_get_maximum_size();
+    return network_class->msg_get_max_expected_size();
+}
+
+/*---------------------------------------------------------------------------*/
+na_size_t
+NA_Msg_get_max_unexpected_size(na_class_t *network_class)
+{
+    assert(network_class);
+    return network_class->msg_get_max_unexpected_size();
 }
 
 /*---------------------------------------------------------------------------*/
 na_tag_t
-NA_Msg_get_maximum_tag(na_class_t *network_class)
+NA_Msg_get_max_tag(na_class_t *network_class)
 {
     assert(network_class);
-    return network_class->msg_get_maximum_tag();
+    return network_class->msg_get_max_tag();
 }
 
 /*---------------------------------------------------------------------------*/

@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
     }
 
     /* Allocate send and recv bufs */
-    send_buf_len = NA_Msg_get_maximum_size(network_class);
+    send_buf_len = NA_Msg_get_max_unexpected_size(network_class);
     recv_buf_len = send_buf_len;
     send_buf = malloc(send_buf_len);
     recv_buf = malloc(recv_buf_len);

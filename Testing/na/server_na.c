@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
     network_class = HG_Test_server_init(argc, argv, &number_of_peers);
 
     /* Allocate send/recv/bulk bufs */
-    send_buf_len = NA_Msg_get_maximum_size(network_class);
+    send_buf_len = NA_Msg_get_max_unexpected_size(network_class);
     send_buf = malloc(send_buf_len);
     recv_buf = malloc(send_buf_len);
     bulk_buf = malloc(sizeof(int) * bulk_size);

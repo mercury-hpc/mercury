@@ -32,8 +32,9 @@ struct na_class {
     int (*addr_free)(na_addr_t addr);
 
     /* Message callbacks (used for metadata transfer) */
-    na_size_t (*msg_get_maximum_size)(void);
-    na_tag_t (*msg_get_maximum_tag)(void);
+    na_size_t (*msg_get_max_expected_size)(void);
+    na_size_t (*msg_get_max_unexpected_size)(void);
+    na_tag_t (*msg_get_max_tag)(void);
     int (*msg_send_unexpected)(const void *buf, na_size_t buf_size, na_addr_t dest,
             na_tag_t tag, na_request_t *request, void *op_arg);
     int (*msg_recv_unexpected)(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,

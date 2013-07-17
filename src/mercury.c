@@ -94,7 +94,7 @@ hg_gen_tag(void)
 
     hg_thread_mutex_lock(&tag_mutex);
     tag++;
-    if (tag == NA_Msg_get_maximum_tag(hg_na_class)) tag = 0;
+    if (tag == NA_Msg_get_max_tag(hg_na_class)) tag = 0;
     hg_thread_mutex_unlock(&tag_mutex);
 
     return tag;
@@ -299,7 +299,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_struct,
     priv_request->id = id;
 
     /* Send Buffer */
-    priv_request->send_buf_size = NA_Msg_get_maximum_size(hg_na_class);
+    priv_request->send_buf_size = NA_Msg_get_max_unexpected_size(hg_na_class);
     ret = hg_proc_buf_alloc(&priv_request->send_buf, priv_request->send_buf_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not allocate send buffer");
@@ -309,7 +309,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_struct,
     priv_request->send_request = NA_REQUEST_NULL;
 
     /* Recv Buffer */
-    priv_request->recv_buf_size = NA_Msg_get_maximum_size(hg_na_class);
+    priv_request->recv_buf_size = NA_Msg_get_max_expected_size(hg_na_class);
     ret = hg_proc_buf_alloc(&priv_request->recv_buf, priv_request->recv_buf_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not allocate send buffer");
@@ -357,7 +357,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_struct,
      *  - 1: send an unexpected message with info + eventual bulk data descriptor
      *  - 2: send the remaining data in extra buf using bulk data transfer
      */
-    if (hg_proc_get_size(enc_proc) > NA_Msg_get_maximum_size(hg_na_class)) {
+    if (hg_proc_get_size(enc_proc) > NA_Msg_get_max_unexpected_size(hg_na_class)) {
 #ifdef HG_HAS_XDR
         HG_ERROR_DEFAULT("Extra encoding using XDR is not yet supported");
         ret = HG_FAIL;
