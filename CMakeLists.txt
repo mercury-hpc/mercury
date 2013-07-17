@@ -179,6 +179,14 @@ endmacro()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 #-----------------------------------------------------------------------------
+# Build doxygen documentation.
+#-----------------------------------------------------------------------------
+option(BUILD_DOCUMENTATION "Build documentation." OFF)
+if(BUILD_DOCUMENTATION)
+  add_subdirectory(Documentation/Doxygen)
+endif()
+
+#-----------------------------------------------------------------------------
 # Testing
 #-----------------------------------------------------------------------------
 option(BUILD_TESTING "Build testing." OFF)
