@@ -26,10 +26,13 @@ if(MERCURY_ENABLE_COVERAGE)
 endif()
 
 # Dynamic client / server test with all enabled NA plugins
-add_mercury_test(na_simple server_na client_na server_simple_na
-		client_simple_na)
+add_mercury_test(na server_na client_na)
+if(NA_USE_SSM)
+  add_mercury_test(simple_na server_simple_na client_simple_na)
+endif()
 
 # Static client / server test with all enabled NA plugins
-add_mercury_static_test(na_simple server_na client_na server_simple_na)
-add_mercury_static_test(na_simple_ssm server_simple_na client_simple_na)
-
+add_mercury_static_test(na server_na client_na)
+if(NA_USE_SSM)
+  add_mercury_static_test(simple_na server_simple_na client_simple_na)
+endif()
