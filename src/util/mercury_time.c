@@ -93,7 +93,7 @@ hg_time_get_current(hg_time_t *tv)
     tv->tv_sec = t.QuadPart / 1000000;
     tv->tv_usec = t.QuadPart % 1000000;
 #else
-    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tp)) {
+    if (clock_gettime(CLOCK_MONOTONIC_RAW, &tp)) {
         HG_ERROR_DEFAULT("clock_gettime failed");
         ret = HG_FAIL;
         return ret;
