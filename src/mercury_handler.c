@@ -464,7 +464,7 @@ HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
 int
 HG_Handler_process(unsigned int timeout, hg_status_t *status)
 {
-    int time_remaining = timeout;
+    double time_remaining = timeout / 1000; /* Timeout in milliseconds */
     hg_priv_handle_t *priv_handle = NULL;
     hg_proc_info_t   *proc_info;
 
@@ -516,7 +516,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
 
         /* Start receiving a message from a client */
         do {
-            hg_time_t t1, t2, t;
+            hg_time_t t1, t2;
 
             hg_time_get_current(&t1);
 
@@ -531,8 +531,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
             }
 
             hg_time_get_current(&t2);
-            t = hg_time_subtract(t2, t1);
-            time_remaining -= t.tv_sec * 1000 + t.tv_usec / 1000;
+            time_remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
 
         } while (time_remaining > 0 && !actual_buf_size);
 
@@ -551,7 +550,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
 
     /* Wait/Test the completion of the unexpected recv */
     na_ret = NA_Wait(handler_na_class, priv_handle->recv_request,
-            time_remaining, &recv_status);
+            (unsigned int) (time_remaining * 1000), &recv_status);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Error while waiting");
         ret = HG_FAIL;

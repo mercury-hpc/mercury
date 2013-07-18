@@ -837,7 +837,7 @@ static int
 na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 {
     bmi_request_t *bmi_wait_request = (bmi_request_t*) request;
-    int remaining = timeout;
+    double remaining = timeout / 1000; /* Timeout in milliseconds */
     int ret = NA_SUCCESS;
     bool wait_request_completed = 0;
 
@@ -857,7 +857,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
     if (!wait_request_completed)
     do {
         int hg_thread_cond_ret = 0;
-        hg_time_t t1_wait, t2_wait, t_wait;
+        hg_time_t t1_wait, t2_wait;
 
         hg_time_get_current(&t1_wait);
 
@@ -882,8 +882,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
         }
 
         hg_time_get_current(&t2_wait);
-        t_wait = hg_time_subtract(t2_wait, t1_wait);
-        remaining -= t_wait.tv_sec * 1000 + t_wait.tv_usec / 1000;
+        remaining -= hg_time_to_double(hg_time_subtract(t2_wait, t1_wait));
 
         /* Only one calling thread at a time should reach that point */
         hg_thread_mutex_lock(&testcontext_mutex);
@@ -899,7 +898,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
             bmi_op_id_t bmi_op_id = 0;
             bmi_size_t  bmi_actual_size = 0;
             void *bmi_user_ptr = NULL;
-            hg_time_t t1, t2, t;
+            hg_time_t t1, t2;
 
             hg_time_get_current(&t1);
 
@@ -915,8 +914,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
                     &bmi_actual_size, &bmi_user_ptr, 0, bmi_context);
 
             hg_time_get_current(&t2);
-            t = hg_time_subtract(t2, t1);
-            remaining -= t.tv_sec * 1000 + t.tv_usec / 1000;
+            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
 
             if (bmi_ret < 0 || error_code != 0) {
                 NA_ERROR_DEFAULT("BMI_testcontext failed");
@@ -992,7 +990,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 static int
 na_bmi_progress(unsigned int timeout, na_status_t *status)
 {
-    int time_remaining = timeout;
+    double time_remaining = timeout / 1000; /* Timeout in milliseconds */
     int ret = NA_SUCCESS;
     /* TODO may want to have it dynamically allocated if multiple threads call
      * progress on the client but should that happen? */
@@ -1012,7 +1010,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
     /* Wait for an initial request from client */
     if (onesided_request == NA_REQUEST_NULL) {
         do {
-            hg_time_t t1, t2, t;
+            hg_time_t t1, t2;
             onesided_actual_size = 0;
             remote_addr = NA_ADDR_NULL;
             remote_tag = 0;
@@ -1029,8 +1027,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
             }
 
             hg_time_get_current(&t2);
-            t = hg_time_subtract(t2, t1);
-            time_remaining -= t.tv_sec * 1000 + t.tv_usec / 1000;
+            time_remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
 
         } while (time_remaining > 0 && !onesided_actual_size);
         if (!onesided_actual_size) {

@@ -956,7 +956,7 @@ na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 {
     int mpi_ret, ret = NA_SUCCESS;
     mpi_req_t *mpi_request = (mpi_req_t*) request;
-    int remaining = timeout;
+    double remaining = timeout / 1000; /* Timeout in milliseconds */
     MPI_Status mpi_status;
 
     if (!mpi_request) {
@@ -968,7 +968,7 @@ na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
     do {
         int hg_thread_cond_ret = 0;
         int mpi_flag = 0;
-        hg_time_t t1, t2, t;
+        hg_time_t t1, t2;
 
         hg_time_get_current(&t1);
 
@@ -1020,8 +1020,7 @@ na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
         hg_thread_mutex_unlock(&mpi_test_mutex);
 
         hg_time_get_current(&t2);
-        t = hg_time_subtract(t2, t1);
-        remaining -= t.tv_sec * 1000 + t.tv_usec / 1000;
+        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
 
     } while (( (mpi_request->request != MPI_REQUEST_NULL) ||
 #if MPI_VERSION < 3
@@ -1065,7 +1064,7 @@ na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 static int
 na_mpi_progress(unsigned int timeout, na_status_t *status)
 {
-    int time_remaining = timeout;
+    double time_remaining = timeout / 1000; /* Timeout in milliseconds */
     int ret = NA_SUCCESS;
     int mpi_ret;
 
@@ -1083,7 +1082,7 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
     /* Wait for an initial request from client */
     if (onesided_request == NA_REQUEST_NULL) {
         do {
-            hg_time_t t1, t2, t;
+            hg_time_t t1, t2;
 
             onesided_actual_size = 0;
             remote_addr = NA_ADDR_NULL;
@@ -1101,8 +1100,7 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
             }
 
             hg_time_get_current(&t2);
-            t = hg_time_subtract(t2, t1);
-            time_remaining -= t.tv_sec * 1000 + t.tv_usec / 1000;
+            time_remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
 
         } while (time_remaining > 0 && !onesided_actual_size);
         if (!onesided_actual_size) {
