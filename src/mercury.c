@@ -52,10 +52,6 @@ static hg_thread_mutex_t tag_mutex;
 /* Pointer to network abstraction class */
 static na_class_t *hg_na_class = NULL;
 
-/* Pointer to function called at termination */
-static void (*hg_atfinalize)(void) = NULL;
-static hg_bool_t hg_dont_atexit = 0;
-
 /**
  * Hash functions for function map
  */
@@ -100,25 +96,6 @@ hg_gen_tag(void)
     return tag;
 }
 
-/**
- * Automatically called at exit
- */
-static void
-hg_atexit(void)
-{
-    if (hg_na_class) {
-        int hg_ret;
-
-        printf("Auto finalize is called\n");
-
-        /* Finalize interface */
-        hg_ret = HG_Finalize();
-        if (hg_ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not finalize mercury interface");
-        }
-    }
-}
-
 /*---------------------------------------------------------------------------*/
 int
 HG_Init(na_class_t *network_class)
@@ -151,17 +128,6 @@ HG_Init(na_class_t *network_class)
     /* Automatically free all the values with the hash map */
     hg_hash_table_register_free_functions(func_map, free, free);
 
-    /*
-     * Install atexit() library cleanup routine unless hg_dont_atexit is set.
-     * Once we add something to the atexit() list it stays there permanently,
-     * so we set hg_dont_atexit after we add it to prevent adding it again
-     * later if the library is closed and reopened.
-     */
-    if (!hg_dont_atexit) {
-        (void) atexit(hg_atexit);
-        hg_dont_atexit = 1;
-    }
-
     return ret;
 }
 
@@ -176,9 +142,6 @@ HG_Finalize(void)
         ret = HG_FAIL;
         return ret;
     }
-
-    /* Call extra finalize callback if required */
-    if (hg_atfinalize) hg_atfinalize();
 
     /* Delete function map */
     hg_hash_table_free(func_map);
@@ -208,17 +171,6 @@ HG_Initialized(hg_bool_t *flag, na_class_t **network_class)
     if (network_class) *network_class = (*flag) ? hg_na_class : 0;
 
     return HG_SUCCESS;
-}
-
-/*---------------------------------------------------------------------------*/
-int
-HG_Atfinalize(void (*function)(void))
-{
-    int ret = HG_SUCCESS;
-
-    hg_atfinalize = function;
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/

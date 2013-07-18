@@ -48,16 +48,6 @@ HG_EXPORT int
 HG_Initialized(hg_bool_t *flag, na_class_t **network_class);
 
 /**
- * Register a function to be called at mercury termination.
- *
- * \param function [IN]         pointer to function
- *
- * \return Non-negative on success or negative on failure
- */
-HG_EXPORT int
-HG_Atfinalize(void (*function)(void));
-
-/**
  * Register a function name that can be sent by RPC layer.
  *
  * \param func_name [IN]        unique name associated to function

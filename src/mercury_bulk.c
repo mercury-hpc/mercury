@@ -42,25 +42,6 @@ typedef struct hg_priv_bulk_request {
 /* Pointer to network abstraction class */
 static na_class_t *bulk_na_class = NULL;
 
-static hg_bool_t bulk_dont_atexit = 0;
-
-/**
- * Automatically called at exit
- */
-static void
-hg_bulk_atexit(void)
-{
-    if (bulk_na_class) {
-        int hg_ret;
-
-        /* Finalize interface */
-        hg_ret = HG_Bulk_finalize();
-        if (hg_ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not finalize mercury bulk interface");
-        }
-    }
-}
-
 /*---------------------------------------------------------------------------*/
 int
 HG_Bulk_init(na_class_t *network_class)
@@ -80,17 +61,6 @@ HG_Bulk_init(na_class_t *network_class)
     }
 
     bulk_na_class = network_class;
-
-    /*
-     * Install atexit() library cleanup routine unless hg_dont_atexit is set.
-     * Once we add something to the atexit() list it stays there permanently,
-     * so we set bulk_dont_atexit after we add it to prevent adding it again
-     * later if the library is closed and reopened.
-     */
-    if (!bulk_dont_atexit) {
-        (void) atexit(hg_bulk_atexit);
-        bulk_dont_atexit = 1;
-    }
 
     return ret;
 }
@@ -128,17 +98,6 @@ HG_Bulk_initialized(hg_bool_t *flag, na_class_t **network_class)
     if (network_class) *network_class = (*flag) ? bulk_na_class : 0;
 
     return HG_SUCCESS;
-}
-
-/*---------------------------------------------------------------------------*/
-int
-HG_Bulk_disable_auto_finalize(void)
-{
-    int ret = HG_SUCCESS;
-
-    bulk_dont_atexit = 1;
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
