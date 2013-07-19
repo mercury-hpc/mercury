@@ -93,7 +93,7 @@ hg_time_get_current(hg_time_t *tv)
     tv->tv_sec = t.QuadPart / 1000000;
     tv->tv_usec = t.QuadPart % 1000000;
 #else
-    if (clock_gettime(CLOCK_MONOTONIC_RAW, &tp)) {
+    if (clock_gettime(CLOCK_MONOTONIC, &tp)) {
         HG_ERROR_DEFAULT("clock_gettime failed");
         ret = HG_FAIL;
         return ret;
@@ -162,4 +162,36 @@ hg_time_subtract(hg_time_t in1, hg_time_t in2)
     }
 
     return out;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_time_sleep(const hg_time_t rqt, hg_time_t *rmt)
+{
+    int ret = HG_SUCCESS;
+
+#ifdef _WIN32
+    DWORD dwMilliseconds = (DWORD) (hg_time_to_double(rqt) / 1000);
+
+    Sleep(dwMilliseconds);
+#else
+    struct timespec rqtp;
+    struct timespec rmtp;
+
+    rqtp.tv_sec = rqt.tv_sec;
+    rqtp.tv_nsec = rqt.tv_usec * 1000;
+
+    if (nanosleep(&rqtp, &rmtp)) {
+        HG_ERROR_DEFAULT("nanosleep failed");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    if (rmt) {
+        rmt->tv_sec = rmtp.tv_sec;
+        rmt->tv_usec = rmtp.tv_nsec / 1000;
+    }
+#endif
+
+    return ret;
 }
