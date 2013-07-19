@@ -10,15 +10,14 @@
 
 #include "test_pipeline_scale.h"
 #include "mercury_test.h"
-#ifdef NA_HAS_MPI
+
 #include "na_mpi.h"
 #include "mercury.h"
 #include "mercury_bulk.h"
+#include "mercury_time.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/time.h>
-#include <unistd.h>
 
 /* TODO Test only supports MPI for now */
 
@@ -128,12 +127,12 @@ int main(int argc, char *argv[])
         bla_write_in_struct.pipeline_buffer_size = pipeline_buffer_size;
 
         for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
-            struct timeval tv1, tv2;
-            double td1, td2;
+            hg_time_t t1, t2;
+            double td;
 
             MPI_Barrier(split_comm);
 
-            gettimeofday(&tv1, NULL);
+            hg_time_get_current(&t1);
 
             /* Forward call to remote addr and get a new request */
             /* printf("Forwarding bla_write, op id: %u...\n", bla_write_id); */
@@ -160,20 +159,18 @@ int main(int argc, char *argv[])
             }
 
             MPI_Barrier(split_comm);
-            gettimeofday(&tv2, NULL);
-
-            td1 = tv1.tv_sec + tv1.tv_usec / 1000000.0;
-            td2 = tv2.tv_sec + tv2.tv_usec / 1000000.0;
+            hg_time_get_current(&t2);
+            td = hg_time_to_double(hg_time_subtract(t2, t1));
 
             /* Get output parameters */
             bla_write_ret = bla_write_out_struct.ret;
             if (bla_write_ret != (bulk_size * sizeof(int))) {
                 fprintf(stderr, "Data not correctly processed\n");
             }
-            time_read += td2 - td1;
+            time_read += td;
             if (!min_time_read) min_time_read = time_read;
-            min_time_read = ((td2 - td1) < min_time_read) ? (td2 - td1) : min_time_read;
-            max_time_read = ((td2 - td1) > max_time_read) ? (td2 - td1) : max_time_read;
+            min_time_read = (td < min_time_read) ? td : min_time_read;
+            max_time_read = (td > max_time_read) ? td : max_time_read;
         }
 
         time_read = time_read / MERCURY_TESTING_MAX_LOOP;
@@ -245,5 +242,3 @@ int main(int argc, char *argv[])
 
     return EXIT_SUCCESS;
 }
-
-#endif /* NA_HAS_MPI */

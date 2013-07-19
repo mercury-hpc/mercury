@@ -29,7 +29,7 @@
  *
  *---------------------------------------------------------------------------
  */
-na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
+na_class_t *HG_Test_client_init(int argc, char *argv[], char **port_name, int *rank)
 {
     na_class_t *network_class = NULL;
 
@@ -40,6 +40,7 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
 
 #ifdef NA_HAS_MPI
     if (strcmp("mpi", argv[1]) == 0) {
+        static char mpi_port_name[MPI_MAX_PORT_NAME];
         FILE *config;
 
         if (argc > 2 && (strcmp("static", argv[2]) == 0)) {
@@ -48,16 +49,16 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
             network_class = NA_MPI_Init(NULL, 0);
             if ((config = fopen("port.cfg", "r")) != NULL) {
                 size_t nread;
-                char mpi_port_name[MPI_MAX_PORT_NAME];
 
                 nread = fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
                 if (!nread) fprintf(stderr, "Could not read port name\n");
                 fclose(config);
-                setenv(HG_PORT_NAME, mpi_port_name, 1);
             }
         }
 
         if (rank) MPI_Comm_rank(MPI_COMM_WORLD, rank);
+        if (port_name) *port_name = mpi_port_name;
+
     }
 #endif
 
@@ -65,6 +66,7 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], int *rank)
     if (strcmp("bmi", argv[1]) == 0) {
         network_class = NA_BMI_Init(NULL, NULL, 0);
         if (rank) *rank = 0;
+        if (port_name) *port_name = getenv(HG_PORT_NAME);
     }
 #endif
 

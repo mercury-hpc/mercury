@@ -9,8 +9,7 @@
  */
 
 #include "test_pipeline_scale.h"
-#include "mercury_test.h"
-#ifdef NA_HAS_MPI
+
 #include "na_mpi.h"
 #include "mercury_handler.h"
 #include "mercury_bulk.h"
@@ -24,7 +23,7 @@
 #define SPAWN_REQUEST_THREAD /* want to spawn threads */
 #define FORCE_MPI_PROGRESS   /* want to have mpi progress */
 
-static bool finalizing = 0;
+static hg_bool_t finalizing = 0;
 
 #ifdef SPAWN_REQUEST_THREAD
 static hg_list_entry_t *thread_list;
@@ -281,7 +280,7 @@ int main(int argc, char *argv[])
         hg_status_t status;
 
         /* Receive new function calls */
-        hg_ret = HG_Handler_process(1, &status);
+        hg_ret = HG_Handler_process(0, &status);
         if (hg_ret == HG_SUCCESS && status) {
             /* printf("# Request processed\n"); */
         }
@@ -325,5 +324,3 @@ int main(int argc, char *argv[])
 
     return EXIT_SUCCESS;
 }
-
-#endif /* NA_HAS_MPI */

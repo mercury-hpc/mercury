@@ -12,11 +12,10 @@
 #include "mercury_test.h"
 #include "mercury_handler.h"
 #include "mercury_bulk.h"
+#include "mercury_time.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/time.h>
-#include <unistd.h>
 
 #define PIPELINE_SIZE 4
 #define MIN_BUFFER_SIZE 2<<11 /* Stop at 4KB buffer size */
@@ -34,31 +33,30 @@ void bla_write_pipeline(size_t chunk_size,
         hg_bulk_request_t bulk_request, hg_status_t *status, bool nosleep)
 {
     int ret;
-    /* Convert raw_time_read to ms */
-    double msleep_time = chunk_size * raw_time_read * 1000 / bla_write_nbytes;
-    struct timeval t1, t2;
+    double sleep_time = chunk_size * raw_time_read / bla_write_nbytes;
+    hg_time_t t1, t2;
     double time_remaining;
 
-    time_remaining = msleep_time;
+    time_remaining = sleep_time;
 
 #ifdef FORCE_MPI_PROGRESS
     /* Force MPI progress for time_remaining ms */
     if (bulk_request != HG_BULK_REQUEST_NULL) {
-        gettimeofday(&t1, NULL);
+        hg_time_get_current(&t1);
 
         ret = HG_Bulk_wait(bulk_request, time_remaining, status);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Error while waiting\n");
         }
 
-        gettimeofday(&t2, NULL);
-        time_remaining -= (t2.tv_sec - t1.tv_sec) * 1000 +
-                (t2.tv_usec - t1.tv_usec) / 1000;
+        hg_time_get_current(&t2);
+        time_remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
     }
 #endif
 
     if (!nosleep && time_remaining > 0) {
-        usleep(time_remaining * 1000);
+        /* Should use nanosleep or equivalent */
+        hg_time_sleep(hg_time_from_double(time_remaining), NULL);
     }
 }
 
@@ -130,10 +128,9 @@ int bla_write_rpc(hg_handle_t handle)
 
     /* Work out BW without pipeline and without processing data */
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
-        struct timeval tv1, tv2;
-        double td1, td2;
+        hg_time_t t1, t2;
 
-        gettimeofday(&tv1, NULL);
+        hg_time_get_current(&t1);
 
         ret = HG_Bulk_read(source, bla_write_bulk_handle, 0,
                 bla_write_bulk_block_handle, 0, bla_write_nbytes,
@@ -150,12 +147,9 @@ int bla_write_rpc(hg_handle_t handle)
             return ret;
         }
 
-        gettimeofday(&tv2, NULL);
+        hg_time_get_current(&t2);
 
-        td1 = tv1.tv_sec + tv1.tv_usec / 1000000.0;
-        td2 = tv2.tv_sec + tv2.tv_usec / 1000000.0;
-
-        raw_time_read += td2 - td1;
+        raw_time_read += hg_time_to_double(hg_time_subtract(t2, t1));
     }
 
     raw_time_read = raw_time_read / MERCURY_TESTING_MAX_LOOP;
@@ -164,10 +158,9 @@ int bla_write_rpc(hg_handle_t handle)
 
     /* Work out BW without pipeline and with processing data */
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
-        struct timeval tv1, tv2;
-        double td1, td2;
+        hg_time_t t1, t2;
 
-        gettimeofday(&tv1, NULL);
+        hg_time_get_current(&t1);
 
         ret = HG_Bulk_read(source, bla_write_bulk_handle, 0,
                 bla_write_bulk_block_handle, 0, bla_write_nbytes,
@@ -187,12 +180,9 @@ int bla_write_rpc(hg_handle_t handle)
         /* Call bla_write */
         bla_write_pipeline(bla_write_nbytes, HG_BULK_REQUEST_NULL, HG_STATUS_IGNORE, 0);
 
-        gettimeofday(&tv2, NULL);
+        hg_time_get_current(&t2);
 
-        td1 = tv1.tv_sec + tv1.tv_usec / 1000000.0;
-        td2 = tv2.tv_sec + tv2.tv_usec / 1000000.0;
-
-        proc_time_read += td2 - td1;
+        proc_time_read += hg_time_to_double(hg_time_subtract(t2, t1));
     }
 
     proc_time_read = proc_time_read / MERCURY_TESTING_MAX_LOOP;
@@ -217,12 +207,12 @@ int bla_write_rpc(hg_handle_t handle)
             size_t total_bytes_read = 0;
             size_t chunk_size;
 
-            struct timeval tv1, tv2;
-            double td1, td2;
+            hg_time_t t1, t2;
+            double td;
 
             chunk_size = (PIPELINE_SIZE == 1) ? bla_write_nbytes : pipeline_buffer_size;
 
-            gettimeofday(&tv1, NULL);
+            hg_time_get_current(&t1);
 
             /* Initialize pipeline */
             for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
@@ -282,15 +272,14 @@ int bla_write_rpc(hg_handle_t handle)
                 start_offset += chunk_size * PIPELINE_SIZE;
             }
 
-            gettimeofday(&tv2, NULL);
+            hg_time_get_current(&t2);
 
-            td1 = tv1.tv_sec + tv1.tv_usec / 1000000.0;
-            td2 = tv2.tv_sec + tv2.tv_usec / 1000000.0;
+            td = hg_time_to_double(hg_time_subtract(t2, t1));
 
-            time_read += td2 - td1;
+            time_read += td;
             if (!min_time_read) min_time_read = time_read;
-            min_time_read = ((td2 - td1) < min_time_read) ? (td2 - td1) : min_time_read;
-            max_time_read = ((td2 - td1) > max_time_read) ? (td2 - td1) : max_time_read;
+            min_time_read = (td < min_time_read) ? td : min_time_read;
+            max_time_read = (td > max_time_read) ? td : max_time_read;
         }
 
         time_read = time_read / MERCURY_TESTING_MAX_LOOP;

@@ -18,7 +18,7 @@
 /* 1. Generate processor and struct for additional struct types
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_PROC( bla_handle_t, ((uint64_t)(cookie)) )
+MERCURY_GEN_PROC( bla_handle_t, ((hg_uint64_t)(cookie)) )
 
 /* Dummy function that needs to be shipped (already defined) */
 int bla_open(const char *path, bla_handle_t handle, int *event_id);
@@ -27,18 +27,18 @@ int bla_open(const char *path, bla_handle_t handle, int *event_id);
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */
 MERCURY_GEN_PROC( bla_open_in_t, ((hg_string_t)(path)) ((bla_handle_t)(handle)) )
-MERCURY_GEN_PROC( bla_open_out_t, ((int32_t)(ret)) ((int32_t)(event_id)) )
+MERCURY_GEN_PROC( bla_open_out_t, ((hg_int32_t)(ret)) ((hg_int32_t)(event_id)) )
 #else
 /* Define bla_handle_t */
 typedef struct {
-    uint64_t cookie;
+    hg_uint64_t cookie;
 } bla_handle_t;
 
 /* Dummy function that needs to be shipped (already defined) */
 int bla_open(const char *path, bla_handle_t handle, int *event_id);
 
 /* Define hg_proc_bla_handle_t */
-static inline int hg_proc_bla_handle_t(hg_proc_t proc, void *data)
+static HG_INLINE int hg_proc_bla_handle_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     bla_handle_t *struct_data = (bla_handle_t *) data;
@@ -60,7 +60,8 @@ typedef struct {
 } bla_open_in_t;
 
 /* Define hg_proc_bla_open_in_t */
-static inline int hg_proc_bla_open_in_t(hg_proc_t proc, void *data)
+static HG_INLINE int
+hg_proc_bla_open_in_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     bla_open_in_t *struct_data = (bla_open_in_t *) data;
@@ -84,12 +85,13 @@ static inline int hg_proc_bla_open_in_t(hg_proc_t proc, void *data)
 
 /* Define bla_open_out_t */
 typedef struct {
-    int32_t ret;
-    int32_t event_id;
+    hg_int32_t ret;
+    hg_int32_t event_id;
 } bla_open_out_t;
 
 /* Define hg_proc_bla_open_out_t */
-static inline int hg_proc_bla_open_out_t(hg_proc_t proc, void *data)
+static HG_INLINE int
+hg_proc_bla_open_out_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     bla_open_out_t *struct_data = (bla_open_out_t *) data;

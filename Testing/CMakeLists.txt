@@ -148,16 +148,18 @@ endif()
 
 #------------------------------------------------------------------------------
 # POSIX test
-add_executable(client_posix client_posix.c)
-target_link_libraries(client_posix mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_posix)
-endif()
+if(NOT WIN32)
+  add_executable(client_posix client_posix.c)
+  target_link_libraries(client_posix mercury_test)
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(client_posix)
+  endif()
 
-add_executable(server_posix server_posix.c)
-target_link_libraries(server_posix mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_posix)
+  add_executable(server_posix server_posix.c)
+  target_link_libraries(server_posix mercury_test)
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(server_posix)
+  endif()
 endif()
 
 #------------------------------------------------------------------------------
@@ -167,8 +169,12 @@ set(MERCURY_tests
   bulk
   bulk_seg
   pipeline
-  posix
 )
+
+if(NOT WIN32)
+  set(MERCURY_tests ${MERCURY_tests} posix)
+endif()
+
 foreach(MERCURY_test ${MERCURY_tests})
   add_mercury_test(mercury_${MERCURY_test}
     server_${MERCURY_test} client_${MERCURY_test})

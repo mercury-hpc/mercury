@@ -27,12 +27,7 @@ int init_rpc(int argc, char *argv[], int *rank)
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    network_class = HG_Test_client_init(argc, argv, rank);
-
-    ion_name = getenv(HG_PORT_NAME);
-    if (!ion_name) {
-        fprintf(stderr, "getenv(\"%s\") failed.\n", HG_PORT_NAME);
-    }
+    network_class = HG_Test_client_init(argc, argv, &ion_name, rank);
 
     hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {

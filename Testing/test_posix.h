@@ -29,23 +29,23 @@
 MERCURY_GEN_CLIENT_STUB_FINALIZE()
 
 MERCURY_GEN_STUB_SYNC( open_rpc, open_cb,
-        int32_t, HG_FAIL,
-        open, (hg_string_t) (int32_t) (uint32_t), ,
+        hg_int32_t, HG_FAIL,
+        open, (hg_string_t) (hg_int32_t) (hg_uint32_t), ,
         HG_GEN_WITHOUT_BULK, )
 
 MERCURY_GEN_STUB_SYNC( close_rpc, close_cb,
-        int32_t, HG_FAIL,
-        close, (int32_t), ,
+        hg_int32_t, HG_FAIL,
+        close, (hg_int32_t), ,
         HG_GEN_WITHOUT_BULK, )
 
 MERCURY_GEN_STUB_SYNC( write_rpc, write_cb,
-        int64_t, HG_FAIL,
+        hg_int64_t, HG_FAIL,
         write, (int32_t), ,
         HG_GEN_WITH_BULK, HG_GEN_CONSUME_BULK )
 
 MERCURY_GEN_STUB_SYNC( read_rpc, read_cb,
-        int64_t, HG_FAIL,
-        read, (int32_t), ,
+        hg_int64_t, HG_FAIL,
+        read, (hg_int32_t), ,
         HG_GEN_WITH_BULK, HG_GEN_PRODUCE_BULK )
 
 #else
@@ -63,20 +63,20 @@ MERCURY_GEN_STUB_SYNC( read_rpc, read_cb,
  */
 
 /* open */
-MERCURY_GEN_PROC( open_in_t, ((hg_string_t)(path)) ((int32_t)(flags)) ((uint32_t)(mode)) )
-MERCURY_GEN_PROC( open_out_t, ((int32_t)(ret)) )
+MERCURY_GEN_PROC( open_in_t, ((hg_string_t)(path)) ((hg_int32_t)(flags)) ((hg_uint32_t)(mode)) )
+MERCURY_GEN_PROC( open_out_t, ((hg_int32_t)(ret)) )
 
 /* close */
-MERCURY_GEN_PROC( close_in_t, ((int32_t)(fd)) )
-MERCURY_GEN_PROC( close_out_t, ((int32_t)(ret)) )
+MERCURY_GEN_PROC( close_in_t, ((hg_int32_t)(fd)) )
+MERCURY_GEN_PROC( close_out_t, ((hg_int32_t)(ret)) )
 
 /* write */
-MERCURY_GEN_PROC( write_in_t, ((int32_t)(fd)) ((hg_bulk_t)(bulk_handle)) )
-MERCURY_GEN_PROC( write_out_t, ((int64_t)(ret)) )
+MERCURY_GEN_PROC( write_in_t, ((hg_int32_t)(fd)) ((hg_bulk_t)(bulk_handle)) )
+MERCURY_GEN_PROC( write_out_t, ((hg_int64_t)(ret)) )
 
 /* read */
-MERCURY_GEN_PROC( read_in_t, ((int32_t)(fd)) ((hg_bulk_t)(bulk_handle)) )
-MERCURY_GEN_PROC( read_out_t, ((int64_t)(ret)) )
+MERCURY_GEN_PROC( read_in_t, ((hg_int32_t)(fd)) ((hg_bulk_t)(bulk_handle)) )
+MERCURY_GEN_PROC( read_out_t, ((hg_int64_t)(ret)) )
 
 #endif /* MERCURY_HAS_ADVANCED_MACROS */
 
@@ -84,12 +84,13 @@ MERCURY_GEN_PROC( read_out_t, ((int64_t)(ret)) )
 /* Define open_in_t */
 typedef struct {
     hg_string_t path;
-    int32_t flags;
-    uint32_t mode;
+    hg_int32_t flags;
+    hg_uint32_t mode;
 } open_in_t;
 
 /* Define hg_proc_open_in_t */
-static inline int hg_proc_open_in_t(hg_proc_t proc, void *data)
+static HG_INLINE int
+hg_proc_open_in_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     open_in_t *struct_data = (open_in_t *) data;
@@ -120,11 +121,12 @@ static inline int hg_proc_open_in_t(hg_proc_t proc, void *data)
 
 /* Define open_out_t */
 typedef struct {
-    int32_t ret;
+    hg_int32_t ret;
 } open_out_t;
 
 /* Define hg_proc_open_out_t */
-static inline int hg_proc_open_out_t(hg_proc_t proc, void *data)
+static HG_INLINE int
+hg_proc_open_out_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     open_out_t *struct_data = (open_out_t *) data;
@@ -141,11 +143,12 @@ static inline int hg_proc_open_out_t(hg_proc_t proc, void *data)
 
 /* Define close_in_t */
 typedef struct {
-    int32_t fd;
+    hg_int32_t fd;
 } close_in_t;
 
 /* Define hg_proc_open_in_t */
-static inline int hg_proc_close_in_t(hg_proc_t proc, void *data)
+static HG_INLINE int
+hg_proc_close_in_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     close_in_t *struct_data = (close_in_t *) data;
@@ -162,11 +165,12 @@ static inline int hg_proc_close_in_t(hg_proc_t proc, void *data)
 
 /* Define close_out_t */
 typedef struct {
-    int32_t ret;
+    hg_int32_t ret;
 } close_out_t;
 
 /* Define hg_proc_open_out_t */
-static inline int hg_proc_close_out_t(hg_proc_t proc, void *data)
+static HG_INLINE int
+hg_proc_close_out_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     close_out_t *struct_data = (close_out_t *) data;
@@ -183,12 +187,13 @@ static inline int hg_proc_close_out_t(hg_proc_t proc, void *data)
 
 /* Define write_in_t */
 typedef struct {
-    int32_t fd;
+    hg_int32_t fd;
     hg_bulk_t bulk_handle;
 } write_in_t;
 
 /* Define hg_proc_write_in_t */
-static inline int hg_proc_write_in_t(hg_proc_t proc, void *data)
+static HG_INLINE int
+hg_proc_write_in_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     write_in_t *struct_data = (write_in_t *) data;
@@ -212,11 +217,12 @@ static inline int hg_proc_write_in_t(hg_proc_t proc, void *data)
 
 /* Define write_out_t */
 typedef struct {
-    int64_t ret;
+    hg_int64_t ret;
 } write_out_t;
 
 /* Define hg_proc_write_out_t */
-static inline int hg_proc_write_out_t(hg_proc_t proc, void *data)
+static HG_INLINE int
+hg_proc_write_out_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     write_out_t *struct_data = (write_out_t *) data;
@@ -233,12 +239,13 @@ static inline int hg_proc_write_out_t(hg_proc_t proc, void *data)
 
 /* Define read_in_t */
 typedef struct {
-    int32_t fd;
+    hg_int32_t fd;
     hg_bulk_t bulk_handle;
 } read_in_t;
 
 /* Define hg_proc_read_in_t */
-static inline int hg_proc_read_in_t(hg_proc_t proc, void *data)
+static HG_INLINE int
+hg_proc_read_in_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     read_in_t *struct_data = (read_in_t *) data;
@@ -262,11 +269,12 @@ static inline int hg_proc_read_in_t(hg_proc_t proc, void *data)
 
 /* Define read_out_t */
 typedef struct {
-    int64_t ret;
+    hg_int64_t ret;
 } read_out_t;
 
 /* Define hg_proc_read_out_t */
-static inline int hg_proc_read_out_t(hg_proc_t proc, void *data)
+static HG_INLINE int
+hg_proc_read_out_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     read_out_t *struct_data = (read_out_t *) data;

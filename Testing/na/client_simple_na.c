@@ -48,11 +48,7 @@ int main(int argc, char *argv[])
     int na_ret;
 
     /* Initialize the interface */
-    network_class = HG_Test_client_init(argc, argv, NULL);
-    ion_name = getenv(HG_PORT_NAME);
-    if (!ion_name) {
-        fprintf(stderr, "getenv(\"%s\") failed\n", HG_PORT_NAME);
-    }
+    network_class = HG_Test_client_init(argc, argv, &ion_name, NULL);
 
     /* Perform an address lookup on the ION */
     na_ret = NA_Addr_lookup(network_class, ion_name, &ion_target);

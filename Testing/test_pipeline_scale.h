@@ -15,7 +15,7 @@
 #include "mercury_proc.h"
 
 #define PIPELINE_SIZE 4
-#define MIN_BUFFER_SIZE 2<<11 /* Stop at 4KB buffer size */
+#define MIN_BUFFER_SIZE (2 << 11) /* Stop at 4KB buffer size */
 
 /* Dummy function that needs to be shipped */
 size_t bla_write(int fildes, const void *buf, size_t nbyte);
@@ -24,18 +24,18 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte);
 /* Generate processor and struct for required input/output structs
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_PROC( bla_write_in_t, ((int32_t)(fildes)) ((hg_bulk_t)(bulk_handle)) ((uint64_t)(pipeline_buffer_size)) )
-MERCURY_GEN_PROC( bla_write_out_t, ((uint64_t)(ret)) )
+MERCURY_GEN_PROC( bla_write_in_t, ((hg_int32_t)(fildes)) ((hg_bulk_t)(bulk_handle)) ((hg_uint64_t)(pipeline_buffer_size)) )
+MERCURY_GEN_PROC( bla_write_out_t, ((hg_uint64_t)(ret)) )
 #else
 /* Define bla_write_in_t */
 typedef struct {
-    int32_t fildes;
+    hg_int32_t fildes;
     hg_bulk_t bulk_handle;
-    uint64_t pipeline_buffer_size;
+    hg_uint64_t pipeline_buffer_size;
 } bla_write_in_t;
 
 /* Define hg_proc_bla_write_in_t */
-static inline int hg_proc_bla_write_in_t(hg_proc_t proc, void *data)
+static HG_INLINE int hg_proc_bla_write_in_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     bla_write_in_t *struct_data = (bla_write_in_t *) data;
@@ -66,11 +66,11 @@ static inline int hg_proc_bla_write_in_t(hg_proc_t proc, void *data)
 
 /* Define bla_write_out_t */
 typedef struct {
-    uint64_t ret;
+    hg_uint64_t ret;
 } bla_write_out_t;
 
 /* Define hg_proc_bla_write_out_t */
-static inline int hg_proc_bla_write_out_t(hg_proc_t proc, void *data)
+static HG_INLINE int hg_proc_bla_write_out_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
     bla_write_out_t *struct_data = (bla_write_out_t *) data;
