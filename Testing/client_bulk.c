@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
     size_t i;
 
     /* Prepare bulk_buf */
-    bulk_buf = malloc(sizeof(int) * bulk_size);
+    bulk_buf = (int*) malloc(sizeof(int) * bulk_size);
     for (i = 0; i < bulk_size; i++) {
         bulk_buf[i] = i;
     }

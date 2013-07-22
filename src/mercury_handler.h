@@ -172,7 +172,8 @@ HG_Handler_get_input(hg_handle_t handle, void *in_struct);
  *
  * \return Non-negative on success or negative on failure
  */
-int HG_Handler_start_output(hg_handle_t handle, void *out_struct);
+HG_EXPORT int
+HG_Handler_start_output(hg_handle_t handle, void *out_struct);
 
 #ifdef __cplusplus
 }

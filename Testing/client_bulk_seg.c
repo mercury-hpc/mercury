@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
         /* bulk_size_x >= 2 */
         /* 524288 + 262144 + 131072 + 65536 + 32768 + 16384 + 8192 + 8192 */
         bulk_size_x = 8;
-        bulk_size_y_var = malloc(bulk_size_x * sizeof(size_t));
+        bulk_size_y_var = (size_t*) malloc(bulk_size_x * sizeof(size_t));
         bulk_size_y_var[0] = bulk_size / 2;
         for (i = 1; i < bulk_size_x - 1; i++) {
             bulk_size_y_var[i] = bulk_size_y_var[i-1] / 2;
@@ -94,11 +94,11 @@ int main(int argc, char *argv[])
     bla_write_id = MERCURY_REGISTER("bla_write", bla_write_in_t, bla_write_out_t);
 
     /* Prepare bulk_buf */
-    bulk_buf = malloc(bulk_size_x * sizeof(int*));
+    bulk_buf = (int**) malloc(bulk_size_x * sizeof(int*));
     if (bulk_size_y_var) {
         int val = 0;
         for (i = 0; i < bulk_size_x; i++) {
-            bulk_buf[i] = malloc(bulk_size_y_var[i] * sizeof(int));
+            bulk_buf[i] = (int*) malloc(bulk_size_y_var[i] * sizeof(int));
             for (j = 0; j < bulk_size_y_var[i]; j++) {
                 bulk_buf[i][j] = val;
                 val++;
@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
         }
     } else {
         for (i = 0; i < bulk_size_x; i++) {
-            bulk_buf[i] = malloc(bulk_size_y * sizeof(int));
+            bulk_buf[i] = (int*) malloc(bulk_size_y * sizeof(int));
             for (j = 0; j < bulk_size_y; j++) {
                 bulk_buf[i][j] = i * bulk_size_y + j;
             }
@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register memory */
-    bulk_segments = malloc(bulk_size_x * sizeof(hg_bulk_segment_t));
+    bulk_segments = (hg_bulk_segment_t*) malloc(bulk_size_x * sizeof(hg_bulk_segment_t));
     if (bulk_size_y_var) {
         for (i = 0; i < bulk_size_x ; i++) {
             bulk_segments[i].address = bulk_buf[i];

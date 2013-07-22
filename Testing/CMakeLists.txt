@@ -60,9 +60,9 @@ endfunction()
 #------------------------------------------------------------------------------
 # mercury_test : Lib used by tests contains main test initialization etc
 #------------------------------------------------------------------------------
-add_library(mercury_test mercury_test.c)
+add_library(mercury_test STATIC mercury_test.c)
 target_link_libraries(mercury_test mercury)
-set_lib_options(mercury_test "mercury_test" ${MERCURY_LIBTYPE})
+set_lib_options(mercury_test "mercury_test" STATIC)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_test)
 endif()

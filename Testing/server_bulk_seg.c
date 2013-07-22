@@ -15,7 +15,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/time.h>
 
 /* Actual definition of the function that needs to be executed */
 size_t bla_write(int fildes, const void *buf, size_t nbyte)

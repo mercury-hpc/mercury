@@ -75,24 +75,26 @@ hg_handler_new(void)
 {
     hg_priv_handle_t *priv_handle;
 
-    priv_handle = malloc(sizeof(hg_priv_handle_t));
-    priv_handle->id = 0;
-    priv_handle->addr = NA_ADDR_NULL;
-    priv_handle->tag = 0;
+    priv_handle = (hg_priv_handle_t*) malloc(sizeof(hg_priv_handle_t));
+    if (priv_handle) {
+        priv_handle->id = 0;
+        priv_handle->addr = NA_ADDR_NULL;
+        priv_handle->tag = 0;
 
-    priv_handle->recv_buf = NULL;
-    priv_handle->recv_buf_size = 0;
-    priv_handle->recv_request = NA_REQUEST_NULL;
-    priv_handle->extra_recv_buf = NULL;
-    priv_handle->extra_recv_buf_size = 0;
+        priv_handle->recv_buf = NULL;
+        priv_handle->recv_buf_size = 0;
+        priv_handle->recv_request = NA_REQUEST_NULL;
+        priv_handle->extra_recv_buf = NULL;
+        priv_handle->extra_recv_buf_size = 0;
 
-    priv_handle->send_buf = NULL;
-    priv_handle->send_buf_size = 0;
-    priv_handle->send_request = NA_REQUEST_NULL;
-    priv_handle->extra_send_buf = NULL;
-    priv_handle->extra_send_buf_size = 0;
+        priv_handle->send_buf = NULL;
+        priv_handle->send_buf_size = 0;
+        priv_handle->send_request = NA_REQUEST_NULL;
+        priv_handle->extra_send_buf = NULL;
+        priv_handle->extra_send_buf_size = 0;
 
-    priv_handle->in_struct = NULL;
+        priv_handle->in_struct = NULL;
+    }
 
     return (hg_handle_t) priv_handle;
 }
@@ -362,16 +364,26 @@ HG_Handler_register(const char *func_name,
         int (*enc_routine)(hg_proc_t proc, void *out_struct))
 {
     int ret = HG_SUCCESS;
-    hg_id_t *id;
-    hg_proc_info_t *proc_info;
+    hg_id_t *id = NULL;
+    hg_proc_info_t *proc_info = NULL;
 
     /* Generate a key from the string */
-    id = malloc(sizeof(hg_id_t));
+    id = (hg_id_t*) malloc(sizeof(hg_id_t));
+    if (!id) {
+        HG_ERROR_DEFAULT("Could not allocate ID");
+        ret = HG_FAIL;
+        goto done;
+    }
 
     *id = hg_proc_string_hash(func_name);
 
     /* Fill a func info struct and store it into the function map */
-    proc_info = malloc(sizeof(hg_proc_info_t));
+    proc_info = (hg_proc_info_t*) malloc(sizeof(hg_proc_info_t));
+    if (!proc_info) {
+        HG_ERROR_DEFAULT("Could not allocate proc info");
+        ret = HG_FAIL;
+        goto done;
+    }
 
     proc_info->callback_routine = callback_routine;
     proc_info->dec_routine = dec_routine;
@@ -379,13 +391,15 @@ HG_Handler_register(const char *func_name,
 
     if (!hg_hash_table_insert(handler_func_map, id, proc_info)) {
         HG_ERROR_DEFAULT("Could not insert func ID");
-        free(proc_info);
-        proc_info = NULL;
-        free(id);
-        id = NULL;
         ret = HG_FAIL;
+        goto done;
     }
 
+done:
+    if (ret != HG_SUCCESS) {
+        free(id);
+        free(proc_info);
+    }
     return ret;
 }
 
@@ -490,11 +504,16 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
 
     /* If we don't have an existing handle for the incoming request, create
      * a new one */
-    priv_handle = hg_handler_process_unexpected_list();
+    priv_handle = (hg_priv_handle_t*) hg_handler_process_unexpected_list();
 
     if (!priv_handle) {
         /* Create a new handle */
-        priv_handle = hg_handler_new();
+        priv_handle = (hg_priv_handle_t*) hg_handler_new();
+        if (!priv_handle) {
+            HG_ERROR_DEFAULT("Could not create new handle");
+            ret = HG_FAIL;
+            goto done;
+        }
 
         /* Recv buffer must match the size of unexpected buffer */
         priv_handle->recv_buf_size = NA_Msg_get_max_unexpected_size(handler_na_class);
@@ -608,7 +627,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
     }
 
     /* Retrieve exe function from function map */
-    proc_info = hg_hash_table_lookup(handler_func_map, &priv_handle->id);
+    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(handler_func_map, &priv_handle->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
@@ -659,7 +678,7 @@ HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf,
      }
 
     /* Retrieve encoding function from function map */
-    proc_info = hg_hash_table_lookup(handler_func_map, &priv_handle->id);
+    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(handler_func_map, &priv_handle->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
@@ -836,7 +855,7 @@ HG_Handler_get_input(hg_handle_t handle, void *in_struct)
     }
 
     /* Retrieve decode function from function map */
-    proc_info = hg_hash_table_lookup(handler_func_map, &priv_handle->id);
+    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(handler_func_map, &priv_handle->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
@@ -887,7 +906,7 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
     }
 
     /* Retrieve decode function from function map */
-    proc_info = hg_hash_table_lookup(handler_func_map, &priv_handle->id);
+    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(handler_func_map, &priv_handle->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;

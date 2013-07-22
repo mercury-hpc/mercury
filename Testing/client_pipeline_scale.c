@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
                 nmbytes, client_size, MERCURY_TESTING_MAX_LOOP);
     }
 
-    bulk_buf = malloc(nbytes);
+    bulk_buf = (int*) malloc(nbytes);
     for (i = 0; i < bulk_size; i++) {
         bulk_buf[i] = (int) i;
     }

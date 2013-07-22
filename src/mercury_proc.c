@@ -55,8 +55,13 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc)
     }
 
     priv_proc = (hg_priv_proc_t*) malloc(sizeof(hg_priv_proc_t));
-    priv_proc->op = op;
+    if (!priv_proc) {
+        HG_ERROR_DEFAULT("Could not allocate proc");
+        ret = HG_FAIL;
+        return ret;
+    }
 
+    priv_proc->op = op;
     priv_proc->proc_buf.buf = buf;
     priv_proc->proc_buf.size = buf_size;
     priv_proc->proc_buf.buf_ptr = buf;

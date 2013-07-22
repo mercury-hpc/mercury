@@ -123,10 +123,28 @@ HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
     }
 
     priv_handle = (hg_priv_bulk_t*) malloc(sizeof(hg_priv_bulk_t));
+    if (!priv_handle) {
+        HG_ERROR_DEFAULT("Could not allocate handle");
+        ret = HG_FAIL;
+        goto done;
+    }
     priv_handle->count = 1;
+    priv_handle->mem_handle_list = NULL;
+    priv_handle->size_list = NULL;
+
     priv_handle->mem_handle_list = (na_mem_handle_t*) malloc(sizeof(na_mem_handle_t));
+    if (!priv_handle->mem_handle_list) {
+        HG_ERROR_DEFAULT("Could not allocate mem handle list");
+        ret = HG_FAIL;
+        goto done;
+    }
     priv_handle->total_size = buf_size;
     priv_handle->size_list = (size_t*) malloc(sizeof(size_t));
+    if (!priv_handle->size_list) {
+        HG_ERROR_DEFAULT("Could not allocate size list");
+        ret = HG_FAIL;
+        goto done;
+    }
     priv_handle->size_list[0] = priv_handle->total_size;
 
     na_ret = NA_Mem_register(bulk_na_class, buf, buf_size, na_flags,
@@ -143,10 +161,8 @@ HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
 done:
     if (ret != HG_SUCCESS) {
         if (priv_handle) {
-            if (priv_handle->size_list) free(priv_handle->size_list);
-            priv_handle->size_list = NULL;
-            if (priv_handle->mem_handle_list) free(priv_handle->mem_handle_list);
-            priv_handle->mem_handle_list = NULL;
+            free(priv_handle->size_list);
+            free(priv_handle->mem_handle_list);
             free(priv_handle);
         }
         priv_handle = NULL;
@@ -178,14 +194,32 @@ HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
     }
 
     priv_handle = (hg_priv_bulk_t*) malloc(sizeof(hg_priv_bulk_t));
+    if (!priv_handle) {
+        HG_ERROR_DEFAULT("Could not allocate handle");
+        ret = HG_FAIL;
+        goto done;
+    }
+
     priv_handle->total_size = 0;
+    priv_handle->mem_handle_list = NULL;
+    priv_handle->size_list = NULL;
 
     /* The underlying layer may support non-contiguous mem registration */
     if (bulk_na_class->mem_register_segments) {
         /* In this case we only need one single handle */
         priv_handle->count = 1;
         priv_handle->mem_handle_list = (na_mem_handle_t*) malloc(sizeof(na_mem_handle_t));
+        if (!priv_handle->mem_handle_list) {
+            HG_ERROR_DEFAULT("Could not allocate mem handle list");
+            ret = HG_FAIL;
+            goto done;
+        }
         priv_handle->size_list = (size_t*) malloc(sizeof(size_t));
+        if (!priv_handle->size_list) {
+            HG_ERROR_DEFAULT("Could not allocate size list");
+            ret = HG_FAIL;
+            goto done;
+        }
 
         na_ret = NA_Mem_register_segments(bulk_na_class,
                 (na_segment_t*)bulk_segments, segment_count,
@@ -203,7 +237,17 @@ HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
         /* In this case we need multiple handles */
         priv_handle->count = segment_count;
         priv_handle->mem_handle_list = (na_mem_handle_t*) malloc(priv_handle->count * sizeof(na_mem_handle_t));
+        if (!priv_handle->mem_handle_list) {
+            HG_ERROR_DEFAULT("Could not allocate mem handle list");
+            ret = HG_FAIL;
+            goto done;
+        }
         priv_handle->size_list = (size_t*) malloc(priv_handle->count * sizeof(size_t));
+        if (!priv_handle->size_list) {
+            HG_ERROR_DEFAULT("Could not allocate size list");
+            ret = HG_FAIL;
+            goto done;
+        }
 
         /* Loop over the list of segments and register them */
         for (i = 0; i < segment_count; i++) {
@@ -226,10 +270,8 @@ HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
 done:
     if (ret != HG_SUCCESS) {
         if (priv_handle) {
-            if (priv_handle->size_list) free(priv_handle->size_list);
-            priv_handle->size_list = NULL;
-            if (priv_handle->mem_handle_list) free(priv_handle->mem_handle_list);
-            priv_handle->mem_handle_list = NULL;
+            free(priv_handle->size_list);
+            free(priv_handle->mem_handle_list);
             free(priv_handle);
         }
         priv_handle = NULL;
@@ -381,10 +423,17 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
     if (!handle) {
         HG_ERROR_DEFAULT("NULL pointer to memory handle passed");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     priv_handle = (hg_priv_bulk_t*) malloc(sizeof(hg_priv_bulk_t));
+    if (!priv_handle) {
+        HG_ERROR_DEFAULT("Could not allocate handle");
+        ret = HG_FAIL;
+        goto done;
+    }
+    priv_handle->mem_handle_list = NULL;
+    priv_handle->size_list = NULL;
 
     /* Get the size of the data */
     memcpy(&priv_handle->total_size, buf_ptr, sizeof(size_t));
@@ -398,6 +447,11 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
 
     /* Add the list of sizes */
     priv_handle->size_list = (size_t*) malloc(priv_handle->count * sizeof(size_t));
+    if (!priv_handle->size_list) {
+        HG_ERROR_DEFAULT("Could not allocate size list");
+        ret = HG_FAIL;
+        goto done;
+    }
     for (i = 0; i < priv_handle->count; i++) {
         memcpy(&priv_handle->size_list[i], buf_ptr, sizeof(size_t));
         buf_ptr += sizeof(size_t);
@@ -408,6 +462,11 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
     }
 
     priv_handle->mem_handle_list = (na_mem_handle_t*) malloc(priv_handle->count * sizeof(na_mem_handle_t));
+    if (!priv_handle->mem_handle_list) {
+        HG_ERROR_DEFAULT("Could not allocate mem handle list");
+        ret = HG_FAIL;
+        goto done;
+    }
     for (i = 0; i < priv_handle->count; i++) {
         na_ret = NA_Mem_handle_deserialize(bulk_na_class, &priv_handle->mem_handle_list[i],
                 buf_ptr, buf_size_left);
@@ -426,6 +485,15 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
     priv_handle->registered = 0;
     *handle = priv_handle;
 
+done:
+    if (ret != HG_SUCCESS) {
+        if (priv_handle) {
+            free(priv_handle->size_list);
+            free(priv_handle->mem_handle_list);
+            free(priv_handle);
+        }
+        priv_handle = NULL;
+    }
     return ret;
 }
 
@@ -452,6 +520,11 @@ HG_Bulk_block_handle_create(void *buf, size_t block_size, unsigned long flags,
     }
 
     priv_block_handle = (hg_priv_bulk_block_t*) malloc(sizeof(hg_priv_bulk_block_t));
+    if (!priv_block_handle) {
+        HG_ERROR_DEFAULT("Could not allocate block handle");
+        ret = HG_FAIL;
+        return ret;
+    }
     priv_block_handle->data = buf;
     priv_block_handle->size = block_size;
 
@@ -480,6 +553,7 @@ HG_Bulk_block_handle_free(hg_bulk_block_t block_handle)
     if (!priv_block_handle) {
         HG_ERROR_DEFAULT("Already freed");
         ret = HG_FAIL;
+        return ret;
     }
 
     na_ret = NA_Mem_deregister(bulk_na_class, priv_block_handle->mem_handle);
@@ -579,7 +653,7 @@ HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
     if (!priv_handle) {
         HG_ERROR_DEFAULT("NULL memory handle passed");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     /* Translate bulk_offset */
@@ -595,8 +669,20 @@ HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
     local_offset = block_offset;
 
     priv_bulk_request = (hg_priv_bulk_request_t*) malloc(sizeof(hg_priv_bulk_request_t));
+    if (!priv_bulk_request) {
+        HG_ERROR_DEFAULT("Could not allocate bulk request");
+        ret = HG_FAIL;
+        goto done;
+    }
     priv_bulk_request->request_count = request_count;
+    priv_bulk_request->request_list = NULL;
+
     priv_bulk_request->request_list = (na_request_t*) malloc(request_count * sizeof(na_request_t));
+    if (!priv_bulk_request->request_list) {
+        HG_ERROR_DEFAULT("Could not allocate request list");
+        ret = HG_FAIL;
+        goto done;
+    }
 
     for (i = handle_list_index_start; i < handle_list_index_start + request_count; i++) {
         /* Transfer size is (size available from handle - offset) or (remaining size) if smaller */
@@ -610,6 +696,7 @@ HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("Could not put data");
             ret = HG_FAIL;
+            goto done;
         }
         /* We started from the index that contains bulk_offset so further remote_offset are 0 */
         remote_offset = 0;
@@ -623,6 +710,14 @@ HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
 
     *bulk_request = (hg_bulk_request_t) priv_bulk_request;
 
+done:
+    if (ret != HG_SUCCESS) {
+        if (priv_bulk_request) {
+            free(priv_bulk_request->request_list);
+            free(priv_bulk_request);
+        }
+        priv_bulk_request = NULL;
+    }
     return ret;
 }
 
@@ -665,7 +760,7 @@ HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
     if (!priv_handle) {
         HG_ERROR_DEFAULT("NULL memory handle passed");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     /* Translate bulk_offset */
@@ -681,8 +776,20 @@ HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
     local_offset = block_offset;
 
     priv_bulk_request = (hg_priv_bulk_request_t*) malloc(sizeof(hg_priv_bulk_request_t));
+    if (!priv_bulk_request) {
+        HG_ERROR_DEFAULT("Could not allocate bulk request");
+        ret = HG_FAIL;
+        goto done;
+    }
     priv_bulk_request->request_count = request_count;
+    priv_bulk_request->request_list = NULL;
+
     priv_bulk_request->request_list = (na_request_t*) malloc(request_count * sizeof(na_request_t));
+    if (!priv_bulk_request->request_list) {
+        HG_ERROR_DEFAULT("Could not allocate request list");
+        ret = HG_FAIL;
+        goto done;
+    }
 
     for (i = handle_list_index_start; i < handle_list_index_start + request_count; i++) {
         /* Transfer size is (size available from handle - offset) or (remaining size) if smaller */
@@ -696,6 +803,7 @@ HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("Could not get data");
             ret = HG_FAIL;
+            goto done;
         }
         /* We started from the index that contains bulk_offset so further remote_offset are 0 */
         remote_offset = 0;
@@ -709,6 +817,14 @@ HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
 
     *bulk_request = (hg_bulk_request_t) priv_bulk_request;
 
+done:
+    if (ret != HG_SUCCESS) {
+        if (priv_bulk_request) {
+            free(priv_bulk_request->request_list);
+            free(priv_bulk_request);
+        }
+        priv_bulk_request = NULL;
+    }
     return ret;
 }
 

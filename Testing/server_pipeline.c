@@ -30,7 +30,7 @@ static size_t bla_write_nbytes;
 
 /* Actual definition of the function that needs to be executed */
 void bla_write_pipeline(size_t chunk_size,
-        hg_bulk_request_t bulk_request, hg_status_t *status, bool nosleep)
+        hg_bulk_request_t bulk_request, hg_status_t *status, hg_bool_t nosleep)
 {
     int ret;
     double sleep_time = chunk_size * raw_time_read / bla_write_nbytes;

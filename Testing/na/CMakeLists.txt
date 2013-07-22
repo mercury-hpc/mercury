@@ -13,6 +13,7 @@ if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_na)
 endif()
 
+if(NA_USE_SSM)
 add_executable(client_simple_na client_simple_na.c)
 target_link_libraries(client_simple_na mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
@@ -23,6 +24,7 @@ add_executable(server_simple_na server_simple_na.c)
 target_link_libraries(server_simple_na mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(server_simple_na)
+endif()
 endif()
 
 # Dynamic client / server test with all enabled NA plugins

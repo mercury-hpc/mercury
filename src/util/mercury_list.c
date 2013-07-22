@@ -56,7 +56,7 @@ hg_list_entry_t *hg_list_prepend(hg_list_entry_t **list, hg_list_value_t data)
 
 	/* Create new entry */
 
-	newentry = malloc(sizeof(hg_list_entry_t));
+	newentry = (hg_list_entry_t*) malloc(sizeof(hg_list_entry_t));
 
 	if (newentry == NULL) {
 		return NULL;
@@ -83,7 +83,7 @@ hg_list_entry_t *hg_list_append(hg_list_entry_t **list, hg_list_value_t data)
 
 	/* Create new list entry */
 
-	newentry = malloc(sizeof(hg_list_entry_t));
+	newentry = (hg_list_entry_t*) malloc(sizeof(hg_list_entry_t));
 
 	if (newentry == NULL) {
 		return NULL;
@@ -200,7 +200,7 @@ hg_list_value_t *hg_list_to_array(hg_list_entry_t *list)
 
 	length = hg_list_length(list);
 
-	array = malloc(sizeof(hg_list_value_t) * length);
+	array = (hg_list_value_t*) malloc(sizeof(hg_list_value_t) * length);
 
 	if (array == NULL) {
 		return NULL;

@@ -179,27 +179,41 @@ HG_Register(const char *func_name,
         int (*enc_routine)(hg_proc_t proc, void *in_struct),
         int (*dec_routine)(hg_proc_t proc, void *out_struct))
 {
-    hg_id_t *id;
-    hg_proc_info_t *proc_info;
+    hg_id_t ret = 0;
+    hg_id_t *id = NULL;
+    hg_proc_info_t *proc_info = NULL;
 
     /* Generate a key from the string */
-    id = malloc(sizeof(hg_id_t));
+    id = (hg_id_t*) malloc(sizeof(hg_id_t));
+    if (!id) {
+        HG_ERROR_DEFAULT("Could not allocate ID");
+        goto done;
+    }
 
     *id = hg_proc_string_hash(func_name);
 
     /* Fill a func info struct and store it into the function map */
-    proc_info = malloc(sizeof(hg_proc_info_t));
+    proc_info = (hg_proc_info_t*) malloc(sizeof(hg_proc_info_t));
+    if (!proc_info) {
+        HG_ERROR_DEFAULT("Could not allocate proc info");
+        goto done;
+    }
 
     proc_info->enc_routine = enc_routine;
     proc_info->dec_routine = dec_routine;
     if (!hg_hash_table_insert(func_map, id, proc_info)) {
         HG_ERROR_DEFAULT("Could not insert func ID");
-        free(proc_info);
-        free(id);
-        return 0;
+        goto done;
     }
 
-    return *id;
+    ret = *id;
+
+done:
+    if (ret == 0) {
+        free(id);
+        free(proc_info);
+    }
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -239,14 +253,19 @@ HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_struct,
     hg_priv_request_t *priv_request = NULL;
 
     /* Retrieve encoding function from function map */
-    proc_info = hg_hash_table_lookup(func_map, &id);
+    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
         goto done;
     }
 
-    priv_request = malloc(sizeof(hg_priv_request_t));
+    priv_request = (hg_priv_request_t*) malloc(sizeof(hg_priv_request_t));
+    if (!priv_request) {
+        HG_ERROR_DEFAULT("Could not allocate request");
+        ret = HG_FAIL;
+        goto done;
+    }
 
     priv_request->id = id;
 
@@ -473,7 +492,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         hg_uint8_t extra_recv_buf_used;
 
         /* Decode depending on op ID */
-        proc_info = hg_hash_table_lookup(func_map, &priv_request->id);
+        proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &priv_request->id);
         if (!proc_info) {
             HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
             ret = HG_FAIL;

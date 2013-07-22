@@ -380,7 +380,7 @@ na_mpi_addr_lookup(const char *name, na_addr_t *addr)
 {
     int mpi_ret, ret = NA_SUCCESS;
     char *port_name = (char*) name;
-    mpi_addr_t *mpi_addr;
+    mpi_addr_t *mpi_addr = NULL;
 
     if (client_remote_addr) {
         /* Already connected (TODO only allow connection to one server at this time) */
@@ -390,6 +390,12 @@ na_mpi_addr_lookup(const char *name, na_addr_t *addr)
 
     /* Allocate the addr */
     mpi_addr = (mpi_addr_t*) malloc(sizeof(mpi_addr_t));
+    if (!mpi_addr) {
+        NA_ERROR_DEFAULT("Could not allocate addr");
+        ret = NA_FAIL;
+        return ret;
+    }
+
     mpi_addr->comm = MPI_COMM_NULL;
     mpi_addr->is_reference = 0;
     mpi_addr->rank = 0; /* TODO Only one rank for server but this may need to be improved */
@@ -406,8 +412,8 @@ na_mpi_addr_lookup(const char *name, na_addr_t *addr)
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("Could not connect");
         free(mpi_addr);
-        mpi_addr = NULL;
         ret = NA_FAIL;
+        return ret;
     } else {
         int remote_size;
         MPI_Comm_remote_size(mpi_addr->comm, &remote_size);
@@ -528,12 +534,13 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     int mpi_source;
     int mpi_tag;
     MPI_Comm mpi_unexpected_comm;
-    mpi_req_t *mpi_request;
+    mpi_req_t *mpi_request = NULL;
+    mpi_addr_t *peer_addr = NULL;
 
     if (!buf) {
         NA_ERROR_DEFAULT("NULL buffer");
         ret = NA_FAIL;
-        return ret;
+        goto done;
     }
 
     /* TODO do that for now until addresses are better handled */
@@ -545,7 +552,7 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
 #else
         NA_ERROR_DEFAULT("Unexpected receive on client not allowed");
         ret = NA_FAIL;
-        return ret;
+        goto done;
 #endif
     }
 
@@ -554,33 +561,28 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Iprobe() failed");
         ret = NA_FAIL;
-        return ret;
+        goto done;
     }
 
-    if (!flag) return ret;
+    if (!flag) goto done;
 
     MPI_Get_count(&mpi_status, MPI_BYTE, &mpi_buf_size);
     if (mpi_buf_size > (int) buf_size) {
         NA_ERROR_DEFAULT("Buffer too small to recv unexpected data");
         ret = NA_FAIL;
-        return ret;
+        goto done;
     }
 
     mpi_source = mpi_status.MPI_SOURCE;
     mpi_tag = mpi_status.MPI_TAG;
-    if (actual_buf_size) *actual_buf_size = (na_size_t) mpi_buf_size;
-    if (source) {
-        mpi_addr_t **peer_addr_ptr = (mpi_addr_t**) source;
-        mpi_addr_t *peer_addr;
-        *peer_addr_ptr = (mpi_addr_t*) malloc(sizeof(mpi_addr_t));
-        peer_addr = *peer_addr_ptr;
-        peer_addr->comm = mpi_unexpected_comm;
-        peer_addr->rank = mpi_source;
-        peer_addr->is_reference = 1;
-    }
-    if (tag) *tag = mpi_tag;
 
     mpi_request = (mpi_req_t*) malloc(sizeof(mpi_req_t));
+    if (!mpi_request) {
+        NA_ERROR_DEFAULT("Could not allocate request");
+        ret = NA_FAIL;
+        goto done;
+    }
+
     mpi_request->type = MPI_RECV_OP;
 #if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
@@ -591,10 +593,31 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");
         ret = NA_FAIL;
+        goto done;
+    }
+
+    /* Fill info */
+    if (actual_buf_size) *actual_buf_size = (na_size_t) mpi_buf_size;
+    if (source) {
+        mpi_addr_t **peer_addr_ptr = (mpi_addr_t**) source;
+        peer_addr = (mpi_addr_t*) malloc(sizeof(mpi_addr_t));
+        if (!peer_addr) {
+            NA_ERROR_DEFAULT("Could not allocate peer addr");
+            ret = NA_FAIL;
+            goto done;
+        }
+        peer_addr->comm = mpi_unexpected_comm;
+        peer_addr->rank = mpi_source;
+        peer_addr->is_reference = 1;
+        *peer_addr_ptr = peer_addr;
+    }
+    if (tag) *tag = mpi_tag;
+    *request = (na_request_t) mpi_request;
+
+done:
+    if (ret != NA_SUCCESS) {
         free(mpi_request);
-        if (source) na_mpi_addr_free(*source);
-    } else {
-        *request = (na_request_t) mpi_request;
+        free(peer_addr);
     }
     return ret;
 }
@@ -612,6 +635,11 @@ na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     mpi_req_t *mpi_request;
 
     mpi_request = (mpi_req_t*) malloc(sizeof(mpi_req_t));
+    if (!mpi_request) {
+        NA_ERROR_DEFAULT("Could not allocate request");
+        ret = NA_FAIL;
+        return ret;
+    }
     mpi_request->type = MPI_SEND_OP;
 #if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
@@ -643,6 +671,11 @@ na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     mpi_req_t *mpi_request;
 
     mpi_request = (mpi_req_t*) malloc(sizeof(mpi_req_t));
+    if (!mpi_request) {
+        NA_ERROR_DEFAULT("Could not allocate request");
+        ret = NA_FAIL;
+        return ret;
+    }
     mpi_request->type = MPI_RECV_OP;
 #if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
@@ -672,6 +705,11 @@ na_mpi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags
     /* MPI_Aint mpi_buf_size = (MPI_Aint) buf_size; */
 
     mpi_mem_handle = (mpi_mem_handle_t*) malloc(sizeof(mpi_mem_handle_t));
+    if (!mpi_mem_handle) {
+        NA_ERROR_DEFAULT("Could not allocate memory handle");
+        ret = NA_FAIL;
+        return ret;
+    }
     mpi_mem_handle->base = mpi_buf_base;
     /* mpi_mem_handle->size = mpi_buf_size; */
     mpi_mem_handle->attr = flags;
@@ -769,12 +807,20 @@ na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
     if (buf_size < sizeof(mpi_mem_handle_t)) {
         NA_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
         ret = NA_FAIL;
-    } else {
-        mpi_mem_handle = (mpi_mem_handle_t*) malloc(sizeof(mpi_mem_handle_t));
-        /* Here safe to do a simple memcpy */
-        memcpy(mpi_mem_handle, buf, sizeof(mpi_mem_handle_t));
-        *mem_handle = (na_mem_handle_t) mpi_mem_handle;
+        return ret;
     }
+
+    mpi_mem_handle = (mpi_mem_handle_t*) malloc(sizeof(mpi_mem_handle_t));
+    if (!mpi_mem_handle) {
+        NA_ERROR_DEFAULT("Could not allocate memory handle");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    /* Here safe to do a simple memcpy */
+    memcpy(mpi_mem_handle, buf, sizeof(mpi_mem_handle_t));
+    *mem_handle = (na_mem_handle_t) mpi_mem_handle;
+
     return ret;
 }
 
@@ -808,7 +854,7 @@ na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     MPI_Aint mpi_remote_offset = (MPI_Aint) remote_offset;
     int mpi_length = (int) length; /* TODO careful here that we don't send more than 2GB */
     mpi_addr_t *mpi_remote_addr = (mpi_addr_t*) remote_addr;
-    mpi_req_t *mpi_request;
+    mpi_req_t *mpi_request = NULL;
 
 #if MPI_VERSION < 3
     mpi_onesided_info_t onesided_info;
@@ -828,6 +874,11 @@ na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     }
 
     mpi_request = (mpi_req_t*) malloc(sizeof(mpi_req_t));
+    if (!mpi_request) {
+        NA_ERROR_DEFAULT("Could not allocate request");
+        ret = NA_FAIL;
+        return ret;
+    }
     mpi_request->type = MPI_SEND_OP;
     mpi_request->request = MPI_REQUEST_NULL;
 
@@ -889,7 +940,7 @@ na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     MPI_Aint mpi_remote_offset = (MPI_Aint) remote_offset;
     int mpi_length = (int) length; /* TODO careful here that we don't send more than 2GB */
     mpi_addr_t *mpi_remote_addr = (mpi_addr_t*) remote_addr;
-    mpi_req_t *mpi_request;
+    mpi_req_t *mpi_request = NULL;
 
 #if MPI_VERSION < 3
     mpi_onesided_info_t onesided_info;
@@ -903,6 +954,11 @@ na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 #endif
 
     mpi_request = (mpi_req_t*) malloc(sizeof(mpi_req_t));
+    if (!mpi_request) {
+        NA_ERROR_DEFAULT("Could not allocate request");
+        ret = NA_FAIL;
+        return ret;
+    }
     mpi_request->type = MPI_RECV_OP;
     mpi_request->request = MPI_REQUEST_NULL;
 
@@ -1044,7 +1100,7 @@ na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
     /* If the request has completed free the request */
     if (status && status != NA_STATUS_IGNORE) {
         if (mpi_request->type == MPI_RECV_OP) {
-            int count;
+            int count = 0;
             MPI_Get_count(&mpi_status, MPI_BYTE, &count);
             status->count = (na_size_t) count;
         } else {
