@@ -237,7 +237,7 @@ install(
 #-----------------------------------------------------------------------------
 # For automake compatibility, also a provide a pkgconfig file
 #-----------------------------------------------------------------------------
-if(NOT WIN32)
+if(NOT WIN32 AND NOT APPLE)
   configure_file(
     ${MERCURY_SOURCE_DIR}/CMake/mercury.pc.in
     ${MERCURY_BINARY_DIR}/CMakeFiles/mercury.pc @ONLY

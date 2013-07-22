@@ -208,7 +208,7 @@ set(MERCURY_INCLUDES_INSTALL_TIME
 )
 
 # Pkg-config configuration
-if(NOT WIN32)
+if(NOT WIN32 AND NOT APPLE)
   string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
 
   foreach(exported_lib ${MERCURY_EXPORTED_LIBS})

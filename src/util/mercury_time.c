@@ -12,9 +12,12 @@
 #include "mercury_error.h"
 
 #ifdef _WIN32
-#include <windows.h>
+#    include <windows.h>
+#elif __APPLE__
+#    include <sys/time.h>
+#    include <mach/mach_time.h>
 #else
-#include <time.h>
+#    include <time.h>
 #endif
 
 #ifdef _WIN32
@@ -55,6 +58,9 @@ hg_time_get_current(hg_time_t *tv)
     static double freq_to_usec;
     static int initialized = 0;
     static BOOL use_perf_counter = 0;
+#elif __APPLE__
+    static uint64_t monotonic_timebase_factor = 0;
+    uint64_t monotonic_nsec;
 #else
     struct timespec tp;
 #endif
@@ -92,6 +98,16 @@ hg_time_get_current(hg_time_t *tv)
     t.QuadPart = t_usec;
     tv->tv_sec = t.QuadPart / 1000000;
     tv->tv_usec = t.QuadPart % 1000000;
+#elif __APPLE__
+    if (monotonic_timebase_factor == 0) {
+        mach_timebase_info_data_t timebase_info;
+
+        (void) mach_timebase_info(&timebase_info);
+        monotonic_timebase_factor = timebase_info.numer / timebase_info.denom;
+    }
+    monotonic_nsec = (mach_absolute_time() * monotonic_timebase_factor);
+    tv->tv_sec  = monotonic_nsec / 1000000000;
+    tv->tv_usec = (monotonic_nsec - tv->tv_sec) / 1000;
 #else
     if (clock_gettime(CLOCK_MONOTONIC, &tp)) {
         HG_ERROR_DEFAULT("clock_gettime failed");
