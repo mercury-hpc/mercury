@@ -99,27 +99,17 @@ typedef struct na_ssm_addr{
 
 typedef struct na_ssm_mem_handle{
     //ssm_md md;    //NULL
-    ssm_mr mr;  //XXX ? 
-    ssm_bits matchbits; //XXX delete
+    ssm_mr mr;  //TODO: ? 
+    ssm_bits matchbits; //TODO: delete
 } na_ssm_mem_handle_t;
 
-//XXX inc counter
+//TODO: inc counter
 
-//typedef enum na_ssm_onesided_op {
-//    SSM_ONESIDED_PUT,       /* Request a put operation */
-//    SSM_ONESIDED_GET        /* Request a get operation */
-//} na_ssm_onesided_op_t;
 
 typedef int ssm_size_t;
 typedef int ssm_tag_t;
 typedef unsigned long ssm_msg_tag_t;
 
-//typedef struct na_ssm_onesided_info {
-//    void    *base;         /* Initial address of memory */
-//    ssm_size_t disp;       /* Offset from initial address */
-//    ssm_size_t count;      /* Number of entries */
-//    ssm_onesided_op_t op;  /* Operation requested */
-//} na_ssm_onesided_info_t;
 
 /* Used to differentiate Send requests from Recv requests */
 typedef enum ssm_req_type {
@@ -164,8 +154,6 @@ static na_ssm_connect p_na_ssm_connect;
 #define NA_SSM_NEXT_UNEXPBUF_POS(n) (((n)+(1)) % (NA_SSM_UNEXPECTED_BUFFERCOUNT))
 char **buf_unexpected;
 
-//#define NA_SSM_ONESIDED_TAG        0x80 /* Default tag used for one-sided over two-sided */
-//#define NA_SSM_ONESIDED_DATA_TAG   0x81
 
 
 #define NA_SSM_TAG_UNEXPECTED_OFFSET 0
@@ -299,7 +287,7 @@ void msg_send_cb(void *cbdat, void *evdat)
     //wake up others
     hg_thread_cond_signal(&comp_req_cond);
     hg_thread_mutex_unlock(&request_mutex);
-    ssm_mr_destroy(r->mr); //XXX Error Handling
+    ssm_mr_destroy(r->mr); //TODO: Error Handling
     if(cbdat!=NULL){
         free(cbdat);
     }
@@ -332,7 +320,7 @@ void unexp_msg_send_cb(void *cbdat, void *evdat)
     //wake up others
     hg_thread_cond_signal(&comp_req_cond);
     hg_thread_mutex_unlock(&request_mutex);
-    ssm_mr_destroy(r->mr); //XXX Error Handling
+    ssm_mr_destroy(r->mr); //TODO: Error Handling
     if(cbdat!=NULL){
         free(cbdat);
     }
@@ -366,7 +354,7 @@ void msg_recv_cb(void *cbdat, void *evdat) {
     //wake up others
     hg_thread_cond_signal(&comp_req_cond);
     hg_thread_mutex_unlock(&request_mutex);
-    ssm_mr_destroy(r->mr); //XXX Error Handling
+    ssm_mr_destroy(r->mr); //TODO: Error Handling
     if(cbdat!=NULL){
         free(cbdat);
     }
@@ -404,14 +392,6 @@ void unexp_msg_recv_cb(void *cbdat, void *evdat) {
     cbd->bytes = r->bytes;
     hg_thread_cond_signal(&unexp_cond);
     hg_thread_mutex_unlock(&unexp_mutex);
-    
-    /*
-    hg_thread_mutex_lock(&request_mutex);
-    mark_as_completed(cbdat);
-    //wake up others
-    hg_thread_cond_signal(&comp_req_cond);
-    hg_thread_mutex_unlock(&request_mutex);
-    */
 }
 
 /*---------------------------------------------------------------------------
@@ -481,7 +461,7 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
     unexpbuf_cpos = 0;
     unexpbuf_availpos = 0;
     //unexpbuf_rpos = 0;
-    // XXX add free(at finalize phase)
+    // TODO: add free(at finalize phase)
 
     /* POST buffers for unexpected recieve */
     ssm_size_t size = NA_SSM_UNEXPECTED_SIZE;
@@ -497,21 +477,11 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
     /* Initialize cond variable */
     //hg_thread_mutex_init(&unexpected_wait_list_mutex);
     hg_thread_mutex_init(&unexpected_buf_mutex);
-//    hg_thread_mutex_init(&testcontext_mutex);
-//    hg_thread_cond_init(&testcontext_cond);
-//    is_testing_context = 0;
     hg_thread_mutex_init(&request_mutex);
     hg_thread_cond_init(&comp_req_cond);
     hg_thread_mutex_init(&unexp_mutex);
     hg_thread_cond_init(&unexp_cond);
     hg_thread_mutex_init(&unexp_bufcounter_mutex);
-//#ifdef NA_HAS_CLIENT_THREAD
-//    hg_thread_mutex_init(&finalizing_mutex);
-//    if (!is_server) {
-//        /* TODO temporary to handle one-sided exchanges with remote server */
-//        hg_thread_create(&progress_service, &na_bmi_progress_service, NULL);
-//    }
-//#endif
 
     return &na_ssm_g;
 }
@@ -674,11 +644,6 @@ static int na_ssm_msg_send_unexpected(const void *buf, na_size_t buf_size,
     *request = (na_request_t*) ssm_request;
 
 
-//    hg_thread_mutex_lock(&request_mutex);
-//    /* Mark request as done if immediate BMI completion detected */
-//    bmi_request->completed = bmi_ret ? 1 : 0;
-//    *request = (na_request_t) bmi_request;
-//    hg_thread_mutex_unlock(&request_mutex);
 
     return ret;
 }
@@ -723,7 +688,6 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
     unexpected_wait->source = source;
     unexpected_wait->tag = tag;
     unexpected_wait->request = (na_request_t)pssm_request;
-    //unexpected_wait->completed = 0;
     unexpected_wait->op_arg = op_arg;
     
     if (!hg_list_append(&unexpected_wait_list, (hg_list_value_t)unexpected_wait)) {
@@ -761,20 +725,7 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     ssm_request->matchbits = (ssm_bits)tag + NA_SSM_TAG_EXPECTED_OFFSET;
     ssm_request->user_ptr = op_arg;
     
-//    ssm_request_t *bmi_request = NULL;
-//
-//    /* Allocate request */
-//    bmi_request = malloc(sizeof(bmi_request_t));
-//    bmi_request->completed = 0;
-//    bmi_request->actual_size = 0;
-//    bmi_request->user_ptr = op_arg;
-//    bmi_request->ack_request = NA_REQUEST_NULL;
-
-//    /* Post the BMI send request */
-//    bmi_ret = BMI_post_send(&bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
-//            BMI_EXT_ALLOC, bmi_tag, bmi_request, bmi_context, NULL);
-    
-    //na_ssm_mem_handle_t *mem_handle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t)); //XXX delete
+    //na_ssm_mem_handle_t *mem_handle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t)); //TODO: delete
     
 #if DEBUG
     printf("na_ssm_msg_send()\n");
@@ -800,13 +751,6 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 
     ssm_request->tx = stx;
     *request = (na_request_t*) ssm_request;
-
-
-//    hg_thread_mutex_lock(&request_mutex);
-//    /* Mark request as done if immediate BMI completion detected */
-//    bmi_request->completed = bmi_ret ? 1 : 0;
-//    *request = (na_request_t) bmi_request;
-//    hg_thread_mutex_unlock(&request_mutex);
 
     return ret;
 }
@@ -880,7 +824,7 @@ int na_ssm_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
     pssm_mr = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
     pssm_mr->mr = ssm_mr_create(NULL, buf, buf_size);
     
-    //XXX alloc matchbits (inc)
+    //TODO: alloc matchbits (inc)
 
     //TODO add this mr to hash table and error handle
     return NA_SUCCESS;
@@ -935,7 +879,7 @@ static na_size_t na_ssm_mem_handle_get_serialize_size(na_mem_handle_t mem_handle
 int na_ssm_mem_handle_serialize(void *buf, na_size_t buf_size,
         na_mem_handle_t mem_handle)
 {
-    //XXX only matchbits
+    //TODO: only matchbits
 #if DEBUG
     fprintf(stderr, "na_ssm_msm_handle_serialize()\n");
 #endif
@@ -1081,14 +1025,14 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
         if (hg_list_length(unexpected_wait_list)) {
             entry = unexpected_wait_list;
             ssm_unexpected_wait = (na_ssm_unexpected_wait_t *) hg_list_data(entry);
-            ssm_wait(ssm, &tv); //XXX change timeout
+            ssm_wait(ssm, &tv); //TODO: change timeout
             while(unexpbuf[NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos)].valid == 0){
                 hg_thread_cond_wait(&unexp_cond, &unexp_mutex);
             }
             if (unexpbuf[NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos)].status < 0) {
                 NA_ERROR_DEFAULT("unexpected recv failed");
-                /* XXX free ?*/
-                //XXX request->status = ERROR
+                /* TODO: free ?*/
+                //TODO: request->status = ERROR
                 
             }
             if(NA_SSM_UNEXPECTED_SIZE > (ssm_size_t)ssm_unexpected_wait->buf_size) {
@@ -1112,12 +1056,12 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
             (preq->completed) = 1;
             rt = 1;
 
-            /* XXX need to free the entry? */
+            /* TODO: need to free the entry? */
             /* remove from the list */
             if (entry && !hg_list_remove_entry(&unexpected_wait_list, entry)) {
                 NA_ERROR_DEFAULT("Could not remove entry");
             } else {
-                //XXX free?
+                //TODO: free?
             }
 
             /* Clean up the buflist */
@@ -1168,7 +1112,7 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
 #endif
         return NA_FAIL;
     }
-    //XXX status->count ??
+    //TODO: status->count ??
     if (status && status != NA_STATUS_IGNORE) {
 #if DEBUG
         printf("\treturn status code\n");
