@@ -23,6 +23,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <sys/time.h>
+#include <sys/uio.h>
 
 #include <ssm/dumb.h>
 #include <ssm.h>
@@ -104,6 +105,7 @@ typedef struct na_ssm_mem_handle{
     //ssm_md md;    //NULL
     ssm_mr mr;  //TODO: ? 
     ssm_bits matchbits; //TODO: delete
+    void *buf;
 } na_ssm_mem_handle_t;
 
 //TODO: inc counter
@@ -187,6 +189,7 @@ static hg_thread_cond_t  testcontext_cond;
 static hg_thread_mutex_t unexp_mutex;
 static hg_thread_cond_t  unexp_cond;
 static hg_thread_mutex_t unexp_bufcounter_mutex;
+static hg_thread_mutex_t gen_matchbits;
 static bool              is_testing_context;
 
 /* List and mutex for unexpected messages */
@@ -224,6 +227,19 @@ typedef struct na_ssm_unexpected_wait{
     na_request_t *request;
     void *op_arg;
 } na_ssm_unexpected_wait_t;
+
+static ssm_bits cur_bits;
+
+/* generate unique matchbits */
+static inline ssm_bits
+generate_unique_matchbits()
+{
+    hg_thread_mutex_lock(&gen_matchbits);
+    cur_bits++;
+    hg_thread_mutex_unlock(&gen_matchbits);
+    return cur_bits;
+}
+
 
 /* map functions */
 static inline int
@@ -263,15 +279,10 @@ static inline int mark_as_completed(na_ssm_request_t *req)
     return 1;
 }
 
-void msg_send_cb(void *cbdat, void *evdat) 
+static inline void show_stats(void *cbdat, ssm_result r)
 {
-#if DEBUG
-    puts("msg_send_cb()");
-#endif
-    ssm_result r = evdat;
-    (void)cbdat;
-#if DEBUG
-    printf("        cbdat = %p\n", cbdat);
+    
+    printf("cbdat             = %p\n", cbdat);
     printf("ssm_id     id     = %p\n", r->id);
     printf("ssm_me     me     = %p\n", r->me);
     printf("ssm_tx     tx     = %p\n", r->tx);
@@ -284,6 +295,17 @@ void msg_send_cb(void *cbdat, void *evdat)
     printf("ssm_mr     mr     = %p\n", r->mr);
     printf("ssm_md     md     = %p\n", r->md);
     printf("uint64_t   bytes  = %lu\n", r->bytes);
+}
+
+void msg_send_cb(void *cbdat, void *evdat) 
+{
+#if DEBUG
+    puts("msg_send_cb()");
+#endif
+    ssm_result r = evdat;
+    (void)cbdat;
+#if DEBUG
+    show_stats(cbdat, r);
 #endif
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
@@ -304,19 +326,7 @@ void unexp_msg_send_cb(void *cbdat, void *evdat)
     ssm_result r = evdat;
     (void)cbdat;
 #if DEBUG
-    printf("        cbdat = %p\n", cbdat);
-    printf("ssm_id     id     = %p\n", r->id);
-    printf("ssm_me     me     = %p\n", r->me);
-    printf("ssm_tx     tx     = %p\n", r->tx);
-    printf("ssm_bits   bits   = %lu\n", r->bits);
-    printf("ssm_status status = %u\n", r->status);
-    printf("         (%s)\n", ssm_status_str(r->status));
-    printf("ssm_op     op     = %u\n", r->op);
-    printf("         (%s)\n", ssm_op_str(r->op));
-    printf("ssm_Haddr  addr   = %p\n", r->addr);
-    printf("ssm_mr     mr     = %p\n", r->mr);
-    printf("ssm_md     md     = %p\n", r->md);
-    printf("uint64_t   bytes  = %lu\n", r->bytes);
+    show_stats(cbdat, r);
 #endif
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
@@ -338,19 +348,7 @@ void msg_recv_cb(void *cbdat, void *evdat) {
 #if DEBUG
     ssm_result r = evdat;
     (void)cbdat;
-    printf("        cbdat = %p\n", cbdat);
-    printf("ssm_id     id     = %p\n", r->id);
-    printf("ssm_me     me     = %p\n", r->me);
-    printf("ssm_tx     tx     = %p\n", r->tx);
-    printf("ssm_bits   bits   = %lu\n", r->bits);
-    printf("ssm_status status = %u\n", r->status);
-    printf("         (%s)\n", ssm_status_str(r->status));
-    printf("ssm_op     op     = %u\n", r->op);
-    printf("         (%s)\n", ssm_op_str(r->op));
-    printf("ssm_Haddr  addr   = %p\n", r->addr);
-    printf("ssm_mr     mr     = %p\n", r->mr);
-    printf("ssm_md     md     = %p\n", r->md);
-    printf("uint64_t   bytes  = %lu\n", r->bytes);
+    show_stats(cbdat, r);
 #endif
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
@@ -372,19 +370,7 @@ void unexp_msg_recv_cb(void *cbdat, void *evdat) {
     puts("----------");
     ssm_result r = evdat;
     (void)cbdat;
-    printf("        cbdat = %p\n", cbdat);
-    printf("ssm_id     id     = %p\n", r->id);
-    printf("ssm_me     me     = %p\n", r->me);
-    printf("ssm_tx     tx     = %p\n", r->tx);
-    printf("ssm_bits   bits   = %lu\n", r->bits);
-    printf("ssm_status status = %u\n", r->status);
-    printf("         (%s)\n", ssm_status_str(r->status));
-    printf("ssm_op     op     = %u\n", r->op);
-    printf("         (%s)\n", ssm_op_str(r->op));
-    printf("ssm_Haddr  addr   = %p\n", r->addr);
-    printf("ssm_mr     mr     = %p\n", r->mr);
-    printf("ssm_md     md     = %p\n", r->md);
-    printf("uint64_t   bytes  = %lu\n", r->bytes);
+    show_stats(cbdat, r);
 #endif
     na_ssm_unexpbuf_t *cbd = cbdat;
     hg_thread_mutex_lock(&unexp_mutex);
@@ -395,6 +381,41 @@ void unexp_msg_recv_cb(void *cbdat, void *evdat) {
     cbd->bytes = r->bytes;
     hg_thread_cond_signal(&unexp_cond);
     hg_thread_mutex_unlock(&unexp_mutex);
+}
+
+void put_cb(void *cbdat, void *evdat) 
+{
+#if DEBUG
+    puts("msg_put_cb()");
+#endif
+    ssm_result r = evdat;
+    (void)cbdat;
+#if DEBUG
+    show_stats(cbdat, r);
+#endif
+    hg_thread_mutex_lock(&request_mutex);
+    mark_as_completed(cbdat);
+    //wake up others
+    hg_thread_cond_signal(&comp_req_cond);
+    hg_thread_mutex_unlock(&request_mutex);
+}
+
+
+void get_cb(void *cbdat, void *evdat) 
+{
+#if DEBUG
+    puts("msg_get_cb()");
+#endif
+    ssm_result r = evdat;
+    (void)cbdat;
+#if DEBUG
+    show_stats(cbdat, r);
+#endif
+    hg_thread_mutex_lock(&request_mutex);
+    mark_as_completed(cbdat);
+    //wake up others
+    hg_thread_cond_signal(&comp_req_cond);
+    hg_thread_mutex_unlock(&request_mutex);
 }
 
 /*---------------------------------------------------------------------------
@@ -463,6 +484,7 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
     }
     unexpbuf_cpos = 0;
     unexpbuf_availpos = 0;
+    cur_bits = 0;
     //unexpbuf_rpos = 0;
     // TODO: add free(at finalize phase)
 
@@ -485,6 +507,7 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
     hg_thread_mutex_init(&unexp_mutex);
     hg_thread_cond_init(&unexp_cond);
     hg_thread_mutex_init(&unexp_bufcounter_mutex);
+    hg_thread_mutex_init(&gen_matchbits);
 
     return &na_ssm_g;
 }
@@ -982,8 +1005,37 @@ int na_ssm_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
-    //mem layout
-    ssm_md md;
+    na_ssm_mem_handle_t *lh = (na_ssm_mem_handle_t *)local_mem_handle;
+    na_ssm_mem_handle_t *rh = (na_ssm_mem_handle_t *)remote_mem_handle;
+    /* mem layout */
+    struct iovec *iov;
+    iov = (struct iovec *)malloc(sizeof(struct iovec));
+    char *pbuf = (char *)lh->buf;
+    pbuf += local_offset;
+    iov[0].iov_base = pbuf;
+    iov[0].iov_len = length;
+    int ssm_ret, ret = NA_SUCCESS;
+    /* args */
+    na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) remote_addr;
+    na_ssm_request_t *ssm_request = NULL;
+    ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+    memset(ssm_request, 0, sizeof(na_ssm_request_t));
+    ssm_request->type = SSM_PUT_OP;
+    ssm_request->matchbits = lh->matchbits;
+    
+#if DEBUG
+    printf("na_ssm_put()\n");
+    printf("\tlocal_h->mr = %p, local_of = %ld, remote_h->mr = %p, remote_of = %ld, len = %ld, addr = %p\n", lh->mr, local_offset, rh->mr, remote_offset, length, ssm_peer_addr->addr);
+#endif
+    ssm_request->cb.pcb = put_cb;
+    ssm_request->cb.cbdata = ssm_request;
+    ssm_tx stx; 
+    stx = ssm_putv(ssm, ssm_peer_addr->addr , iov, 1, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
+#if DEBUG
+    printf("\ttx = %p\n", stx);
+#endif
+    ssm_request->tx = stx;
+    *request = (na_request_t*) ssm_request;
 }
 
 /*---------------------------------------------------------------------------
@@ -999,8 +1051,38 @@ int na_ssm_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
-    //mem layout
+    na_ssm_mem_handle_t *lh = (na_ssm_mem_handle_t *)local_mem_handle;
+    na_ssm_mem_handle_t *rh = (na_ssm_mem_handle_t *)remote_mem_handle;
+    /* mem layout */
+    struct iovec *iov;
+    iov = (struct iovec *)malloc(sizeof(struct iovec));
+    char *pbuf = (char *)lh->buf;
+    pbuf += local_offset;
+    iov[0].iov_base = pbuf;
+    iov[0].iov_len = length;
+    int ssm_ret, ret = NA_SUCCESS;
+    /* args */
+    na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) remote_addr;
+    na_ssm_request_t *ssm_request = NULL;
+    ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+    memset(ssm_request, 0, sizeof(na_ssm_request_t));
+    ssm_request->type = SSM_GET_OP;
+    ssm_request->matchbits = lh->matchbits;
     
+#if DEBUG
+    printf("na_ssm_get()\n");
+    printf("\tlocal_h->mr = %p, local_of = %ld, remote_h->mr = %p, remote_of = %ld, len = %ld, addr = %p\n", lh->mr, local_offset, rh->mr, remote_offset, length, ssm_peer_addr->addr);
+#endif
+
+    ssm_request->cb.pcb = get_cb;
+    ssm_request->cb.cbdata = ssm_request;
+    ssm_tx stx; 
+    stx = ssm_getv(ssm, ssm_peer_addr->addr , iov, 1, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
+#if DEBUG
+    printf("\ttx = %p\n", stx);
+#endif
+    ssm_request->tx = stx;
+    *request = (na_request_t*) ssm_request;
 }
 
 /*---------------------------------------------------------------------------
