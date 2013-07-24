@@ -77,6 +77,7 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], char **port_name, int *r
             fprintf(stderr, "Usage: %s ssm <tcp|udp|ib> port\n", argv[0]);
             exit(0);
         }
+        if (port_name) *port_name = getenv(HG_PORT_NAME);
         network_class = NA_SSM_Init(argv[2], atoi(argv[3]), 0);
     }
 #endif

@@ -32,6 +32,8 @@
 static int na_ssm_finalize(void);
 static int na_ssm_addr_lookup(const char *name, na_addr_t *addr);
 static int na_ssm_addr_free(na_addr_t addr);
+static na_size_t na_ssm_msg_get_max_expected_size(void);
+static na_size_t na_ssm_msg_get_max_unexpected_size(void);
 static na_size_t na_ssm_msg_get_maximum_size(void);
 static na_tag_t na_ssm_msg_get_maximum_tag(void);
 static int na_ssm_msg_send_unexpected(const void *buf, na_size_t buf_size,
@@ -64,7 +66,8 @@ static na_class_t na_ssm_g = {
         na_ssm_finalize,               /* finalize */
         na_ssm_addr_lookup,            /* addr_lookup */
         na_ssm_addr_free,              /* addr_free */
-        na_ssm_msg_get_maximum_size,   /* msg_get_maximum_size */
+        na_ssm_msg_get_max_expected_size,     /* msg_get_max_expected_size */
+        na_ssm_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
         na_ssm_msg_get_maximum_tag,
         na_ssm_msg_send_unexpected,    /* msg_send_unexpected */
         na_ssm_msg_recv_unexpected,    /* msg_recv_unexpected */
@@ -570,6 +573,23 @@ static int na_ssm_addr_free(na_addr_t addr)
     free(paddr);
     return NA_SUCCESS;
 }
+
+/*---------------------------------------------------------------------------*/
+static na_size_t
+na_ssm_msg_get_max_expected_size(void)
+{
+    na_size_t max_expected_size = NA_SSM_EXPECTED_SIZE;
+    return max_expected_size;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_size_t
+na_ssm_msg_get_max_unexpected_size(void)
+{
+    na_size_t max_unexpected_size = NA_SSM_UNEXPECTED_SIZE;
+    return max_unexpected_size;
+}
+
 
 /*---------------------------------------------------------------------------
  * Function:    na_ssm_msg_get_maximum_size
@@ -1091,6 +1111,9 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
             /* Need to wait the completion */
             /* TODO: need to change tv. should be less than timeout, and
              * repeat this.*/
+#if DEBUG
+            puts("Wait for completion");
+#endif
             ssmret = ssm_wait(ssm, &tv);
             if(ssmret < 0 ){
                 NA_ERROR_DEFAULT("ssm_wait() failed");

@@ -67,12 +67,12 @@ int main(int argc, char *argv[])
         na_request_t get_request = NA_REQUEST_NULL;
         int i, error = 0;
         
-        na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, recv_tag, &bulk_request, NULL);
+        na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, recv_tag, &recv_request, NULL);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not recv\n");
             return EXIT_FAILURE;
         }
-
+        puts("a");
         na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Error during wait\n");
