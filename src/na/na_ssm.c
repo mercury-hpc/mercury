@@ -156,7 +156,7 @@ static na_ssm_connect p_na_ssm_connect;
 #define NA_SSM_EXPECTED_SIZE 4096
 
 #define NA_SSM_UNEXPECTED_BUFFERCOUNT 8
-#define NA_SSM_NEXT_UNEXPBUF_POS(n) (((n)+(1)) % (NA_SSM_UNEXPECTED_BUFFERCOUNT))
+#define NA_SSM_NEXT_UNEXPBUF_POS(n) (((n)+(1))%(NA_SSM_UNEXPECTED_BUFFERCOUNT))
 char **buf_unexpected;
 
 
@@ -186,8 +186,10 @@ static hg_thread_mutex_t tag_mutex;
 static hg_thread_mutex_t request_mutex;
 static hg_thread_mutex_t testcontext_mutex;
 static hg_thread_cond_t  testcontext_cond;
-static hg_thread_mutex_t unexp_mutex;
-static hg_thread_cond_t  unexp_cond;
+static hg_thread_mutex_t unexp_waitlist_mutex;
+static hg_thread_cond_t  unexp_waitlist_cond;
+static hg_thread_mutex_t unexp_buf_mutex;
+static hg_thread_cond_t  unexp_buf_cond;
 static hg_thread_mutex_t unexp_bufcounter_mutex;
 static hg_thread_mutex_t gen_matchbits;
 static bool              is_testing_context;
@@ -213,9 +215,11 @@ typedef struct na_ssm_unexpbuf{
     uint64_t bytes;
 } na_ssm_unexpbuf_t;
 static int unexpbuf_cpos;
-//static int unexpbuf_rpos;
+static int unexpbuf_rpos;
 static int unexpbuf_availpos;
-na_ssm_unexpbuf_t unexpbuf[NA_SSM_UNEXPECTED_BUFFERCOUNT];
+static na_ssm_unexpbuf_t unexpbuf[NA_SSM_UNEXPECTED_BUFFERCOUNT];
+static ssm_cb_t unexp_cb;
+static ssm_me unexp_me;
 
 /* u*/
 typedef struct na_ssm_unexpected_wait{
@@ -282,19 +286,19 @@ static inline int mark_as_completed(na_ssm_request_t *req)
 static inline void show_stats(void *cbdat, ssm_result r)
 {
     
-    printf("cbdat             = %p\n", cbdat);
-    printf("ssm_id     id     = %p\n", r->id);
-    printf("ssm_me     me     = %p\n", r->me);
-    printf("ssm_tx     tx     = %p\n", r->tx);
-    printf("ssm_bits   bits   = %lu\n", r->bits);
-    printf("ssm_status status = %u\n", r->status);
-    printf("         (%s)\n", ssm_status_str(r->status));
-    printf("ssm_op     op     = %u\n", r->op);
-    printf("         (%s)\n", ssm_op_str(r->op));
-    printf("ssm_Haddr  addr   = %p\n", r->addr);
-    printf("ssm_mr     mr     = %p\n", r->mr);
-    printf("ssm_md     md     = %p\n", r->md);
-    printf("uint64_t   bytes  = %lu\n", r->bytes);
+    printf("\tcbdat             = %p\n", cbdat);
+    printf("\tssm_id     id     = %p\n", r->id);
+    printf("\tssm_me     me     = %p\n", r->me);
+    printf("\tssm_tx     tx     = %p\n", r->tx);
+    printf("\tssm_bits   bits   = %lu\n", r->bits);
+    printf("\tssm_status status = %u\n", r->status);
+    printf("\t         (%s)\n", ssm_status_str(r->status));
+    printf("\tssm_op     op     = %u\n", r->op);
+    printf("\t         (%s)\n", ssm_op_str(r->op));
+    printf("\tssm_Haddr  addr   = %p\n", r->addr);
+    printf("\tssm_mr     mr     = %p\n", r->mr);
+    printf("\tssm_md     md     = %p\n", r->md);
+    printf("\tuint64_t   bytes  = %lu\n", r->bytes);
 }
 
 void msg_send_cb(void *cbdat, void *evdat) 
@@ -365,22 +369,26 @@ void msg_recv_cb(void *cbdat, void *evdat) {
 void unexp_msg_recv_cb(void *cbdat, void *evdat) {
 #if DEBUG
     puts("unexp_msg_recv_cb()");
-    printf(".");
-    fflush(stdout);
-    puts("----------");
     ssm_result r = evdat;
     (void)cbdat;
     show_stats(cbdat, r);
 #endif
-    na_ssm_unexpbuf_t *cbd = cbdat;
-    hg_thread_mutex_lock(&unexp_mutex);
+    hg_thread_mutex_lock(&unexp_buf_mutex);
+    na_ssm_unexpbuf_t *cbd = &unexpbuf[unexpbuf_cpos];
+#if DEBUG
+    printf("\tcpos = %d\n", unexpbuf_cpos);
+#endif
     cbd->valid = 1;
     cbd->bits = r->bits;
     cbd->status = r->status;
     cbd->addr = r->addr;
     cbd->bytes = r->bytes;
-    hg_thread_cond_signal(&unexp_cond);
-    hg_thread_mutex_unlock(&unexp_mutex);
+    unexpbuf_cpos = NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_cpos);
+    hg_thread_cond_signal(&unexp_buf_cond);
+    hg_thread_mutex_unlock(&unexp_buf_mutex);
+#if DEBUG
+    puts("\tunexp_msg_recv_cb end");
+#endif
 }
 
 void put_cb(void *cbdat, void *evdat) 
@@ -471,24 +479,26 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
 
     /* Prepare buffers */
     int i;
+    unexpbuf_cpos = 0;
+    unexpbuf_rpos = 0;
+    unexpbuf_availpos = -1;
+    cur_bits = 0;
+    unexp_cb.pcb = unexp_msg_recv_cb;
+    unexp_cb.cbdata = NULL;
+    unexp_me = ssm_link(ssm, 0, ((ssm_tag_t)0xffffffffffffffff >> 2), SSM_POS_HEAD, NULL, &unexp_cb, SSM_NOF);
+#if DEBUG
+    printf("\tssm_link(ssm = %d, mask = %p)\n",
+            ssm, ((ssm_tag_t)0xffffffffffffffff >> 2));
+#endif
     for(i = 0; i < NA_SSM_UNEXPECTED_BUFFERCOUNT; i++){
         unexpbuf[i].buf = (char *)malloc(NA_SSM_UNEXPECTED_SIZE);
         unexpbuf[i].mr = ssm_mr_create(NULL, unexpbuf[i].buf, NA_SSM_UNEXPECTED_SIZE);
-        unexpbuf[i].cb.pcb = unexp_msg_recv_cb;
-        unexpbuf[i].cb.cbdata = &unexpbuf[i];
         unexpbuf[i].valid = 0;
-        unexpbuf[i].me = ssm_link(ssm, 0, ((ssm_tag_t)0xffffffffffffffff >> 2), SSM_POS_HEAD, NULL, &(unexpbuf[i].cb), SSM_NOF);
-#if DEBUG
-        printf("\tssm_link(ssm = %d, mask = %p)\n",
-                ssm, ((ssm_tag_t)0xffffffffffffffff >> 2));
-#endif
-        if( ssm_post(ssm, unexpbuf[i].me, unexpbuf[i].mr, SSM_NOF) < 0){
+        if( ssm_post(ssm, unexp_me, unexpbuf[i].mr, SSM_NOF) < 0){
             NA_ERROR_DEFAULT("Post failed (init)");
         }
+        unexpbuf_availpos = NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos);
     }
-    unexpbuf_cpos = 0;
-    unexpbuf_availpos = 0;
-    cur_bits = 0;
     //unexpbuf_rpos = 0;
     // TODO: add free(at finalize phase)
 
@@ -508,8 +518,10 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
     hg_thread_mutex_init(&unexpected_buf_mutex);
     hg_thread_mutex_init(&request_mutex);
     hg_thread_cond_init(&comp_req_cond);
-    hg_thread_mutex_init(&unexp_mutex);
-    hg_thread_cond_init(&unexp_cond);
+    hg_thread_mutex_init(&unexp_waitlist_mutex);
+    hg_thread_cond_init(&unexp_waitlist_cond);
+    hg_thread_mutex_init(&unexp_buf_mutex);
+    hg_thread_cond_init(&unexp_buf_cond);
     hg_thread_mutex_init(&unexp_bufcounter_mutex);
     hg_thread_mutex_init(&gen_matchbits);
 
@@ -729,7 +741,7 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
         return ret;
     }
     
-    hg_thread_mutex_lock(&unexp_mutex);
+    hg_thread_mutex_lock(&unexp_waitlist_mutex);
     pssm_request->type = SSM_UNEXP_RECV_OP;
 
     na_ssm_unexpected_wait_t *unexpected_wait = 
@@ -748,7 +760,7 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
     }
 
     *request = (na_request_t) pssm_request;
-    hg_thread_mutex_unlock(&unexp_mutex);
+    hg_thread_mutex_unlock(&unexp_waitlist_mutex);
     return ret;
 }
 
@@ -1140,21 +1152,27 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
          *  */
         hg_list_entry_t *entry = NULL;
         na_ssm_unexpected_wait_t *ssm_unexpected_wait = NULL;
-        hg_thread_mutex_lock(&unexp_mutex);
+        hg_thread_mutex_lock(&unexp_waitlist_mutex);
         if (hg_list_length(unexpected_wait_list)) {
             entry = unexpected_wait_list;
             ssm_unexpected_wait = (na_ssm_unexpected_wait_t *) hg_list_data(entry);
 #if DEBUG
             puts("\tcall ssm_wait");
 #endif
-            ssm_wait(ssm, &tv); //TODO: change timeout
-            while(unexpbuf[NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos)].valid == 0){
-#if DEBUG
-                puts("\tcond wait");
-#endif
-                hg_thread_cond_wait(&unexp_cond, &unexp_mutex);
+            if(unexpbuf[unexpbuf_rpos].valid == 0){
+                ssm_wait(ssm, &tv); //TODO: change timeout
             }
-            if (unexpbuf[NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos)].status < 0) {
+#if DEBUG
+            puts("\tssm_wait end");
+#endif
+            hg_thread_mutex_lock(&unexp_buf_mutex);
+            while(unexpbuf[unexpbuf_rpos].valid == 0){
+#if DEBUG
+                printf("\tunexpbuf_availpos = %d, rpos = %d, cond wait()\n", unexpbuf_availpos, unexpbuf_rpos);
+#endif
+                hg_thread_cond_wait(&unexp_buf_cond, &unexp_buf_mutex);
+            }
+            if (unexpbuf[unexpbuf_rpos].status < 0) {
                 NA_ERROR_DEFAULT("unexpected recv failed");
                 /* TODO: free ?*/
                 //TODO: request->status = ERROR
@@ -1165,7 +1183,7 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
                 //ret = NA_FAIL;
                 //return ret;
             }
-            na_ssm_unexpbuf_t *pbuf = &unexpbuf[NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos)];
+            na_ssm_unexpbuf_t *pbuf = &unexpbuf[unexpbuf_rpos];
             if (ssm_unexpected_wait->actual_buf_size) {
                 *(ssm_unexpected_wait->actual_buf_size) = (na_size_t) pbuf->bytes;
             }
@@ -1190,14 +1208,15 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
             }
 
             /* Clean up the buflist */
+            /* TODO: lock ? */
             pbuf->valid = 0;
             /* Post the buf again */
-            if( ssm_post(ssm, pbuf->me, pbuf->mr, SSM_NOF) < 0){
+            if( ssm_post(ssm, unexp_me, pbuf->mr, SSM_NOF) < 0){
                 NA_ERROR_DEFAULT("Post failed (wait)");
             }
-
-
             unexpbuf_availpos = NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos);
+            unexpbuf_rpos = NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_rpos);
+            hg_thread_mutex_unlock(&unexp_buf_mutex);
             
             
         } else {
@@ -1205,7 +1224,7 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
              * entry.*/
             puts("no  wait entry?");
         }
-        hg_thread_mutex_unlock(&unexp_mutex);
+        hg_thread_mutex_unlock(&unexp_waitlist_mutex);
     } else {
         hg_thread_mutex_lock(&request_mutex);
         request_completed = prequest->completed;
