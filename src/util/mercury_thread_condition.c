@@ -61,6 +61,21 @@ hg_thread_cond_signal(hg_thread_cond_t *cond)
 
 /*---------------------------------------------------------------------------*/
 int
+hg_thread_cond_broadcast(hg_thread_cond_t *cond)
+{
+    int ret = HG_SUCCESS;
+
+#ifdef _WIN32
+    WakeAllConditionVariable(cond);
+#else
+    if (pthread_cond_broadcast(cond)) ret = HG_FAIL;
+#endif
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
 hg_thread_cond_wait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex)
 {
     int ret = HG_SUCCESS;

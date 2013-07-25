@@ -18,14 +18,14 @@
   typedef HANDLE hg_thread_t;
   typedef LPTHREAD_START_ROUTINE hg_thread_func_t;
   typedef DWORD hg_thread_ret_t;
-  #define MERCURY_THREAD_RETURN_TYPE hg_thread_ret_t WINAPI
+  #define HG_THREAD_RETURN_TYPE hg_thread_ret_t WINAPI
   typedef DWORD hg_thread_key_t;
 #else
   #include <pthread.h>
   typedef pthread_t hg_thread_t;
   typedef void *(*hg_thread_func_t)(void *);
   typedef void *hg_thread_ret_t;
-  #define MERCURY_THREAD_RETURN_TYPE hg_thread_ret_t
+  #define HG_THREAD_RETURN_TYPE hg_thread_ret_t
   typedef pthread_key_t hg_thread_key_t;
 #endif
 
@@ -52,6 +52,16 @@ hg_thread_init(hg_thread_t *thread);
  */
 HG_UTIL_EXPORT int
 hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data);
+
+/**
+ * Ends the calling thread.
+ *
+ * \param ret [IN]              exit code for the thread
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT void
+hg_thread_exit(hg_thread_ret_t ret);
 
 /**
  * Wait for thread completion.

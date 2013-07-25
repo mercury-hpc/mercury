@@ -42,6 +42,17 @@ hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data)
 }
 
 /*---------------------------------------------------------------------------*/
+void
+hg_thread_exit(hg_thread_ret_t ret)
+{
+#ifdef _WIN32
+    ExitThread(ret);
+#else
+    pthread_exit(ret);
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
 int
 hg_thread_join(hg_thread_t thread)
 {

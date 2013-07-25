@@ -50,6 +50,16 @@ HG_UTIL_EXPORT int
 hg_thread_cond_signal(hg_thread_cond_t *cond);
 
 /**
+ * Wake all the threads waiting for the condition to change.
+ *
+ * \param cond [IN/OUT]         pointer to condition object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_cond_broadcast(hg_thread_cond_t *cond);
+
+/**
  * Wait for the condition to change.
  *
  * \param cond [IN/OUT]         pointer to condition object

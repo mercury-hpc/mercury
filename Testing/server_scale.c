@@ -8,7 +8,7 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "test_pipeline_scale.h"
+#include "test_scale.h"
 
 #include "na_mpi.h"
 #include "mercury_handler.h"
@@ -21,10 +21,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define SPAWN_REQUEST_THREAD /* want to spawn threads */
-//#define USE_THREAD_POOL      /* use thread pool */
+//#define SPAWN_REQUEST_THREAD /* want to spawn threads */
+#define USE_THREAD_POOL      /* use thread pool */
 #define POOL_NUM_THREADS 8
 #define FORCE_MPI_PROGRESS   /* want to have mpi progress */
+#define TRANSFER_BULK_DATA
 
 static hg_bool_t finalizing = 0;
 
@@ -34,23 +35,9 @@ static hg_list_entry_t *thread_list;
 static hg_thread_pool_t *thread_pool = NULL;
 #endif
 
-/* Actual definition of the function that needs to be executed */
-static void
-bla_write_progress(hg_bulk_request_t bulk_request, hg_status_t *status)
-{
-#ifdef FORCE_MPI_PROGRESS
-    /* Force MPI progress for time_remaining ms */
-    if (bulk_request != HG_BULK_REQUEST_NULL) {
-        int ret;
-
-        ret = HG_Bulk_wait(bulk_request, 0, status);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Error while waiting\n");
-        }
-    }
-#endif
-}
-
+/**
+ *
+ */
 /*
 static size_t
 bla_write_check(const void *buf, size_t nbyte)
@@ -69,6 +56,9 @@ bla_write_check(const void *buf, size_t nbyte)
 }
 */
 
+/**
+ *
+ */
 static int
 server_finalize(hg_handle_t handle)
 {
@@ -86,6 +76,9 @@ server_finalize(hg_handle_t handle)
     return ret;
 }
 
+/**
+ *
+ */
 static int
 bla_write_rpc(hg_handle_t handle)
 {
@@ -96,16 +89,11 @@ bla_write_rpc(hg_handle_t handle)
 
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bla_write_bulk_handle = HG_BULK_NULL;
-    hg_bulk_block_t bla_write_bulk_block_handle[PIPELINE_SIZE];
-    hg_bulk_request_t bla_write_bulk_request[PIPELINE_SIZE];
+    hg_bulk_block_t bla_write_bulk_block_handle;
+    hg_bulk_request_t bla_write_bulk_request;
     size_t bla_write_nbytes;
-    int pipeline_iter;
-    size_t pipeline_buffer_size;
-    size_t start_offset = 0;
-    size_t total_bytes_read = 0;
-    size_t chunk_size;
 
-    void *bla_write_buf[PIPELINE_SIZE];
+    void *bla_write_buf;
     size_t bla_write_ret = 0;
 
     /* Get input parameters and data */
@@ -116,78 +104,41 @@ bla_write_rpc(hg_handle_t handle)
     }
 
     /* Get parameters */
-    /* unused bla_write_fildes = bla_write_in_struct.fildes; */
-    pipeline_buffer_size = bla_write_in_struct.pipeline_buffer_size;
     bla_write_bulk_handle = bla_write_in_struct.bulk_handle;
 
     /* Create a new block handle to read the data */
     bla_write_nbytes = HG_Bulk_handle_get_size(bla_write_bulk_handle);
-    chunk_size = (PIPELINE_SIZE == 1) ? bla_write_nbytes : pipeline_buffer_size;
 
-    for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
-        bla_write_buf[pipeline_iter] = malloc(pipeline_buffer_size);
-        HG_Bulk_block_handle_create(bla_write_buf[pipeline_iter],
-                pipeline_buffer_size, HG_BULK_READWRITE,
-                &bla_write_bulk_block_handle[pipeline_iter]);
+#ifdef TRANSFER_BULK_DATA
+    bla_write_buf = malloc(bla_write_nbytes);
+
+    HG_Bulk_block_handle_create(bla_write_buf, bla_write_nbytes,
+            HG_BULK_READWRITE, &bla_write_bulk_block_handle);
+
+    ret = HG_Bulk_read_all(source, bla_write_bulk_handle,
+            bla_write_bulk_block_handle, &bla_write_bulk_request);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not read bulk data\n");
+        return ret;
     }
 
-    /* Initialize pipeline */
-    for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
-        size_t write_offset = start_offset + pipeline_iter * chunk_size;
-
-        ret = HG_Bulk_read(source, bla_write_bulk_handle, write_offset,
-                bla_write_bulk_block_handle[pipeline_iter], 0, chunk_size,
-                &bla_write_bulk_request[pipeline_iter]);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not read bulk data\n");
-            return ret;
-        }
+    ret = HG_Bulk_wait(bla_write_bulk_request,
+            HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete bulk data read\n");
+        return ret;
     }
 
-    while (total_bytes_read != bla_write_nbytes) {
-        /* Alternate wait and read to receives pieces */
-        for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
-            size_t write_offset = start_offset + pipeline_iter * chunk_size;
-            hg_status_t status;
-            int pipeline_next;
-
-            if (bla_write_bulk_request[pipeline_iter] != HG_BULK_REQUEST_NULL) {
-                ret = HG_Bulk_wait(bla_write_bulk_request[pipeline_iter],
-                        HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
-                if (ret != HG_SUCCESS) {
-                    fprintf(stderr, "Could not complete bulk data read\n");
-                    return ret;
-                }
-                bla_write_bulk_request[pipeline_iter] = HG_BULK_REQUEST_NULL;
-            }
-            total_bytes_read += chunk_size;
-            /* printf("total_bytes_read: %lu\n", total_bytes_read); */
-
-            /* Call bla_write */
-            pipeline_next = (pipeline_iter < PIPELINE_SIZE - 1) ?
-                    pipeline_iter + 1 : 0;
-            bla_write_progress(bla_write_bulk_request[pipeline_next], &status);
-            if (status) bla_write_bulk_request[pipeline_next] =
-                    HG_BULK_REQUEST_NULL;
-
-            /* Start another read (which is PIPELINE_SIZE far) */
-            write_offset += chunk_size * PIPELINE_SIZE;
-            if (write_offset < bla_write_nbytes) {
-                ret = HG_Bulk_read(source, bla_write_bulk_handle, write_offset,
-                        bla_write_bulk_block_handle[pipeline_iter], 0, chunk_size,
-                        &bla_write_bulk_request[pipeline_iter]);
-                if (ret != HG_SUCCESS) {
-                    fprintf(stderr, "Could not read bulk data\n");
-                    return ret;
-                }
-            }
-            /* TODO should also check remaining data */
-        }
-        start_offset += chunk_size * PIPELINE_SIZE;
+    /* Free block handles */
+    ret = HG_Bulk_block_handle_free(bla_write_bulk_block_handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free block call\n");
+        return ret;
     }
 
-    /* Do not check data as we measure on the client */
-    /* bla_write_ret = bla_write_check(bla_write_buf, bla_write_nbytes); */
+    free(bla_write_buf);
+#endif
+
     bla_write_ret = bla_write_nbytes;
 
     /* Fill output structure */
@@ -198,17 +149,6 @@ bla_write_rpc(hg_handle_t handle)
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start response\n");
         return ret;
-    }
-
-    /* Free block handles */
-    for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
-        ret = HG_Bulk_block_handle_free(bla_write_bulk_block_handle[pipeline_iter]);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not free block call\n");
-            return ret;
-        }
-
-        free(bla_write_buf[pipeline_iter]);
     }
 
     return ret;
@@ -225,6 +165,9 @@ bla_write_rpc_thread(void *arg)
     return NULL;
 }
 
+/**
+ *
+ */
 static int
 bla_write_rpc_spawn(hg_handle_t handle)
 {
@@ -244,8 +187,9 @@ bla_write_rpc_spawn(hg_handle_t handle)
     return ret;
 }
 
-
-/*****************************************************************************/
+/**
+ *
+ */
 int main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
