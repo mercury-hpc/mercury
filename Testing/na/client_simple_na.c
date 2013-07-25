@@ -62,6 +62,7 @@ int main(int argc, char *argv[])
     recv_buf_len = send_buf_len;
     send_buf = malloc(send_buf_len);
     recv_buf = malloc(recv_buf_len);
+    printf("max = %d, %d\n", send_buf_len, recv_buf_len);
 
 
     sprintf(send_buf, "test\n");
@@ -73,6 +74,31 @@ int main(int argc, char *argv[])
     }
 
     na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Error during wait\n");
+        return EXIT_FAILURE;
+    }
+
+    sleep(1);
+    puts("NA_Msg_send_unexpected()");
+    na_ret = NA_Msg_send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not send unexpected message\n");
+        return EXIT_FAILURE;
+    }
+    na_ret = NA_Wait(network_class, send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Error during wait\n");
+        return EXIT_FAILURE;
+    }
+    sleep(1);
+    puts("NA_Msg_send_unexpected()");
+    na_ret = NA_Msg_send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not send unexpected message\n");
+        return EXIT_FAILURE;
+    }
+    na_ret = NA_Wait(network_class, send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Error during wait\n");
         return EXIT_FAILURE;

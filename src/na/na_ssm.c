@@ -112,7 +112,7 @@ typedef struct na_ssm_mem_handle{
 
 
 typedef int ssm_size_t;
-typedef int ssm_tag_t;
+typedef ssm_bits ssm_tag_t;
 typedef unsigned long ssm_msg_tag_t;
 
 
@@ -478,6 +478,10 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
         unexpbuf[i].cb.cbdata = &unexpbuf[i];
         unexpbuf[i].valid = 0;
         unexpbuf[i].me = ssm_link(ssm, 0, ((ssm_tag_t)0xffffffffffffffff >> 2), SSM_POS_HEAD, NULL, &(unexpbuf[i].cb), SSM_NOF);
+#if DEBUG
+        printf("\tssm_link(ssm = %d, mask = %p)\n",
+                ssm, ((ssm_tag_t)0xffffffffffffffff >> 2));
+#endif
         if( ssm_post(ssm, unexpbuf[i].me, unexpbuf[i].mr, SSM_NOF) < 0){
             NA_ERROR_DEFAULT("Post failed (init)");
         }
@@ -564,7 +568,7 @@ static int na_ssm_addr_lookup(const char *name, na_addr_t *addr)
     //ssm_addr->addrs = ssm_addr(ssm);
     //ssm_addr->addr = ssm_addr_create(ssm, adr);
     ssm_addr->addr = ssm_addr_create(ssm, &addrargs);
-    printf("\taddr = %d\n", ssm_addr->addr);
+    printf("\taddr = %p\n", ssm_addr->addr);
     //ssm_addr->addr = iaddr->create(iaddr, &addrargs);
 
     if(ssm_addr->addr < 0){
@@ -670,7 +674,7 @@ static int na_ssm_msg_send_unexpected(const void *buf, na_size_t buf_size,
     
 #if DEBUG
     printf("na_ssm_msg_send_unexpected()\n");
-    printf("\tbuf = %p, buf_size = %d, dest = %d, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, ssm_peer_addr->addr, tag, request, op_arg);
+    printf("\tbuf = %p, buf_size = %d, dest = %p, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, ssm_peer_addr->addr, tag, request, op_arg);
 #endif
 
     ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
@@ -680,6 +684,8 @@ static int na_ssm_msg_send_unexpected(const void *buf, na_size_t buf_size,
     ssm_tx stx; 
     stx = ssm_put(ssm, ssm_peer_addr->addr , mr, NULL, ssm_tag, &(ssm_request->cb), SSM_NOF);
 #if DEBUG
+    printf("\tssmput(ssm = %d, addr = %p, mr = %d, tag = %p\n",
+            ssm, ssm_peer_addr->addr, mr, ssm_tag);
     printf("\ttx = %p\n", stx);
 #endif
 
@@ -713,6 +719,9 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
     na_ssm_unexpected_wait_t *ssm_unexpected_entry = NULL;
 
     pssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+#if DEBUG
+    printf("\tassigned request = %p\n", pssm_request);
+#endif
 
     if (!buf) {
         NA_ERROR_DEFAULT("NULL buffer");
@@ -763,6 +772,9 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     na_ssm_request_t *ssm_request = NULL;
     /* use addr as unique id*/
     ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+#if DEBUG
+    printf("\tassigned request = %p\n", ssm_request);
+#endif
     memset(ssm_request, 0, sizeof(na_ssm_request_t));
     ssm_request->type = SSM_SEND_OP;
     ssm_request->matchbits = (ssm_bits)tag + NA_SSM_TAG_EXPECTED_OFFSET;
@@ -780,7 +792,7 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     ssm_request->cb.cbdata = ssm_request;
 
     ssm_tx stx; 
-    stx = ssm_put(ssm, ssm_peer_addr->addr , mr, NULL, ssm_tag, &(ssm_request->cb), SSM_NOF);
+    stx = ssm_put(ssm, ssm_peer_addr->addr , mr, NULL, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
 #if DEBUG
     printf("\ttx = %p\n", stx);
 #endif
@@ -821,9 +833,12 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     na_ssm_request_t *ssm_request = NULL;
     ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
     memset(ssm_request, 0, sizeof(na_ssm_request_t));
+#if DEBUG
+    printf("\tassigned request = %p\n", ssm_request);
+#endif
     
     ssm_request->type = SSM_RECV_OP;
-    ssm_request->matchbits = tag;
+    ssm_request->matchbits = ssm_tag + NA_SSM_TAG_EXPECTED_OFFSET;
     ssm_request->user_ptr = op_arg;
 
     /* Allocate request */
@@ -833,7 +848,7 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     ssm_request->cb.pcb = msg_recv_cb;
     ssm_request->cb.cbdata = ssm_request;
     /* Post the SSM recv request */
-    ssm_me me = ssm_link(ssm, ssm_tag, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->cb), SSM_NOF);
+    ssm_me me = ssm_link(ssm, ssm_request->matchbits, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->cb), SSM_NOF);
     ssm_ret = ssm_post(ssm, me, mr, SSM_NOF);
 
     if (ssm_ret < 0) {
@@ -866,8 +881,7 @@ int na_ssm_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
     na_ssm_mem_handle_t *pssm_mr;
     pssm_mr = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
     pssm_mr->mr = ssm_mr_create(NULL, buf, buf_size);
-    
-    //TODO: alloc matchbits (inc)
+    pssm_mr->matchbits = generate_unique_matchbits();
 
     //TODO add this mr to hash table and error handle
     return NA_SUCCESS;
@@ -1117,6 +1131,9 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
         fprintf(stderr, "ERR: request == NULL\n");
         rt = ssm_wait(ssm, &tv);
     } else if(prequest->type == SSM_UNEXP_RECV_OP) {
+#if DEBUG
+        puts("\tUnexp wait");
+#endif
         /*  Check the unexpected completed list. If the request has already
          *  completed just copy the buffer. If no, wait for CB of unexpected
          *  recv. 
@@ -1127,8 +1144,14 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
         if (hg_list_length(unexpected_wait_list)) {
             entry = unexpected_wait_list;
             ssm_unexpected_wait = (na_ssm_unexpected_wait_t *) hg_list_data(entry);
+#if DEBUG
+            puts("\tcall ssm_wait");
+#endif
             ssm_wait(ssm, &tv); //TODO: change timeout
             while(unexpbuf[NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos)].valid == 0){
+#if DEBUG
+                puts("\tcond wait");
+#endif
                 hg_thread_cond_wait(&unexp_cond, &unexp_mutex);
             }
             if (unexpbuf[NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos)].status < 0) {
