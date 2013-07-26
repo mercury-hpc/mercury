@@ -80,6 +80,35 @@ server_finalize(hg_handle_t handle)
  *
  */
 static int
+bla_open_rpc(hg_handle_t handle)
+{
+    int ret = HG_SUCCESS;
+
+    bla_open_in_t  bla_open_in_struct;
+    bla_open_out_t bla_open_out_struct;
+
+
+    /* Get input parameters and data */
+    ret = HG_Handler_get_input(handle, &bla_open_in_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not get input\n");
+        return ret;
+    }
+
+    /* Free handle and send response back */
+    ret = HG_Handler_start_output(handle, &bla_open_out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not start response\n");
+        return ret;
+    }
+
+    return ret;
+}
+
+/**
+ *
+ */
+static int
 bla_write_rpc(hg_handle_t handle)
 {
     int ret = HG_SUCCESS;
@@ -156,6 +185,17 @@ bla_write_rpc(hg_handle_t handle)
 
 /* Thread to handle request */
 static HG_THREAD_RETURN_TYPE
+bla_open_rpc_thread(void *arg)
+{
+    hg_handle_t handle = (hg_handle_t) arg;
+
+    bla_open_rpc(handle);
+
+    return NULL;
+}
+
+/* Thread to handle request */
+static HG_THREAD_RETURN_TYPE
 bla_write_rpc_thread(void *arg)
 {
     hg_handle_t handle = (hg_handle_t) arg;
@@ -163,6 +203,28 @@ bla_write_rpc_thread(void *arg)
     bla_write_rpc(handle);
 
     return NULL;
+}
+
+/**
+ *
+ */
+static int
+bla_open_rpc_spawn(hg_handle_t handle)
+{
+    int ret = HG_SUCCESS;
+
+#if defined(SPAWN_REQUEST_THREAD)
+    hg_thread_t thread;
+
+    hg_thread_create(&thread, bla_open_rpc_thread, handle);
+    hg_list_append(&thread_list, (hg_list_value_t)thread);
+#elif defined(USE_THREAD_POOL)
+    hg_thread_pool_post(thread_pool, bla_open_rpc_thread, handle);
+#else
+    bla_open_rpc_thread(handle);
+#endif
+
+    return ret;
 }
 
 /**
@@ -190,7 +252,8 @@ bla_write_rpc_spawn(hg_handle_t handle)
 /**
  *
  */
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
     int hg_ret, na_ret;
@@ -199,6 +262,8 @@ int main(int argc, char *argv[])
 #ifdef SPAWN_REQUEST_THREAD
     hg_list_iter_t list_iterator;
 #endif
+
+    printf("# Starting server with %d threads...\n", POOL_NUM_THREADS);
 
     /* Used by Test Driver */
     printf("# Waiting for client...\n");
@@ -232,6 +297,8 @@ int main(int argc, char *argv[])
 #endif
 
     /* Register routine */
+    MERCURY_HANDLER_REGISTER("bla_open", bla_open_rpc_spawn,
+            bla_open_in_t, bla_write_out_t);
     MERCURY_HANDLER_REGISTER("bla_write", bla_write_rpc_spawn,
             bla_write_in_t, bla_write_out_t);
     MERCURY_HANDLER_REGISTER_FINALIZE(server_finalize);
