@@ -40,7 +40,7 @@ struct hg_thread_pool {
 static HG_THREAD_RETURN_TYPE
 hg_thread_pool_worker(void *args)
 {
-    hg_thread_ret_t ret = NULL;
+    hg_thread_ret_t ret = 0;
     hg_thread_pool_t *pool = (hg_thread_pool_t*) args;
     hg_thread_work_t *work;
 
@@ -66,13 +66,18 @@ hg_thread_pool_worker(void *args)
 
         /* Grab our task */
         work = pool->queue_head;
+        if (!work) {
+            HG_UTIL_ERROR_DEFAULT("Work task cannot be NULL");
+            goto unlock;
+        }
         pool->queue_size --;
         if (pool->queue_size == 0) {
             pool->queue_head = NULL;
             pool->queue_tail = NULL;
         } else {
             if (!work->next) {
-                HG_UTIL_ERROR_DEFAULT("Next work task cannot be NULL")
+                HG_UTIL_ERROR_DEFAULT("Next work task cannot be NULL");
+                goto unlock;
             }
             pool->queue_head = work->next;
         }
