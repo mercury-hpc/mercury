@@ -79,7 +79,6 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    sleep(1);
     puts("NA_Msg_send_unexpected()");
     na_ret = NA_Msg_send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
     if (na_ret != NA_SUCCESS) {
@@ -91,7 +90,6 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error during wait\n");
         return EXIT_FAILURE;
     }
-    sleep(1);
     puts("NA_Msg_send_unexpected()");
     na_ret = NA_Msg_send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
     if (na_ret != NA_SUCCESS) {

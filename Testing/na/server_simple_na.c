@@ -91,7 +91,17 @@ int main(int argc, char *argv[])
             fprintf(stderr, "Error during wait\n");
             return EXIT_FAILURE;
         }
-        
+        na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
+                &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not recv message\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
         break;
         /* ======================================*/
 

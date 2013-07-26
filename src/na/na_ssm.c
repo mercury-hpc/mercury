@@ -220,6 +220,7 @@ static int unexpbuf_availpos;
 static na_ssm_unexpbuf_t unexpbuf[NA_SSM_UNEXPECTED_BUFFERCOUNT];
 static ssm_cb_t unexp_cb;
 static ssm_me unexp_me;
+static ssm_cb_t cb_post;
 
 /* u*/
 typedef struct na_ssm_unexpected_wait{
@@ -424,6 +425,22 @@ void get_cb(void *cbdat, void *evdat)
     //wake up others
     hg_thread_cond_signal(&comp_req_cond);
     hg_thread_mutex_unlock(&request_mutex);
+}
+
+void postedbuf_cb(void *cbdat, void *evdat)
+{
+#if DEBUG
+    puts("postedbuf_cb()");
+#endif
+    ssm_result r = evdat;
+    (void)cbdat;
+#if DEBUG
+    show_stats(cbdat, r);
+#endif
+    /* post the buf again*/
+    if(ssm_post(r->id, r->me, r->mr, SSM_NOF) < 0){
+        NA_ERROR_DEFAULT("failed to post");
+    }
 }
 
 /*---------------------------------------------------------------------------
@@ -894,6 +911,13 @@ int na_ssm_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
     pssm_mr = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
     pssm_mr->mr = ssm_mr_create(NULL, buf, buf_size);
     pssm_mr->matchbits = generate_unique_matchbits();
+    cb_post.pcb = postedbuf_cb;
+    cb_post.cbdata = NULL;
+    ssm_me reg_me = ssm_link(ssm, 0, pssm_mr->matchbits + NA_SSM_TAG_RMA_OFFSET, SSM_POS_HEAD, NULL, &cb_post, SSM_NOF);
+    if( ssm_post(ssm, reg_me, pssm_mr->mr, SSM_NOF) < 0){
+        NA_ERROR_DEFAULT("post failed");
+    }
+
 
     //TODO add this mr to hash table and error handle
     return NA_SUCCESS;
