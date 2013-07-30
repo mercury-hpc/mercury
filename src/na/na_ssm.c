@@ -106,6 +106,8 @@ typedef struct na_ssm_mem_handle{
     ssm_mr mr;  //TODO: ? 
     ssm_bits matchbits; //TODO: delete
     void *buf;
+    ssm_me me;
+    ssm_cb_t cb;
 } na_ssm_mem_handle_t;
 
 //TODO: inc counter
@@ -133,6 +135,8 @@ typedef struct na_ssm_request {
     ssm_tx tx;
     ssm_cb_t cb;
     bool completed;
+    ssm_me me;
+    ssm_mr mr;
 } na_ssm_request_t;
 
 
@@ -220,7 +224,6 @@ static int unexpbuf_availpos;
 static na_ssm_unexpbuf_t unexpbuf[NA_SSM_UNEXPECTED_BUFFERCOUNT];
 static ssm_cb_t unexp_cb;
 static ssm_me unexp_me;
-static ssm_cb_t cb_post;
 
 /* u*/
 typedef struct na_ssm_unexpected_wait{
@@ -766,7 +769,9 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
     unexpected_wait->buf = buf;
     unexpected_wait->buf_size = buf_size;
     unexpected_wait->actual_buf_size = actual_buf_size;
-    unexpected_wait->source = source;
+    na_addr_t src = (na_addr_t)(na_ssm_addr_t *)malloc(sizeof(na_ssm_addr_t));
+    *source = src;
+    unexpected_wait->source = src;
     unexpected_wait->tag = tag;
     unexpected_wait->request = (na_request_t)pssm_request;
     unexpected_wait->op_arg = op_arg;
@@ -872,13 +877,14 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
 
     /* Allocate request */
     /* Register Memory */
-    ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
+    ssm_request->mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
     /* Prepare callback function */
     ssm_request->cb.pcb = msg_recv_cb;
     ssm_request->cb.cbdata = ssm_request;
     /* Post the SSM recv request */
-    ssm_me me = ssm_link(ssm, ssm_request->matchbits, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->cb), SSM_NOF);
-    ssm_ret = ssm_post(ssm, me, mr, SSM_NOF);
+    /* TODO segfault */
+    ssm_request->me = ssm_link(ssm, ssm_request->matchbits, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->cb), SSM_NOF);
+    ssm_ret = ssm_post(ssm, ssm_request->me, ssm_request->mr, SSM_NOF);
 
     if (ssm_ret < 0) {
         NA_ERROR_DEFAULT("ssm_post() failed");
@@ -907,16 +913,23 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
 int na_ssm_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
         na_mem_handle_t *mem_handle)
 {
+#if DEBUG
+    fprintf(stderr, "na_ssm_mem_register ( buf_size = %d, buf = %p)\n", buf_size, buf);
+#endif
     na_ssm_mem_handle_t *pssm_mr;
     pssm_mr = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
     pssm_mr->mr = ssm_mr_create(NULL, buf, buf_size);
     pssm_mr->matchbits = generate_unique_matchbits();
-    cb_post.pcb = postedbuf_cb;
-    cb_post.cbdata = NULL;
-    ssm_me reg_me = ssm_link(ssm, 0, pssm_mr->matchbits + NA_SSM_TAG_RMA_OFFSET, SSM_POS_HEAD, NULL, &cb_post, SSM_NOF);
-    if( ssm_post(ssm, reg_me, pssm_mr->mr, SSM_NOF) < 0){
+    pssm_mr->cb.pcb = postedbuf_cb;
+    pssm_mr->cb.cbdata = NULL;
+    pssm_mr->me = ssm_link(ssm, 0, pssm_mr->matchbits + NA_SSM_TAG_RMA_OFFSET, SSM_POS_HEAD, NULL, &(pssm_mr->cb), SSM_NOF);
+    if( ssm_post(ssm, pssm_mr->me, pssm_mr->mr, SSM_NOF) < 0){
         NA_ERROR_DEFAULT("post failed");
     }
+    *mem_handle = pssm_mr;
+#if DEBUG
+    fprintf(stderr, "\tmr = %lu, matchb = %lu (%p)\n", pssm_mr->mr, pssm_mr->matchbits, pssm_mr->matchbits);
+#endif
 
 
     //TODO add this mr to hash table and error handle
@@ -974,10 +987,11 @@ int na_ssm_mem_handle_serialize(void *buf, na_size_t buf_size,
 {
     //TODO: only matchbits
 #if DEBUG
-    fprintf(stderr, "na_ssm_msm_handle_serialize()\n");
+    fprintf(stderr, "na_ssm_msm_handle_serialize(size = %d, h = %p)\n", buf_size, mem_handle);
 #endif
     na_ssm_mem_handle_t *ssmhandle = (na_ssm_mem_handle_t *)mem_handle;
     ssm_bits *pbits = buf;
+
     int ret = NA_SUCCESS;
     if (buf_size < sizeof(ssm_bits)) {
         NA_ERROR_DEFAULT("Buffer size too small for serializing parameter");
@@ -986,6 +1000,8 @@ int na_ssm_mem_handle_serialize(void *buf, na_size_t buf_size,
         /* Here safe to do a simple memcpy */
         /* TODO may also want to add a checksum or something */
         *pbits = htonl(ssmhandle->matchbits);
+        //*pbits = (ssmhandle->matchbits);
+        printf("\tbits = %p\n", *pbits);
     }
     return ret;
 }
@@ -1002,9 +1018,14 @@ int na_ssm_mem_handle_serialize(void *buf, na_size_t buf_size,
 int na_ssm_mem_handle_deserialize(na_mem_handle_t *mem_handle,
         const void *buf, na_size_t buf_size)
 {
+#if DEBUG
+    fprintf(stderr, "na_ssm_mem_handle_deserialize\n");
+    fprintf(stderr, "\trecvd = %lu\n", *(uint64_t *)buf);
+#endif
     int ret = NA_SUCCESS;
     na_ssm_mem_handle_t *ssm_mem_handle;
     ssm_bits *pbits = (ssm_bits *)buf;
+    
 
     if (buf_size < sizeof(na_ssm_mem_handle_t)) {
         NA_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
@@ -1012,7 +1033,10 @@ int na_ssm_mem_handle_deserialize(na_mem_handle_t *mem_handle,
     } else {
         ssm_mem_handle = malloc(sizeof(na_ssm_mem_handle_t));
         /* Here safe to do a simple memcpy */
-        ssm_mem_handle->matchbits = htons(*pbits);
+        ssm_mem_handle->matchbits = ntohl(*pbits);
+#if DEBUG
+        fprintf(stderr, "\tdeserialized matchbits = %p ( %lu )\n", ssm_mem_handle->matchbits, ssm_mem_handle->matchbits);
+#endif
         *mem_handle = (na_mem_handle_t) ssm_mem_handle;
     }
     return ret;
@@ -1101,6 +1125,9 @@ int na_ssm_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
+#if DEBUG
+    printf("na_ssm_get()\n");
+#endif
     na_ssm_mem_handle_t *lh = (na_ssm_mem_handle_t *)local_mem_handle;
     na_ssm_mem_handle_t *rh = (na_ssm_mem_handle_t *)remote_mem_handle;
     /* mem layout */
@@ -1110,6 +1137,9 @@ int na_ssm_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     pbuf += local_offset;
     iov[0].iov_base = pbuf;
     iov[0].iov_len = length;
+#if DEBUG
+    printf("\tbase = %p, len = %lu\n", pbuf, length);
+#endif
     int ssm_ret, ret = NA_SUCCESS;
     /* args */
     na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) remote_addr;
@@ -1117,22 +1147,24 @@ int na_ssm_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
     memset(ssm_request, 0, sizeof(na_ssm_request_t));
     ssm_request->type = SSM_GET_OP;
-    ssm_request->matchbits = lh->matchbits;
+    ssm_request->matchbits = rh->matchbits;
     
 #if DEBUG
-    printf("na_ssm_get()\n");
     printf("\tlocal_h->mr = %p, local_of = %ld, remote_h->mr = %p, remote_of = %ld, len = %ld, addr = %p\n", lh->mr, local_offset, rh->mr, remote_offset, length, ssm_peer_addr->addr);
+    printf("\tlh->matchbits = %p, rh->matchbits=%p\n", lh->matchbits, rh->matchbits);
 #endif
 
     ssm_request->cb.pcb = get_cb;
     ssm_request->cb.cbdata = ssm_request;
     ssm_tx stx; 
-    stx = ssm_getv(ssm, ssm_peer_addr->addr , iov, 1, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
+    stx = ssm_get(ssm, ssm_peer_addr->addr, NULL, lh->mr, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
+    //stx = ssm_getv(ssm, ssm_peer_addr->addr , iov, 1, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
 #if DEBUG
     printf("\ttx = %p\n", stx);
 #endif
     ssm_request->tx = stx;
     *request = (na_request_t*) ssm_request;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------
@@ -1212,7 +1244,10 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
                 *(ssm_unexpected_wait->actual_buf_size) = (na_size_t) pbuf->bytes;
             }
             if(ssm_unexpected_wait->source){
-                *(ssm_unexpected_wait->source) = (na_addr_t) pbuf->addr;
+#if DEBUG
+                fprintf(stderr, "\tcopy wait->source = %p\n", pbuf->addr);
+#endif
+                ((na_ssm_addr_t *)(ssm_unexpected_wait->source))->addr = pbuf->addr;
             }
             if(ssm_unexpected_wait->tag){
                 *(ssm_unexpected_wait->tag) = (na_tag_t) pbuf->bits - NA_SSM_TAG_UNEXPECTED_OFFSET;
