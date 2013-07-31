@@ -1185,7 +1185,7 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
     na_ssm_request_t *prequest = (na_ssm_request_t *)request;
     bool request_completed = 0;
 #if DEBUG
-    printf("ssm_wait()\n\trequest = %p, timeout = %d, status = %p\n", request, timeout, status);
+    printf("na_ssm_wait()\n\trequest = %p, timeout = %d, status = %p\n", request, timeout, status);
 #endif
     struct timeval tv;
     int rt, ret, ssmret;
@@ -1297,18 +1297,22 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
 #if DEBUG
             puts("Wait for completion");
 #endif
-            ssmret = ssm_wait(ssm, &tv);
-            if(ssmret < 0 ){
-                NA_ERROR_DEFAULT("ssm_wait() failed");
-                rt = -1;
-            } else if(ssmret == 0){
+            while(!request_completed){
+                ssmret = ssm_wait(ssm, &tv);
+                if(ssmret < 0 ){
+                    NA_ERROR_DEFAULT("ssm_wait() failed");
+                    rt = -1;
+                } else if(ssmret == 0){
 
-            }
-            hg_thread_mutex_lock(&request_mutex);
-            request_completed = prequest->completed;
-            hg_thread_mutex_unlock(&request_mutex);
-            if(request_completed){
-                rt = 1;
+                }
+                hg_thread_mutex_lock(&request_mutex);
+                request_completed = prequest->completed;
+                hg_thread_mutex_unlock(&request_mutex);
+                if(request_completed){
+                    rt = 1;
+                    break;
+                }
+                //TODO timeout check
             }
         }
     }
