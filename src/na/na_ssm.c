@@ -29,7 +29,7 @@
 #include <ssm.h>
 #include <ssmptcp.h>
 
-#define DEBUG 1
+#define DEBUG 0
 static int na_ssm_finalize(void);
 static int na_ssm_addr_lookup(const char *name, na_addr_t *addr);
 static int na_ssm_addr_free(na_addr_t addr);
@@ -159,7 +159,7 @@ static na_ssm_connect p_na_ssm_connect;
 #define NA_SSM_UNEXPECTED_SIZE 4096
 #define NA_SSM_EXPECTED_SIZE 4096
 
-#define NA_SSM_UNEXPECTED_BUFFERCOUNT 8
+#define NA_SSM_UNEXPECTED_BUFFERCOUNT 128
 #define NA_SSM_NEXT_UNEXPBUF_POS(n) (((n)+(1))%(NA_SSM_UNEXPECTED_BUFFERCOUNT))
 char **buf_unexpected;
 
@@ -315,6 +315,9 @@ void msg_send_cb(void *cbdat, void *evdat)
 #if DEBUG
     show_stats(cbdat, r);
 #endif
+    if(r->status!=64){
+        NA_ERROR_DEFAULT("msg_send_cb(): cb error");
+    }
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
     //wake up others
@@ -336,6 +339,9 @@ void unexp_msg_send_cb(void *cbdat, void *evdat)
 #if DEBUG
     show_stats(cbdat, r);
 #endif
+    if(r->status!=64){
+        NA_ERROR_DEFAULT("unexp_msg_send_cb(): cb error");
+    }
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
     //wake up others
@@ -353,11 +359,14 @@ void msg_recv_cb(void *cbdat, void *evdat) {
 #endif
     //request completion function
     //
-#if DEBUG
-    ssm_result r = evdat;
     (void)cbdat;
+    ssm_result r = evdat;
+#if DEBUG
     show_stats(cbdat, r);
 #endif
+    if(r->status!=64){
+        NA_ERROR_DEFAULT("msg_recv_cb(): cb error");
+    }
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
     //wake up others
@@ -371,10 +380,10 @@ void msg_recv_cb(void *cbdat, void *evdat) {
 }
 
 void unexp_msg_recv_cb(void *cbdat, void *evdat) {
-#if DEBUG
-    puts("unexp_msg_recv_cb()");
     ssm_result r = evdat;
     (void)cbdat;
+#if DEBUG
+    puts("unexp_msg_recv_cb()");
     show_stats(cbdat, r);
 #endif
     hg_thread_mutex_lock(&unexp_buf_mutex);
@@ -382,6 +391,9 @@ void unexp_msg_recv_cb(void *cbdat, void *evdat) {
 #if DEBUG
     printf("\tcpos = %d\n", unexpbuf_cpos);
 #endif
+    if(r->status!=64){
+        NA_ERROR_DEFAULT("unexp_msg_recv_cb(): cb error");
+    }
     cbd->valid = 1;
     cbd->bits = r->bits;
     cbd->status = r->status;
@@ -405,6 +417,9 @@ void put_cb(void *cbdat, void *evdat)
 #if DEBUG
     show_stats(cbdat, r);
 #endif
+    if(r->status!=64){
+        NA_ERROR_DEFAULT("put_cb(): cb error");
+    }
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
     //wake up others
@@ -423,6 +438,9 @@ void get_cb(void *cbdat, void *evdat)
 #if DEBUG
     show_stats(cbdat, r);
 #endif
+    if(r->status!=64){
+        NA_ERROR_DEFAULT("get_cb(): cb error");
+    }
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
     //wake up others
@@ -437,6 +455,9 @@ void postedbuf_cb(void *cbdat, void *evdat)
 #endif
     ssm_result r = evdat;
     (void)cbdat;
+    if(r->status!=64){
+        NA_ERROR_DEFAULT("postedbuf_cb(): cb error");
+    }
 #if DEBUG
     show_stats(cbdat, r);
 #endif

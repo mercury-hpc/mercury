@@ -16,6 +16,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+double gettimeofday_sec()
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + (double)tv.tv_usec*1e-6;
+}
+
 int main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
@@ -46,6 +53,9 @@ int main(int argc, char *argv[])
     recv_buf = malloc(send_buf_len);
     bulk_buf = malloc(sizeof(int) * bulk_size);
 
+    /* number of benchmark cycle */
+    int n = 12*4;
+
     for (peer = 0; peer < number_of_peers; peer++) {
         na_size_t recv_buf_len = 0;
         recv_buf_len = send_buf_len;
@@ -54,6 +64,7 @@ int main(int argc, char *argv[])
         na_tag_t send_tag = 101;
         na_tag_t bulk_tag = 102;
         na_tag_t ack_tag = 103;
+        na_tag_t single_bench_tag = 105;
 
         na_mem_handle_t local_mem_handle = NA_MEM_HANDLE_NULL;
         na_mem_handle_t remote_mem_handle = NA_MEM_HANDLE_NULL;
@@ -65,6 +76,7 @@ int main(int argc, char *argv[])
         na_request_t bulk_request = NA_REQUEST_NULL;
         na_request_t ack_request = NA_REQUEST_NULL;
         na_request_t get_request = NA_REQUEST_NULL;
+        na_request_t single_bench_request = NA_REQUEST_NULL;
         int i, error = 0;
         
         na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, recv_tag, &recv_request, NULL);
@@ -180,6 +192,52 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
 
+        /* Benchmark */
+        na_size_t bench_len = 4096;
+        /* send single */
+        puts("===send single===");
+        double st = gettimeofday_sec();
+        long bytes = (bench_len * n);
+        printf("len = %d, bytes = %ld\n", bench_len, bytes);
+        for(i = 0; i < n; i++){
+            /*printf("send %d\n", i);*/
+            na_ret = NA_Msg_send(network_class, send_buf, bench_len, recv_addr, single_bench_tag, &single_bench_request, NULL);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not send acknowledgment\n");
+                return EXIT_FAILURE;
+            }
+            na_ret = NA_Wait(network_class, single_bench_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Error during wait\n");
+                return EXIT_FAILURE;
+            }
+        }
+        double ed = gettimeofday_sec();
+        printf("time = %f, %f msg/s, %f MB/s\n", ed - st, n/(ed-st), bytes/(ed-st)/1048576.0);
+
+
+        /* Recv ack */
+        recv_buf_len = send_buf_len;
+        printf("Receiving remote memory handle...\n");
+        na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, ack_tag, &ack_request, NULL);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not recv memory handle\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+
+        /* put single */
+        puts("===put single===");
+
+
+        /* unexpected send */
+        puts("===unexpected send==="); 
+
+        break;  //TODO
         /* Free memory and addresses */
         na_ret = NA_Mem_handle_free(network_class, remote_mem_handle);
         if (na_ret != NA_SUCCESS) {
@@ -199,129 +257,6 @@ int main(int argc, char *argv[])
         recv_addr = NA_ADDR_NULL;
         break;
         /* ======================================*/
-
-        /* Recv a message from a client */
-        do {
-            na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
-                    &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
-            if (na_ret != NA_SUCCESS) {
-                fprintf(stderr, "Could not recv message\n");
-                return EXIT_FAILURE;
-            }
-        } while (!recv_buf_len);
-
-        na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Error during wait\n");
-            return EXIT_FAILURE;
-        }
-        printf("Received from CN: %s\n", recv_buf);
-
-        /* Respond back */
-        sprintf(send_buf, "Hello CN!\n");
-        send_tag = recv_tag + 1;
-        na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, recv_addr, send_tag, &send_request, NULL);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not send message\n");
-            return EXIT_FAILURE;
-        }
-        na_ret = NA_Wait(network_class, send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Error during wait\n");
-            return EXIT_FAILURE;
-        }
-
-        /* Prepare bulk_buf */
-        for (i = 0; i < bulk_size; i++) {
-            bulk_buf[i] = 0;
-        }
-
-        /* Register memory */
-        printf("Registering local memory...\n");
-        na_ret = NA_Mem_register(network_class, bulk_buf, sizeof(int) * bulk_size, NA_MEM_READWRITE, &local_mem_handle);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not register memory\n");
-            return EXIT_FAILURE;
-        }
-
-        /* Recv memory handle */
-        recv_buf_len = send_buf_len;
-        printf("Receiving remote memory handle...\n");
-        na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, bulk_tag, &bulk_request, NULL);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not recv memory handle\n");
-            return EXIT_FAILURE;
-        }
-
-        na_ret = NA_Wait(network_class, bulk_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Error during wait\n");
-            return EXIT_FAILURE;
-        }
-
-        /* Deserialize memory handle */
-        printf("Deserializing remote memory handle...\n");
-        na_ret = NA_Mem_handle_deserialize(network_class, &remote_mem_handle, recv_buf, recv_buf_len);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not deserialize memory handle\n");
-            return EXIT_FAILURE;
-        }
-
-        /* Do a get */
-        printf("Getting %d bytes from remote...\n", (int) (bulk_size * sizeof(int)));
-
-        na_ret = NA_Get(network_class, local_mem_handle, 0, remote_mem_handle, 0, bulk_size * sizeof(int), recv_addr, &get_request);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not get data\n");
-            return EXIT_FAILURE;
-        }
-
-        na_ret = NA_Wait(network_class, get_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Error during wait\n");
-            return EXIT_FAILURE;
-        }
-
-        /* Check bulk buf */
-        for (i = 0; i < bulk_size; i++) {
-            if (bulk_buf[i] != i) {
-                printf("Error detected in bulk transfer, bulk_buf[%d] = %d, was expecting %d!\n", i, bulk_buf[i], i);
-                error = 1;
-                break;
-            }
-        }
-        if (!error) printf("Successfully transfered %lu bytes!\n", bulk_size * sizeof(int));
-
-        /* Send completion ack */
-        printf("Sending end of transfer ack...\n");
-        na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, recv_addr, ack_tag, &ack_request, NULL);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not send acknowledgment\n");
-            return EXIT_FAILURE;
-        }
-        na_ret = NA_Wait(network_class, ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Error during wait\n");
-            return EXIT_FAILURE;
-        }
-
-        /* Free memory and addresses */
-        na_ret = NA_Mem_handle_free(network_class, remote_mem_handle);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not free memory handle\n");
-            return EXIT_FAILURE;
-        }
-        na_ret = NA_Mem_deregister(network_class, local_mem_handle);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not unregister memory\n");
-            return EXIT_FAILURE;
-        }
-        na_ret = NA_Addr_free(network_class, recv_addr);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not free addr\n");
-            return EXIT_FAILURE;
-        }
-        recv_addr = NA_ADDR_NULL;
     }
 
     printf("Finalizing...\n");

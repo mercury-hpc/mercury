@@ -16,6 +16,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+double gettimeofday_sec()
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + (double)tv.tv_usec*1e-6;
+}
+
 int main(int argc, char *argv[])
 {
     char *ion_name;
@@ -24,6 +31,7 @@ int main(int argc, char *argv[])
 
     na_tag_t send_tag = 100;
     na_tag_t recv_tag = 101;
+    na_tag_t single_bench_tag = 105;
 
     na_request_t send_request = NA_REQUEST_NULL;
     na_request_t recv_request = NA_REQUEST_NULL;
@@ -44,8 +52,13 @@ int main(int argc, char *argv[])
     na_request_t bulk_request = NA_REQUEST_NULL;
     na_request_t ack_request = NA_REQUEST_NULL;
 
+    na_request_t single_bench_request = NA_REQUEST_NULL;
+
     int i;
     int na_ret;
+
+    /* number of benchmark cycle */
+    int n = 12*4;
 
     /* Initialize the interface */
     network_class = HG_Test_client_init(argc, argv, &ion_name, NULL);
@@ -152,81 +165,60 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error during wait\n");
         return EXIT_FAILURE;
     }
-    return 0;
 
-    /* Send a message to addr */
-    sprintf(send_buf, "Hello ION!\n");
-    na_ret = NA_Msg_send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not send unexpected message\n");
-        return EXIT_FAILURE;
-    }
-    na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, ion_target, recv_tag, &recv_request, NULL);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not recv message\n");
-        return EXIT_FAILURE;
-    }
 
-    na_ret = NA_Wait(network_class, send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-        return EXIT_FAILURE;
-    }
-    na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-        return EXIT_FAILURE;
-    }
-    printf("Received from ION: %s\n", recv_buf);
-
-    /* Prepare bulk_buf */
-    bulk_buf = malloc(sizeof(int) * bulk_size);
-    for (i = 0; i < bulk_size; i++) {
-        bulk_buf[i] = i;
+    /* Benchmark */
+    na_size_t bench_len = 4096;
+    /* send single */
+    puts("===send single===");
+    for(i = 0; i < n; i++){
+        na_ret = NA_Msg_recv(network_class, recv_buf, bench_len, ion_target, single_bench_tag, &single_bench_request, NULL);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not send acknowledgment\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, single_bench_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
     }
 
-    /* Register memory */
-    printf("Registering local memory...\n");
-    na_ret = NA_Mem_register(network_class, bulk_buf, sizeof(int) * bulk_size, NA_MEM_READ_ONLY, &local_mem_handle);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not register memory\n");
-        return EXIT_FAILURE;
+
+    /* unexp send */
+    for(i = 0; i< 5; i++){
+        printf("unexp send %d\n", i);
+        na_ret = NA_Msg_send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not send unexpected message\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+
     }
 
-    /* Serialize mem handle */
-    printf("Serializing local memory handle...\n");
-    na_ret = NA_Mem_handle_serialize(network_class, send_buf, send_buf_len, local_mem_handle);
+
+    /*send completion ack*/
+    na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, ion_target, ack_tag, &ack_request, NULL);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not serialize memory handle\n");
+        fprintf(stderr, "Could not send expected message\n");
         return EXIT_FAILURE;
     }
 
-    /* Send mem handle */
-    printf("Sending local memory handle...\n");
-    na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, ion_target, bulk_tag, &bulk_request, NULL);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not send memory handle\n");
-        return EXIT_FAILURE;
-    }
-
-    /* Recv completion ack */
-    printf("Receiving end of transfer ack...\n");
-    na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, ion_target, ack_tag, &ack_request, NULL);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not receive acknowledgment\n");
-        return EXIT_FAILURE;
-    }
-
-    na_ret = NA_Wait(network_class, bulk_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-        return EXIT_FAILURE;
-    }
     na_ret = NA_Wait(network_class, ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Error during wait\n");
         return EXIT_FAILURE;
     }
+
+
+
+    return 0;
+
 
     printf("Finalizing...\n");
 
