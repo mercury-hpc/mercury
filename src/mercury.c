@@ -43,7 +43,7 @@ typedef struct hg_proc_info {
 } hg_proc_info_t;
 
 /* Function map */
-static hg_hash_table_t *func_map;
+static hg_hash_table_t *func_map = NULL;
 
 /* Mutex used for tag generation */
 /* TODO use atomic increment instead */
@@ -183,6 +183,11 @@ HG_Register(const char *func_name,
     hg_id_t *id = NULL;
     hg_proc_info_t *proc_info = NULL;
 
+    if (!func_map) {
+        HG_ERROR_DEFAULT("Mercury must be initialized");
+        goto done;
+    }
+
     /* Generate a key from the string */
     id = (hg_id_t*) malloc(sizeof(hg_id_t));
     if (!id) {
@@ -223,6 +228,12 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id)
     int ret = HG_SUCCESS;
     hg_id_t func_id;
 
+    if (!func_map) {
+        HG_ERROR_DEFAULT("Mercury must be initialized");
+        ret = HG_FAIL;
+        return ret;
+    }
+
     if (!flag) {
         HG_ERROR_DEFAULT("NULL flag");
         ret = HG_FAIL;
@@ -251,6 +262,12 @@ HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_struct,
     na_tag_t   send_tag, recv_tag;
 
     hg_priv_request_t *priv_request = NULL;
+
+    if (!hg_na_class) {
+        HG_ERROR_DEFAULT("Mercury must be initialized");
+        ret = HG_FAIL;
+        goto done;
+    }
 
     /* Retrieve encoding function from function map */
     proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &id);
@@ -428,6 +445,12 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         return ret;
     }
 
+    if (!hg_na_class) {
+        HG_ERROR_DEFAULT("Mercury must be initialized");
+        ret = HG_FAIL;
+        return ret;
+    }
+
     if (priv_request->send_request != NA_REQUEST_NULL) {
         int na_ret;
 
@@ -563,6 +586,12 @@ HG_Wait_all(int count, hg_request_t array_of_requests[],
 {
     int ret = HG_SUCCESS;
     int i;
+
+    if (!hg_na_class) {
+        HG_ERROR_DEFAULT("Mercury must be initialized");
+        ret = HG_FAIL;
+        return ret;
+    }
 
     /* TODO For now just loop over requests */
     for (i = 0; i < count; i++) {
