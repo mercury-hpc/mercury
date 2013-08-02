@@ -361,7 +361,7 @@ main(int argc, char *argv[])
     /* Register function and encoding/decoding functions */
     bla_open_id = MERCURY_REGISTER("bla_open", bla_open_in_t, bla_open_out_t);
     bla_write_id = MERCURY_REGISTER("bla_write", bla_write_in_t, bla_write_out_t);
-    finalize_id = MERCURY_REGISTER_FINALIZE();
+    finalize_id = MERCURY_REGISTER("finalize", void, void);
 
     measure_rpc(addr);
 

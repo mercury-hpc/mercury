@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
 
     /* Register function and encoding/decoding functions */
     bla_write_id = MERCURY_REGISTER("bla_write", bla_write_in_t, bla_write_out_t);
-    finalize_id = MERCURY_REGISTER_FINALIZE();
+    finalize_id = MERCURY_REGISTER("finalize", void, void);
 
     /* Prepare bulk_buf */
     nbytes = bulk_size * sizeof(int);

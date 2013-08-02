@@ -56,7 +56,7 @@ int init_rpc(int argc, char *argv[], int *rank)
     write_id = MERCURY_REGISTER("write", write_in_t, write_out_t);
     read_id = MERCURY_REGISTER("read", read_in_t, read_out_t);
     close_id = MERCURY_REGISTER("close", close_in_t, close_out_t);
-    finalize_id = MERCURY_REGISTER_FINALIZE();
+    finalize_id = MERCURY_REGISTER("finalize", void, void);
 
     return ret;
 }

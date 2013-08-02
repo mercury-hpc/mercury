@@ -521,16 +521,14 @@ static HG_INLINE int \
 
 #endif /* HG_HAS_BOOST */
 
+/* If no input args or output args, a void type can be
+ * passed to MERCURY_REGISTER and MERCURY_HANDLER_REGISTER
+ */
+#define hg_proc_void NULL
+
 /* Register callback without encoding/decoding routines */
 #define MERCURY_HANDLER_REGISTER_CALLBACK(func_name, func_callback) \
         HG_Handler_register(func_name, func_callback, NULL, NULL)
-
-/* TODO Better way to register finalize callbacks */
-#define MERCURY_REGISTER_FINALIZE() \
-        HG_Register("MERCURY_REGISTER_FINALIZE", NULL, NULL)
-
-#define MERCURY_HANDLER_REGISTER_FINALIZE(func_callback) \
-        HG_Handler_register("MERCURY_REGISTER_FINALIZE", func_callback, NULL, NULL)
 
 #define MERCURY_GEN_CLIENT_STUB_FINALIZE() \
 void hg_finalize_server(void) \

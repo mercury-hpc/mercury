@@ -301,7 +301,7 @@ main(int argc, char *argv[])
             bla_open_in_t, bla_write_out_t);
     MERCURY_HANDLER_REGISTER("bla_write", bla_write_rpc_spawn,
             bla_write_in_t, bla_write_out_t);
-    MERCURY_HANDLER_REGISTER_FINALIZE(server_finalize);
+    MERCURY_HANDLER_REGISTER("finalize", server_finalize, void, void);
 
     while (!finalizing) {
         hg_status_t status;

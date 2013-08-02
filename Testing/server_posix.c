@@ -318,14 +318,14 @@ int main(int argc, char *argv[])
     MERCURY_HANDLER_REGISTER_CALLBACK("close", close_cb);
     MERCURY_HANDLER_REGISTER_CALLBACK("write", write_cb);
     MERCURY_HANDLER_REGISTER_CALLBACK("read", read_cb);
-    MERCURY_HANDLER_REGISTER_FINALIZE(server_finalize);
+    MERCURY_HANDLER_REGISTER_CALLBACK("finalize", server_finalize);
 #else
     /* Register routine */
     MERCURY_HANDLER_REGISTER("open", server_posix_open, open_in_t, open_out_t);
     MERCURY_HANDLER_REGISTER("write", server_posix_write, write_in_t, write_out_t);
     MERCURY_HANDLER_REGISTER("read", server_posix_read, read_in_t, read_out_t);
     MERCURY_HANDLER_REGISTER("close", server_posix_close, close_in_t, close_out_t);
-    MERCURY_HANDLER_REGISTER_FINALIZE(server_finalize);
+    MERCURY_HANDLER_REGISTER("finalize", server_finalize, void, void);
 #endif
 
     while (finalizing != number_of_peers) {
