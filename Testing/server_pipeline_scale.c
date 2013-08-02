@@ -21,10 +21,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define SPAWN_REQUEST_THREAD /* want to spawn threads */
-//#define USE_THREAD_POOL      /* use thread pool */
+/* #define SPAWN_REQUEST_THREAD */ /* want to spawn threads */
+#define USE_THREAD_POOL      /* use thread pool */
 #define POOL_NUM_THREADS 8
-#define FORCE_MPI_PROGRESS   /* want to have mpi progress */
+/* #define FORCE_MPI_PROGRESS */   /* want to have mpi progress */
 
 static hg_bool_t finalizing = 0;
 

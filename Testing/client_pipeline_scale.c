@@ -117,7 +117,7 @@ int main(int argc, char *argv[])
             12, "BW (MB/s)", 12, "Min (MB/s)", 12, "Max (MB/s)");
     if (client_rank == 0) printf("\n");
 
-    for (pipeline_buffer_size = nbytes / PIPELINE_SIZE;
+    for (pipeline_buffer_size = nbytes / (32 * PIPELINE_SIZE);
             pipeline_buffer_size >= MIN_BUFFER_SIZE;
             pipeline_buffer_size /= 2) {
         int avg_iter;
@@ -182,6 +182,8 @@ int main(int argc, char *argv[])
         printf("%-*d%*f%*f%*f%*.*f%*.*f%*.*f\n", 12, (int) pipeline_buffer_size / 1024,
                 10, time_read, 10, min_time_read, 10, max_time_read,
                 12, 2, read_bandwidth, 12, 2, min_read_bandwidth, 12, 2, max_read_bandwidth);
+
+        break; /* Exit here for now */
     }
 
     /* Free memory handle */
