@@ -33,10 +33,10 @@ SOFTWARE REQUIREMENTS:
    software packages. Beware that using excessively old versions of these
    packages can cause indirect errors that are very difficult to track down.
    To make use of the MPI plugin, Mercury requires a _well-configured_ MPI
-   implementation (MPICH2 1.4.1 or higher / OpenMPI 1.6 or higher). For
+   implementation (MPICH2 v1.4.1 or higher / OpenMPI v1.6 or higher). For
    optional automatic code generation features (which are used for generating
    encoding and decoding routines), the preprocessor subset of the BOOST
-   library must be included (Boost 1.48 or higher is recommended).
+   library must be included (Boost v1.48 or higher is recommended).
 
 BUILDING:
 
