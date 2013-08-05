@@ -37,7 +37,8 @@ NA_Initialize(const char *method, const char *port_name, na_bool_t listen)
 #ifdef NA_HAS_BMI
     if (strcmp("bmi", method) == 0) {
         int flags = (listen) ? BMI_INIT_SERVER : 0;
-        network_class = NA_BMI_Init("bmi_tcp", port_name, flags);
+        const char *method_list = (listen) ? "bmi_tcp" : NULL;
+        network_class = NA_BMI_Init(method_list, port_name, flags);
     }
 #endif
 
