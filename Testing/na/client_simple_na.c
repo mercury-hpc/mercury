@@ -23,6 +23,9 @@ double gettimeofday_sec()
     return tv.tv_sec + (double)tv.tv_usec*1e-6;
 }
 
+int buflen = 4;
+int bench_buf_size = 1024*1024;
+
 int main(int argc, char *argv[])
 {
     char *ion_name;
@@ -38,6 +41,11 @@ int main(int argc, char *argv[])
 
     char *send_buf = NULL;
     char *recv_buf = NULL;
+    char *bench_buf[buflen];
+    int i;
+    for(i = 0; i < buflen; i++){
+        bench_buf[i] = malloc(bench_buf_size);
+    }
 
     na_size_t send_buf_len;
     na_size_t recv_buf_len;
@@ -45,20 +53,23 @@ int main(int argc, char *argv[])
     int *bulk_buf = NULL;
     int bulk_size = 1024*1024;
     na_mem_handle_t local_mem_handle = NA_MEM_HANDLE_NULL;
+    na_mem_handle_t local_bench_mem_handle[buflen];
+    na_mem_handle_t remote_bench_mem_handle[buflen];
 
     na_tag_t bulk_tag = 102;
     na_tag_t ack_tag = 103;
 
     na_request_t bulk_request = NA_REQUEST_NULL;
+    na_request_t bulk_request2 = NA_REQUEST_NULL;
     na_request_t ack_request = NA_REQUEST_NULL;
 
     na_request_t single_bench_request = NA_REQUEST_NULL;
+    na_request_t bench_request[buflen];
 
-    int i;
     int na_ret;
 
     /* number of benchmark cycle */
-    int n = 12*4;
+    int n = 4;
 
     /* Initialize the interface */
     network_class = HG_Test_client_init(argc, argv, &ion_name, NULL);
@@ -186,6 +197,7 @@ int main(int argc, char *argv[])
 
 
     /* unexp send */
+    /*
     for(i = 0; i< 5; i++){
         printf("unexp send %d\n", i);
         na_ret = NA_Msg_send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
@@ -200,6 +212,7 @@ int main(int argc, char *argv[])
         }
 
     }
+    */
 
 
     /*send completion ack*/
@@ -215,7 +228,82 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    /* register bench buffers */
+    for(i = 0; i < buflen; i++){
+        na_ret = NA_Mem_register(network_class, bench_buf[i], bench_buf_size, NA_MEM_READWRITE, &local_bench_mem_handle[i]);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not register memory\n");
+            return EXIT_FAILURE;
+        }
+    }
 
+    /* Serialize and exchange bench bufs */
+    puts("Serialize and exchange bench buffers");
+    for(i = 0; i < buflen; i++){
+        printf("\tbufnumber = %d\n", i);
+        /* serialize */
+        na_ret = NA_Mem_handle_serialize(network_class, send_buf, send_buf_len, local_bench_mem_handle[i]);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not serialize memory handle\n");
+            return EXIT_FAILURE;
+        }
+        /* recv */
+        na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, ion_target, bulk_tag, &bulk_request2, NULL);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not recv memory handle\n");
+            return EXIT_FAILURE;
+        }
+        /* send */
+        na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, ion_target, bulk_tag, &bulk_request, NULL);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not send memory handle\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, bulk_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+        /* wait recv */
+        na_ret = NA_Wait(network_class, bulk_request2, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+        /* deserializ e*/
+        na_ret = NA_Mem_handle_deserialize(network_class, &remote_bench_mem_handle[i], recv_buf, recv_buf_len);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not deserialize memory handle\n");
+            return EXIT_FAILURE;
+        }
+    }
+
+
+
+    /* Send  ack */
+    printf("send ack\n");
+    na_ret = NA_Msg_send_unexpected(network_class, send_buf, send_buf_len, ion_target, send_tag, &send_request, NULL);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not send unexpected message\n");
+        return EXIT_FAILURE;
+    }
+    na_ret = NA_Wait(network_class, send_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Error during wait\n");
+        return EXIT_FAILURE;
+    }
+    /* Recv completion ack */
+    printf("Receiving end of transfer ack...\n");
+    na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, ion_target, ack_tag, &ack_request, NULL);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not receive acknowledgment\n");
+        return EXIT_FAILURE;
+    }
+    na_ret = NA_Wait(network_class, ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Error during wait\n");
+        return EXIT_FAILURE;
+    }
 
     return 0;
 

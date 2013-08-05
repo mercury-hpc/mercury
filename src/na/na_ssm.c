@@ -29,7 +29,7 @@
 #include <ssm.h>
 #include <ssmptcp.h>
 
-#define DEBUG 0
+#define DEBUG 1
 static int na_ssm_finalize(void);
 static int na_ssm_addr_lookup(const char *name, na_addr_t *addr);
 static int na_ssm_addr_free(na_addr_t addr);
@@ -949,7 +949,7 @@ int na_ssm_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
     }
     *mem_handle = pssm_mr;
 #if DEBUG
-    fprintf(stderr, "\tmr = %lu, matchb = %lu (%p)\n", pssm_mr->mr, pssm_mr->matchbits, pssm_mr->matchbits);
+    fprintf(stderr, "\tmr = %p, matchb = %lu (%p)\n", pssm_mr->mr, pssm_mr->matchbits, pssm_mr->matchbits);
 #endif
 
 
@@ -1022,7 +1022,7 @@ int na_ssm_mem_handle_serialize(void *buf, na_size_t buf_size,
         /* TODO may also want to add a checksum or something */
         *pbits = htonl(ssmhandle->matchbits);
         //*pbits = (ssmhandle->matchbits);
-        printf("\tbits = %p\n", *pbits);
+        //printf("\tbits = %p\n", *pbits);
     }
     return ret;
 }
@@ -1125,12 +1125,14 @@ int na_ssm_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     ssm_request->cb.pcb = put_cb;
     ssm_request->cb.cbdata = ssm_request;
     ssm_tx stx; 
-    stx = ssm_putv(ssm, ssm_peer_addr->addr , iov, 1, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
+    //stx = ssm_putv(ssm, ssm_peer_addr->addr , iov, 1, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
+    stx = ssm_put(ssm, ssm_peer_addr->addr, lh->mr, NULL, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
 #if DEBUG
     printf("\ttx = %p\n", stx);
 #endif
     ssm_request->tx = stx;
     *request = (na_request_t*) ssm_request;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------

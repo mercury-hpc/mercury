@@ -23,12 +23,20 @@ double gettimeofday_sec()
     return tv.tv_sec + (double)tv.tv_usec*1e-6;
 }
 
+int buflen = 4;
+int bench_buf_size = 1024*1024;
+
 int main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
 
     char *recv_buf = NULL;
     char *send_buf = NULL;
+    char *bench_buf[buflen];
+    int i;
+    for(i = 0; i < buflen; i++){
+        bench_buf[i] = malloc(bench_buf_size);
+    }
 
     na_size_t send_buf_len;
 
@@ -37,6 +45,8 @@ int main(int argc, char *argv[])
 
     unsigned int number_of_peers;
     unsigned int peer;
+
+    
 
     int na_ret;
 
@@ -54,7 +64,7 @@ int main(int argc, char *argv[])
     bulk_buf = malloc(sizeof(int) * bulk_size);
 
     /* number of benchmark cycle */
-    int n = 12*4;
+    int n = 4;
 
     for (peer = 0; peer < number_of_peers; peer++) {
         na_size_t recv_buf_len = 0;
@@ -68,16 +78,20 @@ int main(int argc, char *argv[])
 
         na_mem_handle_t local_mem_handle = NA_MEM_HANDLE_NULL;
         na_mem_handle_t remote_mem_handle = NA_MEM_HANDLE_NULL;
+        na_mem_handle_t local_bench_mem_handle[buflen];
+        na_mem_handle_t remote_bench_mem_handle[buflen];
 
         na_addr_t recv_addr = NA_ADDR_NULL;
         na_request_t recv_request = NA_REQUEST_NULL;
         na_request_t send_request = NA_REQUEST_NULL;
 
         na_request_t bulk_request = NA_REQUEST_NULL;
+        na_request_t bulk_request2 = NA_REQUEST_NULL;
         na_request_t ack_request = NA_REQUEST_NULL;
         na_request_t get_request = NA_REQUEST_NULL;
+        na_request_t bench_request[buflen];
         na_request_t single_bench_request = NA_REQUEST_NULL;
-        int i, error = 0;
+        int error = 0;
         
         na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, recv_tag, &recv_request, NULL);
         if (na_ret != NA_SUCCESS) {
@@ -230,12 +244,100 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
 
+        /* register bench buffers */
+        puts("Register bench buffers");
+        for(i = 0; i < buflen; i++){
+            na_ret = NA_Mem_register(network_class, bench_buf[i], bench_buf_size, NA_MEM_READWRITE, &local_bench_mem_handle[i]);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not register memory\n");
+                return EXIT_FAILURE;
+            }
+        }
+
+        /* Serialize and exchange bench bufs */
+        puts("Serialize and exchange bench buffers");
+        for(i = 0; i < buflen; i++){
+            printf("\tbufnumber = %d\n", i);
+            /* serialize */
+            na_ret = NA_Mem_handle_serialize(network_class, send_buf, send_buf_len, local_bench_mem_handle[i]);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not serialize memory handle\n");
+                return EXIT_FAILURE;
+            }
+            /* recv */
+            na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, bulk_tag, &bulk_request2, NULL);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not recv memory handle\n");
+                return EXIT_FAILURE;
+            }
+            /* send */
+            na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, recv_addr, bulk_tag, &bulk_request, NULL);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not send memory handle\n");
+                return EXIT_FAILURE;
+            }
+            na_ret = NA_Wait(network_class, bulk_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Error during wait\n");
+                return EXIT_FAILURE;
+            }
+            /* wait recv */
+            na_ret = NA_Wait(network_class, bulk_request2, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Error during wait\n");
+                return EXIT_FAILURE;
+            }
+            /* deserialize */
+            na_ret = NA_Mem_handle_deserialize(network_class, &remote_bench_mem_handle[i], recv_buf, recv_buf_len);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not deserialize memory handle\n");
+                return EXIT_FAILURE;
+            }
+        }
+
         /* put single */
         puts("===put single===");
+        for(i = 0; i < n; i++){
+            na_ret = NA_Put(network_class, local_bench_mem_handle[0], 0, remote_bench_mem_handle[0], 0, bench_buf_size, recv_addr, &single_bench_request);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not put data\n");
+                return EXIT_FAILURE;
+            }
+            na_ret = NA_Wait(network_class, single_bench_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Error during wait\n");
+                return EXIT_FAILURE;
+            }
+        }
 
 
         /* unexpected send */
         puts("===unexpected send==="); 
+
+        /* Recv final ack */
+        puts("recv final ack");
+        na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
+                &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not recv message\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+        /* send ack */
+        na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, recv_addr, ack_tag, &ack_request, NULL);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not send acknowledgment\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
 
         break;  //TODO
         /* Free memory and addresses */
