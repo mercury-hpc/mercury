@@ -7,6 +7,9 @@ set(MERCURY_TESTING_BUFFER_SIZE "16" CACHE STRING
 set(MERCURY_TESTING_MAX_LOOP "1" CACHE STRING
   "Loop n times for average bandwidth/time measures.")
 
+set(MERCURY_TESTING_NUM_THREADS "8" CACHE STRING
+  "Number of server threads used for testing.")
+
 #------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
 #------------------------------------------------------------------------------
@@ -71,6 +74,11 @@ endif()
 # NA tests
 #------------------------------------------------------------------------------
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
+
+#------------------------------------------------------------------------------
+# UTIL tests
+#------------------------------------------------------------------------------
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
 
 #------------------------------------------------------------------------------
 # Set up test

@@ -18,12 +18,13 @@
 #include "mercury_thread_pool.h"
 #include "mercury_list.h"
 
+#include "mercury_test_config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
 //#define SPAWN_REQUEST_THREAD /* want to spawn threads */
 #define USE_THREAD_POOL      /* use thread pool */
-#define POOL_NUM_THREADS 8
 #define FORCE_MPI_PROGRESS   /* want to have mpi progress */
 #define TRANSFER_BULK_DATA
 
@@ -263,7 +264,7 @@ main(int argc, char *argv[])
     hg_list_iter_t list_iterator;
 #endif
 
-    printf("# Starting server with %d threads...\n", POOL_NUM_THREADS);
+    printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 
     /* Used by Test Driver */
     printf("# Waiting for client...\n");
@@ -293,7 +294,7 @@ main(int argc, char *argv[])
     }
 
 #ifdef USE_THREAD_POOL
-    hg_thread_pool_init(POOL_NUM_THREADS, &thread_pool);
+    hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &thread_pool);
 #endif
 
     /* Register routine */

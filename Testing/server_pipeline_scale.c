@@ -18,12 +18,13 @@
 #include "mercury_thread_pool.h"
 #include "mercury_list.h"
 
+#include "mercury_test_config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
 /* #define SPAWN_REQUEST_THREAD */ /* want to spawn threads */
 #define USE_THREAD_POOL      /* use thread pool */
-#define POOL_NUM_THREADS 8
 /* #define FORCE_MPI_PROGRESS */   /* want to have mpi progress */
 
 static hg_bool_t finalizing = 0;
@@ -48,6 +49,9 @@ bla_write_progress(hg_bulk_request_t bulk_request, hg_status_t *status)
             fprintf(stderr, "Error while waiting\n");
         }
     }
+#else
+    (void) bulk_request;
+    (void) status;
 #endif
 }
 
@@ -148,7 +152,7 @@ bla_write_rpc(hg_handle_t handle)
         /* Alternate wait and read to receives pieces */
         for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
             size_t write_offset = start_offset + pipeline_iter * chunk_size;
-            hg_status_t status;
+            hg_status_t status = 0;
             int pipeline_next;
 
             if (bla_write_bulk_request[pipeline_iter] != HG_BULK_REQUEST_NULL) {
@@ -256,6 +260,8 @@ int main(int argc, char *argv[])
     hg_list_iter_t list_iterator;
 #endif
 
+    printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
+
     /* Used by Test Driver */
     printf("# Waiting for client...\n");
     fflush(stdout);
@@ -284,7 +290,7 @@ int main(int argc, char *argv[])
     }
 
 #ifdef USE_THREAD_POOL
-    hg_thread_pool_init(POOL_NUM_THREADS, &thread_pool);
+    hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &thread_pool);
 #endif
 
     /* Register routine */
