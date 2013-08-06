@@ -253,6 +253,17 @@ static HG_INLINE int \
         HG_GEN_STRUCT(struct_type_name, fields) \
         HG_GEN_STRUCT_PROC(struct_type_name, fields)
 
+/* In the case of user defined structures / MERCURY_GEN_STRUCT_PROC can be
+ * used to generate the corresponding proc routine.
+ * E.g., if user defined struct:
+ *   typedef struct {
+ *     uint64_t cookie;
+ *   } bla_handle_t;
+ * MERCURY_GEN_STRUCT_PROC( struct_type_name, field sequence ):
+ *   MERCURY_GEN_STRUCT_PROC( bla_handle_t, ((uint64_t)(cookie)) )
+ */
+#define MERCURY_GEN_STRUCT_PROC HG_GEN_STRUCT_PROC
+
 /* Register func_name */
 #define MERCURY_REGISTER(func_name, in_struct_type_name, out_struct_type_name) \
         HG_Register(func_name, BOOST_PP_CAT(hg_proc_, in_struct_type_name), \

@@ -15,10 +15,15 @@
 #include "mercury_proc.h"
 
 #ifdef HG_HAS_BOOST
+
+typedef struct {
+    hg_uint64_t cookie;
+} bla_handle_t;
+
 /* 1. Generate processor and struct for additional struct types
- * MERCURY_GEN_PROC( struct_type_name, fields )
+ * MERCURY_GEN_STRUCT_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_PROC( bla_handle_t, ((hg_uint64_t)(cookie)) )
+MERCURY_GEN_STRUCT_PROC( bla_handle_t, ((hg_uint64_t)(cookie)) )
 
 /* Dummy function that needs to be shipped (already defined) */
 int bla_open(const char *path, bla_handle_t handle, int *event_id);
