@@ -23,7 +23,7 @@ double gettimeofday_sec()
     return tv.tv_sec + (double)tv.tv_usec*1e-6;
 }
 
-int buflen = 4;
+int nbenchbufs = 4;
 int bench_buf_size = 1024*1024;
 
 int main(int argc, char *argv[])
@@ -32,9 +32,10 @@ int main(int argc, char *argv[])
 
     char *recv_buf = NULL;
     char *send_buf = NULL;
-    char *bench_buf[buflen];
+    char *bench_buf[nbenchbufs];
     int i;
-    for(i = 0; i < buflen; i++){
+    int j;
+    for(i = 0; i < nbenchbufs; i++){
         bench_buf[i] = malloc(bench_buf_size);
     }
 
@@ -78,8 +79,8 @@ int main(int argc, char *argv[])
 
         na_mem_handle_t local_mem_handle = NA_MEM_HANDLE_NULL;
         na_mem_handle_t remote_mem_handle = NA_MEM_HANDLE_NULL;
-        na_mem_handle_t local_bench_mem_handle[buflen];
-        na_mem_handle_t remote_bench_mem_handle[buflen];
+        na_mem_handle_t local_bench_mem_handle[nbenchbufs];
+        na_mem_handle_t remote_bench_mem_handle[nbenchbufs];
 
         na_addr_t recv_addr = NA_ADDR_NULL;
         na_request_t recv_request = NA_REQUEST_NULL;
@@ -89,7 +90,7 @@ int main(int argc, char *argv[])
         na_request_t bulk_request2 = NA_REQUEST_NULL;
         na_request_t ack_request = NA_REQUEST_NULL;
         na_request_t get_request = NA_REQUEST_NULL;
-        na_request_t bench_request[buflen];
+        na_request_t bench_request[nbenchbufs];
         na_request_t single_bench_request = NA_REQUEST_NULL;
         int error = 0;
         
@@ -246,7 +247,7 @@ int main(int argc, char *argv[])
 
         /* register bench buffers */
         puts("Register bench buffers");
-        for(i = 0; i < buflen; i++){
+        for(i = 0; i < nbenchbufs; i++){
             na_ret = NA_Mem_register(network_class, bench_buf[i], bench_buf_size, NA_MEM_READWRITE, &local_bench_mem_handle[i]);
             if (na_ret != NA_SUCCESS) {
                 fprintf(stderr, "Could not register memory\n");
@@ -256,7 +257,7 @@ int main(int argc, char *argv[])
 
         /* Serialize and exchange bench bufs */
         puts("Serialize and exchange bench buffers");
-        for(i = 0; i < buflen; i++){
+        for(i = 0; i < nbenchbufs; i++){
             printf("\tbufnumber = %d\n", i);
             /* serialize */
             na_ret = NA_Mem_handle_serialize(network_class, send_buf, send_buf_len, local_bench_mem_handle[i]);
@@ -298,7 +299,8 @@ int main(int argc, char *argv[])
         /* put single */
         puts("===put single===");
         for(i = 0; i < n; i++){
-            na_ret = NA_Put(network_class, local_bench_mem_handle[0], 0, remote_bench_mem_handle[0], 0, bench_buf_size, recv_addr, &single_bench_request);
+            na_ret = NA_Put(network_class, local_bench_mem_handle[0], 0, 
+                    remote_bench_mem_handle[0], 0, bench_buf_size, recv_addr, &single_bench_request);
             if (na_ret != NA_SUCCESS) {
                 fprintf(stderr, "Could not put data\n");
                 return EXIT_FAILURE;
@@ -307,6 +309,26 @@ int main(int argc, char *argv[])
             if (na_ret != NA_SUCCESS) {
                 fprintf(stderr, "Error during wait\n");
                 return EXIT_FAILURE;
+            }
+        }
+
+        /* put pipelined */
+        puts("===put pipelined===");
+        for(i = 0; i < 1; i++){
+            for(j = 0; j < nbenchbufs; j++){
+                na_ret = NA_Put(network_class, local_bench_mem_handle[j], 0, 
+                        remote_bench_mem_handle[j], 0, bench_buf_size, recv_addr, &bench_request[j]);
+                if (na_ret != NA_SUCCESS) {
+                    fprintf(stderr, "Could not put data\n");
+                    return EXIT_FAILURE;
+                }
+            }
+            for(j = 0; j < nbenchbufs; j++){
+                na_ret = NA_Wait(network_class, bench_request[j], NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+                if (na_ret != NA_SUCCESS) {
+                    fprintf(stderr, "Error during wait\n");
+                    return EXIT_FAILURE;
+                }
             }
         }
 

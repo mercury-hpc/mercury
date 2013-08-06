@@ -940,10 +940,10 @@ int na_ssm_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
     na_ssm_mem_handle_t *pssm_mr;
     pssm_mr = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
     pssm_mr->mr = ssm_mr_create(NULL, buf, buf_size);
-    pssm_mr->matchbits = generate_unique_matchbits();
+    pssm_mr->matchbits = generate_unique_matchbits() + NA_SSM_TAG_RMA_OFFSET;
     pssm_mr->cb.pcb = postedbuf_cb;
     pssm_mr->cb.cbdata = NULL;
-    pssm_mr->me = ssm_link(ssm, 0, pssm_mr->matchbits + NA_SSM_TAG_RMA_OFFSET, SSM_POS_HEAD, NULL, &(pssm_mr->cb), SSM_NOF);
+    pssm_mr->me = ssm_link(ssm, 0, pssm_mr->matchbits, SSM_POS_HEAD, NULL, &(pssm_mr->cb), SSM_NOF);
     if( ssm_post(ssm, pssm_mr->me, pssm_mr->mr, SSM_NOF) < 0){
         NA_ERROR_DEFAULT("post failed");
     }

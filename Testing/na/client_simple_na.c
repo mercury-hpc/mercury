@@ -23,7 +23,7 @@ double gettimeofday_sec()
     return tv.tv_sec + (double)tv.tv_usec*1e-6;
 }
 
-int buflen = 4;
+int nbenchbufs = 4;
 int bench_buf_size = 1024*1024;
 
 int main(int argc, char *argv[])
@@ -41,9 +41,10 @@ int main(int argc, char *argv[])
 
     char *send_buf = NULL;
     char *recv_buf = NULL;
-    char *bench_buf[buflen];
+    char *bench_buf[nbenchbufs];
     int i;
-    for(i = 0; i < buflen; i++){
+    int j;
+    for(i = 0; i < nbenchbufs; i++){
         bench_buf[i] = malloc(bench_buf_size);
     }
 
@@ -53,8 +54,8 @@ int main(int argc, char *argv[])
     int *bulk_buf = NULL;
     int bulk_size = 1024*1024;
     na_mem_handle_t local_mem_handle = NA_MEM_HANDLE_NULL;
-    na_mem_handle_t local_bench_mem_handle[buflen];
-    na_mem_handle_t remote_bench_mem_handle[buflen];
+    na_mem_handle_t local_bench_mem_handle[nbenchbufs];
+    na_mem_handle_t remote_bench_mem_handle[nbenchbufs];
 
     na_tag_t bulk_tag = 102;
     na_tag_t ack_tag = 103;
@@ -64,7 +65,7 @@ int main(int argc, char *argv[])
     na_request_t ack_request = NA_REQUEST_NULL;
 
     na_request_t single_bench_request = NA_REQUEST_NULL;
-    na_request_t bench_request[buflen];
+    na_request_t bench_request[nbenchbufs];
 
     int na_ret;
 
@@ -229,7 +230,7 @@ int main(int argc, char *argv[])
     }
 
     /* register bench buffers */
-    for(i = 0; i < buflen; i++){
+    for(i = 0; i < nbenchbufs; i++){
         na_ret = NA_Mem_register(network_class, bench_buf[i], bench_buf_size, NA_MEM_READWRITE, &local_bench_mem_handle[i]);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not register memory\n");
@@ -239,7 +240,7 @@ int main(int argc, char *argv[])
 
     /* Serialize and exchange bench bufs */
     puts("Serialize and exchange bench buffers");
-    for(i = 0; i < buflen; i++){
+    for(i = 0; i < nbenchbufs; i++){
         printf("\tbufnumber = %d\n", i);
         /* serialize */
         na_ret = NA_Mem_handle_serialize(network_class, send_buf, send_buf_len, local_bench_mem_handle[i]);
