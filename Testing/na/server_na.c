@@ -74,7 +74,6 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "Could not recv message\n");
                 return EXIT_FAILURE;
             }
-            sleep(1);
         } while (!recv_buf_len);
 
         na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
