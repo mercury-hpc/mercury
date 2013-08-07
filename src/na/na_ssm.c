@@ -29,7 +29,7 @@
 #include <ssm.h>
 #include <ssmptcp.h>
 
-#define DEBUG 1
+#define DEBUG 0
 static int na_ssm_finalize(void);
 static int na_ssm_addr_lookup(const char *name, na_addr_t *addr);
 static int na_ssm_addr_free(na_addr_t addr);
@@ -477,6 +477,28 @@ void postedbuf_cb(void *cbdat, void *evdat)
 #ifdef NA_HAS_CLIENT_THREAD
 static void* na_ssm_progress_service(void *args)
 {
+#if DEBUG
+    puts("Progress service start");
+#endif
+    na_bool_t service_done = 0;
+
+    while (!service_done) {
+        int na_ret;
+
+        hg_thread_mutex_lock(&finalizing_mutex);
+        service_done = (finalizing) ? 1 : 0;
+        hg_thread_mutex_unlock(&finalizing_mutex);
+
+        na_ret = na_ssm_progress(0, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            NA_ERROR_DEFAULT("Could not make progress");
+            break;
+        }
+
+        if (service_done) break;
+    }
+
+    return NULL;
 }
 #endif
 
@@ -491,6 +513,9 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
 {
 #if DEBUG
     puts("NA_SSM_Init()");
+#ifdef NA_HAS_CLIENT_THREAD
+    puts("HAS_CLIENT_THREAD");
+#endif
 #endif
     if (flags == 0 ){
         flags = SSM_NOF;
@@ -565,6 +590,10 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
     hg_thread_cond_init(&unexp_buf_cond);
     hg_thread_mutex_init(&unexp_bufcounter_mutex);
     hg_thread_mutex_init(&gen_matchbits);
+#ifdef NA_HAS_CLIENT_THREAD
+    hg_thread_mutex_init(&finalizing_mutex);
+    hg_thread_create(&progress_service, &na_ssm_progress_service, NULL);
+#endif
 
     return &na_ssm_g;
 }
@@ -771,18 +800,75 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
     na_ssm_request_t *pssm_request = NULL;
     na_ssm_unexpected_wait_t *ssm_unexpected_entry = NULL;
 
-    pssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
 #if DEBUG
     printf("\tassigned request = %p\n", pssm_request);
 #endif
+    pssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+    pssm_request->type = SSM_UNEXP_RECV_OP;
 
     if (!buf) {
         NA_ERROR_DEFAULT("NULL buffer");
         ret = NA_FAIL;
         return ret;
     }
-    
+    hg_thread_mutex_lock(&unexp_buf_mutex);
+    if(unexpbuf[unexpbuf_rpos].valid == 0){
+        *actual_buf_size = 0;
+        hg_thread_mutex_unlock(&unexp_buf_mutex);
+        return ret;
+    }
+
+
+    if (unexpbuf[unexpbuf_rpos].status < 0) {
+        NA_ERROR_DEFAULT("unexpected recv failed");
+        /* TODO: free ?*/
+        //TODO: request->status = ERROR
+
+    }
+    if(NA_SSM_UNEXPECTED_SIZE > (ssm_size_t)buf_size) {
+        NA_ERROR_DEFAULT("buf_size is less than its of unexpected message");
+        //ret = NA_FAIL;
+        //return ret;
+    }
+    na_ssm_unexpbuf_t *pbuf = &unexpbuf[unexpbuf_rpos];
+    if (actual_buf_size) {
+        *(actual_buf_size) = (na_size_t) pbuf->bytes;
+    }
+    if(source){
+#if DEBUG
+        fprintf(stderr, "\tcopy wait->source = %p\n", pbuf->addr);
+#endif
+        na_ssm_addr_t *psrc = (na_ssm_addr_t *)malloc(sizeof(na_ssm_addr_t));
+        psrc->addr = pbuf->addr;
+        *source = (na_addr_t) psrc;
+        //((na_ssm_addr_t *)(source))->addr = pbuf->addr;
+    }
+    if(tag){
+        *(tag) = (na_tag_t) pbuf->bits - NA_SSM_TAG_UNEXPECTED_OFFSET;
+    }
+    memcpy(buf, pbuf->buf, buf_size);
+    na_ssm_request_t *preq = (na_ssm_request_t *)pssm_request;
+    (preq->matchbits) = pbuf->bits;
+    (preq->completed) = 1;
+
+
+    /* Clean up the buflist */
+    /* TODO: lock ? */
+    pbuf->valid = 0;
+    /* Post the buf again */
+#if 0
+    if( ssm_post(ssm, unexp_me, pbuf->mr, SSM_NOF) < 0){
+        NA_ERROR_DEFAULT("Post failed (wait)");
+    }
+#endif
+    unexpbuf_availpos = NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos);
+    unexpbuf_rpos = NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_rpos);
+    *request = (na_request_t) pssm_request;
+
+    hg_thread_mutex_unlock(&unexp_buf_mutex);
+#if 0
     hg_thread_mutex_lock(&unexp_waitlist_mutex);
+    pssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
     pssm_request->type = SSM_UNEXP_RECV_OP;
 
     na_ssm_unexpected_wait_t *unexpected_wait = 
@@ -804,6 +890,7 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
 
     *request = (na_request_t) pssm_request;
     hg_thread_mutex_unlock(&unexp_waitlist_mutex);
+#endif
     return ret;
 }
 
@@ -839,15 +926,15 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     
 #if DEBUG
     printf("na_ssm_msg_send()\n");
-    printf("\tbuf = %p, buf_size = %d, dest = %d, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, ssm_peer_addr->addr, tag, request, op_arg);
+    printf("\tbuf = %p, buf_size = %d, dest = %p, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, ssm_peer_addr->addr, tag, request, op_arg);
 #endif
 
-    ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
+    ssm_request->mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
     ssm_request->cb.pcb = msg_send_cb;
     ssm_request->cb.cbdata = ssm_request;
 
     ssm_tx stx; 
-    stx = ssm_put(ssm, ssm_peer_addr->addr , mr, NULL, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
+    stx = ssm_put(ssm, ssm_peer_addr->addr, ssm_request->mr, NULL, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
 #if DEBUG
     printf("\ttx = %p\n", stx);
 #endif
@@ -1219,9 +1306,10 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
     printf("\ttimeout sec = %d, usec = %d\n", tv.tv_sec, tv.tv_usec);
 #endif
     if(prequest == NULL){
-        fprintf(stderr, "ERR: request == NULL\n");
-        rt = ssm_wait(ssm, &tv);
-    } else if(prequest->type == SSM_UNEXP_RECV_OP) {
+        fprintf(stderr, "ERR: request == NULL\n\n");
+        return NA_FAIL;
+        //rt = ssm_wait(ssm, &tv);
+    } else if(0 && prequest->type == SSM_UNEXP_RECV_OP) {
 #if DEBUG
         puts("\tUnexp wait");
 #endif
@@ -1316,11 +1404,14 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
         } else {
             /* Need to wait the completion */
             /* TODO: need to change tv. should be less than timeout, and
-             * repeat this.*/
+             * repeat this.
+             * If there is a progress thread, just wait for completion.*/
 #if DEBUG
-            puts("Wait for completion");
+            puts("\tWait for completion");
+            puts("\twait loop (ssm_wait)");
 #endif
             while(!request_completed){
+#if 0
                 ssmret = ssm_wait(ssm, &tv);
                 if(ssmret < 0 ){
                     NA_ERROR_DEFAULT("ssm_wait() failed");
@@ -1328,6 +1419,7 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
                 } else if(ssmret == 0){
 
                 }
+#endif
                 hg_thread_mutex_lock(&request_mutex);
                 request_completed = prequest->completed;
                 hg_thread_mutex_unlock(&request_mutex);
@@ -1382,6 +1474,22 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
  */
 static int na_ssm_progress(unsigned int timeout, na_status_t *status)
 {
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 1000*10;
+#if DEBUG
+    puts("Call ssm_wait()");
+#endif
+    int rt;
+    sleep(0);
+    do {
+        rt = ssm_wait(ssm, &tv);
+    } while ( rt > 0);
+    if( rt < 0 ) {
+        return NA_FAIL;
+    } else {
+        return NA_SUCCESS;
+    }
 }
 
 

@@ -56,6 +56,7 @@ int main(int argc, char *argv[])
     fflush(stdout);
 
     /* Initialize the interface */
+    puts("Init");
     network_class = HG_Test_server_init(argc, argv, &number_of_peers);
 
     /* Allocate send/recv/bulk bufs */
@@ -65,8 +66,9 @@ int main(int argc, char *argv[])
     bulk_buf = malloc(sizeof(int) * bulk_size);
 
     /* number of benchmark cycle */
-    int n = 4;
+    int n = 64;
 
+#define DEBUG 0
     for (peer = 0; peer < number_of_peers; peer++) {
         na_size_t recv_buf_len = 0;
         recv_buf_len = send_buf_len;
@@ -91,38 +93,167 @@ int main(int argc, char *argv[])
         na_request_t ack_request = NA_REQUEST_NULL;
         na_request_t get_request = NA_REQUEST_NULL;
         na_request_t bench_request[nbenchbufs];
+        na_request_t bench_unexp_request[n];
         na_request_t single_bench_request = NA_REQUEST_NULL;
         int error = 0;
+        puts("Start");   
+        printf("Unexp recv\n\n");
+        do{
+            na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
+                    &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
+#if DEBUG
+            sleep(1);
+#endif
+        } while(recv_buf_len==0);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not recv message\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+        printf("Received from CN: %s\n", recv_buf);
         
+        /* Send completion ack */
+        printf("Sending end of transfer ack...\n");
+        na_ret = NA_Msg_send(network_class, send_buf, send_buf_len, recv_addr, ack_tag, &ack_request, NULL);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not send acknowledgment\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+        /* Benchmark */
+        /* wait for ready*/
+        do{
+            na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
+                    &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
+#if DEBUG
+            sleep(1);
+#endif
+        } while(recv_buf_len==0);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not recv message\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+
+        na_size_t bench_len = 4096;
+        /* send single */
+        puts("===send single===");
+        double st = gettimeofday_sec();
+        long bytes = (bench_len * n);
+        printf("len = %d, bytes = %ld\n", bench_len, bytes);
+        for(i = 0; i < n; i++){
+            /*printf("send %d\n", i);*/
+            na_ret = NA_Msg_send(network_class, send_buf, bench_len, recv_addr, single_bench_tag, &single_bench_request, NULL);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not send acknowledgment\n");
+                return EXIT_FAILURE;
+            }
+            na_ret = NA_Wait(network_class, single_bench_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Error during wait\n");
+                return EXIT_FAILURE;
+            }
+        }
+        double ed = gettimeofday_sec();
+        printf("time = %f, %f msg/s, %f MB/s\n", ed - st, n/(ed-st), bytes/(ed-st)/1048576.0);
+
+        /* wait for ready*/
+        do{
+            na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
+                    &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
+#if DEBUG
+            sleep(1);
+#endif
+        } while(recv_buf_len==0);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not recv message\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+        /* unexpected send single*/
+        puts("start unexpected send single");
+        st = gettimeofday_sec();
+        bytes = (bench_len * n);
+        for(i = 0; i < n; i++){
+            na_ret = NA_Msg_send_unexpected(network_class, send_buf, bench_len, recv_addr, n, &bench_unexp_request[n], NULL);
+            if(na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not send unexpected message\n");
+                return EXIT_FAILURE;
+            }
+            na_ret = NA_Wait(network_class, bench_unexp_request[n], NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Error during wait\n");
+                return EXIT_FAILURE;
+            }
+        }
+        ed = gettimeofday_sec();
+        printf("time = %f, %f msg/s, %f MB/s\n", ed - st, n/(ed-st), bytes/(ed-st)/1048576.0);
+        /* wait for ready*/
+        do{
+            na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
+                    &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
+#if DEBUG
+            sleep(1);
+#endif
+        } while(recv_buf_len==0);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not recv message\n");
+            return EXIT_FAILURE;
+        }
+        na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+        /* pipelined unexpected send */
+        puts("start pipelined unexpected send");
+        st = gettimeofday_sec();
+        bytes = (bench_len * n);
+        for(i = 0; i < n; i++){
+            na_ret = NA_Msg_send_unexpected(network_class, send_buf, bench_len, recv_addr, n, &bench_unexp_request[n], NULL);
+            if(na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not send unexpected message\n");
+                return EXIT_FAILURE;
+            }
+        }
+        puts("\twait");
+        for(i = 0; i < n; i++){
+            na_ret = NA_Wait(network_class, bench_unexp_request[n], NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Error during wait\n");
+                return EXIT_FAILURE;
+            }
+        }
+        ed = gettimeofday_sec();
+        printf("time = %f, %f msg/s, %f MB/s\n", ed - st, n/(ed-st), bytes/(ed-st)/1048576.0);
+
+
+        
+
+
+        break;
+        /* ==================*/
+
+        /* expected recv */
         na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, recv_tag, &recv_request, NULL);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not recv\n");
-            return EXIT_FAILURE;
-        }
-        na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Error during wait\n");
-            return EXIT_FAILURE;
-        }
-        printf("Received from CN: %s\n", recv_buf);
-        printf("Unexp recv\n\n");
-
-        na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
-                &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not recv message\n");
-            return EXIT_FAILURE;
-        }
-        na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Error during wait\n");
-            return EXIT_FAILURE;
-        }
-        printf("Received from CN: %s\n", recv_buf);
-        na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
-                &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not recv message\n");
             return EXIT_FAILURE;
         }
         na_ret = NA_Wait(network_class, recv_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
@@ -208,11 +339,12 @@ int main(int argc, char *argv[])
         }
 
         /* Benchmark */
-        na_size_t bench_len = 4096;
+        //na_size_t bench_len = 4096;
         /* send single */
         puts("===send single===");
-        double st = gettimeofday_sec();
-        long bytes = (bench_len * n);
+        st = gettimeofday_sec();
+        bytes = (bench_len * n);
+
         printf("len = %d, bytes = %ld\n", bench_len, bytes);
         for(i = 0; i < n; i++){
             /*printf("send %d\n", i);*/
@@ -227,7 +359,7 @@ int main(int argc, char *argv[])
                 return EXIT_FAILURE;
             }
         }
-        double ed = gettimeofday_sec();
+        ed = gettimeofday_sec();
         printf("time = %f, %f msg/s, %f MB/s\n", ed - st, n/(ed-st), bytes/(ed-st)/1048576.0);
 
 
@@ -338,8 +470,13 @@ int main(int argc, char *argv[])
 
         /* Recv final ack */
         puts("recv final ack");
-        na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
-                &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
+        do {
+            na_ret = NA_Msg_recv_unexpected(network_class, recv_buf, send_buf_len,
+                    &recv_buf_len, &recv_addr, &recv_tag, &recv_request, NULL);
+#if DEBUG
+            sleep(1);
+#endif
+        } while(recv_buf_len == 0);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not recv message\n");
             return EXIT_FAILURE;
