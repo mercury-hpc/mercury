@@ -78,6 +78,7 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], char **port_name, int *r
             exit(0);
         }
         if (port_name) *port_name = getenv(HG_PORT_NAME);
+        if (rank) *rank = 0;
         network_class = NA_SSM_Init(argv[2], atoi(argv[3]), 0);
     }
 #endif
@@ -132,10 +133,10 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
     }
 #endif
 
-#ifdef NA_HAS_MPI
-    *max_number_of_peers = MPIEXEC_MAX_NUMPROCS;
-#else
-    *max_number_of_peers = 1;
-#endif
+    if (strcmp("mpi", argv[1]) == 0) {
+        *max_number_of_peers = MPIEXEC_MAX_NUMPROCS;
+    } else {
+        *max_number_of_peers = 1;
+    }
     return network_class;
 }

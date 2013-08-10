@@ -156,10 +156,10 @@ static na_ssm_connect p_na_ssm_connect;
 
 
 /* Message Size */
-#define NA_SSM_UNEXPECTED_SIZE 4096
-#define NA_SSM_EXPECTED_SIZE 4096
+#define NA_SSM_UNEXPECTED_SIZE 1024*1024*64
+#define NA_SSM_EXPECTED_SIZE 1024*1024*64
 
-#define NA_SSM_UNEXPECTED_BUFFERCOUNT 128
+#define NA_SSM_UNEXPECTED_BUFFERCOUNT 64
 #define NA_SSM_NEXT_UNEXPBUF_POS(n) (((n)+(1))%(NA_SSM_UNEXPECTED_BUFFERCOUNT))
 char **buf_unexpected;
 
@@ -317,6 +317,7 @@ void msg_send_cb(void *cbdat, void *evdat)
 #endif
     if(r->status!=64){
         NA_ERROR_DEFAULT("msg_send_cb(): cb error");
+        fprintf(stderr, "\t         (%s)\n", ssm_status_str(r->status));
     }
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
@@ -324,9 +325,11 @@ void msg_send_cb(void *cbdat, void *evdat)
     hg_thread_cond_signal(&comp_req_cond);
     hg_thread_mutex_unlock(&request_mutex);
     ssm_mr_destroy(r->mr); //TODO: Error Handling
+    /*
     if(cbdat!=NULL){
         free(cbdat);
     }
+    */
 }
 
 void unexp_msg_send_cb(void *cbdat, void *evdat) 
@@ -348,9 +351,11 @@ void unexp_msg_send_cb(void *cbdat, void *evdat)
     hg_thread_cond_signal(&comp_req_cond);
     hg_thread_mutex_unlock(&request_mutex);
     ssm_mr_destroy(r->mr); //TODO: Error Handling
+    /*
     if(cbdat!=NULL){
         free(cbdat);
     }
+    */
 }
 
 void msg_recv_cb(void *cbdat, void *evdat) {
@@ -373,9 +378,12 @@ void msg_recv_cb(void *cbdat, void *evdat) {
     hg_thread_cond_signal(&comp_req_cond);
     hg_thread_mutex_unlock(&request_mutex);
     ssm_mr_destroy(r->mr); //TODO: Error Handling
+    /*
     if(cbdat!=NULL){
         free(cbdat);
     }
+    */
+    ssm_unlink(ssm, r->me);
     
 }
 
@@ -419,6 +427,8 @@ void put_cb(void *cbdat, void *evdat)
 #endif
     if(r->status!=64){
         NA_ERROR_DEFAULT("put_cb(): cb error");
+        //show_stats(cbdat ,r);
+        printf("\t         (%s)\n", ssm_status_str(r->status));
     }
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
@@ -458,7 +468,7 @@ void postedbuf_cb(void *cbdat, void *evdat)
     if(r->status!=64){
         NA_ERROR_DEFAULT("postedbuf_cb(): cb error");
     }
-#if DEBUG
+#if 0
     show_stats(cbdat, r);
 #endif
     /* post the buf again*/
@@ -494,6 +504,7 @@ static void* na_ssm_progress_service(void *args)
             NA_ERROR_DEFAULT("Could not make progress");
             break;
         }
+        sleep(0);
 
         if (service_done) break;
     }
@@ -611,6 +622,8 @@ static int na_ssm_finalize(void)
 {
 	ssm_stop(ssm);
     /* TODO */
+    /* add free */
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------
@@ -675,10 +688,9 @@ static int na_ssm_addr_free(na_addr_t addr)
 #if DEBUG
     fprintf(stderr, "na_ssm_addr_free(addr = %p)\n", addr);
 #endif
-    //free(addr);
     na_ssm_addr_t *paddr = (na_ssm_addr_t *)addr;
     /* SSM addr destroy */
-    ssm_addr_destroy(ssm, paddr->addr);
+    //ssm_addr_destroy(ssm, paddr->addr);
     free(paddr);
     return NA_SUCCESS;
 }
@@ -800,11 +812,6 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
     na_ssm_request_t *pssm_request = NULL;
     na_ssm_unexpected_wait_t *ssm_unexpected_entry = NULL;
 
-#if DEBUG
-    printf("\tassigned request = %p\n", pssm_request);
-#endif
-    pssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
-    pssm_request->type = SSM_UNEXP_RECV_OP;
 
     if (!buf) {
         NA_ERROR_DEFAULT("NULL buffer");
@@ -817,7 +824,12 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
         hg_thread_mutex_unlock(&unexp_buf_mutex);
         return ret;
     }
+    pssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+    pssm_request->type = SSM_UNEXP_RECV_OP;
 
+#if DEBUG
+    printf("\tassigned request = %p\n", pssm_request);
+#endif
 
     if (unexpbuf[unexpbuf_rpos].status < 0) {
         NA_ERROR_DEFAULT("unexpected recv failed");
@@ -825,11 +837,13 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
         //TODO: request->status = ERROR
 
     }
+    /*
     if(NA_SSM_UNEXPECTED_SIZE > (ssm_size_t)buf_size) {
         NA_ERROR_DEFAULT("buf_size is less than its of unexpected message");
         //ret = NA_FAIL;
         //return ret;
     }
+    */
     na_ssm_unexpbuf_t *pbuf = &unexpbuf[unexpbuf_rpos];
     if (actual_buf_size) {
         *(actual_buf_size) = (na_size_t) pbuf->bytes;
@@ -1027,12 +1041,16 @@ int na_ssm_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
     na_ssm_mem_handle_t *pssm_mr;
     pssm_mr = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
     pssm_mr->mr = ssm_mr_create(NULL, buf, buf_size);
+    //printf("mr = %p\n", pssm_mr->mr);
     pssm_mr->matchbits = generate_unique_matchbits() + NA_SSM_TAG_RMA_OFFSET;
     pssm_mr->cb.pcb = postedbuf_cb;
     pssm_mr->cb.cbdata = NULL;
     pssm_mr->me = ssm_link(ssm, 0, pssm_mr->matchbits, SSM_POS_HEAD, NULL, &(pssm_mr->cb), SSM_NOF);
-    if( ssm_post(ssm, pssm_mr->me, pssm_mr->mr, SSM_NOF) < 0){
-        NA_ERROR_DEFAULT("post failed");
+    int i;
+    for(i=0; i< 2; i++){
+        if( ssm_post(ssm, pssm_mr->me, pssm_mr->mr, SSM_NOF) < 0){
+            NA_ERROR_DEFAULT("post failed");
+        }
     }
     *mem_handle = pssm_mr;
 #if DEBUG
@@ -1484,6 +1502,7 @@ static int na_ssm_progress(unsigned int timeout, na_status_t *status)
     sleep(0);
     do {
         rt = ssm_wait(ssm, &tv);
+        sleep(0);
     } while ( rt > 0);
     if( rt < 0 ) {
         return NA_FAIL;
