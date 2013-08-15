@@ -194,7 +194,7 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
  * Inline prototypes (do not remove)
  */
 #ifndef HG_PROC_INLINE
-  #if __GNUC__ && !__GNUC_STDC_INLINE__
+  #if defined(__GNUC__) && !defined(__GNUC_STDC_INLINE__)
     #define HG_PROC_INLINE extern HG_INLINE
   #else
     #define HG_PROC_INLINE HG_INLINE

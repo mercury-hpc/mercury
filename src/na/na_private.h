@@ -14,9 +14,9 @@
 #include "na.h"
 
 /* Remove warnings when plugin does not use callback arguments */
-#ifdef __cplusplus
+#if defined(__cplusplus)
     #define NA_UNUSED
-#elif __GNUC__ >= 4
+#elif defined(__GNUC__) && (__GNUC__ >= 4)
     #define NA_UNUSED __attribute__((unused))
 #else
     #define NA_UNUSED

@@ -13,11 +13,11 @@
 #ifndef MERCURY_CONFIG_H
 #define MERCURY_CONFIG_H
 
-#ifdef _WIN32
+#if defined(_WIN32)
     #define HG_ABI_IMPORT __declspec(dllimport)
     #define HG_ABI_EXPORT __declspec(dllexport)
     #define HG_ABI_HIDDEN
-#elif __GNUC__ >= 4
+#elif defined(__GNUC__) && (__GNUC__ >= 4)
     #define HG_ABI_IMPORT __attribute__((visibility("default")))
     #define HG_ABI_EXPORT __attribute__((visibility("default")))
     #define HG_ABI_HIDDEN __attribute__((visibility("hidden")))

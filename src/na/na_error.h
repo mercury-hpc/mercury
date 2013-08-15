@@ -14,13 +14,13 @@
 #include <stdio.h>
 
 /* For compatibility */
-#if __STDC_VERSION__ < 199901L
-  #if __GNUC__ >= 2
+#if defined(__STDC_VERSION__) &&  (__STDC_VERSION__ < 199901L)
+  #if defined(__GNUC__) && (__GNUC__ >= 2)
     #define __func__ __FUNCTION__
   #else
     #define __func__ "<unknown>"
   #endif
-#elif _WIN32
+#elif defined(_WIN32)
   #define __func__ __FUNCTION__
 #endif
 
