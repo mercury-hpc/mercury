@@ -13,6 +13,7 @@
 
 #include "mercury.h"
 #include "mercury_handler.h"
+#include "mercury_proc.h"
 
 #ifdef NA_HAS_BMI
 #include "na_bmi.h"
@@ -131,18 +132,18 @@ static HG_INLINE int \
 /********************** Bulk data support boilerplate **********************/
 
 /* RPC with or without bulk data */
-#define HG_GEN_WITHOUT_BULK 0
-#define HG_GEN_WITH_BULK 1
+#define MERCURY_GEN_WITHOUT_BULK 0
+#define MERCURY_GEN_WITH_BULK 1
 
 /* RPC produces or consumes bulk data */
-#define HG_GEN_PRODUCE_BULK 0
-#define HG_GEN_CONSUME_BULK 1
+#define MERCURY_GEN_PRODUCE_BULK 0
+#define MERCURY_GEN_CONSUME_BULK 1
 
 /* Initialized parameter */
 #define HG_BULK_INIT_PARAM ((hg_bool_t)(bulk_initialized))
 
 /* Extra input parameters for bulk data */
-#define HG_BULK_EXTRA_IN_PARAM ((void*)(bulk_buf)) ((uint64_t) (bulk_count))
+#define HG_BULK_EXTRA_IN_PARAM ((void*)(bulk_buf)) ((hg_uint64_t) (bulk_count))
 
 /* Bulk handle parameter */
 #define HG_BULK_PARAM ((hg_bulk_t)(bulk_handle))
@@ -202,7 +203,7 @@ static HG_INLINE int \
         HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_ADDR_PARAM)) = \
         HG_Handler_get_addr(handle);
 
-/* Read bulk data here and wait for the data to be here */
+/* Read bulk data and wait for the data to arrive */
 #define HG_BULK_BLOCK_ALLOCATE \
         HG_GEN_GET_NAME(BOOST_PP_SEQ_ELEM(1, HG_BULK_EXTRA_IN_PARAM)) = \
             HG_Bulk_handle_get_size(HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_PARAM))); \
@@ -235,7 +236,7 @@ static HG_INLINE int \
             return hg_ret; \
         } \
         hg_ret = HG_Bulk_wait(HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_REQUEST_PARAM)), \
-                HG_BULK_MAX_IDLE_TIME, HG_BULK_STATUS_IGNORE); \
+                HG_MAX_IDLE_TIME, HG_STATUS_IGNORE); \
         if (hg_ret != HG_SUCCESS) { \
             HG_ERROR_DEFAULT("Could not complete bulk data write"); \
             return hg_ret; \
@@ -262,7 +263,8 @@ static HG_INLINE int \
  * MERCURY_GEN_STRUCT_PROC( struct_type_name, field sequence ):
  *   MERCURY_GEN_STRUCT_PROC( bla_handle_t, ((uint64_t)(cookie)) )
  */
-#define MERCURY_GEN_STRUCT_PROC HG_GEN_STRUCT_PROC
+#define MERCURY_GEN_STRUCT_PROC(struct_type_name, fields) \
+    HG_GEN_STRUCT_PROC(struct_type_name, fields)
 
 /* Register func_name */
 #define MERCURY_REGISTER(func_name, in_struct_type_name, out_struct_type_name) \
@@ -277,13 +279,12 @@ static HG_INLINE int \
 
 /*****************************************************************************
  * Advanced BOOST macros:
- *   - MERCURY_GEN_CLIENT_STUB_SYNC
- *   - MERCURY_GEN_SERVER_STUB_SYNC
- *   - MERCURY_GEN_STUB_SYNC
+ *   - MERCURY_GEN_RPC_STUB
+ *   - MERCURY_HANDLER_GEN_CALLBACK_STUB
  *****************************************************************************/
 
-/* Generate client RPC stub (synchronous) */
-#define MERCURY_GEN_CLIENT_STUB_SYNC(gen_func_name, ret_type, ret_fail, func_name, \
+/* Generate client RPC stub */
+#define MERCURY_GEN_RPC_STUB(gen_func_name, ret_type, ret_fail, func_name, \
         in_struct_type_name, in_params, out_struct_type_name, out_params, \
         with_bulk, consume_bulk) \
         ret_type \
@@ -312,19 +313,10 @@ static HG_INLINE int \
                 char *na_plugin = getenv(HG_NA_PLUGIN); \
                 if (!na_plugin) na_plugin = "mpi"; \
                 if (strcmp("mpi", na_plugin) == 0) { \
-                    FILE *config; \
-                    network_class = NA_MPI_Init(NULL, 0); \
-                    /* ***************************************************/ \
-                    /* TODO Config crap that we don't want in that macro */ \
-                    /* ***************************************************/ \
-                    if ((config = fopen("port.cfg", "r")) != NULL) { \
-                        size_t nread; \
-                        char mpi_port_name[MPI_MAX_PORT_NAME]; \
-                        nread = fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config); \
-                        if (!nread) HG_ERROR_DEFAULT("Could not read port name"); \
-                        fclose(config); \
-                        setenv(HG_PORT_NAME, mpi_port_name, 1); \
-                    } \
+                    network_class = NA_Initialize("mpi", NULL, 0); \
+                } \
+                else if (strcmp("bmi", na_plugin) == 0) { \
+                    network_class = NA_Initialize("bmi", NULL, 0); \
                 } \
                 hg_ret = HG_Init(network_class); \
                 if (hg_ret != HG_SUCCESS) { \
@@ -332,7 +324,6 @@ static HG_INLINE int \
                     ret = ret_fail; \
                     goto done; \
                 } \
-                HG_Atfinalize(hg_finalize_server); \
             } \
             BOOST_PP_IF(with_bulk, HG_BULK_INITIALIZE(ret_fail), BOOST_PP_EMPTY()) \
             \
@@ -377,7 +368,7 @@ static HG_INLINE int \
                 ret = ret_fail; \
                 goto done; \
             } \
-            if ( !status ) { \
+            if (!status) { \
                 HG_ERROR_DEFAULT("Operation did not complete"); \
                 ret = ret_fail; \
                 goto done; \
@@ -386,15 +377,15 @@ static HG_INLINE int \
             BOOST_PP_IF(with_bulk, HG_BULK_FREE(ret_fail), BOOST_PP_EMPTY()) \
             \
             /* Get output parameters */ \
-            HG_GET_STRUCT_PARAMS( out_struct, out_params ((ret_type)(ret)) ) \
+            HG_GET_STRUCT_PARAMS(out_struct, out_params ((ret_type)(ret))) \
             \
             done: \
             \
             return ret; \
         }
 
-/* Generate client RPC stub (synchronous) */
-#define MERCURY_GEN_SERVER_STUB_SYNC(gen_func_name, ret_type, func_name, \
+/* Generate handler callback */
+#define MERCURY_HANDLER_GEN_CALLBACK_STUB(gen_func_name, ret_type, func_name, \
         in_struct_type_name, in_params, out_struct_type_name, out_params, \
         with_bulk, consume_bulk) \
         int \
@@ -405,24 +396,16 @@ static HG_INLINE int \
                 out_struct_type_name out_struct; \
                 HG_GEN_DECL_VARS(in_params) \
                 ret_type ret; \
-                void *in_buf, *out_buf; \
-                size_t in_buf_size, out_buf_size; \
-                hg_proc_t proc; \
                 BOOST_PP_IF(with_bulk, HG_BULK_DECL_PARAMS, BOOST_PP_EMPTY()) \
                 \
                 BOOST_PP_IF(with_bulk, HG_BULK_GET_ADDR, BOOST_PP_EMPTY()) \
                 \
                 /* Get input buffer */ \
-                hg_ret = HG_Handler_get_input_buf(handle, &in_buf, &in_buf_size); \
+                hg_ret = HG_Handler_get_input(handle, &in_struct); \
                 if (hg_ret != HG_SUCCESS) { \
-                    HG_ERROR_DEFAULT("Could not get input buffer"); \
+                    HG_ERROR_DEFAULT("Could not get input struct"); \
                     goto done; \
                 } \
-                \
-                /* Create a new decoding proc */ \
-                hg_proc_create(in_buf, in_buf_size, HG_DECODE, &proc); \
-                BOOST_PP_CAT(hg_proc_, in_struct_type_name)(proc, &in_struct); \
-                hg_proc_free(proc); \
                 \
                 /* Get parameters */ \
                 HG_GET_STRUCT_PARAMS(in_struct, in_params \
@@ -444,80 +427,22 @@ static HG_INLINE int \
                                 BOOST_PP_EMPTY(), HG_BULK_TRANSFER(consume_bulk)), \
                         BOOST_PP_EMPTY()) \
                 \
-                /* Fill output structure */ \
-                HG_SET_STRUCT_PARAMS( out_struct, out_params ((ret_type)(ret)) ) \
-                \
-                /* Create a new encoding proc */ \
-                hg_ret = HG_Handler_get_output_buf(handle, &out_buf, &out_buf_size); \
-                if (hg_ret != HG_SUCCESS) { \
-                    HG_ERROR_DEFAULT("Could not get output buffer"); \
-                    goto done; \
-                } \
-                \
-                hg_proc_create(out_buf, out_buf_size, HG_ENCODE, &proc); \
-                BOOST_PP_CAT(hg_proc_, out_struct_type_name)(proc, &out_struct); \
-                hg_proc_free(proc); \
-                \
-                /* Free handle and send response back */ \
-                hg_ret = HG_Handler_start_response(handle, NULL, 0); \
-                if (hg_ret != HG_SUCCESS) { \
-                    HG_ERROR_DEFAULT("Could not respond"); \
-                    goto done; \
-                } \
-                \
                 BOOST_PP_IF(with_bulk, HG_BULK_BLOCK_FREE, BOOST_PP_EMPTY()) \
                 \
-                /* Also free memory allocated during decoding */ \
-                hg_proc_create(NULL, 0, HG_FREE, &proc); \
-                BOOST_PP_CAT(hg_proc_, in_struct_type_name)(proc, &in_struct); \
-                hg_proc_free(proc); \
+                /* Fill output structure */ \
+                HG_SET_STRUCT_PARAMS(out_struct, out_params ((ret_type)(ret))) \
+                \
+                /* Free handle and send response back */ \
+                hg_ret = HG_Handler_start_output(handle, &out_struct); \
+                if (hg_ret != HG_SUCCESS) { \
+                    HG_ERROR_DEFAULT("Could not start output"); \
+                    goto done; \
+                } \
                 \
                 done: \
                 \
                 return hg_ret; \
             }
-
-/* Generate synchronous RPC stub
- *
- * MERCURY_GEN_STUB_SYNC(client stub name, server stub name,
- *         return type, return value when RPC fail,
- *         function name, input types, output types,
- *         RPC makes use of bulk data, RPC consumes or produces bulk data)
- *
- * Example:
- * --------
- * MERCURY_GEN_STUB_SYNC( test_rpc, test_cb,
- *   int32_t, HG_FAIL, test, (int32_t), (uint32_t), 0, )
- * --->
- *   typedef struct { int32_t in_param_0;   } test_in_t;
- *   typedef struct { uint32_t out_param_0; } test_out_t;
- *   static inline int hg_proc_test_in_t(hg_proc_t proc, void *data) { ... }
- *   static inline int hg_proc_test_out_t(hg_proc_t proc, void *data) { ... }
- *   static int32_t test_rpc (int32_t in_param_0, uint32_t *out_param_0) { ... }
- *   static int test_cb (hg_handle_t handle) { ... }
- */
-#define MERCURY_GEN_STUB_SYNC(client_stub_name, server_stub_name, \
-        ret_type, ret_fail, func_name, in_types, out_types, \
-        with_bulk, consume_bulk) \
-        \
-        /* Generate serialization / deserialization structs */ \
-        MERCURY_GEN_PROC( BOOST_PP_CAT(func_name, _in_t), \
-                HG_GEN_PARAM_NAME_SEQ(in_param_, in_types) \
-                BOOST_PP_IF(with_bulk, HG_BULK_PARAM, BOOST_PP_EMPTY()) ) \
-        MERCURY_GEN_PROC( BOOST_PP_CAT(func_name, _out_t), \
-                HG_GEN_PARAM_NAME_SEQ(out_param_, out_types) \
-                ((ret_type)(ret)) ) \
-        \
-        /* Generate client rpc stub */ \
-        MERCURY_GEN_CLIENT_STUB_SYNC( client_stub_name, ret_type, ret_fail, func_name, \
-                BOOST_PP_CAT(func_name, _in_t), HG_GEN_PARAM_NAME_SEQ(in_param_, in_types), \
-                BOOST_PP_CAT(func_name, _out_t), HG_GEN_PARAM_NAME_SEQ(out_param_, out_types), \
-                with_bulk, consume_bulk ) \
-        /* Generate server rpc stub */ \
-        MERCURY_GEN_SERVER_STUB_SYNC( server_stub_name, ret_type, func_name, \
-                BOOST_PP_CAT(func_name, _in_t), HG_GEN_PARAM_NAME_SEQ(in_param_, in_types), \
-                BOOST_PP_CAT(func_name, _out_t), HG_GEN_PARAM_NAME_SEQ(out_param_, out_types), \
-                with_bulk, consume_bulk )
 
 #else /* HG_HAS_BOOST */
 
@@ -536,54 +461,5 @@ static HG_INLINE int \
  * passed to MERCURY_REGISTER and MERCURY_HANDLER_REGISTER
  */
 #define hg_proc_void NULL
-
-/* Register callback without encoding/decoding routines */
-#define MERCURY_HANDLER_REGISTER_CALLBACK(func_name, func_callback) \
-        HG_Handler_register(func_name, func_callback, NULL, NULL)
-
-#define MERCURY_GEN_CLIENT_STUB_FINALIZE() \
-void hg_finalize_server(void) \
-{ \
-    int hg_ret, na_ret; \
-    hg_bool_t hg_initialized, func_registered; \
-    na_class_t *network_class; \
-    char *server_name; \
-    hg_request_t request; \
-    na_addr_t addr; \
-    hg_id_t id; \
-    \
-    HG_Initialized(&hg_initialized, &network_class); \
-    if (!hg_initialized) { \
-        HG_ERROR_DEFAULT("Mercury is not initialized"); \
-        return; \
-    } \
-    \
-    /* Get server_name if set */ \
-    server_name = getenv(HG_PORT_NAME); \
-    /* Look up addr id */ \
-    na_ret = NA_Addr_lookup(network_class, server_name, &addr); \
-    if (na_ret != NA_SUCCESS) { \
-        HG_ERROR_DEFAULT("Could not lookup addr"); \
-        return; \
-    } \
-    \
-    /* Check whether call has already been registered or not */ \
-    HG_Registered("MERCURY_REGISTER_FINALIZE", &func_registered, &id); \
-    if (!func_registered) { \
-        id = MERCURY_REGISTER_FINALIZE(); \
-    } \
-    \
-    /* Forward call to remote addr and get a new request */ \
-    hg_ret = HG_Forward(addr, id, NULL, NULL, &request); \
-    if (hg_ret != HG_SUCCESS) { \
-        HG_ERROR_DEFAULT("Could not forward call"); \
-        return; \
-    } \
-    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE); \
-    if (hg_ret != HG_SUCCESS) { \
-        HG_ERROR_DEFAULT("Error during wait"); \
-        return; \
-    } \
-}
 
 #endif /* MERCURY_MACROS_H */

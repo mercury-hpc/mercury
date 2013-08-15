@@ -20,35 +20,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-//#define MERCURY_HAS_ADVANCED_MACROS
-
 #ifdef HG_HAS_BOOST
-
-#ifdef MERCURY_HAS_ADVANCED_MACROS
-
-MERCURY_GEN_CLIENT_STUB_FINALIZE()
-
-MERCURY_GEN_STUB_SYNC( open_rpc, open_cb,
-        hg_int32_t, HG_FAIL,
-        open, (hg_string_t) (hg_int32_t) (hg_uint32_t), ,
-        HG_GEN_WITHOUT_BULK, )
-
-MERCURY_GEN_STUB_SYNC( close_rpc, close_cb,
-        hg_int32_t, HG_FAIL,
-        close, (hg_int32_t), ,
-        HG_GEN_WITHOUT_BULK, )
-
-MERCURY_GEN_STUB_SYNC( write_rpc, write_cb,
-        hg_int64_t, HG_FAIL,
-        write, (int32_t), ,
-        HG_GEN_WITH_BULK, HG_GEN_CONSUME_BULK )
-
-MERCURY_GEN_STUB_SYNC( read_rpc, read_cb,
-        hg_int64_t, HG_FAIL,
-        read, (hg_int32_t), ,
-        HG_GEN_WITH_BULK, HG_GEN_PRODUCE_BULK )
-
-#else
 
 /* Dummy function that needs to be shipped (already defined) */
 /*
@@ -77,8 +49,6 @@ MERCURY_GEN_PROC( write_out_t, ((hg_int64_t)(ret)) )
 /* read */
 MERCURY_GEN_PROC( read_in_t, ((hg_int32_t)(fd)) ((hg_bulk_t)(bulk_handle)) )
 MERCURY_GEN_PROC( read_out_t, ((hg_int64_t)(ret)) )
-
-#endif /* MERCURY_HAS_ADVANCED_MACROS */
 
 #else /* HG_HAS_BOOST */
 /* Define open_in_t */

@@ -28,17 +28,8 @@ int fs_bla_open(hg_handle_t handle)
 {
     int ret = HG_SUCCESS;
 
-    void          *bla_open_in_buf;
-    size_t         bla_open_in_buf_size;
     bla_open_in_t  bla_open_in_struct;
-
-    void          *bla_open_out_buf;
-    size_t         bla_open_out_buf_size;
-    void          *bla_open_out_extra_buf = NULL;
-    size_t         bla_open_out_extra_buf_size = 0;
     bla_open_out_t bla_open_out_struct;
-
-    hg_proc_t proc;
 
     const char *bla_open_path;
     bla_handle_t bla_open_handle;
@@ -46,16 +37,11 @@ int fs_bla_open(hg_handle_t handle)
     int bla_open_ret;
 
     /* Get input buffer */
-    ret = HG_Handler_get_input_buf(handle, &bla_open_in_buf, &bla_open_in_buf_size);
+    ret = HG_Handler_get_input(handle, &bla_open_in_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get input buffer\n");
+        fprintf(stderr, "Could not get input\n");
         return ret;
     }
-
-    /* Create a new decoding proc */
-    hg_proc_create(bla_open_in_buf, bla_open_in_buf_size, HG_DECODE, &proc);
-    hg_proc_bla_open_in_t(proc, &bla_open_in_struct);
-    hg_proc_free(proc);
 
     /* Get parameters */
     bla_open_path = bla_open_in_struct.path;
@@ -68,33 +54,12 @@ int fs_bla_open(hg_handle_t handle)
     bla_open_out_struct.event_id = bla_open_event_id;
     bla_open_out_struct.ret = bla_open_ret;
 
-    /* Create a new encoding proc */
-    ret = HG_Handler_get_output_buf(handle, &bla_open_out_buf, &bla_open_out_buf_size);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get output buffer\n");
-        return ret;
-    }
-
-    hg_proc_create(bla_open_out_buf, bla_open_out_buf_size, HG_ENCODE, &proc);
-    hg_proc_bla_open_out_t(proc, &bla_open_out_struct);
-    if (hg_proc_get_extra_buf(proc)) {
-        bla_open_out_extra_buf = hg_proc_get_extra_buf(proc);
-        bla_open_out_extra_buf_size = hg_proc_get_extra_size(proc);
-        hg_proc_set_extra_buf_is_mine(proc, 1);
-    }
-    hg_proc_free(proc);
-
     /* Free handle and send response back */
-    ret = HG_Handler_start_response(handle, bla_open_out_extra_buf, bla_open_out_extra_buf_size);
+    ret = HG_Handler_start_output(handle, &bla_open_out_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
-
-    /* Also free memory allocated during decoding */
-    hg_proc_create(NULL, 0, HG_FREE, &proc);
-    hg_proc_bla_open_in_t(proc, &bla_open_in_struct);
-    hg_proc_free(proc);
 
     return ret;
 }
@@ -121,7 +86,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register routine */
-    MERCURY_HANDLER_REGISTER_CALLBACK("bla_open", fs_bla_open);
+    MERCURY_HANDLER_REGISTER("bla_open", fs_bla_open, bla_open_in_t, bla_open_out_t);
 
     for (i = 0; i < number_of_peers; i++) {
         /* Receive new function calls */

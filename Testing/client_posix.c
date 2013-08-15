@@ -13,7 +13,6 @@
 #include "mercury.h"
 #include "mercury_bulk.h"
 
-#ifndef MERCURY_HAS_ADVANCED_MACROS
 na_addr_t addr;
 na_class_t *network_class = NULL;
 hg_id_t open_id, write_id, read_id, close_id, finalize_id;
@@ -330,8 +329,6 @@ ssize_t read_rpc(int fd, void *buf, size_t count)
 
     return read_ret;
 }
-
-#endif
 
 #undef open
 #define open open_rpc
