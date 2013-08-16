@@ -86,7 +86,7 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id);
  */
 HG_EXPORT int
 HG_Forward(na_addr_t addr, hg_id_t id,
-        const void *in_struct, void *out_struct, hg_request_t *request);
+        void *in_struct, void *out_struct, hg_request_t *request);
 
 /**
  * Wait for an operation request to complete.

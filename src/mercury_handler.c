@@ -652,7 +652,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 int
-HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf,
+HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
         size_t extra_out_buf_size)
 {
     hg_priv_handle_t *priv_handle = (hg_priv_handle_t *) handle;
@@ -693,7 +693,7 @@ HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf,
             ret = HG_FAIL;
             goto done;
         }
-        priv_handle->extra_send_buf = (void*)extra_out_buf;
+        priv_handle->extra_send_buf = extra_out_buf;
         priv_handle->extra_send_buf_size = extra_out_buf_size;
         extra_send_buf_used = 1;
     }

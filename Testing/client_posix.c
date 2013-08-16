@@ -124,7 +124,7 @@ int finalize_rpc()
     return ret;
 }
 
-int open_rpc(const char *pathname, int flags, mode_t mode)
+int open_rpc(char *pathname, int flags, mode_t mode)
 {
     open_in_t  open_in_struct;
     open_out_t open_out_struct;
@@ -210,7 +210,7 @@ int close_rpc(int fd)
     return close_ret;
 }
 
-ssize_t write_rpc(int fd, const void *buf, size_t count)
+ssize_t write_rpc(int fd, void *buf, size_t count)
 {
     write_in_t  write_in_struct;
     write_out_t write_out_struct;
@@ -222,7 +222,7 @@ ssize_t write_rpc(int fd, const void *buf, size_t count)
     int write_ret;
 
     /* Register memory */
-    hg_ret = HG_Bulk_handle_create((void*)buf, count, HG_BULK_READ_ONLY, &bulk_handle);
+    hg_ret = HG_Bulk_handle_create(buf, count, HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         write_ret = HG_FAIL;

@@ -63,7 +63,7 @@ void bla_write_pipeline(size_t chunk_size,
 size_t bla_write_check(const void *buf, size_t nbyte)
 {
     size_t i;
-    int *bulk_buf = (int*) buf;
+    const int *bulk_buf = (const int*) buf;
 
     /* Check bulk buf */
     for (i = 0; i < (nbyte / sizeof(int)); i++) {

@@ -21,7 +21,7 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
 {
     size_t i;
     int error = 0;
-    int *bulk_buf = (int*) buf;
+    const int *bulk_buf = (const int*) buf;
 
     printf("Executing bla_write with fildes %d...\n", fildes);
 

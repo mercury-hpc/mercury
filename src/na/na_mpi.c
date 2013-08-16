@@ -379,7 +379,7 @@ static int
 na_mpi_addr_lookup(const char *name, na_addr_t *addr)
 {
     int mpi_ret, ret = NA_SUCCESS;
-    char *port_name = (char*) name;
+    const char *port_name = name;
     mpi_addr_t *mpi_addr = NULL;
 
     if (client_remote_addr) {
@@ -628,7 +628,7 @@ na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void NA_UNUSED *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
-    void *mpi_buf = (void*) buf;
+    const void *mpi_buf = buf;
     int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;
     mpi_addr_t *mpi_addr = (mpi_addr_t*) dest;

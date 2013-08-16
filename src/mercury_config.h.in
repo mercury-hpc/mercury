@@ -70,7 +70,8 @@
     typedef bool     hg_bool_t;
 #endif
 typedef hg_uint64_t  hg_ptr_t;
-typedef const char * hg_string_t;
+typedef char *       hg_string_t;
+typedef const char * hg_const_string_t;
 
 #ifdef _WIN32
    #define HG_INLINE __inline

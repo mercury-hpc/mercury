@@ -39,7 +39,7 @@ measure_rpc(na_addr_t addr)
     hg_request_t bla_open_request;
     hg_status_t bla_open_status;
 
-    const char *bla_open_path = "/scratch/hdf/test.h5";
+    hg_string_t bla_open_path = "/scratch/hdf/test.h5";
     bla_handle_t bla_open_handle;
 
     int avg_iter;

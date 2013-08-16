@@ -250,7 +250,7 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id)
 
 /*---------------------------------------------------------------------------*/
 int
-HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_struct,
+HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
         hg_request_t *request)
 {
     int ret = HG_SUCCESS, na_ret;
@@ -333,7 +333,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, const void *in_struct, void *out_struct,
 
     /* Encode the function parameters */
     if (proc_info->enc_routine) {
-        ret = proc_info->enc_routine(enc_proc, (void*)in_struct);
+        ret = proc_info->enc_routine(enc_proc, in_struct);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not encode parameters");
             ret = HG_FAIL;

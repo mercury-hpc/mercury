@@ -110,7 +110,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status);
  * \return Non-negative on success or negative on failure
  */
 HG_EXPORT int
-HG_Handler_start_response(hg_handle_t handle, const void *extra_out_buf,
+HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
         size_t extra_out_buf_size);
 
 /**

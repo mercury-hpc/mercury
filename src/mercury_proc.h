@@ -504,13 +504,13 @@ hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     hg_uint64_t string_len = 0;
-    char *string_buf = NULL;
+    hg_string_t string_buf = NULL;
     int ret = HG_FAIL;
 
     switch (priv_proc->op) {
         case HG_ENCODE:
             string_len = strlen(*string) + 1;
-            string_buf = (char*) *string;
+            string_buf = *string;
             ret = hg_proc_uint64_t(priv_proc, &string_len);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
@@ -531,7 +531,7 @@ hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string)
                 ret = HG_FAIL;
                 return ret;
             }
-            string_buf = (char*) malloc(string_len);
+            string_buf = (hg_string_t) malloc(string_len);
             ret = hg_proc_raw(priv_proc, string_buf, string_len);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
@@ -541,7 +541,7 @@ hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string)
             *string = string_buf;
             break;
         case HG_FREE:
-            string_buf = (char*) *string;
+            string_buf = *string;
             if (!string_buf) {
                 HG_ERROR_DEFAULT("Already freed");
                 ret = HG_FAIL;
