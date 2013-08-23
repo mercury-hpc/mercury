@@ -9,7 +9,7 @@
  */
 
 #include "mercury.h"
-#include "mercury_proc.h"
+#include "mercury_proc_private.h"
 
 #include "mercury_hash_table.h"
 #include "mercury_thread.h"

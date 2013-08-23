@@ -12,6 +12,7 @@
   #define HG_PROC_INLINE
 #endif
 #include "mercury_proc.h"
+#include "mercury_proc_private.h"
 
 #ifdef _WIN32
   #include <windows.h>
@@ -244,6 +245,22 @@ hg_proc_get_buf_ptr(hg_proc_t proc)
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef HG_HAS_XDR
+XDR *
+hg_proc_get_xdr_ptr(hg_proc_t proc)
+{
+    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    XDR *ptr = NULL;
+
+    if (priv_proc) {
+        ptr = &priv_proc->current_buf->xdr;
+    }
+
+    return ptr;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
 int
 hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
 {
@@ -312,6 +329,37 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t theirs)
         priv_proc->extra_buf.is_mine = !theirs;
         ret = HG_SUCCESS;
     }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
+{
+    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    const void *src;
+    void *dest;
+    int ret = HG_SUCCESS;
+
+    if (priv_proc->op == HG_FREE) return ret;
+
+    /* If not enough space allocate extra space if encoding or
+     * just get extra buffer if decoding */
+    if (priv_proc->current_buf->size_left < data_size) {
+        hg_proc_set_size(proc, priv_proc->proc_buf.size +
+                priv_proc->extra_buf.size + data_size);
+    }
+
+    /* Process data */
+    src = (priv_proc->op == HG_ENCODE) ? (const void *) data :
+            (const void *) priv_proc->current_buf->buf_ptr;
+    dest = (priv_proc->op == HG_ENCODE) ? priv_proc->current_buf->buf_ptr :
+            data;
+    memcpy(dest, src, data_size);
+    priv_proc->current_buf->buf_ptr = (char*) priv_proc->current_buf->buf_ptr
+            + data_size;
+    priv_proc->current_buf->size_left -= data_size;
 
     return ret;
 }
