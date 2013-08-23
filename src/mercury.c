@@ -332,7 +332,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     }
 
     /* Encode the function parameters */
-    if (proc_info->enc_routine) {
+    if (proc_info->enc_routine && in_struct) {
         ret = proc_info->enc_routine(enc_proc, in_struct);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not encode parameters");
@@ -550,7 +550,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         }
 
         /* Decode function parameters */
-        if (proc_info->dec_routine) {
+        if (proc_info->dec_routine && priv_request->out_struct) {
             ret = proc_info->dec_routine(dec_proc, priv_request->out_struct);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Could not decode return parameters");
@@ -596,6 +596,51 @@ HG_Wait_all(int count, hg_request_t array_of_requests[],
     /* TODO For now just loop over requests */
     for (i = 0; i < count; i++) {
         ret = HG_Wait(array_of_requests[i], timeout, &array_of_statuses[i]);
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+HG_Free_output(hg_id_t id, void *out_struct)
+{
+    hg_proc_t proc;
+    hg_proc_info_t *proc_info;
+    int ret = HG_SUCCESS;
+
+    if (!hg_na_class) {
+        HG_ERROR_DEFAULT("Mercury must be initialized");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    /* Retrieve decoding function from function map */
+    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &id);
+    if (!proc_info) {
+        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    if (out_struct && proc_info->dec_routine) {
+        /* Create a new free proc */
+        ret = hg_proc_create(NULL, 0, HG_FREE, &proc);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not create proc");
+            ret = HG_FAIL;
+            return ret;
+        }
+
+        /* Free memory allocated during output decoding */
+        ret = proc_info->dec_routine(proc, out_struct);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not free allocated parameters");
+            ret = HG_FAIL;
+        }
+
+        /* Free proc */
+        hg_proc_free(proc);
     }
 
     return ret;

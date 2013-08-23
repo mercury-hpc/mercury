@@ -114,6 +114,17 @@ HG_EXPORT int
 HG_Wait_all(int count, hg_request_t array_of_requests[],
         unsigned int timeout, hg_status_t array_of_statuses[]);
 
+/**
+ * Free eventual resources allocated when decoding the output.
+ *
+ * \param id [IN]               registered function ID
+ * \param out_struct [OUT]      pointer to output structure
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Free_output(hg_id_t id, void *out_struct);
+
 #ifdef __cplusplus
 }
 #endif

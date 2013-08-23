@@ -90,6 +90,9 @@ int main(int argc, char *argv[])
     bla_open_event_id = bla_open_out_struct.event_id;
     printf("bla_open returned: %d with event_id: %d\n", bla_open_ret, bla_open_event_id);
 
+    /* Free output */
+    HG_Free_output(bla_open_id, &bla_open_out_struct);
+
     /* Free addr id */
     na_ret = NA_Addr_free(network_class, addr);
     if (na_ret != NA_SUCCESS) {
