@@ -104,8 +104,11 @@ static string FixExecutablePath(const string& path)
 
   string filename =
     mercury_sys::SystemTools::GetFilenameName(path);
-  parent_dir += "/" CMAKE_INTDIR "/";
-  return parent_dir + filename;
+
+  if (!mercury_sys::SystemTools::StringEndsWith(parent_dir.c_str(), CMAKE_INTDIR)) {
+    parent_dir += "/" CMAKE_INTDIR;
+  }
+  return parent_dir + "/" + filename;
 #endif
 
   return path;
