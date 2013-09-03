@@ -22,22 +22,39 @@
 #include <stdlib.h>
 
 /*---------------------------------------------------------------------------*/
-int
-hg_proc_buf_alloc(void **mem_ptr, size_t size)
+void *
+hg_proc_buf_alloc(size_t size)
 {
-    int ret = HG_SUCCESS;
     size_t alignment;
+    void *mem_ptr = NULL;
 
 #ifdef _WIN32
     SYSTEM_INFO system_info;
     GetSystemInfo (&system_info);
     alignment = system_info.dwPageSize;
-    *mem_ptr = _aligned_malloc(size, alignment);
+    mem_ptr = _aligned_malloc(size, alignment);
 #else
     alignment = sysconf(_SC_PAGE_SIZE);
-    posix_memalign(mem_ptr, alignment, size);
+    posix_memalign(&mem_ptr, alignment, size);
 #endif
-    memset(*mem_ptr, 0, size);
+    if (mem_ptr) {
+        memset(mem_ptr, 0, size);
+    }
+
+    return mem_ptr;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_buf_free(void *mem_ptr)
+{
+    int ret = HG_SUCCESS;
+
+#ifdef _WIN32
+    _aligned_free(mem_ptr);
+#else
+    free(mem_ptr);
+#endif
 
     return ret;
 }

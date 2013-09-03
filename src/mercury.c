@@ -288,8 +288,8 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
 
     /* Send Buffer */
     priv_request->send_buf_size = NA_Msg_get_max_unexpected_size(hg_na_class);
-    ret = hg_proc_buf_alloc(&priv_request->send_buf, priv_request->send_buf_size);
-    if (ret != HG_SUCCESS) {
+    priv_request->send_buf = hg_proc_buf_alloc(priv_request->send_buf_size);
+    if (!priv_request->send_buf) {
         HG_ERROR_DEFAULT("Could not allocate send buffer");
         ret = HG_FAIL;
         goto done;
@@ -298,8 +298,8 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
 
     /* Recv Buffer */
     priv_request->recv_buf_size = NA_Msg_get_max_expected_size(hg_na_class);
-    ret = hg_proc_buf_alloc(&priv_request->recv_buf, priv_request->recv_buf_size);
-    if (ret != HG_SUCCESS) {
+    priv_request->recv_buf = hg_proc_buf_alloc(priv_request->recv_buf_size);
+    if (!priv_request->recv_buf) {
         HG_ERROR_DEFAULT("Could not allocate send buffer");
         ret = HG_FAIL;
         goto done;
@@ -472,7 +472,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
             priv_request->send_request = NA_REQUEST_NULL;
 
             /* Everything has been sent so free unused resources except eventual extra buffer */
-            if (priv_request->send_buf) free (priv_request->send_buf);
+            if (priv_request->send_buf) hg_proc_buf_free(priv_request->send_buf);
             priv_request->send_buf = NULL;
             priv_request->send_buf_size = 0;
         }
@@ -563,7 +563,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         hg_proc_free(dec_proc);
 
         /* Everything has been decoded so free unused resources */
-        if (priv_request->recv_buf) free (priv_request->recv_buf);
+        if (priv_request->recv_buf) hg_proc_buf_free(priv_request->recv_buf);
         priv_request->recv_buf = NULL;
         priv_request->recv_buf_size = 0;
 

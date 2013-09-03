@@ -460,8 +460,8 @@ HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
         /* Recv buffer must match the size of unexpected buffer */
         priv_handle->send_buf_size = NA_Msg_get_max_expected_size(handler_na_class);
 
-        ret = hg_proc_buf_alloc(&priv_handle->send_buf, priv_handle->send_buf_size);
-        if (ret != HG_SUCCESS) {
+        priv_handle->send_buf = hg_proc_buf_alloc(priv_handle->send_buf_size);
+        if (!priv_handle->send_buf) {
             HG_ERROR_DEFAULT("Could not allocate send buffer");
             ret = HG_FAIL;
             return ret;
@@ -519,8 +519,8 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
         priv_handle->recv_buf_size = NA_Msg_get_max_unexpected_size(handler_na_class);
 
         /* Allocate a new receive buffer for the unexpected message */
-        ret = hg_proc_buf_alloc(&priv_handle->recv_buf, priv_handle->recv_buf_size);
-        if (ret != HG_SUCCESS) {
+        priv_handle->recv_buf = hg_proc_buf_alloc(priv_handle->recv_buf_size);
+        if (!priv_handle->recv_buf) {
             HG_ERROR_DEFAULT("Could not allocate recv buffer");
             ret = HG_FAIL;
             goto done;
@@ -801,8 +801,8 @@ HG_Handler_free(hg_handle_t handle)
     }
 
     if (priv_handle->recv_buf) {
-        free(priv_handle->recv_buf);
-        priv_handle->recv_buf = NULL;
+       hg_proc_buf_free(priv_handle->recv_buf);
+       priv_handle->recv_buf = NULL;
     }
 
     if (priv_handle->extra_recv_buf) {
@@ -811,12 +811,12 @@ HG_Handler_free(hg_handle_t handle)
     }
 
     if (priv_handle->send_buf) {
-        free(priv_handle->send_buf);
+        hg_proc_buf_free(priv_handle->send_buf);
         priv_handle->send_buf = NULL;
     }
 
     if (priv_handle->extra_send_buf) {
-        free(priv_handle->extra_send_buf);
+        hg_proc_buf_free(priv_handle->extra_send_buf);
         priv_handle->extra_send_buf = NULL;
     }
 
