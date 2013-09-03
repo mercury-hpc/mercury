@@ -158,15 +158,23 @@ int main(int argc, char *argv[])
                 /* printf("Call completed\n"); */
             }
 
-            MPI_Barrier(split_comm);
-            hg_time_get_current(&t2);
-            td = hg_time_to_double(hg_time_subtract(t2, t1));
-
             /* Get output parameters */
             bla_write_ret = bla_write_out_struct.ret;
             if (bla_write_ret != (bulk_size * sizeof(int))) {
                 fprintf(stderr, "Data not correctly processed\n");
             }
+
+            /* Free request */
+            hg_ret = HG_Request_free(bla_write_request);
+            if (hg_ret != HG_SUCCESS) {
+                fprintf(stderr, "Could not free request\n");
+                return EXIT_FAILURE;
+            }
+
+            MPI_Barrier(split_comm);
+            hg_time_get_current(&t2);
+            td = hg_time_to_double(hg_time_subtract(t2, t1));
+
             time_read += td;
             if (!min_time_read) min_time_read = time_read;
             min_time_read = (td < min_time_read) ? td : min_time_read;
@@ -208,6 +216,13 @@ int main(int argc, char *argv[])
         hg_ret = HG_Wait(finalize_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Error during wait\n");
+            return EXIT_FAILURE;
+        }
+
+        /* Free request */
+        hg_ret = HG_Request_free(finalize_request);
+        if (hg_ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not free request\n");
             return EXIT_FAILURE;
         }
     }

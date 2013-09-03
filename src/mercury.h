@@ -75,6 +75,7 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id);
 
 /**
  * Forward a call to a remote server.
+ * Request must be freed using HG_Request_free.
  *
  * \param addr [IN]             abstract network address of destination
  * \param id [IN]               registered function ID
@@ -90,6 +91,7 @@ HG_Forward(na_addr_t addr, hg_id_t id,
 
 /**
  * Wait for an operation request to complete.
+ * Once the request has completed, request must be freed using HG_Request_free.
  *
  * \param request [IN]          RPC request
  * \param timeout [IN]          timeout (in milliseconds)
@@ -115,15 +117,16 @@ HG_Wait_all(int count, hg_request_t array_of_requests[],
         unsigned int timeout, hg_status_t array_of_statuses[]);
 
 /**
- * Free eventual resources allocated when decoding the output.
+ * Free request and resources allocated when decoding the output.
+ * User must get output parameters contained in the output structure
+ * before calling HG_Request_free.
  *
- * \param id [IN]               registered function ID
- * \param out_struct [OUT]      pointer to output structure
+ * \param request [IN]          RPC request
  *
  * \return Non-negative on success or negative on failure
  */
 HG_EXPORT int
-HG_Free_output(hg_id_t id, void *out_struct);
+HG_Request_free(hg_request_t request);
 
 #ifdef __cplusplus
 }

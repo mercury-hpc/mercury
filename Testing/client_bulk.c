@@ -111,6 +111,13 @@ int main(int argc, char *argv[])
     bla_write_ret = bla_write_out_struct.ret;
     printf("bla_write returned: %lu\n", bla_write_ret);
 
+    /* Free request */
+    hg_ret = HG_Request_free(bla_write_request);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free request\n");
+        return EXIT_FAILURE;
+    }
+
     /* Free memory handle */
     hg_ret = HG_Bulk_handle_free(bulk_handle);
     if (hg_ret != HG_SUCCESS) {

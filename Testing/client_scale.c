@@ -77,6 +77,12 @@ measure_rpc(na_addr_t addr)
             fprintf(stderr, "Error during wait\n");
             return HG_FAIL;
         }
+
+        hg_ret = HG_Request_free(bla_open_request);
+        if (hg_ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not free request\n");
+            return HG_FAIL;
+        }
     }
 
     if (client_rank == 0) printf("%*s%*s%*s%*s%*s%*s",
@@ -115,6 +121,13 @@ measure_rpc(na_addr_t addr)
             return HG_FAIL;
         } else {
             /* printf("Call completed\n"); */
+        }
+
+        /* Free request */
+        hg_ret = HG_Request_free(bla_open_request);
+        if (hg_ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not free request\n");
+            return HG_FAIL;
         }
 
         MPI_Barrier(split_comm);
@@ -209,6 +222,13 @@ measure_bulk_transfer(na_addr_t addr)
             fprintf(stderr, "Error during wait\n");
             return HG_FAIL;
         }
+
+        /* Free request */
+        hg_ret = HG_Request_free(bla_write_request);
+        if (hg_ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not free request\n");
+            return HG_FAIL;
+        }
     }
 
     if (client_rank == 0) printf("%*s%*s%*s%*s%*s%*s",
@@ -249,15 +269,23 @@ measure_bulk_transfer(na_addr_t addr)
             /* printf("Call completed\n"); */
         }
 
-        MPI_Barrier(split_comm);
-        hg_time_get_current(&t2);
-        td = hg_time_to_double(hg_time_subtract(t2, t1));
-
         /* Get output parameters */
         bla_write_ret = bla_write_out_struct.ret;
         if (bla_write_ret != (bulk_size * sizeof(int))) {
             fprintf(stderr, "Data not correctly processed\n");
         }
+
+        /* Free request */
+        hg_ret = HG_Request_free(bla_write_request);
+        if (hg_ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not free request\n");
+            return HG_FAIL;
+        }
+
+        MPI_Barrier(split_comm);
+        hg_time_get_current(&t2);
+        td = hg_time_to_double(hg_time_subtract(t2, t1));
+
         time_read += td;
         if (!min_time_read) min_time_read = time_read;
         min_time_read = (td < min_time_read) ? td : min_time_read;
@@ -307,6 +335,13 @@ server_finalize(na_addr_t addr)
     hg_ret = HG_Wait(finalize_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error during wait\n");
+        return HG_FAIL;
+    }
+
+    /* Free request */
+    hg_ret = HG_Request_free(finalize_request);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free request\n");
         return HG_FAIL;
     }
 

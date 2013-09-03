@@ -91,6 +91,14 @@ int finalize_rpc()
         return finalize_ret;
     }
 
+    /* Free request */
+    hg_ret = HG_Request_free(request);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free request\n");
+        finalize_ret = HG_FAIL;
+        return finalize_ret;
+    }
+
     /* Free addr id */
     na_ret = NA_Addr_free(network_class, addr);
     if (na_ret != NA_SUCCESS) {
@@ -165,6 +173,14 @@ int open_rpc(char *pathname, int flags, mode_t mode)
     /* Get output parameters */
     open_ret = open_out_struct.ret;
 
+    /* Free request */
+    hg_ret = HG_Request_free(request);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free request\n");
+        open_ret = HG_FAIL;
+        return open_ret;
+    }
+
     return open_ret;
 }
 
@@ -206,6 +222,14 @@ int close_rpc(int fd)
 
     /* Get output parameters */
     close_ret = close_out_struct.ret;
+
+    /* Free request */
+    hg_ret = HG_Request_free(request);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free request\n");
+        close_ret = HG_FAIL;
+        return close_ret;
+    }
 
     return close_ret;
 }
@@ -267,6 +291,14 @@ ssize_t write_rpc(int fd, void *buf, size_t count)
     /* Get output parameters */
     write_ret = write_out_struct.ret;
 
+    /* Free request */
+    hg_ret = HG_Request_free(request);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free request\n");
+        write_ret = HG_FAIL;
+        return write_ret;
+    }
+
     return write_ret;
 }
 
@@ -326,6 +358,14 @@ ssize_t read_rpc(int fd, void *buf, size_t count)
 
     /* Get output parameters */
     read_ret = read_out_struct.ret;
+
+    /* Free request */
+    hg_ret = HG_Request_free(request);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free request\n");
+        read_ret = HG_FAIL;
+        return read_ret;
+    }
 
     return read_ret;
 }

@@ -35,6 +35,8 @@ typedef struct hg_priv_request {
     na_request_t  recv_request;
 
     void         *out_struct;
+
+    hg_bool_t     completed;
 } hg_priv_request_t;
 
 typedef struct hg_proc_info {
@@ -314,6 +316,9 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     /* Keep pointer to output structure */
     priv_request->out_struct = out_struct;
 
+    /* Mark request as not completed */
+    priv_request->completed = 0;
+
     /* Create a new encoding proc */
     ret = hg_proc_create(priv_request->send_buf, priv_request->send_buf_size,
             HG_ENCODE, &enc_proc);
@@ -439,15 +444,22 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 
     int ret = HG_SUCCESS;
 
+    if (!hg_na_class) {
+        HG_ERROR_DEFAULT("Mercury must be initialized");
+        ret = HG_FAIL;
+        return ret;
+    }
+
     if (!priv_request) {
         HG_ERROR_DEFAULT("NULL request");
         ret = HG_FAIL;
         return ret;
     }
 
-    if (!hg_na_class) {
-        HG_ERROR_DEFAULT("Mercury must be initialized");
-        ret = HG_FAIL;
+    if (priv_request->completed) {
+        if (status && (status != HG_STATUS_IGNORE)) {
+            *status = 1;
+        }
         return ret;
     }
 
@@ -514,6 +526,9 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         hg_proc_t dec_proc;
         hg_uint8_t extra_recv_buf_used;
 
+        /* Mark request as completed */
+        priv_request->completed = 1;
+
         /* Decode depending on op ID */
         proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &priv_request->id);
         if (!proc_info) {
@@ -567,10 +582,6 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         priv_request->recv_buf = NULL;
         priv_request->recv_buf_size = 0;
 
-        /* Free request */
-        free(priv_request);
-        priv_request = NULL;
-
         if (status && (status != HG_STATUS_IGNORE)) {
             *status = 1;
         }
@@ -603,8 +614,9 @@ HG_Wait_all(int count, hg_request_t array_of_requests[],
 
 /*---------------------------------------------------------------------------*/
 int
-HG_Free_output(hg_id_t id, void *out_struct)
+HG_Request_free(hg_request_t request)
 {
+    hg_priv_request_t *priv_request = (hg_priv_request_t*) request;
     hg_proc_t proc;
     hg_proc_info_t *proc_info;
     int ret = HG_SUCCESS;
@@ -615,15 +627,27 @@ HG_Free_output(hg_id_t id, void *out_struct)
         return ret;
     }
 
+    if (!priv_request) {
+        HG_ERROR_DEFAULT("NULL request");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    if (!priv_request->completed) {
+        HG_ERROR_DEFAULT("Trying to free an uncompleted request");
+        ret = HG_FAIL;
+        return ret;
+    }
+
     /* Retrieve decoding function from function map */
-    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &id);
+    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &priv_request->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
         return ret;
     }
 
-    if (out_struct && proc_info->dec_routine) {
+    if (priv_request->out_struct && proc_info->dec_routine) {
         /* Create a new free proc */
         ret = hg_proc_create(NULL, 0, HG_FREE, &proc);
         if (ret != HG_SUCCESS) {
@@ -633,7 +657,7 @@ HG_Free_output(hg_id_t id, void *out_struct)
         }
 
         /* Free memory allocated during output decoding */
-        ret = proc_info->dec_routine(proc, out_struct);
+        ret = proc_info->dec_routine(proc, priv_request->out_struct);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not free allocated parameters");
             ret = HG_FAIL;
@@ -642,6 +666,10 @@ HG_Free_output(hg_id_t id, void *out_struct)
         /* Free proc */
         hg_proc_free(proc);
     }
+
+    /* Free request */
+    free(priv_request);
+    priv_request = NULL;
 
     return ret;
 }
