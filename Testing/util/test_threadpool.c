@@ -52,6 +52,7 @@ main(int argc, char *argv[])
 
     (void) argc;
     (void) argv;
+    hg_thread_mutex_init(&mymutex);
     hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &thread_pool);
 
     for (i = 0; i < POOL_NUM_POSTS; i++) {
@@ -60,6 +61,7 @@ main(int argc, char *argv[])
 
     /* printf("Finalizing...\n"); */
     hg_thread_pool_destroy(thread_pool);
+    hg_thread_mutex_destroy(&mymutex);
 
     if (ncalls != POOL_NUM_POSTS) {
         fprintf(stderr, "Did not execute all the operations posted (%d/%d)\n",
