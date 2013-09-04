@@ -11,7 +11,7 @@
 #ifndef NA_ERROR_H
 #define NA_ERROR_H
 
-#include <stdio.h>
+#include "na_config.h"
 
 /* For compatibility */
 #if defined(__STDC_VERSION__) &&  (__STDC_VERSION__ < 199901L)
@@ -25,11 +25,16 @@
 #endif
 
 /* Default error macro */
-#define NA_ERROR_DEFAULT(x) {             \
-  fprintf(stderr, "Error "                \
-        "in %s:%d (%s): "                 \
-        "%s.\n",                          \
-        __FILE__, __LINE__, __func__, x); \
-}
+#ifdef NA_ENABLE_VERBOSE_ERROR
+  #include <stdio.h>
+  #define NA_ERROR_DEFAULT(x) {                   \
+        fprintf(stderr, "Error "                  \
+                "in %s:%d (%s): "                 \
+                "%s.\n",                          \
+                __FILE__, __LINE__, __func__, x); \
+  }
+#else
+  #define NA_ERROR_DEFAULT(x)
+#endif
 
 #endif /* NA_ERROR_H */

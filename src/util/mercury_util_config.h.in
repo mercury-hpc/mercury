@@ -27,6 +27,8 @@
     #define HG_UTIL_ABI_HIDDEN
 #endif
 
+#cmakedefine HG_UTIL_HAS_VERBOSE_ERROR
+
 #cmakedefine HG_UTIL_BUILD_SHARED_LIBS
 
 #ifdef HG_UTIL_BUILD_SHARED_LIBS

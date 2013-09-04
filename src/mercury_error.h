@@ -11,7 +11,7 @@
 #ifndef MERCURY_ERROR_H
 #define MERCURY_ERROR_H
 
-#include <stdio.h>
+#include "mercury_config.h"
 
 /* TODO Error return codes should be moved */
 #ifndef HG_SUCCESS
@@ -33,11 +33,16 @@
 #endif
 
 /* Default error macro */
-#define HG_ERROR_DEFAULT(x) {             \
-  fprintf(stderr, "Error "                \
-        "in %s:%d (%s): "                 \
-        "%s.\n",                          \
-        __FILE__, __LINE__, __func__, x); \
-}
+#ifdef HG_ENABLE_VERBOSE_ERROR
+  #include <stdio.h>
+  #define HG_ERROR_DEFAULT(x) {                   \
+        fprintf(stderr, "Error "                  \
+                "in %s:%d (%s): "                 \
+                "%s.\n",                          \
+                __FILE__, __LINE__, __func__, x); \
+  }
+#else
+  #define HG_ERROR_DEFAULT(x)
+#endif
 
 #endif /* MERCURY_ERROR_H */

@@ -9,7 +9,7 @@
  */
 
 #include "mercury_thread_condition.h"
-#include "mercury_error.h"
+#include "mercury_util_error.h"
 
 #ifndef _WIN32
 #include <sys/time.h>
@@ -20,12 +20,12 @@
 int
 hg_thread_cond_init(hg_thread_cond_t *cond)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
     InitializeConditionVariable(cond);
 #else
-    if (pthread_cond_init(cond, NULL)) ret = HG_FAIL;
+    if (pthread_cond_init(cond, NULL)) ret = HG_UTIL_FAIL;
 #endif
 
     return ret;
@@ -35,10 +35,10 @@ hg_thread_cond_init(hg_thread_cond_t *cond)
 int
 hg_thread_cond_destroy(hg_thread_cond_t *cond)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifndef _WIN32
-    if (pthread_cond_destroy(cond)) ret = HG_FAIL;
+    if (pthread_cond_destroy(cond)) ret = HG_UTIL_FAIL;
 #endif
 
     return ret;
@@ -48,12 +48,12 @@ hg_thread_cond_destroy(hg_thread_cond_t *cond)
 int
 hg_thread_cond_signal(hg_thread_cond_t *cond)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
     WakeConditionVariable(cond);
 #else
-    if (pthread_cond_signal(cond)) ret = HG_FAIL;
+    if (pthread_cond_signal(cond)) ret = HG_UTIL_FAIL;
 #endif
 
     return ret;
@@ -63,12 +63,12 @@ hg_thread_cond_signal(hg_thread_cond_t *cond)
 int
 hg_thread_cond_broadcast(hg_thread_cond_t *cond)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
     WakeAllConditionVariable(cond);
 #else
-    if (pthread_cond_broadcast(cond)) ret = HG_FAIL;
+    if (pthread_cond_broadcast(cond)) ret = HG_UTIL_FAIL;
 #endif
 
     return ret;
@@ -78,12 +78,12 @@ hg_thread_cond_broadcast(hg_thread_cond_t *cond)
 int
 hg_thread_cond_wait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
-    if (!SleepConditionVariableCS(cond, mutex, INFINITE)) ret = HG_FAIL;
+    if (!SleepConditionVariableCS(cond, mutex, INFINITE)) ret = HG_UTIL_FAIL;
 #else
-    if (pthread_cond_wait(cond, mutex)) ret = HG_FAIL;
+    if (pthread_cond_wait(cond, mutex)) ret = HG_UTIL_FAIL;
 #endif
 
     return ret;
@@ -93,10 +93,10 @@ hg_thread_cond_wait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex)
 int
 hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsigned int timeout)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
-    if (!SleepConditionVariableCS(cond, mutex, timeout)) ret = HG_FAIL;
+    if (!SleepConditionVariableCS(cond, mutex, timeout)) ret = HG_UTIL_FAIL;
 #else
     int pret;
     struct timeval now;
@@ -116,13 +116,13 @@ hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsig
     if (pret) {
         switch (pret) {
             case ETIMEDOUT:
-                HG_ERROR_DEFAULT("Timeout");
+                HG_UTIL_ERROR_DEFAULT("Timeout");
                 break;
             default:
-                HG_ERROR_DEFAULT("Unknown error return");
+                HG_UTIL_ERROR_DEFAULT("Unknown error return");
                 break;
         }
-        ret = HG_FAIL;
+        ret = HG_UTIL_FAIL;
     }
 #endif
 

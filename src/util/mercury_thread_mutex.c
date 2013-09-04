@@ -9,18 +9,18 @@
  */
 
 #include "mercury_thread_mutex.h"
-#include "mercury_error.h"
+#include "mercury_util_error.h"
 
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_mutex_init(hg_thread_mutex_t *mutex)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
     InitializeCriticalSection(mutex);
 #else
-    if (pthread_mutex_init(mutex, NULL)) ret = HG_FAIL;
+    if (pthread_mutex_init(mutex, NULL)) ret = HG_UTIL_FAIL;
 #endif
 
     return ret;
@@ -30,12 +30,12 @@ hg_thread_mutex_init(hg_thread_mutex_t *mutex)
 int
 hg_thread_mutex_destroy(hg_thread_mutex_t *mutex)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
     DeleteCriticalSection(mutex);
 #else
-    if (pthread_mutex_destroy(mutex)) ret = HG_FAIL;
+    if (pthread_mutex_destroy(mutex)) ret = HG_UTIL_FAIL;
 #endif
 
     return ret;
@@ -45,12 +45,12 @@ hg_thread_mutex_destroy(hg_thread_mutex_t *mutex)
 int
 hg_thread_mutex_lock(hg_thread_mutex_t *mutex)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
     EnterCriticalSection(mutex);
 #else
-    if (pthread_mutex_lock(mutex)) ret = HG_FAIL;
+    if (pthread_mutex_lock(mutex)) ret = HG_UTIL_FAIL;
 #endif
 
     return ret;
@@ -60,12 +60,12 @@ hg_thread_mutex_lock(hg_thread_mutex_t *mutex)
 int
 hg_thread_mutex_try_lock(hg_thread_mutex_t *mutex)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
-    if (!TryEnterCriticalSection(mutex)) ret = HG_FAIL;
+    if (!TryEnterCriticalSection(mutex)) ret = HG_UTIL_FAIL;
 #else
-    if (pthread_mutex_trylock(mutex)) ret = HG_FAIL;
+    if (pthread_mutex_trylock(mutex)) ret = HG_UTIL_FAIL;
 #endif
 
     return ret;
@@ -75,12 +75,12 @@ hg_thread_mutex_try_lock(hg_thread_mutex_t *mutex)
 int
 hg_thread_mutex_unlock(hg_thread_mutex_t *mutex)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
     LeaveCriticalSection(mutex);
 #else
-    if (pthread_mutex_unlock(mutex)) ret = HG_FAIL;
+    if (pthread_mutex_unlock(mutex)) ret = HG_UTIL_FAIL;
 #endif
 
     return ret;

@@ -33,6 +33,8 @@
 #cmakedefine HG_HAS_BOOST
 #cmakedefine HG_HAS_XDR
 
+#cmakedefine HG_HAS_VERBOSE_ERROR
+
 #cmakedefine HG_BUILD_SHARED_LIBS
 
 #ifdef HG_BUILD_SHARED_LIBS

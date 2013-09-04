@@ -9,7 +9,7 @@
  */
 
 #include "mercury_time.h"
-#include "mercury_error.h"
+#include "mercury_util_error.h"
 
 #if defined(_WIN32)
 #    include <windows.h>
@@ -48,7 +48,7 @@ get_FILETIME_offset(void)
 int
 hg_time_get_current(hg_time_t *tv)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #if defined(_WIN32)
     LARGE_INTEGER t;
@@ -66,8 +66,8 @@ hg_time_get_current(hg_time_t *tv)
 #endif
 
     if (!tv) {
-        HG_ERROR_DEFAULT("NULL pointer to hg_time_t");
-        ret = HG_FAIL;
+        HG_UTIL_ERROR_DEFAULT("NULL pointer to hg_time_t");
+        ret = HG_UTIL_FAIL;
         return ret;
     }
 
@@ -110,8 +110,8 @@ hg_time_get_current(hg_time_t *tv)
     tv->tv_usec = (monotonic_nsec - tv->tv_sec) / 1000;
 #else
     if (clock_gettime(CLOCK_MONOTONIC, &tp)) {
-        HG_ERROR_DEFAULT("clock_gettime failed");
-        ret = HG_FAIL;
+        HG_UTIL_ERROR_DEFAULT("clock_gettime failed");
+        ret = HG_UTIL_FAIL;
         return ret;
     }
     tv->tv_sec = tp.tv_sec;
@@ -184,7 +184,7 @@ hg_time_subtract(hg_time_t in1, hg_time_t in2)
 int
 hg_time_sleep(const hg_time_t rqt, hg_time_t *rmt)
 {
-    int ret = HG_SUCCESS;
+    int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
     DWORD dwMilliseconds = (DWORD) (hg_time_to_double(rqt) / 1000);
@@ -198,8 +198,8 @@ hg_time_sleep(const hg_time_t rqt, hg_time_t *rmt)
     rqtp.tv_nsec = rqt.tv_usec * 1000;
 
     if (nanosleep(&rqtp, &rmtp)) {
-        HG_ERROR_DEFAULT("nanosleep failed");
-        ret = HG_FAIL;
+        HG_UTIL_ERROR_DEFAULT("nanosleep failed");
+        ret = HG_UTIL_FAIL;
         return ret;
     }
 
