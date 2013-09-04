@@ -25,7 +25,7 @@
 #endif
 
 /* Default error macro */
-#ifdef NA_ENABLE_VERBOSE_ERROR
+#ifdef NA_HAS_VERBOSE_ERROR
   #include <stdio.h>
   #define NA_ERROR_DEFAULT(x) {                   \
         fprintf(stderr, "Error "                  \

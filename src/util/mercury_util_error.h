@@ -30,7 +30,7 @@
 #endif
 
 /* Default error macro */
-#ifdef HG_UTIL_ENABLE_VERBOSE_ERROR
+#ifdef HG_UTIL_HAS_VERBOSE_ERROR
   #include <stdio.h>
   #define HG_UTIL_ERROR_DEFAULT(x) {              \
         fprintf(stderr, "Error "                  \
