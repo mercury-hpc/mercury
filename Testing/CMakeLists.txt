@@ -210,7 +210,9 @@ foreach(MERCURY_test ${MERCURY_opt_tests})
     client_${MERCURY_test} "variable")
 endforeach()
 
-foreach(MERCURY_test ${MERCURY_tests})
-  add_mercury_static_test(mercury_${MERCURY_test}
-    server_${MERCURY_test} client_${MERCURY_test})
-endforeach()
+if(NA_USE_MPI)
+  foreach(MERCURY_test ${MERCURY_tests})
+    add_mercury_static_test(mercury_${MERCURY_test}
+      server_${MERCURY_test} client_${MERCURY_test})
+  endforeach()
+endif()

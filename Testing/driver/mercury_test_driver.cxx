@@ -69,7 +69,6 @@ void ShipperTestDriver::CollectConfiguredOptions()
 #ifdef MPIEXEC
   this->MPIRun = MPIEXEC;
 #else
-  cerr << "Error: MPIEXEC must be set.\n";
   return;
 #endif
   int maxNumProc = 1;
@@ -79,9 +78,6 @@ void ShipperTestDriver::CollectConfiguredOptions()
 # endif
 # ifdef MPIEXEC_NUMPROC_FLAG
   this->MPINumProcessFlag = MPIEXEC_NUMPROC_FLAG;
-# else
-  cerr << "Error MPIEXEC_NUMPROC_FLAG must be defined to run test.\n";
-  return;
 # endif
 # ifdef MPIEXEC_PREFLAGS
   this->SeparateArguments(MPIEXEC_PREFLAGS, this->MPIPreFlags);

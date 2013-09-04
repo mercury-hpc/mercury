@@ -34,7 +34,9 @@ if(NA_USE_SSM)
 endif()
 
 # Static client / server test with all enabled NA plugins
-add_mercury_static_test(na server_na client_na)
-if(NA_USE_SSM)
-  add_mercury_static_test(simple_na server_simple_na client_simple_na)
+if(NA_USE_MPI)
+  add_mercury_static_test(na server_na client_na)
+  if(NA_USE_SSM)
+    add_mercury_static_test(simple_na server_simple_na client_simple_na)
+  endif()
 endif()

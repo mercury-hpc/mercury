@@ -133,10 +133,11 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
     }
 #endif
 
-    if (strcmp("mpi", argv[1]) == 0) {
-        *max_number_of_peers = MPIEXEC_MAX_NUMPROCS;
-    } else {
-        *max_number_of_peers = 1;
-    }
+#ifdef NA_HAS_MPI
+    *max_number_of_peers = MPIEXEC_MAX_NUMPROCS;
+#else
+    *max_number_of_peers = 1;
+#endif
+
     return network_class;
 }
