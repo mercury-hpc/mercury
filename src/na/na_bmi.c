@@ -907,7 +907,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
             if (ret != NA_SUCCESS) {
                 NA_ERROR_DEFAULT("Could not process unexpected messages");
                 ret = NA_FAIL;
-                break;
+                goto wakeup;
             }
 
             bmi_ret = BMI_testcontext(1, &bmi_op_id, &outcount, &error_code,
@@ -919,7 +919,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
             if (bmi_ret < 0 || error_code != 0) {
                 NA_ERROR_DEFAULT("BMI_testcontext failed");
                 ret = NA_FAIL;
-                break;
+                goto wakeup;
             }
 
             if (bmi_user_ptr) {
@@ -938,11 +938,14 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
             }
         }
 
+wakeup:
         /* Wake up others */
         is_testing_context = 0;
         hg_thread_cond_signal(&testcontext_cond);
 
         hg_thread_mutex_unlock(&testcontext_mutex);
+
+        if (ret == NA_FAIL) return ret;
     } while (!wait_request_completed && remaining > 0);
 
     hg_thread_mutex_lock(&request_mutex);
