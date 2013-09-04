@@ -13,14 +13,6 @@
 
 #include "mercury_config.h"
 
-/* TODO Error return codes should be moved */
-#ifndef HG_SUCCESS
-  #define HG_SUCCESS  1
-  #define HG_FAIL    -1
-  #define HG_TRUE     1
-  #define HG_FALSE    0
-#endif
-
 /* For compatibility */
 #if defined(__STDC_VERSION__) &&  (__STDC_VERSION__ < 199901L)
   #if defined(__GNUC__) && (__GNUC__ >= 2)
