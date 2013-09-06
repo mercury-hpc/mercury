@@ -306,6 +306,11 @@ static HG_INLINE int \
  *   - MERCURY_HANDLER_GEN_CALLBACK_STUB
  *****************************************************************************/
 
+/* Custom function that applications can define for log purposes (none by default) */
+#ifndef MERCURY_HANDLER_GEN_LOG_MESSAGE
+  #define MERCURY_HANDLER_GEN_LOG_MESSAGE(x)
+#endif
+
 /* Generate client RPC stub */
 #define MERCURY_GEN_RPC_STUB(gen_func_name, func_name, \
         with_ret, ret_type_name, ret_fail, \
@@ -387,7 +392,6 @@ static HG_INLINE int \
                     BOOST_PP_EMPTY()) \
             \
             /* Forward call to remote addr and get a new request */ \
-            printf("Forwarding %s\n", BOOST_PP_STRINGIZE(func_name)); \
             hg_ret = HG_Forward(addr, id, \
                     BOOST_PP_IF(with_input, &in_struct, NULL), \
                     BOOST_PP_IF(BOOST_PP_OR(with_output, with_ret), &out_struct, NULL), \
@@ -422,6 +426,14 @@ static HG_INLINE int \
             BOOST_PP_IF(with_output, \
                     HG_GET_OUT_STRUCT_PARAMS(out_struct, out_params), \
                     BOOST_PP_EMPTY()) \
+            \
+            /* Free request */ \
+            hg_ret = HG_Request_free(request); \
+            if (hg_ret != HG_SUCCESS) { \
+                HG_ERROR_DEFAULT("Could not free request"); \
+                BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
+                goto done; \
+            } \
             \
             done: \
             \
@@ -469,7 +481,7 @@ static HG_INLINE int \
                         BOOST_PP_EMPTY()) \
                 \
                 /* Call function */ \
-                printf("Executing %s\n", BOOST_PP_STRINGIZE(func_name)); \
+                MERCURY_HANDLER_GEN_LOG_MESSAGE(BOOST_PP_STRINGIZE(func_name)); \
                 BOOST_PP_IF(with_ret, ret =, BOOST_PP_EMPTY()) \
                     func_name HG_GEN_FUNC_PARAMS(with_input, in_params, \
                             BOOST_PP_IF(with_bulk, HG_BULK_EXTRA_IN_PARAM, BOOST_PP_EMPTY()), \
