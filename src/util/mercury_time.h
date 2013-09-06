@@ -83,7 +83,6 @@ hg_time_add(hg_time_t in1, hg_time_t in2);
 HG_UTIL_EXPORT hg_time_t
 hg_time_subtract(hg_time_t in1, hg_time_t in2);
 
-
 /**
  * Sleep until the time specified in rqt has elapsed.
  *
@@ -94,5 +93,13 @@ hg_time_subtract(hg_time_t in1, hg_time_t in2);
  */
 HG_UTIL_EXPORT int
 hg_time_sleep(const hg_time_t rqt, hg_time_t *rmt);
+
+/**
+ * Get a string containing current time/date stamp.
+ *
+ * \return Valid string or NULL on failure
+ */
+HG_UTIL_EXPORT char *
+hg_time_stamp(void);
 
 #endif /* MERCURY_TIME_H */

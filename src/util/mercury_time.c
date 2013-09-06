@@ -211,3 +211,38 @@ hg_time_sleep(const hg_time_t rqt, hg_time_t *rmt)
 
     return ret;
 }
+
+/*---------------------------------------------------------------------------*/
+#define HG_UTIL_STAMP_MAX 128
+char *
+hg_time_stamp(void)
+{
+    char *ret = NULL;
+    static char buf[HG_UTIL_STAMP_MAX];
+
+#ifdef _WIN32
+    /* TODO not implemented */
+#else
+    const char *time_format = "%a, %d %b %y %T %Z";
+    struct tm *local_time;
+    time_t t;
+
+    t = time(NULL);
+    local_time = localtime(&t);
+    if (local_time == NULL) {
+        HG_UTIL_ERROR_DEFAULT("Could not get local time");
+        ret = NULL;
+        return ret;
+    }
+
+    if (strftime(buf, HG_UTIL_STAMP_MAX, time_format, local_time) == 0) {
+        HG_UTIL_ERROR_DEFAULT("Could not format time");
+        ret = NULL;
+        return ret;
+    }
+
+    ret = buf;
+#endif
+
+    return ret;
+}

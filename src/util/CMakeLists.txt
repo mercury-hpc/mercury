@@ -88,6 +88,33 @@ else()
   )
 endif()
 
+#-----------------------------------------------------------------------------
+# Specify project header files to be installed
+#-----------------------------------------------------------------------------
+set(MERCURY_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.h
+  ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
+)
+
+#-----------------------------------------------------------------------------
+# Add file(s) to CMake Install
+#-----------------------------------------------------------------------------
+install(
+  FILES
+    ${MERCURY_HEADERS}
+  DESTINATION
+    ${MERCURY_INSTALL_INCLUDE_DIR}/mercury_util
+  COMPONENT
+    headers
+)
+
 #------------------------------------------------------------------------------
 # Set variables for parent scope
 #------------------------------------------------------------------------------
