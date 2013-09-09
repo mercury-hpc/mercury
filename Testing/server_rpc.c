@@ -31,7 +31,7 @@ int fs_bla_open(hg_handle_t handle)
     bla_open_in_t  bla_open_in_struct;
     bla_open_out_t bla_open_out_struct;
 
-    const char *bla_open_path;
+    hg_const_string_t bla_open_path;
     bla_handle_t bla_open_handle;
     int bla_open_event_id;
     int bla_open_ret;

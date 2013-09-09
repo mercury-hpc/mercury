@@ -107,6 +107,7 @@ endif()
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra
 )
 
 set(MERCURY_SRCS
@@ -115,6 +116,8 @@ set(MERCURY_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.c
 #  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_context.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_proc_string.c
 )
 
 #------------------------------------------------------------------------------
@@ -153,6 +156,8 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_config.h
   ${CMAKE_CURRENT_SOURCE_DIR}/iofsl_compat.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_error.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_proc_string.h
 )
 
 #-----------------------------------------------------------------------------
@@ -217,6 +222,7 @@ set(MERCURY_INCLUDES_BUILD_TIME
   ${CMAKE_CURRENT_BINARY_DIR}/na
   ${CMAKE_CURRENT_SOURCE_DIR}/util
   ${CMAKE_CURRENT_BINARY_DIR}/util
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra
   ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
   PARENT_SCOPE
 )

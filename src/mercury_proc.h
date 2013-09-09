@@ -17,7 +17,6 @@
 #include "iofsl_compat.h"
 
 #include <stdlib.h>
-#include <string.h>
 #ifdef HG_HAS_XDR
 #include <rpc/types.h>
 #include <rpc/xdr.h>
@@ -29,8 +28,6 @@
 #        define xdr_uint64_t xdr_u_int64_t
 #    endif
 #endif
-
-typedef char * hg_string_t;
 
 #ifndef HG_PROC_INLINE
   #if defined(__GNUC__) && !defined(__GNUC_STDC_INLINE__)
@@ -220,7 +217,6 @@ HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *da
 HG_EXPORT HG_PROC_INLINE int hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data);
 HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data);
 HG_EXPORT HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size);
-HG_EXPORT HG_PROC_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string);
 HG_EXPORT HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle);
 
 /**
@@ -417,72 +413,6 @@ hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
             HG_ERROR_DEFAULT("Proc error");
             break;
         }
-    }
-
-    return ret;
-}
-
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param string [IN/OUT]       pointer to string
- *
- * \return Non-negative on success or negative on failure
- */
-HG_PROC_INLINE int
-hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *string)
-{
-    hg_uint64_t string_len = 0;
-    hg_string_t string_buf = NULL;
-    int ret = HG_FAIL;
-
-    switch (hg_proc_get_op(proc)) {
-        case HG_ENCODE:
-            string_len = strlen(*string) + 1;
-            string_buf = *string;
-            ret = hg_proc_uint64_t(proc, &string_len);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
-            }
-            ret = hg_proc_raw(proc, string_buf, string_len);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
-            }
-            break;
-        case HG_DECODE:
-            ret = hg_proc_uint64_t(proc, &string_len);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
-            }
-            string_buf = (hg_string_t) malloc(string_len);
-            ret = hg_proc_raw(proc, string_buf, string_len);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
-            }
-            *string = string_buf;
-            break;
-        case HG_FREE:
-            string_buf = *string;
-            if (!string_buf) {
-                HG_ERROR_DEFAULT("Already freed");
-                ret = HG_FAIL;
-                return ret;
-            }
-            free(string_buf);
-            *string = NULL;
-            ret = HG_SUCCESS;
-            break;
-        default:
-            break;
     }
 
     return ret;

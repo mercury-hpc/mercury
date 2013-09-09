@@ -12,6 +12,7 @@
 #define TEST_POSIX_H
 
 #include "mercury_proc.h"
+#include "mercury_proc_string.h"
 #include "mercury_macros.h"
 
 #include <stdio.h>
@@ -35,7 +36,7 @@
  */
 
 /* open */
-MERCURY_GEN_PROC( open_in_t, ((hg_string_t)(path)) ((hg_int32_t)(flags)) ((hg_uint32_t)(mode)) )
+MERCURY_GEN_PROC( open_in_t, ((hg_const_string_t)(path)) ((hg_int32_t)(flags)) ((hg_uint32_t)(mode)) )
 MERCURY_GEN_PROC( open_out_t, ((hg_int32_t)(ret)) )
 
 /* close */

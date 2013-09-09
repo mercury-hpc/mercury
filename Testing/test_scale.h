@@ -13,6 +13,7 @@
 
 #include "mercury_macros.h"
 #include "mercury_proc.h"
+#include "mercury_proc_string.h"
 
 /* Dummy function that needs to be shipped */
 size_t bla_write(int fildes, const void *buf, size_t nbyte);
@@ -28,7 +29,7 @@ int bla_open(const char *path, bla_handle_t handle, int *event_id);
 /* 2. Generate processor and struct for required input/output structs
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_PROC( bla_open_in_t, ((hg_string_t)(path)) ((bla_handle_t)(handle)) )
+MERCURY_GEN_PROC( bla_open_in_t, ((hg_const_string_t)(path)) ((bla_handle_t)(handle)) )
 MERCURY_GEN_PROC( bla_open_out_t, ((hg_int32_t)(ret)) ((hg_int32_t)(event_id)) )
 
 /* Generate processor and struct for required input/output structs
