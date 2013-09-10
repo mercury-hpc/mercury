@@ -14,7 +14,6 @@
 #include "mercury_types.h"
 #include "mercury_error.h"
 #include "mercury_bulk.h"
-#include "iofsl_compat.h"
 
 #include <stdlib.h>
 #ifdef HG_HAS_XDR
@@ -230,6 +229,11 @@ HG_EXPORT HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle
 #define hg_proc_uint32_t hg_proc_hg_uint32_t
 #define hg_proc_int64_t  hg_proc_hg_int64_t
 #define hg_proc_uint64_t hg_proc_hg_uint64_t
+
+/* Map mercury common types */
+#define hg_proc_hg_bool_t     hg_proc_hg_uint8_t
+#define hg_proc_hg_ptr_t      hg_proc_hg_uint64_t
+#define hg_proc_hg_id_t       hg_proc_hg_uint32_t
 
 /**
  * Generic processing routine.

@@ -154,7 +154,6 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_macros.h
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_config.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/iofsl_compat.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_error.h
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.h
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_proc_string.h

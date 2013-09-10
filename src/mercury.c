@@ -259,9 +259,9 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
 
     hg_proc_info_t *proc_info;
     hg_proc_t enc_proc = HG_PROC_NULL;
-    hg_uint8_t extra_send_buf_used = 0;
+    hg_priv_header_t priv_header;
 
-    na_tag_t   send_tag, recv_tag;
+    na_tag_t send_tag, recv_tag;
 
     hg_priv_request_t *priv_request = NULL;
 
@@ -366,13 +366,15 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
             goto done;
         }
         hg_proc_set_extra_buf_is_mine(enc_proc, 1);
-        extra_send_buf_used = 1;
 #endif
     }
 
+    /* Fill header */
+    priv_header.id = id;
+    priv_header.extra_buf_handle = priv_request->extra_send_buf_handle;
+
     /* Encode header */
-    ret = hg_proc_header_request(enc_proc, &id, &extra_send_buf_used,
-            &priv_request->extra_send_buf_handle);
+    ret = hg_proc_hg_priv_header_t(enc_proc, &priv_header);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not encode header");
         ret = HG_FAIL;
@@ -524,7 +526,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
     if ((priv_request->send_request == NA_REQUEST_NULL) &&
             (priv_request->recv_request == NA_REQUEST_NULL)) {
         hg_proc_t dec_proc;
-        hg_uint8_t extra_recv_buf_used;
+        hg_priv_header_t priv_header;
 
         /* Mark request as completed */
         priv_request->completed = 1;
@@ -545,14 +547,14 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
             return ret;
         }
 
-        ret = hg_proc_header_response(dec_proc, &extra_recv_buf_used);
+        ret = hg_proc_hg_priv_header_t(dec_proc, &priv_header);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not decode header");
             ret = HG_FAIL;
             return ret;
         }
 
-        if (extra_recv_buf_used) {
+        if (priv_header.extra_buf_handle != HG_BULK_NULL) {
             /* TODO Receive extra buffer now */
         } else {
             /* Set buffer to user data */

@@ -483,8 +483,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
     hg_proc_info_t   *proc_info;
 
     hg_proc_t dec_proc = HG_PROC_NULL;
-    hg_uint8_t extra_recv_buf_used = 0;
-    hg_bulk_t extra_recv_buf_handle = HG_BULK_NULL;
+    hg_priv_header_t priv_header;
 
     hg_bool_t is_handle_from_list = 0;
 
@@ -608,23 +607,25 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
     }
 
     /* Decode header */
-    ret = hg_proc_header_request(dec_proc, &priv_handle->id,
-            &extra_recv_buf_used, &extra_recv_buf_handle);
+    ret = hg_proc_hg_priv_header_t(dec_proc, &priv_header);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not decode header");
         ret = HG_FAIL;
         goto done;
     }
 
-    if (extra_recv_buf_used) {
+    if (priv_header.extra_buf_handle != HG_BULK_NULL) {
         /* This will make the extra_buf the recv_buf associated to the handle */
-        ret = hg_handler_process_extra_recv_buf(priv_handle, extra_recv_buf_handle);
+        ret = hg_handler_process_extra_recv_buf(priv_handle, priv_header.extra_buf_handle);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not recv extra buffer");
             ret = HG_FAIL;
             goto done;
         }
     }
+
+    /* Get operation ID from header */
+    priv_handle->id = priv_header.id;
 
     /* Retrieve exe function from function map */
     proc_info = (hg_proc_info_t*) hg_hash_table_lookup(handler_func_map, &priv_handle->id);
@@ -659,7 +660,7 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
     hg_proc_info_t   *proc_info;
 
     hg_proc_t enc_proc = HG_PROC_NULL;
-    hg_uint8_t extra_send_buf_used = 0;
+    hg_priv_header_t priv_header;
 
     int ret = HG_SUCCESS, na_ret;
 
@@ -695,7 +696,6 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
         }
         priv_handle->extra_send_buf = extra_out_buf;
         priv_handle->extra_send_buf_size = extra_out_buf_size;
-        extra_send_buf_used = 1;
     }
 
     /* Create a new encoding proc */
@@ -707,8 +707,12 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
         goto done;
     }
 
+    /* Fill the header */
+    priv_header.id = priv_handle->id;
+    priv_header.extra_buf_handle = HG_BULK_NULL; /* TODO handle large response */
+
     /* Add the header */
-    ret = hg_proc_header_response(enc_proc, &extra_send_buf_used);
+    ret = hg_proc_hg_priv_header_t(enc_proc, &priv_header);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not encode header");
         ret = HG_FAIL;
