@@ -66,18 +66,19 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc)
 {
     hg_priv_proc_t *priv_proc = NULL;
     int ret = HG_SUCCESS;
+    int util_ret;
 
     if (!buf && op != HG_FREE) {
         HG_ERROR_DEFAULT("NULL buffer");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     priv_proc = (hg_priv_proc_t*) malloc(sizeof(hg_priv_proc_t));
     if (!priv_proc) {
         HG_ERROR_DEFAULT("Could not allocate proc");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     priv_proc->op = op;
@@ -100,9 +101,25 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc)
         default:
             HG_ERROR_DEFAULT("Unknown proc operation");
             ret = HG_FAIL;
-            return ret;
+            goto done;
     }
 #endif
+
+    util_ret = hg_checksum_init("crc64", &priv_proc->proc_buf.checksum);
+    if (util_ret != HG_UTIL_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not initialize checksum");
+        ret = HG_FAIL;
+        goto done;
+    }
+    priv_proc->proc_buf.checksum_size =
+            hg_checksum_get_size(priv_proc->proc_buf.checksum);
+    priv_proc->proc_buf.base_checksum = malloc(priv_proc->proc_buf.checksum_size);
+    if (!priv_proc->proc_buf.base_checksum) {
+        HG_ERROR_DEFAULT("Could not allocate space for base checksum");
+        ret = HG_FAIL;
+        goto done;
+    }
+    priv_proc->proc_buf.update_checksum = 1;
 
     /* Do not allocate extra buffer yet */
     priv_proc->extra_buf.buf = NULL;
@@ -110,12 +127,20 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc)
     priv_proc->extra_buf.buf_ptr = NULL;
     priv_proc->extra_buf.size_left = 0;
     priv_proc->extra_buf.is_mine = 0;
+    priv_proc->extra_buf.checksum = priv_proc->proc_buf.checksum;
+    priv_proc->extra_buf.base_checksum = priv_proc->proc_buf.base_checksum;
+    priv_proc->extra_buf.checksum_size = priv_proc->proc_buf.checksum_size;
+    priv_proc->extra_buf.update_checksum = priv_proc->proc_buf.update_checksum;
 
     /* Default to proc_buf */
     priv_proc->current_buf = &priv_proc->proc_buf;
 
     *proc = (hg_priv_proc_t*) priv_proc;
 
+done:
+    if (ret != HG_SUCCESS) {
+        free(priv_proc);
+    }
     return ret;
 }
 
@@ -125,11 +150,19 @@ hg_proc_free(hg_proc_t proc)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_SUCCESS;
+    int util_ret;
 
     if (!priv_proc) {
         HG_ERROR_DEFAULT("Already freed");
         ret = HG_FAIL;
         return ret;
+    }
+
+    free(priv_proc->proc_buf.base_checksum);
+    util_ret = hg_checksum_destroy(priv_proc->proc_buf.checksum);
+    if (util_ret != HG_UTIL_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not destroy checksum");
+        ret = HG_FAIL;
     }
 
     /* Free extra proc buffer if needed */
@@ -352,6 +385,132 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t theirs)
 }
 
 /*---------------------------------------------------------------------------*/
+size_t
+hg_proc_get_base_checksum_size(hg_proc_t proc)
+{
+    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    int ret = HG_SUCCESS;
+
+    if (!priv_proc) {
+        HG_ERROR_DEFAULT("Proc is not initialized");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    return priv_proc->current_buf->checksum_size;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_get_base_checksum(hg_proc_t proc, void *buf, size_t size)
+{
+    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    int ret = HG_SUCCESS;
+
+    if (!priv_proc) {
+        HG_ERROR_DEFAULT("Proc is not initialized");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    if (size < priv_proc->current_buf->checksum_size) {
+        HG_ERROR_DEFAULT("Buffer is too small to write checksum");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    memcpy(buf, priv_proc->current_buf->base_checksum,
+            priv_proc->current_buf->checksum_size);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_set_base_checksum(hg_proc_t proc, const void *buf, size_t size)
+{
+    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    int ret = HG_SUCCESS;
+
+    if (!priv_proc) {
+        HG_ERROR_DEFAULT("Proc is not initialized");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    if (size < priv_proc->current_buf->checksum_size) {
+        HG_ERROR_DEFAULT("Buffer is too small to write checksum");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    memcpy(priv_proc->current_buf->base_checksum, buf,
+            priv_proc->current_buf->checksum_size);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_proc_flush(hg_proc_t proc)
+{
+    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    size_t checksum_size;
+    void *new_checksum = NULL;
+    int util_ret, cmp_ret;
+    int ret = HG_SUCCESS;
+
+    if (!priv_proc) {
+        HG_ERROR_DEFAULT("Proc is not initialized");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    checksum_size = priv_proc->current_buf->checksum_size;
+
+    switch (hg_proc_get_op(proc)) {
+        case HG_ENCODE:
+            util_ret = hg_checksum_get(priv_proc->current_buf->checksum,
+                    priv_proc->current_buf->base_checksum,
+                    checksum_size, 0);
+            if (util_ret != HG_UTIL_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not get checksum");
+                ret = HG_FAIL;
+                goto done;
+            }
+            break;
+        case HG_DECODE:
+            new_checksum = malloc(checksum_size);
+            util_ret = hg_checksum_get(priv_proc->current_buf->checksum,
+                    new_checksum, checksum_size, 0);
+            if (util_ret != HG_UTIL_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not get checksum");
+                ret = HG_FAIL;
+                goto done;
+            }
+            /* Verify checksums */
+            cmp_ret = strncmp(priv_proc->current_buf->base_checksum, new_checksum,
+                    checksum_size);
+            if (cmp_ret != 0) {
+                HG_ERROR_DEFAULT("Checksums do not match");
+                ret = HG_FAIL;
+                goto done;
+            }
+            break;
+        default:
+            HG_ERROR_DEFAULT("Proc op not supported");
+            ret = HG_FAIL;
+            goto done;
+            break;
+    }
+
+done:
+    free(new_checksum);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 int
 hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
 {
@@ -359,6 +518,13 @@ hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
     const void *src;
     void *dest;
     int ret = HG_SUCCESS;
+    int util_ret;
+
+    if (!priv_proc) {
+        HG_ERROR_DEFAULT("Proc is not initialized");
+        ret = HG_FAIL;
+        return ret;
+    }
 
     if (priv_proc->op == HG_FREE) return ret;
 
@@ -378,6 +544,15 @@ hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
     priv_proc->current_buf->buf_ptr = (char*) priv_proc->current_buf->buf_ptr
             + data_size;
     priv_proc->current_buf->size_left -= data_size;
+
+    /* Update checksum */
+    if (priv_proc->current_buf->update_checksum) {
+        util_ret = hg_checksum_update(priv_proc->current_buf->checksum, data, data_size);
+        if (util_ret != HG_UTIL_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not update checksum");
+            ret = HG_FAIL;
+        }
+    }
 
     return ret;
 }

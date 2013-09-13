@@ -12,6 +12,8 @@
 #define MERCURY_PROC_PRIVATE_H
 
 #include "mercury_proc.h"
+#include "mercury_checksum.h"
+#include "mercury_util_error.h"
 
 typedef struct hg_proc_buf {
     void *    buf;       /* Pointer to allocated buffer */
@@ -22,6 +24,10 @@ typedef struct hg_proc_buf {
 #ifdef HG_HAS_XDR
     XDR      xdr;
 #endif
+    hg_checksum_t checksum;         /* Checksum */
+    void *        base_checksum;    /* Base checksum */
+    size_t        checksum_size;    /* Checksum size */
+    hg_bool_t     update_checksum;  /* Update checksum on proc operation */
 } hg_proc_buf_t;
 
 typedef struct hg_priv_proc {
@@ -104,8 +110,15 @@ hg_proc_hg_priv_header_t(hg_proc_t proc, hg_priv_header_t *data)
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     hg_proc_buf_t  *current_buf;
     hg_bool_t extra_buf_used;
+    hg_bool_t current_update_checksum;
     void *current_buf_ptr;
     int ret = HG_FAIL;
+
+    /* Disable checksum update here if it was enabled */
+    current_update_checksum = priv_proc->current_buf->update_checksum;
+    if (current_update_checksum) {
+        priv_proc->current_buf->update_checksum = 0;
+    }
 
     if (hg_proc_get_op(proc) == HG_ENCODE) {
         extra_buf_used = (data->extra_buf_handle != HG_BULK_NULL) ? 1 : 0;
@@ -147,7 +160,17 @@ hg_proc_hg_priv_header_t(hg_proc_t proc, hg_priv_header_t *data)
         }
     }
 
+    /* Process checksum */
+    ret = hg_proc_raw(proc, priv_proc->current_buf->base_checksum,
+            priv_proc->current_buf->checksum_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Proc error");
+        ret = HG_FAIL;
+        goto done;
+    }
+
 done:
+    priv_proc->current_buf->update_checksum = current_update_checksum;
     priv_proc->current_buf = current_buf;
     hg_proc_set_buf_ptr(proc, current_buf_ptr);
 

@@ -41,4 +41,34 @@
   #define HG_UTIL_EXPORT
 #endif
 
+#ifdef _WIN32
+    typedef signed   __int64 hg_util_int64_t;
+    typedef signed   __int32 hg_util_int32_t;
+    typedef signed   __int16 hg_util_int16_t;
+    typedef signed   __int8  hg_util_int8_t;
+    typedef unsigned __int64 hg_util_uint64_t;
+    typedef unsigned __int32 hg_util_uint32_t;
+    typedef unsigned __int16 hg_util_uint16_t;
+    typedef unsigned __int8  hg_util_uint8_t;
+#else
+    #include <stdint.h>
+    #include <stddef.h>
+    typedef int64_t  hg_util_int64_t;
+    typedef int32_t  hg_util_int32_t;
+    typedef int16_t  hg_util_int16_t;
+    typedef int8_t   hg_util_int8_t;
+    typedef uint64_t hg_util_uint64_t;
+    typedef uint32_t hg_util_uint32_t;
+    typedef uint16_t hg_util_uint16_t;
+    typedef uint8_t  hg_util_uint8_t;
+#endif
+typedef hg_util_uint8_t   hg_util_bool_t;
+typedef hg_util_uint64_t  hg_util_ptr_t;
+
+#ifdef _WIN32
+   #define HG_UTIL_INLINE __inline
+#else
+   #define HG_UTIL_INLINE __inline__
+#endif
+
 #endif /* MERCURY_UTIL_CONFIG_H */

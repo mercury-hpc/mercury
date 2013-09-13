@@ -192,6 +192,47 @@ HG_EXPORT int
 hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
 
 /**
+ * Get base checksum size from proc.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Abstract checksum
+ */
+HG_EXPORT size_t
+hg_proc_get_base_checksum_size(hg_proc_t proc);
+
+/**
+ * Get base checksum from proc and copy it to buf.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Abstract checksum
+ */
+HG_EXPORT int
+hg_proc_get_base_checksum(hg_proc_t proc, void *buf, size_t size);
+
+/**
+ * Set base checksum to proc from buf.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Abstract checksum
+ */
+HG_EXPORT int
+hg_proc_set_base_checksum(hg_proc_t proc, const void *buf, size_t size);
+
+/**
+ * Flush the proc after data has been encoded or decoded and verify data using
+ * base checksum if available.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+hg_proc_flush(hg_proc_t proc);
+
+/**
  * Base proc routine using memcpy.
  * NB. Only uses memcpy / use hg_proc_raw for encoding independent proc routine.
  *
@@ -201,8 +242,8 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_EXPORT
-int hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
+HG_EXPORT int
+hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
 
 /**
  * Inline prototypes (do not remove)

@@ -342,31 +342,40 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not encode parameters");
             ret = HG_FAIL;
-        }
-    }
-
-    /* The size of the encoding buffer may have changed at this point
-     * --> if the buffer is too large, we need to do:
-     *  - 1: send an unexpected message with info + eventual bulk data descriptor
-     *  - 2: send the remaining data in extra buf using bulk data transfer
-     */
-    if (hg_proc_get_size(enc_proc) > NA_Msg_get_max_unexpected_size(hg_na_class)) {
-#ifdef HG_HAS_XDR
-        HG_ERROR_DEFAULT("Extra encoding using XDR is not yet supported");
-        ret = HG_FAIL;
-        goto done;
-#else
-        priv_request->extra_send_buf = hg_proc_get_extra_buf(enc_proc);
-        priv_request->extra_send_buf_size = hg_proc_get_extra_size(enc_proc);
-        ret = HG_Bulk_handle_create(priv_request->extra_send_buf,
-                priv_request->extra_send_buf_size, HG_BULK_READ_ONLY,
-                &priv_request->extra_send_buf_handle);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not create bulk data handle");
             goto done;
         }
-        hg_proc_set_extra_buf_is_mine(enc_proc, 1);
+
+        /* The size of the encoding buffer may have changed at this point
+         * --> if the buffer is too large, we need to do:
+         *  - 1: send an unexpected message with info + eventual bulk data descriptor
+         *  - 2: send the remaining data in extra buf using bulk data transfer
+         */
+        if (hg_proc_get_size(enc_proc) > NA_Msg_get_max_unexpected_size(hg_na_class)) {
+#ifdef HG_HAS_XDR
+            HG_ERROR_DEFAULT("Extra encoding using XDR is not yet supported");
+            ret = HG_FAIL;
+            goto done;
+#else
+            priv_request->extra_send_buf = hg_proc_get_extra_buf(enc_proc);
+            priv_request->extra_send_buf_size = hg_proc_get_extra_size(enc_proc);
+            ret = HG_Bulk_handle_create(priv_request->extra_send_buf,
+                    priv_request->extra_send_buf_size, HG_BULK_READ_ONLY,
+                    &priv_request->extra_send_buf_handle);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not create bulk data handle");
+                goto done;
+            }
+            hg_proc_set_extra_buf_is_mine(enc_proc, 1);
 #endif
+        }
+
+        /* Flush proc */
+        ret = hg_proc_flush(enc_proc);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Error in proc flush");
+            ret = HG_FAIL;
+            goto done;
+        }
     }
 
     /* Fill header */
@@ -558,7 +567,8 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
             /* TODO Receive extra buffer now */
         } else {
             /* Set buffer to user data */
-            ret = hg_proc_set_buf_ptr(dec_proc, (char*) priv_request->recv_buf + hg_proc_get_header_size());
+            ret = hg_proc_set_buf_ptr(dec_proc, (char*) priv_request->recv_buf
+                    + hg_proc_get_header_size());
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Could not move proc to user data");
                 ret = HG_FAIL;
@@ -571,6 +581,14 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
             ret = proc_info->dec_routine(dec_proc, priv_request->out_struct);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Could not decode return parameters");
+                ret = HG_FAIL;
+                return ret;
+            }
+
+            /* Flush proc */
+            ret = hg_proc_flush(dec_proc);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Error in proc flush");
                 ret = HG_FAIL;
                 return ret;
             }

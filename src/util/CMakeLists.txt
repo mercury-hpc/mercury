@@ -55,6 +55,8 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_checksum.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_checksum_crc64.c
 )
 
 if(MERCURY_CREATE_SINGLE_LIB)
@@ -99,6 +101,7 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_checksum.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.h
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
 )

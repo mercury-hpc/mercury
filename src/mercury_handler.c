@@ -36,12 +36,16 @@ typedef struct hg_priv_handle {
     na_request_t  recv_request;
     void         *extra_recv_buf;
     na_size_t     extra_recv_buf_size;
+    void         *recv_base_checksum;
+    size_t        recv_base_checksum_size;
 
     void         *send_buf;
     na_size_t     send_buf_size;
     na_request_t  send_request;
     void         *extra_send_buf;
     na_size_t     extra_send_buf_size;
+    void         *send_base_checksum;
+    size_t        send_base_checksum_size;
 
     void         *in_struct;
 } hg_priv_handle_t;
@@ -86,12 +90,16 @@ hg_handler_new(void)
         priv_handle->recv_request = NA_REQUEST_NULL;
         priv_handle->extra_recv_buf = NULL;
         priv_handle->extra_recv_buf_size = 0;
+        priv_handle->recv_base_checksum = NULL;
+        priv_handle->recv_base_checksum_size = 0;
 
         priv_handle->send_buf = NULL;
         priv_handle->send_buf_size = 0;
         priv_handle->send_request = NA_REQUEST_NULL;
         priv_handle->extra_send_buf = NULL;
         priv_handle->extra_send_buf_size = 0;
+        priv_handle->send_base_checksum = NULL;
+        priv_handle->send_base_checksum_size = 0;
 
         priv_handle->in_struct = NULL;
     }
@@ -624,6 +632,12 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
         }
     }
 
+    /* Get base checksum from proc (as we are using different proc objects) */
+    priv_handle->recv_base_checksum_size = hg_proc_get_base_checksum_size(dec_proc);
+    priv_handle->recv_base_checksum = malloc(priv_handle->recv_base_checksum_size);
+    hg_proc_get_base_checksum(dec_proc, priv_handle->recv_base_checksum,
+            priv_handle->recv_base_checksum_size);
+
     /* Get operation ID from header */
     priv_handle->id = priv_header.id;
 
@@ -710,6 +724,10 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
     /* Fill the header */
     priv_header.id = priv_handle->id;
     priv_header.extra_buf_handle = HG_BULK_NULL; /* TODO handle large response */
+
+    /* Set base checksum to proc */
+    hg_proc_set_base_checksum(enc_proc, priv_handle->send_base_checksum,
+            priv_handle->send_base_checksum_size);
 
     /* Add the header */
     ret = hg_proc_hg_priv_header_t(enc_proc, &priv_header);
@@ -814,6 +832,11 @@ HG_Handler_free(hg_handle_t handle)
         priv_handle->extra_recv_buf = NULL;
     }
 
+    if (priv_handle->recv_base_checksum) {
+        free(priv_handle->recv_base_checksum);
+        priv_handle->recv_base_checksum = NULL;
+    }
+
     if (priv_handle->send_buf) {
         hg_proc_buf_free(priv_handle->send_buf);
         priv_handle->send_buf = NULL;
@@ -822,6 +845,11 @@ HG_Handler_free(hg_handle_t handle)
     if (priv_handle->extra_send_buf) {
         hg_proc_buf_free(priv_handle->extra_send_buf);
         priv_handle->extra_send_buf = NULL;
+    }
+
+    if (priv_handle->send_base_checksum) {
+        free(priv_handle->send_base_checksum);
+        priv_handle->send_base_checksum = NULL;
     }
 
     free(priv_handle);
@@ -874,10 +902,21 @@ HG_Handler_get_input(hg_handle_t handle, void *in_struct)
         return ret;
     }
 
+    /* Set base checksum to proc */
+    hg_proc_set_base_checksum(proc, priv_handle->recv_base_checksum,
+            priv_handle->recv_base_checksum_size);
+
     /* Decode input parameters */
     ret = proc_info->dec_routine(proc, in_struct);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not decode input parameters");
+        ret = HG_FAIL;
+    }
+
+    /* Flush proc */
+    ret = hg_proc_flush(proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Error in proc flush");
         ret = HG_FAIL;
     }
 
@@ -940,6 +979,19 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
             out_extra_buf_size = hg_proc_get_extra_size(proc);
             hg_proc_set_extra_buf_is_mine(proc, 1);
         }
+
+        /* Flush proc */
+        ret = hg_proc_flush(proc);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Error in proc flush");
+            ret = HG_FAIL;
+        }
+
+        /* Get base checksum from proc (as we are using different proc objects) */
+        priv_handle->send_base_checksum_size = hg_proc_get_base_checksum_size(proc);
+        priv_handle->send_base_checksum = malloc(priv_handle->send_base_checksum_size);
+        hg_proc_get_base_checksum(proc, priv_handle->send_base_checksum,
+                priv_handle->send_base_checksum_size);
 
         /* Free proc */
         hg_proc_free(proc);
