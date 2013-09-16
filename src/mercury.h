@@ -18,6 +18,18 @@ extern "C" {
 #endif
 
 /**
+ * Get Mercury version number.
+ *
+ * \param major [OUT]           pointer to unsigned integer
+ * \param minor [OUT]           pointer to unsigned integer
+ * \param patch [OUT]           pointer to unsigned integer
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_EXPORT int
+HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
+
+/**
  * Initialize the function shipper layer.
  *
  * \param network_class [IN]    pointer to network class

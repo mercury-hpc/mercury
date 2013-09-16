@@ -100,6 +100,19 @@ hg_gen_tag(void)
 
 /*---------------------------------------------------------------------------*/
 int
+HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
+{
+    int ret = HG_SUCCESS;
+
+    if (major) *major = HG_VERSION_MAJOR;
+    if (minor) *minor = HG_VERSION_MINOR;
+    if (patch) *patch = HG_VERSION_PATCH;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
 HG_Init(na_class_t *network_class)
 {
     int ret = HG_SUCCESS;

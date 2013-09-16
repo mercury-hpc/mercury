@@ -13,6 +13,10 @@
 #ifndef MERCURY_CONFIG_H
 #define MERCURY_CONFIG_H
 
+#define HG_VERSION_MAJOR @MERCURY_VERSION_MAJOR@
+#define HG_VERSION_MINOR @MERCURY_VERSION_MINOR@
+#define HG_VERSION_PATCH @MERCURY_VERSION_PATCH@
+
 #if defined(_WIN32)
     #define HG_ABI_IMPORT __declspec(dllimport)
     #define HG_ABI_EXPORT __declspec(dllexport)
