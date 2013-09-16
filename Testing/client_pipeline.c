@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
 
     hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize function shipper\n");
+        fprintf(stderr, "Could not initialize Mercury\n");
         return EXIT_FAILURE;
     }
 
@@ -142,7 +142,7 @@ int main(int argc, char *argv[])
     /* Finalize interface */
     hg_ret = HG_Finalize();
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize function shipper\n");
+        fprintf(stderr, "Could not finalize Mercury\n");
         return EXIT_FAILURE;
     }
 

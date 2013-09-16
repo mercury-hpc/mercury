@@ -302,7 +302,7 @@ int main(int argc, char *argv[])
 
     hg_ret = HG_Handler_init(network_class);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize function shipper handler\n");
+        fprintf(stderr, "Could not initialize Mercury handler\n");
         return EXIT_FAILURE;
     }
 
@@ -348,7 +348,7 @@ int main(int argc, char *argv[])
 
     hg_ret = HG_Handler_finalize();
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize function shipper handler\n");
+        fprintf(stderr, "Could not finalize Mercury handler\n");
         return EXIT_FAILURE;
     }
 

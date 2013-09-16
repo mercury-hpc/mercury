@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 /**
- * Initialize the function shipper handler layer.
+ * Initialize the Mercury handler layer.
  *
  * \param network_class [IN]    pointer to network class
  *
@@ -28,7 +28,7 @@ HG_EXPORT int
 HG_Handler_init(na_class_t *network_class);
 
 /**
- * Finalize the function shipper handler layer.
+ * Finalize the Mercury handler layer.
  *
  * \return Non-negative on success or negative on failure
  */

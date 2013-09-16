@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 /**
- * Initialize the function shipper bulk layer.
+ * Initialize the Mercury bulk layer.
  *
  * \param network_class [IN]    pointer to network class
  *
@@ -28,7 +28,7 @@ HG_EXPORT int
 HG_Bulk_init(na_class_t *network_class);
 
 /**
- * Finalize the function shipper bulk layer.
+ * Finalize the Mercury bulk layer.
  *
  * \return Non-negative on success or negative on failure
  */

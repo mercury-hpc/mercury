@@ -30,7 +30,7 @@ int init_rpc(int argc, char *argv[], int *rank)
 
     hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize function shipper\n");
+        fprintf(stderr, "Could not initialize Mercury\n");
         ret = HG_FAIL;
         return ret;
     }
@@ -110,7 +110,7 @@ int finalize_rpc()
     /* Finalize interface */
     hg_ret = HG_Finalize();
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize function shipper\n");
+        fprintf(stderr, "Could not finalize Mercury\n");
         ret = HG_FAIL;
         return ret;
     }

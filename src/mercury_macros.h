@@ -352,7 +352,7 @@ static HG_INLINE int \
                 } \
                 hg_ret = HG_Init(network_class); \
                 if (hg_ret != HG_SUCCESS) { \
-                    HG_ERROR_DEFAULT("Could not initialize function shipper"); \
+                    HG_ERROR_DEFAULT("Could not initialize Mercury"); \
                     BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                     goto done; \
                 } \

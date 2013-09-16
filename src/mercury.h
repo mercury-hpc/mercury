@@ -30,7 +30,7 @@ HG_EXPORT int
 HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
 
 /**
- * Initialize the function shipper layer.
+ * Initialize the Mercury layer.
  *
  * \param network_class [IN]    pointer to network class
  *
@@ -40,7 +40,7 @@ HG_EXPORT int
 HG_Init(na_class_t *network_class);
 
 /**
- * Finalize the function shipper layer.
+ * Finalize the Mercury layer.
  *
  * \return Non-negative on success or negative on failure
  */
