@@ -725,9 +725,11 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
     priv_header.id = priv_handle->id;
     priv_header.extra_buf_handle = HG_BULK_NULL; /* TODO handle large response */
 
-    /* Set base checksum to proc */
-    hg_proc_set_base_checksum(enc_proc, priv_handle->send_base_checksum,
-            priv_handle->send_base_checksum_size);
+    /* Set base checksum to proc (if there is no output, no checksum was created) */
+    if (priv_handle->send_base_checksum_size) {
+        hg_proc_set_base_checksum(enc_proc, priv_handle->send_base_checksum,
+                priv_handle->send_base_checksum_size);
+    }
 
     /* Add the header */
     ret = hg_proc_hg_priv_header_t(enc_proc, &priv_header);
