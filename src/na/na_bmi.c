@@ -19,14 +19,8 @@
 #include "mercury_thread_condition.h"
 #include "mercury_time.h"
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <stdbool.h>
-#include <assert.h>
 #include <string.h>
-#include <unistd.h>
-#include <limits.h>
 
 static int na_bmi_finalize(void);
 static int na_bmi_addr_lookup(const char *name, na_addr_t *addr);
@@ -87,10 +81,10 @@ typedef struct bmi_request bmi_request_t;
 
 struct bmi_request {
     bmi_op_id_t op_id;        /* BMI op ID */
-    bool completed;           /* 1 if operation has completed */
+    na_bool_t completed;      /* 1 if operation has completed */
     void *user_ptr;           /* Extra info passed to BMI to identify request */
     bmi_size_t actual_size;   /* Actual buffer size (must only be a pointer if we return it in the receive) */
-    bool ack;                 /* Additional ack for one-sided put request */
+    na_bool_t ack;            /* Additional ack for one-sided put request */
     na_request_t ack_request; /* Additional request for one-sided put request */
 };
 
@@ -114,7 +108,7 @@ typedef struct bmi_onesided_info {
     na_tag_t ack_tag;      /* Optional tag used for acknowledgment */
 } bmi_onesided_info_t;
 
-static bool is_server = 0; /* Used in server mode */
+static na_bool_t is_server = 0; /* Used in server mode */
 static bmi_context_id    bmi_context;
 static hg_list_entry_t  *unexpected_list;
 static hg_thread_mutex_t unexpected_list_mutex;
@@ -126,7 +120,7 @@ static hg_thread_mutex_t tag_mutex;
 static hg_thread_mutex_t request_mutex;
 static hg_thread_mutex_t testcontext_mutex;
 static hg_thread_cond_t  testcontext_cond;
-static bool              is_testing_context;
+static na_bool_t         is_testing_context = 0;
 /* Map mem addresses to mem handles */
 static hg_hash_table_t  *mem_handle_map = NULL;
 static inline int
@@ -151,8 +145,9 @@ pointer_hash(void *location)
 
 #ifdef NA_HAS_CLIENT_THREAD
 static hg_thread_mutex_t finalizing_mutex;
-static bool              finalizing;
+static na_bool_t         finalizing = 0;
 static hg_thread_t       progress_service;
+static na_bool_t         progress_service_created = 0;
 #endif
 static hg_thread_mutex_t mem_map_mutex;
 
@@ -161,7 +156,7 @@ static hg_thread_mutex_t mem_map_mutex;
 static void*
 na_bmi_progress_service(void NA_UNUSED *args)
 {
-    bool service_done = 0;
+    na_bool_t service_done = 0;
 
     while (!service_done) {
         int na_ret;
@@ -202,11 +197,13 @@ na_class_t *
 NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
 {
     int bmi_ret;
+    na_class_t *ret = NULL;
 
     /* Initialize BMI */
     bmi_ret = BMI_initialize(method_list, listen_addr, flags);
     if (bmi_ret < 0) {
         NA_ERROR_DEFAULT("BMI_initialize() failed");
+        goto done;
     }
 
     is_server = (flags == BMI_INIT_SERVER) ? 1 : 0;
@@ -215,10 +212,16 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
     bmi_ret = BMI_open_context(&bmi_context);
     if (bmi_ret < 0) {
         NA_ERROR_DEFAULT("BMI_open_context() failed");
+        goto done;
     }
 
     /* Create hash table for memory registration */
     mem_handle_map = hg_hash_table_new(pointer_hash, pointer_equal);
+    if (!mem_handle_map) {
+        NA_ERROR_DEFAULT("Could not create memory handle map");
+        goto done;
+    }
+
     /* Automatically free all the values with the hash map */
     hg_hash_table_register_free_functions(mem_handle_map, NULL, NULL);
 
@@ -228,27 +231,37 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
     hg_thread_mutex_init(&tag_mutex);
     hg_thread_mutex_init(&testcontext_mutex);
     hg_thread_cond_init(&testcontext_cond);
-    is_testing_context = 0;
     hg_thread_mutex_init(&mem_map_mutex);
+
+    /* TODO temporary to handle one-sided exchanges with remote server
+     * this should be left to the upper layer */
 #ifdef NA_HAS_CLIENT_THREAD
     hg_thread_mutex_init(&finalizing_mutex);
     if (!is_server) {
-        /* TODO temporary to handle one-sided exchanges with remote server */
         hg_thread_create(&progress_service, &na_bmi_progress_service, NULL);
+        progress_service_created = 1;
     }
 #endif
 
-    return &na_bmi_g;
+    ret = &na_bmi_g;
+
+done:
+    if (!ret) {
+        na_bmi_finalize();
+    }
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static int
 na_bmi_finalize(void)
 {
-    int bmi_ret, ret = NA_SUCCESS;
+    int bmi_ret;
+    int ret = NA_SUCCESS;
 
 #ifdef NA_HAS_CLIENT_THREAD
-    if (!is_server) {
+    if (!is_server && progress_service_created) {
         hg_thread_mutex_lock(&finalizing_mutex);
         finalizing = 1;
         hg_thread_mutex_unlock(&finalizing_mutex);
@@ -259,17 +272,18 @@ na_bmi_finalize(void)
 #endif
 
     /* Free hash table for memory registration */
-    hg_hash_table_free(mem_handle_map);
+    if (mem_handle_map) hg_hash_table_free(mem_handle_map);
+    mem_handle_map = NULL;
 
     /* Close BMI context */
     BMI_close_context(bmi_context);
 
     /* Finalize BMI */
     bmi_ret = BMI_finalize();
-
     if (bmi_ret < 0) {
         NA_ERROR_DEFAULT("BMI_finalize() failed");
         ret = NA_FAIL;
+        goto done;
     }
 
     hg_thread_mutex_destroy(&unexpected_list_mutex);
@@ -279,6 +293,7 @@ na_bmi_finalize(void)
     hg_thread_mutex_destroy(&tag_mutex);
     hg_thread_mutex_destroy(&mem_map_mutex);
 
+done:
     return ret;
 }
 
@@ -290,7 +305,7 @@ na_bmi_addr_lookup(const char *name, na_addr_t *addr)
     BMI_addr_t *bmi_addr = NULL;
 
     /* Perform an address addr_lookup on the ION */
-    bmi_addr = malloc(sizeof(BMI_addr_t));
+    bmi_addr = (BMI_addr_t*) malloc(sizeof(BMI_addr_t));
     bmi_ret = BMI_addr_lookup(bmi_addr, name);
 
     if (bmi_ret < 0) {
@@ -360,7 +375,7 @@ na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
     bmi_request_t *bmi_request = NULL;
 
     /* Allocate request */
-    bmi_request = malloc(sizeof(bmi_request_t));
+    bmi_request = (bmi_request_t*) malloc(sizeof(bmi_request_t));
     bmi_request->completed = 0;
     bmi_request->actual_size = 0;
     bmi_request->user_ptr = op_arg;
@@ -411,7 +426,7 @@ na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
         request_info = (struct BMI_unexpected_info*) hg_list_data(entry);
     } else {
         /* If no message try to get new message from BMI */
-        request_info = malloc(sizeof(struct BMI_unexpected_info));
+        request_info = (struct BMI_unexpected_info*) malloc(sizeof(struct BMI_unexpected_info));
         bmi_ret = BMI_testunexpected(1, &outcount, request_info, 0);
 
         if (!outcount) goto done;
@@ -433,7 +448,7 @@ na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     if (actual_buf_size) *actual_buf_size = (na_size_t) request_info->size;
     if (source) {
         BMI_addr_t **peer_addr = (BMI_addr_t**) source;
-        *peer_addr = malloc(sizeof(BMI_addr_t));
+        *peer_addr = (BMI_addr_t*) malloc(sizeof(BMI_addr_t));
         **peer_addr = request_info->addr;
     }
     if (tag) *tag = (na_tag_t) request_info->tag;
@@ -441,7 +456,7 @@ na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     /* Copy buffer and free request_info */
     memcpy(buf, request_info->buffer, request_info->size);
 
-    bmi_request = malloc(sizeof(bmi_request_t));
+    bmi_request = (bmi_request_t*) malloc(sizeof(bmi_request_t));
     bmi_request->op_id = 0;
     bmi_request->completed = 1;
     bmi_request->actual_size = request_info->size;
@@ -484,7 +499,7 @@ na_bmi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     bmi_request_t *bmi_request = NULL;
 
     /* Allocate request */
-    bmi_request = malloc(sizeof(bmi_request_t));
+    bmi_request = (bmi_request_t*) malloc(sizeof(bmi_request_t));
     bmi_request->completed = 0;
     bmi_request->actual_size = 0;
     bmi_request->user_ptr = op_arg;
@@ -523,7 +538,7 @@ na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     bmi_request_t *bmi_request = NULL;
 
     /* Allocate request */
-    bmi_request = malloc(sizeof(bmi_request_t));
+    bmi_request = (bmi_request_t*) malloc(sizeof(bmi_request_t));
     bmi_request->completed = 0;
     bmi_request->actual_size = 0; /* (bmi_size_t*) actual_size; */
     bmi_request->user_ptr = op_arg;
@@ -560,7 +575,7 @@ na_bmi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags
     bmi_mem_handle_t *bmi_mem_handle;
     /* bmi_size_t bmi_buf_size = (bmi_size_t) buf_size; */
 
-    bmi_mem_handle = malloc(sizeof(bmi_mem_handle_t));
+    bmi_mem_handle = (bmi_mem_handle_t*) malloc(sizeof(bmi_mem_handle_t));
     bmi_mem_handle->base = bmi_buf_base;
     /* bmi_mem_handle->size = bmi_buf_size; */
     bmi_mem_handle->attr = flags;
@@ -644,7 +659,7 @@ na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_s
         NA_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
         ret = NA_FAIL;
     } else {
-        bmi_mem_handle = malloc(sizeof(bmi_mem_handle_t));
+        bmi_mem_handle = (bmi_mem_handle_t*) malloc(sizeof(bmi_mem_handle_t));
         /* Here safe to do a simple memcpy */
         memcpy(bmi_mem_handle, buf, sizeof(bmi_mem_handle_t));
         *mem_handle = (na_mem_handle_t) bmi_mem_handle;
@@ -733,7 +748,7 @@ na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 
     /* Wrap an ack request around the original request */
     bmi_request = (bmi_request_t *) *request;
-    ret = na_bmi_msg_recv(&bmi_request->ack, sizeof(bool),
+    ret = na_bmi_msg_recv(&bmi_request->ack, sizeof(na_bool_t),
             remote_addr, onesided_info.ack_tag, &bmi_request->ack_request, NULL);
     if (ret != NA_SUCCESS) {
         NA_ERROR_DEFAULT("Could not recv ack");
@@ -808,7 +823,7 @@ na_bmi_process_unexpected(void)
     hg_thread_mutex_lock(&unexpected_list_mutex);
 
     do {
-        request_info = malloc(sizeof(struct BMI_unexpected_info));
+        request_info = (struct BMI_unexpected_info*) malloc(sizeof(struct BMI_unexpected_info));
         bmi_ret = BMI_testunexpected(1, &outcount, request_info, 0);
         if (outcount) {
             if (bmi_ret < 0 || request_info->error_code != 0) {
@@ -839,7 +854,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
     bmi_request_t *bmi_wait_request = (bmi_request_t*) request;
     double remaining = timeout / 1000; /* Timeout in milliseconds */
     int ret = NA_SUCCESS;
-    bool wait_request_completed = 0;
+    na_bool_t wait_request_completed = 0;
 
     /* Only the thread that has created the request should wait and free that request
      * even if the request may have been marked as completed by other threads */
@@ -927,7 +942,6 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 
                 hg_thread_mutex_lock(&request_mutex);
                 bmi_request = (bmi_request_t *) bmi_user_ptr;
-                assert(bmi_op_id == bmi_request->op_id);
                 /* Mark the request as completed */
                 bmi_request->completed = 1;
                 /* Our request may have been marked as completed as well */
@@ -1006,7 +1020,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
     na_status_t onesided_status;
     bmi_mem_handle_t *bmi_mem_handle = NULL;
 
-    bool ack;
+    na_bool_t ack;
     na_request_t onesided_data_request;
     na_request_t onesided_ack_request;
 
@@ -1077,7 +1091,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
      * bmi_mem_handle since it's a pointer to a mem_handle */
     hg_thread_mutex_lock(&mem_map_mutex);
 
-    bmi_mem_handle = hg_hash_table_lookup(mem_handle_map, onesided_info.base);
+    bmi_mem_handle = (bmi_mem_handle_t*) hg_hash_table_lookup(mem_handle_map, onesided_info.base);
 
     if (!bmi_mem_handle) {
         NA_ERROR_DEFAULT("Could not find memory handle, registered?");
@@ -1099,7 +1113,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
             }
             /* Send an ack to tell the server that the data is here */
             ack = 1;
-            ret = na_bmi_msg_send(&ack, sizeof(bool), remote_addr, onesided_info.ack_tag,
+            ret = na_bmi_msg_send(&ack, sizeof(na_bool_t), remote_addr, onesided_info.ack_tag,
                     &onesided_ack_request, NULL);
             if (ret != NA_SUCCESS) {
                 NA_ERROR_DEFAULT("Could not send ack");
