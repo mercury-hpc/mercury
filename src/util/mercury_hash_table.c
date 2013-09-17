@@ -79,7 +79,7 @@ static int hash_table_allocate_table(hg_hash_table_t *hash_table)
 
 	/* Allocate the table and initialise to NULL for all entries */
 
-	hash_table->table = calloc(hash_table->table_size, 
+	hash_table->table = (hg_hash_table_entry_t **) calloc(hash_table->table_size,
 	                           sizeof(hg_hash_table_entry_t *));
 
 	return hash_table->table != NULL;
