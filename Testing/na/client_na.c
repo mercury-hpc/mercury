@@ -60,8 +60,8 @@ int main(int argc, char *argv[])
     /* Allocate send and recv bufs */
     send_buf_len = NA_Msg_get_max_unexpected_size(network_class);
     recv_buf_len = send_buf_len;
-    send_buf = malloc(send_buf_len);
-    recv_buf = malloc(recv_buf_len);
+    send_buf = (char*) malloc(send_buf_len);
+    recv_buf = (char*) malloc(recv_buf_len);
 
     /* Send a message to addr */
     sprintf(send_buf, "Hello ION!\n");
@@ -89,7 +89,7 @@ int main(int argc, char *argv[])
     printf("Received from ION: %s\n", recv_buf);
 
     /* Prepare bulk_buf */
-    bulk_buf = malloc(sizeof(int) * bulk_size);
+    bulk_buf = (int*) malloc(sizeof(int) * bulk_size);
     for (i = 0; i < bulk_size; i++) {
         bulk_buf[i] = i;
     }

@@ -407,8 +407,8 @@ int main(int argc, char *argv[])
     sprintf(filename, "posix_test%d", rank);
 
     /* Prepare buffers */
-    write_buf = malloc(sizeof(int) * n_ints);
-    read_buf =  malloc(sizeof(int) * n_ints);
+    write_buf = (int*) malloc(sizeof(int) * n_ints);
+    read_buf =  (int*) malloc(sizeof(int) * n_ints);
     for (i = 0; i < n_ints; i++) {
         write_buf[i] = i;
         read_buf[i] = 0;

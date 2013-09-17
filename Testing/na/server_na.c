@@ -42,9 +42,9 @@ int main(int argc, char *argv[])
 
     /* Allocate send/recv/bulk bufs */
     send_buf_len = NA_Msg_get_max_unexpected_size(network_class);
-    send_buf = malloc(send_buf_len);
-    recv_buf = malloc(send_buf_len);
-    bulk_buf = malloc(sizeof(int) * bulk_size);
+    send_buf = (char*) malloc(send_buf_len);
+    recv_buf = (char*) malloc(send_buf_len);
+    bulk_buf = (int*) malloc(sizeof(int) * bulk_size);
 
     for (peer = 0; peer < number_of_peers; peer++) {
         na_size_t recv_buf_len = 0;

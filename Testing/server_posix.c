@@ -166,7 +166,7 @@ int server_posix_write(hg_handle_t handle)
     }
 
     /* Check bulk buf */
-    buf_ptr = buf;
+    buf_ptr = (const int*) buf;
     for (i = 0; i < (int)(count / sizeof(int)); i++) {
         if (buf_ptr[i] != i) {
             printf("Error detected in bulk transfer, buf[%d] = %d, was expecting %d!\n", i, buf_ptr[i], i);
@@ -238,7 +238,7 @@ int server_posix_read(hg_handle_t handle)
     ret = read(fd, buf, count);
 
     /* Check bulk buf */
-    buf_ptr = buf;
+    buf_ptr = (const int*) buf;
     for (i = 0; i < (int)(count / sizeof(int)); i++) {
         if (buf_ptr[i] != i) {
             printf("Error detected after read, buf[%d] = %d, was expecting %d!\n", i, buf_ptr[i], i);
