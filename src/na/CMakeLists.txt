@@ -34,6 +34,18 @@ endif()
 # mercury_util
 include_directories(${NA_SOURCE_DIR}/../util)
 
+#------------------------------------------------------------------------------
+# Set sources - 1
+# Setting this before NA_USE_XXX to avoid header file conflict if Mercury 
+# was previously installed in $INSTALL_PREFIX and this prefix is also used
+# for NA plugin libraries/dependencies.
+# (Refer Mercury-Trac #15)
+#------------------------------------------------------------------------------
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 # BMI
 option(NA_USE_BMI "Use BMI." OFF)
 if(NA_USE_BMI)
@@ -138,13 +150,8 @@ configure_file(
 )
 
 #------------------------------------------------------------------------------
-# Set sources
+# Set sources - 2
 #------------------------------------------------------------------------------
-include_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_CURRENT_BINARY_DIR}
-)
-
 set(NA_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/na.c
 )
