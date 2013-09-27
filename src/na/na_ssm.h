@@ -12,7 +12,6 @@
 #define NA_SSM_H
 
 #include "na.h"
-#include "na_private.h"
 #include "na_error.h"
 
 #include <ssm/dumb.h>
