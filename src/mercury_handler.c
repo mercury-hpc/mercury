@@ -12,6 +12,7 @@
 #include "mercury_proc_private.h"
 
 #include "mercury_hash_table.h"
+#include "mercury_hash_string.h"
 #include "mercury_list.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_time.h"
@@ -383,7 +384,7 @@ HG_Handler_register(const char *func_name,
         goto done;
     }
 
-    *id = hg_proc_string_hash(func_name);
+    *id = hg_hash_string(func_name);
 
     /* Fill a func info struct and store it into the function map */
     proc_info = (hg_proc_info_t*) malloc(sizeof(hg_proc_info_t));

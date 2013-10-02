@@ -12,6 +12,7 @@
 #include "mercury_proc_private.h"
 
 #include "mercury_hash_table.h"
+#include "mercury_hash_string.h"
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
 
@@ -210,7 +211,7 @@ HG_Register(const char *func_name,
         goto done;
     }
 
-    *id = hg_proc_string_hash(func_name);
+    *id = hg_hash_string(func_name);
 
     /* Fill a func info struct and store it into the function map */
     proc_info = (hg_proc_info_t*) malloc(sizeof(hg_proc_info_t));
@@ -255,7 +256,7 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id)
         return ret;
     }
 
-    func_id = hg_proc_string_hash(func_name);
+    func_id = hg_hash_string(func_name);
 
     *flag = (hg_hash_table_lookup(func_map, &func_id) != HG_HASH_TABLE_NULL) ? 1 : 0;
     if (id) *id = (*flag) ? func_id : 0;
