@@ -259,6 +259,10 @@ HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *da
 HG_EXPORT HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size);
 HG_EXPORT HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle);
 
+
+/* Note: float types are not supported but can be built on top of the existing
+ * proc routines; encoding floats using XDR could modify checksum */
+
 /**
  * For convenience map stdint types to hg types
  */
