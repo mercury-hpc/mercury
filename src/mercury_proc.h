@@ -68,12 +68,16 @@ hg_proc_buf_free(void *mem_ptr);
  *                              serialization/deserialization
  * \param buf_size [IN]         buffer size
  * \param op [IN]               operation type: HG_ENCODE / HG_DECODE / HG_FREE
+ * \param hash [IN]             hash method used for computing checksum
+ *                              (if NULL, checksum is not computed)
+ *                              hash method: HG_CRC16, HG_CRC64, HG_NOHASH
  * \param proc [OUT]            pointer to abstract processor object
  *
  * \return Non-negative on success or negative on failure
  */
 HG_EXPORT int
-hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_t *proc);
+hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
+        hg_proc_t *proc);
 
 /**
  * Free the processor.
@@ -190,36 +194,6 @@ hg_proc_get_extra_size(hg_proc_t proc);
  */
 HG_EXPORT int
 hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
-
-/**
- * Get base checksum size from proc.
- *
- * \param proc [IN]             abstract processor object
- *
- * \return Abstract checksum
- */
-HG_EXPORT size_t
-hg_proc_get_base_checksum_size(hg_proc_t proc);
-
-/**
- * Get base checksum from proc and copy it to buf.
- *
- * \param proc [IN]             abstract processor object
- *
- * \return Abstract checksum
- */
-HG_EXPORT int
-hg_proc_get_base_checksum(hg_proc_t proc, void *buf, size_t size);
-
-/**
- * Set base checksum to proc from buf.
- *
- * \param proc [IN]             abstract processor object
- *
- * \return Abstract checksum
- */
-HG_EXPORT int
-hg_proc_set_base_checksum(hg_proc_t proc, const void *buf, size_t size);
 
 /**
  * Flush the proc after data has been encoded or decoded and verify data using

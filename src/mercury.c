@@ -9,7 +9,7 @@
  */
 
 #include "mercury.h"
-#include "mercury_proc_private.h"
+#include "mercury_proc_header.h"
 
 #include "mercury_hash_table.h"
 #include "mercury_hash_string.h"
@@ -56,7 +56,7 @@ static hg_thread_mutex_t tag_mutex;
 static na_class_t *hg_na_class = NULL;
 
 /**
- * Hash functions for function map
+ * Hash function for function map.
  */
 int
 hg_int_equal(void *vlocation1, void *vlocation2)
@@ -71,7 +71,7 @@ hg_int_equal(void *vlocation1, void *vlocation2)
 }
 
 /**
- *
+ * Hash function for function map.
  */
 unsigned int
 hg_int_hash(void *vlocation)
@@ -84,7 +84,7 @@ hg_int_hash(void *vlocation)
 }
 
 /**
- * Generate a new tag
+ * Generate a new tag.
  */
 static HG_INLINE na_tag_t
 hg_gen_tag(void)
@@ -97,6 +97,284 @@ hg_gen_tag(void)
     hg_thread_mutex_unlock(&tag_mutex);
 
     return tag;
+}
+
+/**
+ * Set and encode and request header.
+ */
+static int
+hg_set_request_header(hg_priv_request_t *priv_request,
+        hg_header_request_t header)
+{
+    hg_proc_t proc = HG_PROC_NULL;
+    int ret = HG_SUCCESS;
+
+    /* TODO use CRC16 hash */
+    hg_proc_create(priv_request->send_buf, priv_request->send_buf_size,
+            HG_ENCODE, HG_NOHASH, &proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not create proc");
+        goto done;
+    }
+
+    /* Encode request header */
+    ret = hg_proc_header_request(proc, &header);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not encode header");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+done:
+    if (proc != HG_PROC_NULL) hg_proc_free(proc);
+    proc = HG_PROC_NULL;
+
+    return ret;
+}
+
+/**
+ * Decode and get response header.
+ */
+static int
+hg_get_response_header(hg_priv_request_t *priv_request,
+        hg_header_response_t *header)
+{
+    hg_proc_t proc = HG_PROC_NULL;
+    int ret = HG_SUCCESS;
+
+    /* TODO use CRC16 hash */
+    hg_proc_create(priv_request->recv_buf, priv_request->recv_buf_size,
+            HG_DECODE, HG_NOHASH, &proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not create proc");
+        goto done;
+    }
+
+    /* Decode response header */
+    ret = hg_proc_header_response(proc, header);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not decode header");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+done:
+    if (proc != HG_PROC_NULL) hg_proc_free(proc);
+    proc = HG_PROC_NULL;
+
+    return ret;
+}
+
+/**
+ * Get RPC input buffer from handle.
+ */
+static int
+hg_get_input_buf(hg_priv_request_t *priv_request, void **in_buf, size_t *in_buf_size)
+{
+    void *user_input_buf;
+    size_t user_input_buf_size;
+    size_t header_offset;
+
+    int ret = HG_SUCCESS;
+
+    if (!priv_request) {
+        HG_ERROR_DEFAULT("NULL handle");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    user_input_buf = priv_request->send_buf;
+    user_input_buf_size = priv_request->send_buf_size;
+    header_offset = hg_proc_header_request_get_size();
+
+    /* Space must be left for request header */
+    if (in_buf) *in_buf = (char*) user_input_buf + header_offset;
+    if (in_buf_size) *in_buf_size = user_input_buf_size - header_offset;
+
+done:
+    return ret;
+}
+
+/**
+ * Get RPC output buffer from handle.
+ */
+static int
+hg_get_output_buf(hg_priv_request_t *priv_request, void **out_buf, size_t *out_buf_size)
+{
+    void *user_output_buf;
+    size_t user_output_buf_size;
+    size_t header_offset;
+
+    int ret = HG_SUCCESS;
+
+    if (!priv_request) {
+        HG_ERROR_DEFAULT("NULL handle");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    user_output_buf = priv_request->recv_buf;
+    user_output_buf_size = priv_request->recv_buf_size;
+    header_offset = hg_proc_header_response_get_size();
+
+    /* Space must be left for request header */
+    if (out_buf) *out_buf = (char*) user_output_buf + header_offset;
+    if (out_buf_size) *out_buf_size = user_output_buf_size - header_offset;
+
+done:
+    return ret;
+}
+
+/**
+ * Set and encode input structure.
+ */
+static int
+hg_set_input(hg_priv_request_t *priv_request, void *in_struct)
+{
+    void *in_buf;
+    size_t in_buf_size;
+    hg_proc_info_t *proc_info;
+    hg_proc_t proc = HG_PROC_NULL;
+
+    int ret = HG_SUCCESS;
+
+    if (!priv_request) {
+        HG_ERROR_DEFAULT("NULL handle");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    if (!in_struct) goto done;
+
+    /* Get input buffer */
+    ret = hg_get_input_buf(priv_request, &in_buf, &in_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get input buffer");
+        goto done;
+    }
+
+    /* Retrieve encoding function from function map */
+    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &priv_request->id);
+    if (!proc_info) {
+        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    /* Create a new encoding proc */
+    ret = hg_proc_create(in_buf, in_buf_size, HG_ENCODE, HG_CRC64, &proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not create proc");
+        goto done;
+    }
+
+    /* Encode input parameters */
+    ret = proc_info->enc_routine(proc, in_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not encode parameters");
+        goto done;
+    }
+
+    /* The size of the encoding buffer may have changed at this point
+     * --> if the buffer is too large, we need to do:
+     *  - 1: send an unexpected message with info + eventual bulk data descriptor
+     *  - 2: send the remaining data in extra buf using bulk data transfer
+     */
+    if (hg_proc_get_size(proc) > NA_Msg_get_max_unexpected_size(hg_na_class)) {
+#ifdef HG_HAS_XDR
+        HG_ERROR_DEFAULT("Extra encoding using XDR is not yet supported");
+        ret = HG_FAIL;
+        goto done;
+#else
+        priv_request->extra_send_buf = hg_proc_get_extra_buf(proc);
+        priv_request->extra_send_buf_size = hg_proc_get_extra_size(proc);
+        ret = HG_Bulk_handle_create(priv_request->extra_send_buf,
+                priv_request->extra_send_buf_size, HG_BULK_READ_ONLY,
+                &priv_request->extra_send_buf_handle);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not create bulk data handle");
+            goto done;
+        }
+        hg_proc_set_extra_buf_is_mine(proc, 1);
+#endif
+    }
+
+    /* Flush proc */
+    ret = hg_proc_flush(proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Error in proc flush");
+        goto done;
+    }
+
+done:
+    if (proc != HG_PROC_NULL) hg_proc_free(proc);
+    proc = HG_PROC_NULL;
+
+    return ret;
+}
+
+/**
+ * Decode and get output structure.
+ */
+static int
+hg_get_output(hg_priv_request_t *priv_request, void *out_struct)
+{
+    void *out_buf;
+    size_t out_buf_size;
+    hg_proc_info_t *proc_info;
+    hg_proc_t proc = HG_PROC_NULL;
+
+    int ret = HG_SUCCESS;
+
+    if (!priv_request) {
+        HG_ERROR_DEFAULT("NULL handle");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    if (!out_struct) goto done;
+
+    /* Get input buffer */
+    ret = hg_get_output_buf(priv_request, &out_buf, &out_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get input buffer");
+        goto done;
+    }
+
+    /* Retrieve encoding function from function map */
+    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &priv_request->id);
+    if (!proc_info) {
+        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    /* Create a new encoding proc */
+    ret = hg_proc_create(out_buf, out_buf_size, HG_DECODE, HG_CRC64, &proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not create proc");
+        goto done;
+    }
+
+    /* Decode output parameters */
+    ret = proc_info->dec_routine(proc, out_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not decode parameters");
+        goto done;
+    }
+
+    /* Flush proc */
+    ret = hg_proc_flush(proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Error in proc flush");
+        goto done;
+    }
+
+done:
+    if (proc != HG_PROC_NULL) hg_proc_free(proc);
+    proc = HG_PROC_NULL;
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -270,25 +548,12 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
         hg_request_t *request)
 {
     int ret = HG_SUCCESS, na_ret;
-
-    hg_proc_info_t *proc_info;
-    hg_proc_t enc_proc = HG_PROC_NULL;
-    hg_priv_header_t priv_header;
-
     na_tag_t send_tag, recv_tag;
-
     hg_priv_request_t *priv_request = NULL;
+    hg_header_request_t request_header;
 
     if (!hg_na_class) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    /* Retrieve encoding function from function map */
-    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &id);
-    if (!proc_info) {
-        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
         goto done;
     }
@@ -333,73 +598,22 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     /* Mark request as not completed */
     priv_request->completed = 0;
 
-    /* Create a new encoding proc */
-    ret = hg_proc_create(priv_request->send_buf, priv_request->send_buf_size,
-            HG_ENCODE, &enc_proc);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not create proc");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    /* Leave some space for the header */
-    ret = hg_proc_set_buf_ptr(enc_proc, (char*) priv_request->send_buf + hg_proc_get_header_size());
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not move proc to user data");
-        ret = HG_FAIL;
-        goto done;
-    }
-
     /* Encode the function parameters */
-    if (proc_info->enc_routine && in_struct) {
-        ret = proc_info->enc_routine(enc_proc, in_struct);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not encode parameters");
-            ret = HG_FAIL;
-            goto done;
-        }
-
-        /* The size of the encoding buffer may have changed at this point
-         * --> if the buffer is too large, we need to do:
-         *  - 1: send an unexpected message with info + eventual bulk data descriptor
-         *  - 2: send the remaining data in extra buf using bulk data transfer
-         */
-        if (hg_proc_get_size(enc_proc) > NA_Msg_get_max_unexpected_size(hg_na_class)) {
-#ifdef HG_HAS_XDR
-            HG_ERROR_DEFAULT("Extra encoding using XDR is not yet supported");
-            ret = HG_FAIL;
-            goto done;
-#else
-            priv_request->extra_send_buf = hg_proc_get_extra_buf(enc_proc);
-            priv_request->extra_send_buf_size = hg_proc_get_extra_size(enc_proc);
-            ret = HG_Bulk_handle_create(priv_request->extra_send_buf,
-                    priv_request->extra_send_buf_size, HG_BULK_READ_ONLY,
-                    &priv_request->extra_send_buf_handle);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Could not create bulk data handle");
-                goto done;
-            }
-            hg_proc_set_extra_buf_is_mine(enc_proc, 1);
-#endif
-        }
-
-        /* Flush proc */
-        ret = hg_proc_flush(enc_proc);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Error in proc flush");
-            ret = HG_FAIL;
-            goto done;
-        }
+    ret = hg_set_input(priv_request, in_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not set input");
+        ret = HG_FAIL;
+        goto done;
     }
 
-    /* Fill header */
-    priv_header.id = id;
-    priv_header.extra_buf_handle = priv_request->extra_send_buf_handle;
+    /* Set header */
+    hg_proc_header_request_init(priv_request->id,
+            priv_request->extra_send_buf_handle,
+            &request_header);
 
-    /* Encode header */
-    ret = hg_proc_hg_priv_header_t(enc_proc, &priv_header);
+    ret = hg_set_request_header(priv_request, request_header);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not encode header");
+        HG_ERROR_DEFAULT("Could not set header");
         ret = HG_FAIL;
         goto done;
     }
@@ -429,9 +643,6 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     *request = (hg_request_t) priv_request;
 
 done:
-    if (enc_proc != HG_PROC_NULL) hg_proc_free(enc_proc);
-    enc_proc = HG_PROC_NULL;
-
     if (ret != HG_SUCCESS) {
         if (priv_request != NULL) {
             if (priv_request->send_buf) {
@@ -463,9 +674,7 @@ int
 HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 {
     hg_priv_request_t *priv_request = (hg_priv_request_t*) request;
-    na_status_t        send_status;
-    na_status_t        recv_status;
-    hg_proc_info_t    *proc_info;
+    na_status_t send_status, recv_status;
 
     int ret = HG_SUCCESS;
 
@@ -548,68 +757,33 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 
     if ((priv_request->send_request == NA_REQUEST_NULL) &&
             (priv_request->recv_request == NA_REQUEST_NULL)) {
-        hg_proc_t dec_proc;
-        hg_priv_header_t priv_header;
+        hg_header_response_t response_header;
 
         /* Mark request as completed */
         priv_request->completed = 1;
 
-        /* Decode depending on op ID */
-        proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &priv_request->id);
-        if (!proc_info) {
-            HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
-            ret = HG_FAIL;
-            return ret;
-        }
-
-        ret = hg_proc_create(priv_request->recv_buf, priv_request->recv_buf_size,
-                HG_DECODE, &dec_proc);
+        /* Get header */
+        ret = hg_get_response_header(priv_request, &response_header);
         if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not create proc");
+            HG_ERROR_DEFAULT("Could not get header");
             ret = HG_FAIL;
-            return ret;
+            goto done;
         }
 
-        ret = hg_proc_hg_priv_header_t(dec_proc, &priv_header);
+        ret = hg_proc_header_response_verify(response_header);
         if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not decode header");
+            HG_ERROR_DEFAULT("Could not verify header");
             ret = HG_FAIL;
-            return ret;
+            goto done;
         }
 
-        if (priv_header.extra_buf_handle != HG_BULK_NULL) {
-            /* TODO Receive extra buffer now */
-        } else {
-            /* Set buffer to user data */
-            ret = hg_proc_set_buf_ptr(dec_proc, (char*) priv_request->recv_buf
-                    + hg_proc_get_header_size());
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Could not move proc to user data");
-                ret = HG_FAIL;
-                return ret;
-            }
+        /* Decode the function output parameters */
+        ret = hg_get_output(priv_request, priv_request->out_struct);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not get output");
+            ret = HG_FAIL;
+            goto done;
         }
-
-        /* Decode function parameters */
-        if (proc_info->dec_routine && priv_request->out_struct) {
-            ret = proc_info->dec_routine(dec_proc, priv_request->out_struct);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Could not decode return parameters");
-                ret = HG_FAIL;
-                return ret;
-            }
-
-            /* Flush proc */
-            ret = hg_proc_flush(dec_proc);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Error in proc flush");
-                ret = HG_FAIL;
-                return ret;
-            }
-        }
-
-        /* Free the decoding proc */
-        hg_proc_free(dec_proc);
 
         /* Everything has been decoded so free unused resources */
         if (priv_request->recv_buf) hg_proc_buf_free(priv_request->recv_buf);
@@ -621,6 +795,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         }
     }
 
+done:
     return ret;
 }
 
@@ -683,7 +858,7 @@ HG_Request_free(hg_request_t request)
 
     if (priv_request->out_struct && proc_info->dec_routine) {
         /* Create a new free proc */
-        ret = hg_proc_create(NULL, 0, HG_FREE, &proc);
+        ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, &proc);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not create proc");
             ret = HG_FAIL;

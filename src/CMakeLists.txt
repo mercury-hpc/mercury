@@ -114,6 +114,7 @@ set(MERCURY_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_handler.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc_header.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.c
 #  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_context.c
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.c

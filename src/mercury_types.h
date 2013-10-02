@@ -16,6 +16,7 @@
 
 typedef hg_uint32_t hg_id_t;          /* Operation ID of the operation */
 typedef hg_bool_t   hg_status_t;      /* Status of the operation */
+typedef hg_int32_t  hg_error_t;       /* Error code */
 typedef void *      hg_request_t;     /* Abstract request */
 typedef void *      hg_context_t;     /* Abstract request context */
 typedef void *      hg_proc_t;        /* Abstract serialization processor */
@@ -55,6 +56,15 @@ typedef enum {
     HG_FREE,
     HG_INVALID
 } hg_proc_op_t;
+
+/**
+ * Hash methods available for proc.
+ */
+typedef enum {
+    HG_CRC16,
+    HG_CRC64,
+    HG_NOHASH
+} hg_proc_hash_t;
 
 /* Error return codes */
 #define HG_SUCCESS  1
