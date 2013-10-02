@@ -222,6 +222,9 @@ na_mpi_gen_onesided_tag(void)
 na_class_t *
 NA_MPI_Init(MPI_Comm *intra_comm, int flags)
 {
+    na_class_t *ret = NULL;
+    int mpi_ret;
+
     /* Check flags */
     switch (flags) {
         case MPI_INIT_SERVER:
@@ -239,15 +242,23 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     }
 
     /* MPI_Init */
-    MPI_Initialized(&mpi_ext_initialized);
+    mpi_ret = MPI_Initialized(&mpi_ext_initialized);
+    if (mpi_ret != MPI_SUCCESS) {
+        goto done;
+    }
 
     if (!mpi_ext_initialized) {
 #if MPI_VERSION < 3
         int provided;
         /* Need a MPI_THREAD_MULTIPLE level if onesided thread required */
-        MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
+        mpi_ret = MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
+        if (mpi_ret != MPI_SUCCESS) {
+            NA_ERROR_DEFAULT("Could not initialize MPI");
+            goto done;
+        }
         if (provided != MPI_THREAD_MULTIPLE) {
             NA_ERROR_DEFAULT("MPI_THREAD_MULTIPLE cannot be set");
+            goto done;
         }
 #else
         MPI_Init(NULL, NULL);
@@ -257,7 +268,11 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     /* Assign MPI intra comm */
     if (intra_comm && (*intra_comm != MPI_COMM_NULL)) {
         /* Assume that the application splits MPI_COMM_WORLD if necessary */
-        MPI_Comm_dup(*intra_comm, &mpi_intra_comm);
+        mpi_ret = MPI_Comm_dup(*intra_comm, &mpi_intra_comm);
+        if (mpi_ret != MPI_SUCCESS) {
+            NA_ERROR_DEFAULT("Could not duplicate communicator");
+            goto done;
+        }
     } else {
         if (use_static_intercomm) {
             int color;
@@ -266,9 +281,17 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
             MPI_Comm_rank(MPI_COMM_WORLD, &global_rank);
             /* Color is 1 for server, 2 for client */
             color = (is_server) ? 1 : 2;
-            MPI_Comm_split(MPI_COMM_WORLD, color, global_rank, &mpi_intra_comm);
+            mpi_ret = MPI_Comm_split(MPI_COMM_WORLD, color, global_rank, &mpi_intra_comm);
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_ERROR_DEFAULT("Could not split communicator");
+                goto done;
+            }
         } else {
-            MPI_Comm_dup(MPI_COMM_WORLD, &mpi_intra_comm);
+            mpi_ret = MPI_Comm_dup(MPI_COMM_WORLD, &mpi_intra_comm);
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_ERROR_DEFAULT("Could not duplicate communicator");
+                goto done;
+            }
         }
     }
 
@@ -319,7 +342,11 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
         MPI_Win_create_dynamic(MPI_INFO_NULL, mpi_onesided_comm, &mpi_dynamic_win);
 #endif
     }
-    return &na_mpi_g;
+
+    ret = &na_mpi_g;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
