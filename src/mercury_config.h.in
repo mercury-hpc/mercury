@@ -13,8 +13,11 @@
 #ifndef MERCURY_CONFIG_H
 #define MERCURY_CONFIG_H
 
+/* Reflects major releases of Mercury */
 #define HG_VERSION_MAJOR @MERCURY_VERSION_MAJOR@
+/* Reflects any API changes */
 #define HG_VERSION_MINOR @MERCURY_VERSION_MINOR@
+/* Reflects any library code changes */
 #define HG_VERSION_PATCH @MERCURY_VERSION_PATCH@
 
 #if defined(_WIN32)
