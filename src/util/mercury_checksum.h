@@ -15,6 +15,8 @@
 
 typedef void *hg_checksum_t;
 
+#define HG_CHECKSUM_NULL ((hg_checksum_t)0)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
