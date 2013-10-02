@@ -453,65 +453,83 @@ HG_PROC_INLINE int
 hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
 {
     int ret = HG_FAIL;
-    void *buf;
+    void *buf = NULL;
     hg_uint64_t buf_size = 0;
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
-            buf_size = HG_Bulk_handle_get_serialize_size(*handle);
-            buf = malloc(buf_size);
-            ret = HG_Bulk_handle_serialize(buf, buf_size, *handle);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Could not serialize bulk handle");
-                ret = HG_FAIL;
-                return ret;
+            if (*handle != HG_BULK_NULL) {
+                buf_size = HG_Bulk_handle_get_serialize_size(*handle);
+                buf = malloc(buf_size);
+                ret = HG_Bulk_handle_serialize(buf, buf_size, *handle);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Could not serialize bulk handle");
+                    ret = HG_FAIL;
+                    return ret;
+                }
+            } else {
+                /* If HG_BULK_NULL set 0 to buf_size */
+                buf_size = 0;
             }
+            /* Encode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
                 return ret;
             }
-            ret = hg_proc_raw(proc, buf, buf_size);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
+            if (buf_size) {
+                /* Encode serialized buffer */
+                ret = hg_proc_raw(proc, buf, buf_size);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Proc error");
+                    ret = HG_FAIL;
+                    return ret;
+                }
+                free(buf);
+                buf = NULL;
             }
-            free(buf);
-            buf = NULL;
             break;
         case HG_DECODE:
+            /* Decode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
                 return ret;
             }
-            buf = malloc(buf_size);
-            ret = hg_proc_raw(proc, buf, buf_size);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
+            if (buf_size) {
+                buf = malloc(buf_size);
+                /* Decode serialized buffer */
+                ret = hg_proc_raw(proc, buf, buf_size);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Proc error");
+                    ret = HG_FAIL;
+                    return ret;
+                }
+                ret = HG_Bulk_handle_deserialize(handle, buf, buf_size);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Could not deserialize bulk handle");
+                    ret = HG_FAIL;
+                    return ret;
+                }
+                free(buf);
+                buf = NULL;
+            } else {
+                /* If buf_size is 0, define handle to HG_BULK_NULL */
+                *handle = HG_BULK_NULL;
             }
-            ret = HG_Bulk_handle_deserialize(handle, buf, buf_size);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Could not deserialize bulk handle");
-                ret = HG_FAIL;
-                return ret;
-            }
-            free(buf);
-            buf = NULL;
             break;
         case HG_FREE:
-            ret = HG_Bulk_handle_free(*handle);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Could not free bulk handle");
-                ret = HG_FAIL;
-                return ret;
+            if (*handle != HG_BULK_NULL) {
+                ret = HG_Bulk_handle_free(*handle);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Could not free bulk handle");
+                    ret = HG_FAIL;
+                    return ret;
+                }
+                *handle = HG_BULK_NULL;
             }
-            *handle = NULL;
             break;
         default:
             break;
