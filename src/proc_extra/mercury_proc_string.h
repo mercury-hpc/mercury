@@ -150,30 +150,32 @@ hg_proc_hg_string_object_t(hg_proc_t proc, hg_string_object_t *string)
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
-            string_len = strlen(string->data) + 1;
+            string_len = (string->data) ? strlen(string->data) + 1 : 0;
             ret = hg_proc_uint64_t(proc, &string_len);
             if (ret != HG_SUCCESS) {
                 HG_ERROR_DEFAULT("Proc error");
                 ret = HG_FAIL;
                 return ret;
             }
-            ret = hg_proc_raw(proc, string->data, string_len);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
-            }
-            ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_const);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
-            }
-            ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_owned);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
+            if (string_len) {
+                ret = hg_proc_raw(proc, string->data, string_len);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Proc error");
+                    ret = HG_FAIL;
+                    return ret;
+                }
+                ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_const);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Proc error");
+                    ret = HG_FAIL;
+                    return ret;
+                }
+                ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_owned);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Proc error");
+                    ret = HG_FAIL;
+                    return ret;
+                }
             }
             break;
         case HG_DECODE:
@@ -183,34 +185,36 @@ hg_proc_hg_string_object_t(hg_proc_t proc, hg_string_object_t *string)
                 ret = HG_FAIL;
                 return ret;
             }
-            string->data = (char*) malloc(string_len);
-            ret = hg_proc_raw(proc, string->data, string_len);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
-            }
-            ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_const);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
-            }
-            ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_owned);
-            if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
+            if (string_len) {
+                string->data = (char*) malloc(string_len);
+                ret = hg_proc_raw(proc, string->data, string_len);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Proc error");
+                    ret = HG_FAIL;
+                    return ret;
+                }
+                ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_const);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Proc error");
+                    ret = HG_FAIL;
+                    return ret;
+                }
+                ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_owned);
+                if (ret != HG_SUCCESS) {
+                    HG_ERROR_DEFAULT("Proc error");
+                    ret = HG_FAIL;
+                    return ret;
+                }
+            } else {
+                string->data = NULL;
             }
             break;
         case HG_FREE:
-            if (!string->data) {
-                HG_ERROR_DEFAULT("Already freed");
+            ret = hg_string_object_free(string);
+            if (ret != HG_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not free string object");
                 ret = HG_FAIL;
-                return ret;
             }
-            hg_string_object_free(string);
-            ret = HG_SUCCESS;
             break;
         default:
             break;
