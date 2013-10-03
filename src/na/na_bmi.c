@@ -304,19 +304,33 @@ na_bmi_addr_lookup(const char *name, na_addr_t *addr)
     int bmi_ret, ret = NA_SUCCESS;
     BMI_addr_t *bmi_addr = NULL;
 
-    /* Perform an address addr_lookup on the ION */
-    bmi_addr = (BMI_addr_t*) malloc(sizeof(BMI_addr_t));
-    bmi_ret = BMI_addr_lookup(bmi_addr, name);
-
-    if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_addr_lookup() failed");
-        free(bmi_addr);
-        bmi_addr = NULL;
+    if (!addr) {
+        NA_ERROR_DEFAULT("NULL addr");
         ret = NA_FAIL;
-    } else {
-        if (addr) *addr = (na_addr_t) bmi_addr;
+        goto done;
     }
 
+    bmi_addr = (BMI_addr_t*) malloc(sizeof(BMI_addr_t));
+    if (!bmi_addr) {
+        NA_ERROR_DEFAULT("Could not allocate BMI addr");
+        ret = NA_FAIL;
+        goto done;
+    }
+
+    /* Perform an address lookup */
+    bmi_ret = BMI_addr_lookup(bmi_addr, name);
+    if (bmi_ret < 0) {
+        NA_ERROR_DEFAULT("BMI_addr_lookup() failed");
+        ret = NA_FAIL;
+        goto done;
+    }
+
+    *addr = (na_addr_t) bmi_addr;
+
+done:
+    if (ret != NA_SUCCESS) {
+        free(bmi_addr);
+    }
     return ret;
 }
 
