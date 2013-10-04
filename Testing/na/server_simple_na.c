@@ -280,7 +280,7 @@ int main(int argc, char *argv[])
         }
         es = gettimeofday_sec() - st;
         if(peer==0){
-            printf("result(send_single, %d): time %f, msg/s %f, MB/s %f, RTT(ms) %f\n", bench_buf_size, es, cycle / es, bytes2mb(bytes) / es, (sum / cycle )*1000);
+            printf("result(send_single, %lu): time %f, msg/s %f, MB/s %f, RTT(ms) %f\n", (uint64_t) bench_buf_size, es, cycle / es, bytes2mb(bytes) / es, (sum / cycle )*1000);
         }
         
         /* Pipelined send */
@@ -320,7 +320,7 @@ int main(int argc, char *argv[])
         bytes = nbenchbufs * bench_buf_size;
         es = gettimeofday_sec() - st;
         if(peer==0){
-            printf("result(send_pipeline, %d): time %f, msg/s %f, MB/s %f\n", bench_buf_size, es, cycle / es, bytes2mb(bytes) / es, (sum / cycle )*1000);
+            printf("result(send_pipeline, %lu): time %f, msg/s %f, MB/s %f\n", (uint64_t) bench_buf_size, es, cycle / es, bytes2mb(bytes) / es, (sum / cycle )*1000);
         }
         
 
