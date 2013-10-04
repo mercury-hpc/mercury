@@ -73,13 +73,9 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], char **port_name, int *r
 
 #ifdef NA_HAS_SSM
     if (strcmp("ssm", argv[1]) == 0) {
-        if (argc != 4) {
-            fprintf(stderr, "Usage: %s ssm <tcp|udp|ib> port\n", argv[0]);
-            exit(0);
-        }
-        if (port_name) *port_name = getenv(HG_PORT_NAME);
-        if (rank) *rank = 0;
-        network_class = NA_SSM_Init(argv[2], atoi(argv[3]), 0);
+        char *listen_addr = getenv("HG_SSM_CLIENT_ADDR");
+        network_class = NA_Initialize(listen_addr, NA_FALSE);
+        if (port_name) *port_name = getenv("HG_SSM_SERVER_ADDR");
     }
 #endif
 
@@ -125,11 +121,8 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
 
 #ifdef NA_HAS_SSM
     if (strcmp("ssm", argv[1]) == 0) {
-        if (argc != 4) {
-            fprintf(stderr, "Usage: %s ssm <tcp|udp|ib> port\n", argv[0]);
-            exit(0);
-        }
-        network_class = NA_SSM_Init(argv[2], atoi(argv[3]), 0);
+        char *listen_addr = getenv("HG_SSM_SERVER_ADDR");
+        network_class = NA_Initialize(listen_addr, NA_TRUE);
     }
 #endif
 

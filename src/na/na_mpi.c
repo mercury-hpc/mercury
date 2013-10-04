@@ -53,6 +53,9 @@ static int na_mpi_wait(na_request_t request, unsigned int timeout,
         na_status_t *status);
 static int na_mpi_progress(unsigned int timeout, na_status_t *status);
 static int na_mpi_request_free(na_request_t request);
+static na_bool_t na_mpi_verify(const char* protocol);
+static na_class_t* na_mpi_initialize(const na_host_buffer_t *na_buffer,
+                                     na_bool_t               listen);
 
 static na_class_t na_mpi_g = {
         na_mpi_finalize,                      /* finalize */
@@ -176,6 +179,14 @@ static hg_thread_t       progress_service;
 #endif
 hg_thread_mutex_t mem_map_mutex;
 
+static const char na_mpi_name_g[] = "mpi";
+
+const na_class_describe_t na_mpi_describe_g  = {
+    na_mpi_name_g,
+    na_mpi_verify,
+        na_mpi_initialize
+};
+
 /*---------------------------------------------------------------------------*/
 #ifdef NA_HAS_CLIENT_THREAD
 static void *
@@ -216,6 +227,19 @@ na_mpi_gen_onesided_tag(void)
     hg_thread_mutex_unlock(&mpi_tag_mutex);
 
     return tag;
+}
+
+na_bool_t
+na_mpi_verify(const char* protocol)
+{
+    return NA_TRUE;
+}
+
+na_class_t*
+na_mpi_initialize(const na_host_buffer_t *na_buffer,
+                  na_bool_t               listen)
+{
+    return NA_MPI_Init(NULL, listen);
 }
 
 /*---------------------------------------------------------------------------*/

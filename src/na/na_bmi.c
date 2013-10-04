@@ -51,6 +51,9 @@ static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset
 static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status);
 static int na_bmi_progress(unsigned int timeout, na_status_t *status);
 static int na_bmi_request_free(na_request_t request);
+static na_bool_t na_bmi_verify(const char*);
+static na_class_t* na_bmi_initialize(const na_host_buffer_t *na_buffer,
+                                     na_bool_t               listen);
 
 static na_class_t na_bmi_g = {
         na_bmi_finalize,                      /* finalize */
@@ -151,6 +154,14 @@ static na_bool_t         progress_service_created = 0;
 #endif
 static hg_thread_mutex_t mem_map_mutex;
 
+static const char na_bmi_name_g[] = "bmi";
+
+const na_class_describe_t na_bmi_describe_g  = {
+    na_bmi_name_g,
+    na_bmi_verify,
+        na_bmi_initialize
+};
+
 /*---------------------------------------------------------------------------*/
 #ifdef NA_HAS_CLIENT_THREAD
 static void*
@@ -190,6 +201,55 @@ na_bmi_gen_onesided_tag(void)
     hg_thread_mutex_unlock(&tag_mutex);
 
     return tag;
+}
+
+/*---------------------------------------------------------------------------*/
+na_bool_t
+na_bmi_verify(const char* protocol)
+{
+    na_bool_t accept = NA_FALSE;
+
+    if (strcmp(protocol, "tcp") == 0)
+    {
+        accept = NA_TRUE;
+    }
+
+    #if 0
+    /* This section will be enabled once BMI supports BMI_QUERY_METHOD
+     * get info option.
+     */
+    if (BMI_get_info(0, BMI_QUERY_METHOD, protocol) > 0)
+    {
+        accept = NA_TRUE;
+    }
+    #endif
+    return accept;
+}
+
+/*---------------------------------------------------------------------------*/
+na_class_t*
+na_bmi_initialize(const na_host_buffer_t* na_buffer,
+                  na_bool_t               listen)
+{
+    char *method_list = malloc(strlen("bmi_") +
+                               strlen(na_buffer->na_protocol) +
+                               1);
+    int flag = (listen) ? BMI_INIT_SERVER : 0;
+    na_class_t *network_class = NULL;
+
+    printf("BMI initializing...\n");
+
+    memset(method_list, 0, sizeof(method_list));
+    
+    strcpy(method_list, "bmi_");
+    strcat(method_list, na_buffer->na_protocol);
+
+    network_class = NA_BMI_Init((listen) ? method_list : NULL,
+                                (listen) ? na_buffer->na_host_string : NULL,
+                                flag);
+
+    free(method_list);
+    return network_class;
 }
 
 /*---------------------------------------------------------------------------*/

@@ -16,6 +16,10 @@
 #include <limits.h>
 
 typedef struct na_class na_class_t; /* Abstract network class */
+typedef struct na_class_desribe na_class_describe_t;
+                                    /* Abstract class description */
+typedef struct na_host_buffer na_host_buffer_t;
+                                    /* Host string buffer */
 typedef void *      na_addr_t;      /* Abstract network address */
 typedef na_uint64_t na_size_t;      /* Size */
 typedef na_uint32_t na_tag_t;       /* Tag */
@@ -63,16 +67,15 @@ extern "C" {
 /**
  * Initialize the network abstraction layer.
  *
- * \param method [IN]           method name, available methods depend on
- *                              configuration (e.g., "bmi", "mpi")
- * \param port_name [IN]        port name string that may be used by underlying
- *                              plugin
+ * \param host_string [IN]      host address with port number (e.g.,
+ *                              tcp://localhost:3344 or
+ *                              tcp@bmi://localhost:3344)
  * \param listen [IN]           listen for incoming connections
  *
  * \return Pointer to network class
  */
 NA_EXPORT na_class_t *
-NA_Initialize(const char *method, const char *port_name, na_bool_t listen);
+NA_Initialize(const char *host_string, na_bool_t listen);
 
 /**
  * Finalize the network abstraction layer.

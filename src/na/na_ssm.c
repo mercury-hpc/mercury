@@ -62,6 +62,9 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
         na_status_t *status);
 static int na_ssm_progress(unsigned int timeout, na_status_t *status);
 static int na_ssm_request_free(na_request_t request);
+static na_bool_t na_ssm_verify(const char* protocol);
+static na_class_t* na_ssm_initialize(const na_host_buffer_t *host_buffer,
+                                     na_bool_t               listen);
 
 static na_class_t na_ssm_g = {
         na_ssm_finalize,               /* finalize */
@@ -237,6 +240,14 @@ typedef struct na_ssm_unexpected_wait{
 } na_ssm_unexpected_wait_t;
 
 static ssm_bits cur_bits;
+
+static const char na_ssm_name_g[] = "ssm";
+
+const na_class_describe_t na_ssm_describe_g = {
+    na_ssm_name_g,
+    na_ssm_verify,
+    na_ssm_initialize
+};
 
 /* generate unique matchbits */
 static inline ssm_bits
@@ -448,7 +459,7 @@ void get_cb(void *cbdat, void *evdat)
 #if DEBUG
     show_stats(cbdat, r);
 #endif
-    if(r->status!=64){
+    if(r->status!=SSM_ST_COMPLETE) {
         NA_ERROR_DEFAULT("get_cb(): cb error");
     }
     hg_thread_mutex_lock(&request_mutex);
@@ -512,6 +523,32 @@ static void* na_ssm_progress_service(void *args)
     return NULL;
 }
 #endif
+
+na_bool_t
+na_ssm_verify(const char* protocol)
+{
+    na_bool_t accept = NA_FALSE;
+    if (strcmp(protocol, "tcp") == 0)
+    {
+        accept = NA_TRUE;
+    }
+
+    return accept;
+}
+
+na_class_t*
+na_ssm_initialize(const na_host_buffer_t *na_buffer,
+                  na_bool_t               listen)
+{
+    if (na_buffer != NULL)
+    {
+        return NA_SSM_Init(na_buffer->na_protocol,
+                           na_buffer->na_port,
+                           listen);
+    }
+
+    return NULL;
+}
 
 /*---------------------------------------------------------------------------
  * Function:    NA_SSM_Init
@@ -635,43 +672,35 @@ static int na_ssm_finalize(void)
  *
  *---------------------------------------------------------------------------
  */
-static int na_ssm_addr_lookup(const char *name, na_addr_t *addr)
+static int na_ssm_addr_lookup(const char *in_name, na_addr_t *in_addr)
 {
-#if DEBUG
-    printf("na_ssm_addr_lookup()\n");
-    printf("\tname = %s, addr = %p \n", name, addr);
-#endif
-    na_ssm_destinfo_t dest;
-    addr_parser(name, &dest);
-    //
-    if(strcmp(dest.proto, c_proto)){
-        fprintf(stderr, "ERROR: protocol does not match\n");
-        return NA_FAIL;
-    }
-    if(dest.port != ssmport){
-        fprintf(stderr, "ERROR: port does not match\n");
-        return NA_FAIL;
+    na_ssm_destinfo_t   v_dest;
+    ssmptcp_addrargs_t  v_addrargs;
+    na_ssm_addr_t      *v_ssm_addr     = NULL;
+
+    printf("Addr: %s\n", in_name);
+
+    addr_parser(in_name, &v_dest);
+
+    v_addrargs.host = v_dest.hostname;
+    v_addrargs.port = v_dest.port;
+
+    v_ssm_addr = (na_ssm_addr_t *) malloc(sizeof(na_ssm_addr_t));
+
+    if (v_ssm_addr != NULL)
+    {
+        v_ssm_addr->addr = ssm_addr_create(ssm, &v_addrargs);
+
+        if(v_ssm_addr->addr < 0)
+        {
+            return NA_FAIL;
+        }
     }
 
-    ssmptcp_addrargs_t addrargs = {
-        .host = dest.hostname,
-        .port = dest.port,
-    };
+    *in_addr = (na_addr_t) v_ssm_addr;
 
-    printf("\tlookup host = %s, port = %d\n", name, ssmport);
-    na_ssm_addr_t *ssm_addr = (na_ssm_addr_t *)malloc(sizeof(na_ssm_addr_t));
-    //ssm_addr->addrs = ssm_addr(ssm);
-    //ssm_addr->addr = ssm_addr_create(ssm, adr);
-    ssm_addr->addr = ssm_addr_create(ssm, &addrargs);
-    printf("\taddr = %p\n", ssm_addr->addr);
-    //ssm_addr->addr = iaddr->create(iaddr, &addrargs);
-
-    if(ssm_addr->addr < 0){
-        printf("ERROR: ssm_addr_create() failed\n");
-        exit(0);
-    }
-    *addr = (na_addr_t)ssm_addr;
     return NA_SUCCESS;
+    
 }
 
 /*---------------------------------------------------------------------------
@@ -1096,7 +1125,7 @@ int na_ssm_mem_deregister(na_mem_handle_t mem_handle)
 static na_size_t na_ssm_mem_handle_get_serialize_size(na_mem_handle_t mem_handle)
 {
     (void) mem_handle;
-    return sizeof(ssm_bits);
+    return sizeof(na_ssm_mem_handle_t);
 }
 
 /*---------------------------------------------------------------------------
@@ -1304,181 +1333,65 @@ int na_ssm_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
  *
  *---------------------------------------------------------------------------
  */
-static int na_ssm_wait(na_request_t request, unsigned int timeout,
-        na_status_t *status)
+static int na_ssm_wait(na_request_t in_request, unsigned int in_timeout,
+        na_status_t *out_status)
 {
-    hg_time_t t1, t2;
-    hg_time_get_current(&t1);
-    na_ssm_request_t *req;
-    na_ssm_request_t *prequest = (na_ssm_request_t *)request;
-    bool request_completed = 0;
-#if DEBUG
-    printf("na_ssm_wait()\n\trequest = %p, timeout = %d, status = %p\n", request, timeout, status);
-#endif
-    struct timeval tv;
-    int rt, ret, ssmret;
-    rt = 0;
-    tv.tv_sec = timeout / 1000;
-    tv.tv_usec = (timeout % 1000)*1000;
-#if DEBUG
-    printf("\ttimeout sec = %d, usec = %d\n", tv.tv_sec, tv.tv_usec);
-#endif
-    if(prequest == NULL){
-        fprintf(stderr, "ERR: request == NULL\n\n");
-        return NA_FAIL;
-        //rt = ssm_wait(ssm, &tv);
-    } else if(0 && prequest->type == SSM_UNEXP_RECV_OP) {
-#if DEBUG
-        puts("\tUnexp wait");
-#endif
-        /*  Check the unexpected completed list. If the request has already
-         *  completed just copy the buffer. If no, wait for CB of unexpected
-         *  recv. 
-         *  */
-        hg_list_entry_t *entry = NULL;
-        na_ssm_unexpected_wait_t *ssm_unexpected_wait = NULL;
-        hg_thread_mutex_lock(&unexp_waitlist_mutex);
-        if (hg_list_length(unexpected_wait_list)) {
-            entry = unexpected_wait_list;
-            ssm_unexpected_wait = (na_ssm_unexpected_wait_t *) hg_list_data(entry);
-#if DEBUG
-            puts("\tcall ssm_wait");
-#endif
-            if(unexpbuf[unexpbuf_rpos].valid == 0){
-                ssm_wait(ssm, &tv); //TODO: change timeout
-            }
-#if DEBUG
-            puts("\tssm_wait end");
-#endif
-            hg_thread_mutex_lock(&unexp_buf_mutex);
-            while(unexpbuf[unexpbuf_rpos].valid == 0){
-#if DEBUG
-                printf("\tunexpbuf_availpos = %d, rpos = %d, cond wait()\n", unexpbuf_availpos, unexpbuf_rpos);
-#endif
-                hg_thread_cond_wait(&unexp_buf_cond, &unexp_buf_mutex);
-            }
-            if (unexpbuf[unexpbuf_rpos].status < 0) {
-                NA_ERROR_DEFAULT("unexpected recv failed");
-                /* TODO: free ?*/
-                //TODO: request->status = ERROR
-                
-            }
-            if(NA_SSM_UNEXPECTED_SIZE > (ssm_size_t)ssm_unexpected_wait->buf_size) {
-                NA_ERROR_DEFAULT("buf_size is less than its of unexpected message");
-                //ret = NA_FAIL;
-                //return ret;
-            }
-            na_ssm_unexpbuf_t *pbuf = &unexpbuf[unexpbuf_rpos];
-            if (ssm_unexpected_wait->actual_buf_size) {
-                *(ssm_unexpected_wait->actual_buf_size) = (na_size_t) pbuf->bytes;
-            }
-            if(ssm_unexpected_wait->source){
-#if DEBUG
-                fprintf(stderr, "\tcopy wait->source = %p\n", pbuf->addr);
-#endif
-                ((na_ssm_addr_t *)(ssm_unexpected_wait->source))->addr = pbuf->addr;
-            }
-            if(ssm_unexpected_wait->tag){
-                *(ssm_unexpected_wait->tag) = (na_tag_t) pbuf->bits - NA_SSM_TAG_UNEXPECTED_OFFSET;
-            }
-            memcpy(ssm_unexpected_wait->buf, pbuf->buf, ssm_unexpected_wait->buf_size);
-            na_ssm_request_t *preq = (na_ssm_request_t *)ssm_unexpected_wait->request;
-            (preq->matchbits) = pbuf->bits;
-            (preq->completed) = 1;
-            rt = 1;
+    int               v_na_status = NA_FAIL;
+    na_ssm_request_t *v_request   = (na_ssm_request_t *) in_request;
+    na_bool_t         v_completed = NA_FALSE;
+    int               v_cond_ret  = 0;
 
-            /* TODO: need to free the entry? */
-            /* remove from the list */
-            if (entry && !hg_list_remove_entry(&unexpected_wait_list, entry)) {
-                NA_ERROR_DEFAULT("Could not remove entry");
-            } else {
-                //TODO: free?
-            }
-
-            /* Clean up the buflist */
-            /* TODO: lock ? */
-            pbuf->valid = 0;
-            /* Post the buf again */
-            if( ssm_post(ssm, unexp_me, pbuf->mr, SSM_NOF) < 0){
-                NA_ERROR_DEFAULT("Post failed (wait)");
-            }
-            unexpbuf_availpos = NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_availpos);
-            unexpbuf_rpos = NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_rpos);
-            hg_thread_mutex_unlock(&unexp_buf_mutex);
-            
-            
-        } else {
-            /* wait has been called with unexp recv but there is no waiting
-             * entry.*/
-            puts("no  wait entry?");
-        }
-        hg_thread_mutex_unlock(&unexp_waitlist_mutex);
-    } else {
+    if (in_request == NULL)
+    {
+        printf("ERROR: %-30s(%4d): Need request pointer.\n",
+               __FUNCTION__, __LINE__);
+        goto out;
+    }
+    else
+    {
         hg_thread_mutex_lock(&request_mutex);
-        request_completed = prequest->completed;
+        v_completed = v_request->completed;
         hg_thread_mutex_unlock(&request_mutex);
-        if(request_completed){
-            rt = 1;
-        } else {
-            /* Need to wait the completion */
-            /* TODO: need to change tv. should be less than timeout, and
-             * repeat this.
-             * If there is a progress thread, just wait for completion.*/
-#if DEBUG
-            puts("\tWait for completion");
-            puts("\twait loop (ssm_wait)");
-#endif
-            while(!request_completed){
-#if 0
-                ssmret = ssm_wait(ssm, &tv);
-                if(ssmret < 0 ){
-                    NA_ERROR_DEFAULT("ssm_wait() failed");
-                    rt = -1;
-                } else if(ssmret == 0){
 
+        if (!v_completed)
+        {
+            hg_thread_mutex_lock(&request_mutex);
+
+            while (!v_completed)
+            {
+                v_cond_ret = hg_thread_cond_wait(&comp_req_cond, &request_mutex);
+
+
+                v_completed = v_request->completed;
+
+                if (!v_completed)
+                {
+                    hg_thread_mutex_unlock(&request_mutex);
                 }
-#endif
-                hg_thread_mutex_lock(&request_mutex);
-                request_completed = prequest->completed;
-                hg_thread_mutex_unlock(&request_mutex);
-                if(request_completed){
-                    rt = 1;
-                    break;
-                }
-                //TODO timeout check
+            }
+
+            hg_thread_mutex_unlock(&request_mutex);
+
+            if (v_cond_ret < 0)
+            {
+                printf("ERROR: %-30s(%4d): hg_thread_cond_wait() failed. "
+                       "Error: %d\n", __FUNCTION__, __LINE__, v_cond_ret);
+                v_na_status = NA_FAIL;
+                goto out;
             }
         }
-    }
-    if( rt < 0){
-#if DEBUG
-        fprintf(stderr, "\tssm_wait() failed\n");
-#endif
-        return NA_FAIL;
-    }
-    //TODO: status->count ??
-    if (status && status != NA_STATUS_IGNORE) {
-#if DEBUG
-        printf("\treturn status code\n");
-        fflush(stdout);
-#endif
-        if (rt > 0){
-            status->completed = 1;
-            ret = 1;
-        } else if (rt == 0){
-            status->completed = 0;
-            ret = 1;
-        } else {
-            status->completed = 0;
-            ret = -1;
+
+        if (out_status && out_status != NA_STATUS_IGNORE)
+        {
+            if (v_completed)
+              out_status->completed = NA_TRUE;
         }
-    } else {
-#if DEBUG
-        printf("\tno return status code\n");
-        fflush(stdout);
-#endif
-        ret = rt;
+
+        v_na_status = NA_SUCCESS;
     }
-    return ret;
+
+ out:
+    return v_na_status;
 }
 
 /*---------------------------------------------------------------------------
