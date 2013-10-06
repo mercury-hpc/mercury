@@ -50,6 +50,7 @@ hg_proc_buf_alloc(size_t size)
 {
     size_t alignment;
     void *mem_ptr = NULL;
+    int ret = HG_SUCCESS;
 
 #ifdef _WIN32
     SYSTEM_INFO system_info;
@@ -58,7 +59,7 @@ hg_proc_buf_alloc(size_t size)
     mem_ptr = _aligned_malloc(size, alignment);
 #else
     alignment = sysconf(_SC_PAGE_SIZE);
-    posix_memalign(&mem_ptr, alignment, size);
+    ret = posix_memalign(&mem_ptr, alignment, size);
 #endif
     if (mem_ptr) {
         memset(mem_ptr, 0, size);

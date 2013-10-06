@@ -540,12 +540,12 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
         itp = ssmptcp_new_tp(port, SSM_NOF);
         if(itp == NULL){
             printf("ssmptcp_new_tp() failed\n");
-            return -1;
+            return NULL;
         }
         ssm = ssm_start(itp, NULL, flags);
         if(ssm == NULL){
             printf("ssm_start() failed\n");
-            return -1;
+            return NULL;
         }
         iaddr = ssm_addr(ssm);
         /* TODO Error handling */
