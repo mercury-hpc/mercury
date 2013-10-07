@@ -15,4 +15,9 @@ if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(test_checksum)
 endif()
 
-add_test(NAME checksum COMMAND $<TARGET_FILE:test_checksum>)
+set(TEST_HASH_TYPES crc16 crc64)
+foreach(hash_type ${TEST_HASH_TYPES})
+  add_test(NAME "checksum_${hash_type}"
+    COMMAND $<TARGET_FILE:test_checksum> "${hash_type}"
+  )
+endforeach()

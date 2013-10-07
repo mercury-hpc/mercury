@@ -27,11 +27,22 @@ main(int argc, char *argv[])
     hg_checksum_t checksum1, checksum2;
     void *hash1 = NULL, *hash2 = NULL;
     size_t hash_size;
+    const char *hash_method;
     int ret = EXIT_SUCCESS;
 
-    /* Unused parameters */
-    (void) argc;
-    (void) argv;
+    if (argc < 2) {
+        fprintf(stderr, "Usage:\n%s [method]\n", argv[0]);
+        ret = EXIT_FAILURE;
+        return ret;
+    }
+
+    if (strcmp(argv[1], "crc16") && strcmp(argv[1], "crc64")) {
+        fprintf(stderr, "%s is not a valid parameter\n", argv[1]);
+        ret = EXIT_FAILURE;
+        return ret;
+    }
+
+    hash_method = argv[1];
 
     /* Initialize buf1 */
     for (i = 0; i < BUF_SIZE; i++) {
@@ -46,8 +57,8 @@ main(int argc, char *argv[])
     }
 
     /* Initialize checksums */
-    hg_checksum_init("crc64", &checksum1);
-    hg_checksum_init("crc64", &checksum2);
+    hg_checksum_init(hash_method, &checksum1);
+    hg_checksum_init(hash_method, &checksum2);
 
     /* Update checksums */
     hg_checksum_update(checksum1, buf1, BUF_SIZE * sizeof(int));
@@ -71,6 +82,12 @@ main(int argc, char *argv[])
 
     printf("Checksum of buf2 is: %016lX\n",
             *(hg_util_uint64_t*)hash2);
+
+    printf("Checksum of buf1 is: %04X\n",
+            *(hg_util_uint16_t*)hash1);
+
+    printf("Checksum of buf2 is: %04X\n",
+            *(hg_util_uint16_t*)hash2);
     */
 
     if (strncmp(hash1, hash2, hash_size) != 0) {

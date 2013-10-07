@@ -57,6 +57,7 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_checksum.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_checksum_crc16.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_checksum_crc64.c
 )
 

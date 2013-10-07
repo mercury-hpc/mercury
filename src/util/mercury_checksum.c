@@ -10,6 +10,7 @@
 
 #include "mercury_checksum_private.h"
 #include "mercury_checksum_crc64.h"
+#include "mercury_checksum_crc16.h"
 
 #include "mercury_util_error.h"
 
@@ -28,6 +29,12 @@ hg_checksum_init(const char *hash_method, hg_checksum_t *checksum)
     if (strcmp(hash_method, "crc64") == 0) {
         if (hg_checksum_crc64_init(checksum_class) != HG_UTIL_SUCCESS) {
             HG_UTIL_ERROR_DEFAULT("Could not initialize crc64 checksum");
+            ret = HG_UTIL_FAIL;
+            goto done;
+        }
+    } else if (strcmp(hash_method, "crc16") == 0) {
+        if (hg_checksum_crc16_init(checksum_class) != HG_UTIL_SUCCESS) {
+            HG_UTIL_ERROR_DEFAULT("Could not initialize crc16 checksum");
             ret = HG_UTIL_FAIL;
             goto done;
         }
