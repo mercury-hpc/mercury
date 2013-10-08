@@ -255,7 +255,22 @@ if(NOT WIN32 AND NOT APPLE)
     )
   endif()
 
+  # Need to generate -llib if not already passed
   foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES})
+    get_filename_component(lib_name ${lib_dep} NAME_WE)
+    if(lib_name MATCHES "^-l")
+      # lib_name is -lxxx
+      set(MERCURY_EXT_LIB_DEPENDENCIES_LIST ${MERCURY_EXT_LIB_DEPENDENCIES_LIST} ${lib_name})
+    else()
+      # lib_name is /path/to/lib so get lirabry path and name
+      get_filename_component(lib_path ${lib_dep} PATH)
+      string(REGEX REPLACE "^lib" "" lib_name ${lib_name})
+      set(MERCURY_EXT_LIB_DEPENDENCIES_LIST ${MERCURY_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path} -l${lib_name})
+    endif()
+  endforeach()
+  list(REMOVE_DUPLICATES MERCURY_EXT_LIB_DEPENDENCIES_LIST)
+
+  foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES_LIST})
     set(MERCURY_LIB_DEPENDENCIES "${MERCURY_LIB_DEPENDENCIES} ${lib_dep}")
   endforeach()
   set(MERCURY_LIB_DEPENDENCIES ${MERCURY_LIB_DEPENDENCIES} PARENT_SCOPE)

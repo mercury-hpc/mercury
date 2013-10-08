@@ -5,7 +5,7 @@ libdir=@MERCURY_INSTALL_LIB_DIR@
 includedir=@MERCURY_INSTALL_INCLUDE_DIR@
 
 Name: mercury
-Description: The Function Shipper for I/O Forwarding
+Description: RPC Library for High-Performance Computing
 Version: @MERCURY_PACKAGE_VERSION@
 URL: http://trac.mcs.anl.gov/projects/mercury
 Requires:
