@@ -64,7 +64,7 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], char **port_name, int *r
 
 #ifdef NA_HAS_BMI
     if (strcmp("bmi", argv[1]) == 0) {
-        network_class = NA_BMI_Init(NULL, NULL, 0);
+        network_class = NA_Initialize(getenv(HG_PORT_NAME), 0);
         if (rank) *rank = 0;
         if (port_name) *port_name = getenv(HG_PORT_NAME);
     }
@@ -115,7 +115,7 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
             fprintf(stderr, "getenv(\"%s\") failed.\n", HG_PORT_NAME);
             return NULL;
         }
-        network_class = NA_BMI_Init("bmi_tcp", listen_addr, BMI_INIT_SERVER);
+        network_class = NA_Initialize(getenv(HG_PORT_NAME), 1);
     }
 #endif
 

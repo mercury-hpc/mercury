@@ -159,7 +159,7 @@ static const char na_bmi_name_g[] = "bmi";
 const na_class_describe_t na_bmi_describe_g  = {
     na_bmi_name_g,
     na_bmi_verify,
-        na_bmi_initialize
+    na_bmi_initialize
 };
 
 /*---------------------------------------------------------------------------*/
@@ -207,22 +207,52 @@ na_bmi_gen_onesided_tag(void)
 na_bool_t
 na_bmi_verify(const char* protocol)
 {
-    na_bool_t accept = NA_FALSE;
+    na_bool_t accept         = NA_FALSE;
+    int       string_length  = 0;
+    char     *transport      = NULL;
+    char     *index          = NULL;
 
+    /* Note: BMI_SUPPORTS_TRANSPORT_METHOD_GETINFO is not defined
+     *       anywhere.  This is a temporary way to disable this fully
+     *       functional code to avoid incompatibility with older versions
+     *       of BMI.  We will remove this #ifdef to always use the
+     *       BMI_get_info API and find out the protocols supported by
+     *       the BMI library.
+     */
+#ifdef BMI_SUPPORTS_TRANSPORT_METHOD_GETINFO
+    /* Obtain the list of transport protocols supported by BMI. */
+    string_length = BMI_get_info(0,
+                                 BMI_TRANSPORT_METHODS_STRING,
+                                 &transport);
+    
+    if (string_length <= 0 || transport == NULL)
+    {
+        /* bmi is not configured with any plugins, transport is NULL */
+        return NA_FALSE;
+    }
+
+    index = strtok(transport, ",");
+
+    while (index != NULL)
+    {
+        /* check if bmi supports the protocol. */
+        if (strcmp(index, protocol) == 0)
+        {
+            accept = NA_TRUE;
+            break;
+        }
+
+        index = strtok(NULL, ",");
+    }
+
+    free(transport);
+#else
     if (strcmp(protocol, "tcp") == 0)
     {
         accept = NA_TRUE;
     }
+#endif
 
-    #if 0
-    /* This section will be enabled once BMI supports BMI_QUERY_METHOD
-     * get info option.
-     */
-    if (BMI_get_info(0, BMI_QUERY_METHOD, protocol) > 0)
-    {
-        accept = NA_TRUE;
-    }
-    #endif
     return accept;
 }
 
@@ -231,14 +261,17 @@ na_class_t*
 na_bmi_initialize(const na_host_buffer_t* na_buffer,
                   na_bool_t               listen)
 {
-    char *method_list = malloc(strlen("bmi_") +
-                               strlen(na_buffer->na_protocol) +
-                               1);
-    int flag = (listen) ? BMI_INIT_SERVER : 0;
-    na_class_t *network_class = NULL;
+    char       *method_list     = NULL;
+    int         flag            = (listen) ? BMI_INIT_SERVER : 0;
+    na_class_t *network_class   = NULL;
 
-    printf("BMI initializing...\n");
-
+    method_list = malloc(strlen("bmi_") +
+                         strlen(na_buffer->na_protocol) + 1);
+    if (method_list == NULL)
+    {
+        return NULL;
+    }
+    
     memset(method_list, 0, sizeof(method_list));
     
     strcpy(method_list, "bmi_");

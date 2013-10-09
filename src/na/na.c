@@ -34,16 +34,16 @@ extern na_class_describe_t na_mpi_describe_g;
 #endif
 
 static na_class_describe_t *const na_class_methods[] = {
-    #ifdef NA_HAS_SSM
-    &na_ssm_describe_g,
-    #endif
-    #ifdef NA_HAS_BMI
+#ifdef NA_HAS_BMI
     &na_bmi_describe_g,
-    #endif
-    #ifdef NA_HAS_MPI
+#endif
+#ifdef NA_HAS_MPI
     &na_mpi_describe_g,
-    #endif
-        NULL
+#endif
+#ifdef NA_HAS_SSM
+    &na_ssm_describe_g,
+#endif
+    NULL
 };
 
 /*---------------------------------------------------------------------------*/
@@ -118,7 +118,10 @@ static int NA_parse_host_string(const char            *host_string,
 
     if (na_buffer->na_host_string != NULL)
     {
-        memset(na_buffer->na_host_string, 0, sizeof(na_buffer->na_host_string));
+        memset(na_buffer->na_host_string,
+               0,
+               sizeof(na_buffer->na_host_string));
+        
         strcpy(na_buffer->na_host_string, na_buffer->na_protocol);
         strcat(na_buffer->na_host_string, "://");
         strcat(na_buffer->na_host_string, na_buffer->na_host);
@@ -146,12 +149,17 @@ NA_Initialize(const char *host_string, na_bool_t listen)
 {
     na_class_t         *network_class      = NULL;
     na_bool_t           accept             = NA_FALSE;
-    na_host_buffer_t   *na_buffer          = malloc(sizeof(na_host_buffer_t));
+    na_host_buffer_t   *na_buffer          = NULL;
     int                 index              = 0;
     NA_CLASS_PRIORITY   highest_priority   = NA_CLASS_PRIORITY_INVALID;
     int                 i                  = 0;
     int                 plugin_count       = 0;
 
+    na_buffer = (na_host_buffer_t *) malloc(sizeof(na_host_buffer_t));
+    if (na_buffer == NULL)
+    {
+        return NULL;
+    }
 
     plugin_count = sizeof(na_class_methods) / sizeof(na_class_methods[0]) - 1;
 
@@ -164,6 +172,7 @@ NA_Initialize(const char *host_string, na_bool_t listen)
         if (accept)
         {
             int class_priority = NA_get_priority(na_buffer);
+            
             if ((na_buffer->na_class && strcmp(na_class_methods[i]->class_name,
                                                na_buffer->na_class) == 0) ||
                 class_priority == NA_CLASS_PRIORITY_MAX)

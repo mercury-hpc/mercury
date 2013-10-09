@@ -318,101 +318,75 @@ static inline void show_stats(void *cbdat, ssm_result r)
 
 void msg_send_cb(void *cbdat, void *evdat) 
 {
-#if DEBUG
-    puts("msg_send_cb()");
-#endif
     ssm_result r = evdat;
     (void)cbdat;
-#if DEBUG
-    show_stats(cbdat, r);
-#endif
-    if(r->status!=64){
+
+    if (r->status != SSM_ST_COMPLETE)
+    {
         NA_ERROR_DEFAULT("msg_send_cb(): cb error");
         fprintf(stderr, "\t         (%s)\n", ssm_status_str(r->status));
+        return;
     }
+    
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
     //wake up others
     hg_thread_cond_signal(&comp_req_cond);
     hg_thread_mutex_unlock(&request_mutex);
     ssm_mr_destroy(r->mr); //TODO: Error Handling
-    /*
-    if(cbdat!=NULL){
-        free(cbdat);
-    }
-    */
 }
 
 void unexp_msg_send_cb(void *cbdat, void *evdat) 
 {
-#if DEBUG
-    puts("unexp_msg_send_cb()");
-#endif
     ssm_result r = evdat;
-    (void)cbdat;
-#if DEBUG
-    show_stats(cbdat, r);
-#endif
-    if(r->status!=64){
+
+    if(r->status != SSM_ST_COMPLETE)
+    {
         NA_ERROR_DEFAULT("unexp_msg_send_cb(): cb error");
+        return;
     }
-    hg_thread_mutex_lock(&request_mutex);
-    mark_as_completed(cbdat);
-    //wake up others
-    hg_thread_cond_signal(&comp_req_cond);
-    hg_thread_mutex_unlock(&request_mutex);
-    ssm_mr_destroy(r->mr); //TODO: Error Handling
-    /*
-    if(cbdat!=NULL){
-        free(cbdat);
-    }
-    */
-}
-
-void msg_recv_cb(void *cbdat, void *evdat) {
-#if DEBUG
-    puts("msg_recv_cb()");
-#endif
-    //request completion function
-    //
-    (void)cbdat;
-    ssm_result r = evdat;
-#if DEBUG
-    show_stats(cbdat, r);
-#endif
-    if(r->status!=64){
-        NA_ERROR_DEFAULT("msg_recv_cb(): cb error");
-    }
-    hg_thread_mutex_lock(&request_mutex);
-    mark_as_completed(cbdat);
-    //wake up others
-    hg_thread_cond_signal(&comp_req_cond);
-    hg_thread_mutex_unlock(&request_mutex);
-    ssm_mr_destroy(r->mr); //TODO: Error Handling
-    /*
-    if(cbdat!=NULL){
-        free(cbdat);
-    }
-    */
-    ssm_unlink(ssm, r->me);
     
+    hg_thread_mutex_lock(&request_mutex);
+    mark_as_completed(cbdat);
+    //wake up others
+    hg_thread_cond_signal(&comp_req_cond);
+    hg_thread_mutex_unlock(&request_mutex);
+    ssm_mr_destroy(r->mr); //TODO: Error Handling
 }
 
-void unexp_msg_recv_cb(void *cbdat, void *evdat) {
+void msg_recv_cb(void *cbdat, void *evdat)
+{
     ssm_result r = evdat;
-    (void)cbdat;
-#if DEBUG
-    puts("unexp_msg_recv_cb()");
-    show_stats(cbdat, r);
-#endif
+
+    if(r->status!=SSM_ST_COMPLETE)
+    {
+        NA_ERROR_DEFAULT("msg_recv_cb(): cb error");
+        return;
+    }
+    
+    hg_thread_mutex_lock(&request_mutex);
+    mark_as_completed(cbdat);
+    //wake up others
+    hg_thread_cond_signal(&comp_req_cond);
+    hg_thread_mutex_unlock(&request_mutex);
+
+    ssm_mr_destroy(r->mr); //TODO: Error Handling
+    ssm_unlink(ssm, r->me);
+}
+
+void unexp_msg_recv_cb(void *cbdat, void *evdat)
+{
+    ssm_result r = evdat;
+
     hg_thread_mutex_lock(&unexp_buf_mutex);
     na_ssm_unexpbuf_t *cbd = &unexpbuf[unexpbuf_cpos];
-#if DEBUG
-    printf("\tcpos = %d\n", unexpbuf_cpos);
-#endif
-    if(r->status!=64){
+
+    if (r->status != SSM_ST_COMPLETE)
+    {
         NA_ERROR_DEFAULT("unexp_msg_recv_cb(): cb error");
+        return;
     }
+    
     cbd->valid = 1;
     cbd->bits = r->bits;
     cbd->status = r->status;
@@ -421,26 +395,19 @@ void unexp_msg_recv_cb(void *cbdat, void *evdat) {
     unexpbuf_cpos = NA_SSM_NEXT_UNEXPBUF_POS(unexpbuf_cpos);
     hg_thread_cond_signal(&unexp_buf_cond);
     hg_thread_mutex_unlock(&unexp_buf_mutex);
-#if DEBUG
-    puts("\tunexp_msg_recv_cb end");
-#endif
 }
 
 void put_cb(void *cbdat, void *evdat) 
 {
-#if DEBUG
-    puts("msg_put_cb()");
-#endif
     ssm_result r = evdat;
-    (void)cbdat;
-#if DEBUG
-    show_stats(cbdat, r);
-#endif
-    if(r->status!=64){
+
+    if (r->status != SSM_ST_COMPLETE)
+    {
         NA_ERROR_DEFAULT("put_cb(): cb error");
-        //show_stats(cbdat ,r);
         printf("\t         (%s)\n", ssm_status_str(r->status));
+        return;
     }
+    
     hg_thread_mutex_lock(&request_mutex);
     mark_as_completed(cbdat);
     //wake up others
@@ -451,41 +418,35 @@ void put_cb(void *cbdat, void *evdat)
 
 void get_cb(void *cbdat, void *evdat) 
 {
-#if DEBUG
-    puts("msg_get_cb()");
-#endif
-    ssm_result r = evdat;
-    (void)cbdat;
-#if DEBUG
-    show_stats(cbdat, r);
-#endif
-    if(r->status!=SSM_ST_COMPLETE) {
+    ssm_result v_ssm_result = evdat;
+    
+    if (v_ssm_result->status != SSM_ST_COMPLETE)
+    {
         NA_ERROR_DEFAULT("get_cb(): cb error");
+        return;
     }
+
     hg_thread_mutex_lock(&request_mutex);
+    
     mark_as_completed(cbdat);
+
     //wake up others
     hg_thread_cond_signal(&comp_req_cond);
+
     hg_thread_mutex_unlock(&request_mutex);
 }
 
 void postedbuf_cb(void *cbdat, void *evdat)
 {
-#if DEBUG
-    puts("postedbuf_cb()");
-#endif
-    ssm_result r = evdat;
-    (void)cbdat;
-    if(r->status!=64){
+    ssm_result v_ssm_result = evdat;
+    
+    if (v_ssm_result->status != SSM_ST_COMPLETE)
+    {
         NA_ERROR_DEFAULT("postedbuf_cb(): cb error");
+        return;
     }
-#if 0
-    show_stats(cbdat, r);
-#endif
-    /* post the buf again*/
-    if(ssm_post(r->id, r->me, r->mr, SSM_NOF) < 0){
-        NA_ERROR_DEFAULT("failed to post");
-    }
+
+    return;
 }
 
 /*---------------------------------------------------------------------------
@@ -498,9 +459,6 @@ void postedbuf_cb(void *cbdat, void *evdat)
 #ifdef NA_HAS_CLIENT_THREAD
 static void* na_ssm_progress_service(void *args)
 {
-#if DEBUG
-    puts("Progress service start");
-#endif
     na_bool_t service_done = 0;
 
     while (!service_done) {
@@ -515,9 +473,11 @@ static void* na_ssm_progress_service(void *args)
             NA_ERROR_DEFAULT("Could not make progress");
             break;
         }
+
         sleep(0);
 
-        if (service_done) break;
+        if (service_done)
+          break;
     }
 
     return NULL;
@@ -528,6 +488,7 @@ na_bool_t
 na_ssm_verify(const char* protocol)
 {
     na_bool_t accept = NA_FALSE;
+    
     if (strcmp(protocol, "tcp") == 0)
     {
         accept = NA_TRUE;
@@ -559,21 +520,16 @@ na_ssm_initialize(const na_host_buffer_t *na_buffer,
  */
 na_class_t *NA_SSM_Init(char *proto, int port, int flags)
 {
-#if DEBUG
-    puts("NA_SSM_Init()");
-#ifdef NA_HAS_CLIENT_THREAD
-    puts("HAS_CLIENT_THREAD");
-#endif
-#endif
-    if (flags == 0 ){
+    if (flags == 0 )
+    {
         flags = SSM_NOF;
     }
-#if DEBUG
-    printf("Port = %d\n", port);
-#endif
+    
     ssmport = port;
     strncpy(c_proto, proto, sizeof(c_proto));
-    if (strcmp(proto, "tcp") == 0) {
+
+    if (strcmp(proto, "tcp") == 0)
+    {
         itp = ssmptcp_new_tp(port, SSM_NOF);
         if(itp == NULL){
             printf("ssmptcp_new_tp() failed\n");
@@ -586,7 +542,9 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
         }
         iaddr = ssm_addr(ssm);
         /* TODO Error handling */
-    } else {
+    }
+    else
+    {
         printf("Unknown protocol");
         exit(0);
     }
@@ -1007,8 +965,9 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
-#if DEBUG
     printf("na_ssm_msg_recv()\n");
+#if DEBUG
+
     printf("\tbuf = %p, buf_size = %d, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, tag, request, op_arg);
 #endif
     int ssm_ret, ret = NA_SUCCESS;
@@ -1061,33 +1020,54 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
  *
  *---------------------------------------------------------------------------
  */
-int na_ssm_mem_register(void *buf, na_size_t buf_size, unsigned long flags,
-        na_mem_handle_t *mem_handle)
+int na_ssm_mem_register(void               *in_buf,
+                        na_size_t           in_buf_size,
+                        unsigned long       in_flags,
+                        na_mem_handle_t    *out_mem_handle)
 {
-#if DEBUG
-    fprintf(stderr, "na_ssm_mem_register ( buf_size = %d, buf = %p)\n", buf_size, buf);
-#endif
-    na_ssm_mem_handle_t *pssm_mr;
-    pssm_mr = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
-    pssm_mr->mr = ssm_mr_create(NULL, buf, buf_size);
-    //printf("mr = %p\n", pssm_mr->mr);
-    pssm_mr->matchbits = generate_unique_matchbits() + NA_SSM_TAG_RMA_OFFSET;
-    pssm_mr->cb.pcb = postedbuf_cb;
-    pssm_mr->cb.cbdata = NULL;
-    pssm_mr->me = ssm_link(ssm, 0, pssm_mr->matchbits, SSM_POS_HEAD, NULL, &(pssm_mr->cb), SSM_NOF);
-    int i;
-    for(i=0; i< 2; i++){
-        if( ssm_post(ssm, pssm_mr->me, pssm_mr->mr, SSM_NOF) < 0){
-            NA_ERROR_DEFAULT("post failed");
-        }
+    na_ssm_mem_handle_t       *v_handle = NULL;
+    int                        v_return = NA_SUCCESS;
+
+    v_handle = (na_ssm_mem_handle_t *) malloc(sizeof(na_ssm_mem_handle_t));
+
+    if (v_handle == NULL)
+    {
+        return NA_FAIL;
     }
-    *mem_handle = pssm_mr;
-#if DEBUG
-    fprintf(stderr, "\tmr = %p, matchb = %lu (%p)\n", pssm_mr->mr, pssm_mr->matchbits, pssm_mr->matchbits);
-#endif
 
+    v_handle->mr = ssm_mr_create(NULL, in_buf, in_buf_size);
 
-    //TODO add this mr to hash table and error handle
+    if (v_handle->mr == NULL)
+    {
+        free(v_handle);
+        return NA_FAIL;
+    }
+
+    v_handle->matchbits = generate_unique_matchbits() + NA_SSM_TAG_RMA_OFFSET;
+    v_handle->cb.pcb    = postedbuf_cb;
+    v_handle->cb.cbdata = NULL;
+
+    v_handle->me = ssm_link(ssm,
+                            v_handle->matchbits,
+                            NA_SSM_TAG_RMA_OFFSET,
+                            SSM_POS_HEAD,
+                            NULL,
+                            &(v_handle->cb),
+                            SSM_NOF);
+
+    v_return = ssm_post(ssm,
+                        v_handle->me,
+                        v_handle->mr,
+                        SSM_POST_STATIC);
+
+    if (v_return < 0)
+    {
+        free(v_handle);
+        return NA_FAIL;
+    }
+
+    *out_mem_handle = v_handle;
+
     return NA_SUCCESS;
 }
 
@@ -1140,6 +1120,22 @@ static na_size_t na_ssm_mem_handle_get_serialize_size(na_mem_handle_t mem_handle
 int na_ssm_mem_handle_serialize(void *buf, na_size_t buf_size,
         na_mem_handle_t mem_handle)
 {
+    int ret = NA_SUCCESS;
+    na_ssm_mem_handle_t *ssmhandle = (na_ssm_mem_handle_t *) mem_handle;
+
+    if (buf_size < sizeof(na_ssm_mem_handle_t))
+    {
+        printf("Error\n");
+        ret = NA_FAIL;
+    }
+    else
+    {
+        memcpy(buf, ssmhandle, sizeof(na_ssm_mem_handle_t));
+    }
+
+    return ret;
+    
+    #if 0
     //TODO: only matchbits
 #if DEBUG
     fprintf(stderr, "na_ssm_msm_handle_serialize(size = %d, h = %p)\n", buf_size, mem_handle);
@@ -1159,6 +1155,7 @@ int na_ssm_mem_handle_serialize(void *buf, na_size_t buf_size,
         //printf("\tbits = %p\n", *pbits);
     }
     return ret;
+    #endif
 }
 
 /*---------------------------------------------------------------------------
@@ -1173,6 +1170,24 @@ int na_ssm_mem_handle_serialize(void *buf, na_size_t buf_size,
 int na_ssm_mem_handle_deserialize(na_mem_handle_t *mem_handle,
         const void *buf, na_size_t buf_size)
 {
+    int ret = NA_SUCCESS;
+    na_ssm_mem_handle_t *ssmhandle;
+
+    if (buf_size < sizeof(na_ssm_mem_handle_t))
+    {
+        printf("Error\n");
+        ret = NA_FAIL;
+    }
+    else
+    {
+        ssmhandle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t));
+        memcpy(ssmhandle, buf, sizeof(na_ssm_mem_handle_t));
+        *mem_handle = (na_mem_handle_t) ssmhandle;
+    }
+
+    return ret;
+    
+    #if 0
 #if DEBUG
     fprintf(stderr, "na_ssm_mem_handle_deserialize\n");
     fprintf(stderr, "\trecvd = %lu\n", *(uint64_t *)buf);
@@ -1195,6 +1210,7 @@ int na_ssm_mem_handle_deserialize(na_mem_handle_t *mem_handle,
         *mem_handle = (na_mem_handle_t) ssm_mem_handle;
     }
     return ret;
+    #endif
 }
 
 /*---------------------------------------------------------------------------
@@ -1278,50 +1294,72 @@ int na_ssm_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
  *
  *---------------------------------------------------------------------------
  */
-int na_ssm_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-        na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t length, na_addr_t remote_addr, na_request_t *request)
+int na_ssm_get(na_mem_handle_t    in_local_mem_handle,
+               na_offset_t        in_local_offset,
+               na_mem_handle_t    in_remote_mem_handle,
+               na_offset_t        in_remote_offset,
+               na_size_t          in_length,
+               na_addr_t          in_remote_addr,
+               na_request_t      *out_request)
 {
-#if DEBUG
-    printf("na_ssm_get()\n");
-#endif
-    na_ssm_mem_handle_t *lh = (na_ssm_mem_handle_t *)local_mem_handle;
-    na_ssm_mem_handle_t *rh = (na_ssm_mem_handle_t *)remote_mem_handle;
-    /* mem layout */
-    struct iovec *iov;
-    iov = (struct iovec *)malloc(sizeof(struct iovec));
-    char *pbuf = (char *)lh->buf;
-    pbuf += local_offset;
-    iov[0].iov_base = pbuf;
-    iov[0].iov_len = length;
-#if DEBUG
-    printf("\tbase = %p, len = %lu\n", pbuf, length);
-#endif
-    int ssm_ret, ret = NA_SUCCESS;
-    /* args */
-    na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) remote_addr;
-    na_ssm_request_t *ssm_request = NULL;
-    ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
-    memset(ssm_request, 0, sizeof(na_ssm_request_t));
-    ssm_request->type = SSM_GET_OP;
-    ssm_request->matchbits = rh->matchbits;
-    
-#if DEBUG
-    printf("\tlocal_h->mr = %p, local_of = %ld, remote_h->mr = %p, remote_of = %ld, len = %ld, addr = %p\n", lh->mr, local_offset, rh->mr, remote_offset, length, ssm_peer_addr->addr);
-    printf("\tlh->matchbits = %p, rh->matchbits=%p\n", lh->matchbits, rh->matchbits);
-#endif
+    na_ssm_mem_handle_t *v_local_handle  = NULL;
+    na_ssm_mem_handle_t *v_remote_handle = NULL;
+    ssm_md               v_remote_md     = NULL;
+    ssm_mr               v_local_mr      = NULL;
+    na_ssm_addr_t       *v_ssm_peer_addr = NULL;
+    na_ssm_request_t    *v_ssm_request   = NULL;
+    ssm_tx               v_stx;
 
-    ssm_request->cb.pcb = get_cb;
-    ssm_request->cb.cbdata = ssm_request;
-    ssm_tx stx; 
-    stx = ssm_get(ssm, ssm_peer_addr->addr, NULL, lh->mr, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
-    //stx = ssm_getv(ssm, ssm_peer_addr->addr , iov, 1, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
-#if DEBUG
-    printf("\ttx = %p\n", stx);
-#endif
-    ssm_request->tx = stx;
-    *request = (na_request_t*) ssm_request;
-    return ret;
+    v_local_handle  = (na_ssm_mem_handle_t *)in_local_mem_handle;
+    v_remote_handle = (na_ssm_mem_handle_t *)in_remote_mem_handle;
+    
+    v_remote_md = ssm_md_add(NULL, in_remote_offset, in_length);
+
+    if (v_remote_md == NULL)
+    {
+        return NA_FAIL;
+    }
+
+    v_local_mr = ssm_mr_create(NULL,
+                               v_local_handle->buf + in_local_offset,
+                               in_length);
+
+    v_ssm_peer_addr = (na_ssm_addr_t *) in_remote_addr;
+    
+    v_ssm_request = (na_ssm_request_t *) malloc(sizeof(na_ssm_request_t));
+
+    if (v_ssm_request == NULL)
+    {
+        ssm_md_release(v_remote_md);
+        return NA_FAIL;
+    }
+
+    memset(v_ssm_request, 0, sizeof(na_ssm_request_t));
+    v_ssm_request->type = SSM_GET_OP;
+    v_ssm_request->matchbits = v_remote_handle->matchbits;
+    v_ssm_request->cb.pcb = get_cb;
+    v_ssm_request->cb.cbdata = v_ssm_request;
+
+    v_stx = ssm_get(ssm,
+                    v_ssm_peer_addr->addr,
+                    v_remote_md,
+                    v_local_mr,
+                    v_ssm_request->matchbits,
+                    &(v_ssm_request->cb),
+                    SSM_NOF);
+
+    if (v_stx <= 0)
+    {
+        free(v_ssm_request);
+        ssm_md_release(v_remote_md);
+        return NA_FAIL;
+    }
+    
+    v_ssm_request->tx = v_stx;
+    
+    *out_request = (na_request_t*) v_ssm_request;
+    
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------
@@ -1333,8 +1371,9 @@ int na_ssm_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
  *
  *---------------------------------------------------------------------------
  */
-static int na_ssm_wait(na_request_t in_request, unsigned int in_timeout,
-        na_status_t *out_status)
+static int na_ssm_wait(na_request_t in_request,
+                       unsigned int in_timeout,
+                       na_status_t *out_status)
 {
     int               v_na_status = NA_FAIL;
     na_ssm_request_t *v_request   = (na_ssm_request_t *) in_request;
@@ -1343,8 +1382,6 @@ static int na_ssm_wait(na_request_t in_request, unsigned int in_timeout,
 
     if (in_request == NULL)
     {
-        printf("ERROR: %-30s(%4d): Need request pointer.\n",
-               __FUNCTION__, __LINE__);
         goto out;
     }
     else
@@ -1359,8 +1396,8 @@ static int na_ssm_wait(na_request_t in_request, unsigned int in_timeout,
 
             while (!v_completed)
             {
-                v_cond_ret = hg_thread_cond_wait(&comp_req_cond, &request_mutex);
-
+                v_cond_ret = hg_thread_cond_wait(&comp_req_cond,
+                                                 &request_mutex);
 
                 v_completed = v_request->completed;
 
@@ -1374,8 +1411,6 @@ static int na_ssm_wait(na_request_t in_request, unsigned int in_timeout,
 
             if (v_cond_ret < 0)
             {
-                printf("ERROR: %-30s(%4d): hg_thread_cond_wait() failed. "
-                       "Error: %d\n", __FUNCTION__, __LINE__, v_cond_ret);
                 v_na_status = NA_FAIL;
                 goto out;
             }
