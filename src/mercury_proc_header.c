@@ -13,8 +13,6 @@
 #endif
 #include "mercury_proc_header.h"
 
-#include "mercury_checksum.h"
-
 #ifdef _WIN32
   #include <winsock2.h>
 #else

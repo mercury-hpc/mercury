@@ -2,19 +2,38 @@
 option(MERCURY_CREATE_SINGLE_LIB "Create one single mercury library." OFF)
 
 #------------------------------------------------------------------------------
-# TODO We probably want to do that at some point
-# Check headers / symbols / sizes
+# Internal dependencies
 #------------------------------------------------------------------------------
-#include(CheckTypeSize)
-#check_type_size(size_t SIZEOF_SIZE_T)
-#check_type_size(int64_t SIZEOF_INT64_T)
-#check_type_size(uint8_t SIZEOF_UINT8_T)
+# UTIL
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}/util
+  ${CMAKE_CURRENT_BINARY_DIR}/util
+)
+if(NOT MERCURY_CREATE_SINGLE_LIB)
+  set(MERCURY_EXPORTED_LIBS mercury_util ${MERCURY_EXPORTED_LIBS})
+endif()
+set(MERCURY_EXT_LIB_DEPENDENCIES  ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
+  ${MERCURY_EXT_LIB_DEPENDENCIES}
+)
 
-#include(CheckIncludeFile)
-#check_include_file("execinfo.h" HAVE_EXECINFO_H)
-
-#include(CheckLibraryExists)
-#check_library_exists(glib-2.0 g_atomic_int_set "" HAVE_GLIB)
+# NA
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}/na
+  ${CMAKE_CURRENT_BINARY_DIR}/na
+)
+set(MERCURY_EXT_INCLUDE_DEPENDENCIES ${NA_EXT_INCLUDE_DEPENDENCIES}
+  ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+  )
+if(NOT MERCURY_CREATE_SINGLE_LIB)
+  set(MERCURY_EXPORTED_LIBS na ${MERCURY_EXPORTED_LIBS})
+else()
+  include_directories(${NA_EXT_INCLUDE_DEPENDENCIES})
+endif()
+set(MERCURY_EXT_LIB_DEPENDENCIES ${NA_EXT_LIB_DEPENDENCIES}
+  ${MERCURY_EXT_LIB_DEPENDENCIES}
+)
 
 #------------------------------------------------------------------------------
 # External dependencies
@@ -25,10 +44,23 @@ if(MERCURY_USE_BOOST_PP)
   find_package(Boost 1.48.0 REQUIRED)
   if(Boost_FOUND)
     set(HG_HAS_BOOST 1)
-    include_directories(${Boost_INCLUDE_DIRS})
+    set(MERCURY_EXT_INCLUDE_DEPENDENCIES ${Boost_INCLUDE_DIRS}
+      ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+    )
   else()
     message(FATAL_ERROR "Could not find Boost, please check Boost_INCLUDE_DIR.")
   endif()
+endif()
+
+# MChecksum
+find_package(mchecksum REQUIRED)
+if(mchecksum_FOUND)
+  set(MERCURY_EXT_INCLUDE_DEPENDENCIES ${MCHECKSUM_INCLUDE_DIR}
+    ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+  )
+  set(MERCURY_EXT_LIB_DEPENDENCIES mchecksum ${MERCURY_EXT_LIB_DEPENDENCIES})
+else()
+  message(FATAL_ERROR "Could not find MChecksum, please check mchecksum_INCLUDE_DIR.")
 endif()
 
 # XDR
@@ -37,41 +69,7 @@ if(MERCURY_USE_XDR)
   set(HG_HAS_XDR 1)
 endif()
 
-set(MERCURY_EXT_INCLUDE_DEPENDENCIES
-  ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
-  ${Boost_INCLUDE_DIRS}
-  )
-
-#------------------------------------------------------------------------------
-# Internal dependencies
-#------------------------------------------------------------------------------
-# UTIL
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
-include_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}/util
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/checksum
-  ${CMAKE_CURRENT_BINARY_DIR}/util
-)
-if(NOT MERCURY_CREATE_SINGLE_LIB)
-  set(MERCURY_EXPORTED_LIBS mercury_util ${MERCURY_EXPORTED_LIBS})
-endif()
-
-# NA
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
-include_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}/na
-  ${CMAKE_CURRENT_BINARY_DIR}/na
-)
-set(MERCURY_EXT_INCLUDE_DEPENDENCIES
-  ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
-  ${NA_EXT_INCLUDE_DEPENDENCIES}
-  )
-if(NOT MERCURY_CREATE_SINGLE_LIB)
-  set(MERCURY_EXPORTED_LIBS na ${MERCURY_EXPORTED_LIBS})
-else()
-  include_directories(${NA_EXT_INCLUDE_DEPENDENCIES})
-endif()
-
+include_directories(${MERCURY_EXT_INCLUDE_DEPENDENCIES})
 
 #------------------------------------------------------------------------------
 # Configure module header files
@@ -99,12 +97,6 @@ configure_file(
 #------------------------------------------------------------------------------
 # Set sources
 #------------------------------------------------------------------------------
-if(MERCURY_ENABLE_VERBOSE_ERROR)
-  set(HG_HAS_VERBOSE_ERROR 1)
-else()
-  set(HG_HAS_VERBOSE_ERROR 0)
-endif()
-
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
@@ -128,11 +120,6 @@ set(MERCURY_SRCS
 # MERCURY
 if(MERCURY_CREATE_SINGLE_LIB)
   set(MERCURY_SRCS ${MERCURY_SRCS} ${MERCURY_UTIL_SRCS} ${NA_SRCS})
-  set(MERCURY_EXT_LIB_DEPENDENCIES
-    ${MERCURY_EXT_LIB_DEPENDENCIES}
-    ${NA_EXT_LIB_DEPENDENCIES}
-    ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
-  )
 endif()
 
 add_library(mercury ${MERCURY_SRCS})
@@ -222,7 +209,6 @@ set(MERCURY_INCLUDES_BUILD_TIME
   ${CMAKE_CURRENT_SOURCE_DIR}/na
   ${CMAKE_CURRENT_BINARY_DIR}/na
   ${CMAKE_CURRENT_SOURCE_DIR}/util
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/checksum
   ${CMAKE_CURRENT_BINARY_DIR}/util
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra
   ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
@@ -250,21 +236,21 @@ if(NOT WIN32 AND NOT APPLE)
   endforeach()
   set(MERCURY_LIBRARIES ${MERCURY_LIBRARIES} PARENT_SCOPE)
 
-  if(NOT MERCURY_EXT_LIB_DEPENDENCIES)
-    set(MERCURY_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
-      ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
-    )
-  endif()
-
   # Need to generate -llib if not already passed
   foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES})
+    if(lib_dep MATCHES "mchecksum")
+      # Need to get full target path for mchecksum
+      get_target_property(mchecksum_config mchecksum IMPORTED_CONFIGURATIONS)
+      get_target_property(lib_realpath mchecksum IMPORTED_LOCATION_${mchecksum_config})
+      set(lib_dep ${lib_realpath})
+    endif()
+    # get library name
     get_filename_component(lib_name ${lib_dep} NAME_WE)
     if(lib_name MATCHES "^-l")
-      # lib_name is -lxxx
+      # lib_name found is -lxxx
       set(MERCURY_EXT_LIB_DEPENDENCIES_LIST ${MERCURY_EXT_LIB_DEPENDENCIES_LIST} ${lib_name})
     else()
-      # lib_name is /path/to/lib so get lirabry path and name
+      # lib_name is /path/to/lib so get library path and name
       get_filename_component(lib_path ${lib_dep} PATH)
       string(REGEX REPLACE "^lib" "" lib_name ${lib_name})
       set(MERCURY_EXT_LIB_DEPENDENCIES_LIST ${MERCURY_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path} -l${lib_name})

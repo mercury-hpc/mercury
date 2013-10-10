@@ -13,8 +13,8 @@
 #endif
 #include "mercury_proc.h"
 
-#include "mercury_checksum.h"
-#include "mercury_util_error.h"
+#include <mchecksum.h>
+#include <mchecksum_error.h>
 
 #ifdef _WIN32
   #include <windows.h>
@@ -33,7 +33,7 @@ typedef struct hg_proc_buf {
 #ifdef HG_HAS_XDR
     XDR      xdr;
 #endif
-    hg_checksum_t checksum;         /* Checksum */
+    mchecksum_object_t checksum;    /* Checksum */
     hg_bool_t     update_checksum;  /* Update checksum on proc operation */
 } hg_proc_buf_t;
 
@@ -91,7 +91,7 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
     hg_priv_proc_t *priv_proc = NULL;
     const char *hash_method;
     int ret = HG_SUCCESS;
-    int util_ret;
+    int checksum_ret;
 
     if (!buf && op != HG_FREE) {
         HG_ERROR_DEFAULT("NULL buffer");
@@ -112,7 +112,7 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
     priv_proc->proc_buf.buf_ptr = buf;
     priv_proc->proc_buf.size_left = buf_size;
     priv_proc->proc_buf.is_mine = 0;
-    priv_proc->proc_buf.checksum = HG_CHECKSUM_NULL;
+    priv_proc->proc_buf.checksum = MCHECKSUM_OBJECT_NULL;
     priv_proc->proc_buf.update_checksum = 0;
 #ifdef HG_HAS_XDR
     switch (op) {
@@ -146,8 +146,8 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
     }
 
     if (hash_method) {
-        util_ret = hg_checksum_init(hash_method, &priv_proc->proc_buf.checksum);
-        if (util_ret != HG_UTIL_SUCCESS) {
+        checksum_ret = mchecksum_init(hash_method, &priv_proc->proc_buf.checksum);
+        if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_ERROR_DEFAULT("Could not initialize checksum");
             ret = HG_FAIL;
             goto done;
@@ -182,7 +182,7 @@ hg_proc_free(hg_proc_t proc)
 {
     hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
     int ret = HG_SUCCESS;
-    int util_ret;
+    int checksum_ret;
 
     if (!priv_proc) {
         HG_ERROR_DEFAULT("Already freed");
@@ -190,9 +190,9 @@ hg_proc_free(hg_proc_t proc)
         return ret;
     }
 
-    if (priv_proc->proc_buf.checksum != HG_CHECKSUM_NULL) {
-        util_ret = hg_checksum_destroy(priv_proc->proc_buf.checksum);
-        if (util_ret != HG_UTIL_SUCCESS) {
+    if (priv_proc->proc_buf.checksum != MCHECKSUM_OBJECT_NULL) {
+        checksum_ret = mchecksum_destroy(priv_proc->proc_buf.checksum);
+        if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_ERROR_DEFAULT("Could not destroy checksum");
             ret = HG_FAIL;
         }
@@ -426,7 +426,7 @@ hg_proc_flush(hg_proc_t proc)
     size_t checksum_size;
     void *base_checksum = NULL;
     void *new_checksum = NULL;
-    int util_ret, cmp_ret;
+    int checksum_ret, cmp_ret;
     int ret = HG_SUCCESS;
 
     if (!priv_proc) {
@@ -444,7 +444,7 @@ hg_proc_flush(hg_proc_t proc)
     /* Disable checksum update now */
     priv_proc->current_buf->update_checksum = 0;
 
-    checksum_size = hg_checksum_get_size(priv_proc->current_buf->checksum);
+    checksum_size = mchecksum_get_size(priv_proc->current_buf->checksum);
     base_checksum = malloc(checksum_size);
     if (!base_checksum) {
         HG_ERROR_DEFAULT("Could not allocate space for base checksum");
@@ -453,16 +453,16 @@ hg_proc_flush(hg_proc_t proc)
     }
 
     if (hg_proc_get_op(proc) == HG_ENCODE) {
-        util_ret = hg_checksum_get(priv_proc->current_buf->checksum,
+        checksum_ret = mchecksum_get(priv_proc->current_buf->checksum,
                 base_checksum, checksum_size, 1);
-        if (util_ret != HG_UTIL_SUCCESS) {
+        if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_ERROR_DEFAULT("Could not get checksum");
             ret = HG_FAIL;
             goto done;
         }
     }
 
-    /* Process checksum */
+    /* Process checksum (TODO should that depend on the encoding method) */
     ret = hg_proc_raw(proc, base_checksum, checksum_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Proc error");
@@ -478,9 +478,9 @@ hg_proc_flush(hg_proc_t proc)
             goto done;
         }
 
-        util_ret = hg_checksum_get(priv_proc->current_buf->checksum,
+        checksum_ret = mchecksum_get(priv_proc->current_buf->checksum,
                 new_checksum, checksum_size, 1);
-        if (util_ret != HG_UTIL_SUCCESS) {
+        if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_ERROR_DEFAULT("Could not get checksum");
             ret = HG_FAIL;
             goto done;
@@ -510,7 +510,7 @@ hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
     const void *src;
     void *dest;
     int ret = HG_SUCCESS;
-    int util_ret;
+    int checksum_ret;
 
     if (!priv_proc) {
         HG_ERROR_DEFAULT("Proc is not initialized");
@@ -539,8 +539,8 @@ hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
 
     /* Update checksum */
     if (priv_proc->current_buf->update_checksum) {
-        util_ret = hg_checksum_update(priv_proc->current_buf->checksum, data, data_size);
-        if (util_ret != HG_UTIL_SUCCESS) {
+        checksum_ret = mchecksum_update(priv_proc->current_buf->checksum, data, data_size);
+        if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_ERROR_DEFAULT("Could not update checksum");
             ret = HG_FAIL;
         }
