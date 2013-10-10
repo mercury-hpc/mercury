@@ -61,7 +61,7 @@ set (dashboard_model ${MERCURY_DASHBOARD_MODEL})
 
 # Initial cache used to build mercury, options can be modified here
 set(dashboard_cache "
-CMAKE_C_FLAGS:STRING=-Wall -Wextra -Wshadow
+CMAKE_C_FLAGS:STRING=-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -Wc++-compat -std=gnu99
 
 BUILD_SHARED_LIBS:BOOL=${mercury_build_shared}
 BUILD_TESTING:BOOL=ON
