@@ -303,9 +303,8 @@ hg_handler_get_request_header(hg_priv_handle_t *priv_handle,
     hg_proc_t proc = HG_PROC_NULL;
     int ret = HG_SUCCESS;
 
-    /* TODO use CRC16 hash */
     hg_proc_create(priv_handle->recv_buf, priv_handle->recv_buf_size,
-            HG_DECODE, HG_NOHASH, &proc);
+            HG_DECODE, HG_CRC16, &proc);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not create proc");
         goto done;
@@ -336,9 +335,8 @@ hg_handler_set_response_header(hg_priv_handle_t *priv_handle,
     hg_proc_t proc = HG_PROC_NULL;
     int ret = HG_SUCCESS;
 
-    /* TODO use CRC16 hash */
     hg_proc_create(priv_handle->send_buf, priv_handle->send_buf_size,
-            HG_ENCODE, HG_NOHASH, &proc);
+            HG_ENCODE, HG_CRC16, &proc);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not create proc");
         goto done;
