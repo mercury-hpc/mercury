@@ -44,14 +44,22 @@ if(MERCURY_USE_BOOST_PP)
 endif()
 
 # MChecksum
-find_package(mchecksum REQUIRED)
-if(mchecksum_FOUND)
-  set(MERCURY_EXT_INCLUDE_DEPENDENCIES ${MCHECKSUM_INCLUDE_DIR}
-    ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
-  )
-  set(MERCURY_EXT_LIB_DEPENDENCIES mchecksum ${MERCURY_EXT_LIB_DEPENDENCIES})
+option(MERCURY_USE_SYSTEM_MCHECKSUM "Use system-installed MChecksum." OFF)
+if(MERCURY_USE_SYSTEM_MCHECKSUM)
+  find_package(mchecksum REQUIRED)
+  if(mchecksum_FOUND)
+    set(MERCURY_EXT_INCLUDE_DEPENDENCIES ${MCHECKSUM_INCLUDE_DIR}
+      ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+    )
+    set(MERCURY_EXT_LIB_DEPENDENCIES mchecksum ${MERCURY_EXT_LIB_DEPENDENCIES})
+  else()
+    message(FATAL_ERROR "Could not find MChecksum, please check mchecksum_INCLUDE_DIR.")
+  endif()
 else()
-  message(FATAL_ERROR "Could not find MChecksum, please check mchecksum_INCLUDE_DIR.")
+  add_subdirectory(mchecksum)
+  include(${MCHECKSUM_BINARY_DIR}/mchecksum-config.cmake)
+  include_directories(${MCHECKSUM_INCLUDE_DIR})
+  set(MERCURY_EXPORTED_LIBS mchecksum ${MERCURY_EXPORTED_LIBS})
 endif()
 
 # XDR
