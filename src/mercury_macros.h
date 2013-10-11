@@ -342,14 +342,7 @@ static HG_INLINE int \
             /* Is mercury library initialized */ \
             HG_Initialized(&hg_initialized, &network_class); \
             if (!hg_initialized) { \
-                char *na_plugin = getenv(HG_NA_PLUGIN); \
-                if (!na_plugin) na_plugin = "mpi"; \
-                if (strcmp("mpi", na_plugin) == 0) { \
-                    network_class = NA_Initialize("mpi", NULL, 0); \
-                } \
-                else if (strcmp("bmi", na_plugin) == 0) { \
-                    network_class = NA_Initialize("bmi", NULL, 0); \
-                } \
+                network_class = NA_Initialize(getenv(HG_PORT_NAME), 0); \
                 hg_ret = HG_Init(network_class); \
                 if (hg_ret != HG_SUCCESS) { \
                     HG_ERROR_DEFAULT("Could not initialize Mercury"); \
