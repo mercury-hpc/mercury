@@ -175,36 +175,29 @@ if(NA_USE_MPI)
   )
 endif()
 
-if(MERCURY_CREATE_SINGLE_LIB)
-  set(NA_SRCS
-    ${NA_SRCS}
-    PARENT_SCOPE
-  )
-else()
-  #----------------------------------------------------------------------------
-  # Libraries
-  #----------------------------------------------------------------------------
-  # NA
-  add_library(na ${NA_SRCS})
-  target_link_libraries(na ${NA_EXT_LIB_DEPENDENCIES} mercury_util)
-  set_lib_options(na "na" ${NA_LIBTYPE})
-  if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(na)
-  endif()
-
-  #---------------------------------------------------------------------------
-  # Add Target(s) to CMake Install
-  #---------------------------------------------------------------------------
-  install(
-    TARGETS
-      na
-    EXPORT
-      ${NA_EXPORTED_TARGETS}
-    LIBRARY DESTINATION ${NA_INSTALL_LIB_DIR}
-    ARCHIVE DESTINATION ${NA_INSTALL_LIB_DIR}
-    RUNTIME DESTINATION ${NA_INSTALL_BIN_DIR}
-  )
+#----------------------------------------------------------------------------
+# Libraries
+#----------------------------------------------------------------------------
+# NA
+add_library(na ${NA_SRCS})
+target_link_libraries(na ${NA_EXT_LIB_DEPENDENCIES} mercury_util)
+set_lib_options(na "na" ${NA_LIBTYPE})
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(na)
 endif()
+
+#---------------------------------------------------------------------------
+# Add Target(s) to CMake Install
+#---------------------------------------------------------------------------
+install(
+  TARGETS
+    na
+  EXPORT
+    ${NA_EXPORTED_TARGETS}
+  LIBRARY DESTINATION ${NA_INSTALL_LIB_DIR}
+  ARCHIVE DESTINATION ${NA_INSTALL_LIB_DIR}
+  RUNTIME DESTINATION ${NA_INSTALL_BIN_DIR}
+)
 
 #-----------------------------------------------------------------------------
 # Specify project header files to be installed

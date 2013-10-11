@@ -58,36 +58,29 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.c
 )
 
-if(MERCURY_CREATE_SINGLE_LIB)
-  set(MERCURY_UTIL_SRCS
-    ${MERCURY_UTIL_SRCS}
-    PARENT_SCOPE
-  )
-else()
-  #----------------------------------------------------------------------------
-  # Libraries
-  #----------------------------------------------------------------------------
-  # UTIL
-  add_library(mercury_util ${MERCURY_UTIL_SRCS})
-  target_link_libraries(mercury_util ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES})
-  set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE})
-  if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(mercury_util)
-  endif()
-
-  #---------------------------------------------------------------------------
-  # Add Target(s) to CMake Install
-  #---------------------------------------------------------------------------
-  install(
-    TARGETS
-      mercury_util
-    EXPORT
-      ${MERCURY_EXPORTED_TARGETS}
-    LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-    ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-    RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
-  )
+#----------------------------------------------------------------------------
+# Libraries
+#----------------------------------------------------------------------------
+# UTIL
+add_library(mercury_util ${MERCURY_UTIL_SRCS})
+target_link_libraries(mercury_util ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES})
+set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE})
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(mercury_util)
 endif()
+
+#---------------------------------------------------------------------------
+# Add Target(s) to CMake Install
+#---------------------------------------------------------------------------
+install(
+  TARGETS
+    mercury_util
+  EXPORT
+    ${MERCURY_EXPORTED_TARGETS}
+  LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+  ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+  RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
+)
 
 #-----------------------------------------------------------------------------
 # Specify project header files to be installed
