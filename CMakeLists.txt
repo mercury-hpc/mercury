@@ -102,7 +102,7 @@ option(BUILD_SHARED_LIBS "Build with shared libraries." OFF)
 option(MERCURY_ENABLE_VERBOSE_ERROR "Print error messages to stderr." ON)
 
 #-------------------------------------------------------------------------------
-function(set_lib_options libtarget libname libtype)
+function(mercury_set_lib_options libtarget libname libtype)
   if(${libtype} MATCHES "SHARED")
     if(WIN32 AND NOT MINGW)
       set(LIB_RELEASE_NAME "${libname}")
@@ -153,21 +153,23 @@ endfunction()
 #-----------------------------------------------------------------------------
 # Coverage
 #-----------------------------------------------------------------------------
-option(MERCURY_ENABLE_COVERAGE "Enable coverage." OFF)
-if(MERCURY_ENABLE_COVERAGE)
-  set(COVERAGE_FLAGS "-fprofile-arcs -ftest-coverage" CACHE STRING
-    "Flags to the coverage program that CTest uses to perform coverage inspection"
-  )
-  mark_as_advanced(COVERAGE_FLAGS)
-endif()
+if(NOT MERCURY_EXTERNALLY_CONFIGURED)
+  option(MERCURY_ENABLE_COVERAGE "Enable coverage." OFF)
+  if(MERCURY_ENABLE_COVERAGE)
+    set(COVERAGE_FLAGS "-fprofile-arcs -ftest-coverage" CACHE STRING
+      "Flags to the coverage program that CTest uses to perform coverage inspection"
+    )
+    mark_as_advanced(COVERAGE_FLAGS)
+  endif()
 
-macro(set_coverage_flags target)
-  set_target_properties(${target}
-    PROPERTIES
-      COMPILE_FLAGS ${COVERAGE_FLAGS}
-      LINK_FLAGS ${COVERAGE_FLAGS}
-  )
-endmacro()
+  macro(set_coverage_flags target)
+    set_target_properties(${target}
+      PROPERTIES
+        COMPILE_FLAGS ${COVERAGE_FLAGS}
+        LINK_FLAGS ${COVERAGE_FLAGS}
+    )
+  endmacro()
+endif()
 
 #-----------------------------------------------------------------------------
 # Source
@@ -250,16 +252,18 @@ endif()
 #-----------------------------------------------------------------------------
 # CPack
 #-----------------------------------------------------------------------------
-set(CPACK_PACKAGE_DESCRIPTION_FILE ${MERCURY_SOURCE_DIR}/README)
-set(CPACK_RESOURCE_FILE_LICENSE ${MERCURY_SOURCE_DIR}/COPYING)
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "The Function Shipper for I/O Forwarding")
-set(CPACK_PACKAGE_NAME "Mercury")
-set(CPACK_PACKAGE_VENDOR "Argonne National Laboratories / The HDF Group")
-set(CPACK_PACKAGE_VERSION_MAJOR ${MERCURY_VERSION_MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${MERCURY_VERSION_MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${MERCURY_VERSION_PATCH})
-set(CPACK_GENERATOR "TBZ2")
-set(CPACK_SOURCE_PACKAGE_FILE_NAME ${MERCURY_PACKAGE_TARNAME}-${MERCURY_PACKAGE_VERSION})
-set(CPACK_SOURCE_IGNORE_FILES ".git*;/GitSetup/;/.git/;.swp$;.#;/#;.*~")
-set(CPACK_SOURCE_STRIP_FILES "")
-include(CPack)
+if(NOT MERCURY_EXTERNALLY_CONFIGURED)
+  set(CPACK_PACKAGE_DESCRIPTION_FILE ${MERCURY_SOURCE_DIR}/README)
+  set(CPACK_RESOURCE_FILE_LICENSE ${MERCURY_SOURCE_DIR}/COPYING)
+  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "The Function Shipper for I/O Forwarding")
+  set(CPACK_PACKAGE_NAME "Mercury")
+  set(CPACK_PACKAGE_VENDOR "Argonne National Laboratories / The HDF Group")
+  set(CPACK_PACKAGE_VERSION_MAJOR ${MERCURY_VERSION_MAJOR})
+  set(CPACK_PACKAGE_VERSION_MINOR ${MERCURY_VERSION_MINOR})
+  set(CPACK_PACKAGE_VERSION_PATCH ${MERCURY_VERSION_PATCH})
+  set(CPACK_GENERATOR "TBZ2")
+  set(CPACK_SOURCE_PACKAGE_FILE_NAME ${MERCURY_PACKAGE_TARNAME}-${MERCURY_PACKAGE_VERSION})
+  set(CPACK_SOURCE_IGNORE_FILES ".git*;/GitSetup/;/.git/;.swp$;.#;/#;.*~")
+  set(CPACK_SOURCE_STRIP_FILES "")
+  include(CPack)
+endif()

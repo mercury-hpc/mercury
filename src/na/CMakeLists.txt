@@ -181,7 +181,7 @@ endif()
 # NA
 add_library(na ${NA_SRCS})
 target_link_libraries(na ${NA_EXT_LIB_DEPENDENCIES} mercury_util)
-set_lib_options(na "na" ${NA_LIBTYPE})
+mercury_set_lib_options(na "na" ${NA_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(na)
 endif()

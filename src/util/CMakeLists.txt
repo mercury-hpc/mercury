@@ -64,7 +64,7 @@ set(MERCURY_UTIL_SRCS
 # UTIL
 add_library(mercury_util ${MERCURY_UTIL_SRCS})
 target_link_libraries(mercury_util ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES})
-set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE})
+mercury_set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_util)
 endif()
