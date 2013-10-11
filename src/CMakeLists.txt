@@ -51,12 +51,18 @@ if(MERCURY_USE_SYSTEM_MCHECKSUM)
     set(MERCURY_EXT_INCLUDE_DEPENDENCIES ${MCHECKSUM_INCLUDE_DIR}
       ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
     )
-    set(MERCURY_EXT_LIB_DEPENDENCIES mchecksum ${MERCURY_EXT_LIB_DEPENDENCIES})
+    # Makes it easier to get full target path for mchecksum (targets and pkgconfig)
+    get_target_property(mchecksum_config mchecksum IMPORTED_CONFIGURATIONS)
+    get_target_property(mchecksum_lib mchecksum IMPORTED_LOCATION_${mchecksum_config})
+    # Get rid of version number if any
+    string(REGEX REPLACE ".([0-9]+).([0-9]+).([0-9]+)$" "" mchecksum_lib ${mchecksum_lib})
+    set(MERCURY_EXT_LIB_DEPENDENCIES ${mchecksum_lib} ${MERCURY_EXT_LIB_DEPENDENCIES})
   else()
     message(FATAL_ERROR "Could not find MChecksum, please check mchecksum_INCLUDE_DIR.")
   endif()
 else()
   set(MCHECKSUM_EXTERNALLY_CONFIGURED 1)
+  set(MCHECKSUM_EXPORTED_TARGETS ${MERCURY_EXPORTED_TARGETS})
   add_subdirectory(mchecksum)
   include(${MCHECKSUM_BINARY_DIR}/mchecksum-config.cmake)
   include_directories(${MCHECKSUM_INCLUDE_DIR})
@@ -234,12 +240,6 @@ if(NOT WIN32 AND NOT APPLE)
 
   # Need to generate -llib if not already passed
   foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES})
-    if(lib_dep MATCHES "mchecksum")
-      # Need to get full target path for mchecksum
-      get_target_property(mchecksum_config mchecksum IMPORTED_CONFIGURATIONS)
-      get_target_property(lib_realpath mchecksum IMPORTED_LOCATION_${mchecksum_config})
-      set(lib_dep ${lib_realpath})
-    endif()
     # get library name
     get_filename_component(lib_name ${lib_dep} NAME_WE)
     if(lib_name MATCHES "^-l")
