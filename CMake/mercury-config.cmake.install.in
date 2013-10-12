@@ -25,7 +25,7 @@ set(MERCURY_VERSION_PATCH   @MERCURY_VERSION_PATCH@)
 # Don't include targets if this file is being picked up by another
 # project which has already built MERCURY as a subproject
 #-----------------------------------------------------------------------------
-if(NOT TARGET "MERCURY" AND NOT MERCURY_INSTALL_SKIP_TARGETS)
+if(NOT TARGET "mercury" AND NOT MERCURY_INSTALL_SKIP_TARGETS)
   include(${SELF_DIR}/mercury-targets.cmake)
-endif(NOT TARGET "MERCURY" AND NOT MERCURY_INSTALL_SKIP_TARGETS)
+endif()
 
