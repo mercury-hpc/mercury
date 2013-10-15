@@ -527,11 +527,11 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                     HG_ERROR_DEFAULT("Could not free bulk handle");
                     ret = HG_FAIL;
                     return ret;
-                } else {
-                    /* If handle is HG_BULK_NULL, just return success */
-                    ret = HG_SUCCESS;
                 }
                 *handle = HG_BULK_NULL;
+            } else {
+                /* If *handle is HG_BULK_NULL, just return success */
+                ret = HG_SUCCESS;
             }
             break;
         default:
