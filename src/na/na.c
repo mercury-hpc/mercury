@@ -67,11 +67,12 @@ void NA_free_host_buffer(na_host_buffer_t *na_buffer)
 static int NA_parse_host_string(const char            *host_string,
                                 na_host_buffer_t     **in_na_buffer)
 {
-    char *allocated_buffer        = malloc(strlen(host_string) + 1);
+    char *allocated_buffer        = (char*) malloc(strlen(host_string) + 1);
     char *input_string            = allocated_buffer;
     char *token                   = NULL;
     char *locator                 = NULL;
     na_host_buffer_t *na_buffer   = *in_na_buffer;
+    unsigned int string_length    = 0;
 
     strcpy(input_string, host_string);
 
@@ -87,16 +88,16 @@ static int NA_parse_host_string(const char            *host_string,
 
         token = strtok_r(token, "@", &_locator);
 
-        na_buffer->na_class = malloc(strlen(_locator) + 1);
+        na_buffer->na_class = (char*) malloc(strlen(_locator) + 1);
         strcpy(na_buffer->na_class, _locator);
 
-        na_buffer->na_protocol = malloc(strlen(token) + 1);
+        na_buffer->na_protocol = (char*) malloc(strlen(token) + 1);
         strcpy(na_buffer->na_protocol, token);
     }
     else
     {
         na_buffer->na_class    = NULL;
-        na_buffer->na_protocol = malloc(strlen(token) + 1);
+        na_buffer->na_protocol = (char*) malloc(strlen(token) + 1);
 
         strcpy(na_buffer->na_protocol, token);
     }
@@ -104,23 +105,25 @@ static int NA_parse_host_string(const char            *host_string,
     token = locator + 2;
     token = strtok_r(token, ":", &locator);
 
-    na_buffer->na_host = malloc(strlen(token) + 1);
+    na_buffer->na_host = (char*) malloc(strlen(token) + 1);
     strcpy(na_buffer->na_host, token);
 
     na_buffer->na_port = atoi(locator);
 
-    na_buffer->na_host_string = malloc(strlen(na_buffer->na_protocol) +
-                                       strlen("://") +
-                                       strlen(na_buffer->na_host) +
-                                       strlen(":") +
-                                       strlen(locator) +
-                                       1);
+    string_length = strlen(na_buffer->na_protocol) +
+      strlen("://") +
+      strlen(na_buffer->na_host) +
+      strlen(":") +
+      strlen(locator) +
+      1;
+    
+    na_buffer->na_host_string = (char*) malloc(string_length);
 
     if (na_buffer->na_host_string != NULL)
     {
         memset(na_buffer->na_host_string,
                0,
-               sizeof(na_buffer->na_host_string));
+               string_length);
         
         strcpy(na_buffer->na_host_string, na_buffer->na_protocol);
         strcat(na_buffer->na_host_string, "://");
@@ -136,7 +139,7 @@ static int NA_parse_host_string(const char            *host_string,
 
 /*---------------------------------------------------------------------------*/
 NA_CLASS_PRIORITY
-NA_get_priority(const na_host_buffer_t *na_buffer)
+NA_get_priority(const na_host_buffer_t NA_UNUSED(*na_buffer))
 {
     /* TBD: */
     return NA_CLASS_PRIORITY_HIGH;
@@ -171,7 +174,7 @@ NA_Initialize(const char *host_string, na_bool_t listen)
 
         if (accept)
         {
-            int class_priority = NA_get_priority(na_buffer);
+            NA_CLASS_PRIORITY class_priority = NA_get_priority(na_buffer);
             
             if ((na_buffer->na_class && strcmp(na_class_methods[i]->class_name,
                                                na_buffer->na_class) == 0) ||
@@ -193,7 +196,6 @@ NA_Initialize(const char *host_string, na_bool_t listen)
 
     network_class = na_class_methods[index]->initialize(na_buffer, listen);
 
- out:
     NA_free_host_buffer(na_buffer);
     return network_class;
 }

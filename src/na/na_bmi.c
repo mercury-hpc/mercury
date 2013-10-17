@@ -208,9 +208,6 @@ na_bool_t
 na_bmi_verify(const char* protocol)
 {
     na_bool_t accept         = NA_FALSE;
-    int       string_length  = 0;
-    char     *transport      = NULL;
-    char     *index          = NULL;
 
     /* Note: BMI_SUPPORTS_TRANSPORT_METHOD_GETINFO is not defined
      *       anywhere.  This is a temporary way to disable this fully
@@ -220,6 +217,10 @@ na_bmi_verify(const char* protocol)
      *       the BMI library.
      */
 #ifdef BMI_SUPPORTS_TRANSPORT_METHOD_GETINFO
+    int       string_length  = 0;
+    char     *transport      = NULL;
+    char     *index          = NULL;
+
     /* Obtain the list of transport protocols supported by BMI. */
     string_length = BMI_get_info(0,
                                  BMI_TRANSPORT_METHODS_STRING,

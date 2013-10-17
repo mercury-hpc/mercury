@@ -24,6 +24,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
 #include <ssm/dumb.h>
 #include <ssm.h>
@@ -35,7 +36,6 @@ static int na_ssm_addr_lookup(const char *name, na_addr_t *addr);
 static int na_ssm_addr_free(na_addr_t addr);
 static na_size_t na_ssm_msg_get_max_expected_size(void);
 static na_size_t na_ssm_msg_get_max_unexpected_size(void);
-static na_size_t na_ssm_msg_get_maximum_size(void);
 static na_tag_t na_ssm_msg_get_maximum_tag(void);
 static int na_ssm_msg_send_unexpected(const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg);
@@ -145,15 +145,12 @@ typedef struct na_ssm_request {
 
 static ssm_Itp itp;
 static ssm_id ssm;
-static ssm_mr mr_msg;
-static ssm_me me_msg;
 static int ssmport;
 static ssm_Iaddr iaddr;
 static char c_proto[64];
 
 //for TCP, UDP or IB...
 typedef int (*na_ssm_connect)(void *addr, void *result_halder);
-static na_ssm_connect p_na_ssm_connect;
 
 /* Used to differentiate Send requests from Recv requests */
 
@@ -188,25 +185,16 @@ static hg_thread_cond_t comp_req_cond;
 
 /* Mutex used for tag generation */
 /* TODO use atomic increment instead */
-static hg_thread_mutex_t tag_mutex;
 
 static hg_thread_mutex_t request_mutex;
-static hg_thread_mutex_t testcontext_mutex;
-static hg_thread_cond_t  testcontext_cond;
 static hg_thread_mutex_t unexp_waitlist_mutex;
 static hg_thread_cond_t  unexp_waitlist_cond;
 static hg_thread_mutex_t unexp_buf_mutex;
 static hg_thread_cond_t  unexp_buf_cond;
 static hg_thread_mutex_t unexp_bufcounter_mutex;
 static hg_thread_mutex_t gen_matchbits;
-static bool              is_testing_context;
-
-/* List and mutex for unexpected messages */
-static hg_list_entry_t  *unexpected_wait_list;
-//static hg_thread_mutex_t unexpected_wait_list_mutex;
 
 /* List and mutex for unexpected buffers */
-static hg_list_entry_t  *unexpected_buf;
 static hg_thread_mutex_t unexpected_buf_mutex;
 
 /* Buffers for unexpected data */
@@ -284,12 +272,6 @@ int addr_parser(const char *str, na_ssm_destinfo_t *addr)
 #endif
     sscanf(str, "%15[^:]://%63[^:]:%d", addr->proto, addr->hostname, &(addr->port));
     return 0;
-}
-
-static inline int post_unexpected_buf(int bufpos)
-{
-
-
 }
 
 static inline int mark_as_completed(na_ssm_request_t *req)
@@ -374,7 +356,7 @@ void msg_recv_cb(void *cbdat, void *evdat)
     ssm_unlink(ssm, r->me);
 }
 
-void unexp_msg_recv_cb(void *cbdat, void *evdat)
+void unexp_msg_recv_cb(void NA_UNUSED(*cbdat), void *evdat)
 {
     ssm_result r = evdat;
 
@@ -436,7 +418,7 @@ void get_cb(void *cbdat, void *evdat)
     hg_thread_mutex_unlock(&request_mutex);
 }
 
-void postedbuf_cb(void *cbdat, void *evdat)
+void postedbuf_cb(void NA_UNUSED(*cbdat), void *evdat)
 {
     ssm_result v_ssm_result = evdat;
     
@@ -457,7 +439,7 @@ void postedbuf_cb(void *cbdat, void *evdat)
  *---------------------------------------------------------------------------
  */
 #ifdef NA_HAS_CLIENT_THREAD
-static void* na_ssm_progress_service(void *args)
+static void* na_ssm_progress_service(void NA_UNUSED(*args))
 {
     na_bool_t service_done = 0;
 
@@ -575,10 +557,6 @@ na_class_t *NA_SSM_Init(char *proto, int port, int flags)
     // TODO: add free(at finalize phase)
 
     /* POST buffers for unexpected recieve */
-    ssm_size_t size = NA_SSM_UNEXPECTED_SIZE;
-    ssm_msg_tag_t ssm_tag = 0 + NA_SSM_TAG_UNEXPECTED_OFFSET;
-
-
     //TODO add is_server (need?)
     //is_server = (flags == BMI_INIT_SERVER) ? 1 : 0;
 //
@@ -649,7 +627,7 @@ static int na_ssm_addr_lookup(const char *in_name, na_addr_t *in_addr)
     {
         v_ssm_addr->addr = ssm_addr_create(ssm, &v_addrargs);
 
-        if(v_ssm_addr->addr < 0)
+        if(v_ssm_addr->addr == NULL)
         {
             return NA_FAIL;
         }
@@ -698,21 +676,6 @@ na_ssm_msg_get_max_unexpected_size(void)
     return max_unexpected_size;
 }
 
-
-/*---------------------------------------------------------------------------
- * Function:    na_ssm_msg_get_maximum_size
- *
- * Purpose:     Get the maximum size of a message
- *
- *---------------------------------------------------------------------------
- */
-static na_size_t na_ssm_msg_get_maximum_size(void)
-{
-    //TODO fix
-    return min(NA_SSM_EXPECTED_SIZE, NA_SSM_UNEXPECTED_SIZE);
-}
-
-
 /*---------------------------------------------------------------------------
  * Function:    na_ssm_msg_get_maximum_tag
  *
@@ -739,7 +702,7 @@ static na_tag_t na_ssm_msg_get_maximum_tag(void)
 static int na_ssm_msg_send_unexpected(const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg)
 {
-    int ssm_ret, ret = NA_SUCCESS;
+    int ret = NA_SUCCESS;
     ssm_size_t ssm_buf_size = (ssm_size_t) buf_size;
 
     na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) dest;
@@ -787,18 +750,20 @@ static int na_ssm_msg_send_unexpected(const void *buf, na_size_t buf_size,
  *
  *---------------------------------------------------------------------------
  */
-static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
-        na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
+static int na_ssm_msg_recv_unexpected(void *buf,
+                                      na_size_t buf_size,
+                                      na_size_t *actual_buf_size,
+                                      na_addr_t *source,
+                                      na_tag_t *tag,
+                                      na_request_t *request,
+                                      void NA_UNUSED(*op_arg))
 {
 #if DEBUG
     printf("na_ssm_msg_recv_unexpected()\n");
     printf("\tbuf = %p, buf_size = %d, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, tag, request, op_arg);
 #endif
-    int ssm_ret, ret = NA_SUCCESS;
-    hg_list_entry_t *entry = NULL;
+    int ret = NA_SUCCESS;
     na_ssm_request_t *pssm_request = NULL;
-    na_ssm_unexpected_wait_t *ssm_unexpected_entry = NULL;
-
 
     if (!buf) {
         NA_ERROR_DEFAULT("NULL buffer");
@@ -818,7 +783,7 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
     printf("\tassigned request = %p\n", pssm_request);
 #endif
 
-    if (unexpbuf[unexpbuf_rpos].status < 0) {
+    if (unexpbuf[unexpbuf_rpos].status != SSM_ST_COMPLETE) {
         NA_ERROR_DEFAULT("unexpected recv failed");
         /* TODO: free ?*/
         //TODO: request->status = ERROR
@@ -907,11 +872,9 @@ static int na_ssm_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *
 static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
-    int ret = NA_SUCCESS, ssm_ret;
+    int ret = NA_SUCCESS;
     ssm_size_t ssm_buf_size = (ssm_size_t) buf_size;
     na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) dest;
-    ssm_msg_tag_t ssm_tag = (ssm_msg_tag_t) tag;
-
     na_ssm_request_t *ssm_request = NULL;
     /* use addr as unique id*/
     ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
@@ -962,7 +925,7 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
  *
  *---------------------------------------------------------------------------
  */
-static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
+static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t NA_UNUSED(source),
         na_tag_t tag, na_request_t *request, void *op_arg)
 {
     printf("na_ssm_msg_recv()\n");
@@ -972,7 +935,6 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
 #endif
     int ssm_ret, ret = NA_SUCCESS;
     ssm_size_t ssm_buf_size = (ssm_size_t) buf_size;
-    na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) source;
     ssm_msg_tag_t ssm_tag = (ssm_msg_tag_t) tag;
     na_ssm_request_t *ssm_request = NULL;
     ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
@@ -1022,7 +984,7 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
  */
 int na_ssm_mem_register(void               *in_buf,
                         na_size_t           in_buf_size,
-                        unsigned long       in_flags,
+                        unsigned long       NA_UNUSED(in_flags),
                         na_mem_handle_t    *out_mem_handle)
 {
     na_ssm_mem_handle_t       *v_handle = NULL;
@@ -1103,7 +1065,7 @@ int na_ssm_mem_deregister(na_mem_handle_t mem_handle)
  *
  *---------------------------------------------------------------------------
  */
-na_size_t na_ssm_mem_handle_get_serialize_size(na_mem_handle_t mem_handle)
+na_size_t na_ssm_mem_handle_get_serialize_size(na_mem_handle_t NA_UNUSED(mem_handle))
 {
     return sizeof(na_ssm_mem_handle_t);
 }
@@ -1224,12 +1186,21 @@ int na_ssm_mem_handle_free(na_mem_handle_t mem_handle)
  *
  *---------------------------------------------------------------------------
  */
-int na_ssm_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-        na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t length, na_addr_t remote_addr, na_request_t *request)
+int na_ssm_put(na_mem_handle_t local_mem_handle,
+               na_offset_t local_offset,
+               na_mem_handle_t remote_mem_handle,
+               na_offset_t remote_offset,
+               na_size_t length,
+               na_addr_t remote_addr,
+               na_request_t *request)
 {
     na_ssm_mem_handle_t *lh = (na_ssm_mem_handle_t *)local_mem_handle;
+#if DEBUG
     na_ssm_mem_handle_t *rh = (na_ssm_mem_handle_t *)remote_mem_handle;
+#else
+    (void) remote_mem_handle;
+    (void) remote_offset;
+#endif
     /* mem layout */
     struct iovec *iov;
     iov = (struct iovec *)malloc(sizeof(struct iovec));
@@ -1237,7 +1208,7 @@ int na_ssm_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     pbuf += local_offset;
     iov[0].iov_base = pbuf;
     iov[0].iov_len = length;
-    int ssm_ret, ret = NA_SUCCESS;
+    int ret = NA_SUCCESS;
     /* args */
     na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) remote_addr;
     na_ssm_request_t *ssm_request = NULL;
@@ -1326,7 +1297,7 @@ int na_ssm_get(na_mem_handle_t    in_local_mem_handle,
                     &(v_ssm_request->cb),
                     SSM_NOF);
 
-    if (v_stx <= 0)
+    if (v_stx == NULL)
     {
         free(v_ssm_request);
         ssm_md_release(v_remote_md);
@@ -1350,7 +1321,7 @@ int na_ssm_get(na_mem_handle_t    in_local_mem_handle,
  *---------------------------------------------------------------------------
  */
 int na_ssm_wait(na_request_t in_request,
-                unsigned int in_timeout,
+                unsigned int NA_UNUSED(in_timeout),
                 na_status_t *out_status)
 {
     int               v_na_status = NA_FAIL;
@@ -1416,7 +1387,8 @@ int na_ssm_wait(na_request_t in_request,
  *
  *---------------------------------------------------------------------------
  */
-static int na_ssm_progress(unsigned int timeout, na_status_t *status)
+static int na_ssm_progress(unsigned int NA_UNUSED(timeout),
+                           na_status_t NA_UNUSED(*status))
 {
     struct timeval tv;
     tv.tv_sec = 0;

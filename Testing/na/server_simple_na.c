@@ -15,6 +15,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
+#include <unistd.h>
+
 #define min(a, b) ((a)<(b)?(a):(b))
 #define max(a, b) ((a)>(b)?(a):(b))
 #define bytes2mb(a) (a/1024.0/1024.0)
@@ -28,7 +31,7 @@ double gettimeofday_sec()
     return tv.tv_sec + (double)tv.tv_usec*1e-6;
 }
 
-int get_nn(int cycle, unsigned long size)
+int get_nn(unsigned int cycle, unsigned long size)
 {
     return min(cycle, MAX_TRANSFER_SIZE_MB*1024*1024 / size);
 }
@@ -52,16 +55,16 @@ int main(int argc, char *argv[])
     unsigned int peer;
 
     int na_ret;
-    int i, j, k;
-    int cycle;
+    int ctr;
+    unsigned int cycle;
     double st, es, st2;
     double sum;
     na_size_t bench_buf_size = atoi(argv[argc-2]);
     cycle = atoi(argv[argc-1]);
     cycle = get_nn(cycle, bench_buf_size);
-    for(i = 0; i < nbenchbufs; i++){
-        bench_buf[i] = malloc(bench_buf_size);
-        memset(bench_buf[i], 0, bench_buf_size);
+    for(ctr = 0; ctr < nbenchbufs; ctr++){
+        bench_buf[ctr] = malloc(bench_buf_size);
+        memset(bench_buf[ctr], 0, bench_buf_size);
     }
     printf("Bench buf size = %lu\n", (uint64_t)bench_buf_size);
     printf("Cycle = %d\n", cycle);
@@ -251,7 +254,7 @@ int main(int argc, char *argv[])
         bytes = bench_buf_size * cycle;
         st = gettimeofday_sec();
         sum = 0;
-        for( i = 0; i < cycle; i++ ){
+        for( i = 0; i < (int) cycle; i++ ){
             /* Recv completion */
             na_ret = NA_Msg_recv(network_class, recv_buf, recv_buf_len, recv_addr, ack_tag, &recv_request, NULL);
             if (na_ret != NA_SUCCESS) {
@@ -284,9 +287,6 @@ int main(int argc, char *argv[])
         }
         
         /* Pipelined send */
-        int rest = nbenchbufs;
-        int pending = 8;
-        int waitpos = 0;
         sleep(1);
         puts("Pipelined send");
         /* Recv completion */
@@ -320,7 +320,7 @@ int main(int argc, char *argv[])
         bytes = nbenchbufs * bench_buf_size;
         es = gettimeofday_sec() - st;
         if(peer==0){
-            printf("result(send_pipeline, %lu): time %f, msg/s %f, MB/s %f\n", (uint64_t) bench_buf_size, es, cycle / es, bytes2mb(bytes) / es, (sum / cycle )*1000);
+            printf("result(send_pipeline, %lu): time %f, msg/s %f, MB/s %f\n", (uint64_t) bench_buf_size, es, cycle / es, bytes2mb(bytes) / es);
         }
         
 
