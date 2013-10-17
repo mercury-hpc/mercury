@@ -18,22 +18,23 @@
 #ifdef NA_HAS_SSM
 #include "na_ssm.h"
 #endif
+#include "na_error.h"
 
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
 #ifdef NA_HAS_SSM
-extern na_class_describe_t na_ssm_describe_g;
+extern struct na_class_describe na_ssm_describe_g;
 #endif
 #ifdef NA_HAS_BMI
-extern na_class_describe_t na_bmi_describe_g;
+extern struct na_class_describe na_bmi_describe_g;
 #endif
 #ifdef NA_HAS_MPI
-extern na_class_describe_t na_mpi_describe_g;
+extern struct na_class_describe na_mpi_describe_g;
 #endif
 
-static na_class_describe_t *const na_class_methods[] = {
+static const struct na_class_describe *na_class_methods[] = {
 #ifdef NA_HAS_BMI
     &na_bmi_describe_g,
 #endif
@@ -47,31 +48,40 @@ static na_class_describe_t *const na_class_methods[] = {
 };
 
 /*---------------------------------------------------------------------------*/
-void NA_free_host_buffer(na_host_buffer_t *na_buffer)
+static void
+NA_free_host_buffer(struct na_host_buffer *na_buffer)
 {
-    if (na_buffer != NULL)
-    {
-        if (na_buffer->na_class != NULL)
-          free(na_buffer->na_class);
-        if (na_buffer->na_protocol != NULL)
-          free(na_buffer->na_protocol);
-        if (na_buffer->na_host != NULL)
-          free(na_buffer->na_host);
-        if (na_buffer->na_host_string != NULL)
-          free(na_buffer->na_host_string);
+    if (na_buffer) {
+        free(na_buffer->na_class);
+        na_buffer->na_class = NULL;
+        free(na_buffer->na_protocol);
+        na_buffer->na_protocol = NULL;
+        free(na_buffer->na_host);
+        na_buffer->na_host = NULL;
+        free(na_buffer->na_host_string);
+        na_buffer->na_host_string = NULL;
         free(na_buffer);
     }
 }
 
 /*---------------------------------------------------------------------------*/
-static int NA_parse_host_string(const char            *host_string,
-                                na_host_buffer_t     **in_na_buffer)
+static int
+NA_parse_host_string(const char *host_string,
+        struct na_host_buffer **in_na_buffer)
 {
-    char *allocated_buffer        = malloc(strlen(host_string) + 1);
-    char *input_string            = allocated_buffer;
-    char *token                   = NULL;
-    char *locator                 = NULL;
-    na_host_buffer_t *na_buffer   = *in_na_buffer;
+    char *input_string = NULL;
+    char *token = NULL;
+    char *locator = NULL;
+    struct na_host_buffer *na_buffer = *in_na_buffer;
+    size_t na_host_string_len;
+    int ret = NA_SUCCESS;
+
+    input_string = (char*) malloc(strlen(host_string) + 1);
+    if (!input_string) {
+        NA_ERROR_DEFAULT("Could not allocate string");
+        ret = NA_FAIL;
+        goto done;
+    }
 
     strcpy(input_string, host_string);
 
@@ -81,47 +91,62 @@ static int NA_parse_host_string(const char            *host_string,
      */
     token = strtok_r(input_string, ":", &locator);
 
-    if (strstr(token, "@") != NULL)
-    {
+    if (strstr(token, "@") != NULL) {
         char *_locator = NULL;
 
         token = strtok_r(token, "@", &_locator);
 
-        na_buffer->na_class = malloc(strlen(_locator) + 1);
+        na_buffer->na_class = (char*) malloc(strlen(_locator) + 1);
+        if (!na_buffer->na_class) {
+            NA_ERROR_DEFAULT("Could not allocate na_class");
+            ret = NA_FAIL;
+            goto done;
+        }
+
         strcpy(na_buffer->na_class, _locator);
-
-        na_buffer->na_protocol = malloc(strlen(token) + 1);
-        strcpy(na_buffer->na_protocol, token);
+    } else {
+        na_buffer->na_class = NULL;
     }
-    else
-    {
-        na_buffer->na_class    = NULL;
-        na_buffer->na_protocol = malloc(strlen(token) + 1);
 
-        strcpy(na_buffer->na_protocol, token);
+    na_buffer->na_protocol = (char*) malloc(strlen(token) + 1);
+    if (!na_buffer->na_protocol) {
+        NA_ERROR_DEFAULT("Could not allocate na_protocol");
+        ret = NA_FAIL;
+        goto done;
     }
+
+    strcpy(na_buffer->na_protocol, token);
 
     token = locator + 2;
     token = strtok_r(token, ":", &locator);
 
-    na_buffer->na_host = malloc(strlen(token) + 1);
+    na_buffer->na_host = (char*) malloc(strlen(token) + 1);
+    if (!na_buffer->na_host) {
+        NA_ERROR_DEFAULT("Could not allocate na_host");
+        ret = NA_FAIL;
+        goto done;
+    }
+
     strcpy(na_buffer->na_host, token);
 
     na_buffer->na_port = atoi(locator);
 
-    na_buffer->na_host_string = malloc(strlen(na_buffer->na_protocol) +
-                                       strlen("://") +
-                                       strlen(na_buffer->na_host) +
-                                       strlen(":") +
-                                       strlen(locator) +
-                                       1);
+    na_host_string_len = strlen(na_buffer->na_protocol) +
+            strlen("://") +
+            strlen(na_buffer->na_host) +
+            strlen(":") +
+            strlen(locator) +
+            1;
 
-    if (na_buffer->na_host_string != NULL)
-    {
-        memset(na_buffer->na_host_string,
-               0,
-               sizeof(na_buffer->na_host_string));
-        
+    na_buffer->na_host_string = (char*) malloc(na_host_string_len);
+    if (!na_buffer->na_host_string) {
+        NA_ERROR_DEFAULT("Could not allocate na_host_string");
+        ret = NA_FAIL;
+        goto done;
+    }
+
+    if (na_buffer->na_host_string != NULL) {
+        memset(na_buffer->na_host_string, '\0', na_host_string_len);
         strcpy(na_buffer->na_host_string, na_buffer->na_protocol);
         strcat(na_buffer->na_host_string, "://");
         strcat(na_buffer->na_host_string, na_buffer->na_host);
@@ -129,35 +154,45 @@ static int NA_parse_host_string(const char            *host_string,
         strcat(na_buffer->na_host_string, locator);
     }
 
-    free(allocated_buffer);
+done:
+    if (ret != NA_SUCCESS) {
+        free(na_buffer->na_class);
+        na_buffer->na_class = NULL;
+        free(na_buffer->na_protocol);
+        na_buffer->na_protocol = NULL;
+        free(na_buffer->na_host);
+        na_buffer->na_host = NULL;
+        free(na_buffer->na_host_string);
+        na_buffer->na_host_string = NULL;
+    }
+    free(input_string);
 
-    return NA_SUCCESS;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-NA_CLASS_PRIORITY
-NA_get_priority(const na_host_buffer_t *na_buffer)
+static na_class_priority_t
+NA_get_priority(const struct na_host_buffer NA_UNUSED *na_buffer)
 {
     /* TBD: */
     return NA_CLASS_PRIORITY_HIGH;
 }
 
-
 /*---------------------------------------------------------------------------*/
 na_class_t *
 NA_Initialize(const char *host_string, na_bool_t listen)
 {
-    na_class_t         *network_class      = NULL;
-    na_bool_t           accept             = NA_FALSE;
-    na_host_buffer_t   *na_buffer          = NULL;
-    int                 index              = 0;
-    NA_CLASS_PRIORITY   highest_priority   = NA_CLASS_PRIORITY_INVALID;
-    int                 i                  = 0;
-    int                 plugin_count       = 0;
+    na_class_t *network_class = NULL;
+    na_bool_t accept = NA_FALSE;
+    struct na_host_buffer *na_buffer = NULL;
+    int class_index = 0;
+    na_class_priority_t highest_priority = NA_CLASS_PRIORITY_INVALID;
+    int i = 0;
+    int plugin_count = 0;
 
-    na_buffer = (na_host_buffer_t *) malloc(sizeof(na_host_buffer_t));
-    if (na_buffer == NULL)
-    {
+    na_buffer = (struct na_host_buffer*) malloc(sizeof(struct na_host_buffer));
+    if (!na_buffer) {
+        NA_ERROR_DEFAULT("Could not allocate na_buffer");
         return NULL;
     }
 
@@ -165,36 +200,30 @@ NA_Initialize(const char *host_string, na_bool_t listen)
 
     NA_parse_host_string(host_string, &na_buffer);
 
-    for (i = 0; i < plugin_count; ++i)
-    {
+    for (i = 0; i < plugin_count; ++i) {
         accept = na_class_methods[i]->verify(na_buffer->na_protocol);
 
-        if (accept)
-        {
-            int class_priority = NA_get_priority(na_buffer);
+        if (accept) {
+            na_class_priority_t class_priority = NA_get_priority(na_buffer);
             
             if ((na_buffer->na_class && strcmp(na_class_methods[i]->class_name,
                                                na_buffer->na_class) == 0) ||
-                class_priority == NA_CLASS_PRIORITY_MAX)
-            {
-                index = i;
+                    class_priority == NA_CLASS_PRIORITY_MAX) {
+                class_index = i;
                 break;
-            }
-            else
-            {
-                if (class_priority > highest_priority)
-                {
+            } else {
+                if (class_priority > highest_priority) {
                     highest_priority = class_priority;
-                    index = i;
+                    class_index = i;
                 }
             }
         }
     }
 
-    network_class = na_class_methods[index]->initialize(na_buffer, listen);
+    network_class = na_class_methods[class_index]->initialize(na_buffer, listen);
 
- out:
     NA_free_host_buffer(na_buffer);
+
     return network_class;
 }
 

@@ -62,9 +62,10 @@ static int na_ssm_wait(na_request_t request, unsigned int timeout,
         na_status_t *status);
 static int na_ssm_progress(unsigned int timeout, na_status_t *status);
 static int na_ssm_request_free(na_request_t request);
-static na_bool_t na_ssm_verify(const char* protocol);
-static na_class_t* na_ssm_initialize(const na_host_buffer_t *host_buffer,
-                                     na_bool_t               listen);
+
+static na_bool_t na_ssm_verify(const char *protocol);
+static na_class_t* na_ssm_initialize(const struct na_host_buffer *host_buffer,
+        na_bool_t listen);
 
 static na_class_t na_ssm_g = {
         na_ssm_finalize,               /* finalize */
@@ -243,7 +244,7 @@ static ssm_bits cur_bits;
 
 static const char na_ssm_name_g[] = "ssm";
 
-const na_class_describe_t na_ssm_describe_g = {
+const struct na_class_describe na_ssm_describe_g = {
     na_ssm_name_g,
     na_ssm_verify,
     na_ssm_initialize
@@ -484,25 +485,22 @@ static void* na_ssm_progress_service(void *args)
 }
 #endif
 
-na_bool_t
-na_ssm_verify(const char* protocol)
+static na_bool_t
+na_ssm_verify(const char *protocol)
 {
     na_bool_t accept = NA_FALSE;
     
-    if (strcmp(protocol, "tcp") == 0)
-    {
+    if (strcmp(protocol, "tcp") == 0) {
         accept = NA_TRUE;
     }
 
     return accept;
 }
 
-na_class_t*
-na_ssm_initialize(const na_host_buffer_t *na_buffer,
-                  na_bool_t               listen)
+static na_class_t*
+na_ssm_initialize(const struct na_host_buffer *na_buffer, na_bool_t listen)
 {
-    if (na_buffer != NULL)
-    {
+    if (na_buffer != NULL) {
         return NA_SSM_Init(na_buffer->na_protocol,
                            na_buffer->na_port,
                            listen);

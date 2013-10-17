@@ -73,26 +73,28 @@ struct na_class {
     int (*request_free)(na_request_t request);
 };
 
+/* Host string buffer */
 struct na_host_buffer {
-char *na_class;          /* Class name (e.g., ssm, bmi, mpi) */
-char *na_protocol;       /* Protocol (e.g., tcp, ib) */
-char *na_host;           /* Host */
-int   na_port;           /* Port for communication */
-char *na_host_string;    /* Full request string sent by the user */
+    char *na_class;          /* Class name (e.g., ssm, bmi, mpi) */
+    char *na_protocol;       /* Protocol (e.g., tcp, ib) */
+    char *na_host;           /* Host */
+    int   na_port;           /* Port for communication */
+    char *na_host_string;    /* Full request string sent by the user */
 };
 
-struct na_class_desribe {
-const char* class_name;
-na_bool_t   (*verify) (const char* protocol);
-na_class_t* (*initialize) (const na_host_buffer_t *na_buffer,
-                             na_bool_t listen);
+/* Class description */
+struct na_class_describe {
+    const char *class_name;
+    na_bool_t (*verify) (const char *protocol);
+    na_class_t *(*initialize) (const struct na_host_buffer *na_buffer,
+            na_bool_t listen);
 };
 
-typedef enum {
+typedef enum na_class_priority {
   NA_CLASS_PRIORITY_INVALID  = 0,
   NA_CLASS_PRIORITY_LOW      = 1,
   NA_CLASS_PRIORITY_HIGH     = 2,
   NA_CLASS_PRIORITY_MAX      = 10
-} NA_CLASS_PRIORITY;
+} na_class_priority_t;
 
 #endif /* NA_PRIVATE_H */

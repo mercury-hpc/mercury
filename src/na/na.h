@@ -16,10 +16,6 @@
 #include <limits.h>
 
 typedef struct na_class na_class_t; /* Abstract network class */
-typedef struct na_class_desribe na_class_describe_t;
-                                    /* Abstract class description */
-typedef struct na_host_buffer na_host_buffer_t;
-                                    /* Host string buffer */
 typedef void *      na_addr_t;      /* Abstract network address */
 typedef na_uint64_t na_size_t;      /* Size */
 typedef na_uint32_t na_tag_t;       /* Tag */
