@@ -1044,6 +1044,7 @@ int na_ssm_mem_register(void               *in_buf,
     }
 
     v_handle->matchbits = generate_unique_matchbits() + NA_SSM_TAG_RMA_OFFSET;
+    v_handle->buf       = in_buf;
     v_handle->cb.pcb    = postedbuf_cb;
     v_handle->cb.cbdata = NULL;
 
@@ -1102,9 +1103,8 @@ int na_ssm_mem_deregister(na_mem_handle_t mem_handle)
  *
  *---------------------------------------------------------------------------
  */
-static na_size_t na_ssm_mem_handle_get_serialize_size(na_mem_handle_t mem_handle)
+na_size_t na_ssm_mem_handle_get_serialize_size(na_mem_handle_t mem_handle)
 {
-    (void) mem_handle;
     return sizeof(na_ssm_mem_handle_t);
 }
 
@@ -1134,28 +1134,6 @@ int na_ssm_mem_handle_serialize(void *buf, na_size_t buf_size,
     }
 
     return ret;
-    
-    #if 0
-    //TODO: only matchbits
-#if DEBUG
-    fprintf(stderr, "na_ssm_msm_handle_serialize(size = %d, h = %p)\n", buf_size, mem_handle);
-#endif
-    na_ssm_mem_handle_t *ssmhandle = (na_ssm_mem_handle_t *)mem_handle;
-    ssm_bits *pbits = buf;
-
-    int ret = NA_SUCCESS;
-    if (buf_size < sizeof(ssm_bits)) {
-        NA_ERROR_DEFAULT("Buffer size too small for serializing parameter");
-        ret = NA_FAIL;
-    } else {
-        /* Here safe to do a simple memcpy */
-        /* TODO may also want to add a checksum or something */
-        *pbits = htonl(ssmhandle->matchbits);
-        //*pbits = (ssmhandle->matchbits);
-        //printf("\tbits = %p\n", *pbits);
-    }
-    return ret;
-    #endif
 }
 
 /*---------------------------------------------------------------------------
@@ -1320,7 +1298,7 @@ int na_ssm_get(na_mem_handle_t    in_local_mem_handle,
         return NA_FAIL;
     }
 
-    v_local_mr = ssm_mr_create(NULL,
+    v_local_mr = ssm_mr_create(v_remote_md,
                                v_local_handle->buf + in_local_offset,
                                in_length);
 
@@ -1371,9 +1349,9 @@ int na_ssm_get(na_mem_handle_t    in_local_mem_handle,
  *
  *---------------------------------------------------------------------------
  */
-static int na_ssm_wait(na_request_t in_request,
-                       unsigned int in_timeout,
-                       na_status_t *out_status)
+int na_ssm_wait(na_request_t in_request,
+                unsigned int in_timeout,
+                na_status_t *out_status)
 {
     int               v_na_status = NA_FAIL;
     na_ssm_request_t *v_request   = (na_ssm_request_t *) in_request;
