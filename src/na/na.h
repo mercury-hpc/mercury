@@ -164,6 +164,7 @@ NA_Msg_send_unexpected(na_class_t *network_class,
 
 /**
  * Receive an unexpected message.
+ * The address returned must be freed using NA_Addr_free().
  * Unexpected receives may wait on ANY_TAG and ANY_SOURCE depending on the
  * implementation.
  *
