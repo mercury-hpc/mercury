@@ -98,41 +98,41 @@ static na_class_t na_mpi_g = {
 
 /* Private structs */
 struct na_mpi_addr {
-    MPI_Comm  comm;            /* Communicator */
-    int       rank;            /* Rank in this communicator */
-    na_bool_t is_unexpected :1; /* Address generated from unexpected recv */
+    MPI_Comm  comm;              /* Communicator */
+    int       rank;              /* Rank in this communicator */
+    na_bool_t is_unexpected : 1; /* Address generated from unexpected recv */
     char      port_name[MPI_MAX_PORT_NAME]; /* String version of addr */
 };
 
-struct mpi_mem_handle {
+struct na_mpi_mem_handle {
     void *base;                /* Initial address of memory */
     /* MPI_Aint size; */       /* Size of memory, NB don't use it for now */
     unsigned attr;             /* Flag of operation access */
 };
 
 #if MPI_VERSION < 3
-typedef enum mpi_onesided_op {
+typedef enum na_mpi_onesided_op {
     MPI_ONESIDED_PUT,       /* Request a put operation */
     MPI_ONESIDED_GET        /* Request a get operation */
-} mpi_onesided_op_t;
+} na_mpi_onesided_op_t;
 
-struct mpi_onesided_info {
+struct na_mpi_onesided_info {
     void    *base;         /* Initial address of memory */
     MPI_Aint disp;         /* Offset from initial address */
     int      count;        /* Number of entries */
-    mpi_onesided_op_t op;  /* Operation requested */
+    na_mpi_onesided_op_t op;  /* Operation requested */
     na_tag_t tag;          /* Tag for the data transfer */
 };
 #endif
 
 /* Used to differentiate Send requests from Recv requests */
-typedef enum mpi_req_type {
+typedef enum na_mpi_req_type {
     MPI_SEND_OP,
     MPI_RECV_OP
-} mpi_req_type_t;
+} na_mpi_req_type_t;
 
-struct mpi_req {
-    mpi_req_type_t type;
+struct na_mpi_req {
+    na_mpi_req_type_t type;
     MPI_Request request;
 #if MPI_VERSION < 3
     MPI_Request data_request;
@@ -664,7 +664,7 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     int mpi_source;
     int mpi_tag;
     MPI_Comm mpi_unexpected_comm;
-    struct mpi_req *mpi_request = NULL;
+    struct na_mpi_req *mpi_request = NULL;
     struct na_mpi_addr *peer_addr = NULL;
 
     if (!buf) {
@@ -706,7 +706,7 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     mpi_source = mpi_status.MPI_SOURCE;
     mpi_tag = mpi_status.MPI_TAG;
 
-    mpi_request = (struct mpi_req*) malloc(sizeof(struct mpi_req));
+    mpi_request = (struct na_mpi_req*) malloc(sizeof(struct na_mpi_req));
     if (!mpi_request) {
         NA_ERROR_DEFAULT("Could not allocate request");
         ret = NA_FAIL;
@@ -766,9 +766,9 @@ na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;
     struct na_mpi_addr *mpi_addr = (struct na_mpi_addr*) dest;
-    struct mpi_req *mpi_request;
+    struct na_mpi_req *mpi_request;
 
-    mpi_request = (struct mpi_req*) malloc(sizeof(struct mpi_req));
+    mpi_request = (struct na_mpi_req*) malloc(sizeof(struct na_mpi_req));
     if (!mpi_request) {
         NA_ERROR_DEFAULT("Could not allocate request");
         ret = NA_FAIL;
@@ -802,9 +802,9 @@ na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;
     struct na_mpi_addr *mpi_addr = (struct na_mpi_addr*) source;
-    struct mpi_req *mpi_request;
+    struct na_mpi_req *mpi_request;
 
-    mpi_request = (struct mpi_req*) malloc(sizeof(struct mpi_req));
+    mpi_request = (struct na_mpi_req*) malloc(sizeof(struct na_mpi_req));
     if (!mpi_request) {
         NA_ERROR_DEFAULT("Could not allocate request");
         ret = NA_FAIL;
@@ -835,10 +835,10 @@ na_mpi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags
 {
     int ret = NA_SUCCESS;
     void *mpi_buf_base = buf;
-    struct mpi_mem_handle *mpi_mem_handle;
+    struct na_mpi_mem_handle *mpi_mem_handle;
     /* MPI_Aint mpi_buf_size = (MPI_Aint) buf_size; */
 
-    mpi_mem_handle = (struct mpi_mem_handle*) malloc(sizeof(struct mpi_mem_handle));
+    mpi_mem_handle = (struct na_mpi_mem_handle*) malloc(sizeof(struct na_mpi_mem_handle));
     if (!mpi_mem_handle) {
         NA_ERROR_DEFAULT("Could not allocate memory handle");
         ret = NA_FAIL;
@@ -875,7 +875,7 @@ static int
 na_mpi_mem_deregister(na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
-    struct mpi_mem_handle *mpi_mem_handle = (struct mpi_mem_handle*) mem_handle;
+    struct na_mpi_mem_handle *mpi_mem_handle = (struct na_mpi_mem_handle*) mem_handle;
 
 #if MPI_VERSION < 3
     hg_thread_mutex_lock(&mem_map_mutex);
@@ -908,7 +908,7 @@ na_mpi_mem_deregister(na_mem_handle_t mem_handle)
 static na_size_t
 na_mpi_mem_handle_get_serialize_size(na_mem_handle_t NA_UNUSED mem_handle)
 {
-    return sizeof(struct mpi_mem_handle);
+    return sizeof(struct na_mpi_mem_handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -917,14 +917,14 @@ na_mpi_mem_handle_serialize(void *buf, na_size_t buf_size,
         na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
-    struct mpi_mem_handle *mpi_mem_handle = (struct mpi_mem_handle*) mem_handle;
+    struct na_mpi_mem_handle *mpi_mem_handle = (struct na_mpi_mem_handle*) mem_handle;
 
-    if (buf_size < sizeof(struct mpi_mem_handle)) {
+    if (buf_size < sizeof(struct na_mpi_mem_handle)) {
         NA_ERROR_DEFAULT("Buffer size too small for serializing parameter");
         ret = NA_FAIL;
     } else {
         /* Here safe to do a simple memcpy */
-        memcpy(buf, mpi_mem_handle, sizeof(struct mpi_mem_handle));
+        memcpy(buf, mpi_mem_handle, sizeof(struct na_mpi_mem_handle));
     }
     return ret;
 }
@@ -935,15 +935,15 @@ na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
         const void *buf, na_size_t buf_size)
 {
     int ret = NA_SUCCESS;
-    struct mpi_mem_handle *mpi_mem_handle;
+    struct na_mpi_mem_handle *mpi_mem_handle;
 
-    if (buf_size < sizeof(struct mpi_mem_handle)) {
+    if (buf_size < sizeof(struct na_mpi_mem_handle)) {
         NA_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
         ret = NA_FAIL;
         return ret;
     }
 
-    mpi_mem_handle = (struct mpi_mem_handle*) malloc(sizeof(struct mpi_mem_handle));
+    mpi_mem_handle = (struct na_mpi_mem_handle*) malloc(sizeof(struct na_mpi_mem_handle));
     if (!mpi_mem_handle) {
         NA_ERROR_DEFAULT("Could not allocate memory handle");
         ret = NA_FAIL;
@@ -951,7 +951,7 @@ na_mpi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
     }
 
     /* Here safe to do a simple memcpy */
-    memcpy(mpi_mem_handle, buf, sizeof(struct mpi_mem_handle));
+    memcpy(mpi_mem_handle, buf, sizeof(struct na_mpi_mem_handle));
     *mem_handle = (na_mem_handle_t) mpi_mem_handle;
 
     return ret;
@@ -962,7 +962,7 @@ static int
 na_mpi_mem_handle_free(na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
-    struct mpi_mem_handle *mpi_mem_handle = (struct mpi_mem_handle*) mem_handle;
+    struct na_mpi_mem_handle *mpi_mem_handle = (struct na_mpi_mem_handle*) mem_handle;
 
     if (mpi_mem_handle) {
         free(mpi_mem_handle);
@@ -981,16 +981,16 @@ na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
     int mpi_ret, ret = NA_SUCCESS;
-    struct mpi_mem_handle *mpi_local_mem_handle = (struct mpi_mem_handle*) local_mem_handle;
+    struct na_mpi_mem_handle *mpi_local_mem_handle = (struct na_mpi_mem_handle*) local_mem_handle;
     MPI_Aint mpi_local_offset = (MPI_Aint) local_offset;
-    struct mpi_mem_handle *mpi_remote_mem_handle = (struct mpi_mem_handle*) remote_mem_handle;
+    struct na_mpi_mem_handle *mpi_remote_mem_handle = (struct na_mpi_mem_handle*) remote_mem_handle;
     MPI_Aint mpi_remote_offset = (MPI_Aint) remote_offset;
     int mpi_length = (int) length; /* TODO careful here that we don't send more than 2GB */
     struct na_mpi_addr *mpi_remote_addr = (struct na_mpi_addr*) remote_addr;
-    struct mpi_req *mpi_request = NULL;
+    struct na_mpi_req *mpi_request = NULL;
 
 #if MPI_VERSION < 3
-    struct mpi_onesided_info onesided_info;
+    struct na_mpi_onesided_info onesided_info;
 
     /* Check that local memory is registered */
     if (!hg_hash_table_lookup(mem_handle_map, mpi_local_mem_handle->base)) {
@@ -1006,7 +1006,7 @@ na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         return ret;
     }
 
-    mpi_request = (struct mpi_req*) malloc(sizeof(struct mpi_req));
+    mpi_request = (struct na_mpi_req*) malloc(sizeof(struct na_mpi_req));
     if (!mpi_request) {
         NA_ERROR_DEFAULT("Could not allocate request");
         ret = NA_FAIL;
@@ -1025,7 +1025,7 @@ na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     onesided_info.op = MPI_ONESIDED_PUT;
     onesided_info.tag = na_mpi_gen_onesided_tag();
 
-    MPI_Isend(&onesided_info, sizeof(struct mpi_onesided_info), MPI_BYTE, mpi_remote_addr->rank,
+    MPI_Isend(&onesided_info, sizeof(struct na_mpi_onesided_info), MPI_BYTE, mpi_remote_addr->rank,
             NA_MPI_ONESIDED_TAG, mpi_onesided_comm, &mpi_request->request);
 
     /* Simply do a non blocking synchronous send */
@@ -1067,16 +1067,16 @@ na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request)
 {
     int mpi_ret, ret = NA_SUCCESS;
-    struct mpi_mem_handle *mpi_local_mem_handle = (struct mpi_mem_handle*) local_mem_handle;
+    struct na_mpi_mem_handle *mpi_local_mem_handle = (struct na_mpi_mem_handle*) local_mem_handle;
     MPI_Aint mpi_local_offset = (MPI_Aint) local_offset;
-    struct mpi_mem_handle *mpi_remote_mem_handle = (struct mpi_mem_handle*) remote_mem_handle;
+    struct na_mpi_mem_handle *mpi_remote_mem_handle = (struct na_mpi_mem_handle*) remote_mem_handle;
     MPI_Aint mpi_remote_offset = (MPI_Aint) remote_offset;
     int mpi_length = (int) length; /* TODO careful here that we don't send more than 2GB */
     struct na_mpi_addr *mpi_remote_addr = (struct na_mpi_addr*) remote_addr;
-    struct mpi_req *mpi_request = NULL;
+    struct na_mpi_req *mpi_request = NULL;
 
 #if MPI_VERSION < 3
-    struct mpi_onesided_info onesided_info;
+    struct na_mpi_onesided_info onesided_info;
 
     /* Check that local memory is registered */
     if (!hg_hash_table_lookup(mem_handle_map, mpi_local_mem_handle->base)) {
@@ -1086,7 +1086,7 @@ na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     }
 #endif
 
-    mpi_request = (struct mpi_req*) malloc(sizeof(struct mpi_req));
+    mpi_request = (struct na_mpi_req*) malloc(sizeof(struct na_mpi_req));
     if (!mpi_request) {
         NA_ERROR_DEFAULT("Could not allocate request");
         ret = NA_FAIL;
@@ -1105,7 +1105,7 @@ na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     onesided_info.op = MPI_ONESIDED_GET;
     onesided_info.tag = na_mpi_gen_onesided_tag();
 
-    MPI_Isend(&onesided_info, sizeof(struct mpi_onesided_info), MPI_BYTE, mpi_remote_addr->rank,
+    MPI_Isend(&onesided_info, sizeof(struct na_mpi_onesided_info), MPI_BYTE, mpi_remote_addr->rank,
             NA_MPI_ONESIDED_TAG, mpi_onesided_comm, &mpi_request->request);
 
     /* Simply do an asynchronous recv */
@@ -1144,7 +1144,7 @@ static int
 na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 {
     int mpi_ret, ret = NA_SUCCESS;
-    struct mpi_req *mpi_request = (struct mpi_req*) request;
+    struct na_mpi_req *mpi_request = (struct na_mpi_req*) request;
     double remaining = timeout / 1000; /* Timeout in milliseconds */
     MPI_Status mpi_status;
 
@@ -1259,14 +1259,14 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
 
     /* TODO may want to have it dynamically allocated if multiple threads call
      * progress on the client but should that happen? */
-    static struct mpi_onesided_info onesided_info;
+    static struct na_mpi_onesided_info onesided_info;
     static na_size_t onesided_actual_size = 0;
     static na_addr_t remote_addr = NA_ADDR_NULL;
     static na_tag_t remote_tag = 0;
     static na_request_t onesided_request = NA_REQUEST_NULL;
     struct na_mpi_addr *mpi_addr;
     na_status_t onesided_status;
-    struct mpi_mem_handle *mpi_mem_handle = NULL;
+    struct na_mpi_mem_handle *mpi_mem_handle = NULL;
 
     /* Wait for an initial request from client */
     if (onesided_request == NA_REQUEST_NULL) {
@@ -1279,7 +1279,7 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
 
             hg_time_get_current(&t1);
 
-            ret = na_mpi_msg_recv_unexpected(&onesided_info, sizeof(struct mpi_onesided_info),
+            ret = na_mpi_msg_recv_unexpected(&onesided_info, sizeof(struct na_mpi_onesided_info),
                     &onesided_actual_size, &remote_addr,
                     &remote_tag, &onesided_request, NULL);
             if (ret != NA_SUCCESS) {
@@ -1340,7 +1340,7 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
      * mpi_mem_handle since it's a pointer to a mem_handle */
     hg_thread_mutex_lock(&mem_map_mutex);
 
-    mpi_mem_handle = (struct mpi_mem_handle*) hg_hash_table_lookup(mem_handle_map, onesided_info.base);
+    mpi_mem_handle = (struct na_mpi_mem_handle*) hg_hash_table_lookup(mem_handle_map, onesided_info.base);
 
     if (!mpi_mem_handle) {
         NA_ERROR_DEFAULT("Could not find memory handle, registered?");
@@ -1404,7 +1404,7 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
 static int
 na_mpi_request_free(na_request_t request)
 {
-    struct mpi_req *mpi_request = (struct mpi_req*) request;
+    struct na_mpi_req *mpi_request = (struct na_mpi_req*) request;
     int ret = NA_SUCCESS;
 
     /* Do not want to free the request if another thread is testing it */
