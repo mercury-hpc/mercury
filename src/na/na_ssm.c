@@ -33,6 +33,8 @@
 #define DEBUG 0
 static int na_ssm_finalize(void);
 static int na_ssm_addr_lookup(const char *name, na_addr_t *addr);
+static int na_ssm_addr_self(na_addr_t *addr);
+static const char* na_ssm_addr_to_string(na_addr_t addr);
 static int na_ssm_addr_free(na_addr_t addr);
 static na_size_t na_ssm_msg_get_max_expected_size(void);
 static na_size_t na_ssm_msg_get_max_unexpected_size(void);
@@ -70,7 +72,9 @@ static na_class_t* na_ssm_initialize(const struct na_host_buffer *host_buffer,
 static na_class_t na_ssm_g = {
         na_ssm_finalize,               /* finalize */
         na_ssm_addr_lookup,            /* addr_lookup */
+        na_ssm_addr_self,              /* self address */
         na_ssm_addr_free,              /* addr_free */
+        na_ssm_addr_to_string,         /* addr to string */
         na_ssm_msg_get_max_expected_size,     /* msg_get_max_expected_size */
         na_ssm_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
         na_ssm_msg_get_maximum_tag,
@@ -638,6 +642,42 @@ static int na_ssm_addr_lookup(const char *in_name, na_addr_t *in_addr)
 }
 
 /*---------------------------------------------------------------------------
+ * Function:    na_ssm_addr_self
+ *
+ * Purpose:     Return self address
+ *
+ * Returns:     Non-negative on success or negative on failure
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+na_ssm_addr_self(na_addr_t *in_addr)
+{
+    na_ssm_addr_t     *v_ssm_addr = NULL;
+    int                v_return   = NA_FAIL;
+
+    v_ssm_addr = (na_ssm_addr_t *) malloc(sizeof(na_ssm_addr_t));
+
+    if (v_ssm_addr != NULL)
+    {
+        v_ssm_addr->addr = ssm_addr_local(ssm);
+
+        if (v_ssm_addr->addr == NULL)
+        {
+            free(v_ssm_addr);
+            v_return = NA_FAIL;
+        }
+        else
+        {
+            (*in_addr) = (na_addr_t) v_ssm_addr;
+            v_return = NA_SUCCESS;
+        }
+    }
+    
+    return v_return;
+}
+
+/*---------------------------------------------------------------------------
  * Function:    na_ssm_addr_free
  *
  * Purpose:     Free the addr from the list of peers
@@ -656,6 +696,21 @@ static int na_ssm_addr_free(na_addr_t addr)
     //ssm_addr_destroy(ssm, paddr->addr);
     free(paddr);
     return NA_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    na_ssm_addr_to_string
+ *
+ * Purpose:     Do reverse lookup and convert the input address to string
+ *
+ * Returns:     Pointer to string on success, NULL otherwise.
+ *
+ *---------------------------------------------------------------------------
+ */
+static const char*
+na_ssm_addr_to_string(na_addr_t NA_UNUSED(addr))
+{
+    return NULL;
 }
 
 /*---------------------------------------------------------------------------*/
