@@ -15,10 +15,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define MAX_TRANSFER_SIZE_MB 1200
 
-int get_nn(int cycle, unsigned long size)
+int get_nn(unsigned int cycle, unsigned long size)
 {
     return min(cycle, MAX_TRANSFER_SIZE_MB*1024*1024 / size);
 }
@@ -50,7 +51,6 @@ int main(int argc, char *argv[])
     int bulk_size = 1024*1024;
     na_mem_handle_t local_mem_handle = NA_MEM_HANDLE_NULL;
     na_mem_handle_t local_bench_mem_handle[nbenchbufs];
-    na_mem_handle_t remote_bench_mem_handle[nbenchbufs];
     char *bench_buf[nbenchbufs];
 
     na_tag_t bulk_tag = 102;
@@ -58,9 +58,9 @@ int main(int argc, char *argv[])
     na_request_t bulk_request = NA_REQUEST_NULL;
     na_request_t ack_request = NA_REQUEST_NULL;
 
-    int i, j, k;
+    int i;
     int na_ret;
-    int cycle;
+    unsigned int cycle;
     na_size_t bench_buf_size = atoi(argv[argc-2]);
     cycle = atoi(argv[argc-1]);
     cycle = get_nn(cycle, bench_buf_size);
@@ -199,7 +199,7 @@ int main(int argc, char *argv[])
 
     /* Single send bandwidth benchmark */
     printf("Single send bandwidth benchmark\n");
-    for( i = 0; i < cycle; i++ ){
+    for( i = 0; i < (int) cycle; i++ ){
         na_ret = NA_Msg_recv(network_class, bench_buf[0], bench_buf_size, ion_target, single_bench_tag, &bench_request[0], NULL);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not send acknowledgment\n");
@@ -223,8 +223,6 @@ int main(int argc, char *argv[])
     }
 
     /* Send pipeline */
-    int pending = 8;
-    int waitpos = 0;
     na_tag_t tag_pipe = 200;
     puts("Send pipeline");
     for( i = 0; i < nbenchbufs; i++) {

@@ -69,9 +69,9 @@ static int
 NA_parse_host_string(const char *host_string,
         struct na_host_buffer **in_na_buffer)
 {
-    char *input_string = NULL;
-    char *token = NULL;
-    char *locator = NULL;
+    char *input_string               = NULL;
+    char *token                      = NULL;
+    char *locator                    = NULL;
     struct na_host_buffer *na_buffer = *in_na_buffer;
     size_t na_host_string_len;
     int ret = NA_SUCCESS;
