@@ -22,9 +22,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+static na_bool_t na_bmi_verify(const char *protocol);
+static na_class_t *na_bmi_initialize(const struct na_host_buffer *na_buffer,
+        na_bool_t listen);
+
 static int na_bmi_finalize(void);
+
 static int na_bmi_addr_lookup(const char *name, na_addr_t *addr);
+static int na_bmi_addr_self(na_addr_t *addr);
 static int na_bmi_addr_free(na_addr_t addr);
+static const char * na_bmi_addr_to_string(na_addr_t addr);
+
 static na_size_t na_bmi_msg_get_max_expected_size(void);
 static na_size_t na_bmi_msg_get_max_unexpected_size(void);
 static na_tag_t na_bmi_msg_get_max_tag(void);
@@ -36,30 +44,31 @@ static int na_bmi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
         na_tag_t tag, na_request_t *request, void *op_arg);
 static int na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
         na_tag_t tag, na_request_t *request, void *op_arg);
+
 static int na_bmi_mem_register(void *buf, na_size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle);
 static int na_bmi_mem_deregister(na_mem_handle_t mem_handle);
 static na_size_t na_bmi_mem_handle_get_serialize_size(na_mem_handle_t mem_handle);
 static int na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_handle);
 static int na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
 static int na_bmi_mem_handle_free(na_mem_handle_t mem_handle);
+
 static int na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request);
 static int na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_request_t *request);
+
 static int na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status);
 static int na_bmi_progress(unsigned int timeout, na_status_t *status);
 static int na_bmi_request_free(na_request_t request);
 
-static na_bool_t na_bmi_verify(const char *protocol);
-static na_class_t *na_bmi_initialize(const struct na_host_buffer *na_buffer,
-        na_bool_t listen);
-
 static na_class_t na_bmi_g = {
         na_bmi_finalize,                      /* finalize */
         na_bmi_addr_lookup,                   /* addr_lookup */
+        na_bmi_addr_self,                     /* addr_self */
         na_bmi_addr_free,                     /* addr_free */
+        na_bmi_addr_to_string,                /* addr_to_string */
         na_bmi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
         na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
         na_bmi_msg_get_max_tag,               /* msg_get_maximum_tag */
@@ -79,6 +88,12 @@ static na_class_t na_bmi_g = {
         na_bmi_wait,                          /* wait */
         na_bmi_progress,                      /* progress */
         na_bmi_request_free                   /* request_free */
+};
+
+/* Private structures */
+struct na_bmi_addr {
+    BMI_addr_t addr;              /* BMI addr */
+    na_bool_t  is_unexpected : 1; /* Address generated from unexpected recv */
 };
 
 typedef struct bmi_request bmi_request_t;
@@ -113,6 +128,7 @@ typedef struct bmi_onesided_info {
 } bmi_onesided_info_t;
 
 static na_bool_t is_server = 0; /* Used in server mode */
+static char *bmi_listen_addr = NULL; /* Server listen_addr */
 static bmi_context_id    bmi_context;
 static hg_list_entry_t  *unexpected_list;
 static hg_thread_mutex_t unexpected_list_mutex;
@@ -127,6 +143,7 @@ static hg_thread_cond_t  testcontext_cond;
 static na_bool_t         is_testing_context = 0;
 /* Map mem addresses to mem handles */
 static hg_hash_table_t  *mem_handle_map = NULL;
+
 static inline int
 pointer_equal(void *location1, void *location2)
 {
@@ -301,6 +318,7 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
     }
 
     is_server = (flags == BMI_INIT_SERVER) ? 1 : 0;
+    bmi_listen_addr = (is_server) ? strdup(listen_addr) : NULL;
 
     /* Create a new BMI context */
     bmi_ret = BMI_open_context(&bmi_context);
@@ -380,6 +398,10 @@ na_bmi_finalize(void)
         goto done;
     }
 
+    /* Free dupp'ed listen addr */
+    free(bmi_listen_addr);
+    bmi_listen_addr = NULL;
+
     hg_thread_mutex_destroy(&unexpected_list_mutex);
     hg_thread_mutex_destroy(&request_mutex);
     hg_thread_mutex_destroy(&testcontext_mutex);
@@ -396,7 +418,7 @@ static int
 na_bmi_addr_lookup(const char *name, na_addr_t *addr)
 {
     int bmi_ret, ret = NA_SUCCESS;
-    BMI_addr_t *bmi_addr = NULL;
+    struct na_bmi_addr *bmi_addr = NULL;
 
     if (!addr) {
         NA_ERROR_DEFAULT("NULL addr");
@@ -404,15 +426,60 @@ na_bmi_addr_lookup(const char *name, na_addr_t *addr)
         goto done;
     }
 
-    bmi_addr = (BMI_addr_t*) malloc(sizeof(BMI_addr_t));
+    bmi_addr = (struct na_bmi_addr*) malloc(sizeof(struct na_bmi_addr));
     if (!bmi_addr) {
         NA_ERROR_DEFAULT("Could not allocate BMI addr");
         ret = NA_FAIL;
         goto done;
     }
+    bmi_addr->is_unexpected = 0;
 
     /* Perform an address lookup */
-    bmi_ret = BMI_addr_lookup(bmi_addr, name);
+    bmi_ret = BMI_addr_lookup(&bmi_addr->addr, name);
+    if (bmi_ret < 0) {
+        NA_ERROR_DEFAULT("BMI_addr_lookup() failed");
+        ret = NA_FAIL;
+        goto done;
+    }
+
+    *addr = (na_addr_t) bmi_addr;
+
+done:
+    if (ret != NA_SUCCESS) {
+        free(bmi_addr);
+    }
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_bmi_addr_self(na_addr_t *addr)
+{
+    int bmi_ret, ret = NA_SUCCESS;
+    struct na_bmi_addr *bmi_addr = NULL;
+
+    if (!addr) {
+        NA_ERROR_DEFAULT("NULL addr");
+        ret = NA_FAIL;
+        goto done;
+    }
+
+    if (!is_server) {
+        NA_ERROR_DEFAULT("Only server can call na_bmi_addr_self");
+        ret = NA_FAIL;
+        goto done;
+    }
+
+    bmi_addr = (struct na_bmi_addr*) malloc(sizeof(struct na_bmi_addr));
+    if (!bmi_addr) {
+        NA_ERROR_DEFAULT("Could not allocate addr");
+        ret = NA_FAIL;
+        goto done;
+    }
+    bmi_addr->is_unexpected = 0;
+
+    /* Perform an address lookup */
+    bmi_ret = BMI_addr_lookup(&bmi_addr->addr, bmi_listen_addr);
     if (bmi_ret < 0) {
         NA_ERROR_DEFAULT("BMI_addr_lookup() failed");
         ret = NA_FAIL;
@@ -432,17 +499,42 @@ done:
 static int
 na_bmi_addr_free(na_addr_t addr)
 {
-    BMI_addr_t *bmi_addr = (BMI_addr_t*) addr;
+    struct na_bmi_addr *bmi_addr = (struct na_bmi_addr*) addr;
     int ret = NA_SUCCESS;
 
     /* Cleanup peer_addr */
-    if (bmi_addr) {
-        free(bmi_addr);
-        bmi_addr = NULL;
-    } else {
+    if (!bmi_addr) {
         NA_ERROR_DEFAULT("Already freed");
         ret = NA_FAIL;
+        return ret;
     }
+
+    free(bmi_addr);
+    bmi_addr = NULL;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static const char *
+na_bmi_addr_to_string(na_addr_t addr)
+{
+    struct na_bmi_addr *bmi_addr = NULL;
+    const char *ret = NULL;
+
+    if (addr == NA_ADDR_NULL) {
+        NA_ERROR_DEFAULT("NULL addr");
+        return ret;
+    }
+
+    bmi_addr = (struct na_bmi_addr*) addr;
+
+    if (bmi_addr->is_unexpected) {
+        ret = BMI_addr_rev_lookup_unexpected(bmi_addr->addr);
+    } else {
+        ret = BMI_addr_rev_lookup(bmi_addr->addr);
+    }
+
     return ret;
 }
 
@@ -478,7 +570,7 @@ na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
 {
     int bmi_ret, ret = NA_SUCCESS;
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
-    BMI_addr_t *bmi_peer_addr = (BMI_addr_t*) dest;
+    struct na_bmi_addr *bmi_peer_addr = (struct na_bmi_addr*) dest;
     bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
     bmi_request_t *bmi_request = NULL;
 
@@ -490,8 +582,9 @@ na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
     bmi_request->ack_request = NA_REQUEST_NULL;
 
     /* Post the BMI unexpected send request */
-    bmi_ret = BMI_post_sendunexpected(&bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
-            BMI_EXT_ALLOC, bmi_tag, bmi_request, bmi_context, NULL);
+    bmi_ret = BMI_post_sendunexpected(&bmi_request->op_id, bmi_peer_addr->addr,
+            buf, bmi_buf_size, BMI_EXT_ALLOC, bmi_tag, bmi_request,
+            bmi_context, NULL);
 
     if (bmi_ret < 0) {
         NA_ERROR_DEFAULT("BMI_post_sendunexpected() failed");
@@ -534,7 +627,8 @@ na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
         request_info = (struct BMI_unexpected_info*) hg_list_data(entry);
     } else {
         /* If no message try to get new message from BMI */
-        request_info = (struct BMI_unexpected_info*) malloc(sizeof(struct BMI_unexpected_info));
+        request_info = (struct BMI_unexpected_info*)
+                malloc(sizeof(struct BMI_unexpected_info));
         bmi_ret = BMI_testunexpected(1, &outcount, request_info, 0);
 
         if (!outcount) goto done;
@@ -555,9 +649,10 @@ na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
 
     if (actual_buf_size) *actual_buf_size = (na_size_t) request_info->size;
     if (source) {
-        BMI_addr_t **peer_addr = (BMI_addr_t**) source;
-        *peer_addr = (BMI_addr_t*) malloc(sizeof(BMI_addr_t));
-        **peer_addr = request_info->addr;
+        struct na_bmi_addr **peer_addr = (struct na_bmi_addr**) source;
+        *peer_addr = (struct na_bmi_addr*) malloc(sizeof(struct na_bmi_addr));
+        (*peer_addr)->is_unexpected = 1;
+        (*peer_addr)->addr = request_info->addr;
     }
     if (tag) *tag = (na_tag_t) request_info->tag;
 
@@ -602,7 +697,7 @@ na_bmi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 {
     int ret = NA_SUCCESS, bmi_ret;
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
-    BMI_addr_t *bmi_peer_addr = (BMI_addr_t*) dest;
+    struct na_bmi_addr *bmi_peer_addr = (struct na_bmi_addr*) dest;
     bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
     bmi_request_t *bmi_request = NULL;
 
@@ -614,8 +709,9 @@ na_bmi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     bmi_request->ack_request = NA_REQUEST_NULL;
 
     /* Post the BMI send request */
-    bmi_ret = BMI_post_send(&bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
-            BMI_EXT_ALLOC, bmi_tag, bmi_request, bmi_context, NULL);
+    bmi_ret = BMI_post_send(&bmi_request->op_id, bmi_peer_addr->addr, buf,
+            bmi_buf_size, BMI_EXT_ALLOC, bmi_tag, bmi_request,
+            bmi_context, NULL);
 
     if (bmi_ret < 0) {
         NA_ERROR_DEFAULT("BMI_post_send() failed");
@@ -641,7 +737,7 @@ na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
 {
     int bmi_ret, ret = NA_SUCCESS;
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
-    BMI_addr_t *bmi_peer_addr = (BMI_addr_t*) source;
+    struct na_bmi_addr *bmi_peer_addr = (struct na_bmi_addr*) source;
     bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
     bmi_request_t *bmi_request = NULL;
 
@@ -653,9 +749,9 @@ na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
     bmi_request->ack_request = NA_REQUEST_NULL;
 
     /* Post the BMI recv request */
-    bmi_ret = BMI_post_recv(&bmi_request->op_id, *bmi_peer_addr, buf, bmi_buf_size,
-            &bmi_request->actual_size, BMI_EXT_ALLOC, bmi_tag, bmi_request,
-            bmi_context, NULL);
+    bmi_ret = BMI_post_recv(&bmi_request->op_id, bmi_peer_addr->addr, buf,
+            bmi_buf_size, &bmi_request->actual_size, BMI_EXT_ALLOC, bmi_tag,
+            bmi_request, bmi_context, NULL);
 
     if (bmi_ret < 0) {
         NA_ERROR_DEFAULT("BMI_post_recv() failed");
@@ -676,7 +772,8 @@ na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
 
 /*---------------------------------------------------------------------------*/
 static int
-na_bmi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags, na_mem_handle_t *mem_handle)
+na_bmi_mem_register(void *buf, na_size_t NA_UNUSED buf_size,
+        unsigned long flags, na_mem_handle_t *mem_handle)
 {
     int ret = NA_SUCCESS;
     void *bmi_buf_base = buf;
@@ -740,7 +837,8 @@ na_bmi_mem_handle_get_serialize_size(na_mem_handle_t NA_UNUSED mem_handle)
 
 /*---------------------------------------------------------------------------*/
 static int
-na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_handle)
+na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size,
+        na_mem_handle_t mem_handle)
 {
     int ret = NA_SUCCESS;
     bmi_mem_handle_t *bmi_mem_handle = (bmi_mem_handle_t*) mem_handle;
@@ -758,7 +856,8 @@ na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size, na_mem_handle_t mem_h
 
 /*---------------------------------------------------------------------------*/
 static int
-na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size)
+na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
+        const void *buf, na_size_t buf_size)
 {
     int ret = NA_SUCCESS;
     bmi_mem_handle_t *bmi_mem_handle;
