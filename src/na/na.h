@@ -45,6 +45,9 @@ typedef struct      na_segment {     /* Segment */
  * NB. This is not the user tag limit but only the limit imposed by the type */
 #define NA_TAG_UB UINT_MAX
 
+/* Max len used for strings that represent an addr */
+#define NA_MAX_ADDR_LEN 256
+
 /* The memory attributes associated with the memory handle
  * can be defined as read/write or read only */
 #define NA_MEM_READWRITE  0x00
@@ -123,12 +126,16 @@ NA_Addr_free(na_class_t *network_class, na_addr_t addr);
  * Convert an addr to a string.
  *
  * \param network_class [IN]    pointer to network class
+ * \param buf [IN/OUT]          pointer to destination buffer
+ * \param buf_size [IN]         buffer size (max string length is defined
+ *                              by NA_MAX_ADDR_LEN)
  * \param addr [IN]             abstract address
  *
  * \return Non-negative on success or negative on failure
  */
-NA_EXPORT const char *
-NA_Addr_to_string(na_class_t *network_class, na_addr_t addr);
+NA_EXPORT int
+NA_Addr_to_string(na_class_t *network_class, char *buf, na_size_t buf_size,
+        na_addr_t addr);
 
 /**
  * Get the maximum size of messages supported by expected send/recv.

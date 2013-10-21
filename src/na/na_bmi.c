@@ -31,7 +31,7 @@ static int na_bmi_finalize(void);
 static int na_bmi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_bmi_addr_self(na_addr_t *addr);
 static int na_bmi_addr_free(na_addr_t addr);
-static const char * na_bmi_addr_to_string(na_addr_t addr);
+static int na_bmi_addr_to_string(char *buf, na_size_t buf_size, na_addr_t addr);
 
 static na_size_t na_bmi_msg_get_max_expected_size(void);
 static na_size_t na_bmi_msg_get_max_unexpected_size(void);
@@ -516,24 +516,28 @@ na_bmi_addr_free(na_addr_t addr)
 }
 
 /*---------------------------------------------------------------------------*/
-static const char *
-na_bmi_addr_to_string(na_addr_t addr)
+static int
+na_bmi_addr_to_string(char *buf, na_size_t buf_size, na_addr_t addr)
 {
     struct na_bmi_addr *bmi_addr = NULL;
-    const char *ret = NULL;
-
-    if (addr == NA_ADDR_NULL) {
-        NA_ERROR_DEFAULT("NULL addr");
-        return ret;
-    }
+    const char *bmi_rev_addr;
+    int ret = NA_SUCCESS;
 
     bmi_addr = (struct na_bmi_addr*) addr;
 
     if (bmi_addr->is_unexpected) {
-        ret = BMI_addr_rev_lookup_unexpected(bmi_addr->addr);
+        bmi_rev_addr = BMI_addr_rev_lookup_unexpected(bmi_addr->addr);
     } else {
-        ret = BMI_addr_rev_lookup(bmi_addr->addr);
+        bmi_rev_addr = BMI_addr_rev_lookup(bmi_addr->addr);
     }
+
+    if (strlen(bmi_rev_addr) > buf_size) {
+        NA_ERROR_DEFAULT("Buffer size too small to copy addr");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    strcpy(buf, bmi_rev_addr);
 
     return ret;
 }

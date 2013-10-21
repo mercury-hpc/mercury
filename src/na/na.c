@@ -260,11 +260,23 @@ NA_Addr_free(na_class_t *network_class, na_addr_t addr)
 }
 
 /*---------------------------------------------------------------------------*/
-const char *
-NA_Addr_to_string(na_class_t *network_class, na_addr_t addr)
+int
+NA_Addr_to_string(na_class_t *network_class, char *buf, na_size_t buf_size,
+        na_addr_t addr)
 {
+    int ret = NA_SUCCESS;
+
     assert(network_class);
-    return network_class->addr_to_string(addr);
+
+    if (addr == NA_ADDR_NULL) {
+        NA_ERROR_DEFAULT("NULL addr");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    ret = network_class->addr_to_string(buf, buf_size, addr);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/

@@ -31,7 +31,7 @@ static int na_mpi_finalize(void);
 static int na_mpi_addr_lookup(const char *name, na_addr_t *addr);
 static int na_mpi_addr_self(na_addr_t *addr);
 static int na_mpi_addr_free(na_addr_t addr);
-static const char * na_mpi_addr_to_string(na_addr_t addr);
+static int na_mpi_addr_to_string(char *buf, na_size_t buf_size, na_addr_t addr);
 
 static na_size_t na_mpi_msg_get_max_expected_size(void);
 static na_size_t na_mpi_msg_get_max_unexpected_size(void);
@@ -599,20 +599,23 @@ na_mpi_addr_free(na_addr_t addr)
 }
 
 /*---------------------------------------------------------------------------*/
-static const char *
-na_mpi_addr_to_string(na_addr_t addr)
+static int
+na_mpi_addr_to_string(char *buf, na_size_t buf_size, na_addr_t addr)
 {
     struct na_mpi_addr *mpi_addr = NULL;
-    const char *ret = NULL;
-
-    if (addr == NA_ADDR_NULL) {
-        NA_ERROR_DEFAULT("NULL addr");
-        return ret;
-    }
+    int ret = NA_SUCCESS;
 
     mpi_addr = (struct na_mpi_addr*) addr;
 
-    return mpi_addr->port_name;
+    if (strlen(mpi_addr->port_name) > buf_size) {
+        NA_ERROR_DEFAULT("Buffer size too small to copy addr");
+        ret = NA_FAIL;
+        return ret;
+    }
+
+    strcpy(buf, mpi_addr->port_name);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/

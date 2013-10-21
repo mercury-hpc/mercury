@@ -31,7 +31,7 @@ struct na_class {
     int (*addr_lookup)(const char *name, na_addr_t *addr);
     int (*addr_self)(na_addr_t *addr);
     int (*addr_free)(na_addr_t addr);
-    const char *(*addr_to_string)(na_addr_t addr);
+    int (*addr_to_string)(char *buf, na_size_t buf_size, na_addr_t addr);
 
     /* Message callbacks (used for metadata transfer) */
     na_size_t (*msg_get_max_expected_size)(void);
