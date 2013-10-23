@@ -113,6 +113,7 @@ hg_proc_header_request(hg_proc_t proc, hg_header_request_t *header)
         hg_proc_hg_bulk_t(proc, &header->extra_buf_handle);
     } else if (hg_proc_get_op(proc) == HG_DECODE) {
         header->extra_buf_handle = HG_BULK_NULL;
+        hg_proc_hg_bulk_t(proc, &header->extra_buf_handle);
     }
 
     if (hg_proc_get_op(proc) == HG_DECODE) {

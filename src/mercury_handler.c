@@ -377,6 +377,19 @@ HG_Handler_init(na_class_t *network_class)
 
     handler_na_class = network_class;
 
+    /* Initialize bulk module */
+    /* TODO: This code may have to be changed in accordance with the
+     *       outcome of Trac#24.
+     */
+    ret = HG_Bulk_init(network_class);
+    if (ret != HG_SUCCESS)
+    {
+        /* Let us assume that we are using the same network class
+         * for initializing when used as a server and a client
+         */
+        ret = HG_SUCCESS;
+    }
+
     /* Create new function map */
     handler_func_map = hg_hash_table_new(hg_int_hash, hg_int_equal);
     if (!handler_func_map) {

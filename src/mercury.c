@@ -15,6 +15,7 @@
 #include "mercury_hash_string.h"
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_bulk.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -408,6 +409,19 @@ HG_Init(na_class_t *network_class)
 
     hg_na_class = network_class;
 
+    /* Initialize bulk module */
+    /* TODO: This code may have to be changed in accordance with the
+     *       outcome of Trac#24.
+     */
+    ret = HG_Bulk_init(network_class);
+    if (ret != HG_SUCCESS)
+    {
+        /* Let us assume that we are using the same network class
+         * for initializing when used as a server and a client
+         */
+        ret = HG_SUCCESS;
+    }
+    
     /* Initialize mutex for tags */
     hg_thread_mutex_init(&tag_mutex);
 
