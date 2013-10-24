@@ -18,8 +18,6 @@
 #include <ssm.h>
 #include <ssmptcp.h>
 
-/* MPI initialization flags */
-
 #ifdef __cplusplus
 extern "C" {
 #endif

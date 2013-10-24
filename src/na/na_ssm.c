@@ -96,6 +96,11 @@ static na_class_t na_ssm_g = {
         na_ssm_request_free
 };
 
+/* Callbacks */
+static void na_ssm_unexpected_msg_send_callback(void *in_context,
+                                                void *in_ssm_event_data);
+static void na_ssm_unexpected_msg_send_release(void *in_na_ssm_opid);
+
 /* Private structs */
 
 typedef struct na_ssm_destinfo{
@@ -118,35 +123,30 @@ typedef struct na_ssm_mem_handle{
     ssm_cb_t cb;
 } na_ssm_mem_handle_t;
 
-//TODO: inc counter
-
-
 typedef int ssm_size_t;
 typedef ssm_bits ssm_tag_t;
 typedef unsigned long ssm_msg_tag_t;
 
-
 /* Used to differentiate Send requests from Recv requests */
-typedef enum ssm_req_type {
+typedef enum na_ssm_req_type {
     SSM_PUT_OP,
     SSM_GET_OP,
     SSM_SEND_OP,
     SSM_RECV_OP,
     SSM_UNEXP_SEND_OP,
     SSM_UNEXP_RECV_OP
-} ssm_req_type_t;
+} na_ssm_req_type_t;
 
-typedef struct na_ssm_request {
-    ssm_req_type_t type;
-    ssm_bits matchbits;
-    void *user_ptr;
-    ssm_tx tx;
-    ssm_cb_t cb;
-    bool completed;
-    ssm_me me;
-    ssm_mr mr;
-} na_ssm_request_t;
-
+typedef struct _na_ssm_opid {
+    na_ssm_req_type_t   m_requesttype;
+    ssm_bits            m_matchbits;
+    void               *m_usercontext;
+    ssm_tx              m_transaction;
+    ssm_cb_t            m_callback;
+    bool                m_completed;
+    ssm_me              m_matchentry;
+    ssm_mr              m_memregion;
+} na_ssm_opid_t;
 
 static ssm_Itp itp;
 static ssm_id ssm;
@@ -279,10 +279,20 @@ int addr_parser(const char *str, na_ssm_destinfo_t *addr)
     return 0;
 }
 
-static inline int mark_as_completed(na_ssm_request_t *req)
+static inline void mark_as_completed(na_ssm_opid_t *in_request)
 {
-    req->completed = 1;
-    return 1;
+    if (in_request != NULL)
+    {
+        in_request->m_completed = 1;
+    }
+}
+
+static inline void mark_as_canceled(na_ssm_opid_t *in_request)
+{
+    if (in_request != NULL)
+    {
+        in_request->m_completed = 1;
+    }
 }
 
 static inline void show_stats(void *cbdat, ssm_result r)
@@ -323,22 +333,69 @@ void msg_send_cb(void *cbdat, void *evdat)
     ssm_mr_destroy(r->mr); //TODO: Error Handling
 }
 
-void unexp_msg_send_cb(void *cbdat, void *evdat) 
+/**
+ * Callback routine for unexpected send message.  This routine is
+ * called once the unexpected message completes.
+ *
+ * @see na_ssm_msg_send_unexpected()
+ *
+ * @param in_na_context
+ * @param in_ssm_event_data
+ *
+ */
+static void
+na_ssm_unexpected_msg_send_callback(void *in_context,
+                                    void *in_ssm_event_data) 
 {
-    ssm_result r = evdat;
+    ssm_result        v_result         = in_ssm_event_data;
+    na_ssm_opid_t    *v_ssm_opid       = in_context;
 
-    if(r->status != SSM_ST_COMPLETE)
+    if (v_result->status == SSM_ST_COMPLETE)
+    {
+        mark_as_completed(v_ssm_opid);
+    }
+    else if (v_result->status == SSM_ST_CANCEL)
+    {
+        mark_as_canceled(v_ssm_opid);
+    }
+    else
     {
         NA_ERROR_DEFAULT("unexp_msg_send_cb(): cb error");
-        return;
     }
-    
+
     hg_thread_mutex_lock(&request_mutex);
-    mark_as_completed(cbdat);
+    
     //wake up others
     hg_thread_cond_signal(&comp_req_cond);
+
     hg_thread_mutex_unlock(&request_mutex);
-    ssm_mr_destroy(r->mr); //TODO: Error Handling
+
+    /* TODO: submit request in NA's completed op queue */
+    na_ssm_unexpected_msg_send_release(v_ssm_opid);
+}
+
+/**
+ * Callback called after NA has called the user's callback.  This
+ * callback function only does cleanup/release of resources that were
+ * allocated at the beginning of the send unexpected operation.
+ *
+ * @see na_ssm_msg_send_unexpected()
+ * @see na_ssm_unexpected_msg_send_callback()
+ *
+ * @param in_na_ssm_opid
+ * @param in_release_context
+ *
+ */
+static void
+na_ssm_unexpected_msg_send_release(void *in_na_ssm_opid)
+{
+    na_ssm_opid_t      *v_ssm_opid       = in_na_ssm_opid;
+
+    if (v_ssm_opid == NULL)
+      return;
+
+    ssm_mr_destroy(v_ssm_opid->m_memregion);
+    free(v_ssm_opid);
 }
 
 void msg_recv_cb(void *cbdat, void *evdat)
@@ -708,9 +765,11 @@ static int na_ssm_addr_free(na_addr_t addr)
  *---------------------------------------------------------------------------
  */
 static int
-na_ssm_addr_to_string(char NA_UNUSED *buf, na_size_t NA_UNUSED buf_size, na_addr_t NA_UNUSED addr)
+na_ssm_addr_to_string(char      NA_UNUSED *in_buf,
+                      na_size_t NA_UNUSED  in_buf_size,
+                      na_addr_t NA_UNUSED  in_addr)
 {
-    return NULL;
+    return 0;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -752,46 +811,98 @@ static na_tag_t na_ssm_msg_get_maximum_tag(void)
  *
  *---------------------------------------------------------------------------
  */
-static int na_ssm_msg_send_unexpected(const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_request_t *request, void *op_arg)
+/**
+ * Send an unexpected message to the destination.
+ *
+ * @see na_ssm_unexpected_msg_send_callback()
+ * @see na_ssm_unexpected_msg_send_release_callback()
+ *
+ * @param in_buf
+ * @param in_buf_size
+ * @param in_destination
+ * @param in_tag
+ * @param in_request
+ * @param in_argument
+ */
+static int na_ssm_msg_send_unexpected(const void    *in_buf,
+                                      na_size_t      in_buf_size,
+                                      na_addr_t      in_destination,
+                                      na_tag_t       in_tag,
+                                      na_request_t  *out_request,
+                                      void          *in_op_arg)
 {
-    int ret = NA_SUCCESS;
-    ssm_size_t ssm_buf_size = (ssm_size_t) buf_size;
-
-    na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) dest;
-    ssm_msg_tag_t ssm_tag = (ssm_msg_tag_t) tag;
-
-    na_ssm_request_t *ssm_request = NULL;
-    /* use addr as unique id*/
-    ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
-    memset(ssm_request, 0, sizeof(na_ssm_request_t));
-    ssm_request->type = SSM_UNEXP_SEND_OP;
-    ssm_request->matchbits = (ssm_bits)tag + NA_SSM_TAG_UNEXPECTED_OFFSET;
-    ssm_request->user_ptr = op_arg;
+    int              v_return          = NA_SUCCESS;
+    ssm_size_t       v_ssm_buf_size    = (ssm_size_t) in_buf_size;
+    na_ssm_addr_t   *v_ssm_peer_addr   = (na_ssm_addr_t*) in_destination;
+    ssm_msg_tag_t    v_ssm_tag         = (ssm_msg_tag_t) in_tag;
+    na_ssm_opid_t   *v_ssm_opid        = NULL;
+    ssm_mr           v_ssm_mr          = NULL;
+    ssm_tx           v_ssm_tx          = NULL;
     
-#if DEBUG
-    printf("na_ssm_msg_send_unexpected()\n");
-    printf("\tbuf = %p, buf_size = %d, dest = %p, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, ssm_peer_addr->addr, tag, request, op_arg);
-#endif
+    v_ssm_opid = (na_ssm_opid_t *) malloc(sizeof(na_ssm_opid_t));
 
-    ssm_mr mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
-    ssm_request->cb.pcb = unexp_msg_send_cb;
-    ssm_request->cb.cbdata = ssm_request;
+    if (v_ssm_opid == NULL)
+    {
+        v_return = NA_MEMORY_ERROR;
+        goto out;
+    }
+    
+    memset(v_ssm_opid, 0, sizeof(na_ssm_opid_t));
+    
+    v_ssm_opid->m_requesttype = SSM_UNEXP_SEND_OP;
+    v_ssm_opid->m_usercontext = in_op_arg;
+    v_ssm_opid->m_matchbits   = (ssm_bits) in_tag +
+                                     NA_SSM_TAG_UNEXPECTED_OFFSET;
 
-    ssm_tx stx; 
-    stx = ssm_put(ssm, ssm_peer_addr->addr , mr, NULL, ssm_tag, &(ssm_request->cb), SSM_NOF);
-#if DEBUG
-    printf("\tssmput(ssm = %d, addr = %p, mr = %d, tag = %p\n",
-            ssm, ssm_peer_addr->addr, mr, ssm_tag);
-    printf("\ttx = %p\n", stx);
-#endif
+    v_ssm_mr = ssm_mr_create(NULL,
+                             (void *) in_buf,
+                             v_ssm_buf_size);
 
-    ssm_request->tx = stx;
-    *request = (na_request_t*) ssm_request;
+    if (v_ssm_mr == NULL)
+    {
+        v_return = NA_FAIL;
+        goto out;
+    }
 
+    v_ssm_opid->m_callback.pcb    = na_ssm_unexpected_msg_send_callback;
+    v_ssm_opid->m_callback.cbdata = v_ssm_opid;
 
+    v_ssm_tx = ssm_put(ssm,
+                       v_ssm_peer_addr->addr,
+                       v_ssm_mr,
+                       NULL,
+                       v_ssm_tag,
+                       &(v_ssm_opid->m_callback),
+                       SSM_NOF);
 
-    return ret;
+    if (v_ssm_tx == NULL)
+    {
+        v_return = NA_FAIL;
+        goto out;
+    }
+    
+    v_ssm_opid->m_transaction = v_ssm_tx;
+
+    /* fill the out variable */
+    *out_request = (na_request_t *) v_ssm_opid;
+
+ out:
+
+    if (v_return != NA_SUCCESS)
+    {
+        /* release all allocated resources */
+        if (v_ssm_mr != NULL)
+        {
+            ssm_mr_destroy(v_ssm_mr);
+        }
+
+        if (v_ssm_opid != NULL)
+        {
+            free(v_ssm_opid);
+        }
+    }
+    
+    return v_return;
 }
 
 /*---------------------------------------------------------------------------
@@ -816,7 +927,7 @@ static int na_ssm_msg_recv_unexpected(void *buf,
     printf("\tbuf = %p, buf_size = %d, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, tag, request, op_arg);
 #endif
     int ret = NA_SUCCESS;
-    na_ssm_request_t *pssm_request = NULL;
+    na_ssm_opid_t *pssm_request = NULL;
 
     if (!buf) {
         NA_ERROR_DEFAULT("NULL buffer");
@@ -829,8 +940,8 @@ static int na_ssm_msg_recv_unexpected(void *buf,
         hg_thread_mutex_unlock(&unexp_buf_mutex);
         return ret;
     }
-    pssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
-    pssm_request->type = SSM_UNEXP_RECV_OP;
+    pssm_request = (na_ssm_opid_t *)malloc(sizeof(na_ssm_opid_t));
+    pssm_request->m_requesttype = SSM_UNEXP_RECV_OP;
 
 #if DEBUG
     printf("\tassigned request = %p\n", pssm_request);
@@ -866,9 +977,9 @@ static int na_ssm_msg_recv_unexpected(void *buf,
         *(tag) = (na_tag_t) pbuf->bits - NA_SSM_TAG_UNEXPECTED_OFFSET;
     }
     memcpy(buf, pbuf->buf, buf_size);
-    na_ssm_request_t *preq = (na_ssm_request_t *)pssm_request;
-    (preq->matchbits) = pbuf->bits;
-    (preq->completed) = 1;
+    na_ssm_opid_t *preq = (na_ssm_opid_t *)pssm_request;
+    (preq->m_matchbits) = pbuf->bits;
+    (preq->m_completed) = 1;
 
 
     /* Clean up the buflist */
@@ -887,7 +998,7 @@ static int na_ssm_msg_recv_unexpected(void *buf,
     hg_thread_mutex_unlock(&unexp_buf_mutex);
 #if 0
     hg_thread_mutex_lock(&unexp_waitlist_mutex);
-    pssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+    pssm_request = (na_ssm_opid_t *)malloc(sizeof(na_ssm_opid_t));
     pssm_request->type = SSM_UNEXP_RECV_OP;
 
     na_ssm_unexpected_wait_t *unexpected_wait = 
@@ -928,16 +1039,16 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     int ret = NA_SUCCESS;
     ssm_size_t ssm_buf_size = (ssm_size_t) buf_size;
     na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) dest;
-    na_ssm_request_t *ssm_request = NULL;
+    na_ssm_opid_t *ssm_request = NULL;
     /* use addr as unique id*/
-    ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
+    ssm_request = (na_ssm_opid_t *)malloc(sizeof(na_ssm_opid_t));
 #if DEBUG
     printf("\tassigned request = %p\n", ssm_request);
 #endif
-    memset(ssm_request, 0, sizeof(na_ssm_request_t));
-    ssm_request->type = SSM_SEND_OP;
-    ssm_request->matchbits = (ssm_bits)tag + NA_SSM_TAG_EXPECTED_OFFSET;
-    ssm_request->user_ptr = op_arg;
+    memset(ssm_request, 0, sizeof(na_ssm_opid_t));
+    ssm_request->m_requesttype = SSM_SEND_OP;
+    ssm_request->m_matchbits = (ssm_bits)tag + NA_SSM_TAG_EXPECTED_OFFSET;
+    ssm_request->m_usercontext = op_arg;
     
     //na_ssm_mem_handle_t *mem_handle = (na_ssm_mem_handle_t *)malloc(sizeof(na_ssm_mem_handle_t)); //TODO: delete
     
@@ -946,12 +1057,14 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
     printf("\tbuf = %p, buf_size = %d, dest = %p, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, ssm_peer_addr->addr, tag, request, op_arg);
 #endif
 
-    ssm_request->mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
-    ssm_request->cb.pcb = msg_send_cb;
-    ssm_request->cb.cbdata = ssm_request;
+    ssm_request->m_memregion = ssm_mr_create(NULL,
+                                             (void *)buf,
+                                             ssm_buf_size);
+    ssm_request->m_callback.pcb = msg_send_cb;
+    ssm_request->m_callback.cbdata = ssm_request;
 
     ssm_tx stx; 
-    stx = ssm_put(ssm, ssm_peer_addr->addr, ssm_request->mr, NULL, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
+    stx = ssm_put(ssm, ssm_peer_addr->addr, ssm_request->m_memregion, NULL, ssm_request->m_matchbits, &(ssm_request->m_callback), SSM_NOF);
 #if DEBUG
     printf("\ttx = %p\n", stx);
 #endif
@@ -963,7 +1076,7 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
 //        return ret;
 //    }
 
-    ssm_request->tx = stx;
+    ssm_request->m_transaction = stx;
     *request = (na_request_t*) ssm_request;
 
     return ret;
@@ -989,27 +1102,27 @@ static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t NA_UNUSED(so
     int ssm_ret, ret = NA_SUCCESS;
     ssm_size_t ssm_buf_size = (ssm_size_t) buf_size;
     ssm_msg_tag_t ssm_tag = (ssm_msg_tag_t) tag;
-    na_ssm_request_t *ssm_request = NULL;
-    ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
-    memset(ssm_request, 0, sizeof(na_ssm_request_t));
+    na_ssm_opid_t *ssm_request = NULL;
+    ssm_request = (na_ssm_opid_t *)malloc(sizeof(na_ssm_opid_t));
+    memset(ssm_request, 0, sizeof(na_ssm_opid_t));
 #if DEBUG
     printf("\tassigned request = %p\n", ssm_request);
 #endif
     
-    ssm_request->type = SSM_RECV_OP;
-    ssm_request->matchbits = ssm_tag + NA_SSM_TAG_EXPECTED_OFFSET;
-    ssm_request->user_ptr = op_arg;
+    ssm_request->m_requesttype = SSM_RECV_OP;
+    ssm_request->m_matchbits = ssm_tag + NA_SSM_TAG_EXPECTED_OFFSET;
+    ssm_request->m_usercontext = op_arg;
 
     /* Allocate request */
     /* Register Memory */
-    ssm_request->mr = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
+    ssm_request->m_memregion = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
     /* Prepare callback function */
-    ssm_request->cb.pcb = msg_recv_cb;
-    ssm_request->cb.cbdata = ssm_request;
+    ssm_request->m_callback.pcb = msg_recv_cb;
+    ssm_request->m_callback.cbdata = ssm_request;
     /* Post the SSM recv request */
     /* TODO segfault */
-    ssm_request->me = ssm_link(ssm, ssm_request->matchbits, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->cb), SSM_NOF);
-    ssm_ret = ssm_post(ssm, ssm_request->me, ssm_request->mr, SSM_NOF);
+    ssm_request->m_matchentry = ssm_link(ssm, ssm_request->m_matchbits, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->m_callback), SSM_NOF);
+    ssm_ret = ssm_post(ssm, ssm_request->m_matchentry, ssm_request->m_memregion, SSM_NOF);
 
     if (ssm_ret < 0) {
         NA_ERROR_DEFAULT("ssm_post() failed");
@@ -1264,25 +1377,25 @@ int na_ssm_put(na_mem_handle_t local_mem_handle,
     int ret = NA_SUCCESS;
     /* args */
     na_ssm_addr_t *ssm_peer_addr = (na_ssm_addr_t*) remote_addr;
-    na_ssm_request_t *ssm_request = NULL;
-    ssm_request = (na_ssm_request_t *)malloc(sizeof(na_ssm_request_t));
-    memset(ssm_request, 0, sizeof(na_ssm_request_t));
-    ssm_request->type = SSM_PUT_OP;
-    ssm_request->matchbits = lh->matchbits;
+    na_ssm_opid_t *ssm_request = NULL;
+    ssm_request = (na_ssm_opid_t *)malloc(sizeof(na_ssm_opid_t));
+    memset(ssm_request, 0, sizeof(na_ssm_opid_t));
+    ssm_request->m_requesttype = SSM_PUT_OP;
+    ssm_request->m_matchbits = lh->matchbits;
     
 #if DEBUG
     printf("na_ssm_put()\n");
     printf("\tlocal_h->mr = %p, local_of = %ld, remote_h->mr = %p, remote_of = %ld, len = %ld, addr = %p\n", lh->mr, local_offset, rh->mr, remote_offset, length, ssm_peer_addr->addr);
 #endif
-    ssm_request->cb.pcb = put_cb;
-    ssm_request->cb.cbdata = ssm_request;
+    ssm_request->m_callback.pcb = put_cb;
+    ssm_request->m_callback.cbdata = ssm_request;
     ssm_tx stx; 
     //stx = ssm_putv(ssm, ssm_peer_addr->addr , iov, 1, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
-    stx = ssm_put(ssm, ssm_peer_addr->addr, lh->mr, NULL, ssm_request->matchbits, &(ssm_request->cb), SSM_NOF);
+    stx = ssm_put(ssm, ssm_peer_addr->addr, lh->mr, NULL, ssm_request->m_matchbits, &(ssm_request->m_callback), SSM_NOF);
 #if DEBUG
     printf("\ttx = %p\n", stx);
 #endif
-    ssm_request->tx = stx;
+    ssm_request->m_transaction = stx;
     *request = (na_request_t*) ssm_request;
     return ret;
 }
@@ -1309,7 +1422,7 @@ int na_ssm_get(na_mem_handle_t    in_local_mem_handle,
     ssm_md               v_remote_md     = NULL;
     ssm_mr               v_local_mr      = NULL;
     na_ssm_addr_t       *v_ssm_peer_addr = NULL;
-    na_ssm_request_t    *v_ssm_request   = NULL;
+    na_ssm_opid_t    *v_ssm_request   = NULL;
     ssm_tx               v_stx;
 
     v_local_handle  = (na_ssm_mem_handle_t *)in_local_mem_handle;
@@ -1328,7 +1441,7 @@ int na_ssm_get(na_mem_handle_t    in_local_mem_handle,
 
     v_ssm_peer_addr = (na_ssm_addr_t *) in_remote_addr;
     
-    v_ssm_request = (na_ssm_request_t *) malloc(sizeof(na_ssm_request_t));
+    v_ssm_request = (na_ssm_opid_t *) malloc(sizeof(na_ssm_opid_t));
 
     if (v_ssm_request == NULL)
     {
@@ -1336,18 +1449,19 @@ int na_ssm_get(na_mem_handle_t    in_local_mem_handle,
         return NA_FAIL;
     }
 
-    memset(v_ssm_request, 0, sizeof(na_ssm_request_t));
-    v_ssm_request->type = SSM_GET_OP;
-    v_ssm_request->matchbits = v_remote_handle->matchbits;
-    v_ssm_request->cb.pcb = get_cb;
-    v_ssm_request->cb.cbdata = v_ssm_request;
+    memset(v_ssm_request, 0, sizeof(na_ssm_opid_t));
+    
+    v_ssm_request->m_requesttype     = SSM_GET_OP;
+    v_ssm_request->m_matchbits       = v_remote_handle->matchbits;
+    v_ssm_request->m_callback.pcb    = get_cb;
+    v_ssm_request->m_callback.cbdata = v_ssm_request;
 
     v_stx = ssm_get(ssm,
                     v_ssm_peer_addr->addr,
                     v_remote_md,
                     v_local_mr,
-                    v_ssm_request->matchbits,
-                    &(v_ssm_request->cb),
+                    v_ssm_request->m_matchbits,
+                    &(v_ssm_request->m_callback),
                     SSM_NOF);
 
     if (v_stx == NULL)
@@ -1357,7 +1471,7 @@ int na_ssm_get(na_mem_handle_t    in_local_mem_handle,
         return NA_FAIL;
     }
     
-    v_ssm_request->tx = v_stx;
+    v_ssm_request->m_transaction = v_stx;
     
     *out_request = (na_request_t*) v_ssm_request;
     
@@ -1378,7 +1492,7 @@ int na_ssm_wait(na_request_t in_request,
                 na_status_t *out_status)
 {
     int               v_na_status = NA_FAIL;
-    na_ssm_request_t *v_request   = (na_ssm_request_t *) in_request;
+    na_ssm_opid_t *v_request   = (na_ssm_opid_t *) in_request;
     na_bool_t         v_completed = NA_FALSE;
     int               v_cond_ret  = 0;
 
@@ -1389,7 +1503,7 @@ int na_ssm_wait(na_request_t in_request,
     else
     {
         hg_thread_mutex_lock(&request_mutex);
-        v_completed = v_request->completed;
+        v_completed = v_request->m_completed;
         hg_thread_mutex_unlock(&request_mutex);
 
         if (!v_completed)
@@ -1401,7 +1515,7 @@ int na_ssm_wait(na_request_t in_request,
                 v_cond_ret = hg_thread_cond_wait(&comp_req_cond,
                                                  &request_mutex);
 
-                v_completed = v_request->completed;
+                v_completed = v_request->m_completed;
 
                 if (!v_completed)
                 {
@@ -1467,7 +1581,7 @@ static int na_ssm_progress(unsigned int NA_UNUSED(timeout),
 static int
 na_ssm_request_free(na_request_t request)
 {
-    na_ssm_request_t *ssm_request = (na_ssm_request_t*) request;
+    na_ssm_opid_t *ssm_request = (na_ssm_opid_t*) request;
     int ret = NA_SUCCESS;
 
     /* Do not want to free the request if another thread is testing it */
@@ -1487,3 +1601,35 @@ na_ssm_request_free(na_request_t request)
     return ret;
 }
 
+/**
+ * Attempt to cancel a transaction that has been initiated.  We assume
+ * here that SSM will do the right thing, in that after returning
+ * success here, it will still issue a callback at some later point.
+ * The callback will contain the actual status indicating if the
+ * transaction was completed, failed, or it was canceled.  Here, we
+ * just record that a request was received to cancel the operation.
+ *
+ * @param in_request
+ */
+static int
+na_ssm_cancel(na_request_t in_request)
+{
+    na_ssm_opid_t *v_ssm_opid = (na_ssm_opid_t *) in_request;
+    int            v_return   = NA_SUCCESS;
+
+    if (v_ssm_opid == NULL)
+    {
+        v_return = NA_FAIL;
+        goto out;
+    }
+
+    v_return = ssm_cancel(ssm, v_ssm_opid->m_transaction);
+
+    if (v_return == 0)
+    {
+        v_return = NA_SUCCESS;
+    }
+    
+ out:
+    return v_return;
+}

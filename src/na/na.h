@@ -54,8 +54,12 @@ typedef struct      na_segment {     /* Segment */
 #define NA_MEM_READ_ONLY  0x01
 
 /* Error return codes */
-#define NA_SUCCESS  1
-#define NA_FAIL    -1
+typedef enum _NA_Status {
+    NA_SUCCESS       = 0,
+    NA_FAIL          = 1,
+    NA_MEMORY_ERROR  = 2,
+} NA_Status;
+
 #define NA_TRUE     1
 #define NA_FALSE    0
 
