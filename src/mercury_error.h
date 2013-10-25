@@ -33,8 +33,15 @@
                 "%s.\n",                          \
                 __FILE__, __LINE__, __func__, x); \
   }
+  #define HG_WARNING_DEFAULT(x) {                 \
+        fprintf(stderr, "Warning "                \
+              "in %s:%d (%s): "                   \
+              "%s.\n",                            \
+              __FILE__, __LINE__, __func__, x);   \
+  }
 #else
   #define HG_ERROR_DEFAULT(x)
+  #define HG_WARNING_DEFAULT(x)
 #endif
 
 #endif /* MERCURY_ERROR_H */

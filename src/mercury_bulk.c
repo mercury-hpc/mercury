@@ -54,9 +54,12 @@ HG_Bulk_init(na_class_t *network_class)
         return ret;
     }
 
+    /* TODO: This code may have to be changed in accordance with the
+     *       outcome of Trac#24.
+     */
     if (bulk_na_class) {
-        HG_ERROR_DEFAULT("Already initialized");
-        ret = HG_FAIL;
+        HG_WARNING_DEFAULT("Already initialized");
+        ret = HG_SUCCESS;
         return ret;
     }
 
