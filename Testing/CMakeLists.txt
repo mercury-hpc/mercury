@@ -166,6 +166,20 @@ if(NA_USE_MPI)
 endif()
 
 #------------------------------------------------------------------------------
+# Multiple client/server test
+add_executable(client_multiple client_multiple.c)
+target_link_libraries(client_multiple mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(client_multiple)
+endif()
+
+add_executable(server_multiple server_multiple.c)
+target_link_libraries(server_multiple mercury_test)
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(server_multiple)
+endif()
+
+#------------------------------------------------------------------------------
 # POSIX test
 if(NOT WIN32)
   add_executable(client_posix client_posix.c)
