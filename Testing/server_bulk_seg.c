@@ -153,14 +153,10 @@ int main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
     unsigned int i, number_of_peers;
-    int hg_ret, na_ret;
-
-    /* Used by Test Driver */
-    printf("Waiting for client...\n");
-    fflush(stdout);
+    int hg_ret;
 
     /* Initialize the interface */
-    network_class = HG_Test_server_init(argc, argv, &number_of_peers);
+    network_class = HG_Test_server_init(argc, argv, NULL, NULL, &number_of_peers);
 
     hg_ret = HG_Handler_init(network_class);
     if (hg_ret != HG_SUCCESS) {
@@ -201,11 +197,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    na_ret = NA_Finalize(network_class);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not finalize NA interface\n");
-        return EXIT_FAILURE;
-    }
+    HG_Test_finalize(network_class);
 
     return EXIT_SUCCESS;
 }

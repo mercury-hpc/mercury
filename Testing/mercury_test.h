@@ -19,9 +19,15 @@
 extern "C" {
 #endif
 
-na_class_t *HG_Test_client_init(int argc, char *argv[], char **port_name, int *rank);
+na_class_t *
+HG_Test_client_init(int argc, char *argv[], char **port_name, int *rank);
 
-na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number_of_peers);
+na_class_t *
+HG_Test_server_init(int argc, char *argv[], char ***addr_table,
+        unsigned int *addr_table_size, unsigned int *max_number_of_peers);
+
+void
+HG_Test_finalize(na_class_t *network_class);
 
 #ifdef __cplusplus
 }

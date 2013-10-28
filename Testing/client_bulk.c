@@ -34,7 +34,7 @@ int main(int argc, char *argv[])
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     size_t bla_write_ret = 0;
 
-    hg_status_t bla_open_status;
+    hg_status_t bla_write_status;
     int hg_ret, na_ret;
     size_t i;
 
@@ -95,12 +95,12 @@ int main(int argc, char *argv[])
     /* Wait for call to be executed and return value to be sent back
      * (Request is freed when the call completes)
      */
-    hg_ret = HG_Wait(bla_write_request, HG_MAX_IDLE_TIME, &bla_open_status);
+    hg_ret = HG_Wait(bla_write_request, HG_MAX_IDLE_TIME, &bla_write_status);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error during wait\n");
         return EXIT_FAILURE;
     }
-    if (!bla_open_status) {
+    if (!bla_write_status) {
         fprintf(stderr, "Operation did not complete\n");
         return EXIT_FAILURE;
     } else {
@@ -148,11 +148,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    na_ret = NA_Finalize(network_class);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not finalize NA interface\n");
-        return EXIT_FAILURE;
-    }
+    HG_Test_finalize(network_class);
 
     return EXIT_SUCCESS;
 }

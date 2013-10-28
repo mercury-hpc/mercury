@@ -33,12 +33,8 @@ int main(int argc, char *argv[])
 
     int na_ret;
 
-    /* Used by Test Driver */
-    printf("Waiting for client...\n");
-    fflush(stdout);
-
     /* Initialize the interface */
-    network_class = HG_Test_server_init(argc, argv, &number_of_peers);
+    network_class = HG_Test_server_init(argc, argv, NULL, NULL, &number_of_peers);
 
     /* Allocate send/recv/bulk bufs */
     send_buf_len = NA_Msg_get_max_unexpected_size(network_class);
@@ -201,11 +197,7 @@ int main(int argc, char *argv[])
     free(send_buf);
     send_buf = NULL;
 
-    na_ret = NA_Finalize(network_class);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not finalize interface\n");
-        return EXIT_FAILURE;
-    }
+    HG_Test_finalize(network_class);
 
     return EXIT_SUCCESS;
 }

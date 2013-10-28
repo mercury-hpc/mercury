@@ -11,6 +11,7 @@
 #include "mercury_test.h"
 #ifdef NA_HAS_BMI
 #include "na_bmi.h"
+#include <unistd.h>
 #endif
 #ifdef NA_HAS_MPI
 #include "na_mpi.h"
@@ -23,14 +24,122 @@
 #include <stdio.h>
 #include <string.h>
 
-/*---------------------------------------------------------------------------
- *
- * Function:    HG_Test_client_init
- *
- *---------------------------------------------------------------------------
- */
-na_class_t *HG_Test_client_init(int argc, char *argv[], char **port_name, int *rank)
+#define HG_TEST_MAX_ADDR_NAME 256
+
+static char **na_addr_table = NULL;
+static unsigned int na_addr_table_size = 0;
+
+/*---------------------------------------------------------------------------*/
+#ifdef NA_HAS_MPI
+static void
+HG_Test_mpi_init(void)
 {
+    int mpi_initialized = 0;
+
+    MPI_Initialized(&mpi_initialized);
+    if (!mpi_initialized) {
+        int provided;
+
+        MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
+        if (provided != MPI_THREAD_MULTIPLE) {
+            fprintf(stderr, "MPI_THREAD_MULTIPLE cannot be set");
+        }
+    }
+}
+
+static void
+HG_Test_mpi_finalize(void)
+{
+    int mpi_finalized = 0;
+
+    MPI_Finalized(&mpi_finalized);
+    if (!mpi_finalized) {
+        MPI_Finalize();
+    }
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
+static void
+HG_Test_set_config(const char *addr_name)
+{
+    FILE *config = NULL;
+    int my_rank = 0, my_size = 1;
+    int i;
+
+#ifdef NA_HAS_MPI
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &my_size);
+#endif
+
+    /* Allocate table addrs */
+    na_addr_table = (char**) malloc(my_size * sizeof(char*));
+    for (i = 0; i < my_size; i++) {
+        na_addr_table[i] = (char*) malloc(MPI_MAX_PORT_NAME);
+    }
+
+    strcpy(na_addr_table[my_rank], addr_name);
+
+    na_addr_table_size = my_size;
+
+#ifdef NA_HAS_MPI
+    for (i = 0; i < my_size; i++) {
+        MPI_Bcast(na_addr_table[i], MPI_MAX_PORT_NAME,
+                MPI_BYTE, i, MPI_COMM_WORLD);
+    }
+#endif
+
+    /* Only rank 0 writes file */
+    if (my_rank == 0) {
+        config = fopen("port.cfg", "w+");
+        if (config != NULL) {
+            for (i = 0; i < my_size; i++) {
+                fprintf(config, "%s\n", na_addr_table[i]);
+            }
+            fclose(config);
+        }
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+HG_Test_get_config(char *addr_name, size_t len, int *rank)
+{
+    FILE *config = NULL;
+    int my_rank = 0;
+    char config_addr_name[HG_TEST_MAX_ADDR_NAME];
+
+#ifdef NA_HAS_MPI
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+#endif
+
+    /* Only rank 0 reads file */
+    if (my_rank == 0) {
+        config = fopen("port.cfg", "r");
+        if (config != NULL) {
+            fscanf(config, "%s\n", config_addr_name);
+        }
+        fclose(config);
+    }
+
+#ifdef NA_HAS_MPI
+    /* Broadcast port name */
+    MPI_Bcast(config_addr_name, HG_TEST_MAX_ADDR_NAME, MPI_BYTE, 0,
+            MPI_COMM_WORLD);
+#endif
+
+    strncpy(addr_name, config_addr_name,
+            (len < HG_TEST_MAX_ADDR_NAME) ? len : HG_TEST_MAX_ADDR_NAME);
+
+    if (rank) *rank = my_rank;
+}
+
+/*---------------------------------------------------------------------------*/
+na_class_t *
+HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
+{
+    static char test_addr_name[HG_TEST_MAX_ADDR_NAME];
+    int test_rank = 0;
     na_class_t *network_class = NULL;
 
     if (argc < 2) {
@@ -40,36 +149,35 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], char **port_name, int *r
 
 #ifdef NA_HAS_MPI
     if (strcmp("mpi", argv[1]) == 0) {
-        static char mpi_port_name[MPI_MAX_PORT_NAME];
-        FILE *config;
+        /* Test run in parallel using mpirun so must intialize MPI to get
+         * basic setup info etc */
+        HG_Test_mpi_init();
+
+        HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
 
         if (argc > 2 && (strcmp("static", argv[2]) == 0)) {
             network_class = NA_MPI_Init(NULL, MPI_INIT_STATIC);
         } else {
             network_class = NA_MPI_Init(NULL, 0);
-            if ((config = fopen("port.cfg", "r")) != NULL) {
-                size_t nread;
-
-                nread = fread(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
-                if (!nread) fprintf(stderr, "Could not read port name\n");
-                fclose(config);
-            }
         }
-
-        if (rank) MPI_Comm_rank(MPI_COMM_WORLD, rank);
-        if (port_name) *port_name = mpi_port_name;
-
+        /* Only call finalize at the end */
     }
 #endif
 
 #ifdef NA_HAS_BMI
     if (strcmp("bmi", argv[1]) == 0) {
-        network_class = NA_Initialize(getenv(HG_PORT_NAME), 0);
-        if (rank) *rank = 0;
-        if (port_name) *port_name = getenv(HG_PORT_NAME);
+#ifdef NA_HAS_MPI
+        /* Test run in parallel using mpirun so must intialize MPI to get
+         * basic setup info etc */
+        HG_Test_mpi_init();
+#endif
+        HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
+#ifdef NA_HAS_MPI
+        HG_Test_mpi_finalize();
+#endif
+        network_class = NA_Initialize(test_addr_name, 0);
     }
 #endif
-
 
 #ifdef NA_HAS_SSM
     if (strcmp("ssm", argv[1]) == 0) {
@@ -79,16 +187,16 @@ na_class_t *HG_Test_client_init(int argc, char *argv[], char **port_name, int *r
     }
 #endif
 
+    if (addr_name) *addr_name = test_addr_name;
+    if (rank) *rank = test_rank;
+
     return network_class;
 }
 
-/*---------------------------------------------------------------------------
- *
- * Function:    HG_Test_server_init
- *
- *---------------------------------------------------------------------------
- */
-na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number_of_peers)
+/*---------------------------------------------------------------------------*/
+na_class_t *
+HG_Test_server_init(int argc, char *argv[], char ***addr_table,
+        unsigned int *addr_table_size, unsigned int *max_number_of_peers)
 {
     na_class_t *network_class = NULL;
 
@@ -99,23 +207,50 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
 
 #ifdef NA_HAS_MPI
     if (strcmp("mpi", argv[1]) == 0) {
+        /* Test run in parallel using mpirun so must intialize MPI to get
+         * basic setup info etc */
+        HG_Test_mpi_init();
+
         if (argc > 2 && (strcmp("static", argv[2]) == 0)) {
             network_class = NA_MPI_Init(NULL, MPI_INIT_SERVER_STATIC);
         } else {
-            network_class = NA_MPI_Init(NULL, MPI_INIT_SERVER);
+            network_class = NA_Initialize("tcp@mpi://0.0.0.0:0", 1);
+
+            /* Gather addresses */
+            HG_Test_set_config(NA_MPI_Get_port_name(network_class));
         }
+        /* Only call finalize at the end */
     }
 #endif
 
-
 #ifdef NA_HAS_BMI
     if (strcmp("bmi", argv[1]) == 0) {
-        char *listen_addr = getenv(HG_PORT_NAME);
-        if (!listen_addr) {
-            fprintf(stderr, "getenv(\"%s\") failed.\n", HG_PORT_NAME);
-            return NULL;
-        }
-        network_class = NA_Initialize(getenv(HG_PORT_NAME), 1);
+        /* Although we could run some tests without MPI, need it for test setup */
+        char hostname[HG_TEST_MAX_ADDR_NAME];
+        char addr_name[HG_TEST_MAX_ADDR_NAME];
+        int my_rank = 0;
+        unsigned int port_number = 22222;
+
+#ifdef NA_HAS_MPI
+        /* Test run in parallel using mpirun so must intialize MPI to get
+         * basic setup info etc */
+        HG_Test_mpi_init();
+        MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+#endif
+
+        /* Generate a port number depending on server rank */
+        port_number += my_rank;
+        gethostname(hostname, HG_TEST_MAX_ADDR_NAME);
+        sprintf(addr_name, "tcp://%s:%d", hostname, port_number);
+
+        /* Gather addresses */
+        HG_Test_set_config(addr_name);
+
+#ifdef NA_HAS_MPI
+        HG_Test_mpi_finalize();
+#endif
+
+        network_class = NA_Initialize(addr_name, 1);
     }
 #endif
 
@@ -126,11 +261,51 @@ na_class_t *HG_Test_server_init(int argc, char *argv[], unsigned int *max_number
     }
 #endif
 
+    /* As many entries in addr table as number of server ranks */
+    if (addr_table_size) *addr_table_size = na_addr_table_size;
+
+    /* Point addr table to NA MPI addr table */
+    if (addr_table) *addr_table = na_addr_table;
+
 #ifdef NA_HAS_MPI
-    *max_number_of_peers = MPIEXEC_MAX_NUMPROCS;
+    if (max_number_of_peers) *max_number_of_peers = MPIEXEC_MAX_NUMPROCS;
 #else
-    *max_number_of_peers = 1;
+    if (max_number_of_peers) *max_number_of_peers = 1;
 #endif
 
+    /* Used by Test Driver */
+    printf("Waiting for client...\n");
+    fflush(stdout);
+
     return network_class;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+HG_Test_finalize(na_class_t *network_class)
+{
+    int na_ret;
+    unsigned int i;
+
+    na_ret = NA_Finalize(network_class);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not finalize NA interface\n");
+        goto done;
+    }
+
+    if (na_addr_table_size && na_addr_table) {
+        for (i = 0; i < na_addr_table_size; i++) {
+            free(na_addr_table[i]);
+        }
+        free(na_addr_table);
+        na_addr_table = NULL;
+        na_addr_table_size = 0;
+    }
+
+#ifdef NA_HAS_MPI
+    HG_Test_mpi_finalize();
+#endif
+
+done:
+     return;
 }

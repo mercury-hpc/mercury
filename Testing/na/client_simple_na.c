@@ -278,11 +278,7 @@ int main(int argc, char *argv[])
     free(send_buf);
     send_buf = NULL;
 
-    na_ret = NA_Finalize(network_class);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not finalize interface\n");
-        return EXIT_FAILURE;
-    }
+    HG_Test_finalize(network_class);
 
     return EXIT_SUCCESS;
 }
