@@ -33,7 +33,6 @@
 #define DEBUG 0
 static int na_ssm_finalize(void);
 static int na_ssm_addr_lookup(const char *name, na_addr_t *addr);
-static int na_ssm_addr_self(na_addr_t *addr);
 static int na_ssm_addr_to_string(char *buf, na_size_t buf_size, na_addr_t addr);
 static int na_ssm_addr_free(na_addr_t addr);
 static na_size_t na_ssm_msg_get_max_expected_size(void);
@@ -72,7 +71,6 @@ static na_class_t* na_ssm_initialize(const struct na_host_buffer *host_buffer,
 static na_class_t na_ssm_g = {
         na_ssm_finalize,               /* finalize */
         na_ssm_addr_lookup,            /* addr_lookup */
-        na_ssm_addr_self,              /* self address */
         na_ssm_addr_free,              /* addr_free */
         na_ssm_addr_to_string,         /* addr to string */
         na_ssm_msg_get_max_expected_size,     /* msg_get_max_expected_size */

@@ -30,7 +30,6 @@ static na_class_t *na_mpi_initialize(const struct na_host_buffer *na_buffer,
 static int na_mpi_finalize(void);
 
 static int na_mpi_addr_lookup(const char *name, na_addr_t *addr);
-static int na_mpi_addr_self(na_addr_t *addr);
 static int na_mpi_addr_free(na_addr_t addr);
 static int na_mpi_addr_to_string(char *buf, na_size_t buf_size, na_addr_t addr);
 
@@ -69,7 +68,6 @@ static int na_mpi_request_free(na_request_t request);
 static na_class_t na_mpi_g = {
         na_mpi_finalize,                      /* finalize */
         na_mpi_addr_lookup,                   /* addr_lookup */
-        na_mpi_addr_self,                     /* addr_self */
         na_mpi_addr_free,                     /* addr_free */
         na_mpi_addr_to_string,                /* addr_to_string */
         na_mpi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
@@ -722,13 +720,6 @@ done:
     }
 
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static int
-na_mpi_addr_self(na_addr_t NA_UNUSED *addr)
-{
-    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/

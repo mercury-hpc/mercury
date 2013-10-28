@@ -104,18 +104,6 @@ NA_EXPORT int
 NA_Addr_lookup(na_class_t *network_class, const char *name, na_addr_t *addr);
 
 /**
- * Get self addr, this is always non-blocking. Address need to be
- * freed by calling NA_Addr_free.
- *
- * \param network_class [IN]    pointer to network class
- * \param addr [OUT]            pointer to returned abstract address
- *
- * \return Non-negative on success or negative on failure
- */
-NA_EXPORT int
-NA_Addr_self(na_class_t *network_class, na_addr_t *addr);
-
-/**
  * Free the addr.
  *
  * \param network_class [IN]    pointer to network class

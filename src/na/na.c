@@ -245,14 +245,6 @@ NA_Addr_lookup(na_class_t *network_class, const char *name, na_addr_t *addr)
 
 /*---------------------------------------------------------------------------*/
 int
-NA_Addr_self(na_class_t *network_class, na_addr_t *addr)
-{
-    assert(network_class);
-    return network_class->addr_self(addr);
-}
-
-/*---------------------------------------------------------------------------*/
-int
 NA_Addr_free(na_class_t *network_class, na_addr_t addr)
 {
     assert(network_class);

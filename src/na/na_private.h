@@ -29,7 +29,6 @@ struct na_class {
 
     /* Network address callbacks */
     int (*addr_lookup)(const char *name, na_addr_t *addr);
-    int (*addr_self)(na_addr_t *addr);
     int (*addr_free)(na_addr_t addr);
     int (*addr_to_string)(char *buf, na_size_t buf_size, na_addr_t addr);
 

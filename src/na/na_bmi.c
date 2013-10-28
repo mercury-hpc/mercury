@@ -29,7 +29,6 @@ static na_class_t *na_bmi_initialize(const struct na_host_buffer *na_buffer,
 static int na_bmi_finalize(void);
 
 static int na_bmi_addr_lookup(const char *name, na_addr_t *addr);
-static int na_bmi_addr_self(na_addr_t *addr);
 static int na_bmi_addr_free(na_addr_t addr);
 static int na_bmi_addr_to_string(char *buf, na_size_t buf_size, na_addr_t addr);
 
@@ -66,7 +65,6 @@ static int na_bmi_request_free(na_request_t request);
 static na_class_t na_bmi_g = {
         na_bmi_finalize,                      /* finalize */
         na_bmi_addr_lookup,                   /* addr_lookup */
-        na_bmi_addr_self,                     /* addr_self */
         na_bmi_addr_free,                     /* addr_free */
         na_bmi_addr_to_string,                /* addr_to_string */
         na_bmi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
@@ -436,50 +434,6 @@ na_bmi_addr_lookup(const char *name, na_addr_t *addr)
 
     /* Perform an address lookup */
     bmi_ret = BMI_addr_lookup(&bmi_addr->addr, name);
-    if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_addr_lookup() failed");
-        ret = NA_FAIL;
-        goto done;
-    }
-
-    *addr = (na_addr_t) bmi_addr;
-
-done:
-    if (ret != NA_SUCCESS) {
-        free(bmi_addr);
-    }
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static int
-na_bmi_addr_self(na_addr_t *addr)
-{
-    int bmi_ret, ret = NA_SUCCESS;
-    struct na_bmi_addr *bmi_addr = NULL;
-
-    if (!addr) {
-        NA_ERROR_DEFAULT("NULL addr");
-        ret = NA_FAIL;
-        goto done;
-    }
-
-    if (!is_server) {
-        NA_ERROR_DEFAULT("Only server can call na_bmi_addr_self");
-        ret = NA_FAIL;
-        goto done;
-    }
-
-    bmi_addr = (struct na_bmi_addr*) malloc(sizeof(struct na_bmi_addr));
-    if (!bmi_addr) {
-        NA_ERROR_DEFAULT("Could not allocate addr");
-        ret = NA_FAIL;
-        goto done;
-    }
-    bmi_addr->is_unexpected = 0;
-
-    /* Perform an address lookup */
-    bmi_ret = BMI_addr_lookup(&bmi_addr->addr, bmi_listen_addr);
     if (bmi_ret < 0) {
         NA_ERROR_DEFAULT("BMI_addr_lookup() failed");
         ret = NA_FAIL;
