@@ -66,14 +66,15 @@ typedef enum {
     HG_NOHASH
 } hg_proc_hash_t;
 
-/* Error return codes */
+/* Error return codes:
+ * Functions return 0 for success or -HG_XXX_ERROR for failure */
 typedef enum hg_return {
-    HG_FAIL = -1,      /* default */
-    HG_SUCCESS = 1,
+    HG_FAIL = -1,      /* default (TODO keep until switch to new error format) */
+    HG_SUCCESS = 0,
     HG_NO_MATCH,       /* no function match */
     HG_PROTOCOL_ERROR, /* protocol does not match */
     HG_CHECKSUM_ERROR, /* checksum does not match */
-    HG_TIMEOUT,        /* reached timeout */
+    HG_TIMEOUT         /* reached timeout */
 } hg_return_t;
 
 #endif /* MERCURY_TYPES_H */
