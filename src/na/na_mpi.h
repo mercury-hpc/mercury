@@ -42,6 +42,15 @@ extern "C" {
 NA_EXPORT na_class_t *
 NA_MPI_Init(MPI_Comm *intra_comm, int flags);
 
+/**
+ * Get port name used by server (only valid if plugin initialized with
+ * MPI_INIT_SERVER).
+ *
+ * \return Pointer to string
+ */
+NA_EXPORT const char *
+NA_MPI_Get_port_name(na_class_t *network_class);
+
 #ifdef __cplusplus
 }
 #endif

@@ -13,6 +13,7 @@
 #include "na_error.h"
 
 #include "mercury_hash_table.h"
+#include "mercury_list.h"
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
@@ -92,13 +93,10 @@ static na_class_t na_mpi_g = {
         na_mpi_request_free                   /* request_free */
 };
 
-/* FIXME Force MPI version to 2 for now */
-#undef MPI_VERSION
-#define MPI_VERSION 2
-
 /* Private structs */
 struct na_mpi_addr {
     MPI_Comm  comm;              /* Communicator */
+    MPI_Comm  onesided_comm;     /* Communicator used for one sided emulation */
     int       rank;              /* Rank in this communicator */
     na_bool_t is_unexpected : 1; /* Address generated from unexpected recv */
     char      port_name[MPI_MAX_PORT_NAME]; /* String version of addr */
@@ -110,7 +108,6 @@ struct na_mpi_mem_handle {
     unsigned attr;             /* Flag of operation access */
 };
 
-#if MPI_VERSION < 3
 typedef enum na_mpi_onesided_op {
     MPI_ONESIDED_PUT,       /* Request a put operation */
     MPI_ONESIDED_GET        /* Request a get operation */
@@ -123,7 +120,6 @@ struct na_mpi_onesided_info {
     na_mpi_onesided_op_t op;  /* Operation requested */
     na_tag_t tag;          /* Tag for the data transfer */
 };
-#endif
 
 /* Used to differentiate Send requests from Recv requests */
 typedef enum na_mpi_req_type {
@@ -134,37 +130,57 @@ typedef enum na_mpi_req_type {
 struct na_mpi_req {
     na_mpi_req_type_t type;
     MPI_Request request;
-#if MPI_VERSION < 3
     MPI_Request data_request;
-#endif
 };
 
 /* Private variables */
-static int mpi_ext_initialized;                 /* MPI initialized */
-static MPI_Comm mpi_intra_comm = MPI_COMM_NULL; /* Private plugin intra-comm */
-static na_bool_t is_server = 0;                 /* Used in server mode */
-static na_bool_t use_static_intercomm = 0;      /* Use static inter-communicator */
-static struct na_mpi_addr *client_remote_addr = NULL; /* Client remote address */
-static struct na_mpi_addr server_remote_addr;         /* Server remote address */
-static MPI_Comm mpi_onesided_comm = MPI_COMM_NULL;
 
-static na_bool_t is_mpi_testing = 0;
-static hg_thread_cond_t mpi_test_cond;
-static hg_thread_mutex_t mpi_test_mutex;
-
-/* Mutex used for tag generation (TODO use atomic increment instead) */
-static hg_thread_mutex_t mpi_tag_mutex;
-
+/* Class description */
 static const char na_mpi_name_g[] = "mpi";
-
-const struct na_class_describe na_mpi_describe_g  = {
+const struct na_class_describe na_mpi_describe_g = {
     na_mpi_name_g,
     na_mpi_verify,
     na_mpi_initialize
 };
+static int       na_mpi_ext_initialized_g; /* MPI initialized */
+static MPI_Comm  na_mpi_intra_comm_g = MPI_COMM_NULL; /* Private plugin intra-comm */
+static na_bool_t na_mpi_is_server_g = 0; /* Used in server mode */
+static na_bool_t na_mpi_use_static_intercomm_g = 0; /* Use static inter-communicator */
+static char      na_mpi_port_name_g[MPI_MAX_PORT_NAME]; /* Server local port name used for
+                                                           dynamic connection */
 
-#if MPI_VERSION < 3
-static hg_hash_table_t *mem_handle_map = NULL;  /* Map mem addresses to mem handles */
+/* Mutex used for tag generation (TODO use atomic increment instead) */
+static hg_thread_mutex_t  na_mpi_tag_mutex_g;
+
+/* For na_mpi_wait() */
+static na_bool_t          na_mpi_is_testing_g = 0;
+static hg_thread_cond_t   na_mpi_test_cond_g;
+static hg_thread_mutex_t  na_mpi_test_mutex_g;
+
+/* To finalize service threads */
+static na_bool_t          na_mpi_is_finalizing_g = 0;
+static hg_thread_mutex_t  na_mpi_finalize_mutex_g;
+
+/* Accept service */
+static hg_thread_t        na_mpi_accept_thread_g;
+static hg_thread_mutex_t  na_mpi_accept_mutex_g;
+static hg_thread_cond_t   na_mpi_accept_cond_g;
+static na_bool_t          na_mpi_is_accepting_g = 1;
+
+static hg_thread_mutex_t  na_mpi_remote_list_mutex_g;
+static hg_list_entry_t   *na_mpi_remote_list_g = NULL;
+static NA_INLINE int
+na_mpi_remote_list_equal(void *location1, void *location2)
+{
+    return location1 == location2;
+}
+
+/* Onesided progress service */
+static hg_thread_t        na_mpi_progress_thread_g;
+
+/* Map mem addresses to mem handles */
+static hg_thread_mutex_t  na_mpi_mem_map_mutex_g;
+static hg_hash_table_t   *na_mpi_mem_handle_map_g = NULL;
 static NA_INLINE int
 pointer_equal(void *location1, void *location2)
 {
@@ -175,11 +191,9 @@ pointer_hash(void *location)
 {
     return (unsigned int) (unsigned long) location;
 }
-#else
-static MPI_Win mpi_dynamic_win;                 /* Dynamic window */
-#endif
 
 #define NA_MPI_UNEXPECTED_SIZE 4096
+/* Expected message size is the same as unexpected messages for now */
 #define NA_MPI_EXPECTED_SIZE   NA_MPI_UNEXPECTED_SIZE
 
 /* Max tag */
@@ -188,27 +202,140 @@ static MPI_Win mpi_dynamic_win;                 /* Dynamic window */
 /* Default tag used for one-sided over two-sided emulation */
 #define NA_MPI_ONESIDED_TAG (NA_MPI_MAX_TAG + 1)
 
-#if MPI_VERSION < 3
-#ifdef NA_HAS_CLIENT_THREAD
-static hg_thread_mutex_t finalizing_mutex;
-static na_bool_t         finalizing;
-static hg_thread_t       progress_service;
-#endif
-static hg_thread_mutex_t mem_map_mutex;
-
 /*---------------------------------------------------------------------------*/
-#ifdef NA_HAS_CLIENT_THREAD
-static void *
+static int
+na_mpi_addr_free_(struct na_mpi_addr *mpi_addr)
+{
+    int ret = NA_SUCCESS;
+
+    if (mpi_addr && !mpi_addr->is_unexpected) {
+        if (na_mpi_use_static_intercomm_g || na_mpi_is_server_g) {
+            MPI_Comm_free(&mpi_addr->comm);
+        } else {
+            MPI_Comm_disconnect(&mpi_addr->comm);
+        }
+        MPI_Comm_free(&mpi_addr->onesided_comm);
+    }
+    free(mpi_addr);
+
+    return ret;
+}
+
+static int
+na_mpi_open_port(void)
+{
+    char mpi_port_name[MPI_MAX_PORT_NAME];
+    int my_rank;
+    int mpi_ret;
+    int ret = NA_SUCCESS;
+
+    memset(na_mpi_port_name_g, '\0', MPI_MAX_PORT_NAME);
+
+    MPI_Comm_rank(na_mpi_intra_comm_g, &my_rank);
+    if (my_rank == 0) {
+        mpi_ret = MPI_Open_port(MPI_INFO_NULL, mpi_port_name);
+        if (mpi_ret != MPI_SUCCESS) {
+            NA_ERROR_DEFAULT("MPI_Open_port failed");
+            ret = NA_FAIL;
+            goto done;
+        }
+    }
+    MPI_Bcast(mpi_port_name, MPI_MAX_PORT_NAME, MPI_BYTE, 0, na_mpi_intra_comm_g);
+
+    strcpy(na_mpi_port_name_g, mpi_port_name);
+
+done:
+    return ret;
+}
+
+static int
+na_mpi_accept(void)
+{
+    MPI_Comm new_comm;
+    MPI_Comm new_onesided_comm;
+    struct na_mpi_addr *remote_addr;
+    int ret = NA_SUCCESS;
+
+    hg_thread_mutex_lock(&na_mpi_accept_mutex_g);
+
+    if (na_mpi_use_static_intercomm_g) {
+        int global_size, intra_size, mpi_ret;
+
+        MPI_Comm_size(MPI_COMM_WORLD, &global_size);
+        MPI_Comm_size(na_mpi_intra_comm_g, &intra_size);
+        mpi_ret = MPI_Intercomm_create(na_mpi_intra_comm_g, 0, MPI_COMM_WORLD,
+                global_size - (global_size - intra_size), 0, &new_comm);
+        if (mpi_ret != MPI_SUCCESS) {
+            NA_ERROR_DEFAULT("MPI_Intercomm_create failed");
+            ret = NA_FAIL;
+            goto done;
+        }
+    } else {
+        int mpi_ret;
+
+        mpi_ret = MPI_Comm_accept(na_mpi_port_name_g, MPI_INFO_NULL, 0,
+            na_mpi_intra_comm_g, &new_comm);
+        if (mpi_ret != MPI_SUCCESS) {
+            NA_ERROR_DEFAULT("MPI_Comm_accept failed");
+            ret = NA_FAIL;
+            goto done;
+        }
+    }
+
+    /* To be thread-safe and create a new context, dup the remote comm to a new comm */
+    MPI_Comm_dup(new_comm, &new_onesided_comm);
+
+    na_mpi_is_accepting_g = 0;
+    hg_thread_cond_signal(&na_mpi_accept_cond_g);
+    hg_thread_mutex_unlock(&na_mpi_accept_mutex_g);
+
+    remote_addr = (struct na_mpi_addr *) malloc(sizeof(struct na_mpi_addr));
+    if (!remote_addr) {
+        NA_ERROR_DEFAULT("Could not allocate remote_addr");
+        ret = NA_FAIL;
+        goto done;
+    }
+    remote_addr->comm = new_comm;
+    remote_addr->onesided_comm = new_onesided_comm;
+    remote_addr->rank = MPI_ANY_SOURCE;
+    remote_addr->is_unexpected = 0;
+    memset(remote_addr->port_name, '\0', MPI_MAX_PORT_NAME);
+
+    /* Add comms to list of connected remotes */
+    hg_thread_mutex_lock(&na_mpi_remote_list_mutex_g);
+    hg_list_append(&na_mpi_remote_list_g, (hg_list_value_t) remote_addr);
+    hg_thread_mutex_unlock(&na_mpi_remote_list_mutex_g);
+
+done:
+    return ret;
+}
+
+static HG_THREAD_RETURN_TYPE
+na_mpi_accept_service(void NA_UNUSED *args)
+{
+    hg_thread_ret_t ret = 0;
+    int na_ret;
+
+    na_ret = na_mpi_accept();
+    if (na_ret != NA_SUCCESS) {
+        NA_ERROR_DEFAULT("Could not accept connection");
+    }
+
+    return ret;
+}
+
+static HG_THREAD_RETURN_TYPE
 na_mpi_progress_service(void NA_UNUSED *args)
 {
+    hg_thread_ret_t ret = 0;
     na_bool_t service_done = 0;
 
     while (!service_done) {
         int na_ret;
 
-        hg_thread_mutex_lock(&finalizing_mutex);
-        service_done = (finalizing) ? 1 : 0;
-        hg_thread_mutex_unlock(&finalizing_mutex);
+        hg_thread_mutex_lock(&na_mpi_finalize_mutex_g);
+        service_done = (na_mpi_is_finalizing_g) ? 1 : 0;
+        hg_thread_mutex_unlock(&na_mpi_finalize_mutex_g);
 
         na_ret = na_mpi_progress(0, NA_STATUS_IGNORE);
         if (na_ret != NA_SUCCESS) {
@@ -219,10 +346,94 @@ na_mpi_progress_service(void NA_UNUSED *args)
         if (service_done) break;
     }
 
-    return NULL;
+    return ret;
 }
-#endif
-#endif
+
+static int
+na_mpi_remote_list_remove(struct na_mpi_addr *mpi_addr)
+{
+    int ret = NA_SUCCESS;
+    hg_list_entry_t *entry = NULL;
+
+    /* Process list of remotes */
+    hg_thread_mutex_lock(&na_mpi_remote_list_mutex_g);
+
+    /* Append handle to list if not found */
+    entry = hg_list_find_data(na_mpi_remote_list_g, na_mpi_remote_list_equal,
+            (hg_list_value_t)mpi_addr);
+    if (entry) {
+        if (!hg_list_remove_entry(&na_mpi_remote_list_g, entry)) {
+            NA_ERROR_DEFAULT("Could not remove entry");
+            ret = NA_FAIL;
+        }
+    }
+
+    hg_thread_mutex_unlock(&na_mpi_remote_list_mutex_g);
+
+    return ret;
+}
+
+static int
+na_mpi_remote_comm_free(void)
+{
+    int ret = NA_SUCCESS;
+
+    /* Process list of communicators */
+    hg_thread_mutex_lock(&na_mpi_remote_list_mutex_g);
+
+    if (hg_list_length(na_mpi_remote_list_g)) {
+        hg_list_entry_t *entry = na_mpi_remote_list_g;
+
+        while (entry) {
+            hg_list_entry_t *next_entry = hg_list_next(entry);
+            struct na_mpi_addr *mpi_addr = (struct na_mpi_addr*) hg_list_data(entry);
+
+            na_mpi_addr_free_(mpi_addr);
+
+            if (!hg_list_remove_entry(&na_mpi_remote_list_g, entry)) {
+                NA_ERROR_DEFAULT("Could not remove entry");
+                ret = NA_FAIL;
+                goto done;
+            }
+
+            entry = next_entry;
+        }
+    }
+
+ done:
+    hg_thread_mutex_unlock(&na_mpi_remote_list_mutex_g);
+
+    return ret;
+}
+
+static int
+na_mpi_extract_port_name_info(const char *name, char *mpi_port_name, int *mpi_rank)
+{
+    char *port_string = NULL, *rank_string = NULL, *rank_value = NULL;
+    int ret = NA_SUCCESS;
+
+    port_string = strdup(name);
+
+    /* Get mpi port name */
+    port_string = strtok_r(port_string, ":", &rank_string);
+    strcpy(mpi_port_name, port_string);
+
+    /* Get rank info */
+    if (strlen(rank_string)) {
+        rank_string = strtok_r(rank_string, "$", &rank_value);
+        rank_string = strtok_r(rank_string, "#", &rank_value);
+
+        if (strcmp(rank_string, "rank") == 0) {
+            if (mpi_rank) *mpi_rank = atoi(rank_value);
+        } else {
+            if (mpi_rank) *mpi_rank = 0;
+        }
+    }
+
+    free(port_string);
+
+    return ret;
+}
 
 /*---------------------------------------------------------------------------*/
 static na_tag_t
@@ -230,10 +441,10 @@ na_mpi_gen_onesided_tag(void)
 {
     static long int tag = NA_MPI_ONESIDED_TAG + 1;
 
-    hg_thread_mutex_lock(&mpi_tag_mutex);
+    hg_thread_mutex_lock(&na_mpi_tag_mutex_g);
     tag++;
     if (tag == MPI_TAG_UB) tag = NA_MPI_ONESIDED_TAG + 1;
-    hg_thread_mutex_unlock(&mpi_tag_mutex);
+    hg_thread_mutex_unlock(&na_mpi_tag_mutex_g);
 
     return tag;
 }
@@ -263,28 +474,31 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     /* Check flags */
     switch (flags) {
         case MPI_INIT_SERVER:
-            is_server = 1;
+            na_mpi_is_server_g = 1;
+            na_mpi_use_static_intercomm_g = 0;
             break;
         case MPI_INIT_SERVER_STATIC:
-            is_server = 1;
-            use_static_intercomm = 1;
+            na_mpi_is_server_g = 1;
+            na_mpi_use_static_intercomm_g = 1;
             break;
         case MPI_INIT_STATIC:
-            use_static_intercomm = 1;
+            na_mpi_is_server_g = 0;
+            na_mpi_use_static_intercomm_g = 1;
             break;
         default:
             break;
     }
 
     /* MPI_Init */
-    mpi_ret = MPI_Initialized(&mpi_ext_initialized);
+    mpi_ret = MPI_Initialized(&na_mpi_ext_initialized_g);
     if (mpi_ret != MPI_SUCCESS) {
+        NA_ERROR_DEFAULT("MPI_Initialized failed");
         goto done;
     }
 
-    if (!mpi_ext_initialized) {
-#if MPI_VERSION < 3
+    if (!na_mpi_ext_initialized_g) {
         int provided;
+
         /* Need a MPI_THREAD_MULTIPLE level if onesided thread required */
         mpi_ret = MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
         if (mpi_ret != MPI_SUCCESS) {
@@ -295,94 +509,70 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
             NA_ERROR_DEFAULT("MPI_THREAD_MULTIPLE cannot be set");
             goto done;
         }
-#else
-        MPI_Init(NULL, NULL);
-#endif
     }
 
     /* Assign MPI intra comm */
-    if (intra_comm && (*intra_comm != MPI_COMM_NULL)) {
-        /* Assume that the application splits MPI_COMM_WORLD if necessary */
-        mpi_ret = MPI_Comm_dup(*intra_comm, &mpi_intra_comm);
+    if (intra_comm || (!intra_comm && !na_mpi_use_static_intercomm_g)) {
+        MPI_Comm comm = (intra_comm && (*intra_comm != MPI_COMM_NULL)) ?
+                *intra_comm : MPI_COMM_WORLD;
+
+        mpi_ret = MPI_Comm_dup(comm, &na_mpi_intra_comm_g);
         if (mpi_ret != MPI_SUCCESS) {
             NA_ERROR_DEFAULT("Could not duplicate communicator");
             goto done;
         }
-    } else {
-        if (use_static_intercomm) {
-            int color;
-            int global_rank;
+    } else if (na_mpi_use_static_intercomm_g) {
+        int color;
+        int global_rank;
 
-            MPI_Comm_rank(MPI_COMM_WORLD, &global_rank);
-            /* Color is 1 for server, 2 for client */
-            color = (is_server) ? 1 : 2;
-            mpi_ret = MPI_Comm_split(MPI_COMM_WORLD, color, global_rank, &mpi_intra_comm);
-            if (mpi_ret != MPI_SUCCESS) {
-                NA_ERROR_DEFAULT("Could not split communicator");
-                goto done;
-            }
-        } else {
-            mpi_ret = MPI_Comm_dup(MPI_COMM_WORLD, &mpi_intra_comm);
-            if (mpi_ret != MPI_SUCCESS) {
-                NA_ERROR_DEFAULT("Could not duplicate communicator");
-                goto done;
-            }
+        MPI_Comm_rank(MPI_COMM_WORLD, &global_rank);
+        /* Color is 1 for server, 2 for client */
+        color = (na_mpi_is_server_g) ? 1 : 2;
+
+        /* Assume that the application did not split MPI_COMM_WORLD already */
+        mpi_ret = MPI_Comm_split(MPI_COMM_WORLD, color, global_rank, &na_mpi_intra_comm_g);
+        if (mpi_ret != MPI_SUCCESS) {
+            NA_ERROR_DEFAULT("Could not split communicator");
+            goto done;
         }
     }
 
-#if MPI_VERSION < 3
-    hg_thread_mutex_init(&mem_map_mutex);
-    /* Create hash table for memory registration */
-    mem_handle_map = hg_hash_table_new(pointer_hash, pointer_equal);
-    /* Automatically free all the values with the hash map */
-    hg_hash_table_register_free_functions(mem_handle_map, NULL, NULL);
-#endif
-    hg_thread_mutex_init(&mpi_test_mutex);
-    hg_thread_cond_init(&mpi_test_cond);
-    hg_thread_mutex_init(&mpi_tag_mutex);
+    /* Tag generation mutex */
+    hg_thread_mutex_init(&na_mpi_tag_mutex_g);
 
-    /* If server open a port */
-    if (is_server) {
-        memset(server_remote_addr.port_name, '\0', MPI_MAX_PORT_NAME);
+    /* For na_mpi_wait() */
+    hg_thread_cond_init(&na_mpi_test_cond_g);
+    hg_thread_mutex_init(&na_mpi_test_mutex_g);
 
-        if (use_static_intercomm) {
-            int global_size, intra_size;
+    /* To finalize service threads */
+    hg_thread_mutex_init(&na_mpi_finalize_mutex_g);
 
-            MPI_Comm_size(MPI_COMM_WORLD, &global_size);
-            MPI_Comm_size(mpi_intra_comm, &intra_size);
-            MPI_Intercomm_create(mpi_intra_comm, 0, MPI_COMM_WORLD, global_size -
-                    (global_size - intra_size), 0, &server_remote_addr.comm);
+    /* Accept service */
+    hg_thread_cond_init(&na_mpi_accept_cond_g);
+    hg_thread_mutex_init(&na_mpi_accept_mutex_g);
+    hg_thread_mutex_init(&na_mpi_remote_list_mutex_g);
+
+    /* Map mem addresses to mem handles */
+    hg_thread_mutex_init(&na_mpi_mem_map_mutex_g);
+    na_mpi_mem_handle_map_g = hg_hash_table_new(pointer_hash, pointer_equal);
+    hg_hash_table_register_free_functions(na_mpi_mem_handle_map_g, NULL, NULL);
+
+    /* If server opens a port */
+    if (na_mpi_is_server_g) {
+        if (na_mpi_use_static_intercomm_g) {
+            /* Do not launch any thread, just accept */
+            if (na_mpi_accept() != NA_SUCCESS) goto done;
         } else {
-            FILE *config;
-            size_t nbytes;
-            char mpi_port_name[MPI_MAX_PORT_NAME];
+            if (na_mpi_open_port() != NA_SUCCESS) goto done;
 
-            memset(mpi_port_name, '\0', MPI_MAX_PORT_NAME);
-            MPI_Open_port(MPI_INFO_NULL, mpi_port_name);
-            config = fopen("port.cfg", "w+");
-            nbytes = fwrite(mpi_port_name, sizeof(char), MPI_MAX_PORT_NAME, config);
-            if (!nbytes) {
-                NA_ERROR_DEFAULT("Could not write port name");
-            }
-            fclose(config);
-
-            strcpy(server_remote_addr.port_name, mpi_port_name);
-
-            /* TODO server waits for connection here but that should be handled separately really */
-            MPI_Comm_accept(mpi_port_name, MPI_INFO_NULL, 0, mpi_intra_comm, &server_remote_addr.comm);
+            hg_thread_create(&na_mpi_accept_thread_g, na_mpi_accept_service, NULL);
         }
-        server_remote_addr.is_unexpected = 0;
-        server_remote_addr.rank = -1; /* the address returned does not bind to a specific process */
-
-#if MPI_VERSION < 3
-        /* To be thread-safe and create a new context, dup the remote comm to a new comm */
-        MPI_Comm_dup(server_remote_addr.comm, &mpi_onesided_comm);
-#else
-        MPI_Intercomm_merge(server_remote_addr.comm, is_server, &mpi_onesided_comm);
-        /* Create dynamic window */
-        MPI_Win_create_dynamic(MPI_INFO_NULL, mpi_onesided_comm, &mpi_dynamic_win);
-#endif
     }
+
+    /* Start a progress thread for onesided communication emulation
+     * TODO this will be removed from the plugin and left to the user*/
+    hg_thread_create(&na_mpi_progress_thread_g,
+            (hg_thread_func_t) &na_mpi_progress_service, NULL);
 
     ret = &na_mpi_g;
 
@@ -391,43 +581,68 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+const char *
+NA_MPI_Get_port_name(na_class_t NA_UNUSED *network_class)
+{
+    int my_rank;
+    MPI_Comm_rank(na_mpi_intra_comm_g, &my_rank);
+    static char port_name[MPI_MAX_PORT_NAME];
+
+    sprintf(port_name, "%s:rank#%d$", na_mpi_port_name_g, my_rank);
+    /* Global variable for now but it should be part of the network class */
+    return port_name;
+}
+
+/*---------------------------------------------------------------------------*/
 static int
 na_mpi_finalize(void)
 {
     int mpi_ext_finalized, ret = NA_SUCCESS;
 
+    /* Start shutting down */
+    hg_thread_mutex_lock(&na_mpi_finalize_mutex_g);
+    na_mpi_is_finalizing_g = 1;
+    hg_thread_mutex_unlock(&na_mpi_finalize_mutex_g);
+
     /* If server opened a port */
-    if (is_server) {
-        MPI_Comm_free(&mpi_onesided_comm);
-
-#if MPI_VERSION >= 3
-        /* Destroy dynamic window */
-        MPI_Win_free(&mpi_dynamic_win);
-#endif
-
-        if (use_static_intercomm) {
-            MPI_Comm_free(&server_remote_addr.comm);
-        } else {
-            /* TODO Server disconnects here but that should be handled separately really */
-            MPI_Comm_disconnect(&server_remote_addr.comm);
-            MPI_Close_port(server_remote_addr.port_name);
-        }
-    } else {
-        /* Automatically free addr */
-        if (client_remote_addr) na_mpi_addr_free(client_remote_addr);
+    if (na_mpi_is_server_g && !na_mpi_use_static_intercomm_g) {
+        /* No more connection accepted after this point */
+        hg_thread_join(na_mpi_accept_thread_g);
     }
 
-    hg_thread_mutex_destroy(&mpi_tag_mutex);
-    hg_thread_mutex_destroy(&mpi_test_mutex);
-    hg_thread_cond_destroy(&mpi_test_cond);
-#if MPI_VERSION < 3
-    /* Free hash table for memory registration */
-    hg_hash_table_free(mem_handle_map);
-    hg_thread_mutex_destroy(&mem_map_mutex);
-#endif
+    /* Wait for one-sided thread to complete */
+    hg_thread_join(na_mpi_progress_thread_g);
+
+    /* Process list of communicators */
+    na_mpi_remote_comm_free();
+
+    /* If server opened a port */
+    if (na_mpi_is_server_g && !na_mpi_use_static_intercomm_g) {
+        /* Close port */
+        MPI_Close_port(na_mpi_port_name_g);
+    }
+
+    /* Tag generation mutex */
+    hg_thread_mutex_destroy(&na_mpi_tag_mutex_g);
+
+    /* For na_mpi_wait() */
+    hg_thread_cond_destroy(&na_mpi_test_cond_g);
+    hg_thread_mutex_destroy(&na_mpi_test_mutex_g);
+
+    /* To finalize service threads */
+    hg_thread_mutex_destroy(&na_mpi_finalize_mutex_g);
+
+    /* Accept service */
+    hg_thread_cond_destroy(&na_mpi_accept_cond_g);
+    hg_thread_mutex_destroy(&na_mpi_accept_mutex_g);
+    hg_thread_mutex_destroy(&na_mpi_remote_list_mutex_g);
+
+    /* Map mem addresses to mem handles */
+    hg_hash_table_free(na_mpi_mem_handle_map_g);
+    hg_thread_mutex_destroy(&na_mpi_mem_map_mutex_g);
 
     /* Free the private dup'ed comm */
-    MPI_Comm_free(&mpi_intra_comm);
+    MPI_Comm_free(&na_mpi_intra_comm_g);
 
     /* MPI_Finalize */
     MPI_Finalized(&mpi_ext_finalized);
@@ -435,7 +650,7 @@ na_mpi_finalize(void)
         NA_ERROR_DEFAULT("MPI already finalized");
         ret = NA_FAIL;
     }
-    if (!mpi_ext_initialized && !mpi_ext_finalized) {
+    if (!na_mpi_ext_initialized_g && !mpi_ext_finalized) {
         MPI_Finalize();
     }
 
@@ -447,14 +662,9 @@ static int
 na_mpi_addr_lookup(const char *name, na_addr_t *addr)
 {
     int mpi_ret, ret = NA_SUCCESS;
-    const char *port_name = name;
     struct na_mpi_addr *mpi_addr = NULL;
 
-    if (client_remote_addr) {
-        /* Already connected (TODO only allow connection to one server at this time) */
-        if (addr) *addr = (na_addr_t) client_remote_addr;
-        return ret;
-    }
+    /* TODO Lookup addr list to see if we are already connected */
 
     /* Allocate the addr */
     mpi_addr = (struct na_mpi_addr*) malloc(sizeof(struct na_mpi_addr));
@@ -465,92 +675,60 @@ na_mpi_addr_lookup(const char *name, na_addr_t *addr)
     }
 
     mpi_addr->comm = MPI_COMM_NULL;
+    mpi_addr->onesided_comm = MPI_COMM_NULL;
     mpi_addr->is_unexpected = 0;
-    mpi_addr->rank = 0; /* TODO Only one rank for server but this may need to be improved */
     memset(mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
-    strcpy(mpi_addr->port_name, name);
+    /* get port_name and remote server rank */
+    na_mpi_extract_port_name_info(name, mpi_addr->port_name, &mpi_addr->rank);
 
-    /* Try to connect */
-    if (use_static_intercomm) {
-        mpi_ret = MPI_Intercomm_create(mpi_intra_comm, 0, MPI_COMM_WORLD, 0,
-                0, &mpi_addr->comm);
-    } else {
-        mpi_ret = MPI_Comm_connect(port_name, MPI_INFO_NULL, 0, mpi_intra_comm,
-                &mpi_addr->comm);
-    }
+    /* Try to connect, must prevent concurrent threads to create new communicators */
+    hg_thread_mutex_lock(&na_mpi_accept_mutex_g);
 
-    if (mpi_ret != MPI_SUCCESS) {
-        NA_ERROR_DEFAULT("Could not connect");
-        free(mpi_addr);
-        ret = NA_FAIL;
-        return ret;
-    } else {
-        int remote_size;
-        MPI_Comm_remote_size(mpi_addr->comm, &remote_size);
-        if (remote_size != 1) {
-            NA_ERROR_DEFAULT("Connected to more than one server?");
+    if (na_mpi_is_server_g) {
+        while (na_mpi_is_accepting_g) {
+            hg_thread_cond_wait(&na_mpi_accept_cond_g, &na_mpi_accept_mutex_g);
         }
-        if (addr) *addr = (na_addr_t) mpi_addr;
-        client_remote_addr = mpi_addr;
+        mpi_ret = MPI_Comm_dup(na_mpi_intra_comm_g, &mpi_addr->comm);
+    } else {
+        if (na_mpi_use_static_intercomm_g) {
+            mpi_ret = MPI_Intercomm_create(na_mpi_intra_comm_g, 0, MPI_COMM_WORLD,
+                    0, 0, &mpi_addr->comm);
+        } else {
+            mpi_ret = MPI_Comm_connect(mpi_addr->port_name, MPI_INFO_NULL, 0,
+                    na_mpi_intra_comm_g, &mpi_addr->comm);
+        }
+        if (mpi_ret != MPI_SUCCESS) {
+            NA_ERROR_DEFAULT("Could not connect");
+            ret = NA_FAIL;
+            goto done;
+        }
     }
 
-#if MPI_VERSION < 3
-#ifdef NA_HAS_CLIENT_THREAD
     /* To be thread-safe and create a new context, dup the remote comm to a new comm */
-    MPI_Comm_dup(mpi_addr->comm, &mpi_onesided_comm);
-    hg_thread_mutex_init(&finalizing_mutex);
-    /* TODO temporary to handle one-sided exchanges with remote server */
-    hg_thread_create(&progress_service, (hg_thread_func_t) &na_mpi_progress_service, NULL);
-#endif
-#else
-    MPI_Intercomm_merge(mpi_addr->comm, is_server, &mpi_onesided_comm);
-    /* Create dynamic window */
-    MPI_Win_create_dynamic(MPI_INFO_NULL, mpi_onesided_comm, &mpi_dynamic_win);
-#endif
-    return ret;
-}
+    MPI_Comm_dup(mpi_addr->comm, &mpi_addr->onesided_comm);
 
-/*---------------------------------------------------------------------------*/
-static int
-na_mpi_addr_self(na_addr_t *addr)
-{
-    int ret = NA_SUCCESS;
-    struct na_mpi_addr *mpi_addr = NULL;
+    hg_thread_mutex_unlock(&na_mpi_accept_mutex_g);
 
-    if (!addr) {
-        NA_ERROR_DEFAULT("NULL addr");
-        ret = NA_FAIL;
-        return ret;
-    }
+    /* Add addr to list of addresses */
+    hg_thread_mutex_lock(&na_mpi_remote_list_mutex_g);
+    hg_list_append(&na_mpi_remote_list_g, (hg_list_value_t) mpi_addr);
+    hg_thread_mutex_unlock(&na_mpi_remote_list_mutex_g);
 
-    if (!is_server) {
-        NA_ERROR_DEFAULT("Only server can call na_bmi_addr_self");
-        ret = NA_FAIL;
-        goto done;
-    }
-
-    /* Allocate the addr */
-    mpi_addr = (struct na_mpi_addr*) malloc(sizeof(struct na_mpi_addr));
-    if (!mpi_addr) {
-          NA_ERROR_DEFAULT("Could not allocate addr");
-          ret = NA_FAIL;
-          return ret;
-    }
-
-    /* Create a new copy */
-    MPI_Comm_dup(server_remote_addr.comm, &mpi_addr->comm);
-    mpi_addr->rank = server_remote_addr.rank;
-    mpi_addr->is_unexpected = 0;
-    memset(mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
-    strcpy(mpi_addr->port_name, server_remote_addr.port_name);
-
-    *addr = (na_addr_t) mpi_addr;
+    if (addr) *addr = (na_addr_t) mpi_addr;
 
 done:
     if (ret != NA_SUCCESS) {
         free(mpi_addr);
     }
+
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_mpi_addr_self(na_addr_t NA_UNUSED *addr)
+{
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -566,33 +744,11 @@ na_mpi_addr_free(na_addr_t addr)
         return ret;
     }
 
-    if (!mpi_addr->is_unexpected) {
-#if MPI_VERSION < 3
-#ifdef NA_HAS_CLIENT_THREAD
-        if (!is_server) {
-            hg_thread_mutex_lock(&finalizing_mutex);
-            finalizing = 1;
-            hg_thread_mutex_unlock(&finalizing_mutex);
-            /* Wait for one-sided thread to complete */
-            hg_thread_join(progress_service);
-        }
-        hg_thread_mutex_destroy(&finalizing_mutex);
-#endif
-#else
-        /* Destroy dynamic window */
-        MPI_Win_free(&mpi_dynamic_win);
-#endif
-        MPI_Comm_free(&mpi_onesided_comm);
+    /* Remove addr from list of addresses */
+    na_mpi_remote_list_remove(mpi_addr);
 
-        if (use_static_intercomm) {
-            MPI_Comm_free(&mpi_addr->comm);
-        } else {
-            MPI_Comm_disconnect(&mpi_addr->comm);
-        }
-        /* We're disconnected now */
-        client_remote_addr = NULL;
-    }
-    free(mpi_addr);
+    /* Free addr */
+    na_mpi_addr_free_(mpi_addr);
     mpi_addr = NULL;
 
     return ret;
@@ -656,19 +812,19 @@ na_mpi_msg_send_unexpected(const void *buf, na_size_t buf_size,
 
 /*---------------------------------------------------------------------------*/
 static int
-na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
-        na_addr_t *source, na_tag_t *tag, na_request_t *request, void NA_UNUSED *op_arg)
+na_mpi_msg_recv_unexpected_class(void *buf, na_size_t buf_size,
+        na_bool_t do_onesided_progress, na_size_t *actual_buf_size,
+        na_addr_t *source, na_tag_t *tag, na_request_t *request,
+        void NA_UNUSED *op_arg)
 {
     int mpi_ret, ret = NA_SUCCESS;
     MPI_Status mpi_status;
     int flag = 0;
-
-    int mpi_buf_size;
-    int mpi_source;
-    int mpi_tag;
-    MPI_Comm mpi_unexpected_comm;
+    int mpi_buf_size, mpi_source, mpi_tag;
+    MPI_Comm probe_comm;
     struct na_mpi_req *mpi_request = NULL;
-    struct na_mpi_addr *peer_addr = NULL;
+    struct na_mpi_addr *unexpected_addr = NULL;
+    struct na_mpi_addr *remote_addr_any = NULL;
 
     if (!buf) {
         NA_ERROR_DEFAULT("NULL buffer");
@@ -676,28 +832,37 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
         goto done;
     }
 
-    /* TODO do that for now until addresses are better handled */
-    if (is_server) {
-        mpi_unexpected_comm = server_remote_addr.comm;
-    } else {
-#if MPI_VERSION < 3
-        mpi_unexpected_comm = mpi_onesided_comm;
-#else
-        NA_ERROR_DEFAULT("Unexpected receive on client not allowed");
-        ret = NA_FAIL;
-        goto done;
-#endif
+    /* Process list of communicators */
+    hg_thread_mutex_lock(&na_mpi_remote_list_mutex_g);
+
+    if (hg_list_length(na_mpi_remote_list_g)) {
+        hg_list_entry_t *entry = na_mpi_remote_list_g;
+
+        while (entry) {
+            hg_list_entry_t *next_entry = hg_list_next(entry);
+
+            remote_addr_any = (struct na_mpi_addr*) hg_list_data(entry);
+
+            probe_comm = do_onesided_progress ? remote_addr_any->onesided_comm :
+                    remote_addr_any->comm;
+
+            mpi_ret = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, probe_comm,
+                    &flag, &mpi_status);
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_ERROR_DEFAULT("MPI_Iprobe() failed");
+                ret = NA_FAIL;
+                break;
+            }
+
+            if (flag) break;
+
+            entry = next_entry;
+        }
     }
 
-    mpi_ret = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, mpi_unexpected_comm,
-            &flag, &mpi_status);
-    if (mpi_ret != MPI_SUCCESS) {
-        NA_ERROR_DEFAULT("MPI_Iprobe() failed");
-        ret = NA_FAIL;
-        goto done;
-    }
+    hg_thread_mutex_unlock(&na_mpi_remote_list_mutex_g);
 
-    if (!flag) goto done;
+    if (!remote_addr_any || !flag) goto done;
 
     MPI_Get_count(&mpi_status, MPI_BYTE, &mpi_buf_size);
     if (mpi_buf_size > (int) buf_size) {
@@ -717,12 +882,10 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     }
 
     mpi_request->type = MPI_RECV_OP;
-#if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
-#endif
 
     mpi_ret = MPI_Irecv(buf, mpi_buf_size, MPI_BYTE, mpi_source,
-            mpi_tag, mpi_unexpected_comm, &mpi_request->request);
+            mpi_tag, probe_comm, &mpi_request->request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");
         ret = NA_FAIL;
@@ -732,21 +895,23 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     /* Fill info */
     if (actual_buf_size) *actual_buf_size = (na_size_t) mpi_buf_size;
     if (source) {
-        struct na_mpi_addr **peer_addr_ptr = (struct na_mpi_addr**) source;
-        peer_addr = (struct na_mpi_addr*) malloc(sizeof(struct na_mpi_addr));
-        if (!peer_addr) {
+        unexpected_addr = (struct na_mpi_addr*) malloc(sizeof(struct na_mpi_addr));
+        if (!unexpected_addr) {
             NA_ERROR_DEFAULT("Could not allocate peer addr");
             ret = NA_FAIL;
             goto done;
         }
-        peer_addr->comm = mpi_unexpected_comm;
-        peer_addr->rank = mpi_source;
-        peer_addr->is_unexpected = 1;
-        memset(peer_addr->port_name, '\0', MPI_MAX_PORT_NAME);
+
+        unexpected_addr->comm = remote_addr_any->comm;
+        unexpected_addr->onesided_comm = remote_addr_any->onesided_comm;
+        unexpected_addr->rank = mpi_source;
+        unexpected_addr->is_unexpected = 1;
+        memset(unexpected_addr->port_name, '\0', MPI_MAX_PORT_NAME);
         /* Can only write debug info here */
-        sprintf(peer_addr->port_name, "comm: %d rank:%d\n",
-                (int) peer_addr->comm, peer_addr->rank);
-        *peer_addr_ptr = peer_addr;
+        sprintf(unexpected_addr->port_name, "comm: %d rank:%d\n",
+                (int) unexpected_addr->comm, unexpected_addr->rank);
+
+        *((struct na_mpi_addr**) source) = unexpected_addr;
     }
     if (tag) *tag = mpi_tag;
     *request = (na_request_t) mpi_request;
@@ -754,9 +919,17 @@ na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
 done:
     if (ret != NA_SUCCESS) {
         free(mpi_request);
-        free(peer_addr);
+        free(unexpected_addr);
     }
     return ret;
+}
+
+static int
+na_mpi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
+        na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
+{
+    return na_mpi_msg_recv_unexpected_class(buf, buf_size, 0, actual_buf_size,
+            source, tag, request, op_arg);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -778,9 +951,7 @@ na_mpi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
         return ret;
     }
     mpi_request->type = MPI_SEND_OP;
-#if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
-#endif
 
     mpi_ret = MPI_Isend(mpi_buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank,
             mpi_tag, mpi_addr->comm, &mpi_request->request);
@@ -814,9 +985,7 @@ na_mpi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
         return ret;
     }
     mpi_request->type = MPI_RECV_OP;
-#if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
-#endif
 
     mpi_ret = MPI_Irecv(mpi_buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank,
             mpi_tag, mpi_addr->comm, &mpi_request->request);
@@ -841,7 +1010,8 @@ na_mpi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags
     struct na_mpi_mem_handle *mpi_mem_handle;
     /* MPI_Aint mpi_buf_size = (MPI_Aint) buf_size; */
 
-    mpi_mem_handle = (struct na_mpi_mem_handle*) malloc(sizeof(struct na_mpi_mem_handle));
+    mpi_mem_handle = (struct na_mpi_mem_handle*)
+            malloc(sizeof(struct na_mpi_mem_handle));
     if (!mpi_mem_handle) {
         NA_ERROR_DEFAULT("Could not allocate memory handle");
         ret = NA_FAIL;
@@ -853,23 +1023,15 @@ na_mpi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags
 
     *mem_handle = (na_mem_handle_t) mpi_mem_handle;
 
-#if MPI_VERSION < 3
-    hg_thread_mutex_lock(&mem_map_mutex);
+    hg_thread_mutex_lock(&na_mpi_mem_map_mutex_g);
     /* store this handle */
-    if (!hg_hash_table_insert(mem_handle_map, mpi_mem_handle->base, mpi_mem_handle)) {
+    if (!hg_hash_table_insert(na_mpi_mem_handle_map_g,
+            mpi_mem_handle->base, mpi_mem_handle)) {
         NA_ERROR_DEFAULT("Could not register memory handle");
         ret = NA_FAIL;
     }
-    hg_thread_mutex_unlock(&mem_map_mutex);
-#else
-    int mpi_ret;
+    hg_thread_mutex_unlock(&na_mpi_mem_map_mutex_g);
 
-    mpi_ret = MPI_Win_attach(mpi_dynamic_win, mpi_mem_handle->base, mpi_mem_handle->size);
-    if (mpi_ret != MPI_SUCCESS) {
-        NA_ERROR_DEFAULT("MPI_Win_attach() failed");
-        ret = NA_FAIL;
-    }
-#endif
     return ret;
 }
 
@@ -880,23 +1042,14 @@ na_mpi_mem_deregister(na_mem_handle_t mem_handle)
     int ret = NA_SUCCESS;
     struct na_mpi_mem_handle *mpi_mem_handle = (struct na_mpi_mem_handle*) mem_handle;
 
-#if MPI_VERSION < 3
-    hg_thread_mutex_lock(&mem_map_mutex);
+    hg_thread_mutex_lock(&na_mpi_mem_map_mutex_g);
     /* remove the handle */
-    if (!hg_hash_table_remove(mem_handle_map, mpi_mem_handle->base)) {
+    if (!hg_hash_table_remove(na_mpi_mem_handle_map_g, mpi_mem_handle->base)) {
         NA_ERROR_DEFAULT("Could not deregister memory handle");
         ret = NA_FAIL;
     }
-    hg_thread_mutex_unlock(&mem_map_mutex);
-#else
-    int mpi_ret;
+    hg_thread_mutex_unlock(&na_mpi_mem_map_mutex_g);
 
-    mpi_ret = MPI_Win_detach(mpi_dynamic_win, mpi_mem_handle->base);
-    if (mpi_ret != MPI_SUCCESS) {
-        NA_ERROR_DEFAULT("MPI_Win_detach() failed");
-        ret = NA_FAIL;
-    }
-#endif
     if (mpi_mem_handle) {
         free(mpi_mem_handle);
         mpi_mem_handle = NULL;
@@ -992,16 +1145,14 @@ na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     struct na_mpi_addr *mpi_remote_addr = (struct na_mpi_addr*) remote_addr;
     struct na_mpi_req *mpi_request = NULL;
 
-#if MPI_VERSION < 3
     struct na_mpi_onesided_info onesided_info;
 
     /* Check that local memory is registered */
-    if (!hg_hash_table_lookup(mem_handle_map, mpi_local_mem_handle->base)) {
+    if (!hg_hash_table_lookup(na_mpi_mem_handle_map_g, mpi_local_mem_handle->base)) {
         NA_ERROR_DEFAULT("Could not find memory handle, registered?");
         ret = NA_FAIL;
         return ret;
     }
-#endif
 
     if (mpi_remote_mem_handle->attr != NA_MEM_READWRITE) {
         NA_ERROR_DEFAULT("Registered memory requires write permission");
@@ -1017,8 +1168,6 @@ na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     }
     mpi_request->type = MPI_SEND_OP;
     mpi_request->request = MPI_REQUEST_NULL;
-
-#if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
 
     /* Send to one-sided thread key to access mem_handle */
@@ -1028,37 +1177,22 @@ na_mpi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     onesided_info.op = MPI_ONESIDED_PUT;
     onesided_info.tag = na_mpi_gen_onesided_tag();
 
-    MPI_Isend(&onesided_info, sizeof(struct na_mpi_onesided_info), MPI_BYTE, mpi_remote_addr->rank,
-            NA_MPI_ONESIDED_TAG, mpi_onesided_comm, &mpi_request->request);
+    MPI_Isend(&onesided_info, sizeof(struct na_mpi_onesided_info), MPI_BYTE,
+            mpi_remote_addr->rank, NA_MPI_ONESIDED_TAG,
+            mpi_remote_addr->onesided_comm, &mpi_request->request);
 
     /* Simply do a non blocking synchronous send */
-    mpi_ret = MPI_Issend((char*) mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, onesided_info.tag, mpi_onesided_comm, &mpi_request->data_request);
+    mpi_ret = MPI_Issend((char*) mpi_local_mem_handle->base + mpi_local_offset,
+            mpi_length, MPI_BYTE, mpi_remote_addr->rank, onesided_info.tag,
+            mpi_remote_addr->onesided_comm, &mpi_request->data_request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Isend() failed");
         free(mpi_request);
         mpi_request = NULL;
         ret = NA_FAIL;
-    }
-
-#else
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, mpi_remote_addr->rank, 0, mpi_dynamic_win);
-
-    mpi_ret = MPI_Rput((char*) mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, mpi_remote_offset, mpi_length, MPI_BYTE, mpi_dynamic_win, &mpi_request->request);
-    if (mpi_ret != MPI_SUCCESS) {
-        NA_ERROR_DEFAULT("MPI_Rput() failed");
-        free(mpi_request);
-        mpi_request = NULL;
-        ret = NA_FAIL;
-    }
-#endif
-    else {
+    } else {
         *request = (na_request_t) mpi_request;
     }
-#if MPI_VERSION >= 3
-    MPI_Win_unlock(mpi_remote_addr->rank, mpi_dynamic_win);
-#endif
 
     return ret;
 }
@@ -1078,16 +1212,14 @@ na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     struct na_mpi_addr *mpi_remote_addr = (struct na_mpi_addr*) remote_addr;
     struct na_mpi_req *mpi_request = NULL;
 
-#if MPI_VERSION < 3
     struct na_mpi_onesided_info onesided_info;
 
     /* Check that local memory is registered */
-    if (!hg_hash_table_lookup(mem_handle_map, mpi_local_mem_handle->base)) {
+    if (!hg_hash_table_lookup(na_mpi_mem_handle_map_g, mpi_local_mem_handle->base)) {
         NA_ERROR_DEFAULT("Could not find memory handle, registered?");
         ret = NA_FAIL;
         return ret;
     }
-#endif
 
     mpi_request = (struct na_mpi_req*) malloc(sizeof(struct na_mpi_req));
     if (!mpi_request) {
@@ -1097,8 +1229,6 @@ na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     }
     mpi_request->type = MPI_RECV_OP;
     mpi_request->request = MPI_REQUEST_NULL;
-
-#if MPI_VERSION < 3
     mpi_request->data_request = MPI_REQUEST_NULL;
 
     /* Send to one-sided thread key to access mem_handle */
@@ -1108,36 +1238,22 @@ na_mpi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     onesided_info.op = MPI_ONESIDED_GET;
     onesided_info.tag = na_mpi_gen_onesided_tag();
 
-    MPI_Isend(&onesided_info, sizeof(struct na_mpi_onesided_info), MPI_BYTE, mpi_remote_addr->rank,
-            NA_MPI_ONESIDED_TAG, mpi_onesided_comm, &mpi_request->request);
+    MPI_Isend(&onesided_info, sizeof(struct na_mpi_onesided_info), MPI_BYTE,
+            mpi_remote_addr->rank, NA_MPI_ONESIDED_TAG,
+            mpi_remote_addr->onesided_comm, &mpi_request->request);
 
     /* Simply do an asynchronous recv */
-    mpi_ret = MPI_Irecv((char*) mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, onesided_info.tag, mpi_onesided_comm, &mpi_request->data_request);
+    mpi_ret = MPI_Irecv((char*) mpi_local_mem_handle->base + mpi_local_offset,
+            mpi_length, MPI_BYTE, mpi_remote_addr->rank, onesided_info.tag,
+            mpi_remote_addr->onesided_comm, &mpi_request->data_request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_ERROR_DEFAULT("MPI_Irecv() failed");
         free(mpi_request);
         mpi_request = NULL;
         ret = NA_FAIL;
-    }
-#else
-    MPI_Win_lock(MPI_LOCK_SHARED, mpi_remote_addr->rank, 0, mpi_dynamic_win);
-
-    mpi_ret = MPI_Rget((char*) mpi_local_mem_handle->base + mpi_local_offset, mpi_length, MPI_BYTE,
-            mpi_remote_addr->rank, mpi_remote_offset, mpi_length, MPI_BYTE, mpi_dynamic_win, &mpi_request->request);
-    if (mpi_ret != MPI_SUCCESS) {
-        NA_ERROR_DEFAULT("MPI_Rget() failed");
-        free(mpi_request);
-        mpi_request = NULL;
-        ret = NA_FAIL;
-    }
-#endif
-    else {
+    } else {
         *request = (na_request_t) mpi_request;
     }
-#if MPI_VERSION >= 3
-    MPI_Win_unlock(mpi_remote_addr->rank, mpi_dynamic_win);
-#endif
 
     return ret;
 }
@@ -1164,17 +1280,17 @@ na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 
         hg_time_get_current(&t1);
 
-        hg_thread_mutex_lock(&mpi_test_mutex);
-        while (is_mpi_testing) {
+        hg_thread_mutex_lock(&na_mpi_test_mutex_g);
+        while (na_mpi_is_testing_g) {
             /*
             hg_thread_cond_ret = hg_thread_cond_timedwait(&testcontext_cond,
                     &testcontext_mutex, remaining);
              */
-            hg_thread_cond_ret = hg_thread_cond_wait(&mpi_test_cond,
-                    &mpi_test_mutex);
+            hg_thread_cond_ret = hg_thread_cond_wait(&na_mpi_test_cond_g,
+                    &na_mpi_test_mutex_g);
         }
-        is_mpi_testing = 1;
-        hg_thread_mutex_unlock(&mpi_test_mutex);
+        na_mpi_is_testing_g = 1;
+        hg_thread_mutex_unlock(&na_mpi_test_mutex_g);
 
         if (hg_thread_cond_ret < 0) {
             NA_ERROR_DEFAULT("hg_thread_cond_timedwait failed");
@@ -1182,7 +1298,7 @@ na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
             break;
         }
 
-        hg_thread_mutex_lock(&mpi_test_mutex);
+        hg_thread_mutex_lock(&na_mpi_test_mutex_g);
         /* Test main request */
         if (mpi_request->request != MPI_REQUEST_NULL) {
             mpi_ret = MPI_Test(&mpi_request->request, &mpi_flag, &mpi_status);
@@ -1194,7 +1310,6 @@ na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
             if (mpi_flag) mpi_request->request = MPI_REQUEST_NULL;
         }
 
-#if MPI_VERSION < 3
         /* Test data request if exists */
         if (mpi_request->data_request != MPI_REQUEST_NULL) {
             mpi_ret = MPI_Test(&mpi_request->data_request, &mpi_flag, &mpi_status);
@@ -1205,26 +1320,21 @@ na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
             }
             if (mpi_flag) mpi_request->data_request = MPI_REQUEST_NULL;
         }
-#endif
 
-        is_mpi_testing = 0;
-        hg_thread_cond_signal(&mpi_test_cond);
-        hg_thread_mutex_unlock(&mpi_test_mutex);
+        na_mpi_is_testing_g = 0;
+        hg_thread_cond_signal(&na_mpi_test_cond_g);
+        hg_thread_mutex_unlock(&na_mpi_test_mutex_g);
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
 
     } while (( (mpi_request->request != MPI_REQUEST_NULL) ||
-#if MPI_VERSION < 3
                (mpi_request->data_request != MPI_REQUEST_NULL)
-#endif
              ) && remaining > 0);
 
     /* If the request has not completed return */
     if ( (mpi_request->request != MPI_REQUEST_NULL) ||
-#if MPI_VERSION < 3
          (mpi_request->data_request != MPI_REQUEST_NULL)
-#endif
          ) {
         if (status && status != NA_STATUS_IGNORE) {
             status->completed = 0;
@@ -1252,7 +1362,6 @@ na_mpi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
 }
 
 /*---------------------------------------------------------------------------*/
-#if MPI_VERSION < 3
 static int
 na_mpi_progress(unsigned int timeout, na_status_t *status)
 {
@@ -1260,8 +1369,7 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
     int ret = NA_SUCCESS;
     int mpi_ret;
 
-    /* TODO may want to have it dynamically allocated if multiple threads call
-     * progress on the client but should that happen? */
+    /* TODO progress will be better handled with callbacks */
     static struct na_mpi_onesided_info onesided_info;
     static na_size_t onesided_actual_size = 0;
     static na_addr_t remote_addr = NA_ADDR_NULL;
@@ -1282,9 +1390,9 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
 
             hg_time_get_current(&t1);
 
-            ret = na_mpi_msg_recv_unexpected(&onesided_info, sizeof(struct na_mpi_onesided_info),
-                    &onesided_actual_size, &remote_addr,
-                    &remote_tag, &onesided_request, NULL);
+            ret = na_mpi_msg_recv_unexpected_class(&onesided_info,
+                    sizeof(struct na_mpi_onesided_info), 1, &onesided_actual_size,
+                    &remote_addr, &remote_tag, &onesided_request, NULL);
             if (ret != NA_SUCCESS) {
                 NA_ERROR_DEFAULT("Could not recv buffer");
                 ret = NA_FAIL;
@@ -1341,13 +1449,14 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
 
     /* Here better to keep the mutex locked the time we operate on
      * mpi_mem_handle since it's a pointer to a mem_handle */
-    hg_thread_mutex_lock(&mem_map_mutex);
+    hg_thread_mutex_lock(&na_mpi_mem_map_mutex_g);
 
-    mpi_mem_handle = (struct na_mpi_mem_handle*) hg_hash_table_lookup(mem_handle_map, onesided_info.base);
+    mpi_mem_handle = (struct na_mpi_mem_handle*)
+            hg_hash_table_lookup(na_mpi_mem_handle_map_g, onesided_info.base);
 
     if (!mpi_mem_handle) {
         NA_ERROR_DEFAULT("Could not find memory handle, registered?");
-        hg_thread_mutex_unlock(&mem_map_mutex);
+        hg_thread_mutex_unlock(&na_mpi_mem_map_mutex_g);
         ret = NA_FAIL;
         return ret;
     }
@@ -1355,12 +1464,11 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
     mpi_addr = (struct na_mpi_addr*) remote_addr;
 
     switch (onesided_info.op) {
-
         /* Remote wants to do a put so wait in a recv */
         case MPI_ONESIDED_PUT:
             mpi_ret = MPI_Recv((char*) mpi_mem_handle->base + onesided_info.disp,
                     onesided_info.count, MPI_BYTE, mpi_addr->rank,
-                    onesided_info.tag, mpi_onesided_comm, MPI_STATUS_IGNORE);
+                    onesided_info.tag, mpi_addr->onesided_comm, MPI_STATUS_IGNORE);
             if (mpi_ret != MPI_SUCCESS) {
                 NA_ERROR_DEFAULT("Could not recv data");
                 ret = NA_FAIL;
@@ -1371,7 +1479,7 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
         case MPI_ONESIDED_GET:
             mpi_ret = MPI_Send((char*) mpi_mem_handle->base + onesided_info.disp,
                     onesided_info.count, MPI_BYTE, mpi_addr->rank,
-                    onesided_info.tag, mpi_onesided_comm);
+                    onesided_info.tag, mpi_addr->onesided_comm);
             if (mpi_ret != MPI_SUCCESS) {
                 NA_ERROR_DEFAULT("Could not send data");
                 ret = NA_FAIL;
@@ -1383,7 +1491,7 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
             break;
     }
 
-    hg_thread_mutex_unlock(&mem_map_mutex);
+    hg_thread_mutex_unlock(&na_mpi_mem_map_mutex_g);
 
     if (status && status != NA_STATUS_IGNORE) {
         status->completed = 1;
@@ -1394,14 +1502,6 @@ na_mpi_progress(unsigned int timeout, na_status_t *status)
 
     return ret;
 }
-#else
-static int
-na_mpi_progress(unsigned int timeout, na_status_t *status)
-{
-    NA_ERROR_DEFAULT("Not implemented");
-    return NA_FAIL;
-}
-#endif
 
 /*---------------------------------------------------------------------------*/
 static int
@@ -1411,24 +1511,25 @@ na_mpi_request_free(na_request_t request)
     int ret = NA_SUCCESS;
 
     /* Do not want to free the request if another thread is testing it */
-    hg_thread_mutex_lock(&mpi_test_mutex);
+    hg_thread_mutex_lock(&na_mpi_test_mutex_g);
 
     if (!mpi_request) {
         NA_ERROR_DEFAULT("NULL request");
         ret = NA_FAIL;
-    } else {
-        if (mpi_request->request != MPI_REQUEST_NULL) {
-            MPI_Request_free(&mpi_request->request);
-        }
-        if (mpi_request->data_request != MPI_REQUEST_NULL) {
-            MPI_Request_free(&mpi_request->data_request);
-        }
-        free(mpi_request);
-        mpi_request = NULL;
-        /* TODO may need to do extra things here */
+        goto done;
     }
 
-    hg_thread_mutex_unlock(&mpi_test_mutex);
+    if (mpi_request->request != MPI_REQUEST_NULL) {
+        MPI_Request_free(&mpi_request->request);
+    }
+    if (mpi_request->data_request != MPI_REQUEST_NULL) {
+        MPI_Request_free(&mpi_request->data_request);
+    }
+    free(mpi_request);
+    mpi_request = NULL;
+
+done:
+    hg_thread_mutex_unlock(&na_mpi_test_mutex_g);
 
     return ret;
 }
