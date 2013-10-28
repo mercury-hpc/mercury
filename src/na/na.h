@@ -53,12 +53,13 @@ typedef struct      na_segment {     /* Segment */
 #define NA_MEM_READWRITE  0x00
 #define NA_MEM_READ_ONLY  0x01
 
-/* Error return codes */
-typedef enum _NA_Status {
-    NA_SUCCESS       = 0,
-    NA_FAIL          = 1,
-    NA_MEMORY_ERROR  = 2,
-} NA_Status;
+/* Error return codes:
+ * Functions return 0 for success or -NA_XXX_ERROR for failure */
+typedef enum na_return {
+    NA_FAIL = -1,      /* default (TODO keep until switch to new error format) */
+    NA_SUCCESS = 0,
+    NA_MEMORY_ERROR    /* TODO description */
+} na_return_t;
 
 #define NA_TRUE     1
 #define NA_FALSE    0
@@ -115,7 +116,8 @@ NA_EXPORT int
 NA_Addr_free(na_class_t *network_class, na_addr_t addr);
 
 /**
- * Convert an addr to a string.
+ * Convert an addr to a string (returned string includes the terminating
+ * null byte '\0').
  *
  * \param network_class [IN]    pointer to network class
  * \param buf [IN/OUT]          pointer to destination buffer
@@ -439,6 +441,17 @@ NA_Progress(na_class_t *network_class,
  */
 NA_EXPORT int
 NA_Request_free(na_class_t *network_class, na_request_t request);
+
+/**
+ * Convert error return code to string (null terminated).
+ *
+ * \param errnum [IN]           error return code
+ *
+ * \return String
+ */
+NA_EXPORT const char *
+NA_Error_to_string(na_return_t errnum);
+
 
 #ifdef __cplusplus
 }

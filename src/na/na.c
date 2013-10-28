@@ -47,6 +47,10 @@ static const struct na_class_describe *na_class_methods[] = {
     NULL
 };
 
+/* Convert value to string */
+#define NA_ERROR_STRING_MACRO(def, value, string) \
+  if (value == def) string = #def
+
 /*---------------------------------------------------------------------------*/
 static void
 NA_free_host_buffer(struct na_host_buffer *na_buffer)
@@ -451,4 +455,17 @@ NA_Request_free(na_class_t *network_class, na_request_t request)
 {
     assert(network_class);
     return network_class->request_free(request);
+}
+
+/*---------------------------------------------------------------------------*/
+const char *
+NA_Error_to_string(na_return_t errnum)
+{
+    const char *na_error_string = "UNDEFINED/UNRECOGNIZED NA ERROR";
+
+    NA_ERROR_STRING_MACRO(NA_FAIL, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_SUCCESS, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_MEMORY_ERROR, errnum, na_error_string);
+
+    return na_error_string;
 }
