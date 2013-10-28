@@ -13,7 +13,7 @@
 
 #include "mercury_util_config.h"
 
-#define HG_UTIL_SUCCESS  1
+#define HG_UTIL_SUCCESS  0
 #define HG_UTIL_FAIL    -1
 #define HG_UTIL_TRUE     1
 #define HG_UTIL_FALSE    0
