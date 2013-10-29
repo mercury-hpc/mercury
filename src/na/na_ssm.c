@@ -1089,52 +1089,91 @@ static int na_ssm_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
  *
  *---------------------------------------------------------------------------
  */
-static int na_ssm_msg_recv(void *buf, na_size_t buf_size, na_addr_t NA_UNUSED(source),
-        na_tag_t tag, na_request_t *request, void *op_arg)
+static int na_ssm_msg_recv(void         *in_buf,
+                           na_size_t     in_buf_size,
+                           na_addr_t     NA_UNUSED(in_source),
+                           na_tag_t      in_tag,
+                           na_request_t *out_request,
+                           void         *in_op_arg)
 {
-    printf("na_ssm_msg_recv()\n");
-#if DEBUG
-
-    printf("\tbuf = %p, buf_size = %d, tag = %d, request = %p, op_arg = %p\n", buf, buf_size, tag, request, op_arg);
-#endif
-    int ssm_ret, ret = NA_SUCCESS;
-    ssm_size_t ssm_buf_size = (ssm_size_t) buf_size;
-    ssm_msg_tag_t ssm_tag = (ssm_msg_tag_t) tag;
-    na_ssm_opid_t *ssm_request = NULL;
-    ssm_request = (na_ssm_opid_t *)malloc(sizeof(na_ssm_opid_t));
-    memset(ssm_request, 0, sizeof(na_ssm_opid_t));
-#if DEBUG
-    printf("\tassigned request = %p\n", ssm_request);
-#endif
+    int             v_ssm_return     = 0;
+    int             v_return         = NA_SUCCESS;
+    ssm_size_t      v_ssm_buf_size   = (ssm_size_t) in_buf_size;
+    ssm_msg_tag_t   v_ssm_tag        = (ssm_msg_tag_t) in_tag;
+    na_ssm_opid_t  *v_ssm_request    = NULL;
     
-    ssm_request->m_requesttype = SSM_RECV_OP;
-    ssm_request->m_matchbits = ssm_tag + NA_SSM_TAG_EXPECTED_OFFSET;
-    ssm_request->m_usercontext = op_arg;
+    v_ssm_request = (na_ssm_opid_t *) malloc(sizeof(na_ssm_opid_t));
 
-    /* Allocate request */
-    /* Register Memory */
-    ssm_request->m_memregion = ssm_mr_create(NULL, (void *)buf, ssm_buf_size);
-    /* Prepare callback function */
-    ssm_request->m_callback.pcb = msg_recv_cb;
-    ssm_request->m_callback.cbdata = ssm_request;
-    /* Post the SSM recv request */
-    /* TODO segfault */
-    ssm_request->m_matchentry = ssm_link(ssm, ssm_request->m_matchbits, 0x0 /* mask */, SSM_POS_HEAD, NULL, &(ssm_request->m_callback), SSM_NOF);
-    ssm_ret = ssm_post(ssm, ssm_request->m_matchentry, ssm_request->m_memregion, SSM_NOF);
-
-    if (ssm_ret < 0) {
-        NA_ERROR_DEFAULT("ssm_post() failed");
-        free(ssm_request);
-        ret = NA_FAIL;
-        return ret;
+    if (v_ssm_request == NULL)
+    {
+        v_return = NA_MEMORY_ERROR;
+        goto done;
     }
     
-    *request = (na_request_t) ssm_request;
+    memset(v_ssm_request, 0, sizeof(na_ssm_opid_t));
+    
+    v_ssm_request->m_requesttype = SSM_RECV_OP;
+    v_ssm_request->m_matchbits   = v_ssm_tag + NA_SSM_TAG_EXPECTED_OFFSET;
+    v_ssm_request->m_usercontext = in_op_arg;
+
+    /* Register Memory */
+    v_ssm_request->m_memregion = ssm_mr_create(NULL,
+                                               (void *) in_buf,
+                                               v_ssm_buf_size);
+
+    if (v_ssm_request->m_memregion == NULL)
+    {
+        NA_ERROR_DEFAULT("ssm_mr_create failed.\n");
+        v_return = NA_FAIL;
+        goto done;
+    }
+    
+    /* Prepare callback function */
+    v_ssm_request->m_callback.pcb    = msg_recv_cb;
+    v_ssm_request->m_callback.cbdata = v_ssm_request;
+
+    /* Post the SSM recv request */
+    v_ssm_request->m_matchentry = ssm_link(ssm,
+                                           v_ssm_request->m_matchbits,
+                                           0x0 /* mask */,
+                                           SSM_POS_HEAD,
+                                           NULL,
+                                           &(v_ssm_request->m_callback),
+                                           SSM_NOF);
+
+    if (v_ssm_request->m_matchentry == NULL)
+    {
+        v_return = NA_FAIL;
+        goto done;
+    }
+    
+    v_ssm_return = ssm_post(ssm,
+                            v_ssm_request->m_matchentry,
+                            v_ssm_request->m_memregion,
+                            SSM_NOF);
+    
+    if (v_ssm_return < 0)
+    {
+        NA_ERROR_DEFAULT("ssm_post() failed");
+        v_return = NA_FAIL;
+        goto done;
+    }
+    
+    (*out_request) = (na_request_t) v_ssm_request;
 
     /* Mark request as done if immediate BMI completion detected */
     /* maybe it doesn't happen with ssm */
 
-    return ret;
+ done:
+    if (v_return != NA_SUCCESS)
+    {
+        if (v_ssm_request != NULL)
+        {
+            free(v_ssm_request);
+        }
+    }
+    
+    return v_return;
 }
 
 /*---------------------------------------------------------------------------
