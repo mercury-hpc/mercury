@@ -175,6 +175,8 @@ na_mpi_remote_list_equal(void *location1, void *location2)
 
 /* Onesided progress service */
 static hg_thread_t        na_mpi_progress_thread_g;
+static na_bool_t          na_mpi_is_doing_progress_g = 0;
+static hg_thread_mutex_t  na_mpi_progress_mutex_g;
 
 /* Map mem addresses to mem handles */
 static hg_thread_mutex_t  na_mpi_mem_map_mutex_g;
@@ -550,6 +552,9 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     hg_thread_mutex_init(&na_mpi_accept_mutex_g);
     hg_thread_mutex_init(&na_mpi_remote_list_mutex_g);
 
+    /* Progress service */
+    hg_thread_mutex_init(&na_mpi_progress_mutex_g);
+
     /* Map mem addresses to mem handles */
     hg_thread_mutex_init(&na_mpi_mem_map_mutex_g);
     na_mpi_mem_handle_map_g = hg_hash_table_new(pointer_hash, pointer_equal);
@@ -566,11 +571,6 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
             hg_thread_create(&na_mpi_accept_thread_g, na_mpi_accept_service, NULL);
         }
     }
-
-    /* Start a progress thread for onesided communication emulation
-     * TODO this will be removed from the plugin and left to the user*/
-    hg_thread_create(&na_mpi_progress_thread_g,
-            (hg_thread_func_t) &na_mpi_progress_service, NULL);
 
     ret = &na_mpi_g;
 
@@ -609,7 +609,12 @@ na_mpi_finalize(void)
     }
 
     /* Wait for one-sided thread to complete */
-    hg_thread_join(na_mpi_progress_thread_g);
+    hg_thread_mutex_lock(&na_mpi_progress_mutex_g);
+    if (na_mpi_is_doing_progress_g) {
+        hg_thread_join(na_mpi_progress_thread_g);
+    }
+    na_mpi_is_doing_progress_g = 0;
+    hg_thread_mutex_unlock(&na_mpi_progress_mutex_g);
 
     /* Process list of communicators */
     na_mpi_remote_comm_free();
@@ -634,6 +639,9 @@ na_mpi_finalize(void)
     hg_thread_cond_destroy(&na_mpi_accept_cond_g);
     hg_thread_mutex_destroy(&na_mpi_accept_mutex_g);
     hg_thread_mutex_destroy(&na_mpi_remote_list_mutex_g);
+
+    /* Progress service */
+    hg_thread_mutex_destroy(&na_mpi_progress_mutex_g);
 
     /* Map mem addresses to mem handles */
     hg_hash_table_free(na_mpi_mem_handle_map_g);
@@ -760,7 +768,7 @@ na_mpi_addr_to_string(char *buf, na_size_t buf_size, na_addr_t addr)
         return ret;
     }
 
-    strcpy(buf, mpi_addr->port_name);
+    sprintf(buf, "%s:rank#%d$", mpi_addr->port_name, mpi_addr->rank);
 
     return ret;
 }
@@ -815,7 +823,7 @@ na_mpi_msg_recv_unexpected_class(void *buf, na_size_t buf_size,
     MPI_Comm probe_comm;
     struct na_mpi_req *mpi_request = NULL;
     struct na_mpi_addr *unexpected_addr = NULL;
-    struct na_mpi_addr *remote_addr_any = NULL;
+    struct na_mpi_addr *probe_remote_addr = NULL;
 
     if (!buf) {
         NA_ERROR_DEFAULT("NULL buffer");
@@ -831,14 +839,22 @@ na_mpi_msg_recv_unexpected_class(void *buf, na_size_t buf_size,
 
         while (entry) {
             hg_list_entry_t *next_entry = hg_list_next(entry);
+            int probe_tag = MPI_ANY_TAG;
+            int probe_rank = MPI_ANY_SOURCE;
 
-            remote_addr_any = (struct na_mpi_addr*) hg_list_data(entry);
+            probe_remote_addr = (struct na_mpi_addr*) hg_list_data(entry);
 
-            probe_comm = do_onesided_progress ? remote_addr_any->onesided_comm :
-                    remote_addr_any->comm;
+            /* TODO Iprobe should not depend on onesided_progress */
+            if (do_onesided_progress) {
+                probe_comm = probe_remote_addr->onesided_comm;
+                probe_tag = NA_MPI_ONESIDED_TAG;
+                probe_rank = probe_remote_addr->rank;
+            } else {
+                probe_comm = probe_remote_addr->comm;
+            }
 
-            mpi_ret = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, probe_comm,
-                    &flag, &mpi_status);
+            mpi_ret = MPI_Iprobe(probe_rank, probe_tag, probe_comm, &flag,
+                    &mpi_status);
             if (mpi_ret != MPI_SUCCESS) {
                 NA_ERROR_DEFAULT("MPI_Iprobe() failed");
                 ret = NA_FAIL;
@@ -853,7 +869,7 @@ na_mpi_msg_recv_unexpected_class(void *buf, na_size_t buf_size,
 
     hg_thread_mutex_unlock(&na_mpi_remote_list_mutex_g);
 
-    if (!remote_addr_any || !flag) goto done;
+    if (!probe_remote_addr || !flag) goto done;
 
     MPI_Get_count(&mpi_status, MPI_BYTE, &mpi_buf_size);
     if (mpi_buf_size > (int) buf_size) {
@@ -893,8 +909,8 @@ na_mpi_msg_recv_unexpected_class(void *buf, na_size_t buf_size,
             goto done;
         }
 
-        unexpected_addr->comm = remote_addr_any->comm;
-        unexpected_addr->onesided_comm = remote_addr_any->onesided_comm;
+        unexpected_addr->comm = probe_remote_addr->comm;
+        unexpected_addr->onesided_comm = probe_remote_addr->onesided_comm;
         unexpected_addr->rank = mpi_source;
         unexpected_addr->is_unexpected = 1;
         memset(unexpected_addr->port_name, '\0', MPI_MAX_PORT_NAME);
@@ -1022,6 +1038,16 @@ na_mpi_mem_register(void *buf, na_size_t NA_UNUSED buf_size, unsigned long flags
         ret = NA_FAIL;
     }
     hg_thread_mutex_unlock(&na_mpi_mem_map_mutex_g);
+
+    /* Start a progress thread for onesided communication emulation
+     * TODO this will be removed from the plugin and left to the user*/
+    hg_thread_mutex_lock(&na_mpi_progress_mutex_g);
+    if (!na_mpi_is_doing_progress_g) {
+        hg_thread_create(&na_mpi_progress_thread_g,
+                (hg_thread_func_t) &na_mpi_progress_service, NULL);
+        na_mpi_is_doing_progress_g = 1;
+    }
+    hg_thread_mutex_unlock(&na_mpi_progress_mutex_g);
 
     return ret;
 }
