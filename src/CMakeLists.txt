@@ -1,4 +1,13 @@
 #------------------------------------------------------------------------------
+# Include source and build directories
+#------------------------------------------------------------------------------
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_BINARY_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra
+)
+
+#------------------------------------------------------------------------------
 # Internal dependencies
 #------------------------------------------------------------------------------
 # UTIL
@@ -103,12 +112,6 @@ configure_file(
 #------------------------------------------------------------------------------
 # Set sources
 #------------------------------------------------------------------------------
-include_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_CURRENT_BINARY_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra
-)
-
 set(MERCURY_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_handler.c
