@@ -56,6 +56,10 @@ static hg_thread_mutex_t tag_mutex;
 /* Pointer to network abstraction class */
 static na_class_t *hg_na_class = NULL;
 
+/* Convert value to string */
+#define HG_ERROR_STRING_MACRO(def, value, string) \
+  if (value == def) string = #def
+
 /**
  * Hash function for function map.
  */
@@ -889,4 +893,20 @@ HG_Request_free(hg_request_t request)
     priv_request = NULL;
 
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+const char *
+HG_Error_to_string(hg_return_t errnum)
+{
+    const char *hg_error_string = "UNDEFINED/UNRECOGNIZED NA ERROR";
+
+    HG_ERROR_STRING_MACRO(HG_FAIL, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_SUCCESS, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_NO_MATCH, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_PROTOCOL_ERROR, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_CHECKSUM_ERROR, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_TIMEOUT, errnum, hg_error_string);
+
+    return hg_error_string;
 }

@@ -140,6 +140,16 @@ HG_Wait_all(int count, hg_request_t array_of_requests[],
 HG_EXPORT int
 HG_Request_free(hg_request_t request);
 
+/**
+ * Convert error return code to string (null terminated).
+ *
+ * \param errnum [IN]           error return code
+ *
+ * \return String
+ */
+HG_EXPORT const char *
+HG_Error_to_string(hg_return_t errnum);
+
 #ifdef __cplusplus
 }
 #endif
