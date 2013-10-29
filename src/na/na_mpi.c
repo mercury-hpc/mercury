@@ -321,6 +321,7 @@ na_mpi_accept_service(void NA_UNUSED *args)
         NA_ERROR_DEFAULT("Could not accept connection");
     }
 
+    hg_thread_exit(ret);
     return ret;
 }
 
@@ -346,6 +347,7 @@ na_mpi_progress_service(void NA_UNUSED *args)
         if (service_done) break;
     }
 
+    hg_thread_exit(ret);
     return ret;
 }
 
