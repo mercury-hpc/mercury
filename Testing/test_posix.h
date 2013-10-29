@@ -54,7 +54,7 @@ MERCURY_GEN_PROC( read_out_t, ((hg_int64_t)(ret)) )
 #else /* HG_HAS_BOOST */
 /* Define open_in_t */
 typedef struct {
-    hg_string_t path;
+    hg_const_string_t path;
     hg_int32_t flags;
     hg_uint32_t mode;
 } open_in_t;
@@ -66,7 +66,7 @@ hg_proc_open_in_t(hg_proc_t proc, void *data)
     int ret = HG_SUCCESS;
     open_in_t *struct_data = (open_in_t *) data;
 
-    ret = hg_proc_hg_string_t(proc, &struct_data->path);
+    ret = hg_proc_hg_const_string_t(proc, &struct_data->path);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Proc error");
         ret = HG_FAIL;

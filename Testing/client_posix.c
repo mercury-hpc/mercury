@@ -127,7 +127,7 @@ int finalize_rpc()
     return ret;
 }
 
-int open_rpc(char *pathname, int flags, mode_t mode)
+int open_rpc(const char *pathname, int flags, mode_t mode)
 {
     open_in_t  open_in_struct;
     open_out_t open_out_struct;

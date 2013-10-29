@@ -61,7 +61,7 @@ static HG_INLINE int hg_proc_bla_handle_t(hg_proc_t proc, void *data)
 
 /* Define bla_open_in_t */
 typedef struct {
-    hg_string_t path;
+    hg_const_string_t path;
     bla_handle_t handle;
 } bla_open_in_t;
 
@@ -72,7 +72,7 @@ hg_proc_bla_open_in_t(hg_proc_t proc, void *data)
     int ret = HG_SUCCESS;
     bla_open_in_t *struct_data = (bla_open_in_t *) data;
 
-    ret = hg_proc_hg_string_t(proc, &struct_data->path);
+    ret = hg_proc_hg_const_string_t(proc, &struct_data->path);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Proc error");
         ret = HG_FAIL;
