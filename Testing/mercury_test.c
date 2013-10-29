@@ -66,16 +66,18 @@ HG_Test_set_config(const char *addr_name)
     FILE *config = NULL;
     int my_rank = 0, my_size = 1;
     int i;
+    int max_port_name_length = 256; /* default set to 256 */
 
 #ifdef NA_HAS_MPI
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &my_size);
+    max_port_name_length = MPI_MAX_PORT_NAME;
 #endif
 
     /* Allocate table addrs */
     na_addr_table = (char**) malloc(my_size * sizeof(char*));
     for (i = 0; i < my_size; i++) {
-        na_addr_table[i] = (char*) malloc(MPI_MAX_PORT_NAME);
+        na_addr_table[i] = (char*) malloc(max_port_name_length);
     }
 
     strcpy(na_addr_table[my_rank], addr_name);
@@ -181,9 +183,17 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
 
 #ifdef NA_HAS_SSM
     if (strcmp("ssm", argv[1]) == 0) {
-        char *listen_addr = getenv("HG_SSM_CLIENT_ADDR");
-        network_class = NA_Initialize(listen_addr, NA_FALSE);
-        if (port_name) *port_name = getenv("HG_SSM_SERVER_ADDR");
+#ifdef NA_HAS_MPI
+        /* Test run in parallel using mpirun so must intialize MPI to get
+         * basic setup info etc */
+        HG_Test_mpi_init();
+#endif
+        HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
+
+#ifdef NA_HAS_MPI
+        HG_Test_mpi_finalize();
+#endif
+        network_class = NA_Initialize(test_addr_name, NA_FALSE);
     }
 #endif
 
@@ -256,8 +266,30 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
 
 #ifdef NA_HAS_SSM
     if (strcmp("ssm", argv[1]) == 0) {
-        char *listen_addr = getenv("HG_SSM_SERVER_ADDR");
-        network_class = NA_Initialize(listen_addr, NA_TRUE);
+        char hostname[HG_TEST_MAX_ADDR_NAME];
+        char addr_name[HG_TEST_MAX_ADDR_NAME];
+        int my_rank = 0;
+        unsigned int port_number = 22222;
+
+#ifdef NA_HAS_MPI
+        /* Test run in parallel using mpirun so must intialize MPI to get
+         * basic setup info etc */
+        HG_Test_mpi_init();
+        MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+#endif
+        /* Generate a port number depending on server rank */
+        port_number += my_rank;
+        gethostname(hostname, HG_TEST_MAX_ADDR_NAME);
+        sprintf(addr_name, "tcp://%s:%d", hostname, port_number);
+
+        /* Gather addresses */
+        HG_Test_set_config(addr_name);
+
+#ifdef NA_HAS_MPI
+        HG_Test_mpi_finalize();
+#endif
+
+        network_class = NA_Initialize(addr_name, 1);
     }
 #endif
 
