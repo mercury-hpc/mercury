@@ -66,7 +66,7 @@ NA_free_host_buffer(struct na_host_buffer *na_buffer)
 }
 
 /*---------------------------------------------------------------------------*/
-static int
+static na_return_t
 NA_parse_host_string(const char *host_string,
         struct na_host_buffer **in_na_buffer)
 {
@@ -75,7 +75,7 @@ NA_parse_host_string(const char *host_string,
     char *locator                    = NULL;
     struct na_host_buffer *na_buffer = *in_na_buffer;
     size_t na_host_string_len;
-    int ret = NA_SUCCESS;
+    na_return_t ret = NA_SUCCESS;
 
     input_string = (char*) malloc(strlen(host_string) + 1);
     if (!input_string) {
@@ -229,7 +229,7 @@ NA_Initialize(const char *host_string, na_bool_t listen)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+na_return_t
 NA_Finalize(na_class_t *network_class)
 {
     assert(network_class);
@@ -237,15 +237,16 @@ NA_Finalize(na_class_t *network_class)
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Addr_lookup(na_class_t *network_class, const char *name, na_addr_t *addr)
+na_return_t
+NA_Addr_lookup(na_class_t *network_class, na_cb_t callback, void *arg,
+        const char *name, na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->addr_lookup(name, addr);
+    return network_class->addr_lookup(callback, arg, name, op_id);
 }
 
 /*---------------------------------------------------------------------------*/
-int
+na_return_t
 NA_Addr_free(na_class_t *network_class, na_addr_t addr)
 {
     assert(network_class);
@@ -253,11 +254,11 @@ NA_Addr_free(na_class_t *network_class, na_addr_t addr)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+na_return_t
 NA_Addr_to_string(na_class_t *network_class, char *buf, na_size_t buf_size,
         na_addr_t addr)
 {
-    int ret = NA_SUCCESS;
+    na_return_t ret = NA_SUCCESS;
 
     assert(network_class);
 
@@ -297,66 +298,82 @@ NA_Msg_get_max_tag(na_class_t *network_class)
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Msg_send_unexpected(na_class_t *network_class,
-        const void *buf, na_size_t buf_size, na_addr_t dest,
-        na_tag_t tag, na_request_t *request, void *op_arg)
+na_return_t
+NA_Msg_send_unexpected(na_class_t *network_class, na_cb_t callback, void *arg,
+        const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
+        na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->msg_send_unexpected(
-            buf, buf_size, dest, tag, request,op_arg);
+    return network_class->msg_send_unexpected(callback, arg,
+            buf, buf_size, dest, tag, op_id);
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Msg_recv_unexpected(na_class_t *network_class,
-        void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
-        na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg)
+na_return_t
+NA_Msg_recv_unexpected(na_class_t *network_class, na_cb_t callback, void *arg,
+        void *buf, na_size_t buf_size, na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->msg_recv_unexpected(
-            buf, buf_size, actual_buf_size, source, tag, request, op_arg);
+    return network_class->msg_recv_unexpected(callback, arg,
+            buf, buf_size, op_id);
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Msg_send(na_class_t *network_class,
-        const void *buf, na_size_t buf_size, na_addr_t dest,
-        na_tag_t tag, na_request_t *request, void *op_arg)
+na_return_t
+NA_Msg_send_expected(na_class_t *network_class, na_cb_t callback, void *arg,
+        const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
+        na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->msg_send(buf, buf_size, dest, tag, request, op_arg);
+    return network_class->msg_send_expected(callback, arg,
+            buf, buf_size, dest, tag, op_id);
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Msg_recv(na_class_t *network_class,
-        void *buf, na_size_t buf_size, na_addr_t source,
-        na_tag_t tag, na_request_t *request, void *op_arg)
+na_return_t
+NA_Msg_recv_expected(na_class_t *network_class, na_cb_t callback, void *arg,
+        void *buf, na_size_t buf_size, na_addr_t source, na_tag_t tag,
+        na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->msg_recv(buf, buf_size, source, tag, request, op_arg);
+    return network_class->msg_recv_expected(callback, arg,
+            buf, buf_size, source, tag, op_id);
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Mem_register(na_class_t *network_class,
-        void *buf, na_size_t buf_size, unsigned long flags,
-        na_mem_handle_t *mem_handle)
+na_return_t
+NA_Mem_handle_create(na_class_t *network_class, void *buf, na_size_t buf_size,
+        unsigned long flags, na_mem_handle_t *mem_handle)
 {
     assert(network_class);
-    return network_class->mem_register(buf, buf_size, flags, mem_handle);
+    return network_class->mem_handle_create(buf, buf_size, flags, mem_handle);
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Mem_register_segments(na_class_t *network_class,
-        na_segment_t *segments, na_size_t segment_count, unsigned long flags,
-        na_mem_handle_t *mem_handle)
+na_return_t
+NA_Mem_handle_create_segments(na_class_t *network_class,
+        struct na_segment *segments, na_size_t segment_count,
+        unsigned long flags, na_mem_handle_t *mem_handle)
 {
     assert(network_class);
-    return network_class->mem_register_segments(segments, segment_count, flags,
-            mem_handle);
+    return network_class->mem_handle_create_segments(segments, segment_count,
+            flags, mem_handle);
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Mem_handle_free(na_class_t *network_class, na_mem_handle_t mem_handle)
+{
+    assert(network_class);
+    return network_class->mem_handle_free(mem_handle);
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Mem_register(na_class_t *network_class, na_mem_handle_t mem_handle)
+{
+    assert(network_class);
+    return network_class->mem_register(mem_handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -377,7 +394,7 @@ NA_Mem_handle_get_serialize_size(na_class_t *network_class,
 }
 
 /*---------------------------------------------------------------------------*/
-int
+na_return_t
 NA_Mem_handle_serialize(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_mem_handle_t mem_handle)
 {
@@ -386,7 +403,7 @@ NA_Mem_handle_serialize(na_class_t *network_class,
 }
 
 /*---------------------------------------------------------------------------*/
-int
+na_return_t
 NA_Mem_handle_deserialize(na_class_t *network_class,
         na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size)
 {
@@ -395,63 +412,62 @@ NA_Mem_handle_deserialize(na_class_t *network_class,
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Mem_handle_free(na_class_t *network_class, na_mem_handle_t mem_handle)
-{
-    assert(network_class);
-    return network_class->mem_handle_free(mem_handle);
-}
-
-/*---------------------------------------------------------------------------*/
-int
-NA_Put(na_class_t *network_class,
+na_return_t
+NA_Put(na_class_t *network_class, na_cb_t callback, void *arg,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t length, na_addr_t remote_addr, na_request_t *request)
+        na_size_t data_size, na_addr_t remote_addr,
+        na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->put(local_mem_handle, local_offset,
-            remote_mem_handle, remote_offset,
-            length, remote_addr, request);
+    return network_class->put(callback, arg,
+            local_mem_handle, local_offset, remote_mem_handle, remote_offset,
+            data_size, remote_addr, op_id);
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Get(na_class_t *network_class,
+na_return_t
+NA_Get(na_class_t *network_class, na_cb_t callback, void *arg,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t length, na_addr_t remote_addr, na_request_t *request)
+        na_size_t data_size, na_addr_t remote_addr,
+        na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->get(local_mem_handle, local_offset,
-            remote_mem_handle, remote_offset,
-            length, remote_addr, request);
+    return network_class->get(callback, arg,
+            local_mem_handle, local_offset, remote_mem_handle, remote_offset,
+            data_size, remote_addr, op_id);
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Wait(na_class_t *network_class,
-        na_request_t request, unsigned int timeout, na_status_t *status)
+na_return_t
+NA_Progress(na_class_t *network_class, unsigned int timeout,
+        na_status_t *status)
 {
-    assert(network_class);
-    return network_class->wait(request, timeout, status);
-}
-
-/*---------------------------------------------------------------------------*/
-int
-NA_Progress(na_class_t *network_class,
-        unsigned int timeout, na_status_t *status)
-{
+    /* TODO per plugin --> push callback to the queue when something completes
+     * wake up everyone waiting in the trigger in main na and not in pluggin
+     * to avoid duplicating code */
     assert(network_class);
     return network_class->progress(timeout, status);
 }
 
 /*---------------------------------------------------------------------------*/
-int
-NA_Request_free(na_class_t *network_class, na_request_t request)
+na_return_t
+NA_Trigger(unsigned int NA_UNUSED timeout, unsigned int NA_UNUSED max_count, int NA_UNUSED *actual_count)
 {
-    assert(network_class);
-    return network_class->request_free(request);
+    na_return_t ret = NA_SUCCESS;
+
+    /* TODO locking with condition variable */
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Cancel(na_op_id_t NA_UNUSED op_id)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/

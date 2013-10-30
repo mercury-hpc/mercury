@@ -25,53 +25,60 @@
 /* NA class definition */
 struct na_class {
     /* Finalize callback */
-    int (*finalize)(void);
+    na_return_t (*finalize)(void);
 
     /* Network address callbacks */
-    int (*addr_lookup)(const char *name, na_addr_t *addr);
-    int (*addr_free)(na_addr_t addr);
-    int (*addr_to_string)(char *buf, na_size_t buf_size, na_addr_t addr);
+    na_return_t (*addr_lookup)(na_cb_t callback, void *arg, const char *name,
+            na_op_id_t *op_id);
+    na_return_t (*addr_free)(na_addr_t addr);
+    na_return_t (*addr_to_string)(char *buf, na_size_t buf_size,
+            na_addr_t addr);
 
     /* Message callbacks (used for metadata transfer) */
     na_size_t (*msg_get_max_expected_size)(void);
     na_size_t (*msg_get_max_unexpected_size)(void);
     na_tag_t (*msg_get_max_tag)(void);
-    int (*msg_send_unexpected)(const void *buf, na_size_t buf_size, na_addr_t dest,
-            na_tag_t tag, na_request_t *request, void *op_arg);
-    int (*msg_recv_unexpected)(void *buf, na_size_t buf_size, na_size_t *actual_buf_size,
-            na_addr_t *source, na_tag_t *tag, na_request_t *request, void *op_arg);
-    int (*msg_send)(const void *buf, na_size_t buf_size, na_addr_t dest,
-            na_tag_t tag, na_request_t *request, void *op_arg);
-    int (*msg_recv)(void *buf, na_size_t buf_size, na_addr_t source,
-            na_tag_t tag, na_request_t *request, void *op_arg);
+    na_return_t (*msg_send_unexpected)(na_cb_t callback, void *arg,
+            const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
+            na_op_id_t *op_id);
+    na_return_t (*msg_recv_unexpected)(na_cb_t callback, void *arg,
+            void *buf, na_size_t buf_size, na_op_id_t *op_id);
+    na_return_t (*msg_send_expected)(na_cb_t callback, void *arg,
+            const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
+            na_op_id_t *op_id);
+    na_return_t (*msg_recv_expected)(na_cb_t callback, void *arg,
+            void *buf, na_size_t buf_size, na_addr_t source, na_tag_t tag,
+            na_op_id_t *op_id);
 
     /* Memory registration callbacks */
-    int (*mem_register)(void *buf, na_size_t buf_size, unsigned long flags,
+    na_return_t (*mem_handle_create)(void *buf, na_size_t buf_size,
+        unsigned long flags, na_mem_handle_t *mem_handle);
+    na_return_t (*mem_handle_create_segments)(struct na_segment *segments,
+            na_size_t segment_count, unsigned long flags,
             na_mem_handle_t *mem_handle);
-    int (*mem_register_segments)(na_segment_t *segments, na_size_t segment_count,
-            unsigned long flags, na_mem_handle_t *mem_handle);
-    int (*mem_deregister)(na_mem_handle_t mem_handle);
+    na_return_t (*mem_handle_free)(na_mem_handle_t mem_handle);
+    na_return_t (*mem_register)(na_mem_handle_t mem_handle);
+    na_return_t (*mem_deregister)(na_mem_handle_t mem_handle);
 
     /* Memory handle serialization callbacks */
     na_size_t (*mem_handle_get_serialize_size)(na_mem_handle_t mem_handle);
-    int (*mem_handle_serialize)(void *buf, na_size_t buf_size,
+    na_return_t (*mem_handle_serialize)(void *buf, na_size_t buf_size,
             na_mem_handle_t mem_handle);
-    int (*mem_handle_deserialize)(na_mem_handle_t *mem_handle,
+    na_return_t (*mem_handle_deserialize)(na_mem_handle_t *mem_handle,
             const void *buf, na_size_t buf_size);
-    int (*mem_handle_free)(na_mem_handle_t mem_handle);
 
     /* One-sided transfer callbacks (used for for bulk data operations) */
-    int (*put)(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
+    na_return_t (*put)(na_cb_t callback, void *arg,
+            na_mem_handle_t local_mem_handle, na_offset_t local_offset,
             na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-            na_size_t length, na_addr_t remote_addr, na_request_t *request);
-    int (*get)(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
+            na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
+    na_return_t (*get)(na_cb_t callback, void *arg,
+            na_mem_handle_t local_mem_handle, na_offset_t local_offset,
             na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-            na_size_t length, na_addr_t remote_addr, na_request_t *request);
+            na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
 
     /* Progress callbacks */
-    int (*wait)(na_request_t request, unsigned int timeout, na_status_t *status);
-    int (*progress)(unsigned int timeout, na_status_t *status);
-    int (*request_free)(na_request_t request);
+    na_return_t (*progress)(unsigned int timeout, na_status_t *status);
 };
 
 /* Host string buffer */
@@ -89,6 +96,12 @@ struct na_class_describe {
     na_bool_t (*verify) (const char *protocol);
     na_class_t *(*initialize) (const struct na_host_buffer *na_buffer,
             na_bool_t listen);
+};
+
+/* NA status */
+struct na_status {
+    na_bool_t completed; /* true if operation has completed */
+    na_size_t count;     /* number of bytes transmitted */
 };
 
 typedef enum na_class_priority {
