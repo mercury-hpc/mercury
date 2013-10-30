@@ -215,13 +215,6 @@ if(NA_USE_BMI)
   )
 endif()
 
-if(NA_USE_SSM)
-  set(NA_HEADERS
-    ${NA_HEADERS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_ssm.h
-  )
-endif()
-
 if(NA_USE_MPI)
   set(NA_HEADERS
     ${NA_HEADERS}

@@ -79,7 +79,7 @@ extern "C" {
  * \return Pointer to network class
  */
 NA_EXPORT na_class_t *
-NA_Initialize(const char *host_string, na_bool_t listen);
+NA_Initialize(const char *host_string, na_bool_t listen) NA_WARN_UNUSED_RESULT;
 
 /**
  * Finalize the network abstraction layer.
@@ -140,7 +140,7 @@ NA_Addr_to_string(na_class_t *network_class, char *buf, na_size_t buf_size,
  * \return Non-negative value
  */
 NA_EXPORT na_size_t
-NA_Msg_get_max_expected_size(na_class_t *network_class);
+NA_Msg_get_max_expected_size(na_class_t *network_class) NA_WARN_UNUSED_RESULT;
 
 /**
  * Get the maximum size of messages supported by unexpected send/recv.
@@ -151,7 +151,7 @@ NA_Msg_get_max_expected_size(na_class_t *network_class);
  * \return Non-negative value
  */
 NA_EXPORT na_size_t
-NA_Msg_get_max_unexpected_size(na_class_t *network_class);
+NA_Msg_get_max_unexpected_size(na_class_t *network_class) NA_WARN_UNUSED_RESULT;
 
 /**
  * Get the maximum tag value that can be used by send/recv.
@@ -162,7 +162,7 @@ NA_Msg_get_max_unexpected_size(na_class_t *network_class);
  * \return Non-negative value
  */
 NA_EXPORT na_tag_t
-NA_Msg_get_max_tag(na_class_t *network_class);
+NA_Msg_get_max_tag(na_class_t *network_class) NA_WARN_UNUSED_RESULT;
 
 /**
  * Send an unexpected message to dest.
@@ -313,7 +313,7 @@ NA_Mem_deregister(na_class_t *network_class, na_mem_handle_t mem_handle);
  */
 NA_EXPORT na_size_t
 NA_Mem_handle_get_serialize_size(na_class_t *network_class,
-        na_mem_handle_t mem_handle);
+        na_mem_handle_t mem_handle) NA_WARN_UNUSED_RESULT;
 
 /**
  * Serialize memory handle into a buffer.
@@ -450,7 +450,7 @@ NA_Request_free(na_class_t *network_class, na_request_t request);
  * \return String
  */
 NA_EXPORT const char *
-NA_Error_to_string(na_return_t errnum);
+NA_Error_to_string(na_return_t errnum) NA_WARN_UNUSED_RESULT;
 
 
 #ifdef __cplusplus

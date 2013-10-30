@@ -22,11 +22,6 @@
 extern "C" {
 #endif
 
-/* Initialize the MPI plugin */
-na_class_t *NA_SSM_Init(char *proto, int port, int flags);
-
-
-
 #ifdef __cplusplus
 }
 #endif

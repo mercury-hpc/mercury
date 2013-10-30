@@ -15,9 +15,6 @@
 #ifdef NA_HAS_BMI
 #include "na_bmi.h"
 #endif
-#ifdef NA_HAS_SSM
-#include "na_ssm.h"
-#endif
 #include "na_error.h"
 
 #include <assert.h>

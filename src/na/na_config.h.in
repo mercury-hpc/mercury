@@ -76,5 +76,11 @@ typedef na_uint64_t  na_ptr_t;
    #define NA_INLINE __inline__
 #endif
 
+#if defined(__GNUC__)
+    #define NA_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+#else
+    #define NA_WARN_UNUSED_RESULT
+#endif
+
 #endif /* NA_CONFIG_H */
 

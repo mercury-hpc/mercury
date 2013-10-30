@@ -8,7 +8,6 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "na_ssm.h"
 #include "mercury_hash_table.h"
 #include "mercury_list.h"
 #include "mercury_thread.h"
@@ -67,6 +66,7 @@ static int na_ssm_request_free(na_request_t request);
 static na_bool_t na_ssm_verify(const char *protocol);
 static na_class_t* na_ssm_initialize(const struct na_host_buffer *host_buffer,
         na_bool_t listen);
+static na_class_t *NA_SSM_Init(char *proto, int port, int flags);
 
 static na_class_t na_ssm_g = {
         na_ssm_finalize,               /* finalize */
@@ -557,7 +557,8 @@ na_ssm_initialize(const struct na_host_buffer *na_buffer, na_bool_t listen)
  *
  *---------------------------------------------------------------------------
  */
-na_class_t *NA_SSM_Init(char *proto, int port, int flags)
+static na_class_t*
+NA_SSM_Init(char *proto, int port, int flags)
 {
     if (flags == 0 )
     {
@@ -836,6 +837,7 @@ static int na_ssm_msg_send_unexpected(const void    *in_buf,
     na_ssm_opid_t   *v_ssm_opid        = NULL;
     ssm_mr           v_ssm_mr          = NULL;
     ssm_tx           v_ssm_tx          = NULL;
+    void            *v_buffer          = NULL;
     
     v_ssm_opid = (na_ssm_opid_t *) malloc(sizeof(na_ssm_opid_t));
 
@@ -844,7 +846,7 @@ static int na_ssm_msg_send_unexpected(const void    *in_buf,
         v_return = NA_MEMORY_ERROR;
         goto out;
     }
-    
+
     memset(v_ssm_opid, 0, sizeof(na_ssm_opid_t));
     
     v_ssm_opid->m_requesttype = SSM_UNEXP_SEND_OP;
