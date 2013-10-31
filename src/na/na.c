@@ -82,7 +82,7 @@ NA_parse_host_string(const char *host_string,
 
     input_string = (char*) malloc(strlen(host_string) + 1);
     if (!input_string) {
-        NA_ERROR_DEFAULT("Could not allocate string");
+        NA_LOG_ERROR("Could not allocate string");
         ret = NA_FAIL;
         goto done;
     }
@@ -102,7 +102,7 @@ NA_parse_host_string(const char *host_string,
 
         na_buffer->na_class = (char*) malloc(strlen(_locator) + 1);
         if (!na_buffer->na_class) {
-            NA_ERROR_DEFAULT("Could not allocate na_class");
+            NA_LOG_ERROR("Could not allocate na_class");
             ret = NA_FAIL;
             goto done;
         }
@@ -114,7 +114,7 @@ NA_parse_host_string(const char *host_string,
 
     na_buffer->na_protocol = (char*) malloc(strlen(token) + 1);
     if (!na_buffer->na_protocol) {
-        NA_ERROR_DEFAULT("Could not allocate na_protocol");
+        NA_LOG_ERROR("Could not allocate na_protocol");
         ret = NA_FAIL;
         goto done;
     }
@@ -126,7 +126,7 @@ NA_parse_host_string(const char *host_string,
 
     na_buffer->na_host = (char*) malloc(strlen(token) + 1);
     if (!na_buffer->na_host) {
-        NA_ERROR_DEFAULT("Could not allocate na_host");
+        NA_LOG_ERROR("Could not allocate na_host");
         ret = NA_FAIL;
         goto done;
     }
@@ -144,7 +144,7 @@ NA_parse_host_string(const char *host_string,
 
     na_buffer->na_host_string = (char*) malloc(na_host_string_len);
     if (!na_buffer->na_host_string) {
-        NA_ERROR_DEFAULT("Could not allocate na_host_string");
+        NA_LOG_ERROR("Could not allocate na_host_string");
         ret = NA_FAIL;
         goto done;
     }
@@ -196,7 +196,7 @@ NA_Initialize(const char *host_string, na_bool_t listen)
 
     na_buffer = (struct na_host_buffer*) malloc(sizeof(struct na_host_buffer));
     if (!na_buffer) {
-        NA_ERROR_DEFAULT("Could not allocate na_buffer");
+        NA_LOG_ERROR("Could not allocate na_buffer");
         return NULL;
     }
 
@@ -265,7 +265,7 @@ NA_Addr_to_string(na_class_t *network_class, char *buf, na_size_t buf_size,
     assert(network_class);
 
     if (addr == NA_ADDR_NULL) {
-        NA_ERROR_DEFAULT("NULL addr");
+        NA_LOG_ERROR("NULL addr");
         ret = NA_FAIL;
         return ret;
     }
