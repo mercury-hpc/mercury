@@ -194,7 +194,7 @@ na_bmi_progress_service(void NA_UNUSED *args)
 
         na_ret = na_bmi_progress(0, NA_STATUS_IGNORE);
         if (na_ret != NA_SUCCESS) {
-            NA_ERROR_DEFAULT("Could not make progress");
+            NA_LOG_ERROR("Could not make progress");
             break;
         }
 
@@ -283,7 +283,7 @@ na_bmi_initialize(const struct na_host_buffer *na_buffer, na_bool_t listen)
     method_list_len = strlen("bmi_") + strlen(na_buffer->na_protocol) + 1;
     method_list = (char*) malloc(method_list_len);
     if (!method_list) {
-        NA_ERROR_DEFAULT("Could not allocate method_list");
+        NA_LOG_ERROR("Could not allocate method_list");
         return NULL;
     }
 
@@ -311,7 +311,7 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
     /* Initialize BMI */
     bmi_ret = BMI_initialize(method_list, listen_addr, flags);
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_initialize() failed");
+        NA_LOG_ERROR("BMI_initialize() failed");
         goto done;
     }
 
@@ -321,14 +321,14 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
     /* Create a new BMI context */
     bmi_ret = BMI_open_context(&bmi_context);
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_open_context() failed");
+        NA_LOG_ERROR("BMI_open_context() failed");
         goto done;
     }
 
     /* Create hash table for memory registration */
     mem_handle_map = hg_hash_table_new(pointer_hash, pointer_equal);
     if (!mem_handle_map) {
-        NA_ERROR_DEFAULT("Could not create memory handle map");
+        NA_LOG_ERROR("Could not create memory handle map");
         goto done;
     }
 
@@ -391,7 +391,7 @@ na_bmi_finalize(void)
     /* Finalize BMI */
     bmi_ret = BMI_finalize();
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_finalize() failed");
+        NA_LOG_ERROR("BMI_finalize() failed");
         ret = NA_FAIL;
         goto done;
     }
@@ -419,14 +419,14 @@ na_bmi_addr_lookup(const char *name, na_addr_t *addr)
     struct na_bmi_addr *bmi_addr = NULL;
 
     if (!addr) {
-        NA_ERROR_DEFAULT("NULL addr");
+        NA_LOG_ERROR("NULL addr");
         ret = NA_FAIL;
         goto done;
     }
 
     bmi_addr = (struct na_bmi_addr*) malloc(sizeof(struct na_bmi_addr));
     if (!bmi_addr) {
-        NA_ERROR_DEFAULT("Could not allocate BMI addr");
+        NA_LOG_ERROR("Could not allocate BMI addr");
         ret = NA_FAIL;
         goto done;
     }
@@ -435,7 +435,7 @@ na_bmi_addr_lookup(const char *name, na_addr_t *addr)
     /* Perform an address lookup */
     bmi_ret = BMI_addr_lookup(&bmi_addr->addr, name);
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_addr_lookup() failed");
+        NA_LOG_ERROR("BMI_addr_lookup() failed");
         ret = NA_FAIL;
         goto done;
     }
@@ -458,7 +458,7 @@ na_bmi_addr_free(na_addr_t addr)
 
     /* Cleanup peer_addr */
     if (!bmi_addr) {
-        NA_ERROR_DEFAULT("Already freed");
+        NA_LOG_ERROR("Already freed");
         ret = NA_FAIL;
         return ret;
     }
@@ -486,7 +486,7 @@ na_bmi_addr_to_string(char *buf, na_size_t buf_size, na_addr_t addr)
     }
 
     if (strlen(bmi_rev_addr) > buf_size) {
-        NA_ERROR_DEFAULT("Buffer size too small to copy addr");
+        NA_LOG_ERROR("Buffer size too small to copy addr");
         ret = NA_FAIL;
         return ret;
     }
@@ -545,7 +545,7 @@ na_bmi_msg_send_unexpected(const void *buf, na_size_t buf_size, na_addr_t dest,
             bmi_context, NULL);
 
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_post_sendunexpected() failed");
+        NA_LOG_ERROR("BMI_post_sendunexpected() failed");
         free(bmi_request);
         bmi_request = NULL;
         ret = NA_FAIL;
@@ -571,7 +571,7 @@ na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     hg_list_entry_t *entry = NULL;
 
     if (!buf) {
-        NA_ERROR_DEFAULT("NULL buffer");
+        NA_LOG_ERROR("NULL buffer");
         ret = NA_FAIL;
         return ret;
     }
@@ -593,14 +593,14 @@ na_bmi_msg_recv_unexpected(void *buf, na_size_t buf_size, na_size_t *actual_buf_
     }
 
     if (bmi_ret < 0 || request_info->error_code != 0) {
-        NA_ERROR_DEFAULT("Request recv failure (bad state)");
-        NA_ERROR_DEFAULT("BMI_testunexpected failed");
+        NA_LOG_ERROR("Request recv failure (bad state)");
+        NA_LOG_ERROR("BMI_testunexpected failed");
         ret = NA_FAIL;
         goto done;
     }
 
     if (request_info->size > (bmi_size_t) buf_size) {
-        NA_ERROR_DEFAULT("Buffer too small to recv unexpected data");
+        NA_LOG_ERROR("Buffer too small to recv unexpected data");
         ret = NA_FAIL;
         goto done;
     }
@@ -638,7 +638,7 @@ done:
     }
 
     if (entry && !hg_list_remove_entry(&unexpected_list, entry)) {
-        NA_ERROR_DEFAULT("Could not remove entry");
+        NA_LOG_ERROR("Could not remove entry");
     } else {
         free(request_info);
     }
@@ -672,7 +672,7 @@ na_bmi_msg_send(const void *buf, na_size_t buf_size, na_addr_t dest,
             bmi_context, NULL);
 
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_post_send() failed");
+        NA_LOG_ERROR("BMI_post_send() failed");
         free(bmi_request);
         bmi_request = NULL;
         ret = NA_FAIL;
@@ -712,7 +712,7 @@ na_bmi_msg_recv(void *buf, na_size_t buf_size, na_addr_t source,
             bmi_request, bmi_context, NULL);
 
     if (bmi_ret < 0) {
-        NA_ERROR_DEFAULT("BMI_post_recv() failed");
+        NA_LOG_ERROR("BMI_post_recv() failed");
         free(bmi_request);
         bmi_request = NULL;
         ret = NA_FAIL;
@@ -750,7 +750,7 @@ na_bmi_mem_register(void *buf, na_size_t NA_UNUSED buf_size,
     /* store this handle */
     if (!hg_hash_table_insert(mem_handle_map, bmi_mem_handle->base,
             bmi_mem_handle)) {
-        NA_ERROR_DEFAULT("Could not register memory handle");
+        NA_LOG_ERROR("Could not register memory handle");
         ret = NA_FAIL;
     }
 
@@ -770,7 +770,7 @@ na_bmi_mem_deregister(na_mem_handle_t mem_handle)
 
     /* remove the handle */
     if (!hg_hash_table_remove(mem_handle_map, bmi_mem_handle->base)) {
-        NA_ERROR_DEFAULT("Could not deregister memory handle");
+        NA_LOG_ERROR("Could not deregister memory handle");
         ret = NA_FAIL;
     }
 
@@ -780,7 +780,7 @@ na_bmi_mem_deregister(na_mem_handle_t mem_handle)
         free(bmi_mem_handle);
         bmi_mem_handle = NULL;
     } else {
-        NA_ERROR_DEFAULT("Already freed");
+        NA_LOG_ERROR("Already freed");
         ret = NA_FAIL;
     }
     return ret;
@@ -802,7 +802,7 @@ na_bmi_mem_handle_serialize(void *buf, na_size_t buf_size,
     bmi_mem_handle_t *bmi_mem_handle = (bmi_mem_handle_t*) mem_handle;
 
     if (buf_size < sizeof(bmi_mem_handle_t)) {
-        NA_ERROR_DEFAULT("Buffer size too small for serializing parameter");
+        NA_LOG_ERROR("Buffer size too small for serializing parameter");
         ret = NA_FAIL;
     } else {
         /* Here safe to do a simple memcpy */
@@ -821,7 +821,7 @@ na_bmi_mem_handle_deserialize(na_mem_handle_t *mem_handle,
     bmi_mem_handle_t *bmi_mem_handle;
 
     if (buf_size < sizeof(bmi_mem_handle_t)) {
-        NA_ERROR_DEFAULT("Buffer size too small for deserializing parameter");
+        NA_LOG_ERROR("Buffer size too small for deserializing parameter");
         ret = NA_FAIL;
     } else {
         bmi_mem_handle = (bmi_mem_handle_t*) malloc(sizeof(bmi_mem_handle_t));
@@ -843,7 +843,7 @@ na_bmi_mem_handle_free(na_mem_handle_t mem_handle)
         free(bmi_mem_handle);
         bmi_mem_handle = NULL;
     } else {
-        NA_ERROR_DEFAULT("Already freed");
+        NA_LOG_ERROR("Already freed");
         ret = NA_FAIL;
     }
     return ret;
@@ -869,13 +869,13 @@ na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 
     /* Check that local memory is registered */
     if (!hg_hash_table_lookup(mem_handle_map, bmi_local_mem_handle->base)) {
-        NA_ERROR_DEFAULT("Could not find memory handle, registered?");
+        NA_LOG_ERROR("Could not find memory handle, registered?");
         ret = NA_FAIL;
         return ret;
     }
 
     if (bmi_remote_mem_handle->attr != NA_MEM_READWRITE) {
-        NA_ERROR_DEFAULT("Registered memory requires write permission");
+        NA_LOG_ERROR("Registered memory requires write permission");
         ret = NA_FAIL;
         return ret;
     }
@@ -891,13 +891,13 @@ na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     ret = na_bmi_msg_send_unexpected(&onesided_info, sizeof(bmi_onesided_info_t),
             remote_addr, NA_BMI_ONESIDED_TAG, &onesided_request, NULL);
     if (ret != NA_SUCCESS) {
-        NA_ERROR_DEFAULT("Could not send onesided info");
+        NA_LOG_ERROR("Could not send onesided info");
         ret = NA_FAIL;
         return ret;
     }
     ret = na_bmi_wait(onesided_request, NA_MAX_IDLE_TIME, &onesided_status);
     if (ret != NA_SUCCESS) {
-        NA_ERROR_DEFAULT("Error during wait");
+        NA_LOG_ERROR("Error during wait");
         ret = NA_FAIL;
         return ret;
     }
@@ -906,7 +906,7 @@ na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     ret = na_bmi_msg_send((char*) bmi_local_mem_handle->base + bmi_local_offset, bmi_length,
             remote_addr, onesided_info.tag, request, NULL);
     if (ret != NA_SUCCESS) {
-        NA_ERROR_DEFAULT("Could not send data");
+        NA_LOG_ERROR("Could not send data");
         ret = NA_FAIL;
         return ret;
     }
@@ -916,7 +916,7 @@ na_bmi_put(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     ret = na_bmi_msg_recv(&bmi_request->ack, sizeof(na_bool_t),
             remote_addr, onesided_info.ack_tag, &bmi_request->ack_request, NULL);
     if (ret != NA_SUCCESS) {
-        NA_ERROR_DEFAULT("Could not recv ack");
+        NA_LOG_ERROR("Could not recv ack");
         ret = NA_FAIL;
         return ret;
     }
@@ -943,7 +943,7 @@ na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
 
     /* Check that local memory is registered */
     if (!hg_hash_table_lookup(mem_handle_map, bmi_local_mem_handle->base)) {
-        NA_ERROR_DEFAULT("Could not find memory handle, registered?");
+        NA_LOG_ERROR("Could not find memory handle, registered?");
         ret = NA_FAIL;
         return ret;
     }
@@ -959,13 +959,13 @@ na_bmi_get(na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     ret = na_bmi_msg_send_unexpected(&onesided_info, sizeof(bmi_onesided_info_t),
             remote_addr, NA_BMI_ONESIDED_TAG, &onesided_request, NULL);
     if (ret != NA_SUCCESS) {
-        NA_ERROR_DEFAULT("Could not send onesided info");
+        NA_LOG_ERROR("Could not send onesided info");
         ret = NA_FAIL;
         return ret;
     }
     ret = na_bmi_wait(onesided_request, NA_MAX_IDLE_TIME, &onesided_status);
     if (ret != NA_SUCCESS) {
-        NA_ERROR_DEFAULT("Error during wait");
+        NA_LOG_ERROR("Error during wait");
         ret = NA_FAIL;
         return ret;
     }
@@ -992,13 +992,13 @@ na_bmi_process_unexpected(void)
         bmi_ret = BMI_testunexpected(1, &outcount, request_info, 0);
         if (outcount) {
             if (bmi_ret < 0 || request_info->error_code != 0) {
-                NA_ERROR_DEFAULT("Request recv failure (bad state)");
-                NA_ERROR_DEFAULT("BMI_testunexpected failed");
+                NA_LOG_ERROR("Request recv failure (bad state)");
+                NA_LOG_ERROR("BMI_testunexpected failed");
                 ret = NA_FAIL;
                 break;
             }
             if (!hg_list_append(&unexpected_list, (hg_list_value_t)request_info)) {
-                NA_ERROR_DEFAULT("Could not append handle to list");
+                NA_LOG_ERROR("Could not append handle to list");
                 ret = NA_FAIL;
                 break;
             }
@@ -1024,7 +1024,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
     /* Only the thread that has created the request should wait and free that request
      * even if the request may have been marked as completed by other threads */
     if (!bmi_wait_request) {
-        NA_ERROR_DEFAULT("NULL request");
+        NA_LOG_ERROR("NULL request");
         ret = NA_FAIL;
         return ret;
     }
@@ -1056,7 +1056,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
         hg_thread_mutex_unlock(&testcontext_mutex);
 
         if (hg_thread_cond_ret < 0) {
-            NA_ERROR_DEFAULT("hg_thread_cond_timedwait failed");
+            NA_LOG_ERROR("hg_thread_cond_timedwait failed");
             ret = NA_FAIL;
             break;
         }
@@ -1085,7 +1085,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
             /* Always try to receive unexpected messages before calling testcontext */
             ret = na_bmi_process_unexpected();
             if (ret != NA_SUCCESS) {
-                NA_ERROR_DEFAULT("Could not process unexpected messages");
+                NA_LOG_ERROR("Could not process unexpected messages");
                 ret = NA_FAIL;
                 goto wakeup;
             }
@@ -1097,7 +1097,7 @@ na_bmi_wait(na_request_t request, unsigned int timeout, na_status_t *status)
             remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
 
             if (bmi_ret < 0 || error_code != 0) {
-                NA_ERROR_DEFAULT("BMI_testcontext failed");
+                NA_LOG_ERROR("BMI_testcontext failed");
                 ret = NA_FAIL;
                 goto wakeup;
             }
@@ -1140,16 +1140,16 @@ wakeup:
             hg_thread_mutex_unlock(&request_mutex);
             ret = na_bmi_wait(bmi_wait_request->ack_request, timeout, &ack_status);
             if (ret != NA_SUCCESS) {
-                NA_ERROR_DEFAULT("Could not wait for ack request");
+                NA_LOG_ERROR("Could not wait for ack request");
                 ret = NA_FAIL;
                 return ret;
             }
             if (!ack_status.completed) {
-                NA_ERROR_DEFAULT("Ack not completed");
+                NA_LOG_ERROR("Ack not completed");
                 return ret;
             }
             if (!bmi_wait_request->ack) {
-                NA_ERROR_DEFAULT("Got wrong ack");
+                NA_LOG_ERROR("Got wrong ack");
                 ret = NA_FAIL;
                 return ret;
             }
@@ -1203,7 +1203,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
                     &onesided_actual_size, &remote_addr,
                     &remote_tag, &onesided_request, NULL);
             if (ret != NA_SUCCESS) {
-                NA_ERROR_DEFAULT("Could not recv buffer");
+                NA_LOG_ERROR("Could not recv buffer");
                 ret = NA_FAIL;
                 return ret;
             }
@@ -1222,7 +1222,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
             return ret;
         }
         if (onesided_actual_size != sizeof(onesided_info)) {
-            NA_ERROR_DEFAULT("recv_buf_size does not match onesided_info");
+            NA_LOG_ERROR("recv_buf_size does not match onesided_info");
             ret = NA_FAIL;
             return ret;
         }
@@ -1230,7 +1230,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
 
     ret = na_bmi_wait(onesided_request, timeout, &onesided_status);
     if (ret != NA_SUCCESS) {
-        NA_ERROR_DEFAULT("Error while waiting");
+        NA_LOG_ERROR("Error while waiting");
         ret = NA_FAIL;
         return ret;
     }
@@ -1247,7 +1247,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
     }
 
     if (remote_tag != NA_BMI_ONESIDED_TAG) {
-        NA_ERROR_DEFAULT("Bad remote tag");
+        NA_LOG_ERROR("Bad remote tag");
         ret = NA_FAIL;
         return ret;
     }
@@ -1259,7 +1259,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
     bmi_mem_handle = (bmi_mem_handle_t*) hg_hash_table_lookup(mem_handle_map, onesided_info.base);
 
     if (!bmi_mem_handle) {
-        NA_ERROR_DEFAULT("Could not find memory handle, registered?");
+        NA_LOG_ERROR("Could not find memory handle, registered?");
         hg_thread_mutex_unlock(&mem_map_mutex);
         ret = NA_FAIL;
         return ret;
@@ -1272,7 +1272,7 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
                     onesided_info.count, remote_addr, onesided_info.tag,
                     &onesided_data_request, NULL);
             if (ret != NA_SUCCESS) {
-                NA_ERROR_DEFAULT("Could not recv data");
+                NA_LOG_ERROR("Could not recv data");
                 ret = NA_FAIL;
                 break;
             }
@@ -1281,19 +1281,19 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
             ret = na_bmi_msg_send(&ack, sizeof(na_bool_t), remote_addr, onesided_info.ack_tag,
                     &onesided_ack_request, NULL);
             if (ret != NA_SUCCESS) {
-                NA_ERROR_DEFAULT("Could not send ack");
+                NA_LOG_ERROR("Could not send ack");
                 ret = NA_FAIL;
                 break;
             }
             ret = na_bmi_wait(onesided_data_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
             if (ret != NA_SUCCESS) {
-                NA_ERROR_DEFAULT("Error while waiting");
+                NA_LOG_ERROR("Error while waiting");
                 ret = NA_FAIL;
                 return ret;
             }
             ret = na_bmi_wait(onesided_ack_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
             if (ret != NA_SUCCESS) {
-                NA_ERROR_DEFAULT("Error while waiting");
+                NA_LOG_ERROR("Error while waiting");
                 ret = NA_FAIL;
                 return ret;
             }
@@ -1305,20 +1305,20 @@ na_bmi_progress(unsigned int timeout, na_status_t *status)
                     onesided_info.count, remote_addr, onesided_info.tag,
                     &onesided_data_request, NULL);
             if (ret != NA_SUCCESS) {
-                NA_ERROR_DEFAULT("Could not send data");
+                NA_LOG_ERROR("Could not send data");
                 ret = NA_FAIL;
                 break;
             }
             ret = na_bmi_wait(onesided_data_request, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
             if (ret != NA_SUCCESS) {
-                NA_ERROR_DEFAULT("Error while waiting");
+                NA_LOG_ERROR("Error while waiting");
                 ret = NA_FAIL;
                 return ret;
             }
             break;
 
         default:
-            NA_ERROR_DEFAULT("Operation not supported");
+            NA_LOG_ERROR("Operation not supported");
             break;
     }
 
@@ -1345,7 +1345,7 @@ na_bmi_request_free(na_request_t request)
     hg_thread_mutex_lock(&request_mutex);
 
     if (!bmi_request) {
-        NA_ERROR_DEFAULT("NULL request");
+        NA_LOG_ERROR("NULL request");
         ret = NA_FAIL;
     } else {
         free(bmi_request);
