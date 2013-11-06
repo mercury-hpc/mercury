@@ -47,7 +47,7 @@ lookup_cb(const struct na_cb_info *info)
     na_return_t ret = NA_SUCCESS;
 
     if (info->ret != NA_SUCCESS) {
-        return info->ret;
+        return ret;
     }
 
     params->server_addr = info->lookup.addr;
@@ -66,7 +66,7 @@ msg_expected_recv_cb(const struct na_cb_info *info)
     na_return_t ret = NA_SUCCESS;
 
     if (info->ret != NA_SUCCESS) {
-        return info->ret;
+        return ret;
     }
 
     printf("Received msg (%s) from server\n", params->recv_buf);
@@ -81,7 +81,7 @@ ack_expected_recv_cb(const struct na_cb_info *info)
     na_return_t ret = NA_SUCCESS;
 
     if (info->ret != NA_SUCCESS) {
-        return info->ret;
+        return ret;
     }
 
     printf("Bulk transfer complete\n");
@@ -106,7 +106,7 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
             params->send_buf, params->send_buf_len, params->server_addr,
             send_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not send unexpected message\n");
+        fprintf(stderr, "Could not start send of unexpected message\n");
         return EXIT_FAILURE;
     }
 
@@ -114,7 +114,7 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
             params, params->recv_buf, params->recv_buf_len, params->server_addr,
             send_tag + 1, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not recv message\n");
+        fprintf(stderr, "Could not start recv of message\n");
         return EXIT_FAILURE;
     }
 
@@ -158,7 +158,7 @@ test_bulk(struct na_test_params *params)
             params->send_buf, params->send_buf_len, params->server_addr,
             bulk_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not send memory handle\n");
+        fprintf(stderr, "Could not start send of memory handle\n");
         return EXIT_FAILURE;
     }
 
@@ -168,7 +168,7 @@ test_bulk(struct na_test_params *params)
             params, params->recv_buf, params->recv_buf_len, params->server_addr,
             ack_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not receive acknowledgment\n");
+        fprintf(stderr, "Could not start receive of acknowledgment\n");
         return EXIT_FAILURE;
     }
 
@@ -204,15 +204,16 @@ main(int argc, char *argv[])
     na_ret = NA_Addr_lookup(params.network_class, &lookup_cb, &params, server_name,
             NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not find addr %s\n", server_name);
+        fprintf(stderr, "Could not start lookup of addr %s\n", server_name);
         return EXIT_FAILURE;
     }
 
     /* TODO change condition */
     while(1) {
         int cb_triggered = 0;
-        NA_Progress(params.network_class, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-        NA_Trigger(0, 1, &cb_triggered);
+        if (NA_Progress(params.network_class, NA_MAX_IDLE_TIME) == NA_SUCCESS) {
+            NA_Trigger(0, 1, &cb_triggered);
+        }
     }
 
     printf("Finalizing...\n");

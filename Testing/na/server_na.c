@@ -46,7 +46,7 @@ msg_unexpected_recv_cb(const struct na_cb_info *info)
     na_return_t ret = NA_SUCCESS;
 
     if (info->ret != NA_SUCCESS) {
-        return info->ret;
+        return ret;
     }
 
     printf("Received msg (%s) from client\n", params->recv_buf);
@@ -70,6 +70,10 @@ bulk_get_cb(const struct na_cb_info *info)
     unsigned int i;
     na_bool_t error = 0;
 
+    if (info->ret != NA_SUCCESS) {
+        return ret;
+    }
+
     /* Check bulk buf */
     for (i = 0; i < params->bulk_size; i++) {
         if ((na_size_t) params->bulk_buf[i] != i) {
@@ -88,7 +92,7 @@ bulk_get_cb(const struct na_cb_info *info)
             params->send_buf, params->send_buf_len, params->source_addr,
             ack_tag, NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not send acknowledgment\n");
+        fprintf(stderr, "Could not start send of acknowledgment\n");
         return ret;
     }
 
@@ -119,7 +123,7 @@ mem_handle_expected_recv_cb(const struct na_cb_info *info)
     na_return_t ret = NA_SUCCESS;
 
     if (info->ret != NA_SUCCESS) {
-        return info->ret;
+        return ret;
     }
 
     /* Deserialize memory handle */
@@ -140,12 +144,11 @@ mem_handle_expected_recv_cb(const struct na_cb_info *info)
             params->bulk_size * sizeof(int), params->source_addr,
             NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not get data\n");
+        fprintf(stderr, "Could not start get\n");
     }
 
     return ret;
 }
-
 
 static int
 test_send(struct na_test_params *params, na_tag_t send_tag)
@@ -159,7 +162,7 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
             params->send_buf, params->send_buf_len, params->source_addr,
             send_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not send message\n");
+        fprintf(stderr, "Could not start send of message\n");
         return EXIT_FAILURE;
     }
 
@@ -195,13 +198,12 @@ test_bulk(struct na_test_params *params)
             params->recv_buf_len, params->source_addr, bulk_tag,
             NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not recv memory handle\n");
+        fprintf(stderr, "Could not start recv of memory handle\n");
         return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;
 }
-
 
 int main(int argc, char *argv[])
 {
@@ -240,8 +242,9 @@ int main(int argc, char *argv[])
         /* TODO change condition */
         while(1) {
             int cb_triggered = 0;
-            NA_Progress(params.network_class, NA_MAX_IDLE_TIME, NA_STATUS_IGNORE);
-            NA_Trigger(0, 1, &cb_triggered);
+            if (NA_Progress(params.network_class, NA_MAX_IDLE_TIME) == NA_SUCCESS) {
+                NA_Trigger(0, 1, &cb_triggered);
+            }
         }
 
         na_ret = NA_Addr_free(params.network_class, params.source_addr);
