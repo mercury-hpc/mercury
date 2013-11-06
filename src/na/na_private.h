@@ -29,7 +29,7 @@ typedef na_return_t (*na_plugin_cb_t)(struct na_cb_info *, void * data);
 /* NA class definition */
 struct na_class {
     /* Finalize callback */
-    na_return_t (*finalize)(void);
+    na_return_t (*finalize)(na_class_t *na_class);
 
     /* Network address callbacks */
     na_return_t (*addr_lookup)(na_cb_t callback, void *arg, const char *name,

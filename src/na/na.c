@@ -233,7 +233,7 @@ na_return_t
 NA_Finalize(na_class_t *network_class)
 {
     assert(network_class);
-    return network_class->finalize();
+    return network_class->finalize(network_class);
 }
 
 /*---------------------------------------------------------------------------*/
