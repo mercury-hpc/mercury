@@ -64,6 +64,9 @@ typedef enum na_return {
 #define NA_TRUE     1
 #define NA_FALSE    0
 
+/* Callback type */
+typedef na_return_t (*na_cb_t)(const struct na_cb_info *);
+
 /* Callback operation type */
 enum na_cb_type {
     NA_CB_LOOKUP,
@@ -164,7 +167,7 @@ NA_Finalize(na_class_t *network_class);
  */
 NA_EXPORT na_return_t
 NA_Addr_lookup(na_class_t *network_class,
-        na_return_t (*callback)(const struct na_cb_info *), void *arg,
+        na_cb_t callback, void *arg,
         const char *name, na_op_id_t *op_id);
 
 /**
@@ -247,7 +250,7 @@ NA_Msg_get_max_tag(na_class_t *network_class) NA_WARN_UNUSED_RESULT;
  */
 NA_EXPORT na_return_t
 NA_Msg_send_unexpected(na_class_t *network_class,
-        na_return_t (*callback)(const struct na_cb_info *), void *arg,
+        na_cb_t callback, void *arg,
         const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
         na_op_id_t *op_id);
 
@@ -267,7 +270,7 @@ NA_Msg_send_unexpected(na_class_t *network_class,
  */
 NA_EXPORT na_return_t
 NA_Msg_recv_unexpected(na_class_t *network_class,
-        na_return_t (*callback)(const struct na_cb_info *), void *arg,
+        na_cb_t callback, void *arg,
         void *buf, na_size_t buf_size, na_op_id_t *op_id);
 
 /**
@@ -289,7 +292,7 @@ NA_Msg_recv_unexpected(na_class_t *network_class,
  */
 NA_EXPORT na_return_t
 NA_Msg_send_expected(na_class_t *network_class,
-        na_return_t (*callback)(const struct na_cb_info *), void *arg,
+        na_cb_t callback, void *arg,
         const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
         na_op_id_t *op_id);
 
@@ -309,7 +312,7 @@ NA_Msg_send_expected(na_class_t *network_class,
  */
 NA_EXPORT na_return_t
 NA_Msg_recv_expected(na_class_t *network_class,
-        na_return_t (*callback)(const struct na_cb_info *), void *arg,
+        na_cb_t callback, void *arg,
         void *buf, na_size_t buf_size, na_addr_t source, na_tag_t tag,
         na_op_id_t *op_id);
 
@@ -457,7 +460,7 @@ NA_Mem_handle_deserialize(na_class_t *network_class,
  */
 NA_EXPORT na_return_t
 NA_Put(na_class_t *network_class,
-        na_return_t (*callback)(const struct na_cb_info *), void *arg,
+        na_cb_t callback, void *arg,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t data_size, na_addr_t remote_addr,
@@ -481,7 +484,7 @@ NA_Put(na_class_t *network_class,
  */
 NA_EXPORT na_return_t
 NA_Get(na_class_t *network_class,
-        na_return_t (*callback)(const struct na_cb_info *), void *arg,
+        na_cb_t callback, void *arg,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t data_size, na_addr_t remote_addr,
@@ -496,13 +499,11 @@ NA_Get(na_class_t *network_class,
  *
  * \param network_class [IN]    pointer to network class
  * \param timeout [IN]          timeout (in milliseconds)
- * \param status [OUT]          pointer to returned status
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS if any completion has occurred / NA error code otherwise
  */
 NA_EXPORT na_return_t
-NA_Progress(na_class_t *network_class, unsigned int timeout,
-        na_status_t *status);
+NA_Progress(na_class_t *network_class, unsigned int timeout);
 
 /**
  * Execute at most max_count callbacks. If timeout is non-zero, wait up to

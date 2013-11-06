@@ -22,9 +22,6 @@
     #define NA_UNUSED
 #endif
 
-/* Private callback type */
-typedef na_return_t (*na_cb_t)(const struct na_cb_info *);
-
 /* Private callback type for NA plugins */
 typedef na_return_t (*na_plugin_cb_t)(struct na_cb_info *, void * data);
 
