@@ -448,14 +448,13 @@ NA_Get(na_class_t *network_class,
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Progress(na_class_t *network_class, unsigned int timeout,
-        na_status_t *status)
+NA_Progress(na_class_t *network_class, unsigned int timeout)
 {
     /* TODO per plugin --> push callback to the queue when something completes
      * wake up everyone waiting in the trigger in main na and not in pluggin
      * to avoid duplicating code */
     assert(network_class);
-    return network_class->progress(timeout, status);
+    return network_class->progress(timeout);
 }
 
 /*---------------------------------------------------------------------------*/

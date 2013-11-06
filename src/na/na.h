@@ -20,7 +20,6 @@ typedef void *      na_addr_t;        /* Abstract network address */
 typedef na_uint64_t na_size_t;        /* Size */
 typedef na_uint32_t na_tag_t;         /* Tag */
 typedef void *      na_op_id_t;       /* Abstract operation id */
-typedef struct na_status na_status_t; /* Opaque status */
 
 typedef void *      na_mem_handle_t;   /* Abstract memory handle */
 typedef na_uint64_t na_offset_t;       /* Offset */
@@ -35,7 +34,6 @@ struct na_segment {
 #define NA_ADDR_NULL       ((na_addr_t)0)
 #define NA_OP_ID_NULL      ((na_op_id_t)0)
 #define NA_OP_ID_IGNORE    ((na_op_id_t *)1)
-#define NA_STATUS_IGNORE   ((na_status_t *)1)
 #define NA_MEM_HANDLE_NULL ((na_mem_handle_t)0)
 
 /* Max timeout */

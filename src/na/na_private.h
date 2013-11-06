@@ -82,7 +82,7 @@ struct na_class {
             na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
 
     /* Progress callbacks */
-    na_return_t (*progress)(unsigned int timeout, na_status_t *status);
+    na_return_t (*progress)(unsigned int timeout);
 };
 
 /* Host string buffer */
@@ -100,12 +100,6 @@ struct na_class_describe {
     na_bool_t (*verify) (const char *protocol);
     na_class_t *(*initialize) (const struct na_host_buffer *na_buffer,
             na_bool_t listen);
-};
-
-/* NA status */
-struct na_status {
-    na_bool_t completed; /* true if operation has completed */
-    na_size_t count;     /* number of bytes transmitted */
 };
 
 typedef enum na_class_priority {
