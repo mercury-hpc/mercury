@@ -238,7 +238,8 @@ NA_Finalize(na_class_t *network_class)
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Addr_lookup(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Addr_lookup(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         const char *name, na_op_id_t *op_id)
 {
     assert(network_class);
@@ -299,7 +300,8 @@ NA_Msg_get_max_tag(na_class_t *network_class)
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Msg_send_unexpected(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Msg_send_unexpected(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
         na_op_id_t *op_id)
 {
@@ -310,7 +312,8 @@ NA_Msg_send_unexpected(na_class_t *network_class, na_cb_t callback, void *arg,
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Msg_recv_unexpected(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Msg_recv_unexpected(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         void *buf, na_size_t buf_size, na_op_id_t *op_id)
 {
     assert(network_class);
@@ -320,7 +323,8 @@ NA_Msg_recv_unexpected(na_class_t *network_class, na_cb_t callback, void *arg,
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Msg_send_expected(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Msg_send_expected(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
         na_op_id_t *op_id)
 {
@@ -331,7 +335,8 @@ NA_Msg_send_expected(na_class_t *network_class, na_cb_t callback, void *arg,
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Msg_recv_expected(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Msg_recv_expected(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         void *buf, na_size_t buf_size, na_addr_t source, na_tag_t tag,
         na_op_id_t *op_id)
 {
@@ -413,7 +418,8 @@ NA_Mem_handle_deserialize(na_class_t *network_class,
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Put(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Put(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t data_size, na_addr_t remote_addr,
@@ -427,7 +433,8 @@ NA_Put(na_class_t *network_class, na_cb_t callback, void *arg,
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Get(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Get(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t data_size, na_addr_t remote_addr,

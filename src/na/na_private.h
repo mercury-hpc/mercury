@@ -22,6 +22,9 @@
     #define NA_UNUSED
 #endif
 
+/* Private callback type */
+typedef na_return_t (*na_cb_t)(const struct na_cb_info *);
+
 /* NA class definition */
 struct na_class {
     /* Finalize callback */
@@ -52,7 +55,7 @@ struct na_class {
 
     /* Memory registration callbacks */
     na_return_t (*mem_handle_create)(void *buf, na_size_t buf_size,
-        unsigned long flags, na_mem_handle_t *mem_handle);
+            unsigned long flags, na_mem_handle_t *mem_handle);
     na_return_t (*mem_handle_create_segments)(struct na_segment *segments,
             na_size_t segment_count, unsigned long flags,
             na_mem_handle_t *mem_handle);
@@ -110,5 +113,18 @@ typedef enum na_class_priority {
   NA_CLASS_PRIORITY_HIGH     = 2,
   NA_CLASS_PRIORITY_MAX      = 10
 } na_class_priority_t;
+
+/* Private routines for use inside NA plugins */
+
+/**
+ * Add callback to completion queue.
+ *
+ * \param callback [IN]       pointer to function
+ * \param info [IN]           callback info struct
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+na_cb_completion_add(na_cb_t callback, const struct na_cb_info *info);
 
 #endif /* NA_PRIVATE_H */

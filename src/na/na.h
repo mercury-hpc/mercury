@@ -15,13 +15,6 @@
 
 #include <limits.h>
 
-/* Keep that note for now: this should be internal and depend on the plugin */
-//typedef struct na_op_id {
-//    void * ;
-//    uint64_t cookie;
-//    na_callback_info_t
-//} na_op_id_t;
-
 typedef struct na_class na_class_t;   /* Opaque network class */
 typedef void *      na_addr_t;        /* Abstract network address */
 typedef na_uint64_t na_size_t;        /* Size */
@@ -40,7 +33,8 @@ struct na_segment {
 
 /* Constant values */
 #define NA_ADDR_NULL       ((na_addr_t)0)
-#define NA_REQUEST_NULL    ((na_request_t)0)
+#define NA_OP_ID_NULL      ((na_op_id_t)0)
+#define NA_OP_ID_IGNORE    ((na_op_id_t *)1)
 #define NA_STATUS_IGNORE   ((na_status_t *)1)
 #define NA_MEM_HANDLE_NULL ((na_mem_handle_t)0)
 
@@ -92,7 +86,7 @@ struct na_cb_info_send_unexpected {
 
 struct na_cb_info_recv_unexpected {
     na_size_t actual_buf_size;
-    na_addr_t addr;
+    na_addr_t source;
     na_tag_t  tag;
 };
 
@@ -112,28 +106,21 @@ struct na_cb_info_put {
     /* nothing */
 };
 
-/* Union of callback info structures */
-union na_cb_info_struct {
-  struct na_cb_info_lookup lookup;
-  struct na_cb_info_send_unexpected send_unexpected;
-  struct na_cb_info_recv_unexpected recv_unexpected;
-  struct na_cb_info_send_expected send_expected;
-  struct na_cb_info_recv_expected recv_expected;
-  struct na_cb_info_put put;
-  struct na_cb_info_get get;
-};
-
 /* Callback info struct */
 struct na_cb_info {
     void *          arg;          /* User data */
     na_return_t     ret;          /* Return value */
-//    na_op_id_t      op_id;        /* Operation id (TODO needed here?) */
     enum na_cb_type type;         /* Callback type */
-    union na_cb_info_struct info; /* Callback info (in/out parameters) */
+    union {                       /* Union of callback info structures */
+      struct na_cb_info_lookup lookup;
+      struct na_cb_info_send_unexpected send_unexpected;
+      struct na_cb_info_recv_unexpected recv_unexpected;
+      struct na_cb_info_send_expected send_expected;
+      struct na_cb_info_recv_expected recv_expected;
+      struct na_cb_info_put put;
+      struct na_cb_info_get get;
+    };
 };
-
-/* Callback type */
-typedef na_return_t (*na_cb_t)(const struct na_cb_info *);
 
 #ifdef __cplusplus
 extern "C" {
@@ -176,7 +163,8 @@ NA_Finalize(na_class_t *network_class);
  * \return Non-negative on success or negative on failure
  */
 NA_EXPORT na_return_t
-NA_Addr_lookup(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Addr_lookup(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         const char *name, na_op_id_t *op_id);
 
 /**
@@ -258,7 +246,8 @@ NA_Msg_get_max_tag(na_class_t *network_class) NA_WARN_UNUSED_RESULT;
  * \return Non-negative on success or negative on failure
  */
 NA_EXPORT na_return_t
-NA_Msg_send_unexpected(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Msg_send_unexpected(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
         na_op_id_t *op_id);
 
@@ -277,7 +266,8 @@ NA_Msg_send_unexpected(na_class_t *network_class, na_cb_t callback, void *arg,
  * \return Non-negative on success or negative on failure
  */
 NA_EXPORT na_return_t
-NA_Msg_recv_unexpected(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Msg_recv_unexpected(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         void *buf, na_size_t buf_size, na_op_id_t *op_id);
 
 /**
@@ -298,7 +288,8 @@ NA_Msg_recv_unexpected(na_class_t *network_class, na_cb_t callback, void *arg,
  * \return Non-negative on success or negative on failure
  */
 NA_EXPORT na_return_t
-NA_Msg_send_expected(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Msg_send_expected(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
         na_op_id_t *op_id);
 
@@ -317,7 +308,8 @@ NA_Msg_send_expected(na_class_t *network_class, na_cb_t callback, void *arg,
  * \return Non-negative on success or negative on failure
  */
 NA_EXPORT na_return_t
-NA_Msg_recv_expected(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Msg_recv_expected(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         void *buf, na_size_t buf_size, na_addr_t source, na_tag_t tag,
         na_op_id_t *op_id);
 
@@ -464,7 +456,8 @@ NA_Mem_handle_deserialize(na_class_t *network_class,
  * \return Non-negative on success or negative on failure
  */
 NA_EXPORT na_return_t
-NA_Put(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Put(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t data_size, na_addr_t remote_addr,
@@ -487,7 +480,8 @@ NA_Put(na_class_t *network_class, na_cb_t callback, void *arg,
  * \return Non-negative on success or negative on failure
  */
 NA_EXPORT na_return_t
-NA_Get(na_class_t *network_class, na_cb_t callback, void *arg,
+NA_Get(na_class_t *network_class,
+        na_return_t (*callback)(const struct na_cb_info *), void *arg,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t data_size, na_addr_t remote_addr,
