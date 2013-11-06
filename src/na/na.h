@@ -64,9 +64,6 @@ typedef enum na_return {
 #define NA_TRUE     1
 #define NA_FALSE    0
 
-/* Callback type */
-typedef na_return_t (*na_cb_t)(const struct na_cb_info *);
-
 /* Callback operation type */
 enum na_cb_type {
     NA_CB_LOOKUP,
@@ -124,6 +121,9 @@ struct na_cb_info {
       struct na_cb_info_get get;
     };
 };
+
+/* Callback type */
+typedef na_return_t (*na_cb_t)(const struct na_cb_info *);
 
 #ifdef __cplusplus
 extern "C" {
