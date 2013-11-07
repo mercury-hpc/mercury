@@ -56,12 +56,14 @@ struct na_segment {
 typedef enum na_return {
     NA_FAIL = -1,       /* default (TODO keep until switch to new error format) */
     NA_SUCCESS = 0,
-    NA_TIMEOUT,          /* reached timeout */
-    NA_INVALID_PARAM,    /* invalid parameter */
-    NA_SIZE_ERROR,       /* message size error */
-    NA_ALIGNMENT_ERROR,  /* alignment error */
-    NA_PERMISSION_ERROR, /* read/write permission error */
-    NA_NOMEM_ERROR       /* no memory error */
+    NA_CANCELED = 1,         /* operation canceled. */
+    NA_TIMEOUT = 2,          /* reached timeout */
+    NA_INVALID_PARAM = 3,    /* invalid parameter */
+    NA_SIZE_ERROR = 4,       /* message size error */
+    NA_ALIGNMENT_ERROR = 5,  /* alignment error */
+    NA_PERMISSION_ERROR = 6, /* read/write permission error */
+    NA_NOMEM_ERROR = 7,      /* no memory error */
+    NA_PROTOCOL_ERROR = 8,   /* unknown error reported from the protocol layer */
 } na_return_t;
 
 #define NA_TRUE     1

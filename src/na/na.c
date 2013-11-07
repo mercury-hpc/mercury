@@ -488,7 +488,7 @@ NA_Error_to_string(na_return_t errnum)
 
     NA_ERROR_STRING_MACRO(NA_FAIL, errnum, na_error_string);
     NA_ERROR_STRING_MACRO(NA_SUCCESS, errnum, na_error_string);
-    NA_ERROR_STRING_MACRO(NA_MEMORY_ERROR, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_NOMEM_ERROR, errnum, na_error_string);
 
     return na_error_string;
 }

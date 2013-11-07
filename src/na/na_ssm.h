@@ -18,13 +18,16 @@
 #include <ssm.h>
 #include <ssmptcp.h>
 
-#ifdef __cplusplus
-extern "C" {
+#if (__GNUC__)
+#define __likely(x)   __builtin_expect(!!(x), 1)
+#define __unlikely(x) __builtin_expect(!!(x), 0)
+#else
+#define __likely(x)     (x)
+#define __unlikely(x)   (x)
 #endif
 
-#ifdef __cplusplus
-}
-#endif
+
+
 
 #endif /* NA_SSM_H */
 

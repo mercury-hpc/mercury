@@ -23,7 +23,7 @@
 #endif
 
 /* Private callback type for NA plugins */
-typedef na_return_t (*na_plugin_cb_t)(struct na_cb_info *, void * data);
+typedef void (*na_plugin_cb_t)(struct na_cb_info *, void * data);
 
 
 /* NA class definition */
@@ -88,6 +88,7 @@ struct na_class {
 
     /* Progress callbacks */
     na_return_t (*progress)(na_class_t *na_class, unsigned int timeout);
+    na_return_t (*cancel)(na_class_t *na_class, na_op_id_t op_id);
 };
 
 /* Host string buffer */
