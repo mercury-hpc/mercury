@@ -243,7 +243,7 @@ NA_Addr_lookup(na_class_t *network_class,
         const char *name, na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->addr_lookup(callback, arg, name, op_id);
+    return network_class->addr_lookup(network_class, callback, arg, name, op_id);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -251,7 +251,7 @@ na_return_t
 NA_Addr_free(na_class_t *network_class, na_addr_t addr)
 {
     assert(network_class);
-    return network_class->addr_free(addr);
+    return network_class->addr_free(network_class, addr);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -269,7 +269,7 @@ NA_Addr_to_string(na_class_t *network_class, char *buf, na_size_t buf_size,
         return ret;
     }
 
-    ret = network_class->addr_to_string(buf, buf_size, addr);
+    ret = network_class->addr_to_string(network_class, buf, buf_size, addr);
 
     return ret;
 }
@@ -279,7 +279,7 @@ na_size_t
 NA_Msg_get_max_expected_size(na_class_t *network_class)
 {
     assert(network_class);
-    return network_class->msg_get_max_expected_size();
+    return network_class->msg_get_max_expected_size(network_class);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -287,7 +287,7 @@ na_size_t
 NA_Msg_get_max_unexpected_size(na_class_t *network_class)
 {
     assert(network_class);
-    return network_class->msg_get_max_unexpected_size();
+    return network_class->msg_get_max_unexpected_size(network_class);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -295,7 +295,7 @@ na_tag_t
 NA_Msg_get_max_tag(na_class_t *network_class)
 {
     assert(network_class);
-    return network_class->msg_get_max_tag();
+    return network_class->msg_get_max_tag(network_class);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -306,7 +306,7 @@ NA_Msg_send_unexpected(na_class_t *network_class,
         na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->msg_send_unexpected(callback, arg,
+    return network_class->msg_send_unexpected(network_class, callback, arg,
             buf, buf_size, dest, tag, op_id);
 }
 
@@ -317,7 +317,7 @@ NA_Msg_recv_unexpected(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->msg_recv_unexpected(callback, arg,
+    return network_class->msg_recv_unexpected(network_class, callback, arg,
             buf, buf_size, op_id);
 }
 
@@ -329,7 +329,7 @@ NA_Msg_send_expected(na_class_t *network_class,
         na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->msg_send_expected(callback, arg,
+    return network_class->msg_send_expected(network_class, callback, arg,
             buf, buf_size, dest, tag, op_id);
 }
 
@@ -341,7 +341,7 @@ NA_Msg_recv_expected(na_class_t *network_class,
         na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->msg_recv_expected(callback, arg,
+    return network_class->msg_recv_expected(network_class, callback, arg,
             buf, buf_size, source, tag, op_id);
 }
 
@@ -351,7 +351,8 @@ NA_Mem_handle_create(na_class_t *network_class, void *buf, na_size_t buf_size,
         unsigned long flags, na_mem_handle_t *mem_handle)
 {
     assert(network_class);
-    return network_class->mem_handle_create(buf, buf_size, flags, mem_handle);
+    return network_class->mem_handle_create(network_class, buf, buf_size, flags,
+            mem_handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -361,8 +362,8 @@ NA_Mem_handle_create_segments(na_class_t *network_class,
         unsigned long flags, na_mem_handle_t *mem_handle)
 {
     assert(network_class);
-    return network_class->mem_handle_create_segments(segments, segment_count,
-            flags, mem_handle);
+    return network_class->mem_handle_create_segments(network_class, segments,
+            segment_count, flags, mem_handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -370,7 +371,7 @@ na_return_t
 NA_Mem_handle_free(na_class_t *network_class, na_mem_handle_t mem_handle)
 {
     assert(network_class);
-    return network_class->mem_handle_free(mem_handle);
+    return network_class->mem_handle_free(network_class, mem_handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -378,7 +379,7 @@ na_return_t
 NA_Mem_register(na_class_t *network_class, na_mem_handle_t mem_handle)
 {
     assert(network_class);
-    return network_class->mem_register(mem_handle);
+    return network_class->mem_register(network_class, mem_handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -386,7 +387,7 @@ int
 NA_Mem_deregister(na_class_t *network_class, na_mem_handle_t mem_handle)
 {
     assert(network_class);
-    return network_class->mem_deregister(mem_handle);
+    return network_class->mem_deregister(network_class, mem_handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -395,7 +396,8 @@ NA_Mem_handle_get_serialize_size(na_class_t *network_class,
         na_mem_handle_t mem_handle)
 {
     assert(network_class);
-    return network_class->mem_handle_get_serialize_size(mem_handle);
+    return network_class->mem_handle_get_serialize_size(network_class,
+            mem_handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -404,7 +406,8 @@ NA_Mem_handle_serialize(na_class_t *network_class,
         void *buf, na_size_t buf_size, na_mem_handle_t mem_handle)
 {
     assert(network_class);
-    return network_class->mem_handle_serialize(buf, buf_size, mem_handle);
+    return network_class->mem_handle_serialize(network_class, buf, buf_size,
+            mem_handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -413,7 +416,8 @@ NA_Mem_handle_deserialize(na_class_t *network_class,
         na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size)
 {
     assert(network_class);
-    return network_class->mem_handle_deserialize(mem_handle, buf, buf_size);
+    return network_class->mem_handle_deserialize(network_class, mem_handle, buf,
+            buf_size);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -426,7 +430,7 @@ NA_Put(na_class_t *network_class,
         na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->put(callback, arg,
+    return network_class->put(network_class, callback, arg,
             local_mem_handle, local_offset, remote_mem_handle, remote_offset,
             data_size, remote_addr, op_id);
 }
@@ -441,7 +445,7 @@ NA_Get(na_class_t *network_class,
         na_op_id_t *op_id)
 {
     assert(network_class);
-    return network_class->get(callback, arg,
+    return network_class->get(network_class, callback, arg,
             local_mem_handle, local_offset, remote_mem_handle, remote_offset,
             data_size, remote_addr, op_id);
 }
@@ -454,7 +458,7 @@ NA_Progress(na_class_t *network_class, unsigned int timeout)
      * wake up everyone waiting in the trigger in main na and not in pluggin
      * to avoid duplicating code */
     assert(network_class);
-    return network_class->progress(timeout);
+    return network_class->progress(network_class, timeout);
 }
 
 /*---------------------------------------------------------------------------*/

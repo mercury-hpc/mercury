@@ -32,57 +32,62 @@ struct na_class {
     na_return_t (*finalize)(na_class_t *na_class);
 
     /* Network address callbacks */
-    na_return_t (*addr_lookup)(na_cb_t callback, void *arg, const char *name,
-            na_op_id_t *op_id);
-    na_return_t (*addr_free)(na_addr_t addr);
-    na_return_t (*addr_to_string)(char *buf, na_size_t buf_size,
-            na_addr_t addr);
+    na_return_t (*addr_lookup)(na_class_t *na_class, na_cb_t callback,
+            void *arg, const char *name, na_op_id_t *op_id);
+    na_return_t (*addr_free)(na_class_t *na_class, na_addr_t addr);
+    na_return_t (*addr_to_string)(na_class_t *na_class, char *buf,
+            na_size_t buf_size, na_addr_t addr);
 
     /* Message callbacks (used for metadata transfer) */
-    na_size_t (*msg_get_max_expected_size)(void);
-    na_size_t (*msg_get_max_unexpected_size)(void);
-    na_tag_t (*msg_get_max_tag)(void);
-    na_return_t (*msg_send_unexpected)(na_cb_t callback, void *arg,
-            const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
-            na_op_id_t *op_id);
-    na_return_t (*msg_recv_unexpected)(na_cb_t callback, void *arg,
-            void *buf, na_size_t buf_size, na_op_id_t *op_id);
-    na_return_t (*msg_send_expected)(na_cb_t callback, void *arg,
-            const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
-            na_op_id_t *op_id);
-    na_return_t (*msg_recv_expected)(na_cb_t callback, void *arg,
-            void *buf, na_size_t buf_size, na_addr_t source, na_tag_t tag,
-            na_op_id_t *op_id);
+    na_size_t (*msg_get_max_expected_size)(na_class_t *na_class);
+    na_size_t (*msg_get_max_unexpected_size)(na_class_t *na_class);
+    na_tag_t (*msg_get_max_tag)(na_class_t *na_class);
+    na_return_t (*msg_send_unexpected)(na_class_t *na_class, na_cb_t callback,
+            void *arg, const void *buf, na_size_t buf_size, na_addr_t dest,
+            na_tag_t tag, na_op_id_t *op_id);
+    na_return_t (*msg_recv_unexpected)(na_class_t *na_class, na_cb_t callback,
+            void *arg, void *buf, na_size_t buf_size, na_op_id_t *op_id);
+    na_return_t (*msg_send_expected)(na_class_t *na_class, na_cb_t callback,
+            void *arg, const void *buf, na_size_t buf_size, na_addr_t dest,
+            na_tag_t tag, na_op_id_t *op_id);
+    na_return_t (*msg_recv_expected)(na_class_t *na_class, na_cb_t callback,
+            void *arg, void *buf, na_size_t buf_size, na_addr_t source,
+            na_tag_t tag, na_op_id_t *op_id);
 
     /* Memory registration callbacks */
-    na_return_t (*mem_handle_create)(void *buf, na_size_t buf_size,
-            unsigned long flags, na_mem_handle_t *mem_handle);
-    na_return_t (*mem_handle_create_segments)(struct na_segment *segments,
-            na_size_t segment_count, unsigned long flags,
+    na_return_t (*mem_handle_create)(na_class_t *na_class, void *buf,
+            na_size_t buf_size, unsigned long flags,
             na_mem_handle_t *mem_handle);
-    na_return_t (*mem_handle_free)(na_mem_handle_t mem_handle);
-    na_return_t (*mem_register)(na_mem_handle_t mem_handle);
-    na_return_t (*mem_deregister)(na_mem_handle_t mem_handle);
+    na_return_t (*mem_handle_create_segments)(na_class_t *na_class,
+            struct na_segment *segments, na_size_t segment_count,
+            unsigned long flags, na_mem_handle_t *mem_handle);
+    na_return_t (*mem_handle_free)(na_class_t *na_class,
+            na_mem_handle_t mem_handle);
+    na_return_t (*mem_register)(na_class_t *na_class,
+            na_mem_handle_t mem_handle);
+    na_return_t (*mem_deregister)(na_class_t *na_class,
+            na_mem_handle_t mem_handle);
 
     /* Memory handle serialization callbacks */
-    na_size_t (*mem_handle_get_serialize_size)(na_mem_handle_t mem_handle);
-    na_return_t (*mem_handle_serialize)(void *buf, na_size_t buf_size,
+    na_size_t (*mem_handle_get_serialize_size)(na_class_t *na_class,
             na_mem_handle_t mem_handle);
-    na_return_t (*mem_handle_deserialize)(na_mem_handle_t *mem_handle,
-            const void *buf, na_size_t buf_size);
+    na_return_t (*mem_handle_serialize)(na_class_t *na_class, void *buf,
+            na_size_t buf_size, na_mem_handle_t mem_handle);
+    na_return_t (*mem_handle_deserialize)(na_class_t *na_class,
+            na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
 
     /* One-sided transfer callbacks (used for for bulk data operations) */
-    na_return_t (*put)(na_cb_t callback, void *arg,
+    na_return_t (*put)(na_class_t *na_class, na_cb_t callback, void *arg,
             na_mem_handle_t local_mem_handle, na_offset_t local_offset,
             na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
             na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
-    na_return_t (*get)(na_cb_t callback, void *arg,
+    na_return_t (*get)(na_class_t *na_class, na_cb_t callback, void *arg,
             na_mem_handle_t local_mem_handle, na_offset_t local_offset,
             na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
             na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
 
     /* Progress callbacks */
-    na_return_t (*progress)(unsigned int timeout);
+    na_return_t (*progress)(na_class_t *na_class, unsigned int timeout);
 };
 
 /* Host string buffer */
