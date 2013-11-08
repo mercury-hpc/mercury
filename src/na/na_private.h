@@ -125,7 +125,7 @@ typedef enum na_class_priority {
  *                            callback returned.
  * \param plugindata [IN]     Argument to pass to the plugincallback
  *
- * \return NA_SUCCESS or corresponding NA error code
+ * \return NA_SUCCESS or corresponding NA error code (failure is not an option)
  */
 NA_EXPORT na_return_t
 na_cb_completion_add(na_cb_t callback, struct na_cb_info *info,
