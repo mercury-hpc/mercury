@@ -54,16 +54,21 @@ struct na_segment {
 /* Error return codes:
  * Functions return 0 for success or NA_XXX_ERROR for failure */
 typedef enum na_return {
-    NA_FAIL = -1,      /* default (TODO keep until switch to new error format) */
+    NA_FAIL = -1,       /* default (TODO keep until switch to new error format) */
     NA_SUCCESS = 0,
-    NA_MEMORY_ERROR    /* TODO description */
+    NA_TIMEOUT,          /* reached timeout */
+    NA_INVALID_PARAM,    /* invalid parameter */
+    NA_SIZE_ERROR,       /* message size error */
+    NA_ALIGNMENT_ERROR,  /* alignment error */
+    NA_PERMISSION_ERROR, /* read/write permission error */
+    NA_NOMEM_ERROR       /* no memory error */
 } na_return_t;
 
 #define NA_TRUE     1
 #define NA_FALSE    0
 
 /* Callback operation type */
-enum na_cb_type {
+typedef enum na_cb_type {
     NA_CB_LOOKUP,
     NA_CB_SEND_UNEXPECTED,
     NA_CB_RECV_UNEXPECTED,
@@ -71,7 +76,7 @@ enum na_cb_type {
     NA_CB_RECV_EXPECTED,
     NA_CB_PUT,
     NA_CB_GET
-};
+} na_cb_type_t;
 
 /* Callback info structs */
 struct na_cb_info_lookup {
@@ -108,7 +113,7 @@ struct na_cb_info_put {
 struct na_cb_info {
     void *          arg;          /* User data */
     na_return_t     ret;          /* Return value */
-    enum na_cb_type type;         /* Callback type */
+    na_cb_type_t    type;         /* Callback type */
     union {                       /* Union of callback info structures */
       struct na_cb_info_lookup lookup;
       struct na_cb_info_send_unexpected send_unexpected;
@@ -145,7 +150,7 @@ NA_Initialize(const char *host_string, na_bool_t listen) NA_WARN_UNUSED_RESULT;
  *
  * \param network_class [IN]    pointer to network class
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Finalize(na_class_t *network_class);
@@ -161,7 +166,7 @@ NA_Finalize(na_class_t *network_class);
  * \param name [IN]             lookup name
  * \param op_id [OUT]           pointer to returned operation ID
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Addr_lookup(na_class_t *network_class,
@@ -174,7 +179,7 @@ NA_Addr_lookup(na_class_t *network_class,
  * \param network_class [IN]    pointer to network class
  * \param addr [IN]             abstract address
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Addr_free(na_class_t *network_class, na_addr_t addr);
@@ -189,7 +194,7 @@ NA_Addr_free(na_class_t *network_class, na_addr_t addr);
  *                              by NA_MAX_ADDR_LEN)
  * \param addr [IN]             abstract address
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Addr_to_string(na_class_t *network_class, char *buf, na_size_t buf_size,
@@ -244,7 +249,7 @@ NA_Msg_get_max_tag(na_class_t *network_class) NA_WARN_UNUSED_RESULT;
  * \param tag [IN]              tag attached to message
  * \param op_id [OUT]           pointer to returned operation ID
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Msg_send_unexpected(na_class_t *network_class,
@@ -264,7 +269,7 @@ NA_Msg_send_unexpected(na_class_t *network_class,
  * \param buf_size [IN]         buffer size
  * \param op_id [OUT]           pointer to returned operation ID
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Msg_recv_unexpected(na_class_t *network_class,
@@ -286,7 +291,7 @@ NA_Msg_recv_unexpected(na_class_t *network_class,
  * \param tag [IN]              tag attached to message
  * \param op_id [OUT]           pointer to returned operation ID
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Msg_send_expected(na_class_t *network_class,
@@ -306,7 +311,7 @@ NA_Msg_send_expected(na_class_t *network_class,
  * \param tag [IN]              matching tag used to receive message
  * \param op_id [OUT]           pointer to returned operation ID
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Msg_recv_expected(na_class_t *network_class,
@@ -326,7 +331,7 @@ NA_Msg_recv_expected(na_class_t *network_class,
  *                                - NA_MEM_READ_ONLY
  * \param mem_handle [OUT]      pointer to returned abstract memory handle
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Mem_handle_create(na_class_t *network_class, void *buf, na_size_t buf_size,
@@ -349,7 +354,7 @@ NA_Mem_handle_create(na_class_t *network_class, void *buf, na_size_t buf_size,
  *                                - NA_MEM_READ_ONLY
  * \param mem_handle [OUT]      pointer to returned abstract memory handle
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Mem_handle_create_segments(na_class_t *network_class,
@@ -362,7 +367,7 @@ NA_Mem_handle_create_segments(na_class_t *network_class,
  * \param network_class [IN]    pointer to network class
  * \param mem_handle [IN]       abstract memory handle
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Mem_handle_free(na_class_t *network_class, na_mem_handle_t mem_handle);
@@ -375,7 +380,7 @@ NA_Mem_handle_free(na_class_t *network_class, na_mem_handle_t mem_handle);
  * \param network_class [IN]    pointer to network class
  * \param mem_handle [IN]       pointer to abstract memory handle
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Mem_register(na_class_t *network_class, na_mem_handle_t mem_handle);
@@ -386,7 +391,7 @@ NA_Mem_register(na_class_t *network_class, na_mem_handle_t mem_handle);
  * \param network_class [IN]    pointer to network class
  * \param mem_handle [IN]       abstract memory handle
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Mem_deregister(na_class_t *network_class, na_mem_handle_t mem_handle);
@@ -417,7 +422,7 @@ NA_Mem_handle_get_serialize_size(na_class_t *network_class,
  * \param buf_size [IN]         buffer size
  * \param mem_handle [IN]       abstract memory handle
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Mem_handle_serialize(na_class_t *network_class,
@@ -431,7 +436,7 @@ NA_Mem_handle_serialize(na_class_t *network_class,
  * \param buf [IN]              pointer to buffer used for deserialization
  * \param buf_size [IN]         buffer size
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Mem_handle_deserialize(na_class_t *network_class,
@@ -454,7 +459,7 @@ NA_Mem_handle_deserialize(na_class_t *network_class,
  * \param remote_addr [IN]       abstract address of remote destination
  * \param op_id [OUT]            pointer to returned operation ID
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Put(na_class_t *network_class,
@@ -478,7 +483,7 @@ NA_Put(na_class_t *network_class,
  * \param remote_addr [IN]       abstract address of remote source
  * \param op_id [OUT]            pointer to returned operation ID
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Get(na_class_t *network_class,
@@ -512,7 +517,7 @@ NA_Progress(na_class_t *network_class, unsigned int timeout);
  * \param max_count [IN]        maximum number of callbacks triggered
  * \param max_count [IN]        actual number of callbacks triggered
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count);
@@ -523,7 +528,7 @@ NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count);
  * \param network_class [IN]    pointer to network class
  * \param op_id [IN]            operation ID
  *
- * \return Non-negative on success or negative on failure
+ * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
 NA_Cancel(na_op_id_t op_id);
