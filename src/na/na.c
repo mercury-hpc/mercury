@@ -17,9 +17,21 @@
 #endif
 #include "na_error.h"
 
+#include "mercury_queue.h"
+#include "mercury_thread_mutex.h"
+#include "mercury_thread_condition.h"
+#include "mercury_util_error.h"
+
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+
+struct na_cb_completion_data {
+    na_cb_t callback;
+    struct na_cb_info *callback_info;
+    na_plugin_cb_t plugin_callback;
+    void *plugin_callback_args;
+};
 
 #ifdef NA_HAS_SSM
 extern struct na_class_describe na_ssm_describe_g;
@@ -43,6 +55,10 @@ static const struct na_class_describe *na_class_methods[] = {
 #endif
     NULL
 };
+
+static hg_queue_t *na_cb_completion_queue_g = NULL;
+static hg_thread_mutex_t na_cb_completion_queue_mutex_g;
+static hg_thread_cond_t  na_cb_completion_queue_cond_g;
 
 /* Convert value to string */
 #define NA_ERROR_STRING_MACRO(def, value, string) \
@@ -221,6 +237,13 @@ NA_Initialize(const char *host_string, na_bool_t listen)
         }
     }
 
+    /* Initialize completion queue */
+    na_cb_completion_queue_g = hg_queue_new();
+
+    /* Initialize completion queue mutex/cond */
+    hg_thread_mutex_init(&na_cb_completion_queue_mutex_g);
+    hg_thread_cond_init(&na_cb_completion_queue_cond_g);
+
     network_class = na_class_methods[class_index]->initialize(na_buffer, listen);
 
     NA_free_host_buffer(na_buffer);
@@ -232,8 +255,31 @@ NA_Initialize(const char *host_string, na_bool_t listen)
 na_return_t
 NA_Finalize(na_class_t *network_class)
 {
+    na_return_t ret = NA_SUCCESS;
+
     assert(network_class);
-    return network_class->finalize(network_class);
+    ret = network_class->finalize(network_class);
+
+    /* Check that completion queue is empty now */
+    hg_thread_mutex_lock(&na_cb_completion_queue_mutex_g);
+
+    if (hg_queue_is_empty(na_cb_completion_queue_g)) {
+        NA_LOG_ERROR("Completion queue should be empty");
+        ret = NA_PROTOCOL_ERROR;
+        hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+        return ret;
+    }
+
+    hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+
+    /* Destroy completion queue */
+    hg_queue_free(na_cb_completion_queue_g);
+
+    /* Destroy completion queue mutex/cond */
+    hg_thread_mutex_destroy(&na_cb_completion_queue_mutex_g);
+    hg_thread_cond_destroy(&na_cb_completion_queue_cond_g);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -454,20 +500,71 @@ NA_Get(na_class_t *network_class,
 na_return_t
 NA_Progress(na_class_t *network_class, unsigned int timeout)
 {
-    /* TODO per plugin --> push callback to the queue when something completes
-     * wake up everyone waiting in the trigger in main na and not in pluggin
-     * to avoid duplicating code */
     assert(network_class);
     return network_class->progress(network_class, timeout);
 }
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Trigger(unsigned int NA_UNUSED timeout, unsigned int NA_UNUSED max_count, int NA_UNUSED *actual_count)
+NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count)
 {
     na_return_t ret = NA_SUCCESS;
+    na_bool_t completion_queue_is_empty = 0;
+    struct na_cb_completion_data *completion_data = NULL;
+    unsigned int count = 0;
 
-    /* TODO locking with condition variable */
+    while (count < max_count) {
+        hg_thread_mutex_lock(&na_cb_completion_queue_mutex_g);
+
+        /* Is completion queue empty */
+        completion_queue_is_empty = hg_queue_is_empty(na_cb_completion_queue_g);
+
+        while (completion_queue_is_empty) {
+            /* If queue is empty and already triggered something, just leave */
+            if (count) goto unlock;
+
+            /* Otherwise wait timeout ms */
+            if (hg_thread_cond_timedwait(&na_cb_completion_queue_cond_g,
+                    &na_cb_completion_queue_mutex_g, timeout)
+                    != HG_UTIL_SUCCESS) {
+                /* Timeout occurred so leave */
+                /* TODO check that timeout really occurred */
+                ret = NA_TIMEOUT;
+                goto unlock;
+            }
+        }
+
+        /* Completion queue should not be empty now */
+        completion_data = (struct na_cb_completion_data *)
+                    hg_queue_pop_tail(na_cb_completion_queue_g);
+        if (!completion_data) {
+            NA_LOG_ERROR("NULL completion data");
+            ret = NA_FAIL;
+            goto unlock;
+        }
+
+        /* Unlock now so that other threads can eventually add callbacks
+         * to the queue while callback gets executed */
+        hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+
+        /* Execute callback */
+        completion_data->callback(completion_data->callback_info);
+
+        /* Execute plugin callback (free resources etc) */
+        completion_data->plugin_callback(completion_data->callback_info,
+                completion_data->plugin_callback_args);
+
+        count++;
+    }
+
+    goto done;
+
+unlock:
+    hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+
+done:
+    if (actual_count && ret == NA_SUCCESS) *actual_count = count;
+
     return ret;
 }
 
@@ -498,4 +595,45 @@ NA_Error_to_string(na_return_t errnum)
     NA_ERROR_STRING_MACRO(NA_PROTOCOL_ERROR, errnum, na_error_string);
 
     return na_error_string;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+na_cb_completion_add(na_cb_t callback, struct na_cb_info *callback_info,
+        na_plugin_cb_t plugin_callback, void *plugin_callback_args)
+{
+    na_return_t ret = NA_SUCCESS;
+    struct na_cb_completion_data *completion_data = NULL;
+
+    completion_data = (struct na_cb_completion_data *)
+            malloc(sizeof(struct na_cb_completion_data));
+    if (!completion_data) {
+        NA_LOG_ERROR("Could not allocate completion data struct");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+
+    completion_data->callback = callback;
+    completion_data->callback_info = callback_info;
+    completion_data->plugin_callback = plugin_callback;
+    completion_data->plugin_callback_args = plugin_callback_args;
+
+    hg_thread_mutex_lock(&na_cb_completion_queue_mutex_g);
+
+    if (!hg_queue_push_head(na_cb_completion_queue_g,
+            (hg_queue_value_t) completion_data)) {
+        NA_LOG_ERROR("Could not push completion data to completion queue");
+        ret = NA_NOMEM_ERROR;
+        goto unlock;
+    }
+
+    /* Callback is pushed to the completion queue when something completes
+     * so wake up anyone waiting in the trigger */
+    hg_thread_cond_signal(&na_cb_completion_queue_cond_g);
+
+unlock:
+    hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+
+done:
+    return ret;
 }

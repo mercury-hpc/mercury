@@ -15,19 +15,19 @@
 
 #include <limits.h>
 
-typedef struct na_class na_class_t;   /* Opaque network class */
-typedef void *      na_addr_t;        /* Abstract network address */
-typedef na_uint64_t na_size_t;        /* Size */
-typedef na_uint32_t na_tag_t;         /* Tag */
-typedef void *      na_op_id_t;       /* Abstract operation id */
+typedef struct na_class na_class_t; /* Opaque network class */
+typedef void * na_addr_t;           /* Abstract network address */
+typedef na_uint64_t na_size_t;      /* Size */
+typedef na_uint32_t na_tag_t;       /* Tag */
+typedef void * na_op_id_t;          /* Abstract operation id */
 
-typedef void *      na_mem_handle_t;   /* Abstract memory handle */
-typedef na_uint64_t na_offset_t;       /* Offset */
+typedef void * na_mem_handle_t;  /* Abstract memory handle */
+typedef na_uint64_t na_offset_t; /* Offset */
 
 /* Segment */
 struct na_segment {
-    na_ptr_t   address;              /* Address of the segment */
-    na_size_t  size;                 /* Size of the segment in bytes */
+    na_ptr_t address; /* Address of the segment */
+    na_size_t size;   /* Size of the segment in bytes */
 };
 
 /* Constant values */
@@ -54,7 +54,7 @@ struct na_segment {
 /* Error return codes:
  * Functions return 0 for success or NA_XXX_ERROR for failure */
 typedef enum na_return {
-    NA_FAIL = -1,       /* default (TODO keep until switch to new error format) */
+    NA_FAIL = -1,        /* default (TODO keep until switch to new error format) */
     NA_SUCCESS = 0,
     NA_CANCELED = 1,         /* operation canceled. */
     NA_TIMEOUT = 2,          /* reached timeout */
@@ -63,7 +63,7 @@ typedef enum na_return {
     NA_ALIGNMENT_ERROR = 5,  /* alignment error */
     NA_PERMISSION_ERROR = 6, /* read/write permission error */
     NA_NOMEM_ERROR = 7,      /* no memory error */
-    NA_PROTOCOL_ERROR = 8,   /* unknown error reported from the protocol layer */
+    NA_PROTOCOL_ERROR = 8    /* unknown error reported from the protocol layer */
 } na_return_t;
 
 #define NA_TRUE     1
@@ -113,17 +113,17 @@ struct na_cb_info_put {
 
 /* Callback info struct */
 struct na_cb_info {
-    void *          arg;          /* User data */
-    na_return_t     ret;          /* Return value */
-    na_cb_type_t    type;         /* Callback type */
-    union {                       /* Union of callback info structures */
-      struct na_cb_info_lookup lookup;
-      struct na_cb_info_send_unexpected send_unexpected;
-      struct na_cb_info_recv_unexpected recv_unexpected;
-      struct na_cb_info_send_expected send_expected;
-      struct na_cb_info_recv_expected recv_expected;
-      struct na_cb_info_put put;
-      struct na_cb_info_get get;
+    void *arg;         /* User data */
+    na_return_t ret;   /* Return value */
+    na_cb_type_t type; /* Callback type */
+    union {            /* Union of callback info structures */
+        struct na_cb_info_lookup lookup;
+        struct na_cb_info_send_unexpected send_unexpected;
+        struct na_cb_info_recv_unexpected recv_unexpected;
+        struct na_cb_info_send_expected send_expected;
+        struct na_cb_info_recv_expected recv_expected;
+        struct na_cb_info_put put;
+        struct na_cb_info_get get;
     };
 };
 

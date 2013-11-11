@@ -23,7 +23,7 @@
 #endif
 
 /* Private callback type for NA plugins */
-typedef void (*na_plugin_cb_t)(struct na_cb_info *, void * data);
+typedef void (*na_plugin_cb_t)(struct na_cb_info *, void *data);
 
 
 /* NA class definition */
@@ -120,16 +120,16 @@ typedef enum na_class_priority {
 /**
  * Add callback to completion queue.
  *
- * \param callback [IN]       pointer to function
- * \param info [IN]           callback info struct
- * \param plugincallback [IN] Callback which will be called after the user
- *                            callback returned.
- * \param plugindata [IN]     Argument to pass to the plugincallback
+ * \param callback [IN]             pointer to function
+ * \param callback_info [IN]        callback info struct
+ * \param plugin_callback [IN]      Callback which will be called after the user
+ *                                  callback returns.
+ * \param plugin_callback_args [IN] Argument to pass to the plugin_callback
  *
  * \return NA_SUCCESS or corresponding NA error code (failure is not an option)
  */
 NA_EXPORT na_return_t
-na_cb_completion_add(na_cb_t callback, struct na_cb_info *info,
-      na_plugin_cb_t plugincallback, void * plugindata);
+na_cb_completion_add(na_cb_t callback, struct na_cb_info *callback_info,
+      na_plugin_cb_t plugin_callback, void *plugin_callback_args);
 
 #endif /* NA_PRIVATE_H */
