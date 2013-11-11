@@ -1,31 +1,26 @@
 #------------------------------------------------------------------------------
+# Set up test macros
+#------------------------------------------------------------------------------
+function(build_na_test test_name)
+  add_executable(${test_name} ${test_name}.c)
+  target_link_libraries(${test_name} mercury_test)
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(${test_name})
+  endif()
+endfunction()
+
+#------------------------------------------------------------------------------
 # Network abstraction test
-
-add_executable(client_na client_na.c)
-target_link_libraries(client_na mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_na)
-endif()
-
-add_executable(server_na server_na.c)
-target_link_libraries(server_na mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_na)
-endif()
+build_na_test(client_na)
+build_na_test(server_na)
 
 if(NA_USE_SSM)
-add_executable(client_simple_na client_simple_na.c)
-target_link_libraries(client_simple_na mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_simple_na)
+  build_na_test(client_simple_na)
+  build_na_test(server_simple_na)
 endif()
 
-add_executable(server_simple_na server_simple_na.c)
-target_link_libraries(server_simple_na mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_simple_na)
-endif()
-endif()
+#------------------------------------------------------------------------------
+# Set list of tests
 
 # Dynamic client / server test with all enabled NA plugins
 add_mercury_test(na server_na client_na)

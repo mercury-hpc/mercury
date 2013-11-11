@@ -29,6 +29,14 @@ add_subdirectory(driver)
 #------------------------------------------------------------------------------
 # Set up test macros
 #------------------------------------------------------------------------------
+function(build_mercury_test test_name)
+  add_executable(${test_name} ${test_name}.c)
+  target_link_libraries(${test_name} mercury_test mercury)
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(${test_name})
+  endif()
+endfunction()
+
 function(add_mercury_test full_test_name server client)
   foreach(comm ${NA_PLUGINS})
     add_test(NAME "${full_test_name}_${comm}"
@@ -64,7 +72,7 @@ endfunction()
 # mercury_test : Lib used by tests contains main test initialization etc
 #------------------------------------------------------------------------------
 add_library(mercury_test STATIC mercury_test.c)
-target_link_libraries(mercury_test mercury)
+target_link_libraries(mercury_test na)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_test)
 endif()
@@ -83,116 +91,44 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
 # Set up test
 #------------------------------------------------------------------------------
 # Function shipper test
-add_executable(client_rpc client_rpc.c)
-target_link_libraries(client_rpc mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_rpc)
-endif()
-
-add_executable(server_rpc server_rpc.c)
-target_link_libraries(server_rpc mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_rpc)
-endif()
+build_mercury_test(client_rpc)
+build_mercury_test(server_rpc)
 
 #------------------------------------------------------------------------------
 # Bulk data shipper test
-add_executable(client_bulk client_bulk.c)
-target_link_libraries(client_bulk mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_bulk)
-endif()
-
-add_executable(server_bulk server_bulk.c)
-target_link_libraries(server_bulk mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_bulk)
-endif()
+build_mercury_test(client_bulk)
+build_mercury_test(server_bulk)
 
 #------------------------------------------------------------------------------
 # Non-contiguous bulk data shipper test
-add_executable(client_bulk_seg client_bulk_seg.c)
-target_link_libraries(client_bulk_seg mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_bulk_seg)
-endif()
-
-add_executable(server_bulk_seg server_bulk_seg.c)
-target_link_libraries(server_bulk_seg mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_bulk_seg)
-endif()
+build_mercury_test(client_bulk_seg)
+build_mercury_test(server_bulk_seg)
 
 #------------------------------------------------------------------------------
 # Bandwidth bulk data shipper test using pipelining
-add_executable(client_pipeline client_pipeline.c)
-target_link_libraries(client_pipeline mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_pipeline)
-endif()
-
-add_executable(server_pipeline server_pipeline.c)
-target_link_libraries(server_pipeline mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_pipeline)
-endif()
+build_mercury_test(client_pipeline)
+build_mercury_test(server_pipeline)
 
 #------------------------------------------------------------------------------
 # Scaling bandwidth bulk data shipper test using pipelining
 if(NA_USE_MPI)
-  add_executable(client_scale client_scale.c)
-  target_link_libraries(client_scale mercury_test)
-  if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(client_scale)
-  endif()
+  build_mercury_test(client_scale)
+  build_mercury_test(server_scale)
 
-  add_executable(server_scale server_scale.c)
-  target_link_libraries(server_scale mercury_test)
-  if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(server_scale)
-  endif()
-
-  add_executable(client_pipeline_scale client_pipeline_scale.c)
-  target_link_libraries(client_pipeline_scale mercury_test)
-  if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(client_pipeline_scale)
-  endif()
-
-  add_executable(server_pipeline_scale server_pipeline_scale.c)
-  target_link_libraries(server_pipeline_scale mercury_test)
-  if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(server_pipeline_scale)
-  endif()
+  build_mercury_test(client_pipeline_scale)
+  build_mercury_test(server_pipeline_scale)
 endif()
 
 #------------------------------------------------------------------------------
 # Multiple client/server test
-add_executable(client_multiple client_multiple.c)
-target_link_libraries(client_multiple mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(client_multiple)
-endif()
-
-add_executable(server_multiple server_multiple.c)
-target_link_libraries(server_multiple mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(server_multiple)
-endif()
+build_mercury_test(client_multiple)
+build_mercury_test(server_multiple)
 
 #------------------------------------------------------------------------------
 # POSIX test
 if(NOT WIN32)
-  add_executable(client_posix client_posix.c)
-  target_link_libraries(client_posix mercury_test)
-  if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(client_posix)
-  endif()
-
-  add_executable(server_posix server_posix.c)
-  target_link_libraries(server_posix mercury_test)
-  if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(server_posix)
-  endif()
+  build_mercury_test(client_posix)
+  build_mercury_test(server_posix)
 endif()
 
 #------------------------------------------------------------------------------
