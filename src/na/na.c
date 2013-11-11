@@ -488,7 +488,14 @@ NA_Error_to_string(na_return_t errnum)
 
     NA_ERROR_STRING_MACRO(NA_FAIL, errnum, na_error_string);
     NA_ERROR_STRING_MACRO(NA_SUCCESS, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_CANCELED, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_TIMEOUT, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_INVALID_PARAM, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_SIZE_ERROR, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_ALIGNMENT_ERROR, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_PERMISSION_ERROR, errnum, na_error_string);
     NA_ERROR_STRING_MACRO(NA_NOMEM_ERROR, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_PROTOCOL_ERROR, errnum, na_error_string);
 
     return na_error_string;
 }
