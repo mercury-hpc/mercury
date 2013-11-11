@@ -50,7 +50,7 @@ lookup_cb(const struct na_cb_info *info)
         return ret;
     }
 
-    params->server_addr = info->lookup.addr;
+    params->server_addr = info->info.lookup.addr;
 
     test_send(params, send_tag);
 

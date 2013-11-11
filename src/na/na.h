@@ -85,30 +85,10 @@ struct na_cb_info_lookup {
     na_addr_t addr;
 };
 
-struct na_cb_info_send_unexpected {
-    /* nothing */
-};
-
 struct na_cb_info_recv_unexpected {
     na_size_t actual_buf_size;
     na_addr_t source;
     na_tag_t  tag;
-};
-
-struct na_cb_info_send_expected {
-    /* nothing */
-};
-
-struct na_cb_info_recv_expected {
-    /* nothing */
-};
-
-struct na_cb_info_get {
-    /* nothing */
-};
-
-struct na_cb_info_put {
-    /* nothing */
 };
 
 /* Callback info struct */
@@ -118,13 +98,8 @@ struct na_cb_info {
     na_cb_type_t type; /* Callback type */
     union {            /* Union of callback info structures */
         struct na_cb_info_lookup lookup;
-        struct na_cb_info_send_unexpected send_unexpected;
         struct na_cb_info_recv_unexpected recv_unexpected;
-        struct na_cb_info_send_expected send_expected;
-        struct na_cb_info_recv_expected recv_expected;
-        struct na_cb_info_put put;
-        struct na_cb_info_get get;
-    };
+    } info;
 };
 
 /* Callback type */
