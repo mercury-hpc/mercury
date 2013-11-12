@@ -124,7 +124,7 @@ typedef int (*hg_list_equal_func_t)(hg_list_value_t value1, hg_list_value_t valu
  * \param list         The list to free.
  */
 HG_UTIL_EXPORT void
-list_free(hg_list_entry_t *list);
+hg_list_free(hg_list_entry_t *list);
 
 /**
  * Prepend a value to the start of a list.
