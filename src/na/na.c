@@ -258,7 +258,6 @@ NA_Finalize(na_class_t *network_class)
     na_return_t ret = NA_SUCCESS;
 
     assert(network_class);
-    ret = network_class->finalize(network_class);
 
     /* Check that completion queue is empty now */
     hg_thread_mutex_lock(&na_cb_completion_queue_mutex_g);
@@ -270,10 +269,13 @@ NA_Finalize(na_class_t *network_class)
         return ret;
     }
 
-    hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
-
     /* Destroy completion queue */
     hg_queue_free(na_cb_completion_queue_g);
+    na_cb_completion_queue_g = NULL;
+
+    hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+
+    ret = network_class->finalize(network_class);
 
     /* Destroy completion queue mutex/cond */
     hg_thread_mutex_destroy(&na_cb_completion_queue_mutex_g);
