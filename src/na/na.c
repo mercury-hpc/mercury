@@ -572,11 +572,10 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Cancel(na_op_id_t NA_UNUSED op_id)
+NA_Cancel(na_class_t *na_class, na_op_id_t op_id)
 {
-    na_return_t ret = NA_SUCCESS;
-
-    return ret;
+    assert(na_class);
+    return na_class->cancel(na_class, op_id);
 }
 
 /*---------------------------------------------------------------------------*/

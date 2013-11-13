@@ -502,13 +502,13 @@ NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count);
 /**
  * Cancel an ongoing operation.
  *
- * \param network_class [IN]    pointer to network class
+ * \param na_class [IN]         pointer to NA class
  * \param op_id [IN]            operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Cancel(na_op_id_t op_id);
+NA_Cancel(na_class_t *na_class, na_op_id_t op_id);
 
 /**
  * Convert error return code to string (null terminated).
