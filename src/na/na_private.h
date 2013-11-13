@@ -25,20 +25,20 @@
 /* Private callback type for NA plugins */
 typedef void (*na_plugin_cb_t)(struct na_cb_info *, void *data);
 
-
-/* NA class definition */
+/* NA class definition
+ * na_private_data is defined inside NA plugins to avoid static declaration
+ */
 struct na_class {
-    /* Finalize callback */
+    struct na_private_data *private_data;
+
     na_return_t (*finalize)(na_class_t *na_class);
 
-    /* Network address callbacks */
     na_return_t (*addr_lookup)(na_class_t *na_class, na_cb_t callback,
             void *arg, const char *name, na_op_id_t *op_id);
     na_return_t (*addr_free)(na_class_t *na_class, na_addr_t addr);
     na_return_t (*addr_to_string)(na_class_t *na_class, char *buf,
             na_size_t buf_size, na_addr_t addr);
 
-    /* Message callbacks (used for metadata transfer) */
     na_size_t (*msg_get_max_expected_size)(na_class_t *na_class);
     na_size_t (*msg_get_max_unexpected_size)(na_class_t *na_class);
     na_tag_t (*msg_get_max_tag)(na_class_t *na_class);
@@ -54,7 +54,6 @@ struct na_class {
             void *arg, void *buf, na_size_t buf_size, na_addr_t source,
             na_tag_t tag, na_op_id_t *op_id);
 
-    /* Memory registration callbacks */
     na_return_t (*mem_handle_create)(na_class_t *na_class, void *buf,
             na_size_t buf_size, unsigned long flags,
             na_mem_handle_t *mem_handle);
@@ -68,7 +67,6 @@ struct na_class {
     na_return_t (*mem_deregister)(na_class_t *na_class,
             na_mem_handle_t mem_handle);
 
-    /* Memory handle serialization callbacks */
     na_size_t (*mem_handle_get_serialize_size)(na_class_t *na_class,
             na_mem_handle_t mem_handle);
     na_return_t (*mem_handle_serialize)(na_class_t *na_class, void *buf,
@@ -76,7 +74,6 @@ struct na_class {
     na_return_t (*mem_handle_deserialize)(na_class_t *na_class,
             na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size);
 
-    /* One-sided transfer callbacks (used for for bulk data operations) */
     na_return_t (*put)(na_class_t *na_class, na_cb_t callback, void *arg,
             na_mem_handle_t local_mem_handle, na_offset_t local_offset,
             na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
@@ -86,7 +83,6 @@ struct na_class {
             na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
             na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
 
-    /* Progress callbacks */
     na_return_t (*progress)(na_class_t *na_class, unsigned int timeout);
     na_return_t (*cancel)(na_class_t *na_class, na_op_id_t op_id);
 };
