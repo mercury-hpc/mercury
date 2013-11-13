@@ -25,12 +25,12 @@
 /* Private callback type for NA plugins */
 typedef void (*na_plugin_cb_t)(struct na_cb_info *, void *data);
 
-/* NA class definition
- * na_private_data is defined inside NA plugins to avoid static declaration
- */
+/* NA class definition */
 struct na_class {
-    struct na_private_data *private_data;
+    /* plugin private data */
+    void *private_data;
 
+    /* plugin callbacks */
     na_return_t (*finalize)(na_class_t *na_class);
 
     na_return_t (*addr_lookup)(na_class_t *na_class, na_cb_t callback,
