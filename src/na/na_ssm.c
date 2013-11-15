@@ -567,8 +567,6 @@ na_ssm_addr_lookup(na_class_t  *in_na_class,
     na_return_t          v_return       = NA_SUCCESS;
     struct na_ssm_opid  *v_ssm_opid     = NULL;
 
-    assert(v_ssm_class);
-    
     v_ssm_addr = (struct na_ssm_addr *) malloc(sizeof(struct na_ssm_addr));
 
     if (__unlikely(v_ssm_addr == NULL))
@@ -1243,8 +1241,6 @@ na_ssm_msg_recv_expected(na_class_t     *in_na_class,
     struct na_ssm_private_data *v_data   = (struct na_ssm_private_data *) in_na_class->private_data;
     ssm_cb_t             v_callback;
 
-    assert(v_ssm_class);
-    
     v_ssm_opid = (struct na_ssm_opid *) malloc(sizeof(struct na_ssm_opid));
 
     if (v_ssm_opid == NULL)
@@ -1843,8 +1839,6 @@ na_ssm_progress(na_class_t    *in_na_class,
     na_bool_t      v_condition = NA_TRUE;
     struct na_ssm_private_data *v_data = (struct na_ssm_private_data *) in_na_class->private_data;
 
-    assert(v_ssm_class);
-    
     v_tv.tv_sec = 0;
     v_tv.tv_usec = 1000*10;
     
@@ -1890,8 +1884,6 @@ na_ssm_cancel(na_class_t    *in_na_class,
     struct na_ssm_private_data *v_data = (struct na_ssm_private_data *) in_na_class->private_data;
     struct na_ssm_opid  *v_ssm_opid  = (struct na_ssm_opid *) in_opid;
     int                  v_return    = NA_FAIL;
-
-    assert(v_ssm_class);
 
     if (v_ssm_opid != NULL && v_ssm_opid->transaction != NULL)
     {
