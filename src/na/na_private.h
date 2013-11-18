@@ -23,7 +23,7 @@
 #endif
 
 /* Private callback type for NA plugins */
-typedef void (*na_plugin_cb_t)(struct na_cb_info *, void *data);
+typedef void (*na_plugin_cb_t)(struct na_cb_info *callback_info, void *arg);
 
 /* NA class definition */
 struct na_class {

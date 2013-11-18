@@ -20,11 +20,14 @@
 #include "mercury_queue.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
+#include "mercury_time.h"
 #include "mercury_util_error.h"
 
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* TODO check params in NA routines */
 
 /* Completion data stored in completion queue */
 struct na_cb_completion_data {
@@ -60,6 +63,10 @@ static const struct na_class_describe *na_class_methods[] = {
 static hg_queue_t *na_cb_completion_queue_g = NULL;
 static hg_thread_mutex_t na_cb_completion_queue_mutex_g;
 static hg_thread_cond_t  na_cb_completion_queue_cond_g;
+
+static hg_thread_mutex_t na_progress_mutex_g;
+static hg_thread_cond_t  na_progress_cond_g;
+static na_bool_t na_is_progressing_g = NA_FALSE;
 
 /* Convert value to string */
 #define NA_ERROR_STRING_MACRO(def, value, string) \
@@ -245,6 +252,10 @@ NA_Initialize(const char *host_string, na_bool_t listen)
     hg_thread_mutex_init(&na_cb_completion_queue_mutex_g);
     hg_thread_cond_init(&na_cb_completion_queue_cond_g);
 
+    /* Initialize progress mutex/cond */
+    hg_thread_mutex_init(&na_progress_mutex_g);
+    hg_thread_cond_init(&na_progress_cond_g);
+
     na_class = na_class_methods[class_index]->initialize(na_buffer, listen);
 
     NA_free_host_buffer(na_buffer);
@@ -282,6 +293,10 @@ NA_Finalize(na_class_t *na_class)
     hg_thread_mutex_destroy(&na_cb_completion_queue_mutex_g);
     hg_thread_cond_destroy(&na_cb_completion_queue_cond_g);
 
+    /* Destroy progress mutex/cond */
+    hg_thread_mutex_destroy(&na_progress_mutex_g);
+    hg_thread_cond_destroy(&na_progress_cond_g);
+
     return ret;
 }
 
@@ -290,8 +305,20 @@ na_return_t
 NA_Addr_lookup(na_class_t *na_class, na_cb_t callback, void *arg,
         const char *name, na_op_id_t *op_id)
 {
+    na_op_id_t na_op_id;
+    na_return_t ret;
+
     assert(na_class);
-    return na_class->addr_lookup(na_class, callback, arg, name, op_id);
+
+    ret = na_class->addr_lookup(na_class, callback, arg, name, &na_op_id);
+    if (ret != NA_SUCCESS) {
+        goto done;
+    }
+
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -352,9 +379,21 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
         const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
         na_op_id_t *op_id)
 {
+    na_op_id_t na_op_id;
+    na_return_t ret;
+
     assert(na_class);
-    return na_class->msg_send_unexpected(na_class, callback, arg,
-            buf, buf_size, dest, tag, op_id);
+
+    ret = na_class->msg_send_unexpected(na_class, callback, arg, buf, buf_size,
+            dest, tag, &na_op_id);
+    if (ret != NA_SUCCESS) {
+        goto done;
+    }
+
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -362,9 +401,21 @@ na_return_t
 NA_Msg_recv_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
         void *buf, na_size_t buf_size, na_op_id_t *op_id)
 {
+    na_op_id_t na_op_id;
+    na_return_t ret;
+
     assert(na_class);
-    return na_class->msg_recv_unexpected(na_class, callback, arg,
-            buf, buf_size, op_id);
+
+    ret = na_class->msg_recv_unexpected(na_class, callback, arg, buf, buf_size,
+            &na_op_id);
+    if (ret != NA_SUCCESS) {
+        goto done;
+    }
+
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -373,9 +424,21 @@ NA_Msg_send_expected(na_class_t *na_class, na_cb_t callback, void *arg,
         const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
         na_op_id_t *op_id)
 {
+    na_op_id_t na_op_id;
+    na_return_t ret;
+
     assert(na_class);
-    return na_class->msg_send_expected(na_class, callback, arg,
-            buf, buf_size, dest, tag, op_id);
+
+    ret = na_class->msg_send_expected(na_class, callback, arg, buf, buf_size,
+            dest, tag, &na_op_id);
+    if (ret != NA_SUCCESS) {
+        goto done;
+    }
+
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -384,9 +447,21 @@ NA_Msg_recv_expected(na_class_t *na_class, na_cb_t callback, void *arg,
         void *buf, na_size_t buf_size, na_addr_t source, na_tag_t tag,
         na_op_id_t *op_id)
 {
+    na_op_id_t na_op_id;
+    na_return_t ret;
+
     assert(na_class);
-    return na_class->msg_recv_expected(na_class, callback, arg,
-            buf, buf_size, source, tag, op_id);
+
+    ret = na_class->msg_recv_expected(na_class, callback, arg, buf, buf_size,
+            source, tag, &na_op_id);
+    if (ret != NA_SUCCESS) {
+        goto done;
+    }
+
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -471,10 +546,22 @@ NA_Put(na_class_t *na_class, na_cb_t callback, void *arg,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
 {
+    na_op_id_t na_op_id;
+    na_return_t ret;
+
     assert(na_class);
-    return na_class->put(na_class, callback, arg,
-            local_mem_handle, local_offset, remote_mem_handle, remote_offset,
-            data_size, remote_addr, op_id);
+
+    ret = na_class->put(na_class, callback, arg, local_mem_handle, local_offset,
+            remote_mem_handle, remote_offset, data_size, remote_addr,
+            &na_op_id);
+    if (ret != NA_SUCCESS) {
+        goto done;
+    }
+
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -484,18 +571,69 @@ NA_Get(na_class_t *na_class, na_cb_t callback, void *arg,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
 {
+    na_op_id_t na_op_id;
+    na_return_t ret;
+
     assert(na_class);
-    return na_class->get(na_class, callback, arg,
-            local_mem_handle, local_offset, remote_mem_handle, remote_offset,
-            data_size, remote_addr, op_id);
+
+    ret = na_class->get(na_class, callback, arg, local_mem_handle, local_offset,
+            remote_mem_handle, remote_offset, data_size, remote_addr,
+            &na_op_id);
+    if (ret != NA_SUCCESS) {
+        goto done;
+    }
+
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Progress(na_class_t *na_class, unsigned int timeout)
 {
+    double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
+    hg_time_t t1, t2;
+    na_return_t ret = NA_SUCCESS;
+
     assert(na_class);
-    return na_class->progress(na_class, timeout);
+
+    hg_time_get_current(&t1);
+
+    /* Prevent other threads from concurrently calling progress */
+    hg_thread_mutex_lock(&na_progress_mutex_g);
+
+    while (na_is_progressing_g) {
+        if (hg_thread_cond_timedwait(&na_progress_cond_g, &na_progress_mutex_g,
+                (unsigned int) (remaining * 1000)) != HG_UTIL_SUCCESS) {
+            /* Timeout occurred so leave */
+            hg_thread_mutex_unlock(&na_progress_mutex_g);
+            ret = NA_TIMEOUT;
+            goto done;
+        }
+    }
+    na_is_progressing_g = NA_TRUE;
+
+    hg_thread_mutex_unlock(&na_progress_mutex_g);
+
+    hg_time_get_current(&t2);
+    remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+
+    hg_thread_mutex_lock(&na_progress_mutex_g);
+
+    /* Try to make progress for remaining time */
+    ret = na_class->progress(na_class, (unsigned int) (remaining * 1000));
+
+    /* At this point, either progress succeeded or failed with NA_TIMEOUT,
+     * meaning remaining time is now 0, so wake up other threads waiting */
+    na_is_progressing_g = NA_FALSE;
+    hg_thread_cond_signal(&na_progress_cond_g);
+
+    hg_thread_mutex_unlock(&na_progress_mutex_g);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -515,16 +653,19 @@ NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count)
 
         while (completion_queue_is_empty) {
             /* If queue is empty and already triggered something, just leave */
-            if (count) goto unlock;
+            if (count) {
+                hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+                goto done;
+            }
 
             /* Otherwise wait timeout ms */
             if (hg_thread_cond_timedwait(&na_cb_completion_queue_cond_g,
                     &na_cb_completion_queue_mutex_g, timeout)
                     != HG_UTIL_SUCCESS) {
                 /* Timeout occurred so leave */
-                /* TODO check that timeout really occurred */
                 ret = NA_TIMEOUT;
-                goto unlock;
+                hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+                goto done;
             }
         }
 
@@ -534,7 +675,8 @@ NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count)
         if (!completion_data) {
             NA_LOG_ERROR("NULL completion data");
             ret = NA_FAIL;
-            goto unlock;
+            hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+            goto done;
         }
 
         /* Unlock now so that other threads can eventually add callbacks
@@ -551,14 +693,9 @@ NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count)
         count++;
     }
 
-    goto done;
-
-unlock:
-    hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+    if (actual_count) *actual_count = count;
 
 done:
-    if (actual_count && ret == NA_SUCCESS) *actual_count = count;
-
     return ret;
 }
 
@@ -566,8 +703,20 @@ done:
 na_return_t
 NA_Cancel(na_class_t *na_class, na_op_id_t op_id)
 {
+    na_return_t ret = NA_SUCCESS;
+
     assert(na_class);
-    return na_class->cancel(na_class, op_id);
+
+    if (op_id != NA_OP_ID_NULL) {
+        NA_LOG_ERROR("NULL operation ID");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = na_class->cancel(na_class, op_id);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -617,14 +766,14 @@ na_cb_completion_add(na_cb_t callback, struct na_cb_info *callback_info,
             (hg_queue_value_t) completion_data)) {
         NA_LOG_ERROR("Could not push completion data to completion queue");
         ret = NA_NOMEM_ERROR;
-        goto unlock;
+        hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
+        goto done;
     }
 
     /* Callback is pushed to the completion queue when something completes
      * so wake up anyone waiting in the trigger */
     hg_thread_cond_signal(&na_cb_completion_queue_cond_g);
 
-unlock:
     hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
 
 done:

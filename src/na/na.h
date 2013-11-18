@@ -103,7 +103,7 @@ struct na_cb_info {
 };
 
 /* Callback type */
-typedef na_return_t (*na_cb_t)(const struct na_cb_info *);
+typedef na_return_t (*na_cb_t)(const struct na_cb_info *callback_info);
 
 #ifdef __cplusplus
 extern "C" {
