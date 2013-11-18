@@ -235,6 +235,10 @@ static void
 na_ssm_get_callback(void *cbdat, void *evdat);
 
 static void
+na_ssm_get_release(struct na_cb_info *in_info,
+                   void              *in_na_ssm_opid);
+
+static void
 na_ssm_msg_send_expected_callback(void *in_context,
                                   void *in_ssm_event_data) ;
 
@@ -1838,28 +1842,72 @@ na_ssm_get(na_class_t        *in_na_class,
     return NA_SUCCESS;
 }
 
+/**
+ * Callback function for the get operation.
+ *
+ * @param  in_context
+ * @param  in_ssm_event_data
+ * @return (void)
+ *
+ * @see na_ssm_get()
+ */
 static void
 na_ssm_get_callback(void *in_context,
                     void *in_ssm_event_data) 
 {
-    ssm_result v_result = in_ssm_event_data;
-    struct na_ssm_opid *v_ssm_opid = in_context;
-    struct na_ssm_private_data *v_data = v_ssm_opid->ssm_data;
+    ssm_result                  v_result   = in_ssm_event_data;
+    struct na_ssm_opid         *v_ssm_opid = in_context;
+    struct na_ssm_private_data *v_data     = v_ssm_opid->ssm_data;
     
-    if (v_result->status != SSM_ST_COMPLETE)
+    if (v_result->status == SSM_ST_COMPLETE)
+    {
+        NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
+    }
+    else if (v_result->status == SSM_ST_CANCEL)
+    {
+        NA_SSM_MARK_OPID_CANCELED(v_ssm_opid);
+    }
+    else
     {
         NA_LOG_ERROR("Error reported by SSM.");
-        return;
     }
 
     hg_thread_mutex_lock(&v_data->request_mutex);
-    
-    NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
 
     //wake up others
     hg_thread_cond_signal(&v_data->comp_req_cond);
 
     hg_thread_mutex_unlock(&v_data->request_mutex);
+
+    /* Add the request to the callback queue.  We are ignoring the
+     * returned status here because there is nothing that we can
+     * do to correct it.  This API should never fail.
+     */
+    na_cb_completion_add(v_ssm_opid->user_callback,
+                         v_ssm_opid->user_context,
+                         na_ssm_get_release,
+                         v_ssm_opid);
+}
+
+/**
+ * Release function for resources allocated in na_ssm_get().
+ *
+ * @param  in_info
+ * @param  in_na_ssm_opid
+ * @return (void)
+ *
+ * @see na_ssm_get()
+ * @see na_ssm_get_callback()
+ */
+static void
+na_ssm_get_release(struct na_cb_info *in_info,
+                   void              *in_na_ssm_opid)
+{
+    struct na_ssm_opid *v_ssm_opid = in_na_ssm_opid;
+
+    assert(v_ssm_opid);
+
+    free(v_ssm_opid);
 }
 
 /**
@@ -1873,12 +1921,12 @@ static na_return_t
 na_ssm_progress(na_class_t    *in_na_class,
                 unsigned int NA_UNUSED in_timeout)
 {
-    struct timeval v_tv;
-    int            v_return    = 0;
-    na_bool_t      v_condition = NA_TRUE;
-    struct na_ssm_private_data *v_data = (struct na_ssm_private_data *) in_na_class->private_data;
+    struct timeval              v_tv;
+    na_return_t                 v_return    = NA_SUCCESS;
+    na_bool_t                   v_condition = NA_TRUE;
+    struct na_ssm_private_data *v_data = NA_SSM_GET_PRIVATE_DATA(in_na_class);
 
-    v_tv.tv_sec = 0;
+    v_tv.tv_sec  = 0;
     v_tv.tv_usec = 1000*10;
     
     sleep(0);
@@ -1910,8 +1958,8 @@ na_ssm_progress(na_class_t    *in_na_class,
  * transaction was completed, failed, or it was canceled.  Here, we
  * just record that a request was received to cancel the operation.
  *
- * @param  in_request
- * @param  in_opid
+ * @param  in_na_class  NA class object for reference.
+ * @param  in_opid      Operation ID / Request handle
  * @return na_return_t  Returns success if cancel was scheduled.  If the
  *                      task (or transaction) had already completed, then
  *                      we return failure here.
@@ -1920,19 +1968,33 @@ static na_return_t
 na_ssm_cancel(na_class_t    *in_na_class,
               na_op_id_t     in_opid)
 {
-    struct na_ssm_private_data *v_data = (struct na_ssm_private_data *) in_na_class->private_data;
+    struct na_ssm_private_data *v_data = NA_SSM_GET_PRIVATE_DATA(in_na_class);
     struct na_ssm_opid  *v_ssm_opid  = (struct na_ssm_opid *) in_opid;
-    int                  v_return    = NA_FAIL;
+    na_return_t          v_return    = NA_FAIL;
 
-    if (v_ssm_opid != NULL && v_ssm_opid->transaction != NULL)
+    /* See if we have a ssm transaction id available to cancel the
+     * operation.
+     */
+    if (v_ssm_opid != NULL &&
+        v_ssm_opid->transaction != NULL)
     {
-        v_return = ssm_cancel(v_data->ssm,
-                              v_ssm_opid->transaction);
+        v_return = ssm_cancel(v_data->ssm, v_ssm_opid->transaction);
     }
-    
+
+    /* If SSM returns 0, it will attempt to cancel the operation.  This is
+     * not guaranteed, and SSM may still end up completing the operation,
+     * instead of canceling it.
+     *
+     * If SSM returns negative number, then the operation could not be
+     * canceled.
+     */
     if (v_return == 0)
     {
         v_return = NA_SUCCESS;
+    }
+    else
+    {
+        v_return = NA_FAIL;
     }
     
     return v_return;
