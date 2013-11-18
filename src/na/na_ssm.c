@@ -8,6 +8,12 @@
  * found at the root of the source code distribution tree.
  */
 
+/**
+ * Assumptions: - When na_ssm_cancel() is called, the caller will
+ * guarantee that the op id pointer is valid throughout the operation,
+ * and not removed from under the cancel request.
+ */
+
 /*
  * API Order in the file:
  *  - Send Unexpected
@@ -253,7 +259,7 @@ static hg_thread_t       progress_service;
 static inline ssm_bits
 generate_unique_matchbits(na_class_t *in_na_class)
 {
-    struct na_ssm_private_data *v_data = (struct na_ssm_private_data *) in_na_class->private_data;
+    struct na_ssm_private_data *v_data = NA_SSM_GET_PRIVATE_DATA(in_na_class);
     
     hg_thread_mutex_lock(&v_data->gen_matchbits);
     v_data->cur_bits++;
@@ -262,31 +268,15 @@ generate_unique_matchbits(na_class_t *in_na_class)
     return v_data->cur_bits;
 }
 
-static inline void mark_as_completed(struct na_ssm_opid *in_request)
-{
-    if (in_request != NULL)
-    {
-        in_request->completed = 1;
-    }
-}
-
-static inline void mark_as_canceled(struct na_ssm_opid *in_request)
-{
-    if (in_request != NULL)
-    {
-        in_request->completed = 1;
-    }
-}
-
-/*---------------------------------------------------------------------------
- * Function:    na_ssm_progress_service
- *
- * Purpose:     Service to make one-sided progress
- *
- *---------------------------------------------------------------------------
- */
 #ifdef NA_HAS_CLIENT_THREAD
-static void* na_ssm_progress_service(void NA_UNUSED(*args))
+/**
+ * Function to ensure progress on one-sided operations.
+ *
+ * @param  in_args
+ * @return (void *)
+ */
+static void*
+na_ssm_progress_service(void NA_UNUSED(*in_args))
 {
     na_bool_t service_done = 0;
 
@@ -650,7 +640,7 @@ na_ssm_addr_lookup_release(struct na_cb_info *in_info,
  * @param  in_addr
  * @return NA_SUCCESS always.
  */
-static int
+static na_return_t
 na_ssm_addr_free(na_class_t    NA_UNUSED *in_na_class,
                  na_addr_t                in_addr)
 {
@@ -856,12 +846,12 @@ na_ssm_unexpected_msg_send_callback(void *in_context,
     
     if (v_result->status == SSM_ST_COMPLETE)
     {
-        mark_as_completed(v_ssm_opid);
+        NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
         v_return = NA_SUCCESS;
     }
     else if (v_result->status == SSM_ST_CANCEL)
     {
-        mark_as_canceled(v_ssm_opid);
+        NA_SSM_MARK_OPID_CANCELED(v_ssm_opid);
         v_return = NA_CANCELED;
     }
     else
@@ -931,7 +921,7 @@ na_ssm_unexpected_msg_send_release(struct na_cb_info NA_UNUSED *in_info,
  *
  * @see 
  */
-static int
+static na_return_t
 na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
                            na_cb_t         NA_UNUSED  in_callback,
                            void            NA_UNUSED *in_context,
@@ -939,15 +929,11 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
                            na_size_t        in_buf_size,
                            na_op_id_t      *out_opid)
 {
-    int                       v_return    = NA_SUCCESS;
-    struct na_ssm_opid       *v_ssm_opid  = NULL;
-    struct na_ssm_unexpbuf   *v_buf       = NULL;
-    struct na_ssm_private_data *v_ssm_data  = NULL;
+    na_return_t                 v_return   = NA_SUCCESS;
+    struct na_ssm_opid         *v_ssm_opid = NULL;
+    struct na_ssm_unexpbuf     *v_buf      = NULL;
+    struct na_ssm_private_data *v_data     = NA_SSM_GET_PRIVATE_DATA(in_na_class);
 
-    assert(in_na_class);
-    
-    v_ssm_data  = (struct na_ssm_private_data *) in_na_class->private_data;
-    
     if (__unlikely(in_buf == NULL))
     {
         NA_LOG_ERROR("Invalid input argument, in_buf is NULL.");
@@ -958,44 +944,44 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
 
     if (__unlikely(v_ssm_opid == NULL))
     {
-        hg_thread_mutex_unlock(&v_ssm_data->unexp_buf_mutex);
+        hg_thread_mutex_unlock(&v_data->unexp_buf_mutex);
         NA_LOG_ERROR("Out of memory error.");
         return NA_NOMEM_ERROR;
     }
     
-    hg_thread_mutex_lock(&v_ssm_data->unexp_buf_mutex);
+    hg_thread_mutex_lock(&v_data->unexp_buf_mutex);
 
     /* Check if we have anything to read */
-    if(v_ssm_data->unexpbuf[v_ssm_data->unexpbuf_rpos].valid == 0)
+    if(v_data->unexpbuf[v_data->unexpbuf_rpos].valid == 0)
     {
         /* We have no new message received, returning success. */
-        hg_thread_mutex_unlock(&v_ssm_data->unexp_buf_mutex);
+        hg_thread_mutex_unlock(&v_data->unexp_buf_mutex);
         v_return = NA_SUCCESS;
         goto done;
     }
     
     /* Check if the position that we are reading, status is complete. */
-    if (v_ssm_data->unexpbuf[v_ssm_data->unexpbuf_rpos].status != SSM_ST_COMPLETE)
+    if (v_data->unexpbuf[v_data->unexpbuf_rpos].status != SSM_ST_COMPLETE)
     {
         NA_LOG_ERROR("Unexpected receive failed.");
         v_return = NA_FAIL;
         goto done;
     }
     
-    v_buf = &v_ssm_data->unexpbuf[v_ssm_data->unexpbuf_rpos];
+    v_buf = &v_data->unexpbuf[v_data->unexpbuf_rpos];
     
     memcpy(in_buf, v_buf->buf, in_buf_size);
 
-    v_ssm_opid->completed = 1;
+    v_ssm_opid->status = SSM_STATUS_INPROGRESS;
 
     v_buf->valid = 0;
 
-    v_ssm_data->unexpbuf_availpos = NA_SSM_NEXT_UNEXPBUF_POS(v_ssm_data->unexpbuf_availpos);
-    v_ssm_data->unexpbuf_rpos     = NA_SSM_NEXT_UNEXPBUF_POS(v_ssm_data->unexpbuf_rpos);
+    v_data->unexpbuf_availpos = NA_SSM_NEXT_UNEXPBUF_POS(v_data->unexpbuf_availpos);
+    v_data->unexpbuf_rpos     = NA_SSM_NEXT_UNEXPBUF_POS(v_data->unexpbuf_rpos);
     
     (*out_opid) = (na_op_id_t *) v_ssm_opid;
 
-    hg_thread_mutex_unlock(&v_ssm_data->unexp_buf_mutex);
+    hg_thread_mutex_unlock(&v_data->unexp_buf_mutex);
 
  done:
     if (v_return == NA_SUCCESS)
@@ -1133,13 +1119,14 @@ na_ssm_msg_send_expected(na_class_t   *in_na_class,
         goto cleanup;
     }
     
-    v_ssm_opid->requesttype = SSM_SEND_OP;
-    v_ssm_opid->user_context = in_arg;
-    v_ssm_opid->transaction = v_transaction;
-    v_ssm_opid->user_callback    = in_callback;
-    v_ssm_opid->completed   = NA_SUCCESS;
+    v_ssm_opid->requesttype    = SSM_SEND_OP;
+    v_ssm_opid->user_context   = in_arg;
+    v_ssm_opid->transaction    = v_transaction;
+    v_ssm_opid->user_callback  = in_callback;
+    v_ssm_opid->status         = SSM_STATUS_INPROGRESS;
 
     (*out_id) = (na_op_id_t *) v_ssm_opid;
+    
  cleanup:
     if (v_ssm_opid != NULL)
     {        
@@ -1169,11 +1156,11 @@ void na_ssm_msg_send_expected_callback(void *in_context,
     
     if (v_result->status == SSM_ST_COMPLETE)
     {
-        mark_as_completed(v_ssm_opid);
+        NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
     }
     else if (v_result->status == SSM_ST_CANCEL)
     {
-        mark_as_canceled(v_ssm_opid);
+        NA_SSM_MARK_OPID_CANCELED(v_ssm_opid);
     }
     else
     {
@@ -1222,9 +1209,17 @@ na_ssm_msg_send_expected_release(struct na_cb_info  NA_UNUSED *in_info,
 /**
  * Receive an expected message from the source.
  *
- * @param
+ * @param  in_na_class
+ * @param  in_callback
+ * @param  in_context
+ * @param  in_buf
+ * @param  in_buf_size
+ * @param  in_source
+ * @param  in_tag
+ * @param  out_opid
+ * @return na_return_t
  */
-static int
+static na_return_t
 na_ssm_msg_recv_expected(na_class_t     *in_na_class,
                          na_cb_t         in_callback,
                          void           *in_context,
@@ -1235,15 +1230,15 @@ na_ssm_msg_recv_expected(na_class_t     *in_na_class,
                          na_op_id_t     *out_opid)
 {
     int                  v_ssm_return     = 0;
-    int                  v_return         = NA_SUCCESS;
+    na_return_t          v_return         = NA_SUCCESS;
     ssm_size_t           v_ssm_buf_size   = (ssm_size_t) in_buf_size;
-    struct na_ssm_opid  *v_ssm_opid    = NULL;
-    struct na_ssm_private_data *v_data   = (struct na_ssm_private_data *) in_na_class->private_data;
-    ssm_cb_t             v_callback;
+    struct na_ssm_opid  *v_ssm_opid       = NULL;
+    ssm_cb_t             v_callback;    
+    struct na_ssm_private_data *v_data   = NA_SSM_GET_PRIVATE_DATA(in_na_class);
 
     v_ssm_opid = (struct na_ssm_opid *) malloc(sizeof(struct na_ssm_opid));
 
-    if (v_ssm_opid == NULL)
+    if (__unlikely(v_ssm_opid == NULL))
     {
         v_return = NA_NOMEM_ERROR;
         goto done;
@@ -1317,6 +1312,9 @@ na_ssm_msg_recv_expected(na_class_t     *in_na_class,
  *
  * @param  in_context
  * @param  in_ssm_event_data
+ * @return (void)
+ *
+ * @see na_ssm_msg_recv_expected()
  */
 static void
 na_ssm_msg_recv_expected_callback(void *in_context,
@@ -1328,11 +1326,11 @@ na_ssm_msg_recv_expected_callback(void *in_context,
     
     if (v_result->status == SSM_ST_COMPLETE)
     {
-        mark_as_completed(v_ssm_opid);
+        NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
     }
     else if (v_result->status == SSM_ST_CANCEL)
     {
-        mark_as_canceled(v_ssm_opid);
+        NA_SSM_MARK_OPID_CANCELED(v_ssm_opid);
     }
     else
     {
@@ -1346,6 +1344,10 @@ na_ssm_msg_recv_expected_callback(void *in_context,
 
     hg_thread_mutex_unlock(&v_data->request_mutex);
 
+    /* Ignoring the status returned from na_cb_completion_add() API
+     * because there is nothing much we can do if this fails.  This
+     * function is not supposed to fail.
+     */
     na_cb_completion_add(v_ssm_opid->user_callback,
                          v_ssm_opid->user_context,
                          na_ssm_msg_recv_release,
@@ -1357,6 +1359,10 @@ na_ssm_msg_recv_expected_callback(void *in_context,
  *
  * @param  in_info
  * @peram  in_na_ssm_opid
+ * @return (void)
+ *
+ * @see na_ssm_msg_recv_expected()
+ * @see na_ssm_msg_recv_expected_callback()
  */
 static void
 na_ssm_msg_recv_release(struct na_cb_info  NA_UNUSED *in_info,
@@ -1381,15 +1387,16 @@ static na_return_t
 na_ssm_mem_register(na_class_t        *in_na_class,
                     na_mem_handle_t    in_mem_handle)
 {
-    struct na_ssm_mem_handle  *v_handle = NULL;
-    int                        v_return = NA_SUCCESS;
-    struct na_ssm_private_data       *v_data = (struct na_ssm_private_data *) in_na_class->private_data;
+    na_return_t                 v_return = NA_SUCCESS;
+    struct na_ssm_mem_handle   *v_handle = NULL;
+    struct na_ssm_private_data *v_data   = NA_SSM_GET_PRIVATE_DATA(in_na_class);
 
     v_handle = (struct na_ssm_mem_handle *) in_mem_handle;
 
-    if (v_handle == NULL)
+    if (__unlikely(v_handle == NULL))
     {
-        return NA_FAIL;
+        NA_LOG_ERROR("Invalid input parameter; memory handle is NULL.\n");
+        return NA_INVALID_PARAM;
     }
 
     v_handle->mr = ssm_mr_create(NULL,
@@ -1398,8 +1405,8 @@ na_ssm_mem_register(na_class_t        *in_na_class,
 
     if (v_handle->mr == NULL)
     {
-        free(v_handle);
-        return NA_FAIL;
+        NA_LOG_ERROR("SSM failed to create memory region.\n");
+        return NA_PROTOCOL_ERROR;
     }
 
     v_handle->matchbits = generate_unique_matchbits(in_na_class) +
@@ -1416,6 +1423,13 @@ na_ssm_mem_register(na_class_t        *in_na_class,
                             &(v_handle->cb),
                             SSM_NOF);
 
+    if (v_handle->me == NULL)
+    {
+        NA_LOG_ERROR("SSM failed to link memory region.\n");
+        ssm_mr_destroy(v_handle->mr);
+        return NA_PROTOCOL_ERROR;
+    }
+    
     v_return = ssm_post(v_data->ssm,
                         v_handle->me,
                         v_handle->mr,
@@ -1423,7 +1437,9 @@ na_ssm_mem_register(na_class_t        *in_na_class,
 
     if (v_return < 0)
     {
-        free(v_handle);
+        NA_LOG_ERROR("SSM failed to post memory region.\n");
+        ssm_unlink(v_data->ssm, v_handle->me);
+        ssm_mr_destroy(v_handle->mr);
         return NA_FAIL;
     }
     
@@ -1693,8 +1709,18 @@ na_ssm_put(na_class_t        *in_na_class,
     return v_return;
 }
 
-void na_ssm_put_callback(void *in_context,
-                         void *in_ssm_event_data) 
+/**
+ * Callback function for post operation.
+ *
+ * @param  in_context
+ * @param  in_ssm_event_data
+ * @return (void)
+ *
+ * @see na_ssm_put()
+ */
+static void
+na_ssm_put_callback(void *in_context,
+                    void *in_ssm_event_data) 
 {
     ssm_result v_result = in_ssm_event_data;
     struct na_ssm_opid *v_ssm_opid = in_context;
@@ -1702,12 +1728,10 @@ void na_ssm_put_callback(void *in_context,
     
     if (v_result->status == SSM_ST_COMPLETE)
     {
-        mark_as_completed(v_ssm_opid);
+        NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
     }
     
     hg_thread_mutex_lock(&v_data->request_mutex);
-    
-    mark_as_completed(v_ssm_opid);
     
     //wake up others
     hg_thread_cond_signal(&v_data->comp_req_cond);
@@ -1726,8 +1750,8 @@ void na_ssm_put_callback(void *in_context,
  */
 static na_return_t
 na_ssm_get(na_class_t        *in_na_class,
-           na_cb_t            NA_UNUSED in_callback,
-           void              NA_UNUSED *in_context,
+           na_cb_t            in_callback,
+           void              *in_context,
            na_mem_handle_t    in_local_mem_handle,
            na_offset_t        in_local_offset,
            na_mem_handle_t    in_remote_mem_handle,
@@ -1743,57 +1767,72 @@ na_ssm_get(na_class_t        *in_na_class,
     ssm_md                      v_remote_md     = NULL;
     ssm_mr                      v_local_mr      = NULL;
     ssm_tx                      v_stx           = NULL;
-    struct na_ssm_private_data *v_data     = (struct na_ssm_private_data *) in_na_class->private_data;
-    ssm_cb_t                    v_callback;
+    struct na_ssm_private_data *v_data          = NA_SSM_GET_PRIVATE_DATA(in_na_class);
 
     v_local_handle   = (struct na_ssm_mem_handle *)in_local_mem_handle;
     v_remote_handle  = (struct na_ssm_mem_handle *)in_remote_mem_handle;
+
+    /* Allocate memory for op id handle */
+    v_ssm_opid = (struct na_ssm_opid *) malloc(sizeof(struct na_ssm_opid));
+    
+    if (__unlikely(v_ssm_opid == NULL))
+    {
+        NA_LOG_ERROR("Unable to allocate memory for op id handle.\n");
+        return NA_NOMEM_ERROR;
+    }
+
+    memset(v_ssm_opid, 0, sizeof(struct na_ssm_opid));
     
     v_remote_md = ssm_md_add(NULL, in_remote_offset, in_length);
 
     if (v_remote_md == NULL)
     {
-        return NA_FAIL;
+        return NA_PROTOCOL_ERROR;
     }
 
     v_local_mr = ssm_mr_create(v_remote_md,
                                v_local_handle->buf + in_local_offset,
                                in_length);
 
-    v_ssm_peer_addr = (struct na_ssm_addr *) in_remote_addr;
-    
-    v_ssm_opid = (struct na_ssm_opid *) malloc(sizeof(struct na_ssm_opid));
-
-    if (v_ssm_opid == NULL)
+    if (v_local_mr == NULL)
     {
-        ssm_md_release(v_remote_md);
-        return NA_FAIL;
+        NA_LOG_ERROR("SSM failed to create memory region.\n");
+        return NA_PROTOCOL_ERROR;
     }
+    
+    v_ssm_peer_addr = (struct na_ssm_addr *) in_remote_addr;
 
-    memset(v_ssm_opid, 0, sizeof(struct na_ssm_opid));
-    
     v_ssm_opid->requesttype     = SSM_GET_OP;
+    v_ssm_opid->user_callback   = in_callback;
+    v_ssm_opid->user_context    = in_context;
+    v_ssm_opid->ssm_data        = v_data;
+
+    v_ssm_opid->opid_info.get.memory_region = v_local_mr;
+    v_ssm_opid->opid_info.get.memory_desc   = v_remote_md;
     
-    v_callback.pcb    = na_ssm_get_callback;
-    v_callback.cbdata = v_ssm_opid;
+    v_ssm_opid->ssm_callback.pcb    = na_ssm_get_callback;
+    v_ssm_opid->ssm_callback.cbdata = v_ssm_opid;
 
     v_stx = ssm_get(v_data->ssm,
                     v_ssm_peer_addr->addr,
                     v_remote_md,
                     v_local_mr,
                     v_remote_handle->matchbits,
-                    &v_callback,
+                    &v_ssm_opid->ssm_callback,
                     SSM_NOF);
 
     if (v_stx == NULL)
     {
         free(v_ssm_opid);
+        ssm_mr_destroy(v_local_mr);
         ssm_md_release(v_remote_md);
         return NA_FAIL;
     }
     
     v_ssm_opid->transaction = v_stx;
-    
+    v_ssm_opid->status = SSM_STATUS_INPROGRESS;
+
+    /* Fill the return handle. */
     (*out_opid) = (struct na_ssm_opid *) v_ssm_opid;
     
     return NA_SUCCESS;
@@ -1815,7 +1854,7 @@ na_ssm_get_callback(void *in_context,
 
     hg_thread_mutex_lock(&v_data->request_mutex);
     
-    mark_as_completed(v_ssm_opid);
+    NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
 
     //wake up others
     hg_thread_cond_signal(&v_data->comp_req_cond);

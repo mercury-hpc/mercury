@@ -35,6 +35,11 @@
 
 #define NA_SSM_NEXT_UNEXPBUF_POS(n) (((n)+(1))%(NA_SSM_UNEXPECTED_BUFFERCOUNT))
 
+#define NA_SSM_GET_PRIVATE_DATA(a) ((struct na_ssm_private_data *) (a)->private_data)
+
+#define NA_SSM_MARK_OPID_COMPLETE(a)  ((a)->status = SSM_STATUS_COMPLETED)
+#define NA_SSM_MARK_OPID_CANCELED(a)  ((a)->status = SSM_STATUS_CANCELED)
+
 /* Buffers for unexpected data */
 struct na_ssm_unexpbuf {
   char *buf;
@@ -93,6 +98,13 @@ typedef enum na_ssm_req_type {
     SSM_UNEXP_RECV_OP
 } na_ssm_req_type_t;
 
+typedef enum na_ssm_status {
+    SSM_STATUS_INVALID     = 0,
+    SSM_STATUS_INPROGRESS  = 1,
+    SSM_STATUS_COMPLETED   = 2,
+    SSM_STATUS_CANCELED    = 3,
+} na_ssm_status_t;
+
 struct ssm_msg_send_unexpected {
   ssm_mr            memregion;
   ssm_bits          matchbits;
@@ -104,6 +116,8 @@ struct ssm_msg_send_expected {
 };
 
 struct ssm_get_info {
+  ssm_mr        memory_region;
+  ssm_md        memory_desc;
 };
 
 struct ssm_msg_recv_expected_info {
@@ -115,7 +129,10 @@ struct na_ssm_opid {
   void               *user_context;
   struct na_ssm_private_data *ssm_data;
   ssm_tx              transaction;
-  bool                completed;
+  na_ssm_status_t     status;
+  na_return_t         result;
+  ssm_cb_t            ssm_callback;
+  
   ssm_me              matchentry;
   ssm_mr              memregion;
   
