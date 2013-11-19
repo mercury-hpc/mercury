@@ -67,6 +67,8 @@ msg_expected_send_cb(const struct na_cb_info *callback_info)
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
 
+    printf("%s():\n", __FUNCTION__);
+    
     if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
@@ -74,6 +76,14 @@ msg_expected_send_cb(const struct na_cb_info *callback_info)
     test_bulk(params);
 
     return ret;
+}
+
+static na_return_t
+msg_expected_send_final_cb(const struct na_cb_info *callback_info)
+{
+    printf("%s(): \n", __FUNCTION__);
+    test_done_g = 1;
+    return NA_SUCCESS;
 }
 
 static na_return_t
@@ -89,7 +99,8 @@ bulk_put_cb(const struct na_cb_info *callback_info)
 
     /* Send completion ack */
     printf("Sending end of transfer ack...\n");
-    ret = NA_Msg_send_expected(params->network_class, NULL, NULL,
+    ret = NA_Msg_send_expected(params->network_class, 
+                               msg_expected_send_final_cb, NULL,
             params->send_buf, params->send_buf_len, params->source_addr,
             ack_tag, NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
@@ -114,7 +125,7 @@ bulk_put_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
-    test_done_g = 1;
+    //    test_done_g = 1;
 
     return ret;
 }
@@ -169,6 +180,7 @@ mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
     na_return_t ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
+        printf("error\n");
         return ret;
     }
 

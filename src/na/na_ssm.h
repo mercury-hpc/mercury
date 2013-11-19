@@ -11,8 +11,26 @@
 #ifndef NA_SSM_H
 #define NA_SSM_H
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <unistd.h>
+#include <assert.h>
+
 #include "na.h"
+#include "na_private.h"
 #include "na_error.h"
+
+#include "mercury_hash_table.h"
+#include "mercury_list.h"
+#include "mercury_queue.h"
+#include "mercury_thread.h"
+#include "mercury_thread_mutex.h"
+#include "mercury_thread_condition.h"
+#include "mercury_time.h"
 
 #include <ssm/dumb.h>
 #include <ssm.h>
@@ -35,26 +53,25 @@
 
 #define NA_SSM_NEXT_UNEXPBUF_POS(n) (((n)+(1))%(NA_SSM_UNEXPECTED_BUFFERCOUNT))
 
-#define NA_SSM_GET_PRIVATE_DATA(a) ((struct na_ssm_private_data *) (a)->private_data)
+#define NA_SSM_PRIVATE_DATA(a) ((struct na_ssm_private_data *) (a)->private_data)
 
 #define NA_SSM_MARK_OPID_COMPLETE(a)  ((a)->status = SSM_STATUS_COMPLETED)
 #define NA_SSM_MARK_OPID_CANCELED(a)  ((a)->status = SSM_STATUS_CANCELED)
 
 /* Buffers for unexpected data */
-struct na_ssm_unexpbuf {
-  char *buf;
-  ssm_me me;
-  ssm_cb_t cb;
-  ssm_mr mr;
-  bool valid;
-  ssm_bits bits;
-  ssm_status status;
-  ssm_Haddr addr;
-  uint64_t bytes;
+struct na_ssm_unexpected_buffer {
+  char          *buf;
+  ssm_me         me;
+  ssm_cb_t       cb;
+  ssm_mr         mr;
+  na_bool_t      valid;
+  ssm_bits       bits;
+  ssm_status     status;
+  ssm_Haddr      addr;
+  uint64_t       bytes;
 };
 
 struct na_ssm_private_data {
-  struct na_host_buffer na_buffer;
   ssm_id       ssm;
   ssm_Itp      itp;
   int          unexpbuf_cpos;
@@ -64,11 +81,26 @@ struct na_ssm_private_data {
   ssm_me       unexpected_me;
   ssm_bits     cur_bits;
   hg_thread_mutex_t gen_matchbits;
-  hg_thread_mutex_t unexp_buf_mutex;
+
   hg_thread_cond_t  unexp_buf_cond;
   hg_thread_mutex_t request_mutex;
   hg_thread_cond_t  comp_req_cond;
-  struct na_ssm_unexpbuf unexpbuf[NA_SSM_UNEXPECTED_BUFFERCOUNT];
+
+#ifdef NA_HAS_CLIENT_THREAD
+  hg_thread_mutex_t finalizing_mutex;
+  bool              finalizing;
+  hg_thread_t       progress_service;
+#endif
+
+  hg_queue_t *opid_wait_queue;
+  
+  hg_queue_t *unexpected_msg_queue;
+  hg_thread_mutex_t unexpected_msg_queue_mutex;
+  hg_thread_cond_t unexpected_msg_queue_cond;
+  
+  hg_queue_t *unexpected_msg_complete_queue;
+  hg_thread_mutex_t unexpected_msg_complete_mutex;
+  hg_thread_cond_t unexpected_msg_complete_cond;
 };
 
 struct na_ssm_addr {
@@ -87,17 +119,6 @@ struct na_ssm_mem_handle {
 typedef int           ssm_size_t;
 typedef unsigned long ssm_msg_tag_t;
 
-/* Used to differentiate Send requests from Recv requests */
-typedef enum na_ssm_req_type {
-    SSM_ADDR_LOOKUP_OP,
-    SSM_PUT_OP,
-    SSM_GET_OP,
-    SSM_SEND_OP,
-    SSM_RECV_OP,
-    SSM_UNEXP_SEND_OP,
-    SSM_UNEXP_RECV_OP
-} na_ssm_req_type_t;
-
 typedef enum na_ssm_status {
     SSM_STATUS_INVALID     = 0,
     SSM_STATUS_INPROGRESS  = 1,
@@ -113,18 +134,30 @@ struct ssm_msg_send_unexpected {
 struct ssm_msg_send_expected {
   ssm_mr            memregion;
   ssm_cb_t          callback;
+  ssm_bits matchbits;
 };
 
-struct ssm_get_info {
-  ssm_mr        memory_region;
-  ssm_md        memory_desc;
+struct ssm_get {
+  ssm_mr        memregion;
+  ssm_md        memdesc;
 };
 
-struct ssm_msg_recv_expected_info {
+struct ssm_msg_recv_expected {
+  ssm_mr        memregion;
+  ssm_me        matchentry;
+  ssm_bits matchbits;
+  void *input_buffer;
+  na_size_t input_buffer_size;
+};
+
+struct ssm_msg_recv_unexpected {
+  ssm_mr        memregion;
+  void         *input_buffer;
+  na_size_t     input_buffer_size;
 };
 
 struct na_ssm_opid {
-  na_ssm_req_type_t   requesttype;
+  na_cb_type_t   requesttype;
   na_cb_t             user_callback;
   void               *user_context;
   struct na_ssm_private_data *ssm_data;
@@ -133,18 +166,13 @@ struct na_ssm_opid {
   na_return_t         result;
   ssm_cb_t            ssm_callback;
   
-  ssm_me              matchentry;
-  ssm_mr              memregion;
-  
   union {
     struct ssm_msg_send_unexpected send_unexpected;
-    struct ssm_msg_send_expected   send_expected;
-    struct ssm_get_info            get;
-  } opid_info;
+    struct ssm_msg_send_expected send_expected;
+    struct ssm_msg_recv_expected recv_expected;
+    struct ssm_msg_recv_unexpected recv_unexpected;
+    struct ssm_get get;
+  } info;
 };
 
 #endif /* NA_SSM_H */
-
-
-
-

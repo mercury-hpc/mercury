@@ -84,6 +84,8 @@ ack_expected_recv_cb(const struct na_cb_info *callback_info)
     unsigned int i;
     na_bool_t error = 0;
 
+    printf("here..\n");
+    
     if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
