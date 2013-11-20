@@ -32,6 +32,7 @@ endif()
 # External dependencies
 #------------------------------------------------------------------------------
 # mercury_util
+include_directories(${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES})
 include_directories(${NA_SOURCE_DIR}/../util)
 
 #------------------------------------------------------------------------------

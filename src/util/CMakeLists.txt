@@ -1,4 +1,10 @@
 #------------------------------------------------------------------------------
+# Setup cmake module
+#------------------------------------------------------------------------------
+set(MERCURY_UTIL_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_UTIL_CMAKE_DIR})
+
+#------------------------------------------------------------------------------
 # Include source and build directories
 #------------------------------------------------------------------------------
 include_directories(
@@ -22,6 +28,20 @@ if(NOT WIN32 AND NOT APPLE)
     ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
     -lrt
   )
+endif()
+
+# OpenPA
+if(NOT WIN32 AND NOT APPLE)
+  find_package(OPA REQUIRED)
+  if(OPA_FOUND)
+    include_directories(${OPA_INCLUDE_DIR})
+    set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES
+      ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
+      ${OPA_INCLUDE_DIR}
+    )
+  else()
+    message(FATAL_ERROR "Could not find OPA.")
+  endif()
 endif()
 
 #------------------------------------------------------------------------------
@@ -99,6 +119,7 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.h
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
 )
@@ -118,4 +139,5 @@ install(
 #------------------------------------------------------------------------------
 # Set variables for parent scope
 #------------------------------------------------------------------------------
+set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES} PARENT_SCOPE)
 set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES} PARENT_SCOPE)
