@@ -20,6 +20,8 @@
 #define NA_TEST_BULK_TAG 102
 #define NA_TEST_BULK_ACK_TAG 103
 
+static int test_done_g = 0;
+
 /* Test parameters */
 struct na_test_params {
     na_class_t *network_class;
@@ -39,22 +41,35 @@ static int test_send(struct na_test_params *params, na_tag_t send_tag);
 static int test_bulk(struct na_test_params *params);
 
 static na_return_t
-msg_unexpected_recv_cb(const struct na_cb_info *info)
+msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
 {
-    struct na_test_params *params = (struct na_test_params *) info->arg;
+    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
     na_tag_t recv_tag;
     na_return_t ret = NA_SUCCESS;
 
-    if (info->ret != NA_SUCCESS) {
+    if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
 
     printf("Received msg (%s) from client\n", params->recv_buf);
 
-    params->source_addr = info->recv_unexpected.source;
-    recv_tag = info->recv_unexpected.tag;
+    params->source_addr = callback_info->info.recv_unexpected.source;
+    recv_tag = callback_info->info.recv_unexpected.tag;
 
     test_send(params, recv_tag + 1);
+
+    return ret;
+}
+
+static na_return_t
+msg_expected_send_cb(const struct na_cb_info *callback_info)
+{
+    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
+    na_return_t ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        return ret;
+    }
 
     test_bulk(params);
 
@@ -62,29 +77,15 @@ msg_unexpected_recv_cb(const struct na_cb_info *info)
 }
 
 static na_return_t
-bulk_get_cb(const struct na_cb_info *info)
+bulk_put_cb(const struct na_cb_info *callback_info)
 {
-    struct na_test_params *params = (struct na_test_params *) info->arg;
+    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
     na_tag_t ack_tag = NA_TEST_BULK_ACK_TAG;
     na_return_t ret = NA_SUCCESS;
-    unsigned int i;
-    na_bool_t error = 0;
 
-    if (info->ret != NA_SUCCESS) {
+    if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
-
-    /* Check bulk buf */
-    for (i = 0; i < params->bulk_size; i++) {
-        if ((na_size_t) params->bulk_buf[i] != i) {
-            printf("Error detected in bulk transfer, bulk_buf[%d] = %d,\t"
-                    " was expecting %d!\n", i, params->bulk_buf[i], i);
-            error = 1;
-            break;
-        }
-    }
-    if (!error) printf("Successfully transfered %lu bytes!\n",
-            params->bulk_size * sizeof(int));
 
     /* Send completion ack */
     printf("Sending end of transfer ack...\n");
@@ -113,16 +114,61 @@ bulk_get_cb(const struct na_cb_info *info)
         return ret;
     }
 
+    test_done_g = 1;
+
     return ret;
 }
 
 static na_return_t
-mem_handle_expected_recv_cb(const struct na_cb_info *info)
+bulk_get_cb(const struct na_cb_info *callback_info)
 {
-    struct na_test_params *params = (struct na_test_params *) info->arg;
+    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
+    na_return_t ret = NA_SUCCESS;
+    unsigned int i;
+    na_bool_t error = 0;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        return ret;
+    }
+
+    /* Check bulk buf */
+    for (i = 0; i < params->bulk_size; i++) {
+        if ((na_size_t) params->bulk_buf[i] != i) {
+            printf("Error detected in bulk transfer, bulk_buf[%d] = %d,\t"
+                    " was expecting %d!\n", i, params->bulk_buf[i], i);
+            error = 1;
+            break;
+        }
+    }
+    if (!error) printf("Successfully transfered %lu bytes!\n",
+            params->bulk_size * sizeof(int));
+
+    /* Reset bulk_buf */
+    printf("Resetting buffer\n");
+    memset(params->bulk_buf, 0, params->bulk_size * sizeof(int));
+
+    /* Now do a put */
+    printf("Putting %d bytes to remote...\n",
+            (int) (params->bulk_size * sizeof(int)));
+
+    ret = NA_Put(params->network_class, &bulk_put_cb, params,
+            params->local_mem_handle, 0, params->remote_mem_handle, 0,
+            params->bulk_size * sizeof(int), params->source_addr,
+            NA_OP_ID_IGNORE);
+    if (ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not start put\n");
+    }
+
+    return ret;
+}
+
+static na_return_t
+mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
+{
+    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
 
-    if (info->ret != NA_SUCCESS) {
+    if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
 
@@ -156,10 +202,10 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
     na_return_t na_ret;
 
     /* Respond back */
-    sprintf(params->send_buf, "Hello CN!\n");
+    sprintf(params->send_buf, "Hello Client!");
 
-    na_ret = NA_Msg_send_expected(params->network_class, NULL, NULL,
-            params->send_buf, params->send_buf_len, params->source_addr,
+    na_ret = NA_Msg_send_expected(params->network_class, &msg_expected_send_cb,
+            params, params->send_buf, params->send_buf_len, params->source_addr,
             send_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of message\n");
@@ -219,12 +265,12 @@ int main(int argc, char *argv[])
     /* Allocate send/recv/bulk bufs */
     params.send_buf_len = NA_Msg_get_max_unexpected_size(params.network_class);
     params.recv_buf_len = params.send_buf_len;
-    params.send_buf = (char*) malloc(params.send_buf_len);
-    params.recv_buf = (char*) malloc(params.recv_buf_len);
+    params.send_buf = (char*) calloc(params.send_buf_len, sizeof(char));
+    params.recv_buf = (char*) calloc(params.recv_buf_len, sizeof(char));
 
     /* Prepare bulk_buf */
     params.bulk_size = NA_TEST_BULK_SIZE;
-    params.bulk_buf = (int*) malloc(sizeof(int) * params.bulk_size);
+    params.bulk_buf = (int*) malloc(params.bulk_size * sizeof(int));
 
     for (peer = 0; peer < number_of_peers; peer++) {
         unsigned int i;
@@ -239,12 +285,17 @@ int main(int argc, char *argv[])
                 &msg_unexpected_recv_cb, &params, params.recv_buf,
                 params.recv_buf_len, NA_OP_ID_IGNORE);
 
-        /* TODO change condition */
-        while(1) {
-            int cb_triggered = 0;
-            if (NA_Progress(params.network_class, NA_MAX_IDLE_TIME) == NA_SUCCESS) {
-                NA_Trigger(0, 1, &cb_triggered);
-            }
+        while(!test_done_g) {
+            na_return_t trigger_ret;
+            int actual_count = 0;
+
+            do {
+                trigger_ret = NA_Trigger(0, 1, &actual_count);
+            } while ((trigger_ret == NA_SUCCESS) && actual_count);
+
+            if (test_done_g) break;
+
+            NA_Progress(params.network_class, NA_MAX_IDLE_TIME);
         }
 
         na_ret = NA_Addr_free(params.network_class, params.source_addr);

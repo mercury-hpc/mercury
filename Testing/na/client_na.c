@@ -21,6 +21,8 @@
 #define NA_TEST_BULK_TAG 102
 #define NA_TEST_BULK_ACK_TAG 103
 
+static int test_done_g = 0;
+
 /* Test parameters */
 struct na_test_params {
     na_class_t *network_class;
@@ -40,19 +42,34 @@ static int test_bulk(struct na_test_params *params);
 
 /* NA test user-defined callbacks */
 static na_return_t
-lookup_cb(const struct na_cb_info *info)
+lookup_cb(const struct na_cb_info *callback_info)
 {
-    struct na_test_params *params = (struct na_test_params *) info->arg;
+    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
     na_tag_t send_tag = NA_TEST_SEND_TAG;
     na_return_t ret = NA_SUCCESS;
 
-    if (info->ret != NA_SUCCESS) {
+    if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
 
-    params->server_addr = info->info.lookup.addr;
+    params->server_addr = callback_info->info.lookup.addr;
 
     test_send(params, send_tag);
+
+    return ret;
+}
+
+static na_return_t
+msg_expected_recv_cb(const struct na_cb_info *callback_info)
+{
+    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
+    na_return_t ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        return ret;
+    }
+
+    printf("Received msg (%s) from server\n", params->recv_buf);
 
     test_bulk(params);
 
@@ -60,36 +77,44 @@ lookup_cb(const struct na_cb_info *info)
 }
 
 static na_return_t
-msg_expected_recv_cb(const struct na_cb_info *info)
+ack_expected_recv_cb(const struct na_cb_info *callback_info)
 {
-    struct na_test_params *params = (struct na_test_params *) info->arg;
+    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
+    unsigned int i;
+    na_bool_t error = 0;
 
-    if (info->ret != NA_SUCCESS) {
-        return ret;
-    }
-
-    printf("Received msg (%s) from server\n", params->recv_buf);
-
-    return ret;
-}
-
-static na_return_t
-ack_expected_recv_cb(const struct na_cb_info *info)
-{
-    struct na_test_params *params = (struct na_test_params *) info->arg;
-    na_return_t ret = NA_SUCCESS;
-
-    if (info->ret != NA_SUCCESS) {
+    if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
 
     printf("Bulk transfer complete\n");
 
+    /* Check bulk buf */
+    for (i = 0; i < params->bulk_size; i++) {
+        if ((na_size_t) params->bulk_buf[i] != 0) {
+            printf("Error detected in bulk transfer, bulk_buf[%d] = %d,\t"
+                    " was expecting %d!\n", i, params->bulk_buf[i], 0);
+            error = 1;
+            break;
+        }
+    }
+    if (!error) printf("Successfully reset %lu bytes!\n",
+            params->bulk_size * sizeof(int));
+
     ret = NA_Mem_deregister(params->network_class, params->local_mem_handle);
     if (ret != NA_SUCCESS) {
         fprintf(stderr, "Could not unregister memory\n");
+        return ret;
     }
+
+    ret = NA_Mem_handle_free(params->network_class, params->local_mem_handle);
+    if (ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not free memory handle\n");
+        return ret;
+    }
+
+    test_done_g = 1;
 
     return ret;
 }
@@ -101,7 +126,8 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
     na_return_t na_ret;
 
     /* Send a message to addr */
-    sprintf(params->send_buf, "Hello Server!\n");
+    sprintf(params->send_buf, "Hello Server!");
+
     na_ret = NA_Msg_send_unexpected(params->network_class, NULL, NULL,
             params->send_buf, params->send_buf_len, params->server_addr,
             send_tag, NA_OP_ID_IGNORE);
@@ -130,7 +156,7 @@ test_bulk(struct na_test_params *params)
     /* Register memory */
     printf("Registering local memory...\n");
     na_ret = NA_Mem_handle_create(params->network_class, params->bulk_buf,
-            sizeof(int) * params->bulk_size, NA_MEM_READ_ONLY,
+            sizeof(int) * params->bulk_size, NA_MEM_READWRITE,
             &params->local_mem_handle);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not create bulk handle\n");
@@ -179,7 +205,6 @@ int
 main(int argc, char *argv[])
 {
     char *server_name;
-    na_addr_t server_addr = NA_ADDR_NULL;
     struct na_test_params params;
     na_return_t na_ret;
     unsigned int i;
@@ -190,36 +215,41 @@ main(int argc, char *argv[])
     /* Allocate send and recv bufs */
     params.send_buf_len = NA_Msg_get_max_unexpected_size(params.network_class);
     params.recv_buf_len = params.send_buf_len;
-    params.send_buf = (char*) malloc(params.send_buf_len);
-    params.recv_buf = (char*) malloc(params.recv_buf_len);
+    params.send_buf = (char*) calloc(params.send_buf_len, sizeof(char));
+    params.recv_buf = (char*) calloc(params.recv_buf_len, sizeof(char));
 
     /* Prepare bulk_buf */
     params.bulk_size = NA_TEST_BULK_SIZE;
-    params.bulk_buf = (int*) malloc(sizeof(int) * params.bulk_size);
+    params.bulk_buf = (int*) malloc(params.bulk_size * sizeof(int));
     for (i = 0; i < params.bulk_size; i++) {
         params.bulk_buf[i] = i;
     }
 
     /* Perform an address lookup on the ION */
-    na_ret = NA_Addr_lookup(params.network_class, &lookup_cb, &params, server_name,
-            NA_OP_ID_IGNORE);
+    na_ret = NA_Addr_lookup(params.network_class, &lookup_cb, &params,
+            server_name, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start lookup of addr %s\n", server_name);
         return EXIT_FAILURE;
     }
 
-    /* TODO change condition */
-    while(1) {
-        int cb_triggered = 0;
-        if (NA_Progress(params.network_class, NA_MAX_IDLE_TIME) == NA_SUCCESS) {
-            NA_Trigger(0, 1, &cb_triggered);
-        }
+    while(!test_done_g) {
+        na_return_t trigger_ret;
+        int actual_count = 0;
+
+        do {
+            trigger_ret = NA_Trigger(0, 1, &actual_count);
+        } while ((trigger_ret == NA_SUCCESS) && actual_count);
+
+        if (test_done_g) break;
+
+        NA_Progress(params.network_class, NA_MAX_IDLE_TIME);
     }
 
     printf("Finalizing...\n");
 
     /* Free memory and addresses */
-    na_ret = NA_Addr_free(params.network_class, server_addr);
+    na_ret = NA_Addr_free(params.network_class, params.server_addr);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not free addr\n");
         return EXIT_FAILURE;
