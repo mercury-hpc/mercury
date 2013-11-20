@@ -116,7 +116,6 @@ hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsig
     if (pret) {
         switch (pret) {
             case ETIMEDOUT:
-                HG_UTIL_ERROR_DEFAULT("Timeout");
                 break;
             default:
                 HG_UTIL_ERROR_DEFAULT("Unknown error return");
