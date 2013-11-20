@@ -20,6 +20,7 @@
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_time.h"
+#include "mercury_atomic.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -35,7 +36,8 @@
 #define NA_BMI_MAX_TAG (NA_TAG_UB >> 2)
 
 /* Default tag used for one-sided over two-sided */
-#define NA_BMI_RMA_TAG (NA_BMI_MAX_TAG + 1)
+#define NA_BMI_RMA_REQUEST_TAG (NA_BMI_MAX_TAG + 1)
+#define NA_BMI_RMA_TAG (NA_BMI_RMA_REQUEST_TAG + 1)
 #define NA_BMI_MAX_RMA_TAG (NA_TAG_UB >> 1)
 
 #define NA_BMI_PRIVATE_DATA(na_class) \
@@ -143,6 +145,7 @@ struct na_bmi_private_data {
     hg_thread_mutex_t unexpected_op_queue_mutex;  /* Mutex */
     hg_hash_table_t  *mem_handle_map;             /* Map to memory handles */
     hg_thread_mutex_t mem_handle_map_mutex;       /* Mutex */
+    hg_atomic_int32_t rma_tag;                    /* Atomic RMA tag value */
 };
 
 /********************/
@@ -306,16 +309,16 @@ pointer_hash(void *location)
 static NA_INLINE bmi_msg_tag_t
 na_bmi_gen_rma_tag(na_class_t *na_class)
 {
-    static bmi_msg_tag_t tag = NA_BMI_RMA_TAG + 1;
+    bmi_msg_tag_t tag;
 
-    /* TODO use atomic */
-    hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    tag++;
-    if (tag == NA_BMI_MAX_RMA_TAG) tag = NA_BMI_RMA_TAG + 1;
-
-    hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
+    /* Compare and swap tag if reached max tag */
+    if (hg_atomic_cas32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag,
+            NA_BMI_MAX_RMA_TAG, NA_BMI_RMA_TAG)) {
+        tag = NA_BMI_RMA_TAG;
+    } else {
+        /* Increment tag */
+        tag = hg_atomic_incr32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag);
+    }
 
     return tag;
 }
@@ -483,6 +486,9 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
     hg_thread_mutex_init(
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+
+    /* Initialize atomic op */
+    hg_atomic_set32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag, NA_BMI_RMA_TAG);
 
 done:
     if (error_occurred) {
@@ -1246,7 +1252,7 @@ na_bmi_put(na_class_t *na_class, na_cb_t callback, void *arg,
     bmi_ret = BMI_post_sendunexpected(
             &na_bmi_op_id->info.put.request_op_id, na_bmi_addr->bmi_addr,
             na_bmi_rma_info, sizeof(struct na_bmi_rma_info), BMI_EXT_ALLOC,
-            NA_BMI_RMA_TAG, na_bmi_op_id,
+            NA_BMI_RMA_REQUEST_TAG, na_bmi_op_id,
             NA_BMI_PRIVATE_DATA(na_class)->bmi_context, NULL);
     if (bmi_ret < 0) {
         NA_LOG_ERROR("BMI_post_sendunexpected() failed");
@@ -1365,7 +1371,7 @@ na_bmi_get(na_class_t *na_class, na_cb_t callback, void *arg,
     bmi_ret = BMI_post_sendunexpected(
             &na_bmi_op_id->info.get.request_op_id, na_bmi_addr->bmi_addr,
             na_bmi_rma_info, sizeof(struct na_bmi_rma_info), BMI_EXT_ALLOC,
-            NA_BMI_RMA_TAG, na_bmi_op_id,
+            NA_BMI_RMA_REQUEST_TAG, na_bmi_op_id,
             NA_BMI_PRIVATE_DATA(na_class)->bmi_context, NULL);
     if (bmi_ret < 0) {
         NA_LOG_ERROR("BMI_post_sendunexpected() failed");
@@ -1493,7 +1499,7 @@ na_bmi_progress_unexpected(na_class_t *na_class, unsigned int timeout,
         memcpy(unexpected_info, &test_unexpected_info,
                 sizeof(struct BMI_unexpected_info));
 
-        if (unexpected_info->tag == NA_BMI_RMA_TAG) {
+        if (unexpected_info->tag == NA_BMI_RMA_REQUEST_TAG) {
             /* Make RMA progress */
             ret = na_bmi_progress_rma(na_class, unexpected_info);
             if (ret != NA_SUCCESS) {
