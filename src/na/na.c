@@ -230,7 +230,7 @@ NA_Initialize(const char *host_string, na_bool_t listen)
 
         if (accept) {
             na_class_priority_t class_priority = NA_get_priority(na_buffer);
-            
+
             if ((na_buffer->na_class && strcmp(na_class_methods[i]->class_name,
                                                na_buffer->na_class) == 0) ||
                     class_priority == NA_CLASS_PRIORITY_MAX) {
@@ -274,7 +274,7 @@ NA_Finalize(na_class_t *na_class)
     /* Check that completion queue is empty now */
     hg_thread_mutex_lock(&na_cb_completion_queue_mutex_g);
 
-    if (hg_queue_is_empty(na_cb_completion_queue_g)) {
+    if (!hg_queue_is_empty(na_cb_completion_queue_g)) {
         NA_LOG_ERROR("Completion queue should be empty");
         ret = NA_PROTOCOL_ERROR;
         hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
@@ -599,6 +599,7 @@ NA_Progress(na_class_t *na_class, unsigned int timeout)
 
     assert(na_class);
 
+    /* TODO option for concurrent progress */
     hg_time_get_current(&t1);
 
     /* Prevent other threads from concurrently calling progress */
@@ -684,12 +685,17 @@ NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count)
         hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
 
         /* Execute callback */
-        completion_data->callback(completion_data->callback_info);
+        if (completion_data->callback) {
+            /* TODO should return error from callback ? */
+            completion_data->callback(completion_data->callback_info);
+        }
 
         /* Execute plugin callback (free resources etc) */
-        completion_data->plugin_callback(completion_data->callback_info,
-                completion_data->plugin_callback_args);
+        if (completion_data->plugin_callback)
+            completion_data->plugin_callback(completion_data->callback_info,
+                    completion_data->plugin_callback_args);
 
+        free(completion_data);
         count++;
     }
 
