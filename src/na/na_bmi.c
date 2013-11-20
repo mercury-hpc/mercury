@@ -63,10 +63,10 @@ typedef enum na_bmi_rma_op {
 } na_bmi_rma_op_t;
 
 struct na_bmi_rma_info {
-    na_bmi_rma_op_t op;      /* Operation requested */
-    na_ptr_t base;           /* Initial address of memory */
-    bmi_size_t disp;         /* Offset from initial address */
-    bmi_size_t count;        /* Number of entries */
+    na_bmi_rma_op_t op;           /* Operation requested */
+    na_ptr_t base;                /* Initial address of memory */
+    bmi_size_t disp;              /* Offset from initial address */
+    bmi_size_t count;             /* Number of entries */
     bmi_msg_tag_t transfer_tag;   /* Tag used for the data transfer */
     bmi_msg_tag_t completion_tag; /* Tag used for completion ack */
 };
@@ -161,10 +161,6 @@ static na_return_t na_bmi_finalize(na_class_t *na_class);
 /* addr_lookup */
 static na_return_t na_bmi_addr_lookup(na_class_t *na_class, na_cb_t callback,
         void *arg, const char *name, na_op_id_t *op_id);
-static na_return_t na_bmi_addr_lookup_complete(
-        struct na_bmi_op_id *na_bmi_op_id);
-static void na_bmi_addr_lookup_release(struct na_cb_info *callback_info,
-        void *arg);
 
 /* addr_free */
 static na_return_t na_bmi_addr_free(na_class_t *na_class, na_addr_t addr);
@@ -182,28 +178,16 @@ static na_tag_t na_bmi_msg_get_max_tag(na_class_t *na_class);
 static na_return_t na_bmi_msg_send_unexpected(na_class_t *na_class,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_op_id_t *op_id);
-static na_return_t na_bmi_msg_send_unexpected_complete(
-        struct na_bmi_op_id *na_bmi_op_id);
-static void na_bmi_msg_send_unexpected_release(struct na_cb_info *callback_info,
-        void *arg);
 
 /* msg_recv_unexpected */
 static na_return_t na_bmi_msg_recv_unexpected(na_class_t *na_class,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
         na_op_id_t *op_id);
-static na_return_t na_bmi_msg_recv_unexpected_complete(
-        struct na_bmi_op_id *na_bmi_op_id);
-static void na_bmi_msg_recv_unexpected_release(struct na_cb_info *callback_info,
-        void *arg);
 
 /* msg_send_expected */
 static na_return_t na_bmi_msg_send_expected(na_class_t *na_class,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_op_id_t *op_id);
-static na_return_t na_bmi_msg_send_expected_complete(
-        struct na_bmi_op_id *na_bmi_op_id);
-static void na_bmi_msg_send_expected_release(struct na_cb_info *callback_info,
-        void *arg);
 
 /* msg_recv_expected */
 static na_return_t na_bmi_msg_recv_expected(na_class_t *na_class,
@@ -216,10 +200,6 @@ static struct BMI_unexpected_info *na_bmi_msg_unexpected_pop(
 static na_return_t na_bmi_msg_unexpected_op_push(na_class_t *na_class,
         struct na_bmi_op_id *na_bmi_op_id);
 static struct na_bmi_op_id *na_bmi_msg_unexpected_op_pop(na_class_t *na_class);
-static na_return_t na_bmi_msg_recv_expected_complete(
-        struct na_bmi_op_id *na_bmi_op_id);
-static void na_bmi_msg_recv_expected_release(struct na_cb_info *callback_info,
-        void *arg);
 
 /* mem_handle */
 static na_return_t na_bmi_mem_handle_create(na_class_t *na_class, void *buf,
@@ -231,6 +211,7 @@ static na_return_t na_bmi_mem_register(na_class_t *na_class,
 static na_return_t na_bmi_mem_deregister(na_class_t *na_class,
         na_mem_handle_t mem_handle);
 
+/* mem_handle serialization */
 static na_size_t na_bmi_mem_handle_get_serialize_size(na_class_t *na_class,
         na_mem_handle_t mem_handle);
 static na_return_t na_bmi_mem_handle_serialize(na_class_t *na_class, void *buf,
@@ -243,17 +224,14 @@ static na_return_t na_bmi_put(na_class_t *na_class, na_cb_t callback, void *arg,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
-static na_return_t na_bmi_put_complete(struct na_bmi_op_id *na_bmi_op_id);
-static void na_bmi_put_release(struct na_cb_info *callback_info, void *arg);
 
 /* get */
 static na_return_t na_bmi_get(na_class_t *na_class, na_cb_t callback, void *arg,
         na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
-static na_return_t na_bmi_get_complete(struct na_bmi_op_id *na_bmi_op_id);
-static void na_bmi_get_release(struct na_cb_info *callback_info, void *arg);
 
+/* progress */
 static na_return_t na_bmi_progress(na_class_t *na_class, unsigned int timeout);
 static na_return_t na_bmi_progress_unexpected(na_class_t *na_class,
         unsigned int timeout, na_bool_t *progressed);
@@ -263,7 +241,10 @@ static na_return_t na_bmi_progress_rma(na_class_t *na_class,
         struct BMI_unexpected_info *unexpected_info);
 static na_return_t na_bmi_progress_rma_completion(na_class_t *na_class,
         struct na_bmi_op_id *na_bmi_op_id);
+static na_return_t na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id);
+static void na_bmi_release(struct na_cb_info *callback_info, void *arg);
 
+/* cancel */
 static na_return_t na_bmi_cancel(na_class_t *na_class, na_op_id_t op_id);
 
 /*******************/
@@ -518,23 +499,22 @@ na_bmi_finalize(na_class_t *na_class)
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* TODO  */
     /* Check that unexpected op queue is empty */
-    hg_thread_mutex_lock(&
-            NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
-
-    if (!hg_queue_is_empty(NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue)) {
+    if (!hg_queue_is_empty(
+            NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue)) {
         NA_LOG_ERROR("Unexpected op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
     }
 
-    hg_thread_mutex_unlock(&
-            NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
-
     /* Free unexpected op queue */
     hg_queue_free(NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue);
 
-    /* TODO check that unexpected message queue is empty */
+    /* Check that unexpected message queue is empty */
+    if (!hg_queue_is_empty(
+            NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue)) {
+        NA_LOG_ERROR("Unexpected msg queue should be empty");
+        ret = NA_PROTOCOL_ERROR;
+    }
 
     /* Free unexpected message queue */
     hg_queue_free(NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
@@ -593,8 +573,6 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_cb_t callback, void *arg,
     na_bmi_op_id->arg = arg;
     na_bmi_op_id->is_completed = NA_FALSE;
 
-    /* TODO keep the actual lookup here for now */
-
     /* Allocate addr */
     na_bmi_addr = (struct na_bmi_addr *) malloc(sizeof(struct na_bmi_addr));
     if (!na_bmi_addr) {
@@ -614,10 +592,8 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_cb_t callback, void *arg,
         goto done;
     }
 
-    /* Also mark op_id as completed  */
-    na_bmi_op_id->is_completed = NA_TRUE;
-
-    ret = na_bmi_addr_lookup_complete(na_bmi_op_id);
+    /* TODO we always complete here for now as lookup is blocking */
+    ret = na_bmi_complete(na_bmi_op_id);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not complete operation");
         goto done;
@@ -632,46 +608,6 @@ done:
         free(na_bmi_op_id);
     }
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_addr_lookup_complete(struct na_bmi_op_id *na_bmi_op_id)
-{
-    struct na_cb_info *callback_info = NULL;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    callback_info->arg = na_bmi_op_id->arg;
-    callback_info->ret = ret;
-    callback_info->type = NA_CB_LOOKUP;
-    callback_info->info.lookup.addr = na_bmi_op_id->info.lookup.addr;
-
-    ret = na_cb_completion_add(na_bmi_op_id->callback, callback_info,
-            &na_bmi_addr_lookup_release, na_bmi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-    }
-
-done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-na_bmi_addr_lookup_release(struct na_cb_info *callback_info, void *arg)
-{
-    free(callback_info);
-    free(arg);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -788,10 +724,7 @@ na_bmi_msg_send_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
 
     /* If immediate completion, directly add to completion queue */
     if (bmi_ret) {
-        /* Also mark op_id as completed  */
-        na_bmi_op_id->is_completed = NA_TRUE;
-
-        ret = na_bmi_msg_send_unexpected_complete(na_bmi_op_id);
+        ret = na_bmi_complete(na_bmi_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not complete operation");
             goto done;
@@ -806,46 +739,6 @@ done:
         free(na_bmi_op_id);
     }
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_msg_send_unexpected_complete(struct na_bmi_op_id *na_bmi_op_id)
-{
-    struct na_cb_info *callback_info = NULL;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    callback_info->arg = na_bmi_op_id->arg;
-    callback_info->ret = ret;
-    callback_info->type = NA_CB_SEND_UNEXPECTED;
-
-    ret = na_cb_completion_add(na_bmi_op_id->callback, callback_info,
-            &na_bmi_msg_send_unexpected_release, na_bmi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-        goto done;
-    }
-
-done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-na_bmi_msg_send_unexpected_release(struct na_cb_info *callback_info, void *arg)
-{
-    free(callback_info);
-    free(arg);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -886,12 +779,8 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
     unexpected_info = na_bmi_msg_unexpected_pop(na_class);
 
     if (unexpected_info) {
-        /* In the case of immediate completion, complete the operation and
-         * mark mark op_id as completed */
-        na_bmi_op_id->is_completed = NA_TRUE;
-
         na_bmi_op_id->info.recv_unexpected.unexpected_info = unexpected_info;
-        ret = na_bmi_msg_recv_unexpected_complete(na_bmi_op_id);
+        ret = na_bmi_complete(na_bmi_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not complete operation");
             goto done;
@@ -1016,81 +905,6 @@ na_bmi_msg_unexpected_op_pop(na_class_t *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_msg_recv_unexpected_complete(struct na_bmi_op_id *na_bmi_op_id)
-{
-    struct na_cb_info *callback_info = NULL;
-    void *buf;
-    bmi_size_t buf_size;
-    struct BMI_unexpected_info *unexpected_info = NULL;
-    struct na_bmi_addr *na_bmi_addr = NULL;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    callback_info->arg = na_bmi_op_id->arg;
-    callback_info->ret = NA_SUCCESS;
-    callback_info->type = NA_CB_RECV_UNEXPECTED;
-
-    buf = na_bmi_op_id->info.recv_unexpected.buf;
-    buf_size = na_bmi_op_id->info.recv_unexpected.buf_size;
-    unexpected_info = na_bmi_op_id->info.recv_unexpected.unexpected_info;
-
-    /* Copy buffer from bmi_unexpected_info */
-    if (unexpected_info->size > buf_size) {
-        NA_LOG_ERROR("Buffer too small to recv unexpected data");
-        ret = NA_SIZE_ERROR;
-        goto done;
-    }
-    memcpy(buf, unexpected_info->buffer, unexpected_info->size);
-
-    /* Allocate addr */
-    na_bmi_addr = (struct na_bmi_addr *) malloc(sizeof(struct na_bmi_addr));
-    if (!na_bmi_addr) {
-        NA_LOG_ERROR("Could not allocate BMI addr");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    na_bmi_addr->is_unexpected = NA_TRUE;
-    na_bmi_addr->bmi_addr = unexpected_info->addr;
-
-    /* Fill callback info */
-    callback_info->info.recv_unexpected.actual_buf_size =
-            (na_size_t) unexpected_info->size;
-    callback_info->info.recv_unexpected.source = (na_addr_t) na_bmi_addr;
-    callback_info->info.recv_unexpected.tag =
-            (na_tag_t) unexpected_info->tag;
-
-    ret = na_cb_completion_add(na_bmi_op_id->callback, callback_info,
-            &na_bmi_msg_recv_unexpected_release, na_bmi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-        goto done;
-    }
-
-done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    } else {
-        BMI_unexpected_free(unexpected_info->addr, unexpected_info->buffer);
-    }
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-na_bmi_msg_recv_unexpected_release(struct na_cb_info *callback_info, void *arg)
-{
-    free(callback_info);
-    free(arg);
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
 na_bmi_msg_send_expected(na_class_t *na_class, na_cb_t callback, void *arg,
         const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
         na_op_id_t *op_id)
@@ -1127,10 +941,7 @@ na_bmi_msg_send_expected(na_class_t *na_class, na_cb_t callback, void *arg,
 
     /* If immediate completion, directly add to completion queue */
     if (bmi_ret) {
-        /* Also mark op_id as completed  */
-        na_bmi_op_id->is_completed = NA_TRUE;
-
-        ret = na_bmi_msg_send_expected_complete(na_bmi_op_id);
+        ret = na_bmi_complete(na_bmi_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not complete operation");
             goto done;
@@ -1145,46 +956,6 @@ done:
         free(na_bmi_op_id);
     }
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_msg_send_expected_complete(struct na_bmi_op_id *na_bmi_op_id)
-{
-    struct na_cb_info *callback_info = NULL;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    callback_info->arg = na_bmi_op_id->arg;
-    callback_info->ret = ret;
-    callback_info->type = NA_CB_SEND_EXPECTED;
-
-    ret = na_cb_completion_add(na_bmi_op_id->callback, callback_info,
-            &na_bmi_msg_send_expected_release, na_bmi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-        goto done;
-    }
-
-done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-na_bmi_msg_send_expected_release(struct na_cb_info *callback_info, void *arg)
-{
-    free(callback_info);
-    free(arg);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1229,10 +1000,7 @@ na_bmi_msg_recv_expected(na_class_t *na_class, na_cb_t callback, void *arg,
 
     /* If immediate completion, directly add to completion queue */
     if (bmi_ret) {
-        /* Also mark op_id as completed  */
-        na_bmi_op_id->is_completed = NA_TRUE;
-
-        ret = na_bmi_msg_recv_expected_complete(na_bmi_op_id);
+        ret = na_bmi_complete(na_bmi_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not complete operation");
             goto done;
@@ -1247,54 +1015,6 @@ done:
         free(na_bmi_op_id);
     }
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_msg_recv_expected_complete(struct na_bmi_op_id *na_bmi_op_id)
-{
-    struct na_cb_info *callback_info = NULL;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Check buf_size and actual_size */
-    if (na_bmi_op_id->info.recv_expected.actual_size !=
-            na_bmi_op_id->info.recv_expected.buf_size) {
-        NA_LOG_ERROR("Buffer size and actual size of the transfer do not match");
-        ret = NA_SIZE_ERROR;
-        goto done;
-    }
-
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    callback_info->arg = na_bmi_op_id->arg;
-    callback_info->ret = ret;
-    callback_info->type = NA_CB_RECV_EXPECTED;
-
-    ret = na_cb_completion_add(na_bmi_op_id->callback, callback_info,
-            &na_bmi_msg_recv_expected_release, na_bmi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-        goto done;
-    }
-
-done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-na_bmi_msg_recv_expected_release(struct na_cb_info *callback_info, void *arg)
-{
-    free(callback_info);
-    free(arg);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1556,10 +1276,7 @@ na_bmi_put(na_class_t *na_class, na_cb_t callback, void *arg,
 
     /* If immediate completion, directly add to completion queue */
     if (bmi_ret) {
-        /* Also mark op_id as completed  */
-        na_bmi_op_id->is_completed = NA_TRUE;
-
-        ret = na_bmi_put_complete(na_bmi_op_id);
+        ret = na_bmi_complete(na_bmi_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not complete operation");
             goto done;
@@ -1575,50 +1292,6 @@ done:
         free(na_bmi_rma_info);
     }
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_put_complete(struct na_bmi_op_id *na_bmi_op_id)
-{
-    struct na_cb_info *callback_info = NULL;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Transfer is now done so free RMA info */
-    free(na_bmi_op_id->info.put.rma_info);
-    na_bmi_op_id->info.put.rma_info = NULL;
-
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    callback_info->arg = na_bmi_op_id->arg;
-    callback_info->ret = ret;
-    callback_info->type = NA_CB_PUT;
-
-    ret = na_cb_completion_add(na_bmi_op_id->callback, callback_info,
-            &na_bmi_put_release, na_bmi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-        goto done;
-    }
-
-done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-na_bmi_put_release(struct na_cb_info *callback_info, void *arg)
-{
-    free(callback_info);
-    free(arg);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1715,10 +1388,7 @@ na_bmi_get(na_class_t *na_class, na_cb_t callback, void *arg,
 
     /* If immediate completion, directly add to completion queue */
     if (bmi_ret) {
-        /* Also mark op_id as completed  */
-        na_bmi_op_id->is_completed = NA_TRUE;
-
-        ret = na_bmi_get_complete(na_bmi_op_id);
+        ret = na_bmi_complete(na_bmi_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not complete operation");
             goto done;
@@ -1734,50 +1404,6 @@ done:
         free(na_bmi_rma_info);
     }
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_get_complete(struct na_bmi_op_id *na_bmi_op_id)
-{
-    struct na_cb_info *callback_info = NULL;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Transfer is now done so free RMA info */
-    free(na_bmi_op_id->info.get.rma_info);
-    na_bmi_op_id->info.put.rma_info = NULL;
-
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    callback_info->arg = na_bmi_op_id->arg;
-    callback_info->ret = ret;
-    callback_info->type = NA_CB_GET;
-
-    ret = na_cb_completion_add(na_bmi_op_id->callback, callback_info,
-            &na_bmi_get_release, na_bmi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-        goto done;
-    }
-
-done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-na_bmi_get_release(struct na_cb_info *callback_info, void *arg)
-{
-    free(callback_info);
-    free(arg);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1882,11 +1508,9 @@ na_bmi_progress_unexpected(na_class_t *na_class, unsigned int timeout,
             /* If an op id was pushed, associate unexpected
              * info to this operation ID and complete operation */
             if (na_bmi_op_id) {
-                na_bmi_op_id->is_completed = NA_TRUE;
-
                 na_bmi_op_id->info.recv_unexpected.unexpected_info =
                         unexpected_info;
-                ret = na_bmi_msg_recv_unexpected_complete(na_bmi_op_id);
+                ret = na_bmi_complete(na_bmi_op_id);
                 if (ret != NA_SUCCESS) {
                     NA_LOG_ERROR("Could not complete operation");
                     goto done;
@@ -1941,9 +1565,6 @@ na_bmi_progress_expected(na_class_t *na_class, unsigned int timeout,
             goto done;
         }
 
-        /* Mark op_id as completed */
-        na_bmi_op_id->is_completed = NA_TRUE;
-
         switch (na_bmi_op_id->type) {
             case NA_CB_LOOKUP:
                 NA_LOG_ERROR("Should not complete lookup here");
@@ -1952,65 +1573,58 @@ na_bmi_progress_expected(na_class_t *na_class, unsigned int timeout,
                 NA_LOG_ERROR("Should not complete unexpected recv here");
                 break;
             case NA_CB_SEND_UNEXPECTED:
-                ret = na_bmi_msg_send_unexpected_complete(na_bmi_op_id);
+                ret = na_bmi_complete(na_bmi_op_id);
                 break;
             case NA_CB_RECV_EXPECTED:
                 /* Set the actual size */
                 na_bmi_op_id->info.recv_expected.actual_size = bmi_actual_size;
-                ret = na_bmi_msg_recv_expected_complete(na_bmi_op_id);
+                ret = na_bmi_complete(na_bmi_op_id);
                 break;
             case NA_CB_SEND_EXPECTED:
-                ret = na_bmi_msg_send_expected_complete(na_bmi_op_id);
+                ret = na_bmi_complete(na_bmi_op_id);
                 break;
             case NA_CB_PUT:
-                if (!na_bmi_op_id->info.put.internal_progress) {
-                    /* No internal progress but actual put */
-                    if (na_bmi_op_id->info.put.transfer_op_id == bmi_op_id) {
-                        ret = NA_SUCCESS;
-                    } else
-                    if (na_bmi_op_id->info.put.completion_op_id == bmi_op_id) {
-                        ret = na_bmi_put_complete(na_bmi_op_id);
-                    } else {
-                        NA_LOG_ERROR("Unexpected operation ID");
-                        ret = NA_PROTOCOL_ERROR;
-                        goto done;
-                    }
-                } else {
-                    /* Check that this is the transfer op id */
-                    if (na_bmi_op_id->info.put.transfer_op_id == bmi_op_id) {
-                        ret = na_bmi_progress_rma_completion(na_class,
-                                na_bmi_op_id);
-                    } else
-                    if (na_bmi_op_id->info.put.completion_op_id == bmi_op_id) {
+                if (na_bmi_op_id->info.put.transfer_op_id == bmi_op_id) {
+                    /* Progress completion and send an ack after the put */
+                    ret = (na_bmi_op_id->info.put.internal_progress) ?
+                            na_bmi_progress_rma_completion(na_class,
+                                    na_bmi_op_id) : NA_SUCCESS;
+                }
+                else if (na_bmi_op_id->info.put.completion_op_id == bmi_op_id) {
+                    if (na_bmi_op_id->info.put.internal_progress) {
+                        na_bmi_op_id->is_completed = NA_TRUE;
+
                         /* Transfer is now done so free RMA info */
                         free(na_bmi_op_id->info.put.rma_info);
                         na_bmi_op_id->info.put.rma_info = NULL;
-                        /* TODO call release op_id */
-                        free(na_bmi_op_id);
+                        na_bmi_release(NULL, na_bmi_op_id);
                     } else {
-                        NA_LOG_ERROR("Unexpected operation ID");
-                        ret = NA_PROTOCOL_ERROR;
-                        goto done;
+                        /* No internal progress but actual put */
+                        ret = na_bmi_complete(na_bmi_op_id);
                     }
+                } else {
+                    NA_LOG_ERROR("Unexpected operation ID");
+                    ret = NA_PROTOCOL_ERROR;
+                    goto done;
                 }
                 break;
             case NA_CB_GET:
-                if (!na_bmi_op_id->info.get.internal_progress) {
-                    /* No internal progress but actual get */
-                    ret = na_bmi_get_complete(na_bmi_op_id);
-                } else {
-                    /* Check that this is the transfer op id */
-                    if (na_bmi_op_id->info.get.transfer_op_id == bmi_op_id) {
+                if (na_bmi_op_id->info.get.transfer_op_id == bmi_op_id) {
+                    if (na_bmi_op_id->info.get.internal_progress) {
+                        na_bmi_op_id->is_completed = NA_TRUE;
+
                         /* Transfer is now done so free RMA info */
                         free(na_bmi_op_id->info.get.rma_info);
                         na_bmi_op_id->info.get.rma_info = NULL;
-                        /* TODO call release op_id */
-                        free(na_bmi_op_id);
+                        na_bmi_release(NULL, na_bmi_op_id);
                     } else {
-                        NA_LOG_ERROR("Unexpected operation ID");
-                        ret = NA_PROTOCOL_ERROR;
-                        goto done;
+                        /* No internal progress but actual get */
+                        ret = na_bmi_complete(na_bmi_op_id);
                     }
+                } else {
+                    NA_LOG_ERROR("Unexpected operation ID");
+                    ret = NA_PROTOCOL_ERROR;
+                    goto done;
                 }
                 break;
             default:
@@ -2035,6 +1649,7 @@ na_bmi_progress_rma(na_class_t *na_class,
     struct na_bmi_rma_info *na_bmi_rma_info;
     struct na_bmi_op_id *na_bmi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
+    int bmi_ret;
 
     if (unexpected_info->size != sizeof(struct na_bmi_rma_info)) {
         NA_LOG_ERROR("Unexpected message size does not match RMA info struct");
@@ -2081,9 +1696,6 @@ na_bmi_progress_rma(na_class_t *na_class,
     switch (na_bmi_rma_info->op) {
         /* Remote wants to do a put so wait in a recv */
         case NA_BMI_RMA_PUT:
-        {
-            int bmi_ret;
-
             na_bmi_op_id->type = NA_CB_PUT;
             na_bmi_op_id->info.put.request_op_id = 0;
             na_bmi_op_id->info.put.transfer_op_id = 0;
@@ -2094,6 +1706,7 @@ na_bmi_progress_rma(na_class_t *na_class,
             na_bmi_op_id->info.put.remote_addr = unexpected_info->addr;
             na_bmi_op_id->info.put.rma_info = na_bmi_rma_info;
 
+            /* Start receiving data */
             bmi_ret = BMI_post_recv(&na_bmi_op_id->info.put.transfer_op_id,
                     na_bmi_op_id->info.put.remote_addr,
                     (char *) na_bmi_mem_handle->base + na_bmi_rma_info->disp,
@@ -2110,13 +1723,9 @@ na_bmi_progress_rma(na_class_t *na_class,
             if (bmi_ret) {
                 ret = na_bmi_progress_rma_completion(na_class, na_bmi_op_id);
             }
-        }
-        break;
-        /* Remote wants to do a get so do a send */
+            break;
+            /* Remote wants to do a get so do a send */
         case NA_BMI_RMA_GET:
-        {
-            int bmi_ret;
-
             na_bmi_op_id->type = NA_CB_GET;
             na_bmi_op_id->info.get.request_op_id = 0;
             na_bmi_op_id->info.get.transfer_op_id = 0;
@@ -2125,6 +1734,7 @@ na_bmi_progress_rma(na_class_t *na_class,
             na_bmi_op_id->info.get.remote_addr = unexpected_info->addr;
             na_bmi_op_id->info.get.rma_info = na_bmi_rma_info;
 
+            /* Start sending data */
             bmi_ret = BMI_post_send(&na_bmi_op_id->info.get.transfer_op_id,
                     na_bmi_op_id->info.get.remote_addr,
                     (char *) na_bmi_mem_handle->base + na_bmi_rma_info->disp,
@@ -2140,18 +1750,15 @@ na_bmi_progress_rma(na_class_t *na_class,
             if (bmi_ret) {
                 na_bmi_op_id->is_completed = NA_TRUE;
 
-                free(na_bmi_rma_info);
-                /* TODO call release op_id */
-                free(na_bmi_op_id);
+                free(na_bmi_op_id->info.get.rma_info);
+                na_bmi_op_id->info.get.rma_info = NULL;
+                na_bmi_release(NULL, na_bmi_op_id);
             }
-        }
-        break;
+            break;
         default:
-        {
             NA_LOG_ERROR("Operation not supported");
             ret = NA_INVALID_PARAM;
-        }
-        break;
+            break;
     }
 
     hg_thread_mutex_unlock(
@@ -2194,13 +1801,134 @@ na_bmi_progress_rma_completion(na_class_t *na_class,
     if (bmi_ret) {
         na_bmi_op_id->is_completed = NA_TRUE;
 
-        free(na_bmi_rma_info);
-        /* TODO call release op_id */
-        free(na_bmi_op_id);
+        free(na_bmi_op_id->info.put.rma_info);
+        na_bmi_op_id->info.put.rma_info = NULL;
+        na_bmi_release(NULL, na_bmi_op_id);
     }
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
+{
+    struct na_cb_info *callback_info = NULL;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Mark op id as completed */
+    na_bmi_op_id->is_completed = NA_TRUE;
+
+    /* Allocate callback info */
+    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
+    if (!callback_info) {
+        NA_LOG_ERROR("Could not allocate callback info");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+    callback_info->arg = na_bmi_op_id->arg;
+    callback_info->ret = ret;
+    callback_info->type = na_bmi_op_id->type;
+
+    switch (na_bmi_op_id->type) {
+        case NA_CB_LOOKUP:
+            callback_info->info.lookup.addr = na_bmi_op_id->info.lookup.addr;
+            break;
+        case NA_CB_SEND_UNEXPECTED:
+            break;
+        case NA_CB_RECV_UNEXPECTED:
+        {
+            struct BMI_unexpected_info *unexpected_info = NULL;
+            struct na_bmi_addr *na_bmi_addr = NULL;
+
+            unexpected_info =
+                    na_bmi_op_id->info.recv_unexpected.unexpected_info;
+
+            /* Copy buffer from bmi_unexpected_info */
+            if (unexpected_info->size
+                    > na_bmi_op_id->info.recv_unexpected.buf_size) {
+                NA_LOG_ERROR("Buffer too small to recv unexpected data");
+                ret = NA_SIZE_ERROR;
+                goto done;
+            }
+            memcpy(na_bmi_op_id->info.recv_unexpected.buf,
+                    unexpected_info->buffer, unexpected_info->size);
+
+            /* Allocate addr */
+            na_bmi_addr = (struct na_bmi_addr *) malloc(
+                    sizeof(struct na_bmi_addr));
+            if (!na_bmi_addr) {
+                NA_LOG_ERROR("Could not allocate BMI addr");
+                ret = NA_NOMEM_ERROR;
+                goto done;
+            }
+            na_bmi_addr->is_unexpected = NA_TRUE;
+            na_bmi_addr->bmi_addr = unexpected_info->addr;
+
+            /* Fill callback info */
+            callback_info->info.recv_unexpected.actual_buf_size =
+                    (na_size_t) unexpected_info->size;
+            callback_info->info.recv_unexpected.source =
+                    (na_addr_t) na_bmi_addr;
+            callback_info->info.recv_unexpected.tag =
+                    (na_tag_t) unexpected_info->tag;
+
+            BMI_unexpected_free(unexpected_info->addr, unexpected_info->buffer);
+        }
+            break;
+        case NA_CB_SEND_EXPECTED:
+            break;
+        case NA_CB_RECV_EXPECTED:
+            /* Check buf_size and actual_size */
+            if (na_bmi_op_id->info.recv_expected.actual_size !=
+                    na_bmi_op_id->info.recv_expected.buf_size) {
+                NA_LOG_ERROR("Buffer size and actual transfer size do not match");
+                ret = NA_SIZE_ERROR;
+                goto done;
+            }
+            break;
+        case NA_CB_PUT:
+            /* Transfer is now done so free RMA info */
+            free(na_bmi_op_id->info.put.rma_info);
+            na_bmi_op_id->info.put.rma_info = NULL;
+            break;
+        case NA_CB_GET:
+            /* Transfer is now done so free RMA info */
+            free(na_bmi_op_id->info.get.rma_info);
+            na_bmi_op_id->info.get.rma_info = NULL;
+            break;
+        default:
+            NA_LOG_ERROR("Operation not supported");
+            ret = NA_INVALID_PARAM;
+            break;
+    }
+
+    ret = na_cb_completion_add(na_bmi_op_id->callback, callback_info,
+            &na_bmi_release, na_bmi_op_id);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not add callback to completion queue");
+        goto done;
+    }
+
+done:
+    if (ret != NA_SUCCESS) {
+        free(callback_info);
+    }
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_bmi_release(struct na_cb_info *callback_info, void *arg)
+{
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) arg;
+
+    if (na_bmi_op_id && !na_bmi_op_id->is_completed) {
+        NA_LOG_ERROR("Releasing resources from an uncompleted operation");
+    }
+    free(callback_info);
+    free(na_bmi_op_id);
 }
 
 /*---------------------------------------------------------------------------*/
