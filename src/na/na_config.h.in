@@ -67,8 +67,10 @@
     typedef uint16_t na_uint16_t;
     typedef uint8_t  na_uint8_t;
 #endif
-typedef na_uint8_t   na_bool_t;
 typedef na_uint64_t  na_ptr_t;
+typedef na_uint8_t   na_bool_t;
+#define NA_TRUE     1
+#define NA_FALSE    0
 
 #ifdef _WIN32
    #define NA_INLINE __inline

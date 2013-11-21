@@ -66,9 +66,6 @@ typedef enum na_return {
     NA_PROTOCOL_ERROR = 8    /* unknown error reported from the protocol layer */
 } na_return_t;
 
-#define NA_TRUE     1
-#define NA_FALSE    0
-
 /* Callback operation type */
 typedef enum na_cb_type {
     NA_CB_LOOKUP,

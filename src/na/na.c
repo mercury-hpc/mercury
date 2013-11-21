@@ -104,7 +104,7 @@ NA_parse_host_string(const char *host_string,
     input_string = (char*) malloc(strlen(host_string) + 1);
     if (!input_string) {
         NA_LOG_ERROR("Could not allocate string");
-        ret = NA_FAIL;
+        ret = NA_NOMEM_ERROR;
         goto done;
     }
 
@@ -124,7 +124,7 @@ NA_parse_host_string(const char *host_string,
         na_buffer->na_class = (char*) malloc(strlen(_locator) + 1);
         if (!na_buffer->na_class) {
             NA_LOG_ERROR("Could not allocate na_class");
-            ret = NA_FAIL;
+            ret = NA_NOMEM_ERROR;
             goto done;
         }
 
@@ -136,7 +136,7 @@ NA_parse_host_string(const char *host_string,
     na_buffer->na_protocol = (char*) malloc(strlen(token) + 1);
     if (!na_buffer->na_protocol) {
         NA_LOG_ERROR("Could not allocate na_protocol");
-        ret = NA_FAIL;
+        ret = NA_NOMEM_ERROR;
         goto done;
     }
 
@@ -148,7 +148,7 @@ NA_parse_host_string(const char *host_string,
     na_buffer->na_host = (char*) malloc(strlen(token) + 1);
     if (!na_buffer->na_host) {
         NA_LOG_ERROR("Could not allocate na_host");
-        ret = NA_FAIL;
+        ret = NA_NOMEM_ERROR;
         goto done;
     }
 
@@ -166,7 +166,7 @@ NA_parse_host_string(const char *host_string,
     na_buffer->na_host_string = (char*) malloc(na_host_string_len);
     if (!na_buffer->na_host_string) {
         NA_LOG_ERROR("Could not allocate na_host_string");
-        ret = NA_FAIL;
+        ret = NA_NOMEM_ERROR;
         goto done;
     }
 
@@ -340,7 +340,7 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
 
     if (addr == NA_ADDR_NULL) {
         NA_LOG_ERROR("NULL addr");
-        ret = NA_FAIL;
+        ret = NA_INVALID_PARAM;
         return ret;
     }
 
@@ -675,7 +675,7 @@ NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count)
                     hg_queue_pop_tail(na_cb_completion_queue_g);
         if (!completion_data) {
             NA_LOG_ERROR("NULL completion data");
-            ret = NA_FAIL;
+            ret = NA_INVALID_PARAM;
             hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
             goto done;
         }

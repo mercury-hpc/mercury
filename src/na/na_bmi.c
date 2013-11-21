@@ -8,9 +8,6 @@
  * found at the root of the source code distribution tree.
  */
 
-/***********/
-/* Headers */
-/***********/
 #include "na_bmi.h"
 #include "na_private.h"
 #include "na_error.h"
@@ -538,7 +535,7 @@ na_bmi_finalize(na_class_t *na_class)
     bmi_ret = BMI_finalize();
     if (bmi_ret < 0) {
         NA_LOG_ERROR("BMI_finalize() failed");
-        ret = NA_FAIL;
+        ret = NA_PROTOCOL_ERROR;
     }
 
     /* Destroy mutex/cond */
