@@ -29,6 +29,17 @@
 
 /* TODO check params in NA routines */
 
+/****************/
+/* Local Macros */
+/****************/
+/* Convert value to string */
+#define NA_ERROR_STRING_MACRO(def, value, string) \
+  if (value == def) string = #def
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
+
 /* Completion data stored in completion queue */
 struct na_cb_completion_data {
     na_cb_t callback;
@@ -37,6 +48,13 @@ struct na_cb_completion_data {
     void *plugin_callback_args;
 };
 
+/********************/
+/* Local Prototypes */
+/********************/
+
+/*******************/
+/* Local Variables */
+/*******************/
 #ifdef NA_HAS_SSM
 extern struct na_class_describe na_ssm_describe_g;
 #endif
@@ -66,11 +84,7 @@ static hg_thread_cond_t  na_cb_completion_queue_cond_g;
 
 static hg_thread_mutex_t na_progress_mutex_g;
 static hg_thread_cond_t  na_progress_cond_g;
-static na_bool_t na_is_progressing_g = NA_FALSE;
-
-/* Convert value to string */
-#define NA_ERROR_STRING_MACRO(def, value, string) \
-  if (value == def) string = #def
+static na_bool_t na_progressing_g = NA_FALSE;
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -605,7 +619,7 @@ NA_Progress(na_class_t *na_class, unsigned int timeout)
     /* Prevent other threads from concurrently calling progress */
     hg_thread_mutex_lock(&na_progress_mutex_g);
 
-    while (na_is_progressing_g) {
+    while (na_progressing_g) {
         if (hg_thread_cond_timedwait(&na_progress_cond_g, &na_progress_mutex_g,
                 (unsigned int) (remaining * 1000)) != HG_UTIL_SUCCESS) {
             /* Timeout occurred so leave */
@@ -614,7 +628,7 @@ NA_Progress(na_class_t *na_class, unsigned int timeout)
             goto done;
         }
     }
-    na_is_progressing_g = NA_TRUE;
+    na_progressing_g = NA_TRUE;
 
     hg_thread_mutex_unlock(&na_progress_mutex_g);
 
@@ -628,7 +642,7 @@ NA_Progress(na_class_t *na_class, unsigned int timeout)
 
     /* At this point, either progress succeeded or failed with NA_TIMEOUT,
      * meaning remaining time is now 0, so wake up other threads waiting */
-    na_is_progressing_g = NA_FALSE;
+    na_progressing_g = NA_FALSE;
     hg_thread_cond_signal(&na_progress_cond_g);
 
     hg_thread_mutex_unlock(&na_progress_mutex_g);
@@ -642,7 +656,7 @@ na_return_t
 NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count)
 {
     na_return_t ret = NA_SUCCESS;
-    na_bool_t completion_queue_is_empty = 0;
+    na_bool_t completion_queue_empty = 0;
     struct na_cb_completion_data *completion_data = NULL;
     unsigned int count = 0;
 
@@ -650,9 +664,9 @@ NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count)
         hg_thread_mutex_lock(&na_cb_completion_queue_mutex_g);
 
         /* Is completion queue empty */
-        completion_queue_is_empty = hg_queue_is_empty(na_cb_completion_queue_g);
+        completion_queue_empty = hg_queue_is_empty(na_cb_completion_queue_g);
 
-        while (completion_queue_is_empty) {
+        while (completion_queue_empty) {
             /* If queue is empty and already triggered something, just leave */
             if (count) {
                 hg_thread_mutex_unlock(&na_cb_completion_queue_mutex_g);
