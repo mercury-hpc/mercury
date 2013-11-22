@@ -46,8 +46,8 @@
 
 /* na_bmi_addr */
 struct na_bmi_addr {
-    BMI_addr_t bmi_addr;      /* BMI addr */
-    na_bool_t  is_unexpected; /* Address generated from unexpected recv */
+    BMI_addr_t bmi_addr;   /* BMI addr */
+    na_bool_t  unexpected; /* Address generated from unexpected recv */
 };
 
 struct na_bmi_mem_handle {
@@ -119,7 +119,7 @@ struct na_bmi_op_id {
     na_cb_type_t type;
     na_cb_t callback; /* Callback */
     void *arg;
-    na_bool_t is_completed; /* Operation completed */
+    na_bool_t completed; /* Operation completed */
     union {
       struct na_bmi_info_lookup lookup;
       struct na_bmi_info_send_unexpected send_unexpected;
@@ -132,7 +132,7 @@ struct na_bmi_op_id {
 };
 
 struct na_bmi_private_data {
-    na_bool_t is_listening;                       /* Used in server mode */
+    na_bool_t listening;                          /* Used in server mode */
     char *listen_addr;                            /* Server listen_addr */
     bmi_context_id bmi_context;                   /* BMI Context */
     hg_thread_mutex_t test_unexpected_mutex;      /* Mutex */
@@ -405,7 +405,7 @@ na_class_t *
 NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
 {
     na_class_t *na_class = NULL;
-    na_bool_t is_listening;
+    na_bool_t listening;
     hg_hash_table_t *mem_handle_map = NULL;
     hg_queue_t *unexpected_msg_queue = NULL;
     hg_queue_t *unexpected_op_queue = NULL;
@@ -434,10 +434,10 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
         goto done;
     }
 
-    is_listening = (flags == BMI_INIT_SERVER) ? NA_TRUE : NA_FALSE;
-    NA_BMI_PRIVATE_DATA(na_class)->is_listening = is_listening;
+    listening = (flags == BMI_INIT_SERVER) ? NA_TRUE : NA_FALSE;
+    NA_BMI_PRIVATE_DATA(na_class)->listening = listening;
     NA_BMI_PRIVATE_DATA(na_class)->listen_addr =
-            (is_listening) ? strdup(listen_addr) : NULL;
+            (listening) ? strdup(listen_addr) : NULL;
 
     /* Create a new BMI context */
     bmi_ret = BMI_open_context(&NA_BMI_PRIVATE_DATA(na_class)->bmi_context);
@@ -574,7 +574,7 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_cb_t callback, void *arg,
     na_bmi_op_id->type = NA_CB_LOOKUP;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->is_completed = NA_FALSE;
+    na_bmi_op_id->completed = NA_FALSE;
 
     /* Allocate addr */
     na_bmi_addr = (struct na_bmi_addr *) malloc(sizeof(struct na_bmi_addr));
@@ -584,7 +584,7 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_cb_t callback, void *arg,
         goto done;
     }
     na_bmi_addr->bmi_addr = 0;
-    na_bmi_addr->is_unexpected = NA_FALSE;
+    na_bmi_addr->unexpected = NA_FALSE;
     na_bmi_op_id->info.lookup.addr = (na_addr_t) na_bmi_addr;
 
     /* Perform an address lookup */
@@ -644,7 +644,7 @@ na_bmi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
 
     na_bmi_addr = (struct na_bmi_addr *) addr;
 
-    if (na_bmi_addr->is_unexpected) {
+    if (na_bmi_addr->unexpected) {
         bmi_rev_addr = BMI_addr_rev_lookup_unexpected(na_bmi_addr->bmi_addr);
     } else {
         bmi_rev_addr = BMI_addr_rev_lookup(na_bmi_addr->bmi_addr);
@@ -711,7 +711,7 @@ na_bmi_msg_send_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
     na_bmi_op_id->type = NA_CB_SEND_UNEXPECTED;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->is_completed = NA_FALSE;
+    na_bmi_op_id->completed = NA_FALSE;
     na_bmi_op_id->info.send_unexpected.op_id = 0;
 
     /* Post the BMI unexpected send request */
@@ -764,7 +764,7 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
     na_bmi_op_id->type = NA_CB_RECV_UNEXPECTED;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->is_completed = NA_FALSE;
+    na_bmi_op_id->completed = NA_FALSE;
     na_bmi_op_id->info.recv_unexpected.buf = buf;
     na_bmi_op_id->info.recv_unexpected.buf_size = (bmi_size_t) buf_size;
     na_bmi_op_id->info.recv_unexpected.unexpected_info = NULL;
@@ -929,7 +929,7 @@ na_bmi_msg_send_expected(na_class_t *na_class, na_cb_t callback, void *arg,
     na_bmi_op_id->type = NA_CB_SEND_EXPECTED;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->is_completed = NA_FALSE;
+    na_bmi_op_id->completed = NA_FALSE;
     na_bmi_op_id->info.send_expected.op_id = 0;
 
     /* Post the BMI send request */
@@ -984,7 +984,7 @@ na_bmi_msg_recv_expected(na_class_t *na_class, na_cb_t callback, void *arg,
     na_bmi_op_id->type = NA_CB_RECV_EXPECTED;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->is_completed = NA_FALSE;
+    na_bmi_op_id->completed = NA_FALSE;
     na_bmi_op_id->info.recv_expected.op_id = 0;
     na_bmi_op_id->info.recv_expected.buf_size = bmi_buf_size;
     na_bmi_op_id->info.recv_expected.actual_size = 0;
@@ -1219,7 +1219,7 @@ na_bmi_put(na_class_t *na_class, na_cb_t callback, void *arg,
     na_bmi_op_id->type = NA_CB_PUT;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->is_completed = NA_FALSE;
+    na_bmi_op_id->completed = NA_FALSE;
     na_bmi_op_id->info.put.request_op_id = 0;
     na_bmi_op_id->info.put.transfer_op_id = 0;
     na_bmi_op_id->info.put.transfer_actual_size = 0;
@@ -1272,7 +1272,7 @@ na_bmi_put(na_class_t *na_class, na_cb_t callback, void *arg,
     /* Post the BMI recv request */
     bmi_ret = BMI_post_recv(
             &na_bmi_op_id->info.put.completion_op_id, na_bmi_addr->bmi_addr,
-            &na_bmi_op_id->is_completed, sizeof(na_bool_t),
+            &na_bmi_op_id->completed, sizeof(na_bool_t),
             &na_bmi_op_id->info.put.completion_actual_size,
             BMI_EXT_ALLOC, na_bmi_rma_info->completion_tag, na_bmi_op_id,
             NA_BMI_PRIVATE_DATA(na_class)->bmi_context, NULL);
@@ -1340,7 +1340,7 @@ na_bmi_get(na_class_t *na_class, na_cb_t callback, void *arg,
     na_bmi_op_id->type = NA_CB_GET;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->is_completed = NA_FALSE;
+    na_bmi_op_id->completed = NA_FALSE;
     na_bmi_op_id->info.get.request_op_id = 0;
     na_bmi_op_id->info.get.transfer_op_id = 0;
     na_bmi_op_id->info.get.transfer_actual_size = 0;
@@ -1595,7 +1595,7 @@ na_bmi_progress_expected(na_class_t *na_class, unsigned int timeout,
                 }
                 else if (na_bmi_op_id->info.put.completion_op_id == bmi_op_id) {
                     if (na_bmi_op_id->info.put.internal_progress) {
-                        na_bmi_op_id->is_completed = NA_TRUE;
+                        na_bmi_op_id->completed = NA_TRUE;
 
                         /* Transfer is now done so free RMA info */
                         free(na_bmi_op_id->info.put.rma_info);
@@ -1614,7 +1614,7 @@ na_bmi_progress_expected(na_class_t *na_class, unsigned int timeout,
             case NA_CB_GET:
                 if (na_bmi_op_id->info.get.transfer_op_id == bmi_op_id) {
                     if (na_bmi_op_id->info.get.internal_progress) {
-                        na_bmi_op_id->is_completed = NA_TRUE;
+                        na_bmi_op_id->completed = NA_TRUE;
 
                         /* Transfer is now done so free RMA info */
                         free(na_bmi_op_id->info.get.rma_info);
@@ -1679,7 +1679,7 @@ na_bmi_progress_rma(na_class_t *na_class,
     /* This is an internal operation so no user callback/arg */
     na_bmi_op_id->callback = NULL;
     na_bmi_op_id->arg = NULL;
-    na_bmi_op_id->is_completed = NA_FALSE;
+    na_bmi_op_id->completed = NA_FALSE;
 
     /* Here better to keep the mutex locked the time we operate on
      * bmi_mem_handle since it's a pointer to a mem_handle */
@@ -1751,7 +1751,7 @@ na_bmi_progress_rma(na_class_t *na_class,
             }
 
             if (bmi_ret) {
-                na_bmi_op_id->is_completed = NA_TRUE;
+                na_bmi_op_id->completed = NA_TRUE;
 
                 free(na_bmi_op_id->info.get.rma_info);
                 na_bmi_op_id->info.get.rma_info = NULL;
@@ -1793,7 +1793,7 @@ na_bmi_progress_rma_completion(na_class_t *na_class,
 
     /* Send an ack to tell the server that the data is here */
     bmi_ret = BMI_post_send(&na_bmi_op_id->info.put.completion_op_id,
-            na_bmi_op_id->info.put.remote_addr, &na_bmi_op_id->is_completed,
+            na_bmi_op_id->info.put.remote_addr, &na_bmi_op_id->completed,
             sizeof(na_bool_t), BMI_EXT_ALLOC, na_bmi_rma_info->completion_tag,
             na_bmi_op_id, NA_BMI_PRIVATE_DATA(na_class)->bmi_context, NULL);
     if (bmi_ret < 0) {
@@ -1802,7 +1802,7 @@ na_bmi_progress_rma_completion(na_class_t *na_class,
         goto done;
     }
     if (bmi_ret) {
-        na_bmi_op_id->is_completed = NA_TRUE;
+        na_bmi_op_id->completed = NA_TRUE;
 
         free(na_bmi_op_id->info.put.rma_info);
         na_bmi_op_id->info.put.rma_info = NULL;
@@ -1821,7 +1821,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
     na_return_t ret = NA_SUCCESS;
 
     /* Mark op id as completed */
-    na_bmi_op_id->is_completed = NA_TRUE;
+    na_bmi_op_id->completed = NA_TRUE;
 
     /* Allocate callback info */
     callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
@@ -1866,7 +1866,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
                 ret = NA_NOMEM_ERROR;
                 goto done;
             }
-            na_bmi_addr->is_unexpected = NA_TRUE;
+            na_bmi_addr->unexpected = NA_TRUE;
             na_bmi_addr->bmi_addr = unexpected_info->addr;
 
             /* Fill callback info */
@@ -1927,7 +1927,7 @@ na_bmi_release(struct na_cb_info *callback_info, void *arg)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) arg;
 
-    if (na_bmi_op_id && !na_bmi_op_id->is_completed) {
+    if (na_bmi_op_id && !na_bmi_op_id->completed) {
         NA_LOG_ERROR("Releasing resources from an uncompleted operation");
     }
     free(callback_info);
