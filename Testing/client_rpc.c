@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
     }
 
     /* Look up addr id */
-    na_ret = NA_Addr_lookup(network_class, ion_name, &addr);
+    na_ret = NA_Addr_lookup_wait(network_class, ion_name, &addr);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not find addr %s\n", ion_name);
         return EXIT_FAILURE;
@@ -88,7 +88,8 @@ int main(int argc, char *argv[])
     /* Get output parameters */
     bla_open_ret = bla_open_out_struct.ret;
     bla_open_event_id = bla_open_out_struct.event_id;
-    printf("bla_open returned: %d with event_id: %d\n", bla_open_ret, bla_open_event_id);
+    printf("bla_open returned: %d with event_id: %d\n", bla_open_ret,
+            bla_open_event_id);
 
     /* Free request */
     hg_ret = HG_Request_free(bla_open_request);

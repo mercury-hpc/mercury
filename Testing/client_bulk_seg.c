@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
     }
 
     /* Look up addr id */
-    na_ret = NA_Addr_lookup(network_class, ion_name, &addr);
+    na_ret = NA_Addr_lookup_wait(network_class, ion_name, &addr);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not find addr %s\n", ion_name);
         return EXIT_FAILURE;
@@ -118,12 +118,12 @@ int main(int argc, char *argv[])
     bulk_segments = (hg_bulk_segment_t*) malloc(bulk_size_x * sizeof(hg_bulk_segment_t));
     if (bulk_size_y_var) {
         for (i = 0; i < bulk_size_x ; i++) {
-            bulk_segments[i].address = bulk_buf[i];
+            bulk_segments[i].address = (hg_ptr_t) bulk_buf[i];
             bulk_segments[i].size = bulk_size_y_var[i] * sizeof(int);
         }
     } else {
         for (i = 0; i < bulk_size_x ; i++) {
-            bulk_segments[i].address = bulk_buf[i];
+            bulk_segments[i].address = (hg_ptr_t) bulk_buf[i];
             bulk_segments[i].size = bulk_size_y * sizeof(int);
         }
     }

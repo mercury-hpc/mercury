@@ -73,10 +73,10 @@ bla_write_check(const void *buf, size_t nbyte)
 }
 */
 
-static int
+static hg_return_t
 server_finalize(hg_handle_t handle)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     finalizing = 1;
 
@@ -90,10 +90,10 @@ server_finalize(hg_handle_t handle)
     return ret;
 }
 
-static int
+static hg_return_t
 bla_write_rpc(hg_handle_t handle)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     bla_write_in_t  bla_write_in_struct;
     bla_write_out_t bla_write_out_struct;
@@ -229,10 +229,10 @@ bla_write_rpc_thread(void *arg)
     return NULL;
 }
 
-static int
+static hg_return_t
 bla_write_rpc_spawn(hg_handle_t handle)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
 #if defined(SPAWN_REQUEST_THREAD)
     hg_thread_t thread;

@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
     }
 
     /* Look up addr id */
-    na_ret = NA_Addr_lookup(network_class, ion_name, &addr);
+    na_ret = NA_Addr_lookup_wait(network_class, ion_name, &addr);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not find addr %s\n", ion_name);
         return EXIT_FAILURE;

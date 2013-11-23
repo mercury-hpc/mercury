@@ -62,10 +62,10 @@ bla_write(int fildes, const void *buf, size_t nbyte)
 
 
 /******************************************************************************/
-int
+hg_return_t
 fs_bla_open_fwd(hg_handle_t handle)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     hg_request_t request;
 
     bla_open_in_t  bla_open_in_struct;
@@ -96,16 +96,16 @@ fs_bla_open_fwd(hg_handle_t handle)
     ret = HG_Request_free(request);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free request\n");
-        return EXIT_FAILURE;
+        return ret;
     }
 
     return ret;
 }
 
-int
+hg_return_t
 fs_bla_open(hg_handle_t handle)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     bla_open_in_t  bla_open_in_struct;
     bla_open_out_t bla_open_out_struct;
@@ -143,10 +143,10 @@ fs_bla_open(hg_handle_t handle)
     return ret;
 }
 
-int
+hg_return_t
 fs_bla_write_fwd(hg_handle_t handle)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     hg_request_t request;
 
     bla_write_in_t  bla_write_in_struct;
@@ -223,14 +223,14 @@ fs_bla_write_fwd(hg_handle_t handle)
     ret = HG_Request_free(request);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free request\n");
-        return EXIT_FAILURE;
+        return ret;
     }
 
     /* Free memory handle */
     ret = HG_Bulk_handle_free(bulk_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free bulk data handle\n");
-        return EXIT_FAILURE;
+        return ret;
     }
 
 
@@ -246,10 +246,10 @@ fs_bla_write_fwd(hg_handle_t handle)
     return ret;
 }
 
-int
+hg_return_t
 fs_bla_write(hg_handle_t handle)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     bla_write_in_t  bla_write_in_struct;
     bla_write_out_t bla_write_out_struct;
@@ -364,7 +364,7 @@ int main(int argc, char *argv[])
     /* We do the lookup here but this may not be optimal */
     server_addr = (na_addr_t *) malloc(addr_table_size * sizeof(na_addr_t));
     for (i = 0; i < addr_table_size; i++) {
-        na_ret = NA_Addr_lookup(network_class, addr_table[i], &server_addr[i]);
+        na_ret = NA_Addr_lookup_wait(network_class, addr_table[i], &server_addr[i]);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not find addr\n");
             return EXIT_FAILURE;

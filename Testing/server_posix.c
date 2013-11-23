@@ -22,9 +22,9 @@
 
 unsigned int finalizing = 0;
 
-int server_finalize(hg_handle_t handle)
+hg_return_t server_finalize(hg_handle_t handle)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     finalizing++;
 
@@ -40,9 +40,9 @@ int server_finalize(hg_handle_t handle)
 
 #ifndef MERCURY_HAS_ADVANCED_MACROS
 
-int server_posix_open(hg_handle_t handle)
+hg_return_t server_posix_open(hg_handle_t handle)
 {
-    int hg_ret = HG_SUCCESS;
+    hg_return_t hg_ret = HG_SUCCESS;
 
     open_in_t      open_in_struct;
     open_out_t     open_out_struct;
@@ -53,10 +53,10 @@ int server_posix_open(hg_handle_t handle)
     int ret;
 
     /* Get input struct */
-    ret = HG_Handler_get_input(handle, &open_in_struct);
-    if (ret != HG_SUCCESS) {
+    hg_ret = HG_Handler_get_input(handle, &open_in_struct);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input struct\n");
-        return ret;
+        return hg_ret;
     }
 
     path = open_in_struct.path;
@@ -71,18 +71,18 @@ int server_posix_open(hg_handle_t handle)
     open_out_struct.ret = ret;
 
     /* Free handle and send response back */
-    ret = HG_Handler_start_output(handle, &open_out_struct);
-    if (ret != HG_SUCCESS) {
+    hg_ret = HG_Handler_start_output(handle, &open_out_struct);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
-        return ret;
+        return hg_ret;
     }
 
     return hg_ret;
 }
 
-int server_posix_close(hg_handle_t handle)
+hg_return_t server_posix_close(hg_handle_t handle)
 {
-    int hg_ret = HG_SUCCESS;
+    hg_return_t hg_ret = HG_SUCCESS;
 
     close_in_t     close_in_struct;
     close_out_t    close_out_struct;
@@ -91,10 +91,10 @@ int server_posix_close(hg_handle_t handle)
     int ret;
 
     /* Get input struct */
-    ret = HG_Handler_get_input(handle, &close_in_struct);
-    if (ret != HG_SUCCESS) {
+    hg_ret = HG_Handler_get_input(handle, &close_in_struct);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input struct\n");
-        return ret;
+        return hg_ret;
     }
 
     fd = close_in_struct.fd;
@@ -107,18 +107,18 @@ int server_posix_close(hg_handle_t handle)
     close_out_struct.ret = ret;
 
     /* Free handle and send response back */
-    ret = HG_Handler_start_output(handle, &close_out_struct);
-    if (ret != HG_SUCCESS) {
+    hg_ret = HG_Handler_start_output(handle, &close_out_struct);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
-        return ret;
+        return hg_ret;
     }
 
     return hg_ret;
 }
 
-int server_posix_write(hg_handle_t handle)
+hg_return_t server_posix_write(hg_handle_t handle)
 {
-    int hg_ret = HG_SUCCESS;
+    hg_return_t hg_ret = HG_SUCCESS;
 
     write_in_t     write_in_struct;
     write_out_t    write_out_struct;
@@ -138,10 +138,10 @@ int server_posix_write(hg_handle_t handle)
     const int *buf_ptr;
 
     /* Get input struct */
-    ret = HG_Handler_get_input(handle, &write_in_struct);
-    if (ret != HG_SUCCESS) {
+    hg_ret = HG_Handler_get_input(handle, &write_in_struct);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input struct\n");
-        return ret;
+        return hg_ret;
     }
 
     bulk_handle = write_in_struct.bulk_handle;
@@ -181,10 +181,10 @@ int server_posix_write(hg_handle_t handle)
     write_out_struct.ret = ret;
 
     /* Free handle and send response back */
-    ret = HG_Handler_start_output(handle, &write_out_struct);
-    if (ret != HG_SUCCESS) {
+    hg_ret = HG_Handler_start_output(handle, &write_out_struct);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
-        return ret;
+        return hg_ret;
     }
 
     /* Free block handle */
@@ -199,9 +199,9 @@ int server_posix_write(hg_handle_t handle)
     return hg_ret;
 }
 
-int server_posix_read(hg_handle_t handle)
+hg_return_t server_posix_read(hg_handle_t handle)
 {
-    int hg_ret = HG_SUCCESS;
+    hg_return_t hg_ret = HG_SUCCESS;
 
     read_in_t     read_in_struct;
     read_out_t    read_out_struct;
@@ -221,10 +221,10 @@ int server_posix_read(hg_handle_t handle)
     const int *buf_ptr;
 
     /* Get input struct */
-    ret = HG_Handler_get_input(handle, &read_in_struct);
-    if (ret != HG_SUCCESS) {
+    hg_ret = HG_Handler_get_input(handle, &read_in_struct);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input struct\n");
-        return ret;
+        return hg_ret;
     }
 
     bulk_handle = read_in_struct.bulk_handle;
@@ -266,10 +266,10 @@ int server_posix_read(hg_handle_t handle)
     read_out_struct.ret = ret;
 
     /* Free handle and send response back */
-    ret = HG_Handler_start_output(handle, &read_out_struct);
-    if (ret != HG_SUCCESS) {
+    hg_ret = HG_Handler_start_output(handle, &read_out_struct);
+    if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
-        return ret;
+        return hg_ret;
     }
 
     /* Free block handle */

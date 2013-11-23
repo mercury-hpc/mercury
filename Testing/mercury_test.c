@@ -260,7 +260,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         HG_Test_mpi_finalize();
 #endif
 
-        network_class = NA_Initialize(addr_name, 1);
+        network_class = NA_Initialize(addr_name, NA_TRUE);
     }
 #endif
 

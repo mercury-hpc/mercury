@@ -50,9 +50,9 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
 }
 
 /******************************************************************************/
-int fs_bla_write(hg_handle_t handle)
+hg_return_t fs_bla_write(hg_handle_t handle)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     bla_write_in_t  bla_write_in_struct;
     bla_write_out_t bla_write_out_struct;

@@ -24,9 +24,9 @@ int bla_open(const char *path, bla_handle_t handle, int *event_id)
 }
 
 /******************************************************************************/
-int fs_bla_open(hg_handle_t handle)
+hg_return_t fs_bla_open(hg_handle_t handle)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     bla_open_in_t  bla_open_in_struct;
     bla_open_out_t bla_open_out_struct;

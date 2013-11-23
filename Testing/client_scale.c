@@ -387,7 +387,7 @@ main(int argc, char *argv[])
     }
 
     /* Look up addr id */
-    na_ret = NA_Addr_lookup(network_class, "nil", &addr);
+    na_ret = NA_Addr_lookup_wait(network_class, "nil", &addr);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not find connect\n");
         return EXIT_FAILURE;

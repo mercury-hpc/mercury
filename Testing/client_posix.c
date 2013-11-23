@@ -13,9 +13,9 @@
 #include "mercury.h"
 #include "mercury_bulk.h"
 
-na_addr_t addr;
-na_class_t *network_class = NULL;
-hg_id_t open_id, write_id, read_id, close_id, finalize_id;
+static na_addr_t addr;
+static na_class_t *network_class = NULL;
+static hg_id_t open_id, write_id, read_id, close_id, finalize_id;
 
 int init_rpc(int argc, char *argv[], int *rank)
 {
@@ -43,7 +43,7 @@ int init_rpc(int argc, char *argv[], int *rank)
     }
 
     /* Look up addr id */
-    na_ret = NA_Addr_lookup(network_class, ion_name, &addr);
+    na_ret = NA_Addr_lookup_wait(network_class, ion_name, &addr);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not find addr %s\n", ion_name);
         ret = HG_FAIL;
