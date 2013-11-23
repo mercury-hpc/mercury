@@ -51,6 +51,7 @@ struct na_cb_completion_data {
 /********************/
 /* Local Prototypes */
 /********************/
+static na_return_t na_addr_lookup_cb(const struct na_cb_info *callback_info);
 
 /*******************/
 /* Local Variables */
@@ -77,6 +78,8 @@ static const struct na_class_describe *na_class_methods[] = {
 #endif
     NULL
 };
+
+static hg_thread_mutex_t na_addr_lookup_mutex_g;
 
 static hg_queue_t *na_cb_completion_queue_g = NULL;
 static hg_thread_mutex_t na_cb_completion_queue_mutex_g;
@@ -262,6 +265,9 @@ NA_Initialize(const char *host_string, na_bool_t listen)
     /* Initialize completion queue */
     na_cb_completion_queue_g = hg_queue_new();
 
+    /* Initialize lookup mutex */
+    hg_thread_mutex_init(&na_addr_lookup_mutex_g);
+
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&na_cb_completion_queue_mutex_g);
     hg_thread_cond_init(&na_cb_completion_queue_cond_g);
@@ -303,6 +309,9 @@ NA_Finalize(na_class_t *na_class)
 
     ret = na_class->finalize(na_class);
 
+    /* Destroy lookup mutex */
+    hg_thread_mutex_destroy(&na_addr_lookup_mutex_g);
+
     /* Destroy completion queue mutex/cond */
     hg_thread_mutex_destroy(&na_cb_completion_queue_mutex_g);
     hg_thread_cond_destroy(&na_cb_completion_queue_cond_g);
@@ -332,6 +341,75 @@ NA_Addr_lookup(na_class_t *na_class, na_cb_t callback, void *arg,
     if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
 
 done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr)
+{
+    na_addr_t new_addr = NULL;
+    na_bool_t lookup_completed = NA_FALSE;
+    na_return_t ret = NA_SUCCESS;
+
+    if (!addr) {
+        NA_LOG_ERROR("NULL pointer to na_addr_t");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = NA_Addr_lookup(na_class, &na_addr_lookup_cb, &new_addr, name,
+            NA_OP_ID_IGNORE);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not start NA_Addr_lookup");
+        goto done;
+    }
+
+    while (!lookup_completed) {
+        na_return_t trigger_ret;
+        int actual_count = 0;
+
+        do {
+            trigger_ret = NA_Trigger(0, 1, &actual_count);
+        } while ((trigger_ret == NA_SUCCESS) && actual_count);
+
+        hg_thread_mutex_lock(&na_addr_lookup_mutex_g);
+        if (new_addr) {
+            lookup_completed = NA_TRUE;
+            *addr = new_addr;
+        }
+        hg_thread_mutex_unlock(&na_addr_lookup_mutex_g);
+
+        if (lookup_completed) break;
+
+        ret = NA_Progress(na_class, NA_MAX_IDLE_TIME);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not make progress");
+            goto done;
+        }
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_addr_lookup_cb(const struct na_cb_info *callback_info)
+{
+    na_addr_t *addr_ptr = (na_addr_t *) callback_info->arg;
+    na_return_t ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        return ret;
+    }
+
+    hg_thread_mutex_lock(&na_addr_lookup_mutex_g);
+
+    *addr_ptr = callback_info->info.lookup.addr;
+
+    hg_thread_mutex_unlock(&na_addr_lookup_mutex_g);
+
     return ret;
 }
 

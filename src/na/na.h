@@ -147,6 +147,19 @@ NA_Addr_lookup(na_class_t *na_class, na_cb_t callback, void *arg,
         const char *name, na_op_id_t *op_id);
 
 /**
+ * For compatibility, temporarily provide this routine, which waits until
+ * addr is returned.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param name [IN]             lookup name
+ * \param addr [OUT]            pointer to returned address
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr);
+
+/**
  * Free the addr from the list of peers.
  *
  * \param na_class [IN]         pointer to NA class
