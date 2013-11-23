@@ -75,8 +75,10 @@
     typedef uint16_t hg_uint16_t;
     typedef uint8_t  hg_uint8_t;
 #endif
-typedef hg_uint8_t   hg_bool_t;
 typedef hg_uint64_t  hg_ptr_t;
+typedef hg_uint8_t   hg_bool_t;
+#define HG_TRUE     1
+#define HG_FALSE    0
 
 #ifdef _WIN32
    #define HG_INLINE __inline
