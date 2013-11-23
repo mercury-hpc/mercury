@@ -10,60 +10,110 @@
 
 #include "mercury.h"
 #include "mercury_proc_header.h"
+#include "mercury_bulk.h"
 
 #include "mercury_hash_table.h"
 #include "mercury_hash_string.h"
-#include "mercury_thread.h"
-#include "mercury_thread_mutex.h"
-#include "mercury_bulk.h"
+#include "mercury_atomic.h"
+#include "mercury_time.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Private structs */
-typedef struct hg_priv_request {
+/****************/
+/* Local Macros */
+/****************/
+/* Convert value to string */
+#define HG_ERROR_STRING_MACRO(def, value, string) \
+  if (value == def) string = #def
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
+struct hg_request {
     hg_id_t       id;
 
     void         *send_buf;
     na_size_t     send_buf_size;
-    na_request_t  send_request;
     void         *extra_send_buf;
     na_size_t     extra_send_buf_size;
     hg_bulk_t     extra_send_buf_handle;
 
     void         *recv_buf;
     na_size_t     recv_buf_size;
-    na_request_t  recv_request;
 
     void         *out_struct;
 
     hg_bool_t     completed;
-} hg_priv_request_t;
+};
 
-typedef struct hg_proc_info {
-    int (*enc_routine)(hg_proc_t proc, void *in_struct);
-    int (*dec_routine)(hg_proc_t proc, void *out_struct);
-} hg_proc_info_t;
+struct hg_proc_info {
+    hg_proc_cb_t enc_routine;
+    hg_proc_cb_t dec_routine;
+};
+
+/********************/
+/* Local Prototypes */
+/********************/
+/**
+ * Set and encode and request header.
+ */
+static hg_return_t hg_set_request_header(struct hg_request *priv_request,
+        struct hg_header_request header);
+/**
+ * Decode and get response header.
+ */
+static hg_return_t hg_get_response_header(struct hg_request *priv_request,
+        struct hg_header_response *header);
+/**
+ * Get RPC input buffer from handle.
+ */
+static hg_return_t hg_get_input_buf(struct hg_request *priv_request,
+        void **in_buf, size_t *in_buf_size);
+/**
+ * Get RPC output buffer from handle.
+ */
+static hg_return_t hg_get_output_buf(struct hg_request *priv_request,
+        void **out_buf, size_t *out_buf_size);
+/**
+ * Set and encode input structure.
+ */
+static hg_return_t hg_set_input(struct hg_request *priv_request,
+        void *in_struct);
+/**
+ * Decode and get output structure.
+ */
+static hg_return_t hg_get_output(struct hg_request *priv_request,
+        void *out_struct);
+
+/**
+ * Send input callback.
+ */
+static na_return_t hg_send_input_cb(const struct na_cb_info *callback_info);
+
+/**
+ * Recv output callback.
+ */
+static na_return_t hg_recv_output_cb(const struct na_cb_info *callback_info);
+
+/*******************/
+/* Local Variables */
+/*******************/
 
 /* Function map */
 static hg_hash_table_t *func_map = NULL;
 
 /* Mutex used for tag generation */
-/* TODO use atomic increment instead */
-static hg_thread_mutex_t tag_mutex;
+static hg_atomic_int32_t request_tag;
 
 /* Pointer to network abstraction class */
 static na_class_t *hg_na_class = NULL;
 
-/* Convert value to string */
-#define HG_ERROR_STRING_MACRO(def, value, string) \
-  if (value == def) string = #def
-
+/*---------------------------------------------------------------------------*/
 /**
  * Hash function for function map.
  */
-int
+static HG_INLINE int
 hg_int_equal(void *vlocation1, void *vlocation2)
 {
     int *location1;
@@ -75,10 +125,11 @@ hg_int_equal(void *vlocation1, void *vlocation2)
     return *location1 == *location2;
 }
 
+/*---------------------------------------------------------------------------*/
 /**
  * Hash function for function map.
  */
-unsigned int
+static HG_INLINE unsigned int
 hg_int_hash(void *vlocation)
 {
     int *location;
@@ -88,31 +139,34 @@ hg_int_hash(void *vlocation)
     return (unsigned int) *location;
 }
 
+/*---------------------------------------------------------------------------*/
 /**
  * Generate a new tag.
  */
 static HG_INLINE na_tag_t
-hg_gen_tag(void)
+hg_gen_request_tag(void)
 {
-    static long int tag = 0;
+    na_tag_t tag;
 
-    hg_thread_mutex_lock(&tag_mutex);
-    tag++;
-    if (tag == NA_Msg_get_max_tag(hg_na_class)) tag = 0;
-    hg_thread_mutex_unlock(&tag_mutex);
+    /* Compare and swap tag if reached max tag */
+    /* TODO NA_Msg_get_max_tag in static variable to avoid function call */
+    if (hg_atomic_cas32(&request_tag, NA_Msg_get_max_tag(hg_na_class), 0)) {
+        tag = 0;
+    } else {
+        /* Increment tag */
+        tag = hg_atomic_incr32(&request_tag);
+    }
 
     return tag;
 }
 
-/**
- * Set and encode and request header.
- */
-static int
-hg_set_request_header(hg_priv_request_t *priv_request,
-        hg_header_request_t header)
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_set_request_header(struct hg_request *priv_request,
+        struct hg_header_request header)
 {
     hg_proc_t proc = HG_PROC_NULL;
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     hg_proc_create(priv_request->send_buf, priv_request->send_buf_size,
             HG_ENCODE, HG_CRC16, &proc);
@@ -136,15 +190,13 @@ done:
     return ret;
 }
 
-/**
- * Decode and get response header.
- */
-static int
-hg_get_response_header(hg_priv_request_t *priv_request,
-        hg_header_response_t *header)
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_get_response_header(struct hg_request *priv_request,
+        struct hg_header_response *header)
 {
     hg_proc_t proc = HG_PROC_NULL;
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     hg_proc_create(priv_request->recv_buf, priv_request->recv_buf_size,
             HG_DECODE, HG_CRC16, &proc);
@@ -168,17 +220,14 @@ done:
     return ret;
 }
 
-/**
- * Get RPC input buffer from handle.
- */
-static int
-hg_get_input_buf(hg_priv_request_t *priv_request, void **in_buf, size_t *in_buf_size)
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_get_input_buf(struct hg_request *priv_request, void **in_buf, size_t *in_buf_size)
 {
     void *user_input_buf;
     size_t user_input_buf_size;
     size_t header_offset;
-
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!priv_request) {
         HG_ERROR_DEFAULT("NULL handle");
@@ -198,17 +247,14 @@ done:
     return ret;
 }
 
-/**
- * Get RPC output buffer from handle.
- */
-static int
-hg_get_output_buf(hg_priv_request_t *priv_request, void **out_buf, size_t *out_buf_size)
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_get_output_buf(struct hg_request *priv_request, void **out_buf, size_t *out_buf_size)
 {
     void *user_output_buf;
     size_t user_output_buf_size;
     size_t header_offset;
-
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!priv_request) {
         HG_ERROR_DEFAULT("NULL handle");
@@ -228,18 +274,15 @@ done:
     return ret;
 }
 
-/**
- * Set and encode input structure.
- */
-static int
-hg_set_input(hg_priv_request_t *priv_request, void *in_struct)
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_set_input(struct hg_request *priv_request, void *in_struct)
 {
     void *in_buf;
     size_t in_buf_size;
-    hg_proc_info_t *proc_info;
+    struct hg_proc_info *proc_info;
     hg_proc_t proc = HG_PROC_NULL;
-
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!priv_request) {
         HG_ERROR_DEFAULT("NULL handle");
@@ -257,7 +300,7 @@ hg_set_input(hg_priv_request_t *priv_request, void *in_struct)
     }
 
     /* Retrieve encoding function from function map */
-    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &priv_request->id);
+    proc_info = (struct hg_proc_info *) hg_hash_table_lookup(func_map, &priv_request->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
@@ -298,7 +341,7 @@ hg_set_input(hg_priv_request_t *priv_request, void *in_struct)
             HG_ERROR_DEFAULT("Could not create bulk data handle");
             goto done;
         }
-        hg_proc_set_extra_buf_is_mine(proc, 1);
+        hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
 #endif
     }
 
@@ -316,18 +359,15 @@ done:
     return ret;
 }
 
-/**
- * Decode and get output structure.
- */
-static int
-hg_get_output(hg_priv_request_t *priv_request, void *out_struct)
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_get_output(struct hg_request *priv_request, void *out_struct)
 {
     void *out_buf;
     size_t out_buf_size;
-    hg_proc_info_t *proc_info;
+    struct hg_proc_info *proc_info;
     hg_proc_t proc = HG_PROC_NULL;
-
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!priv_request) {
         HG_ERROR_DEFAULT("NULL handle");
@@ -345,7 +385,7 @@ hg_get_output(hg_priv_request_t *priv_request, void *out_struct)
     }
 
     /* Retrieve encoding function from function map */
-    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &priv_request->id);
+    proc_info = (struct hg_proc_info *) hg_hash_table_lookup(func_map, &priv_request->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
@@ -381,10 +421,86 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-int
+static na_return_t
+hg_send_input_cb(const struct na_cb_info *callback_info)
+{
+    struct hg_request *priv_request = (struct hg_request *) callback_info->arg;
+    na_return_t ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        return ret;
+    }
+
+    /* Everything has been sent so free unused resources except extra buffer */
+    if (priv_request->send_buf) hg_proc_buf_free(priv_request->send_buf);
+    priv_request->send_buf = NULL;
+    priv_request->send_buf_size = 0;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+hg_recv_output_cb(const struct na_cb_info *callback_info)
+{
+    struct hg_request *priv_request = (struct hg_request *) callback_info->arg;
+    struct hg_header_response response_header;
+    hg_return_t ret = HG_SUCCESS; /* TODO embed ret into priv_request */
+    na_return_t na_ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        goto done;
+    }
+
+    /* Now we can free the extra send buf now since we received the response */
+    if (priv_request->extra_send_buf) free(priv_request->extra_send_buf);
+    priv_request->extra_send_buf = NULL;
+    priv_request->extra_send_buf_size = 0;
+    if (priv_request->extra_send_buf_handle != HG_BULK_NULL)
+        HG_Bulk_handle_free(priv_request->extra_send_buf_handle);
+    priv_request->extra_send_buf_handle = HG_BULK_NULL;
+
+    /* Get header */
+    ret = hg_get_response_header(priv_request, &response_header);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get header");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    /* Verify header */
+    ret = hg_proc_header_response_verify(response_header);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not verify header");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    /* Decode the function output parameters */
+    ret = hg_get_output(priv_request, priv_request->out_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get output");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    /* Everything has been decoded so free unused resources */
+    if (priv_request->recv_buf) hg_proc_buf_free(priv_request->recv_buf);
+    priv_request->recv_buf = NULL;
+    priv_request->recv_buf_size = 0;
+
+    /* Mark request as completed */
+    priv_request->completed = HG_TRUE;
+
+done:
+    return na_ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (major) *major = HG_VERSION_MAJOR;
     if (minor) *minor = HG_VERSION_MINOR;
@@ -394,10 +510,10 @@ HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 HG_Init(na_class_t *network_class)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!network_class) {
         HG_ERROR_DEFAULT("Invalid specified network_class");
@@ -422,8 +538,8 @@ HG_Init(na_class_t *network_class)
         return ret;
     }
     
-    /* Initialize mutex for tags */
-    hg_thread_mutex_init(&tag_mutex);
+    /* Initialize atomic for tags */
+    hg_atomic_set32(&request_tag, 0);
 
     /* Create new function map */
     func_map = hg_hash_table_new(hg_int_hash, hg_int_equal);
@@ -438,10 +554,10 @@ HG_Init(na_class_t *network_class)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 HG_Finalize(void)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!hg_na_class) {
         HG_ERROR_DEFAULT("Already finalized");
@@ -453,19 +569,16 @@ HG_Finalize(void)
     hg_hash_table_free(func_map);
     func_map = NULL;
 
-    /* Free tag mutex */
-    hg_thread_mutex_destroy(&tag_mutex);
-
     hg_na_class = NULL;
 
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 HG_Initialized(hg_bool_t *flag, na_class_t **network_class)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!flag) {
         HG_ERROR_DEFAULT("NULL flag");
@@ -473,21 +586,20 @@ HG_Initialized(hg_bool_t *flag, na_class_t **network_class)
         return ret;
     }
 
-    *flag = (hg_na_class) ? 1 : 0;
-    if (network_class) *network_class = (*flag) ? hg_na_class : 0;
+    *flag = (hg_na_class != NULL);
+    if (network_class) *network_class = hg_na_class;
 
     return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_id_t
-HG_Register(const char *func_name,
-        int (*enc_routine)(hg_proc_t proc, void *in_struct),
-        int (*dec_routine)(hg_proc_t proc, void *out_struct))
+HG_Register(const char *func_name, hg_proc_cb_t enc_routine,
+        hg_proc_cb_t dec_routine)
 {
     hg_id_t ret = 0;
     hg_id_t *id = NULL;
-    hg_proc_info_t *proc_info = NULL;
+    struct hg_proc_info *proc_info = NULL;
 
     if (!func_map) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
@@ -504,7 +616,7 @@ HG_Register(const char *func_name,
     *id = hg_hash_string(func_name);
 
     /* Fill a func info struct and store it into the function map */
-    proc_info = (hg_proc_info_t*) malloc(sizeof(hg_proc_info_t));
+    proc_info = (struct hg_proc_info *) malloc(sizeof(struct hg_proc_info));
     if (!proc_info) {
         HG_ERROR_DEFAULT("Could not allocate proc info");
         goto done;
@@ -528,10 +640,10 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     hg_id_t func_id;
 
     if (!func_map) {
@@ -548,21 +660,22 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id)
 
     func_id = hg_hash_string(func_name);
 
-    *flag = (hg_hash_table_lookup(func_map, &func_id) != HG_HASH_TABLE_NULL) ? 1 : 0;
+    *flag = (hg_hash_table_lookup(func_map, &func_id) != HG_HASH_TABLE_NULL);
     if (id) *id = (*flag) ? func_id : 0;
 
     return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
         hg_request_t *request)
 {
-    int ret = HG_SUCCESS, na_ret;
+    hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
     na_tag_t send_tag, recv_tag;
-    hg_priv_request_t *priv_request = NULL;
-    hg_header_request_t request_header;
+    struct hg_request *priv_request = NULL;
+    struct hg_header_request request_header;
 
     if (!hg_na_class) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
@@ -570,7 +683,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
         goto done;
     }
 
-    priv_request = (hg_priv_request_t*) malloc(sizeof(hg_priv_request_t));
+    priv_request = (struct hg_request*) malloc(sizeof(struct hg_request));
     if (!priv_request) {
         HG_ERROR_DEFAULT("Could not allocate request");
         ret = HG_FAIL;
@@ -587,7 +700,6 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
         ret = HG_FAIL;
         goto done;
     }
-    priv_request->send_request = NA_REQUEST_NULL;
 
     /* Recv Buffer */
     priv_request->recv_buf_size = NA_Msg_get_max_expected_size(hg_na_class);
@@ -597,7 +709,6 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
         ret = HG_FAIL;
         goto done;
     }
-    priv_request->recv_request = NA_REQUEST_NULL;
 
     /* Extra send buffer set to NULL by default */
     priv_request->extra_send_buf = NULL;
@@ -608,7 +719,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     priv_request->out_struct = out_struct;
 
     /* Mark request as not completed */
-    priv_request->completed = 0;
+    priv_request->completed = HG_FALSE;
 
     /* Encode the function parameters */
     ret = hg_set_input(priv_request, in_struct);
@@ -631,21 +742,21 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     }
 
     /* Post the send message and pre-post the recv message */
-    send_tag = hg_gen_tag();
+    send_tag = hg_gen_request_tag();
     recv_tag = send_tag;
 
-    na_ret = NA_Msg_send_unexpected(hg_na_class, priv_request->send_buf,
-            priv_request->send_buf_size, addr, send_tag,
-            &priv_request->send_request, NULL);
+    na_ret = NA_Msg_send_unexpected(hg_na_class, &hg_send_input_cb,
+            priv_request, priv_request->send_buf, priv_request->send_buf_size,
+            addr, send_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not send buffer");
         ret = HG_FAIL;
         goto done;
     }
 
-    na_ret = NA_Msg_recv(hg_na_class, priv_request->recv_buf,
-            priv_request->recv_buf_size, addr, recv_tag,
-            &priv_request->recv_request, NULL);
+    na_ret = NA_Msg_recv_expected(hg_na_class, &hg_recv_output_cb, priv_request,
+            priv_request->recv_buf, priv_request->recv_buf_size, addr, recv_tag,
+            NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not pre-post buffer");
         ret = HG_FAIL;
@@ -682,129 +793,57 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 {
-    hg_priv_request_t *priv_request = (hg_priv_request_t*) request;
-    na_status_t send_status, recv_status;
-
-    int ret = HG_SUCCESS;
+    double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
+    struct hg_request *priv_request = (struct hg_request*) request;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!hg_na_class) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     if (!priv_request) {
-        HG_ERROR_DEFAULT("NULL request");
+        HG_ERROR_DEFAULT("NULL request passed");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
-    if (priv_request->completed) {
-        if (status && (status != HG_STATUS_IGNORE)) {
-            *status = 1;
-        }
-        return ret;
-    }
+    /* TODO only one single thread should do so separate and make it called
+     * by handler / bulk etc
+     */
+    while (!priv_request->completed) {
+        hg_time_t t1, t2;
+        na_return_t na_ret;
+        int actual_count = 0;
 
-    if (priv_request->send_request != NA_REQUEST_NULL) {
-        int na_ret;
+        hg_time_get_current(&t1);
 
-        na_ret = NA_Wait(hg_na_class, priv_request->send_request, timeout, &send_status);
-        if (na_ret != NA_SUCCESS) {
-            HG_ERROR_DEFAULT("Error while waiting");
-            ret = HG_FAIL;
-            return ret;
-        }
-        if (!send_status.completed) {
-            if (timeout == HG_MAX_IDLE_TIME) {
-                HG_ERROR_DEFAULT("Reached MAX_IDLE_TIME and the request has not completed yet");
-            }
-            if (status && (status != HG_STATUS_IGNORE)) {
-                *status = 0;
-            }
-        } else {
-            /* Request has been freed so set it to NULL */
-            priv_request->send_request = NA_REQUEST_NULL;
+        do {
+            na_ret = NA_Trigger(0, 1, &actual_count);
+        } while ((na_ret == NA_SUCCESS) && actual_count);
 
-            /* Everything has been sent so free unused resources except eventual extra buffer */
-            if (priv_request->send_buf) hg_proc_buf_free(priv_request->send_buf);
-            priv_request->send_buf = NULL;
-            priv_request->send_buf_size = 0;
-        }
-    }
+        if (priv_request->completed) break;
 
-    if ((priv_request->send_request == NA_REQUEST_NULL) &&
-            (priv_request->recv_request != NA_REQUEST_NULL)) {
-        int na_ret;
-
-        na_ret = NA_Wait(hg_na_class, priv_request->recv_request, timeout, &recv_status);
-        if (na_ret != NA_SUCCESS) {
-            HG_ERROR_DEFAULT("Error while waiting");
-            ret = HG_FAIL;
-            return ret;
-        }
-        if (!recv_status.completed) {
-            if (timeout == HG_MAX_IDLE_TIME) {
-                HG_ERROR_DEFAULT("Reached MAX_IDLE_TIME and the request has not completed yet");
-            }
-            if (status && (status != HG_STATUS_IGNORE)) {
-                *status = 0;
-            }
-        } else {
-            /* Request has been freed so set it to NULL */
-            priv_request->recv_request = NA_REQUEST_NULL;
-
-            /* We received the response back so safe to free the extra buf now */
-            if (priv_request->extra_send_buf) free(priv_request->extra_send_buf);
-            priv_request->extra_send_buf = NULL;
-            priv_request->extra_send_buf_size = 0;
-            if (priv_request->extra_send_buf_handle != HG_BULK_NULL)
-                HG_Bulk_handle_free(priv_request->extra_send_buf_handle);
-            priv_request->extra_send_buf_handle = HG_BULK_NULL;
-        }
-    }
-
-    if ((priv_request->send_request == NA_REQUEST_NULL) &&
-            (priv_request->recv_request == NA_REQUEST_NULL)) {
-        hg_header_response_t response_header;
-
-        /* Mark request as completed */
-        priv_request->completed = 1;
-
-        /* Get header */
-        ret = hg_get_response_header(priv_request, &response_header);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not get header");
+        na_ret = NA_Progress(hg_na_class, (unsigned int) (remaining * 1000));
+        if (na_ret == NA_TIMEOUT) {
             ret = HG_FAIL;
             goto done;
         }
 
-        ret = hg_proc_header_response_verify(response_header);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not verify header");
+        hg_time_get_current(&t2);
+        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        if (remaining < 0) {
             ret = HG_FAIL;
             goto done;
         }
+    }
 
-        /* Decode the function output parameters */
-        ret = hg_get_output(priv_request, priv_request->out_struct);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not get output");
-            ret = HG_FAIL;
-            goto done;
-        }
-
-        /* Everything has been decoded so free unused resources */
-        if (priv_request->recv_buf) hg_proc_buf_free(priv_request->recv_buf);
-        priv_request->recv_buf = NULL;
-        priv_request->recv_buf_size = 0;
-
-        if (status && (status != HG_STATUS_IGNORE)) {
-            *status = 1;
-        }
+    if (status && (status != HG_STATUS_IGNORE)) {
+        *status = (ret == HG_SUCCESS) ? HG_TRUE : HG_FALSE;
     }
 
 done:
@@ -812,11 +851,11 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 HG_Wait_all(int count, hg_request_t array_of_requests[],
         unsigned int timeout, hg_status_t array_of_statuses[])
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     int i;
 
     if (!hg_na_class) {
@@ -834,13 +873,13 @@ HG_Wait_all(int count, hg_request_t array_of_requests[],
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 HG_Request_free(hg_request_t request)
 {
-    hg_priv_request_t *priv_request = (hg_priv_request_t*) request;
+    struct hg_request *priv_request = (struct hg_request*) request;
     hg_proc_t proc;
-    hg_proc_info_t *proc_info;
-    int ret = HG_SUCCESS;
+    struct hg_proc_info *proc_info;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!hg_na_class) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
@@ -861,7 +900,7 @@ HG_Request_free(hg_request_t request)
     }
 
     /* Retrieve decoding function from function map */
-    proc_info = (hg_proc_info_t*) hg_hash_table_lookup(func_map, &priv_request->id);
+    proc_info = (struct hg_proc_info *) hg_hash_table_lookup(func_map, &priv_request->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;

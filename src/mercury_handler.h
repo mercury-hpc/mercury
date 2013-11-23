@@ -20,19 +20,19 @@ extern "C" {
 /**
  * Initialize the Mercury handler layer.
  *
- * \param network_class [IN]    pointer to network class
+ * \param na_class [IN]    pointer to network class
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
-HG_Handler_init(na_class_t *network_class);
+HG_EXPORT hg_return_t
+HG_Handler_init(na_class_t *na_class);
 
 /**
  * Finalize the Mercury handler layer.
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Handler_finalize(void);
 
 /**
@@ -45,13 +45,11 @@ HG_Handler_finalize(void);
  * \param dec_routine [IN]      pointer to deserializing routine
  * \param enc_routine [IN]      pointer to serializing routine
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
-HG_Handler_register(const char *func_name,
-        int (*callback_routine) (hg_handle_t handle),
-        int (*dec_routine)(hg_proc_t proc, void *in_struct),
-        int (*enc_routine)(hg_proc_t proc, void *out_struct));
+HG_EXPORT hg_return_t
+HG_Handler_register(const char *func_name, hg_handler_cb_t callback_routine,
+        hg_proc_cb_t dec_routine, hg_proc_cb_t enc_routine);
 
 /**
  * Get abstract network address of remote caller from RPC handle.
@@ -70,9 +68,9 @@ HG_Handler_get_addr(hg_handle_t handle);
  * \param in_buf [OUT]          pointer to input buffer
  * \param in_buf_size [OUT]     pointer to input buffer size
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf,
         size_t *in_buf_size);
 
@@ -83,9 +81,9 @@ HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf,
  * \param out_buf [OUT]         pointer to output buffer
  * \param out_buf_size [OUT]    pointer to output buffer size
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
         size_t *out_buf_size);
 
@@ -95,46 +93,32 @@ HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
  * \param timeout [IN]          timeout (in milliseconds)
  * \param status [OUT]          pointer to status object
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Handler_process(unsigned int timeout, hg_status_t *status);
 
 /**
- * Send the response back to the caller and free handle.
+ * Send the response back to the caller and free handle when it completes.
  *
  * \param handle [IN]                 abstract RPC handle
  * \param extra_out_buf [OUT]         pointer to extra output buffer
  * \param extra_out_buf_size [OUT]    pointer to extra output buffer size
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
         size_t extra_out_buf_size);
-
-/**
- * Wait timeout ms for the response of an RPC request to complete and free
- * RPC handle if it has completed.
- *
- * \param handle [IN]           abstract RPC handle
- * \param timeout [IN]          timeout (in milliseconds)
- * \param status [OUT]          pointer to status object
- *
- * \return Non-negative on success or negative on failure
- */
-HG_EXPORT int
-HG_Handler_wait_response(hg_handle_t handle, unsigned int timeout,
-        hg_status_t *status);
 
 /**
  * Free an RPC handle.
  *
  * \param handle [IN]           abstract RPC handle
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Handler_free(hg_handle_t handle);
 
 /**
@@ -152,9 +136,9 @@ HG_Handler_free(hg_handle_t handle);
  *                              filled with deserialized input parameters of
  *                              RPC call
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Handler_get_input(hg_handle_t handle, void *in_struct);
 
 /**
@@ -170,9 +154,9 @@ HG_Handler_get_input(hg_handle_t handle, void *in_struct);
  *                              be serialized into a buffer. This buffer is then
  *                              sent using a non-blocking send.
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Handler_start_output(hg_handle_t handle, void *out_struct);
 
 #ifdef __cplusplus

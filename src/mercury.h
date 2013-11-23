@@ -24,9 +24,9 @@ extern "C" {
  * \param minor [OUT]           pointer to unsigned integer
  * \param patch [OUT]           pointer to unsigned integer
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
 
 /**
@@ -34,17 +34,17 @@ HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
  *
  * \param network_class [IN]    pointer to network class
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Init(na_class_t *network_class);
 
 /**
  * Finalize the Mercury layer.
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Finalize(void);
 
 /**
@@ -54,9 +54,9 @@ HG_Finalize(void);
  * \param flag [OUT]            pointer to boolean
  * \param na_class_t [OUT]      pointer to returned network class pointer
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Initialized(hg_bool_t *flag, na_class_t **network_class);
 
 /**
@@ -69,9 +69,8 @@ HG_Initialized(hg_bool_t *flag, na_class_t **network_class);
  * \return unique ID associated to the registered function
  */
 HG_EXPORT hg_id_t
-HG_Register(const char *func_name,
-        int (*enc_routine)(hg_proc_t proc, void *in_struct),
-        int (*dec_routine)(hg_proc_t proc, void *out_struct));
+HG_Register(const char *func_name, hg_proc_cb_t enc_routine,
+        hg_proc_cb_t dec_routine);
 
 /**
  * Indicate whether HG_Register has been called and return associated ID.
@@ -80,9 +79,9 @@ HG_Register(const char *func_name,
  * \param flag [OUT]            pointer to boolean
  * \param id [OUT]              pointer to ID
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id);
 
 /**
@@ -95,9 +94,9 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id);
  * \param out_struct [OUT]      pointer to output structure
  * \param request [OUT]         pointer to RPC request
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Forward(na_addr_t addr, hg_id_t id,
         void *in_struct, void *out_struct, hg_request_t *request);
 
@@ -109,9 +108,9 @@ HG_Forward(na_addr_t addr, hg_id_t id,
  * \param timeout [IN]          timeout (in milliseconds)
  * \param status [OUT]          pointer to returned status
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status);
 
 /**
@@ -122,9 +121,9 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status);
  * \param timeout [IN]            timeout (in milliseconds)
  * \param array_of_statuses [OUT] array of statuses
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Wait_all(int count, hg_request_t array_of_requests[],
         unsigned int timeout, hg_status_t array_of_statuses[]);
 
@@ -135,9 +134,9 @@ HG_Wait_all(int count, hg_request_t array_of_requests[],
  *
  * \param request [IN]          RPC request
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 HG_Request_free(hg_request_t request);
 
 /**

@@ -26,8 +26,8 @@ typedef void *      hg_bulk_block_t;  /* Abstract block handle for bulk data */
 typedef void *      hg_bulk_request_t;/* Bulk request object */
 
 typedef struct hg_bulk_segment {
-    void *    address; /* address of the segment */
-    size_t    size;    /* size of the segment in bytes */
+    hg_ptr_t address; /* address of the segment */
+    size_t size;      /* size of the segment in bytes */
 } hg_bulk_segment_t;
 
 #define HG_BULK_READWRITE    NA_MEM_READWRITE
@@ -47,8 +47,7 @@ typedef struct hg_bulk_segment {
 /**
  * Proc operations.  HG_ENCODE causes the type to be encoded into the
  * stream.  HG_DECODE causes the type to be extracted from the stream.
- * HG_FREE can be used to release the space allocated by an HG_DECODE
- * request.
+ * HG_FREE can be used to release the space allocated by an HG_DECODE request.
  */
 typedef enum {
     HG_ENCODE,
@@ -76,5 +75,11 @@ typedef enum hg_return {
     HG_CHECKSUM_ERROR, /* checksum does not match */
     HG_TIMEOUT         /* reached timeout */
 } hg_return_t;
+
+/* Proc callback for serializing/deserializing parameters */
+typedef hg_return_t (*hg_proc_cb_t)(hg_proc_t proc, void *in_struct);
+
+/* Callback for executing RPC */
+typedef hg_return_t (*hg_handler_cb_t)(hg_handle_t handle);
 
 #endif /* MERCURY_TYPES_H */
