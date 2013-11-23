@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct hg_proc_buf {
+struct hg_proc_buf {
     void *    buf;       /* Pointer to allocated buffer */
     void *    buf_ptr;   /* Pointer to current position */
     size_t    size;      /* Total buffer size */
@@ -35,14 +35,14 @@ typedef struct hg_proc_buf {
 #endif
     mchecksum_object_t checksum;    /* Checksum */
     hg_bool_t     update_checksum;  /* Update checksum on proc operation */
-} hg_proc_buf_t;
+};
 
-typedef struct hg_priv_proc {
-    hg_proc_op_t    op;
-    hg_proc_buf_t * current_buf;
-    hg_proc_buf_t   proc_buf;
-    hg_proc_buf_t   extra_buf;
-} hg_priv_proc_t;
+struct hg_proc {
+    hg_proc_op_t op;
+    struct hg_proc_buf *current_buf;
+    struct hg_proc_buf proc_buf;
+    struct hg_proc_buf extra_buf;
+};
 
 /*---------------------------------------------------------------------------*/
 void *
@@ -57,15 +57,12 @@ hg_proc_buf_alloc(size_t size)
     alignment = system_info.dwPageSize;
     mem_ptr = _aligned_malloc(size, alignment);
 #else
-    int ret = HG_SUCCESS;
     alignment = sysconf(_SC_PAGE_SIZE);
-    ret = posix_memalign(&mem_ptr, alignment, size);
 
-    if (ret != 0)
-    {
-        /* error. */
+    if (posix_memalign(&mem_ptr, alignment, size) != 0) {
+        HG_ERROR_DEFAULT("posix_memalign failed");
+        return NULL;
     }
-    
 #endif
     if (mem_ptr) {
         memset(mem_ptr, 0, size);
@@ -75,10 +72,10 @@ hg_proc_buf_alloc(size_t size)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_proc_buf_free(void *mem_ptr)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
 #ifdef _WIN32
     _aligned_free(mem_ptr);
@@ -90,13 +87,13 @@ hg_proc_buf_free(void *mem_ptr)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
         hg_proc_t *proc)
 {
-    hg_priv_proc_t *priv_proc = NULL;
+    struct hg_proc *priv_proc = NULL;
     const char *hash_method;
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     int checksum_ret;
 
     if (!buf && op != HG_FREE) {
@@ -105,7 +102,7 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
         goto done;
     }
 
-    priv_proc = (hg_priv_proc_t*) malloc(sizeof(hg_priv_proc_t));
+    priv_proc = (struct hg_proc *) malloc(sizeof(struct hg_proc));
     if (!priv_proc) {
         HG_ERROR_DEFAULT("Could not allocate proc");
         ret = HG_FAIL;
@@ -173,7 +170,7 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
     /* Default to proc_buf */
     priv_proc->current_buf = &priv_proc->proc_buf;
 
-    *proc = (hg_priv_proc_t*) priv_proc;
+    *proc = (struct hg_proc *) priv_proc;
 
 done:
     if (ret != HG_SUCCESS) {
@@ -183,11 +180,11 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_proc_free(hg_proc_t proc)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
-    int ret = HG_SUCCESS;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
+    hg_return_t ret = HG_SUCCESS;
     int checksum_ret;
 
     if (!priv_proc) {
@@ -221,7 +218,7 @@ hg_proc_free(hg_proc_t proc)
 hg_proc_op_t
 hg_proc_get_op(hg_proc_t proc)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
     hg_proc_op_t proc_op = HG_INVALID;
 
     if (priv_proc) proc_op = priv_proc->op;
@@ -233,7 +230,7 @@ hg_proc_get_op(hg_proc_t proc)
 size_t
 hg_proc_get_size(hg_proc_t proc)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
     size_t size = 0;
 
     if (priv_proc) size = priv_proc->proc_buf.size + priv_proc->extra_buf.size;
@@ -242,14 +239,14 @@ hg_proc_get_size(hg_proc_t proc)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
     size_t new_buf_size;
     size_t page_size;
     ptrdiff_t current_pos;
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
 #ifdef _WIN32
     SYSTEM_INFO system_info;
@@ -312,7 +309,7 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
 size_t
 hg_proc_get_size_left(hg_proc_t proc)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
     size_t size = 0;
 
     if (priv_proc) size = priv_proc->current_buf->size_left;
@@ -324,7 +321,7 @@ hg_proc_get_size_left(hg_proc_t proc)
 void *
 hg_proc_get_buf_ptr(hg_proc_t proc)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
     void *ptr = NULL;
 
     if (priv_proc) {
@@ -339,7 +336,7 @@ hg_proc_get_buf_ptr(hg_proc_t proc)
 XDR *
 hg_proc_get_xdr_ptr(hg_proc_t proc)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
     XDR *ptr = NULL;
 
     if (priv_proc) {
@@ -351,11 +348,11 @@ hg_proc_get_xdr_ptr(hg_proc_t proc)
 #endif
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
-    int ret = HG_FAIL;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
+    hg_return_t ret = HG_FAIL;
 
     if (priv_proc) {
         ptrdiff_t new_pos, lim_pos;
@@ -384,7 +381,7 @@ hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
 void *
 hg_proc_get_extra_buf(hg_proc_t proc)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
     void *extra_buf = NULL;
 
     if (priv_proc->extra_buf.buf) {
@@ -398,7 +395,7 @@ hg_proc_get_extra_buf(hg_proc_t proc)
 size_t
 hg_proc_get_extra_size(hg_proc_t proc)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
     size_t extra_size = 0;
 
     if (priv_proc->extra_buf.buf) {
@@ -409,11 +406,11 @@ hg_proc_get_extra_size(hg_proc_t proc)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t theirs)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
-    int ret = HG_FAIL;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
+    hg_return_t ret = HG_FAIL;
 
     if (priv_proc->extra_buf.buf) {
         priv_proc->extra_buf.is_mine = !theirs;
@@ -424,16 +421,16 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t theirs)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_proc_flush(hg_proc_t proc)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
     hg_bool_t current_update_checksum;
     size_t checksum_size;
     void *base_checksum = NULL;
     void *new_checksum = NULL;
     int checksum_ret, cmp_ret;
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!priv_proc) {
         HG_ERROR_DEFAULT("Proc is not initialized");
@@ -509,13 +506,13 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
 {
-    hg_priv_proc_t *priv_proc = (hg_priv_proc_t*) proc;
+    struct hg_proc *priv_proc = (struct hg_proc *) proc;
     const void *src;
     void *dest;
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     int checksum_ret;
 
     if (!priv_proc) {

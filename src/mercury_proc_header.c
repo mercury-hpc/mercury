@@ -23,7 +23,7 @@
 /*---------------------------------------------------------------------------*/
 void
 hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_buf_handle,
-        hg_header_request_t *header)
+        struct hg_header_request *header)
 {
     header->hg = HG_IDENTIFIER;
     header->protocol = HG_VERSION;
@@ -36,7 +36,7 @@ hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_buf_handle,
 
 /*---------------------------------------------------------------------------*/
 void
-hg_proc_header_response_init(hg_header_response_t *header)
+hg_proc_header_response_init(struct hg_header_response *header)
 {
     header->flags = 0;
     header->error = 0;
@@ -45,12 +45,12 @@ hg_proc_header_response_init(hg_header_response_t *header)
 }
 
 /*---------------------------------------------------------------------------*/
-int
-hg_proc_header_request(hg_proc_t proc, hg_header_request_t *header)
+hg_return_t
+hg_proc_header_request(hg_proc_t proc, struct hg_header_request *header)
 {
     hg_uint32_t n_protocol, n_id, n_cookie;
     hg_uint16_t n_crc16;
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 
     /* Mercury header */
     if (hg_proc_get_op(proc) == HG_ENCODE) {
@@ -128,13 +128,13 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-int
-hg_proc_header_response(hg_proc_t proc, hg_header_response_t *header)
+hg_return_t
+hg_proc_header_response(hg_proc_t proc, struct hg_header_response *header)
 {
     hg_uint32_t n_error;
     hg_uint32_t n_cookie;
     hg_uint16_t n_crc16;
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 
     /* Mercury header */
     if (hg_proc_get_op(proc) == HG_ENCODE) {
@@ -186,10 +186,10 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-int
-hg_proc_header_request_verify(hg_header_request_t header)
+hg_return_t
+hg_proc_header_request_verify(struct hg_header_request header)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     /* Must match HG */
     if ( (((header.hg >> 1)  & 'H') != 'H') ||
@@ -217,10 +217,10 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-int
-hg_proc_header_response_verify(hg_header_response_t header)
+hg_return_t
+hg_proc_header_response_verify(struct hg_header_response header)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (header.error) {
         HG_ERROR_DEFAULT("Error detected");

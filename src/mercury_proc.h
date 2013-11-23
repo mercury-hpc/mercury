@@ -56,9 +56,9 @@ hg_proc_buf_alloc(size_t size);
  *
  * \param mem_ptr [IN]          pointer to memory address
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_proc_buf_free(void *mem_ptr);
 
 /**
@@ -73,9 +73,9 @@ hg_proc_buf_free(void *mem_ptr);
  *                              hash method: HG_CRC16, HG_CRC64, HG_NOHASH
  * \param proc [OUT]            pointer to abstract processor object
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
         hg_proc_t *proc);
 
@@ -84,9 +84,9 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
  *
  * \param proc [IN/OUT]         abstract processor object
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_proc_free(hg_proc_t proc);
 
 /**
@@ -116,9 +116,9 @@ hg_proc_get_size(hg_proc_t proc);
  * \param proc [IN/OUT]         abstract processor object
  * \param buf_size [IN]         buffer size
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_proc_set_size(hg_proc_t proc, size_t buf_size);
 
 /**
@@ -159,9 +159,9 @@ hg_proc_get_xdr_ptr(hg_proc_t proc);
  * \param proc [IN/OUT]         abstract processor object
  * \param buf_ptr [IN]          pointer to buffer used by the processor
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr);
 
 /**
@@ -190,9 +190,9 @@ hg_proc_get_extra_size(hg_proc_t proc);
  *
  * \param proc [IN]             abstract processor object
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
 
 /**
@@ -201,9 +201,9 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
  *
  * \param proc [IN]             abstract processor object
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_proc_flush(hg_proc_t proc);
 
 /**
@@ -214,24 +214,34 @@ hg_proc_flush(hg_proc_t proc);
  * \param data [IN/OUT]         pointer to data
  * \param data_size [IN]        data size
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
 
 /**
  * Inline prototypes (do not remove)
  */
-HG_EXPORT HG_PROC_INLINE int hg_proc_hg_int8_t(hg_proc_t proc, hg_int8_t *data);
-HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint8_t(hg_proc_t proc, hg_uint8_t *data);
-HG_EXPORT HG_PROC_INLINE int hg_proc_hg_int16_t(hg_proc_t proc, hg_int16_t *data);
-HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint16_t(hg_proc_t proc, hg_uint16_t *data);
-HG_EXPORT HG_PROC_INLINE int hg_proc_hg_int32_t(hg_proc_t proc, hg_int32_t *data);
-HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *data);
-HG_EXPORT HG_PROC_INLINE int hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data);
-HG_EXPORT HG_PROC_INLINE int hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data);
-HG_EXPORT HG_PROC_INLINE int hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size);
-HG_EXPORT HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle);
+HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int8_t(hg_proc_t proc,
+        hg_int8_t *data);
+HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint8_t(hg_proc_t proc,
+        hg_uint8_t *data);
+HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int16_t(hg_proc_t proc,
+        hg_int16_t *data);
+HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint16_t(hg_proc_t proc,
+        hg_uint16_t *data);
+HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int32_t(hg_proc_t proc,
+        hg_int32_t *data);
+HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint32_t(hg_proc_t proc,
+        hg_uint32_t *data);
+HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int64_t(hg_proc_t proc,
+        hg_int64_t *data);
+HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint64_t(hg_proc_t proc,
+        hg_uint64_t *data);
+HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_raw(hg_proc_t proc, void *buf,
+        size_t buf_size);
+HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
+        hg_bulk_t *handle);
 
 
 /* Note: float types are not supported but can be built on top of the existing
@@ -260,12 +270,12 @@ HG_EXPORT HG_PROC_INLINE int hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE int
+HG_PROC_INLINE hg_return_t
 hg_proc_hg_int8_t(hg_proc_t proc, hg_int8_t *data)
 {
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 #ifdef HG_HAS_XDR
     ret = xdr_int8_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -280,12 +290,12 @@ hg_proc_hg_int8_t(hg_proc_t proc, hg_int8_t *data)
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE int
+HG_PROC_INLINE hg_return_t
 hg_proc_hg_uint8_t(hg_proc_t proc, hg_uint8_t *data)
 {
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 #ifdef HG_HAS_XDR
     ret = xdr_uint8_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -300,12 +310,12 @@ hg_proc_hg_uint8_t(hg_proc_t proc, hg_uint8_t *data)
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE int
+HG_PROC_INLINE hg_return_t
 hg_proc_hg_int16_t(hg_proc_t proc, hg_int16_t *data)
 {
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 #ifdef HG_HAS_XDR
     ret = xdr_int16_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -320,12 +330,12 @@ hg_proc_hg_int16_t(hg_proc_t proc, hg_int16_t *data)
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE int
+HG_PROC_INLINE hg_return_t
 hg_proc_hg_uint16_t(hg_proc_t proc, hg_uint16_t *data)
 {
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 #ifdef HG_HAS_XDR
     ret = xdr_uint16_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -340,12 +350,12 @@ hg_proc_hg_uint16_t(hg_proc_t proc, hg_uint16_t *data)
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE int
+HG_PROC_INLINE hg_return_t
 hg_proc_hg_int32_t(hg_proc_t proc, hg_int32_t *data)
 {
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 #ifdef HG_HAS_XDR
     ret = xdr_int32_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -360,12 +370,12 @@ hg_proc_hg_int32_t(hg_proc_t proc, hg_int32_t *data)
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE int
+HG_PROC_INLINE hg_return_t
 hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *data)
 {
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 #ifdef HG_HAS_XDR
     ret = xdr_uint32_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -380,12 +390,12 @@ hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *data)
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE int
+HG_PROC_INLINE hg_return_t
 hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data)
 {
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 #ifdef HG_HAS_XDR
     ret = xdr_int64_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -400,12 +410,12 @@ hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data)
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE int
+HG_PROC_INLINE hg_return_t
 hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data)
 {
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 #ifdef HG_HAS_XDR
     ret = xdr_uint64_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -421,14 +431,14 @@ hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data)
  * \param buf [IN/OUT]          pointer to buffer
  * \param buf_size [IN]         buffer size
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE int
+HG_PROC_INLINE hg_return_t
 hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
 {
     hg_uint8_t *buf_ptr;
     hg_uint8_t *buf_ptr_lim = (hg_uint8_t*) buf + buf_size;
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 
     for (buf_ptr = (hg_uint8_t*) buf; buf_ptr < buf_ptr_lim; buf_ptr++) {
         ret = hg_proc_uint8_t(proc, buf_ptr);
@@ -447,12 +457,12 @@ hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
  * \param proc [IN/OUT]         abstract processor object
  * \param handle [IN/OUT]       pointer to bulk handle
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE int
+HG_PROC_INLINE hg_return_t
 hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
 {
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
     void *buf = NULL;
     hg_uint64_t buf_size = 0;
 

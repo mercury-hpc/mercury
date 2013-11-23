@@ -13,7 +13,7 @@
 
 #include "mercury_proc.h"
 
-typedef struct hg_header_request {
+struct hg_header_request {
      hg_uint8_t  hg;               /* Mercury identifier */
      hg_uint32_t protocol;         /* Version number */
      hg_id_t     id;               /* RPC request identifier */
@@ -22,16 +22,16 @@ typedef struct hg_header_request {
      hg_uint16_t crc16;            /* CRC16 checksum */
      /* Should be 128 bits here */
      hg_bulk_t   extra_buf_handle; /* Extra handle (large data) */
-} hg_header_request_t;
+};
 
-typedef struct hg_header_response {
+struct hg_header_response {
     hg_uint8_t  flags;  /* Flags */
     hg_error_t  error;  /* Error */
     hg_uint32_t cookie; /* Cookie */
     hg_uint16_t crc16;  /* CRC16 checksum */
     hg_uint8_t  padding;
     /* Should be 96 bits here */
-} hg_header_response_t;
+};
 
 /*
  * 0      HG_PROC_HEADER_SIZE              size
@@ -82,7 +82,7 @@ HG_PROC_HEADER_INLINE size_t
 hg_proc_header_request_get_size(void)
 {
     /* hg_bulk_t is optional and is not really part of the header */
-    return (sizeof(hg_header_request_t) - sizeof(hg_bulk_t));
+    return (sizeof(struct hg_header_request) - sizeof(hg_bulk_t));
 }
 
 /**
@@ -93,7 +93,7 @@ hg_proc_header_request_get_size(void)
 HG_PROC_HEADER_INLINE size_t
 hg_proc_header_response_get_size(void)
 {
-    return sizeof(hg_header_response_t);
+    return sizeof(struct hg_header_response);
 }
 
 /**
@@ -106,7 +106,7 @@ hg_proc_header_response_get_size(void)
  */
 HG_EXPORT void
 hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_buf_handle,
-        hg_header_request_t *header);
+        struct hg_header_request *header);
 
 /**
  * Initialize RPC response header.
@@ -115,7 +115,7 @@ hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_buf_handle,
  *
  */
 HG_EXPORT void
-hg_proc_header_response_init(hg_header_response_t *header);
+hg_proc_header_response_init(struct hg_header_response *header);
 
 
 /**
@@ -124,10 +124,10 @@ hg_proc_header_response_init(hg_header_response_t *header);
  * \param proc [IN/OUT]         abstract processor object
  * \param header [IN/OUT]       pointer to header structure
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
-hg_proc_header_request(hg_proc_t proc, hg_header_request_t *header);
+HG_EXPORT hg_return_t
+hg_proc_header_request(hg_proc_t proc, struct hg_header_request *header);
 
 /**
  * Process private information for sending/receiving response.
@@ -135,30 +135,30 @@ hg_proc_header_request(hg_proc_t proc, hg_header_request_t *header);
  * \param proc [IN/OUT]         abstract processor object
  * \param header [IN/OUT]       pointer to header structure
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
-hg_proc_header_response(hg_proc_t proc, hg_header_response_t *header);
+HG_EXPORT hg_return_t
+hg_proc_header_response(hg_proc_t proc, struct hg_header_response *header);
 
 /**
  * Verify private information from request header.
  *
  * \param header [IN]           request header structure
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
-hg_proc_header_request_verify(hg_header_request_t header);
+HG_EXPORT hg_return_t
+hg_proc_header_request_verify(struct hg_header_request header);
 
 /**
  * Verify private information from response header.
  *
  * \param header [IN]           response header structure
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
-hg_proc_header_response_verify(hg_header_response_t header);
+HG_EXPORT hg_return_t
+hg_proc_header_response_verify(struct hg_header_response header);
 
 #ifdef __cplusplus
 }
