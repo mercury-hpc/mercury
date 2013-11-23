@@ -34,9 +34,12 @@ extern "C" {
 /**
  * Inline prototypes (do not remove)
  */
-HG_EXPORT HG_PROC_STRING_INLINE int hg_proc_hg_const_string_t(hg_proc_t proc, hg_const_string_t *data);
-HG_EXPORT HG_PROC_STRING_INLINE int hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *data);
-HG_EXPORT HG_PROC_STRING_INLINE int hg_proc_hg_string_object_t(hg_proc_t proc, hg_string_object_t *data);
+HG_EXPORT HG_PROC_STRING_INLINE hg_return_t hg_proc_hg_const_string_t(
+        hg_proc_t proc, hg_const_string_t *data);
+HG_EXPORT HG_PROC_STRING_INLINE hg_return_t hg_proc_hg_string_t(
+        hg_proc_t proc, hg_string_t *data);
+HG_EXPORT HG_PROC_STRING_INLINE hg_return_t hg_proc_hg_string_object_t(
+        hg_proc_t proc, hg_string_object_t *data);
 
 /**
  * Generic processing routine.
@@ -44,13 +47,13 @@ HG_EXPORT HG_PROC_STRING_INLINE int hg_proc_hg_string_object_t(hg_proc_t proc, h
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_STRING_INLINE int
+HG_PROC_STRING_INLINE hg_return_t
 hg_proc_hg_const_string_t(hg_proc_t proc, hg_const_string_t *data)
 {
     hg_string_object_t string;
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
@@ -92,13 +95,13 @@ hg_proc_hg_const_string_t(hg_proc_t proc, hg_const_string_t *data)
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_STRING_INLINE int
+HG_PROC_STRING_INLINE hg_return_t
 hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *data)
 {
     hg_string_object_t string;
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
@@ -140,13 +143,13 @@ hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *data)
  * \param proc [IN/OUT]         abstract processor object
  * \param string [IN/OUT]       pointer to string
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_STRING_INLINE int
+HG_PROC_STRING_INLINE hg_return_t
 hg_proc_hg_string_object_t(hg_proc_t proc, hg_string_object_t *string)
 {
     hg_uint64_t string_len = 0;
-    int ret = HG_FAIL;
+    hg_return_t ret = HG_FAIL;
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:

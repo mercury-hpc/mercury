@@ -14,10 +14,10 @@
 #include <stdlib.h>
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_string_object_init(hg_string_object_t *string)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     string->data = NULL;
     string->is_owned = 0;
@@ -27,10 +27,10 @@ hg_string_object_init(hg_string_object_t *string)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_string_object_init_char(hg_string_object_t *string, char *s, hg_bool_t is_owned)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     string->data = s;
     string->is_owned = is_owned;
@@ -40,10 +40,10 @@ hg_string_object_init_char(hg_string_object_t *string, char *s, hg_bool_t is_own
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_string_object_init_const_char(hg_string_object_t *string, const char *s, hg_bool_t is_owned)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     string->data = (char*) s;
     string->is_owned = is_owned;
@@ -53,10 +53,10 @@ hg_string_object_init_const_char(hg_string_object_t *string, const char *s, hg_b
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_string_object_free(hg_string_object_t *string)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     if (string->is_owned) {
         free(string->data);
@@ -67,10 +67,10 @@ hg_string_object_free(hg_string_object_t *string)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+hg_return_t
 hg_string_object_dup(hg_string_object_t string, hg_string_object_t *new_string)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     new_string->data = strdup(string.data);
     new_string->is_owned = 1;

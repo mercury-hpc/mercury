@@ -28,9 +28,9 @@ extern "C" {
  *
  * \param string [OUT]          pointer to string structure
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_string_object_init(hg_string_object_t *string);
 
 /**
@@ -40,9 +40,9 @@ hg_string_object_init(hg_string_object_t *string);
  * \param s [IN]                pointer to string
  * \param is_owned [IN]         boolean
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_string_object_init_char(hg_string_object_t *string, char *s, hg_bool_t is_owned);
 
 /**
@@ -52,9 +52,9 @@ hg_string_object_init_char(hg_string_object_t *string, char *s, hg_bool_t is_own
  * \param s [IN]                pointer to string
  * \param is_owned [IN]         boolean
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_string_object_init_const_char(hg_string_object_t *string, const char *s, hg_bool_t is_owned);
 
 /**
@@ -62,9 +62,9 @@ hg_string_object_init_const_char(hg_string_object_t *string, const char *s, hg_b
  *
  * \param string [IN/OUT]       pointer to string structure
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_string_object_free(hg_string_object_t *string);
 
 /**
@@ -73,9 +73,9 @@ hg_string_object_free(hg_string_object_t *string);
  * \param string [IN]           pointer to string structure
  * \param new_string [OUT]      pointer to string structure
  *
- * \return Non-negative on success or negative on failure
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT int
+HG_EXPORT hg_return_t
 hg_string_object_dup(hg_string_object_t string, hg_string_object_t *new_string);
 
 /**
