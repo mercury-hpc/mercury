@@ -10,6 +10,14 @@ set(MERCURY_TESTING_MAX_LOOP "1" CACHE STRING
 set(MERCURY_TESTING_NUM_THREADS "8" CACHE STRING
   "Number of server threads used for testing.")
 
+option(MERCURY_ENABLE_PARALLEL_TESTING
+  "Enable testing in parallel (requires MPI)." OFF)
+if(MERCURY_ENABLE_PARALLEL_TESTING OR NA_USE_MPI)
+  set(MERCURY_HAS_PARALLEL_TESTING 1)
+else()
+  set(MERCURY_HAS_PARALLEL_TESTING 0)
+endif()
+
 #------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
 #------------------------------------------------------------------------------
@@ -23,6 +31,19 @@ include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}
   ${MERCURY_INCLUDES_BUILD_TIME}
 )
+
+if(MERCURY_ENABLE_PARALLEL_TESTING)
+  find_package(MPI REQUIRED)
+  if(MPI_FOUND)
+    include_directories(${MPI_INCLUDE_PATH})
+    set(MERCURY_TEST_EXT_LIB_DEPENDENCIES
+      ${MERCURY_TEST_EXT_LIB_DEPENDENCIES}
+      ${MPI_LIBRARIES}
+    )
+  else()
+    message(FATAL_ERROR "Could not find MPI.")
+  endif()
+endif()
 
 add_subdirectory(driver)
 
@@ -72,7 +93,7 @@ endfunction()
 # mercury_test : Lib used by tests contains main test initialization etc
 #------------------------------------------------------------------------------
 add_library(mercury_test STATIC mercury_test.c)
-target_link_libraries(mercury_test na)
+target_link_libraries(mercury_test na ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_test)
 endif()

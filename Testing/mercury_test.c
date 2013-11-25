@@ -19,6 +19,9 @@
 #ifdef NA_HAS_SSM
 #include "na_ssm.h"
 #endif
+#ifdef MERCURY_HAS_PARALLEL_TESTING
+#include <mpi.h>
+#endif
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -30,7 +33,7 @@ static char **na_addr_table = NULL;
 static unsigned int na_addr_table_size = 0;
 
 /*---------------------------------------------------------------------------*/
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
 static void
 HG_Test_mpi_init(void)
 {
@@ -68,7 +71,7 @@ HG_Test_set_config(const char *addr_name)
     int i;
     int max_port_name_length = 256; /* default set to 256 */
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &my_size);
     max_port_name_length = MPI_MAX_PORT_NAME;
@@ -84,7 +87,7 @@ HG_Test_set_config(const char *addr_name)
 
     na_addr_table_size = my_size;
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
     for (i = 0; i < my_size; i++) {
         MPI_Bcast(na_addr_table[i], MPI_MAX_PORT_NAME,
                 MPI_BYTE, i, MPI_COMM_WORLD);
@@ -111,7 +114,7 @@ HG_Test_get_config(char *addr_name, size_t len, int *rank)
     int my_rank = 0;
     char config_addr_name[HG_TEST_MAX_ADDR_NAME];
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 #endif
 
@@ -124,7 +127,7 @@ HG_Test_get_config(char *addr_name, size_t len, int *rank)
         fclose(config);
     }
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
     /* Broadcast port name */
     MPI_Bcast(config_addr_name, HG_TEST_MAX_ADDR_NAME, MPI_BYTE, 0,
             MPI_COMM_WORLD);
@@ -168,13 +171,13 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
 
 #ifdef NA_HAS_BMI
     if (strcmp("bmi", argv[1]) == 0) {
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
         HG_Test_mpi_init();
 #endif
         HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         HG_Test_mpi_finalize();
 #endif
         network_class = NA_Initialize(test_addr_name, 0);
@@ -183,14 +186,14 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
 
 #ifdef NA_HAS_SSM
     if (strcmp("ssm", argv[1]) == 0) {
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
         HG_Test_mpi_init();
 #endif
         HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         HG_Test_mpi_finalize();
 #endif
         network_class = NA_Initialize(test_addr_name, NA_FALSE);
@@ -241,7 +244,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         int my_rank = 0;
         unsigned int port_number = 22222;
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
         HG_Test_mpi_init();
@@ -256,7 +259,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         /* Gather addresses */
         HG_Test_set_config(addr_name);
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         HG_Test_mpi_finalize();
 #endif
 
@@ -271,7 +274,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         int my_rank = 0;
         unsigned int port_number = 22222;
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
         HG_Test_mpi_init();
@@ -285,7 +288,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         /* Gather addresses */
         HG_Test_set_config(addr_name);
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         HG_Test_mpi_finalize();
 #endif
 
@@ -299,7 +302,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
     /* Point addr table to NA MPI addr table */
     if (addr_table) *addr_table = na_addr_table;
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
     if (max_number_of_peers) *max_number_of_peers = MPIEXEC_MAX_NUMPROCS;
 #else
     if (max_number_of_peers) *max_number_of_peers = 1;
@@ -334,7 +337,7 @@ HG_Test_finalize(na_class_t *network_class)
         na_addr_table_size = 0;
     }
 
-#ifdef NA_HAS_MPI
+#ifdef MERCURY_HAS_PARALLEL_TESTING
     HG_Test_mpi_finalize();
 #endif
 
