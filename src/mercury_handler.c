@@ -121,6 +121,9 @@ static hg_thread_mutex_t hg_handler_started_request_mutex_g;
 /* Pointer to network abstraction class */
 static na_class_t *hg_handler_na_class_g = NULL;
 
+/* Bulk interface internally initialized */
+static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
+
 /*---------------------------------------------------------------------------*/
 static HG_INLINE int
 hg_int_equal(void *vlocation1, void *vlocation2)
@@ -445,6 +448,7 @@ hg_handler_send_output_cb(const struct na_cb_info *callback_info)
 hg_return_t
 HG_Handler_init(na_class_t *na_class)
 {
+    hg_bool_t bulk_initialized = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
     if (!na_class) {
@@ -462,13 +466,17 @@ HG_Handler_init(na_class_t *na_class)
     hg_handler_na_class_g = na_class;
 
     /* Initialize bulk module */
-    ret = HG_Bulk_init(na_class);
-    if (ret != HG_SUCCESS)
-    {
-        HG_ERROR_DEFAULT("Error initializing bulk module.");
-        ret = HG_FAIL;
-        goto done;
+    HG_Bulk_initialized(&bulk_initialized, NULL);
+    if (!bulk_initialized) {
+        ret = HG_Bulk_init(na_class);
+        if (ret != HG_SUCCESS)
+        {
+            HG_ERROR_DEFAULT("Error initializing bulk module.");
+            ret = HG_FAIL;
+            goto done;
+        }
     }
+    hg_bulk_initialized_internal_g = !bulk_initialized;
 
     /* Create new function map */
     hg_handler_func_map_g = hg_hash_table_new(hg_int_hash, hg_int_equal);
@@ -502,6 +510,16 @@ HG_Handler_finalize(void)
         HG_ERROR_DEFAULT("Already finalized");
         ret = HG_FAIL;
         goto done;
+    }
+
+    if (hg_bulk_initialized_internal_g) {
+        ret = HG_Bulk_finalize();
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not finalize bulk data interface");
+            ret = HG_FAIL;
+            goto done;
+        }
+        hg_bulk_initialized_internal_g = HG_FALSE;
     }
 
     /* Wait for previous responses to complete */

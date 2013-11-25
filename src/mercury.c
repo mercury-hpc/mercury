@@ -101,13 +101,17 @@ static na_return_t hg_recv_output_cb(const struct na_cb_info *callback_info);
 /*******************/
 
 /* Function map */
-static hg_hash_table_t *func_map = NULL;
+static hg_hash_table_t *hg_func_map_g = NULL;
 
 /* Mutex used for tag generation */
-static hg_atomic_int32_t request_tag;
+static hg_atomic_int32_t hg_request_tag_g;
+static na_tag_t hg_request_max_tag_g = 0;
 
 /* Pointer to network abstraction class */
-static na_class_t *hg_na_class = NULL;
+static na_class_t *hg_na_class_g = NULL;
+
+/* Bulk interface internally initialized */
+static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
 
 /*---------------------------------------------------------------------------*/
 /**
@@ -149,12 +153,11 @@ hg_gen_request_tag(void)
     na_tag_t tag;
 
     /* Compare and swap tag if reached max tag */
-    /* TODO NA_Msg_get_max_tag in static variable to avoid function call */
-    if (hg_atomic_cas32(&request_tag, NA_Msg_get_max_tag(hg_na_class), 0)) {
+    if (hg_atomic_cas32(&hg_request_tag_g, hg_request_max_tag_g, 0)) {
         tag = 0;
     } else {
         /* Increment tag */
-        tag = hg_atomic_incr32(&request_tag);
+        tag = hg_atomic_incr32(&hg_request_tag_g);
     }
 
     return tag;
@@ -300,7 +303,8 @@ hg_set_input(struct hg_request *priv_request, void *in_struct)
     }
 
     /* Retrieve encoding function from function map */
-    proc_info = (struct hg_proc_info *) hg_hash_table_lookup(func_map, &priv_request->id);
+    proc_info = (struct hg_proc_info *) hg_hash_table_lookup(hg_func_map_g,
+            &priv_request->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
@@ -326,7 +330,7 @@ hg_set_input(struct hg_request *priv_request, void *in_struct)
      *  - 1: send an unexpected message with info + eventual bulk data descriptor
      *  - 2: send the remaining data in extra buf using bulk data transfer
      */
-    if (hg_proc_get_size(proc) > NA_Msg_get_max_unexpected_size(hg_na_class)) {
+    if (hg_proc_get_size(proc) > NA_Msg_get_max_unexpected_size(hg_na_class_g)) {
 #ifdef HG_HAS_XDR
         HG_ERROR_DEFAULT("Extra encoding using XDR is not yet supported");
         ret = HG_FAIL;
@@ -385,7 +389,8 @@ hg_get_output(struct hg_request *priv_request, void *out_struct)
     }
 
     /* Retrieve encoding function from function map */
-    proc_info = (struct hg_proc_info *) hg_hash_table_lookup(func_map, &priv_request->id);
+    proc_info = (struct hg_proc_info *) hg_hash_table_lookup(hg_func_map_g,
+            &priv_request->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
@@ -511,44 +516,50 @@ HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Init(na_class_t *network_class)
+HG_Init(na_class_t *na_class)
 {
+    hg_bool_t bulk_initialized = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!network_class) {
-        HG_ERROR_DEFAULT("Invalid specified network_class");
+    if (!na_class) {
+        HG_ERROR_DEFAULT("Invalid specified na_class");
         ret = HG_FAIL;
         return ret;
     }
 
-    if (hg_na_class) {
+    if (hg_na_class_g) {
         HG_ERROR_DEFAULT("Already initialized");
         ret = HG_FAIL;
         return ret;
     }
 
-    hg_na_class = network_class;
+    hg_na_class_g = na_class;
 
     /* Initialize bulk module */
-    ret = HG_Bulk_init(network_class);
-    if (ret != HG_SUCCESS)
-    {
-        HG_ERROR_DEFAULT("Error initializing bulk module.");
-        ret = HG_FAIL;
-        return ret;
+    HG_Bulk_initialized(&bulk_initialized, NULL);
+    if (!bulk_initialized) {
+        ret = HG_Bulk_init(na_class);
+        if (ret != HG_SUCCESS)
+        {
+            HG_ERROR_DEFAULT("Error initializing bulk module.");
+            ret = HG_FAIL;
+            return ret;
+        }
     }
+    hg_bulk_initialized_internal_g = !bulk_initialized;
     
     /* Initialize atomic for tags */
-    hg_atomic_set32(&request_tag, 0);
+    hg_request_max_tag_g = NA_Msg_get_max_tag(hg_na_class_g);
+    hg_atomic_set32(&hg_request_tag_g, 0);
 
     /* Create new function map */
-    func_map = hg_hash_table_new(hg_int_hash, hg_int_equal);
-    if (!func_map) {
+    hg_func_map_g = hg_hash_table_new(hg_int_hash, hg_int_equal);
+    if (!hg_func_map_g) {
         HG_ERROR_DEFAULT("Could not create function map");
         ret = HG_FAIL;
     }
     /* Automatically free all the values with the hash map */
-    hg_hash_table_register_free_functions(func_map, free, free);
+    hg_hash_table_register_free_functions(hg_func_map_g, free, free);
 
     return ret;
 }
@@ -559,24 +570,34 @@ HG_Finalize(void)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_na_class) {
+    if (!hg_na_class_g) {
         HG_ERROR_DEFAULT("Already finalized");
         ret = HG_FAIL;
         return ret;
     }
 
-    /* Delete function map */
-    hg_hash_table_free(func_map);
-    func_map = NULL;
+    if (hg_bulk_initialized_internal_g) {
+        ret = HG_Bulk_finalize();
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not finalize bulk data interface");
+            ret = HG_FAIL;
+            return ret;
+        }
+        hg_bulk_initialized_internal_g = HG_FALSE;
+    }
 
-    hg_na_class = NULL;
+    /* Delete function map */
+    hg_hash_table_free(hg_func_map_g);
+    hg_func_map_g = NULL;
+
+    hg_na_class_g = NULL;
 
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Initialized(hg_bool_t *flag, na_class_t **network_class)
+HG_Initialized(hg_bool_t *flag, na_class_t **na_class)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -586,8 +607,8 @@ HG_Initialized(hg_bool_t *flag, na_class_t **network_class)
         return ret;
     }
 
-    *flag = (hg_na_class != NULL);
-    if (network_class) *network_class = hg_na_class;
+    *flag = (hg_na_class_g != NULL);
+    if (na_class) *na_class = hg_na_class_g;
 
     return HG_SUCCESS;
 }
@@ -601,7 +622,7 @@ HG_Register(const char *func_name, hg_proc_cb_t enc_routine,
     hg_id_t *id = NULL;
     struct hg_proc_info *proc_info = NULL;
 
-    if (!func_map) {
+    if (!hg_func_map_g) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
         goto done;
     }
@@ -624,7 +645,7 @@ HG_Register(const char *func_name, hg_proc_cb_t enc_routine,
 
     proc_info->enc_routine = enc_routine;
     proc_info->dec_routine = dec_routine;
-    if (!hg_hash_table_insert(func_map, id, proc_info)) {
+    if (!hg_hash_table_insert(hg_func_map_g, id, proc_info)) {
         HG_ERROR_DEFAULT("Could not insert func ID");
         goto done;
     }
@@ -646,7 +667,7 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id)
     hg_return_t ret = HG_SUCCESS;
     hg_id_t func_id;
 
-    if (!func_map) {
+    if (!hg_func_map_g) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
         ret = HG_FAIL;
         return ret;
@@ -660,7 +681,7 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id)
 
     func_id = hg_hash_string(func_name);
 
-    *flag = (hg_hash_table_lookup(func_map, &func_id) != HG_HASH_TABLE_NULL);
+    *flag = (hg_hash_table_lookup(hg_func_map_g, &func_id) != HG_HASH_TABLE_NULL);
     if (id) *id = (*flag) ? func_id : 0;
 
     return HG_SUCCESS;
@@ -677,7 +698,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     struct hg_request *priv_request = NULL;
     struct hg_header_request request_header;
 
-    if (!hg_na_class) {
+    if (!hg_na_class_g) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
         ret = HG_FAIL;
         goto done;
@@ -693,7 +714,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     priv_request->id = id;
 
     /* Send Buffer */
-    priv_request->send_buf_size = NA_Msg_get_max_unexpected_size(hg_na_class);
+    priv_request->send_buf_size = NA_Msg_get_max_unexpected_size(hg_na_class_g);
     priv_request->send_buf = hg_proc_buf_alloc(priv_request->send_buf_size);
     if (!priv_request->send_buf) {
         HG_ERROR_DEFAULT("Could not allocate send buffer");
@@ -702,7 +723,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     }
 
     /* Recv Buffer */
-    priv_request->recv_buf_size = NA_Msg_get_max_expected_size(hg_na_class);
+    priv_request->recv_buf_size = NA_Msg_get_max_expected_size(hg_na_class_g);
     priv_request->recv_buf = hg_proc_buf_alloc(priv_request->recv_buf_size);
     if (!priv_request->recv_buf) {
         HG_ERROR_DEFAULT("Could not allocate send buffer");
@@ -745,7 +766,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     send_tag = hg_gen_request_tag();
     recv_tag = send_tag;
 
-    na_ret = NA_Msg_send_unexpected(hg_na_class, &hg_send_input_cb,
+    na_ret = NA_Msg_send_unexpected(hg_na_class_g, &hg_send_input_cb,
             priv_request, priv_request->send_buf, priv_request->send_buf_size,
             addr, send_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
@@ -754,7 +775,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
         goto done;
     }
 
-    na_ret = NA_Msg_recv_expected(hg_na_class, &hg_recv_output_cb, priv_request,
+    na_ret = NA_Msg_recv_expected(hg_na_class_g, &hg_recv_output_cb, priv_request,
             priv_request->recv_buf, priv_request->recv_buf_size, addr, recv_tag,
             NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
@@ -800,7 +821,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
     struct hg_request *priv_request = (struct hg_request*) request;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_na_class) {
+    if (!hg_na_class_g) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
         ret = HG_FAIL;
         goto done;
@@ -828,7 +849,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 
         if (priv_request->completed) break;
 
-        na_ret = NA_Progress(hg_na_class, (unsigned int) (remaining * 1000));
+        na_ret = NA_Progress(hg_na_class_g, (unsigned int) (remaining * 1000));
         if (na_ret == NA_TIMEOUT) {
             ret = HG_FAIL;
             goto done;
@@ -858,7 +879,7 @@ HG_Wait_all(int count, hg_request_t array_of_requests[],
     hg_return_t ret = HG_SUCCESS;
     int i;
 
-    if (!hg_na_class) {
+    if (!hg_na_class_g) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
         ret = HG_FAIL;
         return ret;
@@ -881,7 +902,7 @@ HG_Request_free(hg_request_t request)
     struct hg_proc_info *proc_info;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_na_class) {
+    if (!hg_na_class_g) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
         ret = HG_FAIL;
         return ret;
@@ -900,7 +921,8 @@ HG_Request_free(hg_request_t request)
     }
 
     /* Retrieve decoding function from function map */
-    proc_info = (struct hg_proc_info *) hg_hash_table_lookup(func_map, &priv_request->id);
+    proc_info = (struct hg_proc_info *) hg_hash_table_lookup(hg_func_map_g,
+            &priv_request->id);
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
