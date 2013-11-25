@@ -67,8 +67,6 @@ msg_expected_send_cb(const struct na_cb_info *callback_info)
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
 
-    printf("%s():\n", __FUNCTION__);
-    
     if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
@@ -81,7 +79,6 @@ msg_expected_send_cb(const struct na_cb_info *callback_info)
 static na_return_t
 msg_expected_send_final_cb(const struct na_cb_info *callback_info)
 {
-    printf("%s(): \n", __FUNCTION__);
     test_done_g = 1;
     return NA_SUCCESS;
 }
@@ -180,7 +177,6 @@ mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
     na_return_t ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
-        printf("error\n");
         return ret;
     }
 
