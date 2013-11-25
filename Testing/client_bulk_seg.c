@@ -78,12 +78,6 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    hg_ret = HG_Bulk_init(network_class);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize bulk data shipper\n");
-        return EXIT_FAILURE;
-    }
-
     /* Look up addr id */
     na_ret = NA_Addr_lookup_wait(network_class, ion_name, &addr);
     if (na_ret != NA_SUCCESS) {
@@ -205,12 +199,6 @@ int main(int argc, char *argv[])
     hg_ret = HG_Finalize();
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not finalize Mercury\n");
-        return EXIT_FAILURE;
-    }
-
-    hg_ret = HG_Bulk_finalize();
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize bulk data shipper\n");
         return EXIT_FAILURE;
     }
 

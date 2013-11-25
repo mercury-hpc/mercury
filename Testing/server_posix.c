@@ -302,12 +302,6 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    hg_ret = HG_Bulk_init(network_class);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize bulk data shipper\n");
-        return EXIT_FAILURE;
-    }
-
 #ifdef MERCURY_HAS_ADVANCED_MACROS
     /* Register routine */
     MERCURY_HANDLER_REGISTER_CALLBACK("open", open_cb);
@@ -334,13 +328,6 @@ int main(int argc, char *argv[])
     }
 
     printf("Finalizing...\n");
-
-    /* Finalize the interface */
-    hg_ret = HG_Bulk_finalize();
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize bulk data shipper\n");
-        return EXIT_FAILURE;
-    }
 
     hg_ret = HG_Handler_finalize();
     if (hg_ret != HG_SUCCESS) {

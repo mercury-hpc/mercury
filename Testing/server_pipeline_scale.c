@@ -283,12 +283,6 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    hg_ret = HG_Bulk_init(network_class);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize bulk data shipper\n");
-        return EXIT_FAILURE;
-    }
-
 #ifdef USE_THREAD_POOL
     hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &thread_pool);
 #endif
@@ -323,13 +317,6 @@ int main(int argc, char *argv[])
 #elif defined(USE_THREAD_POOL)
     hg_thread_pool_destroy(thread_pool);
 #endif
-
-    /* Finalize the interface */
-    hg_ret = HG_Bulk_finalize();
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize bulk data shipper\n");
-        return EXIT_FAILURE;
-    }
 
     hg_ret = HG_Handler_finalize();
     if (hg_ret != HG_SUCCESS) {
