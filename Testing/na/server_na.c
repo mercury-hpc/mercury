@@ -122,8 +122,6 @@ bulk_put_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
-    //    test_done_g = 1;
-
     return ret;
 }
 
@@ -312,7 +310,7 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
         params.source_addr = NA_ADDR_NULL;
-
+        test_done_g = 0;
     }
 
     printf("Finalizing...\n");
