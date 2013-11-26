@@ -343,7 +343,7 @@ int main(int argc, char *argv[])
         hg_status_t status;
 
         /* Receive new function calls */
-        hg_ret = HG_Handler_process(1, &status);
+        hg_ret = HG_Handler_process(NA_MAX_IDLE_TIME, &status);
         if (hg_ret == HG_SUCCESS && status) {
             printf("# Request processed\n");
             number_of_executed_requests++;

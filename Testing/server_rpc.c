@@ -85,12 +85,17 @@ int main(int argc, char *argv[])
     MERCURY_HANDLER_REGISTER("bla_open", fs_bla_open, bla_open_in_t, bla_open_out_t);
 
     for (i = 0; i < number_of_peers; i++) {
+        hg_status_t status = 0;
         /* Receive new function calls */
-        hg_ret = HG_Handler_process(HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
+        while (!status) {
+            printf("Processing...\n");
+        hg_ret = HG_Handler_process(1000, &status);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not receive function call\n");
             return EXIT_FAILURE;
         }
+        }
+        printf("Processed\n");
     }
 
     printf("Finalizing...\n");
