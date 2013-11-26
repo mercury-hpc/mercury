@@ -14,7 +14,10 @@
 /* TODO see if we can avoid to have to include that header */
 #include "na_private.h"
 
+#include "mercury_thread_mutex.h"
+#include "mercury_thread_condition.h"
 #include "mercury_time.h"
+#include "mercury_util_error.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -74,8 +77,14 @@ static na_return_t hg_bulk_read_cb(const struct na_cb_info *callback_info);
 /* Local Variables */
 /*******************/
 
+/* Mutex used for request completion */
+static hg_thread_mutex_t hg_bulk_request_mutex_g;
+
 /* Pointer to network abstraction class */
 static na_class_t *bulk_na_class = NULL;
+
+/* Mutex to prevent concurrent progress */
+hg_thread_mutex_t hg_progress_mutex_g;
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
@@ -100,6 +109,10 @@ HG_Bulk_init(na_class_t *network_class)
 
     bulk_na_class = network_class;
 
+    /* Initilialize mutex */
+    hg_thread_mutex_init(&hg_bulk_request_mutex_g);
+    hg_thread_mutex_init(&hg_progress_mutex_g);
+
     return ret;
 }
 
@@ -116,6 +129,10 @@ HG_Bulk_finalize(void)
     }
 
     bulk_na_class = NULL;
+
+    /* Destroy mutex */
+    hg_thread_mutex_destroy(&hg_bulk_request_mutex_g);
+    hg_thread_mutex_destroy(&hg_progress_mutex_g);
 
     return ret;
 }
@@ -743,9 +760,13 @@ hg_bulk_write_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
+    hg_thread_mutex_lock(&hg_bulk_request_mutex_g);
+
     priv_request->op_completed_count++;
     if (priv_request->op_completed_count == priv_request->op_count)
         priv_request->completed = HG_TRUE;
+
+    hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
 
     return ret;
 }
@@ -868,9 +889,13 @@ hg_bulk_read_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
+    hg_thread_mutex_lock(&hg_bulk_request_mutex_g);
+
     priv_request->op_completed_count++;
     if (priv_request->op_completed_count == priv_request->op_count)
         priv_request->completed = HG_TRUE;
+
+    hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
 
     return ret;
 }
@@ -990,6 +1015,7 @@ HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
     double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
     struct hg_bulk_request *priv_bulk_request =
             (struct hg_bulk_request *) bulk_request;
+    hg_bool_t completed = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
     if (!priv_bulk_request) {
@@ -998,29 +1024,48 @@ HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
         goto done;
     }
 
-    while(!priv_bulk_request->completed) {
+    hg_thread_mutex_lock(&hg_bulk_request_mutex_g);
+
+    completed = priv_bulk_request->completed;
+
+    hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
+
+    while (!completed) {
         hg_time_t t1, t2;
         na_return_t na_ret;
         int actual_count = 0;
 
         hg_time_get_current(&t1);
 
+        /* Prevent concurrent trigger in handler */
+        hg_thread_mutex_lock(&hg_progress_mutex_g);
+
         do {
             na_ret = NA_Trigger(0, 1, &actual_count);
         } while ((na_ret == NA_SUCCESS) && actual_count);
 
-        if (priv_bulk_request->completed) break;
+        hg_thread_mutex_lock(&hg_bulk_request_mutex_g);
+
+        completed = priv_bulk_request->completed;
+
+        hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
+
+        if (completed) {
+            hg_thread_mutex_unlock(&hg_progress_mutex_g);
+            break;
+        }
 
         na_ret = NA_Progress(bulk_na_class, (unsigned int) (remaining * 1000));
         if (na_ret == NA_TIMEOUT) {
-            ret = HG_FAIL;
+            hg_thread_mutex_unlock(&hg_progress_mutex_g);
             goto done;
         }
+
+        hg_thread_mutex_unlock(&hg_progress_mutex_g);
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
         if (remaining < 0) {
-            ret = HG_FAIL;
             goto done;
         }
     }
@@ -1028,10 +1073,10 @@ HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
     free(priv_bulk_request);
     priv_bulk_request = NULL;
 
+done:
     if (status && (status != HG_STATUS_IGNORE)) {
-        *status = (ret == HG_SUCCESS) ? HG_TRUE : HG_FALSE;
+        *status = completed;
     }
 
-done:
     return ret;
 }

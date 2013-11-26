@@ -115,6 +115,7 @@ static hg_hash_table_t *hg_handler_func_map_g;
 static hg_queue_t *hg_handler_completion_queue_g;
 static hg_thread_mutex_t hg_handler_completion_queue_mutex_g;
 
+/* Request started */
 static hg_bool_t hg_handler_started_request_g = HG_FALSE;
 static hg_thread_mutex_t hg_handler_started_request_mutex_g;
 
@@ -123,6 +124,9 @@ static na_class_t *hg_handler_na_class_g = NULL;
 
 /* Bulk interface internally initialized */
 static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
+
+/* Mutex to prevent concurrent progress */
+extern hg_thread_mutex_t hg_progress_mutex_g;
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE int
@@ -681,7 +685,7 @@ hg_return_t
 HG_Handler_process(unsigned int timeout, hg_status_t *status)
 {
     double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
-    hg_bool_t do_progress;
+    hg_bool_t processed = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
     /* Check if previous handles have completed */
@@ -695,11 +699,11 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
         hg_handler_started_request_g = HG_TRUE;
     }
 
-    do_progress = hg_handler_started_request_g;
+    processed = !hg_handler_started_request_g;
 
     hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
 
-    while (do_progress) {
+    while (!processed) {
         hg_time_t t1, t2;
         na_return_t na_ret;
         int actual_count = 0;
@@ -710,34 +714,39 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
             na_ret = NA_Trigger(0, 1, &actual_count);
         } while ((na_ret == NA_SUCCESS) && actual_count);
 
+        /* Prevent concurrent trigger in handler */
+        hg_thread_mutex_lock(&hg_progress_mutex_g);
+
         hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
 
-        do_progress = hg_handler_started_request_g;
+        processed = !hg_handler_started_request_g;
 
         hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
 
-        if (!do_progress) break;
+        if (processed)  {
+            hg_thread_mutex_unlock(&hg_progress_mutex_g);
+            break;
+        }
 
         na_ret = NA_Progress(hg_handler_na_class_g,
                 (unsigned int) (remaining * 1000));
         if (na_ret == NA_TIMEOUT) {
-            ret = HG_FAIL;
+            hg_thread_mutex_unlock(&hg_progress_mutex_g);
             goto done;
         }
+
+        hg_thread_mutex_unlock(&hg_progress_mutex_g);
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
         if (remaining < 0) {
-            ret = HG_FAIL;
             goto done;
         }
     }
 
-    if (status && status != HG_STATUS_IGNORE) *status = HG_TRUE;
-
 done:
-    if (ret != HG_SUCCESS) {
-        if (status && status != HG_STATUS_IGNORE) *status = HG_FALSE;
+    if (status && (status != HG_STATUS_IGNORE)) {
+        *status = processed;
     }
     return ret;
 }

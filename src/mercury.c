@@ -16,6 +16,7 @@
 #include "mercury_hash_string.h"
 #include "mercury_atomic.h"
 #include "mercury_time.h"
+#include "mercury_thread_mutex.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -103,15 +104,21 @@ static na_return_t hg_recv_output_cb(const struct na_cb_info *callback_info);
 /* Function map */
 static hg_hash_table_t *hg_func_map_g = NULL;
 
-/* Mutex used for tag generation */
+/* Atomic used for tag generation */
 static hg_atomic_int32_t hg_request_tag_g;
 static na_tag_t hg_request_max_tag_g = 0;
+
+/* Mutex used for request completion */
+static hg_thread_mutex_t hg_request_mutex_g;
 
 /* Pointer to network abstraction class */
 static na_class_t *hg_na_class_g = NULL;
 
 /* Bulk interface internally initialized */
 static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
+
+/* Mutex to prevent concurrent progress */
+extern hg_thread_mutex_t hg_progress_mutex_g;
 
 /*---------------------------------------------------------------------------*/
 /**
@@ -495,7 +502,11 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
     priv_request->recv_buf_size = 0;
 
     /* Mark request as completed */
+    hg_thread_mutex_lock(&hg_request_mutex_g);
+
     priv_request->completed = HG_TRUE;
+
+    hg_thread_mutex_unlock(&hg_request_mutex_g);
 
 done:
     return na_ret;
@@ -552,6 +563,9 @@ HG_Init(na_class_t *na_class)
     hg_request_max_tag_g = NA_Msg_get_max_tag(hg_na_class_g);
     hg_atomic_set32(&hg_request_tag_g, 0);
 
+    /* Initialize request mutex */
+    hg_thread_mutex_init(&hg_request_mutex_g);
+
     /* Create new function map */
     hg_func_map_g = hg_hash_table_new(hg_int_hash, hg_int_equal);
     if (!hg_func_map_g) {
@@ -560,6 +574,7 @@ HG_Init(na_class_t *na_class)
     }
     /* Automatically free all the values with the hash map */
     hg_hash_table_register_free_functions(hg_func_map_g, free, free);
+
 
     return ret;
 }
@@ -585,6 +600,9 @@ HG_Finalize(void)
         }
         hg_bulk_initialized_internal_g = HG_FALSE;
     }
+
+    /* Destroy request mutex */
+    hg_thread_mutex_destroy(&hg_request_mutex_g);
 
     /* Delete function map */
     hg_hash_table_free(hg_func_map_g);
@@ -819,6 +837,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 {
     double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
     struct hg_request *priv_request = (struct hg_request*) request;
+    hg_bool_t completed = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_na_class_g) {
@@ -833,41 +852,57 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         goto done;
     }
 
-    /* TODO only one single thread should do so separate and make it called
-     * by handler / bulk etc
-     */
-    while (!priv_request->completed) {
+    hg_thread_mutex_lock(&hg_request_mutex_g);
+
+    completed = priv_request->completed;
+
+    hg_thread_mutex_unlock(&hg_request_mutex_g);
+
+    while (!completed) {
         hg_time_t t1, t2;
         na_return_t na_ret;
         int actual_count = 0;
 
         hg_time_get_current(&t1);
 
+        /* Prevent concurrent trigger in handler */
+        hg_thread_mutex_lock(&hg_progress_mutex_g);
+
         do {
             na_ret = NA_Trigger(0, 1, &actual_count);
         } while ((na_ret == NA_SUCCESS) && actual_count);
 
-        if (priv_request->completed) break;
+        hg_thread_mutex_lock(&hg_request_mutex_g);
+
+        completed = priv_request->completed;
+
+        hg_thread_mutex_unlock(&hg_request_mutex_g);
+
+        if (completed) {
+            hg_thread_mutex_unlock(&hg_progress_mutex_g);
+            break;
+        }
 
         na_ret = NA_Progress(hg_na_class_g, (unsigned int) (remaining * 1000));
         if (na_ret == NA_TIMEOUT) {
-            ret = HG_FAIL;
+            hg_thread_mutex_unlock(&hg_progress_mutex_g);
             goto done;
         }
+
+        hg_thread_mutex_unlock(&hg_progress_mutex_g);
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
         if (remaining < 0) {
-            ret = HG_FAIL;
             goto done;
         }
     }
 
+done:
     if (status && (status != HG_STATUS_IGNORE)) {
-        *status = (ret == HG_SUCCESS) ? HG_TRUE : HG_FALSE;
+        *status = completed;
     }
 
-done:
     return ret;
 }
 
