@@ -1507,7 +1507,6 @@ na_bmi_progress_unexpected(na_class_t *na_class, unsigned int timeout,
             struct na_bmi_op_id *na_bmi_op_id;
 
             na_bmi_op_id = na_bmi_msg_unexpected_op_pop(na_class);
-
             /* If an op id was pushed, associate unexpected
              * info to this operation ID and complete operation */
             if (na_bmi_op_id) {
@@ -1555,7 +1554,8 @@ na_bmi_progress_expected(na_class_t *na_class, unsigned int timeout,
             &bmi_actual_size, (void **) &na_bmi_op_id, timeout,
             NA_BMI_PRIVATE_DATA(na_class)->bmi_context);
 
-    if (bmi_ret < 0) {
+    /* TODO Sometimes bmi_ret is weird so check error_code as well */
+    if (bmi_ret < 0 && (error_code != 0)) {
         NA_LOG_ERROR("BMI_testcontext failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
