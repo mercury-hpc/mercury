@@ -346,6 +346,7 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
     na_class_t *ssm_class = NULL;
     struct na_ssm_private_data *ssm_data = NULL;
     int i = 0;
+    int cleanup_index = 0;
 
     NA_LOG_DEBUG("Initializing NA-SSM using %s on port %d in "
                  "%d mode.\n", in_na_buffer->na_protocol,
@@ -463,12 +464,15 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
         buffer->buf = (char *) malloc(NA_SSM_UNEXPECTED_SIZE);
         if (buffer->buf == NULL)
         {
+            free(buffer);
             goto cleanup;
         }
         
         buffer->mr = ssm_mr_create(NULL, buffer->buf, NA_SSM_UNEXPECTED_SIZE);
         if (buffer->mr == NULL)
         {
+            free(buffer->buf);
+            free(buffer);
             goto cleanup;
         }
         
@@ -481,6 +485,9 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
         
         if (ret < 0)
         {
+            ssm_mr_destroy(buffer->mr);
+            free(buffer->buf);
+            free(buffer);
             NA_LOG_ERROR("Post failed (init)");
             goto cleanup;
         }
@@ -488,22 +495,32 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
         if (!hg_queue_push_tail(ssm_data->unexpected_msg_queue,
                                 (hg_queue_value_t) buffer))
         {
+            int ssm_ret = ssm_drop(ssm_data->ssm,
+                                   ssm_data->unexpected_me,
+                                   buffer->mr);
+            if (ssm_ret != SSM_REMOVE_OK)
+            {
+                /* Even if we see this error, we cannot do anything; we just
+                 * report the error and continue with cleanup.
+                 */
+                NA_LOG_ERROR("SSM failed to drop an attached buffer as part "
+                             "of cleanup process. Error: %d.\n", ssm_ret);
+            }
+            
+            ssm_mr_destroy(buffer->mr);
+            free(buffer->buf);
+            free(buffer);
             goto cleanup;
         }
         
-        // cleanup_index = i + 1;
+        cleanup_index = (i + 1);
     }
-
-    hg_thread_mutex_init(&ssm_data->request_mutex);
-    hg_thread_cond_init(&ssm_data->comp_req_cond);
 
     hg_thread_mutex_init(&ssm_data->unexpected_msg_queue_mutex);
     hg_thread_mutex_init(&ssm_data->unexpected_msg_complete_mutex);
-    
-    hg_thread_cond_init(&ssm_data->unexp_buf_cond);
     hg_thread_mutex_init(&ssm_data->gen_matchbits);
 
-    NA_LOG_DEBUG("Exit. (return %p)\n", ssm_class);
+    NA_LOG_DEBUG("Exit.\n");
     return ssm_class;
     
  cleanup:
@@ -519,8 +536,40 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
         
             ssm_stop(ssm_data->ssm);
         }
+
+        if (ssm_data->unexpected_msg_queue != NULL)
+        {
+            struct na_ssm_unexpected_buffer *buffer = NULL;
+                
+            for (i = 0; i < cleanup_index; ++i)
+            {
+                buffer = hg_queue_pop_head(ssm_data->unexpected_msg_complete_queue);
+                if (buffer != NULL)
+                {
+                    int ssm_ret = ssm_drop(ssm_data->ssm,
+                                           ssm_data->unexpected_me,
+                                           buffer->mr);
+                    if (ssm_ret != SSM_REMOVE_OK)
+                    {
+                        /* Even if we see this error, we cannot do
+                         * anything; we just report the error and
+                         * continue with cleanup.
+                         */
+                        NA_LOG_ERROR("SSM failed to drop an attached "
+                                     "buffer as part of cleanup process. "
+                                     "Error: %d.\n", ssm_ret);
+                    }
+                    
+                    ssm_mr_destroy(buffer->mr);
+                    free(buffer->buf);
+                    free(buffer);
+                }
+            }
+        }
+        
         free(ssm_data);
     }
+
     free(ssm_class);
         
     return NULL;
@@ -851,7 +900,6 @@ na_ssm_unexpected_msg_send_callback(void *in_context,
     struct na_ssm_opid *v_ssm_opid       = in_context;
     struct na_cb_info  *v_cbinfo         = NULL;
     na_return_t         ret         = NA_SUCCESS;
-    struct na_ssm_private_data *v_ssm_data = v_ssm_opid->ssm_data;
 
     NA_LOG_DEBUG("Enter.\n");
     
@@ -885,13 +933,6 @@ na_ssm_unexpected_msg_send_callback(void *in_context,
     v_cbinfo->arg = v_ssm_opid->user_context;
     v_cbinfo->ret = ret;
     
-    hg_thread_mutex_lock(&v_ssm_data->request_mutex);
-    
-    //wake up others
-    hg_thread_cond_signal(&v_ssm_data->comp_req_cond);
-
-    hg_thread_mutex_unlock(&v_ssm_data->request_mutex);
-
     ret = na_cb_completion_add(v_ssm_opid->user_callback,
                                v_cbinfo,
                                na_ssm_unexpected_msg_send_release,
@@ -987,7 +1028,6 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
     if (buffer == NULL)
     {
         /* we haven't received anything yet. */
-        NA_LOG_DEBUG("No message received yet; pushing the opid to queue.\n");
         hg_queue_push_tail(ssm_data->opid_wait_queue,
                            (hg_queue_value_t) ssm_opid);
     }
@@ -1093,7 +1133,6 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
     {
         NA_LOG_ERROR("Unexpected message receive error. Status: %d\n",
                      result->status);
-        hg_thread_cond_signal(&ssm_data->unexp_buf_cond);
     }
 
     ssm_opid = hg_queue_pop_head(ssm_data->opid_wait_queue);
@@ -1136,7 +1175,6 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
         cbinfo->info.recv_unexpected.source = addr;
         cbinfo->info.recv_unexpected.tag = result->bits;
 
-        NA_LOG_DEBUG("Added to the queue\n");
         ret = na_cb_completion_add(ssm_opid->user_callback,
                                    cbinfo,
                                    na_ssm_msg_recv_unexpected_release,
@@ -1281,10 +1319,8 @@ na_ssm_msg_send_expected_callback(void *in_context,
     ssm_result           v_result = in_ssm_event_data;
     struct na_ssm_opid  *v_ssm_opid = in_context;
     struct na_cb_info *cbinfo = NULL;
-    struct na_ssm_private_data *v_data = (struct na_ssm_private_data *) v_ssm_opid->ssm_data;
+    na_return_t ret = NA_SUCCESS;
 
-    NA_LOG_DEBUG("Enter.\n");
-    
     if (v_result->status == SSM_ST_COMPLETE)
     {
         NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
@@ -1308,18 +1344,15 @@ na_ssm_msg_send_expected_callback(void *in_context,
     cbinfo->ret = v_ssm_opid->result;
     cbinfo->type = v_ssm_opid->requesttype;
     
-    hg_thread_mutex_lock(&v_data->request_mutex);
-
-    hg_thread_cond_signal(&v_data->comp_req_cond);
-
-    hg_thread_mutex_unlock(&v_data->request_mutex);
-
-    na_cb_completion_add(v_ssm_opid->user_callback,
-                         cbinfo,
-                         na_ssm_msg_send_expected_release,
-                         v_ssm_opid);
+    ret = na_cb_completion_add(v_ssm_opid->user_callback,
+                               cbinfo,
+                               na_ssm_msg_send_expected_release,
+                               v_ssm_opid);
+    if (ret != NA_SUCCESS)
+    {
+        NA_LOG_ERROR("Unable to queue completion callback. Error: %d.\n", ret);
+    }
     
-    NA_LOG_DEBUG("Exit.\n");
  done:
     return;
 }
@@ -1467,24 +1500,26 @@ static void
 na_ssm_msg_recv_expected_callback(void *in_context,
                                   void *in_ssm_event_data)
 {
-    ssm_result           v_result     = in_ssm_event_data;
-    struct na_ssm_opid  *v_ssm_opid   = in_context;
-    struct na_ssm_private_data *v_data = (struct na_ssm_private_data *) v_ssm_opid->ssm_data;
+    na_return_t ret = NA_SUCCESS;
+    ssm_result v_result = in_ssm_event_data;
+    struct na_ssm_opid *v_ssm_opid = in_context;
     struct na_cb_info *cbinfo = NULL;
 
-    NA_LOG_DEBUG("Enter.\n");
-    
     if (v_result->status == SSM_ST_COMPLETE)
     {
         NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
+        v_ssm_opid->result = NA_SUCCESS;
     }
     else if (v_result->status == SSM_ST_CANCEL)
     {
         NA_SSM_MARK_OPID_CANCELED(v_ssm_opid);
+        v_ssm_opid->result = NA_CANCELED;
     }
     else
     {
-        NA_LOG_ERROR("msg_recv_cb(): cb error");
+        NA_LOG_ERROR("SSM message receive failed. Error: %d\n",
+                     v_result->status);
+        v_ssm_opid->result = NA_FAIL;
     }
 
     cbinfo = malloc(sizeof(struct na_cb_info));
@@ -1497,19 +1532,17 @@ na_ssm_msg_recv_expected_callback(void *in_context,
     cbinfo->ret = v_ssm_opid->result;
     cbinfo->type = v_ssm_opid->requesttype;
     
-    hg_thread_mutex_lock(&v_data->request_mutex);
-
-    //wake up others
-    hg_thread_cond_signal(&v_data->comp_req_cond);
-
-    hg_thread_mutex_unlock(&v_data->request_mutex);
-
-    na_cb_completion_add(v_ssm_opid->user_callback,
-                         cbinfo,
-                         na_ssm_msg_recv_release,
-                         v_ssm_opid);
+    ret = na_cb_completion_add(v_ssm_opid->user_callback,
+                               cbinfo,
+                               na_ssm_msg_recv_release,
+                               v_ssm_opid);
+    if (ret != NA_SUCCESS)
+    {
+        NA_LOG_ERROR("Unable to queue the completion callback. Error: %d.\n",
+                     ret);
+    }
+    
  done:
-    NA_LOG_DEBUG("Exit.\n");
     return;
 }
 
@@ -1926,7 +1959,6 @@ na_ssm_put_callback(void *in_context,
 {
     ssm_result v_result = in_ssm_event_data;
     struct na_ssm_opid *v_ssm_opid = in_context;
-    struct na_ssm_private_data *v_data = (struct na_ssm_private_data *) v_ssm_opid->ssm_data;
     struct na_cb_info *cbinfo = NULL;
 
     NA_LOG_DEBUG("Enter.\n");
@@ -1946,13 +1978,6 @@ na_ssm_put_callback(void *in_context,
     cbinfo->ret = NA_SUCCESS;
     cbinfo->type = v_ssm_opid->requesttype;
     
-    hg_thread_mutex_lock(&v_data->request_mutex);
-    
-    //wake up others
-    hg_thread_cond_signal(&v_data->comp_req_cond);
-    
-    hg_thread_mutex_unlock(&v_data->request_mutex);
-
     na_cb_completion_add(v_ssm_opid->user_callback,
                          cbinfo,
                          na_ssm_put_release,
@@ -2088,24 +2113,25 @@ static void
 na_ssm_get_callback(void *in_context,
                     void *in_ssm_event_data) 
 {
-    ssm_result                  v_result   = in_ssm_event_data;
-    struct na_ssm_opid         *v_ssm_opid = in_context;
-    struct na_ssm_private_data *v_data     = v_ssm_opid->ssm_data;
+    ssm_result v_result   = in_ssm_event_data;
+    struct na_ssm_opid *v_ssm_opid = in_context;
     struct na_cb_info *cbinfo = NULL;
+    na_return_t ret = NA_SUCCESS;
 
-    NA_LOG_DEBUG("Enter.\n");
-    
     if (v_result->status == SSM_ST_COMPLETE)
     {
         NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
+        v_ssm_opid->result = NA_SUCCESS;
     }
     else if (v_result->status == SSM_ST_CANCEL)
     {
         NA_SSM_MARK_OPID_CANCELED(v_ssm_opid);
+        v_ssm_opid->result = NA_CANCELED;
     }
     else
     {
-        NA_LOG_ERROR("Error reported by SSM.");
+        NA_LOG_ERROR("Error reported by SSM. Error: %d", v_result->status);
+        v_ssm_opid->result = NA_FAIL;
     }
 
     cbinfo = malloc(sizeof(struct na_cb_info));
@@ -2115,24 +2141,20 @@ na_ssm_get_callback(void *in_context,
     }
 
     cbinfo->arg = v_ssm_opid->user_context;
-    cbinfo->ret = NA_SUCCESS; // v_ssm_opid->result;
+    cbinfo->ret = v_ssm_opid->result;
     cbinfo->type = v_ssm_opid->requesttype;
     
-    hg_thread_mutex_lock(&v_data->request_mutex);
-
-    //wake up others
-    hg_thread_cond_signal(&v_data->comp_req_cond);
-
-    hg_thread_mutex_unlock(&v_data->request_mutex);
-
-    /* Add the request to the callback queue.  We are ignoring the
-     * returned status here because there is nothing that we can
-     * do to correct it.  This API should never fail.
+    /* Add the request to the callback queue. This API should never fail.
      */
-    na_cb_completion_add(v_ssm_opid->user_callback,
-                         cbinfo,
-                         na_ssm_get_release,
-                         v_ssm_opid);
+    ret = na_cb_completion_add(v_ssm_opid->user_callback,
+                               cbinfo,
+                               na_ssm_get_release,
+                               v_ssm_opid);
+    if (ret != NA_SUCCESS)
+    {
+        NA_LOG_ERROR("Unable to queue completion callback. Error: %d.\n", ret);
+    }
+    
  done:
     NA_LOG_DEBUG("Exit.\n");
     return;
