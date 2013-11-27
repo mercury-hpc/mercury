@@ -64,7 +64,6 @@ struct na_ssm_unexpected_buffer {
   ssm_me         me;
   ssm_cb_t       cb;
   ssm_mr         mr;
-  na_bool_t      valid;
   ssm_bits       bits;
   ssm_status     status;
   ssm_Haddr      addr;
@@ -157,10 +156,11 @@ struct ssm_msg_recv_unexpected {
 };
 
 struct na_ssm_opid {
-  na_cb_type_t   requesttype;
+  na_cb_type_t        requesttype;
   na_cb_t             user_callback;
   void               *user_context;
   struct na_ssm_private_data *ssm_data;
+  struct na_cb_info  *cbinfo;
   ssm_tx              transaction;
   na_ssm_status_t     status;
   na_return_t         result;
