@@ -11,7 +11,10 @@
 #include "test_scale.h"
 #include "mercury_test.h"
 
+#ifdef STATIC_TEST
 #include "na_mpi.h"
+#endif
+
 #include "mercury.h"
 #include "mercury_bulk.h"
 #include "mercury_time.h"
@@ -24,9 +27,12 @@
 
 static hg_id_t bla_open_id, bla_write_id, finalize_id;
 
-/* TODO Test only supports MPI for now */
-static MPI_Comm split_comm;
-static int client_rank, client_size;
+#ifdef MERCURY_HAS_PARALLEL_TESTING
+#include <mpi.h>
+static MPI_Comm split_comm = MPI_COMM_WORLD;
+#endif
+
+static int client_rank = 0, client_size = 1;
 
 /**
  *
@@ -63,8 +69,6 @@ measure_rpc(na_addr_t addr)
 
     /* Warm up for RPC */
     for (i = 0; i < RPC_SKIP; i++) {
-        MPI_Barrier(split_comm);
-
         hg_ret = HG_Forward(addr, bla_open_id,
                 &bla_open_in_struct, &bla_open_out_struct, &bla_open_request);
         if (hg_ret != HG_SUCCESS) {
@@ -85,6 +89,10 @@ measure_rpc(na_addr_t addr)
         }
     }
 
+#ifdef MERCURY_HAS_PARALLEL_TESTING
+    MPI_Barrier(split_comm);
+#endif
+
     if (client_rank == 0) printf("%*s%*s%*s%*s%*s%*s",
             10, "# Time (s)", 10, "Min (s)", 10, "Max (s)",
             12, "Calls (c/s)", 12, "Min (c/s)", 12, "Max (c/s)");
@@ -94,8 +102,6 @@ measure_rpc(na_addr_t addr)
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
         hg_time_t t1, t2;
         double td;
-
-        MPI_Barrier(split_comm);
 
         hg_time_get_current(&t1);
 
@@ -130,7 +136,9 @@ measure_rpc(na_addr_t addr)
             return HG_FAIL;
         }
 
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         MPI_Barrier(split_comm);
+#endif
         hg_time_get_current(&t2);
         td = hg_time_to_double(hg_time_subtract(t2, t1));
 
@@ -208,8 +216,6 @@ measure_bulk_transfer(na_addr_t addr)
 
     /* Warm up for bulk data */
     for (i = 0; i < BULK_SKIP; i++) {
-        MPI_Barrier(split_comm);
-
         hg_ret = HG_Forward(addr, bla_write_id,
                 &bla_write_in_struct, &bla_write_out_struct, &bla_write_request);
         if (hg_ret != HG_SUCCESS) {
@@ -223,6 +229,7 @@ measure_bulk_transfer(na_addr_t addr)
             return HG_FAIL;
         }
 
+
         /* Free request */
         hg_ret = HG_Request_free(bla_write_request);
         if (hg_ret != HG_SUCCESS) {
@@ -230,6 +237,10 @@ measure_bulk_transfer(na_addr_t addr)
             return HG_FAIL;
         }
     }
+
+#ifdef MERCURY_HAS_PARALLEL_TESTING
+    MPI_Barrier(split_comm);
+#endif
 
     if (client_rank == 0) printf("%*s%*s%*s%*s%*s%*s",
             10, "# Time (s)", 10, "Min (s)", 10, "Max (s)",
@@ -240,8 +251,6 @@ measure_bulk_transfer(na_addr_t addr)
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
         hg_time_t t1, t2;
         double td;
-
-        MPI_Barrier(split_comm);
 
         hg_time_get_current(&t1);
 
@@ -282,7 +291,9 @@ measure_bulk_transfer(na_addr_t addr)
             return HG_FAIL;
         }
 
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         MPI_Barrier(split_comm);
+#endif
         hg_time_get_current(&t2);
         td = hg_time_to_double(hg_time_subtract(t2, t1));
 
@@ -353,17 +364,21 @@ int
 main(int argc, char *argv[])
 {
     na_addr_t addr;
+    char *addr_name;
     na_class_t *network_class = NULL;
 
     int hg_ret, na_ret;
 
+#ifdef MERCURY_HAS_PARALLEL_TESTING
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(split_comm, &client_rank);
+    MPI_Comm_size(split_comm, &client_size);
+#endif
+
+#ifdef STATIC_TEST
+    {
     int color;
     int global_rank;
-
-    int provided;
-
-    /* Need a MPI_THREAD_MULTIPLE level if onesided thread required */
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
 
     MPI_Comm_rank(MPI_COMM_WORLD, &global_rank);
     /* Color is 1 for server, 2 for client */
@@ -373,6 +388,10 @@ main(int argc, char *argv[])
     MPI_Comm_size(split_comm, &client_size);
 
     network_class = NA_MPI_Init(&split_comm, MPI_INIT_STATIC);
+    }
+#else
+    network_class = HG_Test_client_init(argc, argv, &addr_name, NULL);
+#endif
 
     hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {
@@ -381,7 +400,7 @@ main(int argc, char *argv[])
     }
 
     /* Look up addr id */
-    na_ret = NA_Addr_lookup_wait(network_class, "nil", &addr);
+    na_ret = NA_Addr_lookup_wait(network_class, addr_name, &addr);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not find connect\n");
         return EXIT_FAILURE;
@@ -394,17 +413,19 @@ main(int argc, char *argv[])
 
     measure_rpc(addr);
 
+#ifdef MERCURY_HAS_PARALLEL_TESTING
     MPI_Barrier(split_comm);
+#endif
 
     measure_bulk_transfer(addr);
 
+#ifdef MERCURY_HAS_PARALLEL_TESTING
     MPI_Barrier(split_comm);
+#endif
 
     if (client_rank == 0) {
         server_finalize(addr);
     }
-
-    MPI_Barrier(split_comm);
 
     /* Free addr id */
     na_ret = NA_Addr_free(network_class, addr);
@@ -426,8 +447,13 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+#ifdef STATIC_TEST
     MPI_Comm_free(&split_comm);
+#endif
+#ifdef MERCURY_HAS_PARALLEL_TESTING
     MPI_Finalize();
+#endif
+
 
     return EXIT_SUCCESS;
 }

@@ -132,10 +132,10 @@ build_mercury_test(server_pipeline)
 
 #------------------------------------------------------------------------------
 # Scaling bandwidth bulk data shipper test using pipelining
-if(NA_USE_MPI)
+#if(NA_USE_MPI)
   build_mercury_test(client_scale)
   build_mercury_test(server_scale)
-
+if(NA_USE_MPI)
   build_mercury_test(client_pipeline_scale)
   build_mercury_test(server_pipeline_scale)
 endif()

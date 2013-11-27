@@ -14,4 +14,7 @@
 #include "test_rpc.h"
 #include "test_bulk.h"
 
+/* Uncomment for static testing using MPI_Comm_split */
+/* #define STATIC_TEST */
+
 #endif /* TEST_SCALE_H */

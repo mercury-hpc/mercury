@@ -34,6 +34,8 @@ static unsigned int na_addr_table_size = 0;
 
 /*---------------------------------------------------------------------------*/
 #ifdef MERCURY_HAS_PARALLEL_TESTING
+static int mpi_internally_initialized = HG_FALSE;
+
 static void
 HG_Test_mpi_init(void)
 {
@@ -47,6 +49,7 @@ HG_Test_mpi_init(void)
         if (provided != MPI_THREAD_MULTIPLE) {
             fprintf(stderr, "MPI_THREAD_MULTIPLE cannot be set");
         }
+        mpi_internally_initialized = HG_TRUE;
     }
 }
 
@@ -56,8 +59,9 @@ HG_Test_mpi_finalize(void)
     int mpi_finalized = 0;
 
     MPI_Finalized(&mpi_finalized);
-    if (!mpi_finalized) {
+    if (!mpi_finalized && mpi_internally_initialized) {
         MPI_Finalize();
+        mpi_internally_initialized = HG_FALSE;
     }
 }
 #endif

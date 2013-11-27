@@ -9,26 +9,24 @@
  */
 
 #include "test_scale.h"
-
-#include "na_mpi.h"
+#include "mercury_test.h"
 #include "mercury_handler.h"
-#include "mercury_bulk.h"
+
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_pool.h"
 #include "mercury_list.h"
 
-#include "mercury_test_config.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 
-//#define SPAWN_REQUEST_THREAD /* want to spawn threads */
+/* #define SPAWN_REQUEST_THREAD */ /* want to spawn threads */
 #define USE_THREAD_POOL      /* use thread pool */
 #define FORCE_MPI_PROGRESS   /* want to have mpi progress */
 #define TRANSFER_BULK_DATA
 
-static hg_bool_t finalizing = 0;
+static unsigned int finalizing_count = 0;
+static hg_thread_mutex_t finalizing_mutex;
 
 #if defined(SPAWN_REQUEST_THREAD)
 static hg_list_entry_t *thread_list;
@@ -39,23 +37,21 @@ static hg_thread_pool_t *thread_pool = NULL;
 /**
  *
  */
-/*
 static size_t
 bla_write_check(const void *buf, size_t nbyte)
 {
-    int i;
-    int *bulk_buf = (int*) buf;
+    size_t i;
+    const int *bulk_buf = (const int*) buf;
 
-    for (i = 0; i < (int)(nbyte / sizeof(int)); i++) {
-        if (bulk_buf[i] != i) {
-            printf("Error detected in bulk transfer, bulk_buf[%d] = %d, "
-                    "was expecting %d!\n", i, bulk_buf[i], i);
+    for (i = 0; i < (nbyte / sizeof(int)); i++) {
+        if (bulk_buf[i] != (int) i) {
+            printf("Error detected in bulk transfer, bulk_buf[%lu] = %d, "
+                    "was expecting %d!\n", i, bulk_buf[i], (int) i);
             break;
         }
     }
     return nbyte;
 }
-*/
 
 /**
  *
@@ -65,7 +61,11 @@ server_finalize(hg_handle_t handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    finalizing = 1;
+    hg_thread_mutex_lock(&finalizing_mutex);
+
+    finalizing_count++;
+
+    hg_thread_mutex_unlock(&finalizing_mutex);
 
     /* Free handle and send response back */
     ret = HG_Handler_start_output(handle, NULL);
@@ -158,6 +158,8 @@ bla_write_rpc(hg_handle_t handle)
         fprintf(stderr, "Could not complete bulk data read\n");
         return ret;
     }
+
+    bla_write_check(bla_write_buf, bla_write_nbytes);
 
     /* Free block handles */
     ret = HG_Bulk_block_handle_free(bla_write_bulk_block_handle);
@@ -257,14 +259,16 @@ int
 main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
-    int hg_ret, na_ret;
-    MPI_Comm split_comm;
-    int color, global_rank, provided;
+    hg_return_t hg_ret;
+    na_return_t na_ret;
+    hg_bool_t finalizing = HG_FALSE;
 #ifdef SPAWN_REQUEST_THREAD
     hg_list_iter_t list_iterator;
 #endif
 
-    printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
+#ifdef STATIC_TEST
+    MPI_Comm split_comm;
+    int color, global_rank, provided;
 
     /* Used by Test Driver */
     printf("# Waiting for client...\n");
@@ -280,6 +284,11 @@ main(int argc, char *argv[])
     MPI_Comm_split(MPI_COMM_WORLD, color, global_rank, &split_comm);
 
     network_class = NA_MPI_Init(&split_comm, MPI_INIT_SERVER_STATIC);
+#else
+    unsigned int number_of_peers;
+
+    network_class = HG_Test_server_init(argc, argv, NULL, NULL, &number_of_peers);
+#endif
 
     hg_ret = HG_Handler_init(network_class);
     if (hg_ret != HG_SUCCESS) {
@@ -289,6 +298,7 @@ main(int argc, char *argv[])
 
 #ifdef USE_THREAD_POOL
     hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &thread_pool);
+    printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
 
     /* Register routine */
@@ -298,17 +308,27 @@ main(int argc, char *argv[])
             bla_write_in_t, bla_write_out_t);
     MERCURY_HANDLER_REGISTER("finalize", server_finalize, void, void);
 
+    hg_thread_mutex_init(&finalizing_mutex);
+
     while (!finalizing) {
-        hg_status_t status;
+        hg_status_t status = HG_FALSE;
 
         /* Receive new function calls */
-        hg_ret = HG_Handler_process(0, &status);
+        hg_ret = HG_Handler_process(NA_MAX_IDLE_TIME, &status);
         if (hg_ret == HG_SUCCESS && status) {
             /* printf("# Request processed\n"); */
         }
+
+        hg_thread_mutex_lock(&finalizing_mutex);
+
+        finalizing = (finalizing_count == number_of_peers);
+
+        hg_thread_mutex_unlock(&finalizing_mutex);
     }
 
     printf("# Finalizing...\n");
+
+    hg_thread_mutex_destroy(&finalizing_mutex);
 
 #if defined(SPAWN_REQUEST_THREAD)
     /* Wait for all threads to have joined */
@@ -336,8 +356,10 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+#ifdef STATIC_TEST
     MPI_Comm_free(&split_comm);
     MPI_Finalize();
+#endif
 
     return EXIT_SUCCESS;
 }
