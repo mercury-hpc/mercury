@@ -332,9 +332,9 @@ static HG_INLINE hg_return_t \
             hg_request_t request; \
             hg_status_t status; \
             hg_bool_t hg_initialized; \
-            BOOST_PP_IF(with_bulk, HG_GEN_DECL_PARAMS(HG_BULK_INIT_PARAM), BOOST_PP_EMPTY()) \
             hg_bool_t func_registered; \
-            int hg_ret, na_ret; \
+            hg_return_t hg_ret; \
+            na_return_t na_ret; \
             \
             /* Is mercury library initialized */ \
             HG_Initialized(&hg_initialized, &network_class); \
@@ -347,12 +347,11 @@ static HG_INLINE hg_return_t \
                     goto done; \
                 } \
             } \
-            BOOST_PP_IF(with_bulk, HG_BULK_INITIALIZE(with_ret, ret_fail), BOOST_PP_EMPTY()) \
             \
             /* Get server_name if set */ \
             server_name = getenv(HG_PORT_NAME); \
             /* Look up addr id */ \
-            na_ret = NA_Addr_lookup(network_class, server_name, &addr); \
+            na_ret = NA_Addr_lookup_wait(network_class, server_name, &addr); \
             if (na_ret != NA_SUCCESS) { \
                 HG_ERROR_DEFAULT("Could not lookup addr"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
@@ -436,10 +435,10 @@ static HG_INLINE hg_return_t \
         with_input, in_struct_type_name, in_params, \
         with_output, out_struct_type_name, out_params, \
         with_bulk, bulk_read) \
-        static int \
+        static hg_return_t \
         gen_func_name (hg_handle_t handle) \
         { \
-                int hg_ret = HG_SUCCESS; \
+                hg_return_t hg_ret = HG_SUCCESS; \
                 BOOST_PP_IF(with_input, \
                     in_struct_type_name in_struct;, BOOST_PP_EMPTY()) \
                 BOOST_PP_IF(BOOST_PP_OR(with_output, with_ret), \
