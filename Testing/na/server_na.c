@@ -25,6 +25,7 @@ static int test_done_g = 0;
 /* Test parameters */
 struct na_test_params {
     na_class_t *network_class;
+    na_context_t *context;
     na_addr_t source_addr;
     char *send_buf;
     char *recv_buf;
@@ -79,8 +80,15 @@ msg_expected_send_cb(const struct na_cb_info *callback_info)
 static na_return_t
 msg_expected_send_final_cb(const struct na_cb_info *callback_info)
 {
+    na_return_t ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        return ret;
+    }
+
     test_done_g = 1;
-    return NA_SUCCESS;
+
+    return ret;
 }
 
 static na_return_t
@@ -96,10 +104,10 @@ bulk_put_cb(const struct na_cb_info *callback_info)
 
     /* Send completion ack */
     printf("Sending end of transfer ack...\n");
-    ret = NA_Msg_send_expected(params->network_class, 
-                               msg_expected_send_final_cb, NULL,
-            params->send_buf, params->send_buf_len, params->source_addr,
-            ack_tag, NA_OP_ID_IGNORE);
+    ret = NA_Msg_send_expected(params->network_class,  params->context,
+            msg_expected_send_final_cb, NULL,  params->send_buf,
+            params->send_buf_len, params->source_addr, ack_tag,
+            NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of acknowledgment\n");
         return ret;
@@ -157,7 +165,7 @@ bulk_get_cb(const struct na_cb_info *callback_info)
     printf("Putting %d bytes to remote...\n",
             (int) (params->bulk_size * sizeof(int)));
 
-    ret = NA_Put(params->network_class, &bulk_put_cb, params,
+    ret = NA_Put(params->network_class, params->context, &bulk_put_cb, params,
             params->local_mem_handle, 0, params->remote_mem_handle, 0,
             params->bulk_size * sizeof(int), params->source_addr,
             NA_OP_ID_IGNORE);
@@ -191,7 +199,7 @@ mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
     printf("Getting %d bytes from remote...\n",
             (int) (params->bulk_size * sizeof(int)));
 
-    ret = NA_Get(params->network_class, &bulk_get_cb, params,
+    ret = NA_Get(params->network_class, params->context, &bulk_get_cb, params,
             params->local_mem_handle, 0, params->remote_mem_handle, 0,
             params->bulk_size * sizeof(int), params->source_addr,
             NA_OP_ID_IGNORE);
@@ -210,9 +218,10 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
     /* Respond back */
     sprintf(params->send_buf, "Hello Client!");
 
-    na_ret = NA_Msg_send_expected(params->network_class, &msg_expected_send_cb,
-            params, params->send_buf, params->send_buf_len, params->source_addr,
-            send_tag, NA_OP_ID_IGNORE);
+    na_ret = NA_Msg_send_expected(params->network_class, params->context,
+            &msg_expected_send_cb, params, params->send_buf,
+            params->send_buf_len, params->source_addr, send_tag,
+            NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of message\n");
         return EXIT_FAILURE;
@@ -245,7 +254,7 @@ test_bulk(struct na_test_params *params)
 
     /* Recv memory handle */
     printf("Receiving remote memory handle...\n");
-    na_ret = NA_Msg_recv_expected(params->network_class,
+    na_ret = NA_Msg_recv_expected(params->network_class, params->context,
             &mem_handle_expected_recv_cb, params, params->recv_buf,
             params->recv_buf_len, params->source_addr, bulk_tag,
             NA_OP_ID_IGNORE);
@@ -268,6 +277,8 @@ int main(int argc, char *argv[])
     params.network_class = HG_Test_server_init(argc, argv, NULL, NULL,
             &number_of_peers);
 
+    params.context = NA_Context_create(params.network_class);
+
     /* Allocate send/recv/bulk bufs */
     params.send_buf_len = NA_Msg_get_max_unexpected_size(params.network_class);
     params.recv_buf_len = params.send_buf_len;
@@ -287,7 +298,7 @@ int main(int argc, char *argv[])
         }
 
         /* Recv a message from a client */
-        na_ret = NA_Msg_recv_unexpected(params.network_class,
+        na_ret = NA_Msg_recv_unexpected(params.network_class, params.context,
                 &msg_unexpected_recv_cb, &params, params.recv_buf,
                 params.recv_buf_len, NA_OP_ID_IGNORE);
 
@@ -296,12 +307,12 @@ int main(int argc, char *argv[])
             int actual_count = 0;
 
             do {
-                trigger_ret = NA_Trigger(0, 1, &actual_count);
+                trigger_ret = NA_Trigger(params.context, 0, 1, &actual_count);
             } while ((trigger_ret == NA_SUCCESS) && actual_count);
 
             if (test_done_g) break;
 
-            NA_Progress(params.network_class, NA_MAX_IDLE_TIME);
+            NA_Progress(params.network_class, params.context, NA_MAX_IDLE_TIME);
         }
 
         na_ret = NA_Addr_free(params.network_class, params.source_addr);
@@ -318,6 +329,8 @@ int main(int argc, char *argv[])
     free(params.bulk_buf);
     free(params.recv_buf);
     free(params.send_buf);
+
+    NA_Context_destroy(params.network_class, params.context);
 
     HG_Test_finalize(params.network_class);
 

@@ -26,6 +26,7 @@ static int test_done_g = 0;
 /* Test parameters */
 struct na_test_params {
     na_class_t *network_class;
+    na_context_t *context;
     na_addr_t server_addr;
     char *send_buf;
     char *recv_buf;
@@ -128,17 +129,18 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
     /* Send a message to addr */
     sprintf(params->send_buf, "Hello Server!");
 
-    na_ret = NA_Msg_send_unexpected(params->network_class, NULL, NULL,
-            params->send_buf, params->send_buf_len, params->server_addr,
-            send_tag, NA_OP_ID_IGNORE);
+    na_ret = NA_Msg_send_unexpected(params->network_class, params->context,
+            NULL, NULL, params->send_buf, params->send_buf_len,
+            params->server_addr, send_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of unexpected message\n");
         return EXIT_FAILURE;
     }
 
-    na_ret = NA_Msg_recv_expected(params->network_class, &msg_expected_recv_cb,
-            params, params->recv_buf, params->recv_buf_len, params->server_addr,
-            send_tag + 1, NA_OP_ID_IGNORE);
+    na_ret = NA_Msg_recv_expected(params->network_class, params->context,
+            &msg_expected_recv_cb, params, params->recv_buf,
+            params->recv_buf_len, params->server_addr, send_tag + 1,
+            NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start recv of message\n");
         return EXIT_FAILURE;
@@ -180,9 +182,9 @@ test_bulk(struct na_test_params *params)
 
     /* Send mem handle */
     printf("Sending local memory handle...\n");
-    na_ret = NA_Msg_send_expected(params->network_class, NULL, NULL,
-            params->send_buf, params->send_buf_len, params->server_addr,
-            bulk_tag, NA_OP_ID_IGNORE);
+    na_ret = NA_Msg_send_expected(params->network_class, params->context,
+            NULL, NULL, params->send_buf, params->send_buf_len,
+            params->server_addr, bulk_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of memory handle\n");
         return EXIT_FAILURE;
@@ -190,9 +192,10 @@ test_bulk(struct na_test_params *params)
 
     /* Recv completion ack */
     printf("Receiving end of transfer ack...\n");
-    na_ret = NA_Msg_recv_expected(params->network_class, &ack_expected_recv_cb,
-            params, params->recv_buf, params->recv_buf_len, params->server_addr,
-            ack_tag, NA_OP_ID_IGNORE);
+    na_ret = NA_Msg_recv_expected(params->network_class, params->context,
+            &ack_expected_recv_cb, params, params->recv_buf,
+            params->recv_buf_len, params->server_addr, ack_tag,
+            NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start receive of acknowledgment\n");
         return EXIT_FAILURE;
@@ -212,6 +215,8 @@ main(int argc, char *argv[])
     /* Initialize the interface */
     params.network_class = HG_Test_client_init(argc, argv, &server_name, NULL);
 
+    params.context = NA_Context_create(params.network_class);
+
     /* Allocate send and recv bufs */
     params.send_buf_len = NA_Msg_get_max_unexpected_size(params.network_class);
     params.recv_buf_len = params.send_buf_len;
@@ -226,8 +231,8 @@ main(int argc, char *argv[])
     }
 
     /* Perform an address lookup on the ION */
-    na_ret = NA_Addr_lookup(params.network_class, &lookup_cb, &params,
-            server_name, NA_OP_ID_IGNORE);
+    na_ret = NA_Addr_lookup(params.network_class, params.context, &lookup_cb,
+            &params, server_name, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start lookup of addr %s\n", server_name);
         return EXIT_FAILURE;
@@ -238,12 +243,12 @@ main(int argc, char *argv[])
         int actual_count = 0;
 
         do {
-            trigger_ret = NA_Trigger(0, 1, &actual_count);
+            trigger_ret = NA_Trigger(params.context, 0, 1, &actual_count);
         } while ((trigger_ret == NA_SUCCESS) && actual_count);
 
         if (test_done_g) break;
 
-        NA_Progress(params.network_class, NA_MAX_IDLE_TIME);
+        NA_Progress(params.network_class, params.context, NA_MAX_IDLE_TIME);
     }
 
     printf("Finalizing...\n");
@@ -258,6 +263,8 @@ main(int argc, char *argv[])
     free(params.recv_buf);
     free(params.send_buf);
     free(params.bulk_buf);
+
+    NA_Context_destroy(params.network_class, params.context);
 
     HG_Test_finalize(params.network_class);
 
