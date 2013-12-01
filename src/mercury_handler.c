@@ -108,6 +108,15 @@ static hg_return_t hg_handler_start_request(void);
 /* Local Variables */
 /*******************/
 
+/* Pointer to network abstraction class */
+static na_class_t *hg_handler_na_class_g = NULL;
+
+/* Local context */
+static na_context_t *hg_handler_context_g = NULL;
+
+/* Bulk interface internally initialized */
+static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
+
 /* Function map */
 static hg_hash_table_t *hg_handler_func_map_g;
 
@@ -118,15 +127,6 @@ static hg_thread_mutex_t hg_handler_completion_queue_mutex_g;
 /* Request started */
 static hg_bool_t hg_handler_started_request_g = HG_FALSE;
 static hg_thread_mutex_t hg_handler_started_request_mutex_g;
-
-/* Pointer to network abstraction class */
-static na_class_t *hg_handler_na_class_g = NULL;
-
-/* Bulk interface internally initialized */
-static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
-
-/* Mutex to prevent concurrent progress */
-extern hg_thread_mutex_t hg_progress_mutex_g;
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE int
@@ -469,6 +469,14 @@ HG_Handler_init(na_class_t *na_class)
 
     hg_handler_na_class_g = na_class;
 
+    /* Create local context */
+    hg_handler_context_g = NA_Context_create(hg_handler_na_class_g);
+    if (!hg_handler_context_g) {
+        HG_ERROR_DEFAULT("Could not create context.");
+        ret = HG_FAIL;
+        goto done;
+    }
+
     /* Initialize bulk module */
     HG_Bulk_initialized(&bulk_initialized, NULL);
     if (!bulk_initialized) {
@@ -509,6 +517,7 @@ hg_return_t
 HG_Handler_finalize(void)
 {
     hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
 
     if (!hg_handler_na_class_g) {
         HG_ERROR_DEFAULT("Already finalized");
@@ -533,6 +542,14 @@ HG_Handler_finalize(void)
 //        ret = HG_FAIL;
 //        goto done;
 //    }
+
+    /* Destroy context */
+    na_ret = NA_Context_destroy(hg_handler_na_class_g, hg_handler_context_g);
+    if (na_ret != NA_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not destroy context.");
+        ret = HG_FAIL;
+        return ret;
+    }
 
     /* Delete function map */
     hg_hash_table_free(hg_handler_func_map_g);
@@ -711,11 +728,8 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
         hg_time_get_current(&t1);
 
         do {
-            na_ret = NA_Trigger(0, 1, &actual_count);
+            na_ret = NA_Trigger(hg_handler_context_g, 0, 1, &actual_count);
         } while ((na_ret == NA_SUCCESS) && actual_count);
-
-        /* Prevent concurrent trigger in handler */
-        hg_thread_mutex_lock(&hg_progress_mutex_g);
 
         hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
 
@@ -723,19 +737,13 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
 
         hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
 
-        if (processed)  {
-            hg_thread_mutex_unlock(&hg_progress_mutex_g);
-            break;
-        }
+        if (processed) break;
 
-        na_ret = NA_Progress(hg_handler_na_class_g,
+        na_ret = NA_Progress(hg_handler_na_class_g, hg_handler_context_g,
                 (unsigned int) (remaining * 1000));
         if (na_ret == NA_TIMEOUT) {
-            hg_thread_mutex_unlock(&hg_progress_mutex_g);
             goto done;
         }
-
-        hg_thread_mutex_unlock(&hg_progress_mutex_g);
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
@@ -780,7 +788,7 @@ hg_handler_start_request(void)
     }
 
     /* Post a new unexpected receive */
-    na_ret = NA_Msg_recv_unexpected(hg_handler_na_class_g,
+    na_ret = NA_Msg_recv_unexpected(hg_handler_na_class_g, hg_handler_context_g,
             &hg_handler_recv_input_cb, priv_handle, priv_handle->recv_buf,
             priv_handle->recv_buf_size, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
@@ -841,7 +849,7 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
     }
 
     /* Respond back */
-    na_ret = NA_Msg_send_expected(hg_handler_na_class_g,
+    na_ret = NA_Msg_send_expected(hg_handler_na_class_g, hg_handler_context_g,
             &hg_handler_send_output_cb, priv_handle, priv_handle->send_buf,
             priv_handle->send_buf_size, priv_handle->addr, priv_handle->tag,
             NA_OP_ID_IGNORE);

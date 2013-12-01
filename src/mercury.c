@@ -101,6 +101,15 @@ static na_return_t hg_recv_output_cb(const struct na_cb_info *callback_info);
 /* Local Variables */
 /*******************/
 
+/* Pointer to network abstraction class */
+static na_class_t *hg_na_class_g = NULL;
+
+/* Local context */
+static na_context_t *hg_context_g = NULL;
+
+/* Bulk interface internally initialized */
+static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
+
 /* Function map */
 static hg_hash_table_t *hg_func_map_g = NULL;
 
@@ -110,15 +119,6 @@ static na_tag_t hg_request_max_tag_g = 0;
 
 /* Mutex used for request completion */
 static hg_thread_mutex_t hg_request_mutex_g;
-
-/* Pointer to network abstraction class */
-static na_class_t *hg_na_class_g = NULL;
-
-/* Bulk interface internally initialized */
-static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
-
-/* Mutex to prevent concurrent progress */
-extern hg_thread_mutex_t hg_progress_mutex_g;
 
 /*---------------------------------------------------------------------------*/
 /**
@@ -546,6 +546,14 @@ HG_Init(na_class_t *na_class)
 
     hg_na_class_g = na_class;
 
+    /* Create local context */
+    hg_context_g = NA_Context_create(hg_na_class_g);
+    if (!hg_context_g) {
+        HG_ERROR_DEFAULT("Could not create context.");
+        ret = HG_FAIL;
+        return ret;
+    }
+
     /* Initialize bulk module */
     HG_Bulk_initialized(&bulk_initialized, NULL);
     if (!bulk_initialized) {
@@ -584,6 +592,7 @@ hg_return_t
 HG_Finalize(void)
 {
     hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
 
     if (!hg_na_class_g) {
         HG_ERROR_DEFAULT("Already finalized");
@@ -599,6 +608,14 @@ HG_Finalize(void)
             return ret;
         }
         hg_bulk_initialized_internal_g = HG_FALSE;
+    }
+
+    /* Destroy context */
+    na_ret = NA_Context_destroy(hg_na_class_g, hg_context_g);
+    if (na_ret != NA_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not destroy context.");
+        ret = HG_FAIL;
+        return ret;
     }
 
     /* Destroy request mutex */
@@ -784,18 +801,18 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     send_tag = hg_gen_request_tag();
     recv_tag = send_tag;
 
-    na_ret = NA_Msg_send_unexpected(hg_na_class_g, &hg_send_input_cb,
-            priv_request, priv_request->send_buf, priv_request->send_buf_size,
-            addr, send_tag, NA_OP_ID_IGNORE);
+    na_ret = NA_Msg_send_unexpected(hg_na_class_g, hg_context_g,
+            &hg_send_input_cb, priv_request, priv_request->send_buf,
+            priv_request->send_buf_size, addr, send_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not send buffer");
         ret = HG_FAIL;
         goto done;
     }
 
-    na_ret = NA_Msg_recv_expected(hg_na_class_g, &hg_recv_output_cb, priv_request,
-            priv_request->recv_buf, priv_request->recv_buf_size, addr, recv_tag,
-            NA_OP_ID_IGNORE);
+    na_ret = NA_Msg_recv_expected(hg_na_class_g, hg_context_g,
+            &hg_recv_output_cb, priv_request, priv_request->recv_buf,
+            priv_request->recv_buf_size, addr, recv_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not pre-post buffer");
         ret = HG_FAIL;
@@ -865,11 +882,8 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 
         hg_time_get_current(&t1);
 
-        /* Prevent concurrent trigger in handler */
-        hg_thread_mutex_lock(&hg_progress_mutex_g);
-
         do {
-            na_ret = NA_Trigger(0, 1, &actual_count);
+            na_ret = NA_Trigger(hg_context_g, 0, 1, &actual_count);
         } while ((na_ret == NA_SUCCESS) && actual_count);
 
         hg_thread_mutex_lock(&hg_request_mutex_g);
@@ -878,18 +892,13 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 
         hg_thread_mutex_unlock(&hg_request_mutex_g);
 
-        if (completed) {
-            hg_thread_mutex_unlock(&hg_progress_mutex_g);
-            break;
-        }
+        if (completed) break;
 
-        na_ret = NA_Progress(hg_na_class_g, (unsigned int) (remaining * 1000));
+        na_ret = NA_Progress(hg_na_class_g, hg_context_g,
+                (unsigned int) (remaining * 1000));
         if (na_ret == NA_TIMEOUT) {
-            hg_thread_mutex_unlock(&hg_progress_mutex_g);
             goto done;
         }
-
-        hg_thread_mutex_unlock(&hg_progress_mutex_g);
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));

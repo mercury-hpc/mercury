@@ -77,23 +77,28 @@ static na_return_t hg_bulk_read_cb(const struct na_cb_info *callback_info);
 /* Local Variables */
 /*******************/
 
+/* Pointer to network abstraction class */
+static na_class_t *hg_bulk_na_class_g = NULL;
+
+/* Local context */
+static na_context_t *hg_bulk_context_g = NULL;
+
 /* Mutex used for request completion */
 static hg_thread_mutex_t hg_bulk_request_mutex_g;
 
-/* Pointer to network abstraction class */
-static na_class_t *bulk_na_class = NULL;
-
-/* Mutex to prevent concurrent progress */
-hg_thread_mutex_t hg_progress_mutex_g;
+/* Mutex/cond to prevent concurrent request trigger/progress */
+static hg_thread_mutex_t hg_bulk_progress_mutex_g;
+static hg_thread_cond_t hg_bulk_progress_cond_g;
+static hg_bool_t hg_bulk_progressing_g = HG_FALSE;
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_init(na_class_t *network_class)
+HG_Bulk_init(na_class_t *na_class)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!network_class) {
-        HG_ERROR_DEFAULT("Invalid specified network_class");
+    if (!na_class) {
+        HG_ERROR_DEFAULT("Invalid specified na_class");
         ret = HG_FAIL;
         return ret;
     }
@@ -101,17 +106,26 @@ HG_Bulk_init(na_class_t *network_class)
     /* TODO: This code may have to be changed in accordance with the
      *       outcome of Trac#24.
      */
-    if (bulk_na_class) {
+    if (hg_bulk_na_class_g) {
         HG_WARNING_DEFAULT("Already initialized");
         ret = HG_SUCCESS;
         return ret;
     }
 
-    bulk_na_class = network_class;
+    hg_bulk_na_class_g = na_class;
+
+    /* Create local context */
+    hg_bulk_context_g = NA_Context_create(hg_bulk_na_class_g);
+    if (!hg_bulk_context_g) {
+        HG_ERROR_DEFAULT("Could not create context.");
+        ret = HG_FAIL;
+        return ret;
+    }
 
     /* Initilialize mutex */
     hg_thread_mutex_init(&hg_bulk_request_mutex_g);
-    hg_thread_mutex_init(&hg_progress_mutex_g);
+    hg_thread_mutex_init(&hg_bulk_progress_mutex_g);
+    hg_thread_cond_init(&hg_bulk_progress_cond_g);
 
     return ret;
 }
@@ -121,25 +135,35 @@ hg_return_t
 HG_Bulk_finalize(void)
 {
     hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
 
-    if (!bulk_na_class) {
+    if (!hg_bulk_na_class_g) {
         HG_ERROR_DEFAULT("Already finalized");
         ret = HG_FAIL;
         return ret;
     }
 
-    bulk_na_class = NULL;
+    /* Destroy context */
+    na_ret = NA_Context_destroy(hg_bulk_na_class_g, hg_bulk_context_g);
+    if (na_ret != NA_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not destroy context.");
+        ret = HG_FAIL;
+        return ret;
+    }
+
+    hg_bulk_na_class_g = NULL;
 
     /* Destroy mutex */
     hg_thread_mutex_destroy(&hg_bulk_request_mutex_g);
-    hg_thread_mutex_destroy(&hg_progress_mutex_g);
+    hg_thread_mutex_destroy(&hg_bulk_progress_mutex_g);
+    hg_thread_cond_destroy(&hg_bulk_progress_cond_g);
 
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_initialized(hg_bool_t *flag, na_class_t **network_class)
+HG_Bulk_initialized(hg_bool_t *flag, na_class_t **na_class)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -149,8 +173,8 @@ HG_Bulk_initialized(hg_bool_t *flag, na_class_t **network_class)
         return ret;
     }
 
-    *flag = (bulk_na_class != NULL);
-    if (network_class) *network_class = bulk_na_class;
+    *flag = (hg_bulk_na_class_g != NULL);
+    if (na_class) *na_class = hg_bulk_na_class_g;
 
     return HG_SUCCESS;
 }
@@ -205,7 +229,7 @@ HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
     }
     priv_handle->size_list[0] = priv_handle->total_size;
 
-    na_ret = NA_Mem_handle_create(bulk_na_class, buf, buf_size, na_flags,
+    na_ret = NA_Mem_handle_create(hg_bulk_na_class_g, buf, buf_size, na_flags,
             &priv_handle->mem_handle_list[0]);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("NA_Mem_handle_create failed");
@@ -213,7 +237,7 @@ HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
         goto done;
     }
 
-    na_ret = NA_Mem_register(bulk_na_class, priv_handle->mem_handle_list[0]);
+    na_ret = NA_Mem_register(hg_bulk_na_class_g, priv_handle->mem_handle_list[0]);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("NA_Mem_register failed");
         ret = HG_FAIL;
@@ -267,7 +291,7 @@ HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
     priv_handle->size_list = NULL;
 
     /* The underlying layer may support non-contiguous mem registration */
-    if (bulk_na_class->mem_handle_create_segments) {
+    if (hg_bulk_na_class_g->mem_handle_create_segments) {
         /* In this case we only need one single handle */
         priv_handle->count = 1;
         priv_handle->mem_handle_list =
@@ -285,7 +309,7 @@ HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
             goto done;
         }
 
-        na_ret = NA_Mem_handle_create_segments(bulk_na_class,
+        na_ret = NA_Mem_handle_create_segments(hg_bulk_na_class_g,
                 (struct na_segment *) bulk_segments, segment_count,
                 na_flags, &priv_handle->mem_handle_list[0]);
         if (na_ret != NA_SUCCESS) {
@@ -294,7 +318,7 @@ HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
             goto done;
         }
 
-        na_ret = NA_Mem_register(bulk_na_class,
+        na_ret = NA_Mem_register(hg_bulk_na_class_g,
                 priv_handle->mem_handle_list[0]);
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("NA_Mem_register failed");
@@ -328,7 +352,7 @@ HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
         for (i = 0; i < segment_count; i++) {
             priv_handle->mem_handle_list[i] = NA_MEM_HANDLE_NULL;
 
-            na_ret = NA_Mem_handle_create(bulk_na_class,
+            na_ret = NA_Mem_handle_create(hg_bulk_na_class_g,
                     (void *) bulk_segments[i].address, bulk_segments[i].size,
                     na_flags, &priv_handle->mem_handle_list[i]);
             if (na_ret != NA_SUCCESS) {
@@ -337,7 +361,7 @@ HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
                 goto done;
             }
 
-            na_ret = NA_Mem_register(bulk_na_class,
+            na_ret = NA_Mem_register(hg_bulk_na_class_g,
                     priv_handle->mem_handle_list[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_ERROR_DEFAULT("NA_Mem_register failed");
@@ -390,7 +414,7 @@ hg_bulk_handle_free(struct hg_bulk *priv_handle)
 
     if (priv_handle->registered) {
         for (i = 0; i < priv_handle->count; i++) {
-            na_ret = NA_Mem_deregister(bulk_na_class,
+            na_ret = NA_Mem_deregister(hg_bulk_na_class_g,
                     priv_handle->mem_handle_list[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_ERROR_DEFAULT("NA_Mem_deregister failed");
@@ -403,7 +427,7 @@ hg_bulk_handle_free(struct hg_bulk *priv_handle)
 
     for (i = 0; i < priv_handle->count; i++) {
         if (priv_handle->mem_handle_list[i] != NA_MEM_HANDLE_NULL) {
-            na_ret = NA_Mem_handle_free(bulk_na_class,
+            na_ret = NA_Mem_handle_free(hg_bulk_na_class_g,
                     priv_handle->mem_handle_list[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_ERROR_DEFAULT("NA_Mem_handle_free failed");
@@ -449,7 +473,7 @@ HG_Bulk_handle_get_serialize_size(hg_bulk_t handle)
         ret = sizeof(priv_handle->total_size) + sizeof(priv_handle->count)
                 + priv_handle->count * sizeof(size_t);
         for (i = 0; i < priv_handle->count; i++) {
-            ret += NA_Mem_handle_get_serialize_size(bulk_na_class,
+            ret += NA_Mem_handle_get_serialize_size(hg_bulk_na_class_g,
                     priv_handle->mem_handle_list[i]);
         }
     }
@@ -467,6 +491,8 @@ HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
     char *buf_ptr = (char*) buf;
     size_t buf_size_left = buf_size;
     size_t i;
+
+    /* TODO publish mem_handle if not registered yet */
 
     if (!priv_handle) {
         HG_ERROR_DEFAULT("NULL memory handle passed");
@@ -498,16 +524,16 @@ HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
     }
 
     for (i = 0; i < priv_handle->count; i++) {
-        na_ret = NA_Mem_handle_serialize(bulk_na_class, buf_ptr,
+        na_ret = NA_Mem_handle_serialize(hg_bulk_na_class_g, buf_ptr,
                 buf_size_left, priv_handle->mem_handle_list[i]);
         if (na_ret != NA_SUCCESS) {
             HG_ERROR_DEFAULT("Could not serialize memory handle");
             ret = HG_FAIL;
             break;
         }
-        buf_ptr += NA_Mem_handle_get_serialize_size(bulk_na_class,
+        buf_ptr += NA_Mem_handle_get_serialize_size(hg_bulk_na_class_g,
                 priv_handle->mem_handle_list[i]);
-        buf_size_left -= NA_Mem_handle_get_serialize_size(bulk_na_class,
+        buf_size_left -= NA_Mem_handle_get_serialize_size(hg_bulk_na_class_g,
                 priv_handle->mem_handle_list[i]);
     }
 
@@ -574,7 +600,7 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
         goto done;
     }
     for (i = 0; i < priv_handle->count; i++) {
-        na_ret = NA_Mem_handle_deserialize(bulk_na_class,
+        na_ret = NA_Mem_handle_deserialize(hg_bulk_na_class_g,
                 &priv_handle->mem_handle_list[i],
                 buf_ptr, buf_size_left);
         if (na_ret != NA_SUCCESS) {
@@ -582,9 +608,9 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
             ret = HG_FAIL;
             return ret;
         }
-        buf_ptr += NA_Mem_handle_get_serialize_size(bulk_na_class,
+        buf_ptr += NA_Mem_handle_get_serialize_size(hg_bulk_na_class_g,
                 priv_handle->mem_handle_list[i]);
-        buf_size_left -= NA_Mem_handle_get_serialize_size(bulk_na_class,
+        buf_size_left -= NA_Mem_handle_get_serialize_size(hg_bulk_na_class_g,
                 priv_handle->mem_handle_list[i]);
     }
 
@@ -633,7 +659,7 @@ HG_Bulk_block_handle_create(void *buf, size_t block_size, unsigned long flags,
     priv_block_handle->size = block_size;
     priv_block_handle->mem_handle = NA_MEM_HANDLE_NULL;
 
-    na_ret = NA_Mem_handle_create(bulk_na_class, buf, block_size, na_flags,
+    na_ret = NA_Mem_handle_create(hg_bulk_na_class_g, buf, block_size, na_flags,
             &priv_block_handle->mem_handle);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("NA_Mem_handle_create failed");
@@ -641,7 +667,7 @@ HG_Bulk_block_handle_create(void *buf, size_t block_size, unsigned long flags,
         return ret;
     }
 
-    na_ret = NA_Mem_register(bulk_na_class, priv_block_handle->mem_handle);
+    na_ret = NA_Mem_register(hg_bulk_na_class_g, priv_block_handle->mem_handle);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("NA_Mem_register failed");
         /* TODO Free mem handle */
@@ -668,14 +694,16 @@ HG_Bulk_block_handle_free(hg_bulk_block_t block_handle)
         return ret;
     }
 
-    na_ret = NA_Mem_deregister(bulk_na_class, priv_block_handle->mem_handle);
+    na_ret = NA_Mem_deregister(hg_bulk_na_class_g,
+            priv_block_handle->mem_handle);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not deregister block");
         ret = HG_FAIL;
         return ret;
     }
 
-    na_ret = NA_Mem_handle_free(bulk_na_class, priv_block_handle->mem_handle);
+    na_ret = NA_Mem_handle_free(hg_bulk_na_class_g,
+            priv_block_handle->mem_handle);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("NA_Mem_handle_free failed");
         ret = HG_FAIL;
@@ -827,7 +855,8 @@ HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
         transfer_size = (remaining_size < transfer_size) ? remaining_size
                 : transfer_size;
 
-        na_ret = NA_Put(bulk_na_class, &hg_bulk_write_cb, priv_bulk_request,
+        na_ret = NA_Put(hg_bulk_na_class_g, hg_bulk_context_g,
+                &hg_bulk_write_cb, priv_bulk_request,
                 priv_block_handle->mem_handle, local_offset,
                 priv_handle->mem_handle_list[i], remote_offset,
                 transfer_size, addr, NA_OP_ID_IGNORE);
@@ -957,7 +986,8 @@ HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
         transfer_size = (remaining_size < transfer_size) ?
                 remaining_size : transfer_size;
 
-        na_ret = NA_Get(bulk_na_class, &hg_bulk_read_cb, priv_bulk_request,
+        na_ret = NA_Get(hg_bulk_na_class_g, hg_bulk_context_g,
+                &hg_bulk_read_cb, priv_bulk_request,
                 priv_block_handle->mem_handle, local_offset,
                 priv_handle->mem_handle_list[i], remote_offset,
                 transfer_size, addr, NA_OP_ID_IGNORE);
@@ -1025,50 +1055,72 @@ HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
     }
 
     hg_thread_mutex_lock(&hg_bulk_request_mutex_g);
-
     completed = priv_bulk_request->completed;
-
     hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
 
+    hg_thread_mutex_lock(&hg_bulk_progress_mutex_g);
+
     while (!completed) {
-        hg_time_t t1, t2;
         na_return_t na_ret;
         int actual_count = 0;
-
-        hg_time_get_current(&t1);
-
-        /* Prevent concurrent trigger in handler */
-        hg_thread_mutex_lock(&hg_progress_mutex_g);
+        hg_time_t t3, t4;
 
         do {
-            na_ret = NA_Trigger(0, 1, &actual_count);
+            na_ret = NA_Trigger(hg_bulk_context_g, 0, 1, &actual_count);
         } while ((na_ret == NA_SUCCESS) && actual_count);
 
         hg_thread_mutex_lock(&hg_bulk_request_mutex_g);
-
         completed = priv_bulk_request->completed;
-
         hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
 
-        if (completed) {
-            hg_thread_mutex_unlock(&hg_progress_mutex_g);
-            break;
+        if (completed) break;
+
+        if (hg_bulk_progressing_g) {
+            hg_time_t t1, t2;
+
+            hg_time_get_current(&t1);
+
+            if (hg_thread_cond_timedwait(&hg_bulk_progress_cond_g,
+                    &hg_bulk_progress_mutex_g,
+                    (unsigned int) (remaining * 1000)) != HG_UTIL_SUCCESS) {
+                /* Timeout occurred so leave */
+                hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
+                goto done;
+            }
+
+            hg_time_get_current(&t2);
+            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            if (remaining < 0) {
+                hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
+                goto done;
+            }
+
+            /* Continue as request may have completed in the meantime */
+            continue;
         }
+        hg_bulk_progressing_g = HG_TRUE;
 
-        na_ret = NA_Progress(bulk_na_class, (unsigned int) (remaining * 1000));
-        if (na_ret == NA_TIMEOUT) {
-            hg_thread_mutex_unlock(&hg_progress_mutex_g);
-            goto done;
-        }
+        hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
 
-        hg_thread_mutex_unlock(&hg_progress_mutex_g);
+        hg_time_get_current(&t3);
 
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-        if (remaining < 0) {
+        na_ret = NA_Progress(hg_bulk_na_class_g, hg_bulk_context_g,
+                (unsigned int) (remaining * 1000));
+
+        hg_time_get_current(&t4);
+        remaining -= hg_time_to_double(hg_time_subtract(t4, t3));
+
+        hg_thread_mutex_lock(&hg_bulk_progress_mutex_g);
+        hg_bulk_progressing_g = HG_FALSE;
+        hg_thread_cond_signal(&hg_bulk_progress_cond_g);
+
+        if ((na_ret == NA_TIMEOUT) || remaining < 0) {
+            hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
             goto done;
         }
     }
+
+    hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
 
     free(priv_bulk_request);
     priv_bulk_request = NULL;
