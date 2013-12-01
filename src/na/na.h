@@ -15,14 +15,15 @@
 
 #include <limits.h>
 
-typedef struct na_class na_class_t; /* Opaque NA class */
-typedef void * na_addr_t;           /* Abstract NA address */
-typedef na_uint64_t na_size_t;      /* Size */
-typedef na_uint32_t na_tag_t;       /* Tag */
-typedef void * na_op_id_t;          /* Abstract operation id */
+typedef struct na_class na_class_t;     /* Opaque NA class */
+typedef struct na_context na_context_t; /* Opaque NA execution context */
+typedef void *na_addr_t;                /* Abstract NA address */
+typedef na_uint64_t na_size_t;          /* Size */
+typedef na_uint32_t na_tag_t;           /* Tag */
+typedef void *na_op_id_t;               /* Abstract operation id */
 
-typedef void * na_mem_handle_t;     /* Abstract memory handle */
-typedef na_uint64_t na_offset_t;    /* Offset */
+typedef void *na_mem_handle_t;          /* Abstract memory handle */
+typedef na_uint64_t na_offset_t;        /* Offset */
 
 /* Segment */
 struct na_segment {
@@ -114,10 +115,13 @@ extern "C" {
  *                              tcp@bmi://localhost:3344)
  * \param listen [IN]           listen for incoming connections
  *
- * \return Pointer to NA class
+ * \return Pointer to NA class or NULL in case of failure
  */
 NA_EXPORT na_class_t *
-NA_Initialize(const char *host_string, na_bool_t listen) NA_WARN_UNUSED_RESULT;
+NA_Initialize(
+        const char *host_string,
+        na_bool_t   listen
+        ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Finalize the network abstraction layer.
@@ -127,7 +131,35 @@ NA_Initialize(const char *host_string, na_bool_t listen) NA_WARN_UNUSED_RESULT;
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Finalize(na_class_t *na_class);
+NA_Finalize(
+        na_class_t *na_class
+        );
+
+/**
+ * Create a new context.
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return Pointer to NA context or NULL in case of failure
+ */
+NA_EXPORT na_context_t *
+NA_Context_create(
+        na_class_t *na_class
+        );
+
+/**
+ * Destroy a context created by using NA_Context_create().
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Context_destroy(
+        na_class_t   *na_class,
+        na_context_t *context
+        );
 
 /**
  * Lookup an addr from a peer address/name. Addresses need to be
@@ -135,6 +167,7 @@ NA_Finalize(na_class_t *na_class);
  * na_addr_t that contains addr ::na_cb_info_lookup
  *
  * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param name [IN]             lookup name
@@ -143,8 +176,14 @@ NA_Finalize(na_class_t *na_class);
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Addr_lookup(na_class_t *na_class, na_cb_t callback, void *arg,
-        const char *name, na_op_id_t *op_id);
+NA_Addr_lookup(
+        na_class_t   *na_class,
+        na_context_t *context,
+        na_cb_t       callback,
+        void         *arg,
+        const char   *name,
+        na_op_id_t   *op_id
+        );
 
 /**
  * For compatibility, temporarily provide this routine, which waits until
@@ -157,7 +196,11 @@ NA_Addr_lookup(na_class_t *na_class, na_cb_t callback, void *arg,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr);
+NA_Addr_lookup_wait(
+        na_class_t *na_class,
+        const char *name,
+        na_addr_t  *addr
+        );
 
 /**
  * Free the addr from the list of peers.
@@ -168,7 +211,10 @@ NA_Addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr);
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Addr_free(na_class_t *na_class, na_addr_t addr);
+NA_Addr_free(
+        na_class_t *na_class,
+        na_addr_t   addr
+        );
 
 /**
  * Convert an addr to a string (returned string includes the terminating
@@ -183,8 +229,12 @@ NA_Addr_free(na_class_t *na_class, na_addr_t addr);
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
-        na_addr_t addr);
+NA_Addr_to_string(
+        na_class_t *na_class,
+        char       *buf,
+        na_size_t   buf_size,
+        na_addr_t   addr
+        );
 
 /**
  * Get the maximum size of messages supported by expected send/recv.
@@ -195,7 +245,9 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
  * \return Non-negative value
  */
 NA_EXPORT na_size_t
-NA_Msg_get_max_expected_size(na_class_t *na_class) NA_WARN_UNUSED_RESULT;
+NA_Msg_get_max_expected_size(
+        na_class_t *na_class
+        ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Get the maximum size of messages supported by unexpected send/recv.
@@ -206,7 +258,9 @@ NA_Msg_get_max_expected_size(na_class_t *na_class) NA_WARN_UNUSED_RESULT;
  * \return Non-negative value
  */
 NA_EXPORT na_size_t
-NA_Msg_get_max_unexpected_size(na_class_t *na_class) NA_WARN_UNUSED_RESULT;
+NA_Msg_get_max_unexpected_size(
+        na_class_t *na_class
+        ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Get the maximum tag value that can be used by send/recv.
@@ -217,7 +271,9 @@ NA_Msg_get_max_unexpected_size(na_class_t *na_class) NA_WARN_UNUSED_RESULT;
  * \return Non-negative value
  */
 NA_EXPORT na_tag_t
-NA_Msg_get_max_tag(na_class_t *na_class) NA_WARN_UNUSED_RESULT;
+NA_Msg_get_max_tag(
+        na_class_t *na_class
+        ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Send an unexpected message to dest.
@@ -227,6 +283,7 @@ NA_Msg_get_max_tag(na_class_t *na_class) NA_WARN_UNUSED_RESULT;
  * is allowed to drop the message without notification.
  *
  * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
@@ -238,9 +295,17 @@ NA_Msg_get_max_tag(na_class_t *na_class) NA_WARN_UNUSED_RESULT;
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Msg_send_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
-        const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
-        na_op_id_t *op_id);
+NA_Msg_send_unexpected(
+        na_class_t   *na_class,
+        na_context_t *context,
+        na_cb_t       callback,
+        void         *arg,
+        const void   *buf,
+        na_size_t     buf_size,
+        na_addr_t     dest,
+        na_tag_t      tag,
+        na_op_id_t   *op_id
+        );
 
 /**
  * Receive an unexpected message.
@@ -248,6 +313,7 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
  * implementation.
  *
  * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
@@ -257,8 +323,15 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Msg_recv_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
-        void *buf, na_size_t buf_size, na_op_id_t *op_id);
+NA_Msg_recv_unexpected(
+        na_class_t   *na_class,
+        na_context_t *context,
+        na_cb_t       callback,
+        void         *arg,
+        void         *buf,
+        na_size_t     buf_size,
+        na_op_id_t   *op_id
+        );
 
 /**
  * Send an expected message to dest. Note that expected messages require
@@ -267,6 +340,7 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
  * notification.
  *
  * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
@@ -278,14 +352,23 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_cb_t callback, void *arg,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Msg_send_expected(na_class_t *na_class, na_cb_t callback, void *arg,
-        const void *buf, na_size_t buf_size, na_addr_t dest, na_tag_t tag,
-        na_op_id_t *op_id);
+NA_Msg_send_expected(
+        na_class_t   *na_class,
+        na_context_t *context,
+        na_cb_t       callback,
+        void         *arg,
+        const void   *buf,
+        na_size_t     buf_size,
+        na_addr_t     dest,
+        na_tag_t      tag,
+        na_op_id_t   *op_id
+        );
 
 /**
  * Receive an expected message from source.
  *
  * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to receive buffer
@@ -297,9 +380,17 @@ NA_Msg_send_expected(na_class_t *na_class, na_cb_t callback, void *arg,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Msg_recv_expected(na_class_t *na_class, na_cb_t callback, void *arg,
-        void *buf, na_size_t buf_size, na_addr_t source, na_tag_t tag,
-        na_op_id_t *op_id);
+NA_Msg_recv_expected(
+        na_class_t   *na_class,
+        na_context_t *context,
+        na_cb_t       callback,
+        void         *arg,
+        void         *buf,
+        na_size_t     buf_size,
+        na_addr_t     source,
+        na_tag_t      tag,
+        na_op_id_t   *op_id
+        );
 
 /**
  * Create memory handle for RMA operations.
@@ -316,8 +407,13 @@ NA_Msg_recv_expected(na_class_t *na_class, na_cb_t callback, void *arg,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
-        unsigned long flags, na_mem_handle_t *mem_handle);
+NA_Mem_handle_create(
+        na_class_t      *na_class,
+        void            *buf,
+        na_size_t        buf_size,
+        unsigned long    flags,
+        na_mem_handle_t *mem_handle
+        );
 
 /**
  * Create memory handle for RMA operations.
@@ -339,9 +435,13 @@ NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
-        na_size_t segment_count, unsigned long flags,
-        na_mem_handle_t *mem_handle);
+NA_Mem_handle_create_segments(
+        na_class_t        *na_class,
+        struct na_segment *segments,
+        na_size_t          segment_count,
+        unsigned long      flags,
+        na_mem_handle_t   *mem_handle
+        );
 
 /**
  * Free memory handle.
@@ -352,7 +452,10 @@ NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
+NA_Mem_handle_free(
+        na_class_t      *na_class,
+        na_mem_handle_t  mem_handle
+        );
 
 /**
  * Register memory for RMA operations.
@@ -365,7 +468,10 @@ NA_Mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle);
+NA_Mem_register(
+        na_class_t      *na_class,
+        na_mem_handle_t  mem_handle
+        );
 
 /**
  * Unregister memory.
@@ -376,7 +482,10 @@ NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle);
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle);
+NA_Mem_deregister(
+        na_class_t      *na_class,
+        na_mem_handle_t  mem_handle
+        );
 
 /**
  * Get size required to serialize handle.
@@ -387,8 +496,10 @@ NA_Mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle);
  * \return Non-negative value
  */
 NA_EXPORT na_size_t
-NA_Mem_handle_get_serialize_size(na_class_t *na_class,
-        na_mem_handle_t mem_handle) NA_WARN_UNUSED_RESULT;
+NA_Mem_handle_get_serialize_size(
+        na_class_t      *na_class,
+        na_mem_handle_t  mem_handle
+        ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Serialize memory handle into a buffer.
@@ -407,8 +518,12 @@ NA_Mem_handle_get_serialize_size(na_class_t *na_class,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
-        na_mem_handle_t mem_handle);
+NA_Mem_handle_serialize(
+        na_class_t      *na_class,
+        void            *buf,
+        na_size_t        buf_size,
+        na_mem_handle_t  mem_handle
+        );
 
 /**
  * Deserialize memory handle from buffer.
@@ -421,8 +536,12 @@ NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
-        const void *buf, na_size_t buf_size);
+NA_Mem_handle_deserialize(
+        na_class_t      *na_class,
+        na_mem_handle_t *mem_handle,
+        const void      *buf,
+        na_size_t        buf_size
+        );
 
 /**
  * Put data to remote target.
@@ -431,6 +550,7 @@ NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
  * NB. Memory must be registered and handles exchanged between peers.
  *
  * \param na_class [IN]          pointer to NA class
+ * \param context [IN]           pointer to context of execution
  * \param callback [IN]          pointer to function callback
  * \param arg [IN]               pointer to data passed to callback
  * \param local_mem_handle [IN]  abstract local memory handle
@@ -444,15 +564,25 @@ NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Put(na_class_t *na_class, na_cb_t callback, void *arg,
-        na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-        na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id);
+NA_Put(
+        na_class_t      *na_class,
+        na_context_t    *context,
+        na_cb_t          callback,
+        void            *arg,
+        na_mem_handle_t  local_mem_handle,
+        na_offset_t      local_offset,
+        na_mem_handle_t  remote_mem_handle,
+        na_offset_t      remote_offset,
+        na_size_t        data_size,
+        na_addr_t        remote_addr,
+        na_op_id_t      *op_id
+        );
 
 /**
  * Get data from remote target.
  *
  * \param na_class [IN]          pointer to NA class
+ * \param context [IN]           pointer to context of execution
  * \param callback [IN]          pointer to function callback
  * \param arg [IN]               pointer to data passed to callback
  * \param local_mem_handle [IN]  abstract local memory handle
@@ -466,28 +596,44 @@ NA_Put(na_class_t *na_class, na_cb_t callback, void *arg,
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Get(na_class_t *na_class, na_cb_t callback, void *arg,
-        na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-        na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id);
+NA_Get(
+        na_class_t      *na_class,
+        na_context_t    *context,
+        na_cb_t          callback,
+        void            *arg,
+        na_mem_handle_t  local_mem_handle,
+        na_offset_t      local_offset,
+        na_mem_handle_t  remote_mem_handle,
+        na_offset_t      remote_offset,
+        na_size_t        data_size,
+        na_addr_t        remote_addr,
+        na_op_id_t      *op_id
+        );
 
 /**
  * Try to progress communication for at most timeout until timeout reached or
  * any completion has occurred.
  *
  * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
  * \param timeout [IN]          timeout (in milliseconds)
  *
  * \return NA_SUCCESS if any completion has occurred / NA error code otherwise
  */
 NA_EXPORT na_return_t
-NA_Progress(na_class_t *na_class, unsigned int timeout);
+NA_Progress(
+        na_class_t   *na_class,
+        na_context_t *context,
+        unsigned int  timeout
+        );
 
 /**
  * Execute at most max_count callbacks. If timeout is non-zero, wait up to
  * timeout before returning. Function can return when at least one or more
  * callbacks are triggered (at most max_count).
  *
+ * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
  * \param timeout [IN]          timeout (in milliseconds)
  * \param max_count [IN]        maximum number of callbacks triggered
  * \param max_count [IN]        actual number of callbacks triggered
@@ -495,18 +641,28 @@ NA_Progress(na_class_t *na_class, unsigned int timeout);
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Trigger(unsigned int timeout, unsigned int max_count, int *actual_count);
+NA_Trigger(
+        na_context_t *context,
+        unsigned int  timeout,
+        unsigned int  max_count,
+        int          *actual_count
+        );
 
 /**
  * Cancel an ongoing operation.
  *
  * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
  * \param op_id [IN]            operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_EXPORT na_return_t
-NA_Cancel(na_class_t *na_class, na_op_id_t op_id);
+NA_Cancel(
+        na_class_t   *na_class,
+        na_context_t *context,
+        na_op_id_t    op_id
+        );
 
 /**
  * Convert error return code to string (null terminated).
@@ -516,7 +672,9 @@ NA_Cancel(na_class_t *na_class, na_op_id_t op_id);
  * \return String
  */
 NA_EXPORT const char *
-NA_Error_to_string(na_return_t errnum) NA_WARN_UNUSED_RESULT;
+NA_Error_to_string(
+        na_return_t errnum
+        ) NA_WARN_UNUSED_RESULT;
 
 #ifdef __cplusplus
 }
