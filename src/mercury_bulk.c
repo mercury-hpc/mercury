@@ -497,14 +497,17 @@ HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
     }
 
     /* Register handle at this point if not registered yet */
-    for (i = 0; i < priv_handle->segment_count; i++) {
-        na_ret = NA_Mem_register(hg_bulk_na_class_g,
-                priv_handle->segment_handles[i]);
-        if (na_ret != NA_SUCCESS) {
-            HG_ERROR_DEFAULT("NA_Mem_register failed");
-            ret = HG_FAIL;
-            goto done;
+    if (!priv_handle->registered) {
+        for (i = 0; i < priv_handle->segment_count; i++) {
+            na_ret = NA_Mem_register(hg_bulk_na_class_g,
+                    priv_handle->segment_handles[i]);
+            if (na_ret != NA_SUCCESS) {
+                HG_ERROR_DEFAULT("NA_Mem_register failed");
+                ret = HG_FAIL;
+                goto done;
+            }
         }
+        priv_handle->registered = HG_TRUE;
     }
 
     if (buf_size < HG_Bulk_handle_get_serialize_size(handle)) {
