@@ -158,7 +158,8 @@ struct ssm_msg_recv_unexpected {
 struct na_ssm_opid {
   na_cb_type_t        requesttype;
   na_cb_t             user_callback;
-  void               *user_context;
+  na_context_t       *user_context;
+  void               *user_arg;
   struct na_ssm_private_data *ssm_data;
   struct na_cb_info  *cbinfo;
   ssm_tx              transaction;

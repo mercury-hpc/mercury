@@ -14,16 +14,6 @@
  * and not removed from under the cancel request.
  */
 
-/**
- * API Order in the file:
- *  - Send Unexpected
- *  - Recv Unexpected
- *  - Send Expected
- *  - Recv Expected
- *  - Put
- *  - Register
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -64,7 +54,16 @@ static na_return_t
 na_ssm_finalize(na_class_t *in_na_class);
 
 static na_return_t
+na_ssm_context_create(na_class_t *in_na_class,
+                      na_plugin_context_t *in_plugin_context);
+
+static na_return_t
+na_ssm_context_destroy(na_class_t *in_na_class,
+                      na_plugin_context_t in_plugin_context);
+
+static na_return_t
 na_ssm_addr_lookup(na_class_t   *in_na_class,
+                   na_context_t *in_context,
                    na_cb_t       in_callback,
                    void         *in_arg,
                    const char   *in_name,
@@ -91,6 +90,7 @@ na_ssm_msg_get_maximum_tag(na_class_t  *in_na_class);
 
 static na_return_t
 na_ssm_msg_send_unexpected(na_class_t     *in_na_class,
+                           na_context_t *in_context,
                            na_cb_t         in_callback,
                            void           *in_arg,
                            const void     *in_buf,
@@ -101,6 +101,7 @@ na_ssm_msg_send_unexpected(na_class_t     *in_na_class,
 
 static na_return_t
 na_ssm_msg_recv_unexpected(na_class_t     *in_na_class,
+                           na_context_t *in_context,
                            na_cb_t         in_callback,
                            void           *in_user_context,
                            void           *in_buf,
@@ -109,6 +110,7 @@ na_ssm_msg_recv_unexpected(na_class_t     *in_na_class,
 
 static na_return_t
 na_ssm_msg_send_expected(na_class_t  *in_na_class,
+                         na_context_t *in_context,
                          na_cb_t      in_callback,
                          void        *in_user_context,
                          const void  *in_buf,
@@ -119,8 +121,9 @@ na_ssm_msg_send_expected(na_class_t  *in_na_class,
 
 static na_return_t
 na_ssm_msg_recv_expected(na_class_t     *in_na_class,
+                         na_context_t *in_context,
                          na_cb_t         in_callback,
-                         void           *in_context,
+                         void           *in_arg,
                          void           *in_buf,
                          na_size_t       in_buf_size,
                          na_addr_t       in_source,
@@ -164,8 +167,9 @@ na_ssm_mem_handle_deserialize(na_class_t      *in_na_class,
 
 static na_return_t
 na_ssm_put(na_class_t         *in_na_class,
+           na_context_t *in_context,
            na_cb_t             in_callback,
-           void               *in_context,
+           void               *in_arg,
            na_mem_handle_t     in_local_mem_handle,
            na_offset_t         in_local_offset,
            na_mem_handle_t     in_remote_mem_handle,
@@ -176,8 +180,9 @@ na_ssm_put(na_class_t         *in_na_class,
 
 static na_return_t
 na_ssm_get(na_class_t         *in_na_class,
+           na_context_t *in_context,
            na_cb_t             in_callback,
-           void               *in_context,
+           void               *in_arg,
            na_mem_handle_t     in_local_mem_handle,
            na_offset_t         in_local_offset,
            na_mem_handle_t     in_remote_mem_handle,
@@ -188,10 +193,12 @@ na_ssm_get(na_class_t         *in_na_class,
 
 static na_return_t
 na_ssm_progress(na_class_t     *in_na_class,
+                na_context_t *in_context,
                 unsigned int    in_timeout);
 
 static na_return_t
 na_ssm_cancel(na_class_t    *in_na_class,
+              na_context_t *in_context,
               na_op_id_t     in_opid);
 
 /* Callbacks */
@@ -373,6 +380,8 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
 
     /* NA class functions */
     ssm_class->finalize                    = na_ssm_finalize;
+    ssm_class->context_create              = na_ssm_context_create;
+    ssm_class->context_destroy             = na_ssm_context_destroy;
     ssm_class->addr_lookup                 = na_ssm_addr_lookup;
     ssm_class->addr_free                   = na_ssm_addr_free;
     ssm_class->addr_to_string              = na_ssm_addr_to_string;
@@ -591,16 +600,6 @@ na_ssm_finalize(na_class_t *in_na_class)
     
     NA_LOG_DEBUG("Enter.\n");
 
-    /* If we cannot stop ssm instance, we better do not proceed with
-     * releasing resources which may be in use by SSM.
-     */
-    ret = ssm_stop(ssm_data->ssm);
-    if (ret < 0)
-    {
-        NA_LOG_ERROR("Failed to stop SSM instance. Error: %d.\n", ret);
-        return ret;
-    }
-
     for (i = 0; i < NA_SSM_UNEXPECTED_BUFFERCOUNT; ++i)
     {
         buffer = hg_queue_pop_head(ssm_data->unexpected_msg_complete_queue);
@@ -625,7 +624,17 @@ na_ssm_finalize(na_class_t *in_na_class)
             free(buffer);
         }
     }
-    
+
+    /* If we cannot stop ssm instance, we better do not proceed with
+     * releasing resources which may be in use by SSM.
+     */
+    ret = ssm_stop(ssm_data->ssm);
+    if (ret < 0)
+    {
+        NA_LOG_ERROR("Failed to stop SSM instance. Error: %d.\n", ret);
+        return ret;
+    }
+
     hg_queue_free(ssm_data->opid_wait_queue);
     hg_queue_free(ssm_data->unexpected_msg_queue);
     hg_queue_free(ssm_data->unexpected_msg_complete_queue);
@@ -641,6 +650,35 @@ na_ssm_finalize(na_class_t *in_na_class)
 }
 
 /**
+ * Create context for NA
+ *
+ * @param  in_na_class
+ * @param  in_plugin_context
+ * @return na_return_t
+ */
+static na_return_t
+na_ssm_context_create(na_class_t *in_na_class,
+                      na_plugin_context_t *in_plugin_context)
+{
+    in_plugin_context = NULL;
+    return NA_SUCCESS;
+}
+
+/**
+ * Destroy context for NA
+ *
+ * @param  in_na_class
+ * @param  in_plugin_context
+ * @return na_return_t
+ */
+static na_return_t
+na_ssm_context_destroy(na_class_t *in_na_class,
+                       na_plugin_context_t in_plugin_context)
+{
+    return NA_SUCCESS;
+}
+
+/**
  * Look up an address from the input address buffer.
  *
  * @param   in_na_class
@@ -652,6 +690,7 @@ na_ssm_finalize(na_class_t *in_na_class)
  */
 static na_return_t
 na_ssm_addr_lookup(na_class_t  *in_na_class,
+                   na_context_t *in_context,
                    na_cb_t      in_callback,
                    void        *in_arg,
                    const char  *in_name,
@@ -715,10 +754,11 @@ na_ssm_addr_lookup(na_class_t  *in_na_class,
     
     ssm_opid->requesttype = NA_CB_LOOKUP;
     
-    ret = na_cb_completion_add(in_callback,
+    ret = na_cb_completion_add(in_context,
+                               in_callback,
                                cbinfo,
                                na_ssm_addr_lookup_release,
-                               ssm_opid);
+                               (void *) ssm_opid);
 
     if (ret != NA_SUCCESS)
     {
@@ -842,8 +882,9 @@ na_ssm_msg_get_maximum_tag(na_class_t NA_UNUSED *in_na_class)
  */
 static na_return_t
 na_ssm_msg_send_unexpected(na_class_t    *in_na_class,
+                           na_context_t  *in_context,
                            na_cb_t        in_callback,
-                           void          *in_context,
+                           void          *in_arg,
                            const void    *in_buf,
                            na_size_t      in_buf_size,
                            na_addr_t      in_destination,
@@ -872,6 +913,7 @@ na_ssm_msg_send_unexpected(na_class_t    *in_na_class,
     
     ssm_opid->requesttype = NA_CB_SEND_UNEXPECTED;
     ssm_opid->user_callback = in_callback;
+    ssm_opid->user_arg = in_arg;
     ssm_opid->user_context = in_context;
     ssm_opid->ssm_data = ssm_data;
     ssm_opid->ssm_callback.pcb = na_ssm_unexpected_msg_send_callback;
@@ -973,13 +1015,14 @@ na_ssm_unexpected_msg_send_callback(void *in_context,
         NA_LOG_ERROR("Protocol Error: %d.\n", v_result->status);
     }
 
-    v_cbinfo->arg = v_ssm_opid->user_context;
+    v_cbinfo->arg = v_ssm_opid->user_arg;
     v_cbinfo->ret = ret;
     
-    ret = na_cb_completion_add(v_ssm_opid->user_callback,
+    ret = na_cb_completion_add(v_ssm_opid->user_context,
+                               v_ssm_opid->user_callback,
                                v_cbinfo,
                                na_ssm_unexpected_msg_send_release,
-                               v_ssm_opid);
+                               (void *) v_ssm_opid);
 
     if (ret != NA_SUCCESS)
     {
@@ -1027,8 +1070,9 @@ na_ssm_unexpected_msg_send_release(struct na_cb_info *in_info,
  */
 static na_return_t
 na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
+                           na_context_t *in_context,
                            na_cb_t          in_callback,
-                           void            *in_context,
+                           void            *in_arg,
                            void            *in_buf,
                            na_size_t        in_buf_size,
                            na_op_id_t      *out_opid)
@@ -1052,6 +1096,7 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
     ssm_opid->requesttype = NA_CB_RECV_UNEXPECTED;
     ssm_opid->user_callback = in_callback;
     ssm_opid->user_context = in_context;
+    ssm_opid->user_arg = in_arg;
     ssm_opid->ssm_data = ssm_data;
     ssm_opid->transaction = NULL;
     ssm_opid->status = SSM_STATUS_INVALID;
@@ -1099,7 +1144,7 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
             goto done;
         }
         
-        cbinfo->arg = in_context;
+        cbinfo->arg = in_arg;
         cbinfo->ret = ssm_opid->result;
         cbinfo->type = ssm_opid->requesttype;
         cbinfo->info.recv_unexpected.actual_buf_size = buffer->bytes;
@@ -1108,7 +1153,8 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
         
         (*out_opid) = (na_op_id_t *) ssm_opid;
         
-        ret = na_cb_completion_add(in_callback,
+        ret = na_cb_completion_add(in_context,
+                                   in_callback,
                                    cbinfo,
                                    na_ssm_msg_recv_unexpected_release,
                                    ssm_opid);
@@ -1227,7 +1273,7 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
             goto done;
         }
 
-        cbinfo->arg = ssm_opid->user_context;
+        cbinfo->arg = ssm_opid->user_arg;
         cbinfo->ret = ssm_opid->result;
         cbinfo->type = ssm_opid->requesttype;
 
@@ -1235,7 +1281,8 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
         cbinfo->info.recv_unexpected.source = addr;
         cbinfo->info.recv_unexpected.tag = result->bits;
 
-        ret = na_cb_completion_add(ssm_opid->user_callback,
+        ret = na_cb_completion_add(ssm_opid->user_context,
+                                   ssm_opid->user_callback,
                                    cbinfo,
                                    na_ssm_msg_recv_unexpected_release,
                                    ssm_opid);
@@ -1281,6 +1328,7 @@ na_ssm_msg_recv_unexpected_release(struct na_cb_info  *in_info,
  */
 static na_return_t
 na_ssm_msg_send_expected(na_class_t   *in_na_class,
+                         na_context_t *in_context,
                          na_cb_t       in_callback,
                          void         *in_arg,
                          const void   *in_buf,
@@ -1308,7 +1356,8 @@ na_ssm_msg_send_expected(na_class_t   *in_na_class,
 
     ssm_opid->requesttype = NA_CB_SEND_EXPECTED;
     ssm_opid->user_callback = in_callback;
-    ssm_opid->user_context = in_arg;
+    ssm_opid->user_arg = in_arg;
+    ssm_opid->user_context = in_context;
     ssm_opid->ssm_data = ssm_data;
     ssm_opid->ssm_callback.pcb = na_ssm_msg_send_expected_callback;
     ssm_opid->ssm_callback.cbdata = ssm_opid;
@@ -1395,11 +1444,12 @@ na_ssm_msg_send_expected_callback(void *in_context,
         goto done;
     }
 
-    cbinfo->arg = v_ssm_opid->user_context;
+    cbinfo->arg = v_ssm_opid->user_arg;
     cbinfo->ret = v_ssm_opid->result;
     cbinfo->type = v_ssm_opid->requesttype;
     
-    ret = na_cb_completion_add(v_ssm_opid->user_callback,
+    ret = na_cb_completion_add(v_ssm_opid->user_context,
+                               v_ssm_opid->user_callback,
                                cbinfo,
                                na_ssm_msg_send_expected_release,
                                v_ssm_opid);
@@ -1448,8 +1498,9 @@ na_ssm_msg_send_expected_release(struct na_cb_info  *in_info,
  */
 static na_return_t
 na_ssm_msg_recv_expected(na_class_t     *in_na_class,
+                         na_context_t *in_context,
                          na_cb_t         in_callback,
-                         void           *in_context,
+                         void           *in_arg,
                          void           *in_buf,
                          na_size_t       in_buf_size,
                          na_addr_t       NA_UNUSED in_source,
@@ -1475,6 +1526,7 @@ na_ssm_msg_recv_expected(na_class_t     *in_na_class,
     v_ssm_opid->requesttype   = NA_CB_RECV_EXPECTED;
     v_ssm_opid->user_callback = in_callback;
     v_ssm_opid->user_context  = in_context;
+    v_ssm_opid->user_arg = in_arg;
     v_ssm_opid->ssm_data = v_data;
     
     /* Register Memory */
@@ -1580,11 +1632,12 @@ na_ssm_msg_recv_expected_callback(void *in_context,
         goto done;
     }
 
-    cbinfo->arg = v_ssm_opid->user_context;
+    cbinfo->arg = v_ssm_opid->user_arg;
     cbinfo->ret = v_ssm_opid->result;
     cbinfo->type = v_ssm_opid->requesttype;
     
-    ret = na_cb_completion_add(v_ssm_opid->user_callback,
+    ret = na_cb_completion_add(v_ssm_opid->user_context,
+                               v_ssm_opid->user_callback,
                                cbinfo,
                                na_ssm_msg_recv_release,
                                v_ssm_opid);
@@ -1914,8 +1967,9 @@ na_ssm_mem_handle_free(na_class_t     NA_UNUSED *in_na_class,
  */
 static na_return_t
 na_ssm_put(na_class_t        *in_na_class,
+           na_context_t *in_context,
            na_cb_t            in_callback,
-           void              *in_context,
+           void              *in_arg,
            na_mem_handle_t    in_local_mem_handle,
            na_offset_t       NA_UNUSED  in_local_offset,
            na_mem_handle_t   NA_UNUSED  in_remote_mem_handle,
@@ -1946,6 +2000,7 @@ na_ssm_put(na_class_t        *in_na_class,
 
     v_opid->requesttype = NA_CB_PUT;
     v_opid->user_callback = in_callback;
+    v_opid->user_arg = in_arg;
     v_opid->user_context = in_context;
     v_opid->ssm_data = v_data;
     v_opid->ssm_callback.pcb = na_ssm_put_callback;
@@ -2008,11 +2063,12 @@ na_ssm_put_callback(void *in_context,
         NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
     }
 
-    cbinfo->arg = v_ssm_opid->user_context;
+    cbinfo->arg = v_ssm_opid->user_arg;
     cbinfo->ret = NA_SUCCESS;
     cbinfo->type = v_ssm_opid->requesttype;
     
-    ret = na_cb_completion_add(v_ssm_opid->user_callback,
+    ret = na_cb_completion_add(v_ssm_opid->user_context,
+                               v_ssm_opid->user_callback,
                                cbinfo,
                                na_ssm_put_release,
                                v_ssm_opid);
@@ -2048,8 +2104,9 @@ na_ssm_put_release(struct na_cb_info *in_info,
  */
 static na_return_t
 na_ssm_get(na_class_t        *in_na_class,
+           na_context_t *in_context,
            na_cb_t            in_callback,
-           void              *in_context,
+           void              *in_arg,
            na_mem_handle_t    in_local_mem_handle,
            na_offset_t        in_local_offset,
            na_mem_handle_t    in_remote_mem_handle,
@@ -2104,7 +2161,8 @@ na_ssm_get(na_class_t        *in_na_class,
 
     v_ssm_opid->requesttype     = NA_CB_GET;
     v_ssm_opid->user_callback   = in_callback;
-    v_ssm_opid->user_context    = in_context;
+    v_ssm_opid->user_arg    = in_arg;
+    v_ssm_opid->user_context = in_context;
     v_ssm_opid->ssm_data        = v_data;
 
     v_ssm_opid->info.get.memregion = v_local_mr;
@@ -2179,13 +2237,14 @@ na_ssm_get_callback(void *in_context,
         goto done;
     }
 
-    cbinfo->arg = v_ssm_opid->user_context;
+    cbinfo->arg = v_ssm_opid->user_arg;
     cbinfo->ret = v_ssm_opid->result;
     cbinfo->type = v_ssm_opid->requesttype;
     
     /* Add the request to the callback queue. This API should never fail.
      */
-    ret = na_cb_completion_add(v_ssm_opid->user_callback,
+    ret = na_cb_completion_add(v_ssm_opid->user_context,
+                               v_ssm_opid->user_callback,
                                cbinfo,
                                na_ssm_get_release,
                                v_ssm_opid);
@@ -2228,6 +2287,7 @@ na_ssm_get_release(struct na_cb_info *in_info,
  */
 static na_return_t
 na_ssm_progress(na_class_t    *in_na_class,
+                na_context_t  NA_UNUSED *in_context,
                 unsigned int   NA_UNUSED in_timeout)
 {
     struct timeval              v_tv;
@@ -2271,6 +2331,7 @@ na_ssm_progress(na_class_t    *in_na_class,
  */
 static na_return_t
 na_ssm_cancel(na_class_t    *in_na_class,
+              na_context_t NA_UNUSED *in_context,
               na_op_id_t     in_opid)
 {
     struct na_ssm_private_data *v_data = NA_SSM_PRIVATE_DATA(in_na_class);
