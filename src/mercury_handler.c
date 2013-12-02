@@ -231,7 +231,7 @@ static hg_return_t
 hg_handler_process_extra_recv_buf(struct hg_handle *priv_handle,
         hg_bulk_t extra_buf_handle)
 {
-    hg_bulk_block_t extra_buf_block_handle = HG_BULK_BLOCK_NULL;
+    hg_bulk_t extra_buf_block_handle = HG_BULK_NULL;
     hg_bulk_request_t extra_buf_request;
     hg_return_t ret = HG_SUCCESS;
 
@@ -244,7 +244,7 @@ hg_handler_process_extra_recv_buf(struct hg_handle *priv_handle,
         goto done;
     }
 
-    ret = HG_Bulk_block_handle_create(priv_handle->extra_recv_buf,
+    ret = HG_Bulk_handle_create(priv_handle->extra_recv_buf,
             priv_handle->extra_recv_buf_size, HG_BULK_READWRITE,
             &extra_buf_block_handle);
     if (ret != HG_SUCCESS) {
@@ -270,16 +270,16 @@ hg_handler_process_extra_recv_buf(struct hg_handle *priv_handle,
     }
 
 done:
-    if (extra_buf_block_handle != HG_BULK_BLOCK_NULL) {
-        ret = HG_Bulk_block_handle_free(extra_buf_block_handle);
+    if (extra_buf_block_handle != HG_BULK_NULL) {
+        ret = HG_Bulk_handle_free(extra_buf_block_handle);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not free block handle");
             ret = HG_FAIL;
         }
-        extra_buf_block_handle = HG_BULK_BLOCK_NULL;
+        extra_buf_block_handle = HG_BULK_NULL;
     }
 
-    if (extra_buf_handle != HG_BULK_BLOCK_NULL) {
+    if (extra_buf_handle != HG_BULK_NULL) {
         ret = HG_Bulk_handle_free(extra_buf_handle);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not free bulk handle");

@@ -119,7 +119,7 @@ bla_write_rpc(hg_handle_t handle)
 
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bla_write_bulk_handle = HG_BULK_NULL;
-    hg_bulk_block_t bla_write_bulk_block_handle;
+    hg_bulk_t bla_write_bulk_block_handle;
     hg_bulk_request_t bla_write_bulk_request;
     size_t bla_write_nbytes;
 
@@ -142,7 +142,7 @@ bla_write_rpc(hg_handle_t handle)
 #ifdef TRANSFER_BULK_DATA
     bla_write_buf = malloc(bla_write_nbytes);
 
-    HG_Bulk_block_handle_create(bla_write_buf, bla_write_nbytes,
+    HG_Bulk_handle_create(bla_write_buf, bla_write_nbytes,
             HG_BULK_READWRITE, &bla_write_bulk_block_handle);
 
     ret = HG_Bulk_read_all(source, bla_write_bulk_handle,
@@ -162,7 +162,7 @@ bla_write_rpc(hg_handle_t handle)
     bla_write_check(bla_write_buf, bla_write_nbytes);
 
     /* Free block handles */
-    ret = HG_Bulk_block_handle_free(bla_write_bulk_block_handle);
+    ret = HG_Bulk_handle_free(bla_write_bulk_block_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free block call\n");
         return ret;
@@ -321,7 +321,7 @@ main(int argc, char *argv[])
 
         hg_thread_mutex_lock(&finalizing_mutex);
 
-        finalizing = (finalizing_count == number_of_peers);
+        finalizing = (finalizing_count);
 
         hg_thread_mutex_unlock(&finalizing_mutex);
     }

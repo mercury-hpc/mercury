@@ -134,42 +134,6 @@ HG_EXPORT hg_return_t
 HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size);
 
 /**
- * Create abstract bulk block handle from buffer (register memory, etc).
- *
- * \param buf [IN]              pointer to buffer
- * \param buf_size [IN]         buffer size
- * \param flags [IN]            permission flag:
- *                                - HG_BULK_READWRITE
- *                                - HG_BULK_READ_ONLY
- * \param handle [OUT]          pointer to returned abstract bulk block handle
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Bulk_block_handle_create(void *buf, size_t buf_size, unsigned long flags,
-        hg_bulk_block_t *handle);
-
-/**
- * Free bulk block handle.
- *
- * \param handle [IN/OUT]       abstract bulk block handle
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Bulk_block_handle_free(hg_bulk_block_t block_handle);
-
-/**
- * Get size of data associated to abstract bulk block handle.
- *
- * \param handle [IN]           abstract bulk block handle
- *
- * \return Non-negative value
- */
-HG_EXPORT size_t
-HG_Bulk_block_handle_get_size(hg_bulk_block_t handle);
-
-/**
  * Write data to remote address using abstract bulk and bulk block handles.
  *
  * \param addr [IN]             abstract network address of destination
@@ -184,7 +148,7 @@ HG_Bulk_block_handle_get_size(hg_bulk_block_t handle);
  */
 HG_EXPORT hg_return_t
 HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
-        hg_bulk_block_t block_handle, size_t block_offset, size_t block_size,
+        hg_bulk_t block_handle, size_t block_offset, size_t block_size,
         hg_bulk_request_t *bulk_request);
 
 /**
@@ -200,7 +164,7 @@ HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
  */
 HG_EXPORT hg_return_t
 HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
-        hg_bulk_block_t block_handle, hg_bulk_request_t *bulk_request);
+        hg_bulk_t block_handle, hg_bulk_request_t *bulk_request);
 
 /**
  * Read data from remote address using abstract bulk and bulk block handles.
@@ -217,7 +181,7 @@ HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
  */
 HG_EXPORT hg_return_t
 HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
-        hg_bulk_block_t block_handle, size_t block_offset, size_t block_size,
+        hg_bulk_t block_handle, size_t block_offset, size_t block_size,
         hg_bulk_request_t *bulk_request);
 
 /**
@@ -233,7 +197,7 @@ HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
  */
 HG_EXPORT hg_return_t
 HG_Bulk_read_all(na_addr_t addr, hg_bulk_t bulk_handle,
-        hg_bulk_block_t block_handle, hg_bulk_request_t *bulk_request);
+        hg_bulk_t block_handle, hg_bulk_request_t *bulk_request);
 
 /**
  * Wait for a bulk operation request to complete.

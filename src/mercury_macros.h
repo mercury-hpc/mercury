@@ -169,7 +169,7 @@ static HG_INLINE hg_return_t \
 #define HG_BULK_PARAM ((hg_bulk_t)(bulk_handle))
 
 /* Bulk block parameter */
-#define HG_BULK_BLOCK_PARAM ((hg_bulk_block_t)(bulk_block_handle))
+#define HG_BULK_BLOCK_PARAM ((hg_bulk_t)(bulk_block_handle))
 
 /* Bulk request parameter */
 #define HG_BULK_REQUEST_PARAM ((hg_bulk_request_t)(bulk_request))
@@ -229,14 +229,14 @@ static HG_INLINE hg_return_t \
             HG_Bulk_handle_get_size(HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_PARAM))); \
         HG_GEN_GET_NAME(BOOST_PP_SEQ_ELEM(0, HG_BULK_EXTRA_IN_PARAM)) = \
             malloc(HG_GEN_GET_NAME(BOOST_PP_SEQ_ELEM(1, HG_BULK_EXTRA_IN_PARAM))); \
-        HG_Bulk_block_handle_create(BOOST_PP_TUPLE_REM(2) \
+        HG_Bulk_handle_create(BOOST_PP_TUPLE_REM(2) \
                 BOOST_PP_SEQ_TO_TUPLE(HG_GEN_FUNC_PARAM_SEQ(MERCURY_GEN_FALSE, HG_BULK_EXTRA_IN_PARAM)), \
                 HG_BULK_READWRITE, \
                 &HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_BLOCK_PARAM)));
 
 /* Free block handle */
 #define HG_BULK_BLOCK_FREE \
-        hg_ret = HG_Bulk_block_handle_free( \
+        hg_ret = HG_Bulk_handle_free( \
                 HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_BLOCK_PARAM))); \
         if (hg_ret != HG_SUCCESS) { \
             HG_ERROR_DEFAULT("Could not free block call"); \

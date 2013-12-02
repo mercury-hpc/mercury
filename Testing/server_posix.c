@@ -125,7 +125,7 @@ hg_return_t server_posix_write(hg_handle_t handle)
 
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    hg_bulk_block_t bulk_block_handle = HG_BULK_BLOCK_NULL;
+    hg_bulk_t bulk_block_handle = HG_BULK_NULL;
     hg_bulk_request_t bulk_request;
 
     int fd;
@@ -151,7 +151,7 @@ hg_return_t server_posix_write(hg_handle_t handle)
     count = HG_Bulk_handle_get_size(bulk_handle);
     buf = malloc(count);
 
-    HG_Bulk_block_handle_create(buf, count, HG_BULK_READWRITE, &bulk_block_handle);
+    HG_Bulk_handle_create(buf, count, HG_BULK_READWRITE, &bulk_block_handle);
 
     hg_ret = HG_Bulk_read_all(source, bulk_handle, bulk_block_handle, &bulk_request);
     if (hg_ret != HG_SUCCESS) {
@@ -188,7 +188,7 @@ hg_return_t server_posix_write(hg_handle_t handle)
     }
 
     /* Free block handle */
-    hg_ret = HG_Bulk_block_handle_free(bulk_block_handle);
+    hg_ret = HG_Bulk_handle_free(bulk_block_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free block call\n");
         return hg_ret;
@@ -208,7 +208,7 @@ hg_return_t server_posix_read(hg_handle_t handle)
 
     na_addr_t dest = HG_Handler_get_addr(handle);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    hg_bulk_block_t bulk_block_handle = HG_BULK_BLOCK_NULL;
+    hg_bulk_t bulk_block_handle = HG_BULK_NULL;
     hg_bulk_request_t bulk_request;
 
     int fd;
@@ -247,7 +247,7 @@ hg_return_t server_posix_read(hg_handle_t handle)
     }
 
     /* Create a new block handle to write the data */
-    HG_Bulk_block_handle_create(buf, ret, HG_BULK_READ_ONLY, &bulk_block_handle);
+    HG_Bulk_handle_create(buf, ret, HG_BULK_READ_ONLY, &bulk_block_handle);
 
     /* Write bulk data here and wait for the data to be there */
     hg_ret = HG_Bulk_write_all(dest, bulk_handle, bulk_block_handle, &bulk_request);
@@ -273,7 +273,7 @@ hg_return_t server_posix_read(hg_handle_t handle)
     }
 
     /* Free block handle */
-    hg_ret = HG_Bulk_block_handle_free(bulk_block_handle);
+    hg_ret = HG_Bulk_handle_free(bulk_block_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free block call\n");
         return hg_ret;

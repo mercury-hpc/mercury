@@ -156,7 +156,7 @@ fs_bla_write_fwd(hg_handle_t handle)
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bla_write_bulk_handle = HG_BULK_NULL;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    hg_bulk_block_t bla_write_bulk_block_handle = HG_BULK_BLOCK_NULL;
+    hg_bulk_t bla_write_bulk_block_handle = HG_BULK_NULL;
     hg_bulk_request_t bla_write_bulk_request;
 
     void *bla_write_buf;
@@ -176,7 +176,7 @@ fs_bla_write_fwd(hg_handle_t handle)
     bla_write_nbytes = HG_Bulk_handle_get_size(bla_write_bulk_handle);
     bla_write_buf = malloc(bla_write_nbytes);
 
-    HG_Bulk_block_handle_create(bla_write_buf, bla_write_nbytes, HG_BULK_READWRITE,
+    HG_Bulk_handle_create(bla_write_buf, bla_write_nbytes, HG_BULK_READWRITE,
             &bla_write_bulk_block_handle);
 
     /* Read bulk data here and wait for the data to be here  */
@@ -194,7 +194,7 @@ fs_bla_write_fwd(hg_handle_t handle)
     }
 
     /* Free block handle */
-    ret = HG_Bulk_block_handle_free(bla_write_bulk_block_handle);
+    ret = HG_Bulk_handle_free(bla_write_bulk_block_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free block call\n");
         return ret;
@@ -256,7 +256,7 @@ fs_bla_write(hg_handle_t handle)
 
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bla_write_bulk_handle = HG_BULK_NULL;
-    hg_bulk_block_t bla_write_bulk_block_handle = HG_BULK_BLOCK_NULL;
+    hg_bulk_t bla_write_bulk_block_handle = HG_BULK_NULL;
     hg_bulk_request_t bla_write_bulk_request;
 
     int bla_write_fildes;
@@ -279,7 +279,7 @@ fs_bla_write(hg_handle_t handle)
     bla_write_nbytes = HG_Bulk_handle_get_size(bla_write_bulk_handle);
     bla_write_buf = malloc(bla_write_nbytes);
 
-    HG_Bulk_block_handle_create(bla_write_buf, bla_write_nbytes, HG_BULK_READWRITE,
+    HG_Bulk_handle_create(bla_write_buf, bla_write_nbytes, HG_BULK_READWRITE,
             &bla_write_bulk_block_handle);
 
     /* Read bulk data here and wait for the data to be here  */
@@ -303,7 +303,7 @@ fs_bla_write(hg_handle_t handle)
     bla_write_out_struct.ret = bla_write_ret;
 
     /* Free block handle */
-    ret = HG_Bulk_block_handle_free(bla_write_bulk_block_handle);
+    ret = HG_Bulk_handle_free(bla_write_bulk_block_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free block call\n");
         return ret;

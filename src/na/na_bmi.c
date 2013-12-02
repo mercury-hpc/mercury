@@ -1422,19 +1422,6 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Check that local memory is registered */
-    hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    if (!hg_hash_table_lookup(NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map,
-            (hg_hash_table_key_t) bmi_local_mem_handle->base)) {
-        NA_LOG_ERROR("Could not find memory handle");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
-
-    hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
     if (bmi_remote_mem_handle->attr != NA_MEM_READWRITE) {
         NA_LOG_ERROR("Registered memory requires write permission");
         ret = NA_PERMISSION_ERROR;
@@ -1549,19 +1536,6 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     struct na_bmi_rma_info *na_bmi_rma_info = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
-
-    /* Check that local memory is registered */
-    hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    if (!hg_hash_table_lookup(NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map,
-            (hg_hash_table_key_t) bmi_local_mem_handle->base)) {
-        NA_LOG_ERROR("Could not find memory handle");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
-
-    hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
 
     /* Allocate op_id */
     na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));

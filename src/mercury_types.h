@@ -22,7 +22,6 @@ typedef void *      hg_context_t;     /* Abstract request context */
 typedef void *      hg_proc_t;        /* Abstract serialization processor */
 typedef void *      hg_handle_t;      /* Abstract RPC handle */
 typedef void *      hg_bulk_t;        /* Abstract bulk data handle */
-typedef void *      hg_bulk_block_t;  /* Abstract block handle for bulk data */
 typedef void *      hg_bulk_request_t;/* Bulk request object */
 
 typedef struct hg_bulk_segment {
@@ -41,7 +40,6 @@ typedef struct hg_bulk_segment {
 #define HG_PROC_NULL         ((hg_proc_t)0)
 #define HG_HANDLE_NULL       ((hg_handle_t)0)
 #define HG_BULK_NULL         ((hg_bulk_t)0)
-#define HG_BULK_BLOCK_NULL   ((hg_bulk_block_t)0)
 #define HG_BULK_REQUEST_NULL ((hg_bulk_request_t)0)
 
 /**
