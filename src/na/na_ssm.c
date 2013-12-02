@@ -215,11 +215,11 @@ na_ssm_msg_send_expected_release(struct na_cb_info *in_info,
                                  void              *in_na_ssm_opid);
 
 static void
-na_ssm_unexpected_msg_send_release(struct na_cb_info *in_info,
+na_ssm_msg_send_unexpected_release(struct na_cb_info *in_info,
                                    void              *in_na_ssm_opid);
 
 static void
-na_ssm_unexpected_msg_send_callback(void *in_context,
+na_ssm_msg_send_unexpected_callback(void *in_context,
                                     void *in_ssm_event_data);
 
 static void
@@ -445,19 +445,21 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
     ssm_data->opid_wait_queue = hg_queue_new();
     if (ssm_data->opid_wait_queue == NULL)
     {
+        NA_LOG_ERROR("Unable to create a opid wait queue.\n");
         goto cleanup;
     }
     
     ssm_data->unexpected_msg_queue = hg_queue_new();
     if (ssm_data->unexpected_msg_queue == NULL)
     {
-        NA_LOG_ERROR("Unable to create message queue.\n");
+        NA_LOG_ERROR("Unable to create unexpected message queue.\n");
         goto cleanup;
     }
 
     ssm_data->unexpected_msg_complete_queue = hg_queue_new();
     if (ssm_data->unexpected_msg_complete_queue == NULL)
     {
+        NA_LOG_ERROR("Unable to create a message complete queue.\n");
         goto cleanup;
     }
     
@@ -467,6 +469,7 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
 
         if (buffer == NULL)
         {
+            NA_LOG_ERROR("Out of memory error.\n");
             goto cleanup;
         }
         
@@ -474,6 +477,7 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
         if (buffer->buf == NULL)
         {
             free(buffer);
+            NA_LOG_ERROR("Out of memory error.\n");
             goto cleanup;
         }
         
@@ -482,6 +486,7 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
         {
             free(buffer->buf);
             free(buffer);
+            NA_LOG_ERROR("Failed to create memory region.\n");
             goto cleanup;
         }
         
@@ -495,7 +500,7 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
             ssm_mr_destroy(buffer->mr);
             free(buffer->buf);
             free(buffer);
-            NA_LOG_ERROR("Post failed (init)");
+            NA_LOG_ERROR("SSM post failed.\n");
             goto cleanup;
         }
         
@@ -657,10 +662,10 @@ na_ssm_finalize(na_class_t *in_na_class)
  * @return na_return_t
  */
 static na_return_t
-na_ssm_context_create(na_class_t *in_na_class,
+na_ssm_context_create(na_class_t NA_UNUSED *in_na_class,
                       na_plugin_context_t *in_plugin_context)
 {
-    in_plugin_context = NULL;
+    (*in_plugin_context) = NULL;
     return NA_SUCCESS;
 }
 
@@ -672,8 +677,8 @@ na_ssm_context_create(na_class_t *in_na_class,
  * @return na_return_t
  */
 static na_return_t
-na_ssm_context_destroy(na_class_t *in_na_class,
-                       na_plugin_context_t in_plugin_context)
+na_ssm_context_destroy(na_class_t NA_UNUSED *in_na_class,
+                       na_plugin_context_t NA_UNUSED in_plugin_context)
 {
     return NA_SUCCESS;
 }
@@ -689,53 +694,80 @@ na_ssm_context_destroy(na_class_t *in_na_class,
  * @return  na_return_t   NA_SUCCESS on success, failure code otherwise
  */
 static na_return_t
-na_ssm_addr_lookup(na_class_t  *in_na_class,
+na_ssm_addr_lookup(na_class_t   *in_na_class,
                    na_context_t *in_context,
-                   na_cb_t      in_callback,
-                   void        *in_arg,
-                   const char  *in_name,
-                   na_op_id_t  *out_opid)
+                   na_cb_t       in_callback,
+                   void         *in_arg,
+                   const char   *in_name,
+                   na_op_id_t   *out_opid)
 {
     struct na_ssm_private_data *ssm_data = NA_SSM_PRIVATE_DATA(in_na_class);
     ssmptcp_addrargs_t addrargs;
     struct na_ssm_addr *ssm_addr = NULL;
     struct na_cb_info *cbinfo = NULL;
-    char v_protocol[16];
+    char protocol[16];
     char *address = NULL;
     na_return_t ret = NA_SUCCESS;
     struct na_ssm_opid *ssm_opid = NULL;
 
-    NA_LOG_DEBUG("Enter (%s).\n", in_name);
+    NA_LOG_DEBUG("Enter (in_name: %s).\n", in_name);
+
+    assert(ssm_data);
     
     ssm_addr = (struct na_ssm_addr *) malloc(sizeof(struct na_ssm_addr));
     if (__unlikely(ssm_addr == NULL))
     {
         NA_LOG_ERROR("Out of memory error.\n");
-        return NA_NOMEM_ERROR;
+        ret = NA_NOMEM_ERROR;
+        goto cleanup;
     }
 
-    address = malloc(64);
-    sscanf(in_name, "%15[^:]://%63[^:]:%d", v_protocol,
-           address, &(addrargs.port));
+    address = malloc(NA_SSM_MAX_ADDRESS_LENGTH);
+    if (__unlikely(address == NULL))
+    {
+        NA_LOG_ERROR("Out of memory error.\n");
+        ret = NA_NOMEM_ERROR;
+        goto cleanup;
+    }
+    
+    sscanf(in_name, "%15[^:]://%63[^:]:%d", protocol, address, &addrargs.port);
     addrargs.host = address;
     
-    ssm_addr->addr = ssm_addr_create(ssm_data->ssm,
-                                     &addrargs);
+    ssm_addr->addr = ssm_addr_create(ssm_data->ssm, &addrargs);
     if(ssm_addr->addr == NULL)
     {
         NA_LOG_ERROR("Unable to create ssm address\n");
-        free(ssm_addr);
-        return NA_FAIL;
+        ret = NA_PROTOCOL_ERROR;
+        goto cleanup;
     }
-
     free(address);
     
     cbinfo = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
     if (__unlikely(cbinfo == NULL))
     {
-        free(ssm_addr);
-        return NA_NOMEM_ERROR;
+        NA_LOG_ERROR("Out of memory error.\n");
+        ret = NA_NOMEM_ERROR;
+        goto cleanup;
     }
+
+    ssm_opid = (struct na_ssm_opid *) malloc(sizeof(struct na_ssm_opid));
+    if (__unlikely(ssm_opid == NULL))
+    {
+        NA_LOG_ERROR("Out of memory error.\n");
+        ret = NA_NOMEM_ERROR;
+        goto cleanup;
+    }
+
+    memset(ssm_opid, 0, sizeof(struct na_ssm_opid));
+    
+    ssm_opid->requesttype = NA_CB_LOOKUP;
+    ssm_opid->user_callback = in_callback;
+    ssm_opid->user_context = in_context;
+    ssm_opid->user_arg = in_arg;
+    ssm_opid->ssm_data = ssm_data;
+    ssm_opid->cbinfo = cbinfo;
+    ssm_opid->status = SSM_STATUS_INPROGRESS;
+    ssm_opid->result = NA_SUCCESS;
 
     /* Fill the callback info structure */
     cbinfo->arg               = in_arg; 
@@ -743,17 +775,6 @@ na_ssm_addr_lookup(na_class_t  *in_na_class,
     cbinfo->type              = NA_CB_LOOKUP; 
     cbinfo->info.lookup.addr  = ssm_addr; 
 
-    ssm_opid = (struct na_ssm_opid *) malloc(sizeof(struct na_ssm_opid));
-    if (__unlikely(ssm_opid == NULL))
-    {
-        free(ssm_addr);
-        return NA_NOMEM_ERROR;
-    }
-
-    memset(ssm_opid, 0, sizeof(struct na_ssm_opid));
-    
-    ssm_opid->requesttype = NA_CB_LOOKUP;
-    
     ret = na_cb_completion_add(in_context,
                                in_callback,
                                cbinfo,
@@ -762,15 +783,31 @@ na_ssm_addr_lookup(na_class_t  *in_na_class,
 
     if (ret != NA_SUCCESS)
     {
-        (*out_opid) = NULL;
-        free(cbinfo);
+        /* Inability to add the callback to the completion queue implies
+         * something went horribly wrong.  We cannot recover from here.
+         */
         NA_LOG_ERROR("Unable to add to the completion queue.\n");
-        goto done;
+        goto cleanup;
     }
     
     (*out_opid) = (na_op_id_t *) ssm_opid;
     
- done:
+ cleanup:
+    if (ret != NA_SUCCESS)
+    {
+        free(address);
+        free(ssm_opid);
+
+        if (ssm_addr != NULL && ssm_addr->addr != NULL)
+        {
+            ssm_addr_destroy(ssm_data->ssm, ssm_addr->addr);
+        }
+        
+        free(ssm_addr);
+        free(cbinfo);
+        (*out_opid) = NULL;
+    }
+    
     NA_LOG_DEBUG("Exit (Status: %d).\n", ret);
     return ret;
 }
@@ -790,29 +827,34 @@ na_ssm_addr_lookup_release(struct na_cb_info *in_info,
                            void              *in_opid)
 {
     struct na_ssm_opid *ssm_opid = in_opid;
+    struct na_ssm_private_data *ssm_data = ssm_opid->ssm_data;
+    
+    ssm_addr_destroy(ssm_data->ssm, in_info->info.lookup.addr);
+    
     free(in_info);
     free(ssm_opid);
+    
     return;
 }
 
 /**
  * Free the address.
  *
- * @param  in_na_class
- * @param  in_addr
- * @return NA_SUCCESS always.
+ * @param  in_na_class   NA class
+ * @param  in_addr       NA address container
+ * @return na_return_t   Always returns NA_SUCCESS.
  */
 static na_return_t
 na_ssm_addr_free(na_class_t    NA_UNUSED *in_na_class,
                  na_addr_t                in_addr)
 {
-    struct na_ssm_addr *v_addr = (struct na_ssm_addr *) in_addr;
-    free(v_addr);
+    struct na_ssm_addr *addr = (struct na_ssm_addr *) in_addr;
+    free(addr);
     return NA_SUCCESS;
 }
 
 /**
- * Convert the given input address to string.
+ * TODO: Convert the given input address to string.
  *
  * @param  in_na_class
  * @param  inout_buf
@@ -832,7 +874,7 @@ na_ssm_addr_to_string(na_class_t     NA_UNUSED *in_na_class,
 /**
  * Returns maximum expected message size.
  *
- * @param  in_na_class
+ * @param  in_na_class  NA class
  * @return na_size_t    Maximum expected message size.
  */
 static na_size_t
@@ -844,7 +886,7 @@ na_ssm_msg_get_max_expected_size(na_class_t NA_UNUSED *in_na_class)
 /**
  * Returns maximum unexpected message size.
  *
- * @param  in_na_class
+ * @param  in_na_class   NA Class
  * @return na_size_t     Maximum unexpected message size.
  */
 static na_size_t
@@ -856,7 +898,7 @@ na_ssm_msg_get_max_unexpected_size(na_class_t NA_UNUSED *in_na_class)
 /**
  * Returns the maximum tag on a message.
  *
- * @param  in_na_class
+ * @param  in_na_class  NA Class
  * @return na_tag_t     Maximum tag on a message.
  */
 static na_tag_t
@@ -868,8 +910,10 @@ na_ssm_msg_get_maximum_tag(na_class_t NA_UNUSED *in_na_class)
 /**
  * Send an unexpected message to the destination.
  *
+ * @param   in_na_class      NA Class
+ * @param   in_context       NA Context
  * @param   in_callback      User callback
- * @param   in_context       User context
+ * @param   in_arg           User argument
  * @param   in_buf           Input buffer
  * @param   in_buf_size      Input buffer size
  * @param   in_destination   Destination address
@@ -877,8 +921,8 @@ na_ssm_msg_get_maximum_tag(na_class_t NA_UNUSED *in_na_class)
  * @param   out_opid         NA Op ID
  * @return  na_return_t      NA_SUCCESS/NA_FAIL/NA_NOMEM_ERROR
  *
- * @see na_ssm_unexpected_msg_send_callback()
- * @see na_ssm_unexpected_msg_send_release_callback()
+ * @see na_ssm_msg_send_unexpected_callback()
+ * @see na_ssm_msg_send_unexpected_release()
  */
 static na_return_t
 na_ssm_msg_send_unexpected(na_class_t    *in_na_class,
@@ -891,21 +935,23 @@ na_ssm_msg_send_unexpected(na_class_t    *in_na_class,
                            na_tag_t       in_tag,
                            na_op_id_t    *out_opid)
 {
-    na_return_t           v_return          = NA_SUCCESS;
-    ssm_size_t            v_ssm_buf_size    = (ssm_size_t) in_buf_size;
-    struct na_ssm_addr   *v_ssm_peer_addr   = (struct na_ssm_addr *) in_destination;
-    struct na_ssm_opid   *ssm_opid = NULL;
-    ssm_mr                v_ssm_mr = NULL;
-    ssm_tx                v_ssm_tx = NULL;
+    na_return_t ret = NA_SUCCESS;
+    ssm_size_t ssm_buf_size = (ssm_size_t) in_buf_size;
+    struct na_ssm_addr *peer_addr = (struct na_ssm_addr *) in_destination;
+    struct na_ssm_opid *ssm_opid = NULL;
+    ssm_mr v_ssm_mr = NULL;
+    ssm_tx v_ssm_tx = NULL;
     struct na_ssm_private_data *ssm_data = NA_SSM_PRIVATE_DATA(in_na_class);
 
-    assert(in_buf);
-    
     NA_LOG_DEBUG("Enter.\n");
+    
+    assert(ssm_data);
+    assert(in_buf);
 
     ssm_opid = (struct na_ssm_opid *) malloc(sizeof(struct na_ssm_opid));
     if (__unlikely(ssm_opid == NULL))
     {
+        NA_LOG_ERROR("Out of memory error.\n");
         return NA_NOMEM_ERROR;
     }
 
@@ -916,20 +962,20 @@ na_ssm_msg_send_unexpected(na_class_t    *in_na_class,
     ssm_opid->user_arg = in_arg;
     ssm_opid->user_context = in_context;
     ssm_opid->ssm_data = ssm_data;
-    ssm_opid->ssm_callback.pcb = na_ssm_unexpected_msg_send_callback;
+    ssm_opid->ssm_callback.pcb = na_ssm_msg_send_unexpected_callback;
     ssm_opid->ssm_callback.cbdata = ssm_opid;
     ssm_opid->info.send_unexpected.matchbits = (ssm_bits) in_tag + NA_SSM_TAG_UNEXPECTED_OFFSET;
     
-    v_ssm_mr = ssm_mr_create(NULL, (void *) in_buf, v_ssm_buf_size);
+    v_ssm_mr = ssm_mr_create(NULL, (void *) in_buf, ssm_buf_size);
     if (v_ssm_mr == NULL)
     {
         NA_LOG_ERROR("Unable to create memory region.\n");
-        v_return = NA_FAIL;
-        goto out;
+        ret = NA_PROTOCOL_ERROR;
+        goto cleanup;
     }
 
     v_ssm_tx = ssm_put(ssm_data->ssm,
-                       v_ssm_peer_addr->addr,
+                       peer_addr->addr,
                        v_ssm_mr,
                        NULL,
                        ssm_opid->info.send_unexpected.matchbits,
@@ -938,9 +984,9 @@ na_ssm_msg_send_unexpected(na_class_t    *in_na_class,
 
     if (v_ssm_tx == NULL)
     {
-        NA_LOG_ERROR("Failed to put the buffer.\n");
-        v_return = NA_FAIL;
-        goto out;
+        NA_LOG_ERROR("SSM failed to put the buffer.\n");
+        ret = NA_PROTOCOL_ERROR;
+        goto cleanup;
     }
     
     ssm_opid->transaction = v_ssm_tx;
@@ -948,24 +994,21 @@ na_ssm_msg_send_unexpected(na_class_t    *in_na_class,
 
     (*out_opid) = (na_op_id_t *) ssm_opid;
     
- out:
+ cleanup:
 
-    if (v_return != NA_SUCCESS)
+    if (ret != NA_SUCCESS)
     {
-        /* release all allocated resources */
         if (v_ssm_mr != NULL)
         {
             ssm_mr_destroy(v_ssm_mr);
         }
 
-        if (ssm_opid != NULL)
-        {
-            free(ssm_opid);
-        }
+        free(ssm_opid);
+        (*out_opid) = NULL;
     }
 
-    NA_LOG_DEBUG("Exit (Status: %d).\n", v_return);
-    return v_return;
+    NA_LOG_DEBUG("Exit (Status: %d).\n", ret);
+    return ret;
 }
 
 /**
@@ -978,58 +1021,59 @@ na_ssm_msg_send_unexpected(na_class_t    *in_na_class,
  * @see na_ssm_msg_send_unexpected()
  */
 static void
-na_ssm_unexpected_msg_send_callback(void *in_context,
+na_ssm_msg_send_unexpected_callback(void *in_context,
                                     void *in_ssm_event_data) 
 {
-    ssm_result          v_result         = in_ssm_event_data;
-    struct na_ssm_opid *v_ssm_opid       = in_context;
-    struct na_cb_info  *v_cbinfo         = NULL;
-    na_return_t         ret         = NA_SUCCESS;
+    ssm_result result = in_ssm_event_data;
+    struct na_ssm_opid *ssm_opid = in_context;
+    struct na_cb_info *cbinfo = NULL;
+    na_return_t ret = NA_SUCCESS;
 
     NA_LOG_DEBUG("Enter.\n");
     
     /* Allocate this memory before we proceed */
-    v_cbinfo = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-
-    if (__unlikely(v_cbinfo == NULL))
+    cbinfo = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
+    if (__unlikely(cbinfo == NULL))
     {
-        free(v_ssm_opid);
+        na_ssm_msg_send_unexpected_release(NULL, ssm_opid);
         ret = NA_NOMEM_ERROR;
         return;
     }
+    memset(cbinfo, 0, sizeof(struct na_cb_info));
     
-    memset(v_cbinfo, 0, sizeof(struct na_cb_info));
-    
-    if (v_result->status == SSM_ST_COMPLETE)
+    if (result->status == SSM_ST_COMPLETE)
     {
-        NA_SSM_MARK_OPID_COMPLETE(v_ssm_opid);
+        NA_SSM_MARK_OPID_COMPLETE(ssm_opid);
         ret = NA_SUCCESS;
     }
-    else if (v_result->status == SSM_ST_CANCEL)
+    else if (result->status == SSM_ST_CANCEL)
     {
-        NA_SSM_MARK_OPID_CANCELED(v_ssm_opid);
+        NA_SSM_MARK_OPID_CANCELED(ssm_opid);
         ret = NA_CANCELED;
     }
     else
     {
-        NA_LOG_ERROR("Protocol Error: %d.\n", v_result->status);
+        NA_LOG_ERROR("Protocol Error: %d.\n", result->status);
     }
 
-    v_cbinfo->arg = v_ssm_opid->user_arg;
-    v_cbinfo->ret = ret;
+    ssm_opid->status = SSM_STATUS_COMPLETED;
     
-    ret = na_cb_completion_add(v_ssm_opid->user_context,
-                               v_ssm_opid->user_callback,
-                               v_cbinfo,
-                               na_ssm_unexpected_msg_send_release,
-                               (void *) v_ssm_opid);
+    cbinfo->arg = ssm_opid->user_arg;
+    cbinfo->ret = ret;
+    cbinfo->type = NA_CB_SEND_UNEXPECTED;
+    
+    ret = na_cb_completion_add(ssm_opid->user_context,
+                               ssm_opid->user_callback,
+                               cbinfo,
+                               na_ssm_msg_send_unexpected_release,
+                               (void *) ssm_opid);
 
     if (ret != NA_SUCCESS)
     {
         NA_LOG_ERROR("Unable to queue the callback.\n");
     }
     
-    NA_LOG_DEBUG("Exit.\n");
+    NA_LOG_DEBUG("Exit (ret: %d)\n", ret);
 }
 
 /**
@@ -1037,19 +1081,23 @@ na_ssm_unexpected_msg_send_callback(void *in_context,
  * callback function only does cleanup/release of resources that were
  * allocated at the beginning of the send unexpected operation.
  *
- * @see na_ssm_msg_send_unexpected()
- * @see na_ssm_unexpected_msg_send_callback()
- *
  * @param in_na_ssm_opid
  * @param in_release_context
  *
+ * @see na_ssm_msg_send_unexpected()
+ * @see na_ssm_msg_send_unexpected_callback()
  */
 static void
-na_ssm_unexpected_msg_send_release(struct na_cb_info *in_info,
+na_ssm_msg_send_unexpected_release(struct na_cb_info *in_info,
                                    void              *in_na_ssm_opid)
 {
     struct na_ssm_opid *v_ssm_opid = in_na_ssm_opid;
-    //    ssm_mr_destroy(v_ssm_opid->info.send_unexpected.memregion);
+
+    /* FIX: Confirm if this destroy is necessary.  Does SSM destroy the
+     * memory region automatically once the buffer is sent?
+     */
+    ssm_mr_destroy(v_ssm_opid->info.send_unexpected.memregion);
+    
     free(in_info);
     free(v_ssm_opid);
     return;
@@ -1058,19 +1106,22 @@ na_ssm_unexpected_msg_send_release(struct na_cb_info *in_info,
 /**
  * Receive an unexpected message.
  *
- * @param in_callback
- * @param in_context
- * @param in_buf
- * @param in_buf_size
- * @param out_opid
+ * @param in_na_class    NA Class
+ * @param in_context     NA Context
+ * @param in_callback    NA Callback
+ * @param in_arg         NA arguments
+ * @param in_buf         Input buffer
+ * @param in_buf_size    Input buffer length
+ * @param out_opid       Out Op Id
+ * @return na_return_t   NA_SUCCESS if successfully accepted the request and
+ *                       a callback will be called.
  *
- * @return na_return_t
- *
- * @see 
+ * @see na_ssm_msg_recv_unexpected_callback()
+ * @see na_ssm_msg_recv_unexpected_release()
  */
 static na_return_t
 na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
-                           na_context_t *in_context,
+                           na_context_t    *in_context,
                            na_cb_t          in_callback,
                            void            *in_arg,
                            void            *in_buf,
@@ -1085,6 +1136,8 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
 
     NA_LOG_DEBUG("Enter.\n");
 
+    assert(ssm_data);
+
     ssm_opid = (struct na_ssm_opid *) malloc(sizeof(struct na_ssm_opid));
     if (__unlikely(ssm_opid == NULL))
     {
@@ -1092,19 +1145,20 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
         NA_LOG_ERROR("Out of memory error.");
         return NA_NOMEM_ERROR;
     }
-
+    memset(ssm_opid, 0, sizeof(struct na_ssm_opid));
+    
     ssm_opid->requesttype = NA_CB_RECV_UNEXPECTED;
     ssm_opid->user_callback = in_callback;
     ssm_opid->user_context = in_context;
     ssm_opid->user_arg = in_arg;
     ssm_opid->ssm_data = ssm_data;
     ssm_opid->transaction = NULL;
-    ssm_opid->status = SSM_STATUS_INVALID;
-    ssm_opid->result = NA_FAIL;
+    ssm_opid->status = SSM_STATUS_INPROGRESS;
+    ssm_opid->result = NA_SUCCESS;
     ssm_opid->info.recv_unexpected.input_buffer = in_buf;
     ssm_opid->info.recv_unexpected.input_buffer_size = in_buf_size;
 
-    /* if there is nothing to receive, just accept the request and
+    /* If there is nothing to receive, just accept the request and
      * wait for the receive callback to happen first.
      */
     hg_thread_mutex_lock(&ssm_data->unexpected_msg_complete_mutex);
@@ -1113,24 +1167,37 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
     
     if (buffer == NULL)
     {
-        /* we haven't received anything yet. */
+        /* We haven't received anything yet, so push the request into
+         * the opid queue and wait for the buffer to arrive.
+         */
         hg_queue_push_tail(ssm_data->opid_wait_queue,
                            (hg_queue_value_t) ssm_opid);
     }
     else
     {
-        ssm_opid->status = SSM_STATUS_COMPLETED;
         if (buffer->status == SSM_ST_COMPLETE)
         {
             ssm_opid->result = NA_SUCCESS;
         }
         else
         {
-        ssm_opid->result = NA_FAIL;
+            ssm_opid->result = NA_FAIL;
         }
+
+        ssm_opid->status = SSM_STATUS_COMPLETED;
         
         /* copy the received buffer into the user's buffer */
         memcpy(in_buf, buffer->buf, in_buf_size);
+        
+        /* recreate the memory region and push the buffer back into
+         * the queue */
+        buffer->mr = ssm_mr_create(NULL,
+                                   buffer->buf,
+                                   ssm_opid->info.recv_unexpected.input_buffer_size);
+        ret = ssm_post(ssm_data->ssm,
+                       ssm_data->unexpected_me,
+                       buffer->mr,
+                       SSM_NOF);
         
         /* push the buffer back into the queue */
         hg_thread_mutex_lock(&ssm_data->unexpected_msg_queue_mutex);
@@ -1141,6 +1208,7 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
         cbinfo = malloc(sizeof(struct na_cb_info));
         if (__unlikely(cbinfo == NULL))
         {
+            NA_LOG_ERROR("Out of memory error.\n");
             goto done;
         }
         
@@ -1150,8 +1218,6 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
         cbinfo->info.recv_unexpected.actual_buf_size = buffer->bytes;
         cbinfo->info.recv_unexpected.source = buffer->addr;
         cbinfo->info.recv_unexpected.tag = buffer->bits;
-        
-        (*out_opid) = (na_op_id_t *) ssm_opid;
         
         ret = na_cb_completion_add(in_context,
                                    in_callback,
@@ -1165,19 +1231,16 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
         }
     }
 
-    NA_LOG_DEBUG("Exit.\n");
-    return ret;
+    (*out_opid) = (na_op_id_t *) ssm_opid;
     
  done:
-    if (ret == NA_SUCCESS)
-    {
-        ssm_opid->requesttype = NA_CB_RECV_UNEXPECTED;
-    }
-    else
+    if (ret != NA_SUCCESS)
     {
         free(ssm_opid);
+        (*out_opid) = NULL;
     }
     
+    NA_LOG_DEBUG("Exit (ret: %d).\n", ret);    
     return ret;
 }
 
@@ -1188,7 +1251,7 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
  * @param in_ssm_event_data
  * @return (void)
  *
- * @see
+ * @see na_ssm_msg_recv_unexpected()
  */
 static void
 na_ssm_msg_recv_unexpected_callback(void *in_context,
@@ -1220,12 +1283,10 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
             return;
         }
 
-        hg_thread_mutex_lock(&ssm_data->unexpected_msg_complete_mutex);
-
         /* We got a completed buffer, push it on to the completed queue. */
+        hg_thread_mutex_lock(&ssm_data->unexpected_msg_complete_mutex);
         hg_queue_push_head(ssm_data->unexpected_msg_complete_queue,
                            (hg_queue_value_t) buffer);
-        
         hg_thread_mutex_unlock(&ssm_data->unexpected_msg_complete_mutex);
     }
     else
@@ -1238,8 +1299,6 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
 
     if (ssm_opid != NULL)
     {
-        NA_LOG_DEBUG("Found a waiting operation.\n");
-        
         ssm_opid->status = SSM_STATUS_COMPLETED;
         if (result->status == SSM_ST_COMPLETE)
         {
@@ -1255,7 +1314,16 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
                buffer->buf,
                ssm_opid->info.recv_unexpected.input_buffer_size);
         
-        /* push the buffer back into the queue */
+        /* recreate the memory region and push the buffer back into
+         * the queue */
+        buffer->mr = ssm_mr_create(NULL,
+                                   buffer->buf,
+                                   ssm_opid->info.recv_unexpected.input_buffer_size);
+        ret = ssm_post(ssm_data->ssm,
+                       ssm_data->unexpected_me,
+                       buffer->mr,
+                       SSM_NOF);
+        
         hg_thread_mutex_lock(&ssm_data->unexpected_msg_queue_mutex);
         hg_queue_push_tail(ssm_data->unexpected_msg_queue,
                            (hg_queue_value_t) buffer);

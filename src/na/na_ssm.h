@@ -50,6 +50,7 @@
 #define NA_SSM_TAG_UNEXPECTED_OFFSET                    0
 #define NA_SSM_TAG_EXPECTED_OFFSET    (((ssm_bits)1)<<62)
 #define NA_SSM_TAG_RMA_OFFSET         (((ssm_bits)1)<<63)
+#define NA_SSM_MAX_ADDRESS_LENGTH                      64
 
 #define NA_SSM_NEXT_UNEXPBUF_POS(n) (((n)+(1))%(NA_SSM_UNEXPECTED_BUFFERCOUNT))
 
