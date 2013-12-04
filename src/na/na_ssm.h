@@ -93,6 +93,7 @@ struct na_ssm_private_data {
 #endif
 
   hg_queue_t *opid_wait_queue;
+  hg_thread_mutex_t opid_wait_queue_mutex;
   
   hg_queue_t *unexpected_msg_queue;
   hg_thread_mutex_t unexpected_msg_queue_mutex;
@@ -108,12 +109,13 @@ struct na_ssm_addr {
 };
 
 struct na_ssm_mem_handle {
-  ssm_mr      mr;
-  ssm_bits    matchbits;
-  void       *buf;
-  unsigned long buf_size;
-  ssm_me      me;
-  ssm_cb_t    cb;
+  ssm_mr         mr;
+  ssm_bits       matchbits;
+  void          *buf;
+  unsigned long  buf_size;
+  ssm_me         me;
+  ssm_cb_t       cb;
+  unsigned long  flag;
 };
 
 typedef int           ssm_size_t;
