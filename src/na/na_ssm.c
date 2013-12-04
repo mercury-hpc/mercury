@@ -1487,7 +1487,8 @@ na_ssm_msg_send_expected(na_class_t   *in_na_class,
     }
 
     NA_LOG_DEBUG("Sending expected message of size %lu with tag %x.\n",
-                 in_buf_size, ssm_opid->info.send_expected.matchbits);
+                 in_buf_size,
+                 (unsigned int) ssm_opid->info.send_expected.matchbits);
 
     ssm_opid->transaction    = v_transaction;
     ssm_opid->status         = SSM_STATUS_INPROGRESS;
@@ -1674,7 +1675,7 @@ na_ssm_msg_recv_expected(na_class_t     *in_na_class,
     }
 
     NA_LOG_DEBUG("Expecting recv of size %lu with tag: %x.\n", in_buf_size,
-                 v_ssm_opid->info.recv_expected.matchbits);
+                 (unsigned int) v_ssm_opid->info.recv_expected.matchbits);
     
     v_ssm_return = ssm_post(v_data->ssm,
                             v_ssm_opid->info.recv_expected.matchentry,
@@ -1720,14 +1721,6 @@ na_ssm_msg_recv_expected_callback(void *in_context,
     ssm_result v_result = in_ssm_event_data;
     struct na_ssm_opid *v_ssm_opid = in_context;
     struct na_cb_info *cbinfo = NULL;
-
-    int *_buffer = (int *) malloc(sizeof(int) * 1024 * 1024);
-    memset(_buffer, 0, sizeof(int)*1024*1024);
-    memcpy(_buffer,
-           v_ssm_opid->info.recv_expected.input_buffer,
-           sizeof(int)*1024*1024);
-    NA_LOG_DEBUG("(%d) Value: %d\n", v_ssm_opid->info.recv_expected.matchbits, _buffer[1]);
-    free(_buffer);
                  
     NA_LOG_DEBUG("Enter.\n");
     
@@ -1969,8 +1962,6 @@ na_ssm_mem_handle_serialize(na_class_t       NA_UNUSED *in_na_class,
     else
     {
         memcpy(in_buf, v_handle, sizeof(struct na_ssm_mem_handle));
-        NA_LOG_DEBUG("Handle: Matchbits: %d, bufsize: %lu\n",
-                     v_handle->matchbits, v_handle->buf_size);
     }
 
     NA_LOG_DEBUG("Exit. (%d)\n", v_return);
@@ -2012,8 +2003,6 @@ na_ssm_mem_handle_deserialize(na_class_t       NA_UNUSED *in_na_class,
         }
         
         memcpy(v_handle, in_buf, sizeof(struct na_ssm_mem_handle));
-        NA_LOG_DEBUG("Handle: Matchbits: %d, bufsize: %lu\n",
-                     v_handle->matchbits, v_handle->buf_size);        
         (*out_mem_handle) = (na_mem_handle_t) v_handle;
     }
 
@@ -2064,8 +2053,7 @@ na_ssm_mem_handle_create(na_class_t      *in_na_class,
     }
 
     (*out_mem_handle) = handle;
-    NA_LOG_DEBUG("Handle: Matchbits: %d, bufsize: %lu\n",
-                 handle->matchbits, handle->buf_size);
+
  done:
     if (ret != NA_SUCCESS)
     {
@@ -2131,7 +2119,7 @@ na_ssm_put(na_class_t        *in_na_class,
     struct na_ssm_mem_handle *v_handle = (struct na_ssm_mem_handle *) in_local_mem_handle;
     struct na_ssm_mem_handle *v_rhandle = (struct na_ssm_mem_handle *) in_remote_mem_handle;
 
-    NA_LOG_DEBUG("Enter (remote matching bits: %d).\n", v_rhandle->matchbits);
+    NA_LOG_DEBUG("Enter.\n");
     
     assert(v_peer_addr);
     assert(v_handle);
