@@ -50,8 +50,7 @@ typedef struct hg_bulk_segment {
 typedef enum {
     HG_ENCODE,
     HG_DECODE,
-    HG_FREE,
-    HG_INVALID
+    HG_FREE
 } hg_proc_op_t;
 
 /**

@@ -219,7 +219,7 @@ hg_proc_op_t
 hg_proc_get_op(hg_proc_t proc)
 {
     struct hg_proc *priv_proc = (struct hg_proc *) proc;
-    hg_proc_op_t proc_op = HG_INVALID;
+    hg_proc_op_t proc_op = HG_ENCODE;
 
     if (priv_proc) proc_op = priv_proc->op;
 
