@@ -240,7 +240,7 @@ static HG_INLINE hg_return_t \
                 HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_BLOCK_PARAM))); \
         if (hg_ret != HG_SUCCESS) { \
             HG_ERROR_DEFAULT("Could not free block call"); \
-            return hg_ret; \
+            goto done; \
         } \
         free(bulk_buf);
 
@@ -253,13 +253,13 @@ static HG_INLINE hg_return_t \
                  &HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_REQUEST_PARAM))); \
         if (hg_ret != HG_SUCCESS) { \
             HG_ERROR_DEFAULT("Could not write bulk data"); \
-            return hg_ret; \
+            goto done; \
         } \
         hg_ret = HG_Bulk_wait(HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_REQUEST_PARAM)), \
                 HG_MAX_IDLE_TIME, HG_STATUS_IGNORE); \
         if (hg_ret != HG_SUCCESS) { \
             HG_ERROR_DEFAULT("Could not complete bulk data write"); \
-            return hg_ret; \
+            goto done; \
         }
 
 /*****************************************************************************
@@ -434,10 +434,21 @@ static HG_INLINE hg_return_t \
         with_ret, ret_type, \
         with_input, in_struct_type_name, in_params, \
         with_output, out_struct_type_name, out_params, \
-        with_bulk, bulk_read) \
-        static hg_return_t \
-        gen_func_name (hg_handle_t handle) \
+        with_bulk, bulk_read, \
+        with_thread, thread_pool) \
+        static \
+        BOOST_PP_IF(with_thread, \
+                    HG_THREAD_RETURN_TYPE BOOST_PP_CAT(gen_func_name, _thread), \
+                    hg_return_t gen_func_name) \
+        ( \
+        BOOST_PP_IF(with_thread, void *arg, hg_handle_t handle) \
+        ) \
         { \
+                BOOST_PP_IF(with_thread, \
+                        hg_handle_t handle = (hg_handle_t) arg; \
+                        hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0; \
+                        ,\
+                    BOOST_PP_EMPTY()) \
                 hg_return_t hg_ret = HG_SUCCESS; \
                 BOOST_PP_IF(with_input, \
                     in_struct_type_name in_struct;, BOOST_PP_EMPTY()) \
@@ -503,8 +514,22 @@ static HG_INLINE hg_return_t \
                 \
                 done: \
                 \
-                return hg_ret; \
-            }
+                BOOST_PP_IF(with_thread, \
+                        hg_thread_exit(thread_ret); \
+                        return thread_ret; \
+                        , return hg_ret;) \
+                \
+            } \
+            BOOST_PP_IF(with_thread, \
+                    static hg_return_t \
+                    gen_func_name(hg_handle_t handle) \
+                    { \
+                        hg_return_t ret = HG_SUCCESS; \
+                        hg_thread_pool_post(thread_pool, \
+                                &BOOST_PP_CAT(gen_func_name, _thread), handle); \
+                        return ret; \
+                    } \
+            , BOOST_PP_EMPTY())
 
 #else /* HG_HAS_BOOST */
 
