@@ -365,6 +365,14 @@ hg_handler_recv_input_cb(const struct na_cb_info *callback_info)
         goto done;
     }
 
+    /* We just received a new request so set started to FALSE so that a new
+     * request recv can be posted */
+    hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
+
+    hg_handler_started_request_g = HG_FALSE;
+
+    hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
+
     priv_handle->addr = callback_info->info.recv_unexpected.source;
     priv_handle->tag = callback_info->info.recv_unexpected.tag;
     if (callback_info->info.recv_unexpected.actual_buf_size !=
@@ -434,13 +442,6 @@ hg_handler_send_output_cb(const struct na_cb_info *callback_info)
     if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
-
-    /* We just received a new request so set started to FALSE (clean later) */
-    hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
-
-    hg_handler_started_request_g = HG_FALSE;
-
-    hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
 
     /* Add handle to completion queue */
     hg_handler_completion_add(priv_handle);
