@@ -129,20 +129,21 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
     /* Send a message to addr */
     sprintf(params->send_buf, "Hello Server!");
 
-    na_ret = NA_Msg_send_unexpected(params->network_class, params->context,
-            NULL, NULL, params->send_buf, params->send_buf_len,
-            params->server_addr, send_tag, NA_OP_ID_IGNORE);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not start send of unexpected message\n");
-        return EXIT_FAILURE;
-    }
-
+    /* Preposting response */
     na_ret = NA_Msg_recv_expected(params->network_class, params->context,
             &msg_expected_recv_cb, params, params->recv_buf,
             params->recv_buf_len, params->server_addr, send_tag + 1,
             NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not start recv of message\n");
+        fprintf(stderr, "Could not prepost recv of expected message\n");
+        return EXIT_FAILURE;
+    }
+
+    na_ret = NA_Msg_send_unexpected(params->network_class, params->context,
+            NULL, NULL, params->send_buf, params->send_buf_len,
+            params->server_addr, send_tag, NA_OP_ID_IGNORE);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not start send of unexpected message\n");
         return EXIT_FAILURE;
     }
 
@@ -180,6 +181,17 @@ test_bulk(struct na_test_params *params)
         return EXIT_FAILURE;
     }
 
+    /* Recv completion ack */
+    printf("Preposting recv of transfer ack...\n");
+    na_ret = NA_Msg_recv_expected(params->network_class, params->context,
+            &ack_expected_recv_cb, params, params->recv_buf,
+            params->recv_buf_len, params->server_addr, ack_tag,
+            NA_OP_ID_IGNORE);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not start receive of acknowledgment\n");
+        return EXIT_FAILURE;
+    }
+
     /* Send mem handle */
     printf("Sending local memory handle...\n");
     na_ret = NA_Msg_send_expected(params->network_class, params->context,
@@ -187,17 +199,6 @@ test_bulk(struct na_test_params *params)
             params->server_addr, bulk_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of memory handle\n");
-        return EXIT_FAILURE;
-    }
-
-    /* Recv completion ack */
-    printf("Receiving end of transfer ack...\n");
-    na_ret = NA_Msg_recv_expected(params->network_class, params->context,
-            &ack_expected_recv_cb, params, params->recv_buf,
-            params->recv_buf_len, params->server_addr, ack_tag,
-            NA_OP_ID_IGNORE);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not start receive of acknowledgment\n");
         return EXIT_FAILURE;
     }
 

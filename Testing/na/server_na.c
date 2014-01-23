@@ -38,8 +38,8 @@ struct na_test_params {
 };
 
 /* NA test routines */
-static int test_send(struct na_test_params *params, na_tag_t send_tag);
-static int test_bulk(struct na_test_params *params);
+static int test_send_respond(struct na_test_params *params, na_tag_t send_tag);
+static int test_bulk_prepare(struct na_test_params *params);
 
 static na_return_t
 msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
@@ -57,22 +57,8 @@ msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
     params->source_addr = callback_info->info.recv_unexpected.source;
     recv_tag = callback_info->info.recv_unexpected.tag;
 
-    test_send(params, recv_tag + 1);
-
-    return ret;
-}
-
-static na_return_t
-msg_expected_send_cb(const struct na_cb_info *callback_info)
-{
-    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
-    na_return_t ret = NA_SUCCESS;
-
-    if (callback_info->ret != NA_SUCCESS) {
-        return ret;
-    }
-
-    test_bulk(params);
+    test_bulk_prepare(params);
+    test_send_respond(params, recv_tag + 1);
 
     return ret;
 }
@@ -211,7 +197,7 @@ mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
 }
 
 static int
-test_send(struct na_test_params *params, na_tag_t send_tag)
+test_send_respond(struct na_test_params *params, na_tag_t send_tag)
 {
     na_return_t na_ret;
 
@@ -219,7 +205,7 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
     sprintf(params->send_buf, "Hello Client!");
 
     na_ret = NA_Msg_send_expected(params->network_class, params->context,
-            &msg_expected_send_cb, params, params->send_buf,
+            NULL, NULL, params->send_buf,
             params->send_buf_len, params->source_addr, send_tag,
             NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
@@ -231,7 +217,7 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
 }
 
 static int
-test_bulk(struct na_test_params *params)
+test_bulk_prepare(struct na_test_params *params)
 {
     na_tag_t bulk_tag = NA_TEST_BULK_TAG;
     na_return_t na_ret;
