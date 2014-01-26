@@ -801,20 +801,20 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     send_tag = hg_gen_request_tag();
     recv_tag = send_tag;
 
-    na_ret = NA_Msg_send_unexpected(hg_na_class_g, hg_context_g,
-            &hg_send_input_cb, priv_request, priv_request->send_buf,
-            priv_request->send_buf_size, addr, send_tag, NA_OP_ID_IGNORE);
-    if (na_ret != NA_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not send buffer");
-        ret = HG_FAIL;
-        goto done;
-    }
-
     na_ret = NA_Msg_recv_expected(hg_na_class_g, hg_context_g,
             &hg_recv_output_cb, priv_request, priv_request->recv_buf,
             priv_request->recv_buf_size, addr, recv_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not pre-post buffer");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    na_ret = NA_Msg_send_unexpected(hg_na_class_g, hg_context_g,
+            &hg_send_input_cb, priv_request, priv_request->send_buf,
+            priv_request->send_buf_size, addr, send_tag, NA_OP_ID_IGNORE);
+    if (na_ret != NA_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not send buffer");
         ret = HG_FAIL;
         goto done;
     }
