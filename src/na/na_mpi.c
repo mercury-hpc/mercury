@@ -742,20 +742,22 @@ static na_return_t
 na_mpi_disconnect(na_class_t *na_class, struct na_mpi_addr *na_mpi_addr)
 {
     na_return_t ret = NA_SUCCESS;
-    int mpi_ret;
 
     if (na_mpi_addr && !na_mpi_addr->unexpected) {
-//        if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm) {
-            MPI_Comm_free(&na_mpi_addr->comm);
-//        } else {
-//            mpi_ret = MPI_Comm_disconnect(&na_mpi_addr->comm);
-//            if (mpi_ret != MPI_SUCCESS) {
-//                NA_LOG_ERROR("MPI_Comm_disconnect() failed");
-//                ret = NA_PROTOCOL_ERROR;
-//                goto done;
-//            }
-//        }
         MPI_Comm_free(&na_mpi_addr->rma_comm);
+
+        if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm) {
+            MPI_Comm_free(&na_mpi_addr->comm);
+        } else {
+            int mpi_ret;
+
+            mpi_ret = MPI_Comm_disconnect(&na_mpi_addr->comm);
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_LOG_ERROR("MPI_Comm_disconnect() failed");
+                ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
+        }
     }
     free(na_mpi_addr);
 
@@ -1140,7 +1142,10 @@ na_mpi_finalize(na_class_t *na_class)
     if (NA_MPI_PRIVATE_DATA(na_class)->accepting) {
         /* No more connection accepted after this point */
         hg_thread_join(NA_MPI_PRIVATE_DATA(na_class)->accept_thread);
-        /* Close port */
+
+        /* Process list of communicators */
+        na_mpi_remote_list_disconnect(na_class);
+
         mpi_ret = MPI_Close_port(NA_MPI_PRIVATE_DATA(na_class)->port_name);
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("Could not close port");
@@ -1148,9 +1153,6 @@ na_mpi_finalize(na_class_t *na_class)
             goto done;
         }
     }
-
-    /* Process list of communicators */
-    na_mpi_remote_list_disconnect(na_class);
 
     /* Check that unexpected op queue is empty */
     if (!hg_queue_is_empty(
@@ -1458,7 +1460,7 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
      * in case messages are already arrived */
     ret = na_mpi_msg_unexpected_op_push(na_class, na_mpi_op_id);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("");
+        NA_LOG_ERROR("Could not push operation ID");
         goto done;
     }
 
