@@ -13,14 +13,11 @@
 
 #include "na.h"
 
-/* MPI initialization flags */
-enum {
-    MPI_INIT_SERVER = 1,    /* set up to listen for unexpected messages */
-    MPI_INIT_SERVER_STATIC, /* set up static inter-communicator */
-    MPI_INIT_STATIC         /* set up static inter-communicator */
-};
-
 #include <mpi.h>
+
+/* MPI initialization flags */
+#define MPI_INIT_SERVER 0x01 /* set up to listen for unexpected messages */
+#define MPI_INIT_STATIC 0x10 /* set up static inter-communicator */
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,7 +31,6 @@ extern "C" {
  *                              processes.
  * \param flags [IN]            (Optional) supported flags:
  *                                - MPI_INIT_SERVER
- *                                - MPI_INIT_SERVER_STATIC
  *                                - MPI_INIT_STATIC
  *
  * \return Pointer to network class
