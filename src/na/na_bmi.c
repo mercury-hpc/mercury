@@ -398,6 +398,7 @@ na_bmi_progress_unexpected(
 
 static na_return_t
 na_bmi_progress_expected(
+        na_class_t   *na_class,
         na_context_t *context,
         unsigned int  timeout,
         na_bool_t    *progressed
@@ -581,8 +582,8 @@ na_bmi_initialize(const struct na_host_buffer *na_buffer, na_bool_t listen)
     strcat(method_list, na_buffer->na_protocol);
 
     na_class = NA_BMI_Init((listen) ? method_list : NULL,
-                                (listen) ? na_buffer->na_host_string : NULL,
-                                flag);
+            (listen) ? na_buffer->na_host_string : NULL,
+                    flag);
 
     free(method_list);
 
@@ -1635,6 +1636,7 @@ na_bmi_progress(na_class_t *na_class, na_context_t *context,
             NA_LOG_ERROR("Could not make unexpected progress");
             goto done;
         }
+
         if (progressed) break;
 
         /* The rule is that the timeout should be passed to testcontext, and
@@ -1642,7 +1644,7 @@ na_bmi_progress(na_class_t *na_class, na_context_t *context,
          * (And, that as long as there are unexpected messages pending,
          * testcontext will ignore the timeout and immediately return).
          * [verified this in the source] */
-        ret = na_bmi_progress_expected(context,
+        ret = na_bmi_progress_expected(na_class, context,
                 (unsigned int) (remaining * 1000), &progressed);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not make expected progress");
@@ -1666,6 +1668,7 @@ na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
     int outcount = 0;
     struct BMI_unexpected_info test_unexpected_info;
     struct BMI_unexpected_info *unexpected_info = NULL;
+    struct na_bmi_op_id *na_bmi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
@@ -1711,12 +1714,11 @@ na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
                 goto done;
             }
         } else {
-            struct na_bmi_op_id *na_bmi_op_id;
-
             na_bmi_op_id = na_bmi_msg_unexpected_op_pop(na_class);
-            /* If an op id was pushed, associate unexpected
-             * info to this operation ID and complete operation */
+
             if (na_bmi_op_id) {
+                /* If an op id was pushed, associate unexpected info to this
+                 * operation ID and complete operation */
                 na_bmi_op_id->info.recv_unexpected.unexpected_info =
                         unexpected_info;
                 ret = na_bmi_complete(na_bmi_op_id);
@@ -1725,6 +1727,9 @@ na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
                     goto done;
                 }
             } else {
+                /* Otherwise push the unexpected message into our
+                 * unexpected queue so that we can treat it later when a
+                 * recv_unexpected is posted */
                 ret = na_bmi_msg_unexpected_push(na_class, unexpected_info);
                 if (ret != NA_SUCCESS) {
                     NA_LOG_ERROR("Could not push unexpected info");
@@ -1745,8 +1750,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_progress_expected(na_context_t *context, unsigned int timeout,
-        na_bool_t *progressed)
+na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
+        unsigned int timeout, na_bool_t *progressed)
 {
     bmi_op_id_t bmi_op_id = 0;
     int outcount = 0;
