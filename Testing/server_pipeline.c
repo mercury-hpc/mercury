@@ -18,7 +18,7 @@
 #include <stdlib.h>
 
 #define PIPELINE_SIZE 4
-#define MIN_BUFFER_SIZE 2<<11 /* Stop at 4KB buffer size */
+#define MIN_BUFFER_SIZE 2<<15 /* 11 Stop at 4KB buffer size */
 
 #define FORCE_MPI_PROGRESS
 #define FORCE_PIPELINE_SLEEP
