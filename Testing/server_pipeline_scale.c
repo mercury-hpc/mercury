@@ -100,7 +100,7 @@ bla_write_rpc(hg_handle_t handle)
 
     na_addr_t source = HG_Handler_get_addr(handle);
     hg_bulk_t bla_write_bulk_handle = HG_BULK_NULL;
-    hg_bulk_block_t bla_write_bulk_block_handle[PIPELINE_SIZE];
+    hg_bulk_t bla_write_bulk_block_handle[PIPELINE_SIZE];
     hg_bulk_request_t bla_write_bulk_request[PIPELINE_SIZE];
     size_t bla_write_nbytes;
     int pipeline_iter;
@@ -130,7 +130,7 @@ bla_write_rpc(hg_handle_t handle)
 
     for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
         bla_write_buf[pipeline_iter] = malloc(pipeline_buffer_size);
-        HG_Bulk_block_handle_create(bla_write_buf[pipeline_iter],
+        HG_Bulk_handle_create(bla_write_buf[pipeline_iter],
                 pipeline_buffer_size, HG_BULK_READWRITE,
                 &bla_write_bulk_block_handle[pipeline_iter]);
     }
@@ -206,7 +206,7 @@ bla_write_rpc(hg_handle_t handle)
 
     /* Free block handles */
     for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
-        ret = HG_Bulk_block_handle_free(bla_write_bulk_block_handle[pipeline_iter]);
+        ret = HG_Bulk_handle_free(bla_write_bulk_block_handle[pipeline_iter]);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not free block call\n");
             return ret;
@@ -275,7 +275,7 @@ int main(int argc, char *argv[])
     color = 1;
     MPI_Comm_split(MPI_COMM_WORLD, color, global_rank, &split_comm);
 
-    network_class = NA_MPI_Init(&split_comm, MPI_INIT_SERVER_STATIC);
+    network_class = NA_MPI_Init(&split_comm, MPI_INIT_SERVER | MPI_INIT_STATIC);
 
     hg_ret = HG_Handler_init(network_class);
     if (hg_ret != HG_SUCCESS) {

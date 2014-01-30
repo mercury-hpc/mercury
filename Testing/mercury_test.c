@@ -229,7 +229,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         HG_Test_mpi_init();
 
         if (argc > 2 && (strcmp("static", argv[2]) == 0)) {
-            network_class = NA_MPI_Init(NULL, MPI_INIT_SERVER_STATIC);
+            network_class = NA_MPI_Init(NULL, MPI_INIT_SERVER | MPI_INIT_STATIC);
         } else {
             network_class = NA_Initialize("tcp@mpi://0.0.0.0:0", 1);
 
