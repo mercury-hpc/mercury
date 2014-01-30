@@ -27,9 +27,10 @@
 /* Default error macro */
 #ifdef NA_HAS_VERBOSE_ERROR
   #include <stdio.h>
-  #define NA_LOG_ERROR(fmt, ...) do {                  \
-      fprintf(stderr, "%s:%d: ERROR: " fmt,            \
-                __func__, __LINE__, ##__VA_ARGS__);    \
+  #define NA_LOG_ERROR(...) do {                              \
+      fprintf(stderr, "%s:%d: ERROR: ",  __func__, __LINE__); \
+      fprintf(stderr, __VA_ARGS__);                           \
+      fprintf(stderr, "\n");                                  \
   } while (0)
   #define NA_LOG_DEBUG(fmt, ...) do {                  \
       fprintf(stdout, "%s:%d: " fmt,                   \
