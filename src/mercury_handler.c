@@ -14,6 +14,7 @@
 #include "mercury_hash_table.h"
 #include "mercury_hash_string.h"
 #include "mercury_queue.h"
+#include "mercury_list.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_time.h"
 
@@ -45,6 +46,8 @@ struct hg_handle {
     na_size_t     extra_send_buf_size; /* Extra send buffer size (TODO not used) */
 
     void         *in_struct;           /* Reference to input structure */
+
+    hg_list_entry_t *processing_entry; /* Entry in processing list */
 };
 
 struct hg_handler_proc_info {
@@ -59,50 +62,85 @@ struct hg_handler_proc_info {
 /**
  * Create new handle.
  */
-static struct hg_handle *hg_handler_new(void);
+static struct hg_handle *
+hg_handler_new(void);
+
+/**
+ * Add handle to processing list.
+ */
+static hg_return_t
+hg_handler_processing_list_add(
+        struct hg_handle *priv_handle
+        );
+
+/**
+ * Remove handle from processing list.
+ */
+static hg_return_t
+hg_handler_processing_list_remove(
+        struct hg_handle *priv_handle
+        );
 
 /**
  * Add handle to completion queue.
  */
-static hg_return_t hg_handler_completion_add(struct hg_handle *priv_handle);
+static hg_return_t
+hg_handler_completion_queue_add(
+        struct hg_handle *priv_handle
+        );
 
 /**
  * Remove and free resources from handles in completion queue.
  */
-static hg_return_t hg_handler_completion_process(void);
+static hg_return_t
+hg_handler_completion_queue_process(void);
 
 /**
  * Get extra buffer and associate it to handle.
  */
-static hg_return_t hg_handler_process_extra_recv_buf(
-        struct hg_handle *priv_handle, hg_bulk_t extra_buf_handle);
+static hg_return_t
+hg_handler_process_extra_recv_buf(
+        struct hg_handle *priv_handle,
+        hg_bulk_t extra_buf_handle
+        );
 /**
  * Decode and get request header.
  */
-static hg_return_t hg_handler_get_request_header(struct hg_handle *priv_handle,
-        struct hg_header_request *header);
+static hg_return_t
+hg_handler_get_request_header(
+        struct hg_handle *priv_handle,
+        struct hg_header_request *header
+        );
 /**
  * Set and encode response header.
  */
-static hg_return_t hg_handler_set_response_header(struct hg_handle *priv_handle,
-        struct hg_header_response header);
+static hg_return_t
+hg_handler_set_response_header(
+        struct hg_handle *priv_handle,
+        struct hg_header_response header
+        );
 
 /**
  * Recv input callback.
  */
-static na_return_t hg_handler_recv_input_cb(
-        const struct na_cb_info *callback_info);
+static na_return_t
+hg_handler_recv_input_cb(
+        const struct na_cb_info *callback_info
+        );
 
 /**
  * Send output callback.
  */
-static na_return_t hg_handler_send_output_cb(
-        const struct na_cb_info *callback_info);
+static na_return_t
+hg_handler_send_output_cb(
+        const struct na_cb_info *callback_info
+        );
 
 /**
  * Start receiving a new request.
  */
-static hg_return_t hg_handler_start_request(void);
+static hg_return_t
+hg_handler_start_request(void);
 
 /*******************/
 /* Local Variables */
@@ -119,6 +157,10 @@ static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
 
 /* Function map */
 static hg_hash_table_t *hg_handler_func_map_g;
+
+/* Processing list */
+static hg_list_entry_t *hg_handler_processing_list_g;
+static hg_thread_mutex_t hg_handler_processing_list_mutex_g;
 
 /* Completion queue */
 static hg_queue_t *hg_handler_completion_queue_g;
@@ -177,6 +219,8 @@ hg_handler_new(void)
         priv_handle->extra_send_buf_size = 0;
 
         priv_handle->in_struct = NULL;
+
+        priv_handle->processing_entry = NULL;
     }
 
     return priv_handle;
@@ -184,7 +228,50 @@ hg_handler_new(void)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_handler_completion_add(struct hg_handle *priv_handle)
+hg_handler_processing_list_add(struct hg_handle *priv_handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+    hg_list_entry_t *new_entry = NULL;
+
+    hg_thread_mutex_lock(&hg_handler_processing_list_mutex_g);
+
+    new_entry = hg_list_append(&hg_handler_processing_list_g,
+            (hg_list_value_t) priv_handle);
+    if (!new_entry) {
+        HG_ERROR_DEFAULT("Could not append entry");
+        ret = HG_FAIL;
+    }
+    priv_handle->processing_entry = new_entry;
+
+    hg_thread_mutex_unlock(&hg_handler_processing_list_mutex_g);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_handler_processing_list_remove(struct hg_handle *priv_handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_thread_mutex_lock(&hg_handler_processing_list_mutex_g);
+
+    /* Remove handle from list if not found */
+    if (priv_handle->processing_entry && !hg_list_remove_entry(
+            &hg_handler_processing_list_g, priv_handle->processing_entry)) {
+        HG_ERROR_DEFAULT("Could not remove entry");
+        ret = HG_FAIL;
+    }
+    priv_handle->processing_entry = NULL;
+
+    hg_thread_mutex_unlock(&hg_handler_processing_list_mutex_g);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_handler_completion_queue_add(struct hg_handle *priv_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -203,7 +290,7 @@ hg_handler_completion_add(struct hg_handle *priv_handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_handler_completion_process(void)
+hg_handler_completion_queue_process(void)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -358,7 +445,8 @@ hg_handler_recv_input_cb(const struct na_cb_info *callback_info)
     struct hg_handle *priv_handle = (struct hg_handle *) callback_info->arg;
     struct hg_handler_proc_info   *proc_info;
     struct hg_header_request request_header;
-    hg_return_t ret = HG_SUCCESS; /* TODO embed ret into priv_request */
+    /* TODO embed ret into priv_request */
+    hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
@@ -372,6 +460,15 @@ hg_handler_recv_input_cb(const struct na_cb_info *callback_info)
     hg_handler_started_request_g = HG_FALSE;
 
     hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
+
+    /* When a new request is being treated we must enqueue the handle
+     * which is then moved to the completion queue once the user is done
+     * with it */
+    ret = hg_handler_processing_list_add(priv_handle);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not add handle to processing list");
+        goto done;
+    }
 
     priv_handle->addr = callback_info->info.recv_unexpected.source;
     priv_handle->tag = callback_info->info.recv_unexpected.tag;
@@ -437,16 +534,27 @@ static na_return_t
 hg_handler_send_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *priv_handle = (struct hg_handle *) callback_info->arg;
-    na_return_t ret = NA_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
-        return ret;
+        goto done;
     }
 
-    /* Add handle to completion queue */
-    hg_handler_completion_add(priv_handle);
+    /* Remove handle from processing list and add handle to completion queue */
+    ret = hg_handler_processing_list_remove(priv_handle);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not remove handle from processing list");
+        goto done;
+    }
+    ret = hg_handler_completion_queue_add(priv_handle);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not add handle to completion queue");
+        goto done;
+    }
 
-    return ret;
+ done:
+    return na_ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -536,13 +644,29 @@ HG_Handler_finalize(void)
         hg_bulk_initialized_internal_g = HG_FALSE;
     }
 
-    /* Wait for previous responses to complete */
-//    ret = hg_handler_process_response_list(HG_MAX_IDLE_TIME);
-//    if (ret != HG_SUCCESS) {
-//        HG_ERROR_DEFAULT("Could not process response list");
-//        ret = HG_FAIL;
-//        goto done;
-//    }
+    /* If requests have not finished processing we must ensure that they are
+     * moved to the completion queue before we process it */
+    while (hg_list_length(hg_handler_processing_list_g)) {
+        int actual_count = 0;
+
+        do {
+            na_ret = NA_Trigger(hg_handler_context_g, 0, 1, &actual_count);
+        } while ((na_ret == NA_SUCCESS) && actual_count);
+
+        if (!hg_list_length(hg_handler_processing_list_g)) break;
+
+        NA_Progress(hg_handler_na_class_g, hg_handler_context_g, 10);
+    }
+
+    /* Check if any handles have been non completed have been left */
+    ret = hg_handler_completion_queue_process();
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not process completed requests");
+        ret = HG_FAIL;
+        goto done;
+    }
+    /* Free completion queue */
+    hg_queue_free(hg_handler_completion_queue_g);
 
     /* Destroy context */
     na_ret = NA_Context_destroy(hg_handler_na_class_g, hg_handler_context_g);
@@ -707,7 +831,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
     hg_return_t ret = HG_SUCCESS;
 
     /* Check if previous handles have completed */
-    hg_handler_completion_process();
+    hg_handler_completion_queue_process();
 
     /* Start a new request if none already started */
     hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
