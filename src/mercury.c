@@ -39,13 +39,13 @@ struct hg_request {
     void         *extra_send_buf;
     na_size_t     extra_send_buf_size;
     hg_bulk_t     extra_send_buf_handle;
+    hg_bool_t     send_completed;
 
     void         *recv_buf;
     na_size_t     recv_buf_size;
+    hg_bool_t     recv_completed;
 
     void         *out_struct;
-
-    hg_bool_t     completed;
 };
 
 struct hg_proc_info {
@@ -448,6 +448,13 @@ hg_send_input_cb(const struct na_cb_info *callback_info)
     priv_request->send_buf = NULL;
     priv_request->send_buf_size = 0;
 
+    /* Mark request as completed */
+    hg_thread_mutex_lock(&hg_request_mutex_g);
+
+    priv_request->send_completed = HG_TRUE;
+
+    hg_thread_mutex_unlock(&hg_request_mutex_g);
+
     return ret;
 }
 
@@ -504,7 +511,7 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
     /* Mark request as completed */
     hg_thread_mutex_lock(&hg_request_mutex_g);
 
-    priv_request->completed = HG_TRUE;
+    priv_request->recv_completed = HG_TRUE;
 
     hg_thread_mutex_unlock(&hg_request_mutex_g);
 
@@ -775,7 +782,8 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     priv_request->out_struct = out_struct;
 
     /* Mark request as not completed */
-    priv_request->completed = HG_FALSE;
+    priv_request->send_completed = HG_FALSE;
+    priv_request->recv_completed = HG_FALSE;
 
     /* Encode the function parameters */
     ret = hg_set_input(priv_request, in_struct);
@@ -871,7 +879,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 
     hg_thread_mutex_lock(&hg_request_mutex_g);
 
-    completed = priv_request->completed;
+    completed = (priv_request->send_completed && priv_request->recv_completed);
 
     hg_thread_mutex_unlock(&hg_request_mutex_g);
 
@@ -888,7 +896,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 
         hg_thread_mutex_lock(&hg_request_mutex_g);
 
-        completed = priv_request->completed;
+        completed = (priv_request->send_completed && priv_request->recv_completed);
 
         hg_thread_mutex_unlock(&hg_request_mutex_g);
 
@@ -958,7 +966,7 @@ HG_Request_free(hg_request_t request)
         return ret;
     }
 
-    if (!priv_request->completed) {
+    if (!priv_request->send_completed || !priv_request->recv_completed) {
         HG_ERROR_DEFAULT("Trying to free an uncompleted request");
         ret = HG_FAIL;
         return ret;
