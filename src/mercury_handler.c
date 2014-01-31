@@ -140,7 +140,9 @@ hg_handler_send_output_cb(
  * Start receiving a new request.
  */
 static hg_return_t
-hg_handler_start_request(void);
+hg_handler_start_request(
+        na_op_id_t *request_op_id
+        );
 
 /*******************/
 /* Local Variables */
@@ -168,6 +170,7 @@ static hg_thread_mutex_t hg_handler_completion_queue_mutex_g;
 
 /* Request started */
 static hg_bool_t hg_handler_started_request_g = HG_FALSE;
+static na_op_id_t hg_handler_started_request_id_g = NA_OP_ID_NULL;
 static hg_thread_mutex_t hg_handler_started_request_mutex_g;
 
 /*---------------------------------------------------------------------------*/
@@ -458,6 +461,9 @@ hg_handler_recv_input_cb(const struct na_cb_info *callback_info)
     hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
 
     hg_handler_started_request_g = HG_FALSE;
+    /* No longer care about the op_id since at this point
+     * the request is received */
+    hg_handler_started_request_id_g = NA_OP_ID_NULL;
 
     hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
 
@@ -642,6 +648,13 @@ HG_Handler_finalize(void)
             goto done;
         }
         hg_bulk_initialized_internal_g = HG_FALSE;
+    }
+
+    /* If request was started, we must cancel it */
+    if (hg_handler_started_request_id_g != NA_OP_ID_NULL) {
+        /* TODO for now print an error message but cancel it in the future
+         * if necessary */
+        HG_ERROR_DEFAULT("Posted a request which did not complete");
     }
 
     /* If requests have not finished processing we must ensure that they are
@@ -837,7 +850,8 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
     hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
 
     if (!hg_handler_started_request_g) {
-        ret = hg_handler_start_request();
+        ret = hg_handler_start_request(&hg_handler_started_request_id_g);
+        if (ret != HG_SUCCESS) goto done;
         hg_handler_started_request_g = HG_TRUE;
     }
 
@@ -886,7 +900,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_handler_start_request(void)
+hg_handler_start_request(na_op_id_t *request_op_id)
 {
     struct hg_handle *priv_handle = NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -915,7 +929,7 @@ hg_handler_start_request(void)
     /* Post a new unexpected receive */
     na_ret = NA_Msg_recv_unexpected(hg_handler_na_class_g, hg_handler_context_g,
             &hg_handler_recv_input_cb, priv_handle, priv_handle->recv_buf,
-            priv_handle->recv_buf_size, NA_OP_ID_IGNORE);
+            priv_handle->recv_buf_size, request_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not post unexpected recv for input buffer");
         ret = HG_FAIL;
