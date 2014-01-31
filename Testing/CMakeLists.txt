@@ -14,6 +14,11 @@ option(MERCURY_ENABLE_PARALLEL_TESTING
   "Enable testing in parallel (requires MPI)." OFF)
 if(MERCURY_ENABLE_PARALLEL_TESTING OR NA_USE_MPI)
   set(MERCURY_HAS_PARALLEL_TESTING 1)
+  if(NA_USE_MPI AND NOT MERCURY_ENABLE_PARALLEL_TESTING)
+    # Always force parallel testing if NA_USE_MPI is turned ON
+    set(MERCURY_ENABLE_PARALLEL_TESTING "ON" CACHE BOOL
+      "Enable testing in parallel (requires MPI)." FORCE)
+  endif()
 else()
   set(MERCURY_HAS_PARALLEL_TESTING 0)
 endif()
@@ -132,9 +137,8 @@ build_mercury_test(server_pipeline)
 
 #------------------------------------------------------------------------------
 # Scaling bandwidth bulk data shipper test using pipelining
-#if(NA_USE_MPI)
-  build_mercury_test(client_scale)
-  build_mercury_test(server_scale)
+build_mercury_test(client_scale)
+build_mercury_test(server_scale)
 if(NA_USE_MPI)
   build_mercury_test(client_pipeline_scale)
   build_mercury_test(server_pipeline_scale)
@@ -159,6 +163,7 @@ set(MERCURY_tests
   bulk
   bulk_seg
   pipeline
+  scale
 )
 
 if(NOT WIN32)
