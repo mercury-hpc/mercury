@@ -863,6 +863,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
         hg_time_t t1, t2;
         na_return_t na_ret;
         int actual_count = 0;
+        unsigned int progress_timeout = (timeout > 1000) ? 1000 : timeout;
 
         hg_time_get_current(&t1);
 
@@ -879,7 +880,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
         if (processed) break;
 
         na_ret = NA_Progress(hg_handler_na_class_g, hg_handler_context_g,
-                (unsigned int) (remaining * 1000));
+                progress_timeout);
         if (na_ret == NA_TIMEOUT) {
             goto done;
         }

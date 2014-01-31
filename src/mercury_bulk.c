@@ -942,6 +942,10 @@ HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
         na_return_t na_ret;
         int actual_count = 0;
         hg_time_t t3, t4;
+        /* TODO Keep a timeout of 10ms for progress timeout for now but this
+         * should be more optimized in the future
+         */
+        unsigned int progress_timeout = (timeout > 10) ? 10 : timeout;
 
         do {
             na_ret = NA_Trigger(hg_bulk_context_g, 0, 1, &actual_count);
@@ -960,10 +964,11 @@ HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
 
             if (hg_thread_cond_timedwait(&hg_bulk_progress_cond_g,
                     &hg_bulk_progress_mutex_g,
-                    (unsigned int) (remaining * 1000)) != HG_UTIL_SUCCESS) {
+                    progress_timeout) != HG_UTIL_SUCCESS) {
                 /* Timeout occurred so leave */
-                hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
-                goto done;
+//                hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
+//                goto done;
+                continue;
             }
 
             hg_time_get_current(&t2);
@@ -983,7 +988,7 @@ HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
         hg_time_get_current(&t3);
 
         na_ret = NA_Progress(hg_bulk_na_class_g, hg_bulk_context_g,
-                (unsigned int) (remaining * 1000));
+                progress_timeout);
 
         hg_time_get_current(&t4);
         remaining -= hg_time_to_double(hg_time_subtract(t4, t3));
