@@ -17,7 +17,7 @@
 #include "mercury_queue.h"
 #include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
-//#include "mercury_thread_condition.h"
+#include "mercury_thread_condition.h"
 #include "mercury_time.h"
 #include "mercury_atomic.h"
 //#include "mercury_util_error.h"
@@ -155,7 +155,7 @@ struct na_mpi_private_data {
 
     hg_thread_t        accept_thread; /* Thread for accepting new connections */
     hg_thread_mutex_t  accept_mutex;  /* Mutex */
-//    hg_thread_cond_t   accept_cond;   /* Cond */
+    hg_thread_cond_t   accept_cond;   /* Cond */
     na_bool_t          accepting;     /* Is in MPI_Comm_accept */
 
     hg_list_entry_t   *remote_list;       /* List of connected remotes */
@@ -678,8 +678,6 @@ na_mpi_accept(na_class_t *na_class)
 
     hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
 
-    NA_MPI_PRIVATE_DATA(na_class)->accepting = NA_TRUE;
-
     if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm) {
         int global_size, intra_size;
 
@@ -713,9 +711,8 @@ na_mpi_accept(na_class_t *na_class)
         goto done;
     }
 
-    // TODO Do we need the condition here ??
-//    NA_MPI_PRIVATE_DATA(na_class)->accepting = NA_FALSE;
-//    hg_thread_cond_signal(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond);
+    NA_MPI_PRIVATE_DATA(na_class)->accepting = NA_FALSE;
+    hg_thread_cond_signal(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond);
 
     hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
 
@@ -1077,8 +1074,7 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
 
     /* Initialize mutex/cond */
     hg_thread_mutex_init(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
-//    hg_thread_cond_init(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond);
-    NA_MPI_PRIVATE_DATA(na_class)->accepting = NA_FALSE;
+    hg_thread_cond_init(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond);
     hg_thread_mutex_init(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
     hg_thread_mutex_init(&NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
     hg_thread_mutex_init(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
@@ -1090,6 +1086,7 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
 
     /* If server opens a port */
     if (listening) {
+        NA_MPI_PRIVATE_DATA(na_class)->accepting = NA_TRUE;
         if (use_static_inter_comm) {
             /* Do not launch any thread, just accept */
             if (na_mpi_accept(na_class) != NA_SUCCESS) {
@@ -1109,6 +1106,8 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
                     &na_mpi_accept_service,
                     (void *) na_class);
         }
+    } else {
+        NA_MPI_PRIVATE_DATA(na_class)->accepting = NA_FALSE;
     }
 
 done:
@@ -1144,12 +1143,10 @@ na_mpi_finalize(na_class_t *na_class)
     int mpi_ret;
 
     /* If server opened a port */
-    if (NA_MPI_PRIVATE_DATA(na_class)->accepting) {
+    if (NA_MPI_PRIVATE_DATA(na_class)->listening &&
+            !NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm) {
         /* No more connection accepted after this point */
         hg_thread_join(NA_MPI_PRIVATE_DATA(na_class)->accept_thread);
-
-        /* Process list of communicators */
-        na_mpi_remote_list_disconnect(na_class);
 
         mpi_ret = MPI_Close_port(NA_MPI_PRIVATE_DATA(na_class)->port_name);
         if (mpi_ret != MPI_SUCCESS) {
@@ -1158,6 +1155,8 @@ na_mpi_finalize(na_class_t *na_class)
             goto done;
         }
     }
+    /* Process list of communicators */
+    na_mpi_remote_list_disconnect(na_class);
 
     /* Check that unexpected op queue is empty */
     if (!hg_queue_is_empty(
@@ -1200,7 +1199,7 @@ na_mpi_finalize(na_class_t *na_class)
 
     /* Destroy mutex/cond */
     hg_thread_mutex_destroy(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
-//    hg_thread_cond_destroy(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond);
+    hg_thread_cond_destroy(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond);
     hg_thread_mutex_destroy(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
     hg_thread_mutex_destroy(&NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
     hg_thread_mutex_destroy(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
@@ -1260,9 +1259,10 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
 
     /* TODO A listening process can only "connect" to one of his pairs ? */
     if (NA_MPI_PRIVATE_DATA(na_class)->listening) {
-//        while (na_mpi_is_accepting_g) {
-//            hg_thread_cond_wait(&na_mpi_accept_cond_g, &na_mpi_accept_mutex_g);
-//        }
+        while (NA_MPI_PRIVATE_DATA(na_class)->accepting) {
+            hg_thread_cond_wait(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond,
+                    &NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
+        }
         mpi_ret = MPI_Comm_dup(NA_MPI_PRIVATE_DATA(na_class)->intra_comm,
                 &na_mpi_addr->comm);
     } else {
