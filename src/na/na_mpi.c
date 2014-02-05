@@ -55,6 +55,7 @@ struct na_mpi_addr {
     MPI_Comm  rma_comm;          /* Communicator used for one sided emulation */
     int       rank;              /* Rank in this communicator */
     na_bool_t unexpected;        /* Address generated from unexpected recv */
+    na_bool_t dynamic;           /* Address generated using MPI DPM routines */
     char      port_name[MPI_MAX_PORT_NAME]; /* String version of addr */
 };
 
@@ -727,7 +728,9 @@ na_mpi_accept(na_class_t *na_class)
     na_mpi_addr->comm = new_comm;
     na_mpi_addr->rma_comm = new_rma_comm;
     na_mpi_addr->rank = MPI_ANY_SOURCE;
-    na_mpi_addr->unexpected = 0;
+    na_mpi_addr->unexpected = NA_FALSE;
+    na_mpi_addr->dynamic = (na_bool_t)
+            (!NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm);
     memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
 
     /* Add comms to list of connected remotes */
@@ -739,16 +742,15 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_disconnect(na_class_t *na_class, struct na_mpi_addr *na_mpi_addr)
+na_mpi_disconnect(na_class_t NA_UNUSED *na_class,
+        struct na_mpi_addr *na_mpi_addr)
 {
     na_return_t ret = NA_SUCCESS;
 
     if (na_mpi_addr && !na_mpi_addr->unexpected) {
         MPI_Comm_free(&na_mpi_addr->rma_comm);
 
-        if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm) {
-            MPI_Comm_free(&na_mpi_addr->comm);
-        } else {
+        if (na_mpi_addr->dynamic) {
             int mpi_ret;
 
             mpi_ret = MPI_Comm_disconnect(&na_mpi_addr->comm);
@@ -757,6 +759,8 @@ na_mpi_disconnect(na_class_t *na_class, struct na_mpi_addr *na_mpi_addr)
                 ret = NA_PROTOCOL_ERROR;
                 goto done;
             }
+        } else {
+            MPI_Comm_free(&na_mpi_addr->comm);
         }
     }
     free(na_mpi_addr);
@@ -1244,6 +1248,7 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_mpi_addr->comm = MPI_COMM_NULL;
     na_mpi_addr->rma_comm = MPI_COMM_NULL;
     na_mpi_addr->unexpected = NA_FALSE;
+    na_mpi_addr->dynamic = NA_FALSE;
     na_mpi_op_id->info.lookup.addr = (na_addr_t) na_mpi_addr;
     memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
     /* get port_name and remote server rank */
@@ -1253,8 +1258,8 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
      * create new communicators */
     hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
 
+    /* TODO A listening process can only "connect" to one of his pairs ? */
     if (NA_MPI_PRIVATE_DATA(na_class)->listening) {
-        /* TODO A listening process can only "connect" to one of his pairs ? */
 //        while (na_mpi_is_accepting_g) {
 //            hg_thread_cond_wait(&na_mpi_accept_cond_g, &na_mpi_accept_mutex_g);
 //        }
@@ -1266,6 +1271,7 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
                     NA_MPI_PRIVATE_DATA(na_class)->intra_comm, 0,
                     MPI_COMM_WORLD, 0, 0, &na_mpi_addr->comm);
         } else {
+            na_mpi_addr->dynamic = NA_TRUE;
             mpi_ret = MPI_Comm_connect(na_mpi_addr->port_name, MPI_INFO_NULL, 0,
                     NA_MPI_PRIVATE_DATA(na_class)->intra_comm,
                     &na_mpi_addr->comm);
@@ -2408,6 +2414,7 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
             na_mpi_addr->rma_comm = na_mpi_remote_addr->rma_comm;
             na_mpi_addr->rank = status->MPI_SOURCE;
             na_mpi_addr->unexpected = NA_TRUE;
+            na_mpi_addr->dynamic = NA_TRUE;
             memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
             /* Can only write debug info here */
             sprintf(na_mpi_addr->port_name, "comm: %d rank:%d\n",
