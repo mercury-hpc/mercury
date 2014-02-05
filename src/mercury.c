@@ -337,7 +337,7 @@ hg_set_input(struct hg_request *priv_request, void *in_struct)
      *  - 1: send an unexpected message with info + eventual bulk data descriptor
      *  - 2: send the remaining data in extra buf using bulk data transfer
      */
-    if (hg_proc_get_size(proc) > NA_Msg_get_max_unexpected_size(hg_na_class_g)) {
+    if (hg_proc_get_size(proc) > priv_request->send_buf_size) {
 #ifdef HG_HAS_XDR
         HG_ERROR_DEFAULT("Extra encoding using XDR is not yet supported");
         ret = HG_FAIL;
@@ -572,7 +572,7 @@ HG_Init(na_class_t *na_class)
             return ret;
         }
     }
-    hg_bulk_initialized_internal_g = !bulk_initialized;
+    hg_bulk_initialized_internal_g = (hg_bool_t) (!bulk_initialized);
     
     /* Initialize atomic for tags */
     hg_request_max_tag_g = NA_Msg_get_max_tag(hg_na_class_g);
@@ -649,7 +649,7 @@ HG_Initialized(hg_bool_t *flag, na_class_t **na_class)
         return ret;
     }
 
-    *flag = (hg_na_class_g != NULL);
+    *flag = (hg_bool_t) (hg_na_class_g != NULL);
     if (na_class) *na_class = hg_na_class_g;
 
     return HG_SUCCESS;
@@ -723,7 +723,8 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id)
 
     func_id = hg_hash_string(func_name);
 
-    *flag = (hg_hash_table_lookup(hg_func_map_g, &func_id) != HG_HASH_TABLE_NULL);
+    *flag = (hg_bool_t) (hg_hash_table_lookup(hg_func_map_g, &func_id)
+            != HG_HASH_TABLE_NULL);
     if (id) *id = (*flag) ? func_id : 0;
 
     return HG_SUCCESS;
@@ -879,7 +880,8 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 
     hg_thread_mutex_lock(&hg_request_mutex_g);
 
-    completed = (priv_request->send_completed && priv_request->recv_completed);
+    completed = (hg_bool_t)
+            (priv_request->send_completed && priv_request->recv_completed);
 
     hg_thread_mutex_unlock(&hg_request_mutex_g);
 
@@ -896,7 +898,8 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 
         hg_thread_mutex_lock(&hg_request_mutex_g);
 
-        completed = (priv_request->send_completed && priv_request->recv_completed);
+        completed = (hg_bool_t)
+                (priv_request->send_completed && priv_request->recv_completed);
 
         hg_thread_mutex_unlock(&hg_request_mutex_g);
 

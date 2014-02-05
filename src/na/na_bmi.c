@@ -624,7 +624,7 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
         goto done;
     }
 
-    listening = (flags == BMI_INIT_SERVER) ? NA_TRUE : NA_FALSE;
+    listening = (na_bool_t) (flags == BMI_INIT_SERVER);
     NA_BMI_PRIVATE_DATA(na_class)->listening = listening;
     NA_BMI_PRIVATE_DATA(na_class)->listen_addr =
             (listening) ? strdup(listen_addr) : NULL;
@@ -1741,7 +1741,7 @@ na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
         }
     }
 
-    if (progressed) *progressed = (outcount > 0);
+    if (progressed) *progressed = (na_bool_t) (outcount > 0);
 
 done:
     free(unexpected_info);
@@ -1849,7 +1849,7 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
         }
     }
 
-    if (progressed) *progressed = (outcount > 0);
+    if (progressed) *progressed = (na_bool_t) (outcount > 0);
 
 done:
     return ret;

@@ -24,7 +24,8 @@ int bla_open(const char *path, bla_handle_t handle, int *event_id)
 }
 
 /******************************************************************************/
-hg_return_t fs_bla_open(hg_handle_t handle)
+static hg_return_t
+fs_bla_open(hg_handle_t handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -65,7 +66,8 @@ hg_return_t fs_bla_open(hg_handle_t handle)
 }
 
 /******************************************************************************/
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
     unsigned int number_of_peers;

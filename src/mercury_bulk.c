@@ -88,7 +88,7 @@ static na_return_t hg_bulk_transfer_cb(const struct na_cb_info *callback_info);
 /**
  * Transfer data.
  */
-hg_return_t hg_bulk_transfer(hg_bulk_op_t op, na_addr_t addr,
+static hg_return_t hg_bulk_transfer(hg_bulk_op_t op, na_addr_t addr,
         hg_bulk_t bulk_handle, size_t bulk_offset,
         hg_bulk_t block_handle, size_t block_offset,
         size_t block_size, hg_bulk_request_t *bulk_request);
@@ -195,7 +195,7 @@ HG_Bulk_initialized(hg_bool_t *flag, na_class_t **na_class)
         goto done;
     }
 
-    *flag = (hg_bulk_na_class_g != NULL);
+    *flag = (hg_bool_t) (hg_bulk_na_class_g != NULL);
     if (na_class) *na_class = hg_bulk_na_class_g;
 
 done:
@@ -688,7 +688,7 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
+static hg_return_t
 hg_bulk_transfer(hg_bulk_op_t bulk_op, na_addr_t addr,
         hg_bulk_t bulk_handle, size_t bulk_offset,
         hg_bulk_t block_handle, size_t block_offset,

@@ -17,7 +17,8 @@ static na_addr_t addr;
 static na_class_t *network_class = NULL;
 static hg_id_t open_id, write_id, read_id, close_id, finalize_id;
 
-int init_rpc(int argc, char *argv[], int *rank)
+static int
+init_rpc(int argc, char *argv[], int *rank)
 {
     int hg_ret, na_ret;
     int ret = HG_SUCCESS;
@@ -53,7 +54,8 @@ int init_rpc(int argc, char *argv[], int *rank)
     return ret;
 }
 
-int finalize_rpc()
+static int
+finalize_rpc()
 {
     int hg_ret, na_ret;
     int ret = HG_SUCCESS;
@@ -113,7 +115,8 @@ int finalize_rpc()
     return ret;
 }
 
-int open_rpc(const char *pathname, int flags, mode_t mode)
+static int
+open_rpc(const char *pathname, int flags, mode_t mode)
 {
     open_in_t  open_in_struct;
     open_out_t open_out_struct;
@@ -165,7 +168,8 @@ int open_rpc(const char *pathname, int flags, mode_t mode)
     return open_ret;
 }
 
-int close_rpc(int fd)
+static int
+close_rpc(int fd)
 {
     close_in_t  close_in_struct;
     close_out_t close_out_struct;
@@ -215,7 +219,8 @@ int close_rpc(int fd)
     return close_ret;
 }
 
-ssize_t write_rpc(int fd, void *buf, size_t count)
+static ssize_t
+write_rpc(int fd, void *buf, size_t count)
 {
     write_in_t  write_in_struct;
     write_out_t write_out_struct;
@@ -283,7 +288,8 @@ ssize_t write_rpc(int fd, void *buf, size_t count)
     return write_ret;
 }
 
-ssize_t read_rpc(int fd, void *buf, size_t count)
+static ssize_t
+read_rpc(int fd, void *buf, size_t count)
 {
     read_in_t  read_in_struct;
     read_out_t read_out_struct;
@@ -361,7 +367,8 @@ ssize_t read_rpc(int fd, void *buf, size_t count)
 #define close close_rpc
 
 /******************************************************************************/
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
     int ret;
     mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
@@ -448,13 +455,13 @@ int main(int argc, char *argv[])
     /* Check bulk buf */
     for (i = 0; i < n_ints; i++) {
         if (read_buf[i] != write_buf[i]) {
-            printf("(%d) Error detected in bulk transfer, read_buf[%d] = %d, was expecting %d!\n",
+            printf("(%d) Error detected in bulk transfer, read_buf[%u] = %d, was expecting %d!\n",
                     rank, i, read_buf[i], write_buf[i]);
             error = 1;
             break;
         }
     }
-    if (!error) printf("(%d) Successfully transferred %lu bytes!\n", rank, nbyte);
+    if (!error) printf("(%d) Successfully transferred %zd bytes!\n", rank, nbyte);
 
     /* Free bulk data */
     free(write_buf);

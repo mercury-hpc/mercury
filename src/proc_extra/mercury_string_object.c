@@ -28,7 +28,8 @@ hg_string_object_init(hg_string_object_t *string)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_string_object_init_char(hg_string_object_t *string, char *s, hg_bool_t is_owned)
+hg_string_object_init_char(hg_string_object_t *string, char *s,
+        hg_bool_t is_owned)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -40,8 +41,17 @@ hg_string_object_init_char(hg_string_object_t *string, char *s, hg_bool_t is_own
 }
 
 /*---------------------------------------------------------------------------*/
+/* We need to suppress -Wcast-qual warnings here as the const qualifier is
+ * handled by the string object.
+ */
+#if defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 406) && \
+    !defined(__INTEL_COMPILER)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-qual"
+#endif
 hg_return_t
-hg_string_object_init_const_char(hg_string_object_t *string, const char *s, hg_bool_t is_owned)
+hg_string_object_init_const_char(hg_string_object_t *string, const char *s,
+        hg_bool_t is_owned)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -51,6 +61,10 @@ hg_string_object_init_const_char(hg_string_object_t *string, const char *s, hg_b
 
     return ret;
 }
+#if defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 406) && \
+    !defined(__INTEL_COMPILER)
+#pragma GCC diagnostic pop
+#endif
 
 /*---------------------------------------------------------------------------*/
 hg_return_t

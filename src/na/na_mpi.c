@@ -978,10 +978,10 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     }
 
     /* Check flags */
-    listening = (flags & MPI_INIT_SERVER) ? NA_TRUE : NA_FALSE;
+    listening = (na_bool_t) (flags & MPI_INIT_SERVER);
     NA_MPI_PRIVATE_DATA(na_class)->listening = listening;
 
-    use_static_inter_comm = (flags & MPI_INIT_STATIC) ? NA_TRUE : NA_FALSE;
+    use_static_inter_comm = (na_bool_t) (flags & MPI_INIT_STATIC);
     NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm = use_static_inter_comm;
 
     /* Initialize MPI */
@@ -991,7 +991,8 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
         error_occurred = NA_TRUE;
         goto done;
     }
-    NA_MPI_PRIVATE_DATA(na_class)->mpi_ext_initialized = mpi_ext_initialized;
+    NA_MPI_PRIVATE_DATA(na_class)->mpi_ext_initialized =
+            (na_bool_t) mpi_ext_initialized;
 
     if (!mpi_ext_initialized) {
         if (listening) {

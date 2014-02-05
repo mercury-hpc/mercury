@@ -112,7 +112,7 @@ hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
 #elif defined(__APPLE__)
     ret = OSAtomicCompareAndSwap32(compare_value, swap_value, &ptr->value);
 #else
-    ret = (compare_value == OPA_cas_int(ptr, compare_value, swap_value));
+    ret = (hg_util_bool_t) (compare_value == OPA_cas_int(ptr, compare_value, swap_value));
 #endif
 
     return ret;

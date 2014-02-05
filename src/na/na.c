@@ -187,12 +187,11 @@ NA_parse_host_string(const char *host_string,
 
     na_buffer->na_port = atoi(locator);
 
-    na_host_string_len = strlen(na_buffer->na_protocol) +
-            strlen("://") +
-            strlen(na_buffer->na_host) +
-            strlen(":") +
-            strlen(locator) +
-            1;
+    na_host_string_len = strlen(na_buffer->na_protocol) + 1;
+    na_host_string_len += strlen("://");
+    na_host_string_len += strlen(na_buffer->na_host);
+    na_host_string_len += strlen(":");
+    na_host_string_len += strlen(locator);
 
     na_buffer->na_host_string = (char*) malloc(na_host_string_len);
     if (!na_buffer->na_host_string) {
@@ -894,7 +893,7 @@ NA_Trigger(na_context_t *context,
         hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
         /* Is completion queue empty */
-        completion_queue_empty = hg_queue_is_empty(
+        completion_queue_empty = (na_bool_t) hg_queue_is_empty(
                 na_private_context->completion_queue);
 
         while (completion_queue_empty) {

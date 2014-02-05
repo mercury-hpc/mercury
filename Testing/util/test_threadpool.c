@@ -64,7 +64,7 @@ main(int argc, char *argv[])
     hg_thread_mutex_destroy(&mymutex);
 
     if (ncalls != POOL_NUM_POSTS) {
-        fprintf(stderr, "Did not execute all the operations posted (%d/%d)\n",
+        fprintf(stderr, "Did not execute all the operations posted (%u/%d)\n",
                 ncalls, POOL_NUM_POSTS);
         ret = EXIT_FAILURE;
     }

@@ -603,7 +603,7 @@ HG_Handler_init(na_class_t *na_class)
             goto done;
         }
     }
-    hg_bulk_initialized_internal_g = !bulk_initialized;
+    hg_bulk_initialized_internal_g = (hg_bool_t) (!bulk_initialized);
 
     /* Create new function map */
     hg_handler_func_map_g = hg_hash_table_new(hg_int_hash, hg_int_equal);
@@ -855,7 +855,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
         hg_handler_started_request_g = HG_TRUE;
     }
 
-    processed = !hg_handler_started_request_g;
+    processed = (hg_bool_t) (!hg_handler_started_request_g);
 
     hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
 
@@ -873,7 +873,7 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status)
 
         hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
 
-        processed = !hg_handler_started_request_g;
+        processed = (hg_bool_t) (!hg_handler_started_request_g);
 
         hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
 

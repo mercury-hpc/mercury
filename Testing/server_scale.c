@@ -321,7 +321,7 @@ main(int argc, char *argv[])
 
         hg_thread_mutex_lock(&finalizing_mutex);
 
-        finalizing = (finalizing_count);
+        finalizing = (hg_bool_t) (finalizing_count > 0);
 
         hg_thread_mutex_unlock(&finalizing_mutex);
     }

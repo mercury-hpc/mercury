@@ -18,9 +18,9 @@
 
 static na_class_t *network_class = NULL;
 
-
 /* Actual definition of the function that needs to be executed */
-size_t bla_write(int fildes, const void *buf, size_t nbyte)
+size_t
+bla_write(int fildes, const void *buf, size_t nbyte)
 {
     size_t i;
     int error = 0;
@@ -50,7 +50,8 @@ size_t bla_write(int fildes, const void *buf, size_t nbyte)
 }
 
 /******************************************************************************/
-hg_return_t fs_bla_write(hg_handle_t handle)
+static hg_return_t
+fs_bla_write(hg_handle_t handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -125,7 +126,8 @@ hg_return_t fs_bla_write(hg_handle_t handle)
 }
 
 /******************************************************************************/
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
     unsigned int number_of_peers;
     unsigned int i;

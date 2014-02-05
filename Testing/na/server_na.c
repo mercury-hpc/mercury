@@ -134,8 +134,8 @@ bulk_get_cb(const struct na_cb_info *callback_info)
     /* Check bulk buf */
     for (i = 0; i < params->bulk_size; i++) {
         if ((na_size_t) params->bulk_buf[i] != i) {
-            printf("Error detected in bulk transfer, bulk_buf[%d] = %d,\t"
-                    " was expecting %d!\n", i, params->bulk_buf[i], i);
+            printf("Error detected in bulk transfer, bulk_buf[%u] = %d,\t"
+                    " was expecting %u!\n", i, params->bulk_buf[i], i);
             error = 1;
             break;
         }

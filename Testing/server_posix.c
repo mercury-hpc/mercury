@@ -22,7 +22,8 @@
 
 unsigned int finalizing = 0;
 
-hg_return_t server_finalize(hg_handle_t handle)
+static hg_return_t
+server_finalize(hg_handle_t handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -40,7 +41,8 @@ hg_return_t server_finalize(hg_handle_t handle)
 
 #ifndef MERCURY_HAS_ADVANCED_MACROS
 
-hg_return_t server_posix_open(hg_handle_t handle)
+static hg_return_t
+server_posix_open(hg_handle_t handle)
 {
     hg_return_t hg_ret = HG_SUCCESS;
 
@@ -80,7 +82,8 @@ hg_return_t server_posix_open(hg_handle_t handle)
     return hg_ret;
 }
 
-hg_return_t server_posix_close(hg_handle_t handle)
+static hg_return_t
+server_posix_close(hg_handle_t handle)
 {
     hg_return_t hg_ret = HG_SUCCESS;
 
@@ -116,7 +119,8 @@ hg_return_t server_posix_close(hg_handle_t handle)
     return hg_ret;
 }
 
-hg_return_t server_posix_write(hg_handle_t handle)
+static hg_return_t
+server_posix_write(hg_handle_t handle)
 {
     hg_return_t hg_ret = HG_SUCCESS;
 
@@ -199,7 +203,8 @@ hg_return_t server_posix_write(hg_handle_t handle)
     return hg_ret;
 }
 
-hg_return_t server_posix_read(hg_handle_t handle)
+static hg_return_t
+server_posix_read(hg_handle_t handle)
 {
     hg_return_t hg_ret = HG_SUCCESS;
 
@@ -287,7 +292,8 @@ hg_return_t server_posix_read(hg_handle_t handle)
 #endif /* MERCURY_HAS_ADVANCED_MACROS */
 
 /******************************************************************************/
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
     unsigned int number_of_peers;

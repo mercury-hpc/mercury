@@ -83,7 +83,7 @@ int main(int argc, char *argv[])
 
     /* Prepare bulk_buf */
     nbytes = bulk_size * sizeof(int);
-    nmbytes = nbytes / (1024 * 1024);
+    nmbytes = (double) nbytes / (1024 * 1024);
     if (client_rank == 0) {
         printf("# Reading Bulk Data (%f MB) with %d client(s) -- loop %d time(s)\n",
                 nmbytes, client_size, MERCURY_TESTING_MAX_LOOP);

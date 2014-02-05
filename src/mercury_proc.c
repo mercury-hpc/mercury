@@ -413,7 +413,7 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t theirs)
     hg_return_t ret = HG_FAIL;
 
     if (priv_proc->extra_buf.buf) {
-        priv_proc->extra_buf.is_mine = !theirs;
+        priv_proc->extra_buf.is_mine = (hg_bool_t) (!theirs);
         ret = HG_SUCCESS;
     }
 
@@ -427,8 +427,8 @@ hg_proc_flush(hg_proc_t proc)
     struct hg_proc *priv_proc = (struct hg_proc *) proc;
     hg_bool_t current_update_checksum;
     size_t checksum_size;
-    void *base_checksum = NULL;
-    void *new_checksum = NULL;
+    char *base_checksum = NULL;
+    char *new_checksum = NULL;
     int checksum_ret, cmp_ret;
     hg_return_t ret = HG_SUCCESS;
 
@@ -448,7 +448,7 @@ hg_proc_flush(hg_proc_t proc)
     priv_proc->current_buf->update_checksum = 0;
 
     checksum_size = mchecksum_get_size(priv_proc->current_buf->checksum);
-    base_checksum = malloc(checksum_size);
+    base_checksum = (char *) malloc(checksum_size);
     if (!base_checksum) {
         HG_ERROR_DEFAULT("Could not allocate space for base checksum");
         ret = HG_FAIL;
@@ -474,7 +474,7 @@ hg_proc_flush(hg_proc_t proc)
     }
 
     if (hg_proc_get_op(proc) == HG_DECODE) {
-        new_checksum = malloc(checksum_size);
+        new_checksum = (char *) malloc(checksum_size);
         if (!new_checksum) {
             HG_ERROR_DEFAULT("Could not allocate checksum");
             ret = HG_FAIL;

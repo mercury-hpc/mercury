@@ -29,7 +29,8 @@ static double raw_time_read = 0;
 static size_t bla_write_nbytes;
 
 /* Actual definition of the function that needs to be executed */
-void bla_write_pipeline(size_t chunk_size,
+static void
+bla_write_pipeline(size_t chunk_size,
         hg_bulk_request_t bulk_request, hg_status_t *status, hg_bool_t nosleep)
 {
     int ret;
@@ -44,7 +45,7 @@ void bla_write_pipeline(size_t chunk_size,
     if (bulk_request != HG_BULK_REQUEST_NULL) {
         hg_time_get_current(&t1);
 
-        ret = HG_Bulk_wait(bulk_request, time_remaining, status);
+        ret = HG_Bulk_wait(bulk_request, (unsigned int) time_remaining, status);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Error while waiting\n");
         }
@@ -60,7 +61,8 @@ void bla_write_pipeline(size_t chunk_size,
     }
 }
 
-size_t bla_write_check(const void *buf, size_t nbyte)
+static size_t
+bla_write_check(const void *buf, size_t nbyte)
 {
     size_t i;
     const int *bulk_buf = (const int*) buf;
@@ -78,7 +80,8 @@ size_t bla_write_check(const void *buf, size_t nbyte)
 
 
 /*****************************************************************************/
-hg_return_t bla_write_rpc(hg_handle_t handle)
+static hg_return_t
+bla_write_rpc(hg_handle_t handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -123,7 +126,7 @@ hg_return_t bla_write_rpc(hg_handle_t handle)
             &bla_write_bulk_block_handle);
 
     /* Timing info */
-    nmbytes = bla_write_nbytes / (1024 * 1024);
+    nmbytes = (double) bla_write_nbytes / (1024 * 1024);
     if (first_call) printf("# Reading Bulk Data (%f MB)\n", nmbytes);
 
     /* Work out BW without pipeline and without processing data */
@@ -321,7 +324,8 @@ hg_return_t bla_write_rpc(hg_handle_t handle)
 }
 
 /*****************************************************************************/
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
     int hg_ret;

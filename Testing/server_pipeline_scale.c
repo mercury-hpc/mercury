@@ -250,7 +250,8 @@ bla_write_rpc_spawn(hg_handle_t handle)
 
 
 /*****************************************************************************/
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
     na_class_t *network_class = NULL;
     int hg_ret, na_ret;

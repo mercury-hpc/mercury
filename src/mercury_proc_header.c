@@ -28,7 +28,7 @@ hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_buf_handle,
     header->hg = HG_IDENTIFIER;
     header->protocol = HG_VERSION;
     header->id = id;
-    header->flags = (extra_buf_handle != HG_BULK_NULL) ? 1 : 0;
+    header->flags = (hg_uint8_t) (extra_buf_handle != HG_BULK_NULL);
     header->cookie = (hg_uint32_t) rand();
     header->crc16 = 0;
     header->extra_buf_handle = extra_buf_handle;
