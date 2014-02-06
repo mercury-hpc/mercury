@@ -97,7 +97,7 @@ static hg_return_t hg_bulk_transfer(hg_bulk_op_t op, na_addr_t addr,
 /* Local Variables */
 /*******************/
 
-/* Pointer to network abstraction class */
+/* Pointer to NA class */
 static na_class_t *hg_bulk_na_class_g = NULL;
 
 /* Local context */

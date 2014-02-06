@@ -35,12 +35,12 @@ HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
  * HG_Bulk_init has not been called before, this allows for users to
  * potentially initialize the bulk interface with a different NA class.
  *
- * \param network_class [IN]    pointer to network class
+ * \param na_class [IN]    pointer to network class
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Init(na_class_t *network_class);
+HG_Init(na_class_t *na_class);
 
 /**
  * Finalize the Mercury layer.
@@ -55,12 +55,12 @@ HG_Finalize(void);
  * and return associated network class.
  *
  * \param flag [OUT]            pointer to boolean
- * \param na_class_t [OUT]      pointer to returned network class pointer
+ * \param na_class [OUT]        pointer to returned network class pointer
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Initialized(hg_bool_t *flag, na_class_t **network_class);
+HG_Initialized(hg_bool_t *flag, na_class_t **na_class);
 
 /**
  * Register a function name that can be sent by RPC layer.

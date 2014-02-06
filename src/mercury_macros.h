@@ -182,7 +182,7 @@ static HG_INLINE hg_return_t \
         HG_Bulk_initialized(&HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_INIT_PARAM)), \
                 NULL); \
         if (!HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_INIT_PARAM))) { \
-            hg_ret = HG_Bulk_init(network_class); \
+            hg_ret = HG_Bulk_init(na_class); \
             if (hg_ret != HG_SUCCESS) { \
                 HG_ERROR_DEFAULT("Could not initialize bulk data shipper"); \
                 BOOST_PP_IF(with_ret, ret = fail_ret;, BOOST_PP_EMPTY()) \
@@ -324,7 +324,7 @@ static HG_INLINE hg_return_t \
             BOOST_PP_IF(BOOST_PP_OR(with_output, with_ret), \
                     out_struct_type_name out_struct;, BOOST_PP_EMPTY()) \
             BOOST_PP_IF(with_ret, ret_type_name ret;, BOOST_PP_EMPTY()) \
-            na_class_t *network_class; \
+            na_class_t *na_class; \
             char *server_name; \
             na_addr_t addr; \
             hg_id_t id; \
@@ -337,10 +337,10 @@ static HG_INLINE hg_return_t \
             na_return_t na_ret; \
             \
             /* Is mercury library initialized */ \
-            HG_Initialized(&hg_initialized, &network_class); \
+            HG_Initialized(&hg_initialized, &na_class); \
             if (!hg_initialized) { \
-                network_class = NA_Initialize(getenv(HG_PORT_NAME), 0); \
-                hg_ret = HG_Init(network_class); \
+                na_class = NA_Initialize(getenv(HG_PORT_NAME), 0); \
+                hg_ret = HG_Init(na_class); \
                 if (hg_ret != HG_SUCCESS) { \
                     HG_ERROR_DEFAULT("Could not initialize Mercury"); \
                     BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
@@ -351,7 +351,7 @@ static HG_INLINE hg_return_t \
             /* Get server_name if set */ \
             server_name = getenv(HG_PORT_NAME); \
             /* Look up addr id */ \
-            na_ret = NA_Addr_lookup_wait(network_class, server_name, &addr); \
+            na_ret = NA_Addr_lookup_wait(na_class, server_name, &addr); \
             if (na_ret != NA_SUCCESS) { \
                 HG_ERROR_DEFAULT("Could not lookup addr"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \

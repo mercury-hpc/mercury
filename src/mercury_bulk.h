@@ -20,12 +20,12 @@ extern "C" {
 /**
  * Initialize the Mercury bulk layer.
  *
- * \param network_class [IN]    pointer to network class
+ * \param na_class [IN]    pointer to network class
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_init(na_class_t *network_class);
+HG_Bulk_init(na_class_t *na_class);
 
 /**
  * Finalize the Mercury bulk layer.
@@ -40,12 +40,12 @@ HG_Bulk_finalize(void);
  * and return associated network class.
  *
  * \param flag [OUT]            pointer to boolean
- * \param na_class_t [OUT]      pointer to returned network class pointer
+ * \param na_class [OUT]        pointer to returned network class pointer
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_initialized(hg_bool_t *flag, na_class_t **network_class);
+HG_Bulk_initialized(hg_bool_t *flag, na_class_t **na_class);
 
 /**
  * Create abstract bulk handle from buffer (register memory, etc).

@@ -34,7 +34,11 @@ extern "C" {
  * \return Pointer to network class
  */
 NA_EXPORT na_class_t *
-NA_BMI_Init(const char *method_list, const char *listen_addr, int flags);
+NA_BMI_Init(
+        const char *method_list,
+        const char *listen_addr,
+        int flags
+        );
 
 #ifdef __cplusplus
 }
