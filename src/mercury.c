@@ -179,7 +179,7 @@ hg_set_request_header(struct hg_request *priv_request,
     hg_return_t ret = HG_SUCCESS;
 
     hg_proc_create(priv_request->send_buf, priv_request->send_buf_size,
-            HG_ENCODE, HG_CRC16, &proc);
+            HG_ENCODE, HG_NOHASH, &proc);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not create proc");
         goto done;
@@ -209,7 +209,7 @@ hg_get_response_header(struct hg_request *priv_request,
     hg_return_t ret = HG_SUCCESS;
 
     hg_proc_create(priv_request->recv_buf, priv_request->recv_buf_size,
-            HG_DECODE, HG_CRC16, &proc);
+            HG_DECODE, HG_NOHASH, &proc);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not create proc");
         goto done;

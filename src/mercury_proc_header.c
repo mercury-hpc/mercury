@@ -13,6 +13,9 @@
 #endif
 #include "mercury_proc_header.h"
 
+#include <mchecksum.h>
+#include <mchecksum_error.h>
+
 #ifdef _WIN32
   #include <winsock2.h>
 #else
@@ -26,7 +29,7 @@ hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_buf_handle,
         struct hg_header_request *header)
 {
     header->hg = HG_IDENTIFIER;
-    header->protocol = HG_VERSION;
+    header->protocol = HG_PROTOCOL_VERSION;
     header->id = id;
     header->flags = (hg_uint8_t) (extra_buf_handle != HG_BULK_NULL);
     header->cookie = (hg_uint32_t) rand();
@@ -50,14 +53,17 @@ hg_proc_header_request(hg_proc_t proc, struct hg_header_request *header)
 {
     hg_uint32_t n_protocol, n_id, n_cookie;
     hg_uint16_t n_crc16;
+    mchecksum_object_t checksum;
     hg_return_t ret = HG_FAIL;
+
+    /* Create a new CRC16 checksum */
+    mchecksum_init("crc16", &checksum);
 
     /* Mercury header */
     if (hg_proc_get_op(proc) == HG_ENCODE) {
         n_protocol = htonl(header->protocol);
         n_id = htonl((hg_uint32_t) header->id);
         n_cookie = htonl(header->cookie);
-        n_crc16 = htons(header->crc16);
     }
 
     /* hg */
@@ -67,6 +73,7 @@ hg_proc_header_request(hg_proc_t proc, struct hg_header_request *header)
         ret = HG_FAIL;
         goto done;
     }
+    mchecksum_update(checksum, &header->hg, sizeof(hg_uint8_t));
 
     /* protocol */
     ret = hg_proc_memcpy(proc, &n_protocol, sizeof(hg_uint32_t));
@@ -75,6 +82,7 @@ hg_proc_header_request(hg_proc_t proc, struct hg_header_request *header)
         ret = HG_FAIL;
         goto done;
     }
+    mchecksum_update(checksum, &n_protocol, sizeof(hg_uint32_t));
 
     /* id */
     ret = hg_proc_memcpy(proc, &n_id, sizeof(hg_uint32_t));
@@ -83,6 +91,7 @@ hg_proc_header_request(hg_proc_t proc, struct hg_header_request *header)
         ret = HG_FAIL;
         goto done;
     }
+    mchecksum_update(checksum, &n_id, sizeof(hg_uint32_t));
 
     /* flags */
     ret = hg_proc_memcpy(proc, &header->flags, sizeof(hg_uint8_t));
@@ -91,6 +100,7 @@ hg_proc_header_request(hg_proc_t proc, struct hg_header_request *header)
         ret = HG_FAIL;
         goto done;
     }
+    mchecksum_update(checksum, &header->flags, sizeof(hg_uint8_t));
 
     /* cookie */
     ret = hg_proc_memcpy(proc, &n_cookie, sizeof(hg_uint32_t));
@@ -99,13 +109,27 @@ hg_proc_header_request(hg_proc_t proc, struct hg_header_request *header)
         ret = HG_FAIL;
         goto done;
     }
+    mchecksum_update(checksum, &n_cookie, sizeof(hg_uint32_t));
 
     /* crc16 */
+    mchecksum_get(checksum, &header->crc16, sizeof(hg_uint16_t),
+            MCHECKSUM_FINALIZE);
+    if (hg_proc_get_op(proc) == HG_ENCODE) {
+        n_crc16 = htons(header->crc16);
+    }
     ret = hg_proc_memcpy(proc, &n_crc16, sizeof(hg_uint16_t));
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Proc error");
         ret = HG_FAIL;
         goto done;
+    }
+    if (hg_proc_get_op(proc) == HG_DECODE) {
+        hg_uint16_t decoded_crc16 = ntohs(n_crc16);
+        if (header->crc16 != decoded_crc16) {
+            HG_ERROR_DEFAULT("Invalid request checksum");
+            ret = HG_FAIL;
+            goto done;
+        }
     }
 
     /* extra_bulk_handle */
@@ -120,10 +144,10 @@ hg_proc_header_request(hg_proc_t proc, struct hg_header_request *header)
         header->protocol = ntohl(n_protocol);
         header->id = (hg_id_t) ntohl(n_id);
         header->cookie = ntohl(n_cookie);
-        header->crc16 = ntohs(n_crc16);
     }
 
 done:
+    mchecksum_destroy(checksum);
     return ret;
 }
 
@@ -134,13 +158,16 @@ hg_proc_header_response(hg_proc_t proc, struct hg_header_response *header)
     hg_uint32_t n_error;
     hg_uint32_t n_cookie;
     hg_uint16_t n_crc16;
+    mchecksum_object_t checksum;
     hg_return_t ret = HG_FAIL;
+
+    /* Create a new CRC16 checksum */
+    mchecksum_init("crc16", &checksum);
 
     /* Mercury header */
     if (hg_proc_get_op(proc) == HG_ENCODE) {
         n_error = htonl((hg_uint32_t) header->error);
         n_cookie = htonl(header->cookie);
-        n_crc16 = htons(header->crc16);
     }
 
     /* flags */
@@ -150,6 +177,7 @@ hg_proc_header_response(hg_proc_t proc, struct hg_header_response *header)
         ret = HG_FAIL;
         goto done;
     }
+    mchecksum_update(checksum, &header->flags, sizeof(hg_uint8_t));
 
     /* error */
     ret = hg_proc_memcpy(proc, &n_error, sizeof(hg_uint32_t));
@@ -158,6 +186,7 @@ hg_proc_header_response(hg_proc_t proc, struct hg_header_response *header)
         ret = HG_FAIL;
         goto done;
     }
+    mchecksum_update(checksum, &n_error, sizeof(hg_uint32_t));
 
     /* cookie */
     ret = hg_proc_memcpy(proc, &n_cookie, sizeof(hg_uint32_t));
@@ -166,19 +195,32 @@ hg_proc_header_response(hg_proc_t proc, struct hg_header_response *header)
         ret = HG_FAIL;
         goto done;
     }
+    mchecksum_update(checksum, &n_cookie, sizeof(hg_uint32_t));
 
     /* crc16 */
+    mchecksum_get(checksum, &header->crc16, sizeof(hg_uint16_t),
+            MCHECKSUM_FINALIZE);
+    if (hg_proc_get_op(proc) == HG_ENCODE) {
+        n_crc16 = htons(header->crc16);
+    }
     ret = hg_proc_memcpy(proc, &n_crc16, sizeof(hg_uint16_t));
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Proc error");
         ret = HG_FAIL;
         goto done;
     }
+    if (hg_proc_get_op(proc) == HG_DECODE) {
+        hg_uint16_t decoded_crc16 = ntohs(n_crc16);
+        if (header->crc16 != decoded_crc16) {
+            HG_ERROR_DEFAULT("Invalid response checksum");
+            ret = HG_FAIL;
+            goto done;
+        }
+    }
 
     if (hg_proc_get_op(proc) == HG_DECODE) {
         header->error = (hg_error_t) ntohl(n_error);
         header->cookie = ntohl(n_cookie);
-        header->crc16 = ntohs(n_crc16);
     }
 
 done:
@@ -194,23 +236,25 @@ hg_proc_header_request_verify(struct hg_header_request header)
     /* Must match HG */
     if ( (((header.hg >> 1)  & 'H') != 'H') ||
             (((header.hg)  & 'G') != 'G') ) {
-        HG_ERROR_DEFAULT("HG byte does not match");
+        HG_ERROR_DEFAULT("Invalid HG byte");
         ret = HG_FAIL;
         goto done;
     }
 
-    /* Protocol version must be at least major and minor version */
-    if ( (HG_VERSION_MAJOR && (HG_GET_MAJOR(header.protocol) < HG_VERSION_MAJOR)) ||
-            (HG_VERSION_MINOR && (HG_GET_MINOR(header.protocol) < HG_VERSION_MINOR)) ) {
-        HG_ERROR_DEFAULT("Protocol does not match");
+    if (header.protocol != HG_PROTOCOL_VERSION) {
+        HG_ERROR_DEFAULT("Invalid HG_PROTOCOL_VERSION");
         ret = HG_FAIL;
         goto done;
     }
 
-//    printf("ID: %d\n", header.id);
-//    printf("FLAGS: %02X\n", header.flags);
-//    printf("COOKIE: %08X\n", header.cookie);
-//    printf("CRC16: %04hX\n", header.crc16);
+    /* Debug
+    printf("HG: 0x%02X\n", header.hg);
+    printf("PROTOCOL: 0x%08X\n", header.protocol);
+    printf("ID: %d\n", header.id);
+    printf("FLAGS: 0x%02X\n", header.flags);
+    printf("COOKIE: 0x%08X\n", header.cookie);
+    printf("CRC16: 0x%04hX\n", header.crc16);
+    */
 
 done:
     return ret;

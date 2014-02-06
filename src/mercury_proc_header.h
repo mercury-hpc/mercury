@@ -51,6 +51,9 @@ struct hg_header_response {
 /* Mercury identifier for packets sent */
 #define HG_IDENTIFIER (('H' << 1) | ('G')) /* 0xD7 */
 
+/* Mercury protocol version number */
+#define HG_PROTOCOL_VERSION 0x00000002
+
 /* Encode/decode version number into uint32 */
 #define HG_GET_MAJOR(value) ((value >> 24) & 0xFF)
 #define HG_GET_MINOR(value) ((value >> 16) & 0xFF)
