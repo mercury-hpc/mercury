@@ -31,6 +31,9 @@ HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
 
 /**
  * Initialize the Mercury layer.
+ * Calling HG_Init also calls HG_Bulk_init with the same NA class if
+ * HG_Bulk_init has not been called before, this allows for users to
+ * potentially initialize the bulk interface with a different NA class.
  *
  * \param network_class [IN]    pointer to network class
  *
