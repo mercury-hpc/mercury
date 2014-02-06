@@ -224,6 +224,7 @@ hg_proc_header_response(hg_proc_t proc, struct hg_header_response *header)
     }
 
 done:
+    mchecksum_destroy(checksum);
     return ret;
 }
 
