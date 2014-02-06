@@ -37,17 +37,21 @@ static unsigned int na_addr_table_size = 0;
 static int mpi_internally_initialized = HG_FALSE;
 
 static void
-HG_Test_mpi_init(void)
+HG_Test_mpi_init(hg_bool_t server)
 {
     int mpi_initialized = 0;
 
     MPI_Initialized(&mpi_initialized);
     if (!mpi_initialized) {
-        int provided;
+        if (server) {
+            int provided;
 
-        MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
-        if (provided != MPI_THREAD_MULTIPLE) {
-            fprintf(stderr, "MPI_THREAD_MULTIPLE cannot be set");
+            MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
+            if (provided != MPI_THREAD_MULTIPLE) {
+                fprintf(stderr, "MPI_THREAD_MULTIPLE cannot be set");
+            }
+        } else {
+            MPI_Init(NULL, NULL);
         }
         mpi_internally_initialized = HG_TRUE;
     }
@@ -160,7 +164,7 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
     if (strcmp("mpi", argv[1]) == 0) {
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init();
+        HG_Test_mpi_init(HG_FALSE);
 
         HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
 
@@ -178,7 +182,7 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
 #ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init();
+        HG_Test_mpi_init(HG_FALSE);
 #endif
         HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
 #ifdef MERCURY_HAS_PARALLEL_TESTING
@@ -193,7 +197,7 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
 #ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init();
+        HG_Test_mpi_init(HG_FALSE);
 #endif
         HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
 
@@ -226,7 +230,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
     if (strcmp("mpi", argv[1]) == 0) {
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init();
+        HG_Test_mpi_init(HG_TRUE);
 
         if (argc > 2 && (strcmp("static", argv[2]) == 0)) {
             network_class = NA_MPI_Init(NULL, MPI_INIT_SERVER | MPI_INIT_STATIC);
@@ -251,7 +255,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
 #ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init();
+        HG_Test_mpi_init(HG_TRUE);
         MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 #endif
 
@@ -281,7 +285,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
 #ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init();
+        HG_Test_mpi_init(HG_TRUE);
         MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 #endif
         /* Generate a port number depending on server rank */
