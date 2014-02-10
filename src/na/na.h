@@ -613,6 +613,9 @@ NA_Get(
 /**
  * Try to progress communication for at most timeout until timeout reached or
  * any completion has occurred.
+ * Progress should not be considered as wait, in the sense that it cannot be
+ * assumed that completion of a specific operation will occur only when
+ * progress is called.
  *
  * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
