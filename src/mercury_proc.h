@@ -16,6 +16,7 @@
 #include "mercury_bulk.h"
 
 #include <stdlib.h>
+#include <string.h>
 #ifdef HG_HAS_XDR
 #include <rpc/types.h>
 #include <rpc/xdr.h>
@@ -218,6 +219,31 @@ hg_proc_flush(hg_proc_t proc);
  */
 HG_EXPORT hg_return_t
 hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
+
+/**
+ * Copy data to buf if HG_ENCODE or buf to data if HG_DECODE and return
+ * incremented pointer to buf.
+ *
+ * \param buf [IN/OUT]          abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ * \param data_size [IN]        data size
+ * \param op [IN]               operation type: HG_ENCODE / HG_DECODE
+ *
+ * \return incremented pointer to buf
+ */
+static HG_INLINE void *
+hg_proc_buf_memcpy(void *buf, void *data, size_t data_size, hg_proc_op_t op)
+{
+    const void *src = NULL;
+    void *dest = NULL;
+
+    if ((op != HG_ENCODE) && (op != HG_DECODE)) return NULL;
+    src = (op == HG_ENCODE) ? (const void *) data : (const void *) buf;
+    dest = (op == HG_ENCODE) ? buf : data;
+    memcpy(dest, src, data_size);
+
+    return ((char *) buf + data_size);
+}
 
 /**
  * Inline prototypes (do not remove)

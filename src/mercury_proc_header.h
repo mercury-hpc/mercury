@@ -11,7 +11,7 @@
 #ifndef MERCURY_PROC_HEADER_H
 #define MERCURY_PROC_HEADER_H
 
-#include "mercury_proc.h"
+#include "mercury_types.h"
 
 struct hg_header_request {
      hg_uint8_t  hg;               /* Mercury identifier */
@@ -124,24 +124,30 @@ hg_proc_header_response_init(struct hg_header_response *header);
 /**
  * Process private information for sending/receiving RPC request.
  *
- * \param proc [IN/OUT]         abstract processor object
+ * \param buf [IN/OUT]          buffer
+ * \param buf_size [IN]         buffer size
  * \param header [IN/OUT]       pointer to header structure
+ * \param op [IN]               operation type: HG_ENCODE / HG_DECODE
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_header_request(hg_proc_t proc, struct hg_header_request *header);
+hg_proc_header_request(void *buf, size_t buf_size,
+        struct hg_header_request *header, hg_proc_op_t op);
 
 /**
  * Process private information for sending/receiving response.
  *
- * \param proc [IN/OUT]         abstract processor object
+ * \param buf [IN/OUT]          buffer
+ * \param buf_size [IN]         buffer size
  * \param header [IN/OUT]       pointer to header structure
+ * \param op [IN]               operation type: HG_ENCODE / HG_DECODE
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_header_response(hg_proc_t proc, struct hg_header_response *header);
+hg_proc_header_response(void *buf, size_t buf_size,
+        struct hg_header_response *header, hg_proc_op_t op);
 
 /**
  * Verify private information from request header.

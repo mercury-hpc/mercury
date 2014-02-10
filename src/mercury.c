@@ -10,6 +10,7 @@
 
 #include "mercury.h"
 #include "mercury_proc_header.h"
+#include "mercury_proc.h"
 #include "mercury_bulk.h"
 
 #include "mercury_hash_table.h"
@@ -56,16 +57,7 @@ struct hg_proc_info {
 /********************/
 /* Local Prototypes */
 /********************/
-/**
- * Set and encode and request header.
- */
-static hg_return_t hg_set_request_header(struct hg_request *priv_request,
-        struct hg_header_request header);
-/**
- * Decode and get response header.
- */
-static hg_return_t hg_get_response_header(struct hg_request *priv_request,
-        struct hg_header_response *header);
+
 /**
  * Get RPC input buffer from handle.
  */
@@ -168,66 +160,6 @@ hg_gen_request_tag(void)
     }
 
     return tag;
-}
-
-/*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_set_request_header(struct hg_request *priv_request,
-        struct hg_header_request header)
-{
-    hg_proc_t proc = HG_PROC_NULL;
-    hg_return_t ret = HG_SUCCESS;
-
-    hg_proc_create(priv_request->send_buf, priv_request->send_buf_size,
-            HG_ENCODE, HG_NOHASH, &proc);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not create proc");
-        goto done;
-    }
-
-    /* Encode request header */
-    ret = hg_proc_header_request(proc, &header);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not encode header");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-done:
-    if (proc != HG_PROC_NULL) hg_proc_free(proc);
-    proc = HG_PROC_NULL;
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_get_response_header(struct hg_request *priv_request,
-        struct hg_header_response *header)
-{
-    hg_proc_t proc = HG_PROC_NULL;
-    hg_return_t ret = HG_SUCCESS;
-
-    hg_proc_create(priv_request->recv_buf, priv_request->recv_buf_size,
-            HG_DECODE, HG_NOHASH, &proc);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not create proc");
-        goto done;
-    }
-
-    /* Decode response header */
-    ret = hg_proc_header_response(proc, header);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not decode header");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-done:
-    if (proc != HG_PROC_NULL) hg_proc_free(proc);
-    proc = HG_PROC_NULL;
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -479,10 +411,11 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
         HG_Bulk_handle_free(priv_request->extra_send_buf_handle);
     priv_request->extra_send_buf_handle = HG_BULK_NULL;
 
-    /* Get header */
-    ret = hg_get_response_header(priv_request, &response_header);
+    /* Decode response header */
+    ret = hg_proc_header_response(priv_request->recv_buf,
+            priv_request->recv_buf_size, &response_header, HG_DECODE);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not get header");
+        HG_ERROR_DEFAULT("Could not decode header");
         ret = HG_FAIL;
         goto done;
     }
@@ -799,9 +732,11 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
             priv_request->extra_send_buf_handle,
             &request_header);
 
-    ret = hg_set_request_header(priv_request, request_header);
+    /* Encode request header */
+    ret = hg_proc_header_request(priv_request->send_buf,
+            priv_request->send_buf_size, &request_header, HG_ENCODE);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not set header");
+        HG_ERROR_DEFAULT("Could not encode header");
         ret = HG_FAIL;
         goto done;
     }

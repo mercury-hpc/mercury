@@ -149,7 +149,8 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
     }
 
     if (hash_method) {
-        checksum_ret = mchecksum_init(hash_method, &priv_proc->proc_buf.checksum);
+        checksum_ret = mchecksum_init(hash_method,
+                &priv_proc->proc_buf.checksum);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_ERROR_DEFAULT("Could not initialize checksum");
             ret = HG_FAIL;
@@ -266,7 +267,8 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
     /* If was not using extra buffer init extra buffer */
     if (!priv_proc->extra_buf.buf) {
         /* Save current position */
-        current_pos = (char*) priv_proc->proc_buf.buf_ptr - (char*) priv_proc->proc_buf.buf;
+        current_pos = (char*) priv_proc->proc_buf.buf_ptr -
+                (char*) priv_proc->proc_buf.buf;
 
         /* Allocate buffer */
         priv_proc->extra_buf.buf = malloc(new_buf_size);
@@ -367,7 +369,8 @@ hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
         }
 
         priv_proc->current_buf->buf_ptr   = buf_ptr;
-        priv_proc->current_buf->size_left = priv_proc->current_buf->size - (size_t)new_pos;
+        priv_proc->current_buf->size_left = priv_proc->current_buf->size -
+                (size_t) new_pos;
 #ifdef HG_HAS_XDR
         xdr_setpos(&priv_proc->current_buf->xdr, new_pos);
 #endif
@@ -510,8 +513,6 @@ hg_return_t
 hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
 {
     struct hg_proc *priv_proc = (struct hg_proc *) proc;
-    const void *src;
-    void *dest;
     hg_return_t ret = HG_SUCCESS;
     int checksum_ret;
 
@@ -531,18 +532,15 @@ hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
     }
 
     /* Process data */
-    src = (priv_proc->op == HG_ENCODE) ? (const void *) data :
-            (const void *) priv_proc->current_buf->buf_ptr;
-    dest = (priv_proc->op == HG_ENCODE) ? priv_proc->current_buf->buf_ptr :
-            data;
-    memcpy(dest, src, data_size);
-    priv_proc->current_buf->buf_ptr = (char*) priv_proc->current_buf->buf_ptr
-            + data_size;
+    priv_proc->current_buf->buf_ptr =
+            hg_proc_buf_memcpy(priv_proc->current_buf->buf_ptr, data, data_size,
+                    priv_proc->op);
     priv_proc->current_buf->size_left -= data_size;
 
     /* Update checksum */
     if (priv_proc->current_buf->update_checksum) {
-        checksum_ret = mchecksum_update(priv_proc->current_buf->checksum, data, data_size);
+        checksum_ret = mchecksum_update(priv_proc->current_buf->checksum, data,
+                data_size);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_ERROR_DEFAULT("Could not update checksum");
             ret = HG_FAIL;
