@@ -66,10 +66,13 @@ typedef enum {
 typedef enum hg_return {
     HG_FAIL = -1,      /* default (TODO keep until switch to new error format) */
     HG_SUCCESS = 0,
-    HG_NO_MATCH,       /* no function match */
+    HG_TIMEOUT,        /* reached timeout */
+    HG_INVALID_PARAM,  /* invalid parameter */
+    HG_SIZE_ERROR,     /* size error */
+    HG_NOMEM_ERROR,    /* no memory error */
     HG_PROTOCOL_ERROR, /* protocol does not match */
-    HG_CHECKSUM_ERROR, /* checksum does not match */
-    HG_TIMEOUT         /* reached timeout */
+    HG_NO_MATCH,       /* no function match */
+    HG_CHECKSUM_ERROR  /* checksum error */
 } hg_return_t;
 
 /* Proc callback for serializing/deserializing parameters */

@@ -954,10 +954,13 @@ HG_Error_to_string(hg_return_t errnum)
 
     HG_ERROR_STRING_MACRO(HG_FAIL, errnum, hg_error_string);
     HG_ERROR_STRING_MACRO(HG_SUCCESS, errnum, hg_error_string);
-    HG_ERROR_STRING_MACRO(HG_NO_MATCH, errnum, hg_error_string);
-    HG_ERROR_STRING_MACRO(HG_PROTOCOL_ERROR, errnum, hg_error_string);
-    HG_ERROR_STRING_MACRO(HG_CHECKSUM_ERROR, errnum, hg_error_string);
     HG_ERROR_STRING_MACRO(HG_TIMEOUT, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_INVALID_PARAM, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_SIZE_ERROR, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_NOMEM_ERROR, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_PROTOCOL_ERROR, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_NO_MATCH, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_CHECKSUM_ERROR, errnum, hg_error_string);
 
     return hg_error_string;
 }
