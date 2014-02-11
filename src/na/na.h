@@ -55,16 +55,15 @@ struct na_segment {
 /* Error return codes:
  * Functions return 0 for success or NA_XXX_ERROR for failure */
 typedef enum na_return {
-    NA_FAIL = -1,        /* default (TODO keep until switch to new error format) */
-    NA_SUCCESS = 0,
-    NA_CANCELED = 1,         /* operation canceled. */
-    NA_TIMEOUT = 2,          /* reached timeout */
-    NA_INVALID_PARAM = 3,    /* invalid parameter */
-    NA_SIZE_ERROR = 4,       /* message size error */
-    NA_ALIGNMENT_ERROR = 5,  /* alignment error */
-    NA_PERMISSION_ERROR = 6, /* read/write permission error */
-    NA_NOMEM_ERROR = 7,      /* no memory error */
-    NA_PROTOCOL_ERROR = 8    /* unknown error reported from the protocol layer */
+    NA_SUCCESS,          /* operation succeeded */
+    NA_CANCELED,         /* operation was canceled */
+    NA_TIMEOUT,          /* reached timeout */
+    NA_INVALID_PARAM,    /* invalid parameter */
+    NA_SIZE_ERROR,       /* message size error */
+    NA_ALIGNMENT_ERROR,  /* alignment error */
+    NA_PERMISSION_ERROR, /* read/write permission error */
+    NA_NOMEM_ERROR,      /* no memory error */
+    NA_PROTOCOL_ERROR    /* unknown error reported from the protocol layer */
 } na_return_t;
 
 /* Callback operation type */
@@ -648,7 +647,7 @@ NA_Trigger(
         na_context_t *context,
         unsigned int  timeout,
         unsigned int  max_count,
-        int          *actual_count
+        unsigned int *actual_count
         );
 
 /**

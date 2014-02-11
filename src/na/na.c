@@ -455,7 +455,7 @@ NA_Addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr)
 
     while (!lookup_completed) {
         na_return_t trigger_ret;
-        int actual_count = 0;
+        unsigned int actual_count = 0;
 
         do {
             trigger_ret = NA_Trigger(context, 0, 1, &actual_count);
@@ -713,7 +713,7 @@ NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 }
 
 /*---------------------------------------------------------------------------*/
-int
+na_return_t
 NA_Mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     assert(na_class);
@@ -873,8 +873,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Trigger(na_context_t *context,
-        unsigned int timeout, unsigned int max_count, int *actual_count)
+NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
+        unsigned int *actual_count)
 {
     struct na_private_context *na_private_context =
             (struct na_private_context *) context;
@@ -984,7 +984,6 @@ NA_Error_to_string(na_return_t errnum)
 {
     const char *na_error_string = "UNDEFINED/UNRECOGNIZED NA ERROR";
 
-    NA_ERROR_STRING_MACRO(NA_FAIL, errnum, na_error_string);
     NA_ERROR_STRING_MACRO(NA_SUCCESS, errnum, na_error_string);
     NA_ERROR_STRING_MACRO(NA_CANCELED, errnum, na_error_string);
     NA_ERROR_STRING_MACRO(NA_TIMEOUT, errnum, na_error_string);

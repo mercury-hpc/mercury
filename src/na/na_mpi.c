@@ -1898,7 +1898,7 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             mpi_length, MPI_BYTE, na_mpi_addr->rank, na_mpi_rma_info->tag,
             na_mpi_addr->rma_comm, &na_mpi_op_id->info.get.data_request);
     if (mpi_ret != MPI_SUCCESS) {
-        NA_LOG_ERROR("MPI_Issend() failed");
+        NA_LOG_ERROR("MPI_Irecv() failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -2153,8 +2153,8 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
                     na_mpi_rma_info->tag, na_mpi_addr->rma_comm,
                     &na_mpi_op_id->info.put.data_request);
             if (mpi_ret != MPI_SUCCESS) {
-                NA_LOG_ERROR("Could not recv data");
-                ret = NA_FAIL;
+                NA_LOG_ERROR("MPI_Irecv() failed");
+                ret = NA_PROTOCOL_ERROR;
             }
             break;
 
@@ -2172,8 +2172,8 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
                     na_mpi_rma_info->tag, na_mpi_addr->rma_comm,
                     &na_mpi_op_id->info.get.data_request);
             if (mpi_ret != MPI_SUCCESS) {
-                NA_LOG_ERROR("Could not send data");
-                ret = NA_FAIL;
+                NA_LOG_ERROR("MPI_Isend() failed");
+                ret = NA_PROTOCOL_ERROR;
             }
             break;
 
