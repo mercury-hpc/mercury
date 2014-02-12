@@ -819,7 +819,6 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
     struct na_private_context *na_private_context =
             (struct na_private_context *) context;
     double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
-    hg_time_t t1, t2;
     na_return_t ret = NA_SUCCESS;
 
     assert(na_class);
@@ -831,13 +830,16 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
     }
 
     /* TODO option for concurrent progress */
-    hg_time_get_current(&t1);
 
     /* Prevent multiple threads from concurrently calling progress on the same
      * context */
     hg_thread_mutex_lock(&na_private_context->progress_mutex);
 
     while (na_private_context->progressing) {
+        hg_time_t t1, t2;
+
+        hg_time_get_current(&t1);
+
         if (hg_thread_cond_timedwait(&na_private_context->progress_cond,
                 &na_private_context->progress_mutex,
                 (unsigned int) (remaining * 1000)) != HG_UTIL_SUCCESS) {
@@ -846,13 +848,18 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
             ret = NA_TIMEOUT;
             goto done;
         }
+
+        hg_time_get_current(&t2);
+        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        if (remaining < 0) {
+            /* Give a chance to call progress with timeout of 0 if
+             * progressing is NA_FALSE */
+            remaining = 0;
+        }
     }
     na_private_context->progressing = NA_TRUE;
 
     hg_thread_mutex_unlock(&na_private_context->progress_mutex);
-
-    hg_time_get_current(&t2);
-    remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
 
     /* Try to make progress for remaining time */
     ret = na_class->progress(na_class, context,
