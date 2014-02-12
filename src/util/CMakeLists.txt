@@ -34,10 +34,10 @@ endif()
 if(NOT WIN32 AND NOT APPLE)
   find_package(OPA REQUIRED)
   if(OPA_FOUND)
-    include_directories(${OPA_INCLUDE_DIR})
+    include_directories(${OPA_INCLUDE_DIRS})
     set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES
       ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
-      ${OPA_INCLUDE_DIR}
+      ${OPA_INCLUDE_DIRS}
     )
   else()
     message(FATAL_ERROR "Could not find OPA.")
