@@ -13,11 +13,6 @@
 
 #include "mercury_util_config.h"
 
-#define HG_UTIL_SUCCESS  0
-#define HG_UTIL_FAIL    -1
-#define HG_UTIL_TRUE     1
-#define HG_UTIL_FALSE    0
-
 /* For compatibility */
 #if defined(__STDC_VERSION__) &&  (__STDC_VERSION__ < 199901L)
   #if defined(__GNUC__) && (__GNUC__ >= 2)

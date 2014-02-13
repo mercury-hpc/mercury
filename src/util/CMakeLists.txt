@@ -122,7 +122,6 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.h
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
 )
 

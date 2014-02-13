@@ -14,3 +14,5 @@ target_link_libraries(test_request mercury_test)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(test_request)
 endif()
+
+add_test(NAME request COMMAND $<TARGET_FILE:test_request>)

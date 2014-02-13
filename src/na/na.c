@@ -21,7 +21,6 @@
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
 #include "mercury_time.h"
-#include "mercury_util_error.h"
 
 #include <assert.h>
 #include <stdlib.h>

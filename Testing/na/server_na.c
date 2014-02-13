@@ -290,7 +290,7 @@ int main(int argc, char *argv[])
 
         while(!test_done_g) {
             na_return_t trigger_ret;
-            int actual_count = 0;
+            unsigned int actual_count = 0;
 
             do {
                 trigger_ret = NA_Trigger(params.context, 0, 1, &actual_count);
