@@ -46,6 +46,7 @@ option(MERCURY_USE_BOOST_PP "Use BOOST preprocessor macros." OFF)
 if(MERCURY_USE_BOOST_PP)
   find_package(Boost 1.48.0 REQUIRED)
   if(Boost_FOUND)
+    message(STATUS "Boost include directory: ${Boost_INCLUDE_DIRS}")
     set(HG_HAS_BOOST 1)
     set(MERCURY_EXT_INCLUDE_DEPENDENCIES ${Boost_INCLUDE_DIRS}
       ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
@@ -60,6 +61,7 @@ option(MERCURY_USE_SYSTEM_MCHECKSUM "Use system-installed MChecksum." OFF)
 if(MERCURY_USE_SYSTEM_MCHECKSUM)
   find_package(mchecksum REQUIRED)
   if(mchecksum_FOUND)
+    message(STATUS "mchecksum include directory: ${MCHECKSUM_INCLUDE_DIR}")
     set(MERCURY_EXT_INCLUDE_DEPENDENCIES ${MCHECKSUM_INCLUDE_DIR}
       ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
     )
@@ -77,6 +79,7 @@ else()
   set(MCHECKSUM_EXPORTED_TARGETS ${MERCURY_EXPORTED_TARGETS})
   add_subdirectory(mchecksum)
   include(${MCHECKSUM_BINARY_DIR}/mchecksum-config.cmake)
+  message(STATUS "mchecksum include directory: ${MCHECKSUM_INCLUDE_DIR}")
   include_directories(${MCHECKSUM_INCLUDE_DIR})
   set(MERCURY_EXPORTED_LIBS mchecksum ${MERCURY_EXPORTED_LIBS})
 endif()
