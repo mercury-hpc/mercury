@@ -22,21 +22,28 @@ typedef struct hg_request_class  hg_request_class_t;  /* Opaque request class */
 typedef struct hg_request_object hg_request_object_t; /* Opaque request object */
 
 /**
+ * Progress callback, arg can be used to pass extra parameters required by
+ * underlying API.
+ *
  * \param timeout [IN]          timeout (in milliseconds)
+ * \param arg [IN]              pointer to data passed to callback
  *
  * \return HG_UTIL_SUCCESS if any completion has occurred / error code otherwise
  */
-typedef int (*hg_request_progress_func_t)(unsigned int timeout);
+typedef int (*hg_request_progress_func_t)(unsigned int timeout, void *arg);
 
 /**
+ * Trigger callback, arg can be used to pass extra parameters required by
+ * underlying API.
+ *
  * \param timeout [IN]          timeout (in milliseconds)
- * \param max_count [IN]        maximum number of callbacks triggered
- * \param max_count [IN]        actual number of callbacks triggered
+ * \param flag [OUT]            1 if callback has been triggered, 0 otherwise
+ * \param arg [IN]              pointer to data passed to callback
  *
  * \return HG_UTIL_SUCCESS or corresponding error code
  */
 typedef int (*hg_request_trigger_func_t)(unsigned int timeout,
-        unsigned int max_count, unsigned int *actual_count);
+        unsigned int *flag, void *arg);
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,15 +52,17 @@ extern "C" {
 /**
  * Initialize the request class with the specific progress/trigger functions
  * that will be called on hg_request_wait().
+ * arg can be used to pass extra parameters required by underlying API.
  *
  * \param progress [IN]         progress function
  * \param trigger [IN]          trigger function
+ * \param arg [IN]              pointer to data passed to callback
  *
  * \return Pointer to request class or NULL in case of failure
  */
 HG_UTIL_EXPORT hg_request_class_t *
 hg_request_init(hg_request_progress_func_t progress,
-        hg_request_trigger_func_t trigger);
+        hg_request_trigger_func_t trigger, void *arg);
 
 /**
  * Finalize the request class.
@@ -102,11 +111,27 @@ hg_request_complete(hg_request_object_t *request);
  *
  * \param request [IN/OUT]      pointer to request
  * \param timeout [IN]          timeout (in milliseconds)
+ * \param flag [OUT]            1 if request has completed, 0 otherwise
  *
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_EXPORT int
-hg_request_wait(hg_request_object_t *request, unsigned int timeout);
+hg_request_wait(hg_request_object_t *request, unsigned int timeout,
+        unsigned int *flag);
+
+/**
+ * Wait timeout ms for all the specified request to complete.
+ *
+ * \param count [IN]            number of requests
+ * \param request [IN/OUT]      arrays of requests
+ * \param timeout [IN]          timeout (in milliseconds)
+ * \param flag [OUT]            1 if all requests have completed, 0 otherwise
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_request_waitall(int count, hg_request_object_t *request[],
+        unsigned int timeout, unsigned int *flag);
 
 /**
  * Attach user data to a specified request.
