@@ -6,6 +6,12 @@
 
 find_package(PkgConfig)
 pkg_check_modules(PC_OPA QUIET openpa)
+# If openpa.pc cannot be found, try to look for mpich2-c.pc
+if(NOT PC_OPA_INCLUDEDIRS)
+  pkg_check_modules(PC_MPICH2_C QUIET mpich2-c)
+  set(PC_OPA_INCLUDEDIR ${PC_MPICH2_C_INCLUDEDIR})
+  set(PC_OPA_LIBDIR ${PC_MPICH2_C_LIBDIR})
+endif()
 
 find_path(OPA_INCLUDE_DIR opa_primitives.h
   HINTS ${PC_OPA_INCLUDEDIR} ${PC_OPA_INCLUDE_DIRS})
