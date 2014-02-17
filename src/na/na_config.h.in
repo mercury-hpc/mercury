@@ -31,8 +31,6 @@
 #cmakedefine NA_HAS_MPI
 #cmakedefine NA_HAS_SSM
 
-#cmakedefine NA_HAS_CLIENT_THREAD
-
 #cmakedefine NA_HAS_VERBOSE_ERROR
 
 #cmakedefine NA_BUILD_SHARED_LIBS

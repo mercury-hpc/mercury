@@ -122,12 +122,6 @@ if(NA_USE_MPI)
   endif()
 endif()
 
-# Force NA_USE_CLIENT_THREAD for now
-#option(NA_USE_CLIENT_THREAD "Allow use of thread for making progress on client." ON)
-#if(NA_USE_CLIENT_THREAD)
-  set(NA_HAS_CLIENT_THREAD 1)
-#endif()
-
 #------------------------------------------------------------------------------
 # Configure module header files
 #------------------------------------------------------------------------------
