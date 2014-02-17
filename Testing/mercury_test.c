@@ -43,12 +43,20 @@ HG_Test_mpi_init(hg_bool_t server)
 
     MPI_Initialized(&mpi_initialized);
     if (!mpi_initialized) {
+#ifdef NA_MPI_HAS_GNI_SETUP
+        /* Setup GNI job before initializing MPI */
+        if (NA_MPI_Gni_job_setup() != NA_SUCCESS) {
+            fprintf(stderr, "Could not setup GNI job\n");
+            return;
+        }
+#endif
         if (server) {
             int provided;
 
             MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
             if (provided != MPI_THREAD_MULTIPLE) {
-                fprintf(stderr, "MPI_THREAD_MULTIPLE cannot be set");
+                fprintf(stderr, "MPI_THREAD_MULTIPLE cannot be set\n");
+                return;
             }
         } else {
             MPI_Init(NULL, NULL);

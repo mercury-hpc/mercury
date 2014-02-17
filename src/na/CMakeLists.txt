@@ -116,6 +116,18 @@ if(NA_USE_MPI)
       ${NA_EXT_INCLUDE_DEPENDENCIES}
       ${MPI_INCLUDE_PATH}
     )
+    # Extra job setup for Cray MPI without ALPS support
+    option(NA_MPI_USE_GNI_SETUP
+      "Define NA_MPI_Gni_job_setup() to setup the Aries NIC resources for the job." OFF)
+    if(NA_MPI_USE_GNI_SETUP)
+      find_package(GNI REQUIRED)
+      if(GNI_FOUND)
+        set(NA_MPI_HAS_GNI_SETUP 1)
+        include_directories(${GNI_INCLUDE_DIRS})
+      else()
+        message(FATAL_ERROR "Could not find GNI.")
+      endif()
+    endif()
   # we may want to add an option for MPI_VERSION >= 3
   else()
     message(FATAL_ERROR "Could not find MPI.")

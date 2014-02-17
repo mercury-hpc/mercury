@@ -24,6 +24,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef NA_MPI_HAS_GNI_SETUP
+#include <gni_pub.h>
+#endif
 
 /****************/
 /* Local Macros */
@@ -560,6 +563,11 @@ const struct na_class_describe na_mpi_describe_g = {
     na_mpi_initialize
 };
 
+#ifdef NA_MPI_HAS_GNI_SETUP
+const uint8_t ptag_value = 20;
+const uint32_t key_value = GNI_PKEY_USER_START + 1;
+#endif
+
 /********************/
 /* Plugin callbacks */
 /********************/
@@ -950,6 +958,87 @@ na_mpi_initialize(const struct na_host_buffer NA_UNUSED *na_buffer,
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef NA_MPI_HAS_GNI_SETUP
+static na_return_t
+gni_job_setup(uint8_t ptag, uint32_t cookie)
+{
+    gni_return_t grc;
+    gni_job_limits_t limits;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Do not apply any resource limits */
+    limits.a.mrt_limit = GNI_JOB_INVALID_LIMIT;
+    limits.b.gart_limit = GNI_JOB_INVALID_LIMIT;
+    limits.mdd_limit = GNI_JOB_INVALID_LIMIT;
+    limits.fma_limit = GNI_JOB_INVALID_LIMIT;
+    limits.bte_limit = GNI_JOB_INVALID_LIMIT;
+    limits.cq_limit = GNI_JOB_INVALID_LIMIT;
+
+    /* Do not use NTT */
+    limits.ntt_size = 0;
+
+    /* GNI_ConfigureJob():
+     * -device_id should be 0 for XC since we only have 1 NIC/node
+     * -job_id should always be 0 (meaning "no job container created")
+     */
+    grc = GNI_ConfigureJob(0, 0, ptag, cookie, &limits);
+    if(grc == GNI_RC_PERMISSION_ERROR) {
+        NA_LOG_ERROR("GNI_ConfigureJob(...) requires root priveledges.");
+        ret = NA_PERMISSION_ERROR;
+    }
+    NA_LOG_DEBUG("GNI_ConfigurJob returned %s", gni_err_str[grc]);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_MPI_Gni_job_setup(void)
+{
+    char ptag_string[128];
+    char cookie_string[128];
+    uint32_t cookie_value = GNI_JOB_CREATE_COOKIE(key_value,0);
+    na_return_t ret;
+
+    if ((key_value >= GNI_PKEY_USER_START)
+            && (key_value < GNI_PKEY_USER_END)) {
+        NA_LOG_ERROR("Invalid key value");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if ((ptag_value >= GNI_PTAG_USER_START)
+            && (ptag_value < GNI_PTAG_USER_END)) {
+        NA_LOG_ERROR("Invalid ptag value");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    /*
+     * setup ptag/pcookie  env variables for MPI
+     */
+    sprintf(ptag_string,"PMI_GNI_PTAG=%d", ptag_value);
+    putenv(ptag_string);
+    sprintf(cookie_string,"PMI_GNI_COOKIE=%d", cookie_value);
+    putenv(cookie_string);
+
+    NA_LOG_DEBUG("Setting ptag to %d and cookie to 0x%x", ptag_value,
+            cookie_value);
+    NA_LOG_DEBUG("sanity check PMI_GNI_PTAG = %s", getenv("PMI_GNI_PTAG"));
+    NA_LOG_DEBUG("sanity check PMI_GNI_COOKIE = %s", getenv("PMI_GNI_COOKIE"));
+
+    /*
+     * setup the Aries NIC resources for the job (this can be done multiple
+     * times for the same ptag/cookie combination on the same node), so it
+     * doesn't matter if there are multiple MPI ranks per node.
+     */
+    ret = gni_job_setup(ptag_value, cookie_value);
+
+done:
+    return ret;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
 na_class_t *
 NA_MPI_Init(MPI_Comm *intra_comm, int flags)
 {
@@ -995,6 +1084,14 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
             (na_bool_t) mpi_ext_initialized;
 
     if (!mpi_ext_initialized) {
+#ifdef NA_MPI_HAS_GNI_SETUP
+        /* Setup GNI job before initializing MPI */
+        if (NA_MPI_Gni_job_setup() != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not setup GNI job");
+            error_occurred = NA_TRUE;
+            goto done;
+        }
+#endif
         if (listening) {
             int provided;
             /* Listening implies creation of listening thread so use that to

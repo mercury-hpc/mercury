@@ -54,6 +54,17 @@ NA_MPI_Get_port_name(
         na_class_t *na_class
         );
 
+/**
+ * Setup the Aries NIC resources for the job when NA MPI is used with
+ * Cray MPI without ALPS support.
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+#ifdef NA_MPI_HAS_GNI_SETUP
+NA_EXPORT na_return_t
+NA_MPI_Gni_job_setup(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
