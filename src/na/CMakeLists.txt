@@ -124,6 +124,10 @@ if(NA_USE_MPI)
       if(GNI_FOUND)
         set(NA_MPI_HAS_GNI_SETUP 1)
         include_directories(${GNI_INCLUDE_DIRS})
+        set(NA_EXT_LIB_DEPENDENCIES
+          ${NA_EXT_LIB_DEPENDENCIES}
+          ${GNI_LIBRARIES}
+        )
       else()
         message(FATAL_ERROR "Could not find GNI.")
       endif()
