@@ -45,6 +45,27 @@ hg_atomic_set32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 }
 
 /**
+ * Get atomic value (32-bit integer).
+ *
+ * \param ptr [OUT]             pointer to an atomic32 integer
+ *
+ * \return Value of the atomic integer
+ */
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_get32(hg_atomic_int32_t *ptr)
+{
+    hg_util_int32_t ret;
+
+#if defined(_WIN32) || defined(__APPLE__)
+    ret = ptr->value;
+#else
+    ret = OPA_load_int(ptr);
+#endif
+
+    return ret;
+}
+
+/**
  * Increment atomic value (32-bit integer).
  *
  * \param ptr [IN/OUT]          pointer to an atomic32 integer
@@ -61,7 +82,7 @@ hg_atomic_incr32(hg_atomic_int32_t *ptr)
 #elif defined(__APPLE__)
     ret = OSAtomicIncrement32(&ptr->value);
 #else
-    ret = OPA_fetch_and_incr_int(ptr);
+    ret = OPA_fetch_and_incr_int(ptr) + 1;
 #endif
 
     return ret;
@@ -84,7 +105,7 @@ hg_atomic_decr32(hg_atomic_int32_t *ptr)
 #elif defined(__APPLE__)
     ret = OSAtomicDecrement32(&ptr->value);
 #else
-    ret = OPA_fetch_and_decr_int(ptr);
+    ret = OPA_fetch_and_decr_int(ptr) - 1;
 #endif
 
     return ret;

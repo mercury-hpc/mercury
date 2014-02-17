@@ -1,18 +1,25 @@
 #------------------------------------------------------------------------------
 # Mercury util tests
+function(add_mercury_test_util test_name)
+  add_executable(test_${test_name} test_${test_name}.c)
+  target_link_libraries(test_${test_name} mercury_test)
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(test_${test_name})
+  endif()
+  add_test(NAME ${test_name} COMMAND $<TARGET_FILE:test_${test_name}>)
+endfunction()
 
-add_executable(test_threadpool test_threadpool.c)
-target_link_libraries(test_threadpool mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(test_threadpool)
-endif()
+#------------------------------------------------------------------------------
+# Set list of tests
+set(MERCURY_util_tests
+  thread
+  thread_mutex
+  thread_condition
+  atomic
+  threadpool
+  request
+)
 
-add_test(NAME threadpool COMMAND $<TARGET_FILE:test_threadpool>)
-
-add_executable(test_request test_request.c)
-target_link_libraries(test_request mercury_test)
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(test_request)
-endif()
-
-add_test(NAME request COMMAND $<TARGET_FILE:test_request>)
+foreach(test_name ${MERCURY_util_tests})
+  add_mercury_test_util(${test_name})
+endforeach()
