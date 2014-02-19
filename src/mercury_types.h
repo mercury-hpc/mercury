@@ -81,4 +81,10 @@ typedef hg_return_t (*hg_proc_cb_t)(hg_proc_t proc, void *in_struct);
 /* Callback for executing RPC */
 typedef hg_return_t (*hg_handler_cb_t)(hg_handle_t handle);
 
+/* Context used for request emulation */
+struct hg_context {
+    na_class_t *na_class;
+    na_context_t *na_context;
+};
+
 #endif /* MERCURY_TYPES_H */

@@ -17,7 +17,7 @@
 #include "mercury_hash_string.h"
 #include "mercury_atomic.h"
 #include "mercury_time.h"
-#include "mercury_thread_mutex.h"
+#include "mercury_request.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -40,11 +40,11 @@ struct hg_request {
     void         *extra_send_buf;
     na_size_t     extra_send_buf_size;
     hg_bulk_t     extra_send_buf_handle;
-    hg_bool_t     send_completed;
+    hg_request_object_t *send_request;
 
     void         *recv_buf;
     na_size_t     recv_buf_size;
-    hg_bool_t     recv_completed;
+    hg_request_object_t *recv_request;
 
     void         *out_struct;
 };
@@ -89,15 +89,36 @@ static na_return_t hg_send_input_cb(const struct na_cb_info *callback_info);
  */
 static na_return_t hg_recv_output_cb(const struct na_cb_info *callback_info);
 
+/**
+ * Progress for request emulation.
+ */
+int
+hg_request_progress_func(unsigned int timeout, void *arg);
+
+/**
+ * Trigger for request emulation.
+ */
+int
+hg_request_trigger_func(unsigned int timeout, unsigned int *flag, void *arg);
+
 /*******************/
 /* Local Variables */
 /*******************/
 
-/* Pointer to network abstraction class */
-static na_class_t *hg_na_class_g = NULL;
+/* Pointer to NA class */
+na_class_t *hg_na_class_g = NULL;
+extern na_class_t *hg_handler_na_class_g;
+extern na_class_t *hg_bulk_na_class_g;
 
 /* Local context */
-static na_context_t *hg_context_g = NULL;
+na_context_t *hg_context_g = NULL;
+extern na_context_t *hg_handler_context_g;
+extern na_context_t *hg_bulk_context_g;
+
+/* Request class */
+hg_request_class_t *hg_request_class_g = NULL;
+extern hg_request_class_t *hg_handler_request_class_g;
+extern hg_request_class_t *hg_bulk_request_class_g;
 
 /* Bulk interface internally initialized */
 static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
@@ -108,9 +129,6 @@ static hg_hash_table_t *hg_func_map_g = NULL;
 /* Atomic used for tag generation */
 static hg_atomic_int32_t hg_request_tag_g;
 static na_tag_t hg_request_max_tag_g = 0;
-
-/* Mutex used for request completion */
-static hg_thread_mutex_t hg_request_mutex_g;
 
 /*---------------------------------------------------------------------------*/
 /**
@@ -381,11 +399,7 @@ hg_send_input_cb(const struct na_cb_info *callback_info)
     priv_request->send_buf_size = 0;
 
     /* Mark request as completed */
-    hg_thread_mutex_lock(&hg_request_mutex_g);
-
-    priv_request->send_completed = HG_TRUE;
-
-    hg_thread_mutex_unlock(&hg_request_mutex_g);
+    hg_request_complete(priv_request->send_request);
 
     return ret;
 }
@@ -442,14 +456,42 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
     priv_request->recv_buf_size = 0;
 
     /* Mark request as completed */
-    hg_thread_mutex_lock(&hg_request_mutex_g);
-
-    priv_request->recv_completed = HG_TRUE;
-
-    hg_thread_mutex_unlock(&hg_request_mutex_g);
+    hg_request_complete(priv_request->recv_request);
 
 done:
     return na_ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_request_progress_func(unsigned int timeout, void *arg)
+{
+    struct hg_context *hg_context = (struct hg_context *) arg;
+    int ret = HG_UTIL_SUCCESS;
+    na_return_t na_ret;
+
+    (void) arg;
+    na_ret = NA_Progress(hg_context->na_class, hg_context->na_context, timeout);
+    if (na_ret != NA_SUCCESS) ret = HG_UTIL_FAIL;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_request_trigger_func(unsigned int timeout, unsigned int *flag, void *arg)
+{
+    struct hg_context *hg_context = (struct hg_context *) arg;
+    int ret = HG_UTIL_SUCCESS;
+    unsigned int actual_count;
+    na_return_t na_ret;
+
+    (void) arg;
+    na_ret = NA_Trigger(hg_context->na_context, timeout, 1, &actual_count);
+    if (na_ret != NA_SUCCESS) ret = HG_UTIL_FAIL;
+    *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -486,12 +528,32 @@ HG_Init(na_class_t *na_class)
 
     hg_na_class_g = na_class;
 
-    /* Create local context */
-    hg_context_g = NA_Context_create(hg_na_class_g);
-    if (!hg_context_g) {
-        HG_ERROR_DEFAULT("Could not create context.");
-        ret = HG_FAIL;
-        return ret;
+    /* Create local context if na_class different from hg_bulk_class */
+    if (hg_bulk_na_class_g == hg_na_class_g) {
+        hg_context_g = hg_bulk_context_g;
+        hg_request_class_g = hg_bulk_request_class_g;
+    } else {
+        if (hg_handler_na_class_g) {
+            hg_context_g = hg_handler_context_g;
+            hg_request_class_g = hg_handler_request_class_g;
+        } else {
+            static struct hg_context hg_context;
+
+            /* Not initialized yet so must initialize */
+            hg_context_g = NA_Context_create(hg_na_class_g);
+            if (!hg_context_g) {
+                HG_ERROR_DEFAULT("Could not create context.");
+                ret = HG_FAIL;
+                return ret;
+            }
+
+            hg_context.na_class = hg_na_class_g;
+            hg_context.na_context = hg_context_g;
+
+            hg_request_class_g = hg_request_init(
+                    hg_request_progress_func,
+                    hg_request_trigger_func, &hg_context);
+        }
     }
 
     /* Initialize bulk module */
@@ -510,9 +572,6 @@ HG_Init(na_class_t *na_class)
     /* Initialize atomic for tags */
     hg_request_max_tag_g = NA_Msg_get_max_tag(hg_na_class_g);
     hg_atomic_set32(&hg_request_tag_g, 0);
-
-    /* Initialize request mutex */
-    hg_thread_mutex_init(&hg_request_mutex_g);
 
     /* Create new function map */
     hg_func_map_g = hg_hash_table_new(hg_int_hash, hg_int_equal);
@@ -550,16 +609,24 @@ HG_Finalize(void)
         hg_bulk_initialized_internal_g = HG_FALSE;
     }
 
-    /* Destroy context */
-    na_ret = NA_Context_destroy(hg_na_class_g, hg_context_g);
-    if (na_ret != NA_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not destroy context.");
-        ret = HG_FAIL;
-        return ret;
-    }
+    if (hg_handler_na_class_g ||
+            (hg_bulk_na_class_g && (hg_na_class_g == hg_bulk_na_class_g))) {
+        hg_request_class_g = NULL;
+        hg_context_g = NULL;
+    } else {
+        /* Finalize request class */
+        hg_request_finalize(hg_request_class_g);
+        hg_request_class_g = NULL;
 
-    /* Destroy request mutex */
-    hg_thread_mutex_destroy(&hg_request_mutex_g);
+        /* Destroy context */
+        na_ret = NA_Context_destroy(hg_na_class_g, hg_context_g);
+        if (na_ret != NA_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not destroy context.");
+            ret = HG_FAIL;
+            return ret;
+        }
+        hg_context_g = NULL;
+    }
 
     /* Delete function map */
     hg_hash_table_free(hg_func_map_g);
@@ -715,9 +782,9 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     /* Keep pointer to output structure */
     priv_request->out_struct = out_struct;
 
-    /* Mark request as not completed */
-    priv_request->send_completed = HG_FALSE;
-    priv_request->recv_completed = HG_FALSE;
+    /* Create two requests for the send/recv operations */
+    priv_request->send_request = hg_request_create(hg_request_class_g);
+    priv_request->recv_request = hg_request_create(hg_request_class_g);
 
     /* Encode the function parameters */
     ret = hg_set_input(priv_request, in_struct);
@@ -798,7 +865,6 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 {
     double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
     struct hg_request *priv_request = (struct hg_request*) request;
-    hg_bool_t completed = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_na_class_g) {
@@ -813,49 +879,53 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         goto done;
     }
 
-    hg_thread_mutex_lock(&hg_request_mutex_g);
+    /* TODO use hg_request_waitall instead */
 
-    completed = (hg_bool_t)
-            (priv_request->send_completed && priv_request->recv_completed);
-
-    hg_thread_mutex_unlock(&hg_request_mutex_g);
-
-    while (!completed) {
+    if (priv_request->send_request) {
         hg_time_t t1, t2;
-        na_return_t na_ret;
-        int actual_count = 0;
+        unsigned int flag;
 
         hg_time_get_current(&t1);
 
-        do {
-            na_ret = NA_Trigger(hg_context_g, 0, 1, &actual_count);
-        } while ((na_ret == NA_SUCCESS) && actual_count);
-
-        hg_thread_mutex_lock(&hg_request_mutex_g);
-
-        completed = (hg_bool_t)
-                (priv_request->send_completed && priv_request->recv_completed);
-
-        hg_thread_mutex_unlock(&hg_request_mutex_g);
-
-        if (completed) break;
-
-        na_ret = NA_Progress(hg_na_class_g, hg_context_g,
-                (unsigned int) (remaining * 1000));
-        if (na_ret == NA_TIMEOUT) {
+        if (hg_request_wait(priv_request->send_request, timeout, &flag) !=
+                HG_UTIL_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not wait on send_request");
+            ret = HG_FAIL;
             goto done;
         }
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-        if (remaining < 0) {
+        if (remaining < 0)
+            remaining = 0;
+
+        if (flag) {
+            hg_request_destroy(priv_request->send_request);
+            priv_request->send_request = NULL;
+        }
+    }
+
+    if (priv_request->recv_request) {
+        unsigned int flag;
+
+        if (hg_request_wait(priv_request->recv_request,
+                (unsigned int) (remaining * 1000), &flag) != HG_UTIL_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not wait on send_request");
+            ret = HG_FAIL;
             goto done;
+        }
+
+        if (flag) {
+            hg_request_destroy(priv_request->recv_request);
+            priv_request->recv_request = NULL;
         }
     }
 
 done:
     if (status && (status != HG_STATUS_IGNORE)) {
-        *status = completed;
+        /* When both are NULL, it's completed */
+        *status = (hg_status_t)
+                (!priv_request->send_request && !priv_request->recv_request);
     }
 
     return ret;
@@ -904,7 +974,7 @@ HG_Request_free(hg_request_t request)
         return ret;
     }
 
-    if (!priv_request->send_completed || !priv_request->recv_completed) {
+    if (priv_request->send_request || priv_request->recv_request) {
         HG_ERROR_DEFAULT("Trying to free an uncompleted request");
         ret = HG_FAIL;
         return ret;

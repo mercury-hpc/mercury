@@ -17,6 +17,7 @@
 #include "mercury_queue.h"
 #include "mercury_list.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_request.h"
 #include "mercury_time.h"
 
 #include <stdlib.h>
@@ -106,6 +107,12 @@ hg_handler_process_extra_recv_buf(
         );
 
 /**
+ * Start processing a received request.
+ */
+static hg_return_t
+hg_handler_start_processing(struct hg_handle *priv_handle);
+
+/**
  * Recv input callback.
  */
 static na_return_t
@@ -125,19 +132,38 @@ hg_handler_send_output_cb(
  * Start receiving a new request.
  */
 static hg_return_t
-hg_handler_start_request(
-        na_op_id_t *request_op_id
-        );
+hg_handler_start_request(void);
+
+/**
+ * Progress for request emulation.
+ */
+extern int
+hg_request_progress_func(unsigned int timeout, void *arg);
+
+/**
+ * Trigger for request emulation.
+ */
+extern int
+hg_request_trigger_func(unsigned int timeout, unsigned int *flag, void *arg);
 
 /*******************/
 /* Local Variables */
 /*******************/
 
-/* Pointer to network abstraction class */
-static na_class_t *hg_handler_na_class_g = NULL;
+/* Pointer to NA class */
+extern na_class_t *hg_na_class_g;
+na_class_t *hg_handler_na_class_g = NULL;
+extern na_class_t *hg_bulk_na_class_g;
 
 /* Local context */
-static na_context_t *hg_handler_context_g = NULL;
+extern na_context_t *hg_context_g;
+na_context_t *hg_handler_context_g = NULL;
+extern na_context_t *hg_bulk_context_g;
+
+/* Request class */
+extern hg_request_class_t *hg_request_class_g;
+hg_request_class_t *hg_handler_request_class_g = NULL;
+extern hg_request_class_t *hg_bulk_request_class_g;
 
 /* Bulk interface internally initialized */
 static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
@@ -153,10 +179,9 @@ static hg_thread_mutex_t hg_handler_processing_list_mutex_g;
 static hg_queue_t *hg_handler_completion_queue_g;
 static hg_thread_mutex_t hg_handler_completion_queue_mutex_g;
 
-/* Request started */
-static hg_bool_t hg_handler_started_request_g = HG_FALSE;
-static na_op_id_t hg_handler_started_request_id_g = NA_OP_ID_NULL;
-static hg_thread_mutex_t hg_handler_started_request_mutex_g;
+/* Handler request started */
+static hg_request_object_t *hg_handler_pending_request_g = NULL;
+static struct hg_handle *hg_handler_pending_handle_g = NULL;
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE int
@@ -367,30 +392,12 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
-hg_handler_recv_input_cb(const struct na_cb_info *callback_info)
+static hg_return_t
+hg_handler_start_processing(struct hg_handle *priv_handle)
 {
-    struct hg_handle *priv_handle = (struct hg_handle *) callback_info->arg;
-    struct hg_handler_proc_info   *proc_info;
+    struct hg_handler_proc_info *proc_info;
     struct hg_header_request request_header;
-    /* TODO embed ret into priv_request */
     hg_return_t ret = HG_SUCCESS;
-    na_return_t na_ret = NA_SUCCESS;
-
-    if (callback_info->ret != NA_SUCCESS) {
-        goto done;
-    }
-
-    /* We just received a new request so set started to FALSE so that a new
-     * request recv can be posted */
-    hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
-
-    hg_handler_started_request_g = HG_FALSE;
-    /* No longer care about the op_id since at this point
-     * the request is received */
-    hg_handler_started_request_id_g = NA_OP_ID_NULL;
-
-    hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
 
     /* When a new request is being treated we must enqueue the handle
      * which is then moved to the completion queue once the user is done
@@ -398,15 +405,6 @@ hg_handler_recv_input_cb(const struct na_cb_info *callback_info)
     ret = hg_handler_processing_list_add(priv_handle);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not add handle to processing list");
-        goto done;
-    }
-
-    priv_handle->addr = callback_info->info.recv_unexpected.source;
-    priv_handle->tag = callback_info->info.recv_unexpected.tag;
-    if (callback_info->info.recv_unexpected.actual_buf_size !=
-            priv_handle->recv_buf_size) {
-        HG_ERROR_DEFAULT("Buffer size and actual transfer size do not match");
-        ret = HG_FAIL;
         goto done;
     }
 
@@ -456,6 +454,35 @@ hg_handler_recv_input_cb(const struct na_cb_info *callback_info)
 
     /* Execute function and fill output parameters */
     proc_info->callback_routine((hg_handle_t) priv_handle);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+hg_handler_recv_input_cb(const struct na_cb_info *callback_info)
+{
+    /* TODO embed ret into priv_request */
+    struct hg_handle *priv_handle = (struct hg_handle *) callback_info->arg;
+    na_return_t na_ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        goto done;
+    }
+
+    /* Fill unexpected info */
+    priv_handle->addr = callback_info->info.recv_unexpected.source;
+    priv_handle->tag = callback_info->info.recv_unexpected.tag;
+    if (callback_info->info.recv_unexpected.actual_buf_size !=
+            priv_handle->recv_buf_size) {
+        HG_ERROR_DEFAULT("Buffer size and actual transfer size do not match");
+        goto done;
+    }
+
+    /* We just received a new request so mark request as completed so that a
+     * new request recv can be posted */
+    hg_request_complete(hg_handler_pending_request_g);
 
 done:
     return na_ret;
@@ -510,12 +537,30 @@ HG_Handler_init(na_class_t *na_class)
 
     hg_handler_na_class_g = na_class;
 
-    /* Create local context */
-    hg_handler_context_g = NA_Context_create(hg_handler_na_class_g);
-    if (!hg_handler_context_g) {
-        HG_ERROR_DEFAULT("Could not create context.");
-        ret = HG_FAIL;
-        goto done;
+    /* Create local context if na_class different from hg_bulk_class */
+    if (hg_bulk_na_class_g == hg_handler_na_class_g) {
+        hg_handler_context_g = hg_bulk_context_g;
+        hg_handler_request_class_g = hg_bulk_request_class_g;
+    } else if (hg_na_class_g) {
+        hg_handler_context_g = hg_context_g;
+        hg_handler_request_class_g = hg_request_class_g;
+    } else {
+        static struct hg_context hg_context;
+
+        /* Not initialized yet so must initialize */
+        hg_handler_context_g = NA_Context_create(hg_handler_na_class_g);
+        if (!hg_handler_context_g) {
+            HG_ERROR_DEFAULT("Could not create context.");
+            ret = HG_FAIL;
+            return ret;
+        }
+
+        hg_context.na_class = hg_handler_na_class_g;
+        hg_context.na_context = hg_handler_context_g;
+
+        hg_handler_request_class_g = hg_request_init(
+                hg_request_progress_func,
+                hg_request_trigger_func, &hg_context);
     }
 
     /* Initialize bulk module */
@@ -547,7 +592,6 @@ HG_Handler_init(na_class_t *na_class)
 
     /* Initialize mutex */
     hg_thread_mutex_init(&hg_handler_completion_queue_mutex_g);
-    hg_thread_mutex_init(&hg_handler_started_request_mutex_g);
 
 done:
     return ret;
@@ -577,7 +621,7 @@ HG_Handler_finalize(void)
     }
 
     /* If request was started, we must cancel it */
-    if (hg_handler_started_request_id_g != NA_OP_ID_NULL) {
+    if (hg_handler_pending_request_g != NULL) {
         /* TODO for now print an error message but cancel it in the future
          * if necessary */
         HG_ERROR_DEFAULT("Posted a request which did not complete");
@@ -585,8 +629,9 @@ HG_Handler_finalize(void)
 
     /* If requests have not finished processing we must ensure that they are
      * moved to the completion queue before we process it */
+    /* TODO move that to request emul */
     while (hg_list_length(hg_handler_processing_list_g)) {
-        int actual_count = 0;
+        unsigned int actual_count = 0;
 
         do {
             na_ret = NA_Trigger(hg_handler_context_g, 0, 1, &actual_count);
@@ -607,12 +652,23 @@ HG_Handler_finalize(void)
     /* Free completion queue */
     hg_queue_free(hg_handler_completion_queue_g);
 
-    /* Destroy context */
-    na_ret = NA_Context_destroy(hg_handler_na_class_g, hg_handler_context_g);
-    if (na_ret != NA_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not destroy context.");
-        ret = HG_FAIL;
-        return ret;
+    if (hg_na_class_g ||
+            (hg_bulk_na_class_g && (hg_handler_na_class_g == hg_bulk_na_class_g))) {
+        hg_handler_request_class_g = NULL;
+        hg_handler_context_g = NULL;
+    } else {
+        /* Finalize request class */
+        hg_request_finalize(hg_handler_request_class_g);
+        hg_handler_request_class_g = NULL;
+
+        /* Destroy context */
+        na_ret = NA_Context_destroy(hg_handler_na_class_g, hg_handler_context_g);
+        if (na_ret != NA_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not destroy context.");
+            ret = HG_FAIL;
+            return ret;
+        }
+        hg_handler_context_g = NULL;
     }
 
     /* Delete function map */
@@ -623,7 +679,6 @@ HG_Handler_finalize(void)
 
     /* Destroy mutex */
     hg_thread_mutex_destroy(&hg_handler_completion_queue_mutex_g);
-    hg_thread_mutex_destroy(&hg_handler_started_request_mutex_g);
 
 done:
     return ret;
@@ -765,69 +820,43 @@ done:
 hg_return_t
 HG_Handler_process(unsigned int timeout, hg_status_t *status)
 {
-    double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
-    hg_bool_t processed = HG_FALSE;
+    unsigned int flag = 0;
     hg_return_t ret = HG_SUCCESS;
 
     /* Check if previous handles have completed */
     hg_handler_completion_queue_process();
 
     /* Start a new request if none already started */
-    hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
-
-    if (!hg_handler_started_request_g) {
-        ret = hg_handler_start_request(&hg_handler_started_request_id_g);
+    if (!hg_handler_pending_request_g) {
+        ret = hg_handler_start_request();
         if (ret != HG_SUCCESS) goto done;
-        hg_handler_started_request_g = HG_TRUE;
     }
 
-    processed = (hg_bool_t) (!hg_handler_started_request_g);
+    if (hg_request_wait(hg_handler_pending_request_g, timeout, &flag)
+            != HG_UTIL_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not wait on send_request");
+        ret = HG_FAIL;
+        goto done;
+    }
 
-    hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
-
-    while (!processed) {
-        hg_time_t t1, t2;
-        na_return_t na_ret;
-        int actual_count = 0;
-        unsigned int progress_timeout = (timeout > 1000) ? 1000 : timeout;
-
-        hg_time_get_current(&t1);
-
-        do {
-            na_ret = NA_Trigger(hg_handler_context_g, 0, 1, &actual_count);
-        } while ((na_ret == NA_SUCCESS) && actual_count);
-
-        hg_thread_mutex_lock(&hg_handler_started_request_mutex_g);
-
-        processed = (hg_bool_t) (!hg_handler_started_request_g);
-
-        hg_thread_mutex_unlock(&hg_handler_started_request_mutex_g);
-
-        if (processed) break;
-
-        na_ret = NA_Progress(hg_handler_na_class_g, hg_handler_context_g,
-                progress_timeout);
-        if (na_ret == NA_TIMEOUT) {
-            goto done;
-        }
-
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-        if (remaining < 0) {
-            goto done;
-        }
+    if (flag) {
+        /* Start processing request */
+        hg_handler_start_processing(hg_handler_pending_handle_g);
+        /* Destroy request */
+        hg_request_destroy(hg_handler_pending_request_g);
+        hg_handler_pending_request_g = NULL;
     }
 
 done:
     if (status && (status != HG_STATUS_IGNORE)) {
-        *status = processed;
+        *status = (hg_status_t) flag;
     }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_handler_start_request(na_op_id_t *request_op_id)
+hg_handler_start_request(void)
 {
     struct hg_handle *priv_handle = NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -853,10 +882,14 @@ hg_handler_start_request(na_op_id_t *request_op_id)
         goto done;
     }
 
+    /* Create a new pending request */
+    hg_handler_pending_request_g = hg_request_create(hg_handler_request_class_g);
+    hg_handler_pending_handle_g = priv_handle;
+
     /* Post a new unexpected receive */
     na_ret = NA_Msg_recv_unexpected(hg_handler_na_class_g, hg_handler_context_g,
             &hg_handler_recv_input_cb, priv_handle, priv_handle->recv_buf,
-            priv_handle->recv_buf_size, request_op_id);
+            priv_handle->recv_buf_size, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not post unexpected recv for input buffer");
         ret = HG_FAIL;

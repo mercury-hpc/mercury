@@ -14,9 +14,8 @@
 /* TODO see if we can avoid to have to include that header */
 #include "na_private.h"
 
-#include "mercury_thread_mutex.h"
-#include "mercury_thread_condition.h"
-#include "mercury_time.h"
+#include "mercury_request.h"
+#include "mercury_atomic.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -58,9 +57,9 @@ struct hg_bulk {
 };
 
 struct hg_bulk_request {
-    size_t op_count; /* Number of ongoing operations */
-    size_t op_completed_count; /* Number of operations completed */
-    hg_bool_t completed;
+    unsigned int op_count; /* Number of ongoing operations */
+    hg_atomic_int32_t op_completed_count; /* Number of operations completed */
+    hg_request_object_t *request;
 };
 
 /********************/
@@ -85,6 +84,17 @@ static hg_return_t hg_bulk_offset_translate(hg_bulk_t bulk_handle,
 static na_return_t hg_bulk_transfer_cb(const struct na_cb_info *callback_info);
 
 /**
+ * Transfer data pieces (private).
+ */
+static hg_return_t
+hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t addr,
+        struct hg_bulk *priv_bulk_handle, size_t bulk_segment_start_index,
+        size_t bulk_segment_start_offset, struct hg_bulk *priv_block_handle,
+        size_t block_segment_start_index, size_t block_segment_start_offset,
+        size_t block_size, struct hg_bulk_request *hg_bulk_request,
+        unsigned int *na_op_count);
+
+/**
  * Transfer data.
  */
 static hg_return_t hg_bulk_transfer(hg_bulk_op_t op, na_addr_t addr,
@@ -92,23 +102,37 @@ static hg_return_t hg_bulk_transfer(hg_bulk_op_t op, na_addr_t addr,
         hg_bulk_t block_handle, size_t block_offset,
         size_t block_size, hg_bulk_request_t *bulk_request);
 
+/**
+ * Progress for request emulation.
+ */
+extern int
+hg_request_progress_func(unsigned int timeout, void *arg);
+
+/**
+ * Trigger for request emulation.
+ */
+extern int
+hg_request_trigger_func(unsigned int timeout, unsigned int *flag, void *arg);
+
+
 /*******************/
 /* Local Variables */
 /*******************/
 
 /* Pointer to NA class */
-static na_class_t *hg_bulk_na_class_g = NULL;
+extern na_class_t *hg_na_class_g;
+extern na_class_t *hg_handler_na_class_g;
+na_class_t *hg_bulk_na_class_g = NULL;
 
 /* Local context */
-static na_context_t *hg_bulk_context_g = NULL;
+extern na_context_t *hg_context_g;
+extern na_context_t *hg_handler_context_g;
+na_context_t *hg_bulk_context_g = NULL;
 
-/* Mutex used for request completion */
-static hg_thread_mutex_t hg_bulk_request_mutex_g;
-
-/* Mutex/cond to prevent concurrent request trigger/progress */
-static hg_thread_mutex_t hg_bulk_progress_mutex_g;
-static hg_thread_cond_t hg_bulk_progress_cond_g;
-static hg_bool_t hg_bulk_progressing_g = HG_FALSE;
+/* Request class */
+extern hg_request_class_t *hg_request_class_g;
+extern hg_request_class_t *hg_handler_request_class_g;
+hg_request_class_t *hg_bulk_request_class_g = NULL;
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
@@ -133,18 +157,31 @@ HG_Bulk_init(na_class_t *na_class)
 
     hg_bulk_na_class_g = na_class;
 
-    /* Create local context */
-    hg_bulk_context_g = NA_Context_create(hg_bulk_na_class_g);
-    if (!hg_bulk_context_g) {
-        HG_ERROR_DEFAULT("Could not create context.");
-        ret = HG_FAIL;
-        goto done;
-    }
+    /* Create local context if na_class different from hg_class */
+    if (hg_bulk_na_class_g == hg_na_class_g) {
+        hg_bulk_context_g = hg_context_g;
+        hg_bulk_request_class_g = hg_request_class_g;
+    } else if (hg_bulk_na_class_g == hg_handler_na_class_g) {
+            hg_bulk_context_g = hg_handler_context_g;
+            hg_bulk_request_class_g = hg_handler_request_class_g;
+    } else {
+        static struct hg_context hg_context;
 
-    /* Initilialize mutex */
-    hg_thread_mutex_init(&hg_bulk_request_mutex_g);
-    hg_thread_mutex_init(&hg_bulk_progress_mutex_g);
-    hg_thread_cond_init(&hg_bulk_progress_cond_g);
+        /* Not initialized yet so must initialize */
+        hg_bulk_context_g = NA_Context_create(hg_bulk_na_class_g);
+        if (!hg_bulk_context_g) {
+            HG_ERROR_DEFAULT("Could not create context.");
+            ret = HG_FAIL;
+            goto done;
+        }
+
+        hg_context.na_class = hg_bulk_na_class_g;
+        hg_context.na_context = hg_bulk_context_g;
+
+        hg_bulk_request_class_g = hg_request_init(
+                hg_request_progress_func,
+                hg_request_trigger_func, &hg_context);
+    }
 
 done:
     return ret;
@@ -163,20 +200,26 @@ HG_Bulk_finalize(void)
         goto done;
     }
 
-    /* Destroy context */
-    na_ret = NA_Context_destroy(hg_bulk_na_class_g, hg_bulk_context_g);
-    if (na_ret != NA_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not destroy context.");
-        ret = HG_FAIL;
-        goto done;
+    if ((hg_na_class_g == hg_bulk_na_class_g) ||
+            (hg_handler_na_class_g == hg_bulk_na_class_g)) {
+        hg_bulk_request_class_g = NULL;
+        hg_bulk_context_g = NULL;
+    } else {
+        /* Finalize request class */
+        hg_request_finalize(hg_bulk_request_class_g);
+        hg_handler_request_class_g = NULL;
+
+        /* Destroy context */
+        na_ret = NA_Context_destroy(hg_bulk_na_class_g, hg_bulk_context_g);
+        if (na_ret != NA_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not destroy context.");
+            ret = HG_FAIL;
+            return ret;
+        }
+        hg_bulk_context_g = NULL;
     }
 
     hg_bulk_na_class_g = NULL;
-
-    /* Destroy mutex */
-    hg_thread_mutex_destroy(&hg_bulk_request_mutex_g);
-    hg_thread_mutex_destroy(&hg_bulk_progress_mutex_g);
-    hg_thread_cond_destroy(&hg_bulk_progress_cond_g);
 
 done:
     return ret;
@@ -675,13 +718,82 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
-    hg_thread_mutex_lock(&hg_bulk_request_mutex_g);
+    if ((unsigned int) hg_atomic_incr32(&priv_request->op_completed_count)
+            == priv_request->op_count)
+        hg_request_complete(priv_request->request);
 
-    priv_request->op_completed_count++;
-    if (priv_request->op_completed_count == priv_request->op_count)
-        priv_request->completed = HG_TRUE;
+    return ret;
+}
 
-    hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t addr,
+        struct hg_bulk *priv_bulk_handle, size_t bulk_segment_start_index,
+        size_t bulk_segment_start_offset, struct hg_bulk *priv_block_handle,
+        size_t block_segment_start_index, size_t block_segment_start_offset,
+        size_t block_size, struct hg_bulk_request *hg_bulk_request,
+        unsigned int *na_op_count)
+{
+    size_t bulk_segment_index = bulk_segment_start_index;
+    size_t block_segment_index = block_segment_start_index;
+    size_t bulk_segment_offset = bulk_segment_start_offset;
+    size_t block_segment_offset = block_segment_start_offset;
+    size_t remaining_size = block_size;
+    unsigned int count = 0;
+    hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
+
+    while (remaining_size > 0) {
+        size_t bulk_transfer_size, block_transfer_size, transfer_size;
+
+        /* Can only transfer smallest size */
+        bulk_transfer_size = priv_bulk_handle->segment_sizes[bulk_segment_index]
+                - bulk_segment_offset;
+        block_transfer_size = priv_block_handle->segment_sizes[block_segment_index]
+                - block_segment_offset;
+        transfer_size = HG_BULK_MIN(bulk_transfer_size, block_transfer_size);
+
+        /* Remaining size may be smaller */
+        transfer_size = HG_BULK_MIN(remaining_size, transfer_size);
+
+        if (na_bulk_op) {
+            na_ret = na_bulk_op(hg_bulk_na_class_g, hg_bulk_context_g,
+                    &hg_bulk_transfer_cb, hg_bulk_request,
+                    priv_block_handle->segment_handles[block_segment_index],
+                    block_segment_offset,
+                    priv_bulk_handle->segment_handles[bulk_segment_index],
+                    bulk_segment_offset,
+                    transfer_size, addr, NA_OP_ID_IGNORE);
+            if (na_ret != NA_SUCCESS) {
+                HG_ERROR_DEFAULT("Could not transfer data");
+                ret = HG_FAIL;
+                break;
+            }
+        }
+
+        /* Decrease remaining size from the size of data we transferred */
+        remaining_size -= transfer_size;
+
+        /* Increment offsets from the size of data we transferred */
+        bulk_segment_offset += transfer_size;
+        block_segment_offset += transfer_size;
+
+        /* Change segment if new offset exceeds segment size */
+        if (bulk_segment_offset >=
+            priv_bulk_handle->segment_sizes[bulk_segment_index]) {
+            bulk_segment_index++;
+            bulk_segment_offset = 0;
+        }
+        if (block_segment_offset >=
+            priv_block_handle->segment_sizes[block_segment_index]) {
+            block_segment_index++;
+            block_segment_offset = 0;
+        }
+        count++;
+    }
+
+    /* Set number of NA operations issued */
+    if (na_op_count) *na_op_count = count;
 
     return ret;
 }
@@ -696,14 +808,10 @@ hg_bulk_transfer(hg_bulk_op_t bulk_op, na_addr_t addr,
     struct hg_bulk *priv_bulk_handle = (struct hg_bulk *) bulk_handle;
     struct hg_bulk *priv_block_handle = (struct hg_bulk *) block_handle;
     size_t bulk_segment_start_index, block_segment_start_index;
-    size_t bulk_segment_index, block_segment_index;
     size_t bulk_segment_start_offset, block_segment_start_offset;
-    size_t bulk_segment_offset, block_segment_offset;
-    size_t remaining_size;
     na_bulk_op_t na_bulk_op;
     struct hg_bulk_request *priv_bulk_request = NULL;
     hg_return_t ret = HG_SUCCESS;
-    na_return_t na_ret;
 
     if (!priv_bulk_handle || !priv_block_handle) {
         HG_ERROR_DEFAULT("NULL memory handle passed");
@@ -753,68 +861,28 @@ hg_bulk_transfer(hg_bulk_op_t bulk_op, na_addr_t addr,
         goto done;
     }
     priv_bulk_request->op_count = 0;
-    priv_bulk_request->op_completed_count = 0;
-    priv_bulk_request->completed = HG_FALSE;
+    hg_atomic_set32(&priv_bulk_request->op_completed_count, 0);
+    priv_bulk_request->request = hg_request_create(hg_bulk_request_class_g);
 
-    bulk_segment_index = bulk_segment_start_index;
-    block_segment_index = block_segment_start_index;
-    bulk_segment_offset = bulk_segment_start_offset;
-    block_segment_offset = block_segment_start_offset;
-    remaining_size = block_size;
-
-    /* Since op_count is incremented, can't let a callback complete before
-     * all the operations are issued */
-    hg_thread_mutex_lock(&hg_bulk_request_mutex_g);
-
-    while (remaining_size > 0) {
-        size_t bulk_transfer_size, block_transfer_size, transfer_size;
-
-        /* Can only transfer smallest size */
-        bulk_transfer_size = priv_bulk_handle->segment_sizes[bulk_segment_index]
-                - bulk_segment_offset;
-        block_transfer_size = priv_block_handle->segment_sizes[block_segment_index]
-                - block_segment_offset;
-        transfer_size = HG_BULK_MIN(bulk_transfer_size, block_transfer_size);
-
-        /* Remaining size may be smaller */
-        transfer_size = HG_BULK_MIN(remaining_size, transfer_size);
-
-        na_ret = na_bulk_op(hg_bulk_na_class_g, hg_bulk_context_g,
-                &hg_bulk_transfer_cb, priv_bulk_request,
-                priv_block_handle->segment_handles[block_segment_index],
-                block_segment_offset,
-                priv_bulk_handle->segment_handles[bulk_segment_index],
-                bulk_segment_offset,
-                transfer_size, addr, NA_OP_ID_IGNORE);
-        if (na_ret != NA_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not transfer data");
-            ret = HG_FAIL;
-            hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
-            goto done;
-        }
-        priv_bulk_request->op_count++;
-
-        /* Decrease remaining size from the size of data we transferred */
-        remaining_size -= transfer_size;
-
-        /* Increment offsets from the size of data we transferred */
-        bulk_segment_offset += transfer_size;
-        block_segment_offset += transfer_size;
-
-        /* Change segment if new offset exceeds segment size */
-        if (bulk_segment_offset >=
-            priv_bulk_handle->segment_sizes[bulk_segment_index]) {
-            bulk_segment_index++;
-            bulk_segment_offset = 0;
-        }
-        if (block_segment_offset >=
-            priv_block_handle->segment_sizes[block_segment_index]) {
-            block_segment_index++;
-            block_segment_offset = 0;
-        }
+    /* Figure out number of NA operations required */
+    ret = hg_bulk_transfer_pieces(NULL, NA_ADDR_NULL,
+            priv_bulk_handle, bulk_segment_start_index, bulk_segment_start_offset,
+            priv_block_handle, block_segment_start_index, block_segment_start_offset,
+            block_size, NULL, &priv_bulk_request->op_count);
+    if (ret != HG_SUCCESS || !priv_bulk_request->op_count) {
+        HG_ERROR_DEFAULT("Could not get bulk op_count")
+        goto done;
     }
 
-    hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
+    /* Do actual transfer */
+    ret = hg_bulk_transfer_pieces(na_bulk_op, addr,
+            priv_bulk_handle, bulk_segment_start_index, bulk_segment_start_offset,
+            priv_block_handle, block_segment_start_index, block_segment_start_offset,
+            block_size, priv_bulk_request, NULL);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not transfer data pieces")
+        goto done;
+    }
 
     *bulk_request = (hg_bulk_request_t) priv_bulk_request;
 
@@ -919,10 +987,9 @@ hg_return_t
 HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
         hg_status_t *status)
 {
-    double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
     struct hg_bulk_request *priv_bulk_request =
             (struct hg_bulk_request *) bulk_request;
-    hg_bool_t completed = HG_FALSE;
+    unsigned int flag;
     hg_return_t ret = HG_SUCCESS;
 
     if (!priv_bulk_request) {
@@ -931,85 +998,22 @@ HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
         goto done;
     }
 
-    hg_thread_mutex_lock(&hg_bulk_request_mutex_g);
-    completed = priv_bulk_request->completed;
-    hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
-
-    hg_thread_mutex_lock(&hg_bulk_progress_mutex_g);
-
-    while (!completed) {
-        na_return_t na_ret;
-        int actual_count = 0;
-        hg_time_t t3, t4;
-        /* TODO Keep a timeout of 10ms for progress timeout for now but this
-         * should be more optimized in the future
-         */
-        unsigned int progress_timeout = (timeout > 10) ? 10 : timeout;
-
-        do {
-            na_ret = NA_Trigger(hg_bulk_context_g, 0, 1, &actual_count);
-        } while ((na_ret == NA_SUCCESS) && actual_count);
-
-        hg_thread_mutex_lock(&hg_bulk_request_mutex_g);
-        completed = priv_bulk_request->completed;
-        hg_thread_mutex_unlock(&hg_bulk_request_mutex_g);
-
-        if (completed) break;
-
-        if (hg_bulk_progressing_g) {
-            hg_time_t t1, t2;
-
-            hg_time_get_current(&t1);
-
-            if (hg_thread_cond_timedwait(&hg_bulk_progress_cond_g,
-                    &hg_bulk_progress_mutex_g,
-                    progress_timeout) != HG_UTIL_SUCCESS) {
-                /* Timeout occurred so leave */
-//                hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
-//                goto done;
-                continue;
-            }
-
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-            if (remaining < 0) {
-                hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
-                goto done;
-            }
-
-            /* Continue as request may have completed in the meantime */
-            continue;
-        }
-        hg_bulk_progressing_g = HG_TRUE;
-
-        hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
-
-        hg_time_get_current(&t3);
-
-        na_ret = NA_Progress(hg_bulk_na_class_g, hg_bulk_context_g,
-                progress_timeout);
-
-        hg_time_get_current(&t4);
-        remaining -= hg_time_to_double(hg_time_subtract(t4, t3));
-
-        hg_thread_mutex_lock(&hg_bulk_progress_mutex_g);
-        hg_bulk_progressing_g = HG_FALSE;
-        hg_thread_cond_signal(&hg_bulk_progress_cond_g);
-
-        if ((na_ret == NA_TIMEOUT) || remaining < 0) {
-            hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
-            goto done;
-        }
+    if (hg_request_wait(priv_bulk_request->request, timeout, &flag)
+            != HG_UTIL_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not wait on bulk request");
+        ret = HG_FAIL;
+        goto done;
     }
-
-    hg_thread_mutex_unlock(&hg_bulk_progress_mutex_g);
-
-    free(priv_bulk_request);
-    priv_bulk_request = NULL;
+    if (flag) {
+        hg_request_destroy(priv_bulk_request->request);
+        free(priv_bulk_request);
+        priv_bulk_request = NULL;
+    }
 
 done:
     if (status && (status != HG_STATUS_IGNORE)) {
-        *status = completed;
+        /* Completed if priv_bulk_request is NULL */
+        *status = (hg_status_t) (priv_bulk_request == NULL);
     }
 
     return ret;
