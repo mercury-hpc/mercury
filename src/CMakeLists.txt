@@ -92,6 +92,11 @@ endif()
 
 include_directories(${MERCURY_EXT_INCLUDE_DEPENDENCIES})
 
+# For htonl etc
+if(WIN32)
+  set(MERCURY_EXT_LIB_DEPENDENCIES ws2_32 ${MERCURY_EXT_LIB_DEPENDENCIES})
+endif(WIN32)
+
 #------------------------------------------------------------------------------
 # Configure module header files
 #------------------------------------------------------------------------------
