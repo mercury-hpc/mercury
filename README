@@ -1,7 +1,7 @@
 MERCURY
 -------
 
-These are the release notes for Mercury (as of 12/18/2013).
+These are the release notes for Mercury (as of 02/20/2014).
 
 WHAT IS MERCURY?
 
@@ -36,7 +36,9 @@ SOFTWARE REQUIREMENTS:
    implementation (MPICH2 v1.4.1 or higher / OpenMPI v1.6 or higher). For
    optional automatic code generation features (which are used for generating
    encoding and decoding routines), the preprocessor subset of the BOOST
-   library must be included (Boost v1.48 or higher is recommended).
+   library must be included (Boost v1.48 or higher is recommended). On Linux
+   OpenPA v1.0.3 or higher is required (the version that is included with MPICH
+   can also be used).
 
 BUILDING:
 
@@ -78,6 +80,7 @@ BUILDING:
      MERCURY_USE_XDR                  OFF
      MERCURY_USE_SYSTEM_MCHECKSUM     OFF
      NA_USE_MPI                       ON
+     OPA_INCLUDE_DIR                  /path/to/include/directory
 
    Setting include directory and library paths may require you to toggle to
    the advanced mode by typing 't'. Once you are done and do not see any
@@ -130,7 +133,7 @@ TESTING:
  - (Optional) To run the tests manually with the MPI plugin open up two
    terminal windows, one for the server and one for the client. From the same
    directory where you have write permissions (so that the port configuration
-   can be written by the server and read by the client) do:
+   file can be written by the server and read by the client) do:
 
      mpirun -np 1 /path/to/binary/server_TESTNAME mpi
 
