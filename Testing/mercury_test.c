@@ -56,7 +56,6 @@ HG_Test_mpi_init(hg_bool_t server)
             MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
             if (provided != MPI_THREAD_MULTIPLE) {
                 fprintf(stderr, "MPI_THREAD_MULTIPLE cannot be set\n");
-                return;
             }
         } else {
             MPI_Init(NULL, NULL);
@@ -138,7 +137,7 @@ HG_Test_get_config(char *addr_name, size_t len, int *rank)
     if (my_rank == 0) {
         config = fopen("port.cfg", "r");
         if (config != NULL) {
-            fscanf(config, "%s\n", config_addr_name);
+            fgets(config_addr_name, HG_TEST_MAX_ADDR_NAME, config);
         }
         fclose(config);
     }
@@ -179,7 +178,7 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
         if (argc > 2 && (strcmp("static", argv[2]) == 0)) {
             network_class = NA_MPI_Init(NULL, MPI_INIT_STATIC);
         } else {
-            network_class = NA_MPI_Init(NULL, 0);
+            network_class = NA_Initialize("tcp@mpi://0.0.0.0:0", 0);
         }
         /* Only call finalize at the end */
     }

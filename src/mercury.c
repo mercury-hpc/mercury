@@ -922,7 +922,7 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
     }
 
 done:
-    if (status && (status != HG_STATUS_IGNORE)) {
+    if (status && (status != HG_STATUS_IGNORE) && priv_request) {
         /* When both are NULL, it's completed */
         *status = (hg_status_t)
                 (!priv_request->send_request && !priv_request->recv_request);

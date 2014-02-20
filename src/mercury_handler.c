@@ -592,6 +592,7 @@ HG_Handler_init(na_class_t *na_class)
 
     /* Initialize mutex */
     hg_thread_mutex_init(&hg_handler_completion_queue_mutex_g);
+    hg_thread_mutex_init(&hg_handler_processing_list_mutex_g);
 
 done:
     return ret;
@@ -679,6 +680,7 @@ HG_Handler_finalize(void)
 
     /* Destroy mutex */
     hg_thread_mutex_destroy(&hg_handler_completion_queue_mutex_g);
+    hg_thread_mutex_destroy(&hg_handler_processing_list_mutex_g);
 
 done:
     return ret;

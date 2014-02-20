@@ -47,6 +47,10 @@
 #define NA_MPI_PRIVATE_DATA(na_class) \
     ((struct na_mpi_private_data *)(na_class->private_data))
 
+#ifdef _WIN32
+#  define strtok_r strtok_s
+#endif
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
@@ -613,6 +617,7 @@ na_mpi_open_port(na_class_t *na_class)
     na_return_t ret = NA_SUCCESS;
 
     memset(NA_MPI_PRIVATE_DATA(na_class)->port_name, '\0', MPI_MAX_PORT_NAME);
+    memset(mpi_port_name, '\0', MPI_MAX_PORT_NAME);
 
     MPI_Comm_rank(NA_MPI_PRIVATE_DATA(na_class)->intra_comm, &my_rank);
     if (my_rank == 0) {
@@ -652,24 +657,29 @@ na_mpi_get_port_info(const char *name, char *mpi_port_name, int *mpi_rank)
     }
 
     /* Get mpi port name */
-    port_string = strtok_r(port_string, ":", &rank_string);
+    port_string = strtok_r(port_string, ";", &rank_string);
     strcpy(mpi_port_name, port_string);
+
+    if (!rank_string) {
+        NA_LOG_ERROR("Cannot get rank from port name info");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
 
     /* Get rank info */
     if (strlen(rank_string)) {
         rank_string = strtok_r(rank_string, "$", &rank_value);
         rank_string = strtok_r(rank_string, "#", &rank_value);
 
-        if (strcmp(rank_string, "rank") == 0) {
+        if (rank_value && strcmp(rank_string, "rank") == 0) {
             if (mpi_rank) *mpi_rank = atoi(rank_value);
         } else {
             if (mpi_rank) *mpi_rank = 0;
         }
     }
 
-    free(port_string);
-
 done:
+    free(port_string);
     return ret;
 }
 
@@ -1224,8 +1234,7 @@ NA_MPI_Get_port_name(na_class_t *na_class)
     MPI_Comm_rank(NA_MPI_PRIVATE_DATA(na_class)->intra_comm, &my_rank);
 
     /* Append rank info to port name */
-    sprintf(port_name, "%s:rank#%d$", NA_MPI_PRIVATE_DATA(na_class)->port_name,
-            my_rank);
+    sprintf(port_name, "%s;rank#%d$", NA_MPI_PRIVATE_DATA(na_class)->port_name, my_rank);
 
     return port_name;
 }
@@ -2399,8 +2408,8 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
         }
 
         /* If request is MPI_REQUEST_NULL, the operation should be completed */
-        if (*request == MPI_REQUEST_NULL) {
-            NA_LOG_ERROR("MPI_REQUEST_NULL found");
+        if (!request || (request && (*request == MPI_REQUEST_NULL))) {
+            NA_LOG_ERROR("NULL request found");
             ret = NA_PROTOCOL_ERROR;
             goto done;
         }

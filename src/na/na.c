@@ -35,6 +35,10 @@
 #define NA_ERROR_STRING_MACRO(def, value, string) \
   if (value == def) string = #def
 
+#ifdef _WIN32
+#  define strtok_r strtok_s
+#endif
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/

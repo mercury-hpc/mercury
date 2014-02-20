@@ -288,17 +288,19 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
         /* Switch buffer */
         priv_proc->current_buf = &priv_proc->extra_buf;
     } else {
+        void *new_buf = NULL;
+
         /* Save current position */
         current_pos = (char*) priv_proc->extra_buf.buf_ptr - (char*) priv_proc->extra_buf.buf;
 
         /* Reallocate buffer */
-        priv_proc->extra_buf.buf = realloc(priv_proc->extra_buf.buf, new_buf_size);
-        if (!priv_proc->extra_buf.buf) {
+        new_buf = realloc(priv_proc->extra_buf.buf, new_buf_size);
+        if (!new_buf) {
             HG_ERROR_DEFAULT("Could not reallocate buffer");
             ret = HG_FAIL;
             return ret;
         }
-
+        priv_proc->extra_buf.buf = new_buf;
         priv_proc->extra_buf.size = new_buf_size;
         priv_proc->extra_buf.buf_ptr = (char*) priv_proc->extra_buf.buf + current_pos;
         priv_proc->extra_buf.size_left = priv_proc->extra_buf.size - current_pos;
