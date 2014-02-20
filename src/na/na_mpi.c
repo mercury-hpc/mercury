@@ -2353,31 +2353,13 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
     entry = NA_MPI_PRIVATE_DATA(na_class)->op_id_list;
 
     while (entry) {
-//        int hg_thread_cond_ret = 0;
-//        hg_time_t t1, t2;
         na_bool_t internal = NA_FALSE; /* Only used to complete internal ops */
         struct na_mpi_rma_info **rma_info = NULL;
         na_bool_t complete_op_id = NA_TRUE;
         int flag = 0;
         MPI_Status *status = MPI_STATUS_IGNORE;
 
-//        hg_time_get_current(&t1);
-
-//        while (NA_MPI_PRIVATE_DATA(na_class)->op_id_list_testing) {
-//            if (hg_thread_cond_timedwait(
-//                    &NA_MPI_PRIVATE_DATA(na_class)->op_id_list_cond,
-//                    &NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex,
-//                    (unsigned int) (remaining * 1000)) != HG_UTIL_SUCCESS) {
-//                /* Timeout occurred so leave */
-//                ret = NA_TIMEOUT;
-//                goto done;
-//            }
-//        }
-//        NA_MPI_PRIVATE_DATA(na_class)->op_id_list_testing = NA_TRUE;
-
         na_mpi_op_id = (struct na_mpi_op_id *) hg_list_data(entry);
-
-//        hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
 
         /* If the op_id is marked as completed, something is wrong */
         if (na_mpi_op_id->completed) {
@@ -2456,12 +2438,6 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
         }
 
         *request = MPI_REQUEST_NULL;
-        //        na_mpi_is_testing_g = 0;
-        //        hg_thread_cond_signal(&na_mpi_test_cond_g);
-        //        hg_thread_mutex_unlock(&na_mpi_test_mutex_g);
-        //
-        //        hg_time_get_current(&t2);
-        //        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
 
         /* If internal operation call release directly otherwise add callback
          * to completion queue */
