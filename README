@@ -14,6 +14,10 @@ WHAT IS MERCURY?
 
    Please see the accompanying COPYING file for license details.
 
+   Contributions and patches are welcomed but require a Contributor License
+   Agreement (CLA) to be filled out. Please contact us if you are interested
+   in contributing to Mercury.
+
 ARCHITECTURES SUPPORTED:
 
    Architectures supported by MPI implementations are supported by the
