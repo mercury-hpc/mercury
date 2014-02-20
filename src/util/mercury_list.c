@@ -200,6 +200,10 @@ hg_list_value_t *hg_list_to_array(hg_list_entry_t *list)
 
 	length = hg_list_length(list);
 
+    if (!length) {
+        return NULL;
+    }
+
 	array = (hg_list_value_t*) malloc(sizeof(hg_list_value_t) * length);
 
 	if (array == NULL) {

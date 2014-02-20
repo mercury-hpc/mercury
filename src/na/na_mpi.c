@@ -1370,27 +1370,42 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
         }
         mpi_ret = MPI_Comm_dup(NA_MPI_PRIVATE_DATA(na_class)->intra_comm,
                 &na_mpi_addr->comm);
+        if (mpi_ret != MPI_SUCCESS) {
+            NA_LOG_ERROR("MPI_Comm_dup() failed");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
     } else {
         if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm) {
             mpi_ret = MPI_Intercomm_create(
                     NA_MPI_PRIVATE_DATA(na_class)->intra_comm, 0,
                     MPI_COMM_WORLD, 0, 0, &na_mpi_addr->comm);
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_LOG_ERROR("MPI_Intercomm_create() failed");
+                ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
         } else {
             na_mpi_addr->dynamic = NA_TRUE;
             mpi_ret = MPI_Comm_connect(na_mpi_addr->port_name, MPI_INFO_NULL, 0,
                     NA_MPI_PRIVATE_DATA(na_class)->intra_comm,
                     &na_mpi_addr->comm);
-        }
-        if (mpi_ret != MPI_SUCCESS) {
-            NA_LOG_ERROR("Could not connect");
-            ret = NA_PROTOCOL_ERROR;
-            goto done;
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_LOG_ERROR("MPI_Comm_connect() failed");
+                ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
         }
     }
 
     /* To be thread-safe and create a new context,
      * dup the remote comm to a new comm */
-    MPI_Comm_dup(na_mpi_addr->comm, &na_mpi_addr->rma_comm);
+    mpi_ret = MPI_Comm_dup(na_mpi_addr->comm, &na_mpi_addr->rma_comm);
+    if (mpi_ret != MPI_SUCCESS) {
+        NA_LOG_ERROR("MPI_Comm_dup() failed");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
 
     hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
 
@@ -2214,6 +2229,11 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
     mpi_ret = MPI_Recv(na_mpi_rma_info, sizeof(struct na_mpi_rma_info),
             MPI_BYTE, status->MPI_SOURCE, status->MPI_TAG,
             na_mpi_addr->rma_comm, MPI_STATUS_IGNORE);
+    if (mpi_ret != MPI_SUCCESS) {
+        NA_LOG_ERROR("MPI_Recv() failed");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
 
     /* Allocate na_op_id */
     na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
@@ -2260,6 +2280,9 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("MPI_Irecv() failed");
                 ret = NA_PROTOCOL_ERROR;
+                hg_thread_mutex_unlock(
+                        &NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
+                goto done;
             }
             break;
 
@@ -2279,6 +2302,9 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("MPI_Isend() failed");
                 ret = NA_PROTOCOL_ERROR;
+                hg_thread_mutex_unlock(
+                        &NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
+                goto done;
             }
             break;
 
@@ -2298,6 +2324,10 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
     *progressed = NA_TRUE;
 
 done:
+    if (ret != NA_SUCCESS) {
+        free(na_mpi_op_id);
+        free(na_mpi_rma_info);
+    }
     return ret;
 }
 

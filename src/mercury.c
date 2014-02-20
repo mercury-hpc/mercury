@@ -430,7 +430,6 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
             priv_request->recv_buf_size, &response_header, HG_DECODE);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not decode header");
-        ret = HG_FAIL;
         goto done;
     }
 
@@ -438,7 +437,6 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
     ret = hg_proc_header_response_verify(response_header);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not verify header");
-        ret = HG_FAIL;
         goto done;
     }
 
@@ -446,7 +444,6 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
     ret = hg_get_output(priv_request, priv_request->out_struct);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not get output");
-        ret = HG_FAIL;
         goto done;
     }
 
@@ -833,6 +830,7 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     *request = (hg_request_t) priv_request;
 
 done:
+    /* TODO clean that */
     if (ret != HG_SUCCESS) {
         if (priv_request != NULL) {
             if (priv_request->send_buf) {

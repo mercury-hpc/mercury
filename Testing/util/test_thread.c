@@ -46,7 +46,7 @@ thread_cb_key(void *arg)
     if (!value_ptr) {
         fprintf(stderr, "Error: No value associated to key\n");
     }
-    if (!(*value_ptr)) {
+    if (*value_ptr != 0) {
         fprintf(stderr, "Error: Value is %d\n", *value_ptr);
     }
 

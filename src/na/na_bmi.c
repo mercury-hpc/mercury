@@ -1861,7 +1861,7 @@ na_bmi_progress_rma(na_class_t *na_class, na_context_t *context,
         struct BMI_unexpected_info *unexpected_info)
 {
     struct na_bmi_mem_handle *na_bmi_mem_handle = NULL;
-    struct na_bmi_rma_info *na_bmi_rma_info;
+    struct na_bmi_rma_info *na_bmi_rma_info = NULL;
     struct na_bmi_op_id *na_bmi_op_id = NULL;
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     na_return_t ret = NA_SUCCESS;
@@ -1984,6 +1984,10 @@ na_bmi_progress_rma(na_class_t *na_class, na_context_t *context,
     BMI_unexpected_free(unexpected_info->addr, unexpected_info->buffer);
 
 done:
+    if (ret != NA_SUCCESS) {
+        free(na_bmi_op_id);
+        free(na_bmi_rma_info);
+    }
     return ret;
 }
 

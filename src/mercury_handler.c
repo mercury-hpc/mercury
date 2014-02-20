@@ -1022,12 +1022,12 @@ HG_Handler_get_input(hg_handle_t handle, void *in_struct)
     void *in_buf;
     size_t in_buf_size;
     struct hg_handler_proc_info *proc_info;
-    hg_proc_t proc;
+    hg_proc_t proc = HG_PROC_NULL;
 
     if (!in_struct) {
         HG_ERROR_DEFAULT("NULL pointer to input struct");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     if (priv_handle->in_struct) {
@@ -1041,7 +1041,7 @@ HG_Handler_get_input(hg_handle_t handle, void *in_struct)
     ret = HG_Handler_get_input_buf(handle, &in_buf, &in_buf_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not get input buffer");
-        return ret;
+        goto done;
     }
 
     /* Retrieve decode function from function map */
@@ -1050,34 +1050,32 @@ HG_Handler_get_input(hg_handle_t handle, void *in_struct)
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     /* Create a new decoding proc */
     ret = hg_proc_create(in_buf, in_buf_size, HG_DECODE, HG_CRC64, &proc);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not create proc");
-        ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     /* Decode input parameters */
     ret = proc_info->dec_routine(proc, in_struct);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not decode input parameters");
-        ret = HG_FAIL;
+        goto done;
     }
 
     /* Flush proc */
     ret = hg_proc_flush(proc);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Error in proc flush");
-        ret = HG_FAIL;
+        goto done;
     }
 
-    /* Free proc */
-    hg_proc_free(proc);
-
+done:
+    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }
 
@@ -1093,14 +1091,13 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
     void *out_extra_buf = NULL;
     size_t out_extra_buf_size = 0;
     struct hg_handler_proc_info *proc_info;
-    hg_proc_t proc;
+    hg_proc_t proc = HG_PROC_NULL;
 
     /* Get output buffer */
     ret = HG_Handler_get_output_buf(handle, &out_buf, &out_buf_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not get output buffer");
-        ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     /* Retrieve decode function from function map */
@@ -1109,7 +1106,7 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
     if (!proc_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
     if (out_struct && proc_info->enc_routine) {
@@ -1117,15 +1114,14 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
         ret = hg_proc_create(out_buf, out_buf_size, HG_ENCODE, HG_CRC64, &proc);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not create proc");
-            ret = HG_FAIL;
-            return ret;
+            goto done;
         }
 
         /* Encode output parameters */
         ret = proc_info->enc_routine(proc, out_struct);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not encode output parameters");
-            ret = HG_FAIL;
+            goto done;
         }
 
         /* Get eventual extra buffer */
@@ -1140,11 +1136,12 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
         ret = hg_proc_flush(proc);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Error in proc flush");
-            ret = HG_FAIL;
+            goto done;
         }
 
         /* Free proc */
         hg_proc_free(proc);
+        proc = HG_PROC_NULL;
     }
 
     if (priv_handle->in_struct && proc_info->dec_routine) {
@@ -1152,19 +1149,19 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
         ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, &proc);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not create proc");
-            ret = HG_FAIL;
-            return ret;
+            goto done;
         }
 
         /* Free memory allocated during input decoding */
         ret = proc_info->dec_routine(proc, priv_handle->in_struct);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not free allocated parameters");
-            ret = HG_FAIL;
+            goto done;
         }
 
         /* Free proc */
         hg_proc_free(proc);
+        proc = HG_PROC_NULL;
     }
 
     /* Start sending response back, this should be the last operation called
@@ -1173,9 +1170,10 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
     ret = HG_Handler_start_response(handle, out_extra_buf, out_extra_buf_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not respond");
-        ret = HG_FAIL;
-        return ret;
+        goto done;
     }
 
+done:
+    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }

@@ -192,7 +192,7 @@ hg_proc_header_response(void *buf, size_t buf_size,
     if (op == HG_ENCODE) {
         n_crc16 = htons(header->crc16);
     }
-    buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_crc16, sizeof(hg_uint16_t), op);
+    hg_proc_buf_memcpy(buf_ptr, &n_crc16, sizeof(hg_uint16_t), op);
     if (op == HG_DECODE) {
         hg_uint16_t decoded_crc16 = ntohs(n_crc16);
         if (header->crc16 != decoded_crc16) {

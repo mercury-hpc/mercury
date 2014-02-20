@@ -443,6 +443,12 @@ hg_bulk_handle_free(struct hg_bulk *priv_handle)
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
+    if (!priv_handle) {
+        HG_ERROR_DEFAULT("NULL bulk handle");
+        ret = HG_FAIL;
+        goto done;
+    }
+
     if (priv_handle->registered) {
         for (i = 0; i < priv_handle->segment_count; i++) {
             na_ret = NA_Mem_deregister(hg_bulk_na_class_g,
@@ -871,6 +877,7 @@ hg_bulk_transfer(hg_bulk_op_t bulk_op, na_addr_t addr,
             block_size, NULL, &priv_bulk_request->op_count);
     if (ret != HG_SUCCESS || !priv_bulk_request->op_count) {
         HG_ERROR_DEFAULT("Could not get bulk op_count")
+        ret = HG_FAIL;
         goto done;
     }
 
@@ -888,10 +895,7 @@ hg_bulk_transfer(hg_bulk_op_t bulk_op, na_addr_t addr,
 
 done:
     if (ret != HG_SUCCESS) {
-        if (priv_bulk_request) {
-            free(priv_bulk_request);
-        }
-        priv_bulk_request = NULL;
+        free(priv_bulk_request);
     }
     return ret;
 }
