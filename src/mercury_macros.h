@@ -15,13 +15,6 @@
 #include "mercury_handler.h"
 #include "mercury_proc.h"
 
-#ifdef NA_HAS_BMI
-#include "na_bmi.h"
-#endif
-#ifdef NA_HAS_MPI
-#include "na_mpi.h"
-#endif
-
 #ifdef HG_HAS_BOOST
 #include <boost/preprocessor.hpp>
 
