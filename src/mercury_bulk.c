@@ -162,8 +162,8 @@ HG_Bulk_init(na_class_t *na_class)
         hg_bulk_context_g = hg_context_g;
         hg_bulk_request_class_g = hg_request_class_g;
     } else if (hg_bulk_na_class_g == hg_handler_na_class_g) {
-            hg_bulk_context_g = hg_handler_context_g;
-            hg_bulk_request_class_g = hg_handler_request_class_g;
+        hg_bulk_context_g = hg_handler_context_g;
+        hg_bulk_request_class_g = hg_handler_request_class_g;
     } else {
         static struct hg_context hg_context;
 
@@ -309,8 +309,7 @@ HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
 
 done:
     if (ret != HG_SUCCESS) {
-        if (priv_handle) hg_bulk_handle_free(priv_handle);
-        priv_handle = NULL;
+        hg_bulk_handle_free(priv_handle);
     }
     return ret;
 }
@@ -409,8 +408,7 @@ HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
 
 done:
     if (ret != HG_SUCCESS) {
-        if (priv_handle) hg_bulk_handle_free(priv_handle);
-        priv_handle = NULL;
+        hg_bulk_handle_free(priv_handle);
     }
     return ret;
 }
@@ -422,11 +420,7 @@ HG_Bulk_handle_free(hg_bulk_t handle)
     hg_return_t ret = HG_SUCCESS;
     struct hg_bulk *priv_handle = (struct hg_bulk *) handle;
 
-    if (!priv_handle) {
-        HG_ERROR_DEFAULT("Already freed");
-        ret = HG_FAIL;
-        goto done;
-    }
+    if (!priv_handle) goto done;
 
     ret = hg_bulk_handle_free(priv_handle);
     priv_handle = NULL;
@@ -443,41 +437,34 @@ hg_bulk_handle_free(struct hg_bulk *priv_handle)
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    if (!priv_handle) {
-        HG_ERROR_DEFAULT("NULL bulk handle");
-        ret = HG_FAIL;
-        goto done;
-    }
+    if (!priv_handle) goto done;
 
-    if (priv_handle->registered) {
+    if (priv_handle->segment_handles) {
+        if (priv_handle->registered) {
+            for (i = 0; i < priv_handle->segment_count; i++) {
+                na_ret = NA_Mem_deregister(hg_bulk_na_class_g,
+                        priv_handle->segment_handles[i]);
+                if (na_ret != NA_SUCCESS) {
+                    HG_ERROR_DEFAULT("NA_Mem_deregister failed");
+                }
+            }
+            priv_handle->registered = HG_FALSE;
+        }
+
         for (i = 0; i < priv_handle->segment_count; i++) {
-            na_ret = NA_Mem_deregister(hg_bulk_na_class_g,
-                    priv_handle->segment_handles[i]);
-            if (na_ret != NA_SUCCESS) {
-                HG_ERROR_DEFAULT("NA_Mem_deregister failed");
-                ret = HG_FAIL;
-                goto done;
+            if (priv_handle->segment_handles[i] != NA_MEM_HANDLE_NULL) {
+                na_ret = NA_Mem_handle_free(hg_bulk_na_class_g,
+                        priv_handle->segment_handles[i]);
+                if (na_ret != NA_SUCCESS) {
+                   HG_ERROR_DEFAULT("NA_Mem_handle_free failed");
+                }
+                priv_handle->segment_handles[i] = NA_MEM_HANDLE_NULL;
             }
         }
-        priv_handle->registered = HG_FALSE;
+        free(priv_handle->segment_handles);
+        priv_handle->segment_handles = NULL;
     }
-
-    for (i = 0; i < priv_handle->segment_count; i++) {
-        if (priv_handle->segment_handles[i] != NA_MEM_HANDLE_NULL) {
-            na_ret = NA_Mem_handle_free(hg_bulk_na_class_g,
-                    priv_handle->segment_handles[i]);
-            if (na_ret != NA_SUCCESS) {
-                HG_ERROR_DEFAULT("NA_Mem_handle_free failed");
-                ret = HG_FAIL;
-                goto done;
-            }
-            priv_handle->segment_handles[i] = NA_MEM_HANDLE_NULL;
-        }
-    }
-
-    if (priv_handle->segment_handles) free(priv_handle->segment_handles);
-    priv_handle->segment_handles = NULL;
-    if (priv_handle->segment_sizes) free(priv_handle->segment_sizes);
+    free(priv_handle->segment_sizes);
     priv_handle->segment_sizes = NULL;
     free(priv_handle);
 
@@ -624,16 +611,28 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
     }
     priv_handle->segment_handles = NULL;
     priv_handle->segment_sizes = NULL;
+    /* The handle is not registered, only deserialized */
+    priv_handle->registered = HG_FALSE;
 
     /* Get the size of the data */
     memcpy(&priv_handle->total_size, buf_ptr, sizeof(size_t));
     buf_ptr += sizeof(size_t);
     buf_size_left -= sizeof(size_t);
+    if (!priv_handle->total_size) {
+        HG_ERROR_DEFAULT("NULL total size");
+        ret = HG_FAIL;
+        goto done;
+    }
 
     /* Get the number of handles */
     memcpy(&priv_handle->segment_count, buf_ptr, sizeof(size_t));
     buf_ptr += sizeof(size_t);
     buf_size_left -= sizeof(size_t);
+    if (!priv_handle->segment_count) {
+        HG_ERROR_DEFAULT("NULL segment count");
+        ret = HG_FAIL;
+        goto done;
+    }
 
     /* Add the list of sizes */
     priv_handle->segment_sizes = (size_t *) malloc(
@@ -647,6 +646,11 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
         memcpy(&priv_handle->segment_sizes[i], buf_ptr, sizeof(size_t));
         buf_ptr += sizeof(size_t);
         buf_size_left -= sizeof(size_t);
+        if (!priv_handle->segment_sizes[i]) {
+            HG_ERROR_DEFAULT("NULL segment size");
+            ret = HG_FAIL;
+            goto done;
+        }
         /*
         fprintf(stderr, "Segment[%lu] = %lu bytes\n", i, priv_handle->size_list[i]);
         */
@@ -660,6 +664,11 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
         goto done;
     }
     for (i = 0; i < priv_handle->segment_count; i++) {
+        priv_handle->segment_handles[i] = NA_MEM_HANDLE_NULL;
+    }
+    for (i = 0; i < priv_handle->segment_count; i++) {
+        size_t serialize_size = NA_Mem_handle_get_serialize_size(
+                hg_bulk_na_class_g, priv_handle->segment_handles[i]);
         na_ret = NA_Mem_handle_deserialize(hg_bulk_na_class_g,
                 &priv_handle->segment_handles[i],
                 buf_ptr, buf_size_left);
@@ -668,20 +677,15 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size)
             ret = HG_FAIL;
             goto done;
         }
-        buf_ptr += NA_Mem_handle_get_serialize_size(hg_bulk_na_class_g,
-                priv_handle->segment_handles[i]);
-        buf_size_left -= NA_Mem_handle_get_serialize_size(hg_bulk_na_class_g,
-                priv_handle->segment_handles[i]);
+        buf_ptr += serialize_size;
+        buf_size_left -= serialize_size;
     }
 
-    /* The handle is not registered, only deserialized */
-    priv_handle->registered = HG_FALSE;
     *handle = priv_handle;
 
 done:
     if (ret != HG_SUCCESS) {
-        if (priv_handle) hg_bulk_handle_free(priv_handle);
-        priv_handle = NULL;
+        hg_bulk_handle_free(priv_handle);
     }
     return ret;
 }
@@ -1019,6 +1023,5 @@ done:
         /* Completed if priv_bulk_request is NULL */
         *status = (hg_status_t) (priv_bulk_request == NULL);
     }
-
     return ret;
 }

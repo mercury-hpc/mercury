@@ -752,6 +752,16 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     }
 
     priv_request->id = id;
+    priv_request->send_buf = NULL;
+    priv_request->recv_buf = NULL;
+
+    /* Extra send buffer set to NULL by default */
+    priv_request->extra_send_buf = NULL;
+    priv_request->extra_send_buf_size = 0;
+    priv_request->extra_send_buf_handle = HG_BULK_NULL;
+
+    /* Keep pointer to output structure */
+    priv_request->out_struct = out_struct;
 
     /* Send Buffer */
     priv_request->send_buf_size = NA_Msg_get_max_unexpected_size(hg_na_class_g);
@@ -770,14 +780,6 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
         ret = HG_FAIL;
         goto done;
     }
-
-    /* Extra send buffer set to NULL by default */
-    priv_request->extra_send_buf = NULL;
-    priv_request->extra_send_buf_size = 0;
-    priv_request->extra_send_buf_handle = HG_BULK_NULL;
-
-    /* Keep pointer to output structure */
-    priv_request->out_struct = out_struct;
 
     /* Create two requests for the send/recv operations */
     priv_request->send_request = hg_request_create(hg_request_class_g);
@@ -832,28 +834,15 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
 done:
     /* TODO clean that */
     if (ret != HG_SUCCESS) {
-        if (priv_request != NULL) {
-            if (priv_request->send_buf) {
-                free(priv_request->send_buf);
-                priv_request->send_buf = NULL;
-            }
-            if (priv_request->recv_buf) {
-                free(priv_request->recv_buf);
-                priv_request->recv_buf = NULL;
-            }
-            if (priv_request->extra_send_buf) {
-                free(priv_request->extra_send_buf);
-                priv_request->extra_send_buf = NULL;
-            }
-            if (priv_request->extra_send_buf_handle != HG_BULK_NULL) {
-                HG_Bulk_handle_free(priv_request->extra_send_buf_handle);
-                priv_request->extra_send_buf_handle = HG_BULK_NULL;
-            }
+        if (priv_request) {
+            free(priv_request->send_buf);
+            free(priv_request->recv_buf);
+            free(priv_request->extra_send_buf);
+            HG_Bulk_handle_free(priv_request->extra_send_buf_handle);
+            priv_request->extra_send_buf_handle = HG_BULK_NULL;
             free(priv_request);
-            priv_request = NULL;
         }
      }
-
      return ret;
 }
 
