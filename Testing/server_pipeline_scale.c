@@ -278,9 +278,9 @@ main(int argc, char *argv[])
 
     network_class = NA_MPI_Init(&split_comm, MPI_INIT_SERVER | MPI_INIT_STATIC);
 
-    hg_ret = HG_Handler_init(network_class);
+    hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize Mercury handler\n");
+        fprintf(stderr, "Could not initialize Mercury\n");
         return EXIT_FAILURE;
     }
 
@@ -319,9 +319,9 @@ main(int argc, char *argv[])
     hg_thread_pool_destroy(thread_pool);
 #endif
 
-    hg_ret = HG_Handler_finalize();
+    hg_ret = HG_Finalize();
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize Mercury handler\n");
+        fprintf(stderr, "Could not finalize Mercury\n");
         return EXIT_FAILURE;
     }
 

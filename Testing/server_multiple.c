@@ -349,12 +349,6 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    hg_ret = HG_Handler_init(network_class);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize Mercury handler\n");
-        return EXIT_FAILURE;
-    }
-
     /* Look up addr id */
     /* We do the lookup here but this may not be optimal */
     server_addr = (na_addr_t *) malloc(addr_table_size * sizeof(na_addr_t));
@@ -391,12 +385,6 @@ main(int argc, char *argv[])
         NA_Addr_free(network_class, server_addr[i]);
     }
     free(server_addr);
-
-    hg_ret = HG_Handler_finalize();
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize Mercury handler\n");
-        return EXIT_FAILURE;
-    }
 
     hg_ret = HG_Finalize();
     if (hg_ret != HG_SUCCESS) {

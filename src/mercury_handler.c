@@ -12,6 +12,8 @@
 #include "mercury_proc_header.h"
 #include "mercury_proc.h"
 
+#include "mercury_private.h"
+
 #include "mercury_hash_table.h"
 #include "mercury_hash_string.h"
 #include "mercury_queue.h"
@@ -30,37 +32,41 @@
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
-struct hg_handle {
-    hg_id_t       id;                  /* Request ID */
-    hg_uint32_t   cookie;              /* Cookie unique to every RPC call */
-
-    na_addr_t     addr;                /* Address of the RPC source */
-    na_tag_t      tag;                 /* Tag used for request and response */
-
-    void         *recv_buf;            /* Recv buffer for request */
-    na_size_t     recv_buf_size;       /* Recv buffer size */
-    void         *extra_recv_buf;      /* Extra recv buffer */
-    na_size_t     extra_recv_buf_size; /* Extra recv buffer size */
-
-    void         *send_buf;            /* Send buffer for response */
-    na_size_t     send_buf_size;       /* Send buffer size */
-    void         *extra_send_buf;      /* Extra send buffer (TODO not used) */
-    na_size_t     extra_send_buf_size; /* Extra send buffer size (TODO not used) */
-
-    void         *in_struct;           /* Reference to input structure */
-
-    hg_list_entry_t *processing_entry; /* Entry in processing list */
-};
-
-struct hg_handler_proc_info {
-    hg_handler_cb_t callback_routine;
-    hg_proc_cb_t dec_routine;
-    hg_proc_cb_t enc_routine;
-};
 
 /********************/
 /* Local Prototypes */
 /********************/
+
+/**
+ * Get RPC input buffer from handle.
+ */
+static hg_return_t hg_handler_get_input_buf(struct hg_handle *hg_handle,
+        void **in_buf, size_t *in_buf_size);
+
+/**
+ * Get RPC output buffer from handle.
+ */
+static hg_return_t hg_handler_get_output_buf(struct hg_handle *hg_handle,
+        void **out_buf, size_t *out_buf_size);
+
+/**
+ * Decode and get input structure.
+ */
+static hg_return_t hg_handler_get_input(struct hg_handle *hg_handle,
+        void *in_struct);
+
+/**
+ * Set and encode output structure.
+ */
+static hg_return_t hg_handler_set_output(struct hg_handle *hg_handle,
+        void *out_struct);
+
+/**
+ * Free allocated members from input structure.
+ */
+static hg_return_t hg_handler_free_input(struct hg_handle *hg_handle,
+        void *out_struct);
+
 /**
  * Create new handle.
  */
@@ -72,7 +78,7 @@ hg_handler_new(void);
  */
 static hg_return_t
 hg_handler_processing_list_add(
-        struct hg_handle *priv_handle
+        struct hg_handle *hg_handle
         );
 
 /**
@@ -80,7 +86,7 @@ hg_handler_processing_list_add(
  */
 static hg_return_t
 hg_handler_processing_list_remove(
-        struct hg_handle *priv_handle
+        struct hg_handle *hg_handle
         );
 
 /**
@@ -88,7 +94,7 @@ hg_handler_processing_list_remove(
  */
 static hg_return_t
 hg_handler_completion_queue_add(
-        struct hg_handle *priv_handle
+        struct hg_handle *hg_handle
         );
 
 /**
@@ -102,7 +108,7 @@ hg_handler_completion_queue_process(void);
  */
 static hg_return_t
 hg_handler_process_extra_recv_buf(
-        struct hg_handle *priv_handle,
+        struct hg_handle *hg_handle,
         hg_bulk_t extra_buf_handle
         );
 
@@ -110,7 +116,7 @@ hg_handler_process_extra_recv_buf(
  * Start processing a received request.
  */
 static hg_return_t
-hg_handler_start_processing(struct hg_handle *priv_handle);
+hg_handler_start_processing(struct hg_handle *hg_handle);
 
 /**
  * Recv input callback.
@@ -134,42 +140,21 @@ hg_handler_send_output_cb(
 static hg_return_t
 hg_handler_start_request(void);
 
-/**
- * Progress for request emulation.
- */
-extern int
-hg_request_progress_func(unsigned int timeout, void *arg);
-
-/**
- * Trigger for request emulation.
- */
-extern int
-hg_request_trigger_func(unsigned int timeout, unsigned int *flag, void *arg);
-
 /*******************/
 /* Local Variables */
 /*******************/
 
 /* Pointer to NA class */
 extern na_class_t *hg_na_class_g;
-na_class_t *hg_handler_na_class_g = NULL;
-extern na_class_t *hg_bulk_na_class_g;
 
 /* Local context */
 extern na_context_t *hg_context_g;
-na_context_t *hg_handler_context_g = NULL;
-extern na_context_t *hg_bulk_context_g;
 
 /* Request class */
 extern hg_request_class_t *hg_request_class_g;
-hg_request_class_t *hg_handler_request_class_g = NULL;
-extern hg_request_class_t *hg_bulk_request_class_g;
-
-/* Bulk interface internally initialized */
-static hg_bool_t hg_bulk_initialized_internal_g = HG_FALSE;
 
 /* Function map */
-static hg_hash_table_t *hg_handler_func_map_g;
+extern hg_hash_table_t *hg_func_map_g;
 
 /* Processing list */
 static hg_list_entry_t *hg_handler_processing_list_g;
@@ -184,64 +169,40 @@ static hg_request_object_t *hg_handler_pending_request_g = NULL;
 static struct hg_handle *hg_handler_pending_handle_g = NULL;
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE int
-hg_int_equal(void *vlocation1, void *vlocation2)
-{
-    int *location1;
-    int *location2;
-
-    location1 = (int *) vlocation1;
-    location2 = (int *) vlocation2;
-
-    return *location1 == *location2;
-}
-
-/*---------------------------------------------------------------------------*/
-static HG_INLINE unsigned int
-hg_int_hash(void *vlocation)
-{
-    int *location;
-
-    location = (int *) vlocation;
-
-    return (unsigned int) *location;
-}
-
-/*---------------------------------------------------------------------------*/
 static struct hg_handle *
 hg_handler_new(void)
 {
-    struct hg_handle *priv_handle = NULL;
+    struct hg_handle *hg_handle = NULL;
 
-    priv_handle = (struct hg_handle *) malloc(sizeof(struct hg_handle));
-    if (priv_handle) {
-        priv_handle->id = 0;
-        priv_handle->cookie = 0;
+    hg_handle = (struct hg_handle *) malloc(sizeof(struct hg_handle));
+    if (hg_handle) {
+        hg_handle->id = 0;
+        hg_handle->cookie = 0;
 
-        priv_handle->addr = NA_ADDR_NULL;
-        priv_handle->tag = 0;
+        hg_handle->addr = NA_ADDR_NULL;
+        hg_handle->tag = 0;
 
-        priv_handle->recv_buf = NULL;
-        priv_handle->recv_buf_size = 0;
-        priv_handle->extra_recv_buf = NULL;
-        priv_handle->extra_recv_buf_size = 0;
+        hg_handle->recv_buf = NULL;
+        hg_handle->recv_buf_size = 0;
+        hg_handle->extra_recv_buf = NULL;
+        hg_handle->extra_recv_buf_size = 0;
 
-        priv_handle->send_buf = NULL;
-        priv_handle->send_buf_size = 0;
-        priv_handle->extra_send_buf = NULL;
-        priv_handle->extra_send_buf_size = 0;
+        hg_handle->send_buf = NULL;
+        hg_handle->send_buf_size = 0;
+        hg_handle->extra_send_buf = NULL;
+        hg_handle->extra_send_buf_size = 0;
 
-        priv_handle->in_struct = NULL;
+        hg_handle->in_struct = NULL;
 
-        priv_handle->processing_entry = NULL;
+        hg_handle->processing_entry = NULL;
     }
 
-    return priv_handle;
+    return hg_handle;
 }
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_handler_processing_list_add(struct hg_handle *priv_handle)
+hg_handler_processing_list_add(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
     hg_list_entry_t *new_entry = NULL;
@@ -249,12 +210,12 @@ hg_handler_processing_list_add(struct hg_handle *priv_handle)
     hg_thread_mutex_lock(&hg_handler_processing_list_mutex_g);
 
     new_entry = hg_list_append(&hg_handler_processing_list_g,
-            (hg_list_value_t) priv_handle);
+            (hg_list_value_t) hg_handle);
     if (!new_entry) {
         HG_ERROR_DEFAULT("Could not append entry");
         ret = HG_FAIL;
     }
-    priv_handle->processing_entry = new_entry;
+    hg_handle->processing_entry = new_entry;
 
     hg_thread_mutex_unlock(&hg_handler_processing_list_mutex_g);
 
@@ -263,19 +224,19 @@ hg_handler_processing_list_add(struct hg_handle *priv_handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_handler_processing_list_remove(struct hg_handle *priv_handle)
+hg_handler_processing_list_remove(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
     hg_thread_mutex_lock(&hg_handler_processing_list_mutex_g);
 
     /* Remove handle from list if not found */
-    if (priv_handle->processing_entry && !hg_list_remove_entry(
-            &hg_handler_processing_list_g, priv_handle->processing_entry)) {
+    if (hg_handle->processing_entry && !hg_list_remove_entry(
+            &hg_handler_processing_list_g, hg_handle->processing_entry)) {
         HG_ERROR_DEFAULT("Could not remove entry");
         ret = HG_FAIL;
     }
-    priv_handle->processing_entry = NULL;
+    hg_handle->processing_entry = NULL;
 
     hg_thread_mutex_unlock(&hg_handler_processing_list_mutex_g);
 
@@ -284,14 +245,14 @@ hg_handler_processing_list_remove(struct hg_handle *priv_handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_handler_completion_queue_add(struct hg_handle *priv_handle)
+hg_handler_completion_queue_add(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
     hg_thread_mutex_lock(&hg_handler_completion_queue_mutex_g);
 
     if (!hg_queue_push_head(hg_handler_completion_queue_g,
-            (hg_queue_value_t) priv_handle)) {
+            (hg_queue_value_t) hg_handle)) {
         HG_ERROR_DEFAULT("Could not push handle to completion queue");
         ret = HG_FAIL;
     }
@@ -311,14 +272,15 @@ hg_handler_completion_queue_process(void)
 
     /* Iterate over entries and test for their completion */
     while (!hg_queue_is_empty(hg_handler_completion_queue_g)) {
-        struct hg_handle *priv_handle;
+        struct hg_handle *hg_handle;
 
-        priv_handle = (struct hg_handle *)
+        hg_handle = (struct hg_handle *)
                             hg_queue_pop_tail(hg_handler_completion_queue_g);
 
         /* Free handle */
-        HG_Handler_free(priv_handle);
-        priv_handle = NULL;
+        /* TODO call private routine */
+        HG_Handler_free(hg_handle);
+        hg_handle = NULL;
     }
 
     hg_thread_mutex_unlock(&hg_handler_completion_queue_mutex_g);
@@ -328,7 +290,7 @@ hg_handler_completion_queue_process(void)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_handler_process_extra_recv_buf(struct hg_handle *priv_handle,
+hg_handler_process_extra_recv_buf(struct hg_handle *hg_handle,
         hg_bulk_t extra_buf_handle)
 {
     hg_bulk_t extra_buf_block_handle = HG_BULK_NULL;
@@ -336,16 +298,16 @@ hg_handler_process_extra_recv_buf(struct hg_handle *priv_handle,
     hg_return_t ret = HG_SUCCESS;
 
     /* Create a new block handle to read the data */
-    priv_handle->extra_recv_buf_size = HG_Bulk_handle_get_size(extra_buf_handle);
-    priv_handle->extra_recv_buf = malloc(priv_handle->extra_recv_buf_size);
-    if (!priv_handle->extra_recv_buf) {
+    hg_handle->extra_recv_buf_size = HG_Bulk_handle_get_size(extra_buf_handle);
+    hg_handle->extra_recv_buf = malloc(hg_handle->extra_recv_buf_size);
+    if (!hg_handle->extra_recv_buf) {
         HG_ERROR_DEFAULT("Could not allocate extra recv buf");
         ret = HG_FAIL;
         goto done;
     }
 
-    ret = HG_Bulk_handle_create(priv_handle->extra_recv_buf,
-            priv_handle->extra_recv_buf_size, HG_BULK_READWRITE,
+    ret = HG_Bulk_handle_create(hg_handle->extra_recv_buf,
+            hg_handle->extra_recv_buf_size, HG_BULK_READWRITE,
             &extra_buf_block_handle);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not create block handle");
@@ -354,7 +316,7 @@ hg_handler_process_extra_recv_buf(struct hg_handle *priv_handle,
     }
 
     /* Read bulk data here and wait for the data to be here  */
-    ret = HG_Bulk_read_all(priv_handle->addr, extra_buf_handle,
+    ret = HG_Bulk_read_all(hg_handle->addr, extra_buf_handle,
             extra_buf_block_handle, &extra_buf_request);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not read bulk data");
@@ -393,24 +355,24 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_handler_start_processing(struct hg_handle *priv_handle)
+hg_handler_start_processing(struct hg_handle *hg_handle)
 {
-    struct hg_handler_proc_info *proc_info;
+    struct hg_info *info;
     struct hg_header_request request_header;
     hg_return_t ret = HG_SUCCESS;
 
     /* When a new request is being treated we must enqueue the handle
      * which is then moved to the completion queue once the user is done
      * with it */
-    ret = hg_handler_processing_list_add(priv_handle);
+    ret = hg_handler_processing_list_add(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not add handle to processing list");
         goto done;
     }
 
     /* Decode request header */
-    ret = hg_proc_header_request(priv_handle->recv_buf,
-            priv_handle->recv_buf_size, &request_header, HG_DECODE);
+    ret = hg_proc_header_request(hg_handle->recv_buf,
+            hg_handle->recv_buf_size, &request_header, HG_DECODE);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not decode header");
         ret = HG_FAIL;
@@ -425,16 +387,16 @@ hg_handler_start_processing(struct hg_handle *priv_handle)
     }
 
     /* Get operation ID from header */
-    priv_handle->id = request_header.id;
+    hg_handle->id = request_header.id;
 
     /* Get cookie from header */
-    priv_handle->cookie = request_header.cookie;
+    hg_handle->cookie = request_header.cookie;
 
     /* Get extra payload if necessary */
     if (request_header.flags &&
             (request_header.extra_buf_handle != HG_BULK_NULL)) {
         /* This will make the extra_buf the recv_buf associated to the handle */
-        ret = hg_handler_process_extra_recv_buf(priv_handle,
+        ret = hg_handler_process_extra_recv_buf(hg_handle,
                 request_header.extra_buf_handle);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not recv extra buffer");
@@ -444,16 +406,16 @@ hg_handler_start_processing(struct hg_handle *priv_handle)
     }
 
     /* Retrieve exe function from function map */
-    proc_info = (struct hg_handler_proc_info *)
-            hg_hash_table_lookup(hg_handler_func_map_g, &priv_handle->id);
-    if (!proc_info) {
+    info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
+            (hg_hash_table_key_t) &hg_handle->id);
+    if (!info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
         goto done;
     }
 
     /* Execute function and fill output parameters */
-    proc_info->callback_routine((hg_handle_t) priv_handle);
+    info->rpc_cb((hg_handle_t) hg_handle);
 
 done:
     return ret;
@@ -464,7 +426,7 @@ static na_return_t
 hg_handler_recv_input_cb(const struct na_cb_info *callback_info)
 {
     /* TODO embed ret into priv_request */
-    struct hg_handle *priv_handle = (struct hg_handle *) callback_info->arg;
+    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     na_return_t na_ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
@@ -472,10 +434,10 @@ hg_handler_recv_input_cb(const struct na_cb_info *callback_info)
     }
 
     /* Fill unexpected info */
-    priv_handle->addr = callback_info->info.recv_unexpected.source;
-    priv_handle->tag = callback_info->info.recv_unexpected.tag;
+    hg_handle->addr = callback_info->info.recv_unexpected.source;
+    hg_handle->tag = callback_info->info.recv_unexpected.tag;
     if (callback_info->info.recv_unexpected.actual_buf_size !=
-            priv_handle->recv_buf_size) {
+            hg_handle->recv_buf_size) {
         HG_ERROR_DEFAULT("Buffer size and actual transfer size do not match");
         goto done;
     }
@@ -492,7 +454,7 @@ done:
 static na_return_t
 hg_handler_send_output_cb(const struct na_cb_info *callback_info)
 {
-    struct hg_handle *priv_handle = (struct hg_handle *) callback_info->arg;
+    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret = NA_SUCCESS;
 
@@ -501,12 +463,12 @@ hg_handler_send_output_cb(const struct na_cb_info *callback_info)
     }
 
     /* Remove handle from processing list and add handle to completion queue */
-    ret = hg_handler_processing_list_remove(priv_handle);
+    ret = hg_handler_processing_list_remove(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not remove handle from processing list");
         goto done;
     }
-    ret = hg_handler_completion_queue_add(priv_handle);
+    ret = hg_handler_completion_queue_add(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not add handle to completion queue");
         goto done;
@@ -516,76 +478,10 @@ hg_handler_send_output_cb(const struct na_cb_info *callback_info)
     return na_ret;
 }
 
-/*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Handler_init(na_class_t *na_class)
+hg_handler_init(void)
 {
-    hg_bool_t bulk_initialized = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
-
-    if (!na_class) {
-        HG_ERROR_DEFAULT("Invalid specified na_class");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    if (hg_handler_na_class_g) {
-        HG_ERROR_DEFAULT("Already initialized");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    hg_handler_na_class_g = na_class;
-
-    /* Create local context if na_class different from hg_bulk_class */
-    if (hg_bulk_na_class_g == hg_handler_na_class_g) {
-        hg_handler_context_g = hg_bulk_context_g;
-        hg_handler_request_class_g = hg_bulk_request_class_g;
-    } else if (hg_na_class_g) {
-        hg_handler_context_g = hg_context_g;
-        hg_handler_request_class_g = hg_request_class_g;
-    } else {
-        static struct hg_context hg_context;
-
-        /* Not initialized yet so must initialize */
-        hg_handler_context_g = NA_Context_create(hg_handler_na_class_g);
-        if (!hg_handler_context_g) {
-            HG_ERROR_DEFAULT("Could not create context.");
-            ret = HG_FAIL;
-            return ret;
-        }
-
-        hg_context.na_class = hg_handler_na_class_g;
-        hg_context.na_context = hg_handler_context_g;
-
-        hg_handler_request_class_g = hg_request_init(
-                hg_request_progress_func,
-                hg_request_trigger_func, &hg_context);
-    }
-
-    /* Initialize bulk module */
-    HG_Bulk_initialized(&bulk_initialized, NULL);
-    if (!bulk_initialized) {
-        ret = HG_Bulk_init(na_class);
-        if (ret != HG_SUCCESS)
-        {
-            HG_ERROR_DEFAULT("Error initializing bulk module.");
-            ret = HG_FAIL;
-            goto done;
-        }
-    }
-    hg_bulk_initialized_internal_g = (hg_bool_t) (!bulk_initialized);
-
-    /* Create new function map */
-    hg_handler_func_map_g = hg_hash_table_new(hg_int_hash, hg_int_equal);
-    if (!hg_handler_func_map_g) {
-        HG_ERROR_DEFAULT("Could not create function map");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    /* Automatically free all the values with the hash map */
-    hg_hash_table_register_free_functions(hg_handler_func_map_g, free, free);
 
     /* Create completion queue */
     hg_handler_completion_queue_g = hg_queue_new();
@@ -594,32 +490,14 @@ HG_Handler_init(na_class_t *na_class)
     hg_thread_mutex_init(&hg_handler_completion_queue_mutex_g);
     hg_thread_mutex_init(&hg_handler_processing_list_mutex_g);
 
-done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Handler_finalize(void)
+hg_handler_finalize(void)
 {
     hg_return_t ret = HG_SUCCESS;
-    na_return_t na_ret;
-
-    if (!hg_handler_na_class_g) {
-        HG_ERROR_DEFAULT("Already finalized");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    if (hg_bulk_initialized_internal_g) {
-        ret = HG_Bulk_finalize();
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not finalize bulk data interface");
-            ret = HG_FAIL;
-            goto done;
-        }
-        hg_bulk_initialized_internal_g = HG_FALSE;
-    }
 
     /* If request was started, we must cancel it */
     if (hg_handler_pending_request_g != NULL) {
@@ -632,15 +510,16 @@ HG_Handler_finalize(void)
      * moved to the completion queue before we process it */
     /* TODO move that to request emul */
     while (hg_list_length(hg_handler_processing_list_g)) {
+        na_return_t na_ret;
         unsigned int actual_count = 0;
 
         do {
-            na_ret = NA_Trigger(hg_handler_context_g, 0, 1, &actual_count);
+            na_ret = NA_Trigger(hg_context_g, 0, 1, &actual_count);
         } while ((na_ret == NA_SUCCESS) && actual_count);
 
         if (!hg_list_length(hg_handler_processing_list_g)) break;
 
-        NA_Progress(hg_handler_na_class_g, hg_handler_context_g, 10);
+        NA_Progress(hg_na_class_g, hg_context_g, 10);
     }
 
     /* Check if any handles have been non completed have been left */
@@ -653,93 +532,265 @@ HG_Handler_finalize(void)
     /* Free completion queue */
     hg_queue_free(hg_handler_completion_queue_g);
 
-    if (hg_na_class_g ||
-            (hg_bulk_na_class_g && (hg_handler_na_class_g == hg_bulk_na_class_g))) {
-        hg_handler_request_class_g = NULL;
-        hg_handler_context_g = NULL;
-    } else {
-        /* Finalize request class */
-        hg_request_finalize(hg_handler_request_class_g);
-        hg_handler_request_class_g = NULL;
-
-        /* Destroy context */
-        na_ret = NA_Context_destroy(hg_handler_na_class_g, hg_handler_context_g);
-        if (na_ret != NA_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not destroy context.");
-            ret = HG_FAIL;
-            return ret;
-        }
-        hg_handler_context_g = NULL;
-    }
-
-    /* Delete function map */
-    hg_hash_table_free(hg_handler_func_map_g);
-    hg_handler_func_map_g = NULL;
-
-    hg_handler_na_class_g = NULL;
-
     /* Destroy mutex */
     hg_thread_mutex_destroy(&hg_handler_completion_queue_mutex_g);
     hg_thread_mutex_destroy(&hg_handler_processing_list_mutex_g);
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_handler_get_input_buf(struct hg_handle *hg_handle, void **in_buf,
+        size_t *in_buf_size)
+{
+    void *user_input_buf;
+    size_t user_input_buf_size;
+    size_t header_offset;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* TODO refactor that */
+    user_input_buf = (hg_handle->extra_recv_buf) ?
+            hg_handle->extra_recv_buf : hg_handle->recv_buf;
+    user_input_buf_size = (hg_handle->extra_recv_buf_size) ?
+            hg_handle->extra_recv_buf_size : hg_handle->recv_buf_size;
+    /* No offset if extra buffer since only the user payload is copied */
+    header_offset = (hg_handle->extra_recv_buf) ?
+            0 : hg_proc_header_request_get_size();
+
+    /* Space left for request header */
+    if (in_buf) *in_buf = (char*) user_input_buf + header_offset;
+    if (in_buf_size) *in_buf_size = user_input_buf_size - header_offset;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_handler_get_output_buf(struct hg_handle *hg_handle, void **out_buf,
+        size_t *out_buf_size)
+{
+    void *user_output_buf;
+    size_t user_output_buf_size;
+    size_t header_offset;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_handle->send_buf) {
+        /* Recv buffer must match the size of unexpected buffer */
+        hg_handle->send_buf_size = NA_Msg_get_max_expected_size(hg_na_class_g);
+
+        hg_handle->send_buf = hg_proc_buf_alloc(hg_handle->send_buf_size);
+        if (!hg_handle->send_buf) {
+            HG_ERROR_DEFAULT("Could not allocate send buffer");
+            ret = HG_FAIL;
+            goto done;
+        }
+    }
+
+    user_output_buf = hg_handle->send_buf;
+    user_output_buf_size = hg_handle->send_buf_size;
+    header_offset = hg_proc_header_response_get_size();
+
+    /* We don't want the user to mess with the header so don't let him see it */
+    if (out_buf) *out_buf = (char*) user_output_buf + header_offset;
+    if (out_buf_size) *out_buf_size = user_output_buf_size - header_offset;
 
 done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-HG_Handler_register(const char *func_name, hg_handler_cb_t callback_routine,
-        hg_proc_cb_t dec_routine, hg_proc_cb_t enc_routine)
+static hg_return_t
+hg_handler_get_input(struct hg_handle *hg_handle, void *in_struct)
 {
+    void *in_buf;
+    size_t in_buf_size;
+    struct hg_info *info;
+    hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
-    hg_id_t *id = NULL;
-    struct hg_handler_proc_info *proc_info = NULL;
 
-    /* Generate a key from the string */
-    id = (hg_id_t*) malloc(sizeof(hg_id_t));
-    if (!id) {
-        HG_ERROR_DEFAULT("Could not allocate ID");
+    if (!hg_handle) {
+        HG_ERROR_DEFAULT("NULL handle");
         ret = HG_FAIL;
         goto done;
     }
 
-    *id = hg_hash_string(func_name);
+    if (!in_struct) goto done;
 
-    /* Fill a func info struct and store it into the function map */
-    proc_info = (struct hg_handler_proc_info *)
-            malloc(sizeof(struct hg_handler_proc_info));
-    if (!proc_info) {
-        HG_ERROR_DEFAULT("Could not allocate proc info");
+    /* Get input buffer */
+    ret = hg_handler_get_input_buf(hg_handle, &in_buf, &in_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get input buffer");
+        goto done;
+    }
+
+    /* Retrieve decode function from function map */
+    info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
+            (hg_hash_table_key_t) &hg_handle->id);
+    if (!info) {
+        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
         goto done;
     }
 
-    proc_info->callback_routine = callback_routine;
-    proc_info->dec_routine = dec_routine;
-    proc_info->enc_routine = enc_routine;
+    if (!info->input_proc_cb) goto done;
 
-    if (!hg_hash_table_insert(hg_handler_func_map_g, id, proc_info)) {
-        HG_ERROR_DEFAULT("Could not insert func ID");
-        ret = HG_FAIL;
+    /* Create a new decoding proc */
+    ret = hg_proc_create(in_buf, in_buf_size, HG_DECODE, HG_CRC64, &proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not create proc");
+        goto done;
+    }
+
+    /* Decode input parameters */
+    ret = info->input_proc_cb(proc, in_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not decode input parameters");
+        goto done;
+    }
+
+    /* Flush proc */
+    ret = hg_proc_flush(proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Error in proc flush");
         goto done;
     }
 
 done:
-    if (ret != HG_SUCCESS) {
-        free(id);
-        free(proc_info);
+    if (proc != HG_PROC_NULL) hg_proc_free(proc);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_handler_free_input(struct hg_handle *hg_handle, void *in_struct)
+{
+    struct hg_info *info;
+    hg_proc_t proc = HG_PROC_NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_handle) {
+        HG_ERROR_DEFAULT("NULL handle");
+        ret = HG_FAIL;
+        goto done;
     }
+
+    if (!in_struct) goto done;
+
+    /* Retrieve encoding function from function map */
+    info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
+            (hg_hash_table_key_t) &hg_handle->id);
+    if (!info) {
+        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    if (!info->input_proc_cb) goto done;
+
+    /* Create a new free proc */
+    ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, &proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not create proc");
+        goto done;
+    }
+
+    /* Free memory allocated during output decoding */
+    ret = info->input_proc_cb(proc, hg_handle->in_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not free allocated parameters");
+        goto done;
+    }
+
+done:
+    if (proc != HG_PROC_NULL) hg_proc_free(proc);
+    proc = HG_PROC_NULL;
+
+    return ret;
+}
+
+static hg_return_t
+hg_handler_set_output(struct hg_handle *hg_handle, void *out_struct)
+{
+    void *out_buf;
+    size_t out_buf_size;
+    struct hg_info *info;
+    hg_proc_t proc = HG_PROC_NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_handle) {
+        HG_ERROR_DEFAULT("NULL handle");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    if (!out_struct) goto done;
+
+    /* Get output buffer */
+    ret = hg_handler_get_output_buf(hg_handle, &out_buf, &out_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get output buffer");
+        goto done;
+    }
+
+    /* Retrieve decode function from function map */
+    info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
+            (hg_hash_table_key_t) &hg_handle->id);
+    if (!info) {
+        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    if (!info->output_proc_cb) goto done;
+
+    /* Create a new encoding proc */
+    ret = hg_proc_create(out_buf, out_buf_size, HG_ENCODE, HG_CRC64, &proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not create proc");
+        goto done;
+    }
+
+    /* Encode output parameters */
+    ret = info->output_proc_cb(proc, out_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not encode output parameters");
+        goto done;
+    }
+
+#if 0
+    /* TODO need to do something here */
+    /* Get eventual extra buffer */
+    if (hg_proc_get_extra_buf(proc)) {
+        void *out_extra_buf = NULL;
+        size_t out_extra_buf_size = 0;
+
+        out_extra_buf = hg_proc_get_extra_buf(proc);
+        out_extra_buf_size = hg_proc_get_extra_size(proc);
+        hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
+    }
+#endif
+
+    /* Flush proc */
+    ret = hg_proc_flush(proc);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Error in proc flush");
+        goto done;
+    }
+
+done:
+    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 na_addr_t
-HG_Handler_get_addr (hg_handle_t handle)
+HG_Handler_get_addr(hg_handle_t handle)
 {
-    struct hg_handle *priv_handle = (struct hg_handle *) handle;
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
     na_addr_t ret = NULL;
 
-    if (priv_handle) ret = priv_handle->addr;
+    if (hg_handle) ret = hg_handle->addr;
 
     return ret;
 }
@@ -748,29 +799,21 @@ HG_Handler_get_addr (hg_handle_t handle)
 hg_return_t
 HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf, size_t *in_buf_size)
 {
-    struct hg_handle *priv_handle = (struct hg_handle *) handle;
-    void *user_input_buf;
-    size_t user_input_buf_size;
-    size_t header_offset;
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!priv_handle) {
+    if (!hg_handle) {
         HG_ERROR_DEFAULT("NULL handle");
         ret = HG_FAIL;
         goto done;
     }
 
-    user_input_buf = (priv_handle->extra_recv_buf) ?
-            priv_handle->extra_recv_buf : priv_handle->recv_buf;
-    user_input_buf_size = (priv_handle->extra_recv_buf_size) ?
-            priv_handle->extra_recv_buf_size : priv_handle->recv_buf_size;
-    /* No offset if extra buffer since only the user payload is copied */
-    header_offset = (priv_handle->extra_recv_buf) ?
-            0 : hg_proc_header_request_get_size();
-
-    /* We don't want the user to mess with the header so don't let him see it */
-    if (in_buf) *in_buf = (char*) user_input_buf + header_offset;
-    if (in_buf_size) *in_buf_size = user_input_buf_size - header_offset;
+    ret = hg_handler_get_input_buf(hg_handle, in_buf, in_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get input buffer");
+        ret = HG_FAIL;
+        goto done;
+    }
 
 done:
     return ret;
@@ -781,38 +824,21 @@ hg_return_t
 HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
         size_t *out_buf_size)
 {
-    struct hg_handle *priv_handle = (struct hg_handle *) handle;
-    void *user_output_buf;
-    size_t user_output_buf_size;
-    size_t header_offset;
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!priv_handle) {
+    if (!hg_handle) {
         HG_ERROR_DEFAULT("NULL handle");
         ret = HG_FAIL;
         goto done;
     }
 
-    if (!priv_handle->send_buf) {
-        /* Recv buffer must match the size of unexpected buffer */
-        priv_handle->send_buf_size =
-                NA_Msg_get_max_expected_size(hg_handler_na_class_g);
-
-        priv_handle->send_buf = hg_proc_buf_alloc(priv_handle->send_buf_size);
-        if (!priv_handle->send_buf) {
-            HG_ERROR_DEFAULT("Could not allocate send buffer");
-            ret = HG_FAIL;
-            goto done;
-        }
+    ret = hg_handler_get_output_buf(hg_handle, out_buf, out_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get output buffer");
+        ret = HG_FAIL;
+        goto done;
     }
-
-    user_output_buf = priv_handle->send_buf;
-    user_output_buf_size = priv_handle->send_buf_size;
-    header_offset = hg_proc_header_response_get_size();
-
-    /* We don't want the user to mess with the header so don't let him see it */
-    if (out_buf) *out_buf = (char*) user_output_buf + header_offset;
-    if (out_buf_size) *out_buf_size = user_output_buf_size - header_offset;
 
 done:
     return ret;
@@ -860,38 +886,38 @@ done:
 static hg_return_t
 hg_handler_start_request(void)
 {
-    struct hg_handle *priv_handle = NULL;
+    struct hg_handle *hg_handle = NULL;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
     /* Create a new handle */
-    priv_handle = (struct hg_handle *) hg_handler_new();
-    if (!priv_handle) {
+    hg_handle = (struct hg_handle *) hg_handler_new();
+    if (!hg_handle) {
         HG_ERROR_DEFAULT("Could not create new handle");
         ret = HG_FAIL;
         goto done;
     }
 
     /* Recv buffer must match the size of unexpected buffer */
-    priv_handle->recv_buf_size =
-            NA_Msg_get_max_unexpected_size(hg_handler_na_class_g);
+    hg_handle->recv_buf_size =
+            NA_Msg_get_max_unexpected_size(hg_na_class_g);
 
     /* Allocate a new receive buffer for the unexpected message */
-    priv_handle->recv_buf = hg_proc_buf_alloc(priv_handle->recv_buf_size);
-    if (!priv_handle->recv_buf) {
+    hg_handle->recv_buf = hg_proc_buf_alloc(hg_handle->recv_buf_size);
+    if (!hg_handle->recv_buf) {
         HG_ERROR_DEFAULT("Could not allocate recv buffer");
         ret = HG_FAIL;
         goto done;
     }
 
     /* Create a new pending request */
-    hg_handler_pending_request_g = hg_request_create(hg_handler_request_class_g);
-    hg_handler_pending_handle_g = priv_handle;
+    hg_handler_pending_request_g = hg_request_create(hg_request_class_g);
+    hg_handler_pending_handle_g = hg_handle;
 
     /* Post a new unexpected receive */
-    na_ret = NA_Msg_recv_unexpected(hg_handler_na_class_g, hg_handler_context_g,
-            &hg_handler_recv_input_cb, priv_handle, priv_handle->recv_buf,
-            priv_handle->recv_buf_size, NA_OP_ID_IGNORE);
+    na_ret = NA_Msg_recv_unexpected(hg_na_class_g, hg_context_g,
+            &hg_handler_recv_input_cb, hg_handle, hg_handle->recv_buf,
+            hg_handle->recv_buf_size, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not post unexpected recv for input buffer");
         ret = HG_FAIL;
@@ -907,19 +933,19 @@ hg_return_t
 HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
         size_t extra_out_buf_size)
 {
-    struct hg_handle *priv_handle = (struct hg_handle *) handle;
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
     struct hg_header_response response_header;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    if (!priv_handle) {
+    if (!hg_handle) {
         HG_ERROR_DEFAULT("NULL handle");
         ret = HG_FAIL;
         goto done;
     }
 
     /* if get_output has not been called, call it to create to send_buf */
-    ret = HG_Handler_get_output_buf(handle, NULL, NULL);
+    ret = hg_handler_get_output_buf(hg_handle, NULL, NULL);
      if (ret != HG_SUCCESS) {
          HG_ERROR_DEFAULT("Could not get output");
          ret = HG_FAIL;
@@ -928,23 +954,23 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
 
     /* Check out_buf_size, if it's bigger than the size of the pre-posted buffer
      * we need to use an extra buffer again */
-    if (extra_out_buf_size > priv_handle->send_buf_size) {
+    if (extra_out_buf_size > hg_handle->send_buf_size) {
         if (!extra_out_buf) {
             HG_ERROR_DEFAULT("No extra buffer given");
             ret = HG_FAIL;
             goto done;
         }
-        priv_handle->extra_send_buf = extra_out_buf;
-        priv_handle->extra_send_buf_size = extra_out_buf_size;
+        hg_handle->extra_send_buf = extra_out_buf;
+        hg_handle->extra_send_buf_size = extra_out_buf_size;
     }
 
     /* Fill the header */
     hg_proc_header_response_init(&response_header);
-    response_header.cookie = priv_handle->cookie;
+    response_header.cookie = hg_handle->cookie;
 
     /* Encode response header */
-    ret = hg_proc_header_response(priv_handle->send_buf,
-            priv_handle->send_buf_size, &response_header, HG_ENCODE);
+    ret = hg_proc_header_response(hg_handle->send_buf,
+            hg_handle->send_buf_size, &response_header, HG_ENCODE);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not encode header");
         ret = HG_FAIL;
@@ -952,9 +978,9 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
     }
 
     /* Respond back */
-    na_ret = NA_Msg_send_expected(hg_handler_na_class_g, hg_handler_context_g,
-            &hg_handler_send_output_cb, priv_handle, priv_handle->send_buf,
-            priv_handle->send_buf_size, priv_handle->addr, priv_handle->tag,
+    na_ret = NA_Msg_send_expected(hg_na_class_g, hg_context_g,
+            &hg_handler_send_output_cb, hg_handle, hg_handle->send_buf,
+            hg_handle->send_buf_size, hg_handle->addr, hg_handle->tag,
             NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not post send for output buffer");
@@ -972,42 +998,42 @@ done:
 hg_return_t
 HG_Handler_free(hg_handle_t handle)
 {
-    struct hg_handle *priv_handle = (struct hg_handle *) handle;
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!priv_handle) {
+    if (!hg_handle) {
         HG_ERROR_DEFAULT("Already freed");
         ret = HG_FAIL;
         return ret;
     }
 
-    if (priv_handle->addr != NA_ADDR_NULL) {
-        NA_Addr_free(hg_handler_na_class_g, priv_handle->addr);
-        priv_handle->addr = NA_ADDR_NULL;
+    if (hg_handle->addr != NA_ADDR_NULL) {
+        NA_Addr_free(hg_na_class_g, hg_handle->addr);
+        hg_handle->addr = NA_ADDR_NULL;
     }
 
-    if (priv_handle->recv_buf) {
-       hg_proc_buf_free(priv_handle->recv_buf);
-       priv_handle->recv_buf = NULL;
+    if (hg_handle->recv_buf) {
+       hg_proc_buf_free(hg_handle->recv_buf);
+       hg_handle->recv_buf = NULL;
     }
 
-    if (priv_handle->extra_recv_buf) {
-        free(priv_handle->extra_recv_buf);
-        priv_handle->extra_recv_buf = NULL;
+    if (hg_handle->extra_recv_buf) {
+        free(hg_handle->extra_recv_buf);
+        hg_handle->extra_recv_buf = NULL;
     }
 
-    if (priv_handle->send_buf) {
-        hg_proc_buf_free(priv_handle->send_buf);
-        priv_handle->send_buf = NULL;
+    if (hg_handle->send_buf) {
+        hg_proc_buf_free(hg_handle->send_buf);
+        hg_handle->send_buf = NULL;
     }
 
-    if (priv_handle->extra_send_buf) {
-        hg_proc_buf_free(priv_handle->extra_send_buf);
-        priv_handle->extra_send_buf = NULL;
+    if (hg_handle->extra_send_buf) {
+        hg_proc_buf_free(hg_handle->extra_send_buf);
+        hg_handle->extra_send_buf = NULL;
     }
 
-    free(priv_handle);
-    priv_handle = NULL;
+    free(hg_handle);
+    hg_handle = NULL;
 
     return ret;
 }
@@ -1016,13 +1042,8 @@ HG_Handler_free(hg_handle_t handle)
 hg_return_t
 HG_Handler_get_input(hg_handle_t handle, void *in_struct)
 {
-    struct hg_handle *priv_handle = (struct hg_handle *) handle;
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
-
-    void *in_buf;
-    size_t in_buf_size;
-    struct hg_handler_proc_info *proc_info;
-    hg_proc_t proc = HG_PROC_NULL;
 
     if (!in_struct) {
         HG_ERROR_DEFAULT("NULL pointer to input struct");
@@ -1030,52 +1051,20 @@ HG_Handler_get_input(hg_handle_t handle, void *in_struct)
         goto done;
     }
 
-    if (priv_handle->in_struct) {
+    if (hg_handle->in_struct) {
         /* TODO Not the first time we call get_input */
     }
 
     /* Keep reference to in_struct to free decoded params later */
-    priv_handle->in_struct = in_struct;
+    hg_handle->in_struct = in_struct;
 
-    /* Get input buffer */
-    ret = HG_Handler_get_input_buf(handle, &in_buf, &in_buf_size);
+    ret = hg_handler_get_input(hg_handle, hg_handle->in_struct);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not get input buffer");
-        goto done;
-    }
-
-    /* Retrieve decode function from function map */
-    proc_info = (struct hg_handler_proc_info *)
-            hg_hash_table_lookup(hg_handler_func_map_g, &priv_handle->id);
-    if (!proc_info) {
-        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    /* Create a new decoding proc */
-    ret = hg_proc_create(in_buf, in_buf_size, HG_DECODE, HG_CRC64, &proc);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not create proc");
-        goto done;
-    }
-
-    /* Decode input parameters */
-    ret = proc_info->dec_routine(proc, in_struct);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not decode input parameters");
-        goto done;
-    }
-
-    /* Flush proc */
-    ret = hg_proc_flush(proc);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Error in proc flush");
+        HG_ERROR_DEFAULT("Could not get input");
         goto done;
     }
 
 done:
-    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }
 
@@ -1083,97 +1072,33 @@ done:
 hg_return_t
 HG_Handler_start_output(hg_handle_t handle, void *out_struct)
 {
-    struct hg_handle *priv_handle = (struct hg_handle *) handle;
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
 
-    void *out_buf;
-    size_t out_buf_size;
-    void *out_extra_buf = NULL;
-    size_t out_extra_buf_size = 0;
-    struct hg_handler_proc_info *proc_info;
-    hg_proc_t proc = HG_PROC_NULL;
+    hg_handle->out_struct = out_struct;
 
-    /* Get output buffer */
-    ret = HG_Handler_get_output_buf(handle, &out_buf, &out_buf_size);
+    ret = hg_handler_set_output(hg_handle, hg_handle->out_struct);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not get output buffer");
+        HG_ERROR_DEFAULT("Could not set output");
         goto done;
     }
 
-    /* Retrieve decode function from function map */
-    proc_info = (struct hg_handler_proc_info *)
-            hg_hash_table_lookup(hg_handler_func_map_g, &priv_handle->id);
-    if (!proc_info) {
-        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
-        ret = HG_FAIL;
+    ret = hg_handler_free_input(hg_handle, hg_handle->in_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not free input");
         goto done;
-    }
-
-    if (out_struct && proc_info->enc_routine) {
-        /* Create a new encoding proc */
-        ret = hg_proc_create(out_buf, out_buf_size, HG_ENCODE, HG_CRC64, &proc);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not create proc");
-            goto done;
-        }
-
-        /* Encode output parameters */
-        ret = proc_info->enc_routine(proc, out_struct);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not encode output parameters");
-            goto done;
-        }
-
-        /* Get eventual extra buffer */
-        if (hg_proc_get_extra_buf(proc)) {
-            /* TODO need to do something here */
-            out_extra_buf = hg_proc_get_extra_buf(proc);
-            out_extra_buf_size = hg_proc_get_extra_size(proc);
-            hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
-        }
-
-        /* Flush proc */
-        ret = hg_proc_flush(proc);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Error in proc flush");
-            goto done;
-        }
-
-        /* Free proc */
-        hg_proc_free(proc);
-        proc = HG_PROC_NULL;
-    }
-
-    if (priv_handle->in_struct && proc_info->dec_routine) {
-        /* Create a new free proc */
-        ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, &proc);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not create proc");
-            goto done;
-        }
-
-        /* Free memory allocated during input decoding */
-        ret = proc_info->dec_routine(proc, priv_handle->in_struct);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not free allocated parameters");
-            goto done;
-        }
-
-        /* Free proc */
-        hg_proc_free(proc);
-        proc = HG_PROC_NULL;
     }
 
     /* Start sending response back, this should be the last operation called
      * that uses the handle as HG_Handler_process may free the handle as soon
      * as the response completes */
-    ret = HG_Handler_start_response(handle, out_extra_buf, out_extra_buf_size);
+    ret = HG_Handler_start_response(handle,
+            hg_handle->extra_send_buf, hg_handle->extra_send_buf_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not respond");
         goto done;
     }
 
 done:
-    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }

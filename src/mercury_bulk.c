@@ -121,17 +121,14 @@ hg_request_trigger_func(unsigned int timeout, unsigned int *flag, void *arg);
 
 /* Pointer to NA class */
 extern na_class_t *hg_na_class_g;
-extern na_class_t *hg_handler_na_class_g;
 na_class_t *hg_bulk_na_class_g = NULL;
 
 /* Local context */
 extern na_context_t *hg_context_g;
-extern na_context_t *hg_handler_context_g;
 na_context_t *hg_bulk_context_g = NULL;
 
 /* Request class */
 extern hg_request_class_t *hg_request_class_g;
-extern hg_request_class_t *hg_handler_request_class_g;
 hg_request_class_t *hg_bulk_request_class_g = NULL;
 
 /*---------------------------------------------------------------------------*/
@@ -161,9 +158,6 @@ HG_Bulk_init(na_class_t *na_class)
     if (hg_bulk_na_class_g == hg_na_class_g) {
         hg_bulk_context_g = hg_context_g;
         hg_bulk_request_class_g = hg_request_class_g;
-    } else if (hg_bulk_na_class_g == hg_handler_na_class_g) {
-        hg_bulk_context_g = hg_handler_context_g;
-        hg_bulk_request_class_g = hg_handler_request_class_g;
     } else {
         static struct hg_context hg_context;
 
@@ -200,14 +194,13 @@ HG_Bulk_finalize(void)
         goto done;
     }
 
-    if ((hg_na_class_g == hg_bulk_na_class_g) ||
-            (hg_handler_na_class_g == hg_bulk_na_class_g)) {
+    if (hg_na_class_g == hg_bulk_na_class_g) {
         hg_bulk_request_class_g = NULL;
         hg_bulk_context_g = NULL;
     } else {
         /* Finalize request class */
         hg_request_finalize(hg_bulk_request_class_g);
-        hg_handler_request_class_g = NULL;
+        hg_bulk_request_class_g = NULL;
 
         /* Destroy context */
         na_ret = NA_Context_destroy(hg_bulk_na_class_g, hg_bulk_context_g);

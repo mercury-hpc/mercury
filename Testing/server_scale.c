@@ -290,9 +290,9 @@ main(int argc, char *argv[])
     network_class = HG_Test_server_init(argc, argv, NULL, NULL, &number_of_peers);
 #endif
 
-    hg_ret = HG_Handler_init(network_class);
+    hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize Mercury handler\n");
+        fprintf(stderr, "Could not initialize Mercury\n");
         return EXIT_FAILURE;
     }
 
@@ -344,9 +344,9 @@ main(int argc, char *argv[])
     hg_thread_pool_destroy(thread_pool);
 #endif
 
-    hg_ret = HG_Handler_finalize();
+    hg_ret = HG_Finalize();
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize Mercury handler\n");
+        fprintf(stderr, "Could not finalize Mercury\n");
         return EXIT_FAILURE;
     }
 

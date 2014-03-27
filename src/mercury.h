@@ -72,8 +72,17 @@ HG_Initialized(hg_bool_t *flag, na_class_t **na_class);
  * \return unique ID associated to the registered function
  */
 HG_EXPORT hg_id_t
-HG_Register(const char *func_name, hg_proc_cb_t enc_routine,
-        hg_proc_cb_t dec_routine);
+HG_Register(const char *func_name, hg_proc_cb_t input_proc_cb,
+        hg_proc_cb_t output_proc_cb);
+
+/**
+ * Register a RPC callback that gets executed when the RPC request is received.
+ *
+ * \param id [IN]               ID associated to the registered function
+ * \param rpc_cb [IN]           RPC callback
+ */
+HG_EXPORT hg_return_t
+HG_Register_rpc_callback(hg_id_t id, hg_rpc_cb_t rpc_cb);
 
 /**
  * Indicate whether HG_Register has been called and return associated ID.

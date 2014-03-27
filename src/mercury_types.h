@@ -79,7 +79,7 @@ typedef enum hg_return {
 typedef hg_return_t (*hg_proc_cb_t)(hg_proc_t proc, void *in_struct);
 
 /* Callback for executing RPC */
-typedef hg_return_t (*hg_handler_cb_t)(hg_handle_t handle);
+typedef hg_return_t (*hg_rpc_cb_t)(hg_handle_t handle);
 
 /* Context used for request emulation */
 struct hg_context {

@@ -333,9 +333,9 @@ main(int argc, char *argv[])
     /* Initialize the interface */
     network_class = HG_Test_server_init(argc, argv, NULL, NULL, &number_of_peers);
 
-    hg_ret = HG_Handler_init(network_class);
+    hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize Mercury handler\n");
+        fprintf(stderr, "Could not initialize Mercury\n");
         return EXIT_FAILURE;
     }
 
@@ -356,9 +356,9 @@ main(int argc, char *argv[])
 
     printf("# Finalizing...\n");
 
-    hg_ret = HG_Handler_finalize();
+    hg_ret = HG_Finalize();
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize Mercury handler\n");
+        fprintf(stderr, "Could not finalize Mercury\n");
         return EXIT_FAILURE;
     }
 

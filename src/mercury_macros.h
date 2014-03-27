@@ -259,7 +259,6 @@ static HG_INLINE hg_return_t \
  * Basic BOOST macros:
  *   - MERCURY_GEN_PROC
  *   - MERCURY_REGISTER
- *   - MERCURY_HANDLER_REGISTER
  *****************************************************************************/
 
 /* Generate struct and corresponding struct proc */
@@ -282,12 +281,6 @@ static HG_INLINE hg_return_t \
 /* Register func_name */
 #define MERCURY_REGISTER(func_name, in_struct_type_name, out_struct_type_name) \
         HG_Register(func_name, BOOST_PP_CAT(hg_proc_, in_struct_type_name), \
-                BOOST_PP_CAT(hg_proc_, out_struct_type_name))
-
-/* Register func_name */
-#define MERCURY_HANDLER_REGISTER(func_name, func_callback, in_struct_type_name, out_struct_type_name) \
-        HG_Handler_register(func_name, func_callback, \
-                BOOST_PP_CAT(hg_proc_, in_struct_type_name), \
                 BOOST_PP_CAT(hg_proc_, out_struct_type_name))
 
 /*****************************************************************************
@@ -530,15 +523,18 @@ static HG_INLINE hg_return_t \
         HG_Register(func_name, hg_proc_ ## in_struct_type_name, \
                 hg_proc_ ## out_struct_type_name)
 
-#define MERCURY_HANDLER_REGISTER(func_name, func_callback, in_struct_type_name, out_struct_type_name) \
-        HG_Handler_register(func_name, func_callback, \
-                hg_proc_ ## in_struct_type_name, \
-                hg_proc_ ## out_struct_type_name)
-
 #endif /* HG_HAS_BOOST */
 
+/* TODO temporary macro */
+#define MERCURY_HANDLER_REGISTER(func_name, func_callback, in_struct_type_name, out_struct_type_name) \
+{ \
+    hg_id_t id = MERCURY_REGISTER(func_name, in_struct_type_name, out_struct_type_name); \
+    \
+    HG_Register_rpc_callback(id, func_callback); \
+}
+
 /* If no input args or output args, a void type can be
- * passed to MERCURY_REGISTER and MERCURY_HANDLER_REGISTER
+ * passed to MERCURY_REGISTER
  */
 #define hg_proc_void NULL
 

@@ -18,43 +18,6 @@ extern "C" {
 #endif
 
 /**
- * Initialize the Mercury handler layer.
- * Calling HG_Handler_init also calls HG_Bulk_init with the same NA class if
- * HG_Bulk_init has not been called before, this allows for users to
- * potentially initialize the bulk interface with a different NA class.
- *
- * \param na_class [IN]    pointer to network class
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Handler_init(na_class_t *na_class);
-
-/**
- * Finalize the Mercury handler layer.
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Handler_finalize(void);
-
-/**
- * Register a function name that can be received and handled by RPC layer.
- *
- * \param func_name [IN]        unique name associated to function
- * \param callback_routine [IN] pointer to RPC routine that is called when
- *                              a new RPC request that corresponds to func_name
- *                              arrives
- * \param dec_routine [IN]      pointer to deserializing routine
- * \param enc_routine [IN]      pointer to serializing routine
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Handler_register(const char *func_name, hg_handler_cb_t callback_routine,
-        hg_proc_cb_t dec_routine, hg_proc_cb_t enc_routine);
-
-/**
  * Get abstract network address of remote caller from RPC handle.
  *
  * \param handle [IN]           abstract RPC handle
