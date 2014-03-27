@@ -190,7 +190,7 @@ NA_Addr_lookup(
  *
  * \param na_class [IN]         pointer to NA class
  * \param name [IN]             lookup name
- * \param addr [OUT]            pointer to returned address
+ * \param addr [OUT]            pointer to abstract address
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
@@ -198,6 +198,20 @@ NA_EXPORT na_return_t
 NA_Addr_lookup_wait(
         na_class_t *na_class,
         const char *name,
+        na_addr_t  *addr
+        );
+
+/**
+ * Access self address.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param addr [OUT]            pointer to abstract address
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Addr_self(
+        na_class_t *na_class,
         na_addr_t  *addr
         );
 
@@ -213,6 +227,36 @@ NA_EXPORT na_return_t
 NA_Addr_free(
         na_class_t *na_class,
         na_addr_t   addr
+        );
+
+/**
+ * Test whether address is self or not.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param addr [IN]             abstract address
+ *
+ * \return NA_TRUE if self or NA_FALSE if not
+ */
+NA_EXPORT na_bool_t
+NA_Addr_is_self(
+        na_class_t *na_class,
+        na_addr_t   addr
+        );
+
+/**
+ * Test whether addresses are equal or not.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param addr1 [IN]            abstract address
+ * \param addr2 [IN]            abstract address
+ *
+ * \return NA_TRUE if equal or NA_FALSE if not
+ */
+NA_EXPORT na_bool_t
+NA_Addr_cmp(
+        na_class_t *na_class,
+        na_addr_t   addr1,
+        na_addr_t   addr2
         );
 
 /**

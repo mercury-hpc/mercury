@@ -48,6 +48,7 @@
 struct na_bmi_addr {
     BMI_addr_t bmi_addr;   /* BMI addr */
     na_bool_t  unexpected; /* Address generated from unexpected recv */
+    na_bool_t  self;       /* Boolean for self */
 };
 
 struct na_bmi_mem_handle {
@@ -191,9 +192,23 @@ na_bmi_addr_lookup(
         na_op_id_t   *op_id
         );
 
+/* addr_self */
+static na_return_t
+na_bmi_addr_self(
+        na_class_t *na_class,
+        na_addr_t  *addr
+        );
+
 /* addr_free */
 static na_return_t
 na_bmi_addr_free(
+        na_class_t *na_class,
+        na_addr_t   addr
+        );
+
+/* addr_is_self */
+static na_bool_t
+na_bmi_addr_is_self(
         na_class_t *na_class,
         na_addr_t   addr
         );
@@ -445,7 +460,10 @@ static const na_class_t na_bmi_class_g = {
         na_bmi_context_create,                /* context_create */
         na_bmi_context_destroy,               /* context_destroy */
         na_bmi_addr_lookup,                   /* addr_lookup */
+        na_bmi_addr_self,                     /* addr_self */
         na_bmi_addr_free,                     /* addr_free */
+        na_bmi_addr_is_self,                  /* addr_is_self */
+        NULL,                                 /* addr_cmp */
         na_bmi_addr_to_string,                /* addr_to_string */
         na_bmi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
         na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
@@ -811,6 +829,7 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
     }
     na_bmi_addr->bmi_addr = 0;
     na_bmi_addr->unexpected = NA_FALSE;
+    na_bmi_addr->self = NA_FALSE;
     na_bmi_op_id->info.lookup.addr = (na_addr_t) na_bmi_addr;
 
     /* Perform an address lookup */
@@ -841,6 +860,33 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
+na_bmi_addr_self(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
+{
+    struct na_bmi_addr *na_bmi_addr = NULL;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Allocate addr */
+    na_bmi_addr = (struct na_bmi_addr *) malloc(sizeof(struct na_bmi_addr));
+    if (!na_bmi_addr) {
+        NA_LOG_ERROR("Could not allocate BMI addr");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+    na_bmi_addr->bmi_addr = 0;
+    na_bmi_addr->unexpected = NA_FALSE;
+    na_bmi_addr->self = NA_TRUE;
+
+    *addr = (na_addr_t) na_bmi_addr;
+
+done:
+    if (ret != NA_SUCCESS) {
+        free(na_bmi_addr);
+    }
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
 na_bmi_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) addr;
@@ -857,6 +903,15 @@ na_bmi_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
     na_bmi_addr = NULL;
 
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_bool_t
+na_bmi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+{
+    struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) addr;
+
+    return na_bmi_addr->self;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2102,6 +2157,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
                 ret = NA_NOMEM_ERROR;
                 goto done;
             }
+            na_bmi_addr->self = NA_FALSE;
             na_bmi_addr->unexpected = NA_TRUE;
             na_bmi_addr->bmi_addr = unexpected_info->addr;
 

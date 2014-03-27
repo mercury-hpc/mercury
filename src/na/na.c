@@ -463,6 +463,8 @@ NA_Addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr)
     na_context_t *context = NULL;
     na_return_t ret = NA_SUCCESS;
 
+    assert(na_class);
+
     if (!addr) {
         NA_LOG_ERROR("NULL pointer to na_addr_t");
         ret = NA_INVALID_PARAM;
@@ -538,10 +540,47 @@ na_addr_lookup_cb(const struct na_cb_info *callback_info)
 
 /*---------------------------------------------------------------------------*/
 na_return_t
+NA_Addr_self(na_class_t *na_class, na_addr_t *addr)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    assert(na_class);
+
+    if (!addr) {
+        NA_LOG_ERROR("NULL pointer to na_addr_t");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = na_class->addr_self(na_class, addr);
+
+done:
+    return ret;
+
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
 NA_Addr_free(na_class_t *na_class, na_addr_t addr)
 {
     assert(na_class);
     return na_class->addr_free(na_class, addr);
+}
+
+/*---------------------------------------------------------------------------*/
+na_bool_t
+NA_Addr_is_self(na_class_t *na_class, na_addr_t addr)
+{
+    assert(na_class);
+    return na_class->addr_is_self(na_class, addr);
+}
+
+/*---------------------------------------------------------------------------*/
+na_bool_t
+NA_Addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2)
+{
+    assert(na_class);
+    return na_class->addr_cmp(na_class, addr1, addr2);
 }
 
 /*---------------------------------------------------------------------------*/

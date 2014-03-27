@@ -61,6 +61,7 @@ struct na_mpi_addr {
     MPI_Comm  rma_comm;          /* Communicator used for one sided emulation */
     int       rank;              /* Rank in this communicator */
     na_bool_t unexpected;        /* Address generated from unexpected recv */
+    na_bool_t self;              /* Boolean for self */
     na_bool_t dynamic;           /* Address generated using MPI DPM routines */
     char      port_name[MPI_MAX_PORT_NAME]; /* String version of addr */
 };
@@ -290,9 +291,23 @@ na_mpi_addr_lookup(
         na_op_id_t   *op_id
         );
 
+/* addr_self */
+static na_return_t
+na_mpi_addr_self(
+        na_class_t *na_class,
+        na_addr_t  *addr
+        );
+
 /* addr_free */
 static na_return_t
 na_mpi_addr_free(
+        na_class_t *na_class,
+        na_addr_t   addr
+        );
+
+/* addr_is_self */
+static na_bool_t
+na_mpi_addr_is_self(
         na_class_t *na_class,
         na_addr_t   addr
         );
@@ -536,7 +551,10 @@ static const na_class_t na_mpi_class_g = {
         NULL,                                 /* context_create */
         NULL,                                 /* context_destroy */
         na_mpi_addr_lookup,                   /* addr_lookup */
+        na_mpi_addr_self,                     /* addr_self */
         na_mpi_addr_free,                     /* addr_free */
+        na_mpi_addr_is_self,                  /* addr_is_self */
+        NULL,                                 /* addr_cmp */
         na_mpi_addr_to_string,                /* addr_to_string */
         na_mpi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
         na_mpi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
@@ -1352,6 +1370,7 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_mpi_addr->comm = MPI_COMM_NULL;
     na_mpi_addr->rma_comm = MPI_COMM_NULL;
     na_mpi_addr->unexpected = NA_FALSE;
+    na_mpi_addr->self = NA_FALSE;
     na_mpi_addr->dynamic = NA_FALSE;
     na_mpi_op_id->info.lookup.addr = (na_addr_t) na_mpi_addr;
     memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
@@ -1437,6 +1456,37 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
+na_mpi_addr_self(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
+{
+    struct na_mpi_addr *na_mpi_addr = NULL;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Allocate addr */
+    na_mpi_addr = (struct na_mpi_addr *) malloc(sizeof(struct na_mpi_addr));
+    if (!na_mpi_addr) {
+        NA_LOG_ERROR("Could not allocate MPI addr");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+    na_mpi_addr->comm = MPI_COMM_NULL;
+    na_mpi_addr->rma_comm = MPI_COMM_NULL;
+    na_mpi_addr->rank = 0;
+    na_mpi_addr->unexpected = NA_FALSE;
+    na_mpi_addr->self = NA_TRUE;
+    na_mpi_addr->dynamic = NA_FALSE;
+    memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
+
+    *addr = (na_addr_t) na_mpi_addr;
+
+done:
+    if (ret != NA_SUCCESS) {
+        free(na_mpi_addr);
+    }
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
 na_mpi_addr_free(na_class_t *na_class, na_addr_t addr)
 {
     struct na_mpi_addr *na_mpi_addr = (struct na_mpi_addr *) addr;
@@ -1459,6 +1509,15 @@ na_mpi_addr_free(na_class_t *na_class, na_addr_t addr)
 
  done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_bool_t
+na_mpi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+{
+    struct na_mpi_addr *na_mpi_addr = (struct na_mpi_addr *) addr;
+
+    return na_mpi_addr->self;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2525,6 +2584,7 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
             na_mpi_addr->rma_comm = na_mpi_remote_addr->rma_comm;
             na_mpi_addr->rank = status->MPI_SOURCE;
             na_mpi_addr->unexpected = NA_TRUE;
+            na_mpi_addr->self = NA_FALSE;
             na_mpi_addr->dynamic = NA_TRUE;
             memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
             /* Can only write debug info here */
