@@ -68,12 +68,6 @@ static hg_return_t hg_handler_free_input(struct hg_handle *hg_handle,
         void *out_struct);
 
 /**
- * Create new handle.
- */
-static struct hg_handle *
-hg_handler_new(void);
-
-/**
  * Add handle to processing list.
  */
 static hg_return_t
@@ -117,6 +111,9 @@ hg_handler_process_extra_recv_buf(
  */
 static hg_return_t
 hg_handler_start_processing(struct hg_handle *hg_handle);
+
+extern hg_return_t
+hg_execute(struct hg_handle *hg_handle);
 
 /**
  * Recv input callback.
@@ -167,38 +164,6 @@ static hg_thread_mutex_t hg_handler_completion_queue_mutex_g;
 /* Handler request started */
 static hg_request_object_t *hg_handler_pending_request_g = NULL;
 static struct hg_handle *hg_handler_pending_handle_g = NULL;
-
-/*---------------------------------------------------------------------------*/
-static struct hg_handle *
-hg_handler_new(void)
-{
-    struct hg_handle *hg_handle = NULL;
-
-    hg_handle = (struct hg_handle *) malloc(sizeof(struct hg_handle));
-    if (hg_handle) {
-        hg_handle->id = 0;
-        hg_handle->cookie = 0;
-
-        hg_handle->addr = NA_ADDR_NULL;
-        hg_handle->tag = 0;
-
-        hg_handle->recv_buf = NULL;
-        hg_handle->recv_buf_size = 0;
-        hg_handle->extra_recv_buf = NULL;
-        hg_handle->extra_recv_buf_size = 0;
-
-        hg_handle->send_buf = NULL;
-        hg_handle->send_buf_size = 0;
-        hg_handle->extra_send_buf = NULL;
-        hg_handle->extra_send_buf_size = 0;
-
-        hg_handle->in_struct = NULL;
-
-        hg_handle->processing_entry = NULL;
-    }
-
-    return hg_handle;
-}
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -357,7 +322,6 @@ done:
 static hg_return_t
 hg_handler_start_processing(struct hg_handle *hg_handle)
 {
-    struct hg_info *info;
     struct hg_header_request request_header;
     hg_return_t ret = HG_SUCCESS;
 
@@ -405,17 +369,7 @@ hg_handler_start_processing(struct hg_handle *hg_handle)
         }
     }
 
-    /* Retrieve exe function from function map */
-    info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
-            (hg_hash_table_key_t) &hg_handle->id);
-    if (!info) {
-        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    /* Execute function and fill output parameters */
-    info->rpc_cb((hg_handle_t) hg_handle);
+    ret = hg_execute(hg_handle);
 
 done:
     return ret;
@@ -605,7 +559,7 @@ hg_handler_get_input(struct hg_handle *hg_handle, void *in_struct)
 {
     void *in_buf;
     size_t in_buf_size;
-    struct hg_info *info;
+    struct hg_info *hg_info;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
@@ -625,15 +579,15 @@ hg_handler_get_input(struct hg_handle *hg_handle, void *in_struct)
     }
 
     /* Retrieve decode function from function map */
-    info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
+    hg_info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
             (hg_hash_table_key_t) &hg_handle->id);
-    if (!info) {
+    if (!hg_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
         goto done;
     }
 
-    if (!info->input_proc_cb) goto done;
+    if (!hg_info->input_proc_cb) goto done;
 
     /* Create a new decoding proc */
     ret = hg_proc_create(in_buf, in_buf_size, HG_DECODE, HG_CRC64, &proc);
@@ -643,7 +597,7 @@ hg_handler_get_input(struct hg_handle *hg_handle, void *in_struct)
     }
 
     /* Decode input parameters */
-    ret = info->input_proc_cb(proc, in_struct);
+    ret = hg_info->input_proc_cb(proc, in_struct);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not decode input parameters");
         goto done;
@@ -665,7 +619,7 @@ done:
 static hg_return_t
 hg_handler_free_input(struct hg_handle *hg_handle, void *in_struct)
 {
-    struct hg_info *info;
+    struct hg_info *hg_info;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
@@ -678,15 +632,15 @@ hg_handler_free_input(struct hg_handle *hg_handle, void *in_struct)
     if (!in_struct) goto done;
 
     /* Retrieve encoding function from function map */
-    info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
+    hg_info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
             (hg_hash_table_key_t) &hg_handle->id);
-    if (!info) {
+    if (!hg_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
         goto done;
     }
 
-    if (!info->input_proc_cb) goto done;
+    if (!hg_info->input_proc_cb) goto done;
 
     /* Create a new free proc */
     ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, &proc);
@@ -696,7 +650,7 @@ hg_handler_free_input(struct hg_handle *hg_handle, void *in_struct)
     }
 
     /* Free memory allocated during output decoding */
-    ret = info->input_proc_cb(proc, hg_handle->in_struct);
+    ret = hg_info->input_proc_cb(proc, hg_handle->in_struct);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not free allocated parameters");
         goto done;
@@ -709,12 +663,13 @@ done:
     return ret;
 }
 
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_handler_set_output(struct hg_handle *hg_handle, void *out_struct)
 {
     void *out_buf;
     size_t out_buf_size;
-    struct hg_info *info;
+    struct hg_info *hg_info = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
@@ -734,15 +689,15 @@ hg_handler_set_output(struct hg_handle *hg_handle, void *out_struct)
     }
 
     /* Retrieve decode function from function map */
-    info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
+    hg_info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
             (hg_hash_table_key_t) &hg_handle->id);
-    if (!info) {
+    if (!hg_info) {
         HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
         ret = HG_FAIL;
         goto done;
     }
 
-    if (!info->output_proc_cb) goto done;
+    if (!hg_info->output_proc_cb) goto done;
 
     /* Create a new encoding proc */
     ret = hg_proc_create(out_buf, out_buf_size, HG_ENCODE, HG_CRC64, &proc);
@@ -752,7 +707,7 @@ hg_handler_set_output(struct hg_handle *hg_handle, void *out_struct)
     }
 
     /* Encode output parameters */
-    ret = info->output_proc_cb(proc, out_struct);
+    ret = hg_info->output_proc_cb(proc, out_struct);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not encode output parameters");
         goto done;
@@ -891,7 +846,7 @@ hg_handler_start_request(void)
     na_return_t na_ret;
 
     /* Create a new handle */
-    hg_handle = (struct hg_handle *) hg_handler_new();
+    hg_handle = hg_handle_new();
     if (!hg_handle) {
         HG_ERROR_DEFAULT("Could not create new handle");
         ret = HG_FAIL;
@@ -941,6 +896,21 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
     if (!hg_handle) {
         HG_ERROR_DEFAULT("NULL handle");
         ret = HG_FAIL;
+        goto done;
+    }
+
+    if (hg_handle->local) {
+        /**
+         * In the case of coresident stack signal the waiting thread that
+         * the call has been processed
+         * TODO should not be necessary anymore when swtiched to callbacks
+         */
+        hg_thread_mutex_lock(&hg_handle->processed_mutex);
+
+        hg_handle->processed = HG_TRUE;
+        hg_thread_cond_signal(&hg_handle->processed_cond);
+
+        hg_thread_mutex_unlock(&hg_handle->processed_mutex);
         goto done;
     }
 
@@ -1051,17 +1021,27 @@ HG_Handler_get_input(hg_handle_t handle, void *in_struct)
         goto done;
     }
 
-    if (hg_handle->in_struct) {
-        /* TODO Not the first time we call get_input */
-    }
+    if (hg_handle->local && hg_handle->in_struct) {
+        struct hg_info *hg_info;
+        hg_info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
+                (hg_hash_table_key_t) &hg_handle->id);
+        if (!hg_info) {
+            HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
+            ret = HG_FAIL;
+            goto done;
+        }
 
-    /* Keep reference to in_struct to free decoded params later */
-    hg_handle->in_struct = in_struct;
+        /* TODO move that to private get_input ? */
+//        memcpy(in_struct, hg_handle->in_struct, );
+    } else {
+        /* Keep reference to in_struct to free decoded params later */
+        hg_handle->in_struct = in_struct;
 
-    ret = hg_handler_get_input(hg_handle, hg_handle->in_struct);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not get input");
-        goto done;
+        ret = hg_handler_get_input(hg_handle, in_struct);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not get input");
+            goto done;
+        }
     }
 
 done:
@@ -1083,6 +1063,7 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
         goto done;
     }
 
+    /* TODO remove that and make it a separate call */
     ret = hg_handler_free_input(hg_handle, hg_handle->in_struct);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not free input");
@@ -1096,6 +1077,23 @@ HG_Handler_start_output(hg_handle_t handle, void *out_struct)
             hg_handle->extra_send_buf, hg_handle->extra_send_buf_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not respond");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Handler_free_input(hg_handle_t handle, void *in_struct)
+{
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    ret = hg_handler_free_input(hg_handle, in_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not free input");
         goto done;
     }
 

@@ -183,3 +183,12 @@ foreach(MERCURY_test ${MERCURY_opt_tests})
   add_mercury_opt_test(mercury_${MERCURY_test} server_${MERCURY_test}
     client_${MERCURY_test} "variable")
 endforeach()
+
+#build_mercury_test(test_bulk_ptr)
+
+#if(NA_USE_MPI)
+#  foreach(MERCURY_test ${MERCURY_tests})
+#    add_mercury_static_test(mercury_${MERCURY_test}
+#      server_${MERCURY_test} client_${MERCURY_test})
+#  endforeach()
+#endif()

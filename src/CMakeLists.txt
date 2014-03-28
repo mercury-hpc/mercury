@@ -126,6 +126,7 @@ configure_file(
 set(MERCURY_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_handler.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_private.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc_header.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.c

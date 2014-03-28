@@ -57,6 +57,7 @@ struct hg_bulk {
 };
 
 struct hg_bulk_request {
+    hg_bool_t local; /* Local request */
     unsigned int op_count; /* Number of ongoing operations */
     hg_atomic_int32_t op_completed_count; /* Number of operations completed */
     hg_request_object_t *request;
@@ -1018,3 +1019,7 @@ done:
     }
     return ret;
 }
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Bulk_handle_access(hg_bulk_t bulk_handle, )

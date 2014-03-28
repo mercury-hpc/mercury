@@ -18,6 +18,17 @@ extern "C" {
 #endif
 
 /**
+ * Try timeout ms to process RPC requests.
+ *
+ * \param timeout [IN]          timeout (in milliseconds)
+ * \param status [OUT]          pointer to status object
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Handler_process(unsigned int timeout, hg_status_t *status);
+
+/**
  * Get abstract network address of remote caller from RPC handle.
  *
  * \param handle [IN]           abstract RPC handle
@@ -26,6 +37,51 @@ extern "C" {
  */
 HG_EXPORT na_addr_t
 HG_Handler_get_addr(hg_handle_t handle);
+
+/**
+ * Get input from handle (requires registration of decoding function).
+ * This is equivalent to:
+ *   - HG_Handler_get_input_buf
+ *   - decode proc
+ *
+ * \param handle [IN]           abstract RPC handle
+ * \param in_struct [OUT]       pointer to input structure that will be
+ *                              filled with deserialized input parameters of
+ *                              RPC call
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Handler_get_input(hg_handle_t handle, void *in_struct);
+
+/**
+ * Free input and allocated members from decoding operation.
+ */
+HG_EXPORT hg_return_t
+HG_Handler_free_input(hg_handle_t handle, void *in_struct);
+
+/**
+ * Start sending output from handle (requires registration of encoding function)
+ * This is equivalent to:
+ *   - HG_Handler_get_output_buf
+ *   - encode
+ *   - HG_Handler_start_response
+ *
+ * \param handle [IN]           abstract RPC handle
+ * \param out_struct [IN]       pointer to output structure that has been
+ *                              filled with output parameters and which will
+ *                              be serialized into a buffer. This buffer is then
+ *                              sent using a non-blocking send.
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Handler_start_output(hg_handle_t handle, void *out_struct);
+
+// HG_Handler_set_output()
+// HG_Handler_respond();
+
+/************ TO BE REMOVED FROM PUBLIC API ***************/
 
 /**
  * Get RPC input buffer from handle.
@@ -54,17 +110,6 @@ HG_Handler_get_output_buf(hg_handle_t handle, void **out_buf,
         size_t *out_buf_size);
 
 /**
- * Try timeout ms to process RPC requests.
- *
- * \param timeout [IN]          timeout (in milliseconds)
- * \param status [OUT]          pointer to status object
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Handler_process(unsigned int timeout, hg_status_t *status);
-
-/**
  * Send the response back to the caller and free handle when it completes.
  *
  * \param handle [IN]                 abstract RPC handle
@@ -87,43 +132,6 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
 HG_EXPORT hg_return_t
 HG_Handler_free(hg_handle_t handle);
 
-/**
- * NB. The following routines are added for convenience
- */
-
-/**
- * Get input from handle (requires registration of decoding function).
- * This is equivalent to:
- *   - HG_Handler_get_input_buf
- *   - decode proc
- *
- * \param handle [IN]           abstract RPC handle
- * \param in_struct [OUT]       pointer to input structure that will be
- *                              filled with deserialized input parameters of
- *                              RPC call
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Handler_get_input(hg_handle_t handle, void *in_struct);
-
-/**
- * Start sending output from handle (requires registration of encoding function)
- * This is equivalent to:
- *   - HG_Handler_get_output_buf
- *   - encode
- *   - HG_Handler_start_response
- *
- * \param handle [IN]           abstract RPC handle
- * \param out_struct [IN]       pointer to output structure that has been
- *                              filled with output parameters and which will
- *                              be serialized into a buffer. This buffer is then
- *                              sent using a non-blocking send.
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Handler_start_output(hg_handle_t handle, void *out_struct);
 
 #ifdef __cplusplus
 }
