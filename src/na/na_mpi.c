@@ -551,10 +551,10 @@ static const na_class_t na_mpi_class_g = {
         NULL,                                 /* context_create */
         NULL,                                 /* context_destroy */
         na_mpi_addr_lookup,                   /* addr_lookup */
-        na_mpi_addr_self,                     /* addr_self */
         na_mpi_addr_free,                     /* addr_free */
+        na_mpi_addr_self,                     /* addr_self */
+        NULL,                                 /* addr_dup */
         na_mpi_addr_is_self,                  /* addr_is_self */
-        NULL,                                 /* addr_cmp */
         na_mpi_addr_to_string,                /* addr_to_string */
         na_mpi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
         na_mpi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */

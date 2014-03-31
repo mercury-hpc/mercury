@@ -556,7 +556,14 @@ NA_Addr_self(na_class_t *na_class, na_addr_t *addr)
 
 done:
     return ret;
+}
 
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr)
+{
+    assert(na_class);
+    return na_class->addr_dup(na_class, addr, new_addr);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -573,14 +580,6 @@ NA_Addr_is_self(na_class_t *na_class, na_addr_t addr)
 {
     assert(na_class);
     return na_class->addr_is_self(na_class, addr);
-}
-
-/*---------------------------------------------------------------------------*/
-na_bool_t
-NA_Addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2)
-{
-    assert(na_class);
-    return na_class->addr_cmp(na_class, addr1, addr2);
 }
 
 /*---------------------------------------------------------------------------*/

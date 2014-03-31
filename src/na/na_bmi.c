@@ -454,16 +454,17 @@ na_bmi_cancel(
 /*******************/
 /* Local Variables */
 /*******************/
+
 static const na_class_t na_bmi_class_g = {
         NULL,                                 /* private_data */
         na_bmi_finalize,                      /* finalize */
         na_bmi_context_create,                /* context_create */
         na_bmi_context_destroy,               /* context_destroy */
         na_bmi_addr_lookup,                   /* addr_lookup */
-        na_bmi_addr_self,                     /* addr_self */
         na_bmi_addr_free,                     /* addr_free */
+        na_bmi_addr_self,                     /* addr_self */
+        NULL,                                 /* addr_dup */
         na_bmi_addr_is_self,                  /* addr_is_self */
-        NULL,                                 /* addr_cmp */
         na_bmi_addr_to_string,                /* addr_to_string */
         na_bmi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
         na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
