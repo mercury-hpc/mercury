@@ -315,7 +315,7 @@ na_ssm_initialize_ssm_tp(struct na_class      *in_na_ssm_class,
         if (v_data->itp == NULL)
         {
             NA_LOG_ERROR("Unable to create transport protocol.\n");
-            return NA_FAIL; 
+            return NA_PROTOCOL_ERROR;
         }
     }
     else
@@ -376,7 +376,7 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
     ssm_class->context_destroy             = NULL;
     ssm_class->addr_lookup                 = na_ssm_addr_lookup;
     ssm_class->addr_free                   = na_ssm_addr_free;
-    ssm_class->addr_to_string              = na_ssm_addr_to_string;
+    ssm_class->addr_to_string              = NULL;
     ssm_class->msg_get_max_expected_size   = na_ssm_msg_get_max_expected_size;
     ssm_class->msg_get_max_unexpected_size = na_ssm_msg_get_max_unexpected_size;
     ssm_class->msg_get_max_tag             = na_ssm_msg_get_maximum_tag;
@@ -831,7 +831,7 @@ na_ssm_addr_to_string(na_class_t     NA_UNUSED *in_na_class,
                       na_size_t      NA_UNUSED  in_buf_size,
                       na_addr_t      NA_UNUSED  in_addr)
 {
-    return NA_FAIL;
+    return NA_SUCCESS;
 }
 
 /**
@@ -1015,7 +1015,7 @@ na_ssm_msg_send_unexpected_callback(void *in_context,
     else
     {
         NA_LOG_ERROR("Protocol Error: %d.\n", result->status);
-        ssm_opid->result = NA_FAIL;
+        ssm_opid->result = NA_PROTOCOL_ERROR;
     }
 
     ssm_opid->status = SSM_STATUS_COMPLETED;
@@ -1149,7 +1149,7 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
         }
         else
         {
-            ssm_opid->result = NA_FAIL;
+            ssm_opid->result = NA_PROTOCOL_ERROR;
         }
 
         ssm_opid->status = SSM_STATUS_COMPLETED;
@@ -1289,7 +1289,7 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
         }
         else
         {
-            ssm_opid->result = NA_FAIL;
+            ssm_opid->result = NA_PROTOCOL_ERROR;
         }
         
         /* copy the received buffer into the user's buffer */
@@ -1541,7 +1541,7 @@ na_ssm_msg_send_expected_callback(void *in_context,
     else
     {
         NA_LOG_ERROR("SSM returned error %d\n", v_result->status);
-        v_ssm_opid->result = NA_FAIL;
+        v_ssm_opid->result = NA_PROTOCOL_ERROR;
     }
 
     cbinfo->arg = v_ssm_opid->user_arg;
@@ -1648,7 +1648,7 @@ na_ssm_msg_recv_expected(na_class_t     *in_na_class,
     if (v_ssm_opid->info.recv_expected.memregion == NULL)
     {
         NA_LOG_ERROR("ssm_mr_create failed.\n");
-        v_return = NA_FAIL;
+        v_return = NA_PROTOCOL_ERROR;
         goto done;
     }
     
@@ -1670,7 +1670,7 @@ na_ssm_msg_recv_expected(na_class_t     *in_na_class,
 
     if (v_ssm_opid->info.recv_expected.matchentry == NULL)
     {
-        v_return = NA_FAIL;
+        v_return = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -1685,7 +1685,7 @@ na_ssm_msg_recv_expected(na_class_t     *in_na_class,
     if (v_ssm_return < 0)
     {
         NA_LOG_ERROR("ssm_post() failed");
-        v_return = NA_FAIL;
+        v_return = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -1738,7 +1738,7 @@ na_ssm_msg_recv_expected_callback(void *in_context,
     {
         NA_LOG_ERROR("SSM message receive failed. Error: %d\n",
                      v_result->status);
-        v_ssm_opid->result = NA_FAIL;
+        v_ssm_opid->result = NA_PROTOCOL_ERROR;
     }
 
     cbinfo = malloc(sizeof(struct na_cb_info));
@@ -1906,7 +1906,7 @@ na_ssm_mem_deregister(na_class_t      NA_UNUSED *in_na_class,
     }
     else
     {
-        v_return = NA_FAIL;
+        v_return = NA_PROTOCOL_ERROR;
     }
 
     NA_LOG_DEBUG("Exit.\n");
@@ -1957,7 +1957,7 @@ na_ssm_mem_handle_serialize(na_class_t       NA_UNUSED *in_na_class,
 
     if (in_buf_size < sizeof(struct na_ssm_mem_handle))
     {
-        v_return = NA_FAIL;
+        v_return = NA_SIZE_ERROR;
     }
     else
     {
@@ -1990,7 +1990,7 @@ na_ssm_mem_handle_deserialize(na_class_t       NA_UNUSED *in_na_class,
     
     if (in_buf_size < sizeof(struct na_ssm_mem_handle))
     {
-        v_return = NA_FAIL;
+        v_return = NA_SIZE_ERROR;
     }
     else
     {
@@ -2162,7 +2162,7 @@ na_ssm_put(na_class_t        *in_na_class,
         free(v_opid->cbinfo);
         free(v_opid);
 
-        v_return = NA_FAIL;
+        v_return = NA_PROTOCOL_ERROR;
         goto done;
     }
     
@@ -2319,7 +2319,7 @@ na_ssm_get(na_class_t        *in_na_class,
         free(v_ssm_opid);
         ssm_mr_destroy(v_local_mr);
         ssm_md_release(v_remote_md);
-        return NA_FAIL;
+        return NA_PROTOCOL_ERROR;
     }
     
     v_ssm_opid->transaction = v_stx;
@@ -2366,7 +2366,7 @@ na_ssm_get_callback(void *in_context,
     {
         NA_LOG_ERROR("Error reported by SSM. Error: %d\n",
                      v_result->status);
-        v_ssm_opid->result = NA_FAIL;
+        v_ssm_opid->result = NA_PROTOCOL_ERROR;
     }
 
     cbinfo = malloc(sizeof(struct na_cb_info));
@@ -2443,7 +2443,7 @@ na_ssm_progress(na_class_t    *in_na_class,
 
     if ( v_return < 0 )
     {
-        v_return = NA_FAIL;
+        v_return = NA_PROTOCOL_ERROR;
     }
     else
     {
@@ -2474,7 +2474,7 @@ na_ssm_cancel(na_class_t    *in_na_class,
 {
     struct na_ssm_private_data *v_data = NA_SSM_PRIVATE_DATA(in_na_class);
     struct na_ssm_opid  *v_ssm_opid  = (struct na_ssm_opid *) in_opid;
-    na_return_t          v_return    = NA_FAIL;
+    na_return_t          v_return;
 
     /* See if we have a ssm transaction id available to cancel the
      * operation.
@@ -2498,7 +2498,7 @@ na_ssm_cancel(na_class_t    *in_na_class,
     }
     else
     {
-        v_return = NA_FAIL;
+        v_return = NA_PROTOCOL_ERROR;
     }
     
     return v_return;
