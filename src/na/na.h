@@ -680,11 +680,10 @@ NA_Progress(
  * timeout before returning. Function can return when at least one or more
  * callbacks are triggered (at most max_count).
  *
- * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
  * \param timeout [IN]          timeout (in milliseconds)
  * \param max_count [IN]        maximum number of callbacks triggered
- * \param max_count [IN]        actual number of callbacks triggered
+ * \param actual_count [IN]     actual number of callbacks triggered
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
