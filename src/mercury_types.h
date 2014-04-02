@@ -28,6 +28,11 @@ typedef struct hg_bulk_segment {
     size_t size;      /* size of the segment in bytes */
 } hg_bulk_segment_t;
 
+typedef enum {
+    HG_BULK_WRITE,
+    HG_BULK_READ
+} hg_bulk_op_t;
+
 #define HG_BULK_READWRITE    NA_MEM_READWRITE
 #define HG_BULK_READ_ONLY    NA_MEM_READ_ONLY
 

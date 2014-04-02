@@ -50,7 +50,7 @@ HG_Bulk_initialized(hg_bool_t *flag, na_class_t **na_class);
 /**
  * Create abstract bulk handle from buffer (register memory, etc).
  *
- * \param buf [IN]              pointer to buffer
+ * \param buf [IN]              buffer
  * \param buf_size [IN]         buffer size
  * \param flags [IN]            permission flag:
  *                                - HG_BULK_READWRITE
@@ -66,7 +66,7 @@ HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
 /**
  * Create bulk handle from arbitrary memory regions.
  *
- * \param bulk_segments [IN]    pointer to array of segments
+ * \param bulk_segments [IN]    array of segments
  * \param segment_count [IN]    number of segments
  * \param flags [IN]            permission flag:
  *                                - HG_BULK_READWRITE
@@ -100,33 +100,14 @@ HG_EXPORT size_t
 HG_Bulk_handle_get_size(hg_bulk_t handle);
 
 /**
- * Access bulk handle to retrieve memory segments abstracted by handle.
+ * Get number of segments represented by the abstract bulk handle.
  *
- * \param handle [IN]            abstract bulk handle
- * \param offset [IN]            bulk offset
- * \param size [IN]              bulk size
- * \param flags [IN]             permission flag:
- *                                 - HG_BULK_READWRITE
- *                                 - HG_BULK_READ_ONLY
- * \param max_count [IN]         maximum number of segments
- * \param segment_ptrs [IN/OUT]  array of memory segment pointers
- * \param segment_sizes [IN/OUT] array of memory segment sizes
- * \param actual_count [OUT]     actual number of segments retrieved
+ * \param handle [IN]           abstract bulk handle
  *
- * \return HG_SUCCESS or corresponding HG error code
+ * \return Non-negative value
  */
-HG_EXPORT hg_return_t
-HG_Bulk_handle_access(hg_bulk_t handle, size_t offset, size_t size,
-        unsigned long flags, unsigned int max_count, void **segment_ptrs,
-        size_t *segment_sizes, unsigned int *actual_count);
-
-HG_EXPORT hg_return_t
-HG_Bulk_handle_replicate(hg_bulk_t bulk_handle, size_t offset, size_t size,
-        hg_bulk_t *block_handle);
-
-HG_EXPORT hg_return_t
-HG_Bulk_sync(na_addr_t addr, hg_bulk_t bulk_handle,
-        hg_bulk_request_t *bulk_request);
+HG_EXPORT size_t
+HG_Bulk_handle_get_segment_count(hg_bulk_t handle);
 
 /**
  * Get size required to serialize abstract bulk handle.
@@ -240,6 +221,64 @@ HG_Bulk_read_all(na_addr_t addr, hg_bulk_t bulk_handle,
 HG_EXPORT hg_return_t
 HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
         hg_status_t *status);
+
+/**
+ * Additional convenience routines for bulk pointer handling. When using
+ * mercury in coresident mode (i.e., when addr passed is self addr), one
+ * can avoid copying bulk data and access it directly from an existing
+ * bulk handle.
+ */
+
+/**
+ * Access bulk handle to retrieve memory segments abstracted by handle.
+ *
+ * \param handle [IN]            abstract bulk handle
+ * \param offset [IN]            bulk offset
+ * \param size [IN]              bulk size
+ * \param flags [IN]             permission flag:
+ *                                 - HG_BULK_READWRITE
+ *                                 - HG_BULK_READ_ONLY
+ * \param max_count [IN]         maximum number of segments
+ * \param segments [IN/OUT]      array of memory segments
+ * \param actual_count [OUT]     actual number of segments retrieved
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_handle_access(hg_bulk_t handle, size_t offset, size_t size,
+        unsigned long flags, unsigned int max_count,
+        hg_bulk_segment_t *segments, unsigned int *actual_count);
+
+/**
+ * Create a mirror from a bulk handle (origin). The mirror handle can be used
+ * to transfer data from/to the origin handle, by using HG_Bulk_sync.
+ *
+ * \param bulk_handle [IN]      abstract bulk handle
+ * \param offset [IN]           bulk offset
+ * \param size [IN]             bulk size
+ * \param mirror_handle [OUT]   pointer to bulk handle
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_mirror(hg_bulk_t bulk_handle, size_t offset, size_t size,
+        hg_bulk_t *mirror_handle);
+
+/**
+ * Synchronize a mirrored bulk handle with its origin.
+ *
+ * \param addr [IN]             abstract NA address
+ * \param bulk_handle [IN]      abstract bulk handle
+ * \param bulk_op [IN]          bulk operation:
+ *                                  - HG_BULK_WRITE
+ *                                  - HG_BULK_READ
+ * \param bulk_request [OUT]    pointer to returned bulk request
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_sync(na_addr_t addr, hg_bulk_t bulk_handle, hg_bulk_op_t bulk_op,
+        hg_bulk_request_t *bulk_request);
 
 #ifdef __cplusplus
 }
