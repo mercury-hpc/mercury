@@ -27,21 +27,29 @@
 /* Default error macro */
 #ifdef HG_HAS_VERBOSE_ERROR
   #include <stdio.h>
-  #define HG_ERROR_DEFAULT(x) {                   \
-        fprintf(stderr, "Error "                  \
-                "in %s:%d (%s): "                 \
-                "%s.\n",                          \
-                __FILE__, __LINE__, __func__, x); \
-  }
-  #define HG_WARNING_DEFAULT(x) {                 \
-        fprintf(stderr, "Warning "                \
-              "in %s:%d (%s): "                   \
-              "%s.\n",                            \
-              __FILE__, __LINE__, __func__, x);   \
-  }
+  #define HG_LOG_ERROR(...) do {                              \
+      fprintf(stderr, "%s:%d: ERROR: ", __func__, __LINE__);  \
+      fprintf(stderr, __VA_ARGS__);                           \
+      fprintf(stderr, "\n");                                  \
+  } while (0)
+  #define HG_LOG_DEBUG(...) do {                       \
+      fprintf(stdout, "%s:%d: ", __func__, __LINE__);  \
+      fprintf(stdout, __VA_ARGS__);                    \
+      fprintf(stdout, "\n");                           \
+  } while (0)
+  #define HG_LOG_WARNING(...) do {                              \
+      fprintf(stdout, "%s:%d: WARNING: ", __func__, __LINE__);  \
+      fprintf(stdout, __VA_ARGS__);                             \
+      fprintf(stdout, "\n");                                    \
+  } while (0)
 #else
-  #define HG_ERROR_DEFAULT(x)
-  #define HG_WARNING_DEFAULT(x)
+  #define HG_LOG_ERROR
+  #define HG_LOG_DEBUG
+  #define HG_LOG_WARNING
 #endif
+
+/* TODO remove that when switched to new macros */
+#define HG_ERROR_DEFAULT   HG_LOG_ERROR
+#define HG_WARNING_DEFAULT HG_LOG_DEBUG
 
 #endif /* MERCURY_ERROR_H */
