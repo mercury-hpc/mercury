@@ -184,7 +184,7 @@ foreach(MERCURY_test ${MERCURY_opt_tests})
     client_${MERCURY_test} "variable")
 endforeach()
 
-#build_mercury_test(test_bulk_ptr)
+build_mercury_test(test_bulk_mirror)
 
 #if(NA_USE_MPI)
 #  foreach(MERCURY_test ${MERCURY_tests})

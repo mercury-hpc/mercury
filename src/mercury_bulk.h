@@ -66,8 +66,8 @@ HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
 /**
  * Create bulk handle from arbitrary memory regions.
  *
- * \param bulk_segments [IN]    array of segments
- * \param segment_count [IN]    number of segments
+ * \param segments [IN]         array of segments
+ * \param count [IN]            number of segments
  * \param flags [IN]            permission flag:
  *                                - HG_BULK_READWRITE
  *                                - HG_BULK_READ_ONLY
@@ -76,8 +76,8 @@ HG_Bulk_handle_create(void *buf, size_t buf_size, unsigned long flags,
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_handle_create_segments(hg_bulk_segment_t *bulk_segments,
-        size_t segment_count, unsigned long flags, hg_bulk_t *handle);
+HG_Bulk_handle_create_segments(hg_bulk_segment_t *segments, size_t count,
+        unsigned long flags, hg_bulk_t *handle);
 
 /**
  * Free bulk handle.
@@ -152,14 +152,14 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size);
  * \param block_handle [IN]     abstract bulk block handle
  * \param block_offset [IN]     bulk block offset
  * \param block_size [IN]       size of data to be transferred
- * \param bulk_request [OUT]    pointer to returned bulk request
+ * \param request [OUT]         pointer to returned bulk request
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
         hg_bulk_t block_handle, size_t block_offset, size_t block_size,
-        hg_bulk_request_t *bulk_request);
+        hg_bulk_request_t *request);
 
 /**
  * Write data to address using abstract bulk and bulk block handles.
@@ -168,13 +168,13 @@ HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
  * \param addr [IN]             abstract network address of destination
  * \param bulk_handle [IN]      abstract bulk handle
  * \param block_handle [IN]     abstract bulk block handle
- * \param bulk_request [OUT]    pointer to returned bulk request
+ * \param request [OUT]         pointer to returned bulk request
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
-        hg_bulk_t block_handle, hg_bulk_request_t *bulk_request);
+        hg_bulk_t block_handle, hg_bulk_request_t *request);
 
 /**
  * Read data from address using abstract bulk and bulk block handles.
@@ -185,14 +185,14 @@ HG_Bulk_write_all(na_addr_t addr, hg_bulk_t bulk_handle,
  * \param block_handle [IN]     abstract bulk block handle
  * \param block_offset [IN]     bulk block offset
  * \param block_size [IN]       size of data to be transferred
- * \param bulk_request [OUT]    pointer to returned bulk request
+ * \param request [OUT]         pointer to returned bulk request
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
         hg_bulk_t block_handle, size_t block_offset, size_t block_size,
-        hg_bulk_request_t *bulk_request);
+        hg_bulk_request_t *request);
 
 /**
  * Read data from address using abstract bulk and bulk block handles.
@@ -201,25 +201,25 @@ HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
  * \param addr [IN]             abstract network address of destination
  * \param bulk_handle [IN]      abstract bulk handle
  * \param block_handle [IN]     abstract bulk block handle
- * \param bulk_request [OUT]    pointer to returned bulk request
+ * \param request [OUT]         pointer to returned bulk request
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Bulk_read_all(na_addr_t addr, hg_bulk_t bulk_handle,
-        hg_bulk_t block_handle, hg_bulk_request_t *bulk_request);
+        hg_bulk_t block_handle, hg_bulk_request_t *request);
 
 /**
  * Wait for a bulk operation request to complete.
  *
- * \param bulk_request [IN]     bulk request
+ * \param request [IN]          bulk request
  * \param timeout [IN]          timeout (in milliseconds)
  * \param status [OUT]          pointer to returned status
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_wait(hg_bulk_request_t bulk_request, unsigned int timeout,
+HG_Bulk_wait(hg_bulk_request_t request, unsigned int timeout,
         hg_status_t *status);
 
 /**
@@ -253,7 +253,8 @@ HG_Bulk_handle_access(hg_bulk_t handle, size_t offset, size_t size,
  * Create a mirror from a bulk handle (origin). The mirror handle can be used
  * to transfer data from/to the origin handle, by using HG_Bulk_sync.
  *
- * \param bulk_handle [IN]      abstract bulk handle
+ * \param addr [IN]             abstract NA address
+ * \param handle [IN]           abstract bulk handle
  * \param offset [IN]           bulk offset
  * \param size [IN]             bulk size
  * \param mirror_handle [OUT]   pointer to bulk handle
@@ -261,24 +262,22 @@ HG_Bulk_handle_access(hg_bulk_t handle, size_t offset, size_t size,
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_mirror(hg_bulk_t bulk_handle, size_t offset, size_t size,
+HG_Bulk_mirror(na_addr_t addr, hg_bulk_t handle, size_t offset, size_t size,
         hg_bulk_t *mirror_handle);
 
 /**
  * Synchronize a mirrored bulk handle with its origin.
  *
- * \param addr [IN]             abstract NA address
- * \param bulk_handle [IN]      abstract bulk handle
- * \param bulk_op [IN]          bulk operation:
+ * \param handle [IN]           abstract bulk handle
+ * \param op [IN]               bulk operation:
  *                                  - HG_BULK_WRITE
  *                                  - HG_BULK_READ
- * \param bulk_request [OUT]    pointer to returned bulk request
+ * \param request [OUT]         pointer to returned bulk request
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_sync(na_addr_t addr, hg_bulk_t bulk_handle, hg_bulk_op_t bulk_op,
-        hg_bulk_request_t *bulk_request);
+HG_Bulk_sync(hg_bulk_t handle, hg_bulk_op_t op, hg_bulk_request_t *request);
 
 #ifdef __cplusplus
 }
