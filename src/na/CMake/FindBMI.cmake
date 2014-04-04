@@ -1,38 +1,22 @@
-#  Try to find BMI library and headers.
-#  This file sets the following variables:
-#
-#  BMI_INCLUDE_DIR, where to find bmi.h, etc.
-#  BMI_LIBRARIES, the libraries to link against
-#  BMI_FOUND, If false, do not try to use BMI.
-#
-# Also defined, but not for general use are:
-#  BMI_LIBRARY, the full path to the bmi library.
+# - Try to find BMI
+# Once done this will define
+#  BMI_FOUND - System has BMI
+#  BMI_INCLUDE_DIRS - The BMI include directories
+#  BMI_LIBRARIES - The libraries needed to use BMI
 
-FIND_PATH( BMI_INCLUDE_DIR bmi.h
-  /usr/local/include
-  /usr/include
-)
+find_path(BMI_INCLUDE_DIR bmi.h
+  HINTS /usr/local/include /usr/include)
 
-FIND_LIBRARY( BMI_LIBRARY NAMES bmi
-  /usr/lib
-  /usr/local/lib
-)
+find_library(BMI_LIBRARY NAMES bmi
+  PATHS /usr/local/lib /usr/lib)
 
-SET( BMI_FOUND "NO" )
-IF(BMI_INCLUDE_DIR)
-  IF(BMI_LIBRARY)
+set(BMI_INCLUDE_DIRS ${BMI_INCLUDE_DIR})
+set(BMI_LIBRARIES ${BMI_LIBRARY})
 
-    SET( BMI_LIBRARIES ${BMI_LIBRARY})
-    SET( BMI_FOUND "YES" )
+include(FindPackageHandleStandardArgs)
+# handle the QUIETLY and REQUIRED arguments and set SSM_FOUND to TRUE
+# if all listed variables are TRUE
+find_package_handle_standard_args(BMI DEFAULT_MSG
+                                  BMI_INCLUDE_DIR BMI_LIBRARY)
 
-  ELSE(BMI_LIBRARY)
-    IF(BMI_FIND_REQUIRED)
-      message(SEND_ERROR "Unable to find the requested BMI libraries.")
-    ENDIF(BMI_FIND_REQUIRED)
-  ENDIF(BMI_LIBRARY)
-ENDIF(BMI_INCLUDE_DIR)
-
-MARK_AS_ADVANCED(
-  BMI_INCLUDE_DIR
-  BMI_LIBRARY
-)
+mark_as_advanced(BMI_INCLUDE_DIR BMI_LIBRARY)

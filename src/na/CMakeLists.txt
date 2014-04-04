@@ -62,7 +62,7 @@ if(NA_USE_BMI)
     )
     set(NA_EXT_INCLUDE_DEPENDENCIES
       ${NA_EXT_INCLUDE_DEPENDENCIES}
-      ${BMI_INCLUDE_DIR}
+      ${BMI_INCLUDE_DIRS}
     )
     include(CheckCSourceCompiles)
     check_c_source_compiles("#include <bmi.h>
@@ -91,7 +91,7 @@ if(NA_USE_SSM)
     )
     set(NA_EXT_INCLUDE_DEPENDENCIES
       ${NA_EXT_INCLUDE_DEPENDENCIES}
-      ${SSM_INCLUDE_DIR}
+      ${SSM_INCLUDE_DIRS}
     )
   else()
      message(FATAL_ERROR "Could not find SSM.")
