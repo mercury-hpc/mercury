@@ -9,12 +9,6 @@
  */
 
 #include "na_private.h"
-#ifdef NA_HAS_MPI
-#include "na_mpi.h"
-#endif
-#ifdef NA_HAS_BMI
-#include "na_bmi.h"
-#endif
 #include "na_error.h"
 
 #include "mercury_queue.h"
@@ -42,13 +36,6 @@
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
-/* NA class priority */
-typedef enum na_class_priority {
-  NA_CLASS_PRIORITY_INVALID  = 0,
-  NA_CLASS_PRIORITY_LOW      = 1,
-  NA_CLASS_PRIORITY_HIGH     = 2,
-  NA_CLASS_PRIORITY_MAX      = 10
-} na_class_priority_t;
 
 /* Private context / do not expose private members to plugins */
 struct na_private_context {
@@ -72,6 +59,26 @@ struct na_cb_completion_data {
 /********************/
 /* Local Prototypes */
 /********************/
+
+/* Parse host string and fill info */
+static na_return_t
+na_info_parse(
+        const char *host_string,
+        struct na_info **na_info_ptr
+        );
+
+/* Free host info */
+static void
+na_info_free(
+        struct na_info *na_info
+        );
+
+#ifdef NA_DEBUG
+/* Print NA info */
+static void
+na_info_print(struct na_info *na_info);
+#endif
+
 /* NA_Lookup_wait callback */
 static na_return_t
 na_addr_lookup_cb(
@@ -82,24 +89,24 @@ na_addr_lookup_cb(
 /* Local Variables */
 /*******************/
 #ifdef NA_HAS_SSM
-extern struct na_class_describe na_ssm_describe_g;
+extern struct na_class_info na_ssm_info_g;
 #endif
 #ifdef NA_HAS_BMI
-extern struct na_class_describe na_bmi_describe_g;
+extern struct na_class_info na_bmi_info_g;
 #endif
 #ifdef NA_HAS_MPI
-extern struct na_class_describe na_mpi_describe_g;
+extern struct na_class_info na_mpi_info_g;
 #endif
 
-static const struct na_class_describe *na_class_methods[] = {
+static const struct na_class_info *na_class_info[] = {
 #ifdef NA_HAS_BMI
-    &na_bmi_describe_g,
+    &na_bmi_info_g,
 #endif
 #ifdef NA_HAS_MPI
-    &na_mpi_describe_g,
+    &na_mpi_info_g,
 #endif
 #ifdef NA_HAS_SSM
-    &na_ssm_describe_g,
+    &na_ssm_info_g,
 #endif
     NULL
 };
@@ -107,121 +114,111 @@ static const struct na_class_describe *na_class_methods[] = {
 static hg_thread_mutex_t na_addr_lookup_mutex_g;
 
 /*---------------------------------------------------------------------------*/
-static void
-NA_free_host_buffer(struct na_host_buffer *na_buffer)
-{
-    if (na_buffer) {
-        free(na_buffer->na_class);
-        na_buffer->na_class = NULL;
-        free(na_buffer->na_protocol);
-        na_buffer->na_protocol = NULL;
-        free(na_buffer->na_host);
-        na_buffer->na_host = NULL;
-        free(na_buffer->na_host_string);
-        na_buffer->na_host_string = NULL;
-        free(na_buffer);
-    }
-}
-
-/*---------------------------------------------------------------------------*/
 static na_return_t
-NA_parse_host_string(const char *host_string,
-        struct na_host_buffer **in_na_buffer)
+na_info_parse(const char *na_info_string, struct na_info **na_info_ptr)
 {
-    char *input_string               = NULL;
-    char *token                      = NULL;
-    char *locator                    = NULL;
-    struct na_host_buffer *na_buffer = *in_na_buffer;
-    size_t na_host_string_len;
+    struct na_info *na_info = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    input_string = (char*) malloc(strlen(host_string) + 1);
+    char *input_string = NULL;
+    char *token = NULL;
+    char *locator = NULL;
+    size_t port_name_len;
+
+    na_info = (struct na_info *) malloc(sizeof(struct na_info));
+    if (!na_info) {
+        NA_LOG_ERROR("Could not allocate NA info struct");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+    /* Initialize NA info */
+    na_info->class_name = NULL;
+    na_info->protocol_name = NULL;
+    na_info->host_name = NULL;
+    na_info->port = 0;
+    na_info->port_name = NULL;
+
+    /* Copy info string and work from that */
+    input_string = strdup(na_info_string);
     if (!input_string) {
-        NA_LOG_ERROR("Could not allocate string");
+        NA_LOG_ERROR("Could not duplicate host string");
         ret = NA_NOMEM_ERROR;
         goto done;
     }
 
-    strcpy(input_string, host_string);
-
-    /* Strings can be of the format:
+    /**
+     * Strings can be of the format:
      *   tcp://localhost:3344
      *   tcp@ssm://localhost:3344
      */
+
+    /* Get first part of string (i.e., protocol@plugin_name) */
     token = strtok_r(input_string, ":", &locator);
 
+    /* Is plugin name specified */
     if (strstr(token, "@") != NULL) {
         char *_locator = NULL;
 
         token = strtok_r(token, "@", &_locator);
 
-        na_buffer->na_class = (char*) malloc(strlen(_locator) + 1);
-        if (!na_buffer->na_class) {
-            NA_LOG_ERROR("Could not allocate na_class");
+        na_info->class_name = strdup(_locator);
+        if (!na_info->class_name) {
+            NA_LOG_ERROR("Could not duplicate NA info class name");
             ret = NA_NOMEM_ERROR;
             goto done;
         }
-
-        strcpy(na_buffer->na_class, _locator);
-    } else {
-        na_buffer->na_class = NULL;
     }
 
-    na_buffer->na_protocol = (char*) malloc(strlen(token) + 1);
-    if (!na_buffer->na_protocol) {
-        NA_LOG_ERROR("Could not allocate na_protocol");
+    /* Get protocol name (@plugin_name removed at this point if present) */
+    na_info->protocol_name = strdup(token);
+    if (!na_info->protocol_name) {
+        NA_LOG_ERROR("Could not duplicate NA info protocol name");
         ret = NA_NOMEM_ERROR;
         goto done;
     }
 
-    strcpy(na_buffer->na_protocol, token);
+    /* Treat //hostname:port part */
+    token = locator + 2; /* Skip // */
+    token = strtok_r(token, ":", &locator); /* Get hostname */
 
-    token = locator + 2;
-    token = strtok_r(token, ":", &locator);
-
-    na_buffer->na_host = (char*) malloc(strlen(token) + 1);
-    if (!na_buffer->na_host) {
-        NA_LOG_ERROR("Could not allocate na_host");
+    na_info->host_name = strdup(token);
+    if (!na_info->host_name) {
+        NA_LOG_ERROR("Could not duplicate NA info host name");
         ret = NA_NOMEM_ERROR;
         goto done;
     }
 
-    strcpy(na_buffer->na_host, token);
+    /* Get port number */
+    na_info->port = atoi(locator);
 
-    na_buffer->na_port = atoi(locator);
+    /* Build port name that can be used by plugin */
+    port_name_len = strlen(na_info_string);
+    if (na_info->class_name) {
+        /* Remove @plugin_name */
+        port_name_len -= (strlen(na_info->class_name) + 1);
+    }
 
-    na_host_string_len = strlen(na_buffer->na_protocol) + 1;
-    na_host_string_len += strlen("://");
-    na_host_string_len += strlen(na_buffer->na_host);
-    na_host_string_len += strlen(":");
-    na_host_string_len += strlen(locator);
-
-    na_buffer->na_host_string = (char*) malloc(na_host_string_len);
-    if (!na_buffer->na_host_string) {
-        NA_LOG_ERROR("Could not allocate na_host_string");
+    /**
+     * Strings can be of the format:
+     *   tcp://localhost:3344
+     */
+    na_info->port_name = (char *) malloc(port_name_len + 1);
+    if (!na_info->port_name) {
+        NA_LOG_ERROR("Could not allocate NA info port name");
         ret = NA_NOMEM_ERROR;
         goto done;
     }
 
-    if (na_buffer->na_host_string != NULL) {
-        memset(na_buffer->na_host_string, '\0', na_host_string_len);
-        strcpy(na_buffer->na_host_string, na_buffer->na_protocol);
-        strcat(na_buffer->na_host_string, "://");
-        strcat(na_buffer->na_host_string, na_buffer->na_host);
-        strcat(na_buffer->na_host_string, ":");
-        strcat(na_buffer->na_host_string, locator);
-    }
+    memset(na_info->port_name, '\0', port_name_len + 1);
+    strcpy(na_info->port_name, na_info->protocol_name);
+    strcat(na_info->port_name, na_info_string +
+            (strlen(na_info_string) - port_name_len) +
+            strlen(na_info->protocol_name));
 
+    *na_info_ptr = na_info;
 done:
     if (ret != NA_SUCCESS) {
-        free(na_buffer->na_class);
-        na_buffer->na_class = NULL;
-        free(na_buffer->na_protocol);
-        na_buffer->na_protocol = NULL;
-        free(na_buffer->na_host);
-        na_buffer->na_host = NULL;
-        free(na_buffer->na_host_string);
-        na_buffer->na_host_string = NULL;
+        na_info_free(na_info);
     }
     free(input_string);
 
@@ -229,62 +226,91 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_class_priority_t
-NA_get_priority(const struct na_host_buffer NA_UNUSED *na_buffer)
+static void
+na_info_free(struct na_info *na_info)
 {
-    /* TBD: */
-    return NA_CLASS_PRIORITY_HIGH;
+    if (!na_info) return;
+
+    free(na_info->class_name);
+    free(na_info->protocol_name);
+    free(na_info->host_name);
+    free(na_info->port_name);
+    free(na_info);
 }
+
+/*---------------------------------------------------------------------------*/
+#ifdef NA_DEBUG
+static void
+na_info_print(struct na_info *na_info)
+{
+    if (!na_info) return;
+
+    printf("Class: %s\n", na_info->class_name);
+    printf("Protocol: %s\n", na_info->protocol_name);
+    printf("Hostname: %s\n", na_info->host_name);
+    printf("Port: %d\n", na_info->port);
+    printf("Port name: %s\n", na_info->port_name);
+}
+#endif
 
 /*---------------------------------------------------------------------------*/
 na_class_t *
 NA_Initialize(const char *host_string, na_bool_t listen)
 {
     na_class_t *na_class = NULL;
-    na_bool_t accept = NA_FALSE;
-    struct na_host_buffer *na_buffer = NULL;
-    int class_index = 0;
-    na_class_priority_t highest_priority = NA_CLASS_PRIORITY_INVALID;
-    int i = 0;
-    int plugin_count = 0;
+    struct na_info *na_info = NULL;
+    unsigned int plugin_index = 0;
+    unsigned int plugin_count = 0;
+    na_bool_t plugin_found = NA_FALSE;
+    na_return_t ret;
 
-    na_buffer = (struct na_host_buffer*) malloc(sizeof(struct na_host_buffer));
-    if (!na_buffer) {
-        NA_LOG_ERROR("Could not allocate na_buffer");
-        return NULL;
+    plugin_count = sizeof(na_class_info) / sizeof(na_class_info[0]) - 1;
+
+    ret = na_info_parse(host_string, &na_info);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not parse host string");
+        goto done;
     }
 
-    plugin_count = sizeof(na_class_methods) / sizeof(na_class_methods[0]) - 1;
+#ifdef NA_DEBUG
+    na_info_print(na_info);
+#endif
 
-    NA_parse_host_string(host_string, &na_buffer);
+    while (plugin_index < plugin_count) {
+        na_bool_t verified = NA_FALSE;
 
-    for (i = 0; i < plugin_count; ++i) {
-        accept = na_class_methods[i]->verify(na_buffer->na_protocol);
+        verified = na_class_info[plugin_index]->check_protocol(
+                na_info->protocol_name);
 
-        if (accept) {
-            na_class_priority_t class_priority = NA_get_priority(na_buffer);
-
-            if ((na_buffer->na_class && strcmp(na_class_methods[i]->class_name,
-                                               na_buffer->na_class) == 0) ||
-                    class_priority == NA_CLASS_PRIORITY_MAX) {
-                class_index = i;
+        if (verified) {
+            /* Take the first plugin that supports the protocol */
+            if (!na_info->class_name) {
+                plugin_found = NA_TRUE;
                 break;
-            } else {
-                if (class_priority > highest_priority) {
-                    highest_priority = class_priority;
-                    class_index = i;
-                }
+            }
+
+            /* Otherwise try to use the plugin name */
+            if (strcmp(na_class_info[plugin_index]->class_name,
+                    na_info->class_name) == 0) {
+                plugin_found = NA_TRUE;
+                break;
             }
         }
+        plugin_index++;
+    }
+
+    if (!plugin_found) {
+        NA_LOG_ERROR("No suitable plugin was found");
+        goto done;
     }
 
     /* Initialize lookup mutex */
     hg_thread_mutex_init(&na_addr_lookup_mutex_g);
 
-    na_class = na_class_methods[class_index]->initialize(na_buffer, listen);
+    na_class = na_class_info[plugin_index]->initialize(na_info, listen);
 
-    NA_free_host_buffer(na_buffer);
-
+done:
+    na_info_free(na_info);
     return na_class;
 }
 

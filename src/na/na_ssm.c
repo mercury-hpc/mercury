@@ -44,11 +44,11 @@
 
 /* Static NA SSM Class functions */
 static na_class_t*
-na_ssm_initialize(const struct na_host_buffer *in_host_buffer,
-                  na_bool_t                    in_listen);
+na_ssm_initialize(const struct na_info *in_info,
+                  na_bool_t             in_listen);
 
 static na_bool_t
-na_ssm_verify(const char *protocol);
+na_ssm_check_protocol(const char *protocol);
 
 static na_return_t
 na_ssm_finalize(na_class_t *in_na_class);
@@ -250,9 +250,9 @@ na_ssm_post_callback(void NA_UNUSED(*cbdat), void *evdat);
 /* Global variables */
 static const char na_ssm_name_g[] = "ssm";
 
-const struct na_class_describe na_ssm_describe_g = {
+const struct na_class_info na_ssm_info_g = {
     na_ssm_name_g,
-    na_ssm_verify,
+    na_ssm_check_protocol,
     na_ssm_initialize
 };
 
@@ -281,7 +281,7 @@ generate_unique_matchbits(na_class_t *in_na_class)
  * @return na_bool_t    NA_TRUE or NA_FALSE
  */
 static na_bool_t
-na_ssm_verify(const char *in_protocol)
+na_ssm_check_protocol(const char *in_protocol)
 {
     na_bool_t accept = NA_FALSE;
     
@@ -338,8 +338,8 @@ na_ssm_initialize_ssm_tp(struct na_class      *in_na_ssm_class,
  *                       na_ssm_class.
  */
 static na_class_t*
-na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
-                  na_bool_t                     in_listen)
+na_ssm_initialize(const struct na_info  *in_info,
+                  na_bool_t              in_listen)
 {
     na_return_t ret = NA_SUCCESS;
     na_class_t *ssm_class = NULL;
@@ -348,8 +348,8 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
     int cleanup_index = 0;
 
     NA_LOG_DEBUG("Initializing NA-SSM using %s on port %d in "
-                 "%d mode.\n", in_na_buffer->na_protocol,
-                 in_na_buffer->na_port, in_listen);
+                 "%d mode.\n", in_info->protocol_name,
+                 in_info->port, in_listen);
 
     ssm_class = malloc(sizeof(na_class_t));
     if (__unlikely(ssm_class == NULL))
@@ -399,8 +399,8 @@ na_ssm_initialize(const struct na_host_buffer  *in_na_buffer,
 
     /* Initialize SSM transport protocol */
     ret = na_ssm_initialize_ssm_tp(ssm_class,
-                                   in_na_buffer->na_protocol,
-                                   (in_listen) ? in_na_buffer->na_port : 0);
+                                   in_info->protocol_name,
+                                   (in_listen) ? in_info->port : 0);
 
     if (ret != NA_SUCCESS)
     {

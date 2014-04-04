@@ -262,15 +262,15 @@ na_mpi_gen_rma_tag(
 
 /* verify */
 static na_bool_t
-na_mpi_verify(
-        const char *protocol
+na_mpi_check_protocol(
+        const char *protocol_name
         );
 
 /* initialize */
 static na_class_t *
 na_mpi_initialize(
-        const struct na_host_buffer *na_buffer,
-        na_bool_t                    listen
+        const struct na_info *na_info,
+        na_bool_t listen
         );
 
 /* finalize */
@@ -561,9 +561,9 @@ static const na_class_t na_mpi_class_g = {
 
 static const char na_mpi_name_g[] = "mpi";
 
-const struct na_class_describe na_mpi_describe_g = {
+const struct na_class_info na_mpi_info_g = {
     na_mpi_name_g,
-    na_mpi_verify,
+    na_mpi_check_protocol,
     na_mpi_initialize
 };
 
@@ -952,14 +952,14 @@ na_mpi_gen_rma_tag(na_class_t *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_bool_t
-na_mpi_verify(const char NA_UNUSED *protocol)
+na_mpi_check_protocol(const char NA_UNUSED *protocol_name)
 {
     return NA_TRUE;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_class_t *
-na_mpi_initialize(const struct na_host_buffer NA_UNUSED *na_buffer,
+na_mpi_initialize(const struct na_info NA_UNUSED *na_info,
         na_bool_t listen)
 {
     int flags = (listen) ? MPI_INIT_SERVER : 0;

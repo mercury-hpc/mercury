@@ -22,21 +22,20 @@
     #define NA_UNUSED
 #endif
 
-/* Host string buffer */
-struct na_host_buffer {
-    char *na_class;          /* Class name (e.g., ssm, bmi, mpi) */
-    char *na_protocol;       /* Protocol (e.g., tcp, ib) */
-    char *na_host;           /* Host */
-    int   na_port;           /* Port for communication */
-    char *na_host_string;    /* Full request string sent by the user */
+/* NA info definition */
+struct na_info {
+    char *class_name;    /* Class name (e.g., ssm, bmi, mpi) */
+    char *protocol_name; /* Protocol (e.g., tcp, ib) */
+    char *host_name;     /* Host */
+    int   port;          /* Port for communication */
+    char *port_name;     /* Identifies the server and can be used by a client */
 };
 
 /* Class description */
-struct na_class_describe {
-    const char *class_name;
-    na_bool_t (*verify) (const char *protocol);
-    na_class_t *(*initialize) (const struct na_host_buffer *na_buffer,
-            na_bool_t listen);
+struct na_class_info {
+    const char *class_name; /* Class name (e.g., ssm, bmi, mpi) */
+    na_bool_t (*check_protocol)(const char *protocol_name);
+    na_class_t *(*initialize)(const struct na_info *na_info, na_bool_t listen);
 };
 
 /* Private callback type for NA plugins */

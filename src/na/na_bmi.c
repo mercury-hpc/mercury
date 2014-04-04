@@ -150,15 +150,15 @@ struct na_bmi_private_data {
 /********************/
 /* verify */
 static na_bool_t
-na_bmi_verify(
-        const char *protocol
+na_bmi_check_protocol(
+        const char *protocol_name
         );
 
 /* initialize */
 static na_class_t *
 na_bmi_initialize(
-        const struct na_host_buffer *na_buffer,
-        na_bool_t                    listen
+        const struct na_info *na_info,
+        na_bool_t             listen
         );
 
 /* finalize */
@@ -469,9 +469,9 @@ static const na_class_t na_bmi_class_g = {
 
 static const char na_bmi_name_g[] = "bmi";
 
-const struct na_class_describe na_bmi_describe_g  = {
+const struct na_class_info na_bmi_info_g  = {
     na_bmi_name_g,
-    na_bmi_verify,
+    na_bmi_check_protocol,
     na_bmi_initialize
 };
 
@@ -512,7 +512,7 @@ na_bmi_gen_rma_tag(na_class_t *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_bool_t
-na_bmi_verify(const char *protocol)
+na_bmi_check_protocol(const char *protocol_name)
 {
     na_bool_t accept         = NA_FALSE;
 
@@ -550,7 +550,7 @@ na_bmi_verify(const char *protocol)
 
     free(transport);
 #else
-    if (strcmp(protocol, "tcp") == 0) {
+    if (strcmp(protocol_name, "tcp") == 0) {
         accept = NA_TRUE;
     }
 #endif
@@ -560,7 +560,7 @@ na_bmi_verify(const char *protocol)
 
 /*---------------------------------------------------------------------------*/
 static na_class_t *
-na_bmi_initialize(const struct na_host_buffer *na_buffer, na_bool_t listen)
+na_bmi_initialize(const struct na_info *na_info, na_bool_t listen)
 {
     char *method_list = NULL;
     int flag;
@@ -569,24 +569,24 @@ na_bmi_initialize(const struct na_host_buffer *na_buffer, na_bool_t listen)
 
     flag = (listen) ? BMI_INIT_SERVER : 0;
 
-    method_list_len = strlen("bmi_") + strlen(na_buffer->na_protocol) + 1;
+    method_list_len = strlen("bmi_") + strlen(na_info->protocol_name) + 1;
     method_list = (char *) malloc(method_list_len);
     if (!method_list) {
         NA_LOG_ERROR("Could not allocate method_list");
-        return NULL;
+        goto done;
     }
 
     memset(method_list, '\0', method_list_len);
 
     strcpy(method_list, "bmi_");
-    strcat(method_list, na_buffer->na_protocol);
+    strcat(method_list, na_info->protocol_name);
 
     na_class = NA_BMI_Init((listen) ? method_list : NULL,
-            (listen) ? na_buffer->na_host_string : NULL,
-                    flag);
+            (listen) ? na_info->port_name : NULL, flag);
 
     free(method_list);
 
+done:
     return na_class;
 }
 

@@ -298,7 +298,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         /* Generate a port number depending on server rank */
         port_number += my_rank;
         gethostname(hostname, HG_TEST_MAX_ADDR_NAME);
-        sprintf(addr_name, "tcp://%s:%u", hostname, port_number);
+        sprintf(addr_name, "tcp@ssm://%s:%u", hostname, port_number);
 
         /* Gather addresses */
         HG_Test_set_config(addr_name);
