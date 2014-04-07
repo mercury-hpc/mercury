@@ -3,12 +3,15 @@
 #------------------------------------------------------------------------------
 set(MERCURY_TESTING_BUFFER_SIZE "16" CACHE STRING
   "Total buffer size (in MB) used for testing.")
+mark_as_advanced(MERCURY_TESTING_BUFFER_SIZE)
 
 set(MERCURY_TESTING_MAX_LOOP "1" CACHE STRING
   "Loop n times for average bandwidth/time measures.")
+mark_as_advanced(MERCURY_TESTING_MAX_LOOP)
 
 set(MERCURY_TESTING_NUM_THREADS "8" CACHE STRING
   "Number of server threads used for testing.")
+mark_as_advanced(MERCURY_TESTING_NUM_THREADS)
 
 option(MERCURY_ENABLE_PARALLEL_TESTING
   "Enable testing in parallel (requires MPI)." OFF)
@@ -22,6 +25,10 @@ if(MERCURY_ENABLE_PARALLEL_TESTING OR NA_USE_MPI)
 else()
   set(MERCURY_HAS_PARALLEL_TESTING 0)
 endif()
+
+set(MERCURY_TEST_INIT_COMMAND "" CACHE STRING
+  "Command to run before a client/server test begins. Multiple commands are separated by ';'.")
+mark_as_advanced(MERCURY_TEST_INIT_COMMAND)
 
 #------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
@@ -55,11 +62,14 @@ add_subdirectory(driver)
 #------------------------------------------------------------------------------
 # Set up test macros
 #------------------------------------------------------------------------------
+#
+# hg_prefix is added to executable
+#
 function(build_mercury_test test_name)
-  add_executable(${test_name} ${test_name}.c)
-  target_link_libraries(${test_name} mercury_test mercury)
+  add_executable(hg_${test_name} ${test_name}.c)
+  target_link_libraries(hg_${test_name} mercury_test mercury)
   if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(${test_name})
+    set_coverage_flags(hg_${test_name})
   endif()
 endfunction()
 
@@ -67,8 +77,8 @@ function(add_mercury_test full_test_name server client)
   foreach(comm ${NA_PLUGINS})
     add_test(NAME "${full_test_name}_${comm}"
       COMMAND $<TARGET_FILE:mercury_test_driver>
-      --server $<TARGET_FILE:${server}>
-      --client $<TARGET_FILE:${client}> ${comm}
+      --server $<TARGET_FILE:hg_${server}>
+      --client $<TARGET_FILE:hg_${client}> ${comm}
     )
   endforeach()
 endfunction()
@@ -77,19 +87,8 @@ function(add_mercury_opt_test full_test_name server client opt)
   foreach(comm ${NA_PLUGINS})
     add_test(NAME "${full_test_name}_${opt}_${comm}"
       COMMAND $<TARGET_FILE:mercury_test_driver>
-      --server $<TARGET_FILE:${server}>
-      --client $<TARGET_FILE:${client}> ${comm} ${opt}
-    )
-  endforeach()
-endfunction()
-
-function(add_mercury_static_test full_test_name server client)
-  foreach(comm ${NA_PLUGINS})
-    add_test(NAME "${full_test_name}_${comm}_static"
-      COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
-      ${MPIEXEC_PREFLAGS} $<TARGET_FILE:${server}>
-      ${H5FDdsm_TESTING_LENGTH} ${comm} "static" : ${MPIEXEC_NUMPROC_FLAG}
-      ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} $<TARGET_FILE:${client}> ${comm} "static"
+      --server $<TARGET_FILE:hg_${server}>
+      --client $<TARGET_FILE:hg_${client}> ${comm} ${opt}
     )
   endforeach()
 endfunction()
@@ -184,10 +183,3 @@ foreach(MERCURY_test ${MERCURY_opt_tests})
   add_mercury_opt_test(mercury_${MERCURY_test} server_${MERCURY_test}
     client_${MERCURY_test} "variable")
 endforeach()
-
-#if(NA_USE_MPI)
-#  foreach(MERCURY_test ${MERCURY_tests})
-#    add_mercury_static_test(mercury_${MERCURY_test}
-#      server_${MERCURY_test} client_${MERCURY_test})
-#  endforeach()
-#endif()

@@ -324,12 +324,30 @@ int ShipperTestDriver::OutputStringHasError(const char* pname, string& output)
   return 0;
 }
 //----------------------------------------------------------------------------
-#define VTK_CLEAN_PROCESSES \
+#define HG_CLEAN_PROCESSES \
   mercury_sysProcess_Delete(client); \
   mercury_sysProcess_Delete(server);
 //----------------------------------------------------------------------------
 int ShipperTestDriver::Main(int argc, char* argv[])
 {
+#ifdef MERCURY_TEST_INIT_COMMAND
+  // run user-specified commands before initialization.
+  // For example: "killall -9 rsh test;"
+  if(strlen(MERCURY_TEST_INIT_COMMAND) > 0)
+    {
+    std::vector<mercury_sys::String> commands = mercury_sys::SystemTools::SplitString(
+      MERCURY_TEST_INIT_COMMAND, ';');
+    for (unsigned int cc=0; cc < commands.size(); cc++)
+      {
+      std::string command = commands[cc];
+      if (command.size() > 0)
+        {
+        system(command.c_str());
+        }
+      }
+    }
+#endif
+
   this->CollectConfiguredOptions();
   if(!this->ProcessCommandLine(argc, argv))
     {
@@ -345,7 +363,7 @@ int ShipperTestDriver::Main(int argc, char* argv[])
     server = mercury_sysProcess_New();
     if(!server)
       {
-      VTK_CLEAN_PROCESSES;
+      HG_CLEAN_PROCESSES;
       cerr << "ShipperTestDriver: Cannot allocate mercury_sysProcess to run the server.\n";
       return 1;
       }
@@ -353,7 +371,7 @@ int ShipperTestDriver::Main(int argc, char* argv[])
   client = mercury_sysProcess_New();
   if(!client)
     {
-    VTK_CLEAN_PROCESSES;
+    HG_CLEAN_PROCESSES;
     cerr << "ShipperTestDriver: Cannot allocate mercury_sysProcess to run the client.\n";
     return 1;
     }
@@ -394,14 +412,14 @@ int ShipperTestDriver::Main(int argc, char* argv[])
       ServerStdOut, ServerStdErr))
     {
     cerr << "ShipperTestDriver: Server never started.\n";
-    VTK_CLEAN_PROCESSES;
+    HG_CLEAN_PROCESSES;
     return -1;
     }
   // Now run the client
   if(!this->StartClient(client, "client"))
     {
     this->Stop(server, "server");
-    VTK_CLEAN_PROCESSES;
+    HG_CLEAN_PROCESSES;
     return -1;
     }
 
@@ -453,7 +471,7 @@ int ShipperTestDriver::Main(int argc, char* argv[])
     }
 
   // Free process managers.
-  VTK_CLEAN_PROCESSES;
+  HG_CLEAN_PROCESSES;
 
   // Report the server return code if it is nonzero.  Otherwise report
   // the client return code.
@@ -468,7 +486,7 @@ int ShipperTestDriver::Main(int argc, char* argv[])
          << mpiError << "\n";
     return mpiError;
     }
-  // if both servers are fine return the client result
+  // if server is fine return the client result
   return clientResult;
 }
 

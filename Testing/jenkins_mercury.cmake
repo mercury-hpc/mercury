@@ -82,6 +82,8 @@ SSM_LIBRARY:FILEPATH=$ENV{WORKSPACE}/.install/lib/libssm.a
 SSM_PTCP_LIBRARY:FILEPATH=$ENV{WORKSPACE}/.install/lib/libssmptcp.a
 SSM_PTCP_INCLUDE_DIR:PATH=$ENV{WORKSPACE}/.install/include
 MPIEXEC_MAX_NUMPROCS:STRING=4
+
+MERCURY_TEST_INIT_COMMAND:STRING=killall -9 -r hg_client;killall -9 -r hg_server;
 ")
 
 set(dashboard_git_url $ENV{GIT_URL})

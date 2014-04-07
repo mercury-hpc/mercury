@@ -1,12 +1,16 @@
 #------------------------------------------------------------------------------
 # Mercury util tests
+#------------------------------------------------------------------------------
+#
+# hg_prefix is added to executable
+#
 function(add_mercury_test_util test_name)
-  add_executable(test_${test_name} test_${test_name}.c)
-  target_link_libraries(test_${test_name} mercury_test)
+  add_executable(hg_test_${test_name} test_${test_name}.c)
+  target_link_libraries(hg_test_${test_name} mercury_test)
   if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(test_${test_name})
+    set_coverage_flags(hg_test_${test_name})
   endif()
-  add_test(NAME ${test_name} COMMAND $<TARGET_FILE:test_${test_name}>)
+  add_test(NAME ${test_name} COMMAND $<TARGET_FILE:hg_test_${test_name}>)
 endfunction()
 
 #------------------------------------------------------------------------------
