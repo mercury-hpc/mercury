@@ -1498,14 +1498,17 @@ na_mpi_addr_free(na_class_t *na_class, na_addr_t addr)
         return ret;
     }
 
-    /* Remove addr from list of addresses */
-    ret = na_mpi_remote_list_remove(na_class, na_mpi_addr);
-    if (ret != NA_SUCCESS) goto done;
+    if (na_mpi_addr->self) {
+        free(na_mpi_addr);
+    } else {
+        /* Remove addr from list of addresses */
+        ret = na_mpi_remote_list_remove(na_class, na_mpi_addr);
+        if (ret != NA_SUCCESS) goto done;
 
-    /* Free addr */
-    ret = na_mpi_disconnect(na_class, na_mpi_addr);
-    if (ret != NA_SUCCESS) goto done;
-    na_mpi_addr = NULL;
+        /* Free addr */
+        ret = na_mpi_disconnect(na_class, na_mpi_addr);
+        if (ret != NA_SUCCESS) goto done;
+    }
 
  done:
     return ret;
@@ -1528,7 +1531,7 @@ na_mpi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
     struct na_mpi_addr *mpi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    mpi_addr = (struct na_mpi_addr*) addr;
+    mpi_addr = (struct na_mpi_addr *) addr;
 
     if (strlen(mpi_addr->port_name) > buf_size) {
         NA_LOG_ERROR("Buffer size too small to copy addr");
