@@ -27,20 +27,23 @@
 /* Default error macro */
 #ifdef HG_HAS_VERBOSE_ERROR
   #include <stdio.h>
-  #define HG_LOG_ERROR(...) do {                              \
-      fprintf(stderr, "%s:%d: ERROR: ", __func__, __LINE__);  \
-      fprintf(stderr, __VA_ARGS__);                           \
-      fprintf(stderr, "\n");                                  \
+  #define HG_LOG_ERROR(...) do {                                   \
+      fprintf(stderr, "HG: Error in %s:%d\n", __FILE__, __LINE__); \
+      fprintf(stderr, " # %s(): ", __func__);                      \
+      fprintf(stderr, __VA_ARGS__);                                \
+      fprintf(stderr, "\n");                                       \
   } while (0)
-  #define HG_LOG_DEBUG(...) do {                       \
-      fprintf(stdout, "%s:%d: ", __func__, __LINE__);  \
-      fprintf(stdout, __VA_ARGS__);                    \
-      fprintf(stdout, "\n");                           \
+  #define HG_LOG_DEBUG(...) do {                             \
+      fprintf(stdout, "HG: in %s:%d\n", __FILE__, __LINE__); \
+      fprintf(stdout, " # %s(): ", __func__);                \
+      fprintf(stdout, __VA_ARGS__);                          \
+      fprintf(stdout, "\n");                                 \
   } while (0)
-  #define HG_LOG_WARNING(...) do {                              \
-      fprintf(stdout, "%s:%d: WARNING: ", __func__, __LINE__);  \
-      fprintf(stdout, __VA_ARGS__);                             \
-      fprintf(stdout, "\n");                                    \
+  #define HG_LOG_WARNING(...) do {                                   \
+      fprintf(stdout, "HG: Warning in %s:%d\n", __FILE__, __LINE__); \
+      fprintf(stdout, " # %s(): ", __func__);                        \
+      fprintf(stdout, __VA_ARGS__);                                  \
+      fprintf(stdout, "\n");                                         \
   } while (0)
 #else
   #define HG_LOG_ERROR
