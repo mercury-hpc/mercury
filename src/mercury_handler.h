@@ -30,6 +30,8 @@ HG_Handler_process(unsigned int timeout, hg_status_t *status);
 
 /**
  * Get abstract network address of remote caller from RPC handle.
+ * The address gets freed when HG_Handler_free is called. Users
+ * must call NA_Addr_dup to be able to safely re-use the address.
  *
  * \param handle [IN]           abstract RPC handle
  *

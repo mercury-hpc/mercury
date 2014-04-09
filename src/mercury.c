@@ -96,7 +96,16 @@ hg_request_trigger_func(unsigned int timeout, unsigned int *flag, void *arg);
  * Send RPC request.
  */
 static hg_return_t
-hg_send_input(struct hg_handle *hg_handle);
+hg_forward_base(struct hg_handle *hg_handle);
+
+extern hg_return_t
+hg_handler_init(void);
+
+extern hg_return_t
+hg_handler_finalize(void);
+
+extern hg_return_t
+hg_handler_start_processing(struct hg_handle *hg_handle);
 
 /*******************/
 /* Local Variables */
@@ -180,8 +189,8 @@ hg_get_input_buf(struct hg_handle *hg_handle, void **in_buf,
         goto done;
     }
 
-    user_input_buf = hg_handle->send_buf;
-    user_input_buf_size = hg_handle->send_buf_size;
+    user_input_buf = hg_handle->in_buf;
+    user_input_buf_size = hg_handle->in_buf_size;
     header_offset = hg_proc_header_request_get_size();
 
     /* Space left for request header */
@@ -208,8 +217,8 @@ hg_get_output_buf(struct hg_handle *hg_handle, void **out_buf,
         goto done;
     }
 
-    user_output_buf = hg_handle->recv_buf;
-    user_output_buf_size = hg_handle->recv_buf_size;
+    user_output_buf = hg_handle->out_buf;
+    user_output_buf_size = hg_handle->out_buf_size;
     header_offset = hg_proc_header_response_get_size();
 
     /* Space must be left for request header */
@@ -254,7 +263,7 @@ hg_set_input(struct hg_handle *hg_handle, void *in_struct)
         goto done;
     }
 
-    if (!hg_info->input_proc_cb) goto done;
+    if (!hg_info->in_proc_cb) goto done;
 
     /* Create a new encoding proc */
     ret = hg_proc_create(in_buf, in_buf_size, HG_ENCODE, HG_CRC64, &proc);
@@ -264,7 +273,7 @@ hg_set_input(struct hg_handle *hg_handle, void *in_struct)
     }
 
     /* Encode input parameters */
-    ret = hg_info->input_proc_cb(proc, in_struct);
+    ret = hg_info->in_proc_cb(proc, in_struct);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not encode parameters");
         goto done;
@@ -275,17 +284,17 @@ hg_set_input(struct hg_handle *hg_handle, void *in_struct)
      *  - 1: send an unexpected message with info + eventual bulk data descriptor
      *  - 2: send the remaining data in extra buf using bulk data transfer
      */
-    if (hg_proc_get_size(proc) > hg_handle->send_buf_size) {
+    if (hg_proc_get_size(proc) > hg_handle->in_buf_size) {
 #ifdef HG_HAS_XDR
         HG_ERROR_DEFAULT("Extra encoding using XDR is not yet supported");
         ret = HG_FAIL;
         goto done;
 #else
-        hg_handle->extra_send_buf = hg_proc_get_extra_buf(proc);
-        hg_handle->extra_send_buf_size = hg_proc_get_extra_size(proc);
-        ret = HG_Bulk_handle_create(hg_handle->extra_send_buf,
-                hg_handle->extra_send_buf_size, HG_BULK_READ_ONLY,
-                &hg_handle->extra_send_buf_handle);
+        hg_handle->extra_in_buf = hg_proc_get_extra_buf(proc);
+        hg_handle->extra_in_buf_size = hg_proc_get_extra_size(proc);
+        ret = HG_Bulk_handle_create(hg_handle->extra_in_buf,
+                hg_handle->extra_in_buf_size, HG_BULK_READ_ONLY,
+                &hg_handle->extra_in_handle);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not create bulk data handle");
             goto done;
@@ -340,7 +349,7 @@ hg_get_output(struct hg_handle *hg_handle, void *out_struct)
         goto done;
     }
 
-    if (!hg_info->output_proc_cb) goto done;
+    if (!hg_info->out_proc_cb) goto done;
 
     /* Create a new encoding proc */
     ret = hg_proc_create(out_buf, out_buf_size, HG_DECODE, HG_CRC64, &proc);
@@ -350,7 +359,7 @@ hg_get_output(struct hg_handle *hg_handle, void *out_struct)
     }
 
     /* Decode output parameters */
-    ret = hg_info->output_proc_cb(proc, out_struct);
+    ret = hg_info->out_proc_cb(proc, out_struct);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not decode parameters");
         goto done;
@@ -393,7 +402,7 @@ hg_free_output(struct hg_handle *hg_handle, void *out_struct)
         goto done;
     }
 
-    if (!hg_info->output_proc_cb) goto done;
+    if (!hg_info->out_proc_cb) goto done;
 
     /* Create a new free proc */
     ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, &proc);
@@ -403,7 +412,7 @@ hg_free_output(struct hg_handle *hg_handle, void *out_struct)
     }
 
     /* Free memory allocated during output decoding */
-    ret = hg_info->output_proc_cb(proc, hg_handle->out_struct);
+    ret = hg_info->out_proc_cb(proc, out_struct);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not free allocated parameters");
         goto done;
@@ -426,12 +435,12 @@ hg_send_input_cb(const struct na_cb_info *callback_info)
     }
 
     /* Everything has been sent so free unused resources except extra buffer */
-    if (hg_handle->send_buf) hg_proc_buf_free(hg_handle->send_buf);
-    hg_handle->send_buf = NULL;
-    hg_handle->send_buf_size = 0;
+    hg_proc_buf_free(hg_handle->in_buf);
+    hg_handle->in_buf = NULL;
+    hg_handle->in_buf_size = 0;
 
     /* Mark request as completed */
-    hg_request_complete(hg_handle->send_request);
+    hg_request_complete(hg_handle->in_request);
 
     return ret;
 }
@@ -450,16 +459,16 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
     }
 
     /* Now we can free the extra send buf now since we received the response */
-    if (hg_handle->extra_send_buf) free(hg_handle->extra_send_buf);
-    hg_handle->extra_send_buf = NULL;
-    hg_handle->extra_send_buf_size = 0;
-    if (hg_handle->extra_send_buf_handle != HG_BULK_NULL)
-        HG_Bulk_handle_free(hg_handle->extra_send_buf_handle);
-    hg_handle->extra_send_buf_handle = HG_BULK_NULL;
+    if (hg_handle->extra_in_buf) free(hg_handle->extra_in_buf);
+    hg_handle->extra_in_buf = NULL;
+    hg_handle->extra_in_buf_size = 0;
+    if (hg_handle->extra_in_handle != HG_BULK_NULL)
+        HG_Bulk_handle_free(hg_handle->extra_in_handle);
+    hg_handle->extra_in_handle = HG_BULK_NULL;
 
     /* Decode response header */
-    ret = hg_proc_header_response(hg_handle->recv_buf,
-            hg_handle->recv_buf_size, &response_header, HG_DECODE);
+    ret = hg_proc_header_response(hg_handle->out_buf,
+            hg_handle->out_buf_size, &response_header, HG_DECODE);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not decode header");
         goto done;
@@ -473,19 +482,19 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
     }
 
     /* Decode the function output parameters */
-    ret = hg_get_output(hg_handle, hg_handle->out_struct);
+    ret = hg_get_output(hg_handle, hg_handle->out_struct_ptr);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not get output");
         goto done;
     }
 
     /* Everything has been decoded so free unused resources */
-    if (hg_handle->recv_buf) hg_proc_buf_free(hg_handle->recv_buf);
-    hg_handle->recv_buf = NULL;
-    hg_handle->recv_buf_size = 0;
+    hg_proc_buf_free(hg_handle->out_buf);
+    hg_handle->out_buf = NULL;
+    hg_handle->out_buf_size = 0;
 
     /* Mark request as completed */
-    hg_request_complete(hg_handle->recv_request);
+    hg_request_complete(hg_handle->out_request);
 
 done:
     return na_ret;
@@ -527,101 +536,37 @@ hg_request_trigger_func(unsigned int timeout, unsigned int *flag, void *arg)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_send_input(struct hg_handle *hg_handle)
+hg_forward_base(struct hg_handle *hg_handle)
 {
-    struct hg_header_request request_header;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    /* Send Buffer */
-    hg_handle->send_buf_size = NA_Msg_get_max_unexpected_size(hg_na_class_g);
-    hg_handle->send_buf = hg_proc_buf_alloc(hg_handle->send_buf_size);
-    if (!hg_handle->send_buf) {
-        HG_ERROR_DEFAULT("Could not allocate send buffer");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    /* Recv Buffer */
-    hg_handle->recv_buf_size = NA_Msg_get_max_expected_size(hg_na_class_g);
-    hg_handle->recv_buf = hg_proc_buf_alloc(hg_handle->recv_buf_size);
-    if (!hg_handle->recv_buf) {
-        HG_ERROR_DEFAULT("Could not allocate send buffer");
-        ret = HG_FAIL;
-        goto done;
-    }
+    /* Generate tag */
+    hg_handle->tag = hg_gen_request_tag();
 
     /* Create two requests for the send/recv operations */
-    hg_handle->send_request = hg_request_create(hg_request_class_g);
-    hg_handle->recv_request = hg_request_create(hg_request_class_g);
+    hg_handle->in_request = hg_request_create(hg_request_class_g);
+    hg_handle->out_request = hg_request_create(hg_request_class_g);
 
-    /* Encode the function parameters */
-    ret = hg_set_input(hg_handle, hg_handle->in_struct);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not set input");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    /* Set header */
-    hg_proc_header_request_init(hg_handle->id,
-            hg_handle->extra_send_buf_handle,
-            &request_header);
-
-    /* Encode request header */
-    ret = hg_proc_header_request(hg_handle->send_buf,
-            hg_handle->send_buf_size, &request_header, HG_ENCODE);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not encode header");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    /* Post the send message (input) and pre-post the recv message (output) */
+    /* Pre-post the recv message (output) */
     na_ret = NA_Msg_recv_expected(hg_na_class_g, hg_context_g,
-            &hg_recv_output_cb, hg_handle, hg_handle->recv_buf,
-            hg_handle->recv_buf_size, hg_handle->addr, hg_handle->tag,
+            hg_recv_output_cb, hg_handle, hg_handle->out_buf,
+            hg_handle->out_buf_size, hg_handle->addr, hg_handle->tag,
             NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not pre-post buffer");
+        HG_ERROR_DEFAULT("Could not pre-post recv for output buffer");
         ret = HG_FAIL;
         goto done;
     }
 
+    /* And post the send message (input) */
     na_ret = NA_Msg_send_unexpected(hg_na_class_g, hg_context_g,
-            &hg_send_input_cb, hg_handle, hg_handle->send_buf,
-            hg_handle->send_buf_size, hg_handle->addr, hg_handle->tag,
+            hg_send_input_cb, hg_handle, hg_handle->in_buf,
+            hg_handle->in_buf_size, hg_handle->addr, hg_handle->tag,
             NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not send buffer");
+        HG_ERROR_DEFAULT("Could not post send for input buffer");
         ret = HG_FAIL;
-        goto done;
-    }
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_return_t
-hg_execute(struct hg_handle *hg_handle)
-{
-    struct hg_info *hg_info;
-    hg_return_t ret = HG_SUCCESS;
-
-    /* Retrieve exe function from function map */
-    hg_info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
-            (hg_hash_table_key_t) &hg_handle->id);
-    if (!hg_info) {
-        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    /* Execute function and fill output parameters */
-    ret = hg_info->rpc_cb((hg_handle_t) hg_handle);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Error while executing RPC callback");
         goto done;
     }
 
@@ -788,10 +733,9 @@ HG_Initialized(hg_bool_t *flag, na_class_t **na_class)
 }
 
 /*---------------------------------------------------------------------------*/
-/* TODO add sizeof here ? */
 hg_id_t
-HG_Register(const char *func_name, hg_proc_cb_t input_proc_cb,
-        hg_proc_cb_t output_proc_cb)
+HG_Register(const char *func_name, hg_proc_cb_t in_proc_cb,
+        hg_proc_cb_t out_proc_cb)
 {
     hg_id_t ret = 0;
     hg_id_t *id = NULL;
@@ -818,8 +762,9 @@ HG_Register(const char *func_name, hg_proc_cb_t input_proc_cb,
         goto done;
     }
 
-    hg_info->input_proc_cb = input_proc_cb;
-    hg_info->output_proc_cb = output_proc_cb;
+    hg_info->in_proc_cb = in_proc_cb;
+    hg_info->out_proc_cb = out_proc_cb;
+    hg_info->rpc_cb = NULL;
     if (!hg_hash_table_insert(hg_func_map_g, (hg_hash_table_key_t) id, hg_info)) {
         HG_ERROR_DEFAULT("Could not insert func ID");
         goto done;
@@ -891,9 +836,9 @@ hg_return_t
 HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
         hg_request_t *request)
 {
-    hg_return_t ret = HG_SUCCESS;
     struct hg_handle *hg_handle = NULL;
-    hg_return_t (*hg_forward)(struct hg_handle *) = NULL;
+    struct hg_header_request request_header;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!hg_na_class_g) {
         HG_ERROR_DEFAULT("Mercury must be initialized");
@@ -912,33 +857,66 @@ HG_Forward(na_addr_t addr, hg_id_t id, void *in_struct, void *out_struct,
     hg_handle->id = id;
     /* TODO add cookie hg_handle->cookie = xx */
     hg_handle->addr = addr;
-    hg_handle->tag = hg_gen_request_tag();
+    hg_handle->local = NA_Addr_is_self(hg_na_class_g, addr);
 
-    /* Keep pointer to structs */
-    hg_handle->in_struct = in_struct;
-    hg_handle->out_struct = out_struct;
+    /* Keep pointer to output struct */
+    hg_handle->out_struct_ptr = out_struct;
 
-    hg_handle->local = NA_Addr_is_self(hg_na_class_g, hg_handle->addr);
-    hg_forward = hg_handle->local ? hg_execute : hg_send_input;
-    ret = hg_forward(hg_handle);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not forward call");
+    /* Input Buffer */
+    hg_handle->in_buf_size = NA_Msg_get_max_unexpected_size(hg_na_class_g);
+    hg_handle->in_buf = hg_proc_buf_alloc(hg_handle->in_buf_size);
+    if (!hg_handle->in_buf) {
+        HG_ERROR_DEFAULT("Could not allocate buffer for input");
+        ret = HG_FAIL;
         goto done;
+    }
+
+    /* Output Buffer */
+    hg_handle->out_buf_size = NA_Msg_get_max_expected_size(hg_na_class_g);
+    hg_handle->out_buf = hg_proc_buf_alloc(hg_handle->out_buf_size);
+    if (!hg_handle->out_buf) {
+        HG_ERROR_DEFAULT("Could not allocate send buffer");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    /* Encode the function parameters */
+    ret = hg_set_input(hg_handle, in_struct);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not set input");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    /* Set header */
+    hg_proc_header_request_init(hg_handle->id, hg_handle->extra_in_handle,
+            &request_header);
+
+    /* Encode request header */
+    ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
+            &request_header, HG_ENCODE);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not encode header");
+        ret = HG_FAIL;
+        goto done;
+    }
+
+    /* Forward call */
+    if (hg_handle->local) {
+        ret = hg_handler_start_processing(hg_handle);
+    } else {
+        ret = hg_forward_base(hg_handle);
+        if (ret != HG_SUCCESS) {
+            HG_ERROR_DEFAULT("Could not forward call");
+            goto done;
+        }
     }
 
     *request = (hg_request_t) hg_handle;
 
 done:
-    /* TODO clean that */
     if (ret != HG_SUCCESS) {
-        if (hg_handle) {
-//            free(hg_handle->send_buf);
-//            free(hg_handle->recv_buf);
-//            free(hg_handle->extra_send_buf);
-//            HG_Bulk_handle_free(hg_handle->extra_send_buf_handle);
-//            hg_handle->extra_send_buf_handle = HG_BULK_NULL;
-//            free(hg_handle);
-        }
+        hg_handle_free(hg_handle);
      }
      return ret;
 }
@@ -982,13 +960,13 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         goto done;
     }
 
-    if (hg_handle->send_request) {
+    if (hg_handle->in_request) {
         hg_time_t t1, t2;
         unsigned int flag;
 
         hg_time_get_current(&t1);
 
-        if (hg_request_wait(hg_handle->send_request, timeout, &flag) !=
+        if (hg_request_wait(hg_handle->in_request, timeout, &flag) !=
                 HG_UTIL_SUCCESS) {
             HG_ERROR_DEFAULT("Could not wait on send_request");
             ret = HG_FAIL;
@@ -1001,15 +979,15 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
             remaining = 0;
 
         if (flag) {
-            hg_request_destroy(hg_handle->send_request);
-            hg_handle->send_request = NULL;
+            hg_request_destroy(hg_handle->in_request);
+            hg_handle->in_request = NULL;
         }
     }
 
-    if (hg_handle->recv_request) {
+    if (hg_handle->out_request) {
         unsigned int flag;
 
-        if (hg_request_wait(hg_handle->recv_request,
+        if (hg_request_wait(hg_handle->out_request,
                 (unsigned int) (remaining * 1000), &flag) != HG_UTIL_SUCCESS) {
             HG_ERROR_DEFAULT("Could not wait on send_request");
             ret = HG_FAIL;
@@ -1017,12 +995,12 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         }
 
         if (flag) {
-            hg_request_destroy(hg_handle->recv_request);
-            hg_handle->recv_request = NULL;
+            hg_request_destroy(hg_handle->out_request);
+            hg_handle->out_request = NULL;
         }
     }
     /* When both are NULL, it's completed */
-    completed = (!hg_handle->send_request && !hg_handle->recv_request);
+    completed = (!hg_handle->in_request && !hg_handle->out_request);
 
 done:
     if (status && (status != HG_STATUS_IGNORE) && hg_handle) {
@@ -1073,23 +1051,22 @@ HG_Request_free(hg_request_t request)
         goto done;
     }
 
-    if (hg_handle->send_request || hg_handle->recv_request) {
+    if (hg_handle->in_request || hg_handle->out_request) {
         HG_ERROR_DEFAULT("Trying to free an uncompleted request");
         ret = HG_FAIL;
         goto done;
     }
 
     if (!hg_handle->local) {
-        ret = hg_free_output(hg_handle, hg_handle->out_struct);
+        ret = hg_free_output(hg_handle, hg_handle->out_struct_ptr);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not free output");
             goto done;
         }
     }
 
-    /* TODO call handle_free */
     /* Free request */
-    free(hg_handle);
+    hg_handle_free(hg_handle);
     hg_handle = NULL;
 
 done:

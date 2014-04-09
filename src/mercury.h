@@ -66,14 +66,14 @@ HG_Initialized(hg_bool_t *flag, na_class_t **na_class);
  * Register a function name that can be sent by RPC layer.
  *
  * \param func_name [IN]        unique name associated to function
- * \param enc_routine [IN]      pointer to serializing routine
- * \param dec_routine [IN]      pointer to deserializing routine
+ * \param in_proc_cb [IN]       pointer to input proc routine
+ * \param out_proc_cb [IN]      pointer to output proc routine
  *
  * \return unique ID associated to the registered function
  */
 HG_EXPORT hg_id_t
-HG_Register(const char *func_name, hg_proc_cb_t input_proc_cb,
-        hg_proc_cb_t output_proc_cb);
+HG_Register(const char *func_name, hg_proc_cb_t in_proc_cb,
+        hg_proc_cb_t out_proc_cb);
 
 /**
  * Register a RPC callback that gets executed when the RPC request is received.

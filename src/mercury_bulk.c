@@ -11,9 +11,6 @@
 #include "mercury_bulk.h"
 #include "mercury_error.h"
 
-/* TODO see if we can avoid to have to include that header */
-#include "na_private.h"
-
 #include "mercury_request.h"
 #include "mercury_atomic.h"
 

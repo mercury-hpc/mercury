@@ -6,10 +6,14 @@
  */
 
 #include "mercury_private.h"
+#include "mercury_proc.h"
 
 #include "mercury_error.h"
 
 #include <stdlib.h>
+
+/* Pointer to NA class */
+extern na_class_t *hg_na_class_g;
 
 /*---------------------------------------------------------------------------*/
 struct hg_handle *
@@ -28,21 +32,20 @@ hg_handle_new(void)
     hg_handle->addr = NA_ADDR_NULL;
     hg_handle->tag = 0;
 
-    hg_handle->send_buf = NULL;
-    hg_handle->send_buf_size = 0;
-    hg_handle->extra_send_buf = NULL;
-    hg_handle->extra_send_buf_size = 0;
-    hg_handle->extra_send_buf_handle = HG_BULK_NULL;
-    hg_handle->send_request = NULL;
+    hg_handle->in_buf = NULL;
+    hg_handle->in_buf_size = 0;
+    hg_handle->extra_in_buf = NULL;
+    hg_handle->extra_in_buf_size = 0;
+    hg_handle->extra_in_handle = HG_BULK_NULL;
+    hg_handle->in_request = NULL;
 
-    hg_handle->recv_buf = NULL;
-    hg_handle->recv_buf_size = 0;
-    hg_handle->extra_recv_buf = NULL;
-    hg_handle->extra_recv_buf_size = 0;
-    hg_handle->recv_request = NULL;
+    hg_handle->out_buf = NULL;
+    hg_handle->out_buf_size = 0;
+    hg_handle->extra_out_buf = NULL;
+    hg_handle->extra_out_buf_size = 0;
+    hg_handle->out_request = NULL;
 
-    hg_handle->in_struct = NULL;
-    hg_handle->out_struct = NULL;
+    hg_handle->out_struct_ptr = NULL;
 
     hg_handle->processing_entry = NULL;
 
@@ -52,4 +55,25 @@ hg_handle_new(void)
     hg_thread_cond_init(&hg_handle->processed_cond);
 done:
     return hg_handle;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_handle_free(struct hg_handle *hg_handle)
+{
+    if (!hg_handle) return;
+
+    if (hg_handle->addr != NA_ADDR_NULL && !hg_handle->local)
+        NA_Addr_free(hg_na_class_g, hg_handle->addr);
+
+    hg_proc_buf_free(hg_handle->in_buf);
+    hg_proc_buf_free(hg_handle->extra_in_buf);
+
+    hg_proc_buf_free(hg_handle->out_buf);
+    hg_proc_buf_free(hg_handle->extra_out_buf);
+
+    hg_thread_mutex_destroy(&hg_handle->processed_mutex);
+    hg_thread_cond_destroy(&hg_handle->processed_cond);
+
+    free(hg_handle);
 }
