@@ -385,8 +385,9 @@ hg_handler_start_processing(struct hg_handle *hg_handle)
     /* Get cookie from header */
     hg_handle->cookie = request_header.cookie;
 
-    /* Get extra payload if necessary */
-    if (request_header.flags &&
+    /* Get extra payload if necessary (skip that step if local as the data is
+     * already associated to the handle) */
+    if (!hg_handle->local && request_header.flags &&
             (request_header.extra_buf_handle != HG_BULK_NULL)) {
         /* This will make the extra_buf the recv_buf associated to the handle */
         ret = hg_handler_get_extra_input_buf(hg_handle,
@@ -987,14 +988,12 @@ HG_Handler_start_response(hg_handle_t handle, void *extra_out_buf,
     }
 
     if (hg_handle->local) {
-
         /* Mark handle as completed */
         ret = hg_handler_complete(hg_handle);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not complete handle");
             goto done;
         }
-
         /**
          * In the case of coresident stack signal the waiting thread that
          * the call has been processed

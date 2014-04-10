@@ -98,6 +98,12 @@ hg_request_trigger_func(unsigned int timeout, unsigned int *flag, void *arg);
 static hg_return_t
 hg_forward_base(struct hg_handle *hg_handle);
 
+/**
+ * Complete RPC request.
+ */
+static hg_return_t
+hg_complete(struct hg_handle *hg_handle);
+
 extern hg_return_t
 hg_handler_init(void);
 
@@ -434,11 +440,6 @@ hg_send_input_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
-    /* Everything has been sent so free unused resources except extra buffer */
-    hg_proc_buf_free(hg_handle->in_buf);
-    hg_handle->in_buf = NULL;
-    hg_handle->in_buf_size = 0;
-
     /* Mark request as completed */
     hg_request_complete(hg_handle->in_request);
 
@@ -450,48 +451,11 @@ static na_return_t
 hg_recv_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
-    struct hg_header_response response_header;
-    hg_return_t ret = HG_SUCCESS; /* TODO embed ret into hg_handle */
     na_return_t na_ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
         goto done;
     }
-
-    /* Now we can free the extra send buf now since we received the response */
-    if (hg_handle->extra_in_buf) free(hg_handle->extra_in_buf);
-    hg_handle->extra_in_buf = NULL;
-    hg_handle->extra_in_buf_size = 0;
-    if (hg_handle->extra_in_handle != HG_BULK_NULL)
-        HG_Bulk_handle_free(hg_handle->extra_in_handle);
-    hg_handle->extra_in_handle = HG_BULK_NULL;
-
-    /* Decode response header */
-    ret = hg_proc_header_response(hg_handle->out_buf,
-            hg_handle->out_buf_size, &response_header, HG_DECODE);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not decode header");
-        goto done;
-    }
-
-    /* Verify header */
-    ret = hg_proc_header_response_verify(response_header);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not verify header");
-        goto done;
-    }
-
-    /* Decode the function output parameters */
-    ret = hg_get_output(hg_handle, hg_handle->out_struct_ptr);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not get output");
-        goto done;
-    }
-
-    /* Everything has been decoded so free unused resources */
-    hg_proc_buf_free(hg_handle->out_buf);
-    hg_handle->out_buf = NULL;
-    hg_handle->out_buf_size = 0;
 
     /* Mark request as completed */
     hg_request_complete(hg_handle->out_request);
@@ -567,6 +531,39 @@ hg_forward_base(struct hg_handle *hg_handle)
     if (na_ret != NA_SUCCESS) {
         HG_ERROR_DEFAULT("Could not post send for input buffer");
         ret = HG_FAIL;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_complete(struct hg_handle *hg_handle)
+{
+    struct hg_header_response response_header;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Decode response header */
+    ret = hg_proc_header_response(hg_handle->out_buf,
+            hg_handle->out_buf_size, &response_header, HG_DECODE);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not decode header");
+        goto done;
+    }
+
+    /* Verify header */
+    ret = hg_proc_header_response_verify(response_header);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not verify header");
+        goto done;
+    }
+
+    /* Decode the function output parameters */
+    ret = hg_get_output(hg_handle, hg_handle->out_struct_ptr);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not get output");
         goto done;
     }
 
@@ -1002,6 +999,9 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
     /* When both are NULL, it's completed */
     completed = (!hg_handle->in_request && !hg_handle->out_request);
 
+    if (completed)
+        ret = hg_complete(hg_handle);
+
 done:
     if (status && (status != HG_STATUS_IGNORE) && hg_handle) {
         *status = (hg_status_t) completed;
@@ -1066,6 +1066,7 @@ HG_Request_free(hg_request_t request)
     }
 
     /* Free request */
+    hg_handle->addr = NA_ADDR_NULL; /* Do not free addr TODO Refcount */
     hg_handle_free(hg_handle);
     hg_handle = NULL;
 

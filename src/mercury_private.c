@@ -53,6 +53,7 @@ hg_handle_new(void)
     hg_handle->processed = HG_FALSE;
     hg_thread_mutex_init(&hg_handle->processed_mutex);
     hg_thread_cond_init(&hg_handle->processed_cond);
+
 done:
     return hg_handle;
 }
@@ -67,10 +68,11 @@ hg_handle_free(struct hg_handle *hg_handle)
         NA_Addr_free(hg_na_class_g, hg_handle->addr);
 
     hg_proc_buf_free(hg_handle->in_buf);
-    hg_proc_buf_free(hg_handle->extra_in_buf);
+    free(hg_handle->extra_in_buf);
+    HG_Bulk_handle_free(hg_handle->extra_in_handle);
 
     hg_proc_buf_free(hg_handle->out_buf);
-    hg_proc_buf_free(hg_handle->extra_out_buf);
+    free(hg_handle->extra_out_buf);
 
     hg_thread_mutex_destroy(&hg_handle->processed_mutex);
     hg_thread_cond_destroy(&hg_handle->processed_cond);
