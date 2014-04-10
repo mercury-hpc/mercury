@@ -999,10 +999,9 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
     /* When both are NULL, it's completed */
     completed = (!hg_handle->in_request && !hg_handle->out_request);
 
-    if (completed)
-        ret = hg_complete(hg_handle);
-
 done:
+    /* If completed, deserialize output etc */
+    if (completed) ret = hg_complete(hg_handle);
     if (status && (status != HG_STATUS_IGNORE) && hg_handle) {
         *status = (hg_status_t) completed;
     }
