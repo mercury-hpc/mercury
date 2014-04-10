@@ -48,7 +48,7 @@ HG_EXPORT hg_return_t
 HG_Bulk_initialized(hg_bool_t *flag, na_class_t **na_class);
 
 /**
- * Create abstract bulk handle from buffer (register memory, etc).
+ * Create abstract bulk handle from buffer.
  *
  * \param buf [IN]              buffer
  * \param buf_size [IN]         buffer size
@@ -164,6 +164,7 @@ HG_Bulk_write(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
 /**
  * Write data to address using abstract bulk and bulk block handles.
  * All the data described by the bulk handle will be transferred.
+ * The size of the data described by the two handles must match.
  *
  * \param addr [IN]             abstract network address of destination
  * \param bulk_handle [IN]      abstract bulk handle
@@ -197,6 +198,7 @@ HG_Bulk_read(na_addr_t addr, hg_bulk_t bulk_handle, size_t bulk_offset,
 /**
  * Read data from address using abstract bulk and bulk block handles.
  * All the data described by the bulk handle will be transferred.
+ * The size of the data described by the two handles must match.
  *
  * \param addr [IN]             abstract network address of destination
  * \param bulk_handle [IN]      abstract bulk handle
@@ -266,7 +268,9 @@ HG_Bulk_mirror(na_addr_t addr, hg_bulk_t handle, size_t offset, size_t size,
         hg_bulk_t *mirror_handle);
 
 /**
- * Synchronize a mirrored bulk handle with its origin.
+ * Synchronize a mirrored bulk handle with its origin. Data is transfered
+ * to/from origin depending on the bulk operation passed. HG_Bulk_wait must
+ * then be called to complete the transfer.
  *
  * \param handle [IN]           abstract bulk handle
  * \param op [IN]               bulk operation:

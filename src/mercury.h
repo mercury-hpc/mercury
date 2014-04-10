@@ -32,8 +32,8 @@ HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
 /**
  * Initialize the Mercury layer.
  * Calling HG_Init also calls HG_Bulk_init with the same NA class if
- * HG_Bulk_init has not been called before, this allows for users to
- * potentially initialize the bulk interface with a different NA class.
+ * HG_Bulk_init has not been called before, this allows users to
+ * eventually initialize the bulk interface with a different NA class.
  *
  * \param na_class [IN]    pointer to network class
  *
@@ -51,8 +51,7 @@ HG_EXPORT hg_return_t
 HG_Finalize(void);
 
 /**
- * Indicate whether HG_Init has been called
- * and return associated network class.
+ * Indicate whether HG_Init has been called and return associated network class.
  *
  * \param flag [OUT]            pointer to boolean
  * \param na_class [OUT]        pointer to returned network class pointer
@@ -63,7 +62,7 @@ HG_EXPORT hg_return_t
 HG_Initialized(hg_bool_t *flag, na_class_t **na_class);
 
 /**
- * Register a function name that can be sent by RPC layer.
+ * Register a function name that can be sent using the RPC layer.
  *
  * \param func_name [IN]        unique name associated to function
  * \param in_proc_cb [IN]       pointer to input proc routine
