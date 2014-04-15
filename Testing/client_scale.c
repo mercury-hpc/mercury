@@ -8,15 +8,8 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "test_scale.h"
 #include "mercury_test.h"
 
-#ifdef STATIC_TEST
-#include "na_mpi.h"
-#endif
-
-#include "mercury.h"
-#include "mercury_bulk.h"
 #include "mercury_time.h"
 
 #include <stdio.h>
@@ -25,8 +18,6 @@
 #define RPC_SKIP 20
 #define BULK_SKIP 20
 
-static hg_id_t bla_open_id, bla_write_id, finalize_id;
-
 #ifdef MERCURY_HAS_PARALLEL_TESTING
 #include <mpi.h>
 static MPI_Comm split_comm = MPI_COMM_WORLD;
@@ -34,19 +25,22 @@ static MPI_Comm split_comm = MPI_COMM_WORLD;
 
 static int client_rank = 0, client_size = 1;
 
+extern hg_id_t hg_test_scale_open_id_g;
+extern hg_id_t hg_test_scale_write_id_g;
+
 /**
  *
  */
 static int
 measure_rpc(na_addr_t addr)
 {
-    bla_open_in_t bla_open_in_struct;
-    bla_open_out_t bla_open_out_struct;
-    hg_request_t bla_open_request;
-    hg_status_t bla_open_status;
+    rpc_open_in_t rpc_open_in_struct;
+    rpc_open_out_t rpc_open_out_struct;
+    hg_request_t rpc_open_request;
+    hg_status_t rpc_open_status;
 
-    hg_const_string_t bla_open_path = "/scratch/hdf/test.h5";
-    bla_handle_t bla_open_handle;
+    hg_const_string_t rpc_open_path = "/scratch/hdf/test.h5";
+    rpc_handle_t rpc_open_handle;
 
     int avg_iter;
     double time_read = 0, min_time_read = 0, max_time_read = 0;
@@ -61,28 +55,28 @@ measure_rpc(na_addr_t addr)
     }
 
     /* Fill input structure */
-    bla_open_handle.cookie = 12345;
-    bla_open_in_struct.path = bla_open_path;
-    bla_open_in_struct.handle = bla_open_handle;
+    rpc_open_handle.cookie = 12345;
+    rpc_open_in_struct.path = rpc_open_path;
+    rpc_open_in_struct.handle = rpc_open_handle;
 
     if (client_rank == 0) printf("# Warming up...\n");
 
     /* Warm up for RPC */
     for (i = 0; i < RPC_SKIP; i++) {
-        hg_ret = HG_Forward(addr, bla_open_id,
-                &bla_open_in_struct, &bla_open_out_struct, &bla_open_request);
+        hg_ret = HG_Forward(addr, hg_test_scale_open_id_g,
+                &rpc_open_in_struct, &rpc_open_out_struct, &rpc_open_request);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
             return HG_FAIL;
         }
 
-        hg_ret = HG_Wait(bla_open_request, HG_MAX_IDLE_TIME, &bla_open_status);
+        hg_ret = HG_Wait(rpc_open_request, HG_MAX_IDLE_TIME, &rpc_open_status);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Error during wait\n");
             return HG_FAIL;
         }
 
-        hg_ret = HG_Request_free(bla_open_request);
+        hg_ret = HG_Request_free(rpc_open_request);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not free request\n");
             return HG_FAIL;
@@ -106,9 +100,8 @@ measure_rpc(na_addr_t addr)
         hg_time_get_current(&t1);
 
         /* Forward call to remote addr and get a new request */
-        /* printf("Forwarding bla_write, op id: %u...\n", bla_write_id); */
-        hg_ret = HG_Forward(addr, bla_open_id,
-                &bla_open_in_struct, &bla_open_out_struct, &bla_open_request);
+        hg_ret = HG_Forward(addr, hg_test_scale_open_id_g,
+                &rpc_open_in_struct, &rpc_open_out_struct, &rpc_open_request);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
             return HG_FAIL;
@@ -117,12 +110,12 @@ measure_rpc(na_addr_t addr)
         /* Wait for call to be executed and return value to be sent back
          * (Request is freed when the call completes)
          */
-        hg_ret = HG_Wait(bla_open_request, HG_MAX_IDLE_TIME, &bla_open_status);
+        hg_ret = HG_Wait(rpc_open_request, HG_MAX_IDLE_TIME, &rpc_open_status);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Error during wait\n");
             return HG_FAIL;
         }
-        if (!bla_open_status) {
+        if (!rpc_open_status) {
             fprintf(stderr, "Operation did not complete\n");
             return HG_FAIL;
         } else {
@@ -130,7 +123,7 @@ measure_rpc(na_addr_t addr)
         }
 
         /* Free request */
-        hg_ret = HG_Request_free(bla_open_request);
+        hg_ret = HG_Request_free(rpc_open_request);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not free request\n");
             return HG_FAIL;
@@ -167,16 +160,16 @@ measure_rpc(na_addr_t addr)
 static int
 measure_bulk_transfer(na_addr_t addr)
 {
-    bla_write_in_t bla_write_in_struct;
-    bla_write_out_t bla_write_out_struct;
-    hg_request_t bla_write_request;
-    hg_status_t bla_write_status;
+    bulk_write_in_t bulk_write_in_struct;
+    bulk_write_out_t bulk_write_out_struct;
+    hg_request_t bulk_write_request;
+    hg_status_t bulk_write_status;
 
     int fildes = 12345;
     int *bulk_buf;
     size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE / sizeof(int);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    size_t bla_write_ret = 0;
+    size_t bulk_write_ret = 0;
     size_t nbytes;
     double nmbytes;
 
@@ -209,21 +202,21 @@ measure_bulk_transfer(na_addr_t addr)
     }
 
     /* Fill input structure */
-    bla_write_in_struct.fildes = fildes;
-    bla_write_in_struct.bulk_handle = bulk_handle;
+    bulk_write_in_struct.fildes = fildes;
+    bulk_write_in_struct.bulk_handle = bulk_handle;
 
     if (client_rank == 0) printf("# Warming up...\n");
 
     /* Warm up for bulk data */
     for (i = 0; i < BULK_SKIP; i++) {
-        hg_ret = HG_Forward(addr, bla_write_id,
-                &bla_write_in_struct, &bla_write_out_struct, &bla_write_request);
+        hg_ret = HG_Forward(addr, hg_test_scale_write_id_g,
+                &bulk_write_in_struct, &bulk_write_out_struct, &bulk_write_request);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
             return HG_FAIL;
         }
 
-        hg_ret = HG_Wait(bla_write_request, HG_MAX_IDLE_TIME, &bla_write_status);
+        hg_ret = HG_Wait(bulk_write_request, HG_MAX_IDLE_TIME, &bulk_write_status);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Error during wait\n");
             return HG_FAIL;
@@ -231,7 +224,7 @@ measure_bulk_transfer(na_addr_t addr)
 
 
         /* Free request */
-        hg_ret = HG_Request_free(bla_write_request);
+        hg_ret = HG_Request_free(bulk_write_request);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not free request\n");
             return HG_FAIL;
@@ -255,9 +248,8 @@ measure_bulk_transfer(na_addr_t addr)
         hg_time_get_current(&t1);
 
         /* Forward call to remote addr and get a new request */
-        /* printf("Forwarding bla_write, op id: %u...\n", bla_write_id); */
-        hg_ret = HG_Forward(addr, bla_write_id,
-                &bla_write_in_struct, &bla_write_out_struct, &bla_write_request);
+        hg_ret = HG_Forward(addr, hg_test_scale_write_id_g,
+                &bulk_write_in_struct, &bulk_write_out_struct, &bulk_write_request);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
             return HG_FAIL;
@@ -266,12 +258,12 @@ measure_bulk_transfer(na_addr_t addr)
         /* Wait for call to be executed and return value to be sent back
          * (Request is freed when the call completes)
          */
-        hg_ret = HG_Wait(bla_write_request, HG_MAX_IDLE_TIME, &bla_write_status);
+        hg_ret = HG_Wait(bulk_write_request, HG_MAX_IDLE_TIME, &bulk_write_status);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Error during wait\n");
             return HG_FAIL;
         }
-        if (!bla_write_status) {
+        if (!bulk_write_status) {
             fprintf(stderr, "Operation did not complete\n");
             return HG_FAIL;
         } else {
@@ -279,13 +271,13 @@ measure_bulk_transfer(na_addr_t addr)
         }
 
         /* Get output parameters */
-        bla_write_ret = bla_write_out_struct.ret;
-        if (bla_write_ret != (bulk_size * sizeof(int))) {
+        bulk_write_ret = bulk_write_out_struct.ret;
+        if (bulk_write_ret != (bulk_size * sizeof(int))) {
             fprintf(stderr, "Data not correctly processed\n");
         }
 
         /* Free request */
-        hg_ret = HG_Request_free(bla_write_request);
+        hg_ret = HG_Request_free(bulk_write_request);
         if (hg_ret != HG_SUCCESS) {
             fprintf(stderr, "Could not free request\n");
             return HG_FAIL;
@@ -327,44 +319,44 @@ measure_bulk_transfer(na_addr_t addr)
 /**
  *
  */
-static int
-server_finalize(na_addr_t addr)
-{
-    hg_request_t finalize_request;
-    int hg_ret;
-
-    /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(addr, finalize_id, NULL, NULL, &finalize_request);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not forward call\n");
-        return HG_FAIL;
-    }
-
-    /* Wait for call to be executed and return value to be sent back
-     * (Request is freed when the call completes)
-     */
-    hg_ret = HG_Wait(finalize_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-        return HG_FAIL;
-    }
-
-    /* Free request */
-    hg_ret = HG_Request_free(finalize_request);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free request\n");
-        return HG_FAIL;
-    }
-
-    return HG_SUCCESS;
-}
+//static int
+//server_finalize(na_addr_t addr)
+//{
+//    hg_request_t finalize_request;
+//    int hg_ret;
+//
+//    /* Forward call to remote addr and get a new request */
+//    hg_ret = HG_Forward(addr, finalize_id, NULL, NULL, &finalize_request);
+//    if (hg_ret != HG_SUCCESS) {
+//        fprintf(stderr, "Could not forward call\n");
+//        return HG_FAIL;
+//    }
+//
+//    /* Wait for call to be executed and return value to be sent back
+//     * (Request is freed when the call completes)
+//     */
+//    hg_ret = HG_Wait(finalize_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
+//    if (hg_ret != HG_SUCCESS) {
+//        fprintf(stderr, "Error during wait\n");
+//        return HG_FAIL;
+//    }
+//
+//    /* Free request */
+//    hg_ret = HG_Request_free(finalize_request);
+//    if (hg_ret != HG_SUCCESS) {
+//        fprintf(stderr, "Could not free request\n");
+//        return HG_FAIL;
+//    }
+//
+//    return HG_SUCCESS;
+//}
 
 /*****************************************************************************/
 int
 main(int argc, char *argv[])
 {
     na_addr_t addr;
-    char *addr_name;
+    char *port_name;
     na_class_t *network_class = NULL;
 
     int hg_ret, na_ret;
@@ -375,23 +367,7 @@ main(int argc, char *argv[])
     MPI_Comm_size(split_comm, &client_size);
 #endif
 
-#ifdef STATIC_TEST
-    {
-    int color;
-    int global_rank;
-
-    MPI_Comm_rank(MPI_COMM_WORLD, &global_rank);
-    /* Color is 1 for server, 2 for client */
-    color = 2;
-    MPI_Comm_split(MPI_COMM_WORLD, color, global_rank, &split_comm);
-    MPI_Comm_rank(split_comm, &client_rank);
-    MPI_Comm_size(split_comm, &client_size);
-
-    network_class = NA_MPI_Init(&split_comm, MPI_INIT_STATIC);
-    }
-#else
-    network_class = HG_Test_client_init(argc, argv, &addr_name, NULL);
-#endif
+    network_class = HG_Test_client_init(argc, argv, &port_name, NULL);
 
     hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {
@@ -399,33 +375,38 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    /* Look up addr id */
-    na_ret = NA_Addr_lookup_wait(network_class, addr_name, &addr);
+    if (strcmp(port_name, "self") == 0) {
+        /* Self addr */
+        na_ret = NA_Addr_self(network_class, &addr);
+    } else {
+        /* Look up addr using port name info */
+        na_ret = NA_Addr_lookup_wait(network_class, port_name, &addr);
+    }
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not find connect\n");
+        fprintf(stderr, "Could not find addr %s\n", port_name);
         return EXIT_FAILURE;
     }
 
     /* Register function and encoding/decoding functions */
-    bla_open_id = MERCURY_REGISTER("bla_open", bla_open_in_t, bla_open_out_t);
-    bla_write_id = MERCURY_REGISTER("bla_write", bla_write_in_t, bla_write_out_t);
-    finalize_id = MERCURY_REGISTER("finalize", void, void);
+    HG_Test_register();
 
+    /* Run RPC test */
     measure_rpc(addr);
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
     MPI_Barrier(split_comm);
 #endif
 
+    /* Run Bulk test */
     measure_bulk_transfer(addr);
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
     MPI_Barrier(split_comm);
 #endif
 
-    if (client_rank == 0) {
-        server_finalize(addr);
-    }
+//    if (client_rank == 0) {
+//        server_finalize(addr);
+//    }
 
     /* Free addr id */
     na_ret = NA_Addr_free(network_class, addr);
@@ -447,9 +428,6 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-#ifdef STATIC_TEST
-    MPI_Comm_free(&split_comm);
-#endif
 #ifdef MERCURY_HAS_PARALLEL_TESTING
     MPI_Finalize();
 #endif

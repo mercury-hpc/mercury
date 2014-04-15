@@ -8,37 +8,36 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "test_rpc.h"
 #include "mercury_test.h"
-#include "mercury.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
+extern hg_id_t hg_test_rpc_open_id_g;
+
 /******************************************************************************/
 int main(int argc, char *argv[])
 {
-    char *ion_name;
+    char *port_name;
     na_addr_t addr;
     na_class_t *network_class = NULL;
 
-    hg_id_t bla_open_id;
-    bla_open_in_t  bla_open_in_struct;
-    bla_open_out_t bla_open_out_struct;
-    hg_request_t bla_open_request;
+    rpc_open_in_t  rpc_open_in_struct;
+    rpc_open_out_t rpc_open_out_struct;
+    hg_request_t rpc_open_request;
 
-    hg_const_string_t bla_open_path = "/scratch/hdf/test.h5";
-    bla_handle_t bla_open_handle;
-    int bla_open_ret = 0;
-    int bla_open_event_id = 0;
+    hg_const_string_t rpc_open_path = "/scratch/hdf/test.h5";
+    rpc_handle_t rpc_open_handle;
+    int rpc_open_ret = 0;
+    int rpc_open_event_id = 0;
 
-    hg_status_t bla_open_status;
+    hg_status_t rpc_open_status;
     int hg_ret, na_ret;
 
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    network_class = HG_Test_client_init(argc, argv, &ion_name, NULL);
+    network_class = HG_Test_client_init(argc, argv, &port_name, NULL);
 
     hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {
@@ -46,25 +45,30 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    /* Look up addr id */
-    na_ret = NA_Addr_lookup_wait(network_class, ion_name, &addr);
+    if (strcmp(port_name, "self") == 0) {
+        /* Self addr */
+        na_ret = NA_Addr_self(network_class, &addr);
+    } else {
+        /* Look up addr using port name info */
+        na_ret = NA_Addr_lookup_wait(network_class, port_name, &addr);
+    }
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not find addr %s\n", ion_name);
+        fprintf(stderr, "Could not find addr %s\n", port_name);
         return EXIT_FAILURE;
     }
 
     /* Register function and encoding/decoding functions */
-    bla_open_id = MERCURY_REGISTER("bla_open", bla_open_in_t, bla_open_out_t);
+    HG_Test_register();
 
     /* Fill input structure */
-    bla_open_handle.cookie = 12345;
-    bla_open_in_struct.path = bla_open_path;
-    bla_open_in_struct.handle = bla_open_handle;
+    rpc_open_handle.cookie = 12345;
+    rpc_open_in_struct.path = rpc_open_path;
+    rpc_open_in_struct.handle = rpc_open_handle;
 
     /* Forward call to remote addr and get a new request */
-    printf("Forwarding bla_open, op id: %u...\n", bla_open_id);
-    hg_ret = HG_Forward(addr, bla_open_id, &bla_open_in_struct,
-            &bla_open_out_struct, &bla_open_request);
+    printf("Forwarding rpc_open, op id: %u...\n", hg_test_rpc_open_id_g);
+    hg_ret = HG_Forward(addr, hg_test_rpc_open_id_g, &rpc_open_in_struct,
+            &rpc_open_out_struct, &rpc_open_request);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         return EXIT_FAILURE;
@@ -73,12 +77,12 @@ int main(int argc, char *argv[])
     /* Wait for call to be executed and return value to be sent back
      * (Request is freed when the call completes)
      */
-    hg_ret = HG_Wait(bla_open_request, HG_MAX_IDLE_TIME, &bla_open_status);
+    hg_ret = HG_Wait(rpc_open_request, HG_MAX_IDLE_TIME, &rpc_open_status);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error during wait\n");
         return EXIT_FAILURE;
     }
-    if (!bla_open_status) {
+    if (!rpc_open_status) {
         fprintf(stderr, "Operation did not complete\n");
         return EXIT_FAILURE;
     } else {
@@ -86,13 +90,13 @@ int main(int argc, char *argv[])
     }
 
     /* Get output parameters */
-    bla_open_ret = bla_open_out_struct.ret;
-    bla_open_event_id = bla_open_out_struct.event_id;
-    printf("bla_open returned: %d with event_id: %d\n", bla_open_ret,
-            bla_open_event_id);
+    rpc_open_ret = rpc_open_out_struct.ret;
+    rpc_open_event_id = rpc_open_out_struct.event_id;
+    printf("rpc_open returned: %d with event_id: %d\n", rpc_open_ret,
+            rpc_open_event_id);
 
     /* Free request */
-    hg_ret = HG_Request_free(bla_open_request);
+    hg_ret = HG_Request_free(rpc_open_request);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free request\n");
         return EXIT_FAILURE;

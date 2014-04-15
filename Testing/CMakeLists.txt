@@ -96,7 +96,7 @@ endfunction()
 #------------------------------------------------------------------------------
 # mercury_test : Lib used by tests contains main test initialization etc
 #------------------------------------------------------------------------------
-add_library(mercury_test STATIC mercury_test.c)
+add_library(mercury_test STATIC mercury_test.c mercury_rpc_cb.c)
 target_link_libraries(mercury_test na ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_test)
@@ -117,42 +117,42 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
 #------------------------------------------------------------------------------
 # Function shipper test
 build_mercury_test(client_rpc)
-build_mercury_test(server_rpc)
+#build_mercury_test(server_rpc)
 
 #------------------------------------------------------------------------------
 # Bulk data shipper test
 build_mercury_test(client_bulk)
-build_mercury_test(server_bulk)
+#build_mercury_test(server_bulk)
 
 #------------------------------------------------------------------------------
 # Non-contiguous bulk data shipper test
 build_mercury_test(client_bulk_seg)
-build_mercury_test(server_bulk_seg)
+#build_mercury_test(server_bulk_seg)
 
 #------------------------------------------------------------------------------
 # Bandwidth bulk data shipper test using pipelining
 build_mercury_test(client_pipeline)
-build_mercury_test(server_pipeline)
+#build_mercury_test(server_pipeline)
 
 #------------------------------------------------------------------------------
 # Scaling bandwidth bulk data shipper test using pipelining
 build_mercury_test(client_scale)
-build_mercury_test(server_scale)
+#build_mercury_test(server_scale)
 if(NA_USE_MPI)
-  build_mercury_test(client_pipeline_scale)
-  build_mercury_test(server_pipeline_scale)
+#  build_mercury_test(client_pipeline_scale)
+#  build_mercury_test(server_pipeline_scale)
 endif()
 
 #------------------------------------------------------------------------------
 # Multiple client/server test
 build_mercury_test(client_multiple)
-build_mercury_test(server_multiple)
+#build_mercury_test(server_multiple)
 
 #------------------------------------------------------------------------------
 # POSIX test
 if(NOT WIN32)
   build_mercury_test(client_posix)
-  build_mercury_test(server_posix)
+#  build_mercury_test(server_posix)
 endif()
 
 #------------------------------------------------------------------------------
@@ -171,20 +171,21 @@ endif()
 
 foreach(MERCURY_test ${MERCURY_tests})
   add_mercury_test(mercury_${MERCURY_test}
-    server_${MERCURY_test} client_${MERCURY_test})
+    server client_${MERCURY_test})
 endforeach()
 
 set(MERCURY_opt_tests
   bulk_seg
 )
 foreach(MERCURY_test ${MERCURY_opt_tests})
-  add_mercury_opt_test(mercury_${MERCURY_test} server_${MERCURY_test}
+  add_mercury_opt_test(mercury_${MERCURY_test} server
     client_${MERCURY_test} "extra")
-  add_mercury_opt_test(mercury_${MERCURY_test} server_${MERCURY_test}
+  add_mercury_opt_test(mercury_${MERCURY_test} server
     client_${MERCURY_test} "variable")
 endforeach()
 
 build_mercury_test(test_bulk_mirror)
+build_mercury_test(server)
 
 #if(NA_USE_MPI)
 #  foreach(MERCURY_test ${MERCURY_tests})

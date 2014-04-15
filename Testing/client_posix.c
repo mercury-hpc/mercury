@@ -8,26 +8,27 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "test_posix.h"
 #include "mercury_test.h"
-#include "mercury.h"
-#include "mercury_bulk.h"
 
 static na_addr_t addr;
 static na_class_t *network_class = NULL;
-static hg_id_t open_id, write_id, read_id, close_id, finalize_id;
+
+extern hg_id_t hg_test_posix_open_id_g;
+extern hg_id_t hg_test_posix_write_id_g;
+extern hg_id_t hg_test_posix_read_id_g;
+extern hg_id_t hg_test_posix_close_id_g;
 
 static int
 init_rpc(int argc, char *argv[], int *rank)
 {
     int hg_ret, na_ret;
     int ret = HG_SUCCESS;
-    char *ion_name;
+    char *port_name;
 
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    network_class = HG_Test_client_init(argc, argv, &ion_name, rank);
+    network_class = HG_Test_client_init(argc, argv, &port_name, rank);
 
     hg_ret = HG_Init(network_class);
     if (hg_ret != HG_SUCCESS) {
@@ -36,20 +37,20 @@ init_rpc(int argc, char *argv[], int *rank)
         return ret;
     }
 
-    /* Look up addr id */
-    na_ret = NA_Addr_lookup_wait(network_class, ion_name, &addr);
+    if (strcmp(port_name, "self") == 0) {
+        /* Self addr */
+        na_ret = NA_Addr_self(network_class, &addr);
+    } else {
+        /* Look up addr using port name info */
+        na_ret = NA_Addr_lookup_wait(network_class, port_name, &addr);
+    }
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not find addr %s\n", ion_name);
-        ret = HG_FAIL;
-        return ret;
+        fprintf(stderr, "Could not find addr %s\n", port_name);
+        return EXIT_FAILURE;
     }
 
     /* Register function and encoding/decoding functions */
-    open_id = MERCURY_REGISTER("open", open_in_t, open_out_t);
-    write_id = MERCURY_REGISTER("write", write_in_t, write_out_t);
-    read_id = MERCURY_REGISTER("read", read_in_t, read_out_t);
-    close_id = MERCURY_REGISTER("close", close_in_t, close_out_t);
-    finalize_id = MERCURY_REGISTER("finalize", void, void);
+    HG_Test_register();
 
     return ret;
 }
@@ -63,36 +64,36 @@ finalize_rpc()
     hg_status_t status;
     int finalize_ret;
 
-    /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(addr, finalize_id, NULL, NULL, &request);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not forward call\n");
-        finalize_ret = HG_FAIL;
-        return finalize_ret;
-    }
-
-    /* Wait for call to be executed and return value to be sent back
-     * (Request is freed when the call completes)
-     */
-    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-        finalize_ret = HG_FAIL;
-        return finalize_ret;
-    }
-    if (!status) {
-        fprintf(stderr, "Operation did not complete\n");
-        finalize_ret = HG_FAIL;
-        return finalize_ret;
-    }
-
-    /* Free request */
-    hg_ret = HG_Request_free(request);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free request\n");
-        finalize_ret = HG_FAIL;
-        return finalize_ret;
-    }
+//    /* Forward call to remote addr and get a new request */
+//    hg_ret = HG_Forward(addr, finalize_id, NULL, NULL, &request);
+//    if (hg_ret != HG_SUCCESS) {
+//        fprintf(stderr, "Could not forward call\n");
+//        finalize_ret = HG_FAIL;
+//        return finalize_ret;
+//    }
+//
+//    /* Wait for call to be executed and return value to be sent back
+//     * (Request is freed when the call completes)
+//     */
+//    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
+//    if (hg_ret != HG_SUCCESS) {
+//        fprintf(stderr, "Error during wait\n");
+//        finalize_ret = HG_FAIL;
+//        return finalize_ret;
+//    }
+//    if (!status) {
+//        fprintf(stderr, "Operation did not complete\n");
+//        finalize_ret = HG_FAIL;
+//        return finalize_ret;
+//    }
+//
+//    /* Free request */
+//    hg_ret = HG_Request_free(request);
+//    if (hg_ret != HG_SUCCESS) {
+//        fprintf(stderr, "Could not free request\n");
+//        finalize_ret = HG_FAIL;
+//        return finalize_ret;
+//    }
 
     /* Free addr id */
     na_ret = NA_Addr_free(network_class, addr);
@@ -131,7 +132,7 @@ open_rpc(const char *pathname, int flags, mode_t mode)
     open_in_struct.mode = mode;
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(addr, open_id, &open_in_struct,
+    hg_ret = HG_Forward(addr, hg_test_posix_open_id_g, &open_in_struct,
             &open_out_struct, &request);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
@@ -182,7 +183,7 @@ close_rpc(int fd)
     close_in_struct.fd = fd;
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(addr, close_id, &close_in_struct,
+    hg_ret = HG_Forward(addr, hg_test_posix_close_id_g, &close_in_struct,
             &close_out_struct, &request);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
@@ -244,7 +245,8 @@ write_rpc(int fd, void *buf, size_t count)
     write_in_struct.fd = fd;
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(addr, write_id, &write_in_struct, &write_out_struct, &request);
+    hg_ret = HG_Forward(addr, hg_test_posix_write_id_g, &write_in_struct,
+            &write_out_struct, &request);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         write_ret = HG_FAIL;
@@ -313,7 +315,8 @@ read_rpc(int fd, void *buf, size_t count)
     read_in_struct.fd = fd;
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(addr, read_id, &read_in_struct, &read_out_struct, &request);
+    hg_ret = HG_Forward(addr, hg_test_posix_read_id_g, &read_in_struct,
+            &read_out_struct, &request);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         read_ret = HG_FAIL;
@@ -406,7 +409,7 @@ main(int argc, char *argv[])
 
     fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, mode);
     if (fd < 0) {
-        fprintf(stderr, "Error in fs_open\n");
+        fprintf(stderr, "Error in open\n");
         return EXIT_FAILURE;
     }
 

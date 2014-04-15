@@ -19,35 +19,35 @@
 
 typedef struct {
     hg_uint64_t cookie;
-} bla_handle_t;
+} rpc_handle_t;
 
 /* 1. Generate processor and struct for additional struct types
  * MERCURY_GEN_STRUCT_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_STRUCT_PROC( bla_handle_t, ((hg_uint64_t)(cookie)) )
+MERCURY_GEN_STRUCT_PROC( rpc_handle_t, ((hg_uint64_t)(cookie)) )
 
 /* Dummy function that needs to be shipped (already defined) */
-int bla_open(const char *path, bla_handle_t handle, int *event_id);
+/* int rpc_open(const char *path, rpc_handle_t handle, int *event_id); */
 
 /* 2. Generate processor and struct for required input/output structs
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_PROC( bla_open_in_t, ((hg_const_string_t)(path)) ((bla_handle_t)(handle)) )
-MERCURY_GEN_PROC( bla_open_out_t, ((hg_int32_t)(ret)) ((hg_int32_t)(event_id)) )
+MERCURY_GEN_PROC( rpc_open_in_t, ((hg_const_string_t)(path)) ((rpc_handle_t)(handle)) )
+MERCURY_GEN_PROC( rpc_open_out_t, ((hg_int32_t)(ret)) ((hg_int32_t)(event_id)) )
 #else
-/* Define bla_handle_t */
+/* Define rpc_handle_t */
 typedef struct {
     hg_uint64_t cookie;
-} bla_handle_t;
+} rpc_handle_t;
 
 /* Dummy function that needs to be shipped (already defined) */
-int bla_open(const char *path, bla_handle_t handle, int *event_id);
+/* int rpc_open(const char *path, rpc_handle_t handle, int *event_id); */
 
-/* Define hg_proc_bla_handle_t */
-static HG_INLINE int hg_proc_bla_handle_t(hg_proc_t proc, void *data)
+/* Define hg_proc_rpc_handle_t */
+static HG_INLINE int hg_proc_rpc_handle_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
-    bla_handle_t *struct_data = (bla_handle_t *) data;
+    rpc_handle_t *struct_data = (rpc_handle_t *) data;
 
     ret = hg_proc_uint64_t(proc, &struct_data->cookie);
     if (ret != HG_SUCCESS) {
@@ -59,18 +59,18 @@ static HG_INLINE int hg_proc_bla_handle_t(hg_proc_t proc, void *data)
     return ret;
 }
 
-/* Define bla_open_in_t */
+/* Define rpc_open_in_t */
 typedef struct {
     hg_const_string_t path;
-    bla_handle_t handle;
-} bla_open_in_t;
+    rpc_handle_t handle;
+} rpc_open_in_t;
 
-/* Define hg_proc_bla_open_in_t */
+/* Define hg_proc_rpc_open_in_t */
 static HG_INLINE int
-hg_proc_bla_open_in_t(hg_proc_t proc, void *data)
+hg_proc_rpc_open_in_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
-    bla_open_in_t *struct_data = (bla_open_in_t *) data;
+    rpc_open_in_t *struct_data = (rpc_open_in_t *) data;
 
     ret = hg_proc_hg_const_string_t(proc, &struct_data->path);
     if (ret != HG_SUCCESS) {
@@ -79,7 +79,7 @@ hg_proc_bla_open_in_t(hg_proc_t proc, void *data)
         return ret;
     }
 
-    ret = hg_proc_bla_handle_t(proc, &struct_data->handle);
+    ret = hg_proc_rpc_handle_t(proc, &struct_data->handle);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Proc error");
         ret = HG_FAIL;
@@ -89,18 +89,18 @@ hg_proc_bla_open_in_t(hg_proc_t proc, void *data)
     return ret;
 }
 
-/* Define bla_open_out_t */
+/* Define rpc_open_out_t */
 typedef struct {
     hg_int32_t ret;
     hg_int32_t event_id;
-} bla_open_out_t;
+} rpc_open_out_t;
 
-/* Define hg_proc_bla_open_out_t */
+/* Define hg_proc_rpc_open_out_t */
 static HG_INLINE int
-hg_proc_bla_open_out_t(hg_proc_t proc, void *data)
+hg_proc_rpc_open_out_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
-    bla_open_out_t *struct_data = (bla_open_out_t *) data;
+    rpc_open_out_t *struct_data = (rpc_open_out_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->ret);
     if (ret != HG_SUCCESS) {

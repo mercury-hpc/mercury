@@ -9,6 +9,8 @@
  */
 
 #include "mercury_test.h"
+#include "mercury_rpc_cb.h"
+
 #ifdef NA_HAS_BMI
 #include "na_bmi.h"
 #include <unistd.h>
@@ -27,10 +29,42 @@
 #include <stdio.h>
 #include <string.h>
 
+/****************/
+/* Local Macros */
+/****************/
 #define HG_TEST_MAX_ADDR_NAME 256
 
+#ifdef HG_HAS_BOOST
+#define HG_TEST_REGISTER(func_name) \
+        MERCURY_REGISTER(BOOST_PP_STRINGIZE(BOOST_PP_CAT(hg_test_, func_name)), \
+                BOOST_PP_CAT(func_name, _in_t), BOOST_PP_CAT(func_name, _out_t), \
+                BOOST_PP_CAT(func_name, _cb))
+#else
+#define HG_TEST_STRINGIZE(func_name) #func_name
+#define HG_TEST_REGISTER(func_name) \
+        MERCURY_REGISTER(HG_TEST_STRINGIZE(hg_test_ ## func_name), \
+                func_name ## _in_t, func_name ## _out_t, \
+                func_name ## _cb)
+#endif
+
+/*******************/
+/* Local Variables */
+/*******************/
 static char **na_addr_table = NULL;
 static unsigned int na_addr_table_size = 0;
+
+/* Register func_name */
+hg_id_t hg_test_rpc_open_id_g = 0;
+hg_id_t hg_test_bulk_write_id_g = 0;
+hg_id_t hg_test_bulk_seg_write_id_g = 0;
+
+hg_id_t hg_test_posix_open_id_g = 0;
+hg_id_t hg_test_posix_write_id_g = 0;
+hg_id_t hg_test_posix_read_id_g = 0;
+hg_id_t hg_test_posix_close_id_g = 0;
+
+hg_id_t hg_test_scale_open_id_g = 0;
+hg_id_t hg_test_scale_write_id_g = 0;
 
 /*---------------------------------------------------------------------------*/
 #ifdef MERCURY_HAS_PARALLEL_TESTING
@@ -215,6 +249,13 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
     }
 #endif
 
+    if (argc > 2 && strcmp("self", argv[2]) == 0) {
+        strcpy(test_addr_name, "self");
+    }
+    if (argc > 3 && strcmp("self", argv[3]) == 0) {
+        strcpy(test_addr_name, "self");
+    }
+
     if (addr_name) *addr_name = test_addr_name;
     if (rank) *rank = test_rank;
 
@@ -358,4 +399,14 @@ HG_Test_finalize(na_class_t *network_class)
 
 done:
      return;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+HG_Test_register(void)
+{
+    hg_test_rpc_open_id_g = HG_TEST_REGISTER(rpc_open);
+    hg_test_bulk_write_id_g = HG_TEST_REGISTER(bulk_write);
+    hg_test_bulk_seg_write_id_g = MERCURY_REGISTER("hg_test_bulk_seg_write",
+            bulk_write_in_t, bulk_write_out_t, bulk_seg_write);
 }

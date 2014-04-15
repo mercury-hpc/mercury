@@ -8,29 +8,49 @@
  * found at the root of the source code distribution tree.
  */
 
-#ifndef SHIPPER_TEST_H
-#define SHIPPER_TEST_H
+#ifndef MERCURY_TEST_H
+#define MERCURY_TEST_H
 
 #include "na.h"
 #include "mercury_test_config.h"
 #include "mercury_config.h"
+#include "mercury_bulk.h"
+
+#include "test_rpc.h"
+#include "test_bulk.h"
+#include "test_posix.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/**
+ * Initialize client
+ */
 na_class_t *
 HG_Test_client_init(int argc, char *argv[], char **port_name, int *rank);
 
+/**
+ * Initialize server
+ */
 na_class_t *
 HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         unsigned int *addr_table_size, unsigned int *max_number_of_peers);
 
+/**
+ * Finalize client/server
+ */
 void
 HG_Test_finalize(na_class_t *network_class);
+
+/**
+ * Register test routines
+ */
+void
+HG_Test_register(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* SHIPPER_TEST_H */
+#endif /* MERCURY_TEST_H */

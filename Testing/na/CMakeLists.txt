@@ -14,8 +14,8 @@ endfunction()
 
 #------------------------------------------------------------------------------
 # Network abstraction test
-build_na_test(client_na)
-build_na_test(server_na)
+build_mercury_test(client_na)
+build_mercury_test(server_na)
 
 #------------------------------------------------------------------------------
 # Set list of tests

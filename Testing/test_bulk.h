@@ -15,27 +15,27 @@
 #include "mercury_proc.h"
 
 /* Dummy function that needs to be shipped */
-size_t bla_write(int fildes, const void *buf, size_t nbyte);
+/* size_t bulk_write(int fildes, const void *buf, size_t nbyte); */
 
 #ifdef HG_HAS_BOOST
 /* Generate processor and struct for required input/output structs
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_PROC( bla_write_in_t, ((hg_int32_t)(fildes)) ((hg_bulk_t)(bulk_handle)) )
-MERCURY_GEN_PROC( bla_write_out_t, ((hg_uint64_t)(ret)) )
+MERCURY_GEN_PROC( bulk_write_in_t, ((hg_int32_t)(fildes)) ((hg_bulk_t)(bulk_handle)) )
+MERCURY_GEN_PROC( bulk_write_out_t, ((hg_uint64_t)(ret)) )
 #else
-/* Define bla_write_in_t */
+/* Define bulk_write_in_t */
 typedef struct {
     hg_int32_t fildes;
     hg_bulk_t bulk_handle;
-} bla_write_in_t;
+} bulk_write_in_t;
 
-/* Define hg_proc_bla_write_in_t */
+/* Define hg_proc_bulk_write_in_t */
 static HG_INLINE int
-hg_proc_bla_write_in_t(hg_proc_t proc, void *data)
+hg_proc_bulk_write_in_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
-    bla_write_in_t *struct_data = (bla_write_in_t *) data;
+    bulk_write_in_t *struct_data = (bulk_write_in_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->fildes);
     if (ret != HG_SUCCESS) {
@@ -54,17 +54,17 @@ hg_proc_bla_write_in_t(hg_proc_t proc, void *data)
     return ret;
 }
 
-/* Define bla_write_out_t */
+/* Define bulk_write_out_t */
 typedef struct {
     hg_uint64_t ret;
-} bla_write_out_t;
+} bulk_write_out_t;
 
-/* Define hg_proc_bla_write_out_t */
+/* Define hg_proc_bulk_write_out_t */
 static HG_INLINE int
-hg_proc_bla_write_out_t(hg_proc_t proc, void *data)
+hg_proc_bulk_write_out_t(hg_proc_t proc, void *data)
 {
     int ret = HG_SUCCESS;
-    bla_write_out_t *struct_data = (bla_write_out_t *) data;
+    bulk_write_out_t *struct_data = (bulk_write_out_t *) data;
 
     ret = hg_proc_uint64_t(proc, &struct_data->ret);
     if (ret != HG_SUCCESS) {
