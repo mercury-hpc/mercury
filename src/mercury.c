@@ -732,7 +732,7 @@ HG_Initialized(hg_bool_t *flag, na_class_t **na_class)
 /*---------------------------------------------------------------------------*/
 hg_id_t
 HG_Register(const char *func_name, hg_proc_cb_t in_proc_cb,
-        hg_proc_cb_t out_proc_cb)
+        hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)
 {
     hg_id_t ret = 0;
     hg_id_t *id = NULL;
@@ -761,7 +761,7 @@ HG_Register(const char *func_name, hg_proc_cb_t in_proc_cb,
 
     hg_info->in_proc_cb = in_proc_cb;
     hg_info->out_proc_cb = out_proc_cb;
-    hg_info->rpc_cb = NULL;
+    hg_info->rpc_cb = rpc_cb;
     if (!hg_hash_table_insert(hg_func_map_g, (hg_hash_table_key_t) id, hg_info)) {
         HG_ERROR_DEFAULT("Could not insert func ID");
         goto done;
@@ -774,27 +774,6 @@ done:
         free(id);
         free(hg_info);
     }
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-HG_EXPORT hg_return_t
-HG_Register_rpc_callback(hg_id_t id, hg_rpc_cb_t rpc_cb)
-{
-    struct hg_info *hg_info = NULL;
-    hg_return_t ret = HG_SUCCESS;
-
-    hg_info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,
-            (hg_hash_table_key_t) &id);
-    if (!hg_info) {
-        HG_ERROR_DEFAULT("hg_hash_table_lookup failed");
-        ret = HG_FAIL;
-        goto done;
-    }
-
-    hg_info->rpc_cb = rpc_cb;
-
-done:
     return ret;
 }
 

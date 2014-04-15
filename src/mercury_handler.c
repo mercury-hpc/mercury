@@ -334,15 +334,6 @@ done:
         extra_buf_block_handle = HG_BULK_NULL;
     }
 
-    if (extra_buf_handle != HG_BULK_NULL) {
-        ret = HG_Bulk_handle_free(extra_buf_handle);
-        if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not free bulk handle");
-            ret = HG_FAIL;
-        }
-        extra_buf_handle = HG_BULK_NULL;
-    }
-
    return ret;
 }
 
@@ -362,6 +353,9 @@ hg_handler_start_processing(struct hg_handle *hg_handle)
         HG_ERROR_DEFAULT("Could not add handle to processing list");
         goto done;
     }
+
+    /* Initialize header with default values */
+    hg_proc_header_request_init(0, HG_BULK_NULL, &request_header);
 
     /* Decode request header */
     ret = hg_proc_header_request(hg_handle->in_buf,
@@ -398,6 +392,15 @@ hg_handler_start_processing(struct hg_handle *hg_handle)
             goto done;
         }
     }
+
+    /* Free eventual handle */
+    ret = HG_Bulk_handle_free(request_header.extra_buf_handle);
+    if (ret != HG_SUCCESS) {
+        HG_ERROR_DEFAULT("Could not free bulk handle");
+        ret = HG_FAIL;
+        goto done;
+    }
+    request_header.extra_buf_handle = HG_BULK_NULL;
 
     /* Retrieve exe function from function map */
     hg_info = (struct hg_info *) hg_hash_table_lookup(hg_func_map_g,

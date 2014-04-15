@@ -279,9 +279,10 @@ static HG_INLINE hg_return_t \
     HG_GEN_STRUCT_PROC(struct_type_name, fields)
 
 /* Register func_name */
-#define MERCURY_REGISTER(func_name, in_struct_type_name, out_struct_type_name) \
+#define MERCURY_REGISTER(func_name, in_struct_type_name, out_struct_type_name, \
+        rpc_cb) \
         HG_Register(func_name, BOOST_PP_CAT(hg_proc_, in_struct_type_name), \
-                BOOST_PP_CAT(hg_proc_, out_struct_type_name))
+                BOOST_PP_CAT(hg_proc_, out_struct_type_name), rpc_cb)
 
 /*****************************************************************************
  * Advanced BOOST macros:
@@ -519,19 +520,12 @@ static HG_INLINE hg_return_t \
 
 #else /* HG_HAS_BOOST */
 
-#define MERCURY_REGISTER(func_name, in_struct_type_name, out_struct_type_name) \
+#define MERCURY_REGISTER(func_name, in_struct_type_name, out_struct_type_name, \
+        rpc_cb) \
         HG_Register(func_name, hg_proc_ ## in_struct_type_name, \
-                hg_proc_ ## out_struct_type_name)
+                hg_proc_ ## out_struct_type_name, rpc_cb)
 
 #endif /* HG_HAS_BOOST */
-
-/* TODO temporary macro */
-#define MERCURY_HANDLER_REGISTER(func_name, func_callback, in_struct_type_name, out_struct_type_name) \
-{ \
-    hg_id_t id = MERCURY_REGISTER(func_name, in_struct_type_name, out_struct_type_name); \
-    \
-    HG_Register_rpc_callback(id, func_callback); \
-}
 
 /* If no input args or output args, a void type can be
  * passed to MERCURY_REGISTER
