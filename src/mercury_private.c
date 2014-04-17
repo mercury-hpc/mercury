@@ -49,11 +49,12 @@ hg_handle_new(void)
 
     hg_handle->processing_entry = NULL;
 
+    hg_atomic_set32(&hg_handle->ref_count, 1);
+
     hg_handle->local = HG_FALSE;
     hg_handle->processed = HG_FALSE;
     hg_thread_mutex_init(&hg_handle->processed_mutex);
     hg_thread_cond_init(&hg_handle->processed_cond);
-
 done:
     return hg_handle;
 }
@@ -62,7 +63,11 @@ done:
 void
 hg_handle_free(struct hg_handle *hg_handle)
 {
-    if (!hg_handle) return;
+    if (!hg_handle) goto done;
+
+    if (hg_atomic_decr32(&hg_handle->ref_count)) {
+        goto done;
+    }
 
     if (hg_handle->addr != NA_ADDR_NULL && !hg_handle->local)
         NA_Addr_free(hg_na_class_g, hg_handle->addr);
@@ -78,4 +83,7 @@ hg_handle_free(struct hg_handle *hg_handle)
     hg_thread_cond_destroy(&hg_handle->processed_cond);
 
     free(hg_handle);
+
+done:
+    return;
 }

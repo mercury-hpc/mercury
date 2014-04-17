@@ -18,6 +18,7 @@
 #include "mercury_list.h"
 #include "mercury_thread_condition.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_atomic.h"
 
 struct hg_handle {
     hg_id_t       id;                  /* Request ID */
@@ -43,6 +44,8 @@ struct hg_handle {
 
     hg_list_entry_t *processing_entry; /* Entry in processing list */
 
+    hg_atomic_int32_t ref_count;
+
     hg_bool_t         local;
     hg_bool_t         processed;
     hg_thread_mutex_t processed_mutex;
@@ -52,7 +55,7 @@ struct hg_handle {
 struct hg_info {
     hg_proc_cb_t in_proc_cb;  /* Input serial/deserial callback */
     hg_proc_cb_t out_proc_cb; /* Output serial/deserial callback */
-    hg_rpc_cb_t  rpc_cb;         /* RPC callback */
+    hg_rpc_cb_t  rpc_cb;      /* RPC callback */
 };
 
 #ifdef __cplusplus

@@ -56,7 +56,7 @@ struct hg_bulk {
     hg_bool_t registered;             /* NA memory handles registered */
     struct hg_bulk_mirror origin;
     unsigned long flags;              /* Permission flags */
-    unsigned int ref_count;           /* Reference count */
+    hg_uint32_t ref_count;            /* Reference count */
 };
 
 struct hg_bulk_request {

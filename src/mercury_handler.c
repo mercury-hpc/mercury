@@ -417,6 +417,11 @@ hg_handler_start_processing(struct hg_handle *hg_handle)
         goto done;
     }
 
+    /* Increase ref count here so that a call to HG_Handler_free in user's RPC
+     * callback does not free the handle but only schedules its completion
+     */
+    hg_atomic_incr32(&hg_handle->ref_count);
+
     /* Execute function and fill output parameters */
     ret = hg_info->rpc_cb((hg_handle_t) hg_handle);
     if (ret != HG_SUCCESS) {
