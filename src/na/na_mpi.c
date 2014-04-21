@@ -1010,14 +1010,14 @@ NA_MPI_Gni_job_setup(void)
     uint32_t cookie_value = GNI_JOB_CREATE_COOKIE(key_value,0);
     na_return_t ret;
 
-    if ((key_value >= GNI_PKEY_USER_START)
-            && (key_value < GNI_PKEY_USER_END)) {
+    if ((key_value < GNI_PKEY_USER_START)
+            && (key_value >= GNI_PKEY_USER_END)) {
         NA_LOG_ERROR("Invalid key value");
         ret = NA_INVALID_PARAM;
         goto done;
     }
-    if ((ptag_value >= GNI_PTAG_USER_START)
-            && (ptag_value < GNI_PTAG_USER_END)) {
+    if ((ptag_value < GNI_PTAG_USER_START)
+            && (ptag_value >= GNI_PTAG_USER_END)) {
         NA_LOG_ERROR("Invalid ptag value");
         ret = NA_INVALID_PARAM;
         goto done;
