@@ -180,6 +180,8 @@ hg_thread_pool_destroy(hg_thread_pool_t *pool)
     int ret = HG_UTIL_SUCCESS;
     unsigned int i;
 
+    if (!pool) goto done;
+
     if (pool->threads) {
         if (hg_thread_mutex_lock(&pool->mutex) != HG_UTIL_SUCCESS) {
             HG_UTIL_ERROR_DEFAULT("Cannot lock pool mutex");
