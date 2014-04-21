@@ -14,11 +14,11 @@ endfunction()
 
 #------------------------------------------------------------------------------
 # Network abstraction test
-build_mercury_test(client_na)
-build_mercury_test(server_na)
+#build_mercury_test(client_na)
+#build_mercury_test(server_na)
 
 #------------------------------------------------------------------------------
 # Set list of tests
 
 # Dynamic client / server test with all enabled NA plugins
-add_mercury_test(na server_na client_na)
+#add_mercury_test(na server_na client_na)

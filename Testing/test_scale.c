@@ -316,79 +316,17 @@ measure_bulk_transfer(na_addr_t addr)
     return HG_SUCCESS;
 }
 
-/**
- *
- */
-//static int
-//server_finalize(na_addr_t addr)
-//{
-//    hg_request_t finalize_request;
-//    int hg_ret;
-//
-//    /* Forward call to remote addr and get a new request */
-//    hg_ret = HG_Forward(addr, finalize_id, NULL, NULL, &finalize_request);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not forward call\n");
-//        return HG_FAIL;
-//    }
-//
-//    /* Wait for call to be executed and return value to be sent back
-//     * (Request is freed when the call completes)
-//     */
-//    hg_ret = HG_Wait(finalize_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Error during wait\n");
-//        return HG_FAIL;
-//    }
-//
-//    /* Free request */
-//    hg_ret = HG_Request_free(finalize_request);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not free request\n");
-//        return HG_FAIL;
-//    }
-//
-//    return HG_SUCCESS;
-//}
-
 /*****************************************************************************/
 int
 main(int argc, char *argv[])
 {
     na_addr_t addr;
-    char *port_name;
-    na_class_t *network_class = NULL;
 
-    int hg_ret, na_ret;
+    HG_Test_client_init(argc, argv, &addr, &client_rank);
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
-    MPI_Init(&argc, &argv);
-    MPI_Comm_rank(split_comm, &client_rank);
     MPI_Comm_size(split_comm, &client_size);
 #endif
-
-    network_class = HG_Test_client_init(argc, argv, &port_name, NULL);
-
-    hg_ret = HG_Init(network_class);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize Mercury\n");
-        return EXIT_FAILURE;
-    }
-
-    if (strcmp(port_name, "self") == 0) {
-        /* Self addr */
-        na_ret = NA_Addr_self(network_class, &addr);
-    } else {
-        /* Look up addr using port name info */
-        na_ret = NA_Addr_lookup_wait(network_class, port_name, &addr);
-    }
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not find addr %s\n", port_name);
-        return EXIT_FAILURE;
-    }
-
-    /* Register function and encoding/decoding functions */
-    HG_Test_register();
 
     /* Run RPC test */
     measure_rpc(addr);
@@ -400,38 +338,7 @@ main(int argc, char *argv[])
     /* Run Bulk test */
     measure_bulk_transfer(addr);
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
-    MPI_Barrier(split_comm);
-#endif
-
-//    if (client_rank == 0) {
-//        server_finalize(addr);
-//    }
-
-    /* Free addr id */
-    na_ret = NA_Addr_free(network_class, addr);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not free addr\n");
-        return EXIT_FAILURE;
-    }
-
-    /* Finalize interface */
-    hg_ret = HG_Finalize();
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize Mercury\n");
-        return EXIT_FAILURE;
-    }
-
-    na_ret = NA_Finalize(network_class);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not finalize NA interface\n");
-        return EXIT_FAILURE;
-    }
-
-#ifdef MERCURY_HAS_PARALLEL_TESTING
-    MPI_Finalize();
-#endif
-
+    HG_Test_finalize();
 
     return EXIT_SUCCESS;
 }

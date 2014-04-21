@@ -66,7 +66,6 @@ read_data(na_addr_t addr, hg_bulk_t bulk_handle)
 int
 main(int argc, char *argv[])
 {
-    na_class_t *na_class = NULL;
     hg_bulk_t bulk_handle;
     na_addr_t addr = NA_ADDR_NULL;
 
@@ -77,10 +76,7 @@ main(int argc, char *argv[])
     strcpy(src, "Nothing");
 
     /* Initialize interface */
-    na_class = HG_Test_client_init(argc, argv, NULL, NULL);
-    NA_Addr_self(na_class, &addr);
-
-    HG_Bulk_init(na_class);
+    HG_Test_client_init(argc, argv, &addr, NULL);
 
     /* This is created remotely or locally */
     HG_Bulk_handle_create(src, size, HG_BULK_READ_ONLY, &bulk_handle);
@@ -99,10 +95,7 @@ main(int argc, char *argv[])
     HG_Bulk_handle_free(bulk_handle);
 
     /* Finalize interface */
-    HG_Bulk_finalize();
-
-    NA_Addr_free(na_class, addr);
-    HG_Test_finalize(na_class);
+    HG_Test_finalize();
 
     return EXIT_SUCCESS;
 }

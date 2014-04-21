@@ -18,9 +18,7 @@ extern hg_id_t hg_test_bulk_write_id_g;
 /******************************************************************************/
 int main(int argc, char *argv[])
 {
-    char *port_name;
     na_addr_t addr;
-    na_class_t *network_class = NULL;
 
     bulk_write_in_t bulk_write_in_struct;
     bulk_write_out_t bulk_write_out_struct;
@@ -33,7 +31,7 @@ int main(int argc, char *argv[])
     size_t bulk_write_ret = 0;
 
     hg_status_t bulk_write_status;
-    int hg_ret, na_ret;
+    hg_return_t hg_ret;
     size_t i;
 
     /* Prepare bulk_buf */
@@ -45,28 +43,7 @@ int main(int argc, char *argv[])
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    network_class = HG_Test_client_init(argc, argv, &port_name, NULL);
-
-    hg_ret = HG_Init(network_class);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize Mercury\n");
-        return EXIT_FAILURE;
-    }
-
-    if (strcmp(port_name, "self") == 0) {
-        /* Self addr */
-        na_ret = NA_Addr_self(network_class, &addr);
-    } else {
-        /* Look up addr using port name info */
-        na_ret = NA_Addr_lookup_wait(network_class, port_name, &addr);
-    }
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not find addr %s\n", port_name);
-        return EXIT_FAILURE;
-    }
-
-    /* Register function and encoding/decoding functions */
-    HG_Test_register();
+    HG_Test_client_init(argc, argv, &addr, NULL);
 
     /* Register memory */
     hg_ret = HG_Bulk_handle_create(bulk_buf, sizeof(int) * bulk_size, HG_BULK_READ_ONLY,
@@ -125,21 +102,7 @@ int main(int argc, char *argv[])
     /* Free bulk data */
     free(bulk_buf);
 
-    /* Free addr id */
-    na_ret = NA_Addr_free(network_class, addr);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not free addr\n");
-        return EXIT_FAILURE;
-    }
-
-    /* Finalize interface */
-    hg_ret = HG_Finalize();
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize Mercury\n");
-        return EXIT_FAILURE;
-    }
-
-    HG_Test_finalize(network_class);
+    HG_Test_finalize();
 
     return EXIT_SUCCESS;
 }

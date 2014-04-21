@@ -27,27 +27,21 @@ extern "C" {
 /**
  * Initialize client
  */
-na_class_t *
-HG_Test_client_init(int argc, char *argv[], char **port_name, int *rank);
+hg_return_t
+HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank);
 
 /**
  * Initialize server
  */
-na_class_t *
+hg_return_t
 HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         unsigned int *addr_table_size, unsigned int *max_number_of_peers);
 
 /**
  * Finalize client/server
  */
-void
-HG_Test_finalize(na_class_t *network_class);
-
-/**
- * Register test routines
- */
-void
-HG_Test_register(void);
+hg_return_t
+HG_Test_finalize(void);
 
 #ifdef __cplusplus
 }

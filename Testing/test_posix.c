@@ -11,110 +11,11 @@
 #include "mercury_test.h"
 
 static na_addr_t addr;
-static na_class_t *network_class = NULL;
 
 extern hg_id_t hg_test_posix_open_id_g;
 extern hg_id_t hg_test_posix_write_id_g;
 extern hg_id_t hg_test_posix_read_id_g;
 extern hg_id_t hg_test_posix_close_id_g;
-
-static int
-init_rpc(int argc, char *argv[], int *rank)
-{
-    int hg_ret, na_ret;
-    int ret = HG_SUCCESS;
-    char *port_name;
-
-    /* Initialize the interface (for convenience, shipper_test_client_init
-     * initializes the network interface with the selected plugin)
-     */
-    network_class = HG_Test_client_init(argc, argv, &port_name, rank);
-
-    hg_ret = HG_Init(network_class);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize Mercury\n");
-        ret = HG_FAIL;
-        return ret;
-    }
-
-    if (strcmp(port_name, "self") == 0) {
-        /* Self addr */
-        na_ret = NA_Addr_self(network_class, &addr);
-    } else {
-        /* Look up addr using port name info */
-        na_ret = NA_Addr_lookup_wait(network_class, port_name, &addr);
-    }
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not find addr %s\n", port_name);
-        return EXIT_FAILURE;
-    }
-
-    /* Register function and encoding/decoding functions */
-    HG_Test_register();
-
-    return ret;
-}
-
-static int
-finalize_rpc()
-{
-    int hg_ret, na_ret;
-    int ret = HG_SUCCESS;
-    hg_request_t request;
-    hg_status_t status;
-    int finalize_ret;
-
-//    /* Forward call to remote addr and get a new request */
-//    hg_ret = HG_Forward(addr, finalize_id, NULL, NULL, &request);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not forward call\n");
-//        finalize_ret = HG_FAIL;
-//        return finalize_ret;
-//    }
-//
-//    /* Wait for call to be executed and return value to be sent back
-//     * (Request is freed when the call completes)
-//     */
-//    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Error during wait\n");
-//        finalize_ret = HG_FAIL;
-//        return finalize_ret;
-//    }
-//    if (!status) {
-//        fprintf(stderr, "Operation did not complete\n");
-//        finalize_ret = HG_FAIL;
-//        return finalize_ret;
-//    }
-//
-//    /* Free request */
-//    hg_ret = HG_Request_free(request);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not free request\n");
-//        finalize_ret = HG_FAIL;
-//        return finalize_ret;
-//    }
-
-    /* Free addr id */
-    na_ret = NA_Addr_free(network_class, addr);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not free addr\n");
-        ret = HG_FAIL;
-        return ret;
-    }
-
-    /* Finalize interface */
-    hg_ret = HG_Finalize();
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize Mercury\n");
-        ret = HG_FAIL;
-        return ret;
-    }
-
-    HG_Test_finalize(network_class);
-
-    return ret;
-}
 
 static int
 open_rpc(const char *pathname, int flags, mode_t mode)
@@ -386,10 +287,13 @@ main(int argc, char *argv[])
     ssize_t nbyte;
 
 #ifndef MERCURY_HAS_ADVANCED_MACROS
-    int hg_ret;
+    hg_return_t hg_ret;
 
     printf("Initializing...\n");
-    hg_ret = init_rpc(argc, argv, &rank);
+    /* Initialize the interface (for convenience, shipper_test_client_init
+     * initializes the network interface with the selected plugin)
+     */
+    hg_ret = HG_Test_client_init(argc, argv, &addr, &rank);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error in client_posix_init\n");
         return EXIT_FAILURE;
@@ -473,7 +377,7 @@ main(int argc, char *argv[])
 #ifndef MERCURY_HAS_ADVANCED_MACROS
     printf("(%d) Finalizing...\n", rank);
 
-    hg_ret = finalize_rpc();
+    hg_ret = HG_Test_finalize();
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Error in client_posix_finalize\n");
         return EXIT_FAILURE;

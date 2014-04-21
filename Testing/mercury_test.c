@@ -11,6 +11,9 @@
 #include "mercury_test.h"
 #include "mercury_rpc_cb.h"
 
+#include "mercury_atomic.h"
+#include "mercury_thread_pool.h"
+
 #ifdef NA_HAS_BMI
 #include "na_bmi.h"
 #include <unistd.h>
@@ -34,44 +37,151 @@
 /****************/
 #define HG_TEST_MAX_ADDR_NAME 256
 
-#ifdef HG_HAS_BOOST
-#define HG_TEST_REGISTER(func_name) \
-        MERCURY_REGISTER(BOOST_PP_STRINGIZE(BOOST_PP_CAT(hg_test_, func_name)), \
-                BOOST_PP_CAT(func_name, _in_t), BOOST_PP_CAT(func_name, _out_t), \
-                BOOST_PP_CAT(func_name, _cb))
-#else
-#define HG_TEST_STRINGIZE(func_name) #func_name
-#define HG_TEST_REGISTER(func_name) \
-        MERCURY_REGISTER(HG_TEST_STRINGIZE(hg_test_ ## func_name), \
-                func_name ## _in_t, func_name ## _out_t, \
-                func_name ## _cb)
-#endif
+#define USE_THREAD_POOL /* use thread pool */
 
 /*******************/
 /* Local Variables */
 /*******************/
+static na_class_t *hg_na_class_g = NULL;
+static hg_bool_t hg_test_is_client_g = HG_FALSE;
+static na_addr_t hg_test_addr_g = NA_ADDR_NULL;
+static int hg_test_rank_g = 0;
+
+#ifdef MERCURY_HAS_PARALLEL_TESTING
+static int mpi_internally_initialized = HG_FALSE;
+#endif
+
+#ifdef USE_THREAD_POOL
+static hg_thread_pool_t *thread_pool = NULL;
+#endif
+
 static char **na_addr_table = NULL;
 static unsigned int na_addr_table_size = 0;
 
-/* Register func_name */
+/* test_rpc */
 hg_id_t hg_test_rpc_open_id_g = 0;
+
+/* test_bulk */
 hg_id_t hg_test_bulk_write_id_g = 0;
+
+/* test_bulk_seg */
 hg_id_t hg_test_bulk_seg_write_id_g = 0;
 
+/* test_pipeline */
+hg_id_t hg_test_pipeline_write_id_g = 0;
+
+/* test_posix */
 hg_id_t hg_test_posix_open_id_g = 0;
 hg_id_t hg_test_posix_write_id_g = 0;
 hg_id_t hg_test_posix_read_id_g = 0;
 hg_id_t hg_test_posix_close_id_g = 0;
 
+/* test_scale */
 hg_id_t hg_test_scale_open_id_g = 0;
 hg_id_t hg_test_scale_write_id_g = 0;
 
+/* test_finalize */
+hg_id_t hg_test_finalize_id_g = 0;
+hg_atomic_int32_t hg_test_finalizing_count_g;
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_test_finalize_rpc(void)
+{
+    hg_return_t hg_ret;
+    hg_request_t request;
+    hg_status_t status;
+
+    /* Forward call to remote addr and get a new request */
+    hg_ret = HG_Forward(hg_test_addr_g, hg_test_finalize_id_g, NULL, NULL,
+            &request);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not forward call\n");
+    }
+
+    /* Wait for call to be executed and return value to be sent back
+     * (Request is freed when the call completes)
+     */
+    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Error during wait\n");
+    }
+    if (!status) {
+        fprintf(stderr, "Operation did not complete\n");
+    }
+
+    /* Free request */
+    hg_ret = HG_Request_free(request);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free request\n");
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_finalize_cb(hg_handle_t handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_atomic_incr32(&hg_test_finalizing_count_g);
+
+    /* Free handle and send response back */
+    ret = HG_Handler_start_output(handle, NULL);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    HG_Handler_free(handle);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_test_register(void)
+{
+    /* test_rpc */
+    hg_test_rpc_open_id_g = MERCURY_REGISTER("hg_test_rpc_open", rpc_open_in_t,
+            rpc_open_out_t, hg_test_rpc_open_cb);
+
+    /* test_bulk */
+    hg_test_bulk_write_id_g = MERCURY_REGISTER("hg_test_bulk_write",
+            bulk_write_in_t, bulk_write_out_t, hg_test_bulk_write_cb);
+
+    /* test_bulk_seg */
+    hg_test_bulk_seg_write_id_g = MERCURY_REGISTER("hg_test_bulk_seg_write",
+            bulk_write_in_t, bulk_write_out_t, hg_test_bulk_seg_write_cb);
+
+    /* test_pipeline */
+    hg_test_pipeline_write_id_g = MERCURY_REGISTER("hg_test_pipeline_write",
+            bulk_write_in_t, bulk_write_out_t, hg_test_pipeline_write_cb);
+
+    /* test_posix */
+    hg_test_posix_open_id_g = MERCURY_REGISTER("hg_test_posix_open",
+            open_in_t, open_out_t, hg_test_posix_open_cb);
+    hg_test_posix_write_id_g = MERCURY_REGISTER("hg_test_posix_write",
+            write_in_t, write_out_t, hg_test_posix_write_cb);
+    hg_test_posix_read_id_g = MERCURY_REGISTER("hg_test_posix_read",
+            read_in_t, read_out_t, hg_test_posix_read_cb);
+    hg_test_posix_close_id_g = MERCURY_REGISTER("hg_test_posix_close",
+            close_in_t, close_out_t, hg_test_posix_close_cb);
+
+    /* test_scale */
+    hg_test_scale_open_id_g = MERCURY_REGISTER("hg_test_scale_open",
+            open_in_t, open_out_t, hg_test_scale_open_cb);
+    hg_test_scale_write_id_g = MERCURY_REGISTER("hg_test_scale_write",
+            write_in_t, write_out_t, hg_test_scale_write_cb);
+
+    /* test_finalize */
+    hg_test_finalize_id_g = MERCURY_REGISTER("hg_test_finalize",
+            void, void, hg_test_finalize_cb);
+}
+
 /*---------------------------------------------------------------------------*/
 #ifdef MERCURY_HAS_PARALLEL_TESTING
-static int mpi_internally_initialized = HG_FALSE;
-
 static void
-HG_Test_mpi_init(hg_bool_t server)
+hg_test_mpi_init(hg_bool_t server)
 {
     int mpi_initialized = 0;
 
@@ -98,8 +208,9 @@ HG_Test_mpi_init(hg_bool_t server)
     }
 }
 
+/*---------------------------------------------------------------------------*/
 static void
-HG_Test_mpi_finalize(void)
+hg_test_mpi_finalize(void)
 {
     int mpi_finalized = 0;
 
@@ -113,7 +224,7 @@ HG_Test_mpi_finalize(void)
 
 /*---------------------------------------------------------------------------*/
 static void
-HG_Test_set_config(const char *addr_name)
+hg_test_set_config(const char *addr_name)
 {
     FILE *config = NULL;
     int my_rank = 0, my_size = 1;
@@ -157,7 +268,7 @@ HG_Test_set_config(const char *addr_name)
 
 /*---------------------------------------------------------------------------*/
 static void
-HG_Test_get_config(char *addr_name, size_t len, int *rank)
+hg_test_get_config(char *addr_name, size_t len, int *rank)
 {
     FILE *config = NULL;
     int my_rank = 0;
@@ -189,12 +300,12 @@ HG_Test_get_config(char *addr_name, size_t len, int *rank)
 }
 
 /*---------------------------------------------------------------------------*/
-na_class_t *
-HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
+hg_return_t
+HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank)
 {
-    static char test_addr_name[HG_TEST_MAX_ADDR_NAME];
-    int test_rank = 0;
-    na_class_t *network_class = NULL;
+    char test_addr_name[HG_TEST_MAX_ADDR_NAME];
+    hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
 
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <bmi|mpi|ssm>\n", argv[0]);
@@ -205,14 +316,14 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
     if (strcmp("mpi", argv[1]) == 0) {
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init(HG_FALSE);
+        hg_test_mpi_init(HG_FALSE);
 
-        HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
+        hg_test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &hg_test_rank_g);
 
         if (argc > 2 && (strcmp("static", argv[2]) == 0)) {
-            network_class = NA_MPI_Init(NULL, MPI_INIT_STATIC);
+            hg_na_class_g = NA_MPI_Init(NULL, MPI_INIT_STATIC);
         } else {
-            network_class = NA_Initialize("tcp@mpi://0.0.0.0:0", 0);
+            hg_na_class_g = NA_Initialize("tcp@mpi://0.0.0.0:0", 0);
         }
         /* Only call finalize at the end */
     }
@@ -223,13 +334,13 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
 #ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init(HG_FALSE);
+        hg_test_mpi_init(HG_FALSE);
 #endif
-        HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
+        hg_test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &hg_test_rank_g);
 #ifdef MERCURY_HAS_PARALLEL_TESTING
-        HG_Test_mpi_finalize();
+//        hg_test_mpi_finalize();
 #endif
-        network_class = NA_Initialize(test_addr_name, 0);
+        hg_na_class_g = NA_Initialize(test_addr_name, 0);
     }
 #endif
 
@@ -238,14 +349,14 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
 #ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init(HG_FALSE);
+        hg_test_mpi_init(HG_FALSE);
 #endif
-        HG_Test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
+        hg_test_get_config(test_addr_name, HG_TEST_MAX_ADDR_NAME, &test_rank);
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
-        HG_Test_mpi_finalize();
+        hg_test_mpi_finalize();
 #endif
-        network_class = NA_Initialize(test_addr_name, NA_FALSE);
+        hg_na_class_g = NA_Initialize(test_addr_name, NA_FALSE);
     }
 #endif
 
@@ -256,18 +367,44 @@ HG_Test_client_init(int argc, char *argv[], char **addr_name, int *rank)
         strcpy(test_addr_name, "self");
     }
 
-    if (addr_name) *addr_name = test_addr_name;
-    if (rank) *rank = test_rank;
+    ret = HG_Init(hg_na_class_g);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not initialize Mercury\n");
+        goto done;
+    }
 
-    return network_class;
+    if (strcmp(test_addr_name, "self") == 0) {
+        /* Self addr */
+        na_ret = NA_Addr_self(hg_na_class_g, &hg_test_addr_g);
+    } else {
+        /* Look up addr using port name info */
+        na_ret = NA_Addr_lookup_wait(hg_na_class_g, test_addr_name, &hg_test_addr_g);
+    }
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not find addr %s\n", test_addr_name);
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    /* Register routines */
+    hg_test_register();
+
+    /* When finalize is called we need to free the addr etc */
+    hg_test_is_client_g = HG_TRUE;
+
+    if (addr) *addr = hg_test_addr_g;
+    if (rank) *rank = hg_test_rank_g;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-na_class_t *
+hg_return_t
 HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         unsigned int *addr_table_size, unsigned int *max_number_of_peers)
 {
-    na_class_t *network_class = NULL;
+    hg_return_t ret = HG_SUCCESS;
 
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <bmi|mpi|ssm>\n", argv[0]);
@@ -278,15 +415,15 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
     if (strcmp("mpi", argv[1]) == 0) {
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init(HG_TRUE);
+        hg_test_mpi_init(HG_TRUE);
 
         if (argc > 2 && (strcmp("static", argv[2]) == 0)) {
-            network_class = NA_MPI_Init(NULL, MPI_INIT_SERVER | MPI_INIT_STATIC);
+            hg_na_class_g = NA_MPI_Init(NULL, MPI_INIT_SERVER | MPI_INIT_STATIC);
         } else {
-            network_class = NA_Initialize("tcp@mpi://0.0.0.0:0", 1);
+            hg_na_class_g = NA_Initialize("tcp@mpi://0.0.0.0:0", 1);
 
             /* Gather addresses */
-            HG_Test_set_config(NA_MPI_Get_port_name(network_class));
+            hg_test_set_config(NA_MPI_Get_port_name(hg_na_class_g));
         }
         /* Only call finalize at the end */
     }
@@ -303,7 +440,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
 #ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init(HG_TRUE);
+        hg_test_mpi_init(HG_TRUE);
         MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 #endif
 
@@ -313,13 +450,13 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         sprintf(addr_name, "tcp://%s:%u", hostname, port_number);
 
         /* Gather addresses */
-        HG_Test_set_config(addr_name);
+        hg_test_set_config(addr_name);
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
-        HG_Test_mpi_finalize();
+//        hg_test_mpi_finalize();
 #endif
 
-        network_class = NA_Initialize(addr_name, NA_TRUE);
+        hg_na_class_g = NA_Initialize(addr_name, NA_TRUE);
     }
 #endif
 
@@ -333,7 +470,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
 #ifdef MERCURY_HAS_PARALLEL_TESTING
         /* Test run in parallel using mpirun so must intialize MPI to get
          * basic setup info etc */
-        HG_Test_mpi_init(HG_TRUE);
+        hg_test_mpi_init(HG_TRUE);
         MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 #endif
         /* Generate a port number depending on server rank */
@@ -342,14 +479,22 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         sprintf(addr_name, "tcp@ssm://%s:%u", hostname, port_number);
 
         /* Gather addresses */
-        HG_Test_set_config(addr_name);
+        hg_test_set_config(addr_name);
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
-        HG_Test_mpi_finalize();
+        hg_test_mpi_finalize();
 #endif
 
-        network_class = NA_Initialize(addr_name, 1);
+        hg_na_class_g = NA_Initialize(addr_name, 1);
     }
+#endif
+
+    /* Initalize atomic variable to finalize server */
+    hg_atomic_set32(&hg_test_finalizing_count_g, 0);
+
+#ifdef USE_THREAD_POOL
+    hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &thread_pool);
+    printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
 
     /* As many entries in addr table as number of server ranks */
@@ -364,25 +509,65 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
     if (max_number_of_peers) *max_number_of_peers = 1;
 #endif
 
-    /* Used by Test Driver */
+    ret = HG_Init(hg_na_class_g);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not initialize Mercury\n");
+        goto done;
+    }
+
+    /* Register test routines */
+    hg_test_register();
+
+    /* Used by CTest Test Driver */
     printf("Waiting for client...\n");
     fflush(stdout);
 
-    return network_class;
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-void
-HG_Test_finalize(na_class_t *network_class)
+hg_return_t
+HG_Test_finalize(void)
 {
-    int na_ret;
+    hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
     unsigned int i;
 
-    na_ret = NA_Finalize(network_class);
+#ifdef MERCURY_HAS_PARALLEL_TESTING
+    MPI_Barrier(MPI_COMM_WORLD);
+#endif
+
+    if (hg_test_is_client_g) {
+        /* Terminate server */
+        if (hg_test_rank_g == 0) hg_test_finalize_rpc();
+
+        /* Free addr id */
+        na_ret = NA_Addr_free(hg_na_class_g, hg_test_addr_g);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not free addr\n");
+            goto done;
+        }
+        hg_test_addr_g = NA_ADDR_NULL;
+    }
+
+#ifdef USE_THREAD_POOL
+    hg_thread_pool_destroy(thread_pool);
+#endif
+
+    /* Finalize interface */
+    ret = HG_Finalize();
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not finalize Mercury\n");
+        goto done;
+    }
+
+    na_ret = NA_Finalize(hg_na_class_g);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not finalize NA interface\n");
         goto done;
     }
+    hg_na_class_g = NULL;
 
     if (na_addr_table_size && na_addr_table) {
         for (i = 0; i < na_addr_table_size; i++) {
@@ -394,19 +579,9 @@ HG_Test_finalize(na_class_t *network_class)
     }
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
-    HG_Test_mpi_finalize();
+    hg_test_mpi_finalize();
 #endif
 
 done:
-     return;
-}
-
-/*---------------------------------------------------------------------------*/
-void
-HG_Test_register(void)
-{
-    hg_test_rpc_open_id_g = HG_TEST_REGISTER(rpc_open);
-    hg_test_bulk_write_id_g = HG_TEST_REGISTER(bulk_write);
-    hg_test_bulk_seg_write_id_g = MERCURY_REGISTER("hg_test_bulk_seg_write",
-            bulk_write_in_t, bulk_write_out_t, bulk_seg_write);
+     return ret;
 }

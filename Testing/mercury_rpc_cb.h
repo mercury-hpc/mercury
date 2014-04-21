@@ -11,13 +11,48 @@
 #ifndef MERCURY_RPC_CB_H
 #define MERCURY_RPC_CB_H
 
+/**
+ * test_rpc
+ */
 hg_return_t
-rpc_open_cb(hg_handle_t handle);
+hg_test_rpc_open_cb(hg_handle_t handle);
 
+/**
+ * test_bulk
+ */
 hg_return_t
-bulk_write_cb(hg_handle_t handle);
+hg_test_bulk_write_cb(hg_handle_t handle);
 
+/**
+ * test_bulk_seg
+ */
 hg_return_t
-bulk_seg_write(hg_handle_t handle);
+hg_test_bulk_seg_write_cb(hg_handle_t handle);
+
+/**
+ * test_pipeline
+ */
+hg_return_t
+hg_test_pipeline_write_cb(hg_handle_t handle);
+
+/**
+ * test_posix
+ */
+hg_return_t
+hg_test_posix_open_cb(hg_handle_t handle);
+hg_return_t
+hg_test_posix_write_cb(hg_handle_t handle);
+hg_return_t
+hg_test_posix_read_cb(hg_handle_t handle);
+hg_return_t
+hg_test_posix_close_cb(hg_handle_t handle);
+
+/**
+ * test_scale
+ */
+hg_return_t
+hg_test_scale_open_cb(hg_handle_t handle);
+hg_return_t
+hg_test_scale_write_cb(hg_handle_t handle);
 
 #endif /* MERCURY_RPC_CB_H */
