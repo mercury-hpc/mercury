@@ -11,11 +11,63 @@
 #include "mercury_test.h"
 
 #include "mercury_time.h"
+#include "mercury_thread_pool.h"
 
+/****************/
+/* Local Macros */
+/****************/
 #define PIPELINE_SIZE 4
 #define MIN_BUFFER_SIZE (2 << 15) /* 11 Stop at 4KB buffer size */
 
+/* TODO add testing options */
 #define HG_TEST_CORESIDENT
+#define HG_USE_THREAD_POOL
+#define HG_TEST_CHECK_DATA
+
+#ifdef HG_USE_THREAD_POOL
+#define HG_TEST_RPC_CB(func_name, handle) \
+    static hg_return_t \
+    func_name ## _thread_cb(hg_handle_t handle)
+
+/* Assuming func_name_cb is defined, calling HG_TEST_THREAD_CB(func_name)
+ * will define func_name_thread and func_name_thread_cb that can be used
+ * to execute RPC callback from a thread
+ */
+#define HG_TEST_THREAD_CB(func_name) \
+        static HG_THREAD_RETURN_TYPE \
+        func_name ## _thread \
+        (void *arg) \
+        { \
+            hg_handle_t handle = (hg_handle_t) arg; \
+            hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0; \
+            \
+            func_name ## _thread_cb(handle); \
+            \
+            return thread_ret; \
+        } \
+        hg_return_t \
+        func_name ## _cb(hg_handle_t handle) \
+        { \
+            hg_return_t ret = HG_SUCCESS; \
+            \
+            hg_thread_pool_post(hg_test_thread_pool_g, func_name ## _thread, \
+                    handle); \
+            \
+            return ret; \
+        }
+#else
+#define HG_TEST_RPC_CB(func_name, handle) \
+    hg_return_t \
+    func_name ## _cb(hg_handle_t handle)
+#define HG_TEST_THREAD_CB(func_name)
+#endif
+
+/*******************/
+/* Local Variables */
+/*******************/
+#ifdef HG_USE_THREAD_POOL
+extern hg_thread_pool_t *hg_test_thread_pool_g;
+#endif
 
 /*---------------------------------------------------------------------------*/
 /* Actual definition of the functions that need to be executed */
@@ -101,8 +153,7 @@ pipeline_bulk_write(double sleep_time, hg_bulk_request_t bulk_request,
 /*---------------------------------------------------------------------------*/
 /* RPC callbacks */
 /*---------------------------------------------------------------------------*/
-hg_return_t
-hg_test_rpc_open_cb(hg_handle_t handle)
+HG_TEST_RPC_CB(hg_test_rpc_open, handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -146,8 +197,7 @@ hg_test_rpc_open_cb(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-hg_test_bulk_write_cb(hg_handle_t handle)
+HG_TEST_RPC_CB(hg_test_bulk_write, handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -258,8 +308,7 @@ hg_test_bulk_write_cb(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-hg_test_bulk_seg_write_cb(hg_handle_t handle)
+HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -450,8 +499,7 @@ hg_test_bulk_seg_write_cb(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-hg_test_pipeline_write_cb(hg_handle_t handle)
+HG_TEST_RPC_CB(hg_test_pipeline_write, handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -700,8 +748,7 @@ hg_test_pipeline_write_cb(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-hg_test_posix_open_cb(hg_handle_t handle)
+HG_TEST_RPC_CB(hg_test_posix_open, handle)
 {
     hg_return_t hg_ret = HG_SUCCESS;
 
@@ -745,8 +792,7 @@ hg_test_posix_open_cb(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-hg_test_posix_close_cb(hg_handle_t handle)
+HG_TEST_RPC_CB(hg_test_posix_close, handle)
 {
     hg_return_t hg_ret = HG_SUCCESS;
 
@@ -786,8 +832,7 @@ hg_test_posix_close_cb(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-hg_test_posix_write_cb(hg_handle_t handle)
+HG_TEST_RPC_CB(hg_test_posix_write, handle)
 {
     hg_return_t hg_ret = HG_SUCCESS;
 
@@ -891,8 +936,7 @@ hg_test_posix_write_cb(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-hg_test_posix_read_cb(hg_handle_t handle)
+HG_TEST_RPC_CB(hg_test_posix_read, handle)
 {
     hg_return_t hg_ret = HG_SUCCESS;
 
@@ -999,8 +1043,7 @@ hg_test_posix_read_cb(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-hg_test_scale_open_cb(hg_handle_t handle)
+HG_TEST_RPC_CB(hg_test_scale_open, handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -1028,8 +1071,7 @@ hg_test_scale_open_cb(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-hg_test_scale_write_cb(hg_handle_t handle)
+HG_TEST_RPC_CB(hg_test_scale_write, handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -1119,3 +1161,17 @@ hg_test_scale_write_cb(hg_handle_t handle)
 
     return ret;
 }
+
+/*---------------------------------------------------------------------------*/
+HG_TEST_THREAD_CB(hg_test_rpc_open)
+HG_TEST_THREAD_CB(hg_test_bulk_write)
+HG_TEST_THREAD_CB(hg_test_bulk_seg_write)
+HG_TEST_THREAD_CB(hg_test_pipeline_write)
+HG_TEST_THREAD_CB(hg_test_posix_open)
+HG_TEST_THREAD_CB(hg_test_posix_close)
+HG_TEST_THREAD_CB(hg_test_posix_write)
+HG_TEST_THREAD_CB(hg_test_posix_read)
+HG_TEST_THREAD_CB(hg_test_scale_open)
+HG_TEST_THREAD_CB(hg_test_scale_write)
+
+/*---------------------------------------------------------------------------*/

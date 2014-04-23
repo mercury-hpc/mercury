@@ -37,7 +37,7 @@
 /****************/
 #define HG_TEST_MAX_ADDR_NAME 256
 
-#define USE_THREAD_POOL /* use thread pool */
+#define HG_USE_THREAD_POOL /* use thread pool */
 
 /*******************/
 /* Local Variables */
@@ -51,12 +51,12 @@ static int hg_test_rank_g = 0;
 static int mpi_internally_initialized = HG_FALSE;
 #endif
 
-#ifdef USE_THREAD_POOL
-static hg_thread_pool_t *thread_pool = NULL;
-#endif
-
 static char **na_addr_table = NULL;
 static unsigned int na_addr_table_size = 0;
+
+#ifdef HG_USE_THREAD_POOL
+hg_thread_pool_t *hg_test_thread_pool_g = NULL;
+#endif
 
 /* test_rpc */
 hg_id_t hg_test_rpc_open_id_g = 0;
@@ -492,8 +492,8 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
     /* Initalize atomic variable to finalize server */
     hg_atomic_set32(&hg_test_finalizing_count_g, 0);
 
-#ifdef USE_THREAD_POOL
-    hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &thread_pool);
+#ifdef HG_USE_THREAD_POOL
+    hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &hg_test_thread_pool_g);
     printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
 
@@ -549,11 +549,11 @@ HG_Test_finalize(void)
             goto done;
         }
         hg_test_addr_g = NA_ADDR_NULL;
-    }
-
-#ifdef USE_THREAD_POOL
-    hg_thread_pool_destroy(thread_pool);
+    } else {
+#ifdef HG_USE_THREAD_POOL
+        hg_thread_pool_destroy(hg_test_thread_pool_g);
 #endif
+    }
 
     /* Finalize interface */
     ret = HG_Finalize();
