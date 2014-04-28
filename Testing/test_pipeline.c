@@ -26,7 +26,9 @@ int main(int argc, char *argv[])
 
     int fildes = 12345;
     int *bulk_buf;
-    size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE / sizeof(int);
+    void *buf_ptr[1];
+    size_t count = (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE) / sizeof(int);
+    size_t bulk_size = count * sizeof(int);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     size_t bulk_write_ret = 0;
 
@@ -40,13 +42,14 @@ int main(int argc, char *argv[])
     HG_Test_client_init(argc, argv, &addr, NULL);
 
     /* Prepare bulk_buf */
-    bulk_buf = (int*) malloc(bulk_size * sizeof(int));
-    for (i = 0; i < bulk_size; i++) {
+    bulk_buf = (int*) malloc(bulk_size);
+    for (i = 0; i < count; i++) {
         bulk_buf[i] = (int) i;
     }
+    *buf_ptr = bulk_buf;
 
     /* Register memory */
-    hg_ret = HG_Bulk_handle_create(bulk_buf, bulk_size * sizeof(int),
+    hg_ret = HG_Bulk_handle_create(1, buf_ptr, &bulk_size,
             HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
@@ -83,7 +86,7 @@ int main(int argc, char *argv[])
 
     /* Get output parameters */
     bulk_write_ret = bulk_write_out_struct.ret;
-    if (bulk_write_ret != (bulk_size * (int)sizeof(int))) {
+    if (bulk_write_ret != bulk_size) {
         fprintf(stderr, "Data not correctly processed\n");
     }
 

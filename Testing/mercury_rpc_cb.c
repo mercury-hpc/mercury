@@ -20,7 +20,6 @@
 #define MIN_BUFFER_SIZE (2 << 15) /* 11 Stop at 4KB buffer size */
 
 /* TODO add testing options */
-#define HG_TEST_CORESIDENT
 #define HG_USE_THREAD_POOL
 #define HG_TEST_CHECK_DATA
 
@@ -210,7 +209,7 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     hg_bulk_request_t bulk_write_bulk_request;
 
     int bulk_write_fildes;
-    hg_bulk_segment_t bulk_write_segment;
+    void *bulk_write_buf;
     size_t bulk_write_nbytes;
     size_t bulk_write_ret;
 
@@ -227,38 +226,20 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
 
     bulk_write_nbytes = HG_Bulk_handle_get_size(bulk_write_bulk_handle);
 
-#ifdef HG_TEST_CORESIDENT
-    /* When using mirror API, data is not copied when running in coresident mode
-     * (i.e., addr is self) */
-    ret = HG_Bulk_mirror(source, bulk_write_bulk_handle, 0, bulk_write_nbytes,
-            &bulk_write_bulk_block_handle);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not create mirror handle\n");
-        return ret;
-    }
-    ret = HG_Bulk_sync(bulk_write_bulk_block_handle, HG_BULK_READ,
-            &bulk_write_bulk_request);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not sync mirror\n");
-        return ret;
-    }
-#else
     /* Create a new block handle to read the data */
-    bulk_write_segment.address = (hg_ptr_t) malloc(bulk_write_nbytes);
-    bulk_write_segment.size = bulk_write_nbytes;
+    bulk_write_buf = malloc(bulk_write_nbytes);
 
-    HG_Bulk_handle_create((void *) bulk_write_segment.address,
-            bulk_write_segment.size, HG_BULK_READWRITE,
-            &bulk_write_bulk_block_handle);
+    HG_Bulk_handle_create(1, &bulk_write_buf, &bulk_write_nbytes,
+    HG_BULK_READWRITE, &bulk_write_bulk_block_handle);
 
     /* Read bulk data here and wait for the data to be here  */
-    ret = HG_Bulk_read_all(source, bulk_write_bulk_handle,
-            bulk_write_bulk_block_handle, &bulk_write_bulk_request);
+    ret = HG_Bulk_transfer(HG_BULK_PULL, source, bulk_write_bulk_handle, 0,
+            bulk_write_bulk_block_handle, 0, bulk_write_nbytes,
+            &bulk_write_bulk_request);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
     }
-#endif
 
     ret = HG_Bulk_wait(bulk_write_bulk_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -266,19 +247,9 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
         return ret;
     }
 
-#ifdef HG_TEST_CORESIDENT
-    ret = HG_Bulk_handle_access(bulk_write_bulk_block_handle, 0,
-            bulk_write_nbytes, HG_BULK_READWRITE, 1, &bulk_write_segment, NULL);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not access handle\n");
-        return ret;
-    }
-#endif
-
     /* Call bulk_write */
-    bulk_write_ret = bulk_write(bulk_write_fildes,
-            (const void *) bulk_write_segment.address, 0,
-            bulk_write_segment.size, 1);
+    bulk_write_ret = bulk_write(bulk_write_fildes, bulk_write_buf, 0,
+            bulk_write_nbytes, 1);
 
     /* Fill output structure */
     bulk_write_out_struct.ret = bulk_write_ret;
@@ -290,9 +261,7 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
         return ret;
     }
 
-#ifndef HG_TEST_CORESIDENT
-    free((void *) bulk_write_segment.address);
-#endif
+    free(bulk_write_buf);
 
     /* Free handle and send response back */
     ret = HG_Handler_start_output(handle, &bulk_write_out_struct);
@@ -325,11 +294,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
     hg_bulk_request_t bulk_write_bulk_request2;
 
     int bulk_write_fildes;
-#ifdef HG_TEST_CORESIDENT
-    hg_bulk_segment_t bulk_write_segment;
-#else
     void *bulk_write_buf;
-#endif
     size_t bulk_write_nbytes;
     int bulk_write_ret = 0;
 
@@ -352,64 +317,31 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
 
     printf("Start reading first chunk of %lu bytes...\n", bulk_write_nbytes_read);
 
-#ifdef HG_TEST_CORESIDENT
-    /* When using mirror API, data is not copied when running in coresident mode
-     * (i.e., addr is self) */
-    ret = HG_Bulk_mirror(source, bulk_write_bulk_handle, 0, bulk_write_nbytes_read,
-            &bulk_write_bulk_block_handle1);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not create mirror handle\n");
-        return ret;
-    }
-    ret = HG_Bulk_sync(bulk_write_bulk_block_handle1, HG_BULK_READ,
-            &bulk_write_bulk_request1);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not sync mirror\n");
-        return ret;
-    }
-#else
     bulk_write_buf = malloc(bulk_write_nbytes);
 
-    HG_Bulk_handle_create(bulk_write_buf, bulk_write_nbytes, HG_BULK_READWRITE,
-            &bulk_write_bulk_block_handle1);
+    HG_Bulk_handle_create(1, &bulk_write_buf, &bulk_write_nbytes,
+            HG_BULK_READWRITE, &bulk_write_bulk_block_handle1);
 
-    ret = HG_Bulk_read(source, bulk_write_bulk_handle, 0,
-            bulk_write_bulk_block_handle1, 0, bulk_write_nbytes_read, &bulk_write_bulk_request1);
+    ret = HG_Bulk_transfer(HG_BULK_PULL, source, bulk_write_bulk_handle, 0,
+            bulk_write_bulk_block_handle1, 0, bulk_write_nbytes_read,
+            &bulk_write_bulk_request1);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
     }
-#endif
 
     bulk_write_offset = bulk_write_nbytes_read;
     bulk_write_nbytes_read = bulk_write_nbytes - bulk_write_nbytes_read;
 
     printf("Start reading second chunk of %lu bytes...\n", bulk_write_nbytes_read);
 
-#ifdef HG_TEST_CORESIDENT
-    /* When using mirror API, data is not copied when running in coresident mode
-     * (i.e., addr is self) */
-    ret = HG_Bulk_mirror(source, bulk_write_bulk_handle, bulk_write_offset,
-            bulk_write_nbytes_read, &bulk_write_bulk_block_handle2);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not create mirror handle\n");
-        return ret;
-    }
-    ret = HG_Bulk_sync(bulk_write_bulk_block_handle2, HG_BULK_READ,
-            &bulk_write_bulk_request2);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not sync mirror\n");
-        return ret;
-    }
-#else
-    ret = HG_Bulk_read(source, bulk_write_bulk_handle, bulk_write_offset,
-            bulk_write_bulk_block_handle1, bulk_write_offset,
+    ret = HG_Bulk_transfer(HG_BULK_PULL, source, bulk_write_bulk_handle,
+            bulk_write_offset, bulk_write_bulk_block_handle1, bulk_write_offset,
             bulk_write_nbytes_read, &bulk_write_bulk_request2);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
     }
-#endif
 
     printf("Waiting for first chunk...\n");
     ret = HG_Bulk_wait(bulk_write_bulk_request1, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
@@ -426,44 +358,8 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
     }
 
     /* Call bulk_write */
-#ifdef HG_TEST_CORESIDENT
-    /* Continue until we get all the segments */
-    while ((size_t) bulk_write_ret != HG_Bulk_handle_get_size(bulk_write_bulk_block_handle1)) {
-        size_t offset = bulk_write_ret;
-
-        ret = HG_Bulk_handle_access(bulk_write_bulk_block_handle1, offset,
-                bulk_write_nbytes, HG_BULK_READWRITE, 1, &bulk_write_segment, NULL);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not access handle\n");
-            return ret;
-        }
-
-        bulk_write_ret += bulk_write(bulk_write_fildes,
-                (const void *) bulk_write_segment.address,
-                bulk_write_ret / sizeof(int),
-                bulk_write_segment.size, 1);
-    }
-
-    /* Continue until we get all the segments */
-    while ((size_t) bulk_write_ret != bulk_write_nbytes) {
-        size_t offset = bulk_write_ret - bulk_write_offset;
-
-        ret = HG_Bulk_handle_access(bulk_write_bulk_block_handle2, offset,
-                bulk_write_nbytes, HG_BULK_READWRITE, 1, &bulk_write_segment, NULL);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not access handle\n");
-            return ret;
-        }
-
-        bulk_write_ret += bulk_write(bulk_write_fildes,
-                (const void *) bulk_write_segment.address,
-                bulk_write_ret / sizeof(int),
-                bulk_write_segment.size, 1);
-    }
-#else
     bulk_write_ret = bulk_write(bulk_write_fildes, bulk_write_buf, 0,
             bulk_write_nbytes, 0);
-#endif
 
     /* Fill output structure */
     bulk_write_out_struct.ret = bulk_write_ret;
@@ -487,9 +383,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
         return ret;
     }
 
-#ifndef HG_TEST_CORESIDENT
     free(bulk_write_buf);
-#endif
 
     printf("\n");
 
@@ -542,8 +436,8 @@ HG_TEST_RPC_CB(hg_test_pipeline_write, handle)
     bulk_write_nbytes = HG_Bulk_handle_get_size(bulk_write_bulk_handle);
     bulk_write_buf = malloc(bulk_write_nbytes);
 
-    HG_Bulk_handle_create(bulk_write_buf, bulk_write_nbytes, HG_BULK_READWRITE,
-            &bulk_write_bulk_block_handle);
+    HG_Bulk_handle_create(1, &bulk_write_buf, &bulk_write_nbytes,
+            HG_BULK_READWRITE, &bulk_write_bulk_block_handle);
 
     /* Timing info */
     nmbytes = (double) bulk_write_nbytes / (1024 * 1024);
@@ -555,7 +449,7 @@ HG_TEST_RPC_CB(hg_test_pipeline_write, handle)
 
         hg_time_get_current(&t1);
 
-        ret = HG_Bulk_read(source, bulk_write_bulk_handle, 0,
+        ret = HG_Bulk_transfer(HG_BULK_PULL, source, bulk_write_bulk_handle, 0,
                 bulk_write_bulk_block_handle, 0, bulk_write_nbytes,
                 &bulk_write_bulk_request[0]);
         if (ret != HG_SUCCESS) {
@@ -585,7 +479,7 @@ HG_TEST_RPC_CB(hg_test_pipeline_write, handle)
 
         hg_time_get_current(&t1);
 
-        ret = HG_Bulk_read(source, bulk_write_bulk_handle, 0,
+        ret = HG_Bulk_transfer(HG_BULK_PULL, source, bulk_write_bulk_handle, 0,
                 bulk_write_bulk_block_handle, 0, bulk_write_nbytes,
                 &bulk_write_bulk_request[0]);
         if (ret != HG_SUCCESS) {
@@ -643,7 +537,8 @@ HG_TEST_RPC_CB(hg_test_pipeline_write, handle)
             for (pipeline_iter = 0; pipeline_iter < PIPELINE_SIZE; pipeline_iter++) {
                 size_t write_offset = start_offset + pipeline_iter * chunk_size;
 
-                ret = HG_Bulk_read(source, bulk_write_bulk_handle, write_offset,
+                ret = HG_Bulk_transfer(HG_BULK_PULL, source,
+                        bulk_write_bulk_handle, write_offset,
                         bulk_write_bulk_block_handle, write_offset, chunk_size,
                         &bulk_write_bulk_request[pipeline_iter]);
                 if (ret != HG_SUCCESS) {
@@ -683,8 +578,10 @@ HG_TEST_RPC_CB(hg_test_pipeline_write, handle)
                     /* Start another read (which is PIPELINE_SIZE far) */
                     write_offset += chunk_size * PIPELINE_SIZE;
                     if (write_offset < bulk_write_nbytes) {
-                        ret = HG_Bulk_read(source, bulk_write_bulk_handle, write_offset,
-                                bulk_write_bulk_block_handle, write_offset, chunk_size,
+                        ret = HG_Bulk_transfer(HG_BULK_PULL, source,
+                                bulk_write_bulk_handle, write_offset,
+                                bulk_write_bulk_block_handle, write_offset,
+                                chunk_size,
                                 &bulk_write_bulk_request[pipeline_iter]);
                         if (ret != HG_SUCCESS) {
                             fprintf(stderr, "Could not read bulk data\n");
@@ -852,9 +749,6 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
     /* for debug */
     int i;
     const int *buf_ptr;
-#ifdef HG_TEST_CORESIDENT
-    hg_bulk_segment_t segment;
-#endif
 
     /* Get input struct */
     hg_ret = HG_Handler_get_input(handle, &write_in_struct);
@@ -869,32 +763,23 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
     /* Read bulk data here and wait for the data to be here */
     count = HG_Bulk_handle_get_size(bulk_handle);
 
-#ifdef HG_TEST_CORESIDENT
-    HG_Bulk_mirror(source, bulk_handle, 0, count, &bulk_block_handle);
-    HG_Bulk_sync(bulk_block_handle, HG_BULK_READ, &bulk_request);
-#else
     buf = malloc(count);
 
-    HG_Bulk_handle_create(buf, count, HG_BULK_READWRITE, &bulk_block_handle);
+    HG_Bulk_handle_create(1, &buf, &count, HG_BULK_READWRITE,
+            &bulk_block_handle);
 
-    hg_ret = HG_Bulk_read_all(source, bulk_handle, bulk_block_handle, &bulk_request);
+    hg_ret = HG_Bulk_transfer(HG_BULK_PULL, source, bulk_handle, 0,
+            bulk_block_handle, 0, count, &bulk_request);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return hg_ret;
     }
-#endif
 
     hg_ret = HG_Bulk_wait(bulk_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not complete bulk data read\n");
         return hg_ret;
     }
-
-#ifdef HG_TEST_CORESIDENT
-    HG_Bulk_handle_access(bulk_block_handle, 0, count, HG_BULK_READWRITE, 1,
-            &segment, NULL);
-    buf = (void *) segment.address;
-#endif
 
     /* Check bulk buf */
     buf_ptr = (const int*) buf;
@@ -925,9 +810,7 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
         return hg_ret;
     }
 
-#ifndef HG_TEST_CORESIDENT
     free(buf);
-#endif
 
     HG_Handler_free_input(handle, &write_in_struct);
     HG_Handler_free(handle);
@@ -952,9 +835,6 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     void *buf;
     size_t count;
     ssize_t ret;
-#ifdef HG_TEST_CORESIDENT
-    hg_bulk_segment_t segment;
-#endif
 
     /* for debug */
     int i;
@@ -973,15 +853,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     /* Call read */
     count = HG_Bulk_handle_get_size(bulk_handle);
 
-#ifdef HG_TEST_CORESIDENT
-    HG_Bulk_mirror(dest, bulk_handle, 0, count, &bulk_block_handle);
-
-    HG_Bulk_handle_access(bulk_block_handle, 0, count, HG_BULK_READWRITE, 1,
-            &segment, NULL);
-    buf = (void *) segment.address;
-#else
     buf = malloc(count);
-#endif
 
     printf("Calling read with fd: %d\n", fd);
     ret = read(fd, buf, count);
@@ -995,19 +867,17 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
         }
     }
 
-#ifdef HG_TEST_CORESIDENT
-    HG_Bulk_sync(bulk_block_handle, HG_BULK_WRITE, &bulk_request);
-#else
     /* Create a new block handle to write the data */
-    HG_Bulk_handle_create(buf, ret, HG_BULK_READ_ONLY, &bulk_block_handle);
+    HG_Bulk_handle_create(1, &buf, (size_t *) &ret, HG_BULK_READ_ONLY,
+            &bulk_block_handle);
 
     /* Write bulk data here and wait for the data to be there */
-    hg_ret = HG_Bulk_write_all(dest, bulk_handle, bulk_block_handle, &bulk_request);
+    hg_ret = HG_Bulk_transfer(HG_BULK_PUSH, dest, bulk_handle, 0,
+            bulk_block_handle, 0, ret, &bulk_request);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not write bulk data\n");
         return hg_ret;
     }
-#endif
 
     hg_ret = HG_Bulk_wait(bulk_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
     if (hg_ret != HG_SUCCESS) {
@@ -1032,9 +902,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
         return hg_ret;
     }
 
-#ifndef HG_TEST_CORESIDENT
     free(buf);
-#endif
 
     HG_Handler_free_input(handle, &read_in_struct);
     HG_Handler_free(handle);
@@ -1086,9 +954,6 @@ HG_TEST_RPC_CB(hg_test_scale_write, handle)
 
     void *buf;
     size_t bulk_write_ret = 0;
-#ifdef HG_TEST_CORESIDENT
-    hg_bulk_segment_t segment;
-#endif
 
     /* Get input parameters and data */
     ret = HG_Handler_get_input(handle, &in_struct);
@@ -1103,33 +968,23 @@ HG_TEST_RPC_CB(hg_test_scale_write, handle)
     /* Create a new block handle to read the data */
     nbytes = HG_Bulk_handle_get_size(bulk_handle);
 
-#ifdef HG_TEST_CORESIDENT
-    HG_Bulk_mirror(source, bulk_handle, 0, nbytes, &bulk_block_handle);
-    HG_Bulk_sync(bulk_block_handle, HG_BULK_READ, &bulk_request);
-#else
     buf = malloc(nbytes);
 
-    HG_Bulk_handle_create(buf, nbytes, HG_BULK_READWRITE, &bulk_block_handle);
+    HG_Bulk_handle_create(1, &buf, &nbytes, HG_BULK_READWRITE,
+            &bulk_block_handle);
 
-    ret = HG_Bulk_read_all(source, bulk_handle, bulk_block_handle,
-            &bulk_request);
+    ret = HG_Bulk_transfer(HG_BULK_PULL, source, bulk_handle, 0,
+            bulk_block_handle, 0, nbytes, &bulk_request);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
     }
-#endif
 
     ret = HG_Bulk_wait(bulk_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not complete bulk data read\n");
         return ret;
     }
-
-#ifdef HG_TEST_CORESIDENT
-    HG_Bulk_handle_access(bulk_block_handle, 0, nbytes, HG_BULK_READWRITE, 1,
-            &segment, NULL);
-    buf = (void *) segment.address;
-#endif
 
     bulk_write(1, buf, 0, nbytes, 0);
 
@@ -1140,9 +995,7 @@ HG_TEST_RPC_CB(hg_test_scale_write, handle)
         return ret;
     }
 
-#ifndef HG_TEST_CORESIDENT
     free(buf);
-#endif
 
     bulk_write_ret = nbytes;
 

@@ -26,13 +26,13 @@ int main(int argc, char *argv[])
     hg_request_t bulk_write_request;
 
     int fildes = 12345;
-    int **bulk_buf;
+    void **bulk_buf;
+    size_t *bulk_sizes;
     size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE / sizeof(int);
     size_t bulk_size_x = 16;
     size_t bulk_size_y = 0;
     size_t *bulk_size_y_var = NULL;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    hg_bulk_segment_t *bulk_segments = NULL;
     size_t bulk_write_ret = 0;
 
     hg_status_t bla_open_status;
@@ -69,48 +69,38 @@ int main(int argc, char *argv[])
     }
 
     /* Prepare bulk_buf */
-    bulk_buf = (int**) malloc(bulk_size_x * sizeof(int*));
+    bulk_buf = (void **) malloc(bulk_size_x * sizeof(void *));
+    bulk_sizes = (size_t *) malloc(bulk_size_x * sizeof(size_t));
     if (bulk_size_y_var) {
         int val = 0;
         for (i = 0; i < bulk_size_x; i++) {
-            bulk_buf[i] = (int*) malloc(bulk_size_y_var[i] * sizeof(int));
+            bulk_sizes[i] = bulk_size_y_var[i] * sizeof(int);
+            bulk_buf[i] = malloc(bulk_sizes[i]);
             for (j = 0; j < bulk_size_y_var[i]; j++) {
-                bulk_buf[i][j] = val;
+                ((int **) (bulk_buf))[i][j] = val;
                 val++;
             }
         }
     } else {
         for (i = 0; i < bulk_size_x; i++) {
-            bulk_buf[i] = (int*) malloc(bulk_size_y * sizeof(int));
+            bulk_sizes[i] = bulk_size_y * sizeof(int);
+            bulk_buf[i] = malloc(bulk_sizes[i]);
             for (j = 0; j < bulk_size_y; j++) {
-                bulk_buf[i][j] = i * bulk_size_y + j;
+                ((int **) (bulk_buf))[i][j] = i * bulk_size_y + j;
             }
         }
     }
 
     /* Register memory */
-    bulk_segments = (hg_bulk_segment_t*) malloc(bulk_size_x * sizeof(hg_bulk_segment_t));
-    if (bulk_size_y_var) {
-        for (i = 0; i < bulk_size_x ; i++) {
-            bulk_segments[i].address = (hg_ptr_t) bulk_buf[i];
-            bulk_segments[i].size = bulk_size_y_var[i] * sizeof(int);
-        }
-    } else {
-        for (i = 0; i < bulk_size_x ; i++) {
-            bulk_segments[i].address = (hg_ptr_t) bulk_buf[i];
-            bulk_segments[i].size = bulk_size_y * sizeof(int);
-        }
-    }
-
-    hg_ret = HG_Bulk_handle_create_segments(bulk_segments, bulk_size_x,
+    hg_ret = HG_Bulk_handle_create(bulk_size_x, bulk_buf, bulk_sizes,
             HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         return EXIT_FAILURE;
     }
 
-    free(bulk_segments);
-    bulk_segments = NULL;
+    free(bulk_sizes);
+    bulk_sizes = NULL;
     if (bulk_size_y_var) free(bulk_size_y_var);
     bulk_size_y_var = NULL;
 

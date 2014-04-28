@@ -167,6 +167,7 @@ measure_bulk_transfer(na_addr_t addr)
 
     int fildes = 12345;
     int *bulk_buf;
+    void *buf_ptr[1];
     size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE / sizeof(int);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     size_t bulk_write_ret = 0;
@@ -192,10 +193,11 @@ measure_bulk_transfer(na_addr_t addr)
     for (i = 0; i < bulk_size; i++) {
         bulk_buf[i] = (int) i;
     }
+    *buf_ptr = bulk_buf,
 
     /* Register memory */
-    hg_ret = HG_Bulk_handle_create(bulk_buf, nbytes,
-            HG_BULK_READ_ONLY, &bulk_handle);
+    hg_ret = HG_Bulk_handle_create(1, buf_ptr, &nbytes, HG_BULK_READ_ONLY,
+            &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         return HG_FAIL;

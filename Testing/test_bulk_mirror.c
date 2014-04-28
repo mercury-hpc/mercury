@@ -16,51 +16,37 @@
 #define BUFFER_SIZE 64
 
 static void
-write_data(na_addr_t addr, hg_bulk_t bulk_handle)
+write_data(hg_bulk_t bulk_handle)
 {
-    hg_bulk_t mirror_handle;
-    hg_bulk_request_t request;
-    hg_bulk_segment_t segment;
     size_t size;
+    void *buf;
+    size_t buf_size;
 
     size = HG_Bulk_handle_get_size(bulk_handle);
 
-    HG_Bulk_mirror(addr, bulk_handle, 2, size, &mirror_handle);
-    HG_Bulk_sync(mirror_handle, HG_BULK_READ, &request);
-    HG_Bulk_wait(request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
+    HG_Bulk_handle_access(bulk_handle, 3, size, HG_BULK_READ_ONLY, 1,
+            &buf, &buf_size, NULL);
 
-    HG_Bulk_handle_access(mirror_handle, 4, size, HG_BULK_READ_ONLY, 1,
-            &segment, NULL);
-
-    printf("Data from mirror is: %s\n", (const char *) segment.address);
+    printf("Data from mirror is: %s\n", (const char *) buf);
     /* write(filedes, segment.address, size); */
-
-    HG_Bulk_handle_free(mirror_handle);
 }
 
 static void
-read_data(na_addr_t addr, hg_bulk_t bulk_handle)
+read_data(hg_bulk_t bulk_handle)
 {
-    hg_bulk_t mirror_handle;
-    hg_bulk_request_t request;
-    hg_bulk_segment_t segment;
     size_t size;
+    void *buf;
+    size_t buf_size;
 
     size = HG_Bulk_handle_get_size(bulk_handle);
-    HG_Bulk_mirror(addr, bulk_handle, 0, size, &mirror_handle);
 
-    HG_Bulk_handle_access(mirror_handle, 0, size, HG_BULK_READWRITE, 1,
-            &segment, NULL);
+    HG_Bulk_handle_access(bulk_handle, 0, size, HG_BULK_READWRITE, 1,
+            &buf, &buf_size, NULL);
 
-    printf("Data from mirror is: %s\n", (const char *) segment.address);
+    printf("Data from mirror is: %s\n", (const char *) buf);
 
     /* read(filedes, segment.address, size); */
-    strcpy((char *) segment.address, "We do not copy bulk data");
-
-    HG_Bulk_sync(mirror_handle, HG_BULK_WRITE, &request);
-    HG_Bulk_wait(request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
-
-    HG_Bulk_handle_free(mirror_handle);
+    strcpy((char *) buf, "We do not copy bulk data");
 }
 
 int
@@ -71,6 +57,7 @@ main(int argc, char *argv[])
 
     char src[BUFFER_SIZE];
     size_t size = BUFFER_SIZE;
+    void *src_ptr[1];
 
     memset(src, '\0', BUFFER_SIZE);
     strcpy(src, "Nothing");
@@ -79,17 +66,19 @@ main(int argc, char *argv[])
     HG_Test_client_init(argc, argv, &addr, NULL);
 
     /* This is created remotely or locally */
-    HG_Bulk_handle_create(src, size, HG_BULK_READ_ONLY, &bulk_handle);
+    *src_ptr = src;
+    HG_Bulk_handle_create(1, src_ptr, &size, HG_BULK_READ_ONLY,
+            &bulk_handle);
 
     printf("Data from origin is: %s\n", (const char *) src);
 
     /* Read data */
-    read_data(addr, bulk_handle);
+    read_data(bulk_handle);
 
     printf("Data from origin is now: %s\n", (const char *) src);
 
     /* Write data */
-    write_data(addr, bulk_handle);
+    write_data(bulk_handle);
 
     /* Free handle */
     HG_Bulk_handle_free(bulk_handle);
