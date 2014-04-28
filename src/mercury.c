@@ -298,8 +298,8 @@ hg_set_input(struct hg_handle *hg_handle, void *in_struct)
 #else
         hg_handle->extra_in_buf = hg_proc_get_extra_buf(proc);
         hg_handle->extra_in_buf_size = hg_proc_get_extra_size(proc);
-        ret = HG_Bulk_handle_create(hg_handle->extra_in_buf,
-                hg_handle->extra_in_buf_size, HG_BULK_READ_ONLY,
+        ret = HG_Bulk_handle_create(1, &hg_handle->extra_in_buf,
+                &hg_handle->extra_in_buf_size, HG_BULK_READ_ONLY,
                 &hg_handle->extra_in_handle);
         if (ret != HG_SUCCESS) {
             HG_ERROR_DEFAULT("Could not create bulk data handle");

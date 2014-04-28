@@ -299,8 +299,8 @@ hg_handler_get_extra_input_buf(struct hg_handle *hg_handle,
         goto done;
     }
 
-    ret = HG_Bulk_handle_create(hg_handle->extra_in_buf,
-            hg_handle->extra_in_buf_size, HG_BULK_READWRITE,
+    ret = HG_Bulk_handle_create(1, &hg_handle->extra_in_buf,
+            &hg_handle->extra_in_buf_size, HG_BULK_READWRITE,
             &extra_buf_block_handle);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not create block handle");
@@ -309,8 +309,9 @@ hg_handler_get_extra_input_buf(struct hg_handle *hg_handle,
     }
 
     /* Read bulk data here and wait for the data to be here  */
-    ret = HG_Bulk_read_all(hg_handle->addr, extra_buf_handle,
-            extra_buf_block_handle, &extra_buf_request);
+    ret = HG_Bulk_transfer(HG_BULK_PULL, hg_handle->addr, extra_buf_handle, 0,
+            extra_buf_block_handle, 0, hg_handle->extra_in_buf_size,
+            &extra_buf_request);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Could not read bulk data");
         ret = HG_FAIL;

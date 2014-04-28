@@ -23,18 +23,14 @@ typedef void *      hg_handle_t;      /* Abstract RPC handle */
 typedef void *      hg_bulk_t;        /* Abstract bulk data handle */
 typedef void *      hg_bulk_request_t;/* Bulk request object */
 
-typedef struct hg_bulk_segment {
-    hg_ptr_t address; /* address of the segment */
-    size_t size;      /* size of the segment in bytes */
-} hg_bulk_segment_t;
-
 typedef enum {
-    HG_BULK_WRITE,
-    HG_BULK_READ
+    HG_BULK_PUSH,
+    HG_BULK_PULL
 } hg_bulk_op_t;
 
 #define HG_BULK_READWRITE    NA_MEM_READWRITE
 #define HG_BULK_READ_ONLY    NA_MEM_READ_ONLY
+#define HG_BULK_WRITE_ONLY   NA_MEM_READWRITE
 
 #define HG_STATUS_IGNORE     ((hg_status_t *)1)
 
