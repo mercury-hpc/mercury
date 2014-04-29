@@ -8,9 +8,7 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "na.h"
-#include "mercury_error.h"
-#include "mercury_test.h"
+#include "na_test.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -260,7 +258,7 @@ int main(int argc, char *argv[])
     na_return_t na_ret;
 
     /* Initialize the interface */
-    params.network_class = HG_Test_server_init(argc, argv, NULL, NULL,
+    params.network_class = NA_Test_server_init(argc, argv, NULL, NULL,
             &number_of_peers);
 
     params.context = NA_Context_create(params.network_class);
@@ -318,7 +316,7 @@ int main(int argc, char *argv[])
 
     NA_Context_destroy(params.network_class, params.context);
 
-    HG_Test_finalize(params.network_class);
+    NA_Test_finalize(params.network_class);
 
     return EXIT_SUCCESS;
 }

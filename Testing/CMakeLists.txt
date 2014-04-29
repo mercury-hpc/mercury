@@ -77,7 +77,7 @@ add_subdirectory(driver)
 # Set up test macros
 #------------------------------------------------------------------------------
 #
-# hg_prefix is added to executable
+# hg prefix is added to executable
 #
 function(build_mercury_test test_name)
   add_executable(hg_${test_name} ${test_name}.c)
@@ -108,17 +108,9 @@ function(add_mercury_opt_test full_test_name server client opt)
 endfunction()
 
 #------------------------------------------------------------------------------
-# mercury_test : Lib used by tests contains main test initialization etc
-#------------------------------------------------------------------------------
-add_library(mercury_test STATIC mercury_test.c mercury_rpc_cb.c)
-target_link_libraries(mercury_test na ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
-if(MERCURY_ENABLE_COVERAGE)
-  set_coverage_flags(mercury_test)
-endif()
-
-#------------------------------------------------------------------------------
 # NA tests
 #------------------------------------------------------------------------------
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/na)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
 
 #------------------------------------------------------------------------------
@@ -127,9 +119,17 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
 
 #------------------------------------------------------------------------------
+# mercury_test : Lib used by tests contains main test initialization etc
+#------------------------------------------------------------------------------
+add_library(mercury_test STATIC mercury_test.c mercury_rpc_cb.c)
+target_link_libraries(mercury_test na_test ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(mercury_test)
+endif()
+
+#------------------------------------------------------------------------------
 # Set up test
 #------------------------------------------------------------------------------
-
 build_mercury_test(test_bulk_mirror)
 build_mercury_test(test_server)
 
