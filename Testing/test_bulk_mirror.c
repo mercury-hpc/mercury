@@ -1,8 +1,11 @@
 /*
- * test_bulk_ptr.c
+ * Copyright (C) 2013 Argonne National Laboratory, Department of Energy,
+ *                    UChicago Argonne, LLC and The HDF Group.
+ * All rights reserved.
  *
- *  Created on: Mar 24, 2014
- *      Author: jsoumagne
+ * The full copyright notice, including terms governing use, modification,
+ * and redistribution, is contained in the COPYING file that can be
+ * found at the root of the source code distribution tree.
  */
 
 #include "mercury_test.h"

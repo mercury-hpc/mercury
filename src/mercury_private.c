@@ -1,8 +1,11 @@
 /*
- * mercury_private.c
+ * Copyright (C) 2013 Argonne National Laboratory, Department of Energy,
+ *                    UChicago Argonne, LLC and The HDF Group.
+ * All rights reserved.
  *
- *  Created on: Mar 27, 2014
- *      Author: jsoumagne
+ * The full copyright notice, including terms governing use, modification,
+ * and redistribution, is contained in the COPYING file that can be
+ * found at the root of the source code distribution tree.
  */
 
 #include "mercury_private.h"
