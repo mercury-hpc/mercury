@@ -225,9 +225,7 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     bulk_write_nbytes = HG_Bulk_handle_get_size(bulk_write_bulk_handle);
 
     /* Create a new block handle to read the data */
-    bulk_write_buf = malloc(bulk_write_nbytes);
-
-    HG_Bulk_handle_create(1, &bulk_write_buf, &bulk_write_nbytes,
+    HG_Bulk_handle_create(1, NULL, &bulk_write_nbytes,
     HG_BULK_READWRITE, &bulk_write_bulk_block_handle);
 
     /* Read bulk data here and wait for the data to be here  */
@@ -246,6 +244,9 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     }
 
     /* Call bulk_write */
+    HG_Bulk_handle_access(bulk_write_bulk_block_handle, 0, bulk_write_nbytes,
+            HG_BULK_READWRITE, 1, &bulk_write_buf, NULL, NULL);
+
     bulk_write_ret = bulk_write(bulk_write_fildes, bulk_write_buf, 0,
             bulk_write_nbytes, 1);
 
@@ -258,8 +259,6 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
         fprintf(stderr, "Could not free block call\n");
         return ret;
     }
-
-    free(bulk_write_buf);
 
     /* Free handle and send response back */
     ret = HG_Handler_start_output(handle, &bulk_write_out_struct);
