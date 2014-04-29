@@ -11,7 +11,9 @@
 #include "mercury_test.h"
 
 #include "mercury_time.h"
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
 #include "mercury_thread_pool.h"
+#endif
 
 /****************/
 /* Local Macros */
@@ -19,11 +21,7 @@
 #define PIPELINE_SIZE 4
 #define MIN_BUFFER_SIZE (2 << 15) /* 11 Stop at 4KB buffer size */
 
-/* TODO add testing options */
-#define HG_USE_THREAD_POOL
-#define HG_TEST_CHECK_DATA
-
-#ifdef HG_USE_THREAD_POOL
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
 #define HG_TEST_RPC_CB(func_name, handle) \
     static hg_return_t \
     func_name ## _thread_cb(hg_handle_t handle)
@@ -64,7 +62,7 @@
 /*******************/
 /* Local Variables */
 /*******************/
-#ifdef HG_USE_THREAD_POOL
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
 extern hg_thread_pool_t *hg_test_thread_pool_g;
 #endif
 
@@ -83,7 +81,7 @@ rpc_open(const char *path, rpc_handle_t handle, int *event_id)
 static HG_INLINE size_t
 bulk_write(int fildes, const void *buf, size_t offset, size_t nbyte, int verbose)
 {
-#ifdef HG_TEST_CHECK_DATA
+#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
     size_t i;
     int error = 0;
     const int *bulk_buf = (const int*) buf;

@@ -21,15 +21,14 @@
 /* Generate processor and struct for required input/output structs
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_PROC( bulk_write_in_t, ((hg_int32_t)(fildes)) ((hg_bulk_t)(bulk_handle))
-        ((hg_uint64_t)(pipeline_buffer_size)) )
-MERCURY_GEN_PROC( bulk_write_out_t, ((hg_uint64_t)(ret)) )
+MERCURY_GEN_PROC(bulk_write_in_t,
+        ((hg_int32_t)(fildes)) ((hg_bulk_t)(bulk_handle)))
+MERCURY_GEN_PROC(bulk_write_out_t, ((hg_uint64_t)(ret)))
 #else
 /* Define bulk_write_in_t */
 typedef struct {
     hg_int32_t fildes;
     hg_bulk_t bulk_handle;
-    hg_uint64_t pipeline_buffer_size;
 } bulk_write_in_t;
 
 /* Define hg_proc_bulk_write_in_t */
@@ -47,13 +46,6 @@ hg_proc_bulk_write_in_t(hg_proc_t proc, void *data)
     }
 
     ret = hg_proc_hg_bulk_t(proc, &struct_data->bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
-        return ret;
-    }
-
-    ret = hg_proc_uint64_t(proc, &struct_data->pipeline_buffer_size);
     if (ret != HG_SUCCESS) {
         HG_ERROR_DEFAULT("Proc error");
         ret = HG_FAIL;

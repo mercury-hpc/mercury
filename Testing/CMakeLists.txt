@@ -13,6 +13,20 @@ set(MERCURY_TESTING_NUM_THREADS "8" CACHE STRING
   "Number of server threads used for testing.")
 mark_as_advanced(MERCURY_TESTING_NUM_THREADS)
 
+option(MERCURY_TESTING_USE_THREAD_POOL
+  "Run tests using thread pool." ON)
+if(MERCURY_TESTING_USE_THREAD_POOL)
+  set(MERCURY_TESTING_HAS_THREAD_POOL ON)
+endif(MERCURY_TESTING_USE_THREAD_POOL)
+mark_as_advanced(MERCURY_TESTING_USE_THREAD_POOL)
+
+option(MERCURY_TESTING_VERIFY_DATA
+  "Verify data when running tests (disable when measuring bandwidth)." ON)
+if(MERCURY_TESTING_VERIFY_DATA)
+  set(MERCURY_TESTING_HAS_VERIFY_DATA ON)
+endif(MERCURY_TESTING_VERIFY_DATA)
+mark_as_advanced(MERCURY_TESTING_VERIFY_DATA)
+
 option(MERCURY_ENABLE_PARALLEL_TESTING
   "Enable testing in parallel (requires MPI)." OFF)
 if(MERCURY_ENABLE_PARALLEL_TESTING OR NA_USE_MPI)
