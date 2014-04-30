@@ -75,7 +75,8 @@ HG_UTIL_EXPORT hg_queue_t *
 hg_queue_new(void);
 
 /**
- * Destroy a queue.
+ * Destroy a queue. User is responsible for freeing allocated data that was
+ * pushed to the queue.
  *
  * \param queue      The queue to destroy.
  */
