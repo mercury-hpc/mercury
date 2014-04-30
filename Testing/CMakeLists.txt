@@ -80,30 +80,56 @@ add_subdirectory(driver)
 # hg prefix is added to executable
 #
 function(build_mercury_test test_name)
-  add_executable(hg_${test_name} ${test_name}.c)
-  target_link_libraries(hg_${test_name} mercury_test mercury)
+  add_executable(hg_test_${test_name} test_${test_name}.c)
+  target_link_libraries(hg_test_${test_name} mercury_test)
   if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(hg_${test_name})
+    set_coverage_flags(hg_test_${test_name})
   endif()
 endfunction()
 
-function(add_mercury_test full_test_name server client)
+function(add_mercury_test test_name)
   foreach(comm ${NA_PLUGINS})
-    add_test(NAME "${full_test_name}_${comm}"
+    # Client/server test
+    add_test(NAME "mercury_${test_name}_${comm}"
       COMMAND $<TARGET_FILE:mercury_test_driver>
-      --server $<TARGET_FILE:hg_${server}>
-      --client $<TARGET_FILE:hg_${client}> ${comm}
+      --server $<TARGET_FILE:hg_test_server>
+      --client $<TARGET_FILE:hg_test_${test_name}> ${comm}
     )
+    # Coresident test
+    if (MERCURY_ENABLE_PARALLEL_TESTING)
+      add_test(NAME "mercury_${test_name}_${comm}_self"
+        COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
+        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${MPIEXEC_POSTFLAGS}
+        ${comm} self
+      )
+    else()
+      add_test(NAME "mercury_${test_name}_${comm}_self"
+        COMMAND $<TARGET_FILE:hg_test_${test_name}> ${comm} self
+      )
+    endif()
   endforeach()
 endfunction()
 
-function(add_mercury_opt_test full_test_name server client opt)
+function(add_mercury_opt_test test_name opt)
   foreach(comm ${NA_PLUGINS})
-    add_test(NAME "${full_test_name}_${opt}_${comm}"
+    # Client/server test
+    add_test(NAME "mercury_${test_name}_${opt}_${comm}"
       COMMAND $<TARGET_FILE:mercury_test_driver>
-      --server $<TARGET_FILE:hg_${server}>
-      --client $<TARGET_FILE:hg_${client}> ${comm} ${opt}
+      --server $<TARGET_FILE:hg_test_server>
+      --client $<TARGET_FILE:hg_test_${test_name}> ${comm} ${opt}
     )
+    # Coresident test
+    if (MERCURY_ENABLE_PARALLEL_TESTING)
+      add_test(NAME "mercury_${test_name}_${opt}_${comm}_self"
+        COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
+        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${MPIEXEC_POSTFLAGS}
+        ${comm} ${opt} self
+      )
+    else()
+      add_test(NAME "mercury_${test_name}_${opt}_${comm}_self"
+        COMMAND $<TARGET_FILE:hg_test_${test_name}> ${comm} ${opt} self
+      )
+    endif()
   endforeach()
 endfunction()
 
@@ -122,7 +148,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
 # mercury_test : Lib used by tests contains main test initialization etc
 #------------------------------------------------------------------------------
 add_library(mercury_test STATIC mercury_test.c mercury_rpc_cb.c)
-target_link_libraries(mercury_test na_test ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
+target_link_libraries(mercury_test mercury na_test ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_test)
 endif()
@@ -130,8 +156,9 @@ endif()
 #------------------------------------------------------------------------------
 # Set up test
 #------------------------------------------------------------------------------
-build_mercury_test(test_bulk_mirror)
-build_mercury_test(test_server)
+
+# Server used for testing
+build_mercury_test(server)
 
 set(MERCURY_tests
   rpc
@@ -140,22 +167,18 @@ set(MERCURY_tests
   pipeline
   scale
 )
-
 if(NOT WIN32)
   set(MERCURY_tests ${MERCURY_tests} posix)
 endif()
 
-set(MERCURY_opt_tests
-  bulk_seg
-)
-
+# Build tests and add them to ctest
 foreach(MERCURY_test ${MERCURY_tests})
-  build_mercury_test(test_${MERCURY_test})
-  add_mercury_test(mercury_${MERCURY_test} test_server test_${MERCURY_test})
+  build_mercury_test(${MERCURY_test})
+  add_mercury_test(${MERCURY_test})
 endforeach()
 
-#TODO should clean that up
-foreach(MERCURY_test ${MERCURY_opt_tests})
-  add_mercury_opt_test(mercury_${MERCURY_test} test_server test_${MERCURY_test} "extra")
-  add_mercury_opt_test(mercury_${MERCURY_test} test_server test_${MERCURY_test} "variable")
-endforeach()
+add_mercury_opt_test(bulk_seg "extra")
+add_mercury_opt_test(bulk_seg "variable")
+
+# Additional test
+build_mercury_test(bulk_mirror)

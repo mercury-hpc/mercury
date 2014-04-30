@@ -5,19 +5,19 @@
 # na prefix is added to executable
 #
 function(build_na_test test_name)
-  add_executable(na_${test_name} ${test_name}.c)
-  target_link_libraries(na_${test_name} na_test)
+  add_executable(na_test_${test_name} test_${test_name}.c)
+  target_link_libraries(na_test_${test_name} na_test)
   if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(na_${test_name})
+    set_coverage_flags(na_test_${test_name})
   endif()
 endfunction()
 
-function(add_na_test full_test_name server client)
+function(add_na_test test_name server client)
   foreach(comm ${NA_PLUGINS})
-    add_test(NAME "${full_test_name}_${comm}"
+    add_test(NAME "na_${test_name}_${comm}"
       COMMAND $<TARGET_FILE:mercury_test_driver>
-      --server $<TARGET_FILE:na_${server}>
-      --client $<TARGET_FILE:na_${client}> ${comm}
+      --server $<TARGET_FILE:na_test_${server}>
+      --client $<TARGET_FILE:na_test_${client}> ${comm}
     )
   endforeach()
 endfunction()
@@ -33,11 +33,11 @@ endif()
 
 #------------------------------------------------------------------------------
 # Network abstraction test
-build_na_test(test_client)
-build_na_test(test_server)
+build_na_test(client)
+build_na_test(server)
 
 #------------------------------------------------------------------------------
 # Set list of tests
 
-# Dynamic client / server test with all enabled NA plugins
-add_na_test(na test_server test_client)
+# Client / server test with all enabled NA plugins
+add_na_test(simple server client)

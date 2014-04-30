@@ -173,31 +173,31 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank)
     hg_test_na_class_g = NA_Test_client_init(argc, argv, test_addr_name,
             NA_TEST_MAX_ADDR_NAME, &hg_test_rank_g);
 
-    if (argc > 2 && strcmp("self", argv[2]) == 0) {
-        strcpy(test_addr_name, "self");
-    }
-    if (argc > 3 && strcmp("self", argv[3]) == 0) {
-        strcpy(test_addr_name, "self");
-    }
-
     ret = HG_Init(hg_test_na_class_g);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not initialize Mercury\n");
         goto done;
     }
 
-    if (strcmp(test_addr_name, "self") == 0) {
+    if ((argc > 2 && strcmp("self", argv[2]) == 0) ||
+            (argc > 3 && strcmp("self", argv[3]) == 0)) {
         /* Self addr */
-        na_ret = NA_Addr_self(hg_test_na_class_g, &hg_test_addr_g);
+        NA_Addr_self(hg_test_na_class_g, &hg_test_addr_g);
+
+        /* In case of self we need the local thread pool */
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+        hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &hg_test_thread_pool_g);
+        printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
+#endif
     } else {
         /* Look up addr using port name info */
         na_ret = NA_Addr_lookup_wait(hg_test_na_class_g, test_addr_name,
                 &hg_test_addr_g);
-    }
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not find addr %s\n", test_addr_name);
-        ret = HG_INVALID_PARAM;
-        goto done;
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not find addr %s\n", test_addr_name);
+            ret = HG_INVALID_PARAM;
+            goto done;
+        }
     }
 
     /* Register routines */
@@ -273,11 +273,11 @@ HG_Test_finalize(void)
             goto done;
         }
         hg_test_addr_g = NA_ADDR_NULL;
-    } else {
+    }
+
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
         hg_thread_pool_destroy(hg_test_thread_pool_g);
 #endif
-    }
 
     /* Finalize interface */
     ret = HG_Finalize();

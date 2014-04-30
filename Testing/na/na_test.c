@@ -27,6 +27,7 @@
 /****************/
 /* Local Macros */
 /****************/
+#define HG_TEST_CONFIG_FILE_NAME "port.cfg"
 
 /*******************/
 /* Local Variables */
@@ -118,7 +119,7 @@ na_test_set_config(const char *addr_name)
 
     /* Only rank 0 writes file */
     if (my_rank == 0) {
-        config = fopen("port.cfg", "w+");
+        config = fopen(HG_TEST_CONFIG_FILE_NAME, "w+");
         if (config != NULL) {
             for (i = 0; i < my_size; i++) {
                 fprintf(config, "%s\n", na_addr_table[i]);
@@ -142,11 +143,11 @@ na_test_get_config(char *addr_name, size_t len, int *rank)
 
     /* Only rank 0 reads file */
     if (my_rank == 0) {
-        config = fopen("port.cfg", "r");
+        config = fopen(HG_TEST_CONFIG_FILE_NAME, "r");
         if (config != NULL) {
             fgets(config_addr_name, NA_TEST_MAX_ADDR_NAME, config);
+            fclose(config);
         }
-        fclose(config);
     }
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
@@ -166,6 +167,7 @@ na_class_t *
 NA_Test_client_init(int argc, char *argv[], char *addr_name, size_t max_addr_name,
         int *rank)
 {
+    const char *host_string = NULL;
     char test_addr_name[NA_TEST_MAX_ADDR_NAME];
     na_class_t *na_class = NULL;
 
@@ -180,18 +182,31 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name, size_t max_addr_nam
     na_test_mpi_init(HG_FALSE);
 #endif
 
-    /* Get config from file */
-    na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME,
-            &na_test_rank_g);
-
 #ifdef NA_HAS_MPI
-    if (strcmp("mpi", argv[1]) == 0) {
-        na_class = NA_Initialize("tcp@mpi://0.0.0.0:0", NA_FALSE);
+    if (strcmp("mpi", argv[1]) == 0)
+        host_string = "tcp@mpi://0.0.0.0:0";
+    else
+#endif
+#ifdef NA_HAS_BMI
+    if (strcmp("bmi", argv[1]) == 0)
+        host_string = "tcp@bmi://0.0.0.0:0";
+    else
+#endif
+#ifdef NA_HAS_SSM
+    if (strcmp("bmi", argv[1]) == 0)
+        host_string = "tcp@ssm://0.0.0.0:0";
     } else
 #endif
     {
-        na_class = NA_Initialize(test_addr_name, NA_FALSE);
+        fprintf(stderr, "Usage: %s <bmi|mpi|ssm>\n", argv[0]);
+        exit(0);
     }
+
+    na_class = NA_Initialize(host_string, NA_FALSE);
+
+    /* Get config from file */
+    na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME,
+            &na_test_rank_g);
 
     strncpy(addr_name, test_addr_name,
             (max_addr_name < NA_TEST_MAX_ADDR_NAME) ?
