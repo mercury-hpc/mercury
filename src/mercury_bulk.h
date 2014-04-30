@@ -13,6 +13,26 @@
 
 #include "mercury_types.h"
 
+typedef void *hg_op_id_t; /* Abstract operation id */
+
+typedef struct hg_bulk_class hg_bulk_class_t;
+
+/* Callback info struct */
+struct hg_bulk_cb_info {
+    void *arg;         /* User data */
+    hg_return_t ret;   /* Return value */
+    hg_bulk_op_t op;   /* Operation type */
+};
+
+typedef hg_return_t
+(*hg_bulk_cb_t)(const struct hg_bulk_cb_info *callback_info);
+
+/**
+ * pass na_context ?
+ * bulk_progress ?
+ * bulk_trigger ?
+ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -23,30 +43,21 @@ extern "C" {
  *
  * \param na_class [IN]    pointer to network class
  *
- * \return HG_SUCCESS or corresponding HG error code
+ * \return Pointer to bulk class or NULL in case of failure
  */
-HG_EXPORT hg_return_t
+HG_EXPORT hg_bulk_class_t *
 HG_Bulk_init(na_class_t *na_class);
 
 /**
  * Finalize the Mercury bulk layer.
  *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Bulk_finalize(void);
-
-/**
- * Indicate whether HG_Bulk_init has been called
- * and return associated network class.
+ * \param bulk_class [IN]       pointer to bulk class
  *
- * \param flag [OUT]            pointer to boolean
- * \param na_class [OUT]        pointer to returned network class pointer
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_initialized(hg_bool_t *flag, na_class_t **na_class);
+HG_Bulk_finalize(hg_bulk_class_t *bulk_class);
 
 /**
  * Create abstract bulk handle from specified memory segments.
@@ -56,6 +67,7 @@ HG_Bulk_initialized(hg_bool_t *flag, na_class_t **na_class);
  * memory for the missing buf_ptrs array will be internally allocated.
  * Memory allocated is then freed when HG_Bulk_handle_free is called.
  *
+ * \param bulk_class [IN]       pointer to bulk class
  * \param count [IN]            number of segments
  * \param buf_ptrs [IN]         array of pointers
  * \param buf_sizes [IN]        array of sizes
@@ -68,8 +80,9 @@ HG_Bulk_initialized(hg_bool_t *flag, na_class_t **na_class);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_handle_create(size_t count, void **buf_ptrs, const size_t *buf_sizes,
-        unsigned long flags, hg_bulk_t *handle);
+HG_Bulk_handle_create(hg_bulk_class_t *bulk_class, size_t count,
+        void **buf_ptrs, const size_t *buf_sizes, unsigned long flags,
+        hg_bulk_t *handle);
 
 /**
  * Free bulk handle.
@@ -162,6 +175,8 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size);
 /**
  * Transfer data to/from origin using abstract bulk handles.
  *
+ * \param callback [IN]         pointer to function callback
+ * \param arg [IN]              pointer to data passed to callback
  * \param op [IN]               transfer operation:
  *                                  - HG_BULK_PUSH
  *                                  - HG_BULK_PULL
@@ -171,27 +186,15 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size);
  * \param local_handle [IN]     abstract bulk handle
  * \param local_offset [IN]     offset
  * \param size [IN]             size of data to be transferred
- * \param request [OUT]         pointer to returned bulk request
+ * \param op_id [OUT]           pointer to returned operation ID
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_transfer(hg_bulk_op_t op, na_addr_t origin_addr, hg_bulk_t origin_handle,
+HG_Bulk_transfer(hg_bulk_cb_t callback, void *arg, hg_bulk_op_t op,
+        na_addr_t origin_addr, hg_bulk_t origin_handle,
         size_t origin_offset, hg_bulk_t local_handle, size_t local_offset,
-        size_t size, hg_bulk_request_t *request);
-
-/**
- * Wait for a bulk operation request to complete.
- *
- * \param request [IN]          bulk request
- * \param timeout [IN]          timeout (in milliseconds)
- * \param status [OUT]          pointer to returned status
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Bulk_wait(hg_bulk_request_t request, unsigned int timeout,
-        hg_status_t *status);
+        size_t size, hg_op_id_t *op_id);
 
 #ifdef __cplusplus
 }
