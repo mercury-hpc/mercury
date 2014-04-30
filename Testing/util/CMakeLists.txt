@@ -22,6 +22,9 @@ set(MERCURY_util_tests
   atomic
   threadpool
   request
+  time
+  hash_table
+  queue
 )
 
 foreach(test_name ${MERCURY_util_tests})
