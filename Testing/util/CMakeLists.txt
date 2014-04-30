@@ -10,7 +10,7 @@ function(add_mercury_test_util test_name)
   if(MERCURY_ENABLE_COVERAGE)
     set_coverage_flags(hg_test_${test_name})
   endif()
-  add_test(NAME ${test_name} COMMAND $<TARGET_FILE:hg_test_${test_name}>)
+  add_test(NAME mercury_util_${test_name} COMMAND $<TARGET_FILE:hg_test_${test_name}>)
 endfunction()
 
 #------------------------------------------------------------------------------
@@ -25,6 +25,7 @@ set(MERCURY_util_tests
   time
   hash_table
   queue
+  list
 )
 
 foreach(test_name ${MERCURY_util_tests})
