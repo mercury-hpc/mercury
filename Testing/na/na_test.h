@@ -32,8 +32,9 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name,
  * Initialize server
  */
 na_class_t *
-NA_Test_server_init(int argc, char *argv[], char ***addr_table,
-        unsigned int *addr_table_size, unsigned int *max_number_of_peers);
+NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
+        char ***addr_table, unsigned int *addr_table_size,
+        unsigned int *max_number_of_peers);
 
 /**
  * Finalize client/server

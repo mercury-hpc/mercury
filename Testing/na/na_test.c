@@ -218,8 +218,9 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name, size_t max_addr_nam
 
 /*---------------------------------------------------------------------------*/
 na_class_t *
-NA_Test_server_init(int argc, char *argv[], char ***addr_table,
-        unsigned int *addr_table_size, unsigned int *max_number_of_peers)
+NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
+        char ***addr_table, unsigned int *addr_table_size,
+        unsigned int *max_number_of_peers)
 {
     na_class_t *na_class = NULL;
     char addr_name[NA_TEST_MAX_ADDR_NAME];
@@ -289,9 +290,11 @@ NA_Test_server_init(int argc, char *argv[], char ***addr_table,
     if (max_number_of_peers) *max_number_of_peers = 1;
 #endif
 
-    /* Used by CTest Test Driver */
-    printf("Waiting for client...\n");
-    fflush(stdout);
+    if (print_ready) {
+        /* Used by CTest Test Driver */
+        printf("Waiting for client...\n");
+        fflush(stdout);
+    }
 
     return na_class;
 }

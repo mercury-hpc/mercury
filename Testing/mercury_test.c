@@ -225,7 +225,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         exit(0);
     }
 
-    hg_test_na_class_g = NA_Test_server_init(argc, argv, addr_table,
+    hg_test_na_class_g = NA_Test_server_init(argc, argv, NA_FALSE, addr_table,
             addr_table_size, max_number_of_peers);
 
     /* Initalize atomic variable to finalize server */
