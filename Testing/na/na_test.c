@@ -193,9 +193,9 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name, size_t max_addr_nam
     else
 #endif
 #ifdef NA_HAS_SSM
-    if (strcmp("bmi", argv[1]) == 0)
+    if (strcmp("ssm", argv[1]) == 0)
         host_string = "tcp@ssm://0.0.0.0:0";
-    } else
+    else
 #endif
     {
         fprintf(stderr, "Usage: %s <bmi|mpi|ssm>\n", argv[0]);

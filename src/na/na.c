@@ -579,6 +579,10 @@ na_bool_t
 NA_Addr_is_self(na_class_t *na_class, na_addr_t addr)
 {
     assert(na_class);
+    if (!na_class->addr_is_self) {
+        NA_LOG_WARNING("NA_Addr_is_self not supported by plugin");
+        return NA_FALSE;
+    }
     return na_class->addr_is_self(na_class, addr);
 }
 
