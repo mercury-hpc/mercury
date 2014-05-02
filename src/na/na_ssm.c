@@ -343,6 +343,7 @@ na_ssm_initialize(const struct na_info  *in_info,
 {
     na_return_t ret = NA_SUCCESS;
     na_class_t *ssm_class = NULL;
+    int ssmret;
     struct na_ssm_private_data *ssm_data = NULL;
     int i = 0;
     int cleanup_index = 0;
@@ -482,12 +483,12 @@ na_ssm_initialize(const struct na_info  *in_info,
             goto cleanup;
         }
         
-        ret = ssm_post(ssm_data->ssm,
+        ssmret = ssm_post(ssm_data->ssm,
                        ssm_data->unexpected_me,
                        buffer->mr,
                        SSM_NOF);
         
-        if (ret < 0)
+        if (ssmret < 0)
         {
             ssm_mr_destroy(buffer->mr);
             free(buffer->buf);
