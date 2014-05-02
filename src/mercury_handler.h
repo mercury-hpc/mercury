@@ -17,16 +17,18 @@
 extern "C" {
 #endif
 
-/**
- * Try timeout ms to process RPC requests.
- *
- * \param timeout [IN]          timeout (in milliseconds)
- * \param status [OUT]          pointer to status object
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Handler_process(unsigned int timeout, hg_status_t *status);
+///**
+// * Try timeout ms to process RPC requests.
+// *
+// * \param timeout [IN]          timeout (in milliseconds)
+// * \param status [OUT]          pointer to status object
+// *
+// * \return HG_SUCCESS or corresponding HG error code
+// */
+//HG_EXPORT hg_return_t
+//HG_Handler_process(unsigned int timeout, hg_status_t *status);
+
+/* Need something to receive unexpected messages */
 
 /**
  * Get abstract network address of remote caller from RPC handle.
@@ -90,7 +92,11 @@ HG_Handler_free_input(hg_handle_t handle, void *in_struct);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Handler_start_output(hg_handle_t handle, void *out_struct);
+HG_Handler_set_output(hg_handle_t handle, void *out_struct);
+
+HG_EXPORT hg_return_t
+HG_Handler_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
+        hg_op_id_t *op_id);
 
 /**
  * Release resources allocated for handling the RPC.

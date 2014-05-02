@@ -13,6 +13,8 @@
 
 #include "mercury_types.h"
 
+typedef void *hg_class_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,7 +41,7 @@ HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_EXPORT hg_class_t *
 HG_Init(na_class_t *na_class);
 
 /**
@@ -48,18 +50,7 @@ HG_Init(na_class_t *na_class);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Finalize(void);
-
-/**
- * Indicate whether HG_Init has been called and return associated network class.
- *
- * \param flag [OUT]            pointer to boolean
- * \param na_class [OUT]        pointer to returned network class pointer
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Initialized(hg_bool_t *flag, na_class_t **na_class);
+HG_Finalize(hg_class_t *hg_class);
 
 /**
  * Register a function name that can be sent using the RPC layer.
@@ -73,8 +64,8 @@ HG_Initialized(hg_bool_t *flag, na_class_t **na_class);
  * \return unique ID associated to the registered function
  */
 HG_EXPORT hg_id_t
-HG_Register(const char *func_name, hg_proc_cb_t in_proc_cb,
-        hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb);
+HG_Register(hg_class_t *hg_class, const char *func_name,
+        hg_proc_cb_t in_proc_cb, hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb);
 
 /**
  * Indicate whether HG_Register has been called and return associated ID.
@@ -86,7 +77,8 @@ HG_Register(const char *func_name, hg_proc_cb_t in_proc_cb,
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id);
+HG_Registered(hg_class_t *hg_class, const char *func_name, hg_bool_t *flag,
+        hg_id_t *id);
 
 /**
  * Forward a call to a remote server.
@@ -101,35 +93,8 @@ HG_Registered(const char *func_name, hg_bool_t *flag, hg_id_t *id);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Forward(na_addr_t addr, hg_id_t id,
-        void *in_struct, void *out_struct, hg_request_t *request);
-
-/**
- * Wait for an operation request to complete.
- * Once the request has completed, request must be freed using HG_Request_free.
- *
- * \param request [IN]          RPC request
- * \param timeout [IN]          timeout (in milliseconds)
- * \param status [OUT]          pointer to returned status
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status);
-
-/**
- * Wait for all operations in array_of_requests to complete.
- *
- * \param count [IN]              number of RPC requests
- * \param array_of_requests [IN]  arrays of RPC requests
- * \param timeout [IN]            timeout (in milliseconds)
- * \param array_of_statuses [OUT] array of statuses
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Wait_all(int count, hg_request_t array_of_requests[],
-        unsigned int timeout, hg_status_t array_of_statuses[]);
+HG_Forward(hg_class_t *hg_class, hg_cb_t callback, void *arg, na_addr_t addr,
+        hg_id_t id, void *in_struct, void *out_struct, hg_request_t *request);
 
 /**
  * Free request and resources allocated when decoding the output.
@@ -140,8 +105,10 @@ HG_Wait_all(int count, hg_request_t array_of_requests[],
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
+/* TODO Could also be called after the user callback has been triggered */
 HG_EXPORT hg_return_t
-HG_Request_free(hg_request_t request);
+HG_Free_output(hg_class_t *hg_class, hg_id_t id, void *out_struct);
+//HG_Free_request(hg_request_t request);
 
 /**
  * Convert error return code to string (null terminated).
@@ -152,6 +119,14 @@ HG_Request_free(hg_request_t request);
  */
 HG_EXPORT const char *
 HG_Error_to_string(hg_return_t errnum);
+
+
+HG_EXPORT hg_return_t
+HG_Progress(hg_class_t *hg_class, unsigned int timeout);
+
+HG_EXPORT hg_return_t
+HG_Trigger(hg_class_t *hg_class, unsigned int max_count, unsigned int timeout,
+        unsigned int *actual_count);
 
 #ifdef __cplusplus
 }
