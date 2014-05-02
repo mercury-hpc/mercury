@@ -377,6 +377,9 @@ na_ssm_initialize(const struct na_info  *in_info,
     ssm_class->context_destroy             = NULL;
     ssm_class->addr_lookup                 = na_ssm_addr_lookup;
     ssm_class->addr_free                   = na_ssm_addr_free;
+    ssm_class->addr_self                   = NULL;
+    ssm_class->addr_dup                    = NULL;
+    ssm_class->addr_is_self                = NULL;
     ssm_class->addr_to_string              = NULL;
     ssm_class->msg_get_max_expected_size   = na_ssm_msg_get_max_expected_size;
     ssm_class->msg_get_max_unexpected_size = na_ssm_msg_get_max_unexpected_size;
