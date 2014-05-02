@@ -41,6 +41,16 @@ HG_EXPORT na_addr_t
 HG_Handler_get_addr(hg_handle_t handle);
 
 /**
+ * Get NA class associated with handle.
+ *
+ * \param handle [IN]           abstract RPC handle
+ *
+ * \return Abstract NA class
+ */
+HG_EXPORT na_class_t *
+HG_Handler_get_na_class(hg_handle_t handle);
+
+/**
  * Get input from handle (requires registration of input proc to deserialize
  * parameters).
  * This is equivalent to:

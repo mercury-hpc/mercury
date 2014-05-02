@@ -812,6 +812,24 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+na_class_t *
+HG_Handler_get_na_class(hg_handle_t handle)
+{
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
+    na_class_t *na_class = NULL;
+
+    if (!hg_handle) {
+        HG_ERROR_DEFAULT("NULL handle");
+        goto done;
+    }
+
+    na_class = hg_na_class_g;
+
+done:
+    return na_class;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Handler_get_input_buf(hg_handle_t handle, void **in_buf, size_t *in_buf_size)
 {
