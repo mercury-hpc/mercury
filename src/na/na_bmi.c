@@ -546,7 +546,7 @@ na_bmi_check_protocol(const char *protocol_name)
 #ifdef BMI_SUPPORTS_TRANSPORT_METHOD_GETINFO
     int       string_length  = 0;
     char     *transport      = NULL;
-    char     *index          = NULL;
+    char     *transport_index = NULL;
 
     /* Obtain the list of transport protocols supported by BMI. */
     string_length = BMI_get_info(0, BMI_TRANSPORT_METHODS_STRING, &transport);
@@ -556,21 +556,22 @@ na_bmi_check_protocol(const char *protocol_name)
         return NA_FALSE;
     }
 
-    index = strtok(transport, ",");
+    transport_index = strtok(transport, ",");
 
-    while (index != NULL) {
+    while (transport_index != NULL) {
         /* check if bmi supports the protocol. */
-        if (strcmp(index, protocol) == 0) {
+        if (strcmp(transport_index, protocol_name) == 0) {
             accept = NA_TRUE;
             break;
         }
 
-        index = strtok(NULL, ",");
+        transport_index = strtok(NULL, ",");
     }
 
     free(transport);
 #else
-    if (strcmp(protocol_name, "tcp") == 0) {
+    if ((strcmp(protocol_name, "tcp") == 0) ||
+            (strcmp(protocol_name, "ib") == 0)) {
         accept = NA_TRUE;
     }
 #endif
