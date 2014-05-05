@@ -21,6 +21,11 @@
 #include <stdio.h>
 #include <string.h>
 #ifndef _WIN32
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 #include <unistd.h>
 #endif
 
@@ -163,6 +168,40 @@ na_test_get_config(char *addr_name, size_t len, int *rank)
 }
 
 /*---------------------------------------------------------------------------*/
+static char *
+na_test_getaddrinfo(const char *hostname)
+{
+    struct addrinfo hints;
+    struct addrinfo *result, *rp;
+    int s;
+    char *result_addr = NULL;
+
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    s = getaddrinfo(hostname, NULL, &hints, &result);
+    if (s != 0) {
+      fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+      goto done;
+    }
+
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        struct sockaddr_in *rp_addr_in =
+                (struct sockaddr_in *) rp->ai_addr;
+        result_addr = inet_ntoa(rp_addr_in->sin_addr);
+        /* Try to avoid localhost addresses */
+        if (strcmp("127.0.0.1", result_addr) != 0)
+            break;
+    }
+
+done:
+    freeaddrinfo(result);
+    return result_addr;
+}
+
+/*---------------------------------------------------------------------------*/
 na_class_t *
 NA_Test_client_init(int argc, char *argv[], char *addr_name, size_t max_addr_name,
         int *rank)
@@ -255,7 +294,8 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
         /* Generate a port number depending on server rank */
         port_number += na_test_rank_g;
         gethostname(hostname, NA_TEST_MAX_ADDR_NAME);
-        sprintf(addr_name, "tcp://%s:%u", hostname, port_number);
+        sprintf(addr_name, "tcp://%s:%u", na_test_getaddrinfo(hostname),
+                port_number);
 
         na_class = NA_Initialize(addr_name, NA_TRUE);
     }
@@ -269,7 +309,8 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
         /* Generate a port number depending on server rank */
         port_number += na_test_rank_g;
         gethostname(hostname, NA_TEST_MAX_ADDR_NAME);
-        sprintf(addr_name, "tcp@ssm://%s:%u", hostname, port_number);
+        sprintf(addr_name, "tcp@ssm://%s:%u", na_test_getaddrinfo(hostname),
+                port_number);
 
         na_class = NA_Initialize(addr_name, NA_TRUE);
     }
