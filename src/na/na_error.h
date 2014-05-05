@@ -27,20 +27,23 @@
 /* Default error macro */
 #ifdef NA_HAS_VERBOSE_ERROR
   #include <stdio.h>
-  #define NA_LOG_ERROR(...) do {                              \
-      fprintf(stderr, "%s:%d: ERROR: ", __func__, __LINE__);  \
-      fprintf(stderr, __VA_ARGS__);                           \
-      fprintf(stderr, "\n");                                  \
+  #define NA_LOG_ERROR(...) do {                                            \
+      fprintf(stderr, "NA: Error in %s:%d\n", __FILE__, __LINE__);          \
+      fprintf(stderr, " # %s(): ", __func__);                               \
+      fprintf(stderr, __VA_ARGS__);                                         \
+      fprintf(stderr, "\n");                                                \
   } while (0)
-  #define NA_LOG_DEBUG(...) do {                       \
-      fprintf(stdout, "%s:%d: ", __func__, __LINE__);  \
-      fprintf(stdout, __VA_ARGS__);                    \
-      fprintf(stdout, "\n");                           \
-  } while (0)
-  #define NA_LOG_WARNING(...) do {                              \
-      fprintf(stdout, "%s:%d: WARNING: ", __func__, __LINE__);  \
+  #define NA_LOG_DEBUG(...) do {                                \
+      fprintf(stdout, "NA: in %s:%d\n", __FILE__, __LINE__);    \
+      fprintf(stdout, " # %s(): ", __func__);                   \
       fprintf(stdout, __VA_ARGS__);                             \
       fprintf(stdout, "\n");                                    \
+  } while (0)
+  #define NA_LOG_WARNING(...) do {                                      \
+      fprintf(stdout, "NA: Warning in %s:%d\n", __FILE__, __LINE__);    \
+      fprintf(stdout, " # %s(): ", __func__);                           \
+      fprintf(stdout, __VA_ARGS__);                                     \
+      fprintf(stdout, "\n");                                            \
   } while (0)
 #else
   #define NA_LOG_ERROR
