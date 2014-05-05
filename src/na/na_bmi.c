@@ -1888,6 +1888,9 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
                         /* No internal progress but actual put */
                         ret = na_bmi_complete(na_bmi_op_id);
                     }
+                }
+                else if (na_bmi_op_id->info.put.request_op_id == bmi_op_id) {
+                    /* If request just completed, nothing to do, just ignore */
                 } else {
                     NA_LOG_ERROR("Unexpected operation ID");
                     ret = NA_PROTOCOL_ERROR;
@@ -1907,6 +1910,9 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
                         /* No internal progress but actual get */
                         ret = na_bmi_complete(na_bmi_op_id);
                     }
+                }
+                else if (na_bmi_op_id->info.get.request_op_id == bmi_op_id) {
+                    /* If request just completed, nothing to do, just ignore */
                 } else {
                     NA_LOG_ERROR("Unexpected operation ID");
                     ret = NA_PROTOCOL_ERROR;
