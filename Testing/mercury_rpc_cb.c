@@ -21,6 +21,12 @@
 #define PIPELINE_SIZE 4
 #define MIN_BUFFER_SIZE (2 << 15) /* 11 Stop at 4KB buffer size */
 
+#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#define HG_TEST_ALLOC(size) calloc(size, sizeof(char))
+#else
+#define HG_TEST_ALLOC(size) malloc(size)
+#endif
+
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 #define HG_TEST_RPC_CB(func_name, handle) \
     static hg_return_t \
@@ -314,7 +320,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
 
     printf("Start reading first chunk of %lu bytes...\n", bulk_write_nbytes_read);
 
-    bulk_write_buf = malloc(bulk_write_nbytes);
+    bulk_write_buf = HG_TEST_ALLOC(bulk_write_nbytes);
 
     HG_Bulk_handle_create(1, &bulk_write_buf, &bulk_write_nbytes,
             HG_BULK_READWRITE, &bulk_write_bulk_block_handle1);
@@ -431,7 +437,7 @@ HG_TEST_RPC_CB(hg_test_pipeline_write, handle)
 
     /* Create a new block handle to read the data */
     bulk_write_nbytes = HG_Bulk_handle_get_size(bulk_write_bulk_handle);
-    bulk_write_buf = malloc(bulk_write_nbytes);
+    bulk_write_buf = HG_TEST_ALLOC(bulk_write_nbytes);
 
     HG_Bulk_handle_create(1, &bulk_write_buf, &bulk_write_nbytes,
             HG_BULK_READWRITE, &bulk_write_bulk_block_handle);
@@ -760,7 +766,7 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
     /* Read bulk data here and wait for the data to be here */
     count = HG_Bulk_handle_get_size(bulk_handle);
 
-    buf = malloc(count);
+    buf = HG_TEST_ALLOC(count);
 
     HG_Bulk_handle_create(1, &buf, &count, HG_BULK_READWRITE,
             &bulk_block_handle);
@@ -850,7 +856,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     /* Call read */
     count = HG_Bulk_handle_get_size(bulk_handle);
 
-    buf = malloc(count);
+    buf = HG_TEST_ALLOC(count);
 
     printf("Calling read with fd: %d\n", fd);
     ret = read(fd, buf, count);
@@ -965,7 +971,7 @@ HG_TEST_RPC_CB(hg_test_scale_write, handle)
     /* Create a new block handle to read the data */
     nbytes = HG_Bulk_handle_get_size(bulk_handle);
 
-    buf = malloc(nbytes);
+    buf = HG_TEST_ALLOC(nbytes);
 
     HG_Bulk_handle_create(1, &buf, &nbytes, HG_BULK_READWRITE,
             &bulk_block_handle);

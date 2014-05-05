@@ -313,8 +313,9 @@ hg_bulk_handle_create(size_t count, void **buf_ptrs, const size_t *buf_sizes,
         if (buf_ptrs && buf_ptrs[i])
             hg_bulk->segments[i].address = (hg_ptr_t) buf_ptrs[i];
         else {
-            hg_bulk->segments[i].address = (hg_ptr_t) malloc(
-                    hg_bulk->segments[i].size);
+            /* Use calloc to avoid uninitialized memory used for transfer */
+            hg_bulk->segments[i].address = (hg_ptr_t) calloc(
+                    hg_bulk->segments[i].size, sizeof(char));
             if (!hg_bulk->segments[i].address) {
                 HG_ERROR_DEFAULT("Could not allocate segment");
                 ret = HG_NOMEM_ERROR;
