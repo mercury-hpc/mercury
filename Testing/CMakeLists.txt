@@ -44,6 +44,9 @@ set(MERCURY_TEST_INIT_COMMAND "" CACHE STRING
   "Command to run before a client/server test begins. Multiple commands are separated by ';'.")
 mark_as_advanced(MERCURY_TEST_INIT_COMMAND)
 
+option(MERCURY_TESTING_CORESIDENT "Enable testing of coresident mode." OFF)
+mark_as_advanced(MERCURY_TESTING_CORESIDENT)
+
 #------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
 #------------------------------------------------------------------------------
@@ -87,49 +90,45 @@ function(build_mercury_test test_name)
   endif()
 endfunction()
 
-function(add_mercury_test test_name)
-  foreach(comm ${NA_PLUGINS})
-    # Client/server test
-    add_test(NAME "mercury_${test_name}_${comm}"
-      COMMAND $<TARGET_FILE:mercury_test_driver>
-      --server $<TARGET_FILE:hg_test_server>
-      --client $<TARGET_FILE:hg_test_${test_name}> ${comm}
-    )
-    # Coresident test
+macro(add_mercury_test_comm test_name comm opt)
+  set(full_test_name ${test_name})
+  set(test_args ${comm} ${opt})
+  foreach(test_arg ${test_args})
+    set(full_test_name ${full_test_name}_${test_arg})
+  endforeach()
+  # Client/server test
+  add_test(NAME "mercury_${full_test_name}"
+    COMMAND $<TARGET_FILE:mercury_test_driver>
+    --server $<TARGET_FILE:hg_test_server>
+    --client $<TARGET_FILE:hg_test_${test_name}> ${test_args}
+  )
+  # Coresident test
+  if (MERCURY_TESTING_CORESIDENT)
+    set(full_test_name ${full_test_name}_self)
+    set(test_args ${test_args} self)
     if (MERCURY_ENABLE_PARALLEL_TESTING)
-      add_test(NAME "mercury_${test_name}_${comm}_self"
+      add_test(NAME "mercury_${full_test_name}"
         COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
         ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${MPIEXEC_POSTFLAGS}
-        ${comm} self
+        ${test_args}
       )
     else()
-      add_test(NAME "mercury_${test_name}_${comm}_self"
-        COMMAND $<TARGET_FILE:hg_test_${test_name}> ${comm} self
+      add_test(NAME "mercury_${full_test_name}"
+        COMMAND $<TARGET_FILE:hg_test_${test_name}> ${test_args}
       )
     endif()
+  endif()
+endmacro()
+
+function(add_mercury_test test_name)
+  foreach(comm ${NA_PLUGINS})
+    add_mercury_test_comm(${test_name} ${comm} "")
   endforeach()
 endfunction()
 
 function(add_mercury_opt_test test_name opt)
   foreach(comm ${NA_PLUGINS})
-    # Client/server test
-    add_test(NAME "mercury_${test_name}_${opt}_${comm}"
-      COMMAND $<TARGET_FILE:mercury_test_driver>
-      --server $<TARGET_FILE:hg_test_server>
-      --client $<TARGET_FILE:hg_test_${test_name}> ${comm} ${opt}
-    )
-    # Coresident test
-    if (MERCURY_ENABLE_PARALLEL_TESTING)
-      add_test(NAME "mercury_${test_name}_${opt}_${comm}_self"
-        COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
-        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${MPIEXEC_POSTFLAGS}
-        ${comm} ${opt} self
-      )
-    else()
-      add_test(NAME "mercury_${test_name}_${opt}_${comm}_self"
-        COMMAND $<TARGET_FILE:hg_test_${test_name}> ${comm} ${opt} self
-      )
-    endif()
+    add_mercury_test_comm(${test_name} ${comm} ${opt})
   endforeach()
 endfunction()
 
