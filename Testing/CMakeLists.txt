@@ -44,6 +44,10 @@ set(MERCURY_TEST_INIT_COMMAND "" CACHE STRING
   "Command to run before a client/server test begins. Multiple commands are separated by ';'.")
 mark_as_advanced(MERCURY_TEST_INIT_COMMAND)
 
+set(MERCURY_TESTING_TEMP_DIRECTORY "." CACHE PATH
+  "Location to use for temp data (default is current directory).")
+mark_as_advanced(MERCURY_TESTING_TEMP_DIRECTORY)
+
 option(MERCURY_TESTING_CORESIDENT "Enable testing of coresident mode." OFF)
 mark_as_advanced(MERCURY_TESTING_CORESIDENT)
 

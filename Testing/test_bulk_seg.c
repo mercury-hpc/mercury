@@ -45,7 +45,8 @@ int main(int argc, char *argv[])
     HG_Test_client_init(argc, argv, &addr, NULL);
 
     /* This will create a list of variable size segments */
-    if (argc > 2 && strcmp(argv[2], "variable") == 0) {
+    /* TODO need a better way of parsing arguments */
+    if (argc > 2 && strcmp(argv[argc - 1], "variable") == 0) {
         printf("Using variable size segments!\n");
         /* bulk_size_x >= 2 */
         /* 524288 + 262144 + 131072 + 65536 + 32768 + 16384 + 8192 + 8192 */
@@ -58,7 +59,7 @@ int main(int argc, char *argv[])
         bulk_size_y_var[bulk_size_x - 1] = bulk_size_y_var[bulk_size_x - 2];
     }
     /* This will use an extra encoding buffer */
-    else if (argc > 2 && strcmp(argv[2], "extra") == 0) {
+    else if (argc > 2 && strcmp(argv[argc - 1], "extra") == 0) {
         printf("Using large number of segments!\n");
         bulk_size_x = 1024;
         bulk_size_y = bulk_size / bulk_size_x;

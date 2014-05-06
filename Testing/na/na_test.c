@@ -20,7 +20,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#ifndef _WIN32
+#ifdef _WIN32
+#include <Winsock2.h>
+#else
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -32,7 +34,7 @@
 /****************/
 /* Local Macros */
 /****************/
-#define HG_TEST_CONFIG_FILE_NAME "port.cfg"
+#define HG_TEST_CONFIG_FILE_NAME "/port.cfg"
 
 /*******************/
 /* Local Variables */
@@ -45,6 +47,29 @@ static int mpi_internally_initialized = HG_FALSE;
 
 static char **na_addr_table = NULL;
 static unsigned int na_addr_table_size = 0;
+
+/********************/
+/* Local Prototypes */
+/********************/
+#ifdef MERCURY_HAS_PARALLEL_TESTING
+static void
+na_test_mpi_init(hg_bool_t server);
+
+static void
+na_test_mpi_finalize(void);
+#endif
+
+static void
+na_test_set_config(const char *addr_name);
+
+static void
+na_test_get_config(char *addr_name, size_t len, int *rank);
+
+static void
+na_test_gethostname(char *name, size_t len);
+
+static char *
+na_test_getaddrinfo(const char *hostname);
 
 /*---------------------------------------------------------------------------*/
 #ifdef MERCURY_HAS_PARALLEL_TESTING
@@ -124,13 +149,17 @@ na_test_set_config(const char *addr_name)
 
     /* Only rank 0 writes file */
     if (my_rank == 0) {
-        config = fopen(HG_TEST_CONFIG_FILE_NAME, "w+");
-        if (config != NULL) {
-            for (i = 0; i < my_size; i++) {
-                fprintf(config, "%s\n", na_addr_table[i]);
-            }
-            fclose(config);
+        config = fopen(MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME,
+                "w+");
+        if (!config) {
+            fprintf(stderr, "Could not open config file from: %s\n",
+                    MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
+            exit(0);
         }
+        for (i = 0; i < my_size; i++) {
+            fprintf(config, "%s\n", na_addr_table[i]);
+        }
+        fclose(config);
     }
 }
 
@@ -148,11 +177,16 @@ na_test_get_config(char *addr_name, size_t len, int *rank)
 
     /* Only rank 0 reads file */
     if (my_rank == 0) {
-        config = fopen(HG_TEST_CONFIG_FILE_NAME, "r");
-        if (config != NULL) {
-            fgets(config_addr_name, NA_TEST_MAX_ADDR_NAME, config);
-            fclose(config);
+        config = fopen(MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME,
+                "r");
+        if (!config) {
+            fprintf(stderr, "Could not open config file from: %s\n",
+                    MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
+            exit(0);
         }
+        fgets(config_addr_name, NA_TEST_MAX_ADDR_NAME, config);
+        printf("Port name read: %s\n", config_addr_name);
+        fclose(config);
     }
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
@@ -168,6 +202,27 @@ na_test_get_config(char *addr_name, size_t len, int *rank)
 }
 
 /*---------------------------------------------------------------------------*/
+static void
+na_test_gethostname(char *name, size_t len)
+{
+#ifdef _WIN32
+    WORD wVersionRequested;
+    WSADATA wsaData;
+    wVersionRequested = MAKEWORD(2, 0);
+
+    if (WSAStartup(wVersionRequested, &wsaData) != 0)
+        goto done;
+#endif
+
+    gethostname(name, len);
+
+#ifdef _WIN32
+done:
+    WSACleanup();
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
 static char *
 na_test_getaddrinfo(const char *hostname)
 {
@@ -175,6 +230,14 @@ na_test_getaddrinfo(const char *hostname)
     struct addrinfo *result, *rp;
     int s;
     char *result_addr = NULL;
+#ifdef _WIN32
+    WORD wVersionRequested;
+    WSADATA wsaData;
+    wVersionRequested = MAKEWORD(2, 0);
+
+    if (WSAStartup(wVersionRequested, &wsaData) != 0)
+        goto done;
+#endif
 
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_INET;
@@ -198,6 +261,9 @@ na_test_getaddrinfo(const char *hostname)
 
 done:
     freeaddrinfo(result);
+#ifdef _WIN32
+    WSACleanup();
+#endif
     return result_addr;
 }
 
@@ -210,6 +276,7 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name, size_t max_addr_nam
     char test_addr_name[NA_TEST_MAX_ADDR_NAME];
     na_class_t *na_class = NULL;
 
+    /* TODO need a better way of parsing arguments */
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <bmi|mpi|ssm>\n", argv[0]);
         exit(0);
@@ -264,6 +331,7 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
     na_class_t *na_class = NULL;
     char addr_name[NA_TEST_MAX_ADDR_NAME];
 
+    /* TODO need a better way of parsing arguments */
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <bmi|mpi|ssm>\n", argv[0]);
         exit(0);
@@ -293,7 +361,7 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 
         /* Generate a port number depending on server rank */
         port_number += na_test_rank_g;
-        gethostname(hostname, NA_TEST_MAX_ADDR_NAME);
+        na_test_gethostname(hostname, NA_TEST_MAX_ADDR_NAME);
         sprintf(addr_name, "tcp://%s:%u", na_test_getaddrinfo(hostname),
                 port_number);
 
@@ -308,7 +376,7 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 
         /* Generate a port number depending on server rank */
         port_number += na_test_rank_g;
-        gethostname(hostname, NA_TEST_MAX_ADDR_NAME);
+        na_test_gethostname(hostname, NA_TEST_MAX_ADDR_NAME);
         sprintf(addr_name, "tcp@ssm://%s:%u", na_test_getaddrinfo(hostname),
                 port_number);
 

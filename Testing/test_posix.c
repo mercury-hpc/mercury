@@ -301,7 +301,7 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 #endif
-    sprintf(filename, "posix_test%d", rank);
+    sprintf(filename, MERCURY_TESTING_TEMP_DIRECTORY "/posix_test%d", rank);
 
     /* Prepare buffers */
     write_buf = (int*) malloc(sizeof(int) * n_ints);

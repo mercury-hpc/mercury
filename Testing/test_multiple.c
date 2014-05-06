@@ -29,7 +29,7 @@ int main(int argc, char *argv[])
     bulk_write_out_t bulk_write_out_struct;
     hg_request_t bulk_write_request;
 
-    hg_const_string_t rpc_open_path = "/scratch/hdf/test.h5";
+    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
     int rpc_open_ret = 0;
     int rpc_open_event_id = 0;

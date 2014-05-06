@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     rpc_open_out_t rpc_open_out_struct;
     hg_request_t rpc_open_request;
 
-    hg_const_string_t rpc_open_path = "/scratch/hdf/test.h5";
+    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
     int rpc_open_ret = 0;
     int rpc_open_event_id = 0;
