@@ -115,7 +115,7 @@ static hg_thread_mutex_t na_addr_lookup_mutex_g;
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_info_parse(const char *na_info_string, struct na_info **na_info_ptr)
+na_info_parse(const char *info_string, struct na_info **na_info_ptr)
 {
     struct na_info *na_info = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -139,7 +139,7 @@ na_info_parse(const char *na_info_string, struct na_info **na_info_ptr)
     na_info->port_name = NULL;
 
     /* Copy info string and work from that */
-    input_string = strdup(na_info_string);
+    input_string = strdup(info_string);
     if (!input_string) {
         NA_LOG_ERROR("Could not duplicate host string");
         ret = NA_NOMEM_ERROR;
@@ -149,32 +149,41 @@ na_info_parse(const char *na_info_string, struct na_info **na_info_ptr)
     /**
      * Strings can be of the format:
      *   tcp://localhost:3344
-     *   tcp@ssm://localhost:3344
+     *   ssm+tcp://localhost:3344
      */
 
-    /* Get first part of string (i.e., protocol@plugin_name) */
+    /* Get first part of string (i.e., class_name+protocol) */
     token = strtok_r(input_string, ":", &locator);
 
-    /* Is plugin name specified */
-    if (strstr(token, "@") != NULL) {
+    /* Is class name specified */
+    if (strstr(token, "+") != NULL) {
         char *_locator = NULL;
 
-        token = strtok_r(token, "@", &_locator);
+        token = strtok_r(token, "+", &_locator);
 
-        na_info->class_name = strdup(_locator);
+        /* Get NA class name */
+        na_info->class_name = strdup(token);
         if (!na_info->class_name) {
             NA_LOG_ERROR("Could not duplicate NA info class name");
             ret = NA_NOMEM_ERROR;
             goto done;
         }
-    }
 
-    /* Get protocol name (@plugin_name removed at this point if present) */
-    na_info->protocol_name = strdup(token);
-    if (!na_info->protocol_name) {
-        NA_LOG_ERROR("Could not duplicate NA info protocol name");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+        /* Get protocol name */
+        na_info->protocol_name = strdup(_locator);
+        if (!na_info->protocol_name) {
+            NA_LOG_ERROR("Could not duplicate NA info protocol name");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
+    } else {
+        /* Get protocol name */
+        na_info->protocol_name = strdup(token);
+        if (!na_info->protocol_name) {
+            NA_LOG_ERROR("Could not duplicate NA info protocol name");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
 
     /* Treat //hostname:port part */
@@ -191,10 +200,10 @@ na_info_parse(const char *na_info_string, struct na_info **na_info_ptr)
     /* Get port number */
     na_info->port = atoi(locator);
 
-    /* Build port name that can be used by plugin */
-    port_name_len = strlen(na_info_string);
+    /* Build port name that can be used by NA class */
+    port_name_len = strlen(info_string);
     if (na_info->class_name) {
-        /* Remove @plugin_name */
+        /* Remove class_name+ */
         port_name_len -= (strlen(na_info->class_name) + 1);
     }
 
@@ -211,8 +220,8 @@ na_info_parse(const char *na_info_string, struct na_info **na_info_ptr)
 
     memset(na_info->port_name, '\0', port_name_len + 1);
     strcpy(na_info->port_name, na_info->protocol_name);
-    strcat(na_info->port_name, na_info_string +
-            (strlen(na_info_string) - port_name_len) +
+    strcat(na_info->port_name, info_string +
+            (strlen(info_string) - port_name_len) +
             strlen(na_info->protocol_name));
 
     *na_info_ptr = na_info;
@@ -255,7 +264,7 @@ na_info_print(struct na_info *na_info)
 
 /*---------------------------------------------------------------------------*/
 na_class_t *
-NA_Initialize(const char *host_string, na_bool_t listen)
+NA_Initialize(const char *info_string, na_bool_t listen)
 {
     na_class_t *na_class = NULL;
     struct na_info *na_info = NULL;
@@ -266,7 +275,7 @@ NA_Initialize(const char *host_string, na_bool_t listen)
 
     plugin_count = sizeof(na_class_info) / sizeof(na_class_info[0]) - 1;
 
-    ret = na_info_parse(host_string, &na_info);
+    ret = na_info_parse(info_string, &na_info);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not parse host string");
         goto done;
@@ -431,6 +440,8 @@ na_return_t
 NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         void *arg, const char *name, na_op_id_t *op_id)
 {
+    char *name_string = NULL;
+    char *short_name = NULL;
     na_op_id_t na_op_id;
     na_return_t ret;
 
@@ -442,7 +453,22 @@ NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         goto done;
     }
 
-    ret = na_class->addr_lookup(na_class, context, callback, arg, name,
+    /* Copy name and work from that */
+    name_string = strdup(name);
+    if (!name_string) {
+        NA_LOG_ERROR("Could not duplicate string");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+
+    /* If NA class name was specified, we can remove the name here:
+     * ie. bmi+tcp://hostname:port -> tcp://hostname:port */
+    if (strstr(name_string, "+") != NULL)
+        strtok_r(name_string, "+", &short_name);
+    else
+        short_name = name_string;
+
+    ret = na_class->addr_lookup(na_class, context, callback, arg, short_name,
             &na_op_id);
     if (ret != NA_SUCCESS) {
         goto done;
@@ -451,6 +477,7 @@ NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
 
 done:
+    free(name_string);
     return ret;
 }
 

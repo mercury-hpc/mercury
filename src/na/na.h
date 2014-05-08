@@ -109,16 +109,16 @@ extern "C" {
 /**
  * Initialize the network abstraction layer.
  *
- * \param host_string [IN]      host address with port number (e.g.,
- *                              tcp://localhost:3344 or
- *                              tcp@bmi://localhost:3344)
+ * \param info_string [IN]      host address with port number (e.g.,
+ *                              "tcp://localhost:3344" or
+ *                              "bmi+tcp://localhost:3344")
  * \param listen [IN]           listen for incoming connections
  *
  * \return Pointer to NA class or NULL in case of failure
  */
 NA_EXPORT na_class_t *
 NA_Initialize(
-        const char *host_string,
+        const char *info_string,
         na_bool_t   listen
         ) NA_WARN_UNUSED_RESULT;
 
