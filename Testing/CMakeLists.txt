@@ -95,11 +95,19 @@ function(build_mercury_test test_name)
 endfunction()
 
 macro(add_mercury_test_comm test_name comm opt)
+  # Set full test name
   set(full_test_name ${test_name})
-  set(test_args ${comm} ${opt})
-  foreach(test_arg ${test_args})
-    set(full_test_name ${full_test_name}_${test_arg})
+  set(opt_names ${comm} ${opt})
+  foreach(opt_name ${opt_names})
+    set(full_test_name ${full_test_name}_${opt_name})
   endforeach()
+
+  # Set test arguments
+  set(test_args --comm ${comm})
+  if(opt)
+    set(test_args ${test_args} --${opt})
+  endif()
+
   # Client/server test
   add_test(NAME "mercury_${full_test_name}"
     COMMAND $<TARGET_FILE:mercury_test_driver>
@@ -109,7 +117,7 @@ macro(add_mercury_test_comm test_name comm opt)
   # Coresident test
   if (MERCURY_TESTING_CORESIDENT)
     set(full_test_name ${full_test_name}_self)
-    set(test_args ${test_args} self)
+    set(test_args ${test_args} --self)
     if (MERCURY_ENABLE_PARALLEL_TESTING)
       add_test(NAME "mercury_${full_test_name}"
         COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}

@@ -33,6 +33,8 @@ static hg_bool_t hg_test_is_client_g = HG_FALSE;
 static na_addr_t hg_test_addr_g = NA_ADDR_NULL;
 static int hg_test_rank_g = 0;
 
+extern na_bool_t na_test_use_self_g;
+
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 hg_thread_pool_t *hg_test_thread_pool_g = NULL;
 #endif
@@ -165,11 +167,6 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank)
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <bmi|mpi|ssm>\n", argv[0]);
-        exit(0);
-    }
-
     hg_test_na_class_g = NA_Test_client_init(argc, argv, test_addr_name,
             NA_TEST_MAX_ADDR_NAME, &hg_test_rank_g);
 
@@ -179,8 +176,7 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank)
         goto done;
     }
 
-    if ((argc > 2 && strcmp("self", argv[2]) == 0) ||
-            (argc > 3 && strcmp("self", argv[3]) == 0)) {
+    if (na_test_use_self_g) {
         /* Self addr */
         NA_Addr_self(hg_test_na_class_g, &hg_test_addr_g);
 
@@ -219,11 +215,6 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         unsigned int *addr_table_size, unsigned int *max_number_of_peers)
 {
     hg_return_t ret = HG_SUCCESS;
-
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <bmi|mpi|ssm>\n", argv[0]);
-        exit(0);
-    }
 
     hg_test_na_class_g = NA_Test_server_init(argc, argv, NA_FALSE, addr_table,
             addr_table_size, max_number_of_peers);

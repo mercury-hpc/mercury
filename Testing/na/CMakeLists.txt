@@ -14,10 +14,11 @@ endfunction()
 
 function(add_na_test test_name server client)
   foreach(comm ${NA_PLUGINS})
+    set(test_args --comm ${comm})
     add_test(NAME "na_${test_name}_${comm}"
       COMMAND $<TARGET_FILE:mercury_test_driver>
       --server $<TARGET_FILE:na_test_${server}>
-      --client $<TARGET_FILE:na_test_${client}> ${comm}
+      --client $<TARGET_FILE:na_test_${client}> ${test_args}
     )
   endforeach()
 endfunction()
@@ -25,7 +26,7 @@ endfunction()
 #------------------------------------------------------------------------------
 # na_test : Lib used by tests contains main test initialization etc
 #------------------------------------------------------------------------------
-add_library(na_test STATIC na_test.c)
+add_library(na_test STATIC na_test.c na_test_getopt.c)
 target_link_libraries(na_test na ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(na_test)

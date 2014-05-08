@@ -13,7 +13,6 @@
 
 #include "na.h"
 #include "mercury_test_config.h"
-#include "mercury_config.h"
 
 #define NA_TEST_MAX_ADDR_NAME 256
 
@@ -26,7 +25,7 @@ extern "C" {
  */
 na_class_t *
 NA_Test_client_init(int argc, char *argv[], char *addr_name,
-        size_t max_addr_name, int *rank);
+        na_size_t max_addr_name, int *rank);
 
 /**
  * Initialize server
