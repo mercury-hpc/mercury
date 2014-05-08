@@ -578,6 +578,7 @@ static const na_class_t na_mpi_class_g = {
 };
 
 static const char na_mpi_name_g[] = "mpi";
+static MPI_Comm na_mpi_init_comm_g = MPI_COMM_NULL; /* MPI comm used at init */
 
 const struct na_class_info na_mpi_info_g = {
     na_mpi_name_g,
@@ -969,20 +970,31 @@ na_mpi_gen_rma_tag(na_class_t *na_class)
 }
 
 /*---------------------------------------------------------------------------*/
-static na_bool_t
-na_mpi_check_protocol(const char NA_UNUSED *protocol_name)
+na_return_t
+NA_MPI_Set_init_intra_comm(MPI_Comm intra_comm)
 {
-    return NA_TRUE;
+    na_mpi_init_comm_g = intra_comm;
+
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
-static na_class_t *
-na_mpi_initialize(const struct na_info NA_UNUSED *na_info,
-        na_bool_t listen)
+const char *
+NA_MPI_Get_port_name(na_class_t *na_class)
 {
-    int flags = (listen) ? MPI_INIT_SERVER : 0;
+    int my_rank;
+    static char port_name[MPI_MAX_PORT_NAME];
 
-    return NA_MPI_Init(NULL, flags);
+    MPI_Comm_rank(NA_MPI_PRIVATE_DATA(na_class)->intra_comm, &my_rank);
+
+    /* Append rank info to port name */
+    if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm)
+        sprintf(port_name, "rank#%d$", my_rank);
+    else
+        sprintf(port_name, "%s;rank#%d$",
+            NA_MPI_PRIVATE_DATA(na_class)->port_name, my_rank);
+
+    return port_name;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1067,8 +1079,15 @@ done:
 #endif
 
 /*---------------------------------------------------------------------------*/
-na_class_t *
-NA_MPI_Init(MPI_Comm *intra_comm, int flags)
+static na_bool_t
+na_mpi_check_protocol(const char NA_UNUSED *protocol_name)
+{
+    return NA_TRUE;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_class_t *
+na_mpi_initialize(const struct na_info *na_info, na_bool_t listen)
 {
     na_class_t *na_class = NULL;
     int mpi_ext_initialized = 0;
@@ -1076,6 +1095,7 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     hg_hash_table_t *mem_handle_map = NULL;
     hg_queue_t *unexpected_op_queue = NULL;
     na_bool_t error_occurred = NA_FALSE;
+    int flags = (listen) ? MPI_INIT_SERVER : 0;
     int mpi_ret;
 
     na_class = (na_class_t *) malloc(sizeof(na_class_t));
@@ -1095,6 +1115,8 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     }
 
     /* Check flags */
+    if (strcmp(na_info->protocol_name, "static") == 0)
+        flags |= MPI_INIT_STATIC;
     listening = (na_bool_t) (flags & MPI_INIT_SERVER);
     NA_MPI_PRIVATE_DATA(na_class)->listening = listening;
 
@@ -1144,9 +1166,9 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     }
 
     /* Assign MPI intra comm */
-    if (intra_comm || (!intra_comm && !use_static_inter_comm)) {
-        MPI_Comm comm = (intra_comm && (*intra_comm != MPI_COMM_NULL)) ?
-                *intra_comm : MPI_COMM_WORLD;
+    if ((na_mpi_init_comm_g != MPI_COMM_NULL) || !use_static_inter_comm) {
+        MPI_Comm comm = (na_mpi_init_comm_g != MPI_COMM_NULL) ?
+                na_mpi_init_comm_g : MPI_COMM_WORLD;
 
         mpi_ret = MPI_Comm_dup(comm, &NA_MPI_PRIVATE_DATA(na_class)->intra_comm);
         if (mpi_ret != MPI_SUCCESS) {
@@ -1211,25 +1233,17 @@ NA_MPI_Init(MPI_Comm *intra_comm, int flags)
     /* If server opens a port */
     if (listening) {
         NA_MPI_PRIVATE_DATA(na_class)->accepting = NA_TRUE;
-        if (use_static_inter_comm) {
-            /* Do not launch any thread, just accept */
-            if (na_mpi_accept(na_class) != NA_SUCCESS) {
-                error_occurred = NA_TRUE;
-                goto done;
-            }
-        } else {
-            if (na_mpi_open_port(na_class) != NA_SUCCESS) {
-                error_occurred = NA_TRUE;
-                goto done;
-            }
-
-            /* We need to create a thread here if we want to allow
-             * connection / disconnection since MPI does not provide any
-             * service for that and MPI_Comm_accept is blocking */
-            hg_thread_create(&NA_MPI_PRIVATE_DATA(na_class)->accept_thread,
-                    &na_mpi_accept_service,
-                    (void *) na_class);
+        if (!use_static_inter_comm && na_mpi_open_port(na_class) != NA_SUCCESS) {
+            error_occurred = NA_TRUE;
+            goto done;
         }
+
+        /* We need to create a thread here if we want to allow
+         * connection / disconnection since MPI does not provide any
+         * service for that and MPI_Comm_accept is blocking */
+        hg_thread_create(&NA_MPI_PRIVATE_DATA(na_class)->accept_thread,
+                &na_mpi_accept_service,
+                (void *) na_class);
     } else {
         NA_MPI_PRIVATE_DATA(na_class)->accepting = NA_FALSE;
     }
@@ -1243,21 +1257,6 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-const char *
-NA_MPI_Get_port_name(na_class_t *na_class)
-{
-    int my_rank;
-    static char port_name[MPI_MAX_PORT_NAME];
-
-    MPI_Comm_rank(NA_MPI_PRIVATE_DATA(na_class)->intra_comm, &my_rank);
-
-    /* Append rank info to port name */
-    sprintf(port_name, "%s;rank#%d$", NA_MPI_PRIVATE_DATA(na_class)->port_name, my_rank);
-
-    return port_name;
-}
-
-/*---------------------------------------------------------------------------*/
 static na_return_t
 na_mpi_finalize(na_class_t *na_class)
 {
@@ -1265,17 +1264,18 @@ na_mpi_finalize(na_class_t *na_class)
     int mpi_ext_finalized = 0;
     int mpi_ret;
 
-    /* If server opened a port */
-    if (NA_MPI_PRIVATE_DATA(na_class)->listening &&
-            !NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm) {
+    if (NA_MPI_PRIVATE_DATA(na_class)->listening) {
         /* No more connection accepted after this point */
         hg_thread_join(NA_MPI_PRIVATE_DATA(na_class)->accept_thread);
 
-        mpi_ret = MPI_Close_port(NA_MPI_PRIVATE_DATA(na_class)->port_name);
-        if (mpi_ret != MPI_SUCCESS) {
-            NA_LOG_ERROR("Could not close port");
-            ret = NA_PROTOCOL_ERROR;
-            goto done;
+        /* If server opened a port */
+        if (!NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm) {
+            mpi_ret = MPI_Close_port(NA_MPI_PRIVATE_DATA(na_class)->port_name);
+            if (mpi_ret != MPI_SUCCESS) {
+                NA_LOG_ERROR("Could not close port");
+                ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
         }
     }
     /* Process list of communicators */
@@ -2617,8 +2617,6 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
             if (na_mpi_op_id->info.recv_expected.actual_size
                     != na_mpi_op_id->info.recv_expected.buf_size) {
                 NA_LOG_ERROR("Buffer size and actual transfer size do not match");
-                fprintf(stderr, "Was expecting %d but is %d\n", na_mpi_op_id->info.recv_expected.buf_size,
-                        na_mpi_op_id->info.recv_expected.actual_size);
                 ret = NA_SIZE_ERROR;
                 goto done;
             }

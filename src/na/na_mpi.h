@@ -24,22 +24,16 @@ extern "C" {
 #endif
 
 /**
- * Initialize the MPI plugin.
+ * Set MPI intra_comm used when initializing the MPI plugin.
  *
- * \param intra_comm [IN]       (Optional) MPI communicator used for
+ * \param intra_comm [IN]       MPI communicator used for
  *                              intra-communication within a local set of
  *                              processes.
- * \param flags [IN]            (Optional) supported flags:
- *                                - MPI_INIT_SERVER
- *                                - MPI_INIT_STATIC
  *
- * \return Pointer to network class
+ * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_class_t *
-NA_MPI_Init(
-        MPI_Comm *intra_comm,
-        int flags
-        );
+NA_EXPORT na_return_t
+NA_MPI_Set_init_intra_comm(MPI_Comm intra_comm);
 
 /**
  * Get port name used by server (only valid if plugin initialized with
