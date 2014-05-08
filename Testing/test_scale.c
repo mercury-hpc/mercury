@@ -9,6 +9,7 @@
  */
 
 #include "mercury_test.h"
+#include "na_test.h"
 
 #include "mercury_time.h"
 
@@ -18,12 +19,8 @@
 #define RPC_SKIP 20
 #define BULK_SKIP 20
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
-#include <mpi.h>
-static MPI_Comm split_comm = MPI_COMM_WORLD;
-#endif
-
-static int client_rank = 0, client_size = 1;
+extern int na_test_comm_rank_g;
+extern int na_test_comm_size_g;
 
 extern hg_id_t hg_test_scale_open_id_g;
 extern hg_id_t hg_test_scale_write_id_g;
@@ -49,9 +46,9 @@ measure_rpc(na_addr_t addr)
     int hg_ret;
     size_t i;
 
-    if (client_rank == 0) {
+    if (na_test_comm_rank_g == 0) {
         printf("# Executing RPC with %d client(s) -- loop %d time(s)\n",
-                client_size, MERCURY_TESTING_MAX_LOOP);
+                na_test_comm_size_g, MERCURY_TESTING_MAX_LOOP);
     }
 
     /* Fill input structure */
@@ -59,7 +56,7 @@ measure_rpc(na_addr_t addr)
     rpc_open_in_struct.path = rpc_open_path;
     rpc_open_in_struct.handle = rpc_open_handle;
 
-    if (client_rank == 0) printf("# Warming up...\n");
+    if (na_test_comm_rank_g == 0) printf("# Warming up...\n");
 
     /* Warm up for RPC */
     for (i = 0; i < RPC_SKIP; i++) {
@@ -83,14 +80,12 @@ measure_rpc(na_addr_t addr)
         }
     }
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
-    MPI_Barrier(split_comm);
-#endif
+    NA_Test_barrier();
 
-    if (client_rank == 0) printf("%*s%*s%*s%*s%*s%*s",
+    if (na_test_comm_rank_g == 0) printf("%*s%*s%*s%*s%*s%*s",
             10, "# Time (s)", 10, "Min (s)", 10, "Max (s)",
             12, "Calls (c/s)", 12, "Min (c/s)", 12, "Max (c/s)");
-    if (client_rank == 0) printf("\n");
+    if (na_test_comm_rank_g == 0) printf("\n");
 
     /* RPC benchmark */
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
@@ -129,9 +124,8 @@ measure_rpc(na_addr_t addr)
             return HG_FAIL;
         }
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
-        MPI_Barrier(split_comm);
-#endif
+        NA_Test_barrier();
+
         hg_time_get_current(&t2);
         td = hg_time_to_double(hg_time_subtract(t2, t1));
 
@@ -142,14 +136,15 @@ measure_rpc(na_addr_t addr)
     }
 
     time_read = time_read / MERCURY_TESTING_MAX_LOOP;
-    calls_per_sec = client_size / time_read;
-    min_calls_per_sec = client_size / max_time_read;
-    max_calls_per_sec = client_size / min_time_read;
+    calls_per_sec = na_test_comm_size_g / time_read;
+    min_calls_per_sec = na_test_comm_size_g / max_time_read;
+    max_calls_per_sec = na_test_comm_size_g / min_time_read;
 
     /* At this point we have received everything so work out the bandwidth */
     printf("%*f%*f%*f%*.*f%*.*f%*.*f\n",
             10, time_read, 10, min_time_read, 10, max_time_read,
-            12, 2, calls_per_sec, 12, 2, min_calls_per_sec, 12, 2, max_calls_per_sec);
+            12, 2, calls_per_sec, 12, 2, min_calls_per_sec, 12, 2,
+            max_calls_per_sec);
 
     return HG_SUCCESS;
 }
@@ -184,9 +179,9 @@ measure_bulk_transfer(na_addr_t addr)
     /* Prepare bulk_buf */
     nbytes = bulk_size * sizeof(int);
     nmbytes = (double) nbytes / (1024 * 1024);
-    if (client_rank == 0) {
+    if (na_test_comm_rank_g == 0) {
         printf("# Reading Bulk Data (%f MB) with %d client(s) -- loop %d time(s)\n",
-                nmbytes, client_size, MERCURY_TESTING_MAX_LOOP);
+                nmbytes, na_test_comm_size_g, MERCURY_TESTING_MAX_LOOP);
     }
 
     bulk_buf = (int*) malloc(nbytes);
@@ -207,7 +202,7 @@ measure_bulk_transfer(na_addr_t addr)
     bulk_write_in_struct.fildes = fildes;
     bulk_write_in_struct.bulk_handle = bulk_handle;
 
-    if (client_rank == 0) printf("# Warming up...\n");
+    if (na_test_comm_rank_g == 0) printf("# Warming up...\n");
 
     /* Warm up for bulk data */
     for (i = 0; i < BULK_SKIP; i++) {
@@ -233,14 +228,12 @@ measure_bulk_transfer(na_addr_t addr)
         }
     }
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
-    MPI_Barrier(split_comm);
-#endif
+    NA_Test_barrier();
 
-    if (client_rank == 0) printf("%*s%*s%*s%*s%*s%*s",
+    if (na_test_comm_rank_g == 0) printf("%*s%*s%*s%*s%*s%*s",
             10, "# Time (s)", 10, "Min (s)", 10, "Max (s)",
             12, "BW (MB/s)", 12, "Min (MB/s)", 12, "Max (MB/s)");
-    if (client_rank == 0) printf("\n");
+    if (na_test_comm_rank_g == 0) printf("\n");
 
     /* Bulk data benchmark */
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
@@ -285,9 +278,8 @@ measure_bulk_transfer(na_addr_t addr)
             return HG_FAIL;
         }
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
-        MPI_Barrier(split_comm);
-#endif
+        NA_Test_barrier();
+
         hg_time_get_current(&t2);
         td = hg_time_to_double(hg_time_subtract(t2, t1));
 
@@ -298,14 +290,15 @@ measure_bulk_transfer(na_addr_t addr)
     }
 
     time_read = time_read / MERCURY_TESTING_MAX_LOOP;
-    read_bandwidth = nmbytes * client_size / time_read;
-    min_read_bandwidth = nmbytes * client_size / max_time_read;
-    max_read_bandwidth = nmbytes * client_size / min_time_read;
+    read_bandwidth = nmbytes * na_test_comm_size_g / time_read;
+    min_read_bandwidth = nmbytes * na_test_comm_size_g / max_time_read;
+    max_read_bandwidth = nmbytes * na_test_comm_size_g / min_time_read;
 
     /* At this point we have received everything so work out the bandwidth */
     printf("%*f%*f%*f%*.*f%*.*f%*.*f\n",
             10, time_read, 10, min_time_read, 10, max_time_read,
-            12, 2, read_bandwidth, 12, 2, min_read_bandwidth, 12, 2, max_read_bandwidth);
+            12, 2, read_bandwidth, 12, 2, min_read_bandwidth, 12, 2,
+            max_read_bandwidth);
 
     /* Free memory handle */
     hg_ret = HG_Bulk_handle_free(bulk_handle);
@@ -324,18 +317,12 @@ main(int argc, char *argv[])
 {
     na_addr_t addr;
 
-    HG_Test_client_init(argc, argv, &addr, &client_rank);
-
-#ifdef MERCURY_HAS_PARALLEL_TESTING
-    MPI_Comm_size(split_comm, &client_size);
-#endif
+    HG_Test_client_init(argc, argv, &addr, &na_test_comm_rank_g);
 
     /* Run RPC test */
     measure_rpc(addr);
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
-    MPI_Barrier(split_comm);
-#endif
+    NA_Test_barrier();
 
     /* Run Bulk test */
     measure_bulk_transfer(addr);

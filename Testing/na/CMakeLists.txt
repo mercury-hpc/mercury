@@ -15,11 +15,26 @@ endfunction()
 function(add_na_test test_name server client)
   foreach(comm ${NA_PLUGINS})
     set(test_args --comm ${comm})
-    add_test(NAME "na_${test_name}_${comm}"
+    set(full_test_name ${test_name}_${comm})
+
+    # Dynamic client/server test
+    add_test(NAME "na_${full_test_name}"
       COMMAND $<TARGET_FILE:mercury_test_driver>
       --server $<TARGET_FILE:na_test_${server}>
       --client $<TARGET_FILE:na_test_${client}> ${test_args}
     )
+
+    # Static client/server test
+    if(${comm} STREQUAL "mpi")
+      set(static_test_name ${full_test_name}_static)
+      set(static_test_args ${test_args} --static)
+      add_test(NAME "na_${static_test_name}"
+        COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
+        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:na_test_${server}> ${MPIEXEC_POSTFLAGS}
+        ${static_test_args} : ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
+        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:na_test_${client}> ${static_test_args}
+      )
+  endif()
   endforeach()
 endfunction()
 

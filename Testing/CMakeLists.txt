@@ -108,25 +108,38 @@ macro(add_mercury_test_comm test_name comm opt)
     set(test_args ${test_args} --${opt})
   endif()
 
-  # Client/server test
+  # Dynamic client/server test
   add_test(NAME "mercury_${full_test_name}"
     COMMAND $<TARGET_FILE:mercury_test_driver>
     --server $<TARGET_FILE:hg_test_server>
     --client $<TARGET_FILE:hg_test_${test_name}> ${test_args}
   )
+
+  # Static client/server test
+  if(${comm} STREQUAL "mpi")
+    set(static_test_name ${full_test_name}_static)
+    set(static_test_args ${test_args} --static)
+      add_test(NAME "mercury_${static_test_name}"
+        COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
+        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_server> ${MPIEXEC_POSTFLAGS}
+        ${static_test_args} : ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
+        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${static_test_args}
+      )
+  endif()
+
   # Coresident test
   if (MERCURY_TESTING_CORESIDENT)
-    set(full_test_name ${full_test_name}_self)
-    set(test_args ${test_args} --self)
+    set(cores_test_name ${full_test_name}_self)
+    set(cores_test_args ${test_args} --self)
     if (MERCURY_ENABLE_PARALLEL_TESTING)
-      add_test(NAME "mercury_${full_test_name}"
+      add_test(NAME "mercury_${cores_test_name}"
         COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
         ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${MPIEXEC_POSTFLAGS}
-        ${test_args}
+        ${cores_test_args}
       )
     else()
-      add_test(NAME "mercury_${full_test_name}"
-        COMMAND $<TARGET_FILE:hg_test_${test_name}> ${test_args}
+      add_test(NAME "mercury_${cores_test_name}"
+        COMMAND $<TARGET_FILE:hg_test_${test_name}> ${cores_test_args}
       )
     endif()
   endif()
