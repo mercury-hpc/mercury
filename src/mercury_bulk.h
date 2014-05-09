@@ -13,26 +13,6 @@
 
 #include "mercury_types.h"
 
-typedef void *hg_op_id_t; /* Abstract operation id */
-
-typedef struct hg_bulk_class hg_bulk_class_t;
-
-/* Callback info struct */
-struct hg_bulk_cb_info {
-    void *arg;         /* User data */
-    hg_return_t ret;   /* Return value */
-    hg_bulk_op_t op;   /* Operation type */
-};
-
-typedef hg_return_t
-(*hg_bulk_cb_t)(const struct hg_bulk_cb_info *callback_info);
-
-/**
- * pass na_context ?
- * bulk_progress ?
- * bulk_trigger ?
- */
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -52,7 +32,6 @@ HG_Bulk_init(na_class_t *na_class);
  * Finalize the Mercury bulk layer.
  *
  * \param bulk_class [IN]       pointer to bulk class
- *
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -192,9 +171,40 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size);
  */
 HG_EXPORT hg_return_t
 HG_Bulk_transfer(hg_bulk_cb_t callback, void *arg, hg_bulk_op_t op,
-        na_addr_t origin_addr, hg_bulk_t origin_handle,
-        size_t origin_offset, hg_bulk_t local_handle, size_t local_offset,
-        size_t size, hg_op_id_t *op_id);
+        na_addr_t origin_addr, hg_bulk_t origin_handle, size_t origin_offset,
+        hg_bulk_t local_handle, size_t local_offset, size_t size,
+        hg_op_id_t *op_id);
+
+/**
+ * Try to progress communication for at most timeout until timeout reached or
+ * any completion has occurred.
+ * Progress should not be considered as wait, in the sense that it cannot be
+ * assumed that completion of a specific operation will occur only when
+ * progress is called.
+ *
+ * \param hg_bulk_class [IN]    pointer to HG bulk class
+ * \param timeout [IN]          timeout (in milliseconds)
+ *
+ * \return HG_SUCCESS if any completion has occurred / HG error code otherwise
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_progress(hg_bulk_class_t *hg_bulk_class, unsigned int timeout);
+
+/**
+ * Execute at most max_count callbacks. If timeout is non-zero, wait up to
+ * timeout before returning. Function can return when at least one or more
+ * callbacks are triggered (at most max_count).
+ *
+ * \param hg_bulk_class [IN]    pointer to HG bulk class
+ * \param timeout [IN]          timeout (in milliseconds)
+ * \param max_count [IN]        maximum number of callbacks triggered
+ * \param actual_count [IN]     actual number of callbacks triggered
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_trigger(hg_bulk_class_t *hg_bulk_class, unsigned int timeout,
+        unsigned int max_count, unsigned int *actual_count);
 
 #ifdef __cplusplus
 }
