@@ -1023,10 +1023,10 @@ gni_job_setup(uint8_t ptag, uint32_t cookie)
      */
     grc = GNI_ConfigureJob(0, 0, ptag, cookie, &limits);
     if(grc == GNI_RC_PERMISSION_ERROR) {
-        NA_LOG_ERROR("GNI_ConfigureJob(...) requires root priveledges.");
+        NA_LOG_ERROR("GNI_ConfigureJob(...) requires root privileges.");
         ret = NA_PERMISSION_ERROR;
     }
-    NA_LOG_DEBUG("GNI_ConfigurJob returned %s", gni_err_str[grc]);
+    NA_LOG_DEBUG("GNI_ConfigureJob returned %s", gni_err_str[grc]);
 
     return ret;
 }
