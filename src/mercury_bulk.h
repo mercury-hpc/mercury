@@ -21,22 +21,23 @@ extern "C" {
  * Initialize the Mercury bulk layer.
  * The NA class can be different from the one used for the RPC interface.
  *
- * \param na_class [IN]    pointer to network class
+ * \param na_class [IN]         pointer to NA class
+ * \param na_context [IN]       pointer to NA context
  *
- * \return Pointer to bulk class or NULL in case of failure
+ * \return Pointer to HG bulk class or NULL in case of failure
  */
 HG_EXPORT hg_bulk_class_t *
-HG_Bulk_init(na_class_t *na_class);
+HG_Bulk_init(na_class_t *na_class, na_context_t *na_context);
 
 /**
  * Finalize the Mercury bulk layer.
  *
- * \param bulk_class [IN]       pointer to bulk class
+ * \param hg_bulk_class [IN]    pointer to bulk class
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_finalize(hg_bulk_class_t *bulk_class);
+HG_Bulk_finalize(hg_bulk_class_t *hg_bulk_class);
 
 /**
  * Create abstract bulk handle from specified memory segments.
@@ -46,7 +47,7 @@ HG_Bulk_finalize(hg_bulk_class_t *bulk_class);
  * memory for the missing buf_ptrs array will be internally allocated.
  * Memory allocated is then freed when HG_Bulk_handle_free is called.
  *
- * \param bulk_class [IN]       pointer to bulk class
+ * \param hg_bulk_class [IN]    pointer to HG bulk class
  * \param count [IN]            number of segments
  * \param buf_ptrs [IN]         array of pointers
  * \param buf_sizes [IN]        array of sizes
@@ -59,7 +60,7 @@ HG_Bulk_finalize(hg_bulk_class_t *bulk_class);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_handle_create(hg_bulk_class_t *bulk_class, size_t count,
+HG_Bulk_handle_create(hg_bulk_class_t *hg_bulk_class, size_t count,
         void **buf_ptrs, const size_t *buf_sizes, unsigned long flags,
         hg_bulk_t *handle);
 

@@ -103,15 +103,13 @@ typedef hg_return_t
 #define HG_BULK_READ_ONLY    NA_MEM_READ_ONLY
 #define HG_BULK_WRITE_ONLY   NA_MEM_READWRITE
 
-#define HG_STATUS_IGNORE     ((hg_status_t *)1)
-
 #define HG_MAX_IDLE_TIME     NA_MAX_IDLE_TIME
 
-#define HG_REQUEST_NULL      ((hg_request_t)0)
+#define HG_OP_ID_NULL        ((hg_op_id_t)0)
+#define HG_OP_ID_IGNORE      ((hg_op_id_t *)1)
 #define HG_PROC_NULL         ((hg_proc_t)0)
 #define HG_HANDLE_NULL       ((hg_handle_t)0)
 #define HG_BULK_NULL         ((hg_bulk_t)0)
-#define HG_BULK_REQUEST_NULL ((hg_bulk_request_t)0)
 
 /* Context used for request emulation */
 //struct hg_context {
