@@ -431,7 +431,7 @@ na_ssm_initialize(const struct na_info  *in_info,
                                        NULL,
                                        &(ssm_data->unexpected_callback),
                                        SSM_NOF);
-    
+
     if (ssm_data->unexpected_me == NULL)
     {
         NA_LOG_ERROR("Unable to create SSM link.\n");
@@ -487,9 +487,9 @@ na_ssm_initialize(const struct na_info  *in_info,
         }
         
         ssmret = ssm_post(ssm_data->ssm,
-                       ssm_data->unexpected_me,
-                       buffer->mr,
-                       SSM_NOF);
+			  ssm_data->unexpected_me,
+			  buffer->mr,
+			  SSM_NOF);
         
         if (ssmret < 0)
         {
@@ -604,7 +604,7 @@ na_ssm_finalize(na_class_t *in_na_class)
 
     for (i = 0; i < NA_SSM_UNEXPECTED_BUFFERCOUNT; ++i)
     {
-        buffer = hg_queue_pop_head(ssm_data->unexpected_msg_complete_queue);
+        buffer = hg_queue_pop_head(ssm_data->unexpected_msg_queue);
         if (buffer != NULL)
         {
             int ssm_ret = ssm_drop(ssm_data->ssm,
@@ -620,11 +620,26 @@ na_ssm_finalize(na_class_t *in_na_class)
                              "buffer as part of cleanup process. "
                              "Error: %d.\n", ssm_ret);
             }
-                    
+
             ssm_mr_destroy(buffer->mr);
             free(buffer->buf);
             free(buffer);
         }
+    }
+
+    buffer = hg_queue_pop_head(ssm_data->unexpected_msg_complete_queue);
+    while (buffer != NULL) {
+        free(buffer->addr);
+	free(buffer);
+	buffer = hg_queue_pop_head(ssm_data->unexpected_msg_complete_queue);
+    }
+
+    ret = ssm_unlink(ssm_data->ssm, ssm_data->unexpected_me);
+
+    if (ret) {
+        if (ret == SSM_REMOVE_INVALID)
+	    NA_LOG_ERROR("SSM_REMOVE_INVALID\n");
+	NA_LOG_ERROR("SSM_REMOVE_BUSY\n");
     }
 
     /* If we cannot stop ssm instance, we better do not proceed with
@@ -635,6 +650,11 @@ na_ssm_finalize(na_class_t *in_na_class)
     {
         NA_LOG_ERROR("Failed to stop SSM instance. Error: %d.\n", ret);
         return ret;
+    }
+
+    ret = ssmptcp_tpdel(ssm_data->itp);
+    if (ret) {
+        NA_LOG_ERROR("ssmptcp_tpdel failed\n");
     }
 
     hg_queue_free(ssm_data->opid_wait_queue);
@@ -1163,6 +1183,12 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
         
         /* recreate the memory region and push the buffer back into
          * the queue */
+	ssm_drop(ssm_data->ssm,
+		 ssm_data->unexpected_me,
+		 buffer->mr);
+
+	ssm_mr_destroy(buffer->mr);
+
         buffer->mr = ssm_mr_create(NULL,
                                    buffer->buf,
                                    NA_SSM_UNEXPECTED_SIZE);
@@ -1170,7 +1196,6 @@ na_ssm_msg_recv_unexpected(na_class_t      *in_na_class,
                        ssm_data->unexpected_me,
                        buffer->mr,
                        SSM_NOF);
-        
         /* push the buffer back into the queue */
         hg_thread_mutex_lock(&ssm_data->unexpected_msg_queue_mutex);
         hg_queue_push_tail(ssm_data->unexpected_msg_queue,
@@ -1299,7 +1324,7 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
         /* copy the received buffer into the user's buffer */
         NA_LOG_DEBUG("Copying %lu into buffer %p.\n",
                      buffer->bytes,
-                     //                     ssm_opid->info.recv_unexpected.input_buffer_size,
+                     //ssm_opid->info.recv_unexpected.input_buffer_size,
                      ssm_opid->info.recv_unexpected.input_buffer);
         
         memcpy(ssm_opid->info.recv_unexpected.input_buffer,
@@ -1309,6 +1334,13 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
         /* recreate the memory region and push the buffer back into
          * the queue */
         hg_thread_mutex_lock(&ssm_data->unexpected_msg_queue_mutex);
+
+	ssm_drop(ssm_data->ssm,
+		 ssm_data->unexpected_me,
+		 buffer->mr);
+
+	ssm_mr_destroy(buffer->mr);
+
         buffer->mr = ssm_mr_create(NULL,
                                    buffer->buf,
                                    NA_SSM_UNEXPECTED_SIZE);
@@ -1317,7 +1349,7 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
                        ssm_data->unexpected_me,
                        buffer->mr,
                        SSM_NOF);
-        
+
         hg_queue_push_tail(ssm_data->unexpected_msg_queue,
                            (hg_queue_value_t) buffer);
         hg_thread_mutex_unlock(&ssm_data->unexpected_msg_queue_mutex);
@@ -1325,7 +1357,7 @@ na_ssm_msg_recv_unexpected_callback(void *in_context,
         addr = malloc(sizeof(struct na_ssm_addr));
         if (addr != NULL)
         {
-            addr->addr = ssm_addr_cp(ssm_opid->ssm_data->ssm, result->addr);
+            addr->addr = ssm_addr_cp(ssm_data->ssm, result->addr);
         }
 
         cbinfo = malloc(sizeof(struct na_cb_info));
