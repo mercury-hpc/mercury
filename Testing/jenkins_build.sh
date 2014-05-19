@@ -43,5 +43,9 @@ echo "mpicc -show"
 mpicc -show
 
 # configure, build and test
+export MERCURY_BUILD_CONFIGURATION="Debug"
+export MERCURY_DASHBOARD_MODEL="Nightly"
+export MERCURY_DO_COVERAGE="TRUE"
+export MERCURY_DO_MEMCHECK="TRUE"
 ctest -S $PWD/Testing/jenkins_mercury.cmake -VV 2>&1
 
