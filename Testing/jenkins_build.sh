@@ -4,7 +4,7 @@ echo "Running build script from repository"
 echo "(current dir is repo root: $PWD)"
 set
 # store the current directory in a local variable to get back to it later
-MERCURY_WORKSPACE_DIR=`pwd`
+MERCURY_WORKSPACE_DIR=$PWD
 
 cd $WORKSPACE
 
@@ -32,20 +32,21 @@ make && make install
 popd
 popd
 
-# get back to the location where we were at the begining
-cd $MERCURY_WORKSPACE_DIR
-
-# export variable needed for bmi testing
-export MERCURY_PORT_NAME='tcp://localhost:3344'
-
 # echo mpi commands needed to compile
 echo "mpicc -show"
 mpicc -show
 
-# configure, build and test
+# set up testing configuration
 export MERCURY_BUILD_CONFIGURATION="Debug"
 export MERCURY_DASHBOARD_MODEL="Nightly"
-export MERCURY_DO_COVERAGE="TRUE"
-export MERCURY_DO_MEMCHECK="TRUE"
-ctest -S $PWD/Testing/jenkins_mercury.cmake -VV 2>&1
+export MERCURY_DO_COVERAGE="true"
+export MERCURY_DO_MEMCHECK="true"
+
+# export variable needed for bmi testing
+export MERCURY_PORT_NAME='tcp://localhost:3344'
+
+# get back to the testing script location
+pushd $MERCURY_WORKSPACE_DIR/Testing
+ctest -S jenkins_mercury.cmake -VV 2>&1
+popd
 
