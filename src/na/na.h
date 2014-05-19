@@ -536,6 +536,38 @@ NA_Mem_deregister(
         );
 
 /**
+ * Expose memory for RMA operations.
+ * Memory pieces must be registered before one-sided transfers can be
+ * initiated.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param mem_handle [IN]       pointer to abstract memory handle
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Mem_publish(
+        na_class_t      *na_class,
+        na_mem_handle_t  mem_handle
+        );
+
+/**
+ * Unpublish memory.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param mem_handle [IN]       abstract memory handle
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Mem_unpublish(
+        na_class_t      *na_class,
+        na_mem_handle_t  mem_handle
+        );
+
+
+
+/**
  * Get size required to serialize handle.
  *
  * \param na_class [IN]         pointer to NA class

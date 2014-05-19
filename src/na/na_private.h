@@ -194,6 +194,16 @@ struct na_class {
             na_class_t      *na_class,
             na_mem_handle_t  mem_handle
             );
+    na_return_t
+    (*mem_publish)(
+            na_class_t      *na_class,
+            na_mem_handle_t  mem_handle
+            );
+    na_return_t
+    (*mem_unpublish)(
+            na_class_t      *na_class,
+            na_mem_handle_t  mem_handle
+            );
     na_size_t
     (*mem_handle_get_serialize_size)(
             na_class_t      *na_class,

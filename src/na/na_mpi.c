@@ -566,6 +566,8 @@ static const na_class_t na_mpi_class_g = {
         na_mpi_mem_handle_free,               /* mem_handle_free */
         na_mpi_mem_register,                  /* mem_register */
         na_mpi_mem_deregister,                /* mem_deregister */
+        NULL,                                 /* mem_publish */
+        NULL,                                 /* mem_unpublish */
         na_mpi_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
         na_mpi_mem_handle_serialize,          /* mem_handle_serialize */
         na_mpi_mem_handle_deserialize,        /* mem_handle_deserialize */

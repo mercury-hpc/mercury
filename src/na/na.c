@@ -21,6 +21,8 @@
 #include <string.h>
 
 /* TODO check params in NA routines */
+/* TODO check that NA plugin callbacks are set, e.g.,
+ * na_class->msg_get_max_expected_size */
 
 /****************/
 /* Local Macros */
@@ -806,16 +808,56 @@ NA_Mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
 na_return_t
 NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
+    na_return_t ret = NA_SUCCESS;
+
     assert(na_class);
-    return na_class->mem_register(na_class, mem_handle);
+
+    if (na_class->mem_register)
+        ret = na_class->mem_register(na_class, mem_handle);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
+    na_return_t ret = NA_SUCCESS;
+
     assert(na_class);
-    return na_class->mem_deregister(na_class, mem_handle);
+
+    if (na_class->mem_deregister)
+        ret = na_class->mem_deregister(na_class, mem_handle);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Mem_publish(na_class_t *na_class, na_mem_handle_t mem_handle)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    assert(na_class);
+
+    if (na_class->mem_publish)
+        ret = na_class->mem_publish(na_class, mem_handle);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Mem_unpublish(na_class_t *na_class, na_mem_handle_t mem_handle)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    assert(na_class);
+
+    if (na_class->mem_unpublish)
+        ret = na_class->mem_unpublish(na_class, mem_handle);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
