@@ -27,17 +27,48 @@ extern "C" {
  * \return Pointer to HG bulk class or NULL in case of failure
  */
 HG_EXPORT hg_bulk_class_t *
-HG_Bulk_init(na_class_t *na_class, na_context_t *na_context);
+HG_Bulk_init(
+        na_class_t *na_class,
+        na_context_t *na_context
+        );
 
 /**
  * Finalize the Mercury bulk layer.
  *
- * \param hg_bulk_class [IN]    pointer to bulk class
+ * \param hg_bulk_class [IN]    pointer to HG bulk class
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_finalize(hg_bulk_class_t *hg_bulk_class);
+HG_Bulk_finalize(
+        hg_bulk_class_t *hg_bulk_class
+        );
+
+/**
+ * Create a new context.
+ *
+ * \param hg_bulk_class [IN]    pointer to HG bulk class
+ *
+ * \return Pointer to HG bulk context or NULL in case of failure
+ */
+HG_EXPORT hg_bulk_context_t *
+HG_Bulk_context_create(
+        hg_bulk_class_t *hg_bulk_class
+        );
+
+/**
+ * Destroy a context created by HG_Bulk_context_create().
+ *
+ * \param hg_bulk_class [IN]    pointer to HG bulk class
+ * \param context [IN]          pointer to HG bulk context
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_context_destroy(
+        hg_bulk_class_t *hg_bulk_class,
+        hg_bulk_context_t *context
+        );
 
 /**
  * Create abstract bulk handle from specified memory segments.
@@ -60,9 +91,14 @@ HG_Bulk_finalize(hg_bulk_class_t *hg_bulk_class);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_handle_create(hg_bulk_class_t *hg_bulk_class, size_t count,
-        void **buf_ptrs, const size_t *buf_sizes, unsigned long flags,
-        hg_bulk_t *handle);
+HG_Bulk_handle_create(
+        hg_bulk_class_t *hg_bulk_class,
+        size_t count,
+        void **buf_ptrs,
+        const size_t *buf_sizes,
+        unsigned long flags,
+        hg_bulk_t *handle
+        );
 
 /**
  * Free bulk handle.
@@ -72,7 +108,9 @@ HG_Bulk_handle_create(hg_bulk_class_t *hg_bulk_class, size_t count,
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_handle_free(hg_bulk_t handle);
+HG_Bulk_handle_free(
+        hg_bulk_t handle
+        );
 
 /**
  * Access bulk handle to retrieve memory segments abstracted by handle.
@@ -94,9 +132,16 @@ HG_Bulk_handle_free(hg_bulk_t handle);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_handle_access(hg_bulk_t handle, size_t offset, size_t size,
-        unsigned long flags, unsigned int max_count, void **buf_ptrs,
-        size_t *buf_sizes, unsigned int *actual_count);
+HG_Bulk_handle_access(
+        hg_bulk_t handle,
+        size_t offset,
+        size_t size,
+        unsigned long flags,
+        unsigned int max_count,
+        void **buf_ptrs,
+        size_t *buf_sizes,
+        unsigned int *actual_count
+        );
 
 /**
  * Get total size of data abstracted by bulk handle.
@@ -106,7 +151,9 @@ HG_Bulk_handle_access(hg_bulk_t handle, size_t offset, size_t size,
  * \return Non-negative value
  */
 HG_EXPORT size_t
-HG_Bulk_handle_get_size(hg_bulk_t handle);
+HG_Bulk_handle_get_size(
+        hg_bulk_t handle
+        );
 
 /**
  * Get total number of segments abstracted by bulk handle.
@@ -116,7 +163,9 @@ HG_Bulk_handle_get_size(hg_bulk_t handle);
  * \return Non-negative value
  */
 HG_EXPORT size_t
-HG_Bulk_handle_get_segment_count(hg_bulk_t handle);
+HG_Bulk_handle_get_segment_count(
+        hg_bulk_t handle
+        );
 
 /**
  * Get size required to serialize bulk handle.
@@ -126,7 +175,9 @@ HG_Bulk_handle_get_segment_count(hg_bulk_t handle);
  * \return Non-negative value
  */
 HG_EXPORT size_t
-HG_Bulk_handle_get_serialize_size(hg_bulk_t handle);
+HG_Bulk_handle_get_serialize_size(
+        hg_bulk_t handle
+        );
 
 /**
  * Serialize bulk handle into a buffer.
@@ -138,11 +189,16 @@ HG_Bulk_handle_get_serialize_size(hg_bulk_t handle);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle);
+HG_Bulk_handle_serialize(
+        void *buf,
+        size_t buf_size,
+        hg_bulk_t handle
+        );
 
 /**
  * Deserialize bulk handle from a buffer.
  *
+ * \param hg_bulk_class [IN]    pointer to HG bulk class
  * \param handle [OUT]          abstract bulk handle
  * \param buf [IN]              pointer to buffer
  * \param buf_size [IN]         buffer size
@@ -150,11 +206,17 @@ HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size);
+HG_Bulk_handle_deserialize(
+        hg_bulk_class_t *hg_bulk_class,
+        hg_bulk_t *handle,
+        const void *buf,
+        size_t buf_size
+        );
 
 /**
  * Transfer data to/from origin using abstract bulk handles.
  *
+ * \param context [IN]          pointer to HG bulk context
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param op [IN]               transfer operation:
@@ -171,10 +233,19 @@ HG_Bulk_handle_deserialize(hg_bulk_t *handle, const void *buf, size_t buf_size);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_transfer(hg_bulk_cb_t callback, void *arg, hg_bulk_op_t op,
-        na_addr_t origin_addr, hg_bulk_t origin_handle, size_t origin_offset,
-        hg_bulk_t local_handle, size_t local_offset, size_t size,
-        hg_op_id_t *op_id);
+HG_Bulk_transfer(
+        hg_bulk_context_t *context,
+        hg_bulk_cb_t callback,
+        void *arg,
+        hg_bulk_op_t op,
+        na_addr_t origin_addr,
+        hg_bulk_t origin_handle,
+        size_t origin_offset,
+        hg_bulk_t local_handle,
+        size_t local_offset,
+        size_t size,
+        hg_op_id_t *op_id
+        );
 
 /**
  * Try to progress communication for at most timeout until timeout reached or
@@ -183,20 +254,23 @@ HG_Bulk_transfer(hg_bulk_cb_t callback, void *arg, hg_bulk_op_t op,
  * assumed that completion of a specific operation will occur only when
  * progress is called.
  *
- * \param hg_bulk_class [IN]    pointer to HG bulk class
+ * \param context [IN]          pointer to HG bulk context
  * \param timeout [IN]          timeout (in milliseconds)
  *
  * \return HG_SUCCESS if any completion has occurred / HG error code otherwise
  */
 HG_EXPORT hg_return_t
-HG_Bulk_progress(hg_bulk_class_t *hg_bulk_class, unsigned int timeout);
+HG_Bulk_progress(
+        hg_bulk_context_t *context,
+        unsigned int timeout
+        );
 
 /**
  * Execute at most max_count callbacks. If timeout is non-zero, wait up to
  * timeout before returning. Function can return when at least one or more
  * callbacks are triggered (at most max_count).
  *
- * \param hg_bulk_class [IN]    pointer to HG bulk class
+ * \param context [IN]          pointer to HG bulk context
  * \param timeout [IN]          timeout (in milliseconds)
  * \param max_count [IN]        maximum number of callbacks triggered
  * \param actual_count [IN]     actual number of callbacks triggered
@@ -204,8 +278,24 @@ HG_Bulk_progress(hg_bulk_class_t *hg_bulk_class, unsigned int timeout);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Bulk_trigger(hg_bulk_class_t *hg_bulk_class, unsigned int timeout,
-        unsigned int max_count, unsigned int *actual_count);
+HG_Bulk_trigger(
+        hg_bulk_context_t *context,
+        unsigned int timeout,
+        unsigned int max_count,
+        unsigned int *actual_count
+        );
+
+/**
+ * Cancel an ongoing operation.
+ *
+ * \param op_id [IN]            operation ID
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_cancel(
+        hg_op_id_t    op_id
+        );
 
 #ifdef __cplusplus
 }

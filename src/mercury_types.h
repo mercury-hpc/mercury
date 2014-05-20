@@ -17,6 +17,8 @@
 typedef struct hg_class hg_class_t;           /* Opaque HG class */
 typedef struct hg_bulk_class hg_bulk_class_t; /* Opaque HG bulk class */
 
+typedef struct hg_bulk_context hg_bulk_context_t; /* Opaque HG bulk context */
+
 typedef hg_uint32_t hg_id_t; /* Operation ID of the operation */
 typedef void *hg_handle_t;   /* Abstract RPC handle */
 typedef void *hg_bulk_t;     /* Abstract bulk data handle */
@@ -67,6 +69,7 @@ typedef enum hg_return {
     HG_NO_MATCH,       /* no function match */
     HG_CHECKSUM_ERROR  /* checksum error */
 } hg_return_t;
+typedef hg_int32_t  hg_error_t; /* Error code */
 
 /* Callback info structs */
 struct hg_cb_info {
@@ -76,10 +79,10 @@ struct hg_cb_info {
 };
 
 struct hg_bulk_cb_info {
-    hg_bulk_class_t *bulk_class; /* HG bulk class */
-    void *arg;                   /* User data */
-    hg_return_t ret;             /* Return value */
-    hg_bulk_op_t op;             /* Operation type */
+    hg_bulk_class_t *hg_bulk_class;  /* HG bulk class */
+    hg_bulk_context_t *context;      /* HG bulk context */
+    hg_bulk_op_t op;                 /* Operation type */
+    void *arg;                       /* User data */
 };
 
 /* Callback for executing RPC */
@@ -111,10 +114,6 @@ typedef hg_return_t
 #define HG_HANDLE_NULL       ((hg_handle_t)0)
 #define HG_BULK_NULL         ((hg_bulk_t)0)
 
-/* Context used for request emulation */
-//struct hg_context {
-//    na_class_t *na_class;
-//    na_context_t *na_context;
-//};
+#define HG_BULK_CONTEXT_DEFAULT ((hg_bulk_context_t *)1)
 
 #endif /* MERCURY_TYPES_H */
