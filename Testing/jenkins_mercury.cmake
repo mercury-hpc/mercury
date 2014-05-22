@@ -69,8 +69,8 @@ endif()
 set(MERCURY_DO_MEMCHECK $ENV{MERCURY_DO_MEMCHECK})
 if(MERCURY_DO_MEMCHECK)
   message("Enabling Memcheck")
-  set(CTEST_MEMORYCHECK_COMMAND "/usr/bin/valgrind")
-  set(CTEST_MEMORYCHECK_COMMAND_OPTIONS "--gen-suppressions=all --trace-children=yes -q --leak-check=yes --show-reachable=yes --num-callers=50 -v")
+  set(CTEST_MEMORYCHECK_COMMAND "/home/soumagne/apps/valgrind/default/bin/valgrind")
+  set(CTEST_MEMORYCHECK_COMMAND_OPTIONS "--gen-suppressions=all --trace-children=yes --fair-sched=yes -q --leak-check=yes --show-reachable=yes --num-callers=50 -v")
   #set(CTEST_MEMORYCHECK_SUPPRESSIONS_FILE ${CTEST_SCRIPT_DIRECTORY}/MercuryValgrindSuppressions.supp)
 
   # needed by mercury_common.cmake
