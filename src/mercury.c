@@ -926,8 +926,9 @@ HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
         hg_thread_mutex_lock(&hg_handle->processed_mutex);
 
         while (!hg_handle->processed) {
-            hg_thread_cond_timedwait(&hg_handle->processed_cond,
-                    &hg_handle->processed_mutex, timeout);
+            if (hg_thread_cond_timedwait(&hg_handle->processed_cond,
+                    &hg_handle->processed_mutex, timeout) != HG_UTIL_SUCCESS)
+                break;
         }
 
         if (hg_handle->processed) completed = HG_TRUE;
