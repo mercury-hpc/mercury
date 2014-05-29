@@ -171,8 +171,6 @@ struct na_mpi_private_data {
     hg_queue_t        *unexpected_op_queue;        /* Unexpected op queue */
     hg_thread_mutex_t  unexpected_op_queue_mutex;  /* Mutex */
 
-    hg_hash_table_t   *mem_handle_map;       /* Map to memory handles */
-    hg_thread_mutex_t  mem_handle_map_mutex; /* Mutex */
     hg_atomic_int32_t  rma_tag;              /* Atomic RMA tag value */
 
     hg_list_entry_t   *op_id_list;        /* List of na_mpi_op_ids */
@@ -1092,7 +1090,6 @@ na_mpi_initialize(const struct na_info *na_info, na_bool_t listen)
     na_class_t *na_class = NULL;
     int mpi_ext_initialized = 0;
     na_bool_t listening, use_static_inter_comm;
-    hg_hash_table_t *mem_handle_map = NULL;
     hg_queue_t *unexpected_op_queue = NULL;
     na_bool_t error_occurred = NA_FALSE;
     int flags = (listen) ? MPI_INIT_SERVER : 0;
@@ -1194,17 +1191,6 @@ na_mpi_initialize(const struct na_info *na_info, na_bool_t listen)
         }
     }
 
-    /* Create hash table for memory registration */
-    mem_handle_map = hg_hash_table_new(pointer_hash, pointer_equal);
-    if (!mem_handle_map) {
-        NA_LOG_ERROR("Could not create memory handle map");
-        error_occurred = NA_TRUE;
-        goto done;
-    }
-    /* Automatically free all the values with the hash map */
-    hg_hash_table_register_free_functions(mem_handle_map, NULL, NULL);
-    NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map = mem_handle_map;
-
     /* Initialize lists */
     NA_MPI_PRIVATE_DATA(na_class)->remote_list = NULL;
     NA_MPI_PRIVATE_DATA(na_class)->op_id_list = NULL;
@@ -1222,7 +1208,6 @@ na_mpi_initialize(const struct na_info *na_info, na_bool_t listen)
     hg_thread_mutex_init(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
     hg_thread_cond_init(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond);
     hg_thread_mutex_init(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
-    hg_thread_mutex_init(&NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
     hg_thread_mutex_init(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
     hg_thread_mutex_init(
             &NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
@@ -1291,9 +1276,6 @@ na_mpi_finalize(na_class_t *na_class)
     /* Free unexpected op queue */
     hg_queue_free(NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue);
 
-    /* Free hash table for memory registration */
-    hg_hash_table_free(NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map);
-
     /* Free the private dup'ed comm */
     mpi_ret = MPI_Comm_free(&NA_MPI_PRIVATE_DATA(na_class)->intra_comm);
     if (mpi_ret != MPI_SUCCESS) {
@@ -1324,7 +1306,6 @@ na_mpi_finalize(na_class_t *na_class)
     hg_thread_mutex_destroy(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
     hg_thread_cond_destroy(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond);
     hg_thread_mutex_destroy(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
-    hg_thread_mutex_destroy(&NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
     hg_thread_mutex_destroy(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
     hg_thread_mutex_destroy(
             &NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
@@ -1815,49 +1796,16 @@ na_mpi_mem_handle_free(na_class_t NA_UNUSED *na_class,
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
+na_mpi_mem_register(na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
 {
-    struct na_mpi_mem_handle *na_mpi_mem_handle =
-            (struct na_mpi_mem_handle *) mem_handle;
-    na_return_t ret = NA_SUCCESS;
-
-    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    /* Store this handle */
-    if (!hg_hash_table_insert(NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map,
-            (hg_hash_table_key_t) na_mpi_mem_handle->base,
-            (hg_hash_table_value_t) na_mpi_mem_handle)) {
-        NA_LOG_ERROR("Could not register memory handle");
-        ret = NA_NOMEM_ERROR;
-    }
-
-    hg_thread_mutex_unlock(
-            &NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    return ret;
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
+na_mpi_mem_deregister(na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
 {
-    struct na_mpi_mem_handle *na_mpi_mem_handle =
-            (struct na_mpi_mem_handle *) mem_handle;
-    na_return_t ret = NA_SUCCESS;
-
-    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    /* Remove the handle */
-    if (!hg_hash_table_remove(NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map,
-            (hg_hash_table_key_t) na_mpi_mem_handle->base)) {
-        NA_LOG_ERROR("Could not deregister memory handle");
-        ret = NA_INVALID_PARAM;
-    }
-
-    hg_thread_mutex_unlock(
-            &NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    return ret;
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2264,7 +2212,6 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
         struct na_mpi_addr *na_mpi_addr, const MPI_Status *status,
         na_bool_t *progressed)
 {
-    struct na_mpi_mem_handle *na_mpi_mem_handle = NULL;
     struct na_mpi_rma_info *na_mpi_rma_info = NULL;
     struct na_mpi_op_id *na_mpi_op_id = NULL;
     int unexpected_buf_size = 0;
@@ -2310,21 +2257,6 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
     na_mpi_op_id->arg = NULL;
     na_mpi_op_id->completed = NA_FALSE;
 
-    /* Here better to keep the mutex locked the time we operate on
-     * mem_handle since it's a pointer to a mem_handle */
-    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    na_mpi_mem_handle = (struct na_mpi_mem_handle *) hg_hash_table_lookup(
-            NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map,
-            (hg_hash_table_key_t) na_mpi_rma_info->base);
-    if (!na_mpi_mem_handle) {
-        NA_LOG_ERROR("Could not find memory handle");
-        ret = NA_INVALID_PARAM;
-        hg_thread_mutex_unlock(
-                &NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-        goto done;
-    }
-
     switch (na_mpi_rma_info->op) {
         /* Remote wants to do a put so wait in a recv */
         case NA_MPI_RMA_PUT:
@@ -2342,8 +2274,6 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("MPI_Irecv() failed");
                 ret = NA_PROTOCOL_ERROR;
-                hg_thread_mutex_unlock(
-                        &NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
                 goto done;
             }
             break;
@@ -2364,8 +2294,6 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("MPI_Isend() failed");
                 ret = NA_PROTOCOL_ERROR;
-                hg_thread_mutex_unlock(
-                        &NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
                 goto done;
             }
             break;
@@ -2374,9 +2302,6 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
             NA_LOG_ERROR("Operation not supported");
             break;
     }
-
-    hg_thread_mutex_unlock(
-            &NA_MPI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
 
     /* Add op_id to list */
     ret = na_mpi_op_id_list_append(na_class, na_mpi_op_id);

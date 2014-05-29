@@ -441,6 +441,9 @@ NA_Msg_recv_expected(
  * Create memory handle for RMA operations.
  * For non-contiguous memory, use NA_Mem_handle_create_segments instead.
  *
+ * Note to plugin developers: NA_Mem_handle_create may be called multiple times
+ * on the same memory region.
+ *
  * \param na_class [IN]         pointer to NA class
  * \param buf [IN]              pointer to buffer that needs to be registered
  * \param buf_size [IN]         buffer size

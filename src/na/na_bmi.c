@@ -142,8 +142,6 @@ struct na_bmi_private_data {
     hg_thread_mutex_t unexpected_msg_queue_mutex; /* Mutex */
     hg_queue_t *unexpected_op_queue;              /* Unexpected op queue */
     hg_thread_mutex_t unexpected_op_queue_mutex;  /* Mutex */
-    hg_hash_table_t  *mem_handle_map;             /* Map to memory handles */
-    hg_thread_mutex_t mem_handle_map_mutex;       /* Mutex */
     hg_atomic_int32_t rma_tag;                    /* Atomic RMA tag value */
 };
 
@@ -617,7 +615,6 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
 {
     na_class_t *na_class = NULL;
     na_bool_t listening;
-    hg_hash_table_t *mem_handle_map = NULL;
     hg_queue_t *unexpected_msg_queue = NULL;
     hg_queue_t *unexpected_op_queue = NULL;
     na_bool_t error_occurred = NA_FALSE;
@@ -650,17 +647,6 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
     NA_BMI_PRIVATE_DATA(na_class)->listen_addr =
             (listening) ? strdup(listen_addr) : NULL;
 
-    /* Create hash table for memory registration */
-    mem_handle_map = hg_hash_table_new(pointer_hash, pointer_equal);
-    if (!mem_handle_map) {
-        NA_LOG_ERROR("Could not create memory handle map");
-        error_occurred = NA_TRUE;
-        goto done;
-    }
-    /* Automatically free all the values with the hash map */
-    hg_hash_table_register_free_functions(mem_handle_map, NULL, NULL);
-    NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map = mem_handle_map;
-
     /* Create queue for unexpected messages */
     unexpected_msg_queue = hg_queue_new();
     if (!unexpected_msg_queue) {
@@ -681,7 +667,6 @@ NA_BMI_Init(const char *method_list, const char *listen_addr, int flags)
 
     /* Initialize mutex/cond */
     hg_thread_mutex_init(&NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
-    hg_thread_mutex_init(&NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
     hg_thread_mutex_init(
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
     hg_thread_mutex_init(
@@ -725,9 +710,6 @@ na_bmi_finalize(na_class_t *na_class)
     /* Free unexpected message queue */
     hg_queue_free(NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
 
-    /* Free hash table for memory registration */
-    hg_hash_table_free(NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map);
-
     /* Free dupp'ed listen addr */
     free(NA_BMI_PRIVATE_DATA(na_class)->listen_addr);
 
@@ -741,8 +723,6 @@ na_bmi_finalize(na_class_t *na_class)
     /* Destroy mutex/cond */
     hg_thread_mutex_destroy(
             &NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
-    hg_thread_mutex_destroy(
-            &NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
     hg_thread_mutex_destroy(
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
     hg_thread_mutex_destroy(
@@ -1354,49 +1334,16 @@ na_bmi_mem_handle_free(na_class_t NA_UNUSED *na_class,
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
+na_bmi_mem_register(na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
 {
-    struct na_bmi_mem_handle *na_bmi_mem_handle =
-            (struct na_bmi_mem_handle *) mem_handle;
-    na_return_t ret = NA_SUCCESS;
-
-    hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    /* Store this handle */
-    if (!hg_hash_table_insert(NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map,
-            (hg_hash_table_key_t) na_bmi_mem_handle->base,
-            (hg_hash_table_value_t) na_bmi_mem_handle)) {
-        NA_LOG_ERROR("Could not register memory handle");
-        ret = NA_NOMEM_ERROR;
-    }
-
-    hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    return ret;
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
+na_bmi_mem_deregister(na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mem_handle)
 {
-    struct na_bmi_mem_handle *na_bmi_mem_handle =
-            (struct na_bmi_mem_handle *) mem_handle;
-    na_return_t ret = NA_SUCCESS;
-
-    hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    /* Remove the handle */
-    if (!hg_hash_table_remove(NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map,
-            (hg_hash_table_key_t) na_bmi_mem_handle->base)) {
-        NA_LOG_ERROR("Could not deregister memory handle");
-        ret = NA_INVALID_PARAM;
-    }
-
-    hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    return ret;
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1934,10 +1881,9 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_progress_rma(na_class_t *na_class, na_context_t *context,
+na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
         struct BMI_unexpected_info *unexpected_info)
 {
-    struct na_bmi_mem_handle *na_bmi_mem_handle = NULL;
     struct na_bmi_rma_info *na_bmi_rma_info = NULL;
     struct na_bmi_op_id *na_bmi_op_id = NULL;
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
@@ -1972,21 +1918,6 @@ na_bmi_progress_rma(na_class_t *na_class, na_context_t *context,
     na_bmi_op_id->arg = NULL;
     na_bmi_op_id->completed = NA_FALSE;
 
-    /* Here better to keep the mutex locked the time we operate on
-     * bmi_mem_handle since it's a pointer to a mem_handle */
-    hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-
-    na_bmi_mem_handle = (struct na_bmi_mem_handle *) hg_hash_table_lookup(
-            NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map,
-            (hg_hash_table_key_t) na_bmi_rma_info->base);
-    if (!na_bmi_mem_handle) {
-        NA_LOG_ERROR("Could not find memory handle");
-        ret = NA_INVALID_PARAM;
-        hg_thread_mutex_unlock(
-                &NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
-        goto done;
-    }
-
     switch (na_bmi_rma_info->op) {
         /* Remote wants to do a put so wait in a recv */
         case NA_BMI_RMA_PUT:
@@ -2004,7 +1935,7 @@ na_bmi_progress_rma(na_class_t *na_class, na_context_t *context,
             /* Start receiving data */
             bmi_ret = BMI_post_recv(&na_bmi_op_id->info.put.transfer_op_id,
                     na_bmi_op_id->info.put.remote_addr,
-                    (char *) na_bmi_mem_handle->base + na_bmi_rma_info->disp,
+                    (char *) na_bmi_rma_info->base + na_bmi_rma_info->disp,
                     na_bmi_rma_info->count,
                     &na_bmi_op_id->info.put.transfer_actual_size,
                     BMI_EXT_ALLOC, na_bmi_rma_info->transfer_tag, na_bmi_op_id,
@@ -2034,7 +1965,7 @@ na_bmi_progress_rma(na_class_t *na_class, na_context_t *context,
             /* Start sending data */
             bmi_ret = BMI_post_send(&na_bmi_op_id->info.get.transfer_op_id,
                     na_bmi_op_id->info.get.remote_addr,
-                    (char *) na_bmi_mem_handle->base + na_bmi_rma_info->disp,
+                    (char *) na_bmi_rma_info->base + na_bmi_rma_info->disp,
                     na_bmi_rma_info->count, BMI_EXT_ALLOC,
                     na_bmi_rma_info->transfer_tag, na_bmi_op_id,
                     *bmi_context, NULL);
@@ -2057,9 +1988,6 @@ na_bmi_progress_rma(na_class_t *na_class, na_context_t *context,
             ret = NA_INVALID_PARAM;
             break;
     }
-
-    hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->mem_handle_map_mutex);
 
     BMI_unexpected_free(unexpected_info->addr, unexpected_info->buffer);
 
