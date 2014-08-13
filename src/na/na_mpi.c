@@ -1347,7 +1347,7 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
         ret = NA_NOMEM_ERROR;
         goto done;
     }
-
+    na_mpi_addr->rank = 0;
     na_mpi_addr->comm = MPI_COMM_NULL;
     na_mpi_addr->rma_comm = MPI_COMM_NULL;
     na_mpi_addr->unexpected = NA_FALSE;
