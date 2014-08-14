@@ -30,8 +30,11 @@ thread_cb_cas(void *arg)
     hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
     hg_atomic_int32_t *atomic_int32 = (hg_atomic_int32_t *) arg;
 
-    if (!hg_atomic_cas32(atomic_int32, 1, 100))
+    hg_atomic_incr32(atomic_int32);
+
+    if (HG_UTIL_TRUE == hg_atomic_cas32(atomic_int32, 2, 99)) {
         hg_atomic_incr32(atomic_int32);
+    }
 
     hg_thread_exit(thread_ret);
     return thread_ret;
