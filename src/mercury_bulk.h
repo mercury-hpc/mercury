@@ -59,14 +59,12 @@ HG_Bulk_context_create(
 /**
  * Destroy a context created by HG_Bulk_context_create().
  *
- * \param hg_bulk_class [IN]    pointer to HG bulk class
  * \param context [IN]          pointer to HG bulk context
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Bulk_context_destroy(
-        hg_bulk_class_t *hg_bulk_class,
         hg_bulk_context_t *context
         );
 
@@ -294,7 +292,7 @@ HG_Bulk_trigger(
  */
 HG_EXPORT hg_return_t
 HG_Bulk_cancel(
-        hg_op_id_t    op_id
+        hg_op_id_t op_id
         );
 
 #ifdef __cplusplus

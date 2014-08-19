@@ -125,7 +125,7 @@ configure_file(
 #------------------------------------------------------------------------------
 set(MERCURY_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_handler.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_private.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc_header.c
@@ -152,7 +152,7 @@ set(MERCURY_EXPORTED_LIBS mercury ${MERCURY_EXPORTED_LIBS})
 #-----------------------------------------------------------------------------
 set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_handler.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_types.h

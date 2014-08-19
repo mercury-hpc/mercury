@@ -17,6 +17,7 @@
 typedef struct hg_class hg_class_t;           /* Opaque HG class */
 typedef struct hg_bulk_class hg_bulk_class_t; /* Opaque HG bulk class */
 
+typedef struct hg_context hg_context_t;           /* Opaque HG context */
 typedef struct hg_bulk_context hg_bulk_context_t; /* Opaque HG bulk context */
 
 typedef hg_uint32_t hg_id_t; /* Operation ID of the operation */
@@ -71,35 +72,37 @@ typedef enum hg_return {
 } hg_return_t;
 typedef hg_int32_t  hg_error_t; /* Error code */
 
+/* Callback operation type */
+typedef enum hg_cb_type {
+    HG_CB,
+    HG_BULK_CB
+} hg_cb_type_t;
+
 /* Callback info structs */
 struct hg_cb_info {
-    hg_class_t *hg_class; /* HG class */
-    void *arg;            /* User data */
-    hg_return_t ret;      /* Return value */
+    void *arg;              /* User data */
+    hg_return_t ret;        /* Return value */
+    hg_class_t *hg_class;   /* HG class */
+    hg_context_t *context;  /* HG context */
+    hg_handle_t handle;     /* HG handle */
+    na_addr_t addr;         /* NA address */
 };
 
 struct hg_bulk_cb_info {
-    hg_bulk_class_t *hg_bulk_class;  /* HG bulk class */
-    hg_bulk_context_t *context;      /* HG bulk context */
-    hg_bulk_op_t op;                 /* Operation type */
-    void *arg;                       /* User data */
+    void *arg;                      /* User data */
+    hg_return_t ret;                /* Return value */
+    hg_bulk_class_t *hg_bulk_class; /* HG bulk class */
+    hg_bulk_context_t *context;     /* HG bulk context */
+    hg_bulk_op_t op;                /* Operation type */
 };
 
-/* Callback for executing RPC */
-typedef hg_return_t
-(*hg_rpc_cb_t)(hg_handle_t handle);
-
 /* HG callback */
-typedef hg_return_t
-(*hg_cb_t)(const struct hg_cb_info *callback_info);
-
-/* HG Bulk callback */
-typedef hg_return_t
-(*hg_bulk_cb_t)(const struct hg_bulk_cb_info *callback_info);
+typedef hg_return_t (*hg_rpc_cb_t)(hg_handle_t handle);
+typedef hg_return_t (*hg_cb_t)(const struct hg_cb_info *callback_info);
+typedef hg_return_t (*hg_bulk_cb_t)(const struct hg_bulk_cb_info *callback_info);
 
 /* Proc callback for serializing/deserializing parameters */
-typedef hg_return_t
-(*hg_proc_cb_t)(hg_proc_t proc, void *data);
+typedef hg_return_t (*hg_proc_cb_t)(hg_proc_t proc, void *data);
 
 /* Constant values */
 #define HG_BULK_READWRITE    NA_MEM_READWRITE
@@ -113,7 +116,5 @@ typedef hg_return_t
 #define HG_PROC_NULL         ((hg_proc_t)0)
 #define HG_HANDLE_NULL       ((hg_handle_t)0)
 #define HG_BULK_NULL         ((hg_bulk_t)0)
-
-#define HG_BULK_CONTEXT_DEFAULT ((hg_bulk_context_t *)1)
 
 #endif /* MERCURY_TYPES_H */
