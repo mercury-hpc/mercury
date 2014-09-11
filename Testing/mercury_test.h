@@ -27,13 +27,13 @@ extern "C" {
 /**
  * Initialize client
  */
-hg_return_t
+hg_class_t *
 HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank);
 
 /**
  * Initialize server
  */
-hg_return_t
+hg_class_t *
 HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         unsigned int *addr_table_size, unsigned int *max_number_of_peers);
 
@@ -41,7 +41,7 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
  * Finalize client/server
  */
 hg_return_t
-HG_Test_finalize(void);
+HG_Test_finalize(hg_class_t *hg_class);
 
 #ifdef __cplusplus
 }

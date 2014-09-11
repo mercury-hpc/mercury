@@ -51,8 +51,7 @@ static HG_INLINE int hg_proc_rpc_handle_t(hg_proc_t proc, void *data)
 
     ret = hg_proc_uint64_t(proc, &struct_data->cookie);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc error");
         return ret;
     }
 
@@ -74,15 +73,13 @@ hg_proc_rpc_open_in_t(hg_proc_t proc, void *data)
 
     ret = hg_proc_hg_const_string_t(proc, &struct_data->path);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc error");
         return ret;
     }
 
     ret = hg_proc_rpc_handle_t(proc, &struct_data->handle);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc error");
         return ret;
     }
 
@@ -104,15 +101,13 @@ hg_proc_rpc_open_out_t(hg_proc_t proc, void *data)
 
     ret = hg_proc_int32_t(proc, &struct_data->ret);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc error");
         return ret;
     }
 
     ret = hg_proc_int32_t(proc, &struct_data->event_id);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc error");
         return ret;
     }
 

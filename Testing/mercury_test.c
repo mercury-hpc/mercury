@@ -29,6 +29,7 @@
 /* Local Variables */
 /*******************/
 static na_class_t *hg_test_na_class_g = NULL;
+static na_context_t *hg_test_na_context_g = NULL;
 static hg_bool_t hg_test_is_client_g = HG_FALSE;
 static na_addr_t hg_test_addr_g = NA_ADDR_NULL;
 static int hg_test_rank_g = 0;
@@ -67,35 +68,27 @@ hg_atomic_int32_t hg_test_finalizing_count_g;
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_test_finalize_rpc(void)
+hg_test_finalize_rpc(hg_class_t *hg_class)
 {
     hg_return_t hg_ret;
-    hg_request_t request;
-    hg_status_t status;
+    hg_context_t *context;
+    hg_handle_t handle;
 
-    /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(hg_test_addr_g, hg_test_finalize_id_g, NULL, NULL,
-            &request);
+    context = HG_Context_create(hg_class);
+
+    hg_ret = HG_Create(hg_class, context, hg_test_addr_g, hg_test_finalize_id_g,
+            &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
     }
 
-    /* Wait for call to be executed and return value to be sent back
-     * (Request is freed when the call completes)
-     */
-    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
+    /* Forward call to remote addr and get a new request */
+    hg_ret = HG_Forward(handle, NULL, NULL, NULL);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-    }
-    if (!status) {
-        fprintf(stderr, "Operation did not complete\n");
+        fprintf(stderr, "Could not forward call\n");
     }
 
-    /* Free request */
-    hg_ret = HG_Request_free(request);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free request\n");
-    }
+    HG_Context_destroy(context);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -107,71 +100,75 @@ hg_test_finalize_cb(hg_handle_t handle)
     hg_atomic_incr32(&hg_test_finalizing_count_g);
 
     /* Free handle and send response back */
-    ret = HG_Handler_start_output(handle, NULL);
+    ret = HG_Respond(handle, NULL, NULL, NULL);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
 
-    HG_Handler_free(handle);
+    HG_Destroy(handle);
 
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_test_register(void)
+hg_test_register(hg_class_t *hg_class)
 {
     /* test_rpc */
-    hg_test_rpc_open_id_g = MERCURY_REGISTER("hg_test_rpc_open", rpc_open_in_t,
-            rpc_open_out_t, hg_test_rpc_open_cb);
+    hg_test_rpc_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_rpc_open",
+            rpc_open_in_t, rpc_open_out_t, hg_test_rpc_open_cb);
 
-    /* test_bulk */
-    hg_test_bulk_write_id_g = MERCURY_REGISTER("hg_test_bulk_write",
-            bulk_write_in_t, bulk_write_out_t, hg_test_bulk_write_cb);
-
-    /* test_bulk_seg */
-    hg_test_bulk_seg_write_id_g = MERCURY_REGISTER("hg_test_bulk_seg_write",
-            bulk_write_in_t, bulk_write_out_t, hg_test_bulk_seg_write_cb);
-
-    /* test_pipeline */
-    hg_test_pipeline_write_id_g = MERCURY_REGISTER("hg_test_pipeline_write",
-            bulk_write_in_t, bulk_write_out_t, hg_test_pipeline_write_cb);
-
-    /* test_posix */
-    hg_test_posix_open_id_g = MERCURY_REGISTER("hg_test_posix_open",
-            open_in_t, open_out_t, hg_test_posix_open_cb);
-    hg_test_posix_write_id_g = MERCURY_REGISTER("hg_test_posix_write",
-            write_in_t, write_out_t, hg_test_posix_write_cb);
-    hg_test_posix_read_id_g = MERCURY_REGISTER("hg_test_posix_read",
-            read_in_t, read_out_t, hg_test_posix_read_cb);
-    hg_test_posix_close_id_g = MERCURY_REGISTER("hg_test_posix_close",
-            close_in_t, close_out_t, hg_test_posix_close_cb);
-
-    /* test_scale */
-    hg_test_scale_open_id_g = MERCURY_REGISTER("hg_test_scale_open",
-            open_in_t, open_out_t, hg_test_scale_open_cb);
-    hg_test_scale_write_id_g = MERCURY_REGISTER("hg_test_scale_write",
-            write_in_t, write_out_t, hg_test_scale_write_cb);
+//    /* test_bulk */
+//    hg_test_bulk_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_bulk_write",
+//            bulk_write_in_t, bulk_write_out_t, hg_test_bulk_write_cb);
+//
+//    /* test_bulk_seg */
+//    hg_test_bulk_seg_write_id_g = MERCURY_REGISTER(hg_class,
+//            "hg_test_bulk_seg_write", bulk_write_in_t, bulk_write_out_t,
+//            hg_test_bulk_seg_write_cb);
+//
+//    /* test_pipeline */
+//    hg_test_pipeline_write_id_g = MERCURY_REGISTER(hg_class,
+//            "hg_test_pipeline_write", bulk_write_in_t, bulk_write_out_t,
+//            hg_test_pipeline_write_cb);
+//
+//    /* test_posix */
+//    hg_test_posix_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_open",
+//            open_in_t, open_out_t, hg_test_posix_open_cb);
+//    hg_test_posix_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_write",
+//            write_in_t, write_out_t, hg_test_posix_write_cb);
+//    hg_test_posix_read_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_read",
+//            read_in_t, read_out_t, hg_test_posix_read_cb);
+//    hg_test_posix_close_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_close",
+//            close_in_t, close_out_t, hg_test_posix_close_cb);
+//
+//    /* test_scale */
+//    hg_test_scale_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_scale_open",
+//            open_in_t, open_out_t, hg_test_scale_open_cb);
+//    hg_test_scale_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_scale_write",
+//            write_in_t, write_out_t, hg_test_scale_write_cb);
 
     /* test_finalize */
-    hg_test_finalize_id_g = MERCURY_REGISTER("hg_test_finalize",
+    hg_test_finalize_id_g = MERCURY_REGISTER(hg_class, "hg_test_finalize",
             void, void, hg_test_finalize_cb);
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
+hg_class_t *
 HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank)
 {
+    hg_class_t *hg_class = NULL;
     char test_addr_name[NA_TEST_MAX_ADDR_NAME];
-    hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
     hg_test_na_class_g = NA_Test_client_init(argc, argv, test_addr_name,
             NA_TEST_MAX_ADDR_NAME, &hg_test_rank_g);
 
-    ret = HG_Init(hg_test_na_class_g);
-    if (ret != HG_SUCCESS) {
+    hg_test_na_context_g = NA_Context_create(hg_test_na_class_g);
+
+    hg_class = HG_Init(hg_test_na_class_g, hg_test_na_context_g, NULL);
+    if (!hg_class) {
         fprintf(stderr, "Could not initialize Mercury\n");
         goto done;
     }
@@ -187,17 +184,15 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank)
 #endif
     } else {
         /* Look up addr using port name info */
-        na_ret = NA_Addr_lookup_wait(hg_test_na_class_g, test_addr_name,
-                &hg_test_addr_g);
+        na_ret = NA_Addr_lookup_wait(hg_test_na_class_g, test_addr_name, &hg_test_addr_g);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not find addr %s\n", test_addr_name);
-            ret = HG_INVALID_PARAM;
             goto done;
         }
     }
 
     /* Register routines */
-    hg_test_register();
+    hg_test_register(hg_class);
 
     /* When finalize is called we need to free the addr etc */
     hg_test_is_client_g = HG_TRUE;
@@ -206,18 +201,20 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank)
     if (rank) *rank = hg_test_rank_g;
 
 done:
-    return ret;
+    return hg_class;
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
+hg_class_t *
 HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         unsigned int *addr_table_size, unsigned int *max_number_of_peers)
 {
-    hg_return_t ret = HG_SUCCESS;
+    hg_class_t *hg_class = NULL;
 
     hg_test_na_class_g = NA_Test_server_init(argc, argv, NA_FALSE, addr_table,
             addr_table_size, max_number_of_peers);
+
+    hg_test_na_context_g = NA_Context_create(hg_test_na_class_g);
 
     /* Initalize atomic variable to finalize server */
     hg_atomic_set32(&hg_test_finalizing_count_g, 0);
@@ -227,26 +224,26 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
     printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
 
-    ret = HG_Init(hg_test_na_class_g);
-    if (ret != HG_SUCCESS) {
+    hg_class = HG_Init(hg_test_na_class_g, hg_test_na_context_g, NULL);
+    if (!hg_class) {
         fprintf(stderr, "Could not initialize Mercury\n");
         goto done;
     }
 
     /* Register test routines */
-    hg_test_register();
+    hg_test_register(hg_class);
 
     /* Used by CTest Test Driver */
     printf("Waiting for client...\n");
     fflush(stdout);
 
 done:
-    return ret;
+    return hg_class;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Test_finalize(void)
+HG_Test_finalize(hg_class_t *hg_class)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
@@ -255,7 +252,7 @@ HG_Test_finalize(void)
 
     if (hg_test_is_client_g) {
         /* Terminate server */
-        if (hg_test_rank_g == 0) hg_test_finalize_rpc();
+        if (hg_test_rank_g == 0) hg_test_finalize_rpc(hg_class);
 
         /* Free addr id */
         na_ret = NA_Addr_free(hg_test_na_class_g, hg_test_addr_g);
@@ -271,11 +268,18 @@ HG_Test_finalize(void)
 #endif
 
     /* Finalize interface */
-    ret = HG_Finalize();
+    ret = HG_Finalize(hg_class);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not finalize Mercury\n");
         goto done;
     }
+
+    na_ret = NA_Context_destroy(hg_test_na_class_g, hg_test_na_context_g);
+    if (na_ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not destroy NA context\n");
+        goto done;
+    }
+    hg_test_na_context_g = NULL;
 
     na_ret = NA_Test_finalize(hg_test_na_class_g);
     if (na_ret != NA_SUCCESS) {

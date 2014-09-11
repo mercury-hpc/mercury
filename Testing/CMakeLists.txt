@@ -186,13 +186,13 @@ build_mercury_test(server)
 
 set(MERCURY_tests
   rpc
-  bulk
-  bulk_seg
-  pipeline
-  scale
+#  bulk
+#  bulk_seg
+#  pipeline
+#  scale
 )
 if(NOT WIN32)
-  set(MERCURY_tests ${MERCURY_tests} posix)
+#  set(MERCURY_tests ${MERCURY_tests} posix)
 endif()
 
 # Build tests and add them to ctest
@@ -201,8 +201,8 @@ foreach(MERCURY_test ${MERCURY_tests})
   add_mercury_test(${MERCURY_test})
 endforeach()
 
-add_mercury_opt_test(bulk_seg "extra")
-add_mercury_opt_test(bulk_seg "variable")
+#add_mercury_opt_test(bulk_seg "extra")
+#add_mercury_opt_test(bulk_seg "variable")
 
 # Additional test
-build_mercury_test(bulk_mirror)
+#build_mercury_test(bulk_mirror)
