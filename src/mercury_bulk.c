@@ -55,17 +55,17 @@ struct hg_bulk_op_id {
     hg_bulk_context_t *context;           /* Context */
     hg_bulk_cb_t callback;                /* Callback */
     void *arg;                            /* Callback arguments */
-    hg_atomic_int32_t completed;          /* Operation completed */
+    hg_atomic_int32_t completed;          /* Operation completed TODO needed ? */
     unsigned int op_count;                /* Number of ongoing operations */
     hg_atomic_int32_t op_completed_count; /* Number of operations completed */
     hg_bulk_op_t op;                      /* Operation type */
 };
 
-/* Completion data stored in completion queue */
-struct hg_bulk_completion_data {
-    hg_bulk_cb_t callback;
-    struct hg_bulk_cb_info *callback_info;
-};
+///* Completion data stored in completion queue */
+//struct hg_bulk_completion_data {
+//    hg_bulk_cb_t callback;
+//    struct hg_bulk_cb_info *callback_info;
+//};
 
 /* Segment used to transfer data and map to NA layer */
 struct hg_bulk_segment {
@@ -111,7 +111,7 @@ struct hg_bulk {
  * Create handle.
  */
 static hg_return_t
-hg_bulk_handle_create(
+hg_bulk_create(
         struct hg_bulk_class *hg_bulk_class,
         size_t count,
         void **buf_ptrs,
@@ -124,7 +124,7 @@ hg_bulk_handle_create(
  * Free handle.
  */
 static hg_return_t
-hg_bulk_handle_free(
+hg_bulk_free(
         struct hg_bulk *hg_bulk
         );
 
@@ -143,7 +143,7 @@ hg_bulk_offset_translate(
  * Access bulk handle and get segment addresses/sizes.
  */
 static void
-hg_bulk_handle_access(
+hg_bulk_access(
         struct hg_bulk *hg_bulk,
         size_t offset,
         size_t size,
@@ -286,7 +286,7 @@ hg_bulk_memcpy_get(na_class_t HG_BULK_UNUSED *na_class,
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_bulk_handle_create(struct hg_bulk_class *hg_bulk_class, size_t count,
+hg_bulk_create(struct hg_bulk_class *hg_bulk_class, size_t count,
         void **buf_ptrs, const size_t *buf_sizes, unsigned long flags,
         struct hg_bulk **hg_bulk_ptr)
 {
@@ -297,7 +297,7 @@ hg_bulk_handle_create(struct hg_bulk_class *hg_bulk_class, size_t count,
 
     hg_bulk = (struct hg_bulk *) malloc(sizeof(struct hg_bulk));
     if (!hg_bulk) {
-        HG_ERROR_DEFAULT("Could not allocate handle");
+        HG_LOG_ERROR("Could not allocate handle");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
@@ -315,7 +315,7 @@ hg_bulk_handle_create(struct hg_bulk_class *hg_bulk_class, size_t count,
     hg_bulk->segments = (struct hg_bulk_segment *) malloc(hg_bulk->segment_count
             * sizeof(struct hg_bulk_segment));
     if (!hg_bulk->segments) {
-        HG_ERROR_DEFAULT("Could not allocate segment array");
+        HG_LOG_ERROR("Could not allocate segment array");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
@@ -324,7 +324,7 @@ hg_bulk_handle_create(struct hg_bulk_class *hg_bulk_class, size_t count,
     hg_bulk->segment_handles = (na_mem_handle_t *) malloc(hg_bulk->segment_count
             * sizeof(na_mem_handle_t));
     if (!hg_bulk->segment_handles) {
-        HG_ERROR_DEFAULT("Could not allocate mem handle array");
+        HG_LOG_ERROR("Could not allocate mem handle array");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
@@ -343,7 +343,7 @@ hg_bulk_handle_create(struct hg_bulk_class *hg_bulk_class, size_t count,
                 (struct na_segment *) bulk_segments, segment_count,
                 na_flags, &hg_bulk->segment_handles[0]);
         if (na_ret != NA_SUCCESS) {
-            HG_ERROR_DEFAULT("NA_Mem_handle_create_segments failed");
+            HG_LOG_ERROR("NA_Mem_handle_create_segments failed");
             ret = HG_NA_ERROR;
             goto done;
         }
@@ -354,7 +354,7 @@ hg_bulk_handle_create(struct hg_bulk_class *hg_bulk_class, size_t count,
     for (i = 0; i < hg_bulk->segment_count; i++) {
         hg_bulk->segments[i].size = buf_sizes[i];
         if (!hg_bulk->segments[i].size) {
-            HG_ERROR_DEFAULT("Invalid segment size");
+            HG_LOG_ERROR("Invalid segment size");
             ret = HG_INVALID_PARAM;
             goto done;
         }
@@ -367,7 +367,7 @@ hg_bulk_handle_create(struct hg_bulk_class *hg_bulk_class, size_t count,
             hg_bulk->segments[i].address = (hg_ptr_t) calloc(
                     hg_bulk->segments[i].size, sizeof(char));
             if (!hg_bulk->segments[i].address) {
-                HG_ERROR_DEFAULT("Could not allocate segment");
+                HG_LOG_ERROR("Could not allocate segment");
                 ret = HG_NOMEM_ERROR;
                 goto done;
             }
@@ -379,7 +379,7 @@ hg_bulk_handle_create(struct hg_bulk_class *hg_bulk_class, size_t count,
                 (void *) hg_bulk->segments[i].address,
                 hg_bulk->segments[i].size, flags, &hg_bulk->segment_handles[i]);
         if (na_ret != NA_SUCCESS) {
-            HG_ERROR_DEFAULT("NA_Mem_handle_create failed");
+            HG_LOG_ERROR("NA_Mem_handle_create failed");
             ret = HG_NA_ERROR;
             goto done;
         }
@@ -389,14 +389,14 @@ hg_bulk_handle_create(struct hg_bulk_class *hg_bulk_class, size_t count,
 
 done:
     if (ret != HG_SUCCESS) {
-        hg_bulk_handle_free(hg_bulk);
+        hg_bulk_free(hg_bulk);
     }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_bulk_handle_free(struct hg_bulk *hg_bulk)
+hg_bulk_free(struct hg_bulk *hg_bulk)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
@@ -415,7 +415,7 @@ hg_bulk_handle_free(struct hg_bulk *hg_bulk)
                 na_ret = NA_Mem_deregister(hg_bulk->hg_bulk_class->na_class,
                         hg_bulk->segment_handles[i]);
                 if (na_ret != NA_SUCCESS) {
-                    HG_ERROR_DEFAULT("NA_Mem_deregister failed");
+                    HG_LOG_ERROR("NA_Mem_deregister failed");
                 }
             }
             hg_bulk->segment_reg = HG_FALSE;
@@ -426,7 +426,7 @@ hg_bulk_handle_free(struct hg_bulk *hg_bulk)
                 na_ret = NA_Mem_handle_free(hg_bulk->hg_bulk_class->na_class,
                         hg_bulk->segment_handles[i]);
                 if (na_ret != NA_SUCCESS) {
-                   HG_ERROR_DEFAULT("NA_Mem_handle_free failed");
+                   HG_LOG_ERROR("NA_Mem_handle_free failed");
                 }
             }
         }
@@ -470,7 +470,7 @@ hg_bulk_offset_translate(struct hg_bulk *hg_bulk, size_t offset,
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_bulk_handle_access(struct hg_bulk *hg_bulk, size_t offset, size_t size,
+hg_bulk_access(struct hg_bulk *hg_bulk, size_t offset, size_t size,
         unsigned long flags, unsigned int max_count, void **buf_ptrs,
         size_t *buf_sizes, unsigned int *actual_count)
 {
@@ -583,7 +583,7 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
                     origin_segment_offset, transfer_size, origin_addr,
                     NA_OP_ID_IGNORE);
             if (na_ret != NA_SUCCESS) {
-                HG_ERROR_DEFAULT("Could not transfer data");
+                HG_LOG_ERROR("Could not transfer data");
                 ret = HG_NA_ERROR;
                 break;
             }
@@ -642,7 +642,7 @@ hg_bulk_transfer(hg_bulk_context_t *context, hg_bulk_cb_t callback, void *arg,
                             origin_addr)) ? hg_bulk_memcpy_get : hg_bulk_na_get;
             break;
         default:
-            HG_ERROR_DEFAULT("Unknown bulk operation");
+            HG_LOG_ERROR("Unknown bulk operation");
             ret = HG_INVALID_PARAM;
             goto done;
     }
@@ -677,7 +677,7 @@ hg_bulk_transfer(hg_bulk_context_t *context, hg_bulk_cb_t callback, void *arg,
             hg_bulk_local, local_segment_start_index,
             local_segment_start_offset, size, NULL, &hg_bulk_op_id->op_count);
     if (!hg_bulk_op_id->op_count) {
-        HG_ERROR_DEFAULT("Could not get bulk op_count");
+        HG_LOG_ERROR("Could not get bulk op_count");
         ret = HG_INVALID_PARAM;
         goto done;
     }
@@ -688,7 +688,7 @@ hg_bulk_transfer(hg_bulk_context_t *context, hg_bulk_cb_t callback, void *arg,
             hg_bulk_local, local_segment_start_index,
             local_segment_start_offset, size, hg_bulk_op_id, NULL);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not transfer data pieces");
+        HG_LOG_ERROR("Could not transfer data pieces");
         goto done;
     }
 
@@ -707,7 +707,7 @@ hg_return_t
 hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
 {
     hg_bulk_context_t *context = hg_bulk_op_id->context;
-    na_return_t ret = NA_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     /* Mark operation as completed */
     hg_atomic_incr32(&hg_bulk_op_id->completed);
@@ -740,11 +740,11 @@ HG_Bulk_init(na_class_t *na_class, na_context_t *na_context)
     struct hg_bulk_class *hg_bulk_class = NULL;
 
     if (!na_class) {
-        HG_ERROR_DEFAULT("Invalid specified na_class");
+        HG_LOG_ERROR("Invalid specified na_class");
         goto done;
     }
     if (!na_context) {
-        HG_ERROR_DEFAULT("Invalid specified na_context");
+        HG_LOG_ERROR("Invalid specified na_context");
         goto done;
     }
 
@@ -752,7 +752,7 @@ HG_Bulk_init(na_class_t *na_class, na_context_t *na_context)
     hg_bulk_class = (struct hg_bulk_class *) malloc(
             sizeof(struct hg_bulk_class));
     if (!hg_bulk_class) {
-        HG_UTIL_ERROR_DEFAULT("Could not allocate HG bulk class");
+        HG_LOG_ERROR("Could not allocate HG bulk class");
         goto done;
     }
 
@@ -768,7 +768,6 @@ hg_return_t
 HG_Bulk_finalize(hg_bulk_class_t *hg_bulk_class)
 {
     hg_return_t ret = HG_SUCCESS;
-    na_return_t na_ret;
 
     if (!hg_bulk_class) goto done;
 
@@ -787,7 +786,7 @@ HG_Bulk_context_create(hg_bulk_class_t *hg_bulk_class)
     hg_bulk_context_t *hg_bulk_context = NULL;
 
     if (!hg_bulk_class) {
-        HG_ERROR_DEFAULT("NULL HG bulk class");
+        HG_LOG_ERROR("NULL HG bulk class");
         ret = HG_INVALID_PARAM;
         goto done;
     }
@@ -812,27 +811,19 @@ HG_Bulk_context_create(hg_bulk_class_t *hg_bulk_class)
     hg_thread_cond_init(&hg_bulk_context->completion_queue_cond);
 
 done:
-    return ret;
+    if (ret != HG_SUCCESS) {
+        free(hg_bulk_context);
+    }
+    return hg_bulk_context;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_context_destroy(hg_bulk_class_t *hg_bulk_class,
-        hg_bulk_context_t *context)
+HG_Bulk_context_destroy(hg_bulk_context_t *context)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_bulk_class) {
-        HG_ERROR_DEFAULT("NULL HG bulk class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-
-    if (!context) {
-        HG_ERROR_DEFAULT("NULL HG bulk context");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    if (!context) goto done;
 
     /* Check that completion queue is empty now */
     hg_thread_mutex_lock(&context->completion_queue_mutex);
@@ -856,12 +847,11 @@ HG_Bulk_context_destroy(hg_bulk_class_t *hg_bulk_class,
 
 done:
     return ret;
-
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_handle_create(hg_bulk_class_t *hg_bulk_class, size_t count,
+HG_Bulk_create(hg_bulk_class_t *hg_bulk_class, size_t count,
         void **buf_ptrs, const size_t *buf_sizes, unsigned long flags,
         hg_bulk_t *handle)
 {
@@ -869,19 +859,19 @@ HG_Bulk_handle_create(hg_bulk_class_t *hg_bulk_class, size_t count,
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_bulk_class) {
-        HG_ERROR_DEFAULT("NULL HG bulk class");
+        HG_LOG_ERROR("NULL HG bulk class");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
     if (!count) {
-        HG_ERROR_DEFAULT("Invalid number of segments");
+        HG_LOG_ERROR("Invalid number of segments");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
     if (!buf_sizes) {
-        HG_ERROR_DEFAULT("NULL segment pointer");
+        HG_LOG_ERROR("NULL segment pointer");
         ret = HG_INVALID_PARAM;
         goto done;
     }
@@ -892,15 +882,15 @@ HG_Bulk_handle_create(hg_bulk_class_t *hg_bulk_class, size_t count,
         case HG_BULK_READ_ONLY:
             break;
         default:
-            HG_ERROR_DEFAULT("Unrecognized handle flag");
+            HG_LOG_ERROR("Unrecognized handle flag");
             ret = HG_INVALID_PARAM;
             goto done;
     }
 
-    ret = hg_bulk_handle_create(hg_bulk_class, count, buf_ptrs, buf_sizes,
+    ret = hg_bulk_create(hg_bulk_class, count, buf_ptrs, buf_sizes,
             flags, &hg_bulk);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not create bulk handle");
+        HG_LOG_ERROR("Could not create bulk handle");
         goto done;
     }
 
@@ -908,21 +898,21 @@ HG_Bulk_handle_create(hg_bulk_class_t *hg_bulk_class, size_t count,
 
 done:
     if (ret != HG_SUCCESS) {
-        hg_bulk_handle_free(hg_bulk);
+        hg_bulk_free(hg_bulk);
     }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_handle_free(hg_bulk_t handle)
+HG_Bulk_free(hg_bulk_t handle)
 {
     hg_return_t ret = HG_SUCCESS;
     struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
 
     if (!hg_bulk) goto done;
 
-    ret = hg_bulk_handle_free(hg_bulk);
+    ret = hg_bulk_free(hg_bulk);
 
 done:
     return ret;
@@ -930,7 +920,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_handle_access(hg_bulk_t handle, size_t offset, size_t size,
+HG_Bulk_access(hg_bulk_t handle, size_t offset, size_t size,
         unsigned long flags, unsigned int max_count, void **buf_ptrs,
         size_t *buf_sizes, unsigned int *actual_count)
 {
@@ -939,14 +929,14 @@ HG_Bulk_handle_access(hg_bulk_t handle, size_t offset, size_t size,
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_bulk) {
-        HG_ERROR_DEFAULT("NULL memory handle passed");
+        HG_LOG_ERROR("NULL memory handle passed");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
     if (!size || !max_count) goto done;
 
-    hg_bulk_handle_access(hg_bulk, offset, size, flags, max_count, buf_ptrs,
+    hg_bulk_access(hg_bulk, offset, size, flags, max_count, buf_ptrs,
             buf_sizes, &count);
 
 done:
@@ -958,13 +948,13 @@ done:
 
 /*---------------------------------------------------------------------------*/
 size_t
-HG_Bulk_handle_get_size(hg_bulk_t handle)
+HG_Bulk_get_size(hg_bulk_t handle)
 {
     size_t ret = 0;
     struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
 
     if (!hg_bulk) {
-        HG_ERROR_DEFAULT("NULL bulk handle");
+        HG_LOG_ERROR("NULL bulk handle");
         goto done;
     }
 
@@ -976,13 +966,13 @@ done:
 
 /*---------------------------------------------------------------------------*/
 size_t
-HG_Bulk_handle_get_segment_count(hg_bulk_t handle)
+HG_Bulk_get_segment_count(hg_bulk_t handle)
 {
     struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
     size_t ret = 0;
 
     if (!hg_bulk) {
-        HG_ERROR_DEFAULT("NULL bulk handle");
+        HG_LOG_ERROR("NULL bulk handle");
         goto done;
     }
 
@@ -994,14 +984,14 @@ done:
 
 /*---------------------------------------------------------------------------*/
 size_t
-HG_Bulk_handle_get_serialize_size(hg_bulk_t handle)
+HG_Bulk_get_serialize_size(hg_bulk_t handle)
 {
     struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
     size_t ret = 0;
     size_t i;
 
     if (!hg_bulk) {
-        HG_ERROR_DEFAULT("NULL bulk handle");
+        HG_LOG_ERROR("NULL bulk handle");
         goto done;
     }
 
@@ -1018,7 +1008,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
+HG_Bulk_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
 {
     struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
     char *buf_ptr = (char*) buf;
@@ -1028,7 +1018,7 @@ HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
     size_t i;
 
     if (!hg_bulk) {
-        HG_ERROR_DEFAULT("NULL memory handle passed");
+        HG_LOG_ERROR("NULL memory handle passed");
         ret = HG_INVALID_PARAM;
         goto done;
     }
@@ -1039,7 +1029,7 @@ HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
             na_ret = NA_Mem_register(hg_bulk->hg_bulk_class->na_class,
                     hg_bulk->segment_handles[i]);
             if (na_ret != NA_SUCCESS) {
-                HG_ERROR_DEFAULT("NA_Mem_register failed");
+                HG_LOG_ERROR("NA_Mem_register failed");
                 ret = HG_NA_ERROR;
                 goto done;
             }
@@ -1047,8 +1037,8 @@ HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
         hg_bulk->segment_reg = HG_TRUE;
     }
 
-    if (buf_size < HG_Bulk_handle_get_serialize_size(handle)) {
-        HG_ERROR_DEFAULT("Buffer size too small for serializing parameter");
+    if (buf_size < HG_Bulk_get_serialize_size(handle)) {
+        HG_LOG_ERROR("Buffer size too small for serializing parameter");
         ret = HG_SIZE_ERROR;
         goto done;
     }
@@ -1074,7 +1064,7 @@ HG_Bulk_handle_serialize(void *buf, size_t buf_size, hg_bulk_t handle)
         na_ret = NA_Mem_handle_serialize(hg_bulk->hg_bulk_class->na_class,
                 buf_ptr, buf_size_left, hg_bulk->segment_handles[i]);
         if (na_ret != NA_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not serialize memory handle");
+            HG_LOG_ERROR("Could not serialize memory handle");
             ret = HG_NA_ERROR;
             break;
         }
@@ -1090,7 +1080,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_handle_deserialize(hg_bulk_class_t *hg_bulk_class, hg_bulk_t *handle,
+HG_Bulk_deserialize(hg_bulk_class_t *hg_bulk_class, hg_bulk_t *handle,
         const void *buf, size_t buf_size)
 {
     struct hg_bulk *hg_bulk = NULL;
@@ -1101,14 +1091,14 @@ HG_Bulk_handle_deserialize(hg_bulk_class_t *hg_bulk_class, hg_bulk_t *handle,
     size_t i;
 
     if (!handle) {
-        HG_ERROR_DEFAULT("NULL pointer to memory handle passed");
+        HG_LOG_ERROR("NULL pointer to memory handle passed");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
     hg_bulk = (struct hg_bulk *) malloc(sizeof(struct hg_bulk));
     if (!hg_bulk) {
-        HG_ERROR_DEFAULT("Could not allocate handle");
+        HG_LOG_ERROR("Could not allocate handle");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
@@ -1127,7 +1117,7 @@ HG_Bulk_handle_deserialize(hg_bulk_class_t *hg_bulk_class, hg_bulk_t *handle,
     buf_ptr += sizeof(size_t);
     buf_size_left -= sizeof(size_t);
     if (!hg_bulk->total_size) {
-        HG_ERROR_DEFAULT("NULL total size");
+        HG_LOG_ERROR("NULL total size");
         ret = HG_SIZE_ERROR;
         goto done;
     }
@@ -1137,7 +1127,7 @@ HG_Bulk_handle_deserialize(hg_bulk_class_t *hg_bulk_class, hg_bulk_t *handle,
     buf_ptr += sizeof(size_t);
     buf_size_left -= sizeof(size_t);
     if (!hg_bulk->segment_count) {
-        HG_ERROR_DEFAULT("NULL segment count");
+        HG_LOG_ERROR("NULL segment count");
         ret = HG_INVALID_PARAM;
         goto done;
     }
@@ -1146,7 +1136,7 @@ HG_Bulk_handle_deserialize(hg_bulk_class_t *hg_bulk_class, hg_bulk_t *handle,
     hg_bulk->segments = (struct hg_bulk_segment *) malloc(
             hg_bulk->segment_count * sizeof(struct hg_bulk_segment));
     if (!hg_bulk->segments) {
-        HG_ERROR_DEFAULT("Could not allocate segment array");
+        HG_LOG_ERROR("Could not allocate segment array");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
@@ -1155,7 +1145,7 @@ HG_Bulk_handle_deserialize(hg_bulk_class_t *hg_bulk_class, hg_bulk_t *handle,
         buf_ptr += sizeof(struct hg_bulk_segment);
         buf_size_left -= sizeof(struct hg_bulk_segment);
         if (!hg_bulk->segments[i].size) {
-            HG_ERROR_DEFAULT("NULL segment size");
+            HG_LOG_ERROR("NULL segment size");
             ret = HG_SIZE_ERROR;
             goto done;
         }
@@ -1165,7 +1155,7 @@ HG_Bulk_handle_deserialize(hg_bulk_class_t *hg_bulk_class, hg_bulk_t *handle,
     hg_bulk->segment_handles = (na_mem_handle_t *) malloc(
             hg_bulk->segment_count * sizeof(na_mem_handle_t));
     if (!hg_bulk->segment_handles) {
-        HG_ERROR_DEFAULT("Could not allocate mem handle list");
+        HG_LOG_ERROR("Could not allocate mem handle list");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
@@ -1179,7 +1169,7 @@ HG_Bulk_handle_deserialize(hg_bulk_class_t *hg_bulk_class, hg_bulk_t *handle,
                 &hg_bulk->segment_handles[i],
                 buf_ptr, buf_size_left);
         if (na_ret != NA_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not deserialize memory handle");
+            HG_LOG_ERROR("Could not deserialize memory handle");
             ret = HG_NA_ERROR;
             goto done;
         }
@@ -1191,14 +1181,15 @@ HG_Bulk_handle_deserialize(hg_bulk_class_t *hg_bulk_class, hg_bulk_t *handle,
 
 done:
     if (ret != HG_SUCCESS) {
-        hg_bulk_handle_free(hg_bulk);
+        hg_bulk_free(hg_bulk);
     }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_transfer(hg_bulk_context_t *context, hg_bulk_cb_t callback, void *arg,
+HG_Bulk_transfer(hg_bulk_context_t *context,
+        hg_bulk_cb_t callback, void *arg,
         hg_bulk_op_t op, na_addr_t origin_addr, hg_bulk_t origin_handle,
         size_t origin_offset, hg_bulk_t local_handle, size_t local_offset,
         size_t size, hg_op_id_t *op_id)
@@ -1209,31 +1200,31 @@ HG_Bulk_transfer(hg_bulk_context_t *context, hg_bulk_cb_t callback, void *arg,
     hg_return_t ret = HG_SUCCESS;
 
     if (!context) {
-        HG_ERROR_DEFAULT("NULL HG bulk context");
+        HG_LOG_ERROR("NULL HG bulk context");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
     if (origin_addr == NA_ADDR_NULL) {
-        HG_ERROR_DEFAULT("NULL addr passed");
+        HG_LOG_ERROR("NULL addr passed");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
     if (!hg_bulk_origin || !hg_bulk_local) {
-        HG_ERROR_DEFAULT("NULL memory handle passed");
+        HG_LOG_ERROR("NULL memory handle passed");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
     if (size > hg_bulk_origin->total_size) {
-        HG_ERROR_DEFAULT("Exceeding size of memory exposed by origin handle");
+        HG_LOG_ERROR("Exceeding size of memory exposed by origin handle");
         ret = HG_SIZE_ERROR;
         goto done;
     }
 
     if (size > hg_bulk_local->total_size) {
-        HG_ERROR_DEFAULT("Exceeding size of memory exposed by local handle");
+        HG_LOG_ERROR("Exceeding size of memory exposed by local handle");
         ret = HG_SIZE_ERROR;
         goto done;
     }
@@ -1243,7 +1234,7 @@ HG_Bulk_transfer(hg_bulk_context_t *context, hg_bulk_cb_t callback, void *arg,
         case HG_BULK_PULL:
             break;
         default:
-            HG_ERROR_DEFAULT("Unknown bulk operation");
+            HG_LOG_ERROR("Unknown bulk operation");
             ret = HG_INVALID_PARAM;
             goto done;
     }
@@ -1252,7 +1243,7 @@ HG_Bulk_transfer(hg_bulk_context_t *context, hg_bulk_cb_t callback, void *arg,
             hg_bulk_origin, origin_offset, hg_bulk_local, local_offset, size,
             &hg_op_id);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Could not transfer data");
+        HG_LOG_ERROR("Could not transfer data");
         goto done;
     }
 
@@ -1264,7 +1255,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_progress(hg_bulk_context_t *context, unsigned int timeout)
+HG_Bulk_progress(hg_bulk_class_t *hg_bulk_class, hg_bulk_context_t *context,
+        unsigned int timeout)
 {
     unsigned int na_actual_count;
     hg_bool_t completion_queue_empty = HG_FALSE;
@@ -1272,15 +1264,14 @@ HG_Bulk_progress(hg_bulk_context_t *context, unsigned int timeout)
     na_return_t na_ret;
 
     if (!context) {
-        HG_ERROR_DEFAULT("NULL HG bulk context");
+        HG_LOG_ERROR("NULL HG bulk context");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
     /* Trigger everything we can from NA */
     do {
-        na_ret = NA_Trigger(context->hg_bulk_class->na_context, 0, 1,
-                &na_actual_count);
+        na_ret = NA_Trigger(hg_bulk_class->na_context, 0, 1, &na_actual_count);
     } while ((na_ret == NA_SUCCESS) && na_actual_count);
 
     hg_thread_mutex_lock(&context->completion_queue_mutex);
@@ -1295,13 +1286,13 @@ HG_Bulk_progress(hg_bulk_context_t *context, unsigned int timeout)
     if (completion_queue_empty) goto done;
 
     /* Otherwise try to make progress on NA */
-    na_ret = NA_Progress(context->hg_bulk_class->na_class,
-            context->hg_bulk_class->na_context, timeout);
+    na_ret = NA_Progress(hg_bulk_class->na_class, hg_bulk_class->na_context,
+            timeout);
     if (na_ret != NA_SUCCESS) {
         if (na_ret == NA_TIMEOUT)
             ret = HG_TIMEOUT;
         else {
-            HG_ERROR_DEFAULT("Could not make NA Progress");
+            HG_LOG_ERROR("Could not make NA Progress");
             ret = HG_NA_ERROR;
         }
         goto done;
@@ -1313,14 +1304,15 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_trigger(hg_bulk_context_t *context, unsigned int timeout,
-        unsigned int max_count, unsigned int *actual_count)
+HG_Bulk_trigger(hg_bulk_class_t *hg_bulk_class, hg_bulk_context_t *context,
+        unsigned int timeout, unsigned int max_count,
+        unsigned int *actual_count)
 {
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
 
     if (!context) {
-        HG_ERROR_DEFAULT("NULL HG bulk context");
+        HG_LOG_ERROR("NULL HG bulk context");
         ret = HG_INVALID_PARAM;
         goto done;
     }
@@ -1329,7 +1321,6 @@ HG_Bulk_trigger(hg_bulk_context_t *context, unsigned int timeout,
         struct hg_bulk_op_id *hg_bulk_op_id = NULL;
         struct hg_bulk_cb_info *hg_bulk_cb_info = NULL;
         hg_bool_t completion_queue_empty = HG_FALSE;
-        na_return_t na_ret;
 
         hg_thread_mutex_lock(&context->completion_queue_mutex);
 
@@ -1400,7 +1391,7 @@ HG_Bulk_cancel(hg_op_id_t op_id)
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_bulk_op_id) {
-        HG_ERROR_DEFAULT("NULL HG bulk operation ID");
+        HG_LOG_ERROR("NULL HG bulk operation ID");
         ret = HG_INVALID_PARAM;
         goto done;
     }

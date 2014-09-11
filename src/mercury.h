@@ -18,9 +18,10 @@ extern "C" {
 #endif
 
 /**
- * Register and associate input and output proc to existing function ID,
- * so that they can be used to serialize and deserialize function parameters.
- * User must first register function by using HG_Register().
+ * Dynamically register a function func_name as an RPC as well as the
+ * RPC callback executed when the RPC request ID associated to func_name is
+ * received. Associate input and output proc to function ID, so that they can
+ * be used to serialize and deserialize function parameters.
  *
  * \param hg_class [IN]         pointer to HG class
  * \param id [IN]               registered function ID
@@ -30,11 +31,12 @@ extern "C" {
  * \return unique ID associated to the registered function
  */
 HG_EXPORT hg_id_t
-HG_Register_proc(
+HG_Register(
         hg_class_t *hg_class,
-        hg_id_t id,
+        const char *func_name,
         hg_proc_cb_t in_proc_cb,
-        hg_proc_cb_t out_proc_cb
+        hg_proc_cb_t out_proc_cb,
+        hg_rpc_cb_t rpc_cb
         );
 
 /**
@@ -56,6 +58,22 @@ HG_Get_input(
         );
 
 /**
+ * Free resources allocated when deserializing the input.
+ * User may copy parameters contained in the input structure before calling
+ * HG_Free_input().
+ *
+ * \param handle [IN]           HG handle
+ * \param in_struct [IN/OUT]    pointer to input structure
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Free_input(
+        hg_handle_t handle,
+        void *in_struct
+        );
+
+/**
  * Get output from handle (requires registration of output proc to deserialize
  * parameters). This is equivalent to:
  *   - HG_Get_output_buf
@@ -71,22 +89,6 @@ HG_EXPORT hg_return_t
 HG_Get_output(
         hg_handle_t handle,
         void *out_struct
-        );
-
-/**
- * Free resources allocated when deserializing the input.
- * User may copy parameters contained in the input structure before calling
- * HG_Free_input().
- *
- * \param handle [IN]           HG handle
- * \param in_struct [IN/OUT]    pointer to input structure
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Free_input(
-        hg_handle_t handle,
-        void *in_struct
         );
 
 /**

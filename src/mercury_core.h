@@ -34,6 +34,18 @@ HG_Version_get(
         );
 
 /**
+ * Convert error return code to string (null terminated).
+ *
+ * \param errnum [IN]           error return code
+ *
+ * \return String
+ */
+HG_EXPORT const char *
+HG_Error_to_string(
+        hg_return_t errnum
+        );
+
+/**
  * Initialize the Mercury layer.
  * Calling HG_Init also calls HG_Bulk_init with the same NA class if the bulk
  * class passed is NULL, users may therefore initialize the bulk interface
@@ -100,14 +112,14 @@ HG_Context_destroy(
  * \return unique ID associated to the registered function
  */
 HG_EXPORT hg_id_t
-HG_Register(
+HG_Register_rpc(
         hg_class_t *hg_class,
         const char *func_name,
         hg_rpc_cb_t rpc_cb
         );
 
 /**
- * Indicate whether HG_Register has been called and return associated ID.
+ * Indicate whether HG_Register_rpc has been called and return associated ID.
  *
  * \param hg_class [IN]         pointer to HG class
  * \param func_name [IN]        name associated to function
@@ -117,11 +129,45 @@ HG_Register(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Registered(
+HG_Registered_rpc(
         hg_class_t *hg_class,
         const char *func_name,
         hg_bool_t *flag,
         hg_id_t *id
+        );
+
+/**
+ * Register and associate user data to registered function. When HG_Finalize
+ * is called, the free callback (if defined) is called to free the registered
+ * data.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param id [IN]               registered function ID
+ * \param data [IN]             pointer to data
+ * \param free_callback [IN]    pointer to function
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Register_data(
+        hg_class_t *hg_class,
+        hg_id_t id,
+        void *data,
+        void (*free_callback)(void *)
+        );
+
+/**
+ * Indicate whether HG_Register_data has been called and return associated data.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param id [IN]               registered function ID
+ *
+ * \return Pointer to data or NULL
+ */
+HG_EXPORT void *
+HG_Registered_data(
+        hg_class_t *hg_class,
+        hg_id_t id
         );
 
 /**
@@ -147,7 +193,7 @@ HG_Create(
         );
 
 /**
- * Mark RPC as completed. Resources associated to the handle are freed when the
+ * Destroy RPC handle. Resources associated to the handle are freed when the
  * reference count is null.
  *
  * \param handle [IN]           HG handle
@@ -160,8 +206,22 @@ HG_Destroy(
         );
 
 /**
+ * Get info from handle.
+ *
+ * \param handle [IN]           HG handle
+ * \param hg_info [IN/OUT]      pointer to hg_info struct
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Get_info(
+        hg_handle_t handle,
+        struct hg_info *hg_info
+        );
+
+/**
  * Get abstract network address of remote caller from HG handle.
- * The address gets freed when HG_Complete() is called. Users
+ * The address gets freed when HG_Destroy() is called. Users
  * must call NA_Addr_dup to be able to safely re-use the address.
  *
  * \param handle [IN]           HG handle
@@ -245,19 +305,7 @@ HG_EXPORT hg_return_t
 HG_Respond_buf(
         hg_handle_t handle,
         hg_cb_t callback,
-        void *arg,
-        );
-
-/**
- * Cancel an ongoing operation.
- *
- * \param op_id [IN]            operation ID
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Cancel(
-        hg_handle_t handle
+        void *arg
         );
 
 /**
@@ -303,15 +351,15 @@ HG_Trigger(
         );
 
 /**
- * Convert error return code to string (null terminated).
+ * Cancel an ongoing operation.
  *
- * \param errnum [IN]           error return code
+ * \param op_id [IN]            operation ID
  *
- * \return String
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT const char *
-HG_Error_to_string(
-        hg_return_t errnum
+HG_EXPORT hg_return_t
+HG_Cancel(
+        hg_handle_t handle
         );
 
 #ifdef __cplusplus

@@ -20,11 +20,19 @@ typedef struct hg_bulk_class hg_bulk_class_t; /* Opaque HG bulk class */
 typedef struct hg_context hg_context_t;           /* Opaque HG context */
 typedef struct hg_bulk_context hg_bulk_context_t; /* Opaque HG bulk context */
 
-typedef hg_uint32_t hg_id_t; /* Operation ID of the operation */
+typedef hg_uint32_t hg_id_t; /* RPC ID */
 typedef void *hg_handle_t;   /* Abstract RPC handle */
 typedef void *hg_bulk_t;     /* Abstract bulk data handle */
 typedef void *hg_proc_t;     /* Abstract serialization processor */
 typedef void *hg_op_id_t;    /* Abstract operation id */
+
+/* HG info struct */
+struct hg_info {
+    hg_class_t *hg_class;   /* HG class */
+    hg_context_t *context;  /* HG context */
+    na_addr_t addr;         /* NA address */
+    hg_id_t id;             /* RPC ID */
+};
 
 /**
  * Bulk transfer operator:
@@ -84,7 +92,6 @@ struct hg_cb_info {
     hg_class_t *hg_class;   /* HG class */
     hg_context_t *context;  /* HG context */
     hg_handle_t handle;     /* HG handle */
-    na_addr_t addr;         /* NA address */
 };
 
 struct hg_bulk_cb_info {
