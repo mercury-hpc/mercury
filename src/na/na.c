@@ -41,7 +41,8 @@
 
 /* Private context / do not expose private members to plugins */
 struct na_private_context {
-    struct na_context context; /* Must remain as first field */
+    struct na_context context;  /* Must remain as first field */
+    na_class_t *na_class;       /* Pointer to NA class */
     hg_queue_t *completion_queue;
     hg_thread_mutex_t completion_queue_mutex;
     hg_thread_cond_t completion_queue_cond;
@@ -319,6 +320,7 @@ NA_Initialize(const char *info_string, na_bool_t listen)
     hg_thread_mutex_init(&na_addr_lookup_mutex_g);
 
     na_class = na_class_info[plugin_index]->initialize(na_info, listen);
+    na_class->listen = listen;
 
 done:
     na_info_free(na_info);
@@ -339,6 +341,15 @@ NA_Finalize(na_class_t *na_class)
     hg_thread_mutex_destroy(&na_addr_lookup_mutex_g);
 
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_bool_t
+NA_Is_listening(na_class_t *na_class)
+{
+    assert(na_class);
+
+    return na_class->listen;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1044,6 +1055,7 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
                 na_private_context->completion_queue);
 
         while (completion_queue_empty) {
+            /* TODO needed ? */
             /* If queue is empty and already triggered something, just leave */
             if (count) {
                 hg_thread_mutex_unlock(

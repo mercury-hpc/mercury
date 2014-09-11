@@ -263,6 +263,7 @@ struct na_class {
             na_context_t *context,
             na_op_id_t    op_id
             );
+    na_bool_t listen;
 };
 
 /* Private routines for use inside NA plugins */

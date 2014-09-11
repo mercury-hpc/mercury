@@ -135,6 +135,19 @@ NA_Finalize(
         );
 
 /**
+ * Test whether class is listening or not.
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return NA_TRUE if listening or NA_FALSE if not
+ */
+NA_EXPORT na_bool_t
+NA_Is_listening(
+        na_class_t *na_class
+        );
+
+
+/**
  * Create a new context.
  *
  * \param na_class [IN]         pointer to NA class
