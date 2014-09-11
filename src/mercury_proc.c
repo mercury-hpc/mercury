@@ -60,7 +60,7 @@ hg_proc_buf_alloc(size_t size)
     alignment = sysconf(_SC_PAGE_SIZE);
 
     if (posix_memalign(&mem_ptr, alignment, size) != 0) {
-        HG_ERROR_DEFAULT("posix_memalign failed");
+        HG_LOG_ERROR("posix_memalign failed");
         return NULL;
     }
 #endif
@@ -72,18 +72,14 @@ hg_proc_buf_alloc(size_t size)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
+void
 hg_proc_buf_free(void *mem_ptr)
 {
-    hg_return_t ret = HG_SUCCESS;
-
 #ifdef _WIN32
     _aligned_free(mem_ptr);
 #else
     free(mem_ptr);
 #endif
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -97,15 +93,15 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
     int checksum_ret;
 
     if (!buf && op != HG_FREE) {
-        HG_ERROR_DEFAULT("NULL buffer");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("NULL buffer");
+        ret = HG_INVALID_PARAM;
         goto done;
     }
 
     priv_proc = (struct hg_proc *) malloc(sizeof(struct hg_proc));
     if (!priv_proc) {
-        HG_ERROR_DEFAULT("Could not allocate proc");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Could not allocate proc");
+        ret = HG_NOMEM_ERROR;
         goto done;
     }
 
@@ -129,7 +125,7 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
             xdrmem_create(&priv_proc->proc_buf.xdr, buf, buf_size, XDR_FREE);
             break;
         default:
-            HG_ERROR_DEFAULT("Unknown proc operation");
+            HG_LOG_ERROR("Unknown proc operation");
             ret = HG_FAIL;
             goto done;
     }
@@ -152,8 +148,8 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
         checksum_ret = mchecksum_init(hash_method,
                 &priv_proc->proc_buf.checksum);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not initialize checksum");
-            ret = HG_FAIL;
+            HG_LOG_ERROR("Could not initialize checksum");
+            ret = HG_CHECKSUM_ERROR;
             goto done;
         }
         priv_proc->proc_buf.update_checksum = 1;
@@ -188,17 +184,13 @@ hg_proc_free(hg_proc_t proc)
     hg_return_t ret = HG_SUCCESS;
     int checksum_ret;
 
-    if (!priv_proc) {
-        HG_ERROR_DEFAULT("Already freed");
-        ret = HG_FAIL;
-        return ret;
-    }
+    if (!priv_proc) goto done;
 
     if (priv_proc->proc_buf.checksum != MCHECKSUM_OBJECT_NULL) {
         checksum_ret = mchecksum_destroy(priv_proc->proc_buf.checksum);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not destroy checksum");
-            ret = HG_FAIL;
+            HG_LOG_ERROR("Could not destroy checksum");
+            ret = HG_CHECKSUM_ERROR;
         }
     }
 
@@ -212,6 +204,7 @@ hg_proc_free(hg_proc_t proc)
     free(priv_proc);
     priv_proc = NULL;
 
+done:
     return ret;
 }
 
@@ -234,8 +227,14 @@ hg_proc_get_size(hg_proc_t proc)
     struct hg_proc *priv_proc = (struct hg_proc *) proc;
     size_t size = 0;
 
-    if (priv_proc) size = priv_proc->proc_buf.size + priv_proc->extra_buf.size;
+    if (!priv_proc) {
+        HG_LOG_ERROR("Proc is not initialized");
+        goto done;
+    }
 
+    size = priv_proc->proc_buf.size + priv_proc->extra_buf.size;
+
+done:
     return size;
 }
 
@@ -259,9 +258,9 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
     new_buf_size = ((size_t)(req_buf_size / page_size) + 1) * page_size;
 
     if (new_buf_size <= hg_proc_get_size(proc)) {
-        HG_ERROR_DEFAULT("Buffer is already of the size requested");
-        ret = HG_FAIL;
-        return ret;
+        HG_LOG_ERROR("Buffer is already of the size requested");
+        ret = HG_SIZE_ERROR;
+        goto done;
     }
 
     /* If was not using extra buffer init extra buffer */
@@ -273,9 +272,9 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
         /* Allocate buffer */
         priv_proc->extra_buf.buf = malloc(new_buf_size);
         if (!priv_proc->extra_buf.buf) {
-            HG_ERROR_DEFAULT("Could not allocate buffer");
-            ret = HG_FAIL;
-            return ret;
+            HG_LOG_ERROR("Could not allocate buffer");
+            ret = HG_NOMEM_ERROR;
+            goto done;
         }
 
         /* Copy proc_buf (should be small) */
@@ -296,9 +295,9 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
         /* Reallocate buffer */
         new_buf = realloc(priv_proc->extra_buf.buf, new_buf_size);
         if (!new_buf) {
-            HG_ERROR_DEFAULT("Could not reallocate buffer");
-            ret = HG_FAIL;
-            return ret;
+            HG_LOG_ERROR("Could not reallocate buffer");
+            ret = HG_NOMEM_ERROR;
+            goto done;
         }
         priv_proc->extra_buf.buf = new_buf;
         priv_proc->extra_buf.size = new_buf_size;
@@ -306,6 +305,7 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
         priv_proc->extra_buf.size_left = priv_proc->extra_buf.size - current_pos;
     }
 
+done:
     return ret;
 }
 
@@ -316,8 +316,14 @@ hg_proc_get_size_left(hg_proc_t proc)
     struct hg_proc *priv_proc = (struct hg_proc *) proc;
     size_t size = 0;
 
-    if (priv_proc) size = priv_proc->current_buf->size_left;
+    if (!priv_proc) {
+        HG_LOG_ERROR("Proc is not initialized");
+        goto done;
+    }
 
+    size = priv_proc->current_buf->size_left;
+
+done:
     return size;
 }
 
@@ -328,10 +334,14 @@ hg_proc_get_buf_ptr(hg_proc_t proc)
     struct hg_proc *priv_proc = (struct hg_proc *) proc;
     void *ptr = NULL;
 
-    if (priv_proc) {
-        ptr = priv_proc->current_buf->buf_ptr;
+    if (!priv_proc) {
+        HG_LOG_ERROR("Proc is not initialized");
+        goto done;
     }
 
+    ptr = priv_proc->current_buf->buf_ptr;
+
+done:
     return ptr;
 }
 
@@ -356,29 +366,32 @@ hg_return_t
 hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
 {
     struct hg_proc *priv_proc = (struct hg_proc *) proc;
-    hg_return_t ret = HG_FAIL;
+    ptrdiff_t new_pos, lim_pos;
+    hg_return_t ret = HG_SUCCESS;
 
-    if (priv_proc) {
-        ptrdiff_t new_pos, lim_pos;
-
-        /* Work out new position */
-        new_pos = (char*) buf_ptr - (char*) priv_proc->current_buf->buf;
-        lim_pos = (ptrdiff_t) priv_proc->current_buf->size;
-        if (new_pos > lim_pos) {
-            HG_ERROR_DEFAULT("Out of memory");
-            ret = HG_FAIL;
-            return ret;
-        }
-
-        priv_proc->current_buf->buf_ptr   = buf_ptr;
-        priv_proc->current_buf->size_left = priv_proc->current_buf->size -
-                (size_t) new_pos;
-#ifdef HG_HAS_XDR
-        xdr_setpos(&priv_proc->current_buf->xdr, new_pos);
-#endif
-        ret = HG_SUCCESS;
+    if (!priv_proc) {
+        HG_LOG_ERROR("Proc is not initialized");
+        ret = HG_INVALID_PARAM;
+        goto done;
     }
 
+    /* Work out new position */
+    new_pos = (char*) buf_ptr - (char*) priv_proc->current_buf->buf;
+    lim_pos = (ptrdiff_t) priv_proc->current_buf->size;
+    if (new_pos > lim_pos) {
+        HG_LOG_ERROR("Out of memory");
+        ret = HG_SIZE_ERROR;
+        return ret;
+    }
+
+    priv_proc->current_buf->buf_ptr   = buf_ptr;
+    priv_proc->current_buf->size_left = priv_proc->current_buf->size -
+            (size_t) new_pos;
+#ifdef HG_HAS_XDR
+    xdr_setpos(&priv_proc->current_buf->xdr, new_pos);
+#endif
+
+done:
     return ret;
 }
 
@@ -415,13 +428,16 @@ hg_return_t
 hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t theirs)
 {
     struct hg_proc *priv_proc = (struct hg_proc *) proc;
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret = HG_SUCCESS;
 
-    if (priv_proc->extra_buf.buf) {
-        priv_proc->extra_buf.is_mine = (hg_bool_t) (!theirs);
-        ret = HG_SUCCESS;
+    if (!priv_proc->extra_buf.buf) {
+        ret = HG_INVALID_PARAM;
+        goto done;
     }
 
+    priv_proc->extra_buf.is_mine = (hg_bool_t) (!theirs);
+
+done:
     return ret;
 }
 
@@ -438,8 +454,8 @@ hg_proc_flush(hg_proc_t proc)
     hg_return_t ret = HG_SUCCESS;
 
     if (!priv_proc) {
-        HG_ERROR_DEFAULT("Proc is not initialized");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc is not initialized");
+        ret = HG_INVALID_PARAM;
         goto done;
     }
 
@@ -455,8 +471,8 @@ hg_proc_flush(hg_proc_t proc)
     checksum_size = mchecksum_get_size(priv_proc->current_buf->checksum);
     base_checksum = (char *) malloc(checksum_size);
     if (!base_checksum) {
-        HG_ERROR_DEFAULT("Could not allocate space for base checksum");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Could not allocate space for base checksum");
+        ret = HG_NOMEM_ERROR;
         goto done;
     }
 
@@ -464,8 +480,8 @@ hg_proc_flush(hg_proc_t proc)
         checksum_ret = mchecksum_get(priv_proc->current_buf->checksum,
                 base_checksum, checksum_size, 1);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not get checksum");
-            ret = HG_FAIL;
+            HG_LOG_ERROR("Could not get checksum");
+            ret = HG_CHECKSUM_ERROR;
             goto done;
         }
     }
@@ -473,32 +489,31 @@ hg_proc_flush(hg_proc_t proc)
     /* Process checksum (TODO should that depend on the encoding method) */
     ret = hg_proc_raw(proc, base_checksum, checksum_size);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc error");
         goto done;
     }
 
     if (hg_proc_get_op(proc) == HG_DECODE) {
         new_checksum = (char *) malloc(checksum_size);
         if (!new_checksum) {
-            HG_ERROR_DEFAULT("Could not allocate checksum");
-            ret = HG_FAIL;
+            HG_LOG_ERROR("Could not allocate checksum");
+            ret = HG_NOMEM_ERROR;
             goto done;
         }
 
         checksum_ret = mchecksum_get(priv_proc->current_buf->checksum,
                 new_checksum, checksum_size, 1);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not get checksum");
-            ret = HG_FAIL;
+            HG_LOG_ERROR("Could not get checksum");
+            ret = HG_CHECKSUM_ERROR;
             goto done;
         }
 
         /* Verify checksums */
         cmp_ret = strncmp(base_checksum, new_checksum, checksum_size);
         if (cmp_ret != 0) {
-            HG_ERROR_DEFAULT("Checksums do not match");
-            ret = HG_FAIL;
+            HG_LOG_ERROR("Checksums do not match");
+            ret = HG_CHECKSUM_ERROR;
             goto done;
         }
     }
@@ -519,12 +534,12 @@ hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
     int checksum_ret;
 
     if (!priv_proc) {
-        HG_ERROR_DEFAULT("Proc is not initialized");
-        ret = HG_FAIL;
-        return ret;
+        HG_LOG_ERROR("Proc is not initialized");
+        ret = HG_INVALID_PARAM;
+        goto done;
     }
 
-    if (priv_proc->op == HG_FREE) return ret;
+    if (priv_proc->op == HG_FREE) goto done;
 
     /* If not enough space allocate extra space if encoding or
      * just get extra buffer if decoding */
@@ -544,10 +559,12 @@ hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
         checksum_ret = mchecksum_update(priv_proc->current_buf->checksum, data,
                 data_size);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not update checksum");
-            ret = HG_FAIL;
+            HG_LOG_ERROR("Could not update checksum");
+            ret = HG_CHECKSUM_ERROR;
+            goto done;
         }
     }
 
+done:
     return ret;
 }

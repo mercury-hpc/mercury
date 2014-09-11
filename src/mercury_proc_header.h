@@ -21,7 +21,7 @@ struct hg_header_request {
      hg_uint32_t cookie;           /* Random cookie */
      hg_uint16_t crc16;            /* CRC16 checksum */
      /* Should be 128 bits here */
-     hg_bulk_t   extra_buf_handle; /* Extra handle (large data) */
+     hg_bulk_t   extra_in_handle;  /* Extra handle (large data) */
 };
 
 struct hg_header_response {

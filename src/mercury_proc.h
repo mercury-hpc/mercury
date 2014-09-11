@@ -56,10 +56,8 @@ hg_proc_buf_alloc(size_t size);
  * Free memory which has been previously allocated using hg_proc_buf_alloc.
  *
  * \param mem_ptr [IN]          pointer to memory address
- *
- * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_EXPORT void
 hg_proc_buf_free(void *mem_ptr);
 
 /**
@@ -301,7 +299,7 @@ HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
 HG_PROC_INLINE hg_return_t
 hg_proc_hg_int8_t(hg_proc_t proc, hg_int8_t *data)
 {
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret;
 #ifdef HG_HAS_XDR
     ret = xdr_int8_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -321,7 +319,7 @@ hg_proc_hg_int8_t(hg_proc_t proc, hg_int8_t *data)
 HG_PROC_INLINE hg_return_t
 hg_proc_hg_uint8_t(hg_proc_t proc, hg_uint8_t *data)
 {
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret;
 #ifdef HG_HAS_XDR
     ret = xdr_uint8_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -341,7 +339,7 @@ hg_proc_hg_uint8_t(hg_proc_t proc, hg_uint8_t *data)
 HG_PROC_INLINE hg_return_t
 hg_proc_hg_int16_t(hg_proc_t proc, hg_int16_t *data)
 {
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret;
 #ifdef HG_HAS_XDR
     ret = xdr_int16_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -361,7 +359,7 @@ hg_proc_hg_int16_t(hg_proc_t proc, hg_int16_t *data)
 HG_PROC_INLINE hg_return_t
 hg_proc_hg_uint16_t(hg_proc_t proc, hg_uint16_t *data)
 {
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret;
 #ifdef HG_HAS_XDR
     ret = xdr_uint16_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -381,7 +379,7 @@ hg_proc_hg_uint16_t(hg_proc_t proc, hg_uint16_t *data)
 HG_PROC_INLINE hg_return_t
 hg_proc_hg_int32_t(hg_proc_t proc, hg_int32_t *data)
 {
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret;
 #ifdef HG_HAS_XDR
     ret = xdr_int32_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -401,7 +399,7 @@ hg_proc_hg_int32_t(hg_proc_t proc, hg_int32_t *data)
 HG_PROC_INLINE hg_return_t
 hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *data)
 {
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret;
 #ifdef HG_HAS_XDR
     ret = xdr_uint32_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -421,7 +419,7 @@ hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *data)
 HG_PROC_INLINE hg_return_t
 hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data)
 {
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret;
 #ifdef HG_HAS_XDR
     ret = xdr_int64_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -441,7 +439,7 @@ hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data)
 HG_PROC_INLINE hg_return_t
 hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data)
 {
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret;
 #ifdef HG_HAS_XDR
     ret = xdr_uint64_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
 #else
@@ -464,12 +462,12 @@ hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
 {
     hg_uint8_t *buf_ptr;
     hg_uint8_t *buf_ptr_lim = (hg_uint8_t*) buf + buf_size;
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret = HG_SUCCESS;
 
     for (buf_ptr = (hg_uint8_t*) buf; buf_ptr < buf_ptr_lim; buf_ptr++) {
         ret = hg_proc_uint8_t(proc, buf_ptr);
         if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Proc error");
+            HG_LOG_ERROR("Proc error");
             break;
         }
     }
@@ -488,19 +486,18 @@ hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
 HG_PROC_INLINE hg_return_t
 hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
 {
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret = HG_SUCCESS;
     void *buf = NULL;
     hg_uint64_t buf_size = 0;
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
             if (*handle != HG_BULK_NULL) {
-                buf_size = HG_Bulk_handle_get_serialize_size(*handle);
+                buf_size = HG_Bulk_get_serialize_size(*handle);
                 buf = malloc(buf_size);
-                ret = HG_Bulk_handle_serialize(buf, buf_size, *handle);
+                ret = HG_Bulk_serialize(buf, buf_size, *handle);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Could not serialize bulk handle");
-                    ret = HG_FAIL;
+                    HG_LOG_ERROR("Could not serialize bulk handle");
                     return ret;
                 }
             } else {
@@ -510,16 +507,14 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
             /* Encode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
+                HG_LOG_ERROR("Proc error");
                 return ret;
             }
             if (buf_size) {
                 /* Encode serialized buffer */
                 ret = hg_proc_raw(proc, buf, buf_size);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Proc error");
-                    ret = HG_FAIL;
+                    HG_LOG_ERROR("Proc error");
                     return ret;
                 }
                 free(buf);
@@ -530,8 +525,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
             /* Decode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
+                HG_LOG_ERROR("Proc error");
                 return ret;
             }
             if (buf_size) {
@@ -539,14 +533,12 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                 /* Decode serialized buffer */
                 ret = hg_proc_raw(proc, buf, buf_size);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Proc error");
-                    ret = HG_FAIL;
+                    HG_LOG_ERROR("Proc error");
                     return ret;
                 }
-                ret = HG_Bulk_handle_deserialize(handle, buf, buf_size);
+                ret = HG_Bulk_deserialize(NULL, handle, buf, buf_size);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Could not deserialize bulk handle");
-                    ret = HG_FAIL;
+                    HG_LOG_ERROR("Could not deserialize bulk handle");
                     return ret;
                 }
                 free(buf);
@@ -558,10 +550,9 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
             break;
         case HG_FREE:
             if (*handle != HG_BULK_NULL) {
-                ret = HG_Bulk_handle_free(*handle);
+                ret = HG_Bulk_free(*handle);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Could not free bulk handle");
-                    ret = HG_FAIL;
+                    HG_LOG_ERROR("Could not free bulk handle");
                     return ret;
                 }
                 *handle = HG_BULK_NULL;

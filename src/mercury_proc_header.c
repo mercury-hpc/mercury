@@ -26,16 +26,16 @@
 
 /*---------------------------------------------------------------------------*/
 void
-hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_buf_handle,
+hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_in_handle,
         struct hg_header_request *header)
 {
     header->hg = HG_IDENTIFIER;
     header->protocol = HG_PROTOCOL_VERSION;
     header->id = id;
-    header->flags = (hg_uint8_t) (extra_buf_handle != HG_BULK_NULL);
+    header->flags = (hg_uint8_t) (extra_in_handle != HG_BULK_NULL);
     header->cookie = (hg_uint32_t) rand();
     header->crc16 = 0;
-    header->extra_buf_handle = extra_buf_handle;
+    header->extra_in_handle = extra_in_handle;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -61,8 +61,8 @@ hg_proc_header_request(void *buf, size_t buf_size,
     hg_return_t ret = HG_SUCCESS;
 
     if (buf_size < sizeof(struct hg_header_request)) {
-        HG_ERROR_DEFAULT("Invalid buffer size");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Invalid buffer size");
+        ret = HG_INVALID_PARAM;
         goto done;
     }
 
@@ -106,8 +106,8 @@ hg_proc_header_request(void *buf, size_t buf_size,
     if (op == HG_DECODE) {
         hg_uint16_t decoded_crc16 = ntohs(n_crc16);
         if (header->crc16 != decoded_crc16) {
-            HG_ERROR_DEFAULT("Invalid request checksum");
-            ret = HG_FAIL;
+            HG_LOG_ERROR("Invalid request checksum");
+            ret = HG_CHECKSUM_ERROR;
             goto done;
         }
     }
@@ -124,19 +124,19 @@ hg_proc_header_request(void *buf, size_t buf_size,
     if (header->flags) {
         ret = hg_proc_create(buf_ptr, buf_size, op, HG_CRC64, &proc);
         if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not create proc");
+            HG_LOG_ERROR("Could not create proc");
             goto done;
         }
 
-        ret = hg_proc_hg_bulk_t(proc, &header->extra_buf_handle);
+        ret = hg_proc_hg_bulk_t(proc, &header->extra_in_handle);
         if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Could not process extra bulk handle");
+            HG_LOG_ERROR("Could not process extra bulk handle");
             goto done;
         }
 
         ret = hg_proc_flush(proc);
         if (ret != HG_SUCCESS) {
-            HG_ERROR_DEFAULT("Error in proc flush");
+            HG_LOG_ERROR("Error in proc flush");
             goto done;
         }
     }
@@ -160,8 +160,8 @@ hg_proc_header_response(void *buf, size_t buf_size,
     hg_return_t ret = HG_SUCCESS;
 
     if (buf_size < sizeof(struct hg_header_response)) {
-        HG_ERROR_DEFAULT("Invalid buffer size");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Invalid buffer size");
+        ret = HG_SIZE_ERROR;
         goto done;
     }
 
@@ -196,8 +196,8 @@ hg_proc_header_response(void *buf, size_t buf_size,
     if (op == HG_DECODE) {
         hg_uint16_t decoded_crc16 = ntohs(n_crc16);
         if (header->crc16 != decoded_crc16) {
-            HG_ERROR_DEFAULT("Invalid response checksum");
-            ret = HG_FAIL;
+            HG_LOG_ERROR("Invalid response checksum");
+            ret = HG_CHECKSUM_ERROR;
             goto done;
         }
     }
@@ -221,14 +221,14 @@ hg_proc_header_request_verify(struct hg_header_request header)
     /* Must match HG */
     if ( (((header.hg >> 1)  & 'H') != 'H') ||
             (((header.hg)  & 'G') != 'G') ) {
-        HG_ERROR_DEFAULT("Invalid HG byte");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Invalid HG byte");
+        ret = HG_NO_MATCH;
         goto done;
     }
 
     if (header.protocol != HG_PROTOCOL_VERSION) {
-        HG_ERROR_DEFAULT("Invalid HG_PROTOCOL_VERSION");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Invalid HG_PROTOCOL_VERSION");
+        ret = HG_NO_MATCH;
         goto done;
     }
 
@@ -252,8 +252,8 @@ hg_proc_header_response_verify(struct hg_header_response header)
     hg_return_t ret = HG_SUCCESS;
 
     if (header.error) {
-        HG_ERROR_DEFAULT("Error detected");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Error detected");
+        ret = HG_PROTOCOL_ERROR;
     }
 
     return ret;

@@ -53,23 +53,23 @@ HG_PROC_STRING_INLINE hg_return_t
 hg_proc_hg_const_string_t(hg_proc_t proc, hg_const_string_t *data)
 {
     hg_string_object_t string;
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret = HG_SUCCESS;
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
             hg_string_object_init_const_char(&string, *data, 0);
             ret = hg_proc_hg_string_object_t(proc, &string);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
+                HG_LOG_ERROR("Proc error");
+                goto done;
             }
             hg_string_object_free(&string);
             break;
         case HG_DECODE:
             ret = hg_proc_hg_string_object_t(proc, &string);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
+                HG_LOG_ERROR("Proc error");
+                goto done;
             }
             *data = hg_string_object_swap(&string, 0);
             hg_string_object_free(&string);
@@ -78,14 +78,15 @@ hg_proc_hg_const_string_t(hg_proc_t proc, hg_const_string_t *data)
             hg_string_object_init_const_char(&string, *data, 1);
             ret = hg_proc_hg_string_object_t(proc, &string);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
+                HG_LOG_ERROR("Proc error");
+                goto done;
             }
             break;
         default:
             break;
     }
 
+done:
     return ret;
 }
 
@@ -101,23 +102,23 @@ HG_PROC_STRING_INLINE hg_return_t
 hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *data)
 {
     hg_string_object_t string;
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret = HG_SUCCESS;
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
             hg_string_object_init_char(&string, *data, 0);
             ret = hg_proc_hg_string_object_t(proc, &string);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
+                HG_LOG_ERROR("Proc error");
+                goto done;
             }
             hg_string_object_free(&string);
             break;
         case HG_DECODE:
             ret = hg_proc_hg_string_object_t(proc, &string);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
+                HG_LOG_ERROR("Proc error");
+                goto done;
             }
             *data = hg_string_object_swap(&string, 0);
             hg_string_object_free(&string);
@@ -126,14 +127,15 @@ hg_proc_hg_string_t(hg_proc_t proc, hg_string_t *data)
             hg_string_object_init_char(&string, *data, 1);
             ret = hg_proc_hg_string_object_t(proc, &string);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
+                HG_LOG_ERROR("Proc error");
+                goto done;
             }
             break;
         default:
             break;
     }
 
+done:
     return ret;
 }
 
@@ -149,64 +151,56 @@ HG_PROC_STRING_INLINE hg_return_t
 hg_proc_hg_string_object_t(hg_proc_t proc, hg_string_object_t *string)
 {
     hg_uint64_t string_len = 0;
-    hg_return_t ret = HG_FAIL;
+    hg_return_t ret = HG_SUCCESS;
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
             string_len = (string->data) ? strlen(string->data) + 1 : 0;
             ret = hg_proc_uint64_t(proc, &string_len);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
+                HG_LOG_ERROR("Proc error");
+                goto done;
             }
             if (string_len) {
                 ret = hg_proc_raw(proc, string->data, string_len);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Proc error");
-                    ret = HG_FAIL;
-                    return ret;
+                    HG_LOG_ERROR("Proc error");
+                    goto done;
                 }
                 ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_const);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Proc error");
-                    ret = HG_FAIL;
-                    return ret;
+                    HG_LOG_ERROR("Proc error");
+                    goto done;
                 }
                 ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_owned);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Proc error");
-                    ret = HG_FAIL;
-                    return ret;
+                    HG_LOG_ERROR("Proc error");
+                    goto done;
                 }
             }
             break;
         case HG_DECODE:
             ret = hg_proc_uint64_t(proc, &string_len);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Proc error");
-                ret = HG_FAIL;
-                return ret;
+                HG_LOG_ERROR("Proc error");
+                goto done;
             }
             if (string_len) {
                 string->data = (char*) malloc(string_len);
                 ret = hg_proc_raw(proc, string->data, string_len);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Proc error");
-                    ret = HG_FAIL;
-                    return ret;
+                    HG_LOG_ERROR("Proc error");
+                    goto done;
                 }
                 ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_const);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Proc error");
-                    ret = HG_FAIL;
-                    return ret;
+                    HG_LOG_ERROR("Proc error");
+                    goto done;
                 }
                 ret = hg_proc_hg_uint8_t(proc, (hg_uint8_t*) &string->is_owned);
                 if (ret != HG_SUCCESS) {
-                    HG_ERROR_DEFAULT("Proc error");
-                    ret = HG_FAIL;
-                    return ret;
+                    HG_LOG_ERROR("Proc error");
+                    goto done;
                 }
             } else {
                 string->data = NULL;
@@ -215,14 +209,15 @@ hg_proc_hg_string_object_t(hg_proc_t proc, hg_string_object_t *string)
         case HG_FREE:
             ret = hg_string_object_free(string);
             if (ret != HG_SUCCESS) {
-                HG_ERROR_DEFAULT("Could not free string object");
-                ret = HG_FAIL;
+                HG_LOG_ERROR("Could not free string object");
+                goto done;
             }
             break;
         default:
             break;
     }
 
+done:
     return ret;
 }
 

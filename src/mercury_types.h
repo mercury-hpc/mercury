@@ -59,7 +59,6 @@ typedef enum {
 /* Error return codes:
  * Functions return 0 for success or -HG_XXX_ERROR for failure */
 typedef enum hg_return {
-    HG_FAIL = -1,      /* default (TODO keep until switch to new error format) */
     HG_SUCCESS = 0,
     HG_NA_ERROR,       /* error in NA layer */
     HG_TIMEOUT,        /* reached timeout */

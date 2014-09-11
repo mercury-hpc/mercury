@@ -12,7 +12,6 @@
 #define MERCURY_MACROS_H
 
 #include "mercury.h"
-#include "mercury_handler.h"
 #include "mercury_proc.h"
 
 #ifdef HG_HAS_BOOST
@@ -48,8 +47,7 @@ typedef struct \
     ret = BOOST_PP_CAT(hg_proc_, HG_GEN_GET_TYPE(field) \
             (proc, &struct_name->HG_GEN_GET_NAME(field))); \
     if (ret != HG_SUCCESS) { \
-      HG_ERROR_DEFAULT("Proc error"); \
-      ret = HG_FAIL; \
+      HG_LOG_ERROR("Proc error"); \
       return ret; \
     }
 
@@ -177,7 +175,7 @@ static HG_INLINE hg_return_t \
         if (!HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_INIT_PARAM))) { \
             hg_ret = HG_Bulk_init(na_class); \
             if (hg_ret != HG_SUCCESS) { \
-                HG_ERROR_DEFAULT("Could not initialize bulk data shipper"); \
+                HG_LOG_ERROR("Could not initialize bulk data shipper"); \
                 BOOST_PP_IF(with_ret, ret = fail_ret;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
@@ -191,7 +189,7 @@ static HG_INLINE hg_return_t \
                 BOOST_PP_IF(bulk_read, HG_BULK_READ_ONLY, HG_BULK_READWRITE), \
                 &bulk_handle); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_ERROR_DEFAULT("Could not create bulk data handle\n"); \
+            HG_LOG_ERROR("Could not create bulk data handle\n"); \
             BOOST_PP_IF(with_ret, ret = fail_ret;, BOOST_PP_EMPTY()) \
             goto done; \
         }
@@ -201,7 +199,7 @@ static HG_INLINE hg_return_t \
         hg_ret = HG_Bulk_handle_free( \
                 HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_PARAM))); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_ERROR_DEFAULT("Could not free bulk data handle"); \
+            HG_LOG_ERROR("Could not free bulk data handle"); \
             BOOST_PP_IF(with_ret, ret = fail_ret;, BOOST_PP_EMPTY()) \
             goto done; \
         } \
@@ -232,7 +230,7 @@ static HG_INLINE hg_return_t \
         hg_ret = HG_Bulk_handle_free( \
                 HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_BLOCK_PARAM))); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_ERROR_DEFAULT("Could not free block call"); \
+            HG_LOG_ERROR("Could not free block call"); \
             goto done; \
         } \
         free(bulk_buf);
@@ -248,13 +246,13 @@ static HG_INLINE hg_return_t \
                  HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_COUNT)), \
                  &HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_REQUEST_PARAM))); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_ERROR_DEFAULT("Could not transfer bulk data"); \
+            HG_LOG_ERROR("Could not transfer bulk data"); \
             goto done; \
         } \
         hg_ret = HG_Bulk_wait(HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_REQUEST_PARAM)), \
                 HG_MAX_IDLE_TIME, HG_STATUS_IGNORE); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_ERROR_DEFAULT("Could not complete bulk data transfer"); \
+            HG_LOG_ERROR("Could not complete bulk data transfer"); \
             goto done; \
         }
 
@@ -340,7 +338,7 @@ static HG_INLINE hg_return_t \
                 na_class = NA_Initialize(info_string, 0); \
                 hg_ret = HG_Init(na_class); \
                 if (hg_ret != HG_SUCCESS) { \
-                    HG_ERROR_DEFAULT("Could not initialize Mercury"); \
+                    HG_LOG_ERROR("Could not initialize Mercury"); \
                     BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                     goto done; \
                 } \
@@ -351,7 +349,7 @@ static HG_INLINE hg_return_t \
             /* Look up addr id */ \
             na_ret = NA_Addr_lookup_wait(na_class, server_name, &addr); \
             if (na_ret != NA_SUCCESS) { \
-                HG_ERROR_DEFAULT("Could not lookup addr"); \
+                HG_LOG_ERROR("Could not lookup addr"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
@@ -385,7 +383,7 @@ static HG_INLINE hg_return_t \
                     BOOST_PP_IF(BOOST_PP_OR(with_output, with_ret), &out_struct, NULL), \
                     &request); \
             if (hg_ret != HG_SUCCESS) { \
-                HG_ERROR_DEFAULT("Could not forward call"); \
+                HG_LOG_ERROR("Could not forward call"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
@@ -395,12 +393,12 @@ static HG_INLINE hg_return_t \
              */ \
             hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status); \
             if (hg_ret != HG_SUCCESS) { \
-                HG_ERROR_DEFAULT("Error during wait"); \
+                HG_LOG_ERROR("Error during wait"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
             if (!status) { \
-                HG_ERROR_DEFAULT("Operation did not complete"); \
+                HG_LOG_ERROR("Operation did not complete"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
@@ -418,7 +416,7 @@ static HG_INLINE hg_return_t \
             /* Free request */ \
             hg_ret = HG_Request_free(request); \
             if (hg_ret != HG_SUCCESS) { \
-                HG_ERROR_DEFAULT("Could not free request"); \
+                HG_LOG_ERROR("Could not free request"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
@@ -472,7 +470,7 @@ static HG_INLINE hg_return_t \
                 BOOST_PP_IF(with_input, \
                         hg_ret = HG_Handler_get_input(handle, &in_struct); \
                         if (hg_ret != HG_SUCCESS) { \
-                            HG_ERROR_DEFAULT("Could not get input struct"); \
+                            HG_LOG_ERROR("Could not get input struct"); \
                             goto done; \
                         } \
                         \
@@ -515,7 +513,7 @@ static HG_INLINE hg_return_t \
                                 &out_struct, \
                                 NULL) ); \
                 if (hg_ret != HG_SUCCESS) { \
-                    HG_ERROR_DEFAULT("Could not start output"); \
+                    HG_LOG_ERROR("Could not start output"); \
                     goto done; \
                 } \
                 \

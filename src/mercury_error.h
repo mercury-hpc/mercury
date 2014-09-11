@@ -51,8 +51,4 @@
   #define HG_LOG_WARNING
 #endif
 
-/* TODO remove that when switched to new macros */
-#define HG_ERROR_DEFAULT   HG_LOG_ERROR
-#define HG_WARNING_DEFAULT HG_LOG_DEBUG
-
 #endif /* MERCURY_ERROR_H */
