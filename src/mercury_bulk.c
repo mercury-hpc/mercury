@@ -783,7 +783,7 @@ hg_bulk_context_t *
 HG_Bulk_context_create(hg_bulk_class_t *hg_bulk_class)
 {
     hg_return_t ret = HG_SUCCESS;
-    hg_bulk_context_t *hg_bulk_context = NULL;
+    hg_bulk_context_t *context = NULL;
 
     if (!hg_bulk_class) {
         HG_LOG_ERROR("NULL HG bulk class");
@@ -791,30 +791,31 @@ HG_Bulk_context_create(hg_bulk_class_t *hg_bulk_class)
         goto done;
     }
 
-    hg_bulk_context = (hg_bulk_context_t *) malloc(sizeof(hg_bulk_context_t));
-    if (!hg_bulk_context) {
+    context = (hg_bulk_context_t *) malloc(sizeof(hg_bulk_context_t));
+    if (!context) {
         HG_LOG_ERROR("Could not allocate HG bulk context");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
 
-    hg_bulk_context->hg_bulk_class = hg_bulk_class;
-    hg_bulk_context->completion_queue = hg_queue_new();
-    if (!hg_bulk_context->completion_queue) {
+    context->hg_bulk_class = hg_bulk_class;
+    context->completion_queue = hg_queue_new();
+    if (!context->completion_queue) {
         HG_LOG_ERROR("Could not create completion queue");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
 
     /* Initialize completion queue mutex/cond */
-    hg_thread_mutex_init(&hg_bulk_context->completion_queue_mutex);
-    hg_thread_cond_init(&hg_bulk_context->completion_queue_cond);
+    hg_thread_mutex_init(&context->completion_queue_mutex);
+    hg_thread_cond_init(&context->completion_queue_cond);
 
 done:
-    if (ret != HG_SUCCESS) {
-        free(hg_bulk_context);
+    if (ret != HG_SUCCESS && context) {
+        hg_queue_free(context->completion_queue);
+        free(context);
     }
-    return hg_bulk_context;
+    return context;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -844,6 +845,8 @@ HG_Bulk_context_destroy(hg_bulk_context_t *context)
     /* Destroy completion queue mutex/cond */
     hg_thread_mutex_destroy(&context->completion_queue_mutex);
     hg_thread_cond_destroy(&context->completion_queue_cond);
+
+    free(context);
 
 done:
     return ret;
@@ -1283,7 +1286,7 @@ HG_Bulk_progress(hg_bulk_class_t *hg_bulk_class, hg_bulk_context_t *context,
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
     /* If something is in context completion queue just return */
-    if (completion_queue_empty) goto done;
+    if (!completion_queue_empty) goto done;
 
     /* Otherwise try to make progress on NA */
     na_ret = NA_Progress(hg_bulk_class->na_class, hg_bulk_class->na_context,
