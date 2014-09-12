@@ -517,7 +517,7 @@ HG_Register(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb
         hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)
 {
     struct hg_proc_info *hg_proc_info = NULL;
-    hg_id_t id;
+    hg_id_t id = 0;
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_class) {
@@ -547,7 +547,7 @@ HG_Register(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb
     }
 
 done:
-    return ret;
+    return id;
 }
 
 /*---------------------------------------------------------------------------*/
