@@ -295,26 +295,6 @@ hg_get_output_buf(struct hg_handle *hg_handle, void **out_buf,
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_processing_list_remove(hg_context_t *context, struct hg_handle *hg_handle)
-{
-    hg_return_t ret = HG_SUCCESS;
-
-    hg_thread_mutex_lock(&context->processing_list_mutex);
-
-    /* Remove handle from list if not found */
-    if (!hg_list_remove_data(&context->processing_list, hg_handle_equal,
-            (hg_list_value_t) hg_handle)) {
-        HG_LOG_ERROR("Could not remove entry");
-        ret = HG_NO_MATCH;
-    }
-
-    hg_thread_mutex_unlock(&context->processing_list_mutex);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
 static struct hg_handle *
 hg_create(hg_class_t *hg_class, hg_context_t *context)
 {
@@ -407,18 +387,13 @@ done:
 static na_return_t
 hg_send_input_cb(const struct na_cb_info *callback_info)
 {
-//    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
 
-    /* Mark as completed */
-//    if (hg_complete(hg_op_id) != HG_SUCCESS) {
-//        HG_LOG_ERROR("Could not complete operation");
-//    }
-    /* TODO needed ? */
+    /* Nothing for now */
 
     return ret;
 }
@@ -443,6 +418,15 @@ hg_recv_input_cb(const struct na_cb_info *callback_info)
         HG_LOG_ERROR("Buffer size and actual transfer size do not match");
         goto done;
     }
+
+    /* Remove handle from processing list */
+    hg_thread_mutex_lock(&hg_handle->context->processing_list_mutex);
+    if (!hg_list_remove_data(&hg_handle->context->processing_list,
+            hg_handle_equal, (hg_list_value_t) hg_handle)) {
+        HG_LOG_ERROR("Could not remove entry");
+        goto done;
+    }
+    hg_thread_mutex_unlock(&hg_handle->context->processing_list_mutex);
 
     /* Process handle */
     if (hg_process(hg_handle) != HG_SUCCESS) {
@@ -690,7 +674,7 @@ hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
     /* If something is in context completion queue just return */
-    if (completion_queue_empty) goto done;
+    if (!completion_queue_empty) goto done;
 
     /* Otherwise try to make progress on NA */
     na_ret = NA_Progress(hg_class->na_class, hg_class->na_context, timeout);
@@ -899,7 +883,7 @@ hg_context_t *
 HG_Context_create(hg_class_t *hg_class)
 {
     hg_return_t ret = HG_SUCCESS;
-    hg_context_t *hg_context = NULL;
+    hg_context_t *context = NULL;
 
     if (!hg_class) {
         HG_LOG_ERROR("NULL HG class");
@@ -907,40 +891,45 @@ HG_Context_create(hg_class_t *hg_class)
         goto done;
     }
 
-    hg_context = (hg_context_t *) malloc(sizeof(hg_context_t));
-    if (!hg_context) {
+    context = (hg_context_t *) malloc(sizeof(hg_context_t));
+    if (!context) {
         HG_LOG_ERROR("Could not allocate HG context");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
 
-    hg_context->hg_class = hg_class;
-    hg_context->bulk_context = NULL;
-    hg_context->completion_queue = hg_queue_new();
-    if (!hg_context->completion_queue) {
+    context->hg_class = hg_class;
+    context->bulk_context = NULL;
+    context->completion_queue = hg_queue_new();
+    if (!context->completion_queue) {
         HG_LOG_ERROR("Could not create completion queue");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
 
-    /* Initialize completion queue mutex/cond */
-    hg_thread_mutex_init(&hg_context->completion_queue_mutex);
-    hg_thread_cond_init(&hg_context->completion_queue_cond);
+    context->processing_list = NULL;
 
     /* Create bulk context for internal transfer in case of overflow
      * TODO may allow user to pass its own HG Bulk context */
-    hg_context->bulk_context = HG_Bulk_context_create(hg_class->bulk_class);
-    if (!hg_context->bulk_context) {
+    context->bulk_context = HG_Bulk_context_create(hg_class->bulk_class);
+    if (!context->bulk_context) {
         HG_LOG_ERROR("Could not create HG Bulk context");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
 
+    /* Initialize completion queue mutex/cond */
+    hg_thread_mutex_init(&context->completion_queue_mutex);
+    hg_thread_cond_init(&context->completion_queue_cond);
+    hg_thread_mutex_init(&context->processing_list_mutex);
+
 done:
-    if (ret != HG_SUCCESS) {
-        free(hg_context);
+    if (ret != HG_SUCCESS && context) {
+        hg_queue_free(context->completion_queue);
+        HG_Bulk_context_destroy(context->bulk_context);
+        free(context);
     }
-    return hg_context;
+    return context;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -978,6 +967,9 @@ HG_Context_destroy(hg_context_t *context)
     /* Destroy completion queue mutex/cond */
     hg_thread_mutex_destroy(&context->completion_queue_mutex);
     hg_thread_cond_destroy(&context->completion_queue_cond);
+    hg_thread_mutex_destroy(&context->processing_list_mutex);
+
+    free(context);
 
 done:
     return ret;
@@ -1160,6 +1152,11 @@ HG_Create(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
     }
     hg_handle->addr = addr;
     hg_handle->id = id;
+
+    /* Increase ref count here so that a call to HG_Destroy does not free the
+     * handle but only schedules its completion
+     */
+    hg_atomic_incr32(&hg_handle->ref_count);
 
     *handle = (hg_handle_t) hg_handle;
 
@@ -1444,15 +1441,21 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
+HG_Trigger(hg_class_t *hg_class, hg_context_t *context,
         unsigned int timeout, unsigned int max_count,
         unsigned int *actual_count)
 {
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
     if (!context) {
-        HG_LOG_ERROR("NULL HG bulk context");
+        HG_LOG_ERROR("NULL HG context");
         ret = HG_INVALID_PARAM;
         goto done;
     }
@@ -1501,19 +1504,20 @@ HG_Trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
             goto done;
         }
 
-        hg_cb_info->hg_class = hg_handle->context->hg_class;
-        hg_cb_info->context = hg_handle->context;
         hg_cb_info->arg = hg_handle->arg;
         hg_cb_info->ret = HG_SUCCESS; /* TODO report failure */
+        hg_cb_info->hg_class = hg_handle->context->hg_class;
+        hg_cb_info->context = hg_handle->context;
+        hg_cb_info->handle = (hg_handle_t) hg_handle;
 
         /* Execute callback */
-        if (hg_handle->callback)
+        if (hg_handle->callback) {
             hg_handle->callback(hg_cb_info);
+        }
 
         /* Free op */
         free(hg_cb_info);
-        /* TODO reference count */
-//        free(hg_handle);
+        hg_destroy(hg_handle);
         count++;
     }
 
