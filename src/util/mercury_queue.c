@@ -57,14 +57,14 @@ hg_queue_new(void)
 void
 hg_queue_free(hg_queue_t *queue)
 {
+	if (!queue) return;
+
 	/* Empty the queue */
-	
 	while (!hg_queue_is_empty(queue)) {
 		hg_queue_pop_head(queue);
 	}
 
 	/* Free back the queue */
-
 	free(queue);
 }
 
