@@ -220,6 +220,20 @@ hg_int_hash(void *vlocation)
 
 /*---------------------------------------------------------------------------*/
 /**
+ * Free function for value in function map.
+ */
+static HG_INLINE void
+hg_func_map_value_free(hg_hash_table_value_t value)
+{
+    struct hg_rpc_info *hg_rpc_info = (struct hg_rpc_info *) value;
+
+    if (hg_rpc_info->free_callback)
+        hg_rpc_info->free_callback(hg_rpc_info->data);
+    free(hg_rpc_info);
+}
+
+/*---------------------------------------------------------------------------*/
+/**
  * Equal function for handle.
  */
 static HG_INLINE int
@@ -827,7 +841,8 @@ HG_Init(na_class_t *na_class, na_context_t *na_context,
         goto done;
     }
     /* Automatically free all the values with the hash map */
-    hg_hash_table_register_free_functions(hg_class->func_map, free, free);
+    hg_hash_table_register_free_functions(hg_class->func_map, free,
+            hg_func_map_value_free);
 
     if (hg_bulk_class) {
         hg_class->bulk_class_external = HG_TRUE;
