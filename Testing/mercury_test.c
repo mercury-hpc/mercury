@@ -88,6 +88,25 @@ hg_test_finalize_rpc(hg_class_t *hg_class)
         fprintf(stderr, "Could not forward call\n");
     }
 
+    while(1) {
+        hg_return_t trigger_ret;
+        unsigned int actual_count = 0;
+
+        do {
+            trigger_ret = HG_Trigger(hg_class, context, 0, 1, &actual_count);
+        } while ((trigger_ret == HG_SUCCESS) && actual_count);
+
+        if (actual_count) break;
+
+        HG_Progress(hg_class, context, NA_MAX_IDLE_TIME);
+    }
+
+    /* Complete */
+    hg_ret = HG_Destroy(handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+    }
+
     HG_Context_destroy(context);
 }
 
