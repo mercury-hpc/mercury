@@ -214,19 +214,19 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_proc_header_request_verify(struct hg_header_request header)
+hg_proc_header_request_verify(const struct hg_header_request *header)
 {
     hg_return_t ret = HG_SUCCESS;
 
     /* Must match HG */
-    if ( (((header.hg >> 1)  & 'H') != 'H') ||
-            (((header.hg)  & 'G') != 'G') ) {
+    if ( (((header->hg >> 1)  & 'H') != 'H') ||
+            (((header->hg)  & 'G') != 'G') ) {
         HG_LOG_ERROR("Invalid HG byte");
         ret = HG_NO_MATCH;
         goto done;
     }
 
-    if (header.protocol != HG_PROTOCOL_VERSION) {
+    if (header->protocol != HG_PROTOCOL_VERSION) {
         HG_LOG_ERROR("Invalid HG_PROTOCOL_VERSION");
         ret = HG_NO_MATCH;
         goto done;
@@ -247,11 +247,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_proc_header_response_verify(struct hg_header_response header)
+hg_proc_header_response_verify(const struct hg_header_response *header)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (header.error) {
+    if (header->error) {
         HG_LOG_ERROR("Error detected");
         ret = HG_PROTOCOL_ERROR;
     }

@@ -152,22 +152,22 @@ hg_proc_header_response(void *buf, size_t buf_size,
 /**
  * Verify private information from request header.
  *
- * \param header [IN]           request header structure
+ * \param header [IN]           pointer to request header structure
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_header_request_verify(struct hg_header_request header);
+hg_proc_header_request_verify(const struct hg_header_request *header);
 
 /**
  * Verify private information from response header.
  *
- * \param header [IN]           response header structure
+ * \param header [IN]           pointer to response header structure
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_header_response_verify(struct hg_header_response header);
+hg_proc_header_response_verify(const struct hg_header_response *header);
 
 #ifdef __cplusplus
 }
