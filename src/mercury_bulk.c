@@ -59,6 +59,8 @@ struct hg_bulk_op_id {
     unsigned int op_count;                /* Number of ongoing operations */
     hg_atomic_int32_t op_completed_count; /* Number of operations completed */
     hg_bulk_op_t op;                      /* Operation type */
+    struct hg_bulk *hg_bulk_origin;       /* Origin handle */
+    struct hg_bulk *hg_bulk_local;        /* Local handle */
 };
 
 ///* Completion data stored in completion queue */
@@ -662,6 +664,8 @@ hg_bulk_transfer(hg_bulk_context_t *context, hg_bulk_cb_t callback, void *arg,
     hg_bulk_op_id->op_count = 0;
     hg_atomic_set32(&hg_bulk_op_id->op_completed_count, 0);
     hg_bulk_op_id->op = op;
+    hg_bulk_op_id->hg_bulk_origin = hg_bulk_origin;
+    hg_bulk_op_id->hg_bulk_local = hg_bulk_local;
 
     /* Translate bulk_offset */
     hg_bulk_offset_translate(hg_bulk_origin, origin_offset,
@@ -1314,6 +1318,12 @@ HG_Bulk_trigger(hg_bulk_class_t *hg_bulk_class, hg_bulk_context_t *context,
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!hg_bulk_class) {
+        HG_LOG_ERROR("NULL HG bulk class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
     if (!context) {
         HG_LOG_ERROR("NULL HG bulk context");
         ret = HG_INVALID_PARAM;
@@ -1322,7 +1332,7 @@ HG_Bulk_trigger(hg_bulk_class_t *hg_bulk_class, hg_bulk_context_t *context,
 
     while (count < max_count) {
         struct hg_bulk_op_id *hg_bulk_op_id = NULL;
-        struct hg_bulk_cb_info *hg_bulk_cb_info = NULL;
+        struct hg_bulk_cb_info hg_bulk_cb_info;
         hg_bool_t completion_queue_empty = HG_FALSE;
 
         hg_thread_mutex_lock(&context->completion_queue_mutex);
@@ -1357,25 +1367,19 @@ HG_Bulk_trigger(hg_bulk_class_t *hg_bulk_class, hg_bulk_context_t *context,
          * to the queue while callback gets executed */
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
-        hg_bulk_cb_info = (struct hg_bulk_cb_info *) malloc(
-                sizeof(struct hg_bulk_cb_info));
-        if (!hg_bulk_cb_info) {
-            HG_LOG_ERROR("Could not allocate HG bulk callback info");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
-
-        hg_bulk_cb_info->hg_bulk_class = hg_bulk_op_id->context->hg_bulk_class;
-        hg_bulk_cb_info->context = hg_bulk_op_id->context;
-        hg_bulk_cb_info->op = hg_bulk_op_id->op;
-        hg_bulk_cb_info->arg = hg_bulk_op_id->arg;
+        hg_bulk_cb_info.arg = hg_bulk_op_id->arg;
+        hg_bulk_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
+        hg_bulk_cb_info.hg_bulk_class = hg_bulk_op_id->context->hg_bulk_class;
+        hg_bulk_cb_info.context = hg_bulk_op_id->context;
+        hg_bulk_cb_info.op = hg_bulk_op_id->op;
+        hg_bulk_cb_info.origin_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_origin;
+        hg_bulk_cb_info.local_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_local;
 
         /* Execute callback */
         if (hg_bulk_op_id->callback)
-            hg_bulk_op_id->callback(hg_bulk_cb_info);
+            hg_bulk_op_id->callback(&hg_bulk_cb_info);
 
         /* Free op */
-        free(hg_bulk_cb_info);
         free(hg_bulk_op_id);
         count++;
     }

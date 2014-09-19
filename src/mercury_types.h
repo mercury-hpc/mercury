@@ -100,6 +100,8 @@ struct hg_bulk_cb_info {
     hg_bulk_class_t *hg_bulk_class; /* HG bulk class */
     hg_bulk_context_t *context;     /* HG bulk context */
     hg_bulk_op_t op;                /* Operation type */
+    hg_bulk_t origin_handle;        /* HG Bulk origin handle */
+    hg_bulk_t local_handle;         /* HG Bulk local handle */
 };
 
 /* HG callback */
