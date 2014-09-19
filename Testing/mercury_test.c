@@ -13,6 +13,7 @@
 #include "mercury_rpc_cb.h"
 
 #include "mercury_atomic.h"
+#include "mercury_request.h"
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 #include "mercury_thread_pool.h"
 #endif
@@ -67,14 +68,63 @@ hg_id_t hg_test_finalize_id_g = 0;
 hg_atomic_int32_t hg_test_finalizing_count_g;
 
 /*---------------------------------------------------------------------------*/
+int
+HG_Test_request_progress(unsigned int timeout, void *arg)
+{
+    struct hg_info *hg_info = (struct hg_info *) arg;
+    int ret = HG_UTIL_SUCCESS;
+
+    if (HG_Progress(hg_info->hg_class, hg_info->context, timeout) != HG_SUCCESS)
+        ret = HG_UTIL_FAIL;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+HG_Test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
+{
+    struct hg_info *hg_info = (struct hg_info *) arg;
+    unsigned int actual_count = 0;
+    int ret = HG_UTIL_SUCCESS;
+
+    if (HG_Trigger(hg_info->hg_class, hg_info->context, timeout, 1, &actual_count) != HG_SUCCESS)
+        ret = HG_UTIL_FAIL;
+    *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
+
+    return ret;
+}
+
+static hg_return_t
+hg_test_finalize_rpc_cb(const struct hg_cb_info *callback_info)
+{
+    hg_request_object_t *request_object =
+            (hg_request_object_t *) callback_info->arg;
+
+    hg_request_complete(request_object);
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
 static void
 hg_test_finalize_rpc(hg_class_t *hg_class)
 {
     hg_return_t hg_ret;
     hg_context_t *context;
     hg_handle_t handle;
+    hg_request_class_t *request_class = NULL;
+    hg_request_object_t *request_object = NULL;
+    struct hg_info hg_info;
 
     context = HG_Context_create(hg_class);
+
+    hg_info.hg_class = hg_class;
+    hg_info.context = context;
+
+    request_class = hg_request_init(HG_Test_request_progress,
+            HG_Test_request_trigger, &hg_info);
+    request_object = hg_request_create(request_class);
 
     hg_ret = HG_Create(hg_class, context, hg_test_addr_g, hg_test_finalize_id_g,
             &handle);
@@ -83,23 +133,12 @@ hg_test_finalize_rpc(hg_class_t *hg_class)
     }
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(handle, NULL, NULL, NULL);
+    hg_ret = HG_Forward(handle, hg_test_finalize_rpc_cb, request_object, NULL);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
     }
 
-    while(1) {
-        hg_return_t trigger_ret;
-        unsigned int actual_count = 0;
-
-        do {
-            trigger_ret = HG_Trigger(hg_class, context, 0, 1, &actual_count);
-        } while ((trigger_ret == HG_SUCCESS) && actual_count);
-
-        if (actual_count) break;
-
-        HG_Progress(hg_class, context, NA_MAX_IDLE_TIME);
-    }
+    hg_request_wait(request_object, HG_MAX_IDLE_TIME, NULL);
 
     /* Complete */
     hg_ret = HG_Destroy(handle);
@@ -108,6 +147,9 @@ hg_test_finalize_rpc(hg_class_t *hg_class)
     }
 
     HG_Context_destroy(context);
+
+    hg_request_destroy(request_object);
+    hg_request_finalize(request_class);
 }
 
 /*---------------------------------------------------------------------------*/
