@@ -15,6 +15,7 @@
 #include "mercury_test_config.h"
 #include "mercury_config.h"
 #include "mercury_bulk.h"
+#include "mercury_request.h"
 
 #include "test_rpc.h"
 #include "test_bulk.h"
@@ -28,14 +29,16 @@ extern "C" {
  * Initialize client
  */
 hg_class_t *
-HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank);
+HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank,
+        hg_context_t **context, hg_request_class_t **request_class);
 
 /**
  * Initialize server
  */
 hg_class_t *
 HG_Test_server_init(int argc, char *argv[], char ***addr_table,
-        unsigned int *addr_table_size, unsigned int *max_number_of_peers);
+        unsigned int *addr_table_size, unsigned int *max_number_of_peers,
+        hg_context_t **context);
 
 /**
  * Finalize client/server

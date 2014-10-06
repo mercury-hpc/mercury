@@ -29,9 +29,7 @@ main(int argc, char *argv[])
     hg_return_t ret = HG_SUCCESS;
 
     hg_class = HG_Test_server_init(argc, argv, NULL, NULL,
-            &number_of_peers);
-
-    context = HG_Context_create(hg_class);
+            &number_of_peers, &context);
 
     while (1) {
         unsigned int actual_count = 0;
@@ -47,11 +45,6 @@ main(int argc, char *argv[])
     }
 
     printf("# Finalizing...\n");
-
-    ret = HG_Context_destroy(context);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not destroy context\n");
-    }
 
     HG_Test_finalize(hg_class);
 

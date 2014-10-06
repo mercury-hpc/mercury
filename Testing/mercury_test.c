@@ -13,7 +13,6 @@
 #include "mercury_rpc_cb.h"
 
 #include "mercury_atomic.h"
-#include "mercury_request.h"
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 #include "mercury_thread_pool.h"
 #endif
@@ -34,6 +33,9 @@ static na_context_t *hg_test_na_context_g = NULL;
 static hg_bool_t hg_test_is_client_g = HG_FALSE;
 static na_addr_t hg_test_addr_g = NA_ADDR_NULL;
 static int hg_test_rank_g = 0;
+static hg_class_t *hg_test_class_g = NULL;
+static hg_context_t *hg_test_context_g = NULL;
+static hg_request_class_t *hg_test_request_class_g = NULL;
 
 extern na_bool_t na_test_use_self_g;
 
@@ -71,10 +73,10 @@ hg_atomic_int32_t hg_test_finalizing_count_g;
 int
 HG_Test_request_progress(unsigned int timeout, void *arg)
 {
-    struct hg_info *hg_info = (struct hg_info *) arg;
     int ret = HG_UTIL_SUCCESS;
 
-    if (HG_Progress(hg_info->hg_class, hg_info->context, timeout) != HG_SUCCESS)
+    (void) arg;
+    if (HG_Progress(hg_test_class_g, hg_test_context_g, timeout) != HG_SUCCESS)
         ret = HG_UTIL_FAIL;
 
     return ret;
@@ -84,17 +86,18 @@ HG_Test_request_progress(unsigned int timeout, void *arg)
 int
 HG_Test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
 {
-    struct hg_info *hg_info = (struct hg_info *) arg;
     unsigned int actual_count = 0;
     int ret = HG_UTIL_SUCCESS;
 
-    if (HG_Trigger(hg_info->hg_class, hg_info->context, timeout, 1, &actual_count) != HG_SUCCESS)
-        ret = HG_UTIL_FAIL;
+    (void) arg;
+    if (HG_Trigger(hg_test_class_g, hg_test_context_g, timeout, 1,
+            &actual_count) != HG_SUCCESS) ret = HG_UTIL_FAIL;
     *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
 
     return ret;
 }
 
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_test_finalize_rpc_cb(const struct hg_cb_info *callback_info)
 {
@@ -111,23 +114,13 @@ static void
 hg_test_finalize_rpc(hg_class_t *hg_class)
 {
     hg_return_t hg_ret;
-    hg_context_t *context;
     hg_handle_t handle;
-    hg_request_class_t *request_class = NULL;
     hg_request_object_t *request_object = NULL;
-    struct hg_info hg_info;
 
-    context = HG_Context_create(hg_class);
+    request_object = hg_request_create(hg_test_request_class_g);
 
-    hg_info.hg_class = hg_class;
-    hg_info.context = context;
-
-    request_class = hg_request_init(HG_Test_request_progress,
-            HG_Test_request_trigger, &hg_info);
-    request_object = hg_request_create(request_class);
-
-    hg_ret = HG_Create(hg_class, context, hg_test_addr_g, hg_test_finalize_id_g,
-            &handle);
+    hg_ret = HG_Create(hg_class, hg_test_context_g, hg_test_addr_g,
+            hg_test_finalize_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
     }
@@ -146,10 +139,7 @@ hg_test_finalize_rpc(hg_class_t *hg_class)
         fprintf(stderr, "Could not complete\n");
     }
 
-    HG_Context_destroy(context);
-
     hg_request_destroy(request_object);
-    hg_request_finalize(request_class);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -180,10 +170,10 @@ hg_test_register(hg_class_t *hg_class)
     hg_test_rpc_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_rpc_open",
             rpc_open_in_t, rpc_open_out_t, hg_test_rpc_open_cb);
 
-//    /* test_bulk */
-//    hg_test_bulk_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_bulk_write",
-//            bulk_write_in_t, bulk_write_out_t, hg_test_bulk_write_cb);
-//
+    /* test_bulk */
+    hg_test_bulk_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_bulk_write",
+            bulk_write_in_t, bulk_write_out_t, hg_test_bulk_write_cb);
+
 //    /* test_bulk_seg */
 //    hg_test_bulk_seg_write_id_g = MERCURY_REGISTER(hg_class,
 //            "hg_test_bulk_seg_write", bulk_write_in_t, bulk_write_out_t,
@@ -217,9 +207,9 @@ hg_test_register(hg_class_t *hg_class)
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank)
+HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank,
+        hg_context_t **context, hg_request_class_t **request_class)
 {
-    hg_class_t *hg_class = NULL;
     char test_addr_name[NA_TEST_MAX_ADDR_NAME];
     na_return_t na_ret;
 
@@ -228,8 +218,8 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank)
 
     hg_test_na_context_g = NA_Context_create(hg_test_na_class_g);
 
-    hg_class = HG_Init(hg_test_na_class_g, hg_test_na_context_g, NULL);
-    if (!hg_class) {
+    hg_test_class_g = HG_Init(hg_test_na_class_g, hg_test_na_context_g, NULL);
+    if (!hg_test_class_g) {
         fprintf(stderr, "Could not initialize Mercury\n");
         goto done;
     }
@@ -253,25 +243,33 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank)
     }
 
     /* Register routines */
-    hg_test_register(hg_class);
+    hg_test_register(hg_test_class_g);
 
     /* When finalize is called we need to free the addr etc */
     hg_test_is_client_g = HG_TRUE;
 
+    /* Create new context */
+    hg_test_context_g = HG_Context_create(hg_test_class_g);
+
+    /* Create request class */
+    hg_test_request_class_g = hg_request_init(HG_Test_request_progress,
+            HG_Test_request_trigger, NULL);
+
     if (addr) *addr = hg_test_addr_g;
     if (rank) *rank = hg_test_rank_g;
+    if (context) *context = hg_test_context_g;
+    if (request_class) * request_class = hg_test_request_class_g;
 
 done:
-    return hg_class;
+    return hg_test_class_g;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
 HG_Test_server_init(int argc, char *argv[], char ***addr_table,
-        unsigned int *addr_table_size, unsigned int *max_number_of_peers)
+        unsigned int *addr_table_size, unsigned int *max_number_of_peers,
+        hg_context_t **context)
 {
-    hg_class_t *hg_class = NULL;
-
     hg_test_na_class_g = NA_Test_server_init(argc, argv, NA_FALSE, addr_table,
             addr_table_size, max_number_of_peers);
 
@@ -285,21 +283,26 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
     printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
 
-    hg_class = HG_Init(hg_test_na_class_g, hg_test_na_context_g, NULL);
-    if (!hg_class) {
+    hg_test_class_g = HG_Init(hg_test_na_class_g, hg_test_na_context_g, NULL);
+    if (!hg_test_class_g) {
         fprintf(stderr, "Could not initialize Mercury\n");
         goto done;
     }
 
     /* Register test routines */
-    hg_test_register(hg_class);
+    hg_test_register(hg_test_class_g);
+
+    /* Create new context */
+    hg_test_context_g = HG_Context_create(hg_test_class_g);
 
     /* Used by CTest Test Driver */
     printf("Waiting for client...\n");
     fflush(stdout);
 
+    if (context) *context = hg_test_context_g;
+
 done:
-    return hg_class;
+    return hg_test_class_g;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -324,8 +327,16 @@ HG_Test_finalize(hg_class_t *hg_class)
         hg_test_addr_g = NA_ADDR_NULL;
     }
 
+    /* Destroy context */
+    HG_Context_destroy(hg_test_context_g);
+    hg_test_context_g = NULL;
+
+    /* Finalize request class */
+    hg_request_finalize(hg_test_request_class_g);
+    hg_test_request_class_g = NULL;
+
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
-        hg_thread_pool_destroy(hg_test_thread_pool_g);
+    hg_thread_pool_destroy(hg_test_thread_pool_g);
 #endif
 
     /* Finalize interface */
@@ -334,6 +345,7 @@ HG_Test_finalize(hg_class_t *hg_class)
         fprintf(stderr, "Could not finalize Mercury\n");
         goto done;
     }
+    hg_test_class_g = NULL;
 
     na_ret = NA_Context_destroy(hg_test_na_class_g, hg_test_na_context_g);
     if (na_ret != NA_SUCCESS) {

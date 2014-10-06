@@ -10,16 +10,10 @@
 
 #include "mercury_test.h"
 
-#include "mercury_request.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 
 extern hg_id_t hg_test_rpc_open_id_g;
-extern int
-HG_Test_request_progress(unsigned int timeout, void *arg);
-extern int
-HG_Test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg);
 
 static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
@@ -68,7 +62,6 @@ main(int argc, char *argv[])
     hg_handle_t handle;
     na_addr_t addr;
     rpc_open_in_t  rpc_open_in_struct;
-    struct hg_info hg_info;
 
     hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
@@ -77,14 +70,8 @@ main(int argc, char *argv[])
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    hg_class = HG_Test_client_init(argc, argv, &addr, NULL);
-    context = HG_Context_create(hg_class);
-
-    hg_info.hg_class = hg_class;
-    hg_info.context = context;
-
-    request_class = hg_request_init(HG_Test_request_progress,
-            HG_Test_request_trigger, &hg_info);
+    hg_class = HG_Test_client_init(argc, argv, &addr, NULL, &context,
+            &request_class);
 
     request_object = hg_request_create(request_class);
 
@@ -118,9 +105,6 @@ main(int argc, char *argv[])
     }
 
     hg_request_destroy(request_object);
-    hg_request_finalize(request_class);
-
-    HG_Context_destroy(context);
 
     HG_Test_finalize(hg_class);
 

@@ -186,7 +186,7 @@ build_mercury_test(server)
 
 set(MERCURY_tests
   rpc
-#  bulk
+  bulk
 #  bulk_seg
 #  pipeline
 #  scale
