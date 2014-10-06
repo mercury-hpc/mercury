@@ -50,7 +50,9 @@ extern "C" {
  * \return Pointer to memory address or NULL if allocation failed
  */
 HG_EXPORT void *
-hg_proc_buf_alloc(size_t size);
+hg_proc_buf_alloc(
+        size_t size
+        );
 
 /**
  * Free memory which has been previously allocated using hg_proc_buf_alloc.
@@ -58,7 +60,9 @@ hg_proc_buf_alloc(size_t size);
  * \param mem_ptr [IN]          pointer to memory address
  */
 HG_EXPORT void
-hg_proc_buf_free(void *mem_ptr);
+hg_proc_buf_free(
+        void *mem_ptr
+        );
 
 /**
  * Create a new encoding/decoding processor.
@@ -70,13 +74,20 @@ hg_proc_buf_free(void *mem_ptr);
  * \param hash [IN]             hash method used for computing checksum
  *                              (if NULL, checksum is not computed)
  *                              hash method: HG_CRC16, HG_CRC64, HG_NOHASH
+ * \param hg_bulk_class [IN]    (optional) HG Bulk class
  * \param proc [OUT]            pointer to abstract processor object
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
-        hg_proc_t *proc);
+hg_proc_create(
+        void *buf,
+        size_t buf_size,
+        hg_proc_op_t op,
+        hg_proc_hash_t hash,
+        hg_bulk_class_t *hg_bulk_class,
+        hg_proc_t *proc
+        );
 
 /**
  * Free the processor.
@@ -86,7 +97,21 @@ hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_free(hg_proc_t proc);
+hg_proc_free(
+        hg_proc_t proc
+        );
+
+/**
+ * Get the HG bulk class associated to the processor.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return HG Bulk class
+ */
+HG_EXPORT hg_bulk_class_t *
+hg_proc_get_bulk_class(
+        hg_proc_t proc
+        );
 
 /**
  * Get the operation type associated to the processor.
@@ -96,7 +121,9 @@ hg_proc_free(hg_proc_t proc);
  * \return Operation type
  */
 HG_EXPORT hg_proc_op_t
-hg_proc_get_op(hg_proc_t proc);
+hg_proc_get_op(
+        hg_proc_t proc
+        );
 
 /**
  * Get buffer size available for processing.
@@ -106,7 +133,9 @@ hg_proc_get_op(hg_proc_t proc);
  * \return Non-negative size value
  */
 HG_EXPORT size_t
-hg_proc_get_size(hg_proc_t proc);
+hg_proc_get_size(
+        hg_proc_t proc
+        );
 
 /**
  * Request a new buffer size. This will modify the size of the buffer attached
@@ -118,7 +147,10 @@ hg_proc_get_size(hg_proc_t proc);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_set_size(hg_proc_t proc, size_t buf_size);
+hg_proc_set_size(
+        hg_proc_t proc,
+        size_t buf_size
+        );
 
 /**
  * Get size left for processing.
@@ -128,7 +160,9 @@ hg_proc_set_size(hg_proc_t proc, size_t buf_size);
  * \return Non-negative size value
  */
 HG_EXPORT size_t
-hg_proc_get_size_left(hg_proc_t proc);
+hg_proc_get_size_left(
+        hg_proc_t proc
+        );
 
 /**
  * Get pointer to current buffer (for manual encoding).
@@ -138,7 +172,9 @@ hg_proc_get_size_left(hg_proc_t proc);
  * \return Buffer pointer
  */
 HG_EXPORT void *
-hg_proc_get_buf_ptr(hg_proc_t proc);
+hg_proc_get_buf_ptr(
+        hg_proc_t proc
+        );
 
 #ifdef HG_HAS_XDR
 /**
@@ -149,7 +185,9 @@ hg_proc_get_buf_ptr(hg_proc_t proc);
  * \return XDR stream pointer
  */
 HG_EXPORT XDR *
-hg_proc_get_xdr_ptr(hg_proc_t proc);
+hg_proc_get_xdr_ptr(
+        hg_proc_t proc
+        );
 #endif
 
 /**
@@ -161,7 +199,10 @@ hg_proc_get_xdr_ptr(hg_proc_t proc);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr);
+hg_proc_set_buf_ptr(
+        hg_proc_t proc,
+        void *buf_ptr
+        );
 
 /**
  * Get eventual extra buffer used by processor.
@@ -171,7 +212,9 @@ hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr);
  * \return Pointer to buffer or NULL if no extra buffer has been used
  */
 HG_EXPORT void *
-hg_proc_get_extra_buf(hg_proc_t proc);
+hg_proc_get_extra_buf(
+        hg_proc_t proc
+        );
 
 /**
  * Get eventual size of the extra buffer used by processor.
@@ -181,7 +224,9 @@ hg_proc_get_extra_buf(hg_proc_t proc);
  * \return Size of buffer or 0 if no extra buffer has been used
  */
 HG_EXPORT size_t
-hg_proc_get_extra_size(hg_proc_t proc);
+hg_proc_get_extra_size(
+        hg_proc_t proc
+        );
 
 /**
  * Set extra buffer to mine (if other calls mine, buffer is no longer freed
@@ -192,7 +237,10 @@ hg_proc_get_extra_size(hg_proc_t proc);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
+hg_proc_set_extra_buf_is_mine(
+        hg_proc_t proc,
+        hg_bool_t mine
+        );
 
 /**
  * Flush the proc after data has been encoded or decoded and verify data using
@@ -203,7 +251,9 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_flush(hg_proc_t proc);
+hg_proc_flush(
+        hg_proc_t proc
+        );
 
 /**
  * Base proc routine using memcpy.
@@ -216,7 +266,11 @@ hg_proc_flush(hg_proc_t proc);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size);
+hg_proc_memcpy(
+        hg_proc_t proc,
+        void *data,
+        size_t data_size
+        );
 
 /**
  * Copy data to buf if HG_ENCODE or buf to data if HG_DECODE and return
@@ -529,6 +583,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                 return ret;
             }
             if (buf_size) {
+                hg_bulk_class_t *hg_bulk_class = hg_proc_get_bulk_class(proc);
+
                 buf = malloc(buf_size);
                 /* Decode serialized buffer */
                 ret = hg_proc_raw(proc, buf, buf_size);
@@ -536,7 +592,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                     HG_LOG_ERROR("Proc error");
                     return ret;
                 }
-                ret = HG_Bulk_deserialize(NULL, handle, buf, buf_size);
+                ret = HG_Bulk_deserialize(hg_bulk_class, handle, buf, buf_size);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not deserialize bulk handle");
                     return ret;
