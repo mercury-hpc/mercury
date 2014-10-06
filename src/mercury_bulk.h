@@ -251,6 +251,9 @@ HG_Bulk_transfer(
  * Progress should not be considered as wait, in the sense that it cannot be
  * assumed that completion of a specific operation will occur only when
  * progress is called.
+ * Calling HG_Bulk_progress is only necessary if a context has been separately
+ * created as HG_Progress will call NA_Progress/NA_Trigger on the same NA
+ * context.
  *
  * \param bulk_class [IN]       pointer to HG bulk class
  * \param context [IN]          pointer to HG bulk context
@@ -269,6 +272,9 @@ HG_Bulk_progress(
  * Execute at most max_count callbacks. If timeout is non-zero, wait up to
  * timeout before returning. Function can return when at least one or more
  * callbacks are triggered (at most max_count).
+ * Calling HG_Trigger is only necessary if a context has been separately
+ * created as HG_Progress will call HG_Bulk_trigger on the same NA
+ * context.
  *
  * \param bulk_class [IN]       pointer to HG bulk class
  * \param context [IN]          pointer to HG bulk context
