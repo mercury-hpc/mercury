@@ -901,7 +901,7 @@ done:
 hg_return_t
 HG_Wait(hg_request_t request, unsigned int timeout, hg_status_t *status)
 {
-    double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     struct hg_handle *hg_handle = (struct hg_handle *) request;
     hg_bool_t completed = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;

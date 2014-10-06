@@ -163,7 +163,7 @@ int
 hg_request_wait(hg_request_object_t *request, unsigned int timeout,
         unsigned int *flag)
 {
-    double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_util_bool_t completed = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
 

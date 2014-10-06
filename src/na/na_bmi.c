@@ -1637,7 +1637,7 @@ static na_return_t
 na_bmi_progress(na_class_t *na_class, na_context_t *context,
         unsigned int timeout)
 {
-    double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     na_return_t ret = NA_SUCCESS;
 
     do {

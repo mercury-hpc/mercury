@@ -916,7 +916,7 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
 {
     struct na_private_context *na_private_context =
             (struct na_private_context *) context;
-    double remaining = timeout / 1000; /* Convert timeout in ms into seconds */
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     na_return_t ret = NA_SUCCESS;
 
     assert(na_class);
