@@ -105,7 +105,7 @@ hg_get_input(hg_handle_t handle, void *in_struct)
 {
     void *in_buf;
     size_t in_buf_size;
-    struct hg_info hg_info;
+    struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -120,15 +120,11 @@ hg_get_input(hg_handle_t handle, void *in_struct)
     }
 
     /* Get info from handle */
-    ret = HG_Get_info(handle, &hg_info);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get info from HG handle");
-        goto done;
-    }
+    hg_info = HG_Get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info.hg_class,
-            hg_info.id);
+    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+            hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("hg_hash_table_lookup failed");
         ret = HG_NO_MATCH;
@@ -138,7 +134,8 @@ hg_get_input(hg_handle_t handle, void *in_struct)
     if (!hg_proc_info->in_proc_cb) goto done;
 
     /* Create a new decoding proc */
-    ret = hg_proc_create(in_buf, in_buf_size, HG_DECODE, HG_CRC64, &proc);
+    ret = hg_proc_create(in_buf, in_buf_size, HG_DECODE, HG_CRC64,
+            hg_info->hg_bulk_class, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -169,7 +166,7 @@ hg_set_input(hg_handle_t handle, void *in_struct)
 {
     void *in_buf;
     size_t in_buf_size;
-    struct hg_info hg_info;
+    struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -184,15 +181,11 @@ hg_set_input(hg_handle_t handle, void *in_struct)
     }
 
     /* Get info from handle */
-    ret = HG_Get_info(handle, &hg_info);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get info from HG handle");
-        goto done;
-    }
+    hg_info = HG_Get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info.hg_class,
-            hg_info.id);
+    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+            hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("hg_hash_table_lookup failed");
         ret = HG_NO_MATCH;
@@ -202,7 +195,8 @@ hg_set_input(hg_handle_t handle, void *in_struct)
     if (!hg_proc_info->in_proc_cb) goto done;
 
     /* Create a new encoding proc */
-    ret = hg_proc_create(in_buf, in_buf_size, HG_ENCODE, HG_CRC64, &proc);
+    ret = hg_proc_create(in_buf, in_buf_size, HG_ENCODE, HG_CRC64,
+            hg_info->hg_bulk_class, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -255,7 +249,7 @@ done:
 static hg_return_t
 hg_free_input(hg_handle_t handle, void *in_struct)
 {
-    struct hg_info hg_info;
+    struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -263,15 +257,11 @@ hg_free_input(hg_handle_t handle, void *in_struct)
     if (!in_struct) goto done;
 
     /* Get info from handle */
-    ret = HG_Get_info(handle, &hg_info);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get info from HG handle");
-        goto done;
-    }
+    hg_info = HG_Get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info.hg_class,
-            hg_info.id);
+    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+            hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("hg_hash_table_lookup failed");
         ret = HG_NO_MATCH;
@@ -281,7 +271,8 @@ hg_free_input(hg_handle_t handle, void *in_struct)
     if (!hg_proc_info->in_proc_cb) goto done;
 
     /* Create a new free proc */
-    ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, &proc);
+    ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, hg_info->hg_bulk_class,
+            &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -307,7 +298,7 @@ hg_get_output(hg_handle_t handle, void *out_struct)
 {
     void *out_buf;
     size_t out_buf_size;
-    struct hg_info hg_info;
+    struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -322,15 +313,11 @@ hg_get_output(hg_handle_t handle, void *out_struct)
     }
 
     /* Get info from handle */
-    ret = HG_Get_info(handle, &hg_info);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get info from HG handle");
-        goto done;
-    }
+    hg_info = HG_Get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info.hg_class,
-            hg_info.id);
+    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+            hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("hg_hash_table_lookup failed");
         ret = HG_NO_MATCH;
@@ -340,7 +327,8 @@ hg_get_output(hg_handle_t handle, void *out_struct)
     if (!hg_proc_info->out_proc_cb) goto done;
 
     /* Create a new encoding proc */
-    ret = hg_proc_create(out_buf, out_buf_size, HG_DECODE, HG_CRC64, &proc);
+    ret = hg_proc_create(out_buf, out_buf_size, HG_DECODE, HG_CRC64,
+            hg_info->hg_bulk_class, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -371,7 +359,7 @@ hg_set_output(hg_handle_t handle, void *out_struct)
 {
     void *out_buf;
     size_t out_buf_size;
-    struct hg_info hg_info;
+    struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -386,15 +374,11 @@ hg_set_output(hg_handle_t handle, void *out_struct)
     }
 
     /* Get info from handle */
-    ret = HG_Get_info(handle, &hg_info);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get info from HG handle");
-        goto done;
-    }
+    hg_info = HG_Get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info.hg_class,
-            hg_info.id);
+    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+            hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("hg_hash_table_lookup failed");
         ret = HG_NO_MATCH;
@@ -404,7 +388,8 @@ hg_set_output(hg_handle_t handle, void *out_struct)
     if (!hg_proc_info->out_proc_cb) goto done;
 
     /* Create a new encoding proc */
-    ret = hg_proc_create(out_buf, out_buf_size, HG_ENCODE, HG_CRC64, &proc);
+    ret = hg_proc_create(out_buf, out_buf_size, HG_ENCODE, HG_CRC64,
+            hg_info->hg_bulk_class, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -444,7 +429,7 @@ done:
 static hg_return_t
 hg_free_output(hg_handle_t handle, void *out_struct)
 {
-    struct hg_info hg_info;
+    struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -452,15 +437,11 @@ hg_free_output(hg_handle_t handle, void *out_struct)
     if (!out_struct) goto done;
 
     /* Get info from handle */
-    ret = HG_Get_info(handle, &hg_info);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get info from HG handle");
-        goto done;
-    }
+    hg_info = HG_Get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info.hg_class,
-            hg_info.id);
+    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+            hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("hg_hash_table_lookup failed");
         ret = HG_NO_MATCH;
@@ -470,7 +451,8 @@ hg_free_output(hg_handle_t handle, void *out_struct)
     if (!hg_proc_info->out_proc_cb) goto done;
 
     /* Create a new free proc */
-    ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, &proc);
+    ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, hg_info->hg_bulk_class,
+            &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
