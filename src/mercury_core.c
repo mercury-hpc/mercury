@@ -60,7 +60,7 @@ struct hg_class {
 
 /* HG context */
 struct hg_context {
-    struct hg_class *hg_class;
+    hg_class_t *hg_class;
     hg_bulk_context_t *bulk_context;
     hg_queue_t *completion_queue;
     hg_thread_mutex_t completion_queue_mutex;
@@ -88,30 +88,27 @@ struct hg_self_cb_info {
 
 /* HG op id */
 struct hg_handle {
-    hg_class_t *hg_class;           /* HG Class */
-    hg_context_t *context;          /* Context */
-    hg_cb_t callback;               /* Callback */
-    void *arg;                      /* Callback arguments */
-    hg_id_t id;                     /* Request ID */
-    hg_uint32_t cookie;             /* Cookie unique to every RPC call */
-    na_tag_t tag;                   /* Tag used for request and response */
-    na_addr_t addr;                 /* NA address of the RPC source/dest */
-    hg_bool_t addr_mine;            /* NA Addr created by HG */
+    struct hg_info hg_info;             /* HG info */
+    hg_cb_t callback;                   /* Callback */
+    void *arg;                          /* Callback arguments */
+    na_tag_t tag;                       /* Tag used for request and response */
+    hg_uint32_t cookie;                 /* Cookie unique to every RPC call */
+    hg_bool_t addr_mine;                /* NA Addr created by HG */
 
-    void *in_buf;                   /* Input buffer */
-    na_size_t in_buf_size;          /* Input buffer size */
-    void *out_buf;                  /* Output buffer */
-    na_size_t out_buf_size;         /* Output buffer size */
+    void *in_buf;                       /* Input buffer */
+    na_size_t in_buf_size;              /* Input buffer size */
+    void *out_buf;                      /* Output buffer */
+    na_size_t out_buf_size;             /* Output buffer size */
 
-    na_op_id_t na_send_op_id;       /* Operation ID for send */
-    na_op_id_t na_recv_op_id;       /* Operation ID for recv */
+    na_op_id_t na_send_op_id;           /* Operation ID for send */
+    na_op_id_t na_recv_op_id;           /* Operation ID for recv */
+    hg_atomic_int32_t completed_count;  /* Number of operations completed */
 
-    hg_atomic_int32_t ref_count;    /* Reference count */
+    hg_atomic_int32_t ref_count;        /* Reference count */
 
     void *extra_in_buf;
     size_t extra_in_buf_size;
     hg_op_id_t extra_in_op_id;
-
 };
 
 /********************/
@@ -153,6 +150,14 @@ hg_pending_list_remove(
         );
 
 /**
+ * Check pending list.
+ */
+static hg_bool_t
+hg_pending_list_check(
+        hg_context_t *context
+        );
+
+/**
  * Add handle to processing list.
  */
 static hg_return_t
@@ -166,6 +171,14 @@ hg_processing_list_add(
 static hg_return_t
 hg_processing_list_remove(
         struct hg_handle *hg_handle
+        );
+
+/**
+ * Wail until processing list is empty.
+ */
+static hg_return_t
+hg_processing_list_wait(
+        hg_context_t *context
         );
 
 /**
@@ -330,8 +343,10 @@ hg_get_input_buf(struct hg_handle *hg_handle, void **in_buf,
     /* Space must be left for request header */
     *in_buf = (char *) ((hg_handle->extra_in_buf) ?
             hg_handle->extra_in_buf : hg_handle->in_buf) + header_offset;
-    *in_buf_size = (hg_handle->extra_in_buf_size) ?
-            hg_handle->extra_in_buf_size : hg_handle->in_buf_size - header_offset;
+    *in_buf_size =
+            (hg_handle->extra_in_buf_size) ?
+                    hg_handle->extra_in_buf_size :
+                    hg_handle->in_buf_size - header_offset;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -350,8 +365,8 @@ hg_get_output_buf(struct hg_handle *hg_handle, void **out_buf,
 static hg_return_t
 hg_get_extra_input_buf(struct hg_handle *hg_handle, hg_bulk_t extra_in_handle)
 {
-    hg_bulk_class_t *hg_bulk_class = hg_handle->hg_class->bulk_class;
-    hg_bulk_context_t *hg_bulk_context = hg_handle->context->bulk_context;
+    hg_bulk_class_t *hg_bulk_class = hg_handle->hg_info.hg_bulk_class;
+    hg_bulk_context_t *hg_bulk_context = hg_handle->hg_info.bulk_context;
     hg_bulk_t local_in_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS;
 
@@ -365,9 +380,10 @@ hg_get_extra_input_buf(struct hg_handle *hg_handle, hg_bulk_t extra_in_handle)
     }
 
     /* Read bulk data here and wait for the data to be here  */
-    ret = HG_Bulk_transfer(hg_bulk_context, hg_get_extra_input_buf_cb, hg_handle,
-            HG_BULK_PULL, hg_handle->addr, extra_in_handle, 0, local_in_handle,
-            0, hg_handle->extra_in_buf_size, &hg_handle->extra_in_op_id);
+    ret = HG_Bulk_transfer(hg_bulk_context, hg_get_extra_input_buf_cb,
+            hg_handle, HG_BULK_PULL, hg_handle->hg_info.addr, extra_in_handle,
+            0, local_in_handle, 0, hg_handle->extra_in_buf_size,
+            &hg_handle->extra_in_op_id);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not transfer bulk data");
         goto done;
@@ -439,15 +455,30 @@ hg_pending_list_remove(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    hg_thread_mutex_lock(&hg_handle->context->pending_list_mutex);
+    hg_thread_mutex_lock(&hg_handle->hg_info.context->pending_list_mutex);
 
-    if (!hg_list_remove_data(&hg_handle->context->pending_list,
+    if (!hg_list_remove_data(&hg_handle->hg_info.context->pending_list,
             hg_handle_equal, (hg_list_value_t) hg_handle)) {
         HG_LOG_ERROR("Could not remove entry");
         ret = HG_INVALID_PARAM;
     }
 
-    hg_thread_mutex_unlock(&hg_handle->context->pending_list_mutex);
+    hg_thread_mutex_unlock(&hg_handle->hg_info.context->pending_list_mutex);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_bool_t
+hg_pending_list_check(hg_context_t *context)
+{
+    hg_bool_t ret = HG_FALSE;
+
+    hg_thread_mutex_lock(&context->pending_list_mutex);
+
+    ret = hg_list_length(context->pending_list) ? HG_TRUE : HG_FALSE;
+
+    hg_thread_mutex_unlock(&context->pending_list_mutex);
 
     return ret;
 }
@@ -458,15 +489,15 @@ hg_processing_list_add(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    hg_thread_mutex_lock(&hg_handle->context->processing_list_mutex);
+    hg_thread_mutex_lock(&hg_handle->hg_info.context->processing_list_mutex);
 
-    if (!hg_list_append(&hg_handle->context->processing_list,
+    if (!hg_list_append(&hg_handle->hg_info.context->processing_list,
             (hg_list_value_t) hg_handle)) {
         HG_LOG_ERROR("Could not append entry");
         ret = HG_NOMEM_ERROR;
     }
 
-    hg_thread_mutex_unlock(&hg_handle->context->processing_list_mutex);
+    hg_thread_mutex_unlock(&hg_handle->hg_info.context->processing_list_mutex);
 
     return ret;
 }
@@ -477,16 +508,52 @@ hg_processing_list_remove(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    hg_thread_mutex_lock(&hg_handle->context->processing_list_mutex);
+    hg_thread_mutex_lock(&hg_handle->hg_info.context->processing_list_mutex);
 
-    if (!hg_list_remove_data(&hg_handle->context->processing_list,
+    if (!hg_list_remove_data(&hg_handle->hg_info.context->processing_list,
             hg_handle_equal, (hg_list_value_t) hg_handle)) {
         HG_LOG_ERROR("Could not remove entry");
         ret = HG_INVALID_PARAM;
     }
 
-    hg_thread_mutex_unlock(&hg_handle->context->processing_list_mutex);
+    hg_thread_mutex_unlock(&hg_handle->hg_info.context->processing_list_mutex);
 
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_processing_list_wait(hg_context_t *context)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    while (1) {
+        unsigned int processing_list_length = 0;
+        unsigned int actual_count = 0;
+        hg_return_t trigger_ret;
+
+        /* Trigger everything we can from HG */
+        do {
+            trigger_ret = HG_Trigger(context->hg_class, context, 0, 1,
+                    &actual_count);
+        } while ((trigger_ret == HG_SUCCESS) && actual_count);
+
+        hg_thread_mutex_lock(&context->processing_list_mutex);
+
+        processing_list_length = hg_list_length(context->processing_list);
+
+        hg_thread_mutex_unlock(&context->processing_list_mutex);
+
+        if (!processing_list_length) break;
+
+        ret = hg_progress(context->hg_class, context, HG_MAX_IDLE_TIME);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not make progress");
+            goto done;
+        }
+    }
+
+done:
     return ret;
 }
 
@@ -504,14 +571,16 @@ hg_create(hg_class_t *hg_class, hg_context_t *context)
         goto done;
     }
 
-    hg_handle->hg_class = hg_class;
-    hg_handle->context = context;
+    hg_handle->hg_info.hg_class = hg_class;
+    hg_handle->hg_info.context = context;
+    hg_handle->hg_info.hg_bulk_class = hg_class->bulk_class;
+    hg_handle->hg_info.bulk_context = context->bulk_context;
+    hg_handle->hg_info.addr = NA_ADDR_NULL;
+    hg_handle->hg_info.id = 0;
     hg_handle->callback = NULL;
     hg_handle->arg = NULL;
-    hg_handle->id = 0;
     hg_handle->cookie = 0; /* TODO Generate cookie */
     hg_handle->tag = 0;
-    hg_handle->addr = NA_ADDR_NULL;
     hg_handle->addr_mine = HG_FALSE;
 
     /* Initialize processing buffers and use unexpected message size */
@@ -535,6 +604,7 @@ hg_create(hg_class_t *hg_class, hg_context_t *context)
 
     hg_handle->na_send_op_id = NA_OP_ID_NULL;
     hg_handle->na_recv_op_id = NA_OP_ID_NULL;
+    hg_atomic_set32(&hg_handle->completed_count, 0);
 
     hg_atomic_set32(&hg_handle->ref_count, 1);
 
@@ -561,8 +631,9 @@ hg_destroy(struct hg_handle *hg_handle)
     }
 
     /* Free if mine */
-    if (hg_handle->addr != NA_ADDR_NULL && hg_handle->addr_mine)
-        NA_Addr_free(hg_handle->hg_class->na_class, hg_handle->addr);
+    if (hg_handle->hg_info.addr != NA_ADDR_NULL && hg_handle->addr_mine)
+        NA_Addr_free(hg_handle->hg_info.hg_class->na_class,
+                hg_handle->hg_info.addr);
 
     hg_proc_buf_free(hg_handle->in_buf);
     hg_proc_buf_free(hg_handle->out_buf);
@@ -583,13 +654,24 @@ done:
 static na_return_t
 hg_send_input_cb(const struct na_cb_info *callback_info)
 {
+    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
 
-    /* Nothing for now */
+    /* Add handle to completion queue only when send_input and recv_output have
+     * completed */
+    if ((unsigned int) hg_atomic_incr32(&hg_handle->completed_count) == 2) {
+        /* Mark as completed */
+        if (hg_complete(hg_handle) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not complete operation");
+            goto done;
+        }
+    }
+
+done:
     return ret;
 }
 
@@ -606,10 +688,11 @@ hg_recv_input_cb(const struct na_cb_info *callback_info)
     }
 
     /* Fill unexpected info */
-    hg_handle->addr = callback_info->info.recv_unexpected.source;
+    hg_handle->hg_info.addr = callback_info->info.recv_unexpected.source;
     hg_handle->addr_mine = HG_TRUE; /* Address will be freed with handle */
     hg_handle->tag = callback_info->info.recv_unexpected.tag;
-    if (callback_info->info.recv_unexpected.actual_buf_size != hg_handle->in_buf_size) {
+    if (callback_info->info.recv_unexpected.actual_buf_size
+            != hg_handle->in_buf_size) {
         HG_LOG_ERROR("Buffer size and actual transfer size do not match");
         goto done;
     }
@@ -631,10 +714,11 @@ hg_recv_input_cb(const struct na_cb_info *callback_info)
     }
 
     /* Get operation ID from header */
-    hg_handle->id = request_header.id;
+    hg_handle->hg_info.id = request_header.id;
     hg_handle->cookie = request_header.cookie;
 
-    if (request_header.flags && (request_header.extra_in_handle != HG_BULK_NULL)) {
+    if (request_header.flags
+            && (request_header.extra_in_handle != HG_BULK_NULL)) {
         /* Get extra payload */
         if (hg_get_extra_input_buf(hg_handle, request_header.extra_in_handle)
                 != HG_SUCCESS) {
@@ -705,11 +789,16 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
         goto done;
     }
 
-    /* Mark as completed */
-    if (hg_complete(hg_handle) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete operation");
-        goto done;
+    /* Add handle to completion queue only when send_input and recv_output have
+     * completed */
+    if ((unsigned int) hg_atomic_incr32(&hg_handle->completed_count) == 2) {
+        /* Mark as completed */
+        if (hg_complete(hg_handle) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not complete operation");
+            goto done;
+        }
     }
+
 
 done:
     return ret;
@@ -719,13 +808,13 @@ done:
 hg_return_t
 hg_process(struct hg_handle *hg_handle)
 {
-    hg_class_t *hg_class = hg_handle->hg_class;
+    hg_class_t *hg_class = hg_handle->hg_info.hg_class;
     struct hg_rpc_info *hg_rpc_info;
     hg_return_t ret = HG_SUCCESS;
 
     /* Retrieve exe function from function map */
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
-            hg_class->func_map, (hg_hash_table_key_t) &hg_handle->id);
+            hg_class->func_map, (hg_hash_table_key_t) &hg_handle->hg_info.id);
     if (!hg_rpc_info) {
         HG_LOG_ERROR("Could not find RPC ID in function map");
         ret = HG_NO_MATCH;
@@ -757,7 +846,7 @@ done:
 static hg_return_t
 hg_complete(struct hg_handle *hg_handle)
 {
-    hg_context_t *context = hg_handle->context;
+    hg_context_t *context = hg_handle->hg_info.context;
     hg_return_t ret = HG_SUCCESS;
 
     hg_thread_mutex_lock(&context->completion_queue_mutex);
@@ -828,15 +917,22 @@ done:
 static hg_return_t
 hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
 {
-    unsigned int na_actual_count;
+    unsigned int actual_count = 0;
     hg_bool_t completion_queue_empty = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
+    hg_return_t bulk_ret;
     na_return_t na_ret;
 
     /* Trigger everything we can from NA */
     do {
-        na_ret = NA_Trigger(hg_class->na_context, 0, 1, &na_actual_count);
-    } while ((na_ret == NA_SUCCESS) && na_actual_count);
+        na_ret = NA_Trigger(hg_class->na_context, 0, 1, &actual_count);
+    } while ((na_ret == NA_SUCCESS) && actual_count);
+
+    /* Trigger everything from HG Bulk */
+    do {
+        bulk_ret = HG_Bulk_trigger(hg_class->bulk_class, context->bulk_context,
+                0, 1, &actual_count);
+    } while ((bulk_ret == HG_SUCCESS) && actual_count);
 
     /* Is completion queue empty */
     hg_thread_mutex_lock(&context->completion_queue_mutex);
@@ -850,7 +946,7 @@ hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
     if (!completion_queue_empty) goto done;
 
     /* Otherwise try to make progress on NA */
-    na_ret = NA_Progress(hg_class->na_class, hg_class->na_context, timeout);
+    na_ret = NA_Progress(hg_class->na_class, hg_class->na_context, 10);
     if (na_ret != NA_SUCCESS) {
         if (na_ret == NA_TIMEOUT)
             ret = HG_TIMEOUT;
@@ -873,14 +969,13 @@ hg_execute_callback(struct hg_handle *hg_handle)
 
     hg_cb_info.arg = hg_handle->arg;
     hg_cb_info.ret = HG_SUCCESS; /* TODO report failure */
-    hg_cb_info.hg_class = hg_handle->context->hg_class;
-    hg_cb_info.context = hg_handle->context;
+    hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
+    hg_cb_info.context = hg_handle->hg_info.context;
     hg_cb_info.handle = (hg_handle_t) hg_handle;
 
     /* Execute callback */
     hg_handle->callback(&hg_cb_info);
 }
-
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -897,8 +992,8 @@ hg_self_cb(const struct hg_cb_info *callback_info)
 
         hg_cb_info.arg = hg_self_cb_info->respond_arg;
         hg_cb_info.ret = HG_SUCCESS; /* TODO report failure */
-        hg_cb_info.hg_class = hg_handle->context->hg_class;
-        hg_cb_info.context = hg_handle->context;
+        hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
+        hg_cb_info.context = hg_handle->hg_info.context;
         hg_cb_info.handle = (hg_handle_t) hg_handle;
 
         hg_self_cb_info->respond_cb(&hg_cb_info);
@@ -1112,45 +1207,22 @@ done:
 hg_return_t
 HG_Context_destroy(hg_context_t *context)
 {
-    unsigned int pending_list_length = 0;
     hg_return_t ret = HG_SUCCESS;
 
     if (!context) goto done;
 
-    /* Destroy bulk context */
-    ret = HG_Bulk_context_destroy(context->bulk_context);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not destroy HG Bulk context");
-        goto done;
-    }
-    context->bulk_context = NULL;
-
-    /* TODO if pending requests are still posted we need to cancel them */
-    hg_thread_mutex_lock(&context->pending_list_mutex);
-
-    pending_list_length = hg_list_length(context->pending_list);
-
-    hg_thread_mutex_unlock(&context->pending_list_mutex);
-
-    if (pending_list_length) {
+    /* Check pending list */
+    if (hg_pending_list_check(context) == HG_TRUE) {
         HG_LOG_ERROR("Pending list should be empty");
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
 
     /* Check that NA operations have completed */
-    while (1) {
-        unsigned int processing_list_length = 0;
-
-        hg_thread_mutex_lock(&context->processing_list_mutex);
-        processing_list_length = hg_list_length(context->processing_list);
-        hg_thread_mutex_unlock(&context->processing_list_mutex);
-
-        if (!processing_list_length) break;
-
-        hg_progress(context->hg_class, context, HG_MAX_IDLE_TIME);
-
-        HG_Trigger(context->hg_class, context, HG_MAX_IDLE_TIME, 1, NULL);
+    ret = hg_processing_list_wait(context);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not wait on processing list");
+        goto done;
     }
 
     /* Check that completion queue is empty now */
@@ -1168,6 +1240,14 @@ HG_Context_destroy(hg_context_t *context)
     /* Destroy completion queue */
     hg_queue_free(context->completion_queue);
     context->completion_queue = NULL;
+
+    /* Destroy bulk context */
+    ret = HG_Bulk_context_destroy(context->bulk_context);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not destroy HG Bulk context");
+        goto done;
+    }
+    context->bulk_context = NULL;
 
     /* Destroy completion queue mutex/cond */
     hg_thread_mutex_destroy(&context->completion_queue_mutex);
@@ -1356,8 +1436,8 @@ HG_Create(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-    hg_handle->addr = addr;
-    hg_handle->id = id;
+    hg_handle->hg_info.addr = addr;
+    hg_handle->hg_info.id = id;
 
     /* Increase ref count here so that a call to HG_Destroy does not free the
      * handle but only schedules its completion
@@ -1393,28 +1473,18 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-HG_Get_info(hg_handle_t handle, struct hg_info *hg_info)
+struct hg_info *
+HG_Get_info(hg_handle_t handle)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
-    hg_return_t ret = HG_SUCCESS;
+    struct hg_info *ret = NULL;
 
     if (!hg_handle) {
         HG_LOG_ERROR("NULL handle");
-        ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    if (!hg_info) {
-        HG_LOG_ERROR("NULL pointer to hg_info");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-
-    hg_info->hg_class = hg_handle->hg_class;
-    hg_info->context = hg_handle->context;
-    hg_info->addr = hg_handle->addr;
-    hg_info->id = hg_handle->id;
+    ret = &hg_handle->hg_info;
 
 done:
     return ret;
@@ -1432,7 +1502,7 @@ HG_Get_addr(hg_handle_t handle)
         goto done;
     }
 
-    ret = hg_handle->addr;
+    ret = hg_handle->hg_info.addr;
 
 done:
     return ret;
@@ -1508,7 +1578,8 @@ HG_Forward_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
     hg_handle->arg = arg;
 
     /* Set header */
-    hg_proc_header_request_init(hg_handle->id, extra_in_handle, &request_header);
+    hg_proc_header_request_init(hg_handle->hg_info.id, extra_in_handle,
+            &request_header);
 
     /* Encode request header */
     ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
@@ -1518,7 +1589,8 @@ HG_Forward_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
         goto done;
     }
 
-    if (NA_Addr_is_self(hg_handle->hg_class->na_class, hg_handle->addr)) {
+    if (NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
+            hg_handle->hg_info.addr)) {
         /* If self, directly process handle */
         ret = hg_process(hg_handle);
         if (ret != HG_SUCCESS) {
@@ -1527,17 +1599,17 @@ HG_Forward_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
         }
     } else {
         /* Forward call */
-        hg_class_t *hg_class = hg_handle->hg_class;
+        hg_class_t *hg_class = hg_handle->hg_info.hg_class;
         na_return_t na_ret;
 
         /* Generate tag */
-        hg_handle->tag = hg_gen_request_tag(hg_handle->hg_class);
+        hg_handle->tag = hg_gen_request_tag(hg_handle->hg_info.hg_class);
 
         /* Pre-post the recv message (output) */
         na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_class->na_context,
                 hg_recv_output_cb, hg_handle, hg_handle->out_buf,
-                hg_handle->out_buf_size, hg_handle->addr, hg_handle->tag,
-                &hg_handle->na_recv_op_id);
+                hg_handle->out_buf_size, hg_handle->hg_info.addr,
+                hg_handle->tag, &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post recv for output buffer");
             ret = HG_NA_ERROR;
@@ -1545,9 +1617,10 @@ HG_Forward_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
         }
 
         /* And post the send message (input) */
-        na_ret = NA_Msg_send_unexpected(hg_class->na_class, hg_class->na_context,
-                hg_send_input_cb, hg_handle, hg_handle->in_buf,
-                hg_handle->in_buf_size, hg_handle->addr, hg_handle->tag,
+        na_ret = NA_Msg_send_unexpected(hg_class->na_class,
+                hg_class->na_context, hg_send_input_cb, hg_handle,
+                hg_handle->in_buf, hg_handle->in_buf_size,
+                hg_handle->hg_info.addr, hg_handle->tag,
                 &hg_handle->na_send_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post send for input buffer");
@@ -1586,7 +1659,8 @@ HG_Respond_buf(hg_handle_t handle, hg_cb_t callback, void *arg)
         goto done;
     }
 
-    if (NA_Addr_is_self(hg_handle->hg_class->na_class, hg_handle->addr)) {
+    if (NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
+            hg_handle->hg_info.addr)) {
         struct hg_self_cb_info *hg_self_cb_info = NULL;
 
         /* TODO finish cleaning that up and add condition if no respond cb don't worry with that*/
@@ -1613,7 +1687,7 @@ HG_Respond_buf(hg_handle_t handle, hg_cb_t callback, void *arg)
             goto done;
         }
     } else {
-        hg_class_t *hg_class = hg_handle->hg_class;
+        hg_class_t *hg_class = hg_handle->hg_info.hg_class;
         na_return_t na_ret;
 
         /* Set callback */
@@ -1623,8 +1697,8 @@ HG_Respond_buf(hg_handle_t handle, hg_cb_t callback, void *arg)
         /* Respond back */
         na_ret = NA_Msg_send_expected(hg_class->na_class, hg_class->na_context,
                 hg_send_output_cb, hg_handle, hg_handle->out_buf,
-                hg_handle->out_buf_size, hg_handle->addr, hg_handle->tag,
-                &hg_handle->na_send_op_id);
+                hg_handle->out_buf_size, hg_handle->hg_info.addr,
+                hg_handle->tag, &hg_handle->na_send_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post send for output buffer");
             ret = HG_NA_ERROR;
@@ -1656,20 +1730,12 @@ HG_Progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
         ret = hg_listen(hg_class, context);
     }
 
-    /* Make progress on the NA layer */
+    /* Make progress on the HG layer */
     ret = hg_progress(hg_class, context, timeout);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not make progress on NA layer");
+        HG_LOG_ERROR("Could not make progress");
         goto done;
     }
-
-    /* Make progress on the associated Bulk class */
-    // TODO
-//    ret = HG_Bulk_progress(hg_class->bulk_class, context->bulk_context, 0);
-//    if (ret != HG_SUCCESS) {
-//        HG_LOG_ERROR("Could not make progress on bulk layer");
-//        goto done;
-//    }
 
 done:
     return ret;

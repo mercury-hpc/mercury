@@ -28,10 +28,12 @@ typedef void *hg_op_id_t;    /* Abstract operation id */
 
 /* HG info struct */
 struct hg_info {
-    hg_class_t *hg_class;   /* HG class */
-    hg_context_t *context;  /* HG context */
-    na_addr_t addr;         /* NA address */
-    hg_id_t id;             /* RPC ID */
+    hg_class_t *hg_class;               /* HG class */
+    hg_context_t *context;              /* HG context */
+    hg_bulk_class_t *hg_bulk_class;     /* HG Bulk class */
+    hg_bulk_context_t *bulk_context;    /* HG Bulk context */
+    na_addr_t addr;                     /* NA address */
+    hg_id_t id;                         /* RPC ID */
 };
 
 /**

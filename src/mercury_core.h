@@ -209,14 +209,12 @@ HG_Destroy(
  * Get info from handle.
  *
  * \param handle [IN]           HG handle
- * \param hg_info [IN/OUT]      pointer to hg_info struct
  *
- * \return HG_SUCCESS or corresponding HG error code
+ * \return Pointer to info or NULL in case of failure
  */
-HG_EXPORT hg_return_t
+HG_EXPORT struct hg_info *
 HG_Get_info(
-        hg_handle_t handle,
-        struct hg_info *hg_info
+        hg_handle_t handle
         );
 
 /**
