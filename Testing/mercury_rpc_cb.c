@@ -248,6 +248,7 @@ hg_test_bulk_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
     }
 
     HG_Destroy(bulk_args->handle);
+    free(bulk_args);
 
     return ret;
 }
@@ -262,35 +263,38 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
 
     bulk_write_in_t bulk_write_in_struct;
 
-    struct hg_test_bulk_args bulk_args;
+    struct hg_test_bulk_args *bulk_args = NULL;
+
+    bulk_args = (struct hg_test_bulk_args *) malloc(
+            sizeof(struct hg_test_bulk_args));
 
     /* Keep handle to pass to callback */
-    bulk_args.handle = handle;
+    bulk_args->handle = handle;
 
     /* Get info from handle */
-    hg_info = HG_Get_info(handle);
+    hg_info = HG_Get_info(bulk_args->handle);
 
     /* Get input parameters and data */
-    ret = HG_Get_input(handle, &bulk_write_in_struct);
+    ret = HG_Get_input(bulk_args->handle, &bulk_write_in_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input\n");
         return ret;
     }
 
     /* Get parameters */
-    bulk_args.fildes = bulk_write_in_struct.fildes;
+    bulk_args->fildes = bulk_write_in_struct.fildes;
     origin_bulk_handle = bulk_write_in_struct.bulk_handle;
 
-    bulk_args.nbytes = HG_Bulk_get_size(origin_bulk_handle);
+    bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
 
     /* Create a new block handle to read the data */
-    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args.nbytes,
+    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
             HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Read bulk data here  */
     ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_bulk_transfer_cb,
-            &bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
-            local_bulk_handle, 0, bulk_args.nbytes, HG_OP_ID_IGNORE);
+            bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
+            local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;

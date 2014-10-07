@@ -33,7 +33,7 @@ hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info)
 
     /* Get output parameters */
     bulk_write_ret = bulk_write_out_struct.ret;
-    printf("bulk_write returned: %lu\n", bulk_write_ret);
+    printf("bulk_write returned: %zu\n", bulk_write_ret);
 
     /* Free request */
     ret = HG_Free_output(handle, &bulk_write_out_struct);
