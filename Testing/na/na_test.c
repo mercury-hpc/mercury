@@ -417,7 +417,6 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name,
         na_size_t max_addr_name, int *rank)
 {
     const char *info_string = NULL;
-    char test_addr_name[NA_TEST_MAX_ADDR_NAME];
     na_class_t *na_class = NULL;
 
     info_string = na_test_gen_config(argc, argv);
@@ -430,12 +429,17 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name,
 
     na_class = NA_Initialize(info_string, NA_FALSE);
 
-    /* Get config from file */
-    na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
+    /* Get config from file if self option is not passed */
+    if (!na_test_use_self_g) {
+        char test_addr_name[NA_TEST_MAX_ADDR_NAME];
 
-    strncpy(addr_name, test_addr_name,
-            (max_addr_name < NA_TEST_MAX_ADDR_NAME) ?
-                    max_addr_name : NA_TEST_MAX_ADDR_NAME);
+        na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
+
+        strncpy(addr_name, test_addr_name,
+                (max_addr_name < NA_TEST_MAX_ADDR_NAME) ?
+                        max_addr_name : NA_TEST_MAX_ADDR_NAME);
+    }
+
     if (rank) *rank = na_test_comm_rank_g;
 
     return na_class;
