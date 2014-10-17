@@ -186,8 +186,8 @@ static HG_INLINE hg_return_t \
 /* Register bulk data */
 #define HG_BULK_REGISTER(with_ret, fail_ret, bulk_read) \
         hg_ret = HG_Bulk_handle_create( \
-                BOOST_PP_TUPLE_REM(2) \
-                BOOST_PP_SEQ_TO_TUPLE(HG_GEN_FUNC_PARAM_SEQ(MERCURY_GEN_FALSE, HG_BULK_EXTRA_IN_PARAM)), \
+                1, &HG_GEN_GET_NAME(BOOST_PP_SEQ_ELEM(0, HG_BULK_EXTRA_IN_PARAM)),\
+                &HG_GEN_GET_NAME(BOOST_PP_SEQ_ELEM(1, HG_BULK_EXTRA_IN_PARAM)), \
                 BOOST_PP_IF(bulk_read, HG_BULK_READ_ONLY, HG_BULK_READWRITE), \
                 &bulk_handle); \
         if (hg_ret != HG_SUCCESS) { \
@@ -222,8 +222,8 @@ static HG_INLINE hg_return_t \
             HG_Bulk_handle_get_size(HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_PARAM))); \
         HG_GEN_GET_NAME(BOOST_PP_SEQ_ELEM(0, HG_BULK_EXTRA_IN_PARAM)) = \
             malloc(HG_GEN_GET_NAME(BOOST_PP_SEQ_ELEM(1, HG_BULK_EXTRA_IN_PARAM))); \
-        HG_Bulk_handle_create(BOOST_PP_TUPLE_REM(2) \
-                BOOST_PP_SEQ_TO_TUPLE(HG_GEN_FUNC_PARAM_SEQ(MERCURY_GEN_FALSE, HG_BULK_EXTRA_IN_PARAM)), \
+        HG_Bulk_handle_create(1, &HG_GEN_GET_NAME(BOOST_PP_SEQ_ELEM(0, HG_BULK_EXTRA_IN_PARAM)), \
+                &HG_GEN_GET_NAME(BOOST_PP_SEQ_ELEM(1, HG_BULK_EXTRA_IN_PARAM)), \
                 HG_BULK_READWRITE, \
                 &HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_BLOCK_PARAM)));
 
@@ -239,19 +239,22 @@ static HG_INLINE hg_return_t \
 
 /* Write bulk data here and wait for the data to be there */
 #define HG_BULK_TRANSFER(bulk_read) \
-        hg_ret = BOOST_PP_IF(bulk_read, HG_Bulk_read_all, HG_Bulk_write_all) \
-                (HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_ADDR_PARAM)), \
+        hg_ret = HG_Bulk_transfer(BOOST_PP_IF(bulk_read, HG_BULK_PULL, HG_BULK_PUSH), \
+                 HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_ADDR_PARAM)), \
                  HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_PARAM)), \
+                 0, \
                  HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_BLOCK_PARAM)), \
+                 0, \
+                 HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_COUNT)), \
                  &HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_REQUEST_PARAM))); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_ERROR_DEFAULT("Could not write bulk data"); \
+            HG_ERROR_DEFAULT("Could not transfer bulk data"); \
             goto done; \
         } \
         hg_ret = HG_Bulk_wait(HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_REQUEST_PARAM)), \
                 HG_MAX_IDLE_TIME, HG_STATUS_IGNORE); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_ERROR_DEFAULT("Could not complete bulk data write"); \
+            HG_ERROR_DEFAULT("Could not complete bulk data transfer"); \
             goto done; \
         }
 
@@ -354,7 +357,8 @@ static HG_INLINE hg_return_t \
                                 BOOST_PP_OR(with_output, with_ret), \
                                 out_struct_type_name, \
                                 void \
-                        ) \
+                        ), \
+                        NULL \
                 ); \
             } \
             \
@@ -407,6 +411,14 @@ static HG_INLINE hg_return_t \
             hg_ret = HG_Request_free(request); \
             if (hg_ret != HG_SUCCESS) { \
                 HG_ERROR_DEFAULT("Could not free request"); \
+                BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
+                goto done; \
+            } \
+            \
+            /* Free addr id */ \
+            na_ret = NA_Addr_free(na_class, addr); \
+            if (na_ret != NA_SUCCESS) { \
+                HG_ERROR_DEFAULT("Could not free addr"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
@@ -499,10 +511,23 @@ static HG_INLINE hg_return_t \
                     goto done; \
                 } \
                 \
+                BOOST_PP_IF(with_input, \
+                        hg_ret = HG_Handler_free_input(handle, &in_struct); \
+                        if (hg_ret != HG_SUCCESS) { \
+                            HG_ERROR_DEFAULT("Could not free input struct"); \
+                            goto done; \
+                        } \
+                        , BOOST_PP_EMPTY()) \
+                \
+                hg_ret = HG_Handler_free(handle); \
+                if (hg_ret != HG_SUCCESS) { \
+                    HG_ERROR_DEFAULT("Could not free handle"); \
+                    goto done; \
+                } \
+                \
                 done: \
                 \
                 BOOST_PP_IF(with_thread, \
-                        hg_thread_exit(thread_ret); \
                         return thread_ret; \
                         , return hg_ret;) \
                 \
