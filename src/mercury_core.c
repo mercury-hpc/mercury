@@ -946,7 +946,7 @@ hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
     if (!completion_queue_empty) goto done;
 
     /* Otherwise try to make progress on NA */
-    na_ret = NA_Progress(hg_class->na_class, hg_class->na_context, 10);
+    na_ret = NA_Progress(hg_class->na_class, hg_class->na_context, timeout);
     if (na_ret != NA_SUCCESS) {
         if (na_ret == NA_TIMEOUT)
             ret = HG_TIMEOUT;
