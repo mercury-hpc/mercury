@@ -174,11 +174,11 @@ hg_test_register(hg_class_t *hg_class)
     hg_test_bulk_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_bulk_write",
             bulk_write_in_t, bulk_write_out_t, hg_test_bulk_write_cb);
 
-//    /* test_bulk_seg */
-//    hg_test_bulk_seg_write_id_g = MERCURY_REGISTER(hg_class,
-//            "hg_test_bulk_seg_write", bulk_write_in_t, bulk_write_out_t,
-//            hg_test_bulk_seg_write_cb);
-//
+    /* test_bulk_seg */
+    hg_test_bulk_seg_write_id_g = MERCURY_REGISTER(hg_class,
+            "hg_test_bulk_seg_write", bulk_write_in_t, bulk_write_out_t,
+            hg_test_bulk_seg_write_cb);
+
 //    /* test_pipeline */
 //    hg_test_pipeline_write_id_g = MERCURY_REGISTER(hg_class,
 //            "hg_test_pipeline_write", bulk_write_in_t, bulk_write_out_t,

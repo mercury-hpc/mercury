@@ -187,7 +187,7 @@ build_mercury_test(server)
 set(MERCURY_tests
   rpc
   bulk
-#  bulk_seg
+  bulk_seg
 #  pipeline
 #  scale
 )
@@ -201,8 +201,5 @@ foreach(MERCURY_test ${MERCURY_tests})
   add_mercury_test(${MERCURY_test})
 endforeach()
 
-#add_mercury_opt_test(bulk_seg "extra")
-#add_mercury_opt_test(bulk_seg "variable")
-
-# Additional test
-#build_mercury_test(bulk_mirror)
+add_mercury_opt_test(bulk_seg "extra")
+add_mercury_opt_test(bulk_seg "variable")

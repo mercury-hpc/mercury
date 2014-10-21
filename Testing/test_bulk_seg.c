@@ -18,14 +18,51 @@ extern hg_id_t hg_test_bulk_seg_write_id_g;
 extern na_bool_t na_test_use_variable_g;
 extern na_bool_t na_test_use_extra_g;
 
+static hg_return_t
+hg_test_bulk_seg_forward_cb(const struct hg_cb_info *callback_info)
+{
+    hg_handle_t handle = callback_info->handle;
+    hg_request_object_t *request_object = (hg_request_object_t *) callback_info->arg;
+    size_t bulk_write_ret = 0;
+    bulk_write_out_t bulk_write_out_struct;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Get output */
+    ret = HG_Get_output(handle, &bulk_write_out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not get output\n");
+        goto done;
+    }
+
+    /* Get output parameters */
+    bulk_write_ret = bulk_write_out_struct.ret;
+    printf("bulk_write returned: %zu\n", bulk_write_ret);
+
+    /* Free request */
+    ret = HG_Free_output(handle, &bulk_write_out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free output\n");
+        goto done;
+    }
+
+    hg_request_complete(request_object);
+
+done:
+    return ret;
+}
+
 /*****************************************************************************/
 int main(int argc, char *argv[])
 {
+    hg_class_t *hg_class = NULL;
+    hg_context_t *context = NULL;
+    hg_request_class_t *request_class = NULL;
+    hg_request_object_t *request_object = NULL;
+    hg_handle_t handle;
     na_addr_t addr;
+    struct hg_info *hg_info = NULL;
 
     bulk_write_in_t bulk_write_in_struct;
-    bulk_write_out_t bulk_write_out_struct;
-    hg_request_t bulk_write_request;
 
     int fildes = 12345;
     void **bulk_buf;
@@ -35,16 +72,27 @@ int main(int argc, char *argv[])
     size_t bulk_size_y = 0;
     size_t *bulk_size_y_var = NULL;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    size_t bulk_write_ret = 0;
 
-    hg_status_t bla_open_status;
     hg_return_t hg_ret;
     size_t i, j;
 
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    HG_Test_client_init(argc, argv, &addr, NULL);
+    hg_class = HG_Test_client_init(argc, argv, &addr, NULL, &context,
+            &request_class);
+
+    request_object = hg_request_create(request_class);
+
+    hg_ret = HG_Create(hg_class, context, addr, hg_test_bulk_seg_write_id_g,
+            &handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not start call\n");
+        return EXIT_FAILURE;
+    }
+
+    /* Must get info to retrieve bulk class if not provided by user */
+    hg_info = HG_Get_info(handle);
 
     /* This will create a list of variable size segments */
     if (na_test_use_variable_g) {
@@ -94,8 +142,8 @@ int main(int argc, char *argv[])
     }
 
     /* Register memory */
-    hg_ret = HG_Bulk_handle_create(bulk_size_x, bulk_buf, bulk_sizes,
-            HG_BULK_READ_ONLY, &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_info->hg_bulk_class, bulk_size_x, bulk_buf,
+            bulk_sizes, HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         return EXIT_FAILURE;
@@ -112,45 +160,32 @@ int main(int argc, char *argv[])
 
     /* Forward call to remote addr and get a new request */
     printf("Forwarding bulk_write, op id: %u...\n", hg_test_bulk_seg_write_id_g);
-    hg_ret = HG_Forward(addr, hg_test_bulk_seg_write_id_g,
-            &bulk_write_in_struct, &bulk_write_out_struct, &bulk_write_request);
+    hg_ret = HG_Forward(handle, hg_test_bulk_seg_forward_cb, request_object,
+            &bulk_write_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         return EXIT_FAILURE;
     }
 
-    /* Wait for call to be executed and return value to be sent back
-     * (Request is freed when the call completes)
-     */
-    hg_ret = HG_Wait(bulk_write_request, HG_MAX_IDLE_TIME, &bla_open_status);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-        return EXIT_FAILURE;
-    }
-    if (!bla_open_status) {
-        fprintf(stderr, "Operation did not complete\n");
-        return EXIT_FAILURE;
-    } else {
-        printf("Call completed\n");
-    }
-
-    /* Get output parameters */
-    bulk_write_ret = bulk_write_out_struct.ret;
-    printf("bulk_write returned: %lu\n", bulk_write_ret);
-
-    /* Free request */
-    hg_ret = HG_Request_free(bulk_write_request);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free request\n");
-        return EXIT_FAILURE;
-    }
+    hg_request_wait(request_object, HG_MAX_IDLE_TIME, NULL);
 
     /* Free memory handle */
-    hg_ret = HG_Bulk_handle_free(bulk_handle);
+    hg_ret = HG_Bulk_free(bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free bulk data handle\n");
         return EXIT_FAILURE;
     }
+
+    /* Complete */
+    hg_ret = HG_Destroy(handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+        return EXIT_FAILURE;
+    }
+
+    hg_request_destroy(request_object);
+
+    HG_Test_finalize(hg_class);
 
     /* Free bulk_buf */
     for (i = 0; i < bulk_size_x; i++) {
@@ -159,8 +194,6 @@ int main(int argc, char *argv[])
     }
     free(bulk_buf);
     bulk_buf = NULL;
-
-    HG_Test_finalize();
 
     return EXIT_SUCCESS;
 }

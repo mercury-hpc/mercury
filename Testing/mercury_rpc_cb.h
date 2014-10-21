@@ -23,12 +23,12 @@ hg_test_rpc_open_cb(hg_handle_t handle);
 hg_return_t
 hg_test_bulk_write_cb(hg_handle_t handle);
 
-///**
-// * test_bulk_seg
-// */
-//hg_return_t
-//hg_test_bulk_seg_write_cb(hg_handle_t handle);
-//
+/**
+ * test_bulk_seg
+ */
+hg_return_t
+hg_test_bulk_seg_write_cb(hg_handle_t handle);
+
 ///**
 // * test_pipeline
 // */
