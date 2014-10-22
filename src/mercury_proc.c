@@ -294,8 +294,8 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
     /* If was not using extra buffer init extra buffer */
     if (!hg_proc->extra_buf.buf) {
         /* Save current position */
-        current_pos = (char*) hg_proc->proc_buf.buf_ptr -
-                (char*) hg_proc->proc_buf.buf;
+        current_pos = (char *) hg_proc->proc_buf.buf_ptr -
+                (char *) hg_proc->proc_buf.buf;
 
         /* Allocate buffer */
         hg_proc->extra_buf.buf = malloc(new_buf_size);
@@ -308,7 +308,7 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
         /* Copy proc_buf (should be small) */
         memcpy(hg_proc->extra_buf.buf, hg_proc->proc_buf.buf, current_pos);
         hg_proc->extra_buf.size = new_buf_size;
-        hg_proc->extra_buf.buf_ptr = (char*) hg_proc->extra_buf.buf + current_pos;
+        hg_proc->extra_buf.buf_ptr = (char *) hg_proc->extra_buf.buf + current_pos;
         hg_proc->extra_buf.size_left = hg_proc->extra_buf.size - current_pos;
         hg_proc->extra_buf.is_mine = 1;
 
@@ -318,7 +318,7 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
         void *new_buf = NULL;
 
         /* Save current position */
-        current_pos = (char*) hg_proc->extra_buf.buf_ptr - (char*) hg_proc->extra_buf.buf;
+        current_pos = (char *) hg_proc->extra_buf.buf_ptr - (char *) hg_proc->extra_buf.buf;
 
         /* Reallocate buffer */
         new_buf = realloc(hg_proc->extra_buf.buf, new_buf_size);
@@ -329,7 +329,7 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
         }
         hg_proc->extra_buf.buf = new_buf;
         hg_proc->extra_buf.size = new_buf_size;
-        hg_proc->extra_buf.buf_ptr = (char*) hg_proc->extra_buf.buf + current_pos;
+        hg_proc->extra_buf.buf_ptr = (char *) hg_proc->extra_buf.buf + current_pos;
         hg_proc->extra_buf.size_left = hg_proc->extra_buf.size - current_pos;
     }
 
@@ -404,7 +404,7 @@ hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
     }
 
     /* Work out new position */
-    new_pos = (char*) buf_ptr - (char*) hg_proc->current_buf->buf;
+    new_pos = (char *) buf_ptr - (char *) hg_proc->current_buf->buf;
     lim_pos = (ptrdiff_t) hg_proc->current_buf->size;
     if (new_pos > lim_pos) {
         HG_LOG_ERROR("Out of memory");
