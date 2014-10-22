@@ -128,12 +128,14 @@ hg_proc_header_response_init(struct hg_header_response *header);
  * \param buf_size [IN]         buffer size
  * \param header [IN/OUT]       pointer to header structure
  * \param op [IN]               operation type: HG_ENCODE / HG_DECODE
+ * \param bulk_class [IN]       HG bulk class
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 hg_proc_header_request(void *buf, size_t buf_size,
-        struct hg_header_request *header, hg_proc_op_t op);
+        struct hg_header_request *header, hg_proc_op_t op,
+        hg_bulk_class_t *bulk_class);
 
 /**
  * Process private information for sending/receiving response.

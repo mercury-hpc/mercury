@@ -117,6 +117,7 @@ struct hg_handle {
 
 /**
  * Get extra user payload using bulk transfer.
+ * TODO this may be moved to the upper mercury layer.
  */
 static hg_return_t
 hg_get_extra_input_buf(
@@ -372,6 +373,13 @@ hg_get_extra_input_buf(struct hg_handle *hg_handle, hg_bulk_t extra_in_handle)
 
     /* Create a new local handle to read the data */
     hg_handle->extra_in_buf_size = HG_Bulk_get_size(extra_in_handle);
+    hg_handle->extra_in_buf = calloc(hg_handle->extra_in_buf_size, sizeof(char));
+    if (!hg_handle->extra_in_buf) {
+        HG_LOG_ERROR("Could not allocate extra input buffer");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+
     ret = HG_Bulk_create(hg_bulk_class, 1, &hg_handle->extra_in_buf,
             &hg_handle->extra_in_buf_size, HG_BULK_READWRITE, &local_in_handle);
     if (ret != HG_SUCCESS) {
@@ -410,6 +418,15 @@ hg_get_extra_input_buf_cb(const struct hg_bulk_cb_info *callback_info)
         goto done;
     }
 
+    /* TODO should be freed with header request proc but clean that up when
+     * extra handle is clean
+     */
+    ret = HG_Bulk_free(callback_info->origin_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not free bulk handle");
+        goto done;
+    }
+
     /* Now can process the handle */
     ret = hg_process(hg_handle);
     if (ret != HG_SUCCESS) {
@@ -433,7 +450,7 @@ hg_get_header_request(struct hg_handle *hg_handle,
 
     /* Decode request header */
     ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
-            request_header, HG_DECODE);
+            request_header, HG_DECODE, hg_handle->hg_info.hg_bulk_class);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not decode header");
         goto done;
@@ -638,11 +655,7 @@ hg_destroy(struct hg_handle *hg_handle)
     hg_proc_buf_free(hg_handle->in_buf);
     hg_proc_buf_free(hg_handle->out_buf);
 
-/*
- * TODO must be in layer above
     free(hg_handle->extra_in_buf);
-    HG_Bulk_handle_free(hg_handle->extra_in_handle);
- */
 
     free(hg_handle);
 
@@ -1583,7 +1596,7 @@ HG_Forward_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
 
     /* Encode request header */
     ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
-            &request_header, HG_ENCODE);
+            &request_header, HG_ENCODE, hg_handle->hg_info.hg_bulk_class);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not encode header");
         goto done;

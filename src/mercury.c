@@ -30,6 +30,14 @@ struct hg_proc_info {
     hg_proc_cb_t out_proc_cb;
 };
 
+/* Info for wrapping forward callback */
+struct hg_forward_cb_info {
+    hg_cb_t callback;
+    void *arg;
+    hg_bulk_t extra_in_handle;
+    void *extra_in_buf;
+};
+
 /********************/
 /* Local Prototypes */
 /********************/
@@ -49,7 +57,9 @@ hg_get_input(
 static hg_return_t
 hg_set_input(
         hg_handle_t handle,
-        void *in_struct
+        void *in_struct,
+        void **extra_in_buf,
+        size_t *extra_in_buf_size
         );
 
 /**
@@ -91,10 +101,10 @@ hg_free_output(
 /**
  * Forward callback.
  */
-//static hg_return_t
-//hg_forward_cb(
-//        const struct hg_cb_info *callback_info
-//        );
+static hg_return_t
+hg_forward_cb(
+        const struct hg_cb_info *callback_info
+        );
 
 /*******************/
 /* Local Variables */
@@ -162,7 +172,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_set_input(hg_handle_t handle, void *in_struct)
+hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
+        size_t *extra_in_buf_size)
 {
     void *in_buf;
     size_t in_buf_size;
@@ -214,24 +225,21 @@ hg_set_input(hg_handle_t handle, void *in_struct)
      *  - 1: send an unexpected message with info + eventual bulk data descriptor
      *  - 2: send the remaining data in extra buf using bulk data transfer
      */
-//    if (hg_proc_get_size(proc) > in_buf_size) {
-//#ifdef HG_HAS_XDR
-//        HG_LOG_ERROR("Extra encoding using XDR is not yet supported");
-//        ret = HG_FAIL;
-//        goto done;
-//#else
-//        void *extra_in_buf = hg_proc_get_extra_buf(proc);
-//        size_t extra_in_buf_size = hg_proc_get_extra_size(proc);
-//
-//        ret = HG_Bulk_handle_create(1, &extra_in_buf, &extra_in_buf_size,
-//                HG_BULK_READ_ONLY, &extra_in_handle);
-//        if (ret != HG_SUCCESS) {
-//            HG_LOG_ERROR("Could not create bulk data handle");
-//            goto done;
-//        }
-//        hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
-//#endif
-//    }
+    if (hg_proc_get_size(proc) > in_buf_size) {
+#ifdef HG_HAS_XDR
+        HG_LOG_ERROR("Extra encoding using XDR is not yet supported");
+        ret = HG_FAIL;
+        goto done;
+#else
+        *extra_in_buf = hg_proc_get_extra_buf(proc);
+        *extra_in_buf_size = hg_proc_get_extra_size(proc);
+        /* Prevent buffer from being freed when proc_free is called */
+        hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
+#endif
+    } else {
+        *extra_in_buf = NULL;
+        *extra_in_buf_size = 0;
+    }
 
     /* Flush proc */
     ret = hg_proc_flush(proc);
@@ -471,27 +479,38 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-//static hg_return_t
-//hg_forward_cb(const struct hg_cb_info *callback_info)
-//{
-//    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
-//    hg_return_t ret = HG_SUCCESS;
-//
-//    if (callback_info->ret != HG_SUCCESS) {
-//        return ret;
-//    }
-//
-//    /* Decode the function output parameters */
-//    ret = hg_get_output(hg_handle, hg_handle->out_struct);
-//    if (ret != HG_SUCCESS) {
-//        HG_LOG_ERROR("Could not get output");
-//        goto done;
-//    }
-//
-//done:
-//    return ret;
-//}
+static hg_return_t
+hg_forward_cb(const struct hg_cb_info *callback_info)
+{
+    struct hg_forward_cb_info *hg_forward_cb_info =
+            (struct hg_forward_cb_info *) callback_info->arg;
+    hg_return_t ret = HG_SUCCESS;
 
+    if (callback_info->ret != HG_SUCCESS) {
+        goto done;
+    }
+
+    /* Free eventual extra input buffer and handle */
+    HG_Bulk_free(hg_forward_cb_info->extra_in_handle);
+    free(hg_forward_cb_info->extra_in_buf);
+
+    /* Execute callback */
+    if (hg_forward_cb_info->callback) {
+        struct hg_cb_info hg_cb_info;
+
+        hg_cb_info.arg = hg_forward_cb_info->arg;
+        hg_cb_info.ret = HG_SUCCESS; /* TODO report failure */
+        hg_cb_info.hg_class = callback_info->hg_class;
+        hg_cb_info.context = callback_info->context;
+        hg_cb_info.handle = callback_info->handle;
+
+        hg_forward_cb_info->callback(&hg_cb_info);
+    }
+
+done:
+    free(hg_forward_cb_info);
+    return ret;
+}
 
 /*---------------------------------------------------------------------------*/
 hg_id_t
@@ -624,24 +643,57 @@ done:
 hg_return_t
 HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
 {
+    struct hg_forward_cb_info *hg_forward_cb_info = NULL;
+    hg_bulk_t extra_in_handle = HG_BULK_NULL;
+    void *extra_in_buf = NULL;
+    size_t extra_in_buf_size;
     hg_return_t ret = HG_SUCCESS;
 
+    hg_forward_cb_info = (struct hg_forward_cb_info *) malloc(
+            sizeof(struct hg_forward_cb_info));
+    if (!hg_forward_cb_info) {
+        HG_LOG_ERROR("Could not allocate HG forward callback info");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+    hg_forward_cb_info->callback = callback;
+    hg_forward_cb_info->arg = arg;
+    hg_forward_cb_info->extra_in_handle = HG_BULK_NULL;
+    hg_forward_cb_info->extra_in_buf = NULL;
+
     /* Serialize input */
-    ret = hg_set_input(handle, in_struct);
+    ret = hg_set_input(handle, in_struct, &extra_in_buf, &extra_in_buf_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not set input");
         goto done;
     }
 
+    if (extra_in_buf) {
+        struct hg_info *hg_info = HG_Get_info(handle);
+
+        ret = HG_Bulk_create(hg_info->hg_bulk_class, 1, &extra_in_buf,
+                &extra_in_buf_size, HG_BULK_READ_ONLY, &extra_in_handle);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not create bulk data handle");
+            goto done;
+        }
+        hg_forward_cb_info->extra_in_handle = extra_in_handle;
+        hg_forward_cb_info->extra_in_buf = extra_in_buf;
+    }
+
     /* Send request */
-    ret = HG_Forward_buf(handle, callback, arg, HG_BULK_NULL);
+    ret = HG_Forward_buf(handle, hg_forward_cb, hg_forward_cb_info,
+            extra_in_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not forward call");
         goto done;
     }
 
 done:
-     return ret;
+    if (ret != HG_SUCCESS) {
+        free(hg_forward_cb_info);
+    }
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
