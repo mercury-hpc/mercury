@@ -989,6 +989,13 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
     while (na_private_context->progressing) {
         hg_time_t t1, t2;
 
+        if (remaining <= 0) {
+            /* Timeout is 0 so leave */
+            hg_thread_mutex_unlock(&na_private_context->progress_mutex);
+            ret = NA_TIMEOUT;
+            goto done;
+        }
+
         hg_time_get_current(&t1);
 
         if (hg_thread_cond_timedwait(&na_private_context->progress_cond,
@@ -1063,6 +1070,13 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
                 goto done;
             }
 
+            if (!timeout) {
+                /* Timeout is 0 so leave */
+                ret = NA_TIMEOUT;
+                hg_thread_mutex_unlock(
+                        &na_private_context->completion_queue_mutex);
+                goto done;
+            }
             /* Otherwise wait timeout ms */
             if (hg_thread_cond_timedwait(
                     &na_private_context->completion_queue_cond,
