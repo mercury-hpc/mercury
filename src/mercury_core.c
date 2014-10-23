@@ -1782,6 +1782,12 @@ HG_Trigger(hg_class_t *hg_class, hg_context_t *context,
 
         /* Is completion queue empty */
         while (hg_queue_is_empty(context->completion_queue)) {
+            if (!timeout) {
+                /* Timeout is 0 so leave */
+                ret = HG_TIMEOUT;
+                hg_thread_mutex_unlock(&context->completion_queue_mutex);
+                goto done;
+            }
             /* Otherwise wait timeout ms */
             if (hg_thread_cond_timedwait(&context->completion_queue_cond,
                     &context->completion_queue_mutex,
