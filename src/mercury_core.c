@@ -677,6 +677,9 @@ hg_send_input_cb(const struct na_cb_info *callback_info)
     /* Add handle to completion queue only when send_input and recv_output have
      * completed */
     if ((unsigned int) hg_atomic_incr32(&hg_handle->completed_count) == 2) {
+        /* Reset completed count */
+        hg_atomic_set32(&hg_handle->completed_count, 0);
+
         /* Mark as completed */
         if (hg_complete(hg_handle) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not complete operation");
@@ -805,6 +808,9 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
     /* Add handle to completion queue only when send_input and recv_output have
      * completed */
     if ((unsigned int) hg_atomic_incr32(&hg_handle->completed_count) == 2) {
+        /* Reset completed count */
+        hg_atomic_set32(&hg_handle->completed_count, 0);
+
         /* Mark as completed */
         if (hg_complete(hg_handle) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not complete operation");
@@ -1452,11 +1458,6 @@ HG_Create(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
     hg_handle->hg_info.addr = addr;
     hg_handle->hg_info.id = id;
 
-    /* Increase ref count here so that a call to HG_Destroy does not free the
-     * handle but only schedules its completion
-     */
-    hg_atomic_incr32(&hg_handle->ref_count);
-
     *handle = (hg_handle_t) hg_handle;
 
 done:
@@ -1589,6 +1590,11 @@ HG_Forward_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
     /* Set callback */
     hg_handle->callback = callback;
     hg_handle->arg = arg;
+
+    /* Increase ref count here so that a call to HG_Destroy does not free the
+     * handle but only schedules its completion
+     */
+    hg_atomic_incr32(&hg_handle->ref_count);
 
     /* Set header */
     hg_proc_header_request_init(hg_handle->hg_info.id, extra_in_handle,
