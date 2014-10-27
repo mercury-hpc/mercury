@@ -136,7 +136,7 @@ hg_get_input(hg_handle_t handle, void *in_struct)
     hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("hg_hash_table_lookup failed");
+        HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -198,7 +198,7 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("hg_hash_table_lookup failed");
+        HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -271,7 +271,7 @@ hg_free_input(hg_handle_t handle, void *in_struct)
     hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("hg_hash_table_lookup failed");
+        HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -327,7 +327,7 @@ hg_get_output(hg_handle_t handle, void *out_struct)
     hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("hg_hash_table_lookup failed");
+        HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -388,7 +388,7 @@ hg_set_output(hg_handle_t handle, void *out_struct)
     hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("hg_hash_table_lookup failed");
+        HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -451,7 +451,7 @@ hg_free_output(hg_handle_t handle, void *out_struct)
     hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("hg_hash_table_lookup failed");
+        HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
         goto done;
     }
