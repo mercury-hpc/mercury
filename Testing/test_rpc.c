@@ -19,7 +19,7 @@ static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
 {
     hg_handle_t handle = callback_info->handle;
-    hg_request_object_t *request_object = (hg_request_object_t *) callback_info->arg;
+    hg_request_t *request = (hg_request_t *) callback_info->arg;
     int rpc_open_ret;
     int rpc_open_event_id;
     rpc_open_out_t rpc_open_out_struct;
@@ -45,7 +45,7 @@ hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
         goto done;
     }
 
-    hg_request_complete(request_object);
+    hg_request_complete(request);
 
 done:
     return ret;
@@ -58,7 +58,7 @@ main(int argc, char *argv[])
     hg_class_t *hg_class = NULL;
     hg_context_t *context = NULL;
     hg_request_class_t *request_class = NULL;
-    hg_request_object_t *request_object = NULL;
+    hg_request_t *request = NULL;
     hg_handle_t handle;
     na_addr_t addr;
     rpc_open_in_t  rpc_open_in_struct;
@@ -73,7 +73,7 @@ main(int argc, char *argv[])
     hg_class = HG_Test_client_init(argc, argv, &addr, NULL, &context,
             &request_class);
 
-    request_object = hg_request_create(request_class);
+    request = hg_request_create(request_class);
 
     hg_ret = HG_Create(hg_class, context, addr, hg_test_rpc_open_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
@@ -88,14 +88,14 @@ main(int argc, char *argv[])
 
     /* Forward call to remote addr and get a new request */
     printf("Forwarding rpc_open, op id: %u...\n", hg_test_rpc_open_id_g);
-    hg_ret = HG_Forward(handle, hg_test_rpc_forward_cb, request_object,
+    hg_ret = HG_Forward(handle, hg_test_rpc_forward_cb, request,
             &rpc_open_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         return EXIT_FAILURE;
     }
 
-    hg_request_wait(request_object, HG_MAX_IDLE_TIME, NULL);
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
     /* Complete */
     hg_ret = HG_Destroy(handle);
@@ -104,7 +104,7 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    hg_request_destroy(request_object);
+    hg_request_destroy(request);
 
     HG_Test_finalize(hg_class);
 

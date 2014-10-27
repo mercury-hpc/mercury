@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-hg_request_object_t *request;
+hg_request_t *request;
 
 static int progressed = 0;
 static int triggered = 0;

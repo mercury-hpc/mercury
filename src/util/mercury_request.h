@@ -19,7 +19,7 @@
  */
 
 typedef struct hg_request_class  hg_request_class_t;  /* Opaque request class */
-typedef struct hg_request_object hg_request_object_t; /* Opaque request object */
+typedef struct hg_request hg_request_t; /* Opaque request object */
 
 /**
  * Progress callback, arg can be used to pass extra parameters required by
@@ -82,7 +82,7 @@ hg_request_finalize(hg_request_class_t *request_class);
  *
  * \return Pointer to request or NULL in case of failure
  */
-HG_UTIL_EXPORT hg_request_object_t *
+HG_UTIL_EXPORT hg_request_t *
 hg_request_create(hg_request_class_t *request_class);
 
 /**
@@ -93,7 +93,7 @@ hg_request_create(hg_request_class_t *request_class);
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_EXPORT int
-hg_request_destroy(hg_request_object_t *request);
+hg_request_destroy(hg_request_t *request);
 
 /**
  * Mark the request as completed. (most likely called by a callback triggered
@@ -104,7 +104,7 @@ hg_request_destroy(hg_request_object_t *request);
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_EXPORT int
-hg_request_complete(hg_request_object_t *request);
+hg_request_complete(hg_request_t *request);
 
 /**
  * Wait timeout ms for the specified request to complete.
@@ -116,7 +116,7 @@ hg_request_complete(hg_request_object_t *request);
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_EXPORT int
-hg_request_wait(hg_request_object_t *request, unsigned int timeout,
+hg_request_wait(hg_request_t *request, unsigned int timeout,
         unsigned int *flag);
 
 /**
@@ -130,8 +130,8 @@ hg_request_wait(hg_request_object_t *request, unsigned int timeout,
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_EXPORT int
-hg_request_waitall(int count, hg_request_object_t *request[],
-        unsigned int timeout, unsigned int *flag);
+hg_request_waitall(int count, hg_request_t *request[],  unsigned int timeout,
+        unsigned int *flag);
 
 /**
  * Attach user data to a specified request.
@@ -142,7 +142,7 @@ hg_request_waitall(int count, hg_request_object_t *request[],
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_EXPORT int
-hg_request_set_data(hg_request_object_t *request, void *data);
+hg_request_set_data(hg_request_t *request, void *data);
 
 /**
  * Get user data from a specified request.
@@ -152,7 +152,7 @@ hg_request_set_data(hg_request_object_t *request, void *data);
  * \return Pointer to data or NULL if nothing was attached by user
  */
 HG_UTIL_EXPORT void *
-hg_request_get_data(hg_request_object_t *request);
+hg_request_get_data(hg_request_t *request);
 
 /**
  * Cancel the request.

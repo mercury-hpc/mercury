@@ -101,8 +101,8 @@ HG_Test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
 static hg_return_t
 hg_test_finalize_rpc_cb(const struct hg_cb_info *callback_info)
 {
-    hg_request_object_t *request_object =
-            (hg_request_object_t *) callback_info->arg;
+    hg_request_t *request_object =
+            (hg_request_t *) callback_info->arg;
 
     hg_request_complete(request_object);
 
@@ -115,7 +115,7 @@ hg_test_finalize_rpc(hg_class_t *hg_class)
 {
     hg_return_t hg_ret;
     hg_handle_t handle;
-    hg_request_object_t *request_object = NULL;
+    hg_request_t *request_object = NULL;
 
     request_object = hg_request_create(hg_test_request_class_g);
 
