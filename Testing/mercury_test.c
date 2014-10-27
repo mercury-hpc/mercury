@@ -184,16 +184,16 @@ hg_test_register(hg_class_t *hg_class)
 //            "hg_test_pipeline_write", bulk_write_in_t, bulk_write_out_t,
 //            hg_test_pipeline_write_cb);
 //
-//    /* test_posix */
-//    hg_test_posix_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_open",
-//            open_in_t, open_out_t, hg_test_posix_open_cb);
-//    hg_test_posix_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_write",
-//            write_in_t, write_out_t, hg_test_posix_write_cb);
-//    hg_test_posix_read_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_read",
-//            read_in_t, read_out_t, hg_test_posix_read_cb);
-//    hg_test_posix_close_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_close",
-//            close_in_t, close_out_t, hg_test_posix_close_cb);
-//
+    /* test_posix */
+    hg_test_posix_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_open",
+            open_in_t, open_out_t, hg_test_posix_open_cb);
+    hg_test_posix_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_write",
+            write_in_t, write_out_t, hg_test_posix_write_cb);
+    hg_test_posix_read_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_read",
+            read_in_t, read_out_t, hg_test_posix_read_cb);
+    hg_test_posix_close_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_close",
+            close_in_t, close_out_t, hg_test_posix_close_cb);
+
 //    /* test_scale */
 //    hg_test_scale_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_scale_open",
 //            open_in_t, open_out_t, hg_test_scale_open_cb);

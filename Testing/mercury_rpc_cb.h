@@ -34,19 +34,19 @@ hg_test_bulk_seg_write_cb(hg_handle_t handle);
 // */
 //hg_return_t
 //hg_test_pipeline_write_cb(hg_handle_t handle);
-//
-///**
-// * test_posix
-// */
-//hg_return_t
-//hg_test_posix_open_cb(hg_handle_t handle);
-//hg_return_t
-//hg_test_posix_write_cb(hg_handle_t handle);
-//hg_return_t
-//hg_test_posix_read_cb(hg_handle_t handle);
-//hg_return_t
-//hg_test_posix_close_cb(hg_handle_t handle);
-//
+
+/**
+ * test_posix
+ */
+hg_return_t
+hg_test_posix_open_cb(hg_handle_t handle);
+hg_return_t
+hg_test_posix_write_cb(hg_handle_t handle);
+hg_return_t
+hg_test_posix_read_cb(hg_handle_t handle);
+hg_return_t
+hg_test_posix_close_cb(hg_handle_t handle);
+
 ///**
 // * test_scale
 // */

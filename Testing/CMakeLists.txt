@@ -192,7 +192,7 @@ set(MERCURY_tests
 #  scale
 )
 if(NOT WIN32)
-#  set(MERCURY_tests ${MERCURY_tests} posix)
+  set(MERCURY_tests ${MERCURY_tests} posix)
 endif()
 
 # Build tests and add them to ctest

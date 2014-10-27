@@ -10,22 +10,42 @@
 
 #include "mercury_test.h"
 
-static na_addr_t addr;
+static hg_class_t *hg_class = NULL;
+static hg_context_t *context = NULL;
+static hg_request_class_t *request_class = NULL;
+static na_addr_t addr = NA_ADDR_NULL;
 
 extern hg_id_t hg_test_posix_open_id_g;
 extern hg_id_t hg_test_posix_write_id_g;
 extern hg_id_t hg_test_posix_read_id_g;
 extern hg_id_t hg_test_posix_close_id_g;
 
+static hg_return_t
+hg_test_posix_forward_cb(const struct hg_cb_info *callback_info)
+{
+    hg_request_complete((hg_request_t *) callback_info->arg);
+
+    return HG_SUCCESS;
+}
+
 static int
 open_rpc(const char *pathname, int flags, mode_t mode)
 {
     open_in_t  open_in_struct;
     open_out_t open_out_struct;
-    hg_request_t request;
-    hg_status_t status;
-    int hg_ret;
-    int open_ret;
+    hg_request_t *request;
+    hg_handle_t handle;
+    hg_return_t hg_ret;
+    int open_ret = 0;
+
+    request = hg_request_create(request_class);
+
+    hg_ret = HG_Create(hg_class, context, addr, hg_test_posix_open_id_g,
+            &handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not start call\n");
+        goto done;
+    }
 
     /* Fill input structure */
     open_in_struct.path = pathname;
@@ -33,40 +53,42 @@ open_rpc(const char *pathname, int flags, mode_t mode)
     open_in_struct.mode = mode;
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(addr, hg_test_posix_open_id_g, &open_in_struct,
-            &open_out_struct, &request);
+    hg_ret = HG_Forward(handle, hg_test_posix_forward_cb, request, &open_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
-        open_ret = HG_FAIL;
-        return open_ret;
+        goto done;
     }
 
-    /* Wait for call to be executed and return value to be sent back
-     * (Request is freed when the call completes)
-     */
-    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
+    /* Wait for call to be executed and return value to be sent back */
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+
+    /* Get output */
+    hg_ret = HG_Get_output(handle, &open_out_struct);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-        open_ret = HG_FAIL;
-        return open_ret;
-    }
-    if (!status) {
-        fprintf(stderr, "Operation did not complete\n");
-        open_ret = HG_FAIL;
-        return open_ret;
+        fprintf(stderr, "Could not get output\n");
+        goto done;
     }
 
     /* Get output parameters */
     open_ret = open_out_struct.ret;
 
     /* Free request */
-    hg_ret = HG_Request_free(request);
+    hg_ret = HG_Free_output(handle, &open_out_struct);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free request\n");
-        open_ret = HG_FAIL;
-        return open_ret;
+        fprintf(stderr, "Could not free output\n");
+        goto done;
     }
 
+    /* Complete */
+    hg_ret = HG_Destroy(handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+        goto done;
+    }
+
+    hg_request_destroy(request);
+
+done:
     return open_ret;
 }
 
@@ -75,49 +97,61 @@ close_rpc(int fd)
 {
     close_in_t  close_in_struct;
     close_out_t close_out_struct;
-    hg_request_t request;
-    hg_status_t status;
-    int hg_ret;
-    int close_ret;
+    hg_request_t *request;
+    hg_handle_t handle;
+    hg_return_t hg_ret;
+    int close_ret = 0;
+
+    request = hg_request_create(request_class);
+
+    hg_ret = HG_Create(hg_class, context, addr, hg_test_posix_close_id_g,
+            &handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not start call\n");
+        goto done;
+    }
 
     /* Fill input structure */
     close_in_struct.fd = fd;
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(addr, hg_test_posix_close_id_g, &close_in_struct,
-            &close_out_struct, &request);
+    hg_ret = HG_Forward(handle, hg_test_posix_forward_cb, request,
+            &close_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
-        close_ret = HG_FAIL;
-        return close_ret;
+        goto done;
     }
 
-    /* Wait for call to be executed and return value to be sent back
-     * (Request is freed when the call completes)
-     */
-    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
+    /* Wait for call to be executed and return value to be sent back */
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+
+    /* Get output */
+    hg_ret = HG_Get_output(handle, &close_out_struct);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-        close_ret = HG_FAIL;
-        return close_ret;
-    }
-    if (!status) {
-        fprintf(stderr, "Operation did not complete\n");
-        close_ret = HG_FAIL;
-        return close_ret;
+        fprintf(stderr, "Could not get output\n");
+        goto done;
     }
 
     /* Get output parameters */
     close_ret = close_out_struct.ret;
 
     /* Free request */
-    hg_ret = HG_Request_free(request);
+    hg_ret = HG_Free_output(handle, &close_out_struct);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free request\n");
-        close_ret = HG_FAIL;
-        return close_ret;
+        fprintf(stderr, "Could not free output\n");
+        goto done;
     }
 
+    /* Complete */
+    hg_ret = HG_Destroy(handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+        goto done;
+    }
+
+    hg_request_destroy(request);
+
+done:
     return close_ret;
 }
 
@@ -128,18 +162,30 @@ write_rpc(int fd, void *buf, size_t count)
     write_out_t write_out_struct;
 
     hg_bulk_t bulk_handle;
-    hg_request_t request;
-    hg_status_t status;
-    int hg_ret;
-    int write_ret;
+    hg_request_t *request;
+    hg_handle_t handle;
+    struct hg_info *hg_info = NULL;
+    hg_return_t hg_ret;
+    int write_ret = 0;
+
+    request = hg_request_create(request_class);
+
+    hg_ret = HG_Create(hg_class, context, addr, hg_test_posix_write_id_g,
+            &handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not start call\n");
+        goto done;
+    }
+
+    /* Must get info to retrieve bulk class if not provided by user */
+    hg_info = HG_Get_info(handle);
 
     /* Register memory */
-    hg_ret = HG_Bulk_handle_create(1, &buf, &count, HG_BULK_READ_ONLY,
-            &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_info->hg_bulk_class, 1, &buf, &count,
+            HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
-        write_ret = HG_FAIL;
-        return write_ret;
+        goto done;
     }
 
     /* Fill input structure */
@@ -147,48 +193,50 @@ write_rpc(int fd, void *buf, size_t count)
     write_in_struct.fd = fd;
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(addr, hg_test_posix_write_id_g, &write_in_struct,
-            &write_out_struct, &request);
+    hg_ret = HG_Forward(handle, hg_test_posix_forward_cb, request,
+            &write_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
-        write_ret = HG_FAIL;
-        return write_ret;
+        goto done;
     }
 
-    /* Wait for call to be executed and return value to be sent back
-     * (Request is freed when the call completes)
-     */
-    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-        write_ret = HG_FAIL;
-        return write_ret;
-    }
-    if (!status) {
-        fprintf(stderr, "Operation did not complete\n");
-        write_ret = HG_FAIL;
-        return write_ret;
-    }
+    /* Wait for call to be executed and return value to be sent back */
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
-    /* Free memory handle */
-    hg_ret = HG_Bulk_handle_free(bulk_handle);
+    /* Get output */
+    hg_ret = HG_Get_output(handle, &write_out_struct);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free bulk data handle\n");
-        write_ret = HG_FAIL;
-        return write_ret;
+        fprintf(stderr, "Could not get output\n");
+        goto done;
     }
 
     /* Get output parameters */
     write_ret = write_out_struct.ret;
 
     /* Free request */
-    hg_ret = HG_Request_free(request);
+    hg_ret = HG_Free_output(handle, &write_out_struct);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free request\n");
-        write_ret = HG_FAIL;
-        return write_ret;
+        fprintf(stderr, "Could not free output\n");
+        goto done;
     }
 
+    /* Complete */
+    hg_ret = HG_Destroy(handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+        goto done;
+    }
+
+    hg_request_destroy(request);
+
+    /* Free memory handle */
+    hg_ret = HG_Bulk_free(bulk_handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free bulk data handle\n");
+        goto done;
+    }
+
+done:
     return write_ret;
 }
 
@@ -199,67 +247,81 @@ read_rpc(int fd, void *buf, size_t count)
     read_out_t read_out_struct;
 
     hg_bulk_t bulk_handle;
-    hg_request_t request;
-    hg_status_t status;
-    int hg_ret;
-    int read_ret;
+    hg_request_t *request;
+    hg_handle_t handle;
+    struct hg_info *hg_info = NULL;
+    hg_return_t hg_ret;
+    int read_ret = 0;
+
+    request = hg_request_create(request_class);
+
+    hg_ret = HG_Create(hg_class, context, addr, hg_test_posix_read_id_g,
+            &handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not start call\n");
+        goto done;
+    }
+
+    /* Must get info to retrieve bulk class if not provided by user */
+    hg_info = HG_Get_info(handle);
 
     /* Register memory */
-    hg_ret = HG_Bulk_handle_create(1, &buf, &count, HG_BULK_READWRITE,
-            &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_info->hg_bulk_class, 1, &buf, &count,
+            HG_BULK_READWRITE, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
-        read_ret = HG_FAIL;
-        return read_ret;
+        goto done;
     }
 
     /* Fill input structure */
     read_in_struct.bulk_handle = bulk_handle;
     read_in_struct.fd = fd;
 
-    /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(addr, hg_test_posix_read_id_g, &read_in_struct,
-            &read_out_struct, &request);
+    /* Forward call to remote addr */
+    hg_ret = HG_Forward(handle, hg_test_posix_forward_cb, request,
+            &read_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
-        read_ret = HG_FAIL;
-        return read_ret;
+        goto done;
     }
 
-    /* Wait for call to be executed and return value to be sent back
-     * (Request is freed when the call completes)
-     */
-    hg_ret = HG_Wait(request, HG_MAX_IDLE_TIME, &status);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Error during wait\n");
-        read_ret = HG_FAIL;
-        return read_ret;
-    }
-    if (!status) {
-        fprintf(stderr, "Operation did not complete\n");
-        read_ret = HG_FAIL;
-        return read_ret;
-    }
+    /* Wait for call to be executed and return value to be sent back */
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
-    /* Free memory handle */
-    hg_ret = HG_Bulk_handle_free(bulk_handle);
+    /* Get output */
+    hg_ret = HG_Get_output(handle, &read_out_struct);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free bulk data handle\n");
-        read_ret = HG_FAIL;
-        return read_ret;
+        fprintf(stderr, "Could not get output\n");
+        goto done;
     }
 
     /* Get output parameters */
     read_ret = read_out_struct.ret;
 
     /* Free request */
-    hg_ret = HG_Request_free(request);
+    hg_ret = HG_Free_output(handle, &read_out_struct);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free request\n");
-        read_ret = HG_FAIL;
-        return read_ret;
+        fprintf(stderr, "Could not free output\n");
+        goto done;
     }
 
+    /* Complete */
+    hg_ret = HG_Destroy(handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+        goto done;
+    }
+
+    hg_request_destroy(request);
+
+    /* Free memory handle */
+    hg_ret = HG_Bulk_free(bulk_handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free bulk data handle\n");
+        goto done;
+    }
+
+done:
     return read_ret;
 }
 
@@ -289,14 +351,13 @@ main(int argc, char *argv[])
     ssize_t nbyte;
 
 #ifndef MERCURY_HAS_ADVANCED_MACROS
-    hg_return_t hg_ret;
-
     printf("Initializing...\n");
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    hg_ret = HG_Test_client_init(argc, argv, &addr, &rank);
-    if (hg_ret != HG_SUCCESS) {
+    hg_class = HG_Test_client_init(argc, argv, &addr, &rank, &context,
+            &request_class);
+    if (!hg_class) {
         fprintf(stderr, "Error in client_posix_init\n");
         return EXIT_FAILURE;
     }
@@ -379,11 +440,7 @@ main(int argc, char *argv[])
 #ifndef MERCURY_HAS_ADVANCED_MACROS
     printf("(%d) Finalizing...\n", rank);
 
-    hg_ret = HG_Test_finalize();
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Error in client_posix_finalize\n");
-        return EXIT_FAILURE;
-    }
+    HG_Test_finalize(hg_class);
 #endif
 
     return EXIT_SUCCESS;

@@ -75,6 +75,7 @@ struct hg_test_bulk_args {
     int fildes;
     size_t nbytes;
     hg_atomic_int32_t completed_transfers;
+    ssize_t ret;
 };
 
 /*******************/
@@ -676,273 +677,312 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
 //
 //    return ret;
 //}
-//
-///*---------------------------------------------------------------------------*/
-//HG_TEST_RPC_CB(hg_test_posix_open, handle)
-//{
-//    hg_return_t hg_ret = HG_SUCCESS;
-//
-//    open_in_t      open_in_struct;
-//    open_out_t     open_out_struct;
-//
-//    const char *path;
-//    int flags;
-//    mode_t mode;
-//    int ret;
-//
-//    /* Get input struct */
-//    hg_ret = HG_Handler_get_input(handle, &open_in_struct);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not get input struct\n");
-//        return hg_ret;
-//    }
-//
-//    path = open_in_struct.path;
-//    flags = open_in_struct.flags;
-//    mode = open_in_struct.mode;
-//
-//    /* Call open */
-//    printf("Calling open with path: %s\n", path);
-//    ret = open(path, flags, mode);
-//
-//    /* Fill output structure */
-//    open_out_struct.ret = ret;
-//
-//    /* Free handle and send response back */
-//    hg_ret = HG_Handler_start_output(handle, &open_out_struct);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not respond\n");
-//        return hg_ret;
-//    }
-//
-//    HG_Handler_free_input(handle, &open_in_struct);
-//    HG_Handler_free(handle);
-//
-//    return hg_ret;
-//}
-//
-///*---------------------------------------------------------------------------*/
-//HG_TEST_RPC_CB(hg_test_posix_close, handle)
-//{
-//    hg_return_t hg_ret = HG_SUCCESS;
-//
-//    close_in_t     close_in_struct;
-//    close_out_t    close_out_struct;
-//
-//    int fd;
-//    int ret;
-//
-//    /* Get input struct */
-//    hg_ret = HG_Handler_get_input(handle, &close_in_struct);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not get input struct\n");
-//        return hg_ret;
-//    }
-//
-//    fd = close_in_struct.fd;
-//
-//    /* Call close */
-//    printf("Calling close with fd: %d\n", fd);
-//    ret = close(fd);
-//
-//    /* Fill output structure */
-//    close_out_struct.ret = ret;
-//
-//    /* Free handle and send response back */
-//    hg_ret = HG_Handler_start_output(handle, &close_out_struct);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not respond\n");
-//        return hg_ret;
-//    }
-//
-//    HG_Handler_free_input(handle, &close_in_struct);
-//    HG_Handler_free(handle);
-//
-//    return hg_ret;
-//}
-//
-///*---------------------------------------------------------------------------*/
-//HG_TEST_RPC_CB(hg_test_posix_write, handle)
-//{
-//    hg_return_t hg_ret = HG_SUCCESS;
-//
-//    write_in_t     write_in_struct;
-//    write_out_t    write_out_struct;
-//
-//    na_addr_t source = HG_Handler_get_addr(handle);
-//    hg_bulk_t bulk_handle = HG_BULK_NULL;
-//    hg_bulk_t bulk_block_handle = HG_BULK_NULL;
-//    hg_bulk_request_t bulk_request;
-//
-//    int fd;
-//    void *buf;
-//    size_t count;
-//    ssize_t ret;
-//
-//    /* for debug */
-//    int i;
-//    const int *buf_ptr;
-//
-//    /* Get input struct */
-//    hg_ret = HG_Handler_get_input(handle, &write_in_struct);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not get input struct\n");
-//        return hg_ret;
-//    }
-//
-//    bulk_handle = write_in_struct.bulk_handle;
-//    fd = write_in_struct.fd;
-//
-//    /* Read bulk data here and wait for the data to be here */
-//    count = HG_Bulk_handle_get_size(bulk_handle);
-//
-//    buf = HG_TEST_ALLOC(count);
-//
-//    HG_Bulk_handle_create(1, &buf, &count, HG_BULK_READWRITE,
-//            &bulk_block_handle);
-//
-//    hg_ret = HG_Bulk_transfer(HG_BULK_PULL, source, bulk_handle, 0,
-//            bulk_block_handle, 0, count, &bulk_request);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not read bulk data\n");
-//        return hg_ret;
-//    }
-//
-//    hg_ret = HG_Bulk_wait(bulk_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not complete bulk data read\n");
-//        return hg_ret;
-//    }
-//
-//    /* Check bulk buf */
-//    buf_ptr = (const int*) buf;
-//    for (i = 0; i < (int)(count / sizeof(int)); i++) {
-//        if (buf_ptr[i] != i) {
-//            printf("Error detected in bulk transfer, buf[%d] = %d, was expecting %d!\n", i, buf_ptr[i], i);
-//            break;
-//        }
-//    }
-//
-//    printf("Calling write with fd: %d\n", fd);
-//    ret = write(fd, buf, count);
-//
-//    /* Fill output structure */
-//    write_out_struct.ret = ret;
-//
-//    /* Free handle and send response back */
-//    hg_ret = HG_Handler_start_output(handle, &write_out_struct);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not respond\n");
-//        return hg_ret;
-//    }
-//
-//    /* Free block handle */
-//    hg_ret = HG_Bulk_handle_free(bulk_block_handle);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not free block call\n");
-//        return hg_ret;
-//    }
-//
-//    free(buf);
-//
-//    HG_Handler_free_input(handle, &write_in_struct);
-//    HG_Handler_free(handle);
-//
-//    return hg_ret;
-//}
-//
-///*---------------------------------------------------------------------------*/
-//HG_TEST_RPC_CB(hg_test_posix_read, handle)
-//{
-//    hg_return_t hg_ret = HG_SUCCESS;
-//
-//    read_in_t     read_in_struct;
-//    read_out_t    read_out_struct;
-//
-//    na_addr_t dest = HG_Handler_get_addr(handle);
-//    hg_bulk_t bulk_handle = HG_BULK_NULL;
-//    hg_bulk_t bulk_block_handle = HG_BULK_NULL;
-//    hg_bulk_request_t bulk_request;
-//
-//    int fd;
-//    void *buf;
-//    size_t count;
-//    ssize_t ret;
-//
-//    /* for debug */
-//    int i;
-//    const int *buf_ptr;
-//
-//    /* Get input struct */
-//    hg_ret = HG_Handler_get_input(handle, &read_in_struct);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not get input struct\n");
-//        return hg_ret;
-//    }
-//
-//    bulk_handle = read_in_struct.bulk_handle;
-//    fd = read_in_struct.fd;
-//
-//    /* Call read */
-//    count = HG_Bulk_handle_get_size(bulk_handle);
-//
-//    buf = HG_TEST_ALLOC(count);
-//
-//    printf("Calling read with fd: %d\n", fd);
-//    ret = read(fd, buf, count);
-//
-//    /* Check bulk buf */
-//    buf_ptr = (const int*) buf;
-//    for (i = 0; i < (int)(count / sizeof(int)); i++) {
-//        if (buf_ptr[i] != i) {
-//            printf("Error detected after read, buf[%d] = %d, was expecting %d!\n", i, buf_ptr[i], i);
-//            break;
-//        }
-//    }
-//
-//    /* Create a new block handle to write the data */
-//    HG_Bulk_handle_create(1, &buf, (size_t *) &ret, HG_BULK_READ_ONLY,
-//            &bulk_block_handle);
-//
-//    /* Write bulk data here and wait for the data to be there */
-//    hg_ret = HG_Bulk_transfer(HG_BULK_PUSH, dest, bulk_handle, 0,
-//            bulk_block_handle, 0, ret, &bulk_request);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not write bulk data\n");
-//        return hg_ret;
-//    }
-//
-//    hg_ret = HG_Bulk_wait(bulk_request, HG_MAX_IDLE_TIME, HG_STATUS_IGNORE);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not complete bulk data write\n");
-//        return hg_ret;
-//    }
-//
-//    /* Fill output structure */
-//    read_out_struct.ret = ret;
-//
-//    /* Free handle and send response back */
-//    hg_ret = HG_Handler_start_output(handle, &read_out_struct);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not respond\n");
-//        return hg_ret;
-//    }
-//
-//    /* Free block handle */
-//    hg_ret = HG_Bulk_handle_free(bulk_block_handle);
-//    if (hg_ret != HG_SUCCESS) {
-//        fprintf(stderr, "Could not free block call\n");
-//        return hg_ret;
-//    }
-//
-//    free(buf);
-//
-//    HG_Handler_free_input(handle, &read_in_struct);
-//    HG_Handler_free(handle);
-//
-//    return hg_ret;
-//}
-//
+
+/*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_posix_open, handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    open_in_t in_struct;
+    open_out_t out_struct;
+
+    const char *path;
+    int flags;
+    mode_t mode;
+    int open_ret;
+
+    /* Get input struct */
+    ret = HG_Get_input(handle, &in_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not get input struct\n");
+        return ret;
+    }
+
+    path = in_struct.path;
+    flags = in_struct.flags;
+    mode = in_struct.mode;
+
+    /* Call open */
+    printf("Calling open with path: %s\n", path);
+    open_ret = open(path, flags, mode);
+
+    /* Fill output structure */
+    out_struct.ret = open_ret;
+
+    /* Free handle and send response back */
+    ret = HG_Respond(handle, NULL, NULL, &out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    HG_Free_input(handle, &in_struct);
+    HG_Destroy(handle);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_posix_close, handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    close_in_t in_struct;
+    close_out_t out_struct;
+
+    int fd;
+    int close_ret;
+
+    /* Get input struct */
+    ret = HG_Get_input(handle, &in_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not get input struct\n");
+        return ret;
+    }
+
+    fd = in_struct.fd;
+
+    /* Call close */
+    printf("Calling close with fd: %d\n", fd);
+    close_ret = close(fd);
+
+    /* Fill output structure */
+    out_struct.ret = close_ret;
+
+    /* Free handle and send response back */
+    ret = HG_Respond(handle, NULL, NULL, &out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    HG_Free_input(handle, &in_struct);
+    HG_Destroy(handle);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_posix_write_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+{
+    struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
+            hg_bulk_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    write_out_t out_struct;
+
+    void *buf;
+    ssize_t write_ret;
+
+    /* for debug */
+    int i;
+    const int *buf_ptr;
+
+    /* Call bulk_write */
+    HG_Bulk_access(local_bulk_handle, 0, bulk_args->nbytes, HG_BULK_READWRITE,
+            1, &buf, NULL, NULL);
+
+    /* Check bulk buf */
+    buf_ptr = (const int*) buf;
+    for (i = 0; i < (int)(bulk_args->nbytes / sizeof(int)); i++) {
+        if (buf_ptr[i] != i) {
+            printf("Error detected in bulk transfer, buf[%d] = %d, was expecting %d!\n", i, buf_ptr[i], i);
+            break;
+        }
+    }
+
+    printf("Calling write with fd: %d\n", bulk_args->fildes);
+    write_ret = write(bulk_args->fildes, buf, bulk_args->nbytes);
+
+    /* Fill output structure */
+    out_struct.ret = write_ret;
+
+    /* Free block handle */
+    ret = HG_Bulk_free(local_bulk_handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free HG bulk handle\n");
+        return ret;
+    }
+
+    /* Free handle and send response back */
+    ret = HG_Respond(bulk_args->handle, NULL, NULL, &out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    HG_Destroy(bulk_args->handle);
+    free(bulk_args);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_posix_write, handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    write_in_t in_struct;
+
+    struct hg_info *hg_info = NULL;
+    hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
+    hg_bulk_t local_bulk_handle = HG_BULK_NULL;
+    struct hg_test_bulk_args *bulk_args = NULL;
+
+    bulk_args = (struct hg_test_bulk_args *) malloc(
+            sizeof(struct hg_test_bulk_args));
+
+    /* Keep handle to pass to callback */
+    bulk_args->handle = handle;
+
+    /* Get info from handle */
+    hg_info = HG_Get_info(handle);
+
+    /* Get input struct */
+    ret = HG_Get_input(handle, &in_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not get input struct\n");
+        return ret;
+    }
+
+    bulk_args->fildes = in_struct.fd;
+    origin_bulk_handle = in_struct.bulk_handle;
+
+    /* Create a new block handle to read the data */
+    bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
+
+    /* Create a new bulk handle to read the data */
+    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
+            HG_BULK_READWRITE, &local_bulk_handle);
+
+    /* Read bulk data here  */
+    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_posix_write_transfer_cb,
+            bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
+            local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not read bulk data\n");
+        return ret;
+    }
+
+    HG_Free_input(handle, &in_struct);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_posix_read_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+{
+    struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
+            hg_bulk_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    write_out_t out_struct;
+
+    /* Fill output structure */
+    out_struct.ret = bulk_args->ret;
+
+    /* Free block handle */
+    ret = HG_Bulk_free(local_bulk_handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free HG bulk handle\n");
+        return ret;
+    }
+
+    /* Free handle and send response back */
+    ret = HG_Respond(bulk_args->handle, NULL, NULL, &out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    HG_Destroy(bulk_args->handle);
+    free(bulk_args);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_posix_read, handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    read_in_t in_struct;
+
+    struct hg_info *hg_info = NULL;
+    hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
+    hg_bulk_t local_bulk_handle = HG_BULK_NULL;
+    struct hg_test_bulk_args *bulk_args = NULL;
+
+    void *buf;
+    ssize_t read_ret;
+
+    /* for debug */
+    int i;
+    const int *buf_ptr;
+
+    bulk_args = (struct hg_test_bulk_args *) malloc(
+            sizeof(struct hg_test_bulk_args));
+
+    /* Keep handle to pass to callback */
+    bulk_args->handle = handle;
+
+    /* Get info from handle */
+    hg_info = HG_Get_info(handle);
+
+    /* Get input struct */
+    ret = HG_Get_input(handle, &in_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not get input struct\n");
+        return ret;
+    }
+
+    bulk_args->fildes = in_struct.fd;
+    origin_bulk_handle = in_struct.bulk_handle;
+
+    /* Create a new block handle to read the data */
+    bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
+
+    /* Create a new bulk handle to read the data */
+    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
+            HG_BULK_READ_ONLY, &local_bulk_handle);
+
+    /* Call bulk_write */
+    HG_Bulk_access(local_bulk_handle, 0, bulk_args->nbytes, HG_BULK_READWRITE,
+            1, &buf, NULL, NULL);
+
+    printf("Calling read with fd: %d\n", bulk_args->fildes);
+    read_ret = read(bulk_args->fildes, buf, bulk_args->nbytes);
+
+    /* Check bulk buf */
+    buf_ptr = (const int*) buf;
+    for (i = 0; i < (int)(bulk_args->nbytes / sizeof(int)); i++) {
+        if (buf_ptr[i] != i) {
+            printf("Error detected after read, buf[%d] = %d, was expecting %d!\n", i, buf_ptr[i], i);
+            break;
+        }
+    }
+
+    /* Fill output structure */
+    bulk_args->ret = read_ret;
+
+    /* Read bulk data here  */
+    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_posix_read_transfer_cb,
+            bulk_args, HG_BULK_PUSH, hg_info->addr, origin_bulk_handle, 0,
+            local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not read bulk data\n");
+        return ret;
+    }
+
+    HG_Free_input(handle, &in_struct);
+
+    return ret;
+}
+
 ///*---------------------------------------------------------------------------*/
 //HG_TEST_RPC_CB(hg_test_scale_open, handle)
 //{
@@ -1053,10 +1093,10 @@ HG_TEST_THREAD_CB(hg_test_rpc_open)
 HG_TEST_THREAD_CB(hg_test_bulk_write)
 HG_TEST_THREAD_CB(hg_test_bulk_seg_write)
 //HG_TEST_THREAD_CB(hg_test_pipeline_write)
-//HG_TEST_THREAD_CB(hg_test_posix_open)
-//HG_TEST_THREAD_CB(hg_test_posix_close)
-//HG_TEST_THREAD_CB(hg_test_posix_write)
-//HG_TEST_THREAD_CB(hg_test_posix_read)
+HG_TEST_THREAD_CB(hg_test_posix_open)
+HG_TEST_THREAD_CB(hg_test_posix_close)
+HG_TEST_THREAD_CB(hg_test_posix_write)
+HG_TEST_THREAD_CB(hg_test_posix_read)
 //HG_TEST_THREAD_CB(hg_test_scale_open)
 //HG_TEST_THREAD_CB(hg_test_scale_write)
 
