@@ -47,12 +47,12 @@ hg_test_posix_read_cb(hg_handle_t handle);
 hg_return_t
 hg_test_posix_close_cb(hg_handle_t handle);
 
-///**
-// * test_scale
-// */
-//hg_return_t
-//hg_test_scale_open_cb(hg_handle_t handle);
-//hg_return_t
-//hg_test_scale_write_cb(hg_handle_t handle);
+/**
+ * test_perf
+ */
+hg_return_t
+hg_test_perf_rpc_cb(hg_handle_t handle);
+hg_return_t
+hg_test_perf_bulk_cb(hg_handle_t handle);
 
 #endif /* MERCURY_RPC_CB_H */

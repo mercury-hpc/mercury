@@ -61,9 +61,9 @@ hg_id_t hg_test_posix_write_id_g = 0;
 hg_id_t hg_test_posix_read_id_g = 0;
 hg_id_t hg_test_posix_close_id_g = 0;
 
-/* test_scale */
-hg_id_t hg_test_scale_open_id_g = 0;
-hg_id_t hg_test_scale_write_id_g = 0;
+/* test_perf */
+hg_id_t hg_test_perf_rpc_id_g = 0;
+hg_id_t hg_test_perf_bulk_id_g = 0;
 
 /* test_finalize */
 hg_id_t hg_test_finalize_id_g = 0;
@@ -194,11 +194,11 @@ hg_test_register(hg_class_t *hg_class)
     hg_test_posix_close_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_close",
             close_in_t, close_out_t, hg_test_posix_close_cb);
 
-//    /* test_scale */
-//    hg_test_scale_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_scale_open",
-//            open_in_t, open_out_t, hg_test_scale_open_cb);
-//    hg_test_scale_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_scale_write",
-//            write_in_t, write_out_t, hg_test_scale_write_cb);
+    /* test_perf */
+    hg_test_perf_rpc_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_rpc",
+            void, void, hg_test_perf_rpc_cb);
+    hg_test_perf_bulk_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_bulk",
+            write_in_t, void, hg_test_perf_bulk_cb);
 
     /* test_finalize */
     hg_test_finalize_id_g = MERCURY_REGISTER(hg_class, "hg_test_finalize",
