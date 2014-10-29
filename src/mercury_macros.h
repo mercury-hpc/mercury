@@ -316,6 +316,7 @@ static HG_INLINE hg_return_t \
             BOOST_PP_IF(with_ret, ret_type_name ret;, BOOST_PP_EMPTY()) \
             na_class_t *na_class; \
             char *server_name; \
+            const char *info_string; \
             na_addr_t addr; \
             hg_id_t id; \
             BOOST_PP_IF(with_bulk, HG_GEN_DECL_PARAMS(HG_BULK_PARAM), BOOST_PP_EMPTY()) \
@@ -329,7 +330,13 @@ static HG_INLINE hg_return_t \
             /* Is mercury library initialized */ \
             HG_Initialized(&hg_initialized, &na_class); \
             if (!hg_initialized) { \
-                na_class = NA_Initialize(getenv(HG_PORT_NAME), 0); \
+                info_string = getenv(HG_PORT_NAME); \
+                if (!info_string) { /* passing NULL to NA_Initialize is bad! */ \
+                    HG_ERROR_DEFAULT(HG_PORT_NAME " env var not set"); \
+                    BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
+                    goto done; \
+                }  \
+                na_class = NA_Initialize(info_string, 0); \
                 hg_ret = HG_Init(na_class); \
                 if (hg_ret != HG_SUCCESS) { \
                     HG_ERROR_DEFAULT("Could not initialize Mercury"); \
