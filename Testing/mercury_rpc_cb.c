@@ -1082,6 +1082,36 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 }
 
 /*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_overflow, handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    overflow_out_t out_struct;
+
+    hg_string_t string;
+    size_t string_len = 1024 * 4;
+
+    string = malloc(string_len);
+    memset(string, 'h', string_len);
+
+    /* Fill output structure */
+    out_struct.string = string;
+    out_struct.string_len = string_len;
+
+    /* Send response back */
+    ret = HG_Respond(handle, NULL, NULL, &out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    HG_Destroy(handle);
+    free(string);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 HG_TEST_THREAD_CB(hg_test_rpc_open)
 HG_TEST_THREAD_CB(hg_test_bulk_write)
 HG_TEST_THREAD_CB(hg_test_bulk_seg_write)
@@ -1092,5 +1122,6 @@ HG_TEST_THREAD_CB(hg_test_posix_write)
 HG_TEST_THREAD_CB(hg_test_posix_read)
 HG_TEST_THREAD_CB(hg_test_perf_rpc)
 HG_TEST_THREAD_CB(hg_test_perf_bulk)
+HG_TEST_THREAD_CB(hg_test_overflow)
 
 /*---------------------------------------------------------------------------*/

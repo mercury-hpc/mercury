@@ -55,4 +55,10 @@ hg_test_perf_rpc_cb(hg_handle_t handle);
 hg_return_t
 hg_test_perf_bulk_cb(hg_handle_t handle);
 
+/**
+ * test_overflow
+ */
+hg_return_t
+hg_test_overflow_cb(hg_handle_t handle);
+
 #endif /* MERCURY_RPC_CB_H */

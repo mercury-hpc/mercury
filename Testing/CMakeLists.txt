@@ -190,6 +190,7 @@ set(MERCURY_tests
   bulk_seg
 #  pipeline
   perf
+  overflow
 )
 if(NOT WIN32)
   set(MERCURY_tests ${MERCURY_tests} posix)

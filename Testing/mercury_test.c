@@ -65,6 +65,9 @@ hg_id_t hg_test_posix_close_id_g = 0;
 hg_id_t hg_test_perf_rpc_id_g = 0;
 hg_id_t hg_test_perf_bulk_id_g = 0;
 
+/* test_overflow */
+hg_id_t hg_test_overflow_id_g = 0;
+
 /* test_finalize */
 hg_id_t hg_test_finalize_id_g = 0;
 hg_atomic_int32_t hg_test_finalizing_count_g;
@@ -199,6 +202,10 @@ hg_test_register(hg_class_t *hg_class)
             void, void, hg_test_perf_rpc_cb);
     hg_test_perf_bulk_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_bulk",
             write_in_t, void, hg_test_perf_bulk_cb);
+
+    /* test_overflow */
+    hg_test_overflow_id_g = MERCURY_REGISTER(hg_class, "hg_test_overflow",
+            void, overflow_out_t, hg_test_overflow_cb);
 
     /* test_finalize */
     hg_test_finalize_id_g = MERCURY_REGISTER(hg_class, "hg_test_finalize",

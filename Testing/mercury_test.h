@@ -20,6 +20,7 @@
 #include "test_rpc.h"
 #include "test_bulk.h"
 #include "test_posix.h"
+#include "test_overflow.h"
 
 #ifdef __cplusplus
 extern "C" {
