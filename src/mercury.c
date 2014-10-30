@@ -410,16 +410,13 @@ hg_set_output(hg_handle_t handle, void *out_struct)
         goto done;
     }
 
-//    /* TODO need to do something here */
-//    /* Get eventual extra buffer */
-//    if (hg_proc_get_extra_buf(proc)) {
-//        void *out_extra_buf = NULL;
-//        size_t out_extra_buf_size = 0;
-//
-//        out_extra_buf = hg_proc_get_extra_buf(proc);
-//        out_extra_buf_size = hg_proc_get_extra_size(proc);
-//        hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
-//    }
+    /* Get eventual extra buffer
+     * TODO need to do something here  */
+    if (hg_proc_get_size(proc) > out_buf_size) {
+        HG_LOG_ERROR("Output size exceeds NA expected message size");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
 
     /* Flush proc */
     ret = hg_proc_flush(proc);
