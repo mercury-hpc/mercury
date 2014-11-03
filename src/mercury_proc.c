@@ -27,8 +27,8 @@
 struct hg_proc_buf {
     void *    buf;       /* Pointer to allocated buffer */
     void *    buf_ptr;   /* Pointer to current position */
-    size_t    size;      /* Total buffer size */
-    size_t    size_left; /* Available size for user */
+    hg_size_t size;      /* Total buffer size */
+    hg_size_t size_left; /* Available size for user */
     hg_bool_t is_mine;
 #ifdef HG_HAS_XDR
     XDR      xdr;
@@ -47,9 +47,9 @@ struct hg_proc {
 
 /*---------------------------------------------------------------------------*/
 void *
-hg_proc_buf_alloc(size_t size)
+hg_proc_buf_alloc(hg_size_t size)
 {
-    size_t alignment;
+    hg_size_t alignment;
     void *mem_ptr = NULL;
 
 #ifdef _WIN32
@@ -85,7 +85,7 @@ hg_proc_buf_free(void *mem_ptr)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_proc_create(void *buf, size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
+hg_proc_create(void *buf, hg_size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
         hg_bulk_class_t *hg_bulk_class, hg_proc_t *proc)
 {
     struct hg_proc *hg_proc = NULL;
@@ -249,11 +249,11 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-size_t
+hg_size_t
 hg_proc_get_size(hg_proc_t proc)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    size_t size = 0;
+    hg_size_t size = 0;
 
     if (!hg_proc) {
         HG_LOG_ERROR("Proc is not initialized");
@@ -268,11 +268,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
+hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    size_t new_buf_size;
-    size_t page_size;
+    hg_size_t new_buf_size;
+    hg_size_t page_size;
     ptrdiff_t current_pos;
     hg_return_t ret = HG_SUCCESS;
 
@@ -283,7 +283,7 @@ hg_proc_set_size(hg_proc_t proc, size_t req_buf_size)
 #else
     page_size = sysconf(_SC_PAGE_SIZE);
 #endif
-    new_buf_size = ((size_t)(req_buf_size / page_size) + 1) * page_size;
+    new_buf_size = ((hg_size_t)(req_buf_size / page_size) + 1) * page_size;
 
     if (new_buf_size <= hg_proc_get_size(proc)) {
         HG_LOG_ERROR("Buffer is already of the size requested");
@@ -338,11 +338,11 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-size_t
+hg_size_t
 hg_proc_get_size_left(hg_proc_t proc)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    size_t size = 0;
+    hg_size_t size = 0;
 
     if (!hg_proc) {
         HG_LOG_ERROR("Proc is not initialized");
@@ -414,7 +414,7 @@ hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
 
     hg_proc->current_buf->buf_ptr   = buf_ptr;
     hg_proc->current_buf->size_left = hg_proc->current_buf->size -
-            (size_t) new_pos;
+            (hg_size_t) new_pos;
 #ifdef HG_HAS_XDR
     xdr_setpos(&hg_proc->current_buf->xdr, new_pos);
 #endif
@@ -438,11 +438,11 @@ hg_proc_get_extra_buf(hg_proc_t proc)
 }
 
 /*---------------------------------------------------------------------------*/
-size_t
+hg_size_t
 hg_proc_get_extra_size(hg_proc_t proc)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    size_t extra_size = 0;
+    hg_size_t extra_size = 0;
 
     if (hg_proc->extra_buf.buf) {
         extra_size = hg_proc->extra_buf.size;
@@ -475,7 +475,7 @@ hg_proc_flush(hg_proc_t proc)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
     hg_bool_t current_update_checksum;
-    size_t checksum_size;
+    hg_size_t checksum_size;
     char *base_checksum = NULL;
     char *new_checksum = NULL;
     int checksum_ret, cmp_ret;
@@ -555,7 +555,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_proc_memcpy(hg_proc_t proc, void *data, size_t data_size)
+hg_proc_memcpy(hg_proc_t proc, void *data, hg_size_t data_size)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
     hg_return_t ret = HG_SUCCESS;

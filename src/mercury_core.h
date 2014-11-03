@@ -246,7 +246,7 @@ HG_EXPORT hg_return_t
 HG_Get_input_buf(
         hg_handle_t handle,
         void **in_buf,
-        size_t *in_buf_size
+        hg_size_t *in_buf_size
         );
 
 /**
@@ -263,7 +263,7 @@ HG_EXPORT hg_return_t
 HG_Get_output_buf(
         hg_handle_t handle,
         void **out_buf,
-        size_t *out_buf_size
+        hg_size_t *out_buf_size
         );
 
 /**

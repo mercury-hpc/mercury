@@ -59,7 +59,7 @@ hg_set_input(
         hg_handle_t handle,
         void *in_struct,
         void **extra_in_buf,
-        size_t *extra_in_buf_size
+        hg_size_t *extra_in_buf_size
         );
 
 /**
@@ -114,7 +114,7 @@ static hg_return_t
 hg_get_input(hg_handle_t handle, void *in_struct)
 {
     void *in_buf;
-    size_t in_buf_size;
+    hg_size_t in_buf_size;
     struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info;
     hg_proc_t proc = HG_PROC_NULL;
@@ -173,10 +173,10 @@ done:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
-        size_t *extra_in_buf_size)
+        hg_size_t *extra_in_buf_size)
 {
     void *in_buf;
-    size_t in_buf_size;
+    hg_size_t in_buf_size;
     struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info;
     hg_proc_t proc = HG_PROC_NULL;
@@ -305,7 +305,7 @@ static hg_return_t
 hg_get_output(hg_handle_t handle, void *out_struct)
 {
     void *out_buf;
-    size_t out_buf_size;
+    hg_size_t out_buf_size;
     struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info;
     hg_proc_t proc = HG_PROC_NULL;
@@ -366,7 +366,7 @@ static hg_return_t
 hg_set_output(hg_handle_t handle, void *out_struct)
 {
     void *out_buf;
-    size_t out_buf_size;
+    hg_size_t out_buf_size;
     struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info = NULL;
     hg_proc_t proc = HG_PROC_NULL;
@@ -643,7 +643,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     struct hg_forward_cb_info *hg_forward_cb_info = NULL;
     hg_bulk_t extra_in_handle = HG_BULK_NULL;
     void *extra_in_buf = NULL;
-    size_t extra_in_buf_size;
+    hg_size_t extra_in_buf_size;
     hg_return_t ret = HG_SUCCESS;
 
     hg_forward_cb_info = (struct hg_forward_cb_info *) malloc(

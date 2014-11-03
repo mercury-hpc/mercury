@@ -91,10 +91,10 @@ HG_Bulk_context_destroy(
 HG_EXPORT hg_return_t
 HG_Bulk_create(
         hg_bulk_class_t *hg_bulk_class,
-        size_t count,
+        hg_uint32_t count,
         void **buf_ptrs,
-        const size_t *buf_sizes,
-        unsigned long flags,
+        const hg_size_t *buf_sizes,
+        hg_uint8_t flags,
         hg_bulk_t *handle
         );
 
@@ -132,13 +132,13 @@ HG_Bulk_free(
 HG_EXPORT hg_return_t
 HG_Bulk_access(
         hg_bulk_t handle,
-        size_t offset,
-        size_t size,
-        unsigned long flags,
-        unsigned int max_count,
+        hg_size_t offset,
+        hg_size_t size,
+        hg_uint8_t flags,
+        hg_uint32_t max_count,
         void **buf_ptrs,
-        size_t *buf_sizes,
-        unsigned int *actual_count
+        hg_size_t *buf_sizes,
+        hg_uint32_t *actual_count
         );
 
 /**
@@ -148,7 +148,7 @@ HG_Bulk_access(
  *
  * \return Non-negative value
  */
-HG_EXPORT size_t
+HG_EXPORT hg_uint64_t
 HG_Bulk_get_size(
         hg_bulk_t handle
         );
@@ -160,7 +160,7 @@ HG_Bulk_get_size(
  *
  * \return Non-negative value
  */
-HG_EXPORT size_t
+HG_EXPORT hg_uint32_t
 HG_Bulk_get_segment_count(
         hg_bulk_t handle
         );
@@ -172,7 +172,7 @@ HG_Bulk_get_segment_count(
  *
  * \return Non-negative value
  */
-HG_EXPORT size_t
+HG_EXPORT hg_size_t
 HG_Bulk_get_serialize_size(
         hg_bulk_t handle
         );
@@ -189,7 +189,7 @@ HG_Bulk_get_serialize_size(
 HG_EXPORT hg_return_t
 HG_Bulk_serialize(
         void *buf,
-        size_t buf_size,
+        hg_size_t buf_size,
         hg_bulk_t handle
         );
 
@@ -208,7 +208,7 @@ HG_Bulk_deserialize(
         hg_bulk_class_t *hg_bulk_class,
         hg_bulk_t *handle,
         const void *buf,
-        size_t buf_size
+        hg_size_t buf_size
         );
 
 /**
@@ -238,10 +238,10 @@ HG_Bulk_transfer(
         hg_bulk_op_t op,
         na_addr_t origin_addr,
         hg_bulk_t origin_handle,
-        size_t origin_offset,
+        hg_size_t origin_offset,
         hg_bulk_t local_handle,
-        size_t local_offset,
-        size_t size,
+        hg_size_t local_offset,
+        hg_size_t size,
         hg_op_id_t *op_id
         );
 

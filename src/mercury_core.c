@@ -107,7 +107,7 @@ struct hg_handle {
     hg_atomic_int32_t ref_count;        /* Reference count */
 
     void *extra_in_buf;
-    size_t extra_in_buf_size;
+    hg_size_t extra_in_buf_size;
     hg_op_id_t extra_in_op_id;
 };
 
@@ -335,27 +335,26 @@ hg_gen_request_tag(hg_class_t *hg_class)
 /*---------------------------------------------------------------------------*/
 static HG_INLINE void
 hg_get_input_buf(struct hg_handle *hg_handle, void **in_buf,
-        size_t *in_buf_size)
+        hg_size_t *in_buf_size)
 {
     /* No offset if extra buffer since only the user payload is copied */
-    size_t header_offset = (hg_handle->extra_in_buf) ? 0 :
+    hg_size_t header_offset = (hg_handle->extra_in_buf) ? 0 :
             hg_proc_header_request_get_size();
 
     /* Space must be left for request header */
     *in_buf = (char *) ((hg_handle->extra_in_buf) ?
             hg_handle->extra_in_buf : hg_handle->in_buf) + header_offset;
-    *in_buf_size =
-            (hg_handle->extra_in_buf_size) ?
-                    hg_handle->extra_in_buf_size :
-                    hg_handle->in_buf_size - header_offset;
+    *in_buf_size = (hg_handle->extra_in_buf_size) ?
+            hg_handle->extra_in_buf_size :
+            hg_handle->in_buf_size - header_offset;
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE void
 hg_get_output_buf(struct hg_handle *hg_handle, void **out_buf,
-        size_t *out_buf_size)
+        hg_size_t *out_buf_size)
 {
-    size_t header_offset = hg_proc_header_response_get_size();
+    hg_size_t header_offset = hg_proc_header_response_get_size();
 
     /* Space must be left for response header */
     *out_buf = (char *) hg_handle->out_buf + header_offset;
@@ -817,7 +816,6 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
             goto done;
         }
     }
-
 
 done:
     return ret;
@@ -1524,7 +1522,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Get_input_buf(hg_handle_t handle, void **in_buf, size_t *in_buf_size)
+HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
@@ -1549,7 +1547,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Get_output_buf(hg_handle_t handle, void **out_buf, size_t *out_buf_size)
+HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;

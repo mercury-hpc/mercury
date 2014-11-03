@@ -51,7 +51,7 @@ extern "C" {
  */
 HG_EXPORT void *
 hg_proc_buf_alloc(
-        size_t size
+        hg_size_t size
         );
 
 /**
@@ -82,7 +82,7 @@ hg_proc_buf_free(
 HG_EXPORT hg_return_t
 hg_proc_create(
         void *buf,
-        size_t buf_size,
+        hg_size_t buf_size,
         hg_proc_op_t op,
         hg_proc_hash_t hash,
         hg_bulk_class_t *hg_bulk_class,
@@ -132,7 +132,7 @@ hg_proc_get_op(
  *
  * \return Non-negative size value
  */
-HG_EXPORT size_t
+HG_EXPORT hg_size_t
 hg_proc_get_size(
         hg_proc_t proc
         );
@@ -149,7 +149,7 @@ hg_proc_get_size(
 HG_EXPORT hg_return_t
 hg_proc_set_size(
         hg_proc_t proc,
-        size_t buf_size
+        hg_size_t buf_size
         );
 
 /**
@@ -159,7 +159,7 @@ hg_proc_set_size(
  *
  * \return Non-negative size value
  */
-HG_EXPORT size_t
+HG_EXPORT hg_size_t
 hg_proc_get_size_left(
         hg_proc_t proc
         );
@@ -223,7 +223,7 @@ hg_proc_get_extra_buf(
  *
  * \return Size of buffer or 0 if no extra buffer has been used
  */
-HG_EXPORT size_t
+HG_EXPORT hg_size_t
 hg_proc_get_extra_size(
         hg_proc_t proc
         );
@@ -269,7 +269,7 @@ HG_EXPORT hg_return_t
 hg_proc_memcpy(
         hg_proc_t proc,
         void *data,
-        size_t data_size
+        hg_size_t data_size
         );
 
 /**
@@ -284,7 +284,7 @@ hg_proc_memcpy(
  * \return incremented pointer to buf
  */
 static HG_INLINE void *
-hg_proc_buf_memcpy(void *buf, void *data, size_t data_size, hg_proc_op_t op)
+hg_proc_buf_memcpy(void *buf, void *data, hg_size_t data_size, hg_proc_op_t op)
 {
     const void *src = NULL;
     void *dest = NULL;
@@ -317,7 +317,7 @@ HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int64_t(hg_proc_t proc,
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint64_t(hg_proc_t proc,
         hg_uint64_t *data);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_raw(hg_proc_t proc, void *buf,
-        size_t buf_size);
+        hg_size_t buf_size);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
         hg_bulk_t *handle);
 
@@ -340,6 +340,7 @@ HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
 /* Map mercury common types */
 #define hg_proc_hg_bool_t     hg_proc_hg_uint8_t
 #define hg_proc_hg_ptr_t      hg_proc_hg_uint64_t
+#define hg_proc_hg_size_t     hg_proc_hg_uint64_t
 #define hg_proc_hg_id_t       hg_proc_hg_uint32_t
 
 /**
@@ -512,7 +513,7 @@ hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data)
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PROC_INLINE hg_return_t
-hg_proc_raw(hg_proc_t proc, void *buf, size_t buf_size)
+hg_proc_raw(hg_proc_t proc, void *buf, hg_size_t buf_size)
 {
     hg_uint8_t *buf_ptr;
     hg_uint8_t *buf_ptr_lim = (hg_uint8_t*) buf + buf_size;
