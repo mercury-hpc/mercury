@@ -16,13 +16,8 @@
 #include "mercury_thread_condition.h"
 #include "mercury_time.h"
 
-#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
-
-/* TODO check params in NA routines */
-/* TODO check that NA plugin callbacks are set, e.g.,
- * na_class->msg_get_max_expected_size */
 
 /****************/
 /* Local Macros */
@@ -274,7 +269,12 @@ NA_Initialize(const char *info_string, na_bool_t listen)
     unsigned int plugin_index = 0;
     unsigned int plugin_count = 0;
     na_bool_t plugin_found = NA_FALSE;
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
+
+    if (!info_string) {
+        NA_LOG_ERROR("NULL info string");
+        goto done;
+    }
 
     plugin_count = sizeof(na_class_info) / sizeof(na_class_info[0]) - 1;
 
@@ -333,13 +333,14 @@ NA_Finalize(na_class_t *na_class)
 {
     na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
+    if (!na_class) goto done;
 
     ret = na_class->finalize(na_class);
 
     /* Destroy lookup mutex */
     hg_thread_mutex_destroy(&na_addr_lookup_mutex_g);
 
+done:
     return ret;
 }
 
@@ -347,9 +348,17 @@ NA_Finalize(na_class_t *na_class)
 na_bool_t
 NA_Is_listening(na_class_t *na_class)
 {
-    assert(na_class);
+    na_bool_t ret = NA_FALSE;
 
-    return na_class->listen;
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
+    ret = na_class->listen;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -359,7 +368,11 @@ NA_Context_create(na_class_t *na_class)
     na_return_t ret = NA_SUCCESS;
     struct na_private_context *na_private_context = NULL;
 
-    assert(na_class);
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
 
     na_private_context = (struct na_private_context *) malloc(
             sizeof(struct na_private_context));
@@ -410,6 +423,13 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
             (struct na_private_context *) context;
     na_return_t ret = NA_SUCCESS;
 
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!context) goto done;
+
     /* Check that completion queue is empty now */
     hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
@@ -456,12 +476,20 @@ NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     char *name_string = NULL;
     char *short_name = NULL;
     na_op_id_t na_op_id;
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!context) {
         NA_LOG_ERROR("NULL context");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!name) {
+        NA_LOG_ERROR("Lookup name is NULL");
         ret = NA_INVALID_PARAM;
         goto done;
     }
@@ -503,8 +531,16 @@ NA_Addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr)
     na_context_t *context = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!name) {
+        NA_LOG_ERROR("Lookup name is NULL");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!addr) {
         NA_LOG_ERROR("NULL pointer to na_addr_t");
         ret = NA_INVALID_PARAM;
@@ -566,6 +602,8 @@ na_addr_lookup_cb(const struct na_cb_info *callback_info)
     na_return_t ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Return from callback with %s error code",
+                NA_Error_to_string(callback_info->ret));
         return ret;
     }
 
@@ -584,8 +622,11 @@ NA_Addr_self(na_class_t *na_class, na_addr_t *addr)
 {
     na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!addr) {
         NA_LOG_ERROR("NULL pointer to na_addr_t");
         ret = NA_INVALID_PARAM;
@@ -602,28 +643,67 @@ done:
 na_return_t
 NA_Addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr)
 {
-    assert(na_class);
-    return na_class->addr_dup(na_class, addr, new_addr);
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (addr == NA_ADDR_NULL) {
+        NA_LOG_ERROR("NULL addr");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!new_addr) {
+        NA_LOG_ERROR("NULL pointer to NA addr");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = na_class->addr_dup(na_class, addr, new_addr);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Addr_free(na_class_t *na_class, na_addr_t addr)
 {
-    assert(na_class);
-    return na_class->addr_free(na_class, addr);
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = na_class->addr_free(na_class, addr);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 na_bool_t
 NA_Addr_is_self(na_class_t *na_class, na_addr_t addr)
 {
-    assert(na_class);
+    na_bool_t ret = NA_FALSE;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
     if (!na_class->addr_is_self) {
         NA_LOG_WARNING("NA_Addr_is_self not supported by plugin");
-        return NA_FALSE;
+        goto done;
     }
-    return na_class->addr_is_self(na_class, addr);
+
+    ret = na_class->addr_is_self(na_class, addr);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -633,16 +713,30 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
 {
     na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (addr == NA_ADDR_NULL) {
         NA_LOG_ERROR("NULL addr");
         ret = NA_INVALID_PARAM;
-        return ret;
+        goto done;
     }
 
     ret = na_class->addr_to_string(na_class, buf, buf_size, addr);
 
+done:
     return ret;
 }
 
@@ -650,24 +744,51 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
 na_size_t
 NA_Msg_get_max_expected_size(na_class_t *na_class)
 {
-    assert(na_class);
-    return na_class->msg_get_max_expected_size(na_class);
+    na_size_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
+    ret = na_class->msg_get_max_expected_size(na_class);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 na_size_t
 NA_Msg_get_max_unexpected_size(na_class_t *na_class)
 {
-    assert(na_class);
-    return na_class->msg_get_max_unexpected_size(na_class);
+    na_size_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
+    ret = na_class->msg_get_max_unexpected_size(na_class);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 na_tag_t
 NA_Msg_get_max_tag(na_class_t *na_class)
 {
-    assert(na_class);
-    return na_class->msg_get_max_tag(na_class);
+    na_tag_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
+    ret = na_class->msg_get_max_tag(na_class);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -677,12 +798,30 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     na_op_id_t na_op_id;
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!context) {
         NA_LOG_ERROR("NULL context");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (dest == NA_ADDR_NULL) {
+        NA_LOG_ERROR("NULL NA address");
         ret = NA_INVALID_PARAM;
         goto done;
     }
@@ -706,12 +845,25 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_op_id_t *op_id)
 {
     na_op_id_t na_op_id;
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!context) {
         NA_LOG_ERROR("NULL context");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
         ret = NA_INVALID_PARAM;
         goto done;
     }
@@ -735,12 +887,30 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
         na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     na_op_id_t na_op_id;
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!context) {
         NA_LOG_ERROR("NULL context");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (dest == NA_ADDR_NULL) {
+        NA_LOG_ERROR("NULL NA address");
         ret = NA_INVALID_PARAM;
         goto done;
     }
@@ -764,12 +934,30 @@ NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
         na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
 {
     na_op_id_t na_op_id;
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!context) {
         NA_LOG_ERROR("NULL context");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (source == NA_ADDR_NULL) {
+        NA_LOG_ERROR("NULL NA address");
         ret = NA_INVALID_PARAM;
         goto done;
     }
@@ -791,9 +979,29 @@ na_return_t
 NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
         unsigned long flags, na_mem_handle_t *mem_handle)
 {
-    assert(na_class);
-    return na_class->mem_handle_create(na_class, buf, buf_size, flags,
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = na_class->mem_handle_create(na_class, buf, buf_size, flags,
             mem_handle);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -802,17 +1010,52 @@ NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
         na_size_t segment_count, unsigned long flags,
         na_mem_handle_t *mem_handle)
 {
-    assert(na_class);
-    return na_class->mem_handle_create_segments(na_class, segments,
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!segments) {
+        NA_LOG_ERROR("NULL pointer to segments");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!segment_count) {
+        NA_LOG_ERROR("NULL segment count");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = na_class->mem_handle_create_segments(na_class, segments,
             segment_count, flags, mem_handle);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
-    assert(na_class);
-    return na_class->mem_handle_free(na_class, mem_handle);
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = na_class->mem_handle_free(na_class, mem_handle);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -821,11 +1064,20 @@ NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
 
-    if (na_class->mem_register)
-        ret = na_class->mem_register(na_class, mem_handle);
+    ret = na_class->mem_register(na_class, mem_handle);
 
+done:
     return ret;
 }
 
@@ -835,11 +1087,20 @@ NA_Mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
 
-    if (na_class->mem_deregister)
-        ret = na_class->mem_deregister(na_class, mem_handle);
+    ret = na_class->mem_deregister(na_class, mem_handle);
 
+done:
     return ret;
 }
 
@@ -849,11 +1110,20 @@ NA_Mem_publish(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
 
-    if (na_class->mem_publish)
-        ret = na_class->mem_publish(na_class, mem_handle);
+    ret = na_class->mem_publish(na_class, mem_handle);
 
+done:
     return ret;
 }
 
@@ -863,11 +1133,20 @@ NA_Mem_unpublish(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
 
-    if (na_class->mem_unpublish)
-        ret = na_class->mem_unpublish(na_class, mem_handle);
+    ret = na_class->mem_unpublish(na_class, mem_handle);
 
+done:
     return ret;
 }
 
@@ -876,9 +1155,18 @@ na_size_t
 NA_Mem_handle_get_serialize_size(na_class_t *na_class,
         na_mem_handle_t mem_handle)
 {
-    assert(na_class);
-    return na_class->mem_handle_get_serialize_size(na_class,
-            mem_handle);
+    na_size_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+    /* mem_handle parameter is optional */
+
+    ret = na_class->mem_handle_get_serialize_size(na_class, mem_handle);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -886,9 +1174,33 @@ na_return_t
 NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
         na_mem_handle_t mem_handle)
 {
-    assert(na_class);
-    return na_class->mem_handle_serialize(na_class, buf, buf_size,
-            mem_handle);
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = na_class->mem_handle_serialize(na_class, buf, buf_size, mem_handle);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -896,9 +1208,33 @@ na_return_t
 NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
         const void *buf, na_size_t buf_size)
 {
-    assert(na_class);
-    return na_class->mem_handle_deserialize(na_class, mem_handle, buf,
-            buf_size);
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!mem_handle) {
+        NA_LOG_ERROR("NULL pointer to memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = na_class->mem_handle_deserialize(na_class, mem_handle, buf, buf_size);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -909,12 +1245,35 @@ NA_Put(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
         na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
 {
     na_op_id_t na_op_id;
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!context) {
         NA_LOG_ERROR("NULL context");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (local_mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (remote_mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!data_size) {
+        NA_LOG_ERROR("NULL data size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (remote_addr == NA_ADDR_NULL) {
+        NA_LOG_ERROR("NULL addr");
         ret = NA_INVALID_PARAM;
         goto done;
     }
@@ -940,12 +1299,35 @@ NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
         na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
 {
     na_op_id_t na_op_id;
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!context) {
         NA_LOG_ERROR("NULL context");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (local_mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (remote_mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!data_size) {
+        NA_LOG_ERROR("NULL data size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (remote_addr == NA_ADDR_NULL) {
+        NA_LOG_ERROR("NULL addr");
         ret = NA_INVALID_PARAM;
         goto done;
     }
@@ -972,8 +1354,11 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!context) {
         NA_LOG_ERROR("NULL context");
         ret = NA_INVALID_PARAM;
@@ -1131,15 +1516,17 @@ NA_Cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
-    assert(na_class);
-
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     if (!context) {
         NA_LOG_ERROR("NULL context");
         ret = NA_INVALID_PARAM;
         goto done;
     }
-
-    if (op_id != NA_OP_ID_NULL) {
+    if (op_id == NA_OP_ID_NULL) {
         NA_LOG_ERROR("NULL operation ID");
         ret = NA_INVALID_PARAM;
         goto done;
@@ -1180,8 +1567,6 @@ na_cb_completion_add(na_context_t *context,
             (struct na_private_context *) context;
     na_return_t ret = NA_SUCCESS;
     struct na_cb_completion_data *completion_data = NULL;
-
-    assert(context);
 
     completion_data = (struct na_cb_completion_data *)
             malloc(sizeof(struct na_cb_completion_data));
