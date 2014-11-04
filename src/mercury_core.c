@@ -93,6 +93,7 @@ struct hg_handle {
     void *arg;                          /* Callback arguments */
     na_tag_t tag;                       /* Tag used for request and response */
     hg_uint32_t cookie;                 /* Cookie unique to every RPC call */
+    hg_return_t ret;                    /* Return code associated to handle */
     hg_bool_t addr_mine;                /* NA Addr created by HG */
 
     void *in_buf;                       /* Input buffer */
@@ -597,6 +598,7 @@ hg_create(hg_class_t *hg_class, hg_context_t *context)
     hg_handle->arg = NULL;
     hg_handle->cookie = 0; /* TODO Generate cookie */
     hg_handle->tag = 0;
+    hg_handle->ret = HG_SUCCESS;
     hg_handle->addr_mine = HG_FALSE;
 
     /* Initialize processing buffers and use unexpected message size */
@@ -798,11 +800,12 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
         goto done;
     }
 
-    /* Verify header */
+    /* Verify header and set return code */
     if (hg_proc_header_response_verify(&response_header) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not verify header");
         goto done;
     }
+    hg_handle->ret = (hg_return_t) response_header.ret_code;
 
     /* Add handle to completion queue only when send_input and recv_output have
      * completed */
@@ -985,7 +988,7 @@ hg_execute_callback(struct hg_handle *hg_handle)
     struct hg_cb_info hg_cb_info;
 
     hg_cb_info.arg = hg_handle->arg;
-    hg_cb_info.ret = HG_SUCCESS; /* TODO report failure */
+    hg_cb_info.ret = hg_handle->ret;
     hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
     hg_cb_info.context = hg_handle->hg_info.context;
     hg_cb_info.handle = (hg_handle_t) hg_handle;
@@ -1652,7 +1655,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Respond_buf(hg_handle_t handle, hg_cb_t callback, void *arg)
+HG_Respond_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
+        hg_return_t ret_code)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     struct hg_header_response response_header;
@@ -1667,6 +1671,7 @@ HG_Respond_buf(hg_handle_t handle, hg_cb_t callback, void *arg)
     /* Fill the header */
     hg_proc_header_response_init(&response_header);
     response_header.cookie = hg_handle->cookie;
+    response_header.ret_code = ret_code;
 
     /* Encode response header */
     ret = hg_proc_header_response(hg_handle->out_buf, hg_handle->out_buf_size,

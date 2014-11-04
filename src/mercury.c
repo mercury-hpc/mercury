@@ -413,8 +413,8 @@ hg_set_output(hg_handle_t handle, void *out_struct)
     /* Get eventual extra buffer
      * TODO need to do something here  */
     if (hg_proc_get_size(proc) > out_buf_size) {
-        HG_LOG_ERROR("Output size exceeds NA expected message size");
-        ret = HG_NOMEM_ERROR;
+        HG_LOG_WARNING("Output size exceeds NA expected message size");
+        ret = HG_SIZE_ERROR;
         goto done;
     }
 
@@ -483,10 +483,6 @@ hg_forward_cb(const struct hg_cb_info *callback_info)
             (struct hg_forward_cb_info *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
-    if (callback_info->ret != HG_SUCCESS) {
-        goto done;
-    }
-
     /* Free eventual extra input buffer and handle */
     HG_Bulk_free(hg_forward_cb_info->extra_in_handle);
     free(hg_forward_cb_info->extra_in_buf);
@@ -496,7 +492,7 @@ hg_forward_cb(const struct hg_cb_info *callback_info)
         struct hg_cb_info hg_cb_info;
 
         hg_cb_info.arg = hg_forward_cb_info->arg;
-        hg_cb_info.ret = HG_SUCCESS; /* TODO report failure */
+        hg_cb_info.ret = callback_info->ret;
         hg_cb_info.hg_class = callback_info->hg_class;
         hg_cb_info.context = callback_info->context;
         hg_cb_info.handle = callback_info->handle;
@@ -504,7 +500,6 @@ hg_forward_cb(const struct hg_cb_info *callback_info)
         hg_forward_cb_info->callback(&hg_cb_info);
     }
 
-done:
     free(hg_forward_cb_info);
     return ret;
 }
@@ -698,16 +693,21 @@ hg_return_t
 HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
 {
     hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret_code = HG_SUCCESS;
 
     /* Serialize output */
     ret = hg_set_output(handle, out_struct);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not set output");
-        goto done;
+        if (ret == HG_SIZE_ERROR)
+            ret_code = HG_SIZE_ERROR;
+        else {
+            HG_LOG_ERROR("Could not set output");
+            goto done;
+        }
     }
 
     /* Send response back */
-    ret = HG_Respond_buf(handle, callback, arg);
+    ret = HG_Respond_buf(handle, callback, arg, ret_code);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not respond");
         goto done;

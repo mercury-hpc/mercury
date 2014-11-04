@@ -80,7 +80,6 @@ typedef enum hg_return {
     HG_NO_MATCH,       /* no function match */
     HG_CHECKSUM_ERROR  /* checksum error */
 } hg_return_t;
-typedef hg_int32_t  hg_error_t; /* Error code */
 
 /* Callback operation type */
 typedef enum hg_cb_type {

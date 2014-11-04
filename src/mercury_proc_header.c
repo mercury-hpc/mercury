@@ -13,6 +13,7 @@
 #endif
 #include "mercury_proc_header.h"
 #include "mercury_proc.h"
+#include "mercury_core.h"
 
 #include <mchecksum.h>
 #include <mchecksum_error.h>
@@ -43,7 +44,7 @@ void
 hg_proc_header_response_init(struct hg_header_response *header)
 {
     header->flags = 0;
-    header->error = 0;
+    header->ret_code = 0;
     header->cookie = 0;
     header->crc16 = 0;
 }
@@ -154,7 +155,7 @@ hg_return_t
 hg_proc_header_response(void *buf, size_t buf_size,
         struct hg_header_response *header, hg_proc_op_t op)
 {
-    hg_uint32_t n_error, n_cookie;
+    hg_uint32_t n_ret_code, n_cookie;
     hg_uint16_t n_crc16;
     void *buf_ptr = buf;
     mchecksum_object_t checksum = MCHECKSUM_OBJECT_NULL;
@@ -171,7 +172,7 @@ hg_proc_header_response(void *buf, size_t buf_size,
 
     /* Mercury header */
     if (op == HG_ENCODE) {
-        n_error = htonl((hg_uint32_t) header->error);
+        n_ret_code = htonl((hg_uint32_t) header->ret_code);
         n_cookie = htonl(header->cookie);
     }
 
@@ -180,8 +181,8 @@ hg_proc_header_response(void *buf, size_t buf_size,
     mchecksum_update(checksum, &header->flags, sizeof(hg_uint8_t));
 
     /* error */
-    buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_error, sizeof(hg_uint32_t), op);
-    mchecksum_update(checksum, &n_error, sizeof(hg_uint32_t));
+    buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_ret_code, sizeof(hg_uint32_t), op);
+    mchecksum_update(checksum, &n_ret_code, sizeof(hg_uint32_t));
 
     /* cookie */
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_cookie, sizeof(hg_uint32_t), op);
@@ -204,7 +205,7 @@ hg_proc_header_response(void *buf, size_t buf_size,
     }
 
     if (op == HG_DECODE) {
-        header->error = (hg_error_t) ntohl(n_error);
+        header->ret_code = (hg_return_t) ntohl(n_ret_code);
         header->cookie = ntohl(n_cookie);
     }
 
@@ -252,9 +253,9 @@ hg_proc_header_response_verify(const struct hg_header_response *header)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (header->error) {
-        HG_LOG_ERROR("Error detected");
-        ret = HG_PROTOCOL_ERROR;
+    if (header->ret_code) {
+        HG_LOG_WARNING("Response return code: %s",
+                HG_Error_to_string((hg_return_t) header->ret_code));
     }
 
     return ret;

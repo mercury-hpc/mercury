@@ -296,6 +296,7 @@ HG_Forward_buf(
  * \param handle [IN]           HG handle
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
+ * \param ret_code [IN]         return code included in response
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -303,7 +304,8 @@ HG_EXPORT hg_return_t
 HG_Respond_buf(
         hg_handle_t handle,
         hg_cb_t callback,
-        void *arg
+        void *arg,
+        hg_return_t ret_code
         );
 
 /**

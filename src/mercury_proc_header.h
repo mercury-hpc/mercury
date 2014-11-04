@@ -25,10 +25,10 @@ struct hg_header_request {
 };
 
 struct hg_header_response {
-    hg_uint8_t  flags;  /* Flags */
-    hg_error_t  error;  /* Error */
-    hg_uint32_t cookie; /* Cookie */
-    hg_uint16_t crc16;  /* CRC16 checksum */
+    hg_uint8_t  flags;      /* Flags */
+    hg_int32_t  ret_code;   /* Return code */
+    hg_uint32_t cookie;     /* Cookie */
+    hg_uint16_t crc16;      /* CRC16 checksum */
     hg_uint8_t  padding;
     /* Should be 96 bits here */
 };
