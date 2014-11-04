@@ -26,6 +26,11 @@ hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
     hg_string_t string;
     size_t string_len;
 
+    if (callback_info->ret != HG_SUCCESS) {
+        HG_LOG_WARNING("Return from callback info is not HG_SUCCESS");
+        goto done;
+    }
+
     /* Get output */
     ret = HG_Get_output(handle, &out_struct);
     if (ret != HG_SUCCESS) {
@@ -36,7 +41,7 @@ hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
     /* Get output parameters */
     string = out_struct.string;
     string_len = out_struct.string_len;
-    printf("Returned string (length %d): %s\n", string_len, string);
+    printf("Returned string (length %zu): %s\n", string_len, string);
 
     /* Free request */
     ret = HG_Free_output(handle, &out_struct);
@@ -45,9 +50,8 @@ hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
         goto done;
     }
 
-    hg_request_complete(request);
-
 done:
+    hg_request_complete(request);
     return ret;
 }
 

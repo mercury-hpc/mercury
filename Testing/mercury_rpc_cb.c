@@ -1091,8 +1091,9 @@ HG_TEST_RPC_CB(hg_test_overflow, handle)
     hg_string_t string;
     size_t string_len = 1024 * 4;
 
-    string = malloc(string_len);
+    string = (hg_string_t) malloc(string_len + 1);
     memset(string, 'h', string_len);
+    string[string_len] = '\0';
 
     /* Fill output structure */
     out_struct.string = string;
