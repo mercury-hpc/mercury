@@ -28,7 +28,7 @@
 /****************/
 /* Local Macros */
 /****************/
-#define HG_MAX_UNEXPECTED_RECV 1
+#define HG_MAX_UNEXPECTED_RECV 256 /* TODO Variable */
 
 /* Convert value to string */
 #define HG_ERROR_STRING_MACRO(def, value, string) \
@@ -160,6 +160,14 @@ hg_pending_list_check(
         );
 
 /**
+ * Cancel entries from pending list.
+ */
+static hg_return_t
+hg_pending_list_cancel(
+        hg_context_t *context
+        );
+
+/**
  * Add handle to processing list.
  */
 static hg_return_t
@@ -265,6 +273,14 @@ hg_progress(
         hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout
+        );
+
+/**
+ * Cancel handle.
+ */
+static hg_return_t
+hg_cancel(
+        struct hg_handle *hg_handle
         );
 
 /*******************/
@@ -502,6 +518,36 @@ hg_pending_list_check(hg_context_t *context)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
+hg_pending_list_cancel(hg_context_t *context)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_thread_mutex_lock(&context->pending_list_mutex);
+
+    while (hg_list_length(context->pending_list)) {
+        hg_list_entry_t *entry = context->pending_list;
+        struct hg_handle *hg_handle = (struct hg_handle *) hg_list_data(entry);
+
+        ret = hg_cancel(hg_handle);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not cancel handle");
+            break;
+        }
+
+        if (!hg_list_remove_entry(&context->pending_list, entry)) {
+            HG_LOG_ERROR("Could not remove entry");
+            ret = HG_INVALID_PARAM;
+            break;
+        }
+    }
+
+    hg_thread_mutex_unlock(&context->pending_list_mutex);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
 hg_processing_list_add(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -724,6 +770,11 @@ hg_recv_input_cb(const struct na_cb_info *callback_info)
         goto done;
     }
 
+    /* As we removed handle from pending list repost unexpected receives */
+    if (NA_Is_listening(hg_handle->hg_info.hg_class->na_class)) {
+        hg_listen(hg_handle->hg_info.hg_class, hg_handle->hg_info.context);
+    }
+
     /* Get and verify header */
     if (hg_get_header_request(hg_handle, &request_header) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get request header");
@@ -898,6 +949,8 @@ hg_listen(hg_class_t *hg_class, hg_context_t *context)
 
     hg_thread_mutex_lock(&context->pending_list_mutex);
 
+    if (hg_list_length(context->pending_list) > 0) goto done;
+
     while (hg_list_length(context->pending_list) < HG_MAX_UNEXPECTED_RECV) {
         hg_list_entry_t *new_entry = NULL;
 
@@ -1035,6 +1088,24 @@ hg_self_cb(const struct hg_cb_info *callback_info)
     free(hg_self_cb_info);
 
 done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_cancel(struct hg_handle *hg_handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    /* TODO must cancel all NA operations issued */
+    /*
+if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_handle->completed, HG_TRUE, HG_TRUE)) {
+    NA_Cancel(hg_bulk_op_id->context->hg_bulk_class->na_class,
+            hg_bulk_op_id->context->hg_bulk_class->na_context,
+            NA_OP_ID_NULL);
+}
+     */
+
     return ret;
 }
 
@@ -1233,9 +1304,11 @@ HG_Context_destroy(hg_context_t *context)
 
     /* Check pending list */
     if (hg_pending_list_check(context) == HG_TRUE) {
-        HG_LOG_ERROR("Pending list should be empty");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
+        ret = hg_pending_list_cancel(context);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Cannot cancel list of pending entries");
+            goto done;
+        }
     }
 
     /* Check that NA operations have completed */
@@ -1850,14 +1923,11 @@ HG_Cancel(hg_handle_t handle)
         goto done;
     }
 
-    /* TODO must cancel all NA operations issued */
-    /*
-    if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_handle->completed, HG_TRUE, HG_TRUE)) {
-        NA_Cancel(hg_bulk_op_id->context->hg_bulk_class->na_class,
-                hg_bulk_op_id->context->hg_bulk_class->na_context,
-                NA_OP_ID_NULL);
+    ret = hg_cancel(hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not cancel handle");
+        goto done;
     }
-     */
 
 done:
     return ret;
