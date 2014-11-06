@@ -114,9 +114,6 @@ static const na_class_t *na_class_table[] = {
     NULL
 };
 
-/* TODO move that to private class */
-static hg_thread_mutex_t na_addr_lookup_mutex_g;
-
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_info_parse(const char *info_string, struct na_info **na_info_ptr)
@@ -332,9 +329,6 @@ NA_Initialize(const char *info_string, na_bool_t listen)
         goto done;
     }
 
-    /* Initialize lookup mutex */
-    hg_thread_mutex_init(&na_addr_lookup_mutex_g);
-
     na_private_class->na_class = *na_class_table[plugin_index];
     ret = na_private_class->na_class.initialize(&na_private_class->na_class,
             na_info, listen);
@@ -364,9 +358,6 @@ NA_Finalize(na_class_t *na_class)
     if (!na_private_class) goto done;
 
     ret = na_private_class->na_class.finalize(&na_private_class->na_class);
-
-    /* Destroy lookup mutex */
-    hg_thread_mutex_destroy(&na_addr_lookup_mutex_g);
 
     free(na_private_class);
 
@@ -600,12 +591,10 @@ NA_Addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr)
             trigger_ret = NA_Trigger(context, 0, 1, &actual_count);
         } while ((trigger_ret == NA_SUCCESS) && actual_count);
 
-        hg_thread_mutex_lock(&na_addr_lookup_mutex_g);
         if (new_addr) {
             lookup_completed = NA_TRUE;
             *addr = new_addr;
         }
-        hg_thread_mutex_unlock(&na_addr_lookup_mutex_g);
 
         if (lookup_completed) break;
 
@@ -639,11 +628,7 @@ na_addr_lookup_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
-    hg_thread_mutex_lock(&na_addr_lookup_mutex_g);
-
     *addr_ptr = callback_info->info.lookup.addr;
-
-    hg_thread_mutex_unlock(&na_addr_lookup_mutex_g);
 
     return ret;
 }
