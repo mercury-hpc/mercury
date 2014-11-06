@@ -34,6 +34,11 @@
 /* Local Type and Struct Definition */
 /************************************/
 
+struct na_private_class {
+    struct na_class na_class; /* Must remain as first field */
+    na_bool_t listen;
+};
+
 /* Private context / do not expose private members to plugins */
 struct na_private_context {
     struct na_context context;  /* Must remain as first field */
@@ -86,29 +91,30 @@ na_addr_lookup_cb(
 /*******************/
 /* Local Variables */
 /*******************/
-#ifdef NA_HAS_SSM
-extern struct na_class_info na_ssm_info_g;
-#endif
 #ifdef NA_HAS_BMI
-extern struct na_class_info na_bmi_info_g;
+extern na_class_t na_bmi_class_g;
 #endif
 #ifdef NA_HAS_MPI
-extern struct na_class_info na_mpi_info_g;
+extern na_class_t na_mpi_class_g;
+#endif
+#ifdef NA_HAS_SSM
+extern na_class_t na_ssm_class_g;
 #endif
 
-static const struct na_class_info *na_class_info[] = {
+static const na_class_t *na_class_table[] = {
 #ifdef NA_HAS_BMI
-    &na_bmi_info_g,
+    &na_bmi_class_g,
 #endif
 #ifdef NA_HAS_MPI
-    &na_mpi_info_g,
+    &na_mpi_class_g,
 #endif
 #ifdef NA_HAS_SSM
-    &na_ssm_info_g,
+    &na_ssm_class_g,
 #endif
     NULL
 };
 
+/* TODO move that to private class */
 static hg_thread_mutex_t na_addr_lookup_mutex_g;
 
 /*---------------------------------------------------------------------------*/
@@ -264,7 +270,7 @@ na_info_print(struct na_info *na_info)
 na_class_t *
 NA_Initialize(const char *info_string, na_bool_t listen)
 {
-    na_class_t *na_class = NULL;
+    struct na_private_class *na_private_class = NULL;
     struct na_info *na_info = NULL;
     unsigned int plugin_index = 0;
     unsigned int plugin_count = 0;
@@ -273,10 +279,19 @@ NA_Initialize(const char *info_string, na_bool_t listen)
 
     if (!info_string) {
         NA_LOG_ERROR("NULL info string");
+        ret = NA_INVALID_PARAM;
         goto done;
     }
 
-    plugin_count = sizeof(na_class_info) / sizeof(na_class_info[0]) - 1;
+    na_private_class = (struct na_private_class *) malloc(
+            sizeof(struct na_private_class));
+    if (!na_private_class) {
+        NA_LOG_ERROR("Could not allocate class");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+
+    plugin_count = sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
 
     ret = na_info_parse(info_string, &na_info);
     if (ret != NA_SUCCESS) {
@@ -291,7 +306,7 @@ NA_Initialize(const char *info_string, na_bool_t listen)
     while (plugin_index < plugin_count) {
         na_bool_t verified = NA_FALSE;
 
-        verified = na_class_info[plugin_index]->check_protocol(
+        verified = na_class_table[plugin_index]->check_protocol(
                 na_info->protocol_name);
 
         if (verified) {
@@ -302,7 +317,7 @@ NA_Initialize(const char *info_string, na_bool_t listen)
             }
 
             /* Otherwise try to use the plugin name */
-            if (strcmp(na_class_info[plugin_index]->class_name,
+            if (strcmp(na_class_table[plugin_index]->class_name,
                     na_info->class_name) == 0) {
                 plugin_found = NA_TRUE;
                 break;
@@ -313,32 +328,47 @@ NA_Initialize(const char *info_string, na_bool_t listen)
 
     if (!plugin_found) {
         NA_LOG_ERROR("No suitable plugin was found");
+        ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
     /* Initialize lookup mutex */
     hg_thread_mutex_init(&na_addr_lookup_mutex_g);
 
-    na_class = na_class_info[plugin_index]->initialize(na_info, listen);
-    na_class->listen = listen;
+    na_private_class->na_class = *na_class_table[plugin_index];
+    ret = na_private_class->na_class.initialize(&na_private_class->na_class,
+            na_info, listen);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not initialize plugin");
+        goto done;
+    }
+    na_private_class->listen = listen;
 
 done:
+    if (ret != NA_SUCCESS) {
+        free(na_private_class);
+        na_private_class = NULL;
+    }
     na_info_free(na_info);
-    return na_class;
+    return (na_class_t *) na_private_class;
 }
 
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Finalize(na_class_t *na_class)
 {
+    struct na_private_class *na_private_class =
+            (struct na_private_class *) na_class;
     na_return_t ret = NA_SUCCESS;
 
-    if (!na_class) goto done;
+    if (!na_private_class) goto done;
 
-    ret = na_class->finalize(na_class);
+    ret = na_private_class->na_class.finalize(&na_private_class->na_class);
 
     /* Destroy lookup mutex */
     hg_thread_mutex_destroy(&na_addr_lookup_mutex_g);
+
+    free(na_private_class);
 
 done:
     return ret;
@@ -348,14 +378,16 @@ done:
 na_bool_t
 NA_Is_listening(na_class_t *na_class)
 {
+    struct na_private_class *na_private_class =
+            (struct na_private_class *) na_class;
     na_bool_t ret = NA_FALSE;
 
-    if (!na_class) {
+    if (!na_private_class) {
         NA_LOG_ERROR("NULL NA class");
         goto done;
     }
 
-    ret = na_class->listen;
+    ret = na_private_class->listen;
 
 done:
     return ret;

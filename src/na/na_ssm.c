@@ -43,8 +43,9 @@
 #include <ssmptcp.h>
 
 /* Static NA SSM Class functions */
-static na_class_t*
-na_ssm_initialize(const struct na_info *in_info,
+static na_return_t
+na_ssm_initialize(na_class_t           *na_class,
+                  const struct na_info *in_info,
                   na_bool_t             in_listen);
 
 static na_bool_t
@@ -78,7 +79,7 @@ static na_size_t
 na_ssm_msg_get_max_unexpected_size(na_class_t *in_na_class);
 
 static na_tag_t
-na_ssm_msg_get_maximum_tag(na_class_t  *in_na_class);
+na_ssm_msg_get_max_tag(na_class_t  *in_na_class);
 
 static na_return_t
 na_ssm_msg_send_unexpected(na_class_t     *in_na_class,
@@ -248,12 +249,42 @@ static void
 na_ssm_post_callback(void NA_UNUSED(*cbdat), void *evdat);
 
 /* Global variables */
-static const char na_ssm_name_g[] = "ssm";
 
-const struct na_class_info na_ssm_info_g = {
-    na_ssm_name_g,
-    na_ssm_check_protocol,
-    na_ssm_initialize
+const na_class_t na_ssm_class_g = {
+        NULL,                                 /* private_data */
+        "ssm",                                /* name */
+        na_ssm_check_protocol,                /* check_protocol */
+        na_ssm_initialize,                    /* initialize */
+        na_ssm_finalize,                      /* finalize */
+        NULL,                                 /* context_create */
+        NULL,                                 /* context_destroy */
+        na_ssm_addr_lookup,                   /* addr_lookup */
+        na_ssm_addr_free,                     /* addr_free */
+        NULL,                                 /* addr_self */
+        NULL,                                 /* addr_dup */
+        NULL,                                 /* addr_is_self */
+        na_ssm_addr_to_string,                /* addr_to_string */
+        na_ssm_msg_get_max_expected_size,     /* msg_get_max_expected_size */
+        na_ssm_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
+        na_ssm_msg_get_max_tag,               /* msg_get_max_tag */
+        na_ssm_msg_send_unexpected,           /* msg_send_unexpected */
+        na_ssm_msg_recv_unexpected,           /* msg_recv_unexpected */
+        na_ssm_msg_send_expected,             /* msg_send_expected */
+        na_ssm_msg_recv_expected,             /* msg_recv_expected */
+        na_ssm_mem_handle_create,             /* mem_handle_create */
+        NULL,                                 /* mem_handle_create_segment */
+        na_ssm_mem_handle_free,               /* mem_handle_free */
+        na_ssm_mem_register,                  /* mem_register */
+        na_ssm_mem_deregister,                /* mem_deregister */
+        NULL,                                 /* mem_publish */
+        NULL,                                 /* mem_unpublish */
+        na_ssm_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
+        na_ssm_mem_handle_serialize,          /* mem_handle_serialize */
+        na_ssm_mem_handle_deserialize,        /* mem_handle_deserialize */
+        na_ssm_put,                           /* put */
+        na_ssm_get,                           /* get */
+        na_ssm_progress,                      /* progress */
+        na_ssm_cancel                         /* cancel */
 };
 
 /**
@@ -337,12 +368,12 @@ na_ssm_initialize_ssm_tp(struct na_class      *in_na_ssm_class,
  * @return na_class_t*   Returns a pointer to a location that maps to
  *                       na_ssm_class.
  */
-static na_class_t*
-na_ssm_initialize(const struct na_info  *in_info,
+static na_return_t
+na_ssm_initialize(na_class_t            *ssm_class,
+                  const struct na_info  *in_info,
                   na_bool_t              in_listen)
 {
     na_return_t ret = NA_SUCCESS;
-    na_class_t *ssm_class = NULL;
     int ssmret;
     struct na_ssm_private_data *ssm_data = NULL;
     int i = 0;
@@ -352,54 +383,18 @@ na_ssm_initialize(const struct na_info  *in_info,
                  "%d mode.\n", in_info->protocol_name,
                  in_info->port, in_listen);
 
-    ssm_class = malloc(sizeof(na_class_t));
-    if (__unlikely(ssm_class == NULL))
-    {
-        NA_LOG_ERROR("Out of memory error.\n");
-        return NULL;
-    }
-
-    ssm_data = malloc(sizeof(struct na_ssm_private_data));
+    ssm_data = (struct na_ssm_private_data *)
+            malloc(sizeof(struct na_ssm_private_data));
     if (__unlikely(ssm_data == NULL))
     {
-        free(ssm_class);
         NA_LOG_ERROR("Out of memory error.\n");
-        return NULL;
+        ret = NA_NOMEM_ERROR;
+        goto cleanup;
     }
     memset(ssm_data, 0, sizeof(struct na_ssm_private_data));
 
     /* SSM's private data */
     ssm_class->private_data                = (void *) ssm_data;
-
-    /* NA class functions */
-    ssm_class->finalize                    = na_ssm_finalize;
-    ssm_class->context_create              = NULL;
-    ssm_class->context_destroy             = NULL;
-    ssm_class->addr_lookup                 = na_ssm_addr_lookup;
-    ssm_class->addr_free                   = na_ssm_addr_free;
-    ssm_class->addr_self                   = NULL;
-    ssm_class->addr_dup                    = NULL;
-    ssm_class->addr_is_self                = NULL;
-    ssm_class->addr_to_string              = NULL;
-    ssm_class->msg_get_max_expected_size   = na_ssm_msg_get_max_expected_size;
-    ssm_class->msg_get_max_unexpected_size = na_ssm_msg_get_max_unexpected_size;
-    ssm_class->msg_get_max_tag             = na_ssm_msg_get_maximum_tag;
-    ssm_class->msg_send_unexpected         = na_ssm_msg_send_unexpected;
-    ssm_class->msg_recv_unexpected         = na_ssm_msg_recv_unexpected;
-    ssm_class->msg_send_expected           = na_ssm_msg_send_expected;
-    ssm_class->msg_recv_expected           = na_ssm_msg_recv_expected;
-    ssm_class->mem_handle_create           = na_ssm_mem_handle_create;
-    ssm_class->mem_handle_create_segments  = NULL;
-    ssm_class->mem_handle_free             = na_ssm_mem_handle_free;
-    ssm_class->mem_register                = na_ssm_mem_register;
-    ssm_class->mem_deregister              = na_ssm_mem_deregister;
-    ssm_class->mem_handle_get_serialize_size = na_ssm_mem_handle_get_serialize_size;
-    ssm_class->mem_handle_serialize        = na_ssm_mem_handle_serialize;
-    ssm_class->mem_handle_deserialize      = na_ssm_mem_handle_deserialize;
-    ssm_class->put                         = na_ssm_put;
-    ssm_class->get                         = na_ssm_get;
-    ssm_class->progress                    = na_ssm_progress;
-    ssm_class->cancel                      = na_ssm_cancel;
 
     /* Initialize SSM transport protocol */
     ret = na_ssm_initialize_ssm_tp(ssm_class,
@@ -416,6 +411,7 @@ na_ssm_initialize(const struct na_info  *in_info,
     if (ssm_data->ssm == NULL)
     {
         NA_LOG_ERROR("Unable to start ssm transport.\n");
+        ret = NA_PROTOCOL_ERROR;
         goto cleanup;
     }
 
@@ -435,6 +431,7 @@ na_ssm_initialize(const struct na_info  *in_info,
     if (ssm_data->unexpected_me == NULL)
     {
         NA_LOG_ERROR("Unable to create SSM link.\n");
+        ret = NA_PROTOCOL_ERROR;
         goto cleanup;
     }
 
@@ -442,6 +439,7 @@ na_ssm_initialize(const struct na_info  *in_info,
     if (ssm_data->opid_wait_queue == NULL)
     {
         NA_LOG_ERROR("Unable to create a opid wait queue.\n");
+        ret = NA_NOMEM_ERROR;
         goto cleanup;
     }
     
@@ -449,6 +447,7 @@ na_ssm_initialize(const struct na_info  *in_info,
     if (ssm_data->unexpected_msg_queue == NULL)
     {
         NA_LOG_ERROR("Unable to create unexpected message queue.\n");
+        ret = NA_NOMEM_ERROR;
         goto cleanup;
     }
 
@@ -456,6 +455,7 @@ na_ssm_initialize(const struct na_info  *in_info,
     if (ssm_data->unexpected_msg_complete_queue == NULL)
     {
         NA_LOG_ERROR("Unable to create a message complete queue.\n");
+        ret = NA_NOMEM_ERROR;
         goto cleanup;
     }
     
@@ -466,6 +466,7 @@ na_ssm_initialize(const struct na_info  *in_info,
         if (buffer == NULL)
         {
             NA_LOG_ERROR("Out of memory error.\n");
+            ret = NA_NOMEM_ERROR;
             goto cleanup;
         }
         
@@ -474,6 +475,7 @@ na_ssm_initialize(const struct na_info  *in_info,
         {
             free(buffer);
             NA_LOG_ERROR("Out of memory error.\n");
+            ret = NA_NOMEM_ERROR;
             goto cleanup;
         }
         
@@ -483,6 +485,7 @@ na_ssm_initialize(const struct na_info  *in_info,
             free(buffer->buf);
             free(buffer);
             NA_LOG_ERROR("Failed to create memory region.\n");
+            ret = NA_PROTOCOL_ERROR;
             goto cleanup;
         }
         
@@ -497,6 +500,7 @@ na_ssm_initialize(const struct na_info  *in_info,
             free(buffer->buf);
             free(buffer);
             NA_LOG_ERROR("SSM post failed.\n");
+            ret = NA_PROTOCOL_ERROR;
             goto cleanup;
         }
         
@@ -513,6 +517,7 @@ na_ssm_initialize(const struct na_info  *in_info,
                  */
                 NA_LOG_ERROR("SSM failed to drop an attached buffer as part "
                              "of cleanup process. Error: %d.\n", ssm_ret);
+                ret = NA_PROTOCOL_ERROR;
             }
             
             ssm_mr_destroy(buffer->mr);
@@ -530,7 +535,7 @@ na_ssm_initialize(const struct na_info  *in_info,
     hg_thread_mutex_init(&ssm_data->gen_matchbits);
 
     NA_LOG_DEBUG("Exit.\n");
-    return ssm_class;
+    return ret;
     
  cleanup:
 
@@ -578,10 +583,8 @@ na_ssm_initialize(const struct na_info  *in_info,
         
         free(ssm_data);
     }
-
-    free(ssm_class);
         
-    return NULL;
+    return ret;
 }
 
 /**
@@ -889,7 +892,7 @@ na_ssm_msg_get_max_unexpected_size(na_class_t NA_UNUSED *in_na_class)
  * @return na_tag_t     Maximum tag on a message.
  */
 static na_tag_t
-na_ssm_msg_get_maximum_tag(na_class_t NA_UNUSED *in_na_class)
+na_ssm_msg_get_max_tag(na_class_t NA_UNUSED *in_na_class)
 {
     return (na_tag_t) (UINT32_MAX);
 }

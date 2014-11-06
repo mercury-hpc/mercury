@@ -24,18 +24,11 @@
 
 /* NA info definition */
 struct na_info {
-    char *class_name;    /* Class name (e.g., ssm, bmi, mpi) */
+    char *class_name;    /* Class name (e.g., bmi) */
     char *protocol_name; /* Protocol (e.g., tcp, ib) */
     char *host_name;     /* Host */
     int   port;          /* Port for communication */
     char *port_name;     /* Identifies the server and can be used by a client */
-};
-
-/* Class description */
-struct na_class_info {
-    const char *class_name; /* Class name (e.g., ssm, bmi, mpi) */
-    na_bool_t (*check_protocol)(const char *protocol_name);
-    na_class_t *(*initialize)(const struct na_info *na_info, na_bool_t listen);
 };
 
 /* Private callback type for NA plugins */
@@ -50,23 +43,33 @@ struct na_context {
 
 /* NA class definition */
 struct na_class {
-    /* plugin private data */
-    void *private_data;
+    void *private_data; /* Plugin private data */
+    const char *class_name; /* Class name */
 
     /* plugin callbacks */
+    na_bool_t
+    (*check_protocol)(
+            const char *protocol_name
+            );
+    na_return_t
+    (*initialize)(
+            na_class_t *na_class,
+            const struct na_info *na_info,
+            na_bool_t listen
+            );
     na_return_t
     (*finalize)(
             na_class_t *na_class
             );
     na_return_t
     (*context_create)(
-            na_class_t          *na_class,
+            na_class_t *na_class,
             na_plugin_context_t *plugin_context
             );
     na_return_t
     (*context_destroy)(
-            na_class_t          *na_class,
-            na_plugin_context_t  plugin_context
+            na_class_t *na_class,
+            na_plugin_context_t plugin_context
             );
     na_return_t
     (*addr_lookup)(
@@ -263,7 +266,6 @@ struct na_class {
             na_context_t *context,
             na_op_id_t    op_id
             );
-    na_bool_t listen;
 };
 
 /* Private routines for use inside NA plugins */

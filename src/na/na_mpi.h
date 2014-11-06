@@ -15,10 +15,6 @@
 
 #include <mpi.h>
 
-/* MPI initialization flags */
-#define MPI_INIT_SERVER 0x01 /* set up to listen for unexpected messages */
-#define MPI_INIT_STATIC 0x10 /* set up static inter-communicator */
-
 #ifdef __cplusplus
 extern "C" {
 #endif
