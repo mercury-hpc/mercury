@@ -42,7 +42,6 @@ measure_rpc(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
 {
     int avg_iter;
     double time_read = 0, min_time_read = 0, max_time_read = 0;
-    double calls_per_sec, min_calls_per_sec, max_calls_per_sec;
     hg_return_t ret = HG_SUCCESS;
 
     size_t i;
@@ -97,7 +96,8 @@ measure_rpc(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
         hg_request_t *request;
         hg_handle_t handle;
         hg_time_t t1, t2;
-        double td;
+        double td, part_time_read;
+        double calls_per_sec, min_calls_per_sec, max_calls_per_sec;
 
         request = hg_request_create(request_class);
 
@@ -135,18 +135,21 @@ measure_rpc(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
         }
 
         hg_request_destroy(request);
+
+        part_time_read = time_read / (avg_iter + 1);
+        calls_per_sec = na_test_comm_size_g / part_time_read;
+        min_calls_per_sec = na_test_comm_size_g / max_time_read;
+        max_calls_per_sec = na_test_comm_size_g / min_time_read;
+
+        /* At this point we have received everything so work out the bandwidth */
+        if (na_test_comm_rank_g == 0) {
+            printf("%*f%*f%*f%*.*f%*.*f%*.*f\r",
+                10, part_time_read, 10, min_time_read, 10, max_time_read,
+                12, 2, calls_per_sec, 12, 2, min_calls_per_sec, 12, 2,
+                max_calls_per_sec);
+        }
     }
-
-    time_read = time_read / MERCURY_TESTING_MAX_LOOP;
-    calls_per_sec = na_test_comm_size_g / time_read;
-    min_calls_per_sec = na_test_comm_size_g / max_time_read;
-    max_calls_per_sec = na_test_comm_size_g / min_time_read;
-
-    /* At this point we have received everything so work out the bandwidth */
-    printf("%*f%*f%*f%*.*f%*.*f%*.*f\n",
-            10, time_read, 10, min_time_read, 10, max_time_read,
-            12, 2, calls_per_sec, 12, 2, min_calls_per_sec, 12, 2,
-            max_calls_per_sec);
+    if (na_test_comm_rank_g == 0) printf("\n");
 
 done:
     return ret;
@@ -171,7 +174,6 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
     int avg_iter;
     double time_read = 0, min_time_read = 0, max_time_read = 0;
-    double read_bandwidth, min_read_bandwidth, max_read_bandwidth;
 
     struct hg_info *hg_info = NULL;
 
@@ -244,7 +246,8 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
         hg_request_t *request;
         hg_time_t t1, t2;
-        double td;
+        double td, part_time_read;
+        double read_bandwidth, min_read_bandwidth, max_read_bandwidth;
 
         request = hg_request_create(request_class);
 
@@ -269,18 +272,21 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         max_time_read = (td > max_time_read) ? td : max_time_read;
 
         hg_request_destroy(request);
+
+        part_time_read = time_read / (avg_iter + 1);
+        read_bandwidth = nmbytes * na_test_comm_size_g / part_time_read;
+        min_read_bandwidth = nmbytes * na_test_comm_size_g / max_time_read;
+        max_read_bandwidth = nmbytes * na_test_comm_size_g / min_time_read;
+
+        /* At this point we have received everything so work out the bandwidth */
+        if (na_test_comm_rank_g == 0) {
+            printf("%*f%*f%*f%*.*f%*.*f%*.*f\r",
+                10, part_time_read, 10, min_time_read, 10, max_time_read,
+                12, 2, read_bandwidth, 12, 2, min_read_bandwidth, 12, 2,
+                max_read_bandwidth);
+        }
     }
-
-    time_read = time_read / MERCURY_TESTING_MAX_LOOP;
-    read_bandwidth = nmbytes * na_test_comm_size_g / time_read;
-    min_read_bandwidth = nmbytes * na_test_comm_size_g / max_time_read;
-    max_read_bandwidth = nmbytes * na_test_comm_size_g / min_time_read;
-
-    /* At this point we have received everything so work out the bandwidth */
-    printf("%*f%*f%*f%*.*f%*.*f%*.*f\n",
-            10, time_read, 10, min_time_read, 10, max_time_read,
-            12, 2, read_bandwidth, 12, 2, min_read_bandwidth, 12, 2,
-            max_read_bandwidth);
+    if (na_test_comm_rank_g == 0) printf("\n");
 
     /* Free memory handle */
     ret = HG_Bulk_free(bulk_handle);
