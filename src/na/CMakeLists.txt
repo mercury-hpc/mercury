@@ -138,6 +138,35 @@ if(NA_USE_MPI)
   endif()
 endif()
 
+# CCI
+option(NA_USE_CCI "Use CCI." OFF)
+if(NA_USE_CCI)
+  find_package(CCI REQUIRED)
+  if(CCI_FOUND)
+    message(STATUS "CCI include directory: ${CCI_INCLUDE_DIR}")
+    set(NA_PLUGINS ${NA_PLUGINS} cci)
+    set(NA_HAS_CCI 1)
+    include_directories(${CCI_INCLUDE_DIR})
+    set(NA_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
+      ${CCI_LIBRARIES}
+    )
+    set(NA_EXT_INCLUDE_DEPENDENCIES
+      ${NA_EXT_INCLUDE_DEPENDENCIES}
+      ${CCI_INCLUDE_DIRS}
+    )
+    include(CheckCSourceCompiles)
+    check_c_source_compiles("#include <cci.h>
+      int main(int argc, char **argv) {
+        cci_finalize();
+      }
+      " HAVE_CCI_FINALIZE)
+  else()
+    message(FATAL_ERROR "Could not find CCI.")
+  endif()
+endif()
+
+
 #------------------------------------------------------------------------------
 # Configure module header files
 #------------------------------------------------------------------------------
@@ -189,6 +218,13 @@ if(NA_USE_MPI)
   )
 endif()
 
+if(NA_USE_CCI)
+  set(NA_SRCS
+    ${NA_SRCS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_cci.c
+  )
+endif()
+
 #----------------------------------------------------------------------------
 # Libraries
 #----------------------------------------------------------------------------
@@ -233,6 +269,13 @@ if(NA_USE_MPI)
   set(NA_HEADERS
     ${NA_HEADERS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.h
+  )
+endif()
+
+if(NA_USE_CCI)
+  set(NA_HEADERS
+    ${NA_HEADERS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_cci.h
   )
 endif()
 
