@@ -51,7 +51,7 @@ typedef struct na_cci_mem_handle na_cci_mem_handle_t;
 struct na_cci_addr {
 	cci_connection_t *cci_addr;	/* CCI addr */
 	TAILQ_HEAD(prx,na_cci_op_id) rxs; /* Posted recvs */
-	TAILQ_HEAD(erx,na_cci_op_id) early; /* Expected recvs not yet posted */
+	TAILQ_HEAD(erx,na_cci_info_recv_expected) early; /* Expected recvs not yet posted */
 	char *uri;			/* Peer's URI */
 	na_bool_t	unexpected;	/* Address generated from unexpected
 					 * recv */
@@ -91,6 +91,7 @@ struct na_cci_info_send_expected {
 };
 
 struct na_cci_info_recv_expected {
+	TAILQ_ENTRY(na_cci_info_recv_expected) entry;
 	cci_op_id_t	op_id;	/* CCI operation ID */
 	void		*buf;
 	cci_size_t	buf_size;
@@ -1156,28 +1157,10 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 	cci_size_t	cci_buf_size = (cci_size_t) buf_size;
 	na_cci_addr_t *na_cci_addr = (struct na_cci_addr *)source;
 	cci_msg_tag_t	cci_tag = (cci_msg_tag_t) tag;
+	struct na_cci_info_recv_expected *rx = NULL;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
 	int		rc;
-
-	/* See if it has already arrived */
-	if (!TAILQ_EMPTY(&na_cci_addr->early)) {
-		TAILQ_FOREACH(na_cci_op_id, &na_cci_addr->early, entry) {
-			if (na_cci_op_id->info.recv_expected.tag == cci_tag) {
-				/* Found, copy to final buffer, and complete it */
-				na_size_t len = buf_size > na_cci_op_id->info.recv_expected.buf_size ?
-					buf_size : na_cci_op_id->info.recv_expected.buf_size;
-				memcpy(buf, na_cci_op_id->info.recv_expected.buf, len);
-				na_cci_op_id->info.recv_expected.actual_size = len;
-				TAILQ_REMOVE(&na_cci_addr->early, na_cci_op_id, entry);
-				ret = na_cci_complete(na_cci_op_id);
-				if (ret != NA_SUCCESS) {
-					NA_LOG_ERROR("Could not complete operation");
-				}
-				goto out;
-			}
-		}
-	}
 
 	/* Allocate na_op_id */
 	na_cci_op_id = (struct na_cci_op_id *)calloc(1, sizeof(*na_cci_op_id));
@@ -1196,6 +1179,27 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 	na_cci_op_id->info.recv_expected.buf_size = cci_buf_size;
 	na_cci_op_id->info.recv_expected.actual_size = 0;
 	na_cci_op_id->info.recv_expected.tag = cci_tag;
+
+	/* See if it has already arrived */
+	if (!TAILQ_EMPTY(&na_cci_addr->early)) {
+		TAILQ_FOREACH(rx, &na_cci_addr->early, entry) {
+			if (rx->tag == cci_tag) {
+				/* Found, copy to final buffer, and complete it */
+				na_size_t len = buf_size > rx->buf_size ?
+					buf_size : rx->buf_size;
+				memcpy(buf, rx->buf, len);
+				na_cci_op_id->info.recv_expected.actual_size = len;
+				TAILQ_REMOVE(&na_cci_addr->early, rx, entry);
+				free(rx->buf);
+				free(rx);
+				ret = na_cci_complete(na_cci_op_id);
+				if (ret != NA_SUCCESS) {
+					NA_LOG_ERROR("Could not complete operation");
+				}
+				goto out;
+			}
+		}
+	}
 
 	/* Queue the recv request */
 	TAILQ_INSERT_TAIL(&na_cci_addr->rxs, na_cci_op_id, entry);
@@ -1495,6 +1499,57 @@ static void
 handle_recv_expected(na_class_t *na_class, na_context_t *context,
 		cci_endpoint_t *e, cci_event_t *event)
 {
+	cci_connection_t *c = event->recv.connection;
+	na_cci_addr_t *na_cci_addr = c->context;
+	cci_msg_t *msg = (void*) event->recv.ptr;
+	na_size_t msg_len = event->recv.len - sizeof(msg->size);
+	na_cci_op_id_t *na_cci_op_id = NULL;
+	struct na_cci_info_recv_expected *rx = NULL;
+	int rc = 0;
+	na_return_t ret;
+
+	TAILQ_FOREACH(na_cci_op_id, &na_cci_addr->rxs, entry) {
+		if (na_cci_op_id->info.recv_expected.tag == msg->send.tag) {
+			na_size_t len = msg_len;
+
+			if (na_cci_op_id->info.recv_expected.buf_size < len)
+				len = na_cci_op_id->info.recv_expected.buf_size;
+			memcpy(na_cci_op_id->info.recv_unexpected.buf, msg->send.data, len);
+			na_cci_op_id->info.recv_expected.actual_size = len;
+			TAILQ_REMOVE(&na_cci_addr->rxs, na_cci_op_id, entry);
+			ret = na_cci_complete(na_cci_op_id);
+			if (ret != NA_SUCCESS) {
+				NA_LOG_ERROR("Could not complete expected recv");
+			}
+			goto out;
+		}
+	}
+
+	/* Early receive, cache it */
+	rx = calloc(1, sizeof(*rx));
+	if (!rx) {
+		NA_LOG_ERROR("Unable to allocate expected recv - dropping recv");
+		goto out;
+	}
+
+	rx->buf = calloc(1, msg_len);
+	if (!rx->buf) {
+		rc = CCI_ENOMEM;
+		goto out;
+	}
+
+	memcpy(rx->buf, msg->send.data, msg_len);
+	rx->buf_size = rx->actual_size = msg_len;
+	rx->tag = msg->send.tag;
+
+	TAILQ_INSERT_TAIL(&na_cci_addr->early, rx, entry);
+
+out:
+	if (rc) {
+		if (rx)
+			free(rx->buf);
+		free(rx);
+	}
 	return;
 }
 
