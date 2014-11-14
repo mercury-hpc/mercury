@@ -1490,6 +1490,12 @@ static void
 handle_send(na_class_t *class, na_context_t *context,
 		cci_endpoint_t *e, cci_event_t *event)
 {
+	na_cci_op_id_t *na_cci_op_id = event->send.context;
+	na_return_t ret;
+
+	ret = na_cci_complete(na_cci_op_id);
+	if (ret != NA_SUCCESS)
+		NA_LOG_ERROR("Unable to complete send");
 
 	return;
 }
