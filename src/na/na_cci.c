@@ -28,10 +28,7 @@
 /* Local Macros */
 /****************/
 /* Max tag */
-#define NA_CCI_MAX_TAG (NA_TAG_UB >> 2)
-
-/* Default tag used for one-sided over two-sided */
-#define NA_CCI_RMA_REQUEST_TAG (NA_CCI_MAX_TAG + 1)
+#define NA_CCI_MAX_TAG (1 << 30)
 
 #define NA_CCI_PRIVATE_DATA(na_class) \
     ((struct na_cci_private_data *)(na_class->private_data))
@@ -53,8 +50,7 @@ struct na_cci_addr {
 	TAILQ_HEAD(prx,na_cci_op_id) rxs; /* Posted recvs */
 	TAILQ_HEAD(erx,na_cci_info_recv_expected) early; /* Expected recvs not yet posted */
 	char *uri;			/* Peer's URI */
-	na_bool_t	unexpected;	/* Address generated from unexpected
-					 * recv */
+	na_bool_t	unexpected;	/* Address generated from unexpected recv */
 	na_bool_t	self;	/* Boolean for self */
 };
 
@@ -145,6 +141,7 @@ struct na_cci_private_data {
 	hg_thread_mutex_t unexpected_msg_queue_mutex;	/* Mutex */
 	hg_queue_t     *unexpected_op_queue;	/* Unexpected op queue */
 	hg_thread_mutex_t unexpected_op_queue_mutex;	/* Mutex */
+	char		*uri;
 };
 
 typedef union cci_msg {
@@ -424,7 +421,8 @@ na_cci_progress(
 
 static na_return_t
 na_cci_complete(
-		struct na_cci_op_id *na_cci_op_id
+		struct na_cci_op_id *na_cci_op_id,
+		na_return_t ret
 );
 
 static void
@@ -601,7 +599,6 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	}
 	NA_CCI_PRIVATE_DATA(na_class)->endpoint = endpoint;
 
-
 	rc = cci_get_opt(endpoint, CCI_OPT_ENDPT_URI, &uri);
 	if (rc) {
 		NA_LOG_ERROR("cci_get_opt(URI) failed with %s",
@@ -610,6 +607,8 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	}
 
 	fprintf(stderr, "opened %s\n", uri);
+	NA_CCI_PRIVATE_DATA(na_class)->uri = strdup(uri);
+
 	ret = na_cci_init(na_class, na_info);
 
 out:
@@ -714,6 +713,8 @@ static na_return_t
 na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
 	    na_cb_t callback, void *arg, const char *name, na_op_id_t * op_id)
 {
+	cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+	char *uri = NA_CCI_PRIVATE_DATA(na_class)->uri;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_cci_addr_t *na_cci_addr = NULL;
 	na_return_t	ret = NA_SUCCESS;
@@ -733,7 +734,7 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
 	na_cci_op_id->completed = NA_FALSE;
 
 	/* Allocate addr */
-	na_cci_addr = (na_cci_addr_t *)malloc(sizeof(struct na_cci_addr));
+	na_cci_addr = (na_cci_addr_t *)malloc(sizeof(*na_cci_addr));
 	if (!na_cci_addr) {
 		NA_LOG_ERROR("Could not allocate CCI addr");
 		ret = NA_NOMEM_ERROR;
@@ -742,9 +743,17 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
 	na_cci_addr->cci_addr = NULL;
 	TAILQ_INIT(&na_cci_addr->rxs);
 	TAILQ_INIT(&na_cci_addr->early);
+	na_cci_addr->uri = strdup(name);
 	na_cci_addr->unexpected = NA_FALSE;
 	na_cci_addr->self = NA_FALSE;
 	na_cci_op_id->info.lookup.addr = (na_addr_t) na_cci_addr;
+
+	rc = cci_connect(e, name, uri, strlen(uri) + 1, CCI_CONN_ATTR_RO,
+			na_cci_op_id, 0, NULL);
+	if (rc) {
+		NA_LOG_ERROR("cci_connect() failed with %s", cci_strerror(e, rc));
+		goto out;
+	}
 
 	/* Assign op_id */
 	*op_id = (na_op_id_t) na_cci_op_id;
@@ -765,7 +774,7 @@ na_cci_addr_self(na_class_t NA_UNUSED * na_class, na_addr_t * addr)
 	na_return_t	ret = NA_SUCCESS;
 
 	/* Allocate addr */
-	na_cci_addr = (na_cci_addr_t *)malloc(sizeof(struct na_cci_addr));
+	na_cci_addr = (na_cci_addr_t *)malloc(sizeof(*na_cci_addr));
 	if (!na_cci_addr) {
 		NA_LOG_ERROR("Could not allocate CCI addr");
 		ret = NA_NOMEM_ERROR;
@@ -788,7 +797,7 @@ out:
 static na_return_t
 na_cci_addr_free(na_class_t NA_UNUSED * na_class, na_addr_t addr)
 {
-	na_cci_addr_t *na_cci_addr = (struct na_cci_addr *)addr;
+	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)addr;
 	na_return_t	ret = NA_SUCCESS;
 
 	/* Cleanup peer_addr */
@@ -807,7 +816,7 @@ na_cci_addr_free(na_class_t NA_UNUSED * na_class, na_addr_t addr)
 static na_bool_t
 na_cci_addr_is_self(na_class_t NA_UNUSED * na_class, na_addr_t addr)
 {
-	na_cci_addr_t *na_cci_addr = (struct na_cci_addr *)addr;
+	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)addr;
 
 	return na_cci_addr->self;
 }
@@ -837,8 +846,9 @@ na_cci_addr_to_string(na_class_t NA_UNUSED * na_class, char *buf,
 static na_size_t
 na_cci_msg_get_max_expected_size(na_class_t *na_class)
 {
-	na_size_t max_expected_size =
-		NA_CCI_PRIVATE_DATA(na_class)->endpoint->device->max_send_size;
+	cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+	cci_msg_t msg;
+	na_size_t max_expected_size = e->device->max_send_size - sizeof(msg.size);
 
 	return max_expected_size;
 }
@@ -847,8 +857,9 @@ na_cci_msg_get_max_expected_size(na_class_t *na_class)
 static na_size_t
 na_cci_msg_get_max_unexpected_size(na_class_t *na_class)
 {
-	na_size_t max_unexpected_size =
-		NA_CCI_PRIVATE_DATA(na_class)->endpoint->device->max_send_size;
+	cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+	cci_msg_t msg;
+	na_size_t max_unexpected_size = e->device->max_send_size - sizeof(msg.size);
 
 	return max_unexpected_size;
 }
@@ -869,7 +880,7 @@ na_cci_msg_send_unexpected(na_class_t *na_class,
 	 na_size_t buf_size, na_addr_t dest, na_tag_t tag, na_op_id_t * op_id)
 {
 	cci_size_t	cci_buf_size = (cci_size_t) buf_size;
-	na_cci_addr_t *na_cci_addr = (struct na_cci_addr *)dest;
+	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)dest;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
 	int		rc;
@@ -906,14 +917,6 @@ na_cci_msg_send_unexpected(na_class_t *na_class,
 				cci_strerror(endpoint, rc));
 		ret = NA_PROTOCOL_ERROR;
 		goto out;
-	}
-	/* If immediate completion, directly add to completion queue */
-	if (rc) {
-		ret = na_cci_complete(na_cci_op_id);
-		if (ret != NA_SUCCESS) {
-			NA_LOG_ERROR("Could not complete operation");
-			goto out;
-		}
 	}
 	/* Assign op_id */
 	*op_id = (na_op_id_t) na_cci_op_id;
@@ -967,7 +970,7 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
 		free(rx->buf);
 		free(rx);
 
-		ret = na_cci_complete(na_cci_op_id);
+		ret = na_cci_complete(na_cci_op_id, NA_SUCCESS);
 		if (ret != NA_SUCCESS) {
 			NA_LOG_ERROR("Could not complete operation");
 			goto out;
@@ -1049,7 +1052,7 @@ na_cci_msg_unexpected_op_push(na_class_t * na_class,
 	if (!na_cci_op_id) {
 		NA_LOG_ERROR("NULL operation ID");
 		ret = NA_INVALID_PARAM;
-		goto done;
+		goto out;
 	}
 	hg_thread_mutex_lock(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
@@ -1061,7 +1064,7 @@ na_cci_msg_unexpected_op_push(na_class_t * na_class,
 	hg_thread_mutex_unlock(
 		   &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
-done:
+out:
 	return ret;
 }
 
@@ -1092,7 +1095,7 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 			 na_addr_t dest, na_tag_t tag, na_op_id_t * op_id)
 {
 	cci_size_t	cci_buf_size = (cci_size_t) buf_size;
-	na_cci_addr_t *na_cci_addr = (struct na_cci_addr *)dest;
+	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)dest;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
 	int		rc;
@@ -1130,14 +1133,6 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 		ret = NA_PROTOCOL_ERROR;
 		goto out;
 	}
-	/* If immediate completion, directly add to completion queue */
-	if (rc) {
-		ret = na_cci_complete(na_cci_op_id);
-		if (ret != NA_SUCCESS) {
-			NA_LOG_ERROR("Could not complete operation");
-			goto out;
-		}
-	}
 	/* Assign op_id */
 	*op_id = (na_op_id_t) na_cci_op_id;
 
@@ -1155,7 +1150,7 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 			 na_addr_t source, na_tag_t tag, na_op_id_t * op_id)
 {
 	cci_size_t	cci_buf_size = (cci_size_t) buf_size;
-	na_cci_addr_t *na_cci_addr = (struct na_cci_addr *)source;
+	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)source;
 	cci_msg_tag_t	cci_tag = (cci_msg_tag_t) tag;
 	struct na_cci_info_recv_expected *rx = NULL;
 	struct na_cci_op_id *na_cci_op_id = NULL;
@@ -1192,7 +1187,7 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 				TAILQ_REMOVE(&na_cci_addr->early, rx, entry);
 				free(rx->buf);
 				free(rx);
-				ret = na_cci_complete(na_cci_op_id);
+				ret = na_cci_complete(na_cci_op_id, NA_SUCCESS);
 				if (ret != NA_SUCCESS) {
 					NA_LOG_ERROR("Could not complete operation");
 				}
@@ -1371,7 +1366,7 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	cci_size_t	cci_local_offset = (cci_size_t) local_offset;
 	na_cci_mem_handle_t *cci_remote_mem_handle = (na_cci_mem_handle_t *)remote_mem_handle;
 	cci_size_t	cci_remote_offset = (cci_size_t) remote_offset;
-	na_cci_addr_t *na_cci_addr = (struct na_cci_addr *)remote_addr;
+	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)remote_addr;
 	cci_size_t	cci_length = (cci_size_t) length;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
@@ -1439,7 +1434,7 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	na_cci_mem_handle_t *cci_remote_mem_handle =
 	(na_cci_mem_handle_t *)remote_mem_handle;
 	cci_size_t	cci_remote_offset = (cci_size_t) remote_offset;
-	na_cci_addr_t *na_cci_addr = (struct na_cci_addr *)remote_addr;
+	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)remote_addr;
 	cci_size_t	cci_length = (cci_size_t) length;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
@@ -1454,7 +1449,7 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	if (!na_cci_op_id) {
 		NA_LOG_ERROR("Could not allocate NA CCI operation ID");
 		ret = NA_NOMEM_ERROR;
-		goto done;
+		goto out;
 	}
 	na_cci_op_id->context = context;
 	na_cci_op_id->type = NA_CB_GET;
@@ -1473,12 +1468,12 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	if (rc) {
 		NA_LOG_ERROR("cci_rma() failed %s", cci_strerror(e, rc));
 		ret = NA_PROTOCOL_ERROR;
-		goto done;
+		goto out;
 	}
 	/* Assign op_id */
 	*op_id = (na_op_id_t) na_cci_op_id;
 
-done:
+out:
 	if (ret != NA_SUCCESS) {
 		free(na_cci_op_id);
 	}
@@ -1491,9 +1486,9 @@ handle_send(na_class_t *class, na_context_t *context,
 		cci_endpoint_t *e, cci_event_t *event)
 {
 	na_cci_op_id_t *na_cci_op_id = event->send.context;
-	na_return_t ret;
+	na_return_t ret = event->send.status == CCI_SUCCESS ? NA_SUCCESS : NA_PROTOCOL_ERROR;
 
-	ret = na_cci_complete(na_cci_op_id);
+	ret = na_cci_complete(na_cci_op_id, ret);
 	if (ret != NA_SUCCESS)
 		NA_LOG_ERROR("Unable to complete send");
 
@@ -1523,7 +1518,7 @@ handle_recv_expected(na_class_t *na_class, na_context_t *context,
 			memcpy(na_cci_op_id->info.recv_unexpected.buf, msg->send.data, len);
 			na_cci_op_id->info.recv_expected.actual_size = len;
 			TAILQ_REMOVE(&na_cci_addr->rxs, na_cci_op_id, entry);
-			ret = na_cci_complete(na_cci_op_id);
+			ret = na_cci_complete(na_cci_op_id, NA_SUCCESS);
 			if (ret != NA_SUCCESS) {
 				NA_LOG_ERROR("Could not complete expected recv");
 			}
@@ -1585,7 +1580,7 @@ handle_recv_unexpected(na_class_t *na_class, na_context_t *context,
 		na_cci_op_id->info.recv_unexpected.actual_size = len;
 		na_cci_op_id->info.recv_unexpected.tag = msg->send.tag;
 		memcpy(na_cci_op_id->info.recv_unexpected.buf, msg->send.data, len);
-		ret = na_cci_complete(na_cci_op_id);
+		ret = na_cci_complete(na_cci_op_id, NA_SUCCESS);
 		if (ret != NA_SUCCESS) {
 			NA_LOG_ERROR("failed to complete unexpected recv");
 			goto out;
@@ -1648,6 +1643,41 @@ static void
 handle_connect_request(na_class_t *class, na_context_t *context,
 		cci_endpoint_t *e, cci_event_t *event)
 {
+	na_cci_addr_t *na_cci_addr = NULL;
+	int rc = 0;
+
+	na_cci_addr = calloc(1, sizeof(*na_cci_addr));
+	if (!na_cci_addr) {
+		NA_LOG_ERROR("Unable to allocate na_cci_addr for new peer %s",
+				event->request.data_ptr);
+		rc = CCI_ENOMEM;
+		goto out;
+	}
+
+	TAILQ_INIT(&na_cci_addr->rxs);
+	TAILQ_INIT(&na_cci_addr->early);
+
+	na_cci_addr->uri = strdup(event->request.data_ptr);
+	if (!na_cci_addr->uri) {
+		NA_LOG_ERROR("Unable to allocate URI for new peer %s",
+				event->request.data_ptr);
+		rc = CCI_ENOMEM;
+		goto out;
+	}
+
+	na_cci_addr->unexpected = NA_TRUE;
+	na_cci_addr->self = NA_FALSE;
+
+	rc = cci_accept(event, (void*)na_cci_addr);
+	if (rc)
+		NA_LOG_ERROR("cci_acept() failed with %s", cci_strerror(e, rc));
+out:
+	if (rc) {
+		if (na_cci_addr)
+			free(na_cci_addr->uri);
+		free(na_cci_addr);
+	}
+
 	return;
 }
 
@@ -1656,6 +1686,21 @@ static void
 handle_connect(na_class_t *class, na_context_t *context,
 		cci_endpoint_t *e, cci_event_t *event)
 {
+	na_cci_op_id_t *na_cci_op_id = event->connect.context;
+	na_cci_addr_t *na_cci_addr = na_cci_op_id->info.lookup.addr;
+	na_return_t ret = NA_SUCCESS;
+
+	if (event->connect.status != CCI_SUCCESS) {
+		NA_LOG_ERROR("connect to %s failed with %s",
+			na_cci_addr->uri, cci_strerror(e, event->connect.status));
+		ret = NA_PROTOCOL_ERROR;
+	} else {
+		na_cci_addr->cci_addr = event->connect.connection;
+	}
+
+	ret = na_cci_complete(na_cci_op_id, ret);
+	if (ret != NA_SUCCESS)
+		NA_LOG_ERROR("Could not complete operation");
 	return;
 }
 
@@ -1664,6 +1709,10 @@ static void
 handle_accept(na_class_t *class, na_context_t *context,
 		cci_endpoint_t *e, cci_event_t *event)
 {
+	na_cci_addr_t *na_cci_addr = event->accept.context;
+
+	na_cci_addr->cci_addr = event->accept.connection;
+
 	return;
 }
 
@@ -1732,10 +1781,9 @@ na_cci_progress(na_class_t * na_class, na_context_t * context,
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_complete(struct na_cci_op_id *na_cci_op_id)
+na_cci_complete(struct na_cci_op_id *na_cci_op_id, na_return_t ret)
 {
 	struct na_cb_info *callback_info = NULL;
-	na_return_t	ret = NA_SUCCESS;
 
 	/* Mark op id as completed */
 	na_cci_op_id->completed = NA_TRUE;
@@ -1745,7 +1793,7 @@ na_cci_complete(struct na_cci_op_id *na_cci_op_id)
 	if (!callback_info) {
 		NA_LOG_ERROR("Could not allocate callback info");
 		ret = NA_NOMEM_ERROR;
-		goto done;
+		goto out;
 	}
 	callback_info->arg = na_cci_op_id->arg;
 	callback_info->ret = ret;
@@ -1776,7 +1824,7 @@ na_cci_complete(struct na_cci_op_id *na_cci_op_id)
 		    na_cci_op_id->info.recv_expected.buf_size) {
 			NA_LOG_ERROR("Buffer size and actual transfer size do not match");
 			ret = NA_SIZE_ERROR;
-			goto done;
+			goto out;
 		}
 		break;
 	case NA_CB_PUT:
@@ -1793,9 +1841,9 @@ na_cci_complete(struct na_cci_op_id *na_cci_op_id)
 				callback_info, &na_cci_release, na_cci_op_id);
 	if (ret != NA_SUCCESS) {
 		NA_LOG_ERROR("Could not add callback to completion queue");
-		goto done;
+		goto out;
 	}
-done:
+out:
 	if (ret != NA_SUCCESS) {
 		free(callback_info);
 	}
