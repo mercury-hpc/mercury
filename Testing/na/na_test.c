@@ -331,6 +331,8 @@ na_test_get_config(char *addr_name, na_size_t len)
             exit(0);
         }
         fgets(config_addr_name, NA_TEST_MAX_ADDR_NAME, config);
+        /* This prevents retaining the newline, if any */
+        config_addr_name[strlen(config_addr_name) - 1] = '\0';
         printf("Port name read: %s\n", config_addr_name);
         fclose(config);
     }
