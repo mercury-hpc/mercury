@@ -30,9 +30,6 @@
 /* Max tag */
 #define NA_CCI_MAX_TAG (1 << 30)
 
-#define NA_CCI_PRIVATE_DATA(na_class) \
-    ((struct na_cci_private_data *)(na_class->private_data))
-
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
@@ -43,6 +40,10 @@ typedef uintptr_t cci_op_id_t;
 typedef struct na_cci_addr na_cci_addr_t;
 typedef struct na_cci_op_id na_cci_op_id_t;
 typedef struct na_cci_mem_handle na_cci_mem_handle_t;
+typedef struct na_cci_private_data na_cci_private_data_t;
+
+#define NA_CCI_PRIVATE_DATA(na_class) \
+    ((struct na_cci_private_data *)(na_class->private_data))
 
 /* na_cci_addr */
 struct na_cci_addr {
@@ -623,13 +624,6 @@ na_cci_init(na_class_t * na_class, const struct na_info *na_info)
 	hg_queue_t     *unexpected_op_queue = NULL;
 	na_return_t	ret = NA_SUCCESS;
 	int		rc;
-
-	na_class->private_data = malloc(sizeof(struct na_cci_private_data));
-	if (!na_class->private_data) {
-		NA_LOG_ERROR("Could not allocate NA private data class");
-		ret = NA_NOMEM_ERROR;
-		goto out;
-	}
 
 	/* Create queue for unexpected messages */
 	unexpected_msg_queue = hg_queue_new();
