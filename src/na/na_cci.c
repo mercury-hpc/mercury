@@ -51,6 +51,7 @@ struct na_cci_addr {
 	TAILQ_HEAD(prx,na_cci_op_id) rxs; /* Posted recvs */
 	TAILQ_HEAD(erx,na_cci_info_recv_expected) early; /* Expected recvs not yet posted */
 	char *uri;			/* Peer's URI */
+	na_cci_op_id_t	*na_cci_op_id;	/* For addr_lookup() */
 	na_bool_t	unexpected;	/* Address generated from unexpected recv */
 	na_bool_t	self;	/* Boolean for self */
 };
@@ -740,10 +741,11 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
 	na_cci_addr->uri = strdup(name);
 	na_cci_addr->unexpected = NA_FALSE;
 	na_cci_addr->self = NA_FALSE;
+	na_cci_addr->na_cci_op_id = na_cci_op_id;
 	na_cci_op_id->info.lookup.addr = (na_addr_t) na_cci_addr;
 
 	rc = cci_connect(e, name, uri, strlen(uri) + 1, CCI_CONN_ATTR_RO,
-			na_cci_op_id, 0, NULL);
+			na_cci_addr, 0, NULL);
 	if (rc) {
 		NA_LOG_ERROR("cci_connect() failed with %s", cci_strerror(e, rc));
 		goto out;
@@ -1509,7 +1511,7 @@ handle_recv_expected(na_class_t *na_class, na_context_t *context,
 
 			if (na_cci_op_id->info.recv_expected.buf_size < len)
 				len = na_cci_op_id->info.recv_expected.buf_size;
-			memcpy(na_cci_op_id->info.recv_unexpected.buf, msg->send.data, len);
+			memcpy(na_cci_op_id->info.recv_expected.buf, msg->send.data, len);
 			na_cci_op_id->info.recv_expected.actual_size = len;
 			TAILQ_REMOVE(&na_cci_addr->rxs, na_cci_op_id, entry);
 			ret = na_cci_complete(na_cci_op_id, NA_SUCCESS);
@@ -1680,9 +1682,11 @@ static void
 handle_connect(na_class_t *class, na_context_t *context,
 		cci_endpoint_t *e, cci_event_t *event)
 {
-	na_cci_op_id_t *na_cci_op_id = event->connect.context;
-	na_cci_addr_t *na_cci_addr = na_cci_op_id->info.lookup.addr;
+	na_cci_addr_t *na_cci_addr = event->connect.context;
+	na_cci_op_id_t *na_cci_op_id = na_cci_addr->na_cci_op_id;
 	na_return_t ret = NA_SUCCESS;
+
+	na_cci_addr->na_cci_op_id = NULL;
 
 	if (event->connect.status != CCI_SUCCESS) {
 		NA_LOG_ERROR("connect to %s failed with %s",
