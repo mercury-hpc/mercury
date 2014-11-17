@@ -228,7 +228,7 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     if (hg_proc_get_size(proc) > in_buf_size) {
 #ifdef HG_HAS_XDR
         HG_LOG_ERROR("Extra encoding using XDR is not yet supported");
-        ret = HG_FAIL;
+        ret = HG_SIZE_ERROR;
         goto done;
 #else
         *extra_in_buf = hg_proc_get_extra_buf(proc);

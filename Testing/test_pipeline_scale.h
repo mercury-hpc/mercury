@@ -42,22 +42,19 @@ static HG_INLINE int hg_proc_bla_write_in_t(hg_proc_t proc, void *data)
 
     ret = hg_proc_int32_t(proc, &struct_data->fildes);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc error");
         return ret;
     }
 
     ret = hg_proc_hg_bulk_t(proc, &struct_data->bulk_handle);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc error");
         return ret;
     }
 
     ret = hg_proc_uint64_t(proc, &struct_data->pipeline_buffer_size);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc error");
         return ret;
     }
 
@@ -77,8 +74,7 @@ static HG_INLINE int hg_proc_bla_write_out_t(hg_proc_t proc, void *data)
 
     ret = hg_proc_uint64_t(proc, &struct_data->ret);
     if (ret != HG_SUCCESS) {
-        HG_ERROR_DEFAULT("Proc error");
-        ret = HG_FAIL;
+        HG_LOG_ERROR("Proc error");
         return ret;
     }
 

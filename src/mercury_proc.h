@@ -356,7 +356,7 @@ hg_proc_hg_int8_t(hg_proc_t proc, hg_int8_t *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
-    ret = xdr_int8_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
+    ret = xdr_int8_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_PROTOCOL_ERROR;
 #else
     ret = hg_proc_memcpy(proc, data, sizeof(hg_int8_t));
 #endif
@@ -376,7 +376,7 @@ hg_proc_hg_uint8_t(hg_proc_t proc, hg_uint8_t *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
-    ret = xdr_uint8_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
+    ret = xdr_uint8_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_PROTOCOL_ERROR;
 #else
     ret = hg_proc_memcpy(proc, data, sizeof(hg_uint8_t));
 #endif
@@ -396,7 +396,7 @@ hg_proc_hg_int16_t(hg_proc_t proc, hg_int16_t *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
-    ret = xdr_int16_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
+    ret = xdr_int16_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_PROTOCOL_ERROR;
 #else
     ret = hg_proc_memcpy(proc, data, sizeof(hg_int16_t));
 #endif
@@ -416,7 +416,7 @@ hg_proc_hg_uint16_t(hg_proc_t proc, hg_uint16_t *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
-    ret = xdr_uint16_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
+    ret = xdr_uint16_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_PROTOCOL_ERROR;
 #else
     ret = hg_proc_memcpy(proc, data, sizeof(hg_uint16_t));
 #endif
@@ -436,7 +436,7 @@ hg_proc_hg_int32_t(hg_proc_t proc, hg_int32_t *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
-    ret = xdr_int32_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
+    ret = xdr_int32_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_PROTOCOL_ERROR;
 #else
     ret = hg_proc_memcpy(proc, data, sizeof(hg_int32_t));
 #endif
@@ -456,7 +456,7 @@ hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
-    ret = xdr_uint32_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
+    ret = xdr_uint32_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_PROTOCOL_ERROR;
 #else
     ret = hg_proc_memcpy(proc, data, sizeof(hg_uint32_t));
 #endif
@@ -476,7 +476,7 @@ hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
-    ret = xdr_int64_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
+    ret = xdr_int64_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_PROTOCOL_ERROR;
 #else
     ret = hg_proc_memcpy(proc, data, sizeof(hg_int64_t));
 #endif
@@ -496,7 +496,7 @@ hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
-    ret = xdr_uint64_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_FAIL;
+    ret = xdr_uint64_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS : HG_PROTOCOL_ERROR;
 #else
     ret = hg_proc_memcpy(proc, data, sizeof(hg_uint64_t));
 #endif

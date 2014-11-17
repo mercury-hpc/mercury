@@ -127,7 +127,7 @@ hg_proc_create(void *buf, hg_size_t buf_size, hg_proc_op_t op, hg_proc_hash_t ha
             break;
         default:
             HG_LOG_ERROR("Unknown proc operation");
-            ret = HG_FAIL;
+            ret = HG_INVALID_PARAM;
             goto done;
     }
 #endif

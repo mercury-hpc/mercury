@@ -331,7 +331,7 @@ static HG_INLINE hg_return_t \
             if (!hg_initialized) { \
                 info_string = getenv(HG_PORT_NAME); \
                 if (!info_string) { /* passing NULL to NA_Initialize is bad! */ \
-                    HG_ERROR_DEFAULT(HG_PORT_NAME " env var not set"); \
+                    HG_LOG_ERROR(HG_PORT_NAME " env var not set"); \
                     BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                     goto done; \
                 }  \
@@ -424,7 +424,7 @@ static HG_INLINE hg_return_t \
             /* Free addr id */ \
             na_ret = NA_Addr_free(na_class, addr); \
             if (na_ret != NA_SUCCESS) { \
-                HG_ERROR_DEFAULT("Could not free addr"); \
+                HG_LOG_ERROR("Could not free addr"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
@@ -520,14 +520,14 @@ static HG_INLINE hg_return_t \
                 BOOST_PP_IF(with_input, \
                         hg_ret = HG_Handler_free_input(handle, &in_struct); \
                         if (hg_ret != HG_SUCCESS) { \
-                            HG_ERROR_DEFAULT("Could not free input struct"); \
+                            HG_LOG_ERROR("Could not free input struct"); \
                             goto done; \
                         } \
                         , BOOST_PP_EMPTY()) \
                 \
                 hg_ret = HG_Handler_free(handle); \
                 if (hg_ret != HG_SUCCESS) { \
-                    HG_ERROR_DEFAULT("Could not free handle"); \
+                    HG_LOG_ERROR("Could not free handle"); \
                     goto done; \
                 } \
                 \
