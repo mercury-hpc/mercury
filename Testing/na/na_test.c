@@ -14,6 +14,9 @@
 #ifdef NA_HAS_MPI
 #include "na_mpi.h"
 #endif
+#ifdef NA_HAS_CCI
+#include "na_cci.h"
+#endif
 #ifdef MERCURY_HAS_PARALLEL_TESTING
 #include <mpi.h>
 #endif
@@ -66,6 +69,7 @@ static const struct na_test_opt na_test_opt_g[] = {
 };
 
 static na_bool_t na_test_use_mpi_g = NA_FALSE;
+static na_bool_t na_test_use_cci_g = NA_FALSE;
 static na_bool_t na_test_use_static_mpi_g = NA_FALSE;
 na_bool_t na_test_use_self_g = NA_FALSE;
 na_bool_t na_test_use_variable_g = NA_FALSE;
@@ -212,6 +216,8 @@ na_test_gen_config(int argc, char *argv[])
                 na_class_name = strdup(na_test_opt_arg_g);
                 if (strcmp("mpi", na_class_name) == 0)
                     na_test_use_mpi_g = NA_TRUE;
+                if (strcmp("cci", na_class_name) == 0)
+                    na_test_use_cci_g = NA_TRUE;
                 break;
             case 'p':
                 /* NA protocol name */
@@ -469,6 +475,12 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 #ifdef NA_HAS_MPI
     if (na_test_use_mpi_g) {
         na_test_set_config(NA_MPI_Get_port_name(na_class));
+    } else
+#endif
+#ifdef NA_HAS_CCI
+    if (na_test_use_cci_g) {
+	    const char *uri = NA_CCI_Get_port_name(na_class);
+	    na_test_set_config(uri);
     } else
 #endif
     {
