@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2013 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2014 UT-Battelle, LLC. All rights reserved.
  * Chicago Argonne, LLC and The HDF Group. All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification, and
