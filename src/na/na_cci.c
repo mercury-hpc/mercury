@@ -618,6 +618,14 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
+const char *
+NA_CCI_Get_port_name(na_class_t *na_class)
+{
+	na_cci_private_data_t *priv = na_class->private_data;
+	return priv->uri;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_init(na_class_t * na_class, const struct na_info *na_info)
 {

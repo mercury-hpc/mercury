@@ -18,7 +18,17 @@
 extern		"C" {
 #endif
 
-	/* Nothing */
+/**
+ * Get port name used by server.
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return Pointer to string
+ */
+NA_EXPORT const char *
+NA_CCI_Get_port_name(
+        na_class_t *na_class
+        );
 
 #ifdef __cplusplus
 }
