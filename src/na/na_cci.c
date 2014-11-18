@@ -189,8 +189,7 @@ na_cci_initialize(
  */
 static na_return_t
 na_cci_init(
-	    na_class_t * na_class,
-	    const struct na_info *na_info
+	    na_class_t * na_class
 );
 
 /* finalize */
@@ -548,7 +547,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
-		  na_bool_t listen)
+		  na_bool_t NA_UNUSED listen)
 {
 	int rc = 0;
 	uint32_t caps = 0;
@@ -556,8 +555,6 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	cci_endpoint_t *endpoint = NULL;
 	char *uri = NULL;
 	na_return_t ret = NA_SUCCESS;
-	hg_queue_t     *unexpected_msg_queue = NULL;
-	hg_queue_t     *unexpected_op_queue = NULL;
 
 	/* Initialize CCI */
 	rc = cci_init(CCI_ABI_VERSION, 0, &caps);
@@ -611,8 +608,9 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 
 	fprintf(stderr, "opened %s\n", uri);
 	NA_CCI_PRIVATE_DATA(na_class)->uri = strdup(uri);
+	free(uri);
 
-	ret = na_cci_init(na_class, na_info);
+	ret = na_cci_init(na_class);
 
 out:
 	return ret;
@@ -628,12 +626,11 @@ NA_CCI_Get_port_name(na_class_t *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_init(na_class_t * na_class, const struct na_info *na_info)
+na_cci_init(na_class_t * na_class)
 {
 	hg_queue_t     *unexpected_msg_queue = NULL;
 	hg_queue_t     *unexpected_op_queue = NULL;
 	na_return_t	ret = NA_SUCCESS;
-	int		rc;
 
 	/* Create queue for unexpected messages */
 	unexpected_msg_queue = hg_queue_new();
@@ -671,26 +668,36 @@ out:
 static na_return_t
 na_cci_finalize(na_class_t * na_class)
 {
+	na_cci_private_data_t *priv = na_class->private_data;
 	na_return_t	ret = NA_SUCCESS;
 	int		rc;
 
+	free(priv->uri);
+
 	/* Check that unexpected op queue is empty */
 	if (!hg_queue_is_empty(
-			NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue)) {
+			priv->unexpected_op_queue)) {
 		NA_LOG_ERROR("Unexpected op queue should be empty");
 		ret = NA_PROTOCOL_ERROR;
 	}
 	/* Free unexpected op queue */
-	hg_queue_free(NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue);
+	hg_queue_free(priv->unexpected_op_queue);
 
 	/* Check that unexpected message queue is empty */
 	if (!hg_queue_is_empty(
-		       NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue)) {
+		       priv->unexpected_msg_queue)) {
 		NA_LOG_ERROR("Unexpected msg queue should be empty");
 		ret = NA_PROTOCOL_ERROR;
 	}
 	/* Free unexpected message queue */
 	hg_queue_free(NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
+
+	rc = cci_destroy_endpoint(priv->endpoint);
+	if (rc) {
+		NA_LOG_ERROR("cci_destroy_endpoint() failed with %s",
+				cci_strerror(NULL, rc));
+		ret = NA_PROTOCOL_ERROR;
+	}
 
 	/* Finalize CCI */
 	rc = cci_finalize();
@@ -701,11 +708,11 @@ na_cci_finalize(na_class_t * na_class)
 	}
 	/* Destroy mutex/cond */
 	hg_thread_mutex_destroy(
-		       &NA_CCI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
+		       &priv->test_unexpected_mutex);
 	hg_thread_mutex_destroy(
-		  &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+		  &priv->unexpected_msg_queue_mutex);
 	hg_thread_mutex_destroy(
-		   &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+		   &priv->unexpected_op_queue_mutex);
 
 	free(na_class->private_data);
 
@@ -811,6 +818,9 @@ na_cci_addr_free(na_class_t NA_UNUSED * na_class, na_addr_t addr)
 		ret = NA_INVALID_PARAM;
 		return ret;
 	}
+	if (na_cci_addr->cci_addr)
+		cci_disconnect(na_cci_addr->cci_addr);
+	free(na_cci_addr->uri);
 	free(na_cci_addr);
 	na_cci_addr = NULL;
 
@@ -831,11 +841,8 @@ static na_return_t
 na_cci_addr_to_string(na_class_t NA_UNUSED * na_class, char *buf,
 		      na_size_t buf_size, na_addr_t addr)
 {
-	na_cci_addr_t *na_cci_addr = NULL;
-	const char     *cci_rev_addr;
+	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)addr;
 	na_return_t	ret = NA_SUCCESS;
-
-	na_cci_addr = (na_cci_addr_t *)addr;
 
 	if (strlen(na_cci_addr->uri) > buf_size) {
 		NA_LOG_ERROR("Buffer size too small to copy addr");
@@ -884,7 +891,6 @@ na_cci_msg_send_unexpected(na_class_t *na_class,
 	 na_context_t * context, na_cb_t callback, void *arg, const void *buf,
 	 na_size_t buf_size, na_addr_t dest, na_tag_t tag, na_op_id_t * op_id)
 {
-	cci_size_t	cci_buf_size = (cci_size_t) buf_size;
 	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)dest;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
@@ -941,7 +947,6 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
 {
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	struct na_cci_info_recv_unexpected *rx = NULL;
-	na_bool_t	progressed = NA_FALSE;
 	na_return_t	ret = NA_SUCCESS;
 
 	/* Allocate na_op_id */
@@ -1099,7 +1104,6 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 	     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
 			 na_addr_t dest, na_tag_t tag, na_op_id_t * op_id)
 {
-	cci_size_t	cci_buf_size = (cci_size_t) buf_size;
 	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)dest;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
@@ -1160,7 +1164,6 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 	struct na_cci_info_recv_expected *rx = NULL;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
-	int		rc;
 
 	/* Allocate na_op_id */
 	na_cci_op_id = (struct na_cci_op_id *)calloc(1, sizeof(*na_cci_op_id));
@@ -1368,11 +1371,8 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	   na_size_t length, na_addr_t remote_addr, na_op_id_t * op_id)
 {
 	na_cci_mem_handle_t *cci_local_mem_handle = (na_cci_mem_handle_t *)local_mem_handle;
-	cci_size_t	cci_local_offset = (cci_size_t) local_offset;
 	na_cci_mem_handle_t *cci_remote_mem_handle = (na_cci_mem_handle_t *)remote_mem_handle;
-	cci_size_t	cci_remote_offset = (cci_size_t) remote_offset;
 	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)remote_addr;
-	cci_size_t	cci_length = (cci_size_t) length;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
 	int		rc;
@@ -1435,12 +1435,9 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 {
 	na_cci_mem_handle_t *cci_local_mem_handle =
 	(na_cci_mem_handle_t *)local_mem_handle;
-	cci_size_t	cci_local_offset = (cci_size_t) local_offset;
 	na_cci_mem_handle_t *cci_remote_mem_handle =
 	(na_cci_mem_handle_t *)remote_mem_handle;
-	cci_size_t	cci_remote_offset = (cci_size_t) remote_offset;
 	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)remote_addr;
-	cci_size_t	cci_length = (cci_size_t) length;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
 	int		rc;
@@ -1487,8 +1484,8 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-handle_send(na_class_t *class, na_context_t *context,
-		cci_endpoint_t *e, cci_event_t *event)
+handle_send(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
+		cci_endpoint_t NA_UNUSED *e, cci_event_t *event)
 {
 	na_cci_op_id_t *na_cci_op_id = event->send.context;
 	na_return_t ret = event->send.status == CCI_SUCCESS ? NA_SUCCESS : NA_PROTOCOL_ERROR;
@@ -1502,8 +1499,8 @@ handle_send(na_class_t *class, na_context_t *context,
 
 /*---------------------------------------------------------------------------*/
 static void
-handle_recv_expected(na_class_t *na_class, na_context_t *context,
-		cci_endpoint_t *e, cci_event_t *event)
+handle_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t NA_UNUSED *context,
+		cci_endpoint_t NA_UNUSED *e, cci_event_t *event)
 {
 	cci_connection_t *c = event->recv.connection;
 	na_cci_addr_t *na_cci_addr = c->context;
@@ -1561,8 +1558,8 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-handle_recv_unexpected(na_class_t *na_class, na_context_t *context,
-		cci_endpoint_t *e, cci_event_t *event)
+handle_recv_unexpected(na_class_t *na_class, na_context_t NA_UNUSED *context,
+		cci_endpoint_t NA_UNUSED *e, cci_event_t *event)
 {
 	cci_connection_t *c = event->recv.connection;
 	na_cci_addr_t *na_cci_addr = c->context;
@@ -1645,7 +1642,7 @@ handle_recv(na_class_t *na_class, na_context_t *context,
 
 /*---------------------------------------------------------------------------*/
 static void
-handle_connect_request(na_class_t *class, na_context_t *context,
+handle_connect_request(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
 		cci_endpoint_t *e, cci_event_t *event)
 {
 	na_cci_addr_t *na_cci_addr = NULL;
@@ -1654,7 +1651,7 @@ handle_connect_request(na_class_t *class, na_context_t *context,
 	na_cci_addr = calloc(1, sizeof(*na_cci_addr));
 	if (!na_cci_addr) {
 		NA_LOG_ERROR("Unable to allocate na_cci_addr for new peer %s",
-				event->request.data_ptr);
+				(char*)((void*)event->request.data_ptr));
 		rc = CCI_ENOMEM;
 		goto out;
 	}
@@ -1665,7 +1662,7 @@ handle_connect_request(na_class_t *class, na_context_t *context,
 	na_cci_addr->uri = strdup(event->request.data_ptr);
 	if (!na_cci_addr->uri) {
 		NA_LOG_ERROR("Unable to allocate URI for new peer %s",
-				event->request.data_ptr);
+				(char*)((void*)event->request.data_ptr));
 		rc = CCI_ENOMEM;
 		goto out;
 	}
@@ -1688,7 +1685,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-handle_connect(na_class_t *class, na_context_t *context,
+handle_connect(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
 		cci_endpoint_t *e, cci_event_t *event)
 {
 	na_cci_addr_t *na_cci_addr = event->connect.context;
@@ -1713,8 +1710,8 @@ handle_connect(na_class_t *class, na_context_t *context,
 
 /*---------------------------------------------------------------------------*/
 static void
-handle_accept(na_class_t *class, na_context_t *context,
-		cci_endpoint_t *e, cci_event_t *event)
+handle_accept(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
+		cci_endpoint_t NA_UNUSED *e, cci_event_t *event)
 {
 	na_cci_addr_t *na_cci_addr = event->accept.context;
 
@@ -1736,7 +1733,6 @@ na_cci_progress(na_class_t * na_class, na_context_t * context,
 	do {
 		int		rc;
 		hg_time_t	t1, t2;
-		na_bool_t	progressed = NA_FALSE;
 		cci_event_t	*event = NULL;
 
 		hg_time_get_current(&t1);
@@ -1872,10 +1868,10 @@ na_cci_release(struct na_cb_info *callback_info, void *arg)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t * context,
-	      na_op_id_t op_id)
+na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
+	      na_op_id_t NA_UNUSED op_id)
 {
-	struct na_cci_op_id *na_cci_op_id = (struct na_cci_op_id *)op_id;
+	/* struct na_cci_op_id *na_cci_op_id = (struct na_cci_op_id *)op_id; */
 	na_return_t	ret = NA_PROTOCOL_ERROR;
 
 	/* TODO */
