@@ -29,7 +29,7 @@
 /* Local Macros */
 /****************/
 /* Max tag */
-#define NA_CCI_MAX_TAG (1 << 30)
+#define NA_CCI_MAX_TAG ((1 << 30) -1)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -150,12 +150,14 @@ struct na_cci_private_data {
 typedef union cci_msg {
 	struct msg_size {
 		uint32_t	expect	: 1;
-		uint32_t	tag	:31;
+		uint32_t	bye	: 1;
+		uint32_t	tag	:30;
 	} size;
 
 	struct msg_send {
 		uint32_t	expect	: 1;
-		uint32_t	tag	:31;
+		uint32_t	bye	: 1;
+		uint32_t	tag	:30;
 		char		data[1];
 	} send;
 
@@ -828,8 +830,17 @@ na_cci_addr_free(na_class_t NA_UNUSED * na_class, na_addr_t addr)
 		ret = NA_INVALID_PARAM;
 		return ret;
 	}
-	if (na_cci_addr->cci_addr)
+	if (na_cci_addr->cci_addr) {
+		cci_msg_t msg;
+
+		msg.send.expect = 0;
+		msg.send.bye = 1;
+		msg.send.tag = 0;
+		cci_send(na_cci_addr->cci_addr, &msg, sizeof(msg.size),
+				NULL, CCI_FLAG_BLOCKING);
 		cci_disconnect(na_cci_addr->cci_addr);
+		na_cci_addr->cci_addr = NULL;
+	}
 	free(na_cci_addr->uri);
 	free(na_cci_addr);
 	na_cci_addr = NULL;
@@ -1579,6 +1590,12 @@ handle_recv_unexpected(na_class_t *na_class, na_context_t NA_UNUSED *context,
 	struct na_cci_info_recv_unexpected *rx = NULL;
 	int rc = 0;
 	na_return_t ret;
+
+	if (msg->send.bye) {
+		NA_LOG_ERROR("peer %s disconnecting", na_cci_addr->uri);
+		cci_disconnect(na_cci_addr->cci_addr);
+		na_cci_addr->cci_addr = NULL;
+	}
 
 	na_cci_op_id = na_cci_msg_unexpected_op_pop(na_class);
 
