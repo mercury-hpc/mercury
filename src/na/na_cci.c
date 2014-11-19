@@ -498,9 +498,9 @@ static na_bool_t
 na_cci_check_protocol(const char *protocol_name)
 {
 	na_bool_t	accept = NA_FALSE;
-	int		ret = 0;
+	int		ret = 0, i = 0;
 	uint32_t	caps = 0;
-	cci_device_t   *const *devices, *device = NULL;
+	cci_device_t	*const *devices, *device = NULL;
 
 	/*
 	 * init CCI, get_devices, and check if a device on this transport
@@ -521,7 +521,12 @@ na_cci_check_protocol(const char *protocol_name)
 			     cci_strerror(NULL, ret));
 		goto out;
 	}
-	for (device = devices[0]; device != NULL; device++) {
+	for (i = 0; ; i++) {
+		device = devices[i];
+
+		if (!device)
+			break;
+
 		if (!strcmp(device->transport, protocol_name)) {
 			if (!device->up) {
 				NA_LOG_ERROR("device %s (transport %s) is down",
@@ -549,7 +554,7 @@ static na_return_t
 na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 		  na_bool_t NA_UNUSED listen)
 {
-	int rc = 0;
+	int rc = 0, i = 0;
 	uint32_t caps = 0;
 	cci_device_t * const *devices = NULL, *device = NULL;
 	cci_endpoint_t *endpoint = NULL;
@@ -572,7 +577,12 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 		goto out;
 	}
 
-	for (device = devices[0]; device != NULL; device++) {
+	for (i = 0; ; i++) {
+		device = devices[i];
+
+		if (!device)
+			break;
+
 		if (!strcmp(device->transport, na_info->protocol_name)) {
 			if (!device->up) {
 				NA_LOG_ERROR("device %s tranport %s is down",
