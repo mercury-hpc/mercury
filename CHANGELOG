@@ -1,4 +1,96 @@
 ================
+v0.8.2
+================
+Jerome Soumagne (58):
+  2014-11-19 Update README
+  2014-11-19 Update version to 0.8.2
+  2014-10-17 Fixes to high-level macros after previous changes
+  2014-10-06 Fix timeout conversion (fix #39)
+  2014-08-14 Fix atomic test
+  2014-05-29 Fix exit on timeout in coresident mode
+  2014-05-29 Remove register emulation in NA MPI/BMI plugins (fixes #36)
+  2014-05-22 Make jenkins use newer version of valgrind
+  2014-05-20 Temporarily disable valgrind suppression file for jenkins
+  2014-05-19 Fixes for memcheck script and add MercuryValgrindSuppressions for mpiexec
+  2014-05-18 Enable memcheck in daily test
+  2014-05-09 Fix a couple of typos
+  2014-05-08 Add --static option to test NA MPI static mode
+  2014-05-08 Fix use of static MPI comm (when running MPMD job) in NA MPI plugin
+  2014-05-08 Improve argument parsing for testing suite (see test usage for options)
+  2014-05-08 Update NA_Initialize string format to follow format: plugin+protocol://host:port
+  2014-05-06 Merge some of the changes from John
+  2014-05-06 Add MERCURY_TESTING_CORESIDENT option and tweak add_mercury_test macro
+  2014-05-05 Ignore bmi op ids issued from bulk transfer requests (na_bmi_put and na_bmi_get)
+  2014-05-05 Fix na_bmi_check_protocol and support ib
+  2014-05-05 Boost required version 1.41 is sufficient
+  2014-05-05 Use calloc for tests if MERCURY_TESTING_HAS_VERIFY_DATA is ON
+  2014-05-05 Fix NA_LOG_ERROR to match HG_LOG_ERROR
+  2014-05-04 Add na_test_getaddrinfo to provide test IP address instead of hostname
+  2014-05-02 Add HG_Handler_get_na_class to retrieve NA class from hg_handle_t
+  2014-05-02 Fix uninitialized values in SSM plugin (fix #31)
+  2014-05-01 Remove duplicate message print
+  2014-05-01 Fix na_test with SSM enabled
+  2014-04-30 Update mercury util list test
+  2014-04-30 Clean up tests again and simplify cmake files to add new tests
+  2014-04-29 Add mercury util hash_table/queue/time tests
+  2014-04-29 Update documentation for hg_queue
+  2014-04-29 Fix copyright headers
+  2014-04-29 Separate na_test from mercury_test and fix NA tests after recent changes
+  2014-04-29 Test bulk with auto-alloc buffer
+  2014-04-29 Add MERCURY_TESTING_USE_THREAD_POOL / MERCURY_TESTING_VERIFY_DATA cmake options
+  2014-04-28 Update tests after latest Bulk changes
+  2014-04-28 Modifications to HG_Bulk interface
+  2014-04-23 Add option and macro to run all server testing callbacks from thread pool
+  2014-04-21 Fix thread_pool_destroy on NULL ptr
+  2014-04-21 Rework test suite and use unique server for tests
+  2014-04-17 HG_Handler_free must be called from RPC callback to release resources
+  2014-04-15 Start reworking testing framework after coresident changes
+  2014-04-15 Merge Register and Register_callback
+  2014-04-10 Fix output not deserialized in coresident mode
+  2014-04-10 More fixes for coresident execution
+  2014-04-10 Update doc in headers
+  2014-04-01 Fix NA documentation
+  2014-04-09 More renaming for unification
+  2014-04-09 Clean up error macros
+  2014-04-09 Fix NA MPI addr free when self address
+  2014-04-03 Update mercury error macros
+  2014-04-03 Implement Bulk_mirror / Bulk_sync
+  2014-04-01 Start adding HG_Bulk_handle_access/HG_Bulk_mirror/HG_Bulk_sync
+  2014-03-31 Add NA_Addr_dup
+  2014-03-28 Changes to run in coresident mode
+  2014-03-27 Start unifying HG and HG_Handler
+  2014-03-27 Add NA_Addr_self / NA_Addr_is_self / NA_Addr_cmp Add corresponding plugin callbacks (NA plugins must be updated)
+
+Dries Kimpe (1):
+  2014-05-02 Fix bug in na_ssm
+
+Geoffrey Danielson (1):
+  2014-05-15 Fixes shutdown and some of the callbacks in NA SSM
+
+John Biddiscombe (1):
+  2014-08-13 Initialize rank to 0 in case it is not set later
+
+Ross Miller (1):
+  2014-10-29 High level macros: return error if MERCURY_PORT_NAME is not set
+
+================
+v0.8.1p1
+================
+Jerome Soumagne (12):
+  2014-04-21 Fix key_value/ptag_value range for NA MPI GNI job setup
+  2014-04-21 Fix invalid use of BMI op id after immediate completion of post_send in na_bmi_put (fix #30)
+  2014-04-07 Add hg_ prefix to tests
+  2014-04-04 Fix NA_Initialize and parsing of info initialization string
+  2014-04-04 Update jenkins_mercury.cmake to find SSM
+  2014-04-04 Update/cleanup FindBMI and FindSSM
+  2014-04-03 Build SSM with jenkins
+  2014-03-31 Replace NA_FAIL by correct error codes in na_ssm
+  2014-03-24 Fixes for bulk_handle_free and cleanup of mercury handles
+  2014-02-25 Remove na_mpi/na_bmi headers from mercury macros
+  2014-02-20 Add changelog scripts
+  2014-02-20 Add CHANGELOG
+
+================
 v0.8.1
 ================
 Jerome Soumagne (160):
