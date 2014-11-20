@@ -12,9 +12,7 @@
 #include "na_private.h"
 #include "na_error.h"
 
-#include "mercury_hash_table.h"
 #include "mercury_queue.h"
-#include "mercury_thread.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_time.h"
 #include "mercury_atomic.h"
@@ -513,19 +511,6 @@ const na_class_t na_bmi_class_g = {
 /********************/
 /* Plugin callbacks */
 /********************/
-
-static NA_INLINE int
-pointer_equal(void *location1, void *location2)
-{
-    return location1 == location2;
-}
-
-/*---------------------------------------------------------------------------*/
-static NA_INLINE unsigned int
-pointer_hash(void *location)
-{
-    return (unsigned int) (unsigned long) location;
-}
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE bmi_msg_tag_t
