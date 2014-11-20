@@ -1103,17 +1103,36 @@ done:
 static hg_return_t
 hg_cancel(struct hg_handle *hg_handle)
 {
+    struct hg_class *hg_class = hg_handle->hg_info.hg_class;
     hg_return_t ret = HG_SUCCESS;
 
-    /* TODO must cancel all NA operations issued */
-    /*
-if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_handle->completed, HG_TRUE, HG_TRUE)) {
-    NA_Cancel(hg_bulk_op_id->context->hg_bulk_class->na_class,
-            hg_bulk_op_id->context->hg_bulk_class->na_context,
-            NA_OP_ID_NULL);
-}
-     */
+    /* Cancel all NA operations issued */
+    if (hg_handle->na_recv_op_id != NA_OP_ID_NULL) {
+        na_return_t na_ret;
 
+        na_ret = NA_Cancel(hg_class->na_class, hg_class->na_context,
+                hg_handle->na_recv_op_id);
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not cancel recv op id");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+    }
+    if (hg_handle->na_send_op_id != NA_OP_ID_NULL) {
+        na_return_t na_ret;
+
+        na_ret = NA_Cancel(hg_class->na_class, hg_class->na_context,
+                hg_handle->na_send_op_id);
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not cancel send op id");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+    }
+    /* Free op */
+    hg_destroy(hg_handle);
+
+done:
     return ret;
 }
 
