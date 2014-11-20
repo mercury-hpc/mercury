@@ -2,12 +2,12 @@ cmake_minimum_required(VERSION 2.8.5 FATAL_ERROR)
 
 # Setup cmake policies.
 foreach(p
-  CMP0012
-  CMP0013
-  CMP0014
-  CMP0022 # CMake 2.8.12
-  CMP0025 # CMake 3.0
-  CMP0053 # CMake 3.1
+    CMP0012
+    CMP0013
+    CMP0014
+    CMP0022 # CMake 2.8.12
+    CMP0025 # CMake 3.0
+    CMP0053 # CMake 3.1
   )
   if(POLICY ${p})
     cmake_policy(SET ${p} NEW)
@@ -15,7 +15,7 @@ foreach(p
 endforeach()
 
 foreach(p
-  CMP0017
+    CMP0017
   )
   if(POLICY ${p})
     cmake_policy(SET ${p} OLD)
@@ -64,6 +64,14 @@ endif()
 #------------------------------------------------------------------------------
 # Setup CMake Environment
 #------------------------------------------------------------------------------
+if(APPLE)
+  mark_as_advanced(
+    CMAKE_OSX_ARCHITECTURES
+    CMAKE_OSX_DEPLOYMENT_TARGET
+    CMAKE_OSX_SYSROOT
+    )
+endif()
+
 #------------------------------------------------------------------------------
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
