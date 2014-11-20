@@ -1330,7 +1330,8 @@ na_cci_mem_handle_get_serialize_size(na_class_t NA_UNUSED * na_class,
 {
 	na_cci_mem_handle_t *na_cci_mem_handle = mem_handle;
 
-	return sizeof(*na_cci_mem_handle);
+	/* We will only send the CCI RMA handle */
+	return sizeof(na_cci_mem_handle->h);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1341,15 +1342,18 @@ na_cci_mem_handle_serialize(na_class_t NA_UNUSED * na_class, void *buf,
 	na_cci_mem_handle_t *na_cci_mem_handle =
 				(na_cci_mem_handle_t *)mem_handle;
 	na_return_t	ret = NA_SUCCESS;
-	na_size_t	len = sizeof(*na_cci_mem_handle);
+	na_size_t	len = sizeof(na_cci_mem_handle->h);
 
 	if (buf_size < len) {
 		NA_LOG_ERROR("Buffer size too small for serializing parameter");
 		ret = NA_SIZE_ERROR;
 		goto out;
 	}
+
+	/* The CCI RMA handle is already serialized. Just copy the cci_rma_handle_t. */
+
 	/* Copy struct */
-	memcpy(buf, na_cci_mem_handle, len);
+	memcpy(buf, &na_cci_mem_handle->h, len);
 
 out:
 	return ret;
@@ -1362,7 +1366,7 @@ na_cci_mem_handle_deserialize(na_class_t NA_UNUSED * na_class,
 {
 	na_cci_mem_handle_t *na_cci_mem_handle = NULL;
 	na_return_t	ret = NA_SUCCESS;
-	na_size_t	len = sizeof(*na_cci_mem_handle);
+	na_size_t	len = sizeof(na_cci_mem_handle->h);
 
 	if (buf_size < len) {
 		NA_LOG_ERROR("Buffer size too small for deserializing parameter");
@@ -1375,8 +1379,13 @@ na_cci_mem_handle_deserialize(na_class_t NA_UNUSED * na_class,
 		ret = NA_NOMEM_ERROR;
 		goto out;
 	}
+
+	/* The CCI RMA handle is ready to use. Just copy it into a
+	 * na_cci_mem_handle_t and never access the other fields
+	 * when it is a remote handle. */
+
 	/* Copy struct */
-	memcpy(na_cci_mem_handle, buf, len);
+	memcpy((void*)&na_cci_mem_handle->h, buf, len);
 
 	*mem_handle = (na_mem_handle_t) na_cci_mem_handle;
 
@@ -1402,11 +1411,6 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	cci_rma_handle_t *local = &cci_local_mem_handle->h;
 	cci_rma_handle_t *remote = &cci_remote_mem_handle->h;;
 
-	if (cci_remote_mem_handle->attr != NA_MEM_READWRITE) {
-		NA_LOG_ERROR("Registered memory requires write permission");
-		ret = NA_PERMISSION_ERROR;
-		goto out;
-	}
 	/* Allocate op_id */
 	na_cci_op_id = (struct na_cci_op_id *)malloc(sizeof(struct na_cci_op_id));
 	if (!na_cci_op_id) {
@@ -1589,12 +1593,13 @@ handle_recv_unexpected(na_class_t *na_class, na_context_t NA_UNUSED *context,
 	na_cci_op_id_t *na_cci_op_id = NULL;
 	struct na_cci_info_recv_unexpected *rx = NULL;
 	int rc = 0;
-	na_return_t ret;
+	na_return_t ret = NA_SUCCESS;
 
 	if (msg->send.bye) {
 		NA_LOG_ERROR("peer %s disconnecting", na_cci_addr->uri);
 		cci_disconnect(na_cci_addr->cci_addr);
 		na_cci_addr->cci_addr = NULL;
+		goto out;
 	}
 
 	na_cci_op_id = na_cci_msg_unexpected_op_pop(na_class);
