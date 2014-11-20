@@ -919,6 +919,12 @@ na_cci_msg_send_unexpected(na_class_t *na_class,
 	cci_msg_t	msg;
 	struct iovec	iov[2];
 
+	if (!na_cci_addr->cci_addr) {
+		NA_LOG_ERROR("not connected to peer %s", na_cci_addr->uri);
+		ret = NA_PROTOCOL_ERROR;
+		goto out;
+	}
+
 	/* Allocate op_id */
 	na_cci_op_id = (struct na_cci_op_id *)malloc(sizeof(struct na_cci_op_id));
 	if (!na_cci_op_id) {
@@ -1132,6 +1138,12 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 	cci_msg_t	msg;
 	struct iovec	iov[2];
 
+	if (!na_cci_addr->cci_addr) {
+		NA_LOG_ERROR("not connected to peer %s", na_cci_addr->uri);
+		ret = NA_PROTOCOL_ERROR;
+		goto out;
+	}
+
 	/* Allocate op_id */
 	na_cci_op_id = (struct na_cci_op_id *)malloc(sizeof(struct na_cci_op_id));
 	if (!na_cci_op_id) {
@@ -1185,6 +1197,12 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 	struct na_cci_info_recv_expected *rx = NULL;
 	struct na_cci_op_id *na_cci_op_id = NULL;
 	na_return_t	ret = NA_SUCCESS;
+
+	if (!na_cci_addr->cci_addr) {
+		NA_LOG_ERROR("not connected to peer %s", na_cci_addr->uri);
+		ret = NA_PROTOCOL_ERROR;
+		goto out;
+	}
 
 	/* Allocate na_op_id */
 	na_cci_op_id = (struct na_cci_op_id *)calloc(1, sizeof(*na_cci_op_id));
@@ -1411,6 +1429,12 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	cci_rma_handle_t *local = &cci_local_mem_handle->h;
 	cci_rma_handle_t *remote = &cci_remote_mem_handle->h;;
 
+	if (!na_cci_addr->cci_addr) {
+		NA_LOG_ERROR("not connected to peer %s", na_cci_addr->uri);
+		ret = NA_PROTOCOL_ERROR;
+		goto out;
+	}
+
 	/* Allocate op_id */
 	na_cci_op_id = (struct na_cci_op_id *)malloc(sizeof(struct na_cci_op_id));
 	if (!na_cci_op_id) {
@@ -1470,6 +1494,12 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	cci_connection_t *c = na_cci_addr->cci_addr;
 	cci_rma_handle_t *local = &cci_local_mem_handle->h;
 	cci_rma_handle_t *remote = &cci_remote_mem_handle->h;;
+
+	if (!na_cci_addr->cci_addr) {
+		NA_LOG_ERROR("not connected to peer %s", na_cci_addr->uri);
+		ret = NA_PROTOCOL_ERROR;
+		goto out;
+	}
 
 	/* Allocate op_id */
 	na_cci_op_id = (struct na_cci_op_id *)malloc(sizeof(struct na_cci_op_id));
