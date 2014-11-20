@@ -2171,9 +2171,70 @@ na_bmi_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     na_return_t ret = NA_SUCCESS;
+    int bmi_ret;
 
-    /* TODO correct */
-    BMI_cancel(na_bmi_op_id->info.send_expected.op_id, *bmi_context);
+    /* TODO make this atomic */
+    if (na_bmi_op_id->completed) goto done;
 
+    switch (na_bmi_op_id->type) {
+        case NA_CB_LOOKUP:
+            /* Nothing for now */
+            break;
+        case NA_CB_SEND_UNEXPECTED:
+            bmi_ret = BMI_cancel(na_bmi_op_id->info.send_unexpected.op_id,
+                    *bmi_context);
+            if (bmi_ret < 0) {
+                NA_LOG_ERROR("BMI_cancel() failed");
+                ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
+            break;
+        case NA_CB_RECV_UNEXPECTED:
+        {
+            struct na_bmi_op_id *na_bmi_pop_op_id = NULL;
+
+            /* Must remove op_id from unexpected op_id queue */
+            while (na_bmi_pop_op_id != na_bmi_op_id) {
+                na_bmi_pop_op_id = na_bmi_msg_unexpected_op_pop(na_class);
+
+                /* Push back unexpected op_id to queue if it does not match */
+                if (na_bmi_pop_op_id != na_bmi_op_id) {
+                    na_bmi_msg_unexpected_op_push(na_class, na_bmi_pop_op_id);
+                }
+            }
+        }
+            break;
+        case NA_CB_SEND_EXPECTED:
+            bmi_ret = BMI_cancel(na_bmi_op_id->info.send_expected.op_id,
+                    *bmi_context);
+            if (bmi_ret < 0) {
+                NA_LOG_ERROR("BMI_cancel() failed");
+                ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
+            break;
+        case NA_CB_RECV_EXPECTED:
+            bmi_ret = BMI_cancel(na_bmi_op_id->info.recv_expected.op_id,
+                    *bmi_context);
+            if (bmi_ret < 0) {
+                NA_LOG_ERROR("BMI_cancel() failed");
+                ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
+            break;
+        case NA_CB_PUT:
+            /* TODO */
+            break;
+        case NA_CB_GET:
+            /* TODO */
+            break;
+        default:
+            NA_LOG_ERROR("Operation not supported");
+            ret = NA_INVALID_PARAM;
+            break;
+    }
+    free(na_bmi_op_id);
+
+done:
     return ret;
 }
