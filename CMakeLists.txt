@@ -1,4 +1,34 @@
 cmake_minimum_required(VERSION 2.8.5 FATAL_ERROR)
+
+# Setup cmake policies.
+foreach(p
+  CMP0012
+  CMP0013
+  CMP0014
+  CMP0022 # CMake 2.8.12
+  CMP0025 # CMake 3.0
+  CMP0053 # CMake 3.1
+  )
+  if(POLICY ${p})
+    cmake_policy(SET ${p} NEW)
+  endif()
+endforeach()
+
+foreach(p
+  CMP0017
+  )
+  if(POLICY ${p})
+    cmake_policy(SET ${p} OLD)
+  endif()
+endforeach()
+
+# Set a consistent MACOSX_RPATH default across all CMake versions.
+# When CMake 2.8.12 is required, change this default to 1.
+# When CMake 3.0.0 is required, remove this block (see CMP0042).
+if(NOT DEFINED CMAKE_MACOSX_RPATH)
+  set(CMAKE_MACOSX_RPATH 0)
+endif()
+
 project(MERCURY C)
 
 #------------------------------------------------------------------------------
@@ -34,19 +64,6 @@ endif()
 #------------------------------------------------------------------------------
 # Setup CMake Environment
 #------------------------------------------------------------------------------
-# Setup cmake policies.
-foreach(policy CMP0012 CMP0013 CMP0014)
-  if(POLICY ${policy})
-    cmake_policy(SET ${policy} NEW)
-  endif()
-endforeach()
-
-foreach(policy CMP0017)
-  if(POLICY ${policy})
-    cmake_policy(SET ${policy} OLD)
-  endif()
-endforeach()
-
 #------------------------------------------------------------------------------
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
