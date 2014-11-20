@@ -2165,8 +2165,7 @@ na_bmi_release(struct na_cb_info *callback_info, void *arg)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
-        na_op_id_t op_id)
+na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
