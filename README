@@ -1,7 +1,7 @@
 MERCURY
 -------
 
-These are the release notes for Mercury (as of 02/20/2014).
+These are the release notes for Mercury (as of 11/19/2014).
 
 WHAT IS MERCURY?
 
@@ -80,9 +80,10 @@ BUILDING:
      BUILD_TESTING                    ON
      Boost_INCLUDE_DIR                /path/to/include/directory
      CMAKE_INSTALL_PREFIX             /path/to/install/directory
+     MERCURY_ENABLE_PARALLEL_TESTING  ON
      MERCURY_USE_BOOST_PP             ON
-     MERCURY_USE_XDR                  OFF
      MERCURY_USE_SYSTEM_MCHECKSUM     OFF
+     MERCURY_USE_XDR                  OFF
      NA_USE_MPI                       ON
      OPA_INCLUDE_DIR                  /path/to/include/directory
 
@@ -139,16 +140,9 @@ TESTING:
    directory where you have write permissions (so that the port configuration
    file can be written by the server and read by the client) do:
 
-     mpirun -np 1 /path/to/binary/server_TESTNAME mpi
+     mpirun -np 1 /path/to/binary/hg_test_server -c mpi
 
    and in the other:
 
-     mpirun -np 2 /path/to/binary/client_TESTNAME mpi
+     mpirun -np 2 /path/to/binary/hg_test_TESTNAME -c mpi
 
-   Replace "TESTNAME" by "na", "rpc", "bulk", "bulk_seg", "pipeline" or "posix":
-   * "na" tests data transfers through the network abstraction layer
-   * "rpc" tests RPC execution without bulk data transfer
-   * "bulk" tests contiguous transfer of bulk data
-   * "bulk_seg" tests non-contiguous transfer of bulk data
-   * "pipeline" tests pipelining of bulk data using multiple block sizes
-   * "posix" combines previous tests and issues POSIX calls remotely
