@@ -18,33 +18,6 @@
 
 extern hg_atomic_int32_t hg_test_finalizing_count_g;
 
-struct hg_test_server_info {
-    hg_class_t *hg_class;
-    hg_context_t *context;
-};
-
-static HG_THREAD_RETURN_TYPE
-hg_test_server_trigger(void *arg)
-{
-    struct hg_test_server_info *hg_test_server_info =
-            (struct hg_test_server_info *) arg;
-    hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
-    unsigned int actual_count = 0;
-    hg_return_t ret = HG_SUCCESS;
-
-    do {
-        if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
-            break;
-
-        ret = HG_Trigger(hg_test_server_info->hg_class,
-                hg_test_server_info->context, HG_MAX_IDLE_TIME, 1,
-                &actual_count);
-    } while ((ret == HG_SUCCESS) && actual_count);
-
-    hg_thread_exit(thread_ret);
-    return thread_ret;
-}
-
 /**
  *
  */
@@ -53,26 +26,24 @@ main(int argc, char *argv[])
 {
     hg_class_t *hg_class = NULL;
     hg_context_t *context = NULL;
-    struct hg_test_server_info hg_test_server_info;
-    hg_thread_t thread;
     unsigned int number_of_peers;
     hg_return_t ret = HG_SUCCESS;
 
     hg_class = HG_Test_server_init(argc, argv, NULL, NULL,
             &number_of_peers, &context);
 
-    hg_test_server_info.hg_class = hg_class;
-    hg_test_server_info.context = context;
-    hg_thread_create(&thread, hg_test_server_trigger, &hg_test_server_info);
-
     do {
+        unsigned int actual_count = 0;
+
+        do {
+            ret = HG_Trigger(hg_class, context, 0, 1, &actual_count);
+        } while ((ret == HG_SUCCESS) && actual_count);
+
         if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
             break;
 
         ret = HG_Progress(hg_class, context, HG_MAX_IDLE_TIME);
     } while (ret == HG_SUCCESS);
-
-    hg_thread_join(thread);
 
     printf("# Finalizing...\n");
     HG_Test_finalize(hg_class);
