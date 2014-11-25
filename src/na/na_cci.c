@@ -127,6 +127,7 @@ struct na_cci_op_id {
 	na_cb_type_t	type;
 	na_cb_t		callback;	/* Callback */
 	void           *arg;
+	hg_atomic_int32_t refcnt;	/* Reference counter */
 	na_bool_t	completed;	/* Operation completed */
 	na_bool_t	canceled;	/* Operation canceled */
 	union {
@@ -767,7 +768,7 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
 	na_cci_op_id->type = NA_CB_LOOKUP;
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
-	na_cci_op_id->completed = NA_FALSE;
+	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
 
 	/* Allocate addr */
 	na_cci_addr = (na_cci_addr_t *)malloc(sizeof(*na_cci_addr));
@@ -836,6 +837,31 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
+op_id_addref(na_cci_op_id_t *na_cci_op_id)
+{
+	assert(hg_atomic_get32(&na_cci_op_id->refcnt));
+	hg_atomic_incr32(&na_cci_op_id->refcnt);
+	return;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+op_id_decref(na_cci_op_id_t *na_cci_op_id)
+{
+	assert(hg_atomic_get32(&na_cci_op_id->refcnt) > 0);
+
+	/* If there are more references, return */
+	if (hg_atomic_decr32(&na_cci_op_id->refcnt))
+		return;
+
+	/* No more references, cleanup */
+	free(na_cci_op_id);
+
+	return;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
 addr_addref(na_cci_addr_t *na_cci_addr)
 {
 	assert(hg_atomic_get32(&na_cci_addr->refcnt));
@@ -847,7 +873,6 @@ addr_addref(na_cci_addr_t *na_cci_addr)
 static void
 addr_decref(na_cci_addr_t *na_cci_addr)
 {
-	cci_msg_t msg;
 	cci_connection_t *c = na_cci_addr->cci_addr;
 
 	assert(hg_atomic_get32(&na_cci_addr->refcnt) > 0);
@@ -985,7 +1010,7 @@ na_cci_msg_send_unexpected(na_class_t *na_class,
 	na_cci_op_id->type = NA_CB_SEND_UNEXPECTED;
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
-	na_cci_op_id->completed = NA_FALSE;
+	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
 	na_cci_op_id->info.send_unexpected.op_id = 0;
 
 	msg.send.expect = 0;
@@ -1038,7 +1063,7 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
 	na_cci_op_id->type = NA_CB_RECV_UNEXPECTED;
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
-	na_cci_op_id->completed = NA_FALSE;
+	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
 	na_cci_op_id->info.recv_unexpected.buf = buf;
 	na_cci_op_id->info.recv_unexpected.buf_size = (cci_size_t) buf_size;
 
@@ -1209,7 +1234,7 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 	na_cci_op_id->type = NA_CB_SEND_EXPECTED;
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
-	na_cci_op_id->completed = NA_FALSE;
+	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
 	na_cci_op_id->info.send_expected.op_id = 0;
 
 	msg.send.expect = 1;
@@ -1273,7 +1298,7 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 	na_cci_op_id->type = NA_CB_RECV_EXPECTED;
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
-	na_cci_op_id->completed = NA_FALSE;
+	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
 	na_cci_op_id->info.recv_expected.na_cci_addr = na_cci_addr;
 	na_cci_op_id->info.recv_expected.op_id = 0;
 	na_cci_op_id->info.recv_expected.buf = buf;
@@ -1515,7 +1540,7 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	na_cci_op_id->type = NA_CB_PUT;
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
-	na_cci_op_id->completed = NA_FALSE;
+	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
 	na_cci_op_id->info.put.request_op_id = 0;
 	na_cci_op_id->info.put.transfer_op_id = 0;
 	na_cci_op_id->info.put.transfer_completed = NA_FALSE;
@@ -1584,7 +1609,7 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	na_cci_op_id->type = NA_CB_GET;
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
-	na_cci_op_id->completed = NA_FALSE;
+	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
 	na_cci_op_id->info.get.request_op_id = 0;
 	na_cci_op_id->info.get.transfer_op_id = 0;
 	na_cci_op_id->info.get.transfer_actual_size = 0;
@@ -1622,7 +1647,8 @@ handle_send(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
 	if (!na_cci_op_id) {
 		goto out;
 	} else if (na_cci_op_id->canceled) {
-		ret = NA_CANCELED;
+		op_id_decref(na_cci_op_id);
+		goto out;
 	}
 
 	ret = na_cci_complete(na_cci_addr, na_cci_op_id, ret);
@@ -1844,6 +1870,7 @@ handle_connect(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
 	if (!na_cci_addr->na_cci_op_id) {
 		/* User canceled lookup */
 		addr_decref(na_cci_addr);
+		op_id_decref(na_cci_op_id);
 		goto out;
 	}
 
@@ -2019,7 +2046,7 @@ na_cci_release(struct na_cb_info *callback_info, void *arg)
 		NA_LOG_ERROR("Releasing resources from an uncompleted operation");
 	}
 	free(callback_info);
-	free(na_cci_op_id);
+	op_id_decref(na_cci_op_id);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2035,6 +2062,7 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 	if (na_cci_op_id->completed) goto out;
 
 	na_cci_op_id->canceled = NA_TRUE;
+	op_id_addref(na_cci_op_id); /* will be decremented in handle_*() */
 
 	switch (na_cci_op_id->type) {
 		case NA_CB_LOOKUP:
@@ -2048,6 +2076,9 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 		case NA_CB_RECV_UNEXPECTED:
 		{
 			na_cci_op_id_t *tmp = NULL, *first = NULL;
+
+			/* we can't decref in handle_recv_unexpected() */
+			op_id_decref(na_cci_op_id);
 
 			tmp = first = na_cci_msg_unexpected_op_pop(na_class);
 
@@ -2077,6 +2108,9 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 			na_cci_addr_t *na_cci_addr =
 				na_cci_op_id->info.recv_expected.na_cci_addr;
 
+			/* we can't decref in handle_recv_expected() */
+			op_id_decref(na_cci_op_id);
+
 			TAILQ_FOREACH(tmp, &na_cci_addr->rxs, entry) {
 				if (tmp == na_cci_op_id) {
 					TAILQ_REMOVE(&na_cci_addr->rxs, tmp, entry);
@@ -2091,7 +2125,6 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 			break;
 		case NA_CB_SEND_UNEXPECTED:
 		case NA_CB_SEND_EXPECTED:
-			na_cci_addr = NULL;
 		case NA_CB_PUT:
 		case NA_CB_GET:
 			goto out;
