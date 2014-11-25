@@ -780,7 +780,10 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
 	TAILQ_INIT(&na_cci_addr->rxs);
 	TAILQ_INIT(&na_cci_addr->early);
 	na_cci_addr->uri = strdup(name);
-	hg_atomic_set32(&na_cci_addr->refcnt, 1);
+	/* one for the lookup callback and one for the caller to hold until addr_free().
+	 * na_cci_complete will decref for the lookup callback.
+	 */
+	hg_atomic_set32(&na_cci_addr->refcnt, 2);
 	na_cci_addr->unexpected = NA_FALSE;
 	na_cci_addr->self = NA_FALSE;
 	na_cci_addr->na_cci_op_id = na_cci_op_id;
@@ -845,6 +848,7 @@ static void
 addr_decref(na_cci_addr_t *na_cci_addr)
 {
 	cci_msg_t msg;
+	cci_connection_t *c = na_cci_addr->cci_addr;
 
 	assert(hg_atomic_get32(&na_cci_addr->refcnt) > 0);
 
@@ -853,13 +857,8 @@ addr_decref(na_cci_addr_t *na_cci_addr)
 		return;
 
 	/* No more references, cleanup */
-	msg.send.expect = 0;
-	msg.send.bye = 1;
-	msg.send.tag = 0;
-	cci_send(na_cci_addr->cci_addr, &msg, sizeof(msg.size),
-			NULL, CCI_FLAG_BLOCKING);
-	cci_disconnect(na_cci_addr->cci_addr);
 	na_cci_addr->cci_addr = NULL;
+	cci_disconnect(c);
 
 	free(na_cci_addr->uri);
 	free(na_cci_addr);
@@ -872,7 +871,7 @@ static na_return_t
 na_cci_addr_dup(na_class_t NA_UNUSED *na_class, na_addr_t addr, na_addr_t *new_addr)
 {
 	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)addr;
-	addr_addref(na_cci_addr);
+	addr_addref(na_cci_addr); /* for na_cci_addr_free() */
 	*new_addr = addr;
 
 	return NA_SUCCESS;
@@ -973,7 +972,7 @@ na_cci_msg_send_unexpected(na_class_t *na_class,
 		goto out;
 	}
 
-	addr_addref(na_cci_addr);
+	addr_addref(na_cci_addr); /* for na_cci_complete() */
 
 	/* Allocate op_id */
 	na_cci_op_id = (na_cci_op_id_t *)calloc(1, sizeof(*na_cci_op_id));
@@ -1059,7 +1058,9 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
 		free(rx->buf);
 		free(rx);
 
-		ret = na_cci_complete(NULL, na_cci_op_id, NA_SUCCESS);
+		addr_addref(rx->na_cci_addr); /* for na_cci_complete() */
+		addr_addref(rx->na_cci_addr); /* for na_cci_addr_free() */
+		ret = na_cci_complete(rx->na_cci_addr, na_cci_op_id, NA_SUCCESS);
 		if (ret != NA_SUCCESS) {
 			NA_LOG_ERROR("Could not complete operation");
 			goto out;
@@ -1195,7 +1196,7 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 		goto out;
 	}
 
-	addr_addref(na_cci_addr);
+	addr_addref(na_cci_addr); /* for na_cci_complete() */
 
 	/* Allocate op_id */
 	na_cci_op_id = (na_cci_op_id_t *)calloc(1, sizeof(*na_cci_op_id));
@@ -1259,7 +1260,7 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 		goto out;
 	}
 
-	addr_addref(na_cci_addr);
+	addr_addref(na_cci_addr); /* for na_cci_complete() */
 
 	/* Allocate na_op_id */
 	na_cci_op_id = (na_cci_op_id_t *)calloc(1, sizeof(*na_cci_op_id));
@@ -1501,7 +1502,7 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 		goto out;
 	}
 
-	addr_addref(na_cci_addr);
+	addr_addref(na_cci_addr); /* for na_cci_complete() */
 
 	/* Allocate op_id */
 	na_cci_op_id = (na_cci_op_id_t *)calloc(1, sizeof(*na_cci_op_id));
@@ -1570,7 +1571,7 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 		goto out;
 	}
 
-	addr_addref(na_cci_addr);
+	addr_addref(na_cci_addr); /* for na_cci_complete() */
 
 	/* Allocate op_id */
 	na_cci_op_id = (na_cci_op_id_t *)calloc(1, sizeof(*na_cci_op_id));
@@ -1621,8 +1622,7 @@ handle_send(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
 	if (!na_cci_op_id) {
 		goto out;
 	} else if (na_cci_op_id->canceled) {
-		free(na_cci_op_id);
-		goto out;
+		ret = NA_CANCELED;
 	}
 
 	ret = na_cci_complete(na_cci_addr, na_cci_op_id, ret);
@@ -1706,12 +1706,13 @@ handle_recv_unexpected(na_class_t *na_class, na_context_t NA_UNUSED *context,
 	int rc = 0;
 	na_return_t ret = NA_SUCCESS;
 
-	if (msg->send.bye) {
-		fprintf(stderr, "peer %s disconnecting\n", na_cci_addr->uri);
-		cci_disconnect(na_cci_addr->cci_addr);
-		na_cci_addr->cci_addr = NULL;
+	if (!na_cci_addr->cci_addr || hg_atomic_get32(&na_cci_addr->refcnt) <= 0) {
+		fprintf(stderr, "%s: peer %s refcnt %d\n", __func__,
+			na_cci_addr->uri, hg_atomic_get32(&na_cci_addr->refcnt));
 		goto out;
 	}
+
+	addr_addref(na_cci_addr); /* ref for na_cci_complete() */
 
 	na_cci_op_id = na_cci_msg_unexpected_op_pop(na_class);
 
@@ -1725,7 +1726,10 @@ handle_recv_unexpected(na_class_t *na_class, na_context_t NA_UNUSED *context,
 		na_cci_op_id->info.recv_unexpected.actual_size = len;
 		na_cci_op_id->info.recv_unexpected.tag = msg->send.tag;
 		memcpy(na_cci_op_id->info.recv_unexpected.buf, msg->send.data, len);
-		ret = na_cci_complete(NULL, na_cci_op_id, NA_SUCCESS);
+
+		addr_addref(na_cci_addr); /* for na_cci_addr_free() */
+
+		ret = na_cci_complete(na_cci_addr, na_cci_op_id, NA_SUCCESS);
 		if (ret != NA_SUCCESS) {
 			NA_LOG_ERROR("failed to complete unexpected recv");
 			goto out;
@@ -1853,7 +1857,7 @@ handle_connect(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
 		na_cci_addr->cci_addr = event->connect.connection;
 	}
 
-	ret = na_cci_complete(NULL, na_cci_op_id, ret);
+	ret = na_cci_complete(na_cci_addr, na_cci_op_id, ret);
 	if (ret != NA_SUCCESS)
 		NA_LOG_ERROR("Could not complete operation");
 out:
@@ -1980,7 +1984,6 @@ na_cci_complete(na_cci_addr_t *na_cci_addr, na_cci_op_id_t *na_cci_op_id, na_ret
 		break;
 	case NA_CB_SEND_UNEXPECTED:
 	case NA_CB_SEND_EXPECTED:
-		na_cci_addr = NULL;
 		break;
 	case NA_CB_PUT:
 		break;
@@ -1996,7 +1999,6 @@ na_cci_complete(na_cci_addr_t *na_cci_addr, na_cci_op_id_t *na_cci_op_id, na_ret
 				callback_info, &na_cci_release, na_cci_op_id);
 	if (ret != NA_SUCCESS) {
 		NA_LOG_ERROR("Could not add callback to completion queue");
-		goto out;
 	}
 out:
 	if (ret != NA_SUCCESS) {
@@ -2027,6 +2029,7 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 {
 	na_cci_op_id_t		*na_cci_op_id = (na_cci_op_id_t *)op_id;
 	na_cci_private_data_t	*priv = na_class->private_data;
+	na_cci_addr_t		*na_cci_addr = NULL;
 	na_return_t		ret = NA_SUCCESS;
 
 	if (na_cci_op_id->completed) goto out;
@@ -2036,7 +2039,7 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 	switch (na_cci_op_id->type) {
 		case NA_CB_LOOKUP:
 		{
-			na_cci_addr_t *na_cci_addr = na_cci_op_id->info.lookup.addr;
+			na_cci_addr = na_cci_op_id->info.lookup.addr;
 
 			/* handle_connect() will need to cleanup the addr */
 			na_cci_addr->na_cci_op_id = NULL;
@@ -2044,15 +2047,27 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 			break;
 		case NA_CB_RECV_UNEXPECTED:
 		{
-			na_cci_op_id_t *tmp = NULL;
+			na_cci_op_id_t *tmp = NULL, *first = NULL;
 
-			while (tmp != na_cci_op_id) {
-				tmp = na_cci_msg_unexpected_op_pop(na_class);
+			tmp = first = na_cci_msg_unexpected_op_pop(na_class);
 
-				if (tmp != na_cci_op_id) {
-					na_cci_msg_unexpected_op_push(na_class, tmp);
+			do {
+				if (!tmp) {
+					ret = NA_PROTOCOL_ERROR;
+					goto out;
 				}
-			}
+
+				if (tmp == na_cci_op_id)
+					break;
+
+				na_cci_msg_unexpected_op_push(na_class, tmp);
+
+				tmp = na_cci_msg_unexpected_op_pop(na_class);
+				if (tmp == first) {
+					ret = NA_PROTOCOL_ERROR;
+					goto out;
+				}
+			} while (tmp != na_cci_op_id);
 		}
 			break;
 		case NA_CB_RECV_EXPECTED:
@@ -2076,6 +2091,7 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 			break;
 		case NA_CB_SEND_UNEXPECTED:
 		case NA_CB_SEND_EXPECTED:
+			na_cci_addr = NULL;
 		case NA_CB_PUT:
 		case NA_CB_GET:
 			goto out;
@@ -2084,7 +2100,7 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 			break;
 	}
 
-	free(na_cci_op_id);
+	ret = na_cci_complete(na_cci_addr, na_cci_op_id, NA_CANCELED);
 out:
 	return ret;
 }
