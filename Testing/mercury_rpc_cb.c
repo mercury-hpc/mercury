@@ -84,6 +84,7 @@ struct hg_test_bulk_args {
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 extern hg_thread_pool_t *hg_test_thread_pool_g;
 #endif
+extern hg_bulk_t hg_test_local_bulk_handle_g;
 
 /*---------------------------------------------------------------------------*/
 /* Actual definition of the functions that need to be executed */
@@ -1006,26 +1007,28 @@ hg_test_perf_bulk_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
             hg_bulk_cb_info->arg;
-    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
     hg_return_t ret = HG_SUCCESS;
 
+#ifdef MERCURY_TESTING_USE_LOCAL_BULK
     /* Free block handle */
-    ret = HG_Bulk_free(local_bulk_handle);
+    ret = HG_Bulk_free(hg_bulk_cb_info->local_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free HG bulk handle\n");
-        return ret;
+        goto done;
     }
+#endif
 
     /* Send response back */
     ret = HG_Respond(bulk_args->handle, NULL, NULL, NULL);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
-        return ret;
+        goto done;
     }
 
     HG_Destroy(bulk_args->handle);
     free(bulk_args);
 
+done:
     return ret;
 }
 
@@ -1059,13 +1062,18 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 
     bulk_args->fildes = in_struct.fd;
     origin_bulk_handle = in_struct.bulk_handle;
+    hg_atomic_set32(&bulk_args->completed_transfers, 0);
 
     /* Create a new block handle to read the data */
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
 
+#ifdef MERCURY_TESTING_USE_LOCAL_BULK
     /* Create a new bulk handle to read the data */
     HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
             HG_BULK_READWRITE, &local_bulk_handle);
+#else
+    local_bulk_handle = hg_test_local_bulk_handle_g;
+#endif
 
     /* Read bulk data here  */
     ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_perf_bulk_transfer_cb,

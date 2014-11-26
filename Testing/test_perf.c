@@ -166,7 +166,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
     int *bulk_buf;
     void *buf_ptr[1];
-    size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE / sizeof(int);
+    size_t count = (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE) / sizeof(int);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     size_t nbytes;
     double nmbytes;
@@ -181,15 +181,15 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     size_t i;
 
     /* Prepare bulk_buf */
-    nbytes = bulk_size * sizeof(int);
+    nbytes = count * sizeof(int);
     nmbytes = (double) nbytes / (1024 * 1024);
     if (na_test_comm_rank_g == 0) {
         printf("# Reading Bulk Data (%f MB) with %d client(s) -- loop %d time(s)\n",
                 nmbytes, na_test_comm_size_g, MERCURY_TESTING_MAX_LOOP);
     }
 
-    bulk_buf = (int*) malloc(nbytes);
-    for (i = 0; i < bulk_size; i++) {
+    bulk_buf = (int *) malloc(nbytes);
+    for (i = 0; i < count; i++) {
         bulk_buf[i] = (int) i;
     }
     *buf_ptr = bulk_buf;

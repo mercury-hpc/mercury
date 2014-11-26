@@ -33,9 +33,12 @@ static na_context_t *hg_test_na_context_g = NULL;
 static hg_bool_t hg_test_is_client_g = HG_FALSE;
 static na_addr_t hg_test_addr_g = NA_ADDR_NULL;
 static int hg_test_rank_g = 0;
+static hg_bulk_class_t *hg_test_bulk_class_g = NULL;
 static hg_class_t *hg_test_class_g = NULL;
 static hg_context_t *hg_test_context_g = NULL;
 static hg_request_class_t *hg_test_request_class_g = NULL;
+
+hg_bulk_t hg_test_local_bulk_handle_g = HG_BULK_NULL;
 
 extern na_bool_t na_test_use_self_g;
 
@@ -277,6 +280,8 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
         unsigned int *addr_table_size, unsigned int *max_number_of_peers,
         hg_context_t **context)
 {
+    size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
+
     hg_test_na_class_g = NA_Test_server_init(argc, argv, NA_FALSE, addr_table,
             addr_table_size, max_number_of_peers);
 
@@ -290,9 +295,15 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
     printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
 
+    hg_test_bulk_class_g = HG_Bulk_init(hg_test_na_class_g, hg_test_na_context_g);
+    if (!hg_test_bulk_class_g) {
+        fprintf(stderr, "Could not initialize HG Bulk class\n");
+        goto done;
+    }
+
     hg_test_class_g = HG_Init(hg_test_na_class_g, hg_test_na_context_g, NULL);
     if (!hg_test_class_g) {
-        fprintf(stderr, "Could not initialize Mercury\n");
+        fprintf(stderr, "Could not initialize HG class\n");
         goto done;
     }
 
@@ -301,6 +312,10 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
 
     /* Create new context */
     hg_test_context_g = HG_Context_create(hg_test_class_g);
+
+    /* Create bulk buffer that can be used for receiving data */
+    HG_Bulk_create(hg_test_bulk_class_g, 1, NULL, &bulk_size, HG_BULK_READWRITE,
+            &hg_test_local_bulk_handle_g);
 
     /* Used by CTest Test Driver */
     printf("Waiting for client...\n");
@@ -332,6 +347,8 @@ HG_Test_finalize(hg_class_t *hg_class)
             goto done;
         }
         hg_test_addr_g = NA_ADDR_NULL;
+    } else {
+        HG_Bulk_free(hg_test_local_bulk_handle_g);
     }
 
     /* Destroy context */
@@ -349,10 +366,17 @@ HG_Test_finalize(hg_class_t *hg_class)
     /* Finalize interface */
     ret = HG_Finalize(hg_class);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize Mercury\n");
+        fprintf(stderr, "Could not finalize HG class\n");
         goto done;
     }
     hg_test_class_g = NULL;
+
+    ret = HG_Bulk_finalize(hg_test_bulk_class_g);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not finalize HG Bulk class\n");
+        goto done;
+    }
+    hg_test_bulk_class_g = NULL;
 
     na_ret = NA_Context_destroy(hg_test_na_class_g, hg_test_na_context_g);
     if (na_ret != NA_SUCCESS) {
