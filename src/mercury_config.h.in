@@ -38,6 +38,7 @@
 #define HG_PORT_NAME "MERCURY_PORT_NAME"
 
 #cmakedefine HG_HAS_BOOST
+#cmakedefine HG_HAS_CHECKSUMS
 #cmakedefine HG_HAS_XDR
 
 #cmakedefine HG_HAS_VERBOSE_ERROR
