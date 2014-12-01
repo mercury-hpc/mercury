@@ -852,6 +852,9 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
+    /* Initialize header with default values */
+    hg_proc_header_response_init(&response_header);
+
     /* Decode response header */
     if (hg_proc_header_response(hg_handle->out_buf, hg_handle->out_buf_size,
             &response_header, HG_DECODE) != HG_SUCCESS) {
