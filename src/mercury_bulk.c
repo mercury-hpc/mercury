@@ -1349,6 +1349,12 @@ HG_Bulk_trigger(hg_bulk_class_t *hg_bulk_class, hg_bulk_context_t *context,
                 context->completion_queue);
 
         while (completion_queue_empty) {
+            if (!timeout) {
+                /* Timeout is 0 so leave */
+                ret = HG_TIMEOUT;
+                hg_thread_mutex_unlock(&context->completion_queue_mutex);
+                goto done;
+            }
             /* Otherwise wait timeout ms */
             if (hg_thread_cond_timedwait(&context->completion_queue_cond,
                     &context->completion_queue_mutex,
