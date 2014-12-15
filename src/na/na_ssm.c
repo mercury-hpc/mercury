@@ -42,6 +42,11 @@
 #include <ssm.h>
 #include <ssmptcp.h>
 
+/* Turn off debug */
+#undef NA_LOG_DEBUG
+#define NA_LOG_DEBUG(...) do { \
+  } while (0)
+
 /* Static NA SSM Class functions */
 static na_return_t
 na_ssm_initialize(na_class_t           *na_class,
