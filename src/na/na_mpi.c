@@ -39,13 +39,14 @@
 #define NA_MPI_UNEXPECTED_SIZE 4096
 #define NA_MPI_EXPECTED_SIZE   NA_MPI_UNEXPECTED_SIZE
 
-/* Max tag */
-#define NA_MPI_MAX_TAG (MPI_TAG_UB >> 2)
+/* Max tag: computed at init, but standard gives us a reasonable default */
+static int MPI_MAX_TAG = 32767;
+#define NA_MPI_MAX_TAG (MPI_MAX_TAG >> 2)
 
 /* Default tag used for one-sided over two-sided */
 #define NA_MPI_RMA_REQUEST_TAG (NA_MPI_MAX_TAG + 1)
 #define NA_MPI_RMA_TAG (NA_MPI_RMA_REQUEST_TAG + 1)
-#define NA_MPI_MAX_RMA_TAG (MPI_TAG_UB >> 1)
+#define NA_MPI_MAX_RMA_TAG (MPI_MAX_TAG >> 1)
 
 #define NA_MPI_PRIVATE_DATA(na_class) \
     ((struct na_mpi_private_data *)(na_class->private_data))
@@ -1088,6 +1089,7 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
     hg_queue_t *unexpected_op_queue = NULL;
     int flags = (listen) ? MPI_INIT_SERVER : 0;
     int mpi_ret;
+    int *attr_val, attr_flag;
     na_return_t ret = NA_SUCCESS;
 
     na_class->private_data = malloc(sizeof(struct na_mpi_private_data));
@@ -1218,6 +1220,13 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
     } else {
         NA_MPI_PRIVATE_DATA(na_class)->accepting = NA_FALSE;
     }
+
+    /* MPI implementation typically provides a "max tag" far larger than
+     * standard demands */
+    MPI_Comm_get_attr(NA_MPI_PRIVATE_DATA(na_class)->intra_comm, MPI_TAG_UB,
+            &attr_val, &attr_flag);
+    if (attr_flag) MPI_MAX_TAG = *attr_val;
+    NA_LOG_DEBUG("MPI_MAX_TAG: %d\n", MPI_MAX_TAG);
 
 done:
     if (ret != NA_SUCCESS) {
