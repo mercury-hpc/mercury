@@ -32,6 +32,17 @@ make && make install
 popd
 popd
 
+# build cci
+mkdir cci
+pushd cci
+cp /homes/soumagne/jenkins/cci-0.1b7.tar.gz .
+tar -xzf cci-0.1b7.tar.gz
+pushd cci-0.1b7
+./configure --prefix=$WORKSPACE/.install --enable-static
+make && make install
+popd
+popd
+
 # echo mpi commands needed to compile
 echo "mpicc -show"
 mpicc -show
