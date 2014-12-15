@@ -71,6 +71,11 @@ if(NA_USE_SSM)
   mark_as_advanced(NA_SSM_TESTING_PROTOCOL)
 endif()
 
+if(NA_USE_CCI)
+  set(NA_CCI_TESTING_PROTOCOL "" CACHE STRING "Protocol(s) used for testing (e.g., tcp;ib).")
+  mark_as_advanced(NA_CCI_TESTING_PROTOCOL)
+endif()
+
 #------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
 #------------------------------------------------------------------------------
