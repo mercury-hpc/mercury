@@ -503,12 +503,6 @@ const na_class_t na_cci_class_g = {
 /* Plugin callbacks */
 /********************/
 
-static NA_INLINE int
-pointer_equal(void *location1, void *location2)
-{
-	return location1 == location2;
-}
-
 /*---------------------------------------------------------------------------*/
 static na_bool_t
 na_cci_check_protocol(const char *protocol_name)
