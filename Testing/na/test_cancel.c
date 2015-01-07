@@ -3,7 +3,53 @@
 
 #include "na_test.h"
 
+#define COMPLETION_MAGIC 123456789
+
 int global_test_error = 0;
+
+/*
+ * Prototypes
+ */
+void cancel_unexpected_send (
+    na_class_t   *class,
+    na_context_t *context,
+    na_addr_t    *server_addr,
+    na_size_t     len,
+    void         *buf);
+
+void cancel_expected_send (
+    na_class_t   *class,
+    na_context_t *context,
+    na_addr_t    *server_addr,
+    na_size_t     len,
+    void         *buf);
+
+void cancel_unexpected_recv (
+    na_class_t   *class,
+    na_context_t *context,
+    na_size_t     len,
+    void         *buf);
+
+void cancel_expected_recv (
+    na_class_t   *class,
+    na_context_t *context,
+    na_addr_t    *server_addr,
+    na_size_t     len,
+    void         *buf);
+
+void cancel_put (
+    na_class_t   *class,
+    na_context_t *context,
+    na_addr_t    *server_addr,
+    na_size_t     len,
+    void         *buf);
+
+void cancel_get (
+    na_class_t   *class,
+    na_context_t *context,
+    na_addr_t    *server_addr,
+    na_size_t     len,
+    void         *buf);
 
 /*
  * Callbacks
@@ -31,6 +77,19 @@ static na_return_t callback (const struct na_cb_info *callback_info)
         global_test_error = 1;
     }
 
+    if ((callback_info->type == NA_CB_RECV_UNEXPECTED) &&
+        (callback_info->info.recv_unexpected.source))
+    {
+        free(callback_info->info.recv_unexpected.source);
+    }
+
+    *flag = COMPLETION_MAGIC; 
+
+    /* debug
+    printf("callback: type: %d ret: %d\n",
+           callback_info->type, callback_info->ret);
+     */
+ 
     return NA_SUCCESS;
 }
 
@@ -44,8 +103,6 @@ int main (int argc, char **argv)
     char          server_name[NA_TEST_MAX_ADDR_NAME];
     na_return_t   naret;
     unsigned int  count;
-    na_op_id_t    op_id;
-    unsigned int  flag;
     int           found = 0;
 
     class = NA_Test_client_init(argc,
@@ -107,44 +164,41 @@ int main (int argc, char **argv)
                 naret, count);
     }
 
-    /*
-     * cancel unexpected send
-     */
-    flag = NA_CB_SEND_UNEXPECTED;
-    naret = NA_Msg_send_unexpected(class,
-                                   context,
-                                   callback,
-                                   &flag,
-                                   buf,
-                                   len,
-                                   server_addr, 
-                                   1,
-                                   &op_id);
-    if (naret != NA_SUCCESS)
-    {
-        fprintf(stderr, "NA_Msg_send_unexpected failed: %d\n", naret);
-        global_test_error = 1;
-        goto done;
-    }
+    cancel_unexpected_send (class,
+                            context,
+                            &server_addr,
+                            len,
+                            buf);
 
-    naret = NA_Cancel(class, context, op_id);
-    if (naret != NA_SUCCESS)
-    {
-        fprintf(stderr, "NA_Cancel failed: %d\n", naret);
-        global_test_error = 1;
-        goto done;
-    }
+    cancel_expected_send (class,
+                          context,
+                          &server_addr,
+                          len,
+                          buf);
 
-    NA_Progress(class, context, 1);
+    cancel_unexpected_recv (class,
+                            context,
+                            len,
+                            buf);
 
-    count = 0;
-    naret = NA_Trigger(context, 0, 1, &count);
-    if ((naret != NA_SUCCESS) ||
-        (count != 1))
-    {
-        fprintf(stderr, "NA_Trigger failed: ret=%d count=%d\n", naret, count);
-    }
+    cancel_expected_recv (class,
+                          context,
+                          &server_addr,
+                          len,
+                          buf);
 
+    cancel_put (class,
+                context,
+                &server_addr,
+                len,
+                buf);
+
+    cancel_get (class,
+                context,
+                &server_addr,
+                len,
+                buf);
+ 
 done:
     if (found) NA_Addr_free(class, server_addr);
 
@@ -155,4 +209,417 @@ done:
     if (class) NA_Test_finalize(class);
 
     return global_test_error;
+}
+
+void cancel_unexpected_send (
+    na_class_t   *class,
+    na_context_t *context,
+    na_addr_t    *server_addr,
+    na_size_t     len,
+    void         *buf)
+{
+    na_return_t   naret;
+    na_op_id_t    op_id;
+    unsigned int  flag;
+    unsigned int  count;
+
+    flag = NA_CB_SEND_UNEXPECTED;
+    naret = NA_Msg_send_unexpected(class,
+                                   context,
+                                   callback,
+                                   &flag,
+                                   buf,
+                                   len,
+                                   *server_addr, 
+                                   1,
+                                   &op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Msg_send_unexpected failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    naret = NA_Cancel(class, context, op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Cancel failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    NA_Progress(class, context, 1);
+
+    count = 0;
+    naret = NA_Trigger(context, 0, 1, &count);
+    if ((naret != NA_SUCCESS) ||
+        (count != 1))
+    {
+        fprintf(stderr, "NA_Trigger failed: ret=%d count=%d\n", naret, count);
+        global_test_error = 1;
+    }
+
+    if (flag != COMPLETION_MAGIC)
+    {
+        fprintf(stderr, "unexpected send callback failed\n");
+        global_test_error = 1;
+    }
+
+    return;
+}
+
+void cancel_expected_send (
+    na_class_t   *class,
+    na_context_t *context,
+    na_addr_t    *server_addr,
+    na_size_t     len,
+    void         *buf)
+{
+    na_return_t   naret;
+    na_op_id_t    op_id;
+    unsigned int  flag;
+    unsigned int  count;
+   
+    flag = NA_CB_SEND_EXPECTED;
+    naret = NA_Msg_send_expected(class,
+                                 context,
+                                 callback,
+                                 &flag,
+                                 buf,
+                                 len,
+                                 *server_addr,
+                                 2,
+                                 &op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Msg_send_expected failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    naret = NA_Cancel(class, context, op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Cancel failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    NA_Progress(class, context, 1);
+
+    count = 0;
+    naret = NA_Trigger(context, 0, 1, &count);
+    if ((naret != NA_SUCCESS) ||
+        (count != 1))
+    {
+        fprintf(stderr, "NA_Trigger failed: ret=%d count=%d\n", naret, count);
+        global_test_error = 1;
+    }
+
+    if (flag != COMPLETION_MAGIC)
+    {
+        fprintf(stderr, "expected send callback failed\n");
+        global_test_error = 1;
+    }
+
+    return;
+}
+
+void cancel_unexpected_recv (
+    na_class_t   *class,
+    na_context_t *context,
+    na_size_t     len,
+    void         *buf)
+{
+    na_return_t   naret;
+    na_op_id_t    op_id;
+    unsigned int  flag;
+    unsigned int  count;
+
+    flag = NA_CB_RECV_UNEXPECTED;
+    naret = NA_Msg_recv_unexpected(class,
+                                   context,
+                                   callback,
+                                   &flag,
+                                   buf,
+                                   len,
+                                   &op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Msg_recv_unexpected failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    naret = NA_Cancel(class, context, op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Cancel failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    NA_Progress(class, context, 1);
+
+    count = 0;
+    naret = NA_Trigger(context, 0, 1, &count);
+    if ((naret != NA_SUCCESS) ||
+        (count != 1))
+    {
+        fprintf(stderr, "NA_Trigger failed: ret=%d count=%d\n", naret, count);
+        global_test_error = 1;
+    }
+
+    if (flag != COMPLETION_MAGIC)
+    {
+        fprintf(stderr, "unexpected recv callback failed\n");
+        global_test_error = 1;
+    }
+
+    return;
+}
+
+void cancel_expected_recv (
+    na_class_t   *class,
+    na_context_t *context,
+    na_addr_t    *server_addr,
+    na_size_t     len,
+    void         *buf)
+{
+    na_return_t   naret;
+    na_op_id_t    op_id;
+    unsigned int  flag;
+    unsigned int  count;
+
+    flag = NA_CB_RECV_EXPECTED;
+    naret = NA_Msg_recv_expected(class,
+                                 context,
+                                 callback,
+                                 &flag,
+                                 buf,
+                                 len,
+                                 *server_addr,
+                                 3,
+                                 &op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Msg_recv_expected failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    naret = NA_Cancel(class, context, op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Cancel failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    NA_Progress(class, context, 1);
+
+    count = 0;
+    naret = NA_Trigger(context, 0, 1, &count);
+    if ((naret != NA_SUCCESS) ||
+        (count != 1))
+    {
+        fprintf(stderr, "NA_Trigger failed: ret=%d count=%d\n", naret, count);
+        global_test_error = 1;
+    }
+
+    if (flag != COMPLETION_MAGIC)
+    {
+        fprintf(stderr, "expected recv callback failed\n");
+        global_test_error = 1;
+    }
+
+    return;
+}
+
+void cancel_put (
+    na_class_t   *class,
+    na_context_t *context,
+    na_addr_t    *server_addr,
+    na_size_t     len,
+    void         *buf)
+{
+    na_return_t   naret;
+    na_op_id_t    op_id;
+    unsigned int  flag;
+    unsigned int  count;
+    na_mem_handle_t mem_handle_local;
+
+    naret = NA_Mem_handle_create(class,
+                                 buf,
+                                 len,
+                                 NA_MEM_READWRITE,
+                                 &mem_handle_local);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Mem_handle_create failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    naret = NA_Mem_register(class, mem_handle_local);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Mem_register failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    naret = NA_Mem_publish(class, &mem_handle_local);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Mem_publish failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    flag = NA_CB_PUT;
+    naret = NA_Put(class,
+                   context,
+                   callback,
+                   &flag,
+                   mem_handle_local,
+                   0,
+                   mem_handle_local, // fake the remote handle
+                   0,
+                   len,
+                   *server_addr,
+                   &op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Put failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    naret = NA_Cancel(class, context, op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Cancel failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    NA_Progress(class, context, 1);
+    NA_Progress(class, context, 1);
+    NA_Progress(class, context, 1);
+
+    count = 0;
+    naret = NA_Trigger(context, 0, 1, &count);
+    if ((naret != NA_SUCCESS) ||
+        (count != 1))
+    {
+        fprintf(stderr, "NA_Trigger failed: ret=%d count=%d\n", naret, count);
+        global_test_error = 1;
+    }
+
+    if (flag != COMPLETION_MAGIC)
+    {
+        fprintf(stderr, "put callback failed\n");
+        global_test_error = 1;
+    }
+
+    NA_Mem_unpublish(class, mem_handle_local);
+    NA_Mem_deregister(class, mem_handle_local);
+    NA_Mem_handle_free(class, mem_handle_local);
+
+    return; 
+}
+
+void cancel_get (
+    na_class_t   *class,
+    na_context_t *context,
+    na_addr_t    *server_addr,
+    na_size_t     len,
+    void         *buf)
+{
+    na_return_t   naret;
+    na_op_id_t    op_id;
+    unsigned int  flag;
+    unsigned int  count;
+    na_mem_handle_t mem_handle_local;
+
+    naret = NA_Mem_handle_create(class,
+                                 buf,
+                                 len,
+                                 NA_MEM_READ_ONLY,
+                                 &mem_handle_local);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Mem_handle_create failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    naret = NA_Mem_register(class, mem_handle_local);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Mem_register failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    naret = NA_Mem_publish(class, &mem_handle_local);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Mem_publish failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    flag = NA_CB_GET;
+    naret = NA_Get(class,
+                   context,
+                   callback,
+                   &flag,
+                   mem_handle_local,
+                   0,
+                   mem_handle_local, // fake the remote handle
+                   0,
+                   len,
+                   *server_addr,
+                   &op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Put failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    naret = NA_Cancel(class, context, op_id);
+    if (naret != NA_SUCCESS)
+    {
+        fprintf(stderr, "NA_Cancel failed: %d\n", naret);
+        global_test_error = 1;
+        return;
+    }
+
+    NA_Progress(class, context, 1);
+    NA_Progress(class, context, 1);
+    NA_Progress(class, context, 1);
+
+    count = 0;
+    naret = NA_Trigger(context, 0, 1, &count);
+    if ((naret != NA_SUCCESS) ||
+        (count != 1))
+    {
+        fprintf(stderr, "NA_Trigger failed: ret=%d count=%d\n", naret, count);
+        global_test_error = 1;
+    }
+
+    if (flag != COMPLETION_MAGIC)
+    {
+        fprintf(stderr, "get callback failed\n");
+        global_test_error = 1;
+    }
+
+    NA_Mem_unpublish(class, mem_handle_local);
+    NA_Mem_deregister(class, mem_handle_local);
+    NA_Mem_handle_free(class, mem_handle_local);
+
+    return; 
 }
