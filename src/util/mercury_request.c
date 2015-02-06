@@ -46,7 +46,7 @@ hg_request_check(hg_request_t *request)
                 request->request_class->arg);
     } while ((trigger_ret == HG_UTIL_SUCCESS) && trigger_flag);
 
-    if (hg_atomic_cas32(&request->completed, HG_UTIL_TRUE, HG_UTIL_TRUE)) {
+    if (hg_atomic_cas32(&request->completed, HG_UTIL_TRUE, HG_UTIL_FALSE)) {
         ret = HG_UTIL_TRUE;
     }
 
