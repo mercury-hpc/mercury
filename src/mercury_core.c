@@ -1857,7 +1857,7 @@ HG_Progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
 
     /* Make progress on the HG layer */
     ret = hg_progress(hg_class, context, timeout);
-    if (ret != HG_SUCCESS) {
+    if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
         HG_LOG_ERROR("Could not make progress");
         goto done;
     }
