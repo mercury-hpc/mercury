@@ -252,7 +252,7 @@ HG_Bulk_transfer(
  * assumed that completion of a specific operation will occur only when
  * progress is called.
  * Calling HG_Bulk_progress is only necessary if a context has been separately
- * created as HG_Progress will call NA_Progress/NA_Trigger on the same NA
+ * created as HG_Progress will call NA_Progress/NA_Trigger on the associated NA
  * context.
  *
  * \param bulk_class [IN]       pointer to HG bulk class
