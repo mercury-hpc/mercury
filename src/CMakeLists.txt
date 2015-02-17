@@ -38,6 +38,9 @@ set(MERCURY_EXT_LIB_DEPENDENCIES ${NA_EXT_LIB_DEPENDENCIES}
   ${MERCURY_EXT_LIB_DEPENDENCIES}
 )
 
+# Mercury HL
+option(MERCURY_BUILD_HL_LIB "Build High-Level Mercury Library." OFF)
+
 #------------------------------------------------------------------------------
 # External dependencies
 #------------------------------------------------------------------------------
@@ -136,6 +139,9 @@ set(MERCURY_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.c
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_proc_string.c
 )
+set(MERCURY_HL_SRCS
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hl.c
+)
 
 #------------------------------------------------------------------------------
 # Libraries
@@ -149,6 +155,18 @@ if(MERCURY_ENABLE_COVERAGE)
 endif()
 
 set(MERCURY_EXPORTED_LIBS mercury ${MERCURY_EXPORTED_LIBS})
+
+# MERCURY HL
+if(MERCURY_BUILD_HL_LIB)
+  add_library(mercury_hl ${MERCURY_HL_SRCS})
+  target_link_libraries(mercury_hl mercury)
+  mercury_set_lib_options(mercury_hl "mercury_hl" ${MERCURY_LIBTYPE})
+  if(MERCURY_ENABLE_COVERAGE)
+    set_coverage_flags(mercury_hl)
+  endif()
+
+  set(MERCURY_EXPORTED_LIBS mercury_hl ${MERCURY_EXPORTED_LIBS})
+endif()
 
 #-----------------------------------------------------------------------------
 # Specify project header files to be installed
@@ -165,6 +183,10 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.h
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_proc_string.h
 )
+set(MERCURY_HL_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hl.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hl_macros.h
+)
 
 #-----------------------------------------------------------------------------
 # Add file(s) to CMake Install
@@ -177,6 +199,16 @@ install(
   COMPONENT
     headers
 )
+if(MERCURY_BUILD_HL_LIB)
+  install(
+    FILES
+      ${MERCURY_HL_HEADERS}
+    DESTINATION
+      ${MERCURY_INSTALL_INCLUDE_DIR}
+    COMPONENT
+      headers
+  )
+endif()
 
 #-----------------------------------------------------------------------------
 # Add Target(s) to CMake Install
@@ -190,6 +222,17 @@ install(
   ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
   RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
 )
+if(MERCURY_BUILD_HL_LIB)
+  install(
+    TARGETS
+      mercury_hl
+    EXPORT
+      ${MERCURY_EXPORTED_TARGETS}
+    LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+    ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+    RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
+  )
+endif()
 
 #-----------------------------------------------------------------------------
 # Add Target(s) to CMake Install for import into other projects
