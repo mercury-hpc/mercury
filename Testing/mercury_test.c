@@ -190,6 +190,7 @@ hg_test_register(hg_class_t *hg_class)
 //            "hg_test_pipeline_write", bulk_write_in_t, bulk_write_out_t,
 //            hg_test_pipeline_write_cb);
 //
+#ifndef _WIN32
     /* test_posix */
     hg_test_posix_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_open",
             open_in_t, open_out_t, hg_test_posix_open_cb);
@@ -199,12 +200,13 @@ hg_test_register(hg_class_t *hg_class)
             read_in_t, read_out_t, hg_test_posix_read_cb);
     hg_test_posix_close_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_close",
             close_in_t, close_out_t, hg_test_posix_close_cb);
+#endif
 
     /* test_perf */
     hg_test_perf_rpc_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_rpc",
             void, void, hg_test_perf_rpc_cb);
     hg_test_perf_bulk_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_bulk",
-            write_in_t, void, hg_test_perf_bulk_cb);
+            bulk_write_in_t, void, hg_test_perf_bulk_cb);
 
     /* test_overflow */
     hg_test_overflow_id_g = MERCURY_REGISTER(hg_class, "hg_test_overflow",

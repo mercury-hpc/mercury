@@ -26,6 +26,7 @@
 #include <string.h>
 #ifdef _WIN32
 #include <Winsock2.h>
+#include <Ws2tcpip.h>
 #else
 #include <sys/types.h>
 #include <sys/socket.h>

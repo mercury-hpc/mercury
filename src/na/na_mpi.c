@@ -53,6 +53,8 @@ static int MPI_MAX_TAG = 32767;
 
 #ifdef _WIN32
 #  define strtok_r strtok_s
+#  undef strdup
+#  define strdup _strdup
 #endif
 
 /************************************/

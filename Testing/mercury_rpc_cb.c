@@ -70,6 +70,12 @@
 /* Local Type and Struct Definition */
 /************************************/
 
+#ifdef _WIN32
+#  ifndef _SSIZE_T_DEFINED
+    typedef SSIZE_T ssize_t;
+#  endif
+#endif
+
 struct hg_test_bulk_args {
     hg_handle_t handle;
     int fildes;
@@ -680,6 +686,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
 //}
 
 /*---------------------------------------------------------------------------*/
+#ifndef _WIN32
 HG_TEST_RPC_CB(hg_test_posix_open, handle)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -983,6 +990,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
 
     return ret;
 }
+#endif /* _WIN32 */
 
 /*---------------------------------------------------------------------------*/
 HG_TEST_RPC_CB(hg_test_perf_rpc, handle)
@@ -1037,7 +1045,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    write_in_t  in_struct;
+    bulk_write_in_t  in_struct;
 
     struct hg_info *hg_info = NULL;
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
@@ -1060,7 +1068,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
         return ret;
     }
 
-    bulk_args->fildes = in_struct.fd;
+    bulk_args->fildes = in_struct.fildes;
     origin_bulk_handle = in_struct.bulk_handle;
     hg_atomic_set32(&bulk_args->completed_transfers, 0);
 
@@ -1125,10 +1133,12 @@ HG_TEST_THREAD_CB(hg_test_rpc_open)
 HG_TEST_THREAD_CB(hg_test_bulk_write)
 HG_TEST_THREAD_CB(hg_test_bulk_seg_write)
 //HG_TEST_THREAD_CB(hg_test_pipeline_write)
+#ifndef _WIN32
 HG_TEST_THREAD_CB(hg_test_posix_open)
 HG_TEST_THREAD_CB(hg_test_posix_close)
 HG_TEST_THREAD_CB(hg_test_posix_write)
 HG_TEST_THREAD_CB(hg_test_posix_read)
+#endif
 HG_TEST_THREAD_CB(hg_test_perf_rpc)
 HG_TEST_THREAD_CB(hg_test_perf_bulk)
 HG_TEST_THREAD_CB(hg_test_overflow)

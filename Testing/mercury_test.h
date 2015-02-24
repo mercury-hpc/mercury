@@ -19,7 +19,9 @@
 
 #include "test_rpc.h"
 #include "test_bulk.h"
+#ifndef _WIN32
 #include "test_posix.h"
+#endif
 #include "test_overflow.h"
 
 #ifdef __cplusplus

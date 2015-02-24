@@ -162,7 +162,7 @@ static hg_return_t
 measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         na_addr_t addr, hg_request_class_t *request_class)
 {
-    write_in_t in_struct;
+    bulk_write_in_t in_struct;
 
     int *bulk_buf;
     void *buf_ptr[1];
@@ -213,7 +213,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     }
 
     /* Fill input structure */
-    in_struct.fd = 0;
+    in_struct.fildes = 0;
     in_struct.bulk_handle = bulk_handle;
 
     if (na_test_comm_rank_g == 0) printf("# Warming up...\n");
