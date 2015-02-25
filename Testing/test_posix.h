@@ -11,9 +11,8 @@
 #ifndef TEST_POSIX_H
 #define TEST_POSIX_H
 
-#include "mercury_proc.h"
-#include "mercury_proc_string.h"
 #include "mercury_macros.h"
+#include "mercury_proc_string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,10 +59,10 @@ typedef struct {
 } open_in_t;
 
 /* Define hg_proc_open_in_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_open_in_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     open_in_t *struct_data = (open_in_t *) data;
 
     ret = hg_proc_hg_const_string_t(proc, &struct_data->path);
@@ -93,10 +92,10 @@ typedef struct {
 } open_out_t;
 
 /* Define hg_proc_open_out_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_open_out_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     open_out_t *struct_data = (open_out_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->ret);
@@ -114,10 +113,10 @@ typedef struct {
 } close_in_t;
 
 /* Define hg_proc_open_in_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_close_in_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     close_in_t *struct_data = (close_in_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->fd);
@@ -135,10 +134,10 @@ typedef struct {
 } close_out_t;
 
 /* Define hg_proc_open_out_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_close_out_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     close_out_t *struct_data = (close_out_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->ret);
@@ -157,10 +156,10 @@ typedef struct {
 } write_in_t;
 
 /* Define hg_proc_write_in_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_write_in_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     write_in_t *struct_data = (write_in_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->fd);
@@ -184,10 +183,10 @@ typedef struct {
 } write_out_t;
 
 /* Define hg_proc_write_out_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_write_out_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     write_out_t *struct_data = (write_out_t *) data;
 
     ret = hg_proc_int64_t(proc, &struct_data->ret);
@@ -206,10 +205,10 @@ typedef struct {
 } read_in_t;
 
 /* Define hg_proc_read_in_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_read_in_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     read_in_t *struct_data = (read_in_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->fd);
@@ -233,10 +232,10 @@ typedef struct {
 } read_out_t;
 
 /* Define hg_proc_read_out_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_read_out_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     read_out_t *struct_data = (read_out_t *) data;
 
     ret = hg_proc_int64_t(proc, &struct_data->ret);

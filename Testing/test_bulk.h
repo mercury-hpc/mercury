@@ -12,7 +12,6 @@
 #define TEST_BULK_H
 
 #include "mercury_macros.h"
-#include "mercury_proc.h"
 
 /* Dummy function that needs to be shipped */
 /* size_t bulk_write(int fildes, const void *buf, size_t nbyte); */
@@ -32,10 +31,10 @@ typedef struct {
 } bulk_write_in_t;
 
 /* Define hg_proc_bulk_write_in_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_bulk_write_in_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     bulk_write_in_t *struct_data = (bulk_write_in_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->fildes);
@@ -59,10 +58,10 @@ typedef struct {
 } bulk_write_out_t;
 
 /* Define hg_proc_bulk_write_out_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_bulk_write_out_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     bulk_write_out_t *struct_data = (bulk_write_out_t *) data;
 
     ret = hg_proc_uint64_t(proc, &struct_data->ret);

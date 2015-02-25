@@ -12,7 +12,6 @@
 #define TEST_RPC_H
 
 #include "mercury_macros.h"
-#include "mercury_proc.h"
 #include "mercury_proc_string.h"
 
 #ifdef HG_HAS_BOOST
@@ -44,9 +43,10 @@ typedef struct {
 /* int rpc_open(const char *path, rpc_handle_t handle, int *event_id); */
 
 /* Define hg_proc_rpc_handle_t */
-static HG_INLINE int hg_proc_rpc_handle_t(hg_proc_t proc, void *data)
+static HG_INLINE hg_return_t
+hg_proc_rpc_handle_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     rpc_handle_t *struct_data = (rpc_handle_t *) data;
 
     ret = hg_proc_uint64_t(proc, &struct_data->cookie);
@@ -65,10 +65,10 @@ typedef struct {
 } rpc_open_in_t;
 
 /* Define hg_proc_rpc_open_in_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_rpc_open_in_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     rpc_open_in_t *struct_data = (rpc_open_in_t *) data;
 
     ret = hg_proc_hg_const_string_t(proc, &struct_data->path);
@@ -93,10 +93,10 @@ typedef struct {
 } rpc_open_out_t;
 
 /* Define hg_proc_rpc_open_out_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_rpc_open_out_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     rpc_open_out_t *struct_data = (rpc_open_out_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->ret);

@@ -14,7 +14,6 @@
 #include "na.h"
 #include "mercury_test_config.h"
 #include "mercury_config.h"
-#include "mercury_bulk.h"
 #include "mercury_request.h"
 
 #include "test_rpc.h"

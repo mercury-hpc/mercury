@@ -12,7 +12,6 @@
 #define TEST_OVERFLOW_H
 
 #include "mercury_macros.h"
-#include "mercury_proc.h"
 #include "mercury_proc_string.h"
 
 #ifdef HG_HAS_BOOST
@@ -26,10 +25,10 @@ typedef struct {
 } overflow_out_t;
 
 /* Define hg_proc_overflow_out_t */
-static HG_INLINE int
+static HG_INLINE hg_return_t
 hg_proc_overflow_out_t(hg_proc_t proc, void *data)
 {
-    int ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
     overflow_out_t *struct_data = (overflow_out_t *) data;
 
     ret = hg_proc_hg_string_t(proc, &struct_data->string);
