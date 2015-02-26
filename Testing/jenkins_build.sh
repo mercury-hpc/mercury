@@ -33,11 +33,12 @@ popd
 popd
 
 # build cci
+CCI_VERSION=0.1b8
 mkdir cci
 pushd cci
-cp /homes/soumagne/jenkins/cci-0.1b7.tar.gz .
-tar -xzf cci-0.1b7.tar.gz
-pushd cci-0.1b7
+cp /homes/soumagne/jenkins/cci-${CCI_VERSION}.tar.gz .
+tar -xzf cci-${CCI_VERSION}.tar.gz
+pushd cci-${CCI_VERSION}
 ./configure --prefix=$WORKSPACE/.install --enable-static
 make && make install
 popd
