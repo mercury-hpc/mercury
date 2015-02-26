@@ -1228,7 +1228,6 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
     MPI_Comm_get_attr(NA_MPI_PRIVATE_DATA(na_class)->intra_comm, MPI_TAG_UB,
             &attr_val, &attr_flag);
     if (attr_flag) MPI_MAX_TAG = *attr_val;
-    NA_LOG_DEBUG("MPI_MAX_TAG: %d\n", MPI_MAX_TAG);
 
 done:
     if (ret != NA_SUCCESS) {
