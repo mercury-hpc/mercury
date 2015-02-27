@@ -33,7 +33,7 @@ popd
 popd
 
 # build cci
-CCI_VERSION=0.1b8
+CCI_VERSION=master
 mkdir cci
 pushd cci
 cp /homes/soumagne/jenkins/cci-${CCI_VERSION}.tar.gz .
