@@ -424,16 +424,14 @@ static na_return_t
 na_bmi_progress_unexpected(
         na_class_t   *na_class,
         na_context_t *context,
-        unsigned int  timeout,
-        na_bool_t    *progressed
+        unsigned int  timeout
         );
 
 static na_return_t
 na_bmi_progress_expected(
         na_class_t   *na_class,
         na_context_t *context,
-        unsigned int  timeout,
-        na_bool_t    *progressed
+        unsigned int  timeout
         );
 
 static na_return_t
@@ -1003,7 +1001,6 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 {
     struct BMI_unexpected_info *unexpected_info = NULL;
     struct na_bmi_op_id *na_bmi_op_id = NULL;
-    na_bool_t progressed = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate na_op_id */
@@ -1024,12 +1021,12 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Try to make progress here from the BMI unexpected queue */
     do {
-        ret = na_bmi_progress_unexpected(na_class, context, 0, &progressed);
-        if (ret != NA_SUCCESS) {
+        ret = na_bmi_progress_unexpected(na_class, context, 0);
+        if (ret != NA_SUCCESS && ret != NA_TIMEOUT) {
             NA_LOG_ERROR("Could not check BMI unexpected message queue");
             goto done;
         }
-    } while (progressed);
+    } while (ret == NA_SUCCESS);
 
     /* Look for an unexpected message already received */
     unexpected_info = na_bmi_msg_unexpected_pop(na_class);
@@ -1628,18 +1625,18 @@ na_bmi_progress(na_class_t *na_class, na_context_t *context,
 
     do {
         hg_time_t t1, t2;
-        na_bool_t progressed = NA_FALSE;
 
         hg_time_get_current(&t1);
 
         /* Try to make progress here from the BMI unexpected queue */
-        ret = na_bmi_progress_unexpected(na_class, context, 0, &progressed);
+        ret = na_bmi_progress_unexpected(na_class, context, 0);
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not make unexpected progress");
-            goto done;
-        }
-
-        if (progressed) break;
+            if (ret != NA_TIMEOUT) {
+                NA_LOG_ERROR("Could not make unexpected progress");
+                goto done;
+            }
+        } else
+            break; /* Progressed */
 
         /* The rule is that the timeout should be passed to testcontext, and
          * that testcontext will return if there is an unexpected message.
@@ -1647,12 +1644,14 @@ na_bmi_progress(na_class_t *na_class, na_context_t *context,
          * testcontext will ignore the timeout and immediately return).
          * [verified this in the source] */
         ret = na_bmi_progress_expected(na_class, context,
-                (unsigned int) (remaining * 1000), &progressed);
+                (unsigned int) (remaining * 1000));
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not make expected progress");
-            goto done;
-        }
-        if (progressed) break;
+            if (ret != NA_TIMEOUT) {
+                NA_LOG_ERROR("Could not make expected progress");
+                goto done;
+            }
+        } else
+            break; /* Progressed */
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
@@ -1665,7 +1664,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
-        unsigned int timeout, na_bool_t *progressed)
+        unsigned int timeout)
 {
     int outcount = 0;
     struct BMI_unexpected_info test_unexpected_info;
@@ -1741,9 +1740,9 @@ na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
                 unexpected_info = NULL;
             }
         }
+    } else {
+        ret = NA_TIMEOUT; /* No progress */
     }
-
-    if (progressed) *progressed = (na_bool_t) (outcount > 0);
 
 done:
     free(unexpected_info);
@@ -1753,7 +1752,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
-        unsigned int timeout, na_bool_t *progressed)
+        unsigned int timeout)
 {
     bmi_op_id_t bmi_op_id = 0;
     int outcount = 0;
@@ -1857,9 +1856,9 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
                 ret = NA_PROTOCOL_ERROR;
                 goto done;
         }
+    } else {
+        ret = NA_TIMEOUT; /* No progress */
     }
-
-    if (progressed) *progressed = (na_bool_t) (outcount > 0);
 
 done:
     return ret;

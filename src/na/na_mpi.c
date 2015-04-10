@@ -492,18 +492,16 @@ static na_return_t
 na_mpi_progress_unexpected(
         na_class_t   *na_class,
         na_context_t *context,
-        unsigned int  timeout,
-        na_bool_t    *progressed
+        unsigned int  timeout
         );
 
-/* na_mpi_progress_unexpected_rma */
+/* na_mpi_progress_unexpected_msg */
 static na_return_t
 na_mpi_progress_unexpected_msg(
         na_class_t         *na_class,
         na_context_t       *context,
         struct na_mpi_addr *na_mpi_addr,
-        const MPI_Status   *status,
-        na_bool_t          *progressed
+        const MPI_Status   *status
         );
 
 /* na_mpi_progress_unexpected_rma */
@@ -512,8 +510,7 @@ na_mpi_progress_unexpected_rma(
         na_class_t         *na_class,
         na_context_t       *context,
         struct na_mpi_addr *na_mpi_addr,
-        const MPI_Status   *status,
-        na_bool_t          *progressed
+        const MPI_Status   *status
         );
 
 /* na_mpi_progress_expected */
@@ -521,8 +518,7 @@ static na_return_t
 na_mpi_progress_expected(
         na_class_t   *na_class,
         na_context_t *context,
-        unsigned int  timeout,
-        na_bool_t    *progressed
+        unsigned int  timeout
         );
 
 /* na_mpi_complete */
@@ -1602,7 +1598,6 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_op_id_t *op_id)
 {
     struct na_mpi_op_id *na_mpi_op_id = NULL;
-    na_bool_t progressed = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate na_op_id */
@@ -1630,15 +1625,16 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     do {
-        ret = na_mpi_progress_unexpected(na_class, context, 0, &progressed);
-        if (ret != NA_SUCCESS) {
+        ret = na_mpi_progress_unexpected(na_class, context, 0);
+        if (ret != NA_SUCCESS && ret != NA_TIMEOUT) {
             NA_LOG_ERROR("Could not make unexpected progress");
             goto done;
         }
-    } while (progressed);
+    } while (ret == NA_SUCCESS);
     /* No guarantee here that ours has completed even if progressed is true,
      * we make progress here just in case we can complete the op at the same
      * time */
+    ret = NA_SUCCESS;
 
     /* Assign op_id */
     *op_id = (na_op_id_t) na_mpi_op_id;
@@ -2050,28 +2046,29 @@ na_mpi_progress(na_class_t *na_class, na_context_t *context,
 
     do {
         hg_time_t t1, t2;
-        na_bool_t progressed = NA_FALSE;
 
         hg_time_get_current(&t1);
 
         /* Try to make unexpected progress */
-        ret = na_mpi_progress_unexpected(na_class, context, 0, &progressed);
+        ret = na_mpi_progress_unexpected(na_class, context, 0);
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not make unexpected progress");
-            goto done;
-        }
-
-        if (progressed) break;
+            if (ret != NA_TIMEOUT) {
+                NA_LOG_ERROR("Could not make unexpected progress");
+                goto done;
+            }
+        } else
+            break; /* Progressed */
 
         /* Try to make expected progress */
         ret = na_mpi_progress_expected(na_class, context,
-                (unsigned int) (remaining * 1000), &progressed);
+                (unsigned int) (remaining * 1000));
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not make expected progress");
-            goto done;
-        }
-
-        if (progressed) break;
+            if (ret != NA_TIMEOUT) {
+                NA_LOG_ERROR("Could not make expected progress");
+                goto done;
+            }
+        } else
+            break; /* Progressed */
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
@@ -2084,11 +2081,10 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_mpi_progress_unexpected(na_class_t *na_class, na_context_t *context,
-        unsigned int NA_UNUSED timeout, na_bool_t *progressed)
+        unsigned int NA_UNUSED timeout)
 {
     struct na_mpi_addr *probe_addr = NULL;
-    na_return_t ret = NA_SUCCESS;
-    na_bool_t unexpected_progressed = NA_FALSE;
+    na_return_t ret = NA_TIMEOUT;
     int mpi_ret;
 
     /* Process list of communicators */
@@ -2113,12 +2109,14 @@ na_mpi_progress_unexpected(na_class_t *na_class, na_context_t *context,
 
             if (flag) {
                 ret = na_mpi_progress_unexpected_msg(na_class, context,
-                        probe_addr, &status1, &unexpected_progressed);
+                        probe_addr, &status1);
                 if (ret != NA_SUCCESS) {
-                    NA_LOG_ERROR("Could not make unexpected MSG progress");
-                    goto done;
-                }
-                if (unexpected_progressed) break;
+                    if (ret != NA_TIMEOUT) {
+                        NA_LOG_ERROR("Could not make unexpected MSG progress");
+                        goto done;
+                    }
+                } else
+                    break; /* Progressed */
             }
 
             /* Look for internal unexpected RMA requests */
@@ -2132,12 +2130,14 @@ na_mpi_progress_unexpected(na_class_t *na_class, na_context_t *context,
 
             if (flag) {
                 ret = na_mpi_progress_unexpected_rma(na_class, context,
-                        probe_addr, &status2, &unexpected_progressed);
+                        probe_addr, &status2);
                 if (ret != NA_SUCCESS) {
-                    NA_LOG_ERROR("Could not make unexpected RMA progress");
-                    goto done;
-                }
-                if (unexpected_progressed) break;
+                    if (ret != NA_TIMEOUT) {
+                        NA_LOG_ERROR("Could not make unexpected RMA progress");
+                        goto done;
+                    }
+                } else
+                    break; /* Progressed */
             }
 
             entry = hg_list_next(entry);
@@ -2146,8 +2146,6 @@ na_mpi_progress_unexpected(na_class_t *na_class, na_context_t *context,
 
     hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
 
-    *progressed = unexpected_progressed;
-
 done:
     return ret;
 }
@@ -2155,12 +2153,11 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_mpi_progress_unexpected_msg(na_class_t *na_class, na_context_t NA_UNUSED *context,
-        struct na_mpi_addr *na_mpi_addr, const MPI_Status *status,
-        na_bool_t *progressed)
+        struct na_mpi_addr *na_mpi_addr, const MPI_Status *status)
 {
     struct na_mpi_op_id *na_mpi_op_id = NULL;
     int unexpected_buf_size = 0;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret = NA_TIMEOUT;
     int mpi_ret;
 
     MPI_Get_count(status, MPI_BYTE, &unexpected_buf_size);
@@ -2175,7 +2172,6 @@ na_mpi_progress_unexpected_msg(na_class_t *na_class, na_context_t NA_UNUSED *con
     na_mpi_op_id = na_mpi_msg_unexpected_op_pop(na_class);
     if (!na_mpi_op_id) {
         /* Can't process it since nobody has posted an unexpected recv yet */
-        *progressed = NA_FALSE;
         goto done;
     }
 
@@ -2193,9 +2189,10 @@ na_mpi_progress_unexpected_msg(na_class_t *na_class, na_context_t NA_UNUSED *con
     memcpy(&na_mpi_op_id->info.recv_unexpected.status, status,
             sizeof(MPI_Status));
     ret = na_mpi_complete(na_mpi_op_id);
-    if (ret != NA_SUCCESS) goto done;
-
-    *progressed = NA_TRUE;
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not complete op id");
+        goto done;
+    }
 
 done:
     return ret;
@@ -2204,13 +2201,12 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
-        struct na_mpi_addr *na_mpi_addr, const MPI_Status *status,
-        na_bool_t *progressed)
+        struct na_mpi_addr *na_mpi_addr, const MPI_Status *status)
 {
     struct na_mpi_rma_info *na_mpi_rma_info = NULL;
     struct na_mpi_op_id *na_mpi_op_id = NULL;
     int unexpected_buf_size = 0;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret = NA_TIMEOUT;
     int mpi_ret;
 
     MPI_Get_count(status, MPI_BYTE, &unexpected_buf_size);
@@ -2301,9 +2297,9 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
     /* Add op_id to list */
     ret = na_mpi_op_id_list_append(na_class, na_mpi_op_id);
     if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not append op id to op id list");
         goto done;
     }
-    *progressed = NA_TRUE;
 
 done:
     if (ret != NA_SUCCESS) {
@@ -2316,19 +2312,17 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
-        unsigned int NA_UNUSED timeout, na_bool_t *progressed)
+        unsigned int NA_UNUSED timeout)
 {
     hg_list_entry_t *entry = NULL;
     struct na_mpi_op_id *na_mpi_op_id = NULL;
     MPI_Request *request = NULL;
-    na_bool_t expected_progressed = NA_FALSE;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t ret = NA_TIMEOUT;
     int mpi_ret = 0;
 
     hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
 
     if (!hg_list_length(NA_MPI_PRIVATE_DATA(na_class)->op_id_list)) {
-        *progressed = NA_FALSE;
         goto done;
     }
 
@@ -2439,11 +2433,9 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
         /* Remove entry from list */
         hg_list_remove_entry(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list,
                 entry);
-        expected_progressed = NA_TRUE;
+        ret = NA_SUCCESS; /* progressed */
         break;
     }
-
-    *progressed = expected_progressed;
 
 done:
     hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
