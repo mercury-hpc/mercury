@@ -22,6 +22,8 @@
 #include "mercury_list.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
+#include "mercury_thread_pool.h"
+#include "mercury_time.h"
 
 #include <stdlib.h>
 
@@ -29,6 +31,8 @@
 /* Local Macros */
 /****************/
 #define HG_MAX_UNEXPECTED_RECV 256 /* TODO Variable */
+#define HG_MAX_SELF_THREADS 4
+#define HG_NA_MIN_TIMEOUT 0
 
 /* Convert value to string */
 #define HG_ERROR_STRING_MACRO(def, value, string) \
@@ -60,15 +64,19 @@ struct hg_class {
 
 /* HG context */
 struct hg_context {
-    hg_class_t *hg_class;
-    hg_bulk_context_t *bulk_context;
-    hg_queue_t *completion_queue;
-    hg_thread_mutex_t completion_queue_mutex;
-    hg_thread_cond_t completion_queue_cond;
-    hg_list_entry_t *pending_list;
-    hg_thread_mutex_t pending_list_mutex;
-    hg_list_entry_t *processing_list;
-    hg_thread_mutex_t processing_list_mutex;
+    hg_class_t *hg_class;                         /* HG class */
+    hg_bulk_context_t *bulk_context;              /* HG bulk context */
+    hg_queue_t *completion_queue;                 /* Completion queue */
+    hg_thread_mutex_t completion_queue_mutex;     /* Completion queue mutex */
+    hg_thread_cond_t completion_queue_cond;       /* Completion queue cond */
+    hg_list_entry_t *pending_list;                /* List of pending handles */
+    hg_thread_mutex_t pending_list_mutex;         /* Pending list mutex */
+    hg_list_entry_t *processing_list;             /* List of handles being processed */
+    hg_thread_mutex_t processing_list_mutex;      /* Processing list mutex */
+    hg_list_entry_t *self_processing_list;        /* List of handles being processed */
+    hg_thread_mutex_t self_processing_list_mutex; /* Processing list mutex */
+    hg_thread_cond_t self_processing_list_cond;   /* Processing list cond */
+    hg_thread_pool_t *self_processing_pool;       /* Thread pool for self processing */
 };
 
 /* Info for function map */
@@ -192,6 +200,30 @@ hg_processing_list_wait(
         );
 
 /**
+ * Add handle to self processing list.
+ */
+static hg_return_t
+hg_self_processing_list_add(
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Remove handle from self processing list.
+ */
+static hg_return_t
+hg_self_processing_list_remove(
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Check self processing list.
+ */
+static hg_bool_t
+hg_self_processing_list_check(
+        hg_context_t *context
+        );
+
+/**
  * Create handle.
  */
 static struct hg_handle *
@@ -206,6 +238,42 @@ hg_create(
 static void
 hg_destroy(
         struct hg_handle *hg_handle
+        );
+
+/**
+ * Forward handle locally.
+ */
+static hg_return_t
+hg_forward_self(
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Forward handle through NA.
+ */
+static hg_return_t
+hg_forward_na(
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Send response locally.
+ */
+hg_return_t
+hg_respond_self(
+        struct hg_handle *hg_handle,
+        hg_cb_t callback,
+        void *arg
+        );
+
+/**
+ * Send response through NA.
+ */
+hg_return_t
+hg_respond_na(
+        struct hg_handle *hg_handle,
+        hg_cb_t callback,
+        void *arg
         );
 
 /**
@@ -241,6 +309,22 @@ hg_recv_output_cb(
         );
 
 /**
+ * Wrapper for local callback execution.
+ */
+static hg_return_t
+hg_self_cb(
+        const struct hg_cb_info *callback_info
+        );
+
+/**
+ * Process handle thread (used for self execution).
+ */
+static HG_THREAD_RETURN_TYPE
+hg_process_thread(
+        void *arg
+        );
+
+/**
  * Process handle.
  */
 static hg_return_t
@@ -266,7 +350,36 @@ hg_listen(
         );
 
 /**
+ * Make progress on HG bulk layer.
+ */
+static hg_return_t
+hg_progress_bulk(
+        hg_class_t *hg_class,
+        hg_context_t *context,
+        unsigned int timeout
+        );
+
+/**
+ * Make progress on local requests.
+ */
+static hg_return_t
+hg_progress_self(
+        hg_context_t *context,
+        unsigned int timeout
+        );
+
+/**
  * Make progress on NA layer.
+ */
+static hg_return_t
+hg_progress_na(
+        hg_class_t *hg_class,
+        hg_context_t *context,
+        unsigned int timeout
+        );
+
+/**
+ * Make progress.
  */
 static hg_return_t
 hg_progress(
@@ -621,6 +734,62 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_self_processing_list_add(struct hg_handle *hg_handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_thread_mutex_lock(&hg_handle->hg_info.context->self_processing_list_mutex);
+
+    if (!hg_list_append(&hg_handle->hg_info.context->self_processing_list,
+            (hg_list_value_t) hg_handle)) {
+        HG_LOG_ERROR("Could not append entry");
+        ret = HG_NOMEM_ERROR;
+    }
+
+    hg_thread_mutex_unlock(&hg_handle->hg_info.context->self_processing_list_mutex);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_self_processing_list_remove(struct hg_handle *hg_handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_thread_mutex_lock(&hg_handle->hg_info.context->self_processing_list_mutex);
+
+    /* Remove handle from self processing list at this point */
+    if (!hg_list_remove_data(&hg_handle->hg_info.context->self_processing_list,
+            hg_handle_equal, (hg_list_value_t) hg_handle)) {
+        HG_LOG_ERROR("Could not remove entry");
+        ret = HG_INVALID_PARAM;
+    }
+
+    hg_thread_cond_signal(&hg_handle->hg_info.context->self_processing_list_cond);
+
+    hg_thread_mutex_unlock(&hg_handle->hg_info.context->self_processing_list_mutex);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_bool_t
+hg_self_processing_list_check(hg_context_t *context)
+{
+    hg_bool_t ret = HG_FALSE;
+
+    hg_thread_mutex_lock(&context->self_processing_list_mutex);
+
+    ret = hg_list_length(context->self_processing_list) ? HG_TRUE : HG_FALSE;
+
+    hg_thread_mutex_unlock(&context->self_processing_list_mutex);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static struct hg_handle *
 hg_create(hg_class_t *hg_class, hg_context_t *context)
 {
@@ -708,6 +877,140 @@ hg_destroy(struct hg_handle *hg_handle)
 
 done:
     return;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+hg_forward_self(struct hg_handle *hg_handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_handle->hg_info.context->self_processing_pool)
+        hg_thread_pool_init(HG_MAX_SELF_THREADS,
+                &hg_handle->hg_info.context->self_processing_pool);
+
+    /* Add handle to self processing list */
+    ret = hg_self_processing_list_add(hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not add handle to self processing list");
+        goto done;
+    }
+
+    /* Post operation to self processing pool */
+    hg_thread_pool_post(hg_handle->hg_info.context->self_processing_pool,
+            hg_process_thread, hg_handle);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+hg_forward_na(struct hg_handle *hg_handle)
+{
+    hg_class_t *hg_class = hg_handle->hg_info.hg_class;
+    na_return_t na_ret;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Generate tag */
+    hg_handle->tag = hg_gen_request_tag(hg_handle->hg_info.hg_class);
+
+    /* Pre-post the recv message (output) */
+    na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_class->na_context,
+            hg_recv_output_cb, hg_handle, hg_handle->out_buf,
+            hg_handle->out_buf_size, hg_handle->hg_info.addr,
+            hg_handle->tag, &hg_handle->na_recv_op_id);
+    if (na_ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not post recv for output buffer");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+
+    /* And post the send message (input) */
+    na_ret = NA_Msg_send_unexpected(hg_class->na_class,
+            hg_class->na_context, hg_send_input_cb, hg_handle,
+            hg_handle->in_buf, hg_handle->in_buf_size,
+            hg_handle->hg_info.addr, hg_handle->tag,
+            &hg_handle->na_send_op_id);
+    if (na_ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not post send for input buffer");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+hg_respond_self(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
+{
+    struct hg_self_cb_info *hg_self_cb_info = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_self_cb_info = (struct hg_self_cb_info *) malloc(
+            sizeof(struct hg_self_cb_info));
+    if (!hg_self_cb_info) {
+        HG_LOG_ERROR("Could not allocate HG self cb info");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+
+    /* Wrap callbacks */
+    hg_self_cb_info->forward_cb = hg_handle->callback;
+    hg_self_cb_info->forward_arg = hg_handle->arg;
+    hg_self_cb_info->respond_cb = callback;
+    hg_self_cb_info->respond_arg = arg;
+    hg_handle->callback = hg_self_cb;
+    hg_handle->arg = hg_self_cb_info;
+
+    /* Complete and add to completion queue */
+    ret = hg_complete(hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete handle");
+        goto done;
+    }
+
+    /* Callback was pushed to the completion queue so wake up anyone waiting
+     * in the progress */
+    ret = hg_self_processing_list_remove(hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not remove handle from self processing list");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+hg_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
+{
+    hg_class_t *hg_class = hg_handle->hg_info.hg_class;
+    na_return_t na_ret;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Set callback */
+    hg_handle->callback = callback;
+    hg_handle->arg = arg;
+
+    /* Respond back */
+    na_ret = NA_Msg_send_expected(hg_class->na_class, hg_class->na_context,
+            hg_send_output_cb, hg_handle, hg_handle->out_buf,
+            hg_handle->out_buf_size, hg_handle->hg_info.addr,
+            hg_handle->tag, &hg_handle->na_send_op_id);
+    if (na_ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not post send for output buffer");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+
+    /* TODO Handle extra buffer response */
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -887,6 +1190,83 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_self_cb(const struct hg_cb_info *callback_info)
+{
+    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->handle;
+    struct hg_self_cb_info *hg_self_cb_info =
+            (struct hg_self_cb_info *) callback_info->arg;
+    hg_return_t ret;
+
+    /* First execute response callback */
+    if (hg_self_cb_info->respond_cb) {
+        struct hg_cb_info hg_cb_info;
+
+        hg_cb_info.arg = hg_self_cb_info->respond_arg;
+        hg_cb_info.ret = HG_SUCCESS; /* TODO report failure */
+        hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
+        hg_cb_info.context = hg_handle->hg_info.context;
+        hg_cb_info.handle = (hg_handle_t) hg_handle;
+
+        hg_self_cb_info->respond_cb(&hg_cb_info);
+    }
+
+    /* TODO response check header */
+
+    /* Assign forward callback back to handle */
+    hg_handle->callback = hg_self_cb_info->forward_cb;
+    hg_handle->arg = hg_self_cb_info->forward_arg;
+
+    /* Increment refcount and push handle back to completion queue */
+    hg_atomic_incr32(&hg_handle->ref_count);
+
+    ret = hg_complete(hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete handle");
+        goto done;
+    }
+
+done:
+    free(hg_self_cb_info);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_THREAD_RETURN_TYPE
+hg_process_thread(void *arg)
+{
+    hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
+    struct hg_handle *hg_handle = (struct hg_handle *) arg;
+    struct hg_header_request request_header;
+
+    /* Get and verify header */
+    if (hg_get_header_request(hg_handle, &request_header) != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not get request header");
+        goto done;
+    }
+
+    /* Check extra arguments */
+    if (request_header.flags
+            && (request_header.extra_in_handle != HG_BULK_NULL)) {
+        /* Get extra payload */
+        if (hg_get_extra_input_buf(hg_handle, request_header.extra_in_handle)
+                != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not get extra input buffer");
+            goto done;
+        }
+    } else {
+        /* Process handle */
+        if (hg_process(hg_handle) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not process handle");
+            goto done;
+        }
+    }
+
+done:
+    return thread_ret;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 hg_process(struct hg_handle *hg_handle)
 {
@@ -962,6 +1342,7 @@ hg_listen(hg_class_t *hg_class, hg_context_t *context)
 
     if (hg_list_length(context->pending_list) > 0) goto done;
 
+    /* Create a bunch of handles and post unexpected receives */
     while (hg_list_length(context->pending_list) < HG_MAX_UNEXPECTED_RECV) {
         hg_list_entry_t *new_entry = NULL;
 
@@ -999,18 +1380,13 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
+hg_progress_bulk(hg_class_t *hg_class, hg_context_t *context,
+        unsigned int timeout)
 {
-    unsigned int actual_count = 0;
     hg_bool_t completion_queue_empty = HG_FALSE;
-    hg_return_t ret = HG_SUCCESS;
+    unsigned int actual_count = 0;
     hg_return_t bulk_ret;
-    na_return_t na_ret;
-
-    /* Trigger everything we can from NA */
-    do {
-        na_ret = NA_Trigger(hg_class->na_context, 0, 1, &actual_count);
-    } while ((na_ret == NA_SUCCESS) && actual_count);
+    hg_return_t ret = HG_SUCCESS;
 
     /* Trigger everything from HG Bulk */
     do {
@@ -1029,15 +1405,10 @@ hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
     /* If something is in context completion queue just return */
     if (!completion_queue_empty) goto done;
 
-    /* Otherwise try to make progress on NA */
-    na_ret = NA_Progress(hg_class->na_class, hg_class->na_context, timeout);
-    if (na_ret != NA_SUCCESS) {
-        if (na_ret == NA_TIMEOUT)
-            ret = HG_TIMEOUT;
-        else {
-            HG_LOG_ERROR("Could not make NA Progress");
-            ret = HG_NA_ERROR;
-        }
+    /* Otherwise try to make progress on HG Bulk */
+    ret = HG_Bulk_progress(hg_class->bulk_class, context->bulk_context, timeout);
+    if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
+        HG_LOG_ERROR("Could not make progress on HG Bulk");
         goto done;
     }
 
@@ -1046,57 +1417,162 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static void
-hg_execute_callback(struct hg_handle *hg_handle)
+static hg_return_t
+hg_progress_self(hg_context_t *context, unsigned int timeout)
 {
-    struct hg_cb_info hg_cb_info;
+    hg_return_t ret = HG_TIMEOUT;
 
-    hg_cb_info.arg = hg_handle->arg;
-    hg_cb_info.ret = hg_handle->ret;
-    hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
-    hg_cb_info.context = hg_handle->hg_info.context;
-    hg_cb_info.handle = (hg_handle_t) hg_handle;
+    hg_thread_mutex_lock(&context->self_processing_list_mutex);
 
-    /* Execute callback */
-    hg_handle->callback(&hg_cb_info);
+    /* If something is in self processing list, wait timeout ms */
+    while (hg_list_length(context->self_processing_list)) {
+        hg_bool_t completion_queue_empty;
+
+        /* Otherwise wait timeout ms */
+        if (timeout && hg_thread_cond_timedwait(
+                &context->self_processing_list_cond,
+                &context->self_processing_list_mutex, timeout)
+                != HG_UTIL_SUCCESS) {
+            /* Timeout occurred so leave */
+            break;
+        }
+
+        /* Is completion queue empty */
+        hg_thread_mutex_lock(&context->completion_queue_mutex);
+
+        completion_queue_empty = (hg_bool_t) hg_queue_is_empty(
+                context->completion_queue);
+
+        hg_thread_mutex_unlock(&context->completion_queue_mutex);
+
+        /* If something is in context completion queue just return */
+        if (!completion_queue_empty) {
+            ret = HG_SUCCESS; /* Progressed */
+            break;
+        }
+        if (!timeout) {
+            /* Timeout is 0 so leave */
+            break;
+        }
+    }
+
+    hg_thread_mutex_unlock(&context->self_processing_list_mutex);
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_self_cb(const struct hg_cb_info *callback_info)
+hg_progress_na(hg_class_t *hg_class, hg_context_t *context,
+        unsigned int timeout)
 {
-    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->handle;
-    struct hg_self_cb_info *hg_self_cb_info =
-            (struct hg_self_cb_info *) callback_info->arg;
-    hg_return_t ret;
+    hg_bool_t completion_queue_empty = HG_FALSE;
+    unsigned int actual_count = 0;
+    na_return_t na_ret;
+    hg_return_t ret = HG_SUCCESS;
 
-    /* First execute response callback */
-    if (hg_self_cb_info->respond_cb) {
-        struct hg_cb_info hg_cb_info;
+    /* Trigger everything we can from NA, if something completed it will
+     * be moved to the HG context completion queue */
+    do {
+        na_ret = NA_Trigger(hg_class->na_context, 0, 1, &actual_count);
+    } while ((na_ret == NA_SUCCESS) && actual_count);
 
-        hg_cb_info.arg = hg_self_cb_info->respond_arg;
-        hg_cb_info.ret = HG_SUCCESS; /* TODO report failure */
-        hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
-        hg_cb_info.context = hg_handle->hg_info.context;
-        hg_cb_info.handle = (hg_handle_t) hg_handle;
+    /* Is completion queue empty */
+    hg_thread_mutex_lock(&context->completion_queue_mutex);
 
-        hg_self_cb_info->respond_cb(&hg_cb_info);
+    completion_queue_empty = (hg_bool_t) hg_queue_is_empty(
+            context->completion_queue);
+
+    hg_thread_mutex_unlock(&context->completion_queue_mutex);
+
+    /* If something is in context completion queue just return */
+    if (!completion_queue_empty) goto done;
+
+    /* Otherwise try to make progress on NA */
+    na_ret = NA_Progress(hg_class->na_class, hg_class->na_context, timeout);
+    switch (na_ret) {
+        case NA_SUCCESS:
+            /* Progressed */
+            break;
+        case NA_TIMEOUT:
+            ret = HG_TIMEOUT;
+            break;
+        default:
+            HG_LOG_ERROR("Could not make NA Progress");
+            ret = HG_NA_ERROR;
+            break;
     }
 
-    /* Assign forward callback back to handle */
-    hg_handle->callback = hg_self_cb_info->forward_cb;
-    hg_handle->arg = hg_self_cb_info->forward_arg;
+done:
+    return ret;
+}
 
-    /* Increment refcount and push handle back to completion queue */
-    hg_atomic_incr32(&hg_handle->ref_count);
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
+{
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    hg_return_t ret = HG_SUCCESS;
 
-    ret = hg_complete(hg_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete handle");
-        goto done;
-    }
+    do {
+        hg_time_t t1, t2, t3, t4;
+        unsigned int progress_timeout;
+        hg_bool_t do_self_progress = hg_self_processing_list_check(context);
 
-    free(hg_self_cb_info);
+        hg_time_get_current(&t1);
+
+        /* Make progress on HG Bulk with 0 timeout */
+        ret = hg_progress_bulk(hg_class, context, 0);
+        if (ret == HG_SUCCESS)
+            break; /* Progressed */
+        else
+            if (ret != HG_TIMEOUT) {
+                HG_LOG_ERROR("Could not make progress on HG Bulk");
+                goto done;
+            }
+
+        hg_time_get_current(&t2);
+        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        if (remaining < 0) {
+            /* Give a chance to call progress with timeout of 0 if no progress yet */
+            remaining = 0;
+        }
+
+        /* Make progress on NA (do not block if something is already in
+         * self processing list) */
+        if (do_self_progress) {
+            ret = hg_progress_self(context, HG_NA_MIN_TIMEOUT);
+            if (ret == HG_SUCCESS)
+                break; /* Progressed */
+            else
+                if (ret != HG_TIMEOUT) {
+                    HG_LOG_ERROR("Could not make progress on local requests");
+                    goto done;
+                }
+        }
+
+        hg_time_get_current(&t3);
+        remaining -= hg_time_to_double(hg_time_subtract(t3, t2));
+        if (remaining < 0) {
+            /* Give a chance to call progress with timeout of 0 if no progress yet */
+            remaining = 0;
+        }
+
+        /* Make progress on NA (do not block if something is already in
+         * self processing list) */
+        progress_timeout = (do_self_progress) ?  HG_NA_MIN_TIMEOUT :
+                (unsigned int) (remaining * 1000);
+        ret = hg_progress_na(hg_class, context, progress_timeout);
+        if (ret == HG_SUCCESS)
+            break; /* Progressed */
+        else
+            if (ret != HG_TIMEOUT) {
+                HG_LOG_ERROR("Could not make progress on NA");
+                goto done;
+            }
+
+        hg_time_get_current(&t4);
+        remaining -= hg_time_to_double(hg_time_subtract(t4, t3));
+    } while (remaining > 0);
 
 done:
     return ret;
@@ -1299,6 +1775,8 @@ HG_Context_create(hg_class_t *hg_class)
 
     context->pending_list = NULL;
     context->processing_list = NULL;
+    context->self_processing_list = NULL;
+    context->self_processing_pool = NULL;
 
     /* Create bulk context for internal transfer in case of overflow
      * TODO may allow user to pass its own HG Bulk context */
@@ -1314,6 +1792,8 @@ HG_Context_create(hg_class_t *hg_class)
     hg_thread_cond_init(&context->completion_queue_cond);
     hg_thread_mutex_init(&context->pending_list_mutex);
     hg_thread_mutex_init(&context->processing_list_mutex);
+    hg_thread_mutex_init(&context->self_processing_list_mutex);
+    hg_thread_cond_init(&context->self_processing_list_cond);
 
 done:
     if (ret != HG_SUCCESS && context) {
@@ -1341,7 +1821,7 @@ HG_Context_destroy(hg_context_t *context)
         }
     }
 
-    /* Check that NA operations have completed */
+    /* Check that operations have completed */
     ret = hg_processing_list_wait(context);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not wait on processing list");
@@ -1364,6 +1844,9 @@ HG_Context_destroy(hg_context_t *context)
     hg_queue_free(context->completion_queue);
     context->completion_queue = NULL;
 
+    /* Destroy self processing pool if created */
+    hg_thread_pool_destroy(context->self_processing_pool);
+
     /* Destroy bulk context */
     ret = HG_Bulk_context_destroy(context->bulk_context);
     if (ret != HG_SUCCESS) {
@@ -1377,6 +1860,8 @@ HG_Context_destroy(hg_context_t *context)
     hg_thread_cond_destroy(&context->completion_queue_cond);
     hg_thread_mutex_destroy(&context->pending_list_mutex);
     hg_thread_mutex_destroy(&context->processing_list_mutex);
+    hg_thread_mutex_destroy(&context->self_processing_list_mutex);
+    hg_thread_cond_destroy(&context->self_processing_list_cond);
 
     free(context);
 
@@ -1683,6 +2168,7 @@ HG_Forward_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     struct hg_header_request request_header;
+    hg_return_t (*hg_forward)(struct hg_handle *hg_handle);
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_handle) {
@@ -1712,44 +2198,14 @@ HG_Forward_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
         goto done;
     }
 
-    if (NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
-            hg_handle->hg_info.addr)) {
-        /* If self, directly process handle */
-        ret = hg_process(hg_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not process handle");
-            goto done;
-        }
-    } else {
-        /* Forward call */
-        hg_class_t *hg_class = hg_handle->hg_info.hg_class;
-        na_return_t na_ret;
-
-        /* Generate tag */
-        hg_handle->tag = hg_gen_request_tag(hg_handle->hg_info.hg_class);
-
-        /* Pre-post the recv message (output) */
-        na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_class->na_context,
-                hg_recv_output_cb, hg_handle, hg_handle->out_buf,
-                hg_handle->out_buf_size, hg_handle->hg_info.addr,
-                hg_handle->tag, &hg_handle->na_recv_op_id);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not post recv for output buffer");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
-
-        /* And post the send message (input) */
-        na_ret = NA_Msg_send_unexpected(hg_class->na_class,
-                hg_class->na_context, hg_send_input_cb, hg_handle,
-                hg_handle->in_buf, hg_handle->in_buf_size,
-                hg_handle->hg_info.addr, hg_handle->tag,
-                &hg_handle->na_send_op_id);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not post send for input buffer");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+    /* If addr is self, forward locally, otherwise send the encoded buffer
+     * through NA and pre-post response */
+    hg_forward = NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
+            hg_handle->hg_info.addr) ? hg_forward_self : hg_forward_na;
+    ret = hg_forward(hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not forward buffer");
+        goto done;
     }
 
 done:
@@ -1762,6 +2218,8 @@ HG_Respond_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
         hg_return_t ret_code)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
+    hg_return_t (*hg_respond)(struct hg_handle *hg_handle, hg_cb_t callback,
+            void *arg);
     struct hg_header_response response_header;
     hg_return_t ret = HG_SUCCESS;
 
@@ -1784,54 +2242,15 @@ HG_Respond_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
         goto done;
     }
 
-    if (NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
-            hg_handle->hg_info.addr)) {
-        struct hg_self_cb_info *hg_self_cb_info = NULL;
-
-        /* TODO finish cleaning that up and add condition if no respond cb don't worry with that*/
-        hg_self_cb_info = (struct hg_self_cb_info *) malloc(
-                sizeof(struct hg_self_cb_info));
-        if (!hg_self_cb_info) {
-            HG_LOG_ERROR("Could not allocate HG context");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
-
-        /* Wrap callback */
-        hg_self_cb_info->forward_cb = hg_handle->callback;
-        hg_self_cb_info->forward_arg = hg_handle->arg;
-        hg_self_cb_info->respond_cb = callback;
-        hg_self_cb_info->respond_arg = arg;
-        hg_handle->callback = hg_self_cb;
-        hg_handle->arg = hg_self_cb_info;
-
-        /* Complete and add to completion queue */
-        ret = hg_complete(hg_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not complete handle");
-            goto done;
-        }
-    } else {
-        hg_class_t *hg_class = hg_handle->hg_info.hg_class;
-        na_return_t na_ret;
-
-        /* Set callback */
-        hg_handle->callback = callback;
-        hg_handle->arg = arg;
-
-        /* Respond back */
-        na_ret = NA_Msg_send_expected(hg_class->na_class, hg_class->na_context,
-                hg_send_output_cb, hg_handle, hg_handle->out_buf,
-                hg_handle->out_buf_size, hg_handle->hg_info.addr,
-                hg_handle->tag, &hg_handle->na_send_op_id);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not post send for output buffer");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+    /* If addr is self, forward locally, otherwise send the encoded buffer
+     * through NA and pre-post response */
+    hg_respond = NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
+            hg_handle->hg_info.addr) ? hg_respond_self : hg_respond_na;
+    ret = hg_respond(hg_handle, callback, arg);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not respond");
+        goto done;
     }
-
-    /* TODO Handle extra buffer response */
 
 done:
     return ret;
@@ -1926,8 +2345,17 @@ HG_Trigger(hg_class_t *hg_class, hg_context_t *context,
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
         /* Execute callback */
-        if (hg_handle->callback)
-            hg_execute_callback(hg_handle);
+        if (hg_handle->callback) {
+            struct hg_cb_info hg_cb_info;
+
+            hg_cb_info.arg = hg_handle->arg;
+            hg_cb_info.ret = hg_handle->ret;
+            hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
+            hg_cb_info.context = hg_handle->hg_info.context;
+            hg_cb_info.handle = (hg_handle_t) hg_handle;
+
+            hg_handle->callback(&hg_cb_info);
+        }
 
         /* Free op */
         hg_destroy(hg_handle);

@@ -237,6 +237,8 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank,
     }
 
     if (na_test_use_self_g) {
+        size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
+
         /* Self addr */
         NA_Addr_self(hg_test_na_class_g, &hg_test_addr_g);
 
@@ -245,6 +247,16 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank,
         hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &hg_test_thread_pool_g);
         printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
+
+        hg_test_bulk_class_g = HG_Bulk_init(hg_test_na_class_g, hg_test_na_context_g);
+        if (!hg_test_bulk_class_g) {
+            fprintf(stderr, "Could not initialize HG Bulk class\n");
+            goto done;
+        }
+
+        /* Create bulk buffer that can be used for receiving data */
+        HG_Bulk_create(hg_test_bulk_class_g, 1, NULL, &bulk_size, HG_BULK_READWRITE,
+                &hg_test_local_bulk_handle_g);
     } else {
         /* Look up addr using port name info */
         na_ret = NA_Addr_lookup_wait(hg_test_na_class_g, test_addr_name, &hg_test_addr_g);
@@ -349,9 +361,11 @@ HG_Test_finalize(hg_class_t *hg_class)
             goto done;
         }
         hg_test_addr_g = NA_ADDR_NULL;
-    } else {
-        HG_Bulk_free(hg_test_local_bulk_handle_g);
     }
+
+    /* Destroy bulk handle */
+    HG_Bulk_free(hg_test_local_bulk_handle_g);
+    hg_test_local_bulk_handle_g = HG_BULK_NULL;
 
     /* Destroy context */
     HG_Context_destroy(hg_test_context_g);

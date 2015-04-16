@@ -1302,14 +1302,17 @@ HG_Bulk_progress(hg_bulk_class_t *hg_bulk_class, hg_bulk_context_t *context,
     /* Otherwise try to make progress on NA */
     na_ret = NA_Progress(hg_bulk_class->na_class, hg_bulk_class->na_context,
             timeout);
-    if (na_ret != NA_SUCCESS) {
-        if (na_ret == NA_TIMEOUT)
+    switch (na_ret) {
+        case NA_SUCCESS:
+            /* Progressed */
+            break;
+        case NA_TIMEOUT:
             ret = HG_TIMEOUT;
-        else {
+            break;
+        default:
             HG_LOG_ERROR("Could not make NA Progress");
             ret = HG_NA_ERROR;
-        }
-        goto done;
+            break;
     }
 
 done:
@@ -1339,7 +1342,6 @@ HG_Bulk_trigger(hg_bulk_class_t *hg_bulk_class, hg_bulk_context_t *context,
 
     while (count < max_count) {
         struct hg_bulk_op_id *hg_bulk_op_id = NULL;
-        struct hg_bulk_cb_info hg_bulk_cb_info;
         hg_bool_t completion_queue_empty = HG_FALSE;
 
         hg_thread_mutex_lock(&context->completion_queue_mutex);
@@ -1380,17 +1382,20 @@ HG_Bulk_trigger(hg_bulk_class_t *hg_bulk_class, hg_bulk_context_t *context,
          * to the queue while callback gets executed */
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
-        hg_bulk_cb_info.arg = hg_bulk_op_id->arg;
-        hg_bulk_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
-        hg_bulk_cb_info.hg_bulk_class = hg_bulk_op_id->context->hg_bulk_class;
-        hg_bulk_cb_info.context = hg_bulk_op_id->context;
-        hg_bulk_cb_info.op = hg_bulk_op_id->op;
-        hg_bulk_cb_info.origin_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_origin;
-        hg_bulk_cb_info.local_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_local;
-
         /* Execute callback */
-        if (hg_bulk_op_id->callback)
+        if (hg_bulk_op_id->callback) {
+            struct hg_bulk_cb_info hg_bulk_cb_info;
+
+            hg_bulk_cb_info.arg = hg_bulk_op_id->arg;
+            hg_bulk_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
+            hg_bulk_cb_info.hg_bulk_class = hg_bulk_op_id->context->hg_bulk_class;
+            hg_bulk_cb_info.context = hg_bulk_op_id->context;
+            hg_bulk_cb_info.op = hg_bulk_op_id->op;
+            hg_bulk_cb_info.origin_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_origin;
+            hg_bulk_cb_info.local_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_local;
+
             hg_bulk_op_id->callback(&hg_bulk_cb_info);
+        }
 
         /* Free op */
         free(hg_bulk_op_id);
