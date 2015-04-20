@@ -817,8 +817,11 @@ na_cci_addr_self(na_class_t NA_UNUSED * na_class, na_addr_t * addr)
 		goto out;
 	}
 	na_cci_addr->cci_addr = 0;
+	na_cci_addr->uri = NULL;
 	na_cci_addr->unexpected = NA_FALSE;
 	na_cci_addr->self = NA_TRUE;
+	na_cci_addr->na_cci_op_id = NULL;
+	hg_atomic_set32(&na_cci_addr->refcnt, 1);
 
 	*addr = (na_addr_t) na_cci_addr;
 
