@@ -43,8 +43,9 @@ extern HG_EXPORT hg_context_t *HG_CONTEXT_DEFAULT;
  * Initialize Mercury high-level layer and create default classes/contexts.
  * If no info_string is passed, the HG HL layer will attempt to initialize
  * NA by using the value contained in the environment variable called
- * MERCURY_PORT_NAME. NB: HG_Hl_finalize is registered with atexit() so that
- * default classes/contexts are freed at process termination.
+ * MERCURY_PORT_NAME.
+ * \remark HG_Hl_finalize() is registered with atexit() so that default
+ * classes/contexts are freed at process termination.
  *
  * \param info_string [IN]      host address with port number
  * \param listen [IN]           listen for incoming connections
@@ -71,6 +72,7 @@ HG_Hl_finalize(
  * Forward a call and wait for its completion. A HG handle must have been
  * previously created. Output can be queried using HG_Get_output() and freed
  * using HG_Free_output().
+ *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t

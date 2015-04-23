@@ -16,7 +16,7 @@
 
 /**
  * The purpose of these macros is to generate boilerplate code in order
- * to send and execute HG RPCs calls.
+ * to send and execute HG RPC calls.
  * Since these macros make use of the mercury high-level interface, applications
  * using these macros must link to the mercury_hl library.
  * HG_XXX macros are private macros / MERCURY_XXX are public macros.

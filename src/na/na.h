@@ -27,8 +27,8 @@ typedef na_uint64_t na_offset_t;        /* Offset */
 
 /* Segment */
 struct na_segment {
-    na_ptr_t address; /* Address of the segment */
-    na_size_t size;   /* Size of the segment in bytes */
+    na_ptr_t address;   /* Address of the segment */
+    na_size_t size;     /* Size of the segment in bytes */
 };
 
 /* Constant values */
@@ -41,7 +41,7 @@ struct na_segment {
 #define NA_MAX_IDLE_TIME (3600*1000)
 
 /* Tag upper bound
- * NB. This is not the user tag limit but only the limit imposed by the type */
+ * \remark This is not the user tag limit but only the limit imposed by the type */
 #define NA_TAG_UB UINT_MAX
 
 /* Max len used for strings that represent an addr */
@@ -55,26 +55,26 @@ struct na_segment {
 /* Error return codes:
  * Functions return 0 for success or NA_XXX_ERROR for failure */
 typedef enum na_return {
-    NA_SUCCESS,          /* operation succeeded */
-    NA_CANCELED,         /* operation was canceled */
-    NA_TIMEOUT,          /* reached timeout */
-    NA_INVALID_PARAM,    /* invalid parameter */
-    NA_SIZE_ERROR,       /* message size error */
-    NA_ALIGNMENT_ERROR,  /* alignment error */
-    NA_PERMISSION_ERROR, /* read/write permission error */
-    NA_NOMEM_ERROR,      /* no memory error */
-    NA_PROTOCOL_ERROR    /* unknown error reported from the protocol layer */
+    NA_SUCCESS,             /*!< operation succeeded */
+    NA_CANCELED,            /*!< operation was canceled */
+    NA_TIMEOUT,             /*!< reached timeout */
+    NA_INVALID_PARAM,       /*!< invalid parameter */
+    NA_SIZE_ERROR,          /*!< message size error */
+    NA_ALIGNMENT_ERROR,     /*!< alignment error */
+    NA_PERMISSION_ERROR,    /*!< read/write permission error */
+    NA_NOMEM_ERROR,         /*!< no memory error */
+    NA_PROTOCOL_ERROR       /*!< unknown error reported from the protocol layer */
 } na_return_t;
 
 /* Callback operation type */
 typedef enum na_cb_type {
-    NA_CB_LOOKUP,
-    NA_CB_SEND_UNEXPECTED,
-    NA_CB_RECV_UNEXPECTED,
-    NA_CB_SEND_EXPECTED,
-    NA_CB_RECV_EXPECTED,
-    NA_CB_PUT,
-    NA_CB_GET
+    NA_CB_LOOKUP,           /*!< lookup callback */
+    NA_CB_SEND_UNEXPECTED,  /*!< unexpected send callback */
+    NA_CB_RECV_UNEXPECTED,  /*!< unexpected recv callback */
+    NA_CB_SEND_EXPECTED,    /*!< expected send callback */
+    NA_CB_RECV_EXPECTED,    /*!< expected recv callback */
+    NA_CB_PUT,              /*!< put callback */
+    NA_CB_GET               /*!< get callback */
 } na_cb_type_t;
 
 /* Callback info structs */
@@ -90,10 +90,10 @@ struct na_cb_info_recv_unexpected {
 
 /* Callback info struct */
 struct na_cb_info {
-    void *arg;         /* User data */
-    na_return_t ret;   /* Return value */
-    na_cb_type_t type; /* Callback type */
-    union {            /* Union of callback info structures */
+    void *arg;          /* User data */
+    na_return_t ret;    /* Return value */
+    na_cb_type_t type;  /* Callback type */
+    union {             /* Union of callback info structures */
         struct na_cb_info_lookup lookup;
         struct na_cb_info_recv_unexpected recv_unexpected;
     } info;
@@ -108,6 +108,7 @@ extern "C" {
 
 /**
  * Initialize the network abstraction layer.
+ * Must be finalized with NA_Finalize().
  *
  * \param info_string [IN]      host address with port number (e.g.,
  *                              "tcp://localhost:3344" or
@@ -175,8 +176,8 @@ NA_Context_destroy(
 
 /**
  * Lookup an addr from a peer address/name. Addresses need to be
- * freed by calling NA_Addr_free. Callback will be called with pointer to
- * na_addr_t that contains addr ::na_cb_info_lookup
+ * freed by calling NA_Addr_free(). After completion, user callback is placed
+ * into a completion queue and can be triggered using NA_Trigger().
  *
  * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
@@ -199,7 +200,7 @@ NA_Addr_lookup(
 
 /**
  * For compatibility, temporarily provide this routine, which waits until
- * addr is returned.
+ * addr gets returned.
  *
  * \param na_class [IN]         pointer to NA class
  * \param name [IN]             lookup name
@@ -245,7 +246,7 @@ NA_Addr_self(
 /**
  * Duplicate an existing NA abstract address. The duplicated address can be
  * stored for later use and the origin address be freed safely. The duplicated
- * address must be freed with NA_Addr_free.
+ * address must be freed with NA_Addr_free().
  *
  * \param na_class [IN]         pointer to NA class
  * \param addr [IN]             abstract address
@@ -321,8 +322,8 @@ NA_Msg_get_max_unexpected_size(
         ) NA_WARN_UNUSED_RESULT;
 
 /**
- * Get the maximum tag value that can be used by send/recv.
- * (both expected and unexpected)
+ * Get the maximum tag value that can be used by send/recv (both expected and
+ * unexpected).
  *
  * \param na_class [IN]         pointer to NA class
  *
@@ -335,10 +336,12 @@ NA_Msg_get_max_tag(
 
 /**
  * Send an unexpected message to dest.
- * Unexpected sends do not require a matching receive to complete.
- * Note also that unexpected messages do not require an unexpected receive to
- * be posted at the destination before sending the message and the destination
- * is allowed to drop the message without notification.
+ * Unexpected sends do not require a matching receive to complete. After
+ * completion, user callback is placed into a completion queue and can be
+ * triggered using NA_Trigger().
+ * \remark Note also that unexpected messages do not require an unexpected
+ * receive to be posted at the destination before sending the message and the
+ * destination is allowed to drop the message without notification.
  *
  * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
@@ -368,7 +371,8 @@ NA_Msg_send_unexpected(
 /**
  * Receive an unexpected message.
  * Unexpected receives may wait on ANY_TAG and ANY_SOURCE depending on the
- * implementation.
+ * implementation. After completion, user callback is placed into a completion
+ * queue and can be triggered using NA_Trigger().
  *
  * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
@@ -392,7 +396,9 @@ NA_Msg_recv_unexpected(
         );
 
 /**
- * Send an expected message to dest. Note that expected messages require
+ * Send an expected message to dest. After completion, user callback is placed
+ * into a completion queue and can be triggered using NA_Trigger().
+ * \remark Note that expected messages require
  * an expected receive to be posted at the destination before sending the
  * message, otherwise the destination is allowed to drop the message without
  * notification.
@@ -423,7 +429,8 @@ NA_Msg_send_expected(
         );
 
 /**
- * Receive an expected message from source.
+ * Receive an expected message from source. After completion, user callback is
+ * placed into a completion queue and can be triggered using NA_Trigger().
  *
  * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
@@ -452,10 +459,10 @@ NA_Msg_recv_expected(
 
 /**
  * Create memory handle for RMA operations.
- * For non-contiguous memory, use NA_Mem_handle_create_segments instead.
+ * For non-contiguous memory, use NA_Mem_handle_create_segments() instead.
  *
- * Note to plugin developers: NA_Mem_handle_create may be called multiple times
- * on the same memory region.
+ * \remark Note to plugin developers: NA_Mem_handle_create() may be called
+ * multiple times on the same memory region.
  *
  * \param na_class [IN]         pointer to NA class
  * \param buf [IN]              pointer to buffer that needs to be registered
@@ -478,9 +485,9 @@ NA_Mem_handle_create(
 
 /**
  * Create memory handle for RMA operations.
- * Create_segments can be used to register fragmented pieces and get
- * a single memory handle.
- * Implemented only if the network transport or hardware supports it.
+ * Create_segments can be used to register fragmented pieces and get a single
+ * memory handle.
+ * \remark Implemented only if the network transport or hardware supports it.
  *
  * \param na_class [IN]         pointer to NA class
  * \param segments [IN]         pointer to array of segments composed of:
@@ -599,9 +606,9 @@ NA_Mem_handle_get_serialize_size(
  * One-sided transfers require prior exchange of memory handles between
  * peers, serialization callbacks can be used to "pack" a memory handle and
  * send it across the network.
- * NB. Memory handles can be variable size, therefore the space required
+ * \remark Memory handles can be variable size, therefore the space required
  * to serialize a handle into a buffer can be obtained using
- * NA_Mem_handle_get_serialize_size.
+ * NA_Mem_handle_get_serialize_size().
  *
  * \param na_class [IN]         pointer to NA class
  * \param buf [IN/OUT]          pointer to buffer used for serialization
@@ -639,8 +646,9 @@ NA_Mem_handle_deserialize(
 /**
  * Put data to remote target.
  * Initiate a put or get to/from the registered memory regions with the
- * given offset/size.
- * NB. Memory must be registered and handles exchanged between peers.
+ * given offset/size. After completion, user callback is placed into a
+ * completion queue and can be triggered using NA_Trigger().
+ * \remark Memory must be registered and handles exchanged between peers.
  *
  * \param na_class [IN]          pointer to NA class
  * \param context [IN]           pointer to context of execution
@@ -672,7 +680,8 @@ NA_Put(
         );
 
 /**
- * Get data from remote target.
+ * Get data from remote target. After completion, user callback is placed into
+ * a completion queue and can be triggered using NA_Trigger().
  *
  * \param na_class [IN]          pointer to NA class
  * \param context [IN]           pointer to context of execution

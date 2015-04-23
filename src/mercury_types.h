@@ -14,11 +14,11 @@
 #include "na.h"
 #include "mercury_config.h"
 
-typedef struct hg_class hg_class_t;           /* Opaque HG class */
-typedef struct hg_bulk_class hg_bulk_class_t; /* Opaque HG bulk class */
+typedef struct hg_class hg_class_t;             /* Opaque HG class */
+typedef struct hg_bulk_class hg_bulk_class_t;   /* Opaque HG bulk class */
 
-typedef struct hg_context hg_context_t;           /* Opaque HG context */
-typedef struct hg_bulk_context hg_bulk_context_t; /* Opaque HG bulk context */
+typedef struct hg_context hg_context_t;             /* Opaque HG context */
+typedef struct hg_bulk_context hg_bulk_context_t;   /* Opaque HG bulk context */
 
 typedef hg_uint64_t hg_size_t;  /* Size */
 typedef hg_uint32_t hg_id_t;    /* RPC ID */
@@ -38,24 +38,20 @@ struct hg_info {
 };
 
 /**
- * Bulk transfer operator:
- *   - HG_BULK_PUSH: push data to origin
- *   - HG_BULK_PULL: pull data from origin
+ * Bulk transfer operators.
  */
 typedef enum {
-    HG_BULK_PUSH,
-    HG_BULK_PULL
+    HG_BULK_PUSH,   /*!< push data to origin */
+    HG_BULK_PULL    /*!< pull data from origin */
 } hg_bulk_op_t;
 
 /**
- * Proc operations.  HG_ENCODE causes the type to be encoded into the
- * stream.  HG_DECODE causes the type to be extracted from the stream.
- * HG_FREE can be used to release the space allocated by an HG_DECODE request.
+ * Proc operations.
  */
 typedef enum {
-    HG_ENCODE,
-    HG_DECODE,
-    HG_FREE
+    HG_ENCODE,  /*!< causes the type to be encoded into the stream */
+    HG_DECODE,  /*!< causes the type to be extracted from the stream */
+    HG_FREE     /*!< can be used to release the space allocated by an HG_DECODE request */
 } hg_proc_op_t;
 
 /**
@@ -70,22 +66,16 @@ typedef enum {
 /* Error return codes:
  * Functions return 0 for success or -HG_XXX_ERROR for failure */
 typedef enum hg_return {
-    HG_SUCCESS = 0,
-    HG_NA_ERROR,       /* error in NA layer */
-    HG_TIMEOUT,        /* reached timeout */
-    HG_INVALID_PARAM,  /* invalid parameter */
-    HG_SIZE_ERROR,     /* size error */
-    HG_NOMEM_ERROR,    /* no memory error */
-    HG_PROTOCOL_ERROR, /* protocol does not match */
-    HG_NO_MATCH,       /* no function match */
-    HG_CHECKSUM_ERROR  /* checksum error */
+    HG_SUCCESS = 0,     /*!< operation succeeded */
+    HG_NA_ERROR,        /*!< error in NA layer */
+    HG_TIMEOUT,         /*!< reached timeout */
+    HG_INVALID_PARAM,   /*!< invalid parameter */
+    HG_SIZE_ERROR,      /*!< size error */
+    HG_NOMEM_ERROR,     /*!< no memory error */
+    HG_PROTOCOL_ERROR,  /*!< protocol does not match */
+    HG_NO_MATCH,        /*!< no function match */
+    HG_CHECKSUM_ERROR   /*!< checksum error */
 } hg_return_t;
-
-/* Callback operation type */
-typedef enum hg_cb_type {
-    HG_CB,
-    HG_BULK_CB
-} hg_cb_type_t;
 
 /* Callback info structs */
 struct hg_cb_info {
@@ -106,7 +96,7 @@ struct hg_bulk_cb_info {
     hg_bulk_t local_handle;         /* HG Bulk local handle */
 };
 
-/* HG callback */
+/* RPC / HG / HG bulk callbacks */
 typedef hg_return_t (*hg_rpc_cb_t)(hg_handle_t handle);
 typedef hg_return_t (*hg_cb_t)(const struct hg_cb_info *callback_info);
 typedef hg_return_t (*hg_bulk_cb_t)(const struct hg_bulk_cb_info *callback_info);

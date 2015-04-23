@@ -18,8 +18,8 @@
 #include <boost/preprocessor.hpp>
 
 /**
- * The purpose of these macros is to facilitate generation of encoding
- * decoding proc and registration of new routines to an existing hg_class.
+ * The purpose of these macros is to facilitate generation of encoding/decoding
+ * procs as well as the registration of new routines to an existing HG class.
  * HG_XXX macros are private macros / MERCURY_XXX are public macros.
  * Macros defined in this file are:
  *   - MERCURY_REGISTER

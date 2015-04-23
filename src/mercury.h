@@ -41,8 +41,9 @@ HG_Register(
 
 /**
  * Get input from handle (requires registration of input proc to deserialize
- * parameters). This is equivalent to:
- *   - HG_Get_input_buf
+ * parameters).
+ * \remark This is equivalent to:
+ *   - HG_Get_input_buf()
  *   - Call hg_proc to deserialize parameters
  * Input must be freed using HG_Free_input().
  *
@@ -75,8 +76,9 @@ HG_Free_input(
 
 /**
  * Get output from handle (requires registration of output proc to deserialize
- * parameters). This is equivalent to:
- *   - HG_Get_output_buf
+ * parameters).
+ * \remark This is equivalent to:
+ *   - HG_Get_output_buf()
  *   - Call hg_proc to deserialize parameters
  * Output must be freed using HG_Free_output().
  *
@@ -108,14 +110,15 @@ HG_Free_output(
         );
 
 /**
- * Forward a call to the network address defined by addr. If addr is a local
- * address, the callback associated to id is executed locally.
- * After completion the returned op_id must be freed using HG_Complete().
- * Output can be queried using HG_Get_output() and freed using HG_Free_output().
- * This routine is internally equivalent to:
- *   - HG_Get_input_buf
+ * Forward a call to a local/remote target using an existing HG handle.
+ * Input structure can be passed and parameters serialized using a previously
+ * registered input proc. After completion, user callback is placed into a
+ * completion queue and can be triggered using HG_Trigger(). RPC output can
+ * be queried using HG_Get_output() and freed using HG_Free_output().
+ * \remark This routine is internally equivalent to:
+ *   - HG_Get_input_buf()
  *   - Call hg_proc to serialize parameters
- *   - HG_Forward_buf
+ *   - HG_Forward_buf()
  *
  * \param handle [IN]           HG handle
  * \param callback [IN]         pointer to function callback
@@ -133,12 +136,14 @@ HG_Forward(
         );
 
 /**
- * Respond back to caller using information stored in operation ID (requires
- * registration of output proc to serialize parameters)
- * This routine is internally equivalent to:
- *   - HG_Get_output_buf
+ * Respond back to origin using an existing HG handle.
+ * Output structure can be passed and parameters serialized using a previously
+ * registered output proc. After completion, user callback is placed into a
+ * completion queue and can be triggered using HG_Trigger().
+ * \remark This routine is internally equivalent to:
+ *   - HG_Get_output_buf()
  *   - Call hg_proc to serialize parameters
- *   - HG_Respond_buf
+ *   - HG_Respond_buf()
  *
  * \param handle [IN]           HG handle
  * \param callback [IN]         pointer to function callback

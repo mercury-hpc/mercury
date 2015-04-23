@@ -18,8 +18,9 @@ extern "C" {
 #endif
 
 /**
- * Initialize the Mercury bulk layer.
- * The NA class can be different from the one used for the RPC interface.
+ * Initialize the Mercury bulk layer from an existing NA class/context.
+ * Must be finalized with HG_Bulk_finalize().
+ * \remark The NA class can be different from the one used for the HG interface.
  *
  * \param na_class [IN]         pointer to NA class
  * \param na_context [IN]       pointer to NA context
@@ -45,7 +46,7 @@ HG_Bulk_finalize(
         );
 
 /**
- * Create a new context.
+ * Create a new context. Must be destroyed by calling HG_Bulk_context_destroy().
  *
  * \param hg_bulk_class [IN]    pointer to HG bulk class
  *
@@ -69,12 +70,11 @@ HG_Bulk_context_destroy(
         );
 
 /**
- * Create abstract bulk handle from specified memory segments.
- * Note.
- * If NULL is passed to buf_ptrs, i.e.,
- *   HG_Bulk_handle_create(count, NULL, buf_sizes, flags, &handle)
+ * Create an abstract bulk handle from specified memory segments.
+ * Memory allocated is then freed when HG_Bulk_free() is called.
+ * \remark If NULL is passed to buf_ptrs, i.e.,
+ * \verbatim HG_Bulk_create(count, NULL, buf_sizes, flags, &handle) \endverbatim
  * memory for the missing buf_ptrs array will be internally allocated.
- * Memory allocated is then freed when HG_Bulk_handle_free is called.
  *
  * \param hg_bulk_class [IN]    pointer to HG bulk class
  * \param count [IN]            number of segments
@@ -112,9 +112,9 @@ HG_Bulk_free(
 
 /**
  * Access bulk handle to retrieve memory segments abstracted by handle.
- * When using mercury in coresident mode (i.e., when addr passed is self addr),
- * it is possible to avoid copy of bulk data by accessing pointers
- * from an existing bulk handle directly.
+ * \remark When using mercury in co-resident mode (i.e., when addr passed is
+ * self addr), this function allows to avoid copy of bulk data by directly
+ * accessing pointers from an existing HG bulk handle.
  *
  * \param handle [IN]            abstract bulk handle
  * \param offset [IN]            bulk offset
@@ -194,7 +194,7 @@ HG_Bulk_serialize(
         );
 
 /**
- * Deserialize bulk handle from a buffer.
+ * Deserialize bulk handle from an existing buffer.
  *
  * \param hg_bulk_class [IN]    pointer to HG bulk class
  * \param handle [OUT]          abstract bulk handle
@@ -212,7 +212,9 @@ HG_Bulk_deserialize(
         );
 
 /**
- * Transfer data to/from origin using abstract bulk handles.
+ * Transfer data to/from origin using abstract bulk handles. After completion,
+ * user callback is placed into a completion queue and can be triggered using
+ * HG_Bulk_trigger().
  *
  * \param context [IN]          pointer to HG bulk context
  * \param callback [IN]         pointer to function callback
@@ -251,9 +253,9 @@ HG_Bulk_transfer(
  * Progress should not be considered as wait, in the sense that it cannot be
  * assumed that completion of a specific operation will occur only when
  * progress is called.
- * Calling HG_Bulk_progress is only necessary if a context has been separately
- * created as HG_Progress will call NA_Progress/NA_Trigger on the associated NA
- * context.
+ * \remark Calling HG_Bulk_progress() may only be necessary if a context has
+ * been separately created as HG_Progress() will call NA_Progress()/NA_Trigger()
+ * on the associated NA context.
  *
  * \param bulk_class [IN]       pointer to HG bulk class
  * \param context [IN]          pointer to HG bulk context
@@ -272,9 +274,9 @@ HG_Bulk_progress(
  * Execute at most max_count callbacks. If timeout is non-zero, wait up to
  * timeout before returning. Function can return when at least one or more
  * callbacks are triggered (at most max_count).
- * Calling HG_Trigger is only necessary if a context has been separately
- * created as HG_Progress will call HG_Bulk_trigger on the same NA
- * context.
+ * \remark Calling HG_Bulk_trigger() is only necessary if a context has been
+ * separately created as HG_Progress() will call HG_Bulk_trigger() on the same
+ * NA context.
  *
  * \param bulk_class [IN]       pointer to HG bulk class
  * \param context [IN]          pointer to HG bulk context

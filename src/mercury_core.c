@@ -2094,24 +2094,6 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-na_addr_t
-HG_Get_addr(hg_handle_t handle)
-{
-    struct hg_handle *hg_handle = (struct hg_handle *) handle;
-    na_addr_t ret = NULL;
-
-    if (!hg_handle) {
-        HG_LOG_ERROR("NULL handle");
-        goto done;
-    }
-
-    ret = hg_handle->hg_info.addr;
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
 {

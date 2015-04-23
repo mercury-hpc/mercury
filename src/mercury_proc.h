@@ -43,7 +43,7 @@ extern "C" {
 
 /**
  * Can be used to allocate a buffer that will be used by the generic processor.
- * Buffer should be freed using "hg_proc_buf_free".
+ * Buffer should be freed using hg_proc_buf_free().
  *
  * \param size [IN]             request buffer size
  *
@@ -55,7 +55,7 @@ hg_proc_buf_alloc(
         );
 
 /**
- * Free memory which has been previously allocated using hg_proc_buf_alloc.
+ * Free memory which has been previously allocated using hg_proc_buf_alloc().
  *
  * \param mem_ptr [IN]          pointer to memory address
  */
@@ -230,7 +230,7 @@ hg_proc_get_extra_size(
 
 /**
  * Set extra buffer to mine (if other calls mine, buffer is no longer freed
- * after hg_proc_free)
+ * after hg_proc_free())
  *
  * \param proc [IN]             abstract processor object
  *
@@ -256,8 +256,8 @@ hg_proc_flush(
         );
 
 /**
- * Base proc routine using memcpy.
- * NB. Only uses memcpy / use hg_proc_raw for encoding independent proc routine.
+ * Base proc routine using memcpy().
+ * \remark Only uses memcpy() / use hg_proc_raw() for encoding raw buffers.
  *
  * \param proc [IN/OUT]         abstract processor object
  * \param data [IN/OUT]         pointer to data

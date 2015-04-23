@@ -46,10 +46,12 @@ HG_Error_to_string(
         );
 
 /**
- * Initialize the Mercury layer.
- * Calling HG_Init also calls HG_Bulk_init with the same NA class if the bulk
- * class passed is NULL, users may therefore initialize the bulk interface
- * with a different NA class.
+ * Initialize the Mercury layer from an existing NA class/context.
+ * Must be finalized with HG_Finalize().
+ * \remark Calling HG_Init() internally calls HG_Bulk_init() with the same NA
+ * class if the HG bulk class passed is NULL. The HG bulk interface can however
+ * be initialized with a different NA class and, in this case, must be
+ * initialized separately by calling HG_Bulk_init().
  *
  * \param na_class [IN]         pointer to NA class
  * \param na_context [IN]       pointer to NA context
@@ -77,7 +79,7 @@ HG_Finalize(
         );
 
 /**
- * Create a new context.
+ * Create a new context. Must be destroyed by calling HG_Context_destroy().
  *
  * \param hg_class [IN]         pointer to HG class
  *
@@ -137,8 +139,8 @@ HG_Registered_rpc(
         );
 
 /**
- * Register and associate user data to registered function. When HG_Finalize
- * is called, the free callback (if defined) is called to free the registered
+ * Register and associate user data to registered function. When HG_Finalize()
+ * is called, free_callback (if defined) is called to free the registered
  * data.
  *
  * \param hg_class [IN]         pointer to HG class
@@ -157,7 +159,8 @@ HG_Register_data(
         );
 
 /**
- * Indicate whether HG_Register_data has been called and return associated data.
+ * Indicate whether HG_Register_data() has been called and return associated
+ * data.
  *
  * \param hg_class [IN]         pointer to HG class
  * \param id [IN]               registered function ID
@@ -171,9 +174,10 @@ HG_Registered_data(
         );
 
 /**
- * Start a new RPC with the specified function ID to the network address
- * defined by addr. After completion the handle must be freed using
- * HG_Destroy().
+ * Initiate a new HG RPC using the specified function ID and the local/remote
+ * target defined by addr. The HG handle created can be used to query input
+ * and output buffers, as well as issuing the RPC by using HG_Forward_buf().
+ * After completion the handle must be freed using HG_Destroy().
  *
  * \param hg_class [IN]         pointer to HG class
  * \param context [IN]          pointer to HG context
@@ -193,7 +197,7 @@ HG_Create(
         );
 
 /**
- * Destroy RPC handle. Resources associated to the handle are freed when the
+ * Destroy HG handle. Resources associated to the handle are freed when the
  * reference count is null.
  *
  * \param handle [IN]           HG handle
@@ -207,6 +211,7 @@ HG_Destroy(
 
 /**
  * Get info from handle.
+ * \remark Users must call NA_Addr_dup() to safely re-use the NA address.
  *
  * \param handle [IN]           HG handle
  *
@@ -218,27 +223,13 @@ HG_Get_info(
         );
 
 /**
- * Get abstract network address of remote caller from HG handle.
- * The address gets freed when HG_Destroy() is called. Users
- * must call NA_Addr_dup to be able to safely re-use the address.
- *
- * \param handle [IN]           HG handle
- *
- * \return Abstract network address
- */
-HG_EXPORT na_addr_t
-HG_Get_addr(
-        hg_handle_t handle
-        );
-
-/**
  * Get input buffer from handle that can be used for serializing/deserializing
  * parameters.
  *
  * \param handle [IN]           HG handle
  * \param in_buf [OUT]          pointer to input buffer
  * \param in_buf_size [OUT]     pointer to input buffer size
- * TODO Use bulk_t instead and add requested_size argument ?
+ * \cond TODO Use bulk_t instead and add requested_size argument ? \endcond
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -269,9 +260,10 @@ HG_Get_output_buf(
 /**
  * Forward a call using an existing HG handle. Input and output buffers can be
  * queried from the handle to serialize/deserialize parameters.
- * Additionally a bulk handle can be passed if input size is larger than the
- * the queried input buffer size.
- * After completion the handle must be freed using HG_Complete().
+ * Additionally, a bulk handle can be passed if the size of the input is larger
+ * than the queried input buffer size.
+ * After completion, the handle must be freed using HG_Destroy(), user callback
+ * is placed into a completion queue and can be triggered using HG_Trigger().
  *
  * \param handle [IN]           HG handle
  * \param callback [IN]         pointer to function callback
@@ -289,9 +281,11 @@ HG_Forward_buf(
         );
 
 /**
- * Respond back to the caller. The output buffer, which can be used to encode
+ * Respond back to the origin. The output buffer, which can be used to encode
  * the response, must first be queried using HG_Get_output_buf().
- * (TODO) Might add bulk handle here as well
+ * After completion, user callback is placed into a completion queue and can be
+ * triggered using HG_Trigger().
+ * \cond TODO Might add extra_out_handle here as well \endcond
  *
  * \param handle [IN]           HG handle
  * \param callback [IN]         pointer to function callback
@@ -309,7 +303,7 @@ HG_Respond_buf(
         );
 
 /**
- * Try to progress RPC execution for at most timeout until timeout reached or
+ * Try to progress RPC execution for at most timeout until timeout is reached or
  * any completion has occurred.
  * Progress should not be considered as wait, in the sense that it cannot be
  * assumed that completion of a specific operation will occur only when
@@ -353,7 +347,7 @@ HG_Trigger(
 /**
  * Cancel an ongoing operation.
  *
- * \param op_id [IN]            operation ID
+ * \param handle [IN]           HG handle
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
