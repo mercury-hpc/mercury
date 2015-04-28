@@ -13,6 +13,7 @@
 #ifndef MERCURY_UTIL_CONFIG_H
 #define MERCURY_UTIL_CONFIG_H
 
+/* Import/export declarations */
 #if defined(_WIN32)
     #define HG_UTIL_ABI_IMPORT __declspec(dllimport)
     #define HG_UTIL_ABI_EXPORT __declspec(dllexport)
@@ -27,10 +28,16 @@
     #define HG_UTIL_ABI_HIDDEN
 #endif
 
+/* Define if has <stdatomic.h> */
+#cmakedefine HG_UTIL_HAS_STDATOMIC_H
+
+/* Define if has verbose error */
 #cmakedefine HG_UTIL_HAS_VERBOSE_ERROR
 
+/* Define if build shared libraries */
 #cmakedefine HG_UTIL_BUILD_SHARED_LIBS
 
+/* Define export declaration */
 #ifdef HG_UTIL_BUILD_SHARED_LIBS
   #ifdef mercury_util_EXPORTS
     #define HG_UTIL_EXPORT HG_UTIL_ABI_EXPORT
@@ -41,6 +48,7 @@
   #define HG_UTIL_EXPORT
 #endif
 
+/* Standard types */
 #ifdef _WIN32
     typedef signed   __int64 hg_util_int64_t;
     typedef signed   __int32 hg_util_int32_t;
@@ -65,12 +73,14 @@
 typedef hg_util_uint8_t   hg_util_bool_t;
 typedef hg_util_uint64_t  hg_util_ptr_t;
 
+/* Inline declarations */
 #ifdef _WIN32
    #define HG_UTIL_INLINE __inline
 #else
    #define HG_UTIL_INLINE __inline__
 #endif
 
+/* Return codes */
 #define HG_UTIL_SUCCESS  0
 #define HG_UTIL_FAIL    -1
 #define HG_UTIL_TRUE     1

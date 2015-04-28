@@ -30,18 +30,23 @@ if(NOT WIN32 AND NOT APPLE)
   )
 endif()
 
-# OpenPA
+# Atomics
 if(NOT WIN32 AND NOT APPLE)
-  find_package(OPA REQUIRED)
-  if(OPA_FOUND)
-    message(STATUS "OPA include directory: ${OPA_INCLUDE_DIRS}")
-    include_directories(${OPA_INCLUDE_DIRS})
-    set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES
-      ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
-      ${OPA_INCLUDE_DIRS}
-    )
-  else()
-    message(FATAL_ERROR "Could not find OPA.")
+  include(CheckIncludeFiles)
+  CHECK_INCLUDE_FILES("stdatomic.h" HG_UTIL_HAS_STDATOMIC_H)
+  if(NOT HG_UTIL_HAS_STDATOMIC_H)
+    # Use OpenPA if stdatomic is not available
+    find_package(OPA REQUIRED)
+    if(OPA_FOUND)
+      message(STATUS "OPA include directory: ${OPA_INCLUDE_DIRS}")
+      include_directories(${OPA_INCLUDE_DIRS})
+      set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES
+        ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
+        ${OPA_INCLUDE_DIRS}
+      )
+    else()
+      message(FATAL_ERROR "Could not find OPA.")
+    endif()
   endif()
 endif()
 
