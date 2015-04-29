@@ -138,7 +138,7 @@ bulk_get_cb(const struct na_cb_info *callback_info)
             break;
         }
     }
-    if (!error) printf("Successfully transfered %lu bytes!\n",
+    if (!error) printf("Successfully transfered %llu bytes!\n",
             params->bulk_size * sizeof(int));
 
     /* Reset bulk_buf */

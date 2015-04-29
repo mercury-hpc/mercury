@@ -626,6 +626,8 @@ na_bmi_init(na_class_t *na_class, const char *method_list,
         ret = NA_NOMEM_ERROR;
         goto done;
     }
+    NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue = NULL;
+    NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue = NULL;
 
     /* Initialize BMI */
     bmi_ret = BMI_initialize(method_list, listen_addr, flags);
@@ -678,6 +680,10 @@ na_bmi_finalize(na_class_t *na_class)
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
+    if (!na_class->private_data) {
+        goto done;
+    }
+
     /* Check that unexpected op queue is empty */
     if (!hg_queue_is_empty(
             NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue)) {
@@ -715,6 +721,7 @@ na_bmi_finalize(na_class_t *na_class)
 
     free(na_class->private_data);
 
+done:
     return ret;
 }
 

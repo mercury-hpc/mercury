@@ -658,17 +658,18 @@ static na_return_t
 na_mpi_get_port_info(const char *name, char *mpi_port_name, int *mpi_rank)
 {
     char *port_string = NULL, *rank_string = NULL, *rank_value = NULL;
+    char *dup_name;
     na_return_t ret = NA_SUCCESS;
 
-    port_string = strdup(name);
-    if (!port_string) {
+    dup_name = strdup(name);
+    if (!dup_name) {
         NA_LOG_ERROR("Cannot dup name");
         ret = NA_NOMEM_ERROR;
         goto done;
     }
 
     /* Get mpi port name */
-    port_string = strtok_r(port_string, ";", &rank_string);
+    port_string = strtok_r(dup_name, ";", &rank_string);
     strcpy(mpi_port_name, port_string);
 
     if (!rank_string) {
@@ -690,7 +691,7 @@ na_mpi_get_port_info(const char *name, char *mpi_port_name, int *mpi_rank)
     }
 
 done:
-    free(port_string);
+    free(dup_name);
     return ret;
 }
 
@@ -1096,6 +1097,8 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
         ret = NA_NOMEM_ERROR;
         goto done;
     }
+    NA_MPI_PRIVATE_DATA(na_class)->accept_thread = 0;
+    NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue = NULL;
 
     /* Check flags */
     if (strcmp(na_info->protocol_name, "static") == 0)
@@ -1240,6 +1243,10 @@ na_mpi_finalize(na_class_t *na_class)
     na_return_t ret = NA_SUCCESS;
     int mpi_ext_finalized = 0;
     int mpi_ret;
+
+    if (!na_class->private_data) {
+        goto done;
+    }
 
     if (NA_MPI_PRIVATE_DATA(na_class)->listening) {
         /* No more connection accepted after this point */
@@ -2429,6 +2436,10 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
                 continue;
             }
             ret = na_mpi_complete(na_mpi_op_id);
+            if (ret != NA_SUCCESS) {
+                NA_LOG_ERROR("Could not complete operation");
+                goto done;
+            }
         }
         /* Remove entry from list */
         hg_list_remove_entry(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list,

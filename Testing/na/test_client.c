@@ -98,7 +98,7 @@ ack_expected_recv_cb(const struct na_cb_info *callback_info)
             break;
         }
     }
-    if (!error) printf("Successfully reset %lu bytes!\n",
+    if (!error) printf("Successfully reset %llu bytes!\n",
             params->bulk_size * sizeof(int));
 
     ret = NA_Mem_deregister(params->network_class, params->local_mem_handle);
