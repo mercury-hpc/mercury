@@ -826,6 +826,7 @@ done:
     if (ret != HG_SUCCESS && context) {
         hg_queue_free(context->completion_queue);
         free(context);
+        context = NULL;
     }
     return context;
 }
