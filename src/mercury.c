@@ -515,14 +515,12 @@ HG_Register(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb
 
     if (!hg_class) {
         HG_LOG_ERROR("NULL HG class");
-        ret = HG_INVALID_PARAM;
         goto done;
     }
 
     hg_proc_info = (struct hg_proc_info *) malloc(sizeof(struct hg_proc_info));
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not allocate proc info");
-        ret = HG_NOMEM_ERROR;
         goto done;
     }
 

@@ -848,6 +848,7 @@ hg_create(hg_class_t *hg_class, hg_context_t *context)
 done:
     if (ret != HG_SUCCESS) {
         hg_destroy(hg_handle);
+        hg_handle = NULL;
     }
     return hg_handle;
 }
