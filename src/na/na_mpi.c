@@ -1435,7 +1435,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_addr_self(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
+na_mpi_addr_self(na_class_t *na_class, na_addr_t *addr)
 {
     struct na_mpi_addr *na_mpi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1454,6 +1454,9 @@ na_mpi_addr_self(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
     na_mpi_addr->self = NA_TRUE;
     na_mpi_addr->dynamic = NA_FALSE;
     memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
+    if (!NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm
+            && NA_MPI_PRIVATE_DATA(na_class)->listening)
+        strcpy(na_mpi_addr->port_name, NA_MPI_PRIVATE_DATA(na_class)->port_name);
 
     *addr = (na_addr_t) na_mpi_addr;
 
@@ -1504,8 +1507,8 @@ na_mpi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
-        na_size_t buf_size, na_addr_t addr)
+na_mpi_addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
+        na_addr_t addr)
 {
     struct na_mpi_addr *mpi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1518,7 +1521,10 @@ na_mpi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
         goto done;
     }
 
-    sprintf(buf, "%s:rank#%d$", mpi_addr->port_name, mpi_addr->rank);
+    if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm)
+        sprintf(buf, "rank#%d$", mpi_addr->rank);
+    else
+        sprintf(buf, "%s;rank#%d$", mpi_addr->port_name, mpi_addr->rank);
 
 done:
     return ret;

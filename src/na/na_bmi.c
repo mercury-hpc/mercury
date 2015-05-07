@@ -133,6 +133,7 @@ struct na_bmi_op_id {
 };
 
 struct na_bmi_private_data {
+    char *listen_addr;                            /* Listen addr */
     hg_thread_mutex_t test_unexpected_mutex;      /* Mutex */
     hg_queue_t *unexpected_msg_queue;             /* Unexpected message queue */
     hg_thread_mutex_t unexpected_msg_queue_mutex; /* Mutex */
@@ -626,6 +627,8 @@ na_bmi_init(na_class_t *na_class, const char *method_list,
         ret = NA_NOMEM_ERROR;
         goto done;
     }
+    NA_BMI_PRIVATE_DATA(na_class)->listen_addr = (listen_addr) ?
+            strdup(listen_addr) : NULL;
     NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue = NULL;
     NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue = NULL;
 
@@ -719,6 +722,7 @@ na_bmi_finalize(na_class_t *na_class)
     hg_thread_mutex_destroy(
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
+    free(NA_BMI_PRIVATE_DATA(na_class)->listen_addr);
     free(na_class->private_data);
 
 done:
@@ -889,7 +893,7 @@ na_bmi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
+na_bmi_addr_to_string(na_class_t *na_class, char *buf,
         na_size_t buf_size, na_addr_t addr)
 {
     struct na_bmi_addr *na_bmi_addr = NULL;
@@ -898,20 +902,30 @@ na_bmi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
 
     na_bmi_addr = (struct na_bmi_addr *) addr;
 
-    if (na_bmi_addr->unexpected) {
-        bmi_rev_addr = BMI_addr_rev_lookup_unexpected(na_bmi_addr->bmi_addr);
+    if (na_bmi_addr->self) {
+        bmi_rev_addr = NA_BMI_PRIVATE_DATA(na_class)->listen_addr;
+        if (!bmi_rev_addr) {
+            NA_LOG_ERROR("Cannot convert addr to string if not listening");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
     } else {
-        bmi_rev_addr = BMI_addr_rev_lookup(na_bmi_addr->bmi_addr);
+        if (na_bmi_addr->unexpected) {
+            bmi_rev_addr = BMI_addr_rev_lookup_unexpected(na_bmi_addr->bmi_addr);
+        } else {
+            bmi_rev_addr = BMI_addr_rev_lookup(na_bmi_addr->bmi_addr);
+        }
     }
 
     if (strlen(bmi_rev_addr) > buf_size) {
         NA_LOG_ERROR("Buffer size too small to copy addr");
         ret = NA_SIZE_ERROR;
-        return ret;
+        goto done;
     }
 
     strcpy(buf, bmi_rev_addr);
 
+done:
     return ret;
 }
 
