@@ -626,7 +626,6 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 		goto out;
 	}
 
-	fprintf(stderr, "opened %s\n", uri);
 	NA_CCI_PRIVATE_DATA(na_class)->uri = strdup(uri);
 	free(uri);
 
@@ -804,7 +803,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_addr_self(na_class_t NA_UNUSED * na_class, na_addr_t * addr)
+na_cci_addr_self(na_class_t * na_class, na_addr_t * addr)
 {
 	na_cci_addr_t *na_cci_addr = NULL;
 	na_return_t	ret = NA_SUCCESS;
@@ -817,7 +816,7 @@ na_cci_addr_self(na_class_t NA_UNUSED * na_class, na_addr_t * addr)
 		goto out;
 	}
 	na_cci_addr->cci_addr = 0;
-	na_cci_addr->uri = NULL;
+	na_cci_addr->uri = strdup(NA_CCI_PRIVATE_DATA(na_class)->uri);
 	na_cci_addr->unexpected = NA_FALSE;
 	na_cci_addr->self = NA_TRUE;
 	na_cci_addr->na_cci_op_id = NULL;
@@ -1730,8 +1729,8 @@ handle_recv_unexpected(na_class_t *na_class, na_context_t NA_UNUSED *context,
 	na_return_t ret = NA_SUCCESS;
 
 	if (!na_cci_addr->cci_addr || hg_atomic_get32(&na_cci_addr->refcnt) <= 0) {
-		fprintf(stderr, "%s: peer %s refcnt %d\n", __func__,
-			na_cci_addr->uri, hg_atomic_get32(&na_cci_addr->refcnt));
+	    NA_LOG_ERROR("peer %s refcnt %d\n", na_cci_addr->uri,
+	            hg_atomic_get32(&na_cci_addr->refcnt));
 		goto out;
 	}
 
@@ -1821,7 +1820,7 @@ handle_connect_request(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *cont
 	na_cci_addr = calloc(1, sizeof(*na_cci_addr));
 	if (!na_cci_addr) {
 		NA_LOG_ERROR("Unable to allocate na_cci_addr for new peer %s",
-				(char*)((void*)event->request.data_ptr));
+				(const char*)(event->request.data_ptr));
 		rc = CCI_ENOMEM;
 		goto out;
 	}
@@ -1832,7 +1831,7 @@ handle_connect_request(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *cont
 	na_cci_addr->uri = strdup(event->request.data_ptr);
 	if (!na_cci_addr->uri) {
 		NA_LOG_ERROR("Unable to allocate URI for new peer %s",
-				(char*)((void*)event->request.data_ptr));
+				(const char*)(event->request.data_ptr));
 		rc = CCI_ENOMEM;
 		goto out;
 	}
