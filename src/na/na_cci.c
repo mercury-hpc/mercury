@@ -933,7 +933,7 @@ na_cci_addr_to_string(na_class_t NA_UNUSED * na_class, char *buf,
 	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)addr;
 	na_return_t	ret = NA_SUCCESS;
 
-	if (strlen(na_cci_addr->uri) > buf_size) {
+	if (strlen(na_cci_addr->uri) >= buf_size) {
 		NA_LOG_ERROR("Buffer size too small to copy addr");
 		ret = NA_SIZE_ERROR;
 		return ret;
