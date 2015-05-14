@@ -215,6 +215,17 @@ if(BUILD_DOCUMENTATION)
 endif()
 
 #-----------------------------------------------------------------------------
+# Examples
+#-----------------------------------------------------------------------------
+option(BUILD_EXAMPLES "Build examples." OFF)
+if(BUILD_EXAMPLES)
+  # BuildExamples.cmake builds the examples as a separate project. This ensures
+  # that examples can be built by themselves as well as avoiding pollution of
+  # the target space with targets (and other things) from examples.
+  include(${CMAKE_CURRENT_SOURCE_DIR}/Examples/BuildExamples.cmake)
+endif()
+
+#-----------------------------------------------------------------------------
 # Testing
 #-----------------------------------------------------------------------------
 option(BUILD_TESTING "Build testing." OFF)
