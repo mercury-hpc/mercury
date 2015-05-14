@@ -42,7 +42,7 @@ configure_file(
   ${MERCURY_BINARY_DIR}/Documentation/Doxygen/doc_makeall.cmake
   @ONLY)
 
-add_custom_target(DoxygenDoc
+add_custom_target(doc
   ${CMAKE_COMMAND}
   -P ${MERCURY_BINARY_DIR}/Documentation/Doxygen/doc_makeall.cmake
   DEPENDS ${MERCURY_BINARY_DIR}/Documentation/Doxygen/doc_makeall.cmake)
