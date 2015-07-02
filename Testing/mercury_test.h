@@ -38,7 +38,7 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank,
  * Initialize server
  */
 hg_class_t *
-HG_Test_server_init(int argc, char *argv[], char ***addr_table,
+HG_Test_server_init(int argc, char *argv[], na_addr_t **addr_table,
         unsigned int *addr_table_size, unsigned int *max_number_of_peers,
         hg_context_t **context);
 

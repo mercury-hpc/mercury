@@ -17,6 +17,7 @@
 #include <stdlib.h>
 
 extern hg_atomic_int32_t hg_test_finalizing_count_g;
+extern na_addr_t *na_addr_table;
 
 /**
  *
@@ -29,8 +30,8 @@ main(int argc, char *argv[])
     unsigned int number_of_peers;
     hg_return_t ret = HG_SUCCESS;
 
-    hg_class = HG_Test_server_init(argc, argv, NULL, NULL,
-            &number_of_peers, &context);
+    hg_class = HG_Test_server_init(argc, argv, &na_addr_table,
+            NULL, &number_of_peers, &context);
 
     do {
         unsigned int actual_count = 0;

@@ -463,13 +463,17 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
     na_class_t *na_class = NULL;
     const char *info_string = NULL;
 
-    info_string = na_test_gen_config(argc, argv);
+    /* TODO call it once first for now to set static MPI */
+    na_test_gen_config(argc, argv);
+    na_test_opt_ind_g = 1;
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
     /* Test run in parallel using mpirun so must intialize MPI to get
      * basic setup info etc */
     na_test_mpi_init(NA_TRUE);
 #endif
+
+    info_string = na_test_gen_config(argc, argv);
 
     na_class = NA_Initialize(info_string, NA_TRUE);
 

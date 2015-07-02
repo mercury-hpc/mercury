@@ -237,6 +237,7 @@ set(MERCURY_tests
 if(NOT WIN32)
   set(MERCURY_tests ${MERCURY_tests} posix)
 endif()
+build_mercury_test(nested)
 
 # Build tests and add them to ctest
 foreach(MERCURY_test ${MERCURY_tests})

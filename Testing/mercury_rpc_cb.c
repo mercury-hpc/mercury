@@ -92,6 +92,9 @@ extern hg_thread_pool_t *hg_test_thread_pool_g;
 #endif
 extern hg_bulk_t hg_test_local_bulk_handle_g;
 
+extern hg_id_t hg_test_nested2_id_g;
+na_addr_t *na_addr_table;
+
 /*---------------------------------------------------------------------------*/
 /* Actual definition of the functions that need to be executed */
 /*---------------------------------------------------------------------------*/
@@ -1129,6 +1132,79 @@ HG_TEST_RPC_CB(hg_test_overflow, handle)
 }
 
 /*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_nested1_forward_cb(const struct hg_cb_info *callback_info)
+{
+    hg_handle_t handle = (hg_handle_t) callback_info->arg;
+    hg_return_t ret = HG_SUCCESS;
+
+    printf("In hg_test_nested1_forward_cb\n");
+
+    /* Send response back */
+    ret = HG_Respond(handle, NULL, NULL, NULL);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    HG_Destroy(handle);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_nested1, handle)
+{
+    hg_handle_t forward_handle;
+    struct hg_info *hg_info = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    printf("In hg_test_nested1\n");
+
+    /* Get info from handle */
+    hg_info = HG_Get_info(handle);
+
+    ret = HG_Create(hg_info->hg_class, hg_info->context, na_addr_table[1],
+            hg_test_nested2_id_g, &forward_handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not start call\n");
+        goto done;
+    }
+
+    /* Forward call to remote addr and get a new request */
+    printf("Forwarding call, op id: %u...\n", hg_test_nested2_id_g);
+    ret = HG_Forward(forward_handle, hg_test_nested1_forward_cb, handle, NULL);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not forward call\n");
+        goto done;
+    }
+
+    HG_Destroy(forward_handle);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_nested2, handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    printf("In hg_test_nested2\n");
+
+    /* Send response back */
+    ret = HG_Respond(handle, NULL, NULL, NULL);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    HG_Destroy(handle);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 HG_TEST_THREAD_CB(hg_test_rpc_open)
 HG_TEST_THREAD_CB(hg_test_bulk_write)
 HG_TEST_THREAD_CB(hg_test_bulk_seg_write)
@@ -1142,5 +1218,7 @@ HG_TEST_THREAD_CB(hg_test_posix_read)
 HG_TEST_THREAD_CB(hg_test_perf_rpc)
 HG_TEST_THREAD_CB(hg_test_perf_bulk)
 HG_TEST_THREAD_CB(hg_test_overflow)
+HG_TEST_THREAD_CB(hg_test_nested1)
+HG_TEST_THREAD_CB(hg_test_nested2)
 
 /*---------------------------------------------------------------------------*/

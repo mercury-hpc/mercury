@@ -40,6 +40,10 @@ static hg_request_class_t *hg_test_request_class_g = NULL;
 
 hg_bulk_t hg_test_local_bulk_handle_g = HG_BULK_NULL;
 
+static char **hg_test_addr_table_g = NULL;
+static na_addr_t *hg_test_na_addr_table_g = NULL;
+static unsigned int hg_test_addr_table_size_g = 0;
+
 extern na_bool_t na_test_use_self_g;
 
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
@@ -71,8 +75,13 @@ hg_id_t hg_test_perf_bulk_id_g = 0;
 /* test_overflow */
 hg_id_t hg_test_overflow_id_g = 0;
 
+/* test_nested */
+hg_id_t hg_test_nested1_id_g = 0;
+hg_id_t hg_test_nested2_id_g = 0;
+
 /* test_finalize */
-hg_id_t hg_test_finalize_id_g = 0;
+static hg_id_t hg_test_finalize_id_g = 0;
+static hg_id_t hg_test_finalize2_id_g = 0;
 hg_atomic_int32_t hg_test_finalizing_count_g;
 
 /*---------------------------------------------------------------------------*/
@@ -149,8 +158,34 @@ hg_test_finalize_rpc(hg_class_t *hg_class)
 }
 
 /*---------------------------------------------------------------------------*/
+static void
+hg_test_finalize_rpc2(hg_class_t *hg_class, na_addr_t addr)
+{
+    hg_return_t hg_ret;
+    hg_handle_t handle;
+
+    hg_ret = HG_Create(hg_class, hg_test_context_g, addr,
+            hg_test_finalize2_id_g, &handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not forward call\n");
+    }
+
+    /* Forward call to remote addr and get a new request */
+    hg_ret = HG_Forward(handle, hg_test_finalize_rpc_cb, NULL, NULL);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not forward call\n");
+    }
+
+    /* Complete */
+    hg_ret = HG_Destroy(handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_finalize_cb(hg_handle_t handle)
+hg_test_finalize2_cb(hg_handle_t handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -164,6 +199,27 @@ hg_test_finalize_cb(hg_handle_t handle)
     }
 
     HG_Destroy(handle);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_finalize_cb(hg_handle_t handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Shut down other servers */
+    if (hg_test_addr_table_size_g > 1) {
+        unsigned int i;
+        struct hg_info *hg_info = HG_Get_info(handle);
+
+        for (i = 1; i < hg_test_addr_table_size_g; i++) {
+            hg_test_finalize_rpc2(hg_info->hg_class, hg_test_na_addr_table_g[i]);
+        }
+    }
+
+    hg_test_finalize2_cb(handle);
 
     return ret;
 }
@@ -212,9 +268,17 @@ hg_test_register(hg_class_t *hg_class)
     hg_test_overflow_id_g = MERCURY_REGISTER(hg_class, "hg_test_overflow",
             void, overflow_out_t, hg_test_overflow_cb);
 
+    /* test_nested */
+    hg_test_nested1_id_g = MERCURY_REGISTER(hg_class, "hg_test_nested",
+            void, void, hg_test_nested1_cb);
+    hg_test_nested2_id_g = MERCURY_REGISTER(hg_class, "hg_test_nested_forward",
+            void, void, hg_test_nested2_cb);
+
     /* test_finalize */
     hg_test_finalize_id_g = MERCURY_REGISTER(hg_class, "hg_test_finalize",
             void, void, hg_test_finalize_cb);
+    hg_test_finalize2_id_g = MERCURY_REGISTER(hg_class, "hg_test_finalize2",
+            void, void, hg_test_finalize2_cb);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -290,14 +354,14 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Test_server_init(int argc, char *argv[], char ***addr_table,
+HG_Test_server_init(int argc, char *argv[], na_addr_t **addr_table,
         unsigned int *addr_table_size, unsigned int *max_number_of_peers,
         hg_context_t **context)
 {
     size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
 
-    hg_test_na_class_g = NA_Test_server_init(argc, argv, NA_FALSE, addr_table,
-            addr_table_size, max_number_of_peers);
+    hg_test_na_class_g = NA_Test_server_init(argc, argv, NA_FALSE,
+            &hg_test_addr_table_g, &hg_test_addr_table_size_g, max_number_of_peers);
 
     hg_test_na_context_g = NA_Context_create(hg_test_na_class_g);
 
@@ -331,6 +395,24 @@ HG_Test_server_init(int argc, char *argv[], char ***addr_table,
     HG_Bulk_create(hg_test_bulk_class_g, 1, NULL, &bulk_size, HG_BULK_READWRITE,
             &hg_test_local_bulk_handle_g);
 
+    if (hg_test_addr_table_size_g > 1) {
+        unsigned int i;
+
+        hg_test_na_addr_table_g = (na_addr_t *) malloc(hg_test_addr_table_size_g * sizeof(na_addr_t));
+        for (i = 0; i < hg_test_addr_table_size_g; i++) {
+            na_return_t na_ret;
+
+            na_ret = NA_Addr_lookup_wait(hg_test_na_class_g,
+                    hg_test_addr_table_g[i], &hg_test_na_addr_table_g[i]);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not find addr %s\n", hg_test_addr_table_g[i]);
+                goto done;
+            }
+        }
+    }
+    if (addr_table) *addr_table = hg_test_na_addr_table_g;
+    if (addr_table_size) *addr_table_size = hg_test_addr_table_size_g;
+
     /* Used by CTest Test Driver */
     printf("Waiting for client...\n");
     fflush(stdout);
@@ -361,6 +443,13 @@ HG_Test_finalize(hg_class_t *hg_class)
             goto done;
         }
         hg_test_addr_g = NA_ADDR_NULL;
+    } else if (hg_test_na_addr_table_g) {
+        unsigned int i;
+
+        for (i = 0; i < hg_test_addr_table_size_g; i++)
+            NA_Addr_free(hg_test_na_class_g, hg_test_na_addr_table_g[i]);
+        free(hg_test_na_addr_table_g);
+        hg_test_na_addr_table_g = NULL;
     }
 
     /* Destroy bulk handle */
