@@ -2,10 +2,6 @@ language: c
 compiler:
     - gcc
 
-addons:
-  hosts:
-    - ci.travis
-
 env:
   global:
     - MERCURY_BUILD_CONFIGURATION="Debug"

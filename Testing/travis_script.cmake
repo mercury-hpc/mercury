@@ -47,7 +47,7 @@ set(CTEST_DASHBOARD_ROOT "$ENV{TRAVIS_BUILD_DIR}/..")
 # Must specify existing source directory
 set(CTEST_SOURCE_DIRECTORY "$ENV{TRAVIS_BUILD_DIR}")
 # Give a site name
-set(CTEST_SITE "$ENV{HOSTNAME}")
+set(CTEST_SITE "ci.travis")
 set(CTEST_TEST_TIMEOUT 180) # 3 minute timeout
 
 # Optional coverage options
