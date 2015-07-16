@@ -10,12 +10,15 @@ set(MERCURY_BUILD_CONFIGURATION "$ENV{MERCURY_BUILD_CONFIGURATION}")
 if(NOT MERCURY_BUILD_CONFIGURATION)
   set(MERCURY_BUILD_CONFIGURATION "Debug")
 endif()
+string(TOLOWER ${MERCURY_BUILD_CONFIGURATION} lower_mercury_build_configuration)
+set(CTEST_BUILD_CONFIGURATION ${MERCURY_BUILD_CONFIGURATION})
 
 # MERCURY_DASHBOARD_MODEL=Experimental | Nightly | Continuous
 set(MERCURY_DASHBOARD_MODEL "$ENV{MERCURY_DASHBOARD_MODEL}")
 if(NOT MERCURY_DASHBOARD_MODEL)
   set(MERCURY_DASHBOARD_MODEL "Experimental")
 endif()
+set(dashboard_model ${MERCURY_DASHBOARD_MODEL})
 
 # Disable loop when MERCURY_DASHBOARD_MODEL=Continuous
 set(MERCURY_NO_LOOP $ENV{MERCURY_NO_LOOP})
@@ -24,19 +27,17 @@ if(MERCURY_NO_LOOP)
   set(dashboard_disable_loop TRUE)
 endif()
 
-# Build shared libraries
-set(mercury_build_shared ON)
-
-string(TOLOWER ${MERCURY_BUILD_CONFIGURATION} lower_mercury_build_configuration)
-set(CTEST_BUILD_CONFIGURATION ${MERCURY_BUILD_CONFIGURATION})
 # Number of jobs to build
 set(CTEST_BUILD_FLAGS "-j4")
+
 # Build name referenced in cdash
-set(CTEST_BUILD_NAME "travis-x64-${lower_mercury_build_configuration}")
+set(CTEST_BUILD_NAME "$ENV{TRAVIS_OS_NAME}-x64-${lower_mercury_build_configuration}-$ENV{TRAVIS_BUILD_NUMBER}")
+
+# Build shared libraries
+set(mercury_build_shared ON)
 set(MERCURY_BUILD_STATIC_LIBRARIES $ENV{MERCURY_BUILD_STATIC_LIBRARIES})
 if(MERCURY_BUILD_STATIC_LIBRARIES)
   message("Building static libraries")
-  set(CTEST_BUILD_NAME "${CTEST_BUILD_NAME}-static")
   set(mercury_build_shared OFF)
 endif()
 
@@ -54,7 +55,6 @@ set(MERCURY_DO_COVERAGE $ENV{MERCURY_DO_COVERAGE})
 if(MERCURY_DO_COVERAGE)
   message("Enabling Coverage")
   set(CTEST_COVERAGE_COMMAND "/usr/bin/gcov")
-  set(CTEST_BUILD_NAME "${CTEST_BUILD_NAME}-coverage")
   # don't run parallel coverage tests, no matter what.
   set(CTEST_TEST_ARGS PARALLEL_LEVEL 1)
 
@@ -82,7 +82,6 @@ set(dashboard_binary_name mercury-${lower_mercury_build_configuration})
 if(NOT mercury_build_shared)
   set(dashboard_binary_name ${dashboard_binary_name}-static)
 endif()
-set(dashboard_model ${MERCURY_DASHBOARD_MODEL})
 
 # Initial cache used to build mercury, options can be modified here
 set(dashboard_cache "
