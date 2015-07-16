@@ -2,9 +2,7 @@
 
 # build bmi
 git clone git://git.mcs.anl.gov/bmi bmi
-pushd bmi
-./prepare && ./configure --enable-shared --enable-bmi-only --prefix=/usr && make && sudo make install
-popd
+cd bmi && ./prepare && ./configure --enable-shared --enable-bmi-only --prefix=/usr && make && sudo make install
 
 # echo mpi commands needed to compile
 echo "mpicc -show"

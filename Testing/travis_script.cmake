@@ -120,6 +120,6 @@ MERCURY_TESTING_CORESIDENT:BOOL=ON
 #set(ENV{CC}  /usr/bin/gcc)
 #set(ENV{CXX} /usr/bin/g++)
 
-include(mercury_common.cmake)
+include(${CTEST_SOURCE_DIRECTORY}/Testing/mercury_common.cmake)
 
 #######################################################################
