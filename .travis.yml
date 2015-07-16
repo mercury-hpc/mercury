@@ -4,14 +4,15 @@ compiler:
 
 env:
   global:
-    - MERCURY_BUILD_CONFIGURATION="Debug"
     - MERCURY_DASHBOARD_MODEL="Continuous"
     - MERCURY_NO_LOOP="true"
     - MERCURY_DO_COVERAGE="false"
     - MERCURY_DO_MEMCHECK="false"
     - MERCURY_PORT_NAME='tcp://localhost:3344'
   matrix:
-    - MPI=mpich
+    - MERCURY_BUILD_CONFIGURATION="Debug"
+    - MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
+    - MERCURY_BUILD_CONFIGURATION="Release"
 
 branches:
   only:

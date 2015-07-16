@@ -27,13 +27,12 @@ endif()
 # Build shared libraries
 set(mercury_build_shared ON)
 
-string(TOLOWER ${MERCURY_DASHBOARD_MODEL} lower_mercury_dashboard_model)
 string(TOLOWER ${MERCURY_BUILD_CONFIGURATION} lower_mercury_build_configuration)
 set(CTEST_BUILD_CONFIGURATION ${MERCURY_BUILD_CONFIGURATION})
 # Number of jobs to build
 set(CTEST_BUILD_FLAGS "-j4")
 # Build name referenced in cdash
-set(CTEST_BUILD_NAME "travis-x64-${lower_mercury_dashboard_model}")
+set(CTEST_BUILD_NAME "travis-x64-${lower_mercury_build_configuration}")
 set(MERCURY_BUILD_STATIC_LIBRARIES $ENV{MERCURY_BUILD_STATIC_LIBRARIES})
 if(MERCURY_BUILD_STATIC_LIBRARIES)
   message("Building static libraries")
