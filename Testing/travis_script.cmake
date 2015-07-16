@@ -31,7 +31,7 @@ endif()
 set(CTEST_BUILD_FLAGS "-j4")
 
 # Build name referenced in cdash
-set(CTEST_BUILD_NAME "$ENV{TRAVIS_OS_NAME}-x64-${lower_mercury_build_configuration}-$ENV{TRAVIS_BUILD_NUMBER}")
+set(CTEST_BUILD_NAME "travis-ci-$ENV{TRAVIS_OS_NAME}-x64-${lower_mercury_build_configuration}-$ENV{TRAVIS_BUILD_NUMBER}")
 
 # Build shared libraries
 set(mercury_build_shared ON)
@@ -47,7 +47,7 @@ set(CTEST_DASHBOARD_ROOT "$ENV{TRAVIS_BUILD_DIR}/..")
 # Must specify existing source directory
 set(CTEST_SOURCE_DIRECTORY "$ENV{TRAVIS_BUILD_DIR}")
 # Give a site name
-set(CTEST_SITE "ci.travis")
+set(CTEST_SITE "worker.travis-ci.org")
 set(CTEST_TEST_TIMEOUT 180) # 3 minute timeout
 
 # Optional coverage options
