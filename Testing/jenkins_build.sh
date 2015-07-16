@@ -59,6 +59,6 @@ export MERCURY_PORT_NAME='tcp://localhost:3344'
 
 # get back to the testing script location
 pushd $MERCURY_WORKSPACE_DIR/Testing
-ctest -S jenkins_mercury.cmake -VV 2>&1
+ctest -S jenkins_script.cmake -VV 2>&1
 popd
 
