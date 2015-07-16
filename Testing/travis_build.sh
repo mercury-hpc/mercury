@@ -11,6 +11,7 @@ echo "mpicc -show"
 mpicc -show
 
 # build cci
-git clone --branch=v0.2.0 https://github.com/CCI/cci.git
-cd cci && ./autogen.pl && ./configure --prefix=/usr && make && sudo make install
+wget http://cci-forum.com/wp-content/uploads/2015/07/cci-0.2.0.tar.gz
+tar -xzvf cci-0.2.0.tar.gz
+cd cci-0.2.0 && ./configure --prefix=/usr && make && sudo make install
 
