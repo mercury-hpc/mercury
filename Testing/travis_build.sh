@@ -14,7 +14,7 @@ if [ ! -d "$HOME/install/bin" ]; then
   # build cci
   cd $HOME && wget http://cci-forum.com/wp-content/uploads/2015/07/cci-0.2.0.tar.gz;
   tar -xzf cci-0.2.0.tar.gz;
-  cd cci-0.2.0 && ./configure --prefix=$HOME/install && make && make install;
+  cd cci-0.2.0 && ./configure --with-sm-cma --prefix=$HOME/install && make && make install;
 else
   echo "Using cached directory";
 fi
