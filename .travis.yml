@@ -2,6 +2,12 @@ language: c
 compiler:
     - gcc
 
+sudo: false
+
+cache:
+  directories:
+    - $HOME/install
+
 env:
   global:
     - MERCURY_DASHBOARD_MODEL="Continuous"
@@ -18,12 +24,13 @@ branches:
   only:
     - master
 
-before_install:
-    - sudo apt-get update -qq
-    - sudo apt-get install -y mpich2 libmpich2-3 libmpich2-dev
-
 install:
     - ./Testing/travis_build.sh
+
+before_script:
+    - ls -R $HOME/install
+    - export PATH=$PATH:$HOME/install/bin
+    - export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/install/lib
 
 script:
     - ctest -VV --output-on-failure -S ./Testing/travis_script.cmake
