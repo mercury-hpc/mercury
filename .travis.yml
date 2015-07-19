@@ -24,6 +24,9 @@ branches:
   only:
     - master
 
+before_install:
+    - echo "Existing directories in $HOME" && ls $HOME
+
 install:
     - ./Testing/travis_build.sh
 
