@@ -3,7 +3,7 @@
 set -e
 
 # check to see if install folder exists
-if [ ! -d "$HOME/install" ]; then
+if [ ! -d "$HOME/install/bin" ]; then
   # build bmi
   cd $HOME && git clone git://git.mcs.anl.gov/bmi bmi;
   cd bmi && ./prepare && ./configure --enable-shared --enable-bmi-only --prefix=$HOME/install && make && make install;
@@ -16,6 +16,6 @@ if [ ! -d "$HOME/install" ]; then
   tar -xzvf cci-0.2.0.tar.gz;
   cd cci-0.2.0 && ./configure --prefix=$HOME/install && make && make install;
 else
-  echo 'Using cached directory.';
+  echo "Using cached directory";
 fi
 
