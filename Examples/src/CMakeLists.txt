@@ -14,30 +14,32 @@ find_package(MERCURY REQUIRED)
 include_directories(${MERCURY_INCLUDE_DIR})
 
 # Snappy
-find_package(SNAPPY REQUIRED)
+find_package(SNAPPY)
 if(SNAPPY_FOUND)
   message(STATUS "Snappy include directory: ${SNAPPY_INCLUDE_DIR}")
   include_directories(${SNAPPY_INCLUDE_DIR})
-  set(MercuryExamples_LIB_DEPENDENCIES
-    ${MercuryExamples_LIB_DEPENDENCIES}
-    ${SNAPPY_LIBRARIES}
-  )
 else()
-  message(FATAL_ERROR "Could not find Snappy.")
+  message(STATUS "Could not find Snappy.")
 endif()
-
-# Check have snappy
 
 #------------------------------------------------------------------------------
 # Examples
 #------------------------------------------------------------------------------
-function(build_mercury_example example_name)
-  add_executable(hg_example_${example_name} example_snappy.c example_${example_name}.c)
-  target_link_libraries(hg_example_${example_name}
-    mercury
-    ${MercuryExamples_LIB_DEPENDENCIES}
-  )
+function(build_rpc_example example_name)
+  add_executable(hg_example_${example_name} example_rpc.c example_rpc_engine.c example_${example_name}.c)
+  target_link_libraries(hg_example_${example_name} mercury)
 endfunction()
 
-build_mercury_example(snappy_client)
-build_mercury_example(snappy_server)
+function(build_snappy_example example_name)
+  add_executable(hg_example_${example_name} example_snappy.c example_${example_name}.c)
+  target_link_libraries(hg_example_${example_name} mercury ${SNAPPY_LIBRARIES})
+endfunction()
+
+build_rpc_example(rpc_client)
+build_rpc_example(rpc_server)
+
+if(SNAPPY_FOUND)
+  build_snappy_example(snappy_client)
+  build_snappy_example(snappy_server)
+endif()
+

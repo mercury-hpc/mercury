@@ -1,4 +1,17 @@
+/*
+ * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
+ *                    UChicago Argonne, LLC and The HDF Group.
+ * All rights reserved.
+ *
+ * The full copyright notice, including terms governing use, modification,
+ * and redistribution, is contained in the COPYING file that can be
+ * found at the root of the source code distribution tree.
+ */
+
 #include <mercury_macros.h>
+
+#ifndef EXAMPLE_SNAPPY_H
+#define EXAMPLE_SNAPPY_H
 
 /**
  * If this is the snappy interface we wish to ship:
@@ -41,3 +54,5 @@ void print_buf(int n, int *buf);
 #define CONFIG_FILE_NAME "/port.cfg"
 
 extern hg_bool_t snappy_compress_done_target_g;
+
+#endif /* EXAMPLE_SNAPPY_H */
