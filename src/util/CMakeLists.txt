@@ -15,6 +15,8 @@ include_directories(
 #------------------------------------------------------------------------------
 # External dependencies
 #------------------------------------------------------------------------------
+include(CheckIncludeFiles)
+
 # Threads
 include(FindThreads)
 set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES
@@ -32,8 +34,7 @@ endif()
 
 # Atomics
 if(NOT WIN32 AND NOT APPLE)
-  include(CheckIncludeFiles)
-  CHECK_INCLUDE_FILES("stdatomic.h" HG_UTIL_HAS_STDATOMIC_H)
+  check_include_files("stdatomic.h" HG_UTIL_HAS_STDATOMIC_H)
   if(NOT HG_UTIL_HAS_STDATOMIC_H)
     # Use OpenPA if stdatomic is not available
     find_package(OPA REQUIRED)
@@ -49,6 +50,9 @@ if(NOT WIN32 AND NOT APPLE)
     endif()
   endif()
 endif()
+
+# sys/queue.h
+check_include_files("sys/queue.h" HG_UTIL_HAS_SYS_QUEUE_H)
 
 #------------------------------------------------------------------------------
 # Configure module header files
