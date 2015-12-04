@@ -6,7 +6,7 @@
 #
 function(add_mercury_test_util test_name)
   add_executable(hg_test_${test_name} test_${test_name}.c)
-  target_link_libraries(hg_test_${test_name} mercury_test)
+  target_link_libraries(hg_test_${test_name} mercury_util)
   if(MERCURY_ENABLE_COVERAGE)
     set_coverage_flags(hg_test_${test_name})
   endif()
