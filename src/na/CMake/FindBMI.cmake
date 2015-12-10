@@ -14,7 +14,7 @@ set(BMI_INCLUDE_DIRS ${BMI_INCLUDE_DIR})
 set(BMI_LIBRARIES ${BMI_LIBRARY})
 
 include(FindPackageHandleStandardArgs)
-# handle the QUIETLY and REQUIRED arguments and set SSM_FOUND to TRUE
+# handle the QUIETLY and REQUIRED arguments and set BMI_FOUND to TRUE
 # if all listed variables are TRUE
 find_package_handle_standard_args(BMI DEFAULT_MSG
                                   BMI_INCLUDE_DIR BMI_LIBRARY)
