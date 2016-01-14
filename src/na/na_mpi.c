@@ -909,8 +909,8 @@ na_mpi_msg_unexpected_op_push(na_class_t *na_class,
     hg_thread_mutex_lock(
             &NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
-    if (!hg_queue_push_head(NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue,
-            (hg_queue_value_t) na_mpi_op_id)) {
+    if (hg_queue_push_head(NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+            (hg_queue_value_t) na_mpi_op_id) != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not push ID to unexpected op queue");
         ret = NA_NOMEM_ERROR;
     }

@@ -1746,8 +1746,8 @@ na_cb_completion_add(na_context_t *context,
 
     hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
-    if (!hg_queue_push_head(na_private_context->completion_queue,
-            (hg_queue_value_t) completion_data)) {
+    if (hg_queue_push_head(na_private_context->completion_queue,
+            (hg_queue_value_t) completion_data) != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not push completion data to completion queue");
         ret = NA_NOMEM_ERROR;
         hg_thread_mutex_unlock(

@@ -1095,8 +1095,8 @@ na_bmi_msg_unexpected_push(na_class_t *na_class,
     hg_thread_mutex_lock(
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
 
-    if (!hg_queue_push_head(NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
-            (hg_queue_value_t) unexpected_info)) {
+    if (hg_queue_push_head(NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
+            (hg_queue_value_t) unexpected_info) != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not push unexpected info to unexpected msg queue");
         ret = NA_NOMEM_ERROR;
     }
@@ -1144,8 +1144,8 @@ na_bmi_msg_unexpected_op_push(na_class_t *na_class,
 
     hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
-    if (!hg_queue_push_head(NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue,
-            (hg_queue_value_t) na_bmi_op_id)) {
+    if (hg_queue_push_head(NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+            (hg_queue_value_t) na_bmi_op_id) != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not push ID to unexpected op queue");
         ret = NA_NOMEM_ERROR;
     }

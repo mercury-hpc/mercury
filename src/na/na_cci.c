@@ -1120,8 +1120,8 @@ na_cci_msg_unexpected_push(na_class_t * na_class,
 	hg_thread_mutex_lock(
 		  &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
 
-	if (!hg_queue_push_head(NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
-				(hg_queue_value_t) rx)) {
+	if (hg_queue_push_head(NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
+				(hg_queue_value_t) rx) != HG_UTIL_SUCCESS) {
 		NA_LOG_ERROR("Could not push unexpected info to unexpected msg queue");
 		ret = NA_NOMEM_ERROR;
 	}
@@ -1166,8 +1166,8 @@ na_cci_msg_unexpected_op_push(na_class_t * na_class, na_cci_op_id_t *na_cci_op_i
 	}
 	hg_thread_mutex_lock(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
-	if (!hg_queue_push_head(NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue,
-				(hg_queue_value_t) na_cci_op_id)) {
+	if (hg_queue_push_head(NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+				(hg_queue_value_t) na_cci_op_id) != HG_UTIL_SUCCESS) {
 		NA_LOG_ERROR("Could not push ID to unexpected op queue");
 		ret = NA_NOMEM_ERROR;
 	}

@@ -1325,8 +1325,8 @@ hg_complete(struct hg_handle *hg_handle)
     hg_thread_mutex_lock(&context->completion_queue_mutex);
 
     /* Add handle to completion queue */
-    if (!hg_queue_push_head(context->completion_queue,
-            (hg_queue_value_t) hg_handle)) {
+    if (hg_queue_push_head(context->completion_queue,
+            (hg_queue_value_t) hg_handle) != HG_UTIL_SUCCESS) {
         HG_LOG_ERROR("Could not push completion data to completion queue");
         ret = HG_NOMEM_ERROR;
         goto done;

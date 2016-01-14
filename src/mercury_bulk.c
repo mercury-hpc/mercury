@@ -727,8 +727,8 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
     hg_thread_mutex_lock(&context->completion_queue_mutex);
 
     /* Add operation ID to completion queue */
-    if (!hg_queue_push_head(context->completion_queue,
-            (hg_queue_value_t) hg_bulk_op_id)) {
+    if (hg_queue_push_head(context->completion_queue,
+            (hg_queue_value_t) hg_bulk_op_id) != HG_UTIL_SUCCESS) {
         HG_LOG_ERROR("Could not push completion data to completion queue");
         ret = HG_NOMEM_ERROR;
         hg_thread_mutex_unlock(&context->completion_queue_mutex);

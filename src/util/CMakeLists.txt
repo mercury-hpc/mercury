@@ -121,17 +121,18 @@ install(
 # Specify project header files to be installed
 #-----------------------------------------------------------------------------
 set(MERCURY_HEADERS
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_queue.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_sys_queue.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
 )
 
