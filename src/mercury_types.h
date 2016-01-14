@@ -74,6 +74,7 @@ typedef enum hg_return {
     HG_PROTOCOL_ERROR,  /*!< protocol does not match */
     HG_NO_MATCH,        /*!< no function match */
     HG_CHECKSUM_ERROR,  /*!< checksum error */
+    HG_CANCELLED,       /*!< operation was cancelled */
     HG_OTHER_ERROR      /*!< error from mercury_util or external to mercury */
 } hg_return_t;
 

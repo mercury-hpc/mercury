@@ -675,7 +675,6 @@ na_ssm_finalize(na_class_t *in_na_class)
     hg_thread_mutex_destroy(&ssm_data->gen_matchbits);
 
     free(ssm_data);
-    free(in_na_class);
 
     NA_LOG_DEBUG("Exit.\n");
     return NA_SUCCESS;
@@ -2527,6 +2526,10 @@ na_ssm_cancel(na_class_t    *in_na_class,
         v_ssm_opid->transaction != NULL)
     {
         v_return = ssm_cancel(v_data->ssm, v_ssm_opid->transaction);
+    }
+    else
+    {
+        v_return = NA_PROTOCOL_ERROR;
     }
 
     /* If SSM returns 0, it will attempt to cancel the operation.  This is
