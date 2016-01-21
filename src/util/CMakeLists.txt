@@ -15,6 +15,8 @@ include_directories(
 #------------------------------------------------------------------------------
 # External dependencies
 #------------------------------------------------------------------------------
+include(CheckIncludeFiles)
+
 # Threads
 include(FindThreads)
 set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES
@@ -32,8 +34,7 @@ endif()
 
 # Atomics
 if(NOT WIN32 AND NOT APPLE)
-  include(CheckIncludeFiles)
-  CHECK_INCLUDE_FILES("stdatomic.h" HG_UTIL_HAS_STDATOMIC_H)
+  check_include_files("stdatomic.h" HG_UTIL_HAS_STDATOMIC_H)
   if(NOT HG_UTIL_HAS_STDATOMIC_H)
     # Use OpenPA if stdatomic is not available
     find_package(OPA REQUIRED)
@@ -49,6 +50,9 @@ if(NOT WIN32 AND NOT APPLE)
     endif()
   endif()
 endif()
+
+# sys/queue.h
+check_include_files("sys/queue.h" HG_UTIL_HAS_SYS_QUEUE_H)
 
 #------------------------------------------------------------------------------
 # Configure module header files
@@ -117,17 +121,18 @@ install(
 # Specify project header files to be installed
 #-----------------------------------------------------------------------------
 set(MERCURY_HEADERS
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_queue.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_sys_queue.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
 )
 

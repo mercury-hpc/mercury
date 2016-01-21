@@ -31,6 +31,9 @@
 /* Define if has <stdatomic.h> */
 #cmakedefine HG_UTIL_HAS_STDATOMIC_H
 
+/* Define if has <sys/queue.h> */
+#cmakedefine HG_UTIL_HAS_SYS_QUEUE_H
+
 /* Define if has verbose error */
 #cmakedefine HG_UTIL_HAS_VERBOSE_ERROR
 
