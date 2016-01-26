@@ -18,37 +18,9 @@ extern "C" {
 #endif
 
 /**
- * Get Mercury version number.
- *
- * \param major [OUT]           pointer to unsigned integer
- * \param minor [OUT]           pointer to unsigned integer
- * \param patch [OUT]           pointer to unsigned integer
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Version_get(
-        unsigned int *major,
-        unsigned int *minor,
-        unsigned int *patch
-        );
-
-/**
- * Convert error return code to string (null terminated).
- *
- * \param errnum [IN]           error return code
- *
- * \return String
- */
-HG_EXPORT const char *
-HG_Error_to_string(
-        hg_return_t errnum
-        );
-
-/**
  * Initialize the Mercury layer from an existing NA class/context.
- * Must be finalized with HG_Finalize().
- * \remark Calling HG_Init() internally calls HG_Bulk_init() with the same NA
+ * Must be finalized with HG_Core_finalize().
+ * \remark Calling HG_Core_init() internally calls HG_Bulk_init() with the same NA
  * class if the HG bulk class passed is NULL. The HG bulk interface can however
  * be initialized with a different NA class and, in this case, must be
  * initialized separately by calling HG_Bulk_init().
@@ -60,7 +32,7 @@ HG_Error_to_string(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_class_t *
-HG_Init(
+HG_Core_init(
         na_class_t *na_class,
         na_context_t *na_context,
         hg_bulk_class_t *hg_bulk_class
@@ -74,31 +46,31 @@ HG_Init(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Finalize(
+HG_Core_finalize(
         hg_class_t *hg_class
         );
 
 /**
- * Create a new context. Must be destroyed by calling HG_Context_destroy().
+ * Create a new context. Must be destroyed by calling HG_Core_context_destroy().
  *
  * \param hg_class [IN]         pointer to HG class
  *
  * \return Pointer to HG context or NULL in case of failure
  */
 HG_EXPORT hg_context_t *
-HG_Context_create(
+HG_Core_context_create(
         hg_class_t *hg_class
         );
 
 /**
- * Destroy a context created by HG_Context_create().
+ * Destroy a context created by HG_Core_context_create().
  *
  * \param context [IN]          pointer to HG context
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Context_destroy(
+HG_Core_context_destroy(
         hg_context_t *context
         );
 
@@ -114,14 +86,14 @@ HG_Context_destroy(
  * \return unique ID associated to the registered function
  */
 HG_EXPORT hg_id_t
-HG_Register_rpc(
+HG_Core_register(
         hg_class_t *hg_class,
         const char *func_name,
         hg_rpc_cb_t rpc_cb
         );
 
 /**
- * Indicate whether HG_Register_rpc has been called and return associated ID.
+ * Indicate whether HG_Core_register() has been called and return associated ID.
  *
  * \param hg_class [IN]         pointer to HG class
  * \param func_name [IN]        name associated to function
@@ -131,7 +103,7 @@ HG_Register_rpc(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Registered_rpc(
+HG_Core_registered(
         hg_class_t *hg_class,
         const char *func_name,
         hg_bool_t *flag,
@@ -139,7 +111,7 @@ HG_Registered_rpc(
         );
 
 /**
- * Register and associate user data to registered function. When HG_Finalize()
+ * Register and associate user data to registered function. When HG_Core_finalize()
  * is called, free_callback (if defined) is called to free the registered
  * data.
  *
@@ -151,7 +123,7 @@ HG_Registered_rpc(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Register_data(
+HG_Core_register_data(
         hg_class_t *hg_class,
         hg_id_t id,
         void *data,
@@ -159,8 +131,8 @@ HG_Register_data(
         );
 
 /**
- * Indicate whether HG_Register_data() has been called and return associated
- * data.
+ * Indicate whether HG_Core_register_data() has been called and return
+ * associated data.
  *
  * \param hg_class [IN]         pointer to HG class
  * \param id [IN]               registered function ID
@@ -168,7 +140,7 @@ HG_Register_data(
  * \return Pointer to data or NULL
  */
 HG_EXPORT void *
-HG_Registered_data(
+HG_Core_registered_data(
         hg_class_t *hg_class,
         hg_id_t id
         );
@@ -176,8 +148,8 @@ HG_Registered_data(
 /**
  * Initiate a new HG RPC using the specified function ID and the local/remote
  * target defined by addr. The HG handle created can be used to query input
- * and output buffers, as well as issuing the RPC by using HG_Forward_buf().
- * After completion the handle must be freed using HG_Destroy().
+ * and output buffers, as well as issuing the RPC by using HG_Core_forward().
+ * After completion the handle must be freed using HG_Core_destroy().
  *
  * \param hg_class [IN]         pointer to HG class
  * \param context [IN]          pointer to HG context
@@ -188,7 +160,7 @@ HG_Registered_data(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Create(
+HG_Core_create(
         hg_class_t *hg_class,
         hg_context_t *context,
         na_addr_t addr,
@@ -205,7 +177,7 @@ HG_Create(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Destroy(
+HG_Core_destroy(
         hg_handle_t handle
         );
 
@@ -218,7 +190,7 @@ HG_Destroy(
  * \return Pointer to info or NULL in case of failure
  */
 HG_EXPORT struct hg_info *
-HG_Get_info(
+HG_Core_get_info(
         hg_handle_t handle
         );
 
@@ -234,7 +206,7 @@ HG_Get_info(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Get_input_buf(
+HG_Core_get_input(
         hg_handle_t handle,
         void **in_buf,
         hg_size_t *in_buf_size
@@ -251,7 +223,7 @@ HG_Get_input_buf(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Get_output_buf(
+HG_Core_get_output(
         hg_handle_t handle,
         void **out_buf,
         hg_size_t *out_buf_size
@@ -262,8 +234,8 @@ HG_Get_output_buf(
  * queried from the handle to serialize/deserialize parameters.
  * Additionally, a bulk handle can be passed if the size of the input is larger
  * than the queried input buffer size.
- * After completion, the handle must be freed using HG_Destroy(), user callback
- * is placed into a completion queue and can be triggered using HG_Trigger().
+ * After completion, the handle must be freed using HG_Core_destroy(), user callback
+ * is placed into a completion queue and can be triggered using HG_Core_trigger().
  *
  * \param handle [IN]           HG handle
  * \param callback [IN]         pointer to function callback
@@ -273,7 +245,7 @@ HG_Get_output_buf(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Forward_buf(
+HG_Core_forward(
         hg_handle_t handle,
         hg_cb_t callback,
         void *arg,
@@ -282,9 +254,9 @@ HG_Forward_buf(
 
 /**
  * Respond back to the origin. The output buffer, which can be used to encode
- * the response, must first be queried using HG_Get_output_buf().
+ * the response, must first be queried using HG_Core_get_output().
  * After completion, user callback is placed into a completion queue and can be
- * triggered using HG_Trigger().
+ * triggered using HG_Core_trigger().
  * \cond TODO Might add extra_out_handle here as well \endcond
  *
  * \param handle [IN]           HG handle
@@ -295,7 +267,7 @@ HG_Forward_buf(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Respond_buf(
+HG_Core_respond(
         hg_handle_t handle,
         hg_cb_t callback,
         void *arg,
@@ -316,7 +288,7 @@ HG_Respond_buf(
  * \return HG_SUCCESS if any completion has occurred / HG error code otherwise
  */
 HG_EXPORT hg_return_t
-HG_Progress(
+HG_Core_progress(
         hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout
@@ -336,7 +308,7 @@ HG_Progress(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Trigger(
+HG_Core_trigger(
         hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout,
@@ -352,7 +324,7 @@ HG_Trigger(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Cancel(
+HG_Core_cancel(
         hg_handle_t handle
         );
 

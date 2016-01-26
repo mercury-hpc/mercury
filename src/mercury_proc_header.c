@@ -13,7 +13,6 @@
 #endif
 #include "mercury_proc_header.h"
 #include "mercury_proc.h"
-#include "mercury_core.h"
 
 #ifdef HG_HAS_CHECKSUMS
   #include <mchecksum.h>
@@ -26,6 +25,26 @@
   #include <arpa/inet.h>
 #endif
 #include <stdlib.h>
+
+/****************/
+/* Local Macros */
+/****************/
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
+
+/********************/
+/* Local Prototypes */
+/********************/
+extern const char *
+HG_Error_to_string(
+        hg_return_t errnum
+        );
+
+/*******************/
+/* Local Variables */
+/*******************/
 
 /*---------------------------------------------------------------------------*/
 void

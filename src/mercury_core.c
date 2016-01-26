@@ -30,13 +30,10 @@
 /****************/
 /* Local Macros */
 /****************/
+
 #define HG_MAX_UNEXPECTED_RECV 256 /* TODO Variable */
 #define HG_MAX_SELF_THREADS 4
 #define HG_NA_MIN_TIMEOUT 0
-
-/* Convert value to string */
-#define HG_ERROR_STRING_MACRO(def, value, string) \
-  if (value == def) string = #def
 
 /* Remove warnings when routine does not use arguments */
 #if defined(__cplusplus)
@@ -130,7 +127,7 @@ struct hg_handle {
  * TODO this may be moved to the upper mercury layer.
  */
 static hg_return_t
-hg_get_extra_input_buf(
+hg_core_get_extra_input(
         struct hg_handle *hg_handle,
         hg_bulk_t extra_in_handle
         );
@@ -139,7 +136,7 @@ hg_get_extra_input_buf(
  * Bulk transfer callback.
  */
 static hg_return_t
-hg_get_extra_input_buf_cb(
+hg_core_get_extra_input_cb(
         const struct hg_bulk_cb_info *callback_info
         );
 
@@ -147,7 +144,7 @@ hg_get_extra_input_buf_cb(
  * Get request header and verify it.
  */
 static hg_return_t
-hg_get_header_request(
+hg_core_get_header_request(
         struct hg_handle *hg_handle,
         struct hg_header_request *request_header
         );
@@ -156,7 +153,7 @@ hg_get_header_request(
  * Remove handle from pending list.
  */
 static hg_return_t
-hg_pending_list_remove(
+hg_core_pending_list_remove(
         struct hg_handle *hg_handle
         );
 
@@ -164,7 +161,7 @@ hg_pending_list_remove(
  * Check pending list.
  */
 static hg_bool_t
-hg_pending_list_check(
+hg_core_pending_list_check(
         hg_context_t *context
         );
 
@@ -172,7 +169,7 @@ hg_pending_list_check(
  * Cancel entries from pending list.
  */
 static hg_return_t
-hg_pending_list_cancel(
+hg_core_pending_list_cancel(
         hg_context_t *context
         );
 
@@ -180,7 +177,7 @@ hg_pending_list_cancel(
  * Add handle to processing list.
  */
 static hg_return_t
-hg_processing_list_add(
+hg_core_processing_list_add(
         struct hg_handle *hg_handle
         );
 
@@ -188,7 +185,7 @@ hg_processing_list_add(
  * Remove handle from processing list.
  */
 static hg_return_t
-hg_processing_list_remove(
+hg_core_processing_list_remove(
         struct hg_handle *hg_handle
         );
 
@@ -196,7 +193,7 @@ hg_processing_list_remove(
  * Wail until processing list is empty.
  */
 static hg_return_t
-hg_processing_list_wait(
+hg_core_processing_list_wait(
         hg_context_t *context
         );
 
@@ -204,7 +201,7 @@ hg_processing_list_wait(
  * Add handle to self processing list.
  */
 static hg_return_t
-hg_self_processing_list_add(
+hg_core_self_processing_list_add(
         struct hg_handle *hg_handle
         );
 
@@ -212,7 +209,7 @@ hg_self_processing_list_add(
  * Remove handle from self processing list.
  */
 static hg_return_t
-hg_self_processing_list_remove(
+hg_core_self_processing_list_remove(
         struct hg_handle *hg_handle
         );
 
@@ -220,15 +217,33 @@ hg_self_processing_list_remove(
  * Check self processing list.
  */
 static hg_bool_t
-hg_self_processing_list_check(
+hg_core_self_processing_list_check(
         hg_context_t *context
+        );
+
+/**
+ * Initialize class.
+ */
+static hg_class_t *
+hg_core_init(
+        na_class_t *na_class,
+        na_context_t *na_context,
+        hg_bulk_class_t *hg_bulk_class
+        );
+
+/**
+ * Finalize class.
+ */
+static hg_return_t
+hg_core_finalize(
+        hg_class_t *hg_class
         );
 
 /**
  * Create handle.
  */
 static struct hg_handle *
-hg_create(
+hg_core_create(
         hg_class_t *hg_class,
         hg_context_t *context
         );
@@ -237,7 +252,7 @@ hg_create(
  * Free handle.
  */
 static void
-hg_destroy(
+hg_core_destroy(
         struct hg_handle *hg_handle
         );
 
@@ -245,7 +260,7 @@ hg_destroy(
  * Forward handle locally.
  */
 static hg_return_t
-hg_forward_self(
+hg_core_forward_self(
         struct hg_handle *hg_handle
         );
 
@@ -253,7 +268,7 @@ hg_forward_self(
  * Forward handle through NA.
  */
 static hg_return_t
-hg_forward_na(
+hg_core_forward_na(
         struct hg_handle *hg_handle
         );
 
@@ -261,7 +276,7 @@ hg_forward_na(
  * Send response locally.
  */
 hg_return_t
-hg_respond_self(
+hg_core_respond_self(
         struct hg_handle *hg_handle,
         hg_cb_t callback,
         void *arg
@@ -271,7 +286,7 @@ hg_respond_self(
  * Send response through NA.
  */
 hg_return_t
-hg_respond_na(
+hg_core_respond_na(
         struct hg_handle *hg_handle,
         hg_cb_t callback,
         void *arg
@@ -281,7 +296,7 @@ hg_respond_na(
  * Send input callback.
  */
 static na_return_t
-hg_send_input_cb(
+hg_core_send_input_cb(
         const struct na_cb_info *callback_info
         );
 
@@ -289,7 +304,7 @@ hg_send_input_cb(
  * Recv input callback.
  */
 static na_return_t
-hg_recv_input_cb(
+hg_core_recv_input_cb(
         const struct na_cb_info *callback_info
         );
 
@@ -297,7 +312,7 @@ hg_recv_input_cb(
  * Send output callback.
  */
 static na_return_t
-hg_send_output_cb(
+hg_core_send_output_cb(
         const struct na_cb_info *callback_info
         );
 
@@ -305,7 +320,7 @@ hg_send_output_cb(
  * Recv output callback.
  */
 static na_return_t
-hg_recv_output_cb(
+hg_core_recv_output_cb(
         const struct na_cb_info *callback_info
         );
 
@@ -313,7 +328,7 @@ hg_recv_output_cb(
  * Wrapper for local callback execution.
  */
 static hg_return_t
-hg_self_cb(
+hg_core_self_cb(
         const struct hg_cb_info *callback_info
         );
 
@@ -321,7 +336,7 @@ hg_self_cb(
  * Process handle thread (used for self execution).
  */
 static HG_THREAD_RETURN_TYPE
-hg_process_thread(
+hg_core_process_thread(
         void *arg
         );
 
@@ -329,7 +344,7 @@ hg_process_thread(
  * Process handle.
  */
 static hg_return_t
-hg_process(
+hg_core_process(
         struct hg_handle *hg_handle
         );
 
@@ -337,7 +352,7 @@ hg_process(
  * Complete handle and add to completion queue.
  */
 static hg_return_t
-hg_complete(
+hg_core_complete(
         struct hg_handle *hg_handle
         );
 
@@ -345,7 +360,7 @@ hg_complete(
  * Start listening for incoming RPC requests.
  */
 static hg_return_t
-hg_listen(
+hg_core_listen(
         hg_class_t *hg_class,
         hg_context_t *context
         );
@@ -354,7 +369,7 @@ hg_listen(
  * Make progress on HG bulk layer.
  */
 static hg_return_t
-hg_progress_bulk(
+hg_core_progress_bulk(
         hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout
@@ -364,7 +379,7 @@ hg_progress_bulk(
  * Make progress on local requests.
  */
 static hg_return_t
-hg_progress_self(
+hg_core_progress_self(
         hg_context_t *context,
         unsigned int timeout
         );
@@ -373,7 +388,7 @@ hg_progress_self(
  * Make progress on NA layer.
  */
 static hg_return_t
-hg_progress_na(
+hg_core_progress_na(
         hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout
@@ -383,17 +398,29 @@ hg_progress_na(
  * Make progress.
  */
 static hg_return_t
-hg_progress(
+hg_core_progress(
         hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout
         );
 
 /**
+ * Trigger callbacks.
+ */
+static hg_return_t
+hg_core_trigger(
+        hg_class_t *hg_class,
+        hg_context_t *context,
+        unsigned int timeout,
+        unsigned int max_count,
+        unsigned int *actual_count
+        );
+
+/**
  * Cancel handle.
  */
 static hg_return_t
-hg_cancel(
+hg_core_cancel(
         struct hg_handle *hg_handle
         );
 
@@ -406,7 +433,7 @@ hg_cancel(
  * Equal function for function map.
  */
 static HG_INLINE int
-hg_int_equal(void *vlocation1, void *vlocation2)
+hg_core_int_equal(void *vlocation1, void *vlocation2)
 {
     return *((int *) vlocation1) == *((int *) vlocation2);
 }
@@ -416,7 +443,7 @@ hg_int_equal(void *vlocation1, void *vlocation2)
  * Hash function for function map.
  */
 static HG_INLINE unsigned int
-hg_int_hash(void *vlocation)
+hg_core_int_hash(void *vlocation)
 {
     return *((unsigned int *) vlocation);
 }
@@ -426,7 +453,7 @@ hg_int_hash(void *vlocation)
  * Free function for value in function map.
  */
 static HG_INLINE void
-hg_func_map_value_free(hg_hash_table_value_t value)
+hg_core_func_map_value_free(hg_hash_table_value_t value)
 {
     struct hg_rpc_info *hg_rpc_info = (struct hg_rpc_info *) value;
 
@@ -437,20 +464,10 @@ hg_func_map_value_free(hg_hash_table_value_t value)
 
 /*---------------------------------------------------------------------------*/
 /**
- * Equal function for handle.
- */
-static HG_INLINE int
-hg_handle_equal(hg_list_value_t value1, hg_list_value_t value2)
-{
-    return ((struct hg_handle *) value1) == ((struct hg_handle *) value2);
-}
-
-/*---------------------------------------------------------------------------*/
-/**
  * Generate a new tag.
  */
 static HG_INLINE na_tag_t
-hg_gen_request_tag(hg_class_t *hg_class)
+hg_core_gen_request_tag(hg_class_t *hg_class)
 {
     na_tag_t tag = 0;
 
@@ -465,7 +482,7 @@ hg_gen_request_tag(hg_class_t *hg_class)
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE void
-hg_get_input_buf(struct hg_handle *hg_handle, void **in_buf,
+hg_core_get_input(struct hg_handle *hg_handle, void **in_buf,
         hg_size_t *in_buf_size)
 {
     /* No offset if extra buffer since only the user payload is copied */
@@ -482,7 +499,7 @@ hg_get_input_buf(struct hg_handle *hg_handle, void **in_buf,
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE void
-hg_get_output_buf(struct hg_handle *hg_handle, void **out_buf,
+hg_core_get_output(struct hg_handle *hg_handle, void **out_buf,
         hg_size_t *out_buf_size)
 {
     hg_size_t header_offset = hg_proc_header_response_get_size();
@@ -494,7 +511,7 @@ hg_get_output_buf(struct hg_handle *hg_handle, void **out_buf,
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_get_extra_input_buf(struct hg_handle *hg_handle, hg_bulk_t extra_in_handle)
+hg_core_get_extra_input(struct hg_handle *hg_handle, hg_bulk_t extra_in_handle)
 {
     hg_bulk_class_t *hg_bulk_class = hg_handle->hg_info.hg_bulk_class;
     hg_bulk_context_t *hg_bulk_context = hg_handle->hg_info.bulk_context;
@@ -518,7 +535,7 @@ hg_get_extra_input_buf(struct hg_handle *hg_handle, hg_bulk_t extra_in_handle)
     }
 
     /* Read bulk data here and wait for the data to be here  */
-    ret = HG_Bulk_transfer(hg_bulk_context, hg_get_extra_input_buf_cb,
+    ret = HG_Bulk_transfer(hg_bulk_context, hg_core_get_extra_input_cb,
             hg_handle, HG_BULK_PULL, hg_handle->hg_info.addr, extra_in_handle,
             0, local_in_handle, 0, hg_handle->extra_in_buf_size,
             &hg_handle->extra_in_op_id);
@@ -536,7 +553,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_get_extra_input_buf_cb(const struct hg_bulk_cb_info *callback_info)
+hg_core_get_extra_input_cb(const struct hg_bulk_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
@@ -558,7 +575,7 @@ hg_get_extra_input_buf_cb(const struct hg_bulk_cb_info *callback_info)
     }
 
     /* Now can process the handle */
-    ret = hg_process(hg_handle);
+    ret = hg_core_process(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not process handle");
         goto done;
@@ -570,8 +587,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_get_header_request(struct hg_handle *hg_handle,
-        struct hg_header_request *request_header)
+hg_core_get_header_request(struct hg_handle *hg_handle,
+    struct hg_header_request *request_header)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -598,7 +615,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_pending_list_remove(struct hg_handle *hg_handle)
+hg_core_pending_list_remove(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -617,7 +634,7 @@ hg_pending_list_remove(struct hg_handle *hg_handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_bool_t
-hg_pending_list_check(hg_context_t *context)
+hg_core_pending_list_check(hg_context_t *context)
 {
     hg_bool_t ret = HG_FALSE;
 
@@ -632,7 +649,7 @@ hg_pending_list_check(hg_context_t *context)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_pending_list_cancel(hg_context_t *context)
+hg_core_pending_list_cancel(hg_context_t *context)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -642,7 +659,7 @@ hg_pending_list_cancel(hg_context_t *context)
         hg_list_entry_t *entry = hg_list_first(context->pending_list);
         struct hg_handle *hg_handle = (struct hg_handle *) hg_list_data(entry);
 
-        ret = hg_cancel(hg_handle);
+        ret = hg_core_cancel(hg_handle);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not cancel handle");
             break;
@@ -662,7 +679,7 @@ hg_pending_list_cancel(hg_context_t *context)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_processing_list_add(struct hg_handle *hg_handle)
+hg_core_processing_list_add(struct hg_handle *hg_handle)
 {
     hg_list_entry_t *new_entry = NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -685,7 +702,7 @@ hg_processing_list_add(struct hg_handle *hg_handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_processing_list_remove(struct hg_handle *hg_handle)
+hg_core_processing_list_remove(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -704,7 +721,7 @@ hg_processing_list_remove(struct hg_handle *hg_handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_processing_list_wait(hg_context_t *context)
+hg_core_processing_list_wait(hg_context_t *context)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -715,7 +732,7 @@ hg_processing_list_wait(hg_context_t *context)
 
         /* Trigger everything we can from HG */
         do {
-            trigger_ret = HG_Trigger(context->hg_class, context, 0, 1,
+            trigger_ret = hg_core_trigger(context->hg_class, context, 0, 1,
                     &actual_count);
         } while ((trigger_ret == HG_SUCCESS) && actual_count);
 
@@ -727,7 +744,7 @@ hg_processing_list_wait(hg_context_t *context)
 
         if (processing_list_empty) break;
 
-        ret = hg_progress(context->hg_class, context, HG_MAX_IDLE_TIME);
+        ret = hg_core_progress(context->hg_class, context, HG_MAX_IDLE_TIME);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not make progress");
             goto done;
@@ -740,7 +757,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_self_processing_list_add(struct hg_handle *hg_handle)
+hg_core_self_processing_list_add(struct hg_handle *hg_handle)
 {
     hg_list_entry_t *new_entry = NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -763,7 +780,7 @@ hg_self_processing_list_add(struct hg_handle *hg_handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_self_processing_list_remove(struct hg_handle *hg_handle)
+hg_core_self_processing_list_remove(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -785,7 +802,7 @@ hg_self_processing_list_remove(struct hg_handle *hg_handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_bool_t
-hg_self_processing_list_check(hg_context_t *context)
+hg_core_self_processing_list_check(hg_context_t *context)
 {
     hg_bool_t ret = HG_FALSE;
 
@@ -799,8 +816,94 @@ hg_self_processing_list_check(hg_context_t *context)
 }
 
 /*---------------------------------------------------------------------------*/
+static hg_class_t *
+hg_core_init(na_class_t *na_class, na_context_t *na_context,
+    hg_bulk_class_t *hg_bulk_class)
+{
+    struct hg_class *hg_class = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Create new HG class */
+    hg_class = (struct hg_class *) malloc(sizeof(struct hg_class));
+    if (!hg_class) {
+        HG_LOG_ERROR("Could not allocate HG class");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+
+    hg_class->na_class = na_class;
+    hg_class->na_context = na_context;
+    hg_class->bulk_class = NULL;
+    hg_class->func_map = NULL;
+
+    /* Initialize atomic for tags */
+    hg_class->request_max_tag = NA_Msg_get_max_tag(na_class);
+    hg_atomic_set32(&hg_class->request_tag, 0);
+
+    /* Create new function map */
+    hg_class->func_map = hg_hash_table_new(hg_core_int_hash, hg_core_int_equal);
+    if (!hg_class->func_map) {
+        HG_LOG_ERROR("Could not create function map");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+    /* Automatically free all the values with the hash map */
+    hg_hash_table_register_free_functions(hg_class->func_map, free,
+            hg_core_func_map_value_free);
+
+    if (hg_bulk_class) {
+        hg_class->bulk_class_external = HG_TRUE;
+        /* Handled by user */
+        hg_class->bulk_class = hg_bulk_class;
+    } else {
+        hg_class->bulk_class_external = HG_FALSE;
+        /* If not initialize HG Bulk */
+        hg_class->bulk_class = HG_Bulk_init(na_class, na_context);
+        if (!hg_class->bulk_class) {
+            HG_LOG_ERROR("Could not initialize HG Bulk class");
+            ret = HG_NOMEM_ERROR;
+            goto done;
+        }
+    }
+
+done:
+    if (ret != HG_SUCCESS) {
+        hg_core_finalize(hg_class);
+    }
+    return hg_class;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_finalize(hg_class_t *hg_class)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) goto done;
+
+    if (!hg_class->bulk_class_external) {
+        /* Finalize bulk class */
+        ret = HG_Bulk_finalize(hg_class->bulk_class);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not finalize HG Bulk class");
+            goto done;
+        }
+    }
+
+    /* Delete function map */
+    hg_hash_table_free(hg_class->func_map);
+    hg_class->func_map = NULL;
+
+    /* Free HG class */
+    free(hg_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static struct hg_handle *
-hg_create(hg_class_t *hg_class, hg_context_t *context)
+hg_core_create(hg_class_t *hg_class, hg_context_t *context)
 {
     na_class_t *na_class = hg_class->na_class;
     struct hg_handle *hg_handle = NULL;
@@ -857,7 +960,7 @@ hg_create(hg_class_t *hg_class, hg_context_t *context)
 
 done:
     if (ret != HG_SUCCESS) {
-        hg_destroy(hg_handle);
+        hg_core_destroy(hg_handle);
         hg_handle = NULL;
     }
     return hg_handle;
@@ -865,7 +968,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_destroy(struct hg_handle *hg_handle)
+hg_core_destroy(struct hg_handle *hg_handle)
 {
     if (!hg_handle) goto done;
 
@@ -892,7 +995,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_forward_self(struct hg_handle *hg_handle)
+hg_core_forward_self(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -901,7 +1004,7 @@ hg_forward_self(struct hg_handle *hg_handle)
                 &hg_handle->hg_info.context->self_processing_pool);
 
     /* Add handle to self processing list */
-    ret = hg_self_processing_list_add(hg_handle);
+    ret = hg_core_self_processing_list_add(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not add handle to self processing list");
         goto done;
@@ -909,7 +1012,7 @@ hg_forward_self(struct hg_handle *hg_handle)
 
     /* Post operation to self processing pool */
     hg_thread_pool_post(hg_handle->hg_info.context->self_processing_pool,
-            hg_process_thread, hg_handle);
+            hg_core_process_thread, hg_handle);
 
 done:
     return ret;
@@ -917,18 +1020,18 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_forward_na(struct hg_handle *hg_handle)
+hg_core_forward_na(struct hg_handle *hg_handle)
 {
     hg_class_t *hg_class = hg_handle->hg_info.hg_class;
     na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
 
     /* Generate tag */
-    hg_handle->tag = hg_gen_request_tag(hg_handle->hg_info.hg_class);
+    hg_handle->tag = hg_core_gen_request_tag(hg_handle->hg_info.hg_class);
 
     /* Pre-post the recv message (output) */
     na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_class->na_context,
-            hg_recv_output_cb, hg_handle, hg_handle->out_buf,
+            hg_core_recv_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_size, hg_handle->hg_info.addr,
             hg_handle->tag, &hg_handle->na_recv_op_id);
     if (na_ret != NA_SUCCESS) {
@@ -939,7 +1042,7 @@ hg_forward_na(struct hg_handle *hg_handle)
 
     /* And post the send message (input) */
     na_ret = NA_Msg_send_unexpected(hg_class->na_class,
-            hg_class->na_context, hg_send_input_cb, hg_handle,
+            hg_class->na_context, hg_core_send_input_cb, hg_handle,
             hg_handle->in_buf, hg_handle->in_buf_size,
             hg_handle->hg_info.addr, hg_handle->tag,
             &hg_handle->na_send_op_id);
@@ -955,7 +1058,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_respond_self(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
+hg_core_respond_self(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
 {
     struct hg_self_cb_info *hg_self_cb_info = NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -973,11 +1076,11 @@ hg_respond_self(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     hg_self_cb_info->forward_arg = hg_handle->arg;
     hg_self_cb_info->respond_cb = callback;
     hg_self_cb_info->respond_arg = arg;
-    hg_handle->callback = hg_self_cb;
+    hg_handle->callback = hg_core_self_cb;
     hg_handle->arg = hg_self_cb_info;
 
     /* Complete and add to completion queue */
-    ret = hg_complete(hg_handle);
+    ret = hg_core_complete(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not complete handle");
         goto done;
@@ -985,7 +1088,7 @@ hg_respond_self(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
 
     /* Callback was pushed to the completion queue so wake up anyone waiting
      * in the progress */
-    ret = hg_self_processing_list_remove(hg_handle);
+    ret = hg_core_self_processing_list_remove(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not remove handle from self processing list");
         goto done;
@@ -997,7 +1100,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
+hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
 {
     hg_class_t *hg_class = hg_handle->hg_info.hg_class;
     na_return_t na_ret;
@@ -1009,7 +1112,7 @@ hg_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
 
     /* Respond back */
     na_ret = NA_Msg_send_expected(hg_class->na_class, hg_class->na_context,
-            hg_send_output_cb, hg_handle, hg_handle->out_buf,
+            hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_size, hg_handle->hg_info.addr,
             hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
@@ -1026,7 +1129,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-hg_send_input_cb(const struct na_cb_info *callback_info)
+hg_core_send_input_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
@@ -1042,7 +1145,7 @@ hg_send_input_cb(const struct na_cb_info *callback_info)
         hg_atomic_set32(&hg_handle->na_completed_count, 0);
 
         /* Mark as completed */
-        if (hg_complete(hg_handle) != HG_SUCCESS) {
+        if (hg_core_complete(hg_handle) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not complete operation");
             goto done;
         }
@@ -1054,7 +1157,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-hg_recv_input_cb(const struct na_cb_info *callback_info)
+hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     struct hg_header_request request_header;
@@ -1078,22 +1181,22 @@ hg_recv_input_cb(const struct na_cb_info *callback_info)
     }
 
     /* Move handle from pending list to processing list */
-    if (hg_pending_list_remove(hg_handle) != HG_SUCCESS) {
+    if (hg_core_pending_list_remove(hg_handle) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not remove handle from pending list");
         goto done;
     }
-    if (hg_processing_list_add(hg_handle) != HG_SUCCESS) {
+    if (hg_core_processing_list_add(hg_handle) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not add handle to processing list");
         goto done;
     }
 
     /* As we removed handle from pending list repost unexpected receives */
     if (NA_Is_listening(hg_handle->hg_info.hg_class->na_class)) {
-        hg_listen(hg_handle->hg_info.hg_class, hg_handle->hg_info.context);
+        hg_core_listen(hg_handle->hg_info.hg_class, hg_handle->hg_info.context);
     }
 
     /* Get and verify header */
-    if (hg_get_header_request(hg_handle, &request_header) != HG_SUCCESS) {
+    if (hg_core_get_header_request(hg_handle, &request_header) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get request header");
         goto done;
     }
@@ -1105,14 +1208,14 @@ hg_recv_input_cb(const struct na_cb_info *callback_info)
     if (request_header.flags
             && (request_header.extra_in_handle != HG_BULK_NULL)) {
         /* Get extra payload */
-        if (hg_get_extra_input_buf(hg_handle, request_header.extra_in_handle)
+        if (hg_core_get_extra_input(hg_handle, request_header.extra_in_handle)
                 != HG_SUCCESS) {
             HG_LOG_ERROR("Could not get extra input buffer");
             goto done;
         }
     } else {
         /* Process handle */
-        if (hg_process(hg_handle) != HG_SUCCESS) {
+        if (hg_core_process(hg_handle) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not process handle");
             goto done;
         }
@@ -1124,7 +1227,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-hg_send_output_cb(const struct na_cb_info *callback_info)
+hg_core_send_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
@@ -1134,7 +1237,7 @@ hg_send_output_cb(const struct na_cb_info *callback_info)
     }
 
     /* Remove handle from processing list */
-    if (hg_processing_list_remove(hg_handle) != HG_SUCCESS) {
+    if (hg_core_processing_list_remove(hg_handle) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not remove handle from processing list");
         goto done;
     }
@@ -1144,7 +1247,7 @@ hg_send_output_cb(const struct na_cb_info *callback_info)
         /* Reset completed count */
         hg_atomic_set32(&hg_handle->na_completed_count, 0);
 
-        if (hg_complete(hg_handle) != HG_SUCCESS) {
+        if (hg_core_complete(hg_handle) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not complete operation");
             goto done;
         }
@@ -1156,7 +1259,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-hg_recv_output_cb(const struct na_cb_info *callback_info)
+hg_core_recv_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     struct hg_header_response response_header;
@@ -1190,7 +1293,7 @@ hg_recv_output_cb(const struct na_cb_info *callback_info)
         hg_atomic_set32(&hg_handle->na_completed_count, 0);
 
         /* Mark as completed */
-        if (hg_complete(hg_handle) != HG_SUCCESS) {
+        if (hg_core_complete(hg_handle) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not complete operation");
             goto done;
         }
@@ -1202,7 +1305,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_self_cb(const struct hg_cb_info *callback_info)
+hg_core_self_cb(const struct hg_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->handle;
     struct hg_self_cb_info *hg_self_cb_info =
@@ -1231,7 +1334,7 @@ hg_self_cb(const struct hg_cb_info *callback_info)
     /* Increment refcount and push handle back to completion queue */
     hg_atomic_incr32(&hg_handle->ref_count);
 
-    ret = hg_complete(hg_handle);
+    ret = hg_core_complete(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not complete handle");
         goto done;
@@ -1244,14 +1347,14 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static HG_THREAD_RETURN_TYPE
-hg_process_thread(void *arg)
+hg_core_process_thread(void *arg)
 {
     hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
     struct hg_handle *hg_handle = (struct hg_handle *) arg;
     struct hg_header_request request_header;
 
     /* Get and verify header */
-    if (hg_get_header_request(hg_handle, &request_header) != HG_SUCCESS) {
+    if (hg_core_get_header_request(hg_handle, &request_header) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get request header");
         goto done;
     }
@@ -1260,14 +1363,14 @@ hg_process_thread(void *arg)
     if (request_header.flags
             && (request_header.extra_in_handle != HG_BULK_NULL)) {
         /* Get extra payload */
-        if (hg_get_extra_input_buf(hg_handle, request_header.extra_in_handle)
+        if (hg_core_get_extra_input(hg_handle, request_header.extra_in_handle)
                 != HG_SUCCESS) {
             HG_LOG_ERROR("Could not get extra input buffer");
             goto done;
         }
     } else {
         /* Process handle */
-        if (hg_process(hg_handle) != HG_SUCCESS) {
+        if (hg_core_process(hg_handle) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not process handle");
             goto done;
         }
@@ -1279,7 +1382,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_process(struct hg_handle *hg_handle)
+hg_core_process(struct hg_handle *hg_handle)
 {
     hg_class_t *hg_class = hg_handle->hg_info.hg_class;
     struct hg_rpc_info *hg_rpc_info;
@@ -1317,7 +1420,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_complete(struct hg_handle *hg_handle)
+hg_core_complete(struct hg_handle *hg_handle)
 {
     hg_context_t *context = hg_handle->hg_info.context;
     hg_return_t ret = HG_SUCCESS;
@@ -1343,7 +1446,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_listen(hg_class_t *hg_class, hg_context_t *context)
+hg_core_listen(hg_class_t *hg_class, hg_context_t *context)
 {
     struct hg_handle *hg_handle = NULL;
     unsigned int nentry = 0;
@@ -1359,7 +1462,7 @@ hg_listen(hg_class_t *hg_class, hg_context_t *context)
         hg_list_entry_t *new_entry = NULL;
 
         /* Create a new handle */
-        hg_handle = hg_create(hg_class, context);
+        hg_handle = hg_core_create(hg_class, context);
         if (!hg_handle) {
             HG_LOG_ERROR("Could not create HG handle");
             ret = HG_NOMEM_ERROR;
@@ -1377,7 +1480,7 @@ hg_listen(hg_class_t *hg_class, hg_context_t *context)
 
         /* Post a new unexpected receive */
         na_ret = NA_Msg_recv_unexpected(hg_class->na_class, hg_class->na_context,
-                hg_recv_input_cb, hg_handle, hg_handle->in_buf,
+                hg_core_recv_input_cb, hg_handle, hg_handle->in_buf,
                 hg_handle->in_buf_size, &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post unexpected recv for input buffer");
@@ -1393,8 +1496,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_progress_bulk(hg_class_t *hg_class, hg_context_t *context,
-        unsigned int timeout)
+hg_core_progress_bulk(hg_class_t *hg_class, hg_context_t *context,
+    unsigned int timeout)
 {
     hg_bool_t completion_queue_empty = HG_FALSE;
     unsigned int actual_count = 0;
@@ -1431,7 +1534,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_progress_self(hg_context_t *context, unsigned int timeout)
+hg_core_progress_self(hg_context_t *context, unsigned int timeout)
 {
     hg_return_t ret = HG_TIMEOUT;
 
@@ -1475,8 +1578,8 @@ hg_progress_self(hg_context_t *context, unsigned int timeout)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_progress_na(hg_class_t *hg_class, hg_context_t *context,
-        unsigned int timeout)
+hg_core_progress_na(hg_class_t *hg_class, hg_context_t *context,
+    unsigned int timeout)
 {
     hg_bool_t completion_queue_empty = HG_FALSE;
     unsigned int actual_count = 0;
@@ -1521,7 +1624,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
+hg_core_progress(hg_class_t *hg_class, hg_context_t *context,
+    unsigned int timeout)
 {
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_return_t ret = HG_SUCCESS;
@@ -1529,12 +1633,12 @@ hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
     do {
         hg_time_t t1, t2, t3, t4;
         unsigned int progress_timeout;
-        hg_bool_t do_self_progress = hg_self_processing_list_check(context);
+        hg_bool_t do_self_progress = hg_core_self_processing_list_check(context);
 
         hg_time_get_current(&t1);
 
         /* Make progress on HG Bulk with 0 timeout */
-        ret = hg_progress_bulk(hg_class, context, 0);
+        ret = hg_core_progress_bulk(hg_class, context, 0);
         if (ret == HG_SUCCESS)
             break; /* Progressed */
         else
@@ -1553,7 +1657,7 @@ hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
         /* Make progress on NA (do not block if something is already in
          * self processing list) */
         if (do_self_progress) {
-            ret = hg_progress_self(context, HG_NA_MIN_TIMEOUT);
+            ret = hg_core_progress_self(context, HG_NA_MIN_TIMEOUT);
             if (ret == HG_SUCCESS)
                 break; /* Progressed */
             else
@@ -1574,7 +1678,7 @@ hg_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
          * self processing list) */
         progress_timeout = (do_self_progress) ?  HG_NA_MIN_TIMEOUT :
                 (unsigned int) (remaining * 1000);
-        ret = hg_progress_na(hg_class, context, progress_timeout);
+        ret = hg_core_progress_na(hg_class, context, progress_timeout);
         if (ret == HG_SUCCESS)
             break; /* Progressed */
         else
@@ -1593,7 +1697,77 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_cancel(struct hg_handle *hg_handle)
+hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
+    unsigned int timeout, unsigned int max_count, unsigned int *actual_count)
+{
+    unsigned int count = 0;
+    hg_return_t ret = HG_SUCCESS;
+
+    while (count < max_count) {
+        struct hg_handle *hg_handle = NULL;
+
+        hg_thread_mutex_lock(&context->completion_queue_mutex);
+
+        /* Is completion queue empty */
+        while (hg_queue_is_empty(context->completion_queue)) {
+            if (!timeout) {
+                /* Timeout is 0 so leave */
+                ret = HG_TIMEOUT;
+                hg_thread_mutex_unlock(&context->completion_queue_mutex);
+                goto done;
+            }
+            /* Otherwise wait timeout ms */
+            if (hg_thread_cond_timedwait(&context->completion_queue_cond,
+                    &context->completion_queue_mutex,
+                    timeout) != HG_UTIL_SUCCESS) {
+                /* Timeout occurred so leave */
+                ret = HG_TIMEOUT;
+                hg_thread_mutex_unlock(&context->completion_queue_mutex);
+                goto done;
+            }
+        }
+
+        /* Completion queue should not be empty now */
+        hg_handle = (struct hg_handle *) hg_queue_pop_tail(
+                context->completion_queue);
+        if (!hg_handle) {
+            HG_LOG_ERROR("NULL operation ID");
+            ret = HG_INVALID_PARAM;
+            hg_thread_mutex_unlock(&context->completion_queue_mutex);
+            goto done;
+        }
+
+        /* Unlock now so that other threads can eventually add callbacks
+         * to the queue while callback gets executed */
+        hg_thread_mutex_unlock(&context->completion_queue_mutex);
+
+        /* Execute callback */
+        if (hg_handle->callback) {
+            struct hg_cb_info hg_cb_info;
+
+            hg_cb_info.arg = hg_handle->arg;
+            hg_cb_info.ret = hg_handle->ret;
+            hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
+            hg_cb_info.context = hg_handle->hg_info.context;
+            hg_cb_info.handle = (hg_handle_t) hg_handle;
+
+            hg_handle->callback(&hg_cb_info);
+        }
+
+        /* Free op */
+        hg_core_destroy(hg_handle);
+        count++;
+    }
+
+    if (actual_count) *actual_count = count;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_cancel(struct hg_handle *hg_handle)
 {
     struct hg_class *hg_class = hg_handle->hg_info.hg_class;
     hg_return_t ret = HG_SUCCESS;
@@ -1622,46 +1796,15 @@ hg_cancel(struct hg_handle *hg_handle)
         }
     }
     /* Free op */
-    hg_destroy(hg_handle);
+    hg_core_destroy(hg_handle);
 
 done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
-{
-    hg_return_t ret = HG_SUCCESS;
-
-    if (major) *major = HG_VERSION_MAJOR;
-    if (minor) *minor = HG_VERSION_MINOR;
-    if (patch) *patch = HG_VERSION_PATCH;
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-const char *
-HG_Error_to_string(hg_return_t errnum)
-{
-    const char *hg_error_string = "UNDEFINED/UNRECOGNIZED NA ERROR";
-
-    HG_ERROR_STRING_MACRO(HG_SUCCESS, errnum, hg_error_string);
-    HG_ERROR_STRING_MACRO(HG_TIMEOUT, errnum, hg_error_string);
-    HG_ERROR_STRING_MACRO(HG_INVALID_PARAM, errnum, hg_error_string);
-    HG_ERROR_STRING_MACRO(HG_SIZE_ERROR, errnum, hg_error_string);
-    HG_ERROR_STRING_MACRO(HG_NOMEM_ERROR, errnum, hg_error_string);
-    HG_ERROR_STRING_MACRO(HG_PROTOCOL_ERROR, errnum, hg_error_string);
-    HG_ERROR_STRING_MACRO(HG_NO_MATCH, errnum, hg_error_string);
-    HG_ERROR_STRING_MACRO(HG_CHECKSUM_ERROR, errnum, hg_error_string);
-
-    return hg_error_string;
-}
-
-/*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Init(na_class_t *na_class, na_context_t *na_context,
+HG_Core_init(na_class_t *na_class, na_context_t *na_context,
         hg_bulk_class_t *hg_bulk_class)
 {
     struct hg_class *hg_class = NULL;
@@ -1679,79 +1822,31 @@ HG_Init(na_class_t *na_class, na_context_t *na_context,
         goto done;
     }
 
-    /* Create new HG class */
-    hg_class = (struct hg_class *) malloc(sizeof(struct hg_class));
+    hg_class = hg_core_init(na_class, na_context, hg_bulk_class);
     if (!hg_class) {
-        HG_LOG_ERROR("Could not allocate HG class");
-        ret = HG_NOMEM_ERROR;
+        HG_LOG_ERROR("Cannot initialize HG core layer");
+        ret = HG_PROTOCOL_ERROR;
         goto done;
-    }
-
-    hg_class->na_class = na_class;
-    hg_class->na_context = na_context;
-    hg_class->bulk_class = NULL;
-    hg_class->func_map = NULL;
-
-    /* Initialize atomic for tags */
-    hg_class->request_max_tag = NA_Msg_get_max_tag(na_class);
-    hg_atomic_set32(&hg_class->request_tag, 0);
-
-    /* Create new function map */
-    hg_class->func_map = hg_hash_table_new(hg_int_hash, hg_int_equal);
-    if (!hg_class->func_map) {
-        HG_LOG_ERROR("Could not create function map");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
-    /* Automatically free all the values with the hash map */
-    hg_hash_table_register_free_functions(hg_class->func_map, free,
-            hg_func_map_value_free);
-
-    if (hg_bulk_class) {
-        hg_class->bulk_class_external = HG_TRUE;
-        /* Handled by user */
-        hg_class->bulk_class = hg_bulk_class;
-    } else {
-        hg_class->bulk_class_external = HG_FALSE;
-        /* If not initialize HG Bulk */
-        hg_class->bulk_class = HG_Bulk_init(na_class, na_context);
-        if (!hg_class->bulk_class) {
-            HG_LOG_ERROR("Could not initialize HG Bulk class");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
     }
 
 done:
     if (ret != HG_SUCCESS) {
-        HG_Finalize(hg_class);
+        /* Nothing */
     }
     return hg_class;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Finalize(hg_class_t *hg_class)
+HG_Core_finalize(hg_class_t *hg_class)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_class) goto done;
-
-    if (!hg_class->bulk_class_external) {
-        /* Finalize bulk class */
-        ret = HG_Bulk_finalize(hg_class->bulk_class);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not finalize HG Bulk class");
-            goto done;
-        }
+    ret = hg_core_finalize(hg_class);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Cannot finalize HG core layer");
+        goto done;
     }
-
-    /* Delete function map */
-    hg_hash_table_free(hg_class->func_map);
-    hg_class->func_map = NULL;
-
-    /* Free HG class */
-    free(hg_class);
 
 done:
     return ret;
@@ -1759,7 +1854,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_context_t *
-HG_Context_create(hg_class_t *hg_class)
+HG_Core_context_create(hg_class_t *hg_class)
 {
     hg_return_t ret = HG_SUCCESS;
     hg_context_t *context = NULL;
@@ -1834,15 +1929,15 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Context_destroy(hg_context_t *context)
+HG_Core_context_destroy(hg_context_t *context)
 {
     hg_return_t ret = HG_SUCCESS;
 
     if (!context) goto done;
 
     /* Check pending list */
-    if (hg_pending_list_check(context) == HG_TRUE) {
-        ret = hg_pending_list_cancel(context);
+    if (hg_core_pending_list_check(context) == HG_TRUE) {
+        ret = hg_core_pending_list_cancel(context);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Cannot cancel list of pending entries");
             goto done;
@@ -1852,7 +1947,7 @@ HG_Context_destroy(hg_context_t *context)
     context->pending_list = NULL;
 
     /* Check that operations have completed */
-    ret = hg_processing_list_wait(context);
+    ret = hg_core_processing_list_wait(context);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not wait on processing list");
         goto done;
@@ -1905,7 +2000,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_id_t
-HG_Register_rpc(hg_class_t *hg_class, const char *func_name, hg_rpc_cb_t rpc_cb)
+HG_Core_register(hg_class_t *hg_class, const char *func_name, hg_rpc_cb_t rpc_cb)
 {
     hg_id_t ret = 0;
     hg_id_t *id = NULL;
@@ -1938,7 +2033,7 @@ HG_Register_rpc(hg_class_t *hg_class, const char *func_name, hg_rpc_cb_t rpc_cb)
 
     if (!hg_hash_table_insert(hg_class->func_map, (hg_hash_table_key_t) id,
             hg_rpc_info)) {
-        HG_LOG_ERROR("Could not insert RPC ID into function map");
+        HG_LOG_ERROR("Could not insert RPC ID into function map (already registered?)");
         goto done;
     }
 
@@ -1954,8 +2049,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Registered_rpc(hg_class_t *hg_class, const char *func_name, hg_bool_t *flag,
-        hg_id_t *id)
+HG_Core_registered(hg_class_t *hg_class, const char *func_name, hg_bool_t *flag,
+    hg_id_t *id)
 {
     hg_return_t ret = HG_SUCCESS;
     hg_id_t func_id;
@@ -1985,8 +2080,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Register_data(hg_class_t *hg_class, hg_id_t id, void *data,
-        void (*free_callback)(void *))
+HG_Core_register_data(hg_class_t *hg_class, hg_id_t id, void *data,
+    void (*free_callback)(void *))
 {
     struct hg_rpc_info *hg_rpc_info = NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -2005,6 +2100,8 @@ HG_Register_data(hg_class_t *hg_class, hg_id_t id, void *data,
         goto done;
     }
 
+    if (hg_rpc_info->data)
+        HG_LOG_WARNING("Overriding data previously registered");
     hg_rpc_info->data = data;
     hg_rpc_info->free_callback = free_callback;
 
@@ -2014,7 +2111,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 void *
-HG_Registered_data(hg_class_t *hg_class, hg_id_t id)
+HG_Core_registered_data(hg_class_t *hg_class, hg_id_t id)
 {
     struct hg_rpc_info *hg_rpc_info = NULL;
     void *data = NULL;
@@ -2039,8 +2136,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Create(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
-        hg_id_t id, hg_handle_t *handle)
+HG_Core_create(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
+    hg_id_t id, hg_handle_t *handle)
 {
     struct hg_handle *hg_handle = NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -2072,7 +2169,7 @@ HG_Create(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
     }
 
     /* Create new handle */
-    hg_handle = hg_create(hg_class, context);
+    hg_handle = hg_core_create(hg_class, context);
     if (!hg_handle) {
         HG_LOG_ERROR("Could not create HG handle");
         ret = HG_NOMEM_ERROR;
@@ -2085,14 +2182,14 @@ HG_Create(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
 
 done:
     if (ret != HG_SUCCESS) {
-        hg_destroy(hg_handle);
+        hg_core_destroy(hg_handle);
     }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Destroy(hg_handle_t handle)
+HG_Core_destroy(hg_handle_t handle)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
@@ -2103,7 +2200,7 @@ HG_Destroy(hg_handle_t handle)
         goto done;
     }
 
-    hg_destroy(hg_handle);
+    hg_core_destroy(hg_handle);
 
 done:
     return ret;
@@ -2111,7 +2208,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 struct hg_info *
-HG_Get_info(hg_handle_t handle)
+HG_Core_get_info(hg_handle_t handle)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     struct hg_info *ret = NULL;
@@ -2129,7 +2226,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
+HG_Core_get_input(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
@@ -2146,7 +2243,7 @@ HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
         goto done;
     }
 
-    hg_get_input_buf(hg_handle, in_buf, in_buf_size);
+    hg_core_get_input(hg_handle, in_buf, in_buf_size);
 
 done:
     return ret;
@@ -2154,7 +2251,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
+HG_Core_get_output(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
@@ -2171,7 +2268,7 @@ HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
         goto done;
     }
 
-    hg_get_output_buf(hg_handle, out_buf, out_buf_size);
+    hg_core_get_output(hg_handle, out_buf, out_buf_size);
 
 done:
     return ret;
@@ -2179,8 +2276,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Forward_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
-        hg_bulk_t extra_in_handle)
+HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
+    hg_bulk_t extra_in_handle)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     struct hg_header_request request_header;
@@ -2217,7 +2314,7 @@ HG_Forward_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
     hg_forward = NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
-            hg_handle->hg_info.addr) ? hg_forward_self : hg_forward_na;
+            hg_handle->hg_info.addr) ? hg_core_forward_self : hg_core_forward_na;
     ret = hg_forward(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not forward buffer");
@@ -2230,8 +2327,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Respond_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
-        hg_return_t ret_code)
+HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
+    hg_return_t ret_code)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t (*hg_respond)(struct hg_handle *hg_handle, hg_cb_t callback,
@@ -2261,7 +2358,7 @@ HG_Respond_buf(hg_handle_t handle, hg_cb_t callback, void *arg,
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
     hg_respond = NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
-            hg_handle->hg_info.addr) ? hg_respond_self : hg_respond_na;
+            hg_handle->hg_info.addr) ? hg_core_respond_self : hg_core_respond_na;
     ret = hg_respond(hg_handle, callback, arg);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not respond");
@@ -2274,7 +2371,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
+HG_Core_progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -2287,11 +2384,11 @@ HG_Progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
     /* If we are listening, try to post unexpected receives and treat incoming
      * RPCs */
     if (NA_Is_listening(hg_class->na_class)) {
-        ret = hg_listen(hg_class, context);
+        ret = hg_core_listen(hg_class, context);
     }
 
     /* Make progress on the HG layer */
-    ret = hg_progress(hg_class, context, timeout);
+    ret = hg_core_progress(hg_class, context, timeout);
     if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
         HG_LOG_ERROR("Could not make progress");
         goto done;
@@ -2303,11 +2400,9 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Trigger(hg_class_t *hg_class, hg_context_t *context,
-        unsigned int timeout, unsigned int max_count,
-        unsigned int *actual_count)
+HG_Core_trigger(hg_class_t *hg_class, hg_context_t *context,
+    unsigned int timeout, unsigned int max_count, unsigned int *actual_count)
 {
-    unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_class) {
@@ -2322,63 +2417,11 @@ HG_Trigger(hg_class_t *hg_class, hg_context_t *context,
         goto done;
     }
 
-    while (count < max_count) {
-        struct hg_handle *hg_handle = NULL;
-
-        hg_thread_mutex_lock(&context->completion_queue_mutex);
-
-        /* Is completion queue empty */
-        while (hg_queue_is_empty(context->completion_queue)) {
-            if (!timeout) {
-                /* Timeout is 0 so leave */
-                ret = HG_TIMEOUT;
-                hg_thread_mutex_unlock(&context->completion_queue_mutex);
-                goto done;
-            }
-            /* Otherwise wait timeout ms */
-            if (hg_thread_cond_timedwait(&context->completion_queue_cond,
-                    &context->completion_queue_mutex,
-                    timeout) != HG_UTIL_SUCCESS) {
-                /* Timeout occurred so leave */
-                ret = HG_TIMEOUT;
-                hg_thread_mutex_unlock(&context->completion_queue_mutex);
-                goto done;
-            }
-        }
-
-        /* Completion queue should not be empty now */
-        hg_handle = (struct hg_handle *) hg_queue_pop_tail(
-                context->completion_queue);
-        if (!hg_handle) {
-            HG_LOG_ERROR("NULL operation ID");
-            ret = HG_INVALID_PARAM;
-            hg_thread_mutex_unlock(&context->completion_queue_mutex);
-            goto done;
-        }
-
-        /* Unlock now so that other threads can eventually add callbacks
-         * to the queue while callback gets executed */
-        hg_thread_mutex_unlock(&context->completion_queue_mutex);
-
-        /* Execute callback */
-        if (hg_handle->callback) {
-            struct hg_cb_info hg_cb_info;
-
-            hg_cb_info.arg = hg_handle->arg;
-            hg_cb_info.ret = hg_handle->ret;
-            hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
-            hg_cb_info.context = hg_handle->hg_info.context;
-            hg_cb_info.handle = (hg_handle_t) hg_handle;
-
-            hg_handle->callback(&hg_cb_info);
-        }
-
-        /* Free op */
-        hg_destroy(hg_handle);
-        count++;
+    ret = hg_core_trigger(hg_class, context, timeout, max_count, actual_count);
+    if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
+        HG_LOG_ERROR("Could not trigger callbacks");
+        goto done;
     }
-
-    if (actual_count) *actual_count = count;
 
 done:
     return ret;
@@ -2386,7 +2429,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Cancel(hg_handle_t handle)
+HG_Core_cancel(hg_handle_t handle)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
@@ -2397,7 +2440,7 @@ HG_Cancel(hg_handle_t handle)
         goto done;
     }
 
-    ret = hg_cancel(hg_handle);
+    ret = hg_core_cancel(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not cancel handle");
         goto done;
