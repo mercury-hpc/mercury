@@ -148,7 +148,7 @@ HG_Bulk_access(
  *
  * \return Non-negative value
  */
-HG_EXPORT hg_uint64_t
+HG_EXPORT hg_size_t
 HG_Bulk_get_size(
         hg_bulk_t handle
         );

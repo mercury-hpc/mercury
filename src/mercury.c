@@ -20,14 +20,20 @@
 /* Local Macros */
 /****************/
 
+/* Convert value to string */
+#define HG_ERROR_STRING_MACRO(def, value, string) \
+  if (value == def) string = #def
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
 
 /* Info for function map */
 struct hg_proc_info {
-    hg_proc_cb_t in_proc_cb;
-    hg_proc_cb_t out_proc_cb;
+    hg_proc_cb_t in_proc_cb;        /* Input Proc callback */
+    hg_proc_cb_t out_proc_cb;       /* Output Proc callback */
+    void *data;                     /* User data */
+    void (*free_callback)(void *);  /* User data free callback */
 };
 
 /* Info for wrapping forward callback */
@@ -110,6 +116,21 @@ hg_forward_cb(
 /* Local Variables */
 /*******************/
 
+/*---------------------------------------------------------------------------*/
+/**
+ * Free function for value in function map.
+ */
+static HG_INLINE void
+hg_proc_info_free(void *arg)
+{
+    struct hg_proc_info *hg_proc_info = (struct hg_proc_info *) arg;
+
+    if (hg_proc_info->free_callback)
+        hg_proc_info->free_callback(hg_proc_info->data);
+    free(hg_proc_info);
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_get_input(hg_handle_t handle, void *in_struct)
 {
@@ -123,17 +144,17 @@ hg_get_input(hg_handle_t handle, void *in_struct)
     if (!in_struct) goto done;
 
     /* Get input buffer */
-    ret = HG_Get_input_buf(handle, &in_buf, &in_buf_size);
+    ret = HG_Core_get_input(handle, &in_buf, &in_buf_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get input buffer");
         goto done;
     }
 
     /* Get info from handle */
-    hg_info = HG_Get_info(handle);
+    hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
@@ -185,17 +206,17 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     if (!in_struct) goto done;
 
     /* Get input buffer */
-    ret = HG_Get_input_buf(handle, &in_buf, &in_buf_size);
+    ret = HG_Core_get_input(handle, &in_buf, &in_buf_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get input buffer");
         goto done;
     }
 
     /* Get info from handle */
-    hg_info = HG_Get_info(handle);
+    hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
@@ -265,10 +286,10 @@ hg_free_input(hg_handle_t handle, void *in_struct)
     if (!in_struct) goto done;
 
     /* Get info from handle */
-    hg_info = HG_Get_info(handle);
+    hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
@@ -314,17 +335,17 @@ hg_get_output(hg_handle_t handle, void *out_struct)
     if (!out_struct) goto done;
 
     /* Get output buffer */
-    ret = HG_Get_output_buf(handle, &out_buf, &out_buf_size);
+    ret = HG_Core_get_output(handle, &out_buf, &out_buf_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get output buffer");
         goto done;
     }
 
     /* Get info from handle */
-    hg_info = HG_Get_info(handle);
+    hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
@@ -375,17 +396,17 @@ hg_set_output(hg_handle_t handle, void *out_struct)
     if (!out_struct) goto done;
 
     /* Get output buffer */
-    ret = HG_Get_output_buf(handle, &out_buf, &out_buf_size);
+    ret = HG_Core_get_output(handle, &out_buf, &out_buf_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get output buffer");
         goto done;
     }
 
     /* Get info from handle */
-    hg_info = HG_Get_info(handle);
+    hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
@@ -442,10 +463,10 @@ hg_free_output(hg_handle_t handle, void *out_struct)
     if (!out_struct) goto done;
 
     /* Get info from handle */
-    hg_info = HG_Get_info(handle);
+    hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Registered_data(hg_info->hg_class,
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
             hg_info->id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
@@ -505,6 +526,66 @@ hg_forward_cb(const struct hg_cb_info *callback_info)
 }
 
 /*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (major) *major = HG_VERSION_MAJOR;
+    if (minor) *minor = HG_VERSION_MINOR;
+    if (patch) *patch = HG_VERSION_PATCH;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+const char *
+HG_Error_to_string(hg_return_t errnum)
+{
+    const char *hg_error_string = "UNDEFINED/UNRECOGNIZED NA ERROR";
+
+    HG_ERROR_STRING_MACRO(HG_SUCCESS, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_TIMEOUT, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_INVALID_PARAM, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_SIZE_ERROR, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_NOMEM_ERROR, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_PROTOCOL_ERROR, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_NO_MATCH, errnum, hg_error_string);
+    HG_ERROR_STRING_MACRO(HG_CHECKSUM_ERROR, errnum, hg_error_string);
+
+    return hg_error_string;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_class_t *
+HG_Init(na_class_t *na_class, na_context_t *na_context,
+    hg_bulk_class_t *hg_bulk_class)
+{
+    return HG_Core_init(na_class, na_context, hg_bulk_class);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Finalize(hg_class_t *hg_class)
+{
+    return HG_Core_finalize(hg_class);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_context_t *
+HG_Context_create(hg_class_t *hg_class)
+{
+    return HG_Core_context_create(hg_class);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Context_destroy(hg_context_t *context)
+{
+    return HG_Core_context_destroy(context);
+}
+
+/*---------------------------------------------------------------------------*/
 hg_id_t
 HG_Register(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb,
         hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)
@@ -526,12 +607,14 @@ HG_Register(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb
 
     hg_proc_info->in_proc_cb = in_proc_cb;
     hg_proc_info->out_proc_cb = out_proc_cb;
+    hg_proc_info->data = NULL;
+    hg_proc_info->free_callback = NULL;
 
     /* Register RPC callback */
-    id = HG_Register_rpc(hg_class, func_name, rpc_cb);
+    id = HG_Core_register(hg_class, func_name, rpc_cb);
 
     /* Attach proc info to RPC ID */
-    ret = HG_Register_data(hg_class, id, hg_proc_info, free);
+    ret = HG_Core_register_data(hg_class, id, hg_proc_info, hg_proc_info_free);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not set proc info");
         goto done;
@@ -539,6 +622,71 @@ HG_Register(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb
 
 done:
     return id;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Register_data(hg_class_t *hg_class, hg_id_t id, void *data,
+    void (*free_callback)(void *))
+{
+    struct hg_proc_info *hg_proc_info = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Retrieve proc function from function map */
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get registered data");
+        ret = HG_NO_MATCH;
+        goto done;
+    }
+
+    hg_proc_info->data = data;
+    hg_proc_info->free_callback = free_callback;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+void *
+HG_Registered_data(hg_class_t *hg_class, hg_id_t id)
+{
+    struct hg_proc_info *hg_proc_info = NULL;
+    void *data = NULL;
+
+    /* Retrieve proc function from function map */
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get registered data");
+        goto done;
+    }
+
+    data = hg_proc_info->data;
+
+done:
+    return data;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Create(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
+    hg_id_t id, hg_handle_t *handle)
+{
+    return HG_Core_create(hg_class, context, addr, id, handle);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Destroy(hg_handle_t handle)
+{
+    return HG_Core_destroy(handle);
+}
+
+/*---------------------------------------------------------------------------*/
+struct hg_info *
+HG_Get_info(hg_handle_t handle)
+{
+    return HG_Core_get_info(handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -659,7 +807,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     }
 
     if (extra_in_buf) {
-        struct hg_info *hg_info = HG_Get_info(handle);
+        struct hg_info *hg_info = HG_Core_get_info(handle);
 
         ret = HG_Bulk_create(hg_info->hg_bulk_class, 1, &extra_in_buf,
                 &extra_in_buf_size, HG_BULK_READ_ONLY, &extra_in_handle);
@@ -672,7 +820,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     }
 
     /* Send request */
-    ret = HG_Forward_buf(handle, hg_forward_cb, hg_forward_cb_info,
+    ret = HG_Core_forward(handle, hg_forward_cb, hg_forward_cb_info,
             extra_in_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not forward call");
@@ -705,7 +853,7 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
     }
 
     /* Send response back */
-    ret = HG_Respond_buf(handle, callback, arg, ret_code);
+    ret = HG_Core_respond(handle, callback, arg, ret_code);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not respond");
         goto done;
@@ -713,4 +861,26 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
+{
+    return HG_Core_progress(hg_class, context, timeout);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Trigger(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout,
+    unsigned int max_count, unsigned int *actual_count)
+{
+    return HG_Core_trigger(hg_class, context, timeout, max_count, actual_count);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Cancel(hg_handle_t handle)
+{
+    return HG_Core_cancel(handle);
 }

@@ -394,6 +394,23 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+const char *
+NA_Get_class_name(na_class_t *na_class)
+{
+    const char *ret = NULL;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
+    ret = na_class->class_name;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 na_bool_t
 NA_Is_listening(na_class_t *na_class)
 {

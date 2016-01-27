@@ -136,6 +136,18 @@ NA_Finalize(
         );
 
 /**
+ * Return the name of the NA class.
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return Pointer to NA class name or NULL in case of failure
+ */
+NA_EXPORT const char *
+NA_Get_class_name(
+        na_class_t *na_class
+        );
+
+/**
  * Test whether class is listening or not.
  *
  * \param na_class [IN]         pointer to NA class
