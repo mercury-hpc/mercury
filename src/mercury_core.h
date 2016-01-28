@@ -51,6 +51,14 @@ HG_Core_finalize(
         );
 
 /**
+ * See HG_Get_bulk_class.
+ */
+HG_EXPORT hg_bulk_class_t *
+HG_Core_get_bulk_class(
+        hg_class_t *hg_class
+        );
+
+/**
  * Create a new context. Must be destroyed by calling HG_Core_context_destroy().
  *
  * \param hg_class [IN]         pointer to HG class
@@ -72,6 +80,14 @@ HG_Core_context_create(
 HG_EXPORT hg_return_t
 HG_Core_context_destroy(
         hg_context_t *context
+        );
+
+/**
+ * See HG_Get_bulk_context.
+ */
+HG_EXPORT hg_bulk_context_t *
+HG_Core_get_bulk_context(
+        hg_context_t *hg_context
         );
 
 /**

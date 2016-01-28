@@ -572,6 +572,13 @@ HG_Finalize(hg_class_t *hg_class)
 }
 
 /*---------------------------------------------------------------------------*/
+hg_bulk_class_t *
+HG_Get_bulk_class(hg_class_t *hg_class)
+{
+    return HG_Core_get_bulk_class(hg_class);
+}
+
+/*---------------------------------------------------------------------------*/
 hg_context_t *
 HG_Context_create(hg_class_t *hg_class)
 {
@@ -583,6 +590,13 @@ hg_return_t
 HG_Context_destroy(hg_context_t *context)
 {
     return HG_Core_context_destroy(context);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_bulk_context_t *
+HG_Get_bulk_context(hg_context_t *hg_context)
+{
+    return HG_Core_get_bulk_context(hg_context);
 }
 
 /*---------------------------------------------------------------------------*/

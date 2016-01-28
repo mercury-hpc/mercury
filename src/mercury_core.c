@@ -1853,6 +1853,18 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_bulk_class_t *
+HG_Core_get_bulk_class(hg_class_t *hg_class)
+{
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL class");
+        return NULL;
+    }
+    else
+        return hg_class->bulk_class;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_context_t *
 HG_Core_context_create(hg_class_t *hg_class)
 {
@@ -1996,6 +2008,18 @@ HG_Core_context_destroy(hg_context_t *context)
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_bulk_context_t *
+HG_Core_get_bulk_context(hg_context_t *hg_context)
+{
+    if (!hg_context) {
+        HG_LOG_ERROR("NULL context");
+        return NULL;
+    }
+    else
+        return hg_context->bulk_context;
 }
 
 /*---------------------------------------------------------------------------*/
