@@ -15,7 +15,10 @@
 
 /**
  * Purpose: define a request emulation library on top of the callback model
- * that uses progress/trigger functions.
+ * that uses progress/trigger functions. Note that this library can not be
+ * safely used within RPCs in most cases - calling hg_request_wait causes
+ * deadlock when the caller function was triggered by HG_Trigger
+ * (or HG_Bulk_trigger).
  */
 
 typedef struct hg_request_class  hg_request_class_t;  /* Opaque request class */
