@@ -79,6 +79,21 @@ HG_Finalize(
         );
 
 /**
+ * Retrieve the Mercury bulk class instance from the given Mercury class.
+ * Note that HG_Bulk_finalize should *not* be called on the returned
+ * instance if the bulk class is internal to the input class (that is, NULL
+ * was passed as the bulk class to HG_Init).
+ *
+ * \param hg_class [IN] HG class
+ *
+ * \return The corresponding bulk class
+ */
+HG_EXPORT hg_bulk_class_t *
+HG_Get_bulk_class(
+        hg_class_t *hg_class
+        );
+
+/**
  * Create a new context. Must be destroyed by calling HG_Context_destroy().
  *
  * \param hg_class [IN]         pointer to HG class
@@ -100,6 +115,21 @@ HG_Context_create(
 HG_EXPORT hg_return_t
 HG_Context_destroy(
         hg_context_t *context
+        );
+
+/**
+ * Retrieve the Mercury bulk context instance from the given Mercury context.
+ * Note that HG_Bulk_context_destroy should *not* be called on the returned
+ * context if the bulk context is internal to the input context (in the current
+ * API, this is always the case, but may not be in future revisions).
+ *
+ * \param hg_context [IN] HG context
+ *
+ * \return The corresponding bulk context
+ */
+HG_EXPORT hg_bulk_context_t *
+HG_Get_bulk_context(
+        hg_context_t *hg_context
         );
 
 /**
