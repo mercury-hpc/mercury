@@ -74,7 +74,8 @@ typedef enum hg_return {
     HG_NOMEM_ERROR,     /*!< no memory error */
     HG_PROTOCOL_ERROR,  /*!< protocol does not match */
     HG_NO_MATCH,        /*!< no function match */
-    HG_CHECKSUM_ERROR   /*!< checksum error */
+    HG_CHECKSUM_ERROR,  /*!< checksum error */
+    HG_CANCELLED        /*!< operation was cancelled */
 } hg_return_t;
 
 /* Callback info structs */
