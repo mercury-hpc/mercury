@@ -31,7 +31,7 @@ endif()
 set(CTEST_BUILD_FLAGS "-j4")
 
 # Build name referenced in cdash
-set(CTEST_BUILD_NAME "travis-ci-$ENV{TRAVIS_OS_NAME}-x64-${lower_mercury_build_configuration}-$ENV{TRAVIS_BUILD_NUMBER}")
+set(CTEST_BUILD_NAME "travis-ci-$ENV{TRAVIS_OS_NAME}-x64-$ENV{CC}-${lower_mercury_build_configuration}-$ENV{TRAVIS_BUILD_NUMBER}")
 
 # Build shared libraries
 set(mercury_build_shared ON)
