@@ -83,10 +83,15 @@ if(NOT mercury_build_shared)
   set(dashboard_binary_name ${dashboard_binary_name}-static)
 endif()
 
+# OS specific options
 if(APPLE)
   set(SOEXT dylib)
+  set(PROC_NAME_OPT -c)
+  set(USE_CCI OFF)
 else()
   set(SOEXT so)
+  set(PROC_NAME_OPT -r)
+  set(USE_CCI ON)
 endif()
 
 # Initial cache used to build mercury, options can be modified here
@@ -111,13 +116,13 @@ NA_BMI_TESTING_PROTOCOL:STRING=tcp
 NA_USE_MPI:BOOL=ON
 OPA_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
 OPA_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libopa.${SOEXT}
-NA_USE_CCI:BOOL=ON
+NA_USE_CCI:BOOL=${USE_CCI}
 CCI_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
 CCI_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libcci.${SOEXT}
 NA_CCI_TESTING_PROTOCOL:STRING=tcp
 MPIEXEC_MAX_NUMPROCS:STRING=4
 
-MERCURY_TEST_INIT_COMMAND:STRING=killall -9 -r hg_client;killall -9 -r hg_server;
+MERCURY_TEST_INIT_COMMAND:STRING=killall -9 ${PROC_NAME_OPT} hg_test_client;killall -9 ${PROC_NAME_OPT} hg_test_server;
 MERCURY_TESTING_CORESIDENT:BOOL=ON
 ")
 
