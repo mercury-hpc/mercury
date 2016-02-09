@@ -1,4 +1,5 @@
-#!/bin/sh
+#!/bin/bash
+
 MPI_VERSION=3.2
 CCI_VERSION=0.3.0
 
@@ -7,8 +8,11 @@ set -e
 # check to see if install folder exists
 if [ ! -d "$HOME/install/bin" ]; then
   # build bmi
-  cd $HOME && git clone git://git.mcs.anl.gov/bmi bmi;
-  cd bmi && ./prepare && ./configure --enable-shared --enable-bmi-only --prefix=$HOME/install && make && make install;
+  cd $HOME && git clone git://git.mcs.anl.gov/bmi bmi && cd bmi;
+  if [[ $TRAVIS_OS_NAME == 'osx' ]]; then
+      patch -p1 < ${TRAVIS_BUILD_DIR}/Testing/script/bmi_osx.patch
+  fi
+  ./prepare && ./configure --enable-shared --enable-bmi-only --prefix=$HOME/install && make && make install;
   # build mpi
   cd $HOME && wget http://www.mpich.org/static/downloads/${MPI_VERSION}/mpich-${MPI_VERSION}.tar.gz;
   tar -xzf mpich-${MPI_VERSION}.tar.gz;
