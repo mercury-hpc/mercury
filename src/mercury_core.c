@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -1769,6 +1769,7 @@ done:
 static hg_return_t
 hg_core_cancel(struct hg_handle *hg_handle)
 {
+    printf(">hg_core_cancel()\n");
     struct hg_class *hg_class = hg_handle->hg_info.hg_class;
     hg_return_t ret = HG_SUCCESS;
 
@@ -1777,7 +1778,7 @@ hg_core_cancel(struct hg_handle *hg_handle)
         na_return_t na_ret;
 
         na_ret = NA_Cancel(hg_class->na_class, hg_class->na_context,
-                hg_handle->na_recv_op_id);
+                           hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not cancel recv op id");
             ret = HG_NA_ERROR;
@@ -1797,7 +1798,7 @@ hg_core_cancel(struct hg_handle *hg_handle)
     }
     /* Free op */
     hg_core_destroy(hg_handle);
-
+    printf("<hg_core_cancel(%d)\n", ret);
 done:
     return ret;
 }

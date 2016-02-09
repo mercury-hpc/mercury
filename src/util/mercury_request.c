@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -41,6 +41,8 @@ hg_request_check(hg_request_t *request)
     unsigned int trigger_flag = 0;
     hg_util_bool_t ret = HG_UTIL_FALSE;
 
+    printf(">hg_request_check()\n");
+        
     do {
         trigger_ret = request->request_class->trigger_func(0, &trigger_flag,
                 request->request_class->arg);
@@ -49,7 +51,7 @@ hg_request_check(hg_request_t *request)
     if (hg_atomic_cas32(&request->completed, HG_UTIL_TRUE, HG_UTIL_FALSE)) {
         ret = HG_UTIL_TRUE;
     }
-
+    printf("<hg_request_check(%d)\n", ret);
     return ret;
 }
 
@@ -164,7 +166,8 @@ hg_request_complete(hg_request_t *request)
 int
 hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
 {
-    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    printf(">hg_request_wait()\n");            
+    double remaining = (double) timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_util_bool_t completed = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
 
@@ -172,9 +175,10 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
 
     do {
         hg_time_t t3, t4;
-
+        printf("remaining=%lf\n", remaining);
         completed = hg_request_check(request);
-        if (completed) break;
+        if (completed)
+            break;
 
         if (request->request_class->progressing) {
             hg_time_t t1, t2;
@@ -217,11 +221,11 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
         hg_thread_cond_broadcast(&request->request_class->progress_cond);
 
     } while (!completed && (remaining > 0));
-
+    printf("hg_thread_mutex_unlock()\n");
     hg_thread_mutex_unlock(&request->request_class->progress_mutex);
 
     if (flag) *flag = completed;
-
+    printf("<hg_request_wait()\n");
     return ret;
 }
 
