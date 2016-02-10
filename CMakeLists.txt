@@ -294,7 +294,7 @@ endif()
 # CPack
 #-----------------------------------------------------------------------------
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
-  set(CPACK_PACKAGE_DESCRIPTION_FILE ${MERCURY_SOURCE_DIR}/README)
+  set(CPACK_PACKAGE_DESCRIPTION_FILE ${MERCURY_SOURCE_DIR}/README.md)
   set(CPACK_RESOURCE_FILE_LICENSE ${MERCURY_SOURCE_DIR}/COPYING)
   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "RPC for High-Performance Computing")
   set(CPACK_PACKAGE_NAME "Mercury")
