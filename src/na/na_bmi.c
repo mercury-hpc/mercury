@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -2208,6 +2208,7 @@ na_bmi_release(struct na_cb_info *callback_info, void *arg)
 static na_return_t
 na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
 {
+    printf(">na_bmi_cancel()\n");
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     na_return_t ret = NA_SUCCESS;

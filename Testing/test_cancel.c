@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2014 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -92,15 +92,16 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    printf("Cancelling...\n");    
     hg_ret = HG_Cancel(handle);
     if (hg_ret != HG_SUCCESS)
     {
         fprintf(stderr, "HG_Cancel failed: %d\n", hg_ret);
         return EXIT_FAILURE;
     }
+    // hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
     
-    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
-
+    printf("HG_Destroy...\n");            
     /* Complete */
     hg_ret = HG_Destroy(handle);
     if (hg_ret != HG_SUCCESS) {

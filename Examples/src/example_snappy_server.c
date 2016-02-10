@@ -42,7 +42,7 @@ main(void)
     /* bmi+tcp://localhost:port */
     na_info_string = getenv(HG_PORT_NAME);
     if (!na_info_string) {
-        fprintf(stderr, HG_PORT_NAME " environment variable must be set\n");
+        fprintf(stderr, HG_PORT_NAME " environment variable must be set.\n");
         exit(0);
     }
 
