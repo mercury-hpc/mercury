@@ -91,39 +91,36 @@ HG_Core_get_bulk_context(
         );
 
 /**
- * Dynamically register a function func_name as an RPC as well as the
- * RPC callback executed when the RPC request ID associated to func_name is
- * received.
+ * Dynamically register an RPC ID as well as the RPC callback executed
+ * when the RPC request ID is received.
  *
  * \param hg_class [IN]         pointer to HG class
- * \param func_name [IN]        unique name associated to function
+ * \param id [IN]               ID to use to register RPC
  * \param rpc_cb [IN]           RPC callback
  *
- * \return unique ID associated to the registered function
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_id_t
+HG_EXPORT hg_return_t
 HG_Core_register(
         hg_class_t *hg_class,
-        const char *func_name,
+        hg_id_t id,
         hg_rpc_cb_t rpc_cb
         );
 
 /**
- * Indicate whether HG_Core_register() has been called and return associated ID.
+ * Indicate whether HG_Core_register() has been called.
  *
  * \param hg_class [IN]         pointer to HG class
- * \param func_name [IN]        name associated to function
+ * \param id [IN]               function ID
  * \param flag [OUT]            pointer to boolean
- * \param id [OUT]              pointer to ID
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Core_registered(
         hg_class_t *hg_class,
-        const char *func_name,
-        hg_bool_t *flag,
-        hg_id_t *id
+        hg_id_t id,
+        hg_bool_t *flag
         );
 
 /**

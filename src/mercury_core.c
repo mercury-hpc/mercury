@@ -16,7 +16,6 @@
 #include "mercury_error.h"
 
 #include "mercury_hash_table.h"
-#include "mercury_hash_string.h"
 #include "mercury_atomic.h"
 #include "mercury_queue.h"
 #include "mercury_list.h"
@@ -2023,31 +2022,33 @@ HG_Core_get_bulk_context(hg_context_t *hg_context)
 }
 
 /*---------------------------------------------------------------------------*/
-hg_id_t
-HG_Core_register(hg_class_t *hg_class, const char *func_name, hg_rpc_cb_t rpc_cb)
+hg_return_t
+HG_Core_register(hg_class_t *hg_class, hg_id_t id, hg_rpc_cb_t rpc_cb)
 {
-    hg_id_t ret = 0;
-    hg_id_t *id = NULL;
+    hg_id_t *func_key = NULL;
     struct hg_rpc_info *hg_rpc_info = NULL;
+    hg_return_t ret = HG_SUCCESS;
 
     if (!hg_class) {
         HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    /* Generate a key from the string */
-    id = (hg_id_t *) malloc(sizeof(hg_id_t));
-    if (!id) {
+    /* Allocate the key */
+    func_key = (hg_id_t *) malloc(sizeof(hg_id_t));
+    if (!func_key) {
         HG_LOG_ERROR("Could not allocate ID");
+        ret = HG_NOMEM_ERROR;
         goto done;
     }
-
-    *id = hg_hash_string(func_name);
+    *func_key = id;
 
     /* Fill info and store it into the function map */
     hg_rpc_info = (struct hg_rpc_info *) malloc(sizeof(struct hg_rpc_info));
     if (!hg_rpc_info) {
         HG_LOG_ERROR("Could not allocate HG info");
+        ret = HG_NOMEM_ERROR;
         goto done;
     }
 
@@ -2055,17 +2056,16 @@ HG_Core_register(hg_class_t *hg_class, const char *func_name, hg_rpc_cb_t rpc_cb
     hg_rpc_info->data = NULL;
     hg_rpc_info->free_callback = NULL;
 
-    if (!hg_hash_table_insert(hg_class->func_map, (hg_hash_table_key_t) id,
+    if (!hg_hash_table_insert(hg_class->func_map, (hg_hash_table_key_t) func_key,
             hg_rpc_info)) {
         HG_LOG_ERROR("Could not insert RPC ID into function map (already registered?)");
+        ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    ret = *id;
-
 done:
-    if (ret == 0) {
-        free(id);
+    if (ret != HG_SUCCESS) {
+        free(func_key);
         free(hg_rpc_info);
     }
     return ret;
@@ -2073,11 +2073,9 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Core_registered(hg_class_t *hg_class, const char *func_name, hg_bool_t *flag,
-    hg_id_t *id)
+HG_Core_registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
 {
     hg_return_t ret = HG_SUCCESS;
-    hg_id_t func_id;
 
     if (!hg_class) {
         HG_LOG_ERROR("NULL HG class");
@@ -2091,12 +2089,8 @@ HG_Core_registered(hg_class_t *hg_class, const char *func_name, hg_bool_t *flag,
         goto done;
     }
 
-    func_id = hg_hash_string(func_name);
-
     *flag = (hg_bool_t) (hg_hash_table_lookup(hg_class->func_map,
-            (hg_hash_table_key_t) &func_id)
-            != HG_HASH_TABLE_NULL);
-    if (id) *id = (*flag) ? func_id : 0;
+            (hg_hash_table_key_t) &id) != HG_HASH_TABLE_NULL);
 
 done:
     return ret;

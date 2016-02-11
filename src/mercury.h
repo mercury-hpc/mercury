@@ -139,16 +139,39 @@ HG_Get_bulk_context(
  * be used to serialize and deserialize function parameters.
  *
  * \param hg_class [IN]         pointer to HG class
- * \param id [IN]               registered function ID
+ * \param func_name [IN]        unique name associated to function
  * \param in_proc_cb [IN]       pointer to input proc callback
  * \param out_proc_cb [IN]      pointer to output proc callback
+ * \param rpc_cb [IN]           RPC callback
  *
  * \return unique ID associated to the registered function
  */
 HG_EXPORT hg_id_t
-HG_Register(
+HG_Register_name(
         hg_class_t *hg_class,
         const char *func_name,
+        hg_proc_cb_t in_proc_cb,
+        hg_proc_cb_t out_proc_cb,
+        hg_rpc_cb_t rpc_cb
+        );
+
+/**
+ * Dynamically register an RPC ID as well as the RPC callback executed when the
+ * RPC request ID is received. Associate input and output proc to id, so that
+ * they can be used to serialize and deserialize function parameters.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param id [IN]               ID to use to register RPC
+ * \param in_proc_cb [IN]       pointer to input proc callback
+ * \param out_proc_cb [IN]      pointer to output proc callback
+ * \param rpc_cb [IN]           RPC callback
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Register(
+        hg_class_t *hg_class,
+        hg_id_t id,
         hg_proc_cb_t in_proc_cb,
         hg_proc_cb_t out_proc_cb,
         hg_rpc_cb_t rpc_cb
