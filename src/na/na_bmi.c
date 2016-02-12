@@ -235,7 +235,7 @@ static na_return_t
 na_bmi_addr_to_string(
         na_class_t *na_class,
         char       *buf,
-        na_size_t   buf_size,
+        na_size_t  *buf_size,
         na_addr_t   addr
         );
 
@@ -894,10 +894,11 @@ na_bmi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_addr_to_string(na_class_t *na_class, char *buf,
-        na_size_t buf_size, na_addr_t addr)
+        na_size_t *buf_size, na_addr_t addr)
 {
     struct na_bmi_addr *na_bmi_addr = NULL;
     const char *bmi_rev_addr;
+    na_size_t string_len;
     na_return_t ret = NA_SUCCESS;
 
     na_bmi_addr = (struct na_bmi_addr *) addr;
@@ -917,13 +918,16 @@ na_bmi_addr_to_string(na_class_t *na_class, char *buf,
         }
     }
 
-    if (strlen(bmi_rev_addr) > buf_size) {
-        NA_LOG_ERROR("Buffer size too small to copy addr");
-        ret = NA_SIZE_ERROR;
-        goto done;
+    string_len = strlen(bmi_rev_addr);
+    if (buf) {
+        if (string_len >= *buf_size) {
+            NA_LOG_ERROR("Buffer size too small to copy addr");
+            ret = NA_SIZE_ERROR;
+        } else {
+            strcpy(buf, bmi_rev_addr);
+        }
     }
-
-    strcpy(buf, bmi_rev_addr);
+    *buf_size = string_len + 1;
 
 done:
     return ret;
