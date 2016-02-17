@@ -790,7 +790,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
+NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
         na_addr_t addr)
 {
     na_return_t ret = NA_SUCCESS;
@@ -800,11 +800,7 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
         ret = NA_INVALID_PARAM;
         goto done;
     }
-    if (!buf) {
-        NA_LOG_ERROR("NULL buffer");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
+    /* buf can be NULL */
     if (!buf_size) {
         NA_LOG_ERROR("NULL buffer size");
         ret = NA_INVALID_PARAM;

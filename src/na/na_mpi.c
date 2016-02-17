@@ -322,7 +322,7 @@ static na_return_t
 na_mpi_addr_to_string(
         na_class_t *na_class,
         char       *buf,
-        na_size_t   buf_size,
+        na_size_t  *buf_size,
         na_addr_t   addr
         );
 
@@ -1525,26 +1525,33 @@ na_mpi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
+na_mpi_addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
         na_addr_t addr)
 {
     struct na_mpi_addr *mpi_addr = NULL;
+    na_size_t string_len;
+    char port_name[MPI_MAX_PORT_NAME];
     na_return_t ret = NA_SUCCESS;
 
     mpi_addr = (struct na_mpi_addr *) addr;
 
-    if (strlen(mpi_addr->port_name) > buf_size) {
-        NA_LOG_ERROR("Buffer size too small to copy addr");
-        ret = NA_SIZE_ERROR;
-        goto done;
+    if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm) {
+        sprintf(port_name, "rank#%d$", mpi_addr->rank);
+    } else {
+        sprintf(port_name, "%s;rank#%d$", mpi_addr->port_name, mpi_addr->rank);
     }
 
-    if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm)
-        sprintf(buf, "rank#%d$", mpi_addr->rank);
-    else
-        sprintf(buf, "%s;rank#%d$", mpi_addr->port_name, mpi_addr->rank);
+    string_len = strlen(port_name);
+    if (buf) {
+        if (string_len >= *buf_size) {
+            NA_LOG_ERROR("Buffer size too small to copy addr");
+            ret = NA_SIZE_ERROR;
+        } else {
+            strcpy(buf, port_name);
+        }
+    }
+    *buf_size = string_len + 1;
 
-done:
     return ret;
 }
 

@@ -10,6 +10,7 @@
 
 #include "mercury.h"
 
+#include "mercury_hash_string.h"
 #include "mercury_proc.h"
 #include "mercury_error.h"
 
@@ -601,10 +602,9 @@ HG_Get_bulk_context(hg_context_t *hg_context)
 
 /*---------------------------------------------------------------------------*/
 hg_id_t
-HG_Register(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb,
-        hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)
+HG_Register_name(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb,
+    hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)
 {
-    struct hg_proc_info *hg_proc_info = NULL;
     hg_id_t id = 0;
     hg_return_t ret = HG_SUCCESS;
 
@@ -613,9 +613,43 @@ HG_Register(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb
         goto done;
     }
 
+    if (!func_name) {
+        HG_LOG_ERROR("NULL string");
+        goto done;
+    }
+
+    /* Generate an ID from the function name */
+    id = hg_hash_string(func_name);
+
+    /* Register RPC */
+    ret = HG_Register(hg_class, id, in_proc_cb, out_proc_cb, rpc_cb);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not register RPC id");
+        goto done;
+    }
+
+done:
+    return id;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
+    hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)
+{
+    struct hg_proc_info *hg_proc_info = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
     hg_proc_info = (struct hg_proc_info *) malloc(sizeof(struct hg_proc_info));
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not allocate proc info");
+        ret = HG_NOMEM_ERROR;
         goto done;
     }
 
@@ -625,7 +659,11 @@ HG_Register(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb
     hg_proc_info->free_callback = NULL;
 
     /* Register RPC callback */
-    id = HG_Core_register(hg_class, func_name, rpc_cb);
+    ret = HG_Core_register(hg_class, id, rpc_cb);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not register RPC id");
+        goto done;
+    }
 
     /* Attach proc info to RPC ID */
     ret = HG_Core_register_data(hg_class, id, hg_proc_info, hg_proc_info_free);
@@ -635,7 +673,7 @@ HG_Register(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb
     }
 
 done:
-    return id;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
