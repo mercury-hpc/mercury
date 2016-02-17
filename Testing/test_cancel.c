@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2014 Argonne National Laboratory, Department of Energy,
- * UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -21,19 +21,19 @@ static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
 {
     //hg_handle_t handle = callback_info->handle;
-    int *ptr          = callback_info->arg;
+    int *ptr = callback_info->arg;
     hg_request_t *request = (hg_request_t *) ptr;
     hg_return_t ret = HG_SUCCESS;
 
     ptr++;
-    if (callback_info->ret != HG_CANCELLED)
+    if (callback_info->ret != HG_CANCELLED) /* server never manipulates resturn value of this */
     {
         fprintf(stderr, "Callback was not cancelled: %d\n",
                 callback_info->ret);
         *ptr = 0;
     }
     else
-    {
+    {                           /* cancelled */
         *ptr = COMPLETION_MAGIC;
     }
 
@@ -54,6 +54,7 @@ main(int argc, char *argv[])
     na_addr_t addr;
     rpc_open_in_t  rpc_open_in_struct;
     void *data[2];
+    unsigned int flag;
 
     hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
@@ -84,7 +85,7 @@ main(int argc, char *argv[])
     /* Forward call to remote addr and get a new request */
     printf("Forwarding rpc_open, op id: %u...\n", hg_test_rpc_open_id_g);
     hg_ret = HG_Forward(handle,
-                        hg_test_rpc_forward_cb,
+                        hg_test_rpc_forward_cb, /* this should be executed no matther cancelled or not. */
                         data,
                         &rpc_open_in_struct);
     if (hg_ret != HG_SUCCESS) {
@@ -99,7 +100,9 @@ main(int argc, char *argv[])
         fprintf(stderr, "HG_Cancel failed: %d\n", hg_ret);
         return EXIT_FAILURE;
     }
-    // hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+    // hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);    
+    // hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
+    hg_request_wait(request, 1, NULL);
     
     printf("HG_Destroy...\n");            
     /* Complete */

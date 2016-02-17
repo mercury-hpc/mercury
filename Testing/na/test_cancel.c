@@ -1,3 +1,12 @@
+/*
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ * UChicago Argonne, LLC and The HDF Group.
+ * All rights reserved.
+ *
+ * The full copyright notice, including terms governing use, modification,
+ * and redistribution, is contained in the COPYING file that can be
+ * found at the root of the source code distribution tree.
+ */
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -85,10 +94,10 @@ static na_return_t callback (const struct na_cb_info *callback_info)
 
     *flag = COMPLETION_MAGIC; 
 
-    /* debug
+    /* debug      */
     printf("callback: type: %d ret: %d\n",
            callback_info->type, callback_info->ret);
-     */
+
  
     return NA_SUCCESS;
 }

@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -19,7 +19,8 @@ extern "C" {
 
 /**
  * Initialize the Mercury layer from an existing NA class/context.
- * Must be finalized with HG_Core_finalize().
+ *
+ * This function must be finalized with HG_Core_finalize().
  * \remark Calling HG_Core_init() internally calls HG_Bulk_init() with the same NA
  * class if the HG bulk class passed is NULL. The HG bulk interface can however
  * be initialized with a different NA class and, in this case, must be
@@ -59,7 +60,8 @@ HG_Core_get_bulk_class(
         );
 
 /**
- * Create a new context. Must be destroyed by calling HG_Core_context_destroy().
+ * Create a new context. 
+ * This function must be destroyed by calling HG_Core_context_destroy().
  *
  * \param hg_class [IN]         pointer to HG class
  *

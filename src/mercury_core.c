@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
  * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -1700,6 +1700,7 @@ static hg_return_t
 hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
     unsigned int timeout, unsigned int max_count, unsigned int *actual_count)
 {
+    printf(">hg_core_trigger(max_count=%d)\n", max_count);
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
 
@@ -1751,7 +1752,7 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
             hg_cb_info.context = hg_handle->hg_info.context;
             hg_cb_info.handle = (hg_handle_t) hg_handle;
 
-            hg_handle->callback(&hg_cb_info);
+            hg_handle->callback(&hg_cb_info); /* user callback */
         }
 
         /* Free op */
@@ -1789,15 +1790,20 @@ hg_core_cancel(struct hg_handle *hg_handle)
         na_return_t na_ret;
 
         na_ret = NA_Cancel(hg_class->na_class, hg_class->na_context,
-                hg_handle->na_send_op_id);
+                           hg_handle->na_send_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not cancel send op id");
             ret = HG_NA_ERROR;
             goto done;
         }
+        /* if succeeds, put it into completion queue , mark as cancelled */
+        /* We should check if it's canceled or not in callback. */
+        /* Mark as completed */
+        /* and then canceled. */
+        /* If not cancelled,  */
     }
     /* Free op */
-    hg_core_destroy(hg_handle);
+    hg_core_destroy(hg_handle); /* reduces the reference count. doesn't destroy everything immediately.  */
     printf("<hg_core_cancel(%d)\n", ret);
 done:
     return ret;

@@ -1801,6 +1801,9 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     /* TODO Sometimes bmi_ret is weird so check error_code as well */
     if (bmi_ret < 0 && (error_code != 0)) {
         NA_LOG_ERROR("BMI_testcontext failed");
+        if (error_code == -BMI_ECANCEL) {
+            NA_LOG_ERROR("error_code = -BMI_ECANCEL");
+        }
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
