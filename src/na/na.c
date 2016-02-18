@@ -1685,7 +1685,7 @@ done:
 na_return_t
 NA_Cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
 {
-    printf(">NA_Cancel()\n");
+    fprintf(stderr, ">NA_Cancel()\n");
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -1710,7 +1710,7 @@ NA_Cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
     }
 
     ret = na_class->cancel(na_class, context, op_id);
-    printf("<NA_Cancel(%d)\n", ret);
+    fprintf(stderr, "<NA_Cancel(%d)\n", ret);
 done:
     return ret;
 }
