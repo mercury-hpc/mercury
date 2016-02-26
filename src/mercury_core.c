@@ -1714,7 +1714,7 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
         while (hg_queue_is_empty(context->completion_queue)) {
             if (!timeout) {
                 printf("=hg_core_trigger():timeout is 0\n");                                
-                /* Timeout is 0 so leave */
+                /* Timeout is 0 so leave. */
                 ret = HG_TIMEOUT;
                 hg_thread_mutex_unlock(&context->completion_queue_mutex);
                 goto done;
@@ -1732,8 +1732,7 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
         }
         printf("=hg_core_trigger():queue is not empty.\n");
         /* Completion queue should not be empty now */
-        hg_handle = (struct hg_handle *) hg_queue_pop_tail(
-                context->completion_queue);
+        hg_handle = (struct hg_handle *) hg_queue_pop_tail(context->completion_queue);
         if (!hg_handle) {
             HG_LOG_ERROR("NULL operation ID");
             ret = HG_INVALID_PARAM;
@@ -1748,7 +1747,7 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
         /* Execute callback */
         if (hg_handle->callback) {
             struct hg_cb_info hg_cb_info;
-            printf("=hg_core_trigger():executing callback\n");                
+            fprintf(stderr, "=hg_core_trigger():executing callback\n");                
             hg_cb_info.arg = hg_handle->arg;
             hg_cb_info.ret = hg_handle->ret;
             hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
@@ -1814,7 +1813,7 @@ hg_core_cancel(struct hg_handle *hg_handle)
     }
     /* Free op */
     // reduces the reference count. doesn't destroy everything immediately.      
-    hg_core_destroy(hg_handle); 
+    // hg_core_destroy(hg_handle); 
     fprintf(stderr, "<hg_core_cancel(%d)\n", ret);
 done:
     return ret;

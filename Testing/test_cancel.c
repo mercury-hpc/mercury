@@ -105,14 +105,14 @@ main(int argc, char *argv[])
     }
 
     fprintf(stderr, "Cancelling...\n");
-#if 0
+    //#if 0
     hg_ret = HG_Cancel(handle);
     if (hg_ret != HG_SUCCESS)
     {
         fprintf(stderr, "HG_Cancel failed: %d\n", hg_ret);
         return EXIT_FAILURE;
     }
-#endif
+    //#endif
     fprintf(stderr, "Waiting...\n");        
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);    
     // hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);

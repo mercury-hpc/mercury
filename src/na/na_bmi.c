@@ -2215,12 +2215,13 @@ na_bmi_release(struct na_cb_info *callback_info, void *arg)
 static na_return_t
 na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
 {
-    printf(">na_bmi_cancel()\n");
+    fprintf(stderr, ">na_bmi_cancel()\n");
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
-
+    fprintf(stderr, "=na_bmi_cancel():na_bmi_op_id->type=%d\n",
+            na_bmi_op_id->type);
     switch (na_bmi_op_id->type) {
         case NA_CB_LOOKUP:
             /* Nothing for now */
@@ -2313,6 +2314,6 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
             ret = NA_INVALID_PARAM;
             break;
     }
-
+    fprintf(stderr, "<na_bmi_cancel(%d)\n", ret);
     return ret;
 }
