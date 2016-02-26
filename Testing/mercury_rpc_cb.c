@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -101,7 +101,7 @@ na_addr_t *na_addr_table;
 static HG_INLINE int
 rpc_open(const char *path, rpc_handle_t handle, int *event_id)
 {
-    printf("Called rpc_open of %s with cookie %lu\n", path, handle.cookie);
+    fprintf(stderr, "Called rpc_open of %s with cookie %lu\n", path, handle.cookie);
     *event_id = 232;
     return HG_SUCCESS;
 }

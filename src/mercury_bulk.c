@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -1424,11 +1424,10 @@ HG_Bulk_cancel(hg_op_id_t op_id)
 
     if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_bulk_op_id->completed, 1, 0)) {
         /* TODO must cancel all NA operations issued */
-        /*
         NA_Cancel(hg_bulk_op_id->context->hg_bulk_class->na_class,
-                hg_bulk_op_id->context->hg_bulk_class->na_context,
-                NA_OP_ID_NULL);
-        */
+                  hg_bulk_op_id->context->hg_bulk_class->na_context,
+                  NA_OP_ID_NULL);
+
     }
 
 done:

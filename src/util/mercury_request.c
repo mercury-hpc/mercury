@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -37,19 +37,23 @@ struct hg_request {
 static HG_UTIL_INLINE hg_util_bool_t
 hg_request_check(hg_request_t *request)
 {
-    int trigger_ret;
+    int trigger_ret = HG_UTIL_FAIL;
     unsigned int trigger_flag = 0;
     hg_util_bool_t ret = HG_UTIL_FALSE;
 
+    fprintf(stderr, ">hg_request_check()\n");
+        
     do {
         trigger_ret = request->request_class->trigger_func(0, &trigger_flag,
                 request->request_class->arg);
+        fprintf(stderr, "=hg_request_check(trigger_flag=%d, trigger_ret=%d)\n",
+               trigger_flag, trigger_ret);        
     } while ((trigger_ret == HG_UTIL_SUCCESS) && trigger_flag);
 
     if (hg_atomic_cas32(&request->completed, HG_UTIL_TRUE, HG_UTIL_FALSE)) {
         ret = HG_UTIL_TRUE;
     }
-
+    fprintf(stderr, "<hg_request_check(ret=%d, request->completed=%d)\n", ret, request->completed);
     return ret;
 }
 
@@ -164,7 +168,8 @@ hg_request_complete(hg_request_t *request)
 int
 hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
 {
-    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    fprintf(stderr, ">hg_request_wait()\n");            
+    double remaining = (double) timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_util_bool_t completed = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
 
@@ -172,9 +177,10 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
 
     do {
         hg_time_t t3, t4;
-
+        fprintf(stderr, "=hg_request_wait():remaining=%lf\n", remaining);
         completed = hg_request_check(request);
-        if (completed) break;
+        if (completed)
+            break;
 
         if (request->request_class->progressing) {
             hg_time_t t1, t2;
@@ -217,11 +223,11 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
         hg_thread_cond_broadcast(&request->request_class->progress_cond);
 
     } while (!completed && (remaining > 0));
-
+    fprintf(stderr, "=hg_request_wait():hg_thread_mutex_unlock()\n");
     hg_thread_mutex_unlock(&request->request_class->progress_mutex);
 
     if (flag) *flag = completed;
-
+    fprintf(stderr, "<hg_request_wait()\n");
     return ret;
 }
 

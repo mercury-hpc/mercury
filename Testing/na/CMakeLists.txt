@@ -80,9 +80,11 @@ endif()
 # Network abstraction test
 build_na_test(client)
 build_na_test(server)
+build_na_test(cancel)
 
 #------------------------------------------------------------------------------
 # Set list of tests
 
 # Client / server test with all enabled NA plugins
 add_na_test(simple server client)
+add_na_test(cancel server cancel)

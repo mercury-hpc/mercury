@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -1136,7 +1136,7 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
             mpi_ret = MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE,
                     &provided);
             if (provided != MPI_THREAD_MULTIPLE) {
-                NA_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set");
+                NA_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set.");
                 ret = NA_PROTOCOL_ERROR;
                 goto done;
             }
@@ -2428,6 +2428,7 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
                 }
                 break;
             default:
+                printf("Unknown type of operation ID: %d\n", na_mpi_op_id->type);                
                 NA_LOG_ERROR("Unknown type of operation ID");
                 ret = NA_PROTOCOL_ERROR;
                 goto done;

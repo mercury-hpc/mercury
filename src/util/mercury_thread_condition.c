@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -63,6 +63,8 @@ hg_thread_cond_signal(hg_thread_cond_t *cond)
 int
 hg_thread_cond_broadcast(hg_thread_cond_t *cond)
 {
+    printf(">hg_thread_cond_broadcast()\n");        
+    
     int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
@@ -70,7 +72,7 @@ hg_thread_cond_broadcast(hg_thread_cond_t *cond)
 #else
     if (pthread_cond_broadcast(cond)) ret = HG_UTIL_FAIL;
 #endif
-
+    printf("<hg_thread_cond_broadcast()\n");        
     return ret;
 }
 
@@ -93,6 +95,7 @@ hg_thread_cond_wait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex)
 int
 hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsigned int timeout)
 {
+    printf(">hg_thread_cond_timedwait()\n");
     int ret = HG_UTIL_SUCCESS;
 
 #ifdef _WIN32
@@ -124,6 +127,6 @@ hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsig
         ret = HG_UTIL_FAIL;
     }
 #endif
-
+    printf("<hg_thread_cond_timedwait()\n");
     return ret;
 }

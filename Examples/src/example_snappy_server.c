@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -42,7 +42,7 @@ main(void)
     /* bmi+tcp://localhost:port */
     na_info_string = getenv(HG_PORT_NAME);
     if (!na_info_string) {
-        fprintf(stderr, HG_PORT_NAME " environment variable must be set");
+        fprintf(stderr, HG_PORT_NAME " environment variable must be set.\n");
         exit(0);
     }
 
