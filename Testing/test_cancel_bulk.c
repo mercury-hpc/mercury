@@ -118,14 +118,14 @@ int main(int argc, char *argv[])
     }
 
     /* Call cancel. */
-    hg_ret = HG_Cancel(bulk_handle);
+    hg_ret = HG_Cancel(handle);
     if (hg_ret != HG_SUCCESS)
     {
         fprintf(stderr, "HG_Cancel failed: %d\n", hg_ret);
         return EXIT_FAILURE;
     }
     
-    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+    // hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
     
     
 
