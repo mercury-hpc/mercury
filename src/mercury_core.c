@@ -650,6 +650,7 @@ hg_core_pending_list_check(hg_context_t *context)
 static hg_return_t
 hg_core_pending_list_cancel(hg_context_t *context)
 {
+    fprintf(stderr, ">hg_core_pending_list_cancel()\n");
     hg_return_t ret = HG_SUCCESS;
 
     hg_thread_mutex_lock(&context->pending_list_mutex);
@@ -672,7 +673,7 @@ hg_core_pending_list_cancel(hg_context_t *context)
     }
 
     hg_thread_mutex_unlock(&context->pending_list_mutex);
-
+    fprintf(stderr, "<hg_core_pending_list_cancel()\n");
     return ret;
 }
 
@@ -1803,8 +1804,11 @@ hg_core_cancel(struct hg_handle *hg_handle)
         else {
             /* If cancel succeeds, put it into completion queue, mark as cancelled */
             fprintf(stderr, "=hg_core_cancel():NA_Cancel() succeeded.\n");
+            
             /* We should check if it's canceled or not in callback. */
             /* Mark as completed */
+            if (hg_atomic_decr32(&hg_handle->ref_count)){
+                fprintf(stderr, "=hg_core_cancel(): hg_atomic_decr32 failed.\n");                        }
             /* and then canceled. */
 
         }

@@ -592,6 +592,7 @@ NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
 done:
     free(name_string);
+    fprintf(stderr, ">NA_Addr_lookup(%d)\n", ret);
     return ret;
 }
 

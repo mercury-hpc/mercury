@@ -117,6 +117,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+#if 0  
     /* Call cancel. */
     hg_ret = HG_Cancel(handle);
     if (hg_ret != HG_SUCCESS)
@@ -124,8 +125,8 @@ int main(int argc, char *argv[])
         fprintf(stderr, "HG_Cancel failed: %d\n", hg_ret);
         return EXIT_FAILURE;
     }
-    
-    // hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+#endif    
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
     
     
 

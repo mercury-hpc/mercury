@@ -105,6 +105,13 @@ main(int argc, char *argv[])
         fprintf(stderr, "Could not forward call\n");
         return EXIT_FAILURE;
     }
+
+    // Don't wait because NA_Cancel() on server will empty queue.
+    fprintf(stderr, "Waiting...\n");        
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);    
+    // hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
+    // hg_request_wait(request, 1, NULL);
+
     
     fprintf(stderr, "Cancelling...\n");
     // HG_Cancel is for client operation.
@@ -125,7 +132,7 @@ main(int argc, char *argv[])
     // hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
     // hg_request_wait(request, 1, NULL);
 #endif
-    
+
     fprintf(stderr, "HG_Destroy...\n");            
     /* Complete */
     hg_ret = HG_Destroy(handle);
@@ -133,18 +140,27 @@ main(int argc, char *argv[])
         fprintf(stderr, "Could not complete\n");
         return EXIT_FAILURE;
     }
-#if 0
+    fprintf(stderr, "HG_Destroy2...\n");            
+    /* Complete */
+    hg_ret = HG_Destroy(handle);
+    if (hg_ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+        return EXIT_FAILURE;
+    }
+
+    
+#if 0    
     // Since callback will not be called due to NA_Cancel(), it's meaningless to check.
     if (data[1] != (void*)COMPLETION_MAGIC)
     {
         fprintf(stderr, "callback wasn't called\n");
         return EXIT_FAILURE;
     }
-#endif
-    
+
+
     hg_request_destroy(request);
 
     HG_Test_finalize(hg_class);
-
+#endif    
     return EXIT_SUCCESS;
 }
