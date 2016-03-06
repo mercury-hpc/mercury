@@ -254,6 +254,7 @@ HG_Core_get_output(
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param extra_in_handle [IN]  bulk handle to extra input buffer
+ * \param size_to_send [IN]     size of request to transmit
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -262,7 +263,8 @@ HG_Core_forward(
         hg_handle_t handle,
         hg_cb_t callback,
         void *arg,
-        hg_bulk_t extra_in_handle
+        hg_bulk_t extra_in_handle,
+        hg_size_t size_to_send
         );
 
 /**
@@ -276,6 +278,7 @@ HG_Core_forward(
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param ret_code [IN]         return code included in response
+ * \param size_to_send [IN]     amounto of data to send in response
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -284,7 +287,8 @@ HG_Core_respond(
         hg_handle_t handle,
         hg_cb_t callback,
         void *arg,
-        hg_return_t ret_code
+        hg_return_t ret_code,
+        hg_size_t size_to_send
         );
 
 /**

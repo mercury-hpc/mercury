@@ -12,6 +12,7 @@
 
 #include "mercury_hash_string.h"
 #include "mercury_proc.h"
+#include "mercury_proc_header.h"
 #include "mercury_error.h"
 
 #include <stdlib.h>
@@ -66,7 +67,8 @@ hg_set_input(
         hg_handle_t handle,
         void *in_struct,
         void **extra_in_buf,
-        hg_size_t *extra_in_buf_size
+        hg_size_t *extra_in_buf_size,
+        hg_size_t *size_to_send
         );
 
 /**
@@ -93,7 +95,8 @@ hg_get_output(
 static hg_return_t
 hg_set_output(
         hg_handle_t handle,
-        void *out_struct
+        void *out_struct,
+        hg_size_t *size_to_send
         );
 
 /**
@@ -195,7 +198,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
-        hg_size_t *extra_in_buf_size)
+        hg_size_t *extra_in_buf_size, hg_size_t *size_to_send)
 {
     void *in_buf;
     hg_size_t in_buf_size;
@@ -204,7 +207,10 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!in_struct) goto done;
+    *size_to_send = hg_proc_header_request_get_size();
+
+    if (!in_struct)
+        goto done;
 
     /* Get input buffer */
     ret = HG_Core_get_input(handle, &in_buf, &in_buf_size);
@@ -269,6 +275,12 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
         HG_LOG_ERROR("Error in proc flush");
         goto done;
     }
+
+    /* if the request fit in the initial buffer, then we have to add that
+     * size to msg send
+     */
+    if(*extra_in_buf_size == 0)
+        *size_to_send += hg_proc_get_size_used(proc);
 
 done:
     if (proc != HG_PROC_NULL) hg_proc_free(proc);
@@ -385,7 +397,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_set_output(hg_handle_t handle, void *out_struct)
+hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
 {
     void *out_buf;
     hg_size_t out_buf_size;
@@ -393,8 +405,10 @@ hg_set_output(hg_handle_t handle, void *out_struct)
     struct hg_proc_info *hg_proc_info = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
+    *size_to_send = hg_proc_header_response_get_size();
 
-    if (!out_struct) goto done;
+    if (!out_struct) 
+        goto done;
 
     /* Get output buffer */
     ret = HG_Core_get_output(handle, &out_buf, &out_buf_size);
@@ -446,6 +460,9 @@ hg_set_output(hg_handle_t handle, void *out_struct)
         HG_LOG_ERROR("Error in proc flush");
         goto done;
     }
+
+    /* add any encoded response size to the size to transmit */
+    *size_to_send += hg_proc_get_size_used(proc);
 
 done:
     if (proc != HG_PROC_NULL) hg_proc_free(proc);
@@ -838,6 +855,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     void *extra_in_buf = NULL;
     hg_size_t extra_in_buf_size;
     hg_return_t ret = HG_SUCCESS;
+    hg_size_t size_to_send;
 
     hg_forward_cb_info = (struct hg_forward_cb_info *) malloc(
             sizeof(struct hg_forward_cb_info));
@@ -852,7 +870,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     hg_forward_cb_info->extra_in_buf = NULL;
 
     /* Serialize input */
-    ret = hg_set_input(handle, in_struct, &extra_in_buf, &extra_in_buf_size);
+    ret = hg_set_input(handle, in_struct, &extra_in_buf, &extra_in_buf_size, &size_to_send);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not set input");
         goto done;
@@ -873,7 +891,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
 
     /* Send request */
     ret = HG_Core_forward(handle, hg_forward_cb, hg_forward_cb_info,
-            extra_in_handle);
+            extra_in_handle, size_to_send);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not forward call");
         goto done;
@@ -892,9 +910,10 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
 {
     hg_return_t ret = HG_SUCCESS;
     hg_return_t ret_code = HG_SUCCESS;
+    hg_size_t size_to_send;
 
     /* Serialize output */
-    ret = hg_set_output(handle, out_struct);
+    ret = hg_set_output(handle, out_struct, &size_to_send);
     if (ret != HG_SUCCESS) {
         if (ret == HG_SIZE_ERROR)
             ret_code = HG_SIZE_ERROR;
@@ -905,7 +924,7 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
     }
 
     /* Send response back */
-    ret = HG_Core_respond(handle, callback, arg, ret_code);
+    ret = HG_Core_respond(handle, callback, arg, ret_code, size_to_send);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not respond");
         goto done;

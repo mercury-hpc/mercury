@@ -74,7 +74,7 @@ hg_proc_header_response_init(struct hg_header_response *header)
 hg_return_t
 hg_proc_header_request(void *buf, size_t buf_size,
         struct hg_header_request *header, hg_proc_op_t op,
-        hg_bulk_class_t *bulk_class)
+        hg_bulk_class_t *bulk_class, hg_size_t *extra_header_size)
 {
     hg_uint32_t n_protocol, n_id, n_cookie;
     hg_uint16_t n_crc16;
@@ -84,6 +84,7 @@ hg_proc_header_request(void *buf, size_t buf_size,
 #endif
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
+    *extra_header_size = 0;
 
     if (buf_size < sizeof(struct hg_header_request)) {
         HG_LOG_ERROR("Invalid buffer size");
@@ -179,6 +180,7 @@ hg_proc_header_request(void *buf, size_t buf_size,
             HG_LOG_ERROR("Error in proc flush");
             goto done;
         }
+        *extra_header_size = hg_proc_get_size_used(proc);
     }
 
 done:
