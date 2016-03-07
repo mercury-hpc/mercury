@@ -2569,8 +2569,8 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
                 goto done;
             }
             if (na_mpi_op_id->info.recv_expected.actual_size
-                    != na_mpi_op_id->info.recv_expected.buf_size) {
-                NA_LOG_ERROR("Buffer size and actual transfer size do not match");
+                    > na_mpi_op_id->info.recv_expected.buf_size) {
+                NA_LOG_ERROR("Expected recv size too large for buffer");
                 ret = NA_SIZE_ERROR;
                 goto done;
             }

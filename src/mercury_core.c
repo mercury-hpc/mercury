@@ -103,8 +103,10 @@ struct hg_handle {
 
     void *in_buf;                       /* Input buffer */
     na_size_t in_buf_size;              /* Input buffer size */
+    na_size_t in_buf_used;              /* Amount of input buffer used */
     void *out_buf;                      /* Output buffer */
     na_size_t out_buf_size;             /* Output buffer size */
+    na_size_t out_buf_used;             /* Amount of output buffer used */
 
     na_op_id_t na_send_op_id;           /* Operation ID for send */
     na_op_id_t na_recv_op_id;           /* Operation ID for recv */
@@ -590,13 +592,14 @@ hg_core_get_header_request(struct hg_handle *hg_handle,
     struct hg_header_request *request_header)
 {
     hg_return_t ret = HG_SUCCESS;
+    hg_size_t extra_header_size;
 
     /* Initialize header with default values */
     hg_proc_header_request_init(0, HG_BULK_NULL, request_header);
 
     /* Decode request header */
     ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
-            request_header, HG_DECODE, hg_handle->hg_info.hg_bulk_class);
+            request_header, HG_DECODE, hg_handle->hg_info.hg_bulk_class, &extra_header_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not decode header");
         goto done;
@@ -1045,7 +1048,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     /* And post the send message (input) */
     na_ret = NA_Msg_send_unexpected(hg_class->na_class,
             hg_class->na_context, hg_core_send_input_cb, hg_handle,
-            hg_handle->in_buf, hg_handle->in_buf_size,
+            hg_handle->in_buf, hg_handle->in_buf_used,
             hg_handle->hg_info.addr, hg_handle->tag,
             &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
@@ -1115,7 +1118,7 @@ hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     /* Respond back */
     na_ret = NA_Msg_send_expected(hg_class->na_class, hg_class->na_context,
             hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
-            hg_handle->out_buf_size, hg_handle->hg_info.addr,
+            hg_handle->out_buf_used, hg_handle->hg_info.addr,
             hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for output buffer");
@@ -1177,10 +1180,11 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     hg_handle->addr_mine = HG_TRUE; /* Address will be freed with handle */
     hg_handle->tag = callback_info->info.recv_unexpected.tag;
     if (callback_info->info.recv_unexpected.actual_buf_size
-            != hg_handle->in_buf_size) {
-        HG_LOG_ERROR("Buffer size and actual transfer size do not match");
+            > hg_handle->in_buf_size) {
+        HG_LOG_ERROR("Actual transfer size is too large for unexpected recv");
         goto done;
     }
+    hg_handle->in_buf_used = callback_info->info.recv_unexpected.actual_buf_size;
 
     /* Move handle from pending list to processing list */
     if (hg_core_pending_list_remove(hg_handle) != HG_SUCCESS) {
@@ -2317,12 +2321,13 @@ done:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
-    hg_bulk_t extra_in_handle)
+    hg_bulk_t extra_in_handle, hg_size_t size_to_send)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     struct hg_header_request request_header;
     hg_return_t (*hg_forward)(struct hg_handle *hg_handle);
     hg_return_t ret = HG_SUCCESS;
+    hg_size_t extra_header_size = 0;
 
     if (!hg_handle) {
         HG_LOG_ERROR("NULL handle");
@@ -2345,11 +2350,15 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
 
     /* Encode request header */
     ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
-            &request_header, HG_ENCODE, hg_handle->hg_info.hg_bulk_class);
+            &request_header, HG_ENCODE, hg_handle->hg_info.hg_bulk_class,
+            &extra_header_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not encode header");
         goto done;
     }
+
+    /* set the actual size of the msg that needs to be transmitted */
+    hg_handle->in_buf_used = size_to_send + extra_header_size;
 
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
@@ -2368,7 +2377,7 @@ done:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
-    hg_return_t ret_code)
+    hg_return_t ret_code, hg_size_t size_to_send)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t (*hg_respond)(struct hg_handle *hg_handle, hg_cb_t callback,
@@ -2394,6 +2403,9 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
         HG_LOG_ERROR("Could not encode header");
         goto done;
     }
+    
+    /* set the actual size of the msg that needs to be transmitted */
+    hg_handle->out_buf_used = size_to_send;
 
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */

@@ -90,11 +90,11 @@ hg_class_t* hg_engine_get_class(void)
     return(hg_class);
 }
 
-void hg_engine_addr_lookup(const char* name, na_addr_t* addr)
+void hg_engine_addr_lookup(const char* name, na_cb_t cb, void *arg)
 {
     na_return_t ret;
 
-    ret = NA_Addr_lookup_wait(network_class, name, addr);
+    ret = NA_Addr_lookup(network_class, na_context, cb, arg, name, NA_OP_ID_IGNORE);
     assert(ret == NA_SUCCESS);
 
     return;

@@ -2161,9 +2161,9 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
         case NA_CB_RECV_EXPECTED:
             /* Check buf_size and actual_size */
             if (!(na_bmi_op_id->cancel & NA_BMI_CANCEL_R) &&
-                 (na_bmi_op_id->info.recv_expected.actual_size !=
-                    na_bmi_op_id->info.recv_expected.buf_size)) {
-                NA_LOG_ERROR("Buffer size and actual transfer size do not match");
+                        (na_bmi_op_id->info.recv_expected.actual_size >
+                         na_bmi_op_id->info.recv_expected.buf_size)) {
+                NA_LOG_ERROR("Expected recv size too large for buffer");
                 ret = NA_SIZE_ERROR;
                 goto done;
             }
