@@ -2673,7 +2673,7 @@ na_mpi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
                 goto done;
             }
             break;
-        case NA_CB_PUT:
+        case NA_CB_PUT:         /* Related to bulk */
             /* TODO */
             break;
         case NA_CB_GET:

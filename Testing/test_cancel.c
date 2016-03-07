@@ -95,7 +95,8 @@ main(int argc, char *argv[])
     data[1] = 0;
 
     /* Forward call to remote addr and get a new request */
-    fprintf(stderr, "Forwarding rpc_open, op id: %u...\n", hg_test_rpc_open_id_g);
+    fprintf(stderr, "Forwarding rpc_open, op id: %u...\n",
+            hg_test_rpc_open_id_g);
     hg_ret = HG_Forward(handle, /* has rpc_open() in mercury_rpc_cb.c */
                         hg_test_rpc_forward_cb,
                         // This should be executed no matther cancelled or not. 
@@ -105,12 +106,6 @@ main(int argc, char *argv[])
         fprintf(stderr, "Could not forward call\n");
         return EXIT_FAILURE;
     }
-
-    // Don't wait because NA_Cancel() on server will empty queue.
-    fprintf(stderr, "Waiting...\n");        
-    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);    
-    // hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
-    // hg_request_wait(request, 1, NULL);
 
     
     fprintf(stderr, "Cancelling...\n");
@@ -123,24 +118,17 @@ main(int argc, char *argv[])
         fprintf(stderr, "HG_Cancel failed: %d\n", hg_ret);
         return EXIT_FAILURE;
     }
-
-
-#if 0
-    // Don't wait because NA_Cancel() on server will empty queue.
-    fprintf(stderr, "Waiting...\n");        
-    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);    
+    
+    // Don't wait too long because NA_Cancel() will cancel a communication
+    // request.
+    fprintf(stderr, "Waiting...\n");
+    hg_request_wait(request, 1, NULL);    
     // hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
     // hg_request_wait(request, 1, NULL);
-#endif
+
+
 
     fprintf(stderr, "HG_Destroy...\n");            
-    /* Complete */
-    hg_ret = HG_Destroy(handle);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not complete\n");
-        return EXIT_FAILURE;
-    }
-    fprintf(stderr, "HG_Destroy2...\n");            
     /* Complete */
     hg_ret = HG_Destroy(handle);
     if (hg_ret != HG_SUCCESS) {
@@ -156,11 +144,11 @@ main(int argc, char *argv[])
         fprintf(stderr, "callback wasn't called\n");
         return EXIT_FAILURE;
     }
-
+#endif    
 
     hg_request_destroy(request);
 
     HG_Test_finalize(hg_class);
-#endif    
+
     return EXIT_SUCCESS;
 }

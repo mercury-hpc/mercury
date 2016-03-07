@@ -111,14 +111,14 @@ int main(int argc, char *argv[])
     /* Forward call to remote addr and get a new request */
     printf("Forwarding bulk_write, op id: %u...\n", hg_test_bulk_write_id_g);
     hg_ret = HG_Forward(handle, hg_test_bulk_forward_cb, request,
-            &bulk_write_in_struct);
+                        &bulk_write_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         return EXIT_FAILURE;
     }
 
 #if 0  
-    /* Call cancel. */
+    /* Call cancel should only affect bulk transfer. */
     hg_ret = HG_Cancel(handle);
     if (hg_ret != HG_SUCCESS)
     {

@@ -1255,8 +1255,8 @@ HG_Bulk_transfer(hg_bulk_context_t *context, hg_bulk_cb_t callback, void *arg,
     }
 
     ret = hg_bulk_transfer(context, callback, arg, op, origin_addr,
-            hg_bulk_origin, origin_offset, hg_bulk_local, local_offset, size,
-            &hg_op_id);
+                           hg_bulk_origin, origin_offset, hg_bulk_local, local_offset, size,
+                           &hg_op_id);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not transfer data");
         goto done;
