@@ -2428,7 +2428,8 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
                 }
                 break;
             default:
-                printf("Unknown type of operation ID: %d\n", na_mpi_op_id->type);                
+                printf("Unknown type of operation ID: %d\n",
+                       na_mpi_op_id->type);                
                 NA_LOG_ERROR("Unknown type of operation ID");
                 ret = NA_PROTOCOL_ERROR;
                 goto done;

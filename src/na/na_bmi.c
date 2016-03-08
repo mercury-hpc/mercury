@@ -1815,6 +1815,8 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     if (outcount && na_bmi_op_id) {
         if ((error_code != 0) &&
             (error_code != -BMI_ECANCEL)) {
+            fprintf(stderr, "Error code=%d BMI_ECANCEL=%d\n", error_code,
+                    BMI_ECANCEL);
             NA_LOG_ERROR("BMI_testcontext failed, error code set");
             ret = NA_PROTOCOL_ERROR;
             goto done;
