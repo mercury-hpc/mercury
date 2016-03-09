@@ -1755,6 +1755,7 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
             fprintf(stderr, "=hg_core_trigger():executing callback\n");                
             hg_cb_info.arg = hg_handle->arg;
             hg_cb_info.ret = hg_handle->ret;
+            /*  */
             hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
             hg_cb_info.context = hg_handle->hg_info.context;
             hg_cb_info.handle = (hg_handle_t) hg_handle;
@@ -1805,24 +1806,32 @@ hg_core_cancel(struct hg_handle *hg_handle)
             ret = HG_NA_ERROR;
             goto done;
         }
-#if 0        
+
         else {
             /* If cancel succeeds, put it into completion queue, mark as cancelled */
             fprintf(stderr, "=hg_core_cancel():NA_Cancel() succeeded.\n");
             
             /* We should check if it's canceled or not in callback. */
             /* Mark as completed */
+#if 0                    
             if (hg_atomic_decr32(&hg_handle->ref_count)){
-                fprintf(stderr, "=hg_core_cancel(): hg_atomic_decr32 failed.\n");                        }
+                fprintf(stderr, "=hg_core_cancel(): hg_atomic_decr32 failed.\n");
+            }
+#endif                    
             /* and then canceled. */
-
+            hg_handle->ret = HG_CANCELLED;            
+            ret = hg_core_complete(hg_handle);
+            if (ret != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not complete handle");
+                goto done;
+            }            
+            /* call complete() */
         }
-#endif        
+
 
     }
     /* Free op */
-    // reduces the reference count. doesn't destroy everything immediately.      
-    hg_core_destroy(hg_handle); 
+    // reduces the reference count. doesn't destroy everything immediately.         hg_core_destroy(hg_handle); 
     fprintf(stderr, "<hg_core_cancel(%d)\n", ret);
 done:
     return ret;
