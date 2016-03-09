@@ -1805,6 +1805,7 @@ hg_core_cancel(struct hg_handle *hg_handle)
             ret = HG_NA_ERROR;
             goto done;
         }
+#if 0        
         else {
             /* If cancel succeeds, put it into completion queue, mark as cancelled */
             fprintf(stderr, "=hg_core_cancel():NA_Cancel() succeeded.\n");
@@ -1816,12 +1817,12 @@ hg_core_cancel(struct hg_handle *hg_handle)
             /* and then canceled. */
 
         }
-
+#endif        
 
     }
     /* Free op */
     // reduces the reference count. doesn't destroy everything immediately.      
-    // hg_core_destroy(hg_handle); 
+    hg_core_destroy(hg_handle); 
     fprintf(stderr, "<hg_core_cancel(%d)\n", ret);
 done:
     return ret;

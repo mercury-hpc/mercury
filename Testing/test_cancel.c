@@ -13,12 +13,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// It is defined in mercury_test.c with initial value of 0.
-// The rpc_open() is defined in mercury_rpc_cb.c. 
+/*
+  The following extern variable is defined in mercury_test.c with initial 
+  value of 0.  The RPC rpc_open() is defined in mercury_rpc_cb.c. 
+*/
 extern hg_id_t hg_test_rpc_open_id_g; 
 
 #define COMPLETION_MAGIC 123456
-
+/* 
+   This call back function will never be called if CANCEL succeeds.
+   However, it's useful to check for NA plugins that do not support cancel 
+   (e.g., CCI). 
+ */
 static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
 {
@@ -29,24 +35,46 @@ hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
     int rpc_open_event_id;
     rpc_open_out_t rpc_open_out_struct;
     hg_return_t ret = HG_SUCCESS;
+
     fprintf(stderr, ">hg_test_rpc_forward_cb()\n");
+
+    /* Get output */
+    ret = HG_Get_output(handle, &rpc_open_out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not get output\n");
+    }
+    /* Get output parameters */
+    rpc_open_ret = rpc_open_out_struct.ret;
+    rpc_open_event_id = rpc_open_out_struct.event_id;
+    printf("rpc_open returned: %d with event_id: %d\n", rpc_open_ret,
+            rpc_open_event_id);
+
+    /* Free request */
+    ret = HG_Free_output(handle, &rpc_open_out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free output\n");
+        goto done;
+    }
+    
+#if 0    
     ptr++;
-    // Server never manipulates return value of this.
+    /*  Target (server) never manipulates return value of this. */
     if (callback_info->ret != HG_CANCELLED) 
     {
         fprintf(stderr, "Callback was not cancelled: %d\n",
                 callback_info->ret);
-        // *ptr = 0;
+        *ptr = 0;
     }
-    else
-    {                           /* cancelled */
-        // *ptr = COMPLETION_MAGIC;
+    else /* Cancelled. */
+    {                           
+        *ptr = COMPLETION_MAGIC;
         fprintf(stderr, "Callback was cancelled: %d\n",
                 callback_info->ret);        
     }
-
+#endif
     hg_request_complete(request);
-
+    
+done:
     return ret;
 }
 
@@ -63,16 +91,14 @@ main(int argc, char *argv[])
     rpc_open_in_t  rpc_open_in_struct;
     void *data[2];
     unsigned int flag;
-    // MERCURY_TESTING_TEMP_DIRECTORY = "."
-    // hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
-    hg_const_string_t rpc_open_path = "./test.h5"; 
+    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
     hg_return_t hg_ret;
-
+    unsigned int timeout = HG_MAX_IDLE_TIME;
+    
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    fprintf(stderr, "Starting HG_Test_client_init()\n");
     hg_class = HG_Test_client_init(argc, argv, &addr, NULL, &context,
             &request_class);
     
@@ -90,7 +116,7 @@ main(int argc, char *argv[])
     rpc_open_in_struct.path = rpc_open_path; // hg_const_string_t type
     rpc_open_in_struct.handle = rpc_open_handle;
 
-    /* arguments  */
+    /* Why do we send these arguments?  */
     data[0] = request;
     data[1] = 0;
 
@@ -100,33 +126,37 @@ main(int argc, char *argv[])
     hg_ret = HG_Forward(handle, /* has rpc_open() in mercury_rpc_cb.c */
                         hg_test_rpc_forward_cb,
                         // This should be executed no matther cancelled or not. 
-                        data,
+                        // data,
+                        request,
                         &rpc_open_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         return EXIT_FAILURE;
     }
 
-    
+
     fprintf(stderr, "Cancelling...\n");
-    // HG_Cancel is for client operation.
-    // It doesn't send anything special to server.
-    // It simply calls NA's cancel. This will trigger NA_Cancel() at server. 
+    /*  
+        HG_Cancel() is for client operation.
+        It doesn't send anything special to server.
+        It simply calls NA_Cancel() that calls plugin's cancel operation.
+    */
+
     hg_ret = HG_Cancel(handle);
     if (hg_ret != HG_SUCCESS)
     {
         fprintf(stderr, "HG_Cancel failed: %d\n", hg_ret);
         return EXIT_FAILURE;
     }
-    
-    // Don't wait too long because NA_Cancel() will cancel a communication
-    // request.
+    else {
+        /*
+          Don't wait too long (e.g., HG_MAX_IDLE_TIME) because NA_Cancel() will 
+          cancel a network request and HG_Cancel() will destroy handle.
+        */
+        timeout = 1;
+    }
     fprintf(stderr, "Waiting...\n");
-    hg_request_wait(request, 1, NULL);    
-    // hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
-    // hg_request_wait(request, 1, NULL);
-
-
+    hg_request_wait(request, timeout, NULL);    
 
     fprintf(stderr, "HG_Destroy...\n");            
     /* Complete */

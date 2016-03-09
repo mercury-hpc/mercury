@@ -2162,7 +2162,6 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
             break;
         case NA_CB_RECV_EXPECTED:
             /* Check buf_size and actual_size */
-
             if (!(na_bmi_op_id->cancel & NA_BMI_CANCEL_R) &&
                 (na_bmi_op_id->info.recv_expected.actual_size >
                  na_bmi_op_id->info.recv_expected.buf_size)) {
