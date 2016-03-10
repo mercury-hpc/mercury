@@ -86,4 +86,5 @@ build_na_test(cancel)
 # Set list of tests
 
 # Client / server test with all enabled NA plugins
-add_na_test(simple server client cancel)
+add_na_test(simple server client)
+add_na_test(cancel server cancel)
