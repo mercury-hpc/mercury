@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <sys/queue.h>
+#include <unistd.h>
 #include <assert.h>
 
 /****************/
@@ -150,6 +151,7 @@ struct na_cci_private_data {
 	hg_queue_t     *unexpected_op_queue;	/* Unexpected op queue */
 	hg_thread_mutex_t unexpected_op_queue_mutex;	/* Mutex */
 	char		*uri;
+        char           *override_config_file;
 };
 
 typedef union cci_msg {
@@ -457,6 +459,9 @@ na_cci_cancel(
 	      na_op_id_t op_id
 );
 
+static char *
+override_cci_parameters(const struct na_info *na_info, na_bool_t listen);
+
 /*******************/
 /* Local Variables */
 /*******************/
@@ -511,6 +516,7 @@ na_cci_check_protocol(const char *protocol_name)
 	int		ret = 0, i = 0;
 	uint32_t	caps = 0;
 	cci_device_t	*const *devices, *device = NULL;
+        int             init_flag = 0;
 
 	/*
 	 * init CCI, get_devices, and check if a device on this transport
@@ -524,6 +530,7 @@ na_cci_check_protocol(const char *protocol_name)
 			     cci_strerror(NULL, ret));
 		goto out;
 	}
+        init_flag = 1;
 	/* Get the available devices */
 	ret = cci_get_devices(&devices);
 	if (ret) {
@@ -556,13 +563,15 @@ na_cci_check_protocol(const char *protocol_name)
 		accept = NA_TRUE;
 
 out:
+        if(init_flag)
+            cci_finalize();
 	return accept;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
-		  na_bool_t NA_UNUSED listen)
+		  na_bool_t listen)
 {
 	int rc = 0, i = 0;
 	uint32_t caps = 0;
@@ -570,6 +579,12 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	cci_endpoint_t *endpoint = NULL;
 	char *uri = NULL;
 	na_return_t ret = NA_SUCCESS;
+        char* override_config_file = NULL;
+
+        /* override config file parameters if needed to honor Mercury
+         * parameters
+         */
+        override_config_file = override_cci_parameters(na_info, listen);
 
 	/* Initialize CCI */
 	rc = cci_init(CCI_ABI_VERSION, 0, &caps);
@@ -609,6 +624,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 		ret = NA_NOMEM_ERROR;
 		goto out;
 	}
+	NA_CCI_PRIVATE_DATA(na_class)->override_config_file = override_config_file;
 
 	/* Create an endpoint using the requested transport */
 	rc = cci_create_endpoint(device, 0, &endpoint, NULL);
@@ -630,8 +646,13 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	free(uri);
 
 	ret = na_cci_init(na_class);
-
 out:
+        if(ret != 0 && override_config_file)
+        {
+            unlink(override_config_file);
+            free(override_config_file);
+        }
+
 	return ret;
 }
 
@@ -692,6 +713,11 @@ na_cci_finalize(na_class_t * na_class)
 	int		rc;
 
 	free(priv->uri);
+        if(priv->override_config_file)
+        {
+            unlink(priv->override_config_file);
+            free(priv->override_config_file);
+        }
 
 	/* Check that unexpected op queue is empty */
 	if (!hg_queue_is_empty(
@@ -2136,4 +2162,229 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 	ret = na_cci_complete(na_cci_addr, na_cci_op_id, NA_CANCELED);
 out:
 	return ret;
+}
+
+#define CCI_BUF_LEN 512
+#define CCI_PARAM_LEN 128
+
+struct cci_param
+{
+    char key[CCI_PARAM_LEN];
+    char value[CCI_PARAM_LEN];
+    struct cci_param *next;
+};
+
+struct cci_block
+{
+    char name[CCI_PARAM_LEN];
+    struct cci_param *params;
+    struct cci_block *next;
+};
+
+static void write_cci_parameters(FILE *file, struct cci_block *block)
+{
+    struct cci_block *old_block;
+    struct cci_param *old_param;
+
+    /* walk through blocks */
+    while(block)
+    {
+        fprintf(file, "[%s]\n", block->name);
+        while(block->params)
+        {
+            fprintf(file, "%s = %s\n", block->params->key, block->params->value);
+            old_param = block->params;
+            block->params = block->params->next;
+            free(old_param);
+        }
+
+        old_block = block;
+        block = block->next;
+        free(old_block);
+    }
+
+    return;
+}
+
+/* TODO: clean up assertions */
+static int read_cci_parameters(const char *filename, struct cci_block** block)
+{
+    FILE *file;
+    char *str, buffer[CCI_BUF_LEN], tok_buffer[CCI_BUF_LEN], *tok;
+    struct cci_block *next_block = NULL;
+    struct cci_block *cur_block = NULL;
+    struct cci_param *cur_param = NULL;
+
+    file = fopen(filename, "r");
+    if(!file)
+        return(-1);
+     
+    while(1)
+    {
+        /* read each line */
+        str = fgets(buffer, CCI_BUF_LEN, file);
+        if(!str)
+        {
+            if(errno == EINTR)
+                continue;
+            else
+                break;
+        }
+
+        /* look for block names */
+        memcpy(tok_buffer, buffer, CCI_BUF_LEN);
+        tok = strtok(tok_buffer, "[] \n");
+        /* basic check for tokenizing success and presence of both [ and ] */
+        if(tok && index(buffer, '[') && index(buffer, ']'))
+        {
+            /* new block */
+            next_block = cur_block;
+            cur_block = calloc(sizeof(*cur_block), 1);
+            assert(cur_block);
+            strncpy(cur_block->name, tok, CCI_PARAM_LEN-1);
+            cur_block->next = next_block;
+        }
+        
+        /* look for parameters */
+        memcpy(tok_buffer, buffer, CCI_BUF_LEN);
+        tok = strtok(tok_buffer, "= \n");
+        /* basic check for tokenizing success and presence of = */
+        if(tok && index(buffer, '='))
+        {
+            /* new parameter */
+            cur_param = calloc(sizeof(*cur_param), 1);
+            assert(cur_param);
+            strncpy(cur_param->key, tok, CCI_PARAM_LEN-1);
+            tok = strtok(NULL, "= \n");
+            strncpy(cur_param->value, tok, CCI_PARAM_LEN-1);
+            assert(cur_block);
+            cur_param->next = cur_block->params;
+            cur_block->params = cur_param;
+        }
+    }
+
+    *block = cur_block;
+
+    return(0);
+}
+
+static void replace_port(struct cci_block *block, const struct na_info *na_info)
+{
+    int set_port = 0;
+    int match_transport = 0;
+    struct cci_param *cur_param;
+
+    /* walk through blocks */
+    while(block)
+    {
+        /* see if this block refers to the transport we want to use */
+        cur_param = block->params;
+        match_transport = 0;
+        while(cur_param)
+        {
+            if(!strcmp(cur_param->key, "transport") && !strcmp(cur_param->value, na_info->protocol_name))
+            {
+                match_transport = 1;
+                break;
+            }
+            cur_param = cur_param->next;
+        }
+        if(!match_transport)
+        {
+            block = block->next;
+            continue;
+        }
+
+        /* look for the port parameter in this block */
+        set_port = 0;
+        cur_param = block->params;
+        while(cur_param)
+        {
+            if(!strcmp(cur_param->key, "port"))
+            {
+                /* replace existing port */
+                sprintf(cur_param->value, "%d", na_info->port);
+                set_port = 1;
+                break;
+            }
+            cur_param = cur_param->next;
+        }
+        if(!set_port)
+        {
+            /* port wasn't specified; let's add it */
+            cur_param = calloc(sizeof(*cur_param), 1);
+            assert(cur_param);
+            sprintf(cur_param->key, "port");
+            sprintf(cur_param->value, "%d", na_info->port);
+            cur_param->next = block->params;
+            block->params = cur_param;
+        }
+        block = block->next;
+    }
+
+    return;
+}
+
+static char*
+override_cci_parameters(const struct na_info *na_info, na_bool_t listen)
+{
+    char *config_file = NULL;
+    char *tmp_config_file = NULL; 
+    int fd, ret;
+    FILE *newfile;
+    struct cci_block *block;
+    char *env_buffer;
+
+    /* nothing to do on clients */
+    if(listen == NA_FALSE)
+        return(NULL);
+
+    /* TODO: support more protos? */
+    if(strcmp("tcp", na_info->protocol_name))
+        return(NULL);
+    
+    /* find currently specified config file (if present) */
+    config_file = getenv("CCI_CONFIG");
+    if(config_file)
+    {
+        ret = read_cci_parameters(config_file, &block);
+        if(ret < 0)
+            return(NULL);
+    }
+    else
+    {
+        /* warn user; no cci config specified */
+        fprintf(stderr, "WARNING: Mercury was unable to find a CCI configuration file specified by the CCI_CONFIG environment variable.\n");
+        fprintf(stderr, "   Address provided to Mercury init will be ignored.\n");
+        fprintf(stderr, "   Consider a configuration file like this:\n");
+        fprintf(stderr, "      [mercury]\n");
+        fprintf(stderr, "      transport = %s\n", na_info->protocol_name);
+        fprintf(stderr, "      interface = eth0\n");
+        return(NULL);
+    }
+
+    /* replace port parameter */
+    replace_port(block, na_info);
+
+    /* create a new config file for cci */
+    tmp_config_file = strdup("/tmp/cci-mercury.conf.XXXXXX");
+    assert(tmp_config_file);
+    fd = mkstemp(tmp_config_file);
+    if(fd < 0)
+        return(NULL);
+    newfile = fdopen(fd, "w");
+
+    /* write parameters to new file (freeing data structure along the way) */
+    write_cci_parameters(newfile, block);
+
+    fclose(newfile);
+    close(fd);
+
+    /* set replacement env */
+    env_buffer = calloc(CCI_BUF_LEN, 1);
+    assert(env_buffer);
+    sprintf(env_buffer, "CCI_CONFIG=%s", tmp_config_file);
+    putenv(env_buffer);
+    
+    return(tmp_config_file);
 }
