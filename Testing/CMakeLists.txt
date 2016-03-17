@@ -9,7 +9,7 @@ set(MERCURY_TESTING_MAX_LOOP "1" CACHE STRING
   "Loop n times for average bandwidth/time measures.")
 mark_as_advanced(MERCURY_TESTING_MAX_LOOP)
 
-set(MERCURY_TESTING_NUM_THREADS "1" CACHE STRING
+set(MERCURY_TESTING_NUM_THREADS "8" CACHE STRING
   "Number of server threads used for testing.")
 mark_as_advanced(MERCURY_TESTING_NUM_THREADS)
 

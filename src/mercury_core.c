@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
- * UChicago Argonne, LLC and The HDF Group.
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -653,7 +653,6 @@ hg_core_pending_list_check(hg_context_t *context)
 static hg_return_t
 hg_core_pending_list_cancel(hg_context_t *context)
 {
-    fprintf(stderr, ">hg_core_pending_list_cancel()\n");
     hg_return_t ret = HG_SUCCESS;
 
     hg_thread_mutex_lock(&context->pending_list_mutex);
@@ -676,7 +675,6 @@ hg_core_pending_list_cancel(hg_context_t *context)
     }
 
     hg_thread_mutex_unlock(&context->pending_list_mutex);
-    fprintf(stderr, "<hg_core_pending_list_cancel()\n");
     return ret;
 }
 
@@ -973,12 +971,10 @@ done:
 static void
 hg_core_destroy(struct hg_handle *hg_handle)
 {
-    fprintf(stderr, ">hg_core_destroy()\n");
     if (!hg_handle) goto done;
 
     if (hg_atomic_decr32(&hg_handle->ref_count)) {
         /* Cannot free yet */
-        fprintf(stderr, "=hg_core_destroy(): cannot free yet.\n");
         goto done;
     }
 
@@ -993,7 +989,6 @@ hg_core_destroy(struct hg_handle *hg_handle)
     free(hg_handle->extra_in_buf);
 
     free(hg_handle);
-    fprintf(stderr, "<hg_core_destroy(): handle is freed.\n");
 done:
     return;
 }
@@ -1706,7 +1701,6 @@ static hg_return_t
 hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
     unsigned int timeout, unsigned int max_count, unsigned int *actual_count)
 {
-    printf(">hg_core_trigger(max_count=%d)\n", max_count);
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
 
@@ -1718,7 +1712,6 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
         /* Is completion queue empty */
         while (hg_queue_is_empty(context->completion_queue)) {
             if (!timeout) {
-                printf("=hg_core_trigger():timeout is 0\n");                                
                 /* Timeout is 0 so leave. */
                 ret = HG_TIMEOUT;
                 hg_thread_mutex_unlock(&context->completion_queue_mutex);
@@ -1729,13 +1722,11 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
                     &context->completion_queue_mutex,
                     timeout) != HG_UTIL_SUCCESS) {
                 /* Timeout occurred so leave */
-                printf("=hg_core_trigger():timeout\n");                
                 ret = HG_TIMEOUT;
                 hg_thread_mutex_unlock(&context->completion_queue_mutex);
                 goto done;
             }
         }
-        printf("=hg_core_trigger():queue is not empty.\n");
         /* Completion queue should not be empty now */
         hg_handle = (struct hg_handle *) hg_queue_pop_tail(context->completion_queue);
         if (!hg_handle) {
@@ -1752,7 +1743,6 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
         /* Execute callback */
         if (hg_handle->callback) {
             struct hg_cb_info hg_cb_info;
-            fprintf(stderr, "=hg_core_trigger():executing callback\n");                
             hg_cb_info.arg = hg_handle->arg;
             hg_cb_info.ret = hg_handle->ret;
             /*  */
@@ -1771,7 +1761,6 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
     if (actual_count) *actual_count = count;
 
 done:
-    printf("<hg_core_trigger(count=%d)\n", count);    
     return ret;
 }
 
@@ -1779,7 +1768,6 @@ done:
 static hg_return_t
 hg_core_cancel(struct hg_handle *hg_handle)
 {
-    fprintf(stderr, ">hg_core_cancel()\n");
     struct hg_class *hg_class = hg_handle->hg_info.hg_class;
     hg_return_t ret = HG_SUCCESS;
 
@@ -1808,17 +1796,8 @@ hg_core_cancel(struct hg_handle *hg_handle)
         }
 
         else {
-            /* If cancel succeeds, put it into completion queue, mark as cancelled */
-            fprintf(stderr, "=hg_core_cancel():NA_Cancel() succeeded.\n");
-            
-            /* We should check if it's canceled or not in callback. */
-            /* Mark as completed */
-#if 0                    
-            if (hg_atomic_decr32(&hg_handle->ref_count)){
-                fprintf(stderr, "=hg_core_cancel(): hg_atomic_decr32 failed.\n");
-            }
-#endif                    
-            /* and then canceled. */
+            /* If cancel succeeds, put the handle into completion queue, 
+               mark it as cancelled. */
             hg_handle->ret = HG_CANCELLED;            
             ret = hg_core_complete(hg_handle);
             if (ret != HG_SUCCESS) {
@@ -1830,9 +1809,6 @@ hg_core_cancel(struct hg_handle *hg_handle)
 
 
     }
-    /* Free op */
-    // reduces the reference count. doesn't destroy everything immediately.         hg_core_destroy(hg_handle); 
-    fprintf(stderr, "<hg_core_cancel(%d)\n", ret);
 done:
     return ret;
 }

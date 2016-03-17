@@ -36,27 +36,13 @@ hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
     rpc_open_out_t rpc_open_out_struct;
     hg_return_t ret = HG_SUCCESS;
 
-    fprintf(stderr, ">hg_test_rpc_forward_cb()\n");
-
-    //  In main() function below, HG_Forward 
-    //       data[0] = request;
-    //       data[1] = 0;
-    //
-    // fprintf(stderr, "data[0]=%d\n", *ptr);
-    // ptr++;
-    // fprintf(stderr, "data[1]=%d\n", *ptr);
-    
-    //  Target (server) never manipulates the "ret" value of callback_info.
-    //  See mercur_core_cancel() that sets the "ret"value.
     if (callback_info->ret != HG_CANCELLED) 
     {
         fprintf(stderr, "Callback was not cancelled: %d\n",
                 callback_info->ret);
-        // *ptr = 0;
     }
     else /* Cancelled. */
     {                           
-        // *ptr = COMPLETION_MAGIC;
         fprintf(stderr, "Callback was cancelled: %d\n",
                 callback_info->ret);        
     }
@@ -100,22 +86,15 @@ main(int argc, char *argv[])
     }
 
     /* Fill input structure for rpc_open(). */
-    rpc_open_handle.cookie = 12345; // hg_uint64_t  type
-    rpc_open_in_struct.path = rpc_open_path; // hg_const_string_t type
+    rpc_open_handle.cookie = 12345; 
+    rpc_open_in_struct.path = rpc_open_path; 
     rpc_open_in_struct.handle = rpc_open_handle;
-
-    // Why do we send these two requests? <hyokyung 2016.03. 9. 10:46:43>  
-    // data[0] = request;
-    // data[1] = 0;
 
     /* Forward call to remote addr and get a new request */
     fprintf(stderr, "Forwarding rpc_open, op id: %u...\n",
             hg_test_rpc_open_id_g);
-    hg_ret = HG_Forward(handle, /* has rpc_open() in mercury_rpc_cb.c */
+    hg_ret = HG_Forward(handle, 
                         hg_test_rpc_forward_cb,
-                        // This will make client hang.
-                        // <hyokyung 2016.03. 9. 10:51:38>
-                        // data,
                         request,
                         &rpc_open_in_struct);
     if (hg_ret != HG_SUCCESS) {
@@ -138,24 +117,13 @@ main(int argc, char *argv[])
     }
     fprintf(stderr, "Waiting...\n");
     hg_request_wait(request, timeout, NULL);    
-
-    fprintf(stderr, "HG_Destroy...\n");            
+    
     /* Complete */
     hg_ret = HG_Destroy(handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not complete\n");
         return EXIT_FAILURE;
     }
-
- 
-#if 0
-    // Sending two requests do not work and make client hang.
-    if (data[1] != (void*)COMPLETION_MAGIC)
-    {
-        fprintf(stderr, "callback wasn't called\n");
-        return EXIT_FAILURE;
-    }
-#endif
 
     hg_request_destroy(request);
 

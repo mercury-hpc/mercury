@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- * UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -2428,8 +2428,6 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
                 }
                 break;
             default:
-                printf("Unknown type of operation ID: %d\n",
-                       na_mpi_op_id->type);                
                 NA_LOG_ERROR("Unknown type of operation ID");
                 ret = NA_PROTOCOL_ERROR;
                 goto done;
