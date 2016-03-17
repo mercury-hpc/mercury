@@ -1579,7 +1579,7 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
     /* Try to make progress for remaining time */
     ret = na_class->progress(na_class, context,
             (unsigned int) (remaining * 1000));
-
+    
     hg_thread_mutex_lock(&na_private_context->progress_mutex);
 
     /* At this point, either progress succeeded or failed with NA_TIMEOUT,

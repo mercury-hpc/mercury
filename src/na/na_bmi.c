@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- * UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -1815,8 +1815,10 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     if (outcount && na_bmi_op_id) {
         if ((error_code != 0) &&
             (error_code != -BMI_ECANCEL)) {
+            
             fprintf(stderr, "Error code=%d BMI_ECANCEL=%d\n", error_code,
                     BMI_ECANCEL);
+            
             NA_LOG_ERROR("BMI_testcontext failed, error code set");
             ret = NA_PROTOCOL_ERROR;
             goto done;
