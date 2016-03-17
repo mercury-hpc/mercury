@@ -298,7 +298,7 @@ int main(int argc, char *argv[])
 
             na_ret = NA_Progress(params.network_class, params.context, NA_MAX_IDLE_TIME);
             if (na_ret != NA_SUCCESS) {
-                test_done_g = 1;
+                return EXIT_SUCCESS;
             }
             
             

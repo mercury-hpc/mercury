@@ -37,19 +37,13 @@ main(int argc, char *argv[])
         unsigned int actual_count = 0;
 
         do {
-            fprintf(stderr, "Calling HG_Trigger()\n");
             ret = HG_Trigger(hg_class, context, 0, 1, &actual_count);
-            fprintf(stderr, "HG_Trigger returned %d\n", ret);
         } while ((ret == HG_SUCCESS) && actual_count);
 
-        if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1)){
-            fprintf(stderr, "hg_atomic_cas32() returned true.\n");
+        if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
             break;
-        }
-        
-        fprintf(stderr, "Calling HG_Progress()\n");
+
         ret = HG_Progress(hg_class, context, HG_MAX_IDLE_TIME);
-        fprintf(stderr, "HG_Progress returned %d\n", ret);        
     } while (ret == HG_SUCCESS);
 
     printf("# Finalizing...\n");

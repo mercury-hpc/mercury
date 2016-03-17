@@ -136,9 +136,11 @@ int main (int argc, char **argv)
 
     /*
      * BMI specific debug
-     */
+  
     gossip_set_debug_mask(1, 0xffffffffffffffff);
     gossip_enable_stderr();
+     
+     */
     
 
     len = NA_Msg_get_max_unexpected_size(class);
