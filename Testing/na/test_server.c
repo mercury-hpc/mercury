@@ -299,15 +299,17 @@ int main(int argc, char *argv[])
             na_ret = NA_Progress(params.network_class, params.context, NA_MAX_IDLE_TIME);
             if (na_ret != NA_SUCCESS) {
                 test_done_g = 1;
-                return EXIT_FAILURE;
             }
             
             
         }
-        na_ret = NA_Addr_free(params.network_class, params.source_addr);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not free addr\n");
-            return EXIT_FAILURE;
+        
+        if (na_ret == NA_SUCCESS){
+            na_ret = NA_Addr_free(params.network_class, params.source_addr);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not free addr\n");
+                return EXIT_FAILURE;
+            }
         }
         params.source_addr = NA_ADDR_NULL;
         test_done_g = 0;
