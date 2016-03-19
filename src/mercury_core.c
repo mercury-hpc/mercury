@@ -100,6 +100,7 @@ struct hg_handle {
     hg_return_t ret;                    /* Return code associated to handle */
     hg_bool_t addr_mine;                /* NA Addr created by HG */
     hg_list_entry_t *entry;             /* Entry in pending / processing lists */
+    hg_bool_t process_rpc_cb;           /* RPC callback must be processed */
 
     void *in_buf;                       /* Input buffer */
     na_size_t in_buf_size;              /* Input buffer size */
@@ -576,9 +577,10 @@ hg_core_get_extra_input_cb(const struct hg_bulk_cb_info *callback_info)
     }
 
     /* Now can process the handle */
-    ret = hg_core_process(hg_handle);
+    hg_handle->process_rpc_cb = HG_TRUE;
+    ret = hg_core_complete(hg_handle);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not process handle");
+        HG_LOG_ERROR("Could not complete rpc handle");
         goto done;
     }
 
@@ -930,6 +932,7 @@ hg_core_create(hg_class_t *hg_class, hg_context_t *context)
     hg_handle->ret = HG_SUCCESS;
     hg_handle->addr_mine = HG_FALSE;
     hg_handle->entry = NULL;
+    hg_handle->process_rpc_cb = HG_FALSE;
 
     /* Initialize processing buffers and use unexpected message size */
     hg_handle->in_buf = NULL;
@@ -1218,8 +1221,9 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         }
     } else {
         /* Process handle */
-        if (hg_core_process(hg_handle) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not process handle");
+        hg_handle->process_rpc_cb = HG_TRUE;
+        if(hg_core_complete(hg_handle) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not complete rpc handle");
             goto done;
         }
     }
@@ -1373,8 +1377,9 @@ hg_core_process_thread(void *arg)
         }
     } else {
         /* Process handle */
-        if (hg_core_process(hg_handle) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not process handle");
+        hg_handle->process_rpc_cb = HG_TRUE;
+        if(hg_core_complete(hg_handle) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not complete rpc handle");
             goto done;
         }
     }
@@ -1744,21 +1749,34 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
          * to the queue while callback gets executed */
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
-        /* Execute callback */
-        if (hg_handle->callback) {
-            struct hg_cb_info hg_cb_info;
+        if(hg_handle->process_rpc_cb) {
+            /* Handle will now be processed */
+            hg_handle->process_rpc_cb = HG_FALSE;
 
-            hg_cb_info.arg = hg_handle->arg;
-            hg_cb_info.ret = hg_handle->ret;
-            hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
-            hg_cb_info.context = hg_handle->hg_info.context;
-            hg_cb_info.handle = (hg_handle_t) hg_handle;
+            /* Run RPC callback */
+            ret = hg_core_process(hg_handle);
+            if(ret != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not process handle");
+                goto done;
+            }
+        } else {
+            /* Execute user callback */
+            if (hg_handle->callback) {
+                struct hg_cb_info hg_cb_info;
 
-            hg_handle->callback(&hg_cb_info);
+                hg_cb_info.arg = hg_handle->arg;
+                hg_cb_info.ret = hg_handle->ret;
+                hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
+                hg_cb_info.context = hg_handle->hg_info.context;
+                hg_cb_info.handle = (hg_handle_t) hg_handle;
+
+                hg_handle->callback(&hg_cb_info);
+            }
+
+            /* Free op */
+            hg_core_destroy(hg_handle);
         }
 
-        /* Free op */
-        hg_core_destroy(hg_handle);
         count++;
     }
 
