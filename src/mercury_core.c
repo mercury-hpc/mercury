@@ -63,6 +63,7 @@ struct hg_context {
     hg_class_t *hg_class;                         /* HG class */
     hg_bulk_context_t *bulk_context;              /* HG bulk context */
     hg_queue_t *completion_queue;                 /* Completion queue */
+    hg_queue_t *rpc_completion_queue;             /* Completion queue of RPCs to invoke */
     hg_thread_mutex_t completion_queue_mutex;     /* Completion queue mutex */
     hg_thread_cond_t completion_queue_cond;       /* Completion queue cond */
     hg_list_t *pending_list;                      /* List of pending handles */
@@ -354,7 +355,8 @@ hg_core_process(
  */
 static hg_return_t
 hg_core_complete(
-        struct hg_handle *hg_handle
+        struct hg_handle *hg_handle,
+        hg_queue_t *queue
         );
 
 /**
@@ -576,9 +578,10 @@ hg_core_get_extra_input_cb(const struct hg_bulk_cb_info *callback_info)
     }
 
     /* Now can process the handle */
-    ret = hg_core_process(hg_handle);
+    ret = hg_core_complete(hg_handle, 
+        hg_handle->hg_info.context->rpc_completion_queue);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not process handle");
+        HG_LOG_ERROR("Could not complete rpc handle");
         goto done;
     }
 
@@ -1082,7 +1085,7 @@ hg_core_respond_self(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     hg_handle->arg = hg_self_cb_info;
 
     /* Complete and add to completion queue */
-    ret = hg_core_complete(hg_handle);
+    ret = hg_core_complete(hg_handle, hg_handle->hg_info.context->completion_queue);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not complete handle");
         goto done;
@@ -1147,7 +1150,7 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
         hg_atomic_set32(&hg_handle->na_completed_count, 0);
 
         /* Mark as completed */
-        if (hg_core_complete(hg_handle) != HG_SUCCESS) {
+        if (hg_core_complete(hg_handle, hg_handle->hg_info.context->completion_queue) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not complete operation");
             goto done;
         }
@@ -1218,8 +1221,9 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         }
     } else {
         /* Process handle */
-        if (hg_core_process(hg_handle) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not process handle");
+        if(hg_core_complete(hg_handle, 
+            hg_handle->hg_info.context->rpc_completion_queue) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not complete rpc handle");
             goto done;
         }
     }
@@ -1250,7 +1254,7 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
         /* Reset completed count */
         hg_atomic_set32(&hg_handle->na_completed_count, 0);
 
-        if (hg_core_complete(hg_handle) != HG_SUCCESS) {
+        if (hg_core_complete(hg_handle, hg_handle->hg_info.context->completion_queue) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not complete operation");
             goto done;
         }
@@ -1296,7 +1300,7 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
         hg_atomic_set32(&hg_handle->na_completed_count, 0);
 
         /* Mark as completed */
-        if (hg_core_complete(hg_handle) != HG_SUCCESS) {
+        if (hg_core_complete(hg_handle, hg_handle->hg_info.context->completion_queue) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not complete operation");
             goto done;
         }
@@ -1337,7 +1341,7 @@ hg_core_self_cb(const struct hg_cb_info *callback_info)
     /* Increment refcount and push handle back to completion queue */
     hg_atomic_incr32(&hg_handle->ref_count);
 
-    ret = hg_core_complete(hg_handle);
+    ret = hg_core_complete(hg_handle, hg_handle->hg_info.context->completion_queue);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not complete handle");
         goto done;
@@ -1373,8 +1377,9 @@ hg_core_process_thread(void *arg)
         }
     } else {
         /* Process handle */
-        if (hg_core_process(hg_handle) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not process handle");
+        if(hg_core_complete(hg_handle, 
+            hg_handle->hg_info.context->rpc_completion_queue) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not complete rpc handle");
             goto done;
         }
     }
@@ -1423,7 +1428,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_complete(struct hg_handle *hg_handle)
+hg_core_complete(struct hg_handle *hg_handle, hg_queue_t *queue)
 {
     hg_context_t *context = hg_handle->hg_info.context;
     hg_return_t ret = HG_SUCCESS;
@@ -1431,7 +1436,7 @@ hg_core_complete(struct hg_handle *hg_handle)
     hg_thread_mutex_lock(&context->completion_queue_mutex);
 
     /* Add handle to completion queue */
-    if (hg_queue_push_head(context->completion_queue,
+    if (hg_queue_push_head(queue,
             (hg_queue_value_t) hg_handle) != HG_UTIL_SUCCESS) {
         HG_LOG_ERROR("Could not push completion data to completion queue");
         ret = HG_NOMEM_ERROR;
@@ -1600,6 +1605,12 @@ hg_core_progress_na(hg_class_t *hg_class, hg_context_t *context,
 
     completion_queue_empty = (hg_bool_t) hg_queue_is_empty(
             context->completion_queue);
+    /* also check rpc completion queue, indicating that some rpc callbacks
+     * need to be executed
+     */
+    if(completion_queue_empty)
+        completion_queue_empty = (hg_bool_t) hg_queue_is_empty(
+                context->rpc_completion_queue);
 
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
@@ -1708,11 +1719,13 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
 
     while (count < max_count) {
         struct hg_handle *hg_handle = NULL;
+        int rpc_handle_flag = 0;
 
         hg_thread_mutex_lock(&context->completion_queue_mutex);
 
         /* Is completion queue empty */
-        while (hg_queue_is_empty(context->completion_queue)) {
+        while (hg_queue_is_empty(context->completion_queue) &&
+            hg_queue_is_empty(context->rpc_completion_queue)) {
             if (!timeout) {
                 /* Timeout is 0 so leave */
                 ret = HG_TIMEOUT;
@@ -1734,31 +1747,47 @@ hg_core_trigger(hg_class_t HG_UNUSED *hg_class, hg_context_t *context,
         hg_handle = (struct hg_handle *) hg_queue_pop_tail(
                 context->completion_queue);
         if (!hg_handle) {
-            HG_LOG_ERROR("NULL operation ID");
-            ret = HG_INVALID_PARAM;
-            hg_thread_mutex_unlock(&context->completion_queue_mutex);
-            goto done;
+            hg_handle = (struct hg_handle *) hg_queue_pop_tail(
+                            context->rpc_completion_queue);
+            rpc_handle_flag = 1;
+            if (!hg_handle) {
+                HG_LOG_ERROR("NULL operation ID");
+                ret = HG_INVALID_PARAM;
+                hg_thread_mutex_unlock(&context->completion_queue_mutex);
+                goto done;
+            }
         }
 
         /* Unlock now so that other threads can eventually add callbacks
          * to the queue while callback gets executed */
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
-        /* Execute callback */
-        if (hg_handle->callback) {
-            struct hg_cb_info hg_cb_info;
+        if(rpc_handle_flag)
+        {
+            /* Run rpc function */
+            ret = hg_core_process(hg_handle);
+            if(ret != HG_SUCCESS)
+                goto done;
+        }
+        else
+        {
+            /* Execute callback */
+            if (hg_handle->callback) {
+                struct hg_cb_info hg_cb_info;
 
-            hg_cb_info.arg = hg_handle->arg;
-            hg_cb_info.ret = hg_handle->ret;
-            hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
-            hg_cb_info.context = hg_handle->hg_info.context;
-            hg_cb_info.handle = (hg_handle_t) hg_handle;
+                hg_cb_info.arg = hg_handle->arg;
+                hg_cb_info.ret = hg_handle->ret;
+                hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
+                hg_cb_info.context = hg_handle->hg_info.context;
+                hg_cb_info.handle = (hg_handle_t) hg_handle;
 
-            hg_handle->callback(&hg_cb_info);
+                hg_handle->callback(&hg_cb_info);
+            }
+
+            /* Free op */
+            hg_core_destroy(hg_handle);
         }
 
-        /* Free op */
-        hg_core_destroy(hg_handle);
         count++;
     }
 
@@ -1895,6 +1924,12 @@ HG_Core_context_create(hg_class_t *hg_class)
         ret = HG_NOMEM_ERROR;
         goto done;
     }
+    context->rpc_completion_queue = hg_queue_new();
+    if (!context->rpc_completion_queue) {
+        HG_LOG_ERROR("Could not create RPC completion queue");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
 
     context->pending_list = hg_list_new();
     if (!context->pending_list) {
@@ -1936,6 +1971,7 @@ HG_Core_context_create(hg_class_t *hg_class)
 done:
     if (ret != HG_SUCCESS && context) {
         hg_queue_free(context->completion_queue);
+        hg_queue_free(context->rpc_completion_queue);
         HG_Bulk_context_destroy(context->bulk_context);
         free(context);
     }
@@ -1980,11 +2016,20 @@ HG_Core_context_destroy(hg_context_t *context)
         goto done;
     }
 
+    if (!hg_queue_is_empty(context->rpc_completion_queue)) {
+        HG_LOG_ERROR("RPC completion queue should be empty");
+        ret = HG_PROTOCOL_ERROR;
+        hg_thread_mutex_unlock(&context->completion_queue_mutex);
+        goto done;
+    }
+
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
     /* Destroy completion queue */
     hg_queue_free(context->completion_queue);
     context->completion_queue = NULL;
+    hg_queue_free(context->rpc_completion_queue);
+    context->rpc_completion_queue = NULL;
 
     /* Destroy self processing pool if created */
     hg_thread_pool_destroy(context->self_processing_pool);
