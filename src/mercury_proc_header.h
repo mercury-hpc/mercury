@@ -13,6 +13,11 @@
 
 #include "mercury_types.h"
 
+#if defined(__GNUC__) || defined(_WIN32)
+#pragma pack(push,1)
+#else
+#warning "Proc header struct padding may not be consistent across platforms."
+#endif
 struct hg_header_request {
      hg_uint8_t  hg;               /* Mercury identifier */
      hg_uint32_t protocol;         /* Version number */
@@ -32,6 +37,9 @@ struct hg_header_response {
     hg_uint8_t  padding;
     /* Should be 96 bits here */
 };
+#if defined(__GNUC__) || defined(_WIN32)
+#pragma pack(pop)
+#endif
 
 /*
  * 0      HG_PROC_HEADER_SIZE              size
