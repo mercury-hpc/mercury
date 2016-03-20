@@ -31,13 +31,16 @@
 static int done = 0;
 static pthread_cond_t done_cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t done_mutex = PTHREAD_MUTEX_INITIALIZER;
+static hg_id_t my_rpc_id;
 
 static hg_return_t my_rpc_cb(const struct hg_cb_info *info);
-static void run_my_rpc(hg_id_t my_rpc_id, int value);
+static void run_my_rpc(int value);
+static na_return_t lookup_cb(const struct na_cb_info *callback_info);
 
 /* struct used to carry state of overall operation across callbacks */
 struct my_rpc_state
 {
+    int value;
     hg_size_t size;
     void* buffer;
     hg_bulk_t bulk_handle;
@@ -46,7 +49,6 @@ struct my_rpc_state
 
 int main(int argc, char **argv) 
 {
-    hg_id_t my_rpc_id;
     int i;
 
     /* start mercury and register RPC */
@@ -59,7 +61,7 @@ int main(int argc, char **argv)
 
     /* issue 4 RPCs (these will proceed concurrently using callbacks) */
     for(i=0; i<4; i++)
-        run_my_rpc(my_rpc_id, i);
+        run_my_rpc(i);
 
     /* wait for callbacks to finish */
     pthread_mutex_lock(&done_mutex);
@@ -74,13 +76,31 @@ int main(int argc, char **argv)
 }
 
 
-static void run_my_rpc(hg_id_t my_rpc_id, int value)
+static void run_my_rpc(int value)
 {
-    na_addr_t svr_addr = NA_ADDR_NULL;
+    int *heap_value;
+
+    heap_value = malloc(sizeof(*heap_value));
+    assert(heap_value);
+    *heap_value = value;
+
+    /* address lookup.  This is an async operation as well so we continue in
+     * a callback from here.
+     */
+    hg_engine_addr_lookup("tcp://localhost:1234", lookup_cb, heap_value);
+
+    return;
+}
+
+static na_return_t lookup_cb(const struct na_cb_info *callback_info)
+{
+    na_addr_t svr_addr = callback_info->info.lookup.addr;
     my_rpc_in_t in;
     struct hg_info *hgi;
     int ret;
     struct my_rpc_state *my_rpc_state_p;
+
+    assert(callback_info->ret == 0);
 
     /* set up state structure */
     my_rpc_state_p = malloc(sizeof(*my_rpc_state_p));
@@ -89,8 +109,8 @@ static void run_my_rpc(hg_id_t my_rpc_id, int value)
     my_rpc_state_p->buffer = calloc(1, 512);
     assert(my_rpc_state_p->buffer);
     sprintf((char*)my_rpc_state_p->buffer, "Hello world!\n");
-
-    hg_engine_addr_lookup("tcp://localhost:1234", &svr_addr);
+    my_rpc_state_p->value = *((int*)callback_info->arg);
+    free(callback_info->arg);
 
     /* create create handle to represent this rpc operation */
     hg_engine_create_handle(svr_addr, my_rpc_id, &my_rpc_state_p->handle);
@@ -106,11 +126,10 @@ static void run_my_rpc(hg_id_t my_rpc_id, int value)
     /* Send rpc. Note that we are also transmitting the bulk handle in the
      * input struct.  It was set above. 
      */ 
-    in.input_val = value;
+    in.input_val = my_rpc_state_p->value;
     ret = HG_Forward(my_rpc_state_p->handle, my_rpc_cb, my_rpc_state_p, &in);
     assert(ret == 0);
 
-    return;
 }
 
 /* callback triggered upon receipt of rpc response */

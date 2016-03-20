@@ -138,6 +138,19 @@ hg_proc_get_size(
         );
 
 /**
+ * Get amount of buffer space that has actually been consumed
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Non-negative size value
+ */
+HG_EXPORT hg_size_t
+hg_proc_get_size_used(
+        hg_proc_t proc
+        );
+
+
+/**
  * Request a new buffer size. This will modify the size of the buffer attached
  * to the processor or create an extra processing buffer.
  *

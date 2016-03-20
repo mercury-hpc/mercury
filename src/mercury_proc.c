@@ -281,6 +281,28 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_size_t
+hg_proc_get_size_used(hg_proc_t proc)
+{
+    struct hg_proc *hg_proc = (struct hg_proc *) proc;
+    hg_size_t size = 0;
+
+    if (!hg_proc) {
+        HG_LOG_ERROR("Proc is not initialized");
+        goto done;
+    }
+
+    if(hg_proc->extra_buf.size > 0)
+        size = (hg_proc->proc_buf.size + hg_proc->extra_buf.size) - hg_proc->extra_buf.size_left;
+    else
+        size = hg_proc->proc_buf.size - hg_proc->proc_buf.size_left;
+
+done:
+    return size;
+
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
 {
@@ -530,6 +552,7 @@ hg_proc_flush(hg_proc_t proc)
             goto done;
         }
     }
+
 
     /* Process checksum (TODO should that depend on the encoding method) */
     ret = hg_proc_raw(proc, base_checksum, checksum_size);
