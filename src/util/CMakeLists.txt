@@ -38,6 +38,10 @@ if(NOT WIN32 AND NOT APPLE)
   check_include_files("stdatomic.h" HG_UTIL_HAS_STDATOMIC_H)
   # OpenPA
   option(MERCURY_USE_OPA "Use OpenPA for atomics." OFF)
+  # Force use of OPA if <stdatomic.h> is not found
+  if(NOT HG_UTIL_HAS_STDATOMIC_H)
+    set(MERCURY_USE_OPA "ON" CACHE BOOL "Use OpenPA for atomics." FORCE)
+  endif()
   if(MERCURY_USE_OPA)
     # Use OpenPA if stdatomic is not available
     find_package(OPA REQUIRED)
