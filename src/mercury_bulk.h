@@ -169,12 +169,15 @@ HG_Bulk_get_segment_count(
  * Get size required to serialize bulk handle.
  *
  * \param handle [IN]           abstract bulk handle
+ * \param serialize_data [IN]   boolean (passing HG_TRUE adds size of encoding
+ *                              actual data along the handle)
  *
  * \return Non-negative value
  */
 HG_EXPORT hg_size_t
 HG_Bulk_get_serialize_size(
-        hg_bulk_t handle
+        hg_bulk_t handle,
+        hg_bool_t serialize_data
         );
 
 /**
@@ -182,6 +185,9 @@ HG_Bulk_get_serialize_size(
  *
  * \param buf [IN/OUT]          pointer to buffer
  * \param buf_size [IN]         buffer size
+ * \param serialize_data [IN]   boolean (passing HG_TRUE encodes actual data
+ *                              along the handle, which is more efficient for
+ *                              small data)
  * \param handle [IN]           abstract bulk handle
  *
  * \return HG_SUCCESS or corresponding HG error code
@@ -190,6 +196,7 @@ HG_EXPORT hg_return_t
 HG_Bulk_serialize(
         void *buf,
         hg_size_t buf_size,
+        hg_bool_t serialize_data,
         hg_bulk_t handle
         );
 
@@ -257,7 +264,6 @@ HG_Bulk_transfer(
  * been separately created as HG_Progress() will call NA_Progress()/NA_Trigger()
  * on the associated NA context.
  *
- * \param bulk_class [IN]       pointer to HG bulk class
  * \param context [IN]          pointer to HG bulk context
  * \param timeout [IN]          timeout (in milliseconds)
  *
@@ -265,7 +271,6 @@ HG_Bulk_transfer(
  */
 HG_EXPORT hg_return_t
 HG_Bulk_progress(
-        hg_bulk_class_t *bulk_class,
         hg_bulk_context_t *context,
         unsigned int timeout
         );
@@ -278,7 +283,6 @@ HG_Bulk_progress(
  * separately created as HG_Progress() will call HG_Bulk_trigger() on the same
  * NA context.
  *
- * \param bulk_class [IN]       pointer to HG bulk class
  * \param context [IN]          pointer to HG bulk context
  * \param timeout [IN]          timeout (in milliseconds)
  * \param max_count [IN]        maximum number of callbacks triggered
@@ -288,7 +292,6 @@ HG_Bulk_progress(
  */
 HG_EXPORT hg_return_t
 HG_Bulk_trigger(
-        hg_bulk_class_t *bulk_class,
         hg_bulk_context_t *context,
         unsigned int timeout,
         unsigned int max_count,

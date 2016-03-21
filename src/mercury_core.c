@@ -372,7 +372,6 @@ hg_core_listen(
  */
 static hg_return_t
 hg_core_progress_bulk(
-        hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout
         );
@@ -1504,8 +1503,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_progress_bulk(hg_class_t *hg_class, hg_context_t *context,
-    unsigned int timeout)
+hg_core_progress_bulk(hg_context_t *context, unsigned int timeout)
 {
     hg_bool_t completion_queue_empty = HG_FALSE;
     unsigned int actual_count = 0;
@@ -1514,8 +1512,7 @@ hg_core_progress_bulk(hg_class_t *hg_class, hg_context_t *context,
 
     /* Trigger everything from HG Bulk */
     do {
-        bulk_ret = HG_Bulk_trigger(hg_class->bulk_class, context->bulk_context,
-                0, 1, &actual_count);
+        bulk_ret = HG_Bulk_trigger(context->bulk_context, 0, 1, &actual_count);
     } while ((bulk_ret == HG_SUCCESS) && actual_count);
 
     /* Is completion queue empty */
@@ -1530,7 +1527,7 @@ hg_core_progress_bulk(hg_class_t *hg_class, hg_context_t *context,
     if (!completion_queue_empty) goto done;
 
     /* Otherwise try to make progress on HG Bulk */
-    ret = HG_Bulk_progress(hg_class->bulk_class, context->bulk_context, timeout);
+    ret = HG_Bulk_progress(context->bulk_context, timeout);
     if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
         HG_LOG_ERROR("Could not make progress on HG Bulk");
         goto done;
@@ -1646,7 +1643,7 @@ hg_core_progress(hg_class_t *hg_class, hg_context_t *context,
         hg_time_get_current(&t1);
 
         /* Make progress on HG Bulk with 0 timeout */
-        ret = hg_core_progress_bulk(hg_class, context, 0);
+        ret = hg_core_progress_bulk(context, 0);
         if (ret == HG_SUCCESS)
             break; /* Progressed */
         else

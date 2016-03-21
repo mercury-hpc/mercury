@@ -561,9 +561,12 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
             if (*handle != HG_BULK_NULL) {
-                buf_size = HG_Bulk_get_serialize_size(*handle);
+                hg_bool_t eager_mode = (hg_proc_get_size_left(proc)
+                    > HG_Bulk_get_serialize_size(*handle, HG_TRUE))
+                    ? HG_TRUE : HG_FALSE;
+                buf_size = HG_Bulk_get_serialize_size(*handle, eager_mode);
                 buf = malloc(buf_size);
-                ret = HG_Bulk_serialize(buf, buf_size, *handle);
+                ret = HG_Bulk_serialize(buf, buf_size, eager_mode, *handle);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not serialize bulk handle");
                     return ret;

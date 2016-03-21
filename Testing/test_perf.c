@@ -160,13 +160,12 @@ done:
  */
 static hg_return_t
 measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
-        na_addr_t addr, hg_request_class_t *request_class)
+        na_addr_t addr, size_t count, hg_request_class_t *request_class)
 {
     bulk_write_in_t in_struct;
 
     int *bulk_buf;
     void *buf_ptr[1];
-    size_t count = (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE) / sizeof(int);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     size_t nbytes;
     double nmbytes;
@@ -316,18 +315,41 @@ main(int argc, char *argv[])
     hg_class_t *hg_class = NULL;
     hg_context_t *context = NULL;
     hg_request_class_t *request_class = NULL;
+    size_t count1 = 1024 / sizeof(int); /* Use small values for eager message */
+    size_t count2 = (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE) / sizeof(int);
     na_addr_t addr;
 
     hg_class = HG_Test_client_init(argc, argv, &addr, &na_test_comm_rank_g,
             &context, &request_class);
+
+    if (na_test_comm_rank_g == 0) {
+        printf("###############################################################################\n");
+        printf("# RPC test\n");
+        printf("###############################################################################\n");
+    }
 
     /* Run RPC test */
     measure_rpc(hg_class, context, addr, request_class);
 
     NA_Test_barrier();
 
-    /* Run Bulk test */
-    measure_bulk_transfer(hg_class, context, addr, request_class);
+    if (na_test_comm_rank_g == 0) {
+        printf("###############################################################################\n");
+        printf("# Bulk test (eager mode)\n");
+        printf("###############################################################################\n");
+    }
+
+    /* Run Bulk test (eager) */
+    measure_bulk_transfer(hg_class, context, addr, count1, request_class);
+
+    if (na_test_comm_rank_g == 0) {
+        printf("###############################################################################\n");
+        printf("# Bulk test (rma)\n");
+        printf("###############################################################################\n");
+    }
+
+    /* Run Bulk test (rma) */
+    measure_bulk_transfer(hg_class, context, addr, count2, request_class);
 
     HG_Test_finalize(hg_class);
 
