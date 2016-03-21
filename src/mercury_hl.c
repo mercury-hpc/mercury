@@ -29,6 +29,18 @@ struct hg_request_arg {
 /********************/
 /* Local Prototypes */
 /********************/
+static na_return_t
+na_addr_lookup_wait(
+        na_class_t *na_class,
+        const char *name,
+        na_addr_t *addr
+        );
+
+static na_return_t
+na_addr_lookup_cb(
+        const struct na_cb_info *callback_info
+        );
+
 static int
 hg_hl_request_progress(
         unsigned int timeout,
@@ -76,6 +88,94 @@ static struct hg_request_arg hg_request_arg_g = {NULL, NULL};
 
 /* For convenience, register HG_Hl_finalize() */
 static hg_bool_t hg_atexit_g = HG_FALSE;
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr)
+{
+    na_addr_t new_addr = NULL;
+    na_bool_t lookup_completed = NA_FALSE;
+    na_context_t *context = NULL;
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        HG_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!name) {
+        HG_LOG_ERROR("Lookup name is NULL");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!addr) {
+        HG_LOG_ERROR("NULL pointer to na_addr_t");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    context = NA_Context_create(na_class);
+    if (!context) {
+        HG_LOG_ERROR("Could not create context");
+        goto done;
+    }
+
+    ret = NA_Addr_lookup(na_class, context, &na_addr_lookup_cb, &new_addr, name,
+            NA_OP_ID_IGNORE);
+    if (ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not start NA_Addr_lookup");
+        goto done;
+    }
+
+    while (!lookup_completed) {
+        na_return_t trigger_ret;
+        unsigned int actual_count = 0;
+
+        do {
+            trigger_ret = NA_Trigger(context, 0, 1, &actual_count);
+        } while ((trigger_ret == NA_SUCCESS) && actual_count);
+
+        if (new_addr) {
+            lookup_completed = NA_TRUE;
+            *addr = new_addr;
+        }
+
+        if (lookup_completed) break;
+
+        ret = NA_Progress(na_class, context, NA_MAX_IDLE_TIME);
+        if (ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not make progress");
+            goto done;
+        }
+    }
+
+    ret = NA_Context_destroy(na_class, context);
+    if (ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not destroy context");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_addr_lookup_cb(const struct na_cb_info *callback_info)
+{
+    na_addr_t *addr_ptr = (na_addr_t *) callback_info->arg;
+    na_return_t ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Return from callback with %s error code",
+                NA_Error_to_string(callback_info->ret));
+        return ret;
+    }
+
+    *addr_ptr = callback_info->info.lookup.addr;
+
+    return ret;
+}
 
 /*---------------------------------------------------------------------------*/
 static int
@@ -213,7 +313,7 @@ HG_Hl_init(const char *info_string, na_bool_t listen)
 
     /* Lookup addr */
     if (!NA_ADDR_DEFAULT && !listen) {
-        if (NA_Addr_lookup_wait(NA_CLASS_DEFAULT, na_info_string,
+        if (na_addr_lookup_wait(NA_CLASS_DEFAULT, na_info_string,
                 &NA_ADDR_DEFAULT) != NA_SUCCESS) {
             HG_LOG_ERROR("Could not lookup addr");
             ret = HG_NA_ERROR;

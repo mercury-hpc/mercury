@@ -85,6 +85,78 @@ static hg_id_t hg_test_finalize2_id_g = 0;
 hg_atomic_int32_t hg_test_finalizing_count_g;
 
 /*---------------------------------------------------------------------------*/
+static na_return_t
+na_addr_lookup_cb(const struct na_cb_info *callback_info)
+{
+    na_addr_t *addr_ptr = (na_addr_t *) callback_info->arg;
+    na_return_t ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        fprintf(stderr, "Return from callback with %s error code\n",
+                NA_Error_to_string(callback_info->ret));
+        return ret;
+    }
+
+    *addr_ptr = callback_info->info.lookup.addr;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr)
+{
+    na_addr_t new_addr = NULL;
+    na_bool_t lookup_completed = NA_FALSE;
+    na_context_t *context = NULL;
+    na_return_t ret = NA_SUCCESS;
+
+    context = NA_Context_create(na_class);
+    if (!context) {
+        fprintf(stderr, "Could not create context\n");
+        goto done;
+    }
+
+    ret = NA_Addr_lookup(na_class, context, &na_addr_lookup_cb, &new_addr, name,
+            NA_OP_ID_IGNORE);
+    if (ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not start NA_Addr_lookup\n");
+        goto done;
+    }
+
+    while (!lookup_completed) {
+        na_return_t trigger_ret;
+        unsigned int actual_count = 0;
+
+        do {
+            trigger_ret = NA_Trigger(context, 0, 1, &actual_count);
+        } while ((trigger_ret == NA_SUCCESS) && actual_count);
+
+        if (new_addr) {
+            lookup_completed = NA_TRUE;
+            *addr = new_addr;
+        }
+
+        if (lookup_completed) break;
+
+        ret = NA_Progress(na_class, context, NA_MAX_IDLE_TIME);
+        if (ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not make progress\n");
+            goto done;
+        }
+    }
+
+    ret = NA_Context_destroy(na_class, context);
+    if (ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not destroy context\n");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 int
 HG_Test_request_progress(unsigned int timeout, void *arg)
 {
@@ -323,7 +395,7 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank,
                 &hg_test_local_bulk_handle_g);
     } else {
         /* Look up addr using port name info */
-        na_ret = NA_Addr_lookup_wait(hg_test_na_class_g, test_addr_name, &hg_test_addr_g);
+        na_ret = na_addr_lookup_wait(hg_test_na_class_g, test_addr_name, &hg_test_addr_g);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not find addr %s\n", test_addr_name);
             goto done;
@@ -402,7 +474,7 @@ HG_Test_server_init(int argc, char *argv[], na_addr_t **addr_table,
         for (i = 0; i < hg_test_addr_table_size_g; i++) {
             na_return_t na_ret;
 
-            na_ret = NA_Addr_lookup_wait(hg_test_na_class_g,
+            na_ret = na_addr_lookup_wait(hg_test_na_class_g,
                     hg_test_addr_table_g[i], &hg_test_na_addr_table_g[i]);
             if (na_ret != NA_SUCCESS) {
                 fprintf(stderr, "Could not find addr %s\n", hg_test_addr_table_g[i]);
