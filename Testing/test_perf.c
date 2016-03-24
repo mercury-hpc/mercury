@@ -37,8 +37,8 @@ hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
  *
  */
 static hg_return_t
-measure_rpc(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
-        hg_request_class_t *request_class)
+measure_rpc(hg_context_t *context, na_addr_t addr,
+    hg_request_class_t *request_class)
 {
     int avg_iter;
     double time_read = 0, min_time_read = 0, max_time_read = 0;
@@ -60,7 +60,7 @@ measure_rpc(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
 
         request = hg_request_create(request_class);
 
-        ret = HG_Create(hg_class, context, addr, hg_test_perf_rpc_id_g, &handle);
+        ret = HG_Create(context, addr, hg_test_perf_rpc_id_g, &handle);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not start call\n");
             goto done;
@@ -101,7 +101,7 @@ measure_rpc(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
 
         request = hg_request_create(request_class);
 
-        ret = HG_Create(hg_class, context, addr, hg_test_perf_rpc_id_g, &handle);
+        ret = HG_Create(context, addr, hg_test_perf_rpc_id_g, &handle);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not start call\n");
             goto done;
@@ -160,7 +160,7 @@ done:
  */
 static hg_return_t
 measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
-        na_addr_t addr, size_t count, hg_request_class_t *request_class)
+    na_addr_t addr, size_t count, hg_request_class_t *request_class)
 {
     bulk_write_in_t in_struct;
 
@@ -173,8 +173,6 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
     int avg_iter;
     double time_read = 0, min_time_read = 0, max_time_read = 0;
-
-    struct hg_info *hg_info = NULL;
 
     hg_return_t ret = HG_SUCCESS;
     size_t i;
@@ -193,19 +191,15 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     }
     *buf_ptr = bulk_buf;
 
-    ret = HG_Create(hg_class, context, addr, hg_test_perf_bulk_id_g,
-            &handle);
+    ret = HG_Create(context, addr, hg_test_perf_bulk_id_g, &handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         goto done;
     }
 
-    /* Must get info to retrieve bulk class if not provided by user */
-    hg_info = HG_Get_info(handle);
-
     /* Register memory */
-    ret = HG_Bulk_create(hg_info->hg_bulk_class, 1, buf_ptr, &nbytes,
-            HG_BULK_READ_ONLY, &bulk_handle);
+    ret = HG_Bulk_create(hg_class, 1, buf_ptr, &nbytes, HG_BULK_READ_ONLY,
+            &bulk_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         goto done;
@@ -329,7 +323,7 @@ main(int argc, char *argv[])
     }
 
     /* Run RPC test */
-    measure_rpc(hg_class, context, addr, request_class);
+    measure_rpc(context, addr, request_class);
 
     NA_Test_barrier();
 

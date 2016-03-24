@@ -22,7 +22,6 @@
 /* Local Type and Struct Definition */
 /************************************/
 struct hg_request_arg {
-    hg_class_t *hg_class;
     hg_context_t *context;
 };
 
@@ -186,8 +185,7 @@ hg_hl_request_progress(unsigned int timeout, void *arg)
 
     (void) timeout;
     /* TODO Fix timeout to 10ms for now */
-    if (HG_Progress(hg_request_arg->hg_class, hg_request_arg->context,
-            10) != HG_SUCCESS)
+    if (HG_Progress(hg_request_arg->context, 10) != HG_SUCCESS)
         ret = HG_UTIL_FAIL;
 
     return ret;
@@ -201,8 +199,8 @@ hg_hl_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
     unsigned int actual_count = 0;
     int ret = HG_UTIL_SUCCESS;
 
-    if (HG_Trigger(hg_request_arg->hg_class, hg_request_arg->context, timeout,
-            1, &actual_count) != HG_SUCCESS) ret = HG_UTIL_FAIL;
+    if (HG_Trigger(hg_request_arg->context, timeout, 1, &actual_count)
+            != HG_SUCCESS) ret = HG_UTIL_FAIL;
     *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
 
     return ret;
@@ -285,7 +283,7 @@ HG_Hl_init(const char *info_string, na_bool_t listen)
 
     /* Initialize HG */
     if (!HG_CLASS_DEFAULT) {
-        HG_CLASS_DEFAULT = HG_Init(NA_CLASS_DEFAULT, NA_CONTEXT_DEFAULT, NULL);
+        HG_CLASS_DEFAULT = HG_Init(NA_CLASS_DEFAULT, NA_CONTEXT_DEFAULT);
         if (!HG_CLASS_DEFAULT) {
             HG_LOG_ERROR("Could not initialize HG class");
             ret = HG_PROTOCOL_ERROR;
@@ -305,7 +303,6 @@ HG_Hl_init(const char *info_string, na_bool_t listen)
 
     /* Initialize request class */
     if (!hg_request_class_g) {
-        hg_request_arg_g.hg_class = HG_CLASS_DEFAULT;
         hg_request_arg_g.context = HG_CONTEXT_DEFAULT;
         hg_request_class_g = hg_request_init(hg_hl_request_progress,
                 hg_hl_request_trigger, &hg_request_arg_g);
@@ -422,9 +419,9 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Hl_bulk_transfer_wait(hg_bulk_context_t *context, hg_bulk_op_t op,
-        na_addr_t origin_addr, hg_bulk_t origin_handle, hg_size_t origin_offset,
-        hg_bulk_t local_handle, hg_size_t local_offset, hg_size_t size)
+HG_Hl_bulk_transfer_wait(hg_context_t *context, hg_bulk_op_t op,
+    na_addr_t origin_addr, hg_bulk_t origin_handle, hg_size_t origin_offset,
+    hg_bulk_t local_handle, hg_size_t local_offset, hg_size_t size)
 {
     hg_request_t *request = NULL;
     hg_return_t ret = HG_SUCCESS;
