@@ -90,11 +90,11 @@ snappy_pull_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
     }
 
     /* Now set up bulk transfer for "push to origin" callback */
-    HG_Bulk_create(HG_Get_info(snappy_transfer_args->handle)->hg_bulk_class, 1,
+    HG_Bulk_create(HG_Get_info(snappy_transfer_args->handle)->hg_class, 1,
             &snappy_transfer_args->compressed, &snappy_transfer_args->compressed_length,
             HG_BULK_WRITE_ONLY, &snappy_transfer_args->local_compressed_bulk_handle);
 
-    HG_Bulk_transfer(HG_Get_info(snappy_transfer_args->handle)->bulk_context,
+    HG_Bulk_transfer(HG_Get_info(snappy_transfer_args->handle)->context,
             snappy_push_cb, snappy_transfer_args,
             HG_BULK_PUSH, HG_Get_info(snappy_transfer_args->handle)->addr,
             snappy_transfer_args->snappy_compress_input.compressed_bulk_handle, 0, /* origin */
@@ -174,13 +174,13 @@ snappy_compress_cb(hg_handle_t handle)
 
     /* The bulk 'handle' is basically a pointer, with the addition that 'handle'
      * could refer to more than one memory region. */
-    HG_Bulk_create(HG_Get_info(handle)->hg_bulk_class, 1, NULL, &input_length,
+    HG_Bulk_create(HG_Get_info(handle)->hg_class, 1, NULL, &input_length,
 	    HG_BULK_READWRITE, &snappy_transfer_args->local_input_bulk_handle);
 
     /* Pull data from origin's memory into our own */
     /* Another way to do this is via HG_Bulk_access, which would allow mercury,
      * if "co-resident" to avoid a copy of data */
-    HG_Bulk_transfer(HG_Get_info(handle)->bulk_context,
+    HG_Bulk_transfer(HG_Get_info(handle)->context,
             snappy_pull_cb, snappy_transfer_args,
             HG_BULK_PULL, HG_Get_info(handle)->addr,
             snappy_transfer_args->snappy_compress_input.input_bulk_handle, 0, /* origin */

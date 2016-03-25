@@ -23,6 +23,12 @@
 
 #define NR_ITEMS 1024 * 1024
 
+struct snappy_lookup_args {
+    hg_class_t *hg_class;
+    hg_context_t *hg_context;
+    na_addr_t na_target_addr;
+};
+
 struct snappy_compress_rpc_args {
     int *input;
     size_t input_length;
@@ -143,15 +149,15 @@ snappy_compress_rpc(hg_class_t *hg_class, hg_context_t *hg_context,
     memset(compressed, '\0', max_compressed_length);
 
     /* Create HG handle bound to target */
-    HG_Create(hg_class, hg_context, na_target_addr, snappy_compress_id_g, &handle);
+    HG_Create(hg_context, na_target_addr, snappy_compress_id_g, &handle);
 
     /**
      * Associate 'handle' with a region of memory. Mercury's bulk transfer is
      * going to get/put data from this region.
      */
-    HG_Bulk_create(HG_Get_info(handle)->hg_bulk_class, 1, (void **) &input,
+    HG_Bulk_create(hg_class, 1, (void **) &input,
             &source_length, HG_BULK_READ_ONLY, &input_bulk_handle);
-    HG_Bulk_create(HG_Get_info(handle)->hg_bulk_class, 1, &compressed,
+    HG_Bulk_create(hg_class, 1, &compressed,
             &max_compressed_length, HG_BULK_READWRITE, &compressed_bulk_handle);
 
     /* Create struct to keep arguments as the call will be executed
@@ -179,6 +185,23 @@ snappy_compress_rpc(hg_class_t *hg_class, hg_context_t *hg_context,
     return 0;
 }
 
+static na_return_t
+snappy_lookup_cb(const struct na_cb_info *callback_info)
+{
+    struct snappy_lookup_args *snappy_lookup_args =
+                (struct snappy_lookup_args *) callback_info->arg;
+    snappy_lookup_args->na_target_addr = callback_info->info.lookup.addr;
+
+    /* Register RPC */
+    snappy_compress_id_g = snappy_compress_register(snappy_lookup_args->hg_class);
+
+    /* Send RPC to target */
+    snappy_compress_rpc(snappy_lookup_args->hg_class, snappy_lookup_args->hg_context,
+            snappy_lookup_args->na_target_addr);
+
+    return NA_SUCCESS;
+}
+
 int
 main(void)
 {
@@ -186,9 +209,9 @@ main(void)
 
     na_class_t *na_class;
     na_context_t *na_context;
-    na_addr_t na_target_addr;
     char target_addr_string[PATH_MAX], *p;
     FILE *na_config = NULL;
+    struct snappy_lookup_args snappy_lookup_args;
 
     hg_class_t *hg_class;
     hg_context_t *hg_context;
@@ -210,13 +233,13 @@ main(void)
     na_context = NA_Context_create(na_class);
 
     /* Initialize Mercury with the desired network abstraction class */
-    hg_class = HG_Init(na_class, na_context, NULL);
+    hg_class = HG_Init(na_class, na_context);
 
     /* Create HG context */
     hg_context = HG_Context_create(hg_class);
 
     /* The connection string is generated after NA_Addr_self()/NA_Addr_to_string(),
-     * we must get that string and pass it to  NA_Addr_lookup_wait() */
+     * we must get that string and pass it to  NA_Addr_lookup() */
     na_config = fopen(TEMP_DIRECTORY CONFIG_FILE_NAME, "r");
     if (!na_config) {
         fprintf(stderr, "Could not open config file from: %s\n",
@@ -230,30 +253,27 @@ main(void)
     fclose(na_config);
 
     /* Look up target address */
-    NA_Addr_lookup_wait(na_class, target_addr_string, &na_target_addr);
-
-    /* Register RPC */
-    snappy_compress_id_g = snappy_compress_register(hg_class);
-
-    /* Send RPC to target */
-    snappy_compress_rpc(hg_class, hg_context, na_target_addr);
+    snappy_lookup_args.hg_class = hg_class;
+    snappy_lookup_args.hg_context = hg_context;
+    NA_Addr_lookup(na_class, na_context, snappy_lookup_cb, &snappy_lookup_args,
+            target_addr_string, NA_OP_ID_IGNORE);
 
     /* Poke progress engine and check for events */
     do {
         unsigned int actual_count = 0;
         do {
-            hg_ret = HG_Trigger(hg_class, hg_context, 0 /* timeout */,
+            hg_ret = HG_Trigger(hg_context, 0 /* timeout */,
                     1 /* max count */, &actual_count);
         } while ((hg_ret == HG_SUCCESS) && actual_count);
 
         /* Do not try to make progress anymore if we're done */
         if (snappy_compress_done_g) break;
 
-        hg_ret = HG_Progress(hg_class, hg_context, HG_MAX_IDLE_TIME);
+        hg_ret = HG_Progress(hg_context, HG_MAX_IDLE_TIME);
     } while (hg_ret == HG_SUCCESS);
 
     /* Finalize */
-    NA_Addr_free(na_class, na_target_addr);
+    NA_Addr_free(na_class, snappy_lookup_args.na_target_addr);
 
     HG_Context_destroy(hg_context);
     HG_Finalize(hg_class);

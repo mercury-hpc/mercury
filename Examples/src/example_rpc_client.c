@@ -47,7 +47,7 @@ struct my_rpc_state
     hg_handle_t handle;
 };
 
-int main(int argc, char **argv) 
+int main(void)
 {
     int i;
 
@@ -118,7 +118,7 @@ static na_return_t lookup_cb(const struct na_cb_info *callback_info)
     /* register buffer for rdma/bulk access by server */
     hgi = HG_Get_info(my_rpc_state_p->handle);
     assert(hgi);
-    ret = HG_Bulk_create(hgi->hg_bulk_class, 1, &my_rpc_state_p->buffer, &my_rpc_state_p->size, 
+    ret = HG_Bulk_create(hgi->hg_class, 1, &my_rpc_state_p->buffer, &my_rpc_state_p->size,
         HG_BULK_READ_ONLY, &in.bulk_handle);
     my_rpc_state_p->bulk_handle = in.bulk_handle;
     assert(ret == 0);
@@ -130,6 +130,7 @@ static na_return_t lookup_cb(const struct na_cb_info *callback_info)
     ret = HG_Forward(my_rpc_state_p->handle, my_rpc_cb, my_rpc_state_p, &in);
     assert(ret == 0);
 
+    return(NA_SUCCESS);
 }
 
 /* callback triggered upon receipt of rpc response */
