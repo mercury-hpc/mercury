@@ -20,6 +20,10 @@ struct hg_time
     long tv_usec;
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Get an elapsed time on the calling processor.
  *
@@ -101,5 +105,9 @@ hg_time_sleep(const hg_time_t rqt, hg_time_t *rmt);
  */
 HG_UTIL_EXPORT char *
 hg_time_stamp(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* MERCURY_TIME_H */
