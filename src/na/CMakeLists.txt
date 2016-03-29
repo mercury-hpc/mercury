@@ -97,6 +97,7 @@ if(NA_USE_SSM)
      message(FATAL_ERROR "Could not find SSM.")
   endif()
 endif()
+mark_as_advanced(NA_USE_SSM)
 
 
 # MPI

@@ -48,22 +48,16 @@ HG_Error_to_string(
 /**
  * Initialize the Mercury layer from an existing NA class/context.
  * Must be finalized with HG_Finalize().
- * \remark Calling HG_Init() internally calls HG_Bulk_init() with the same NA
- * class if the HG bulk class passed is NULL. The HG bulk interface can however
- * be initialized with a different NA class and, in this case, must be
- * initialized separately by calling HG_Bulk_init().
  *
  * \param na_class [IN]         pointer to NA class
  * \param na_context [IN]       pointer to NA context
- * \param hg_bulk_class [IN]    pointer to HG bulk class
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_class_t *
 HG_Init(
         na_class_t *na_class,
-        na_context_t *na_context,
-        hg_bulk_class_t *hg_bulk_class
+        na_context_t *na_context
         );
 
 /**
@@ -75,21 +69,6 @@ HG_Init(
  */
 HG_EXPORT hg_return_t
 HG_Finalize(
-        hg_class_t *hg_class
-        );
-
-/**
- * Retrieve the Mercury bulk class instance from the given Mercury class.
- * Note that HG_Bulk_finalize should *not* be called on the returned
- * instance if the bulk class is internal to the input class (that is, NULL
- * was passed as the bulk class to HG_Init).
- *
- * \param hg_class [IN] HG class
- *
- * \return The corresponding bulk class
- */
-HG_EXPORT hg_bulk_class_t *
-HG_Get_bulk_class(
         hg_class_t *hg_class
         );
 
@@ -118,37 +97,45 @@ HG_Context_destroy(
         );
 
 /**
- * Retrieve the Mercury bulk context instance from the given Mercury context.
- * Note that HG_Bulk_context_destroy should *not* be called on the returned
- * context if the bulk context is internal to the input context (in the current
- * API, this is always the case, but may not be in future revisions).
- *
- * \param hg_context [IN] HG context
- *
- * \return The corresponding bulk context
- */
-HG_EXPORT hg_bulk_context_t *
-HG_Get_bulk_context(
-        hg_context_t *hg_context
-        );
-
-/**
  * Dynamically register a function func_name as an RPC as well as the
  * RPC callback executed when the RPC request ID associated to func_name is
  * received. Associate input and output proc to function ID, so that they can
  * be used to serialize and deserialize function parameters.
  *
  * \param hg_class [IN]         pointer to HG class
- * \param id [IN]               registered function ID
+ * \param func_name [IN]        unique name associated to function
  * \param in_proc_cb [IN]       pointer to input proc callback
  * \param out_proc_cb [IN]      pointer to output proc callback
+ * \param rpc_cb [IN]           RPC callback
  *
  * \return unique ID associated to the registered function
  */
 HG_EXPORT hg_id_t
-HG_Register(
+HG_Register_name(
         hg_class_t *hg_class,
         const char *func_name,
+        hg_proc_cb_t in_proc_cb,
+        hg_proc_cb_t out_proc_cb,
+        hg_rpc_cb_t rpc_cb
+        );
+
+/**
+ * Dynamically register an RPC ID as well as the RPC callback executed when the
+ * RPC request ID is received. Associate input and output proc to id, so that
+ * they can be used to serialize and deserialize function parameters.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param id [IN]               ID to use to register RPC
+ * \param in_proc_cb [IN]       pointer to input proc callback
+ * \param out_proc_cb [IN]      pointer to output proc callback
+ * \param rpc_cb [IN]           RPC callback
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Register(
+        hg_class_t *hg_class,
+        hg_id_t id,
         hg_proc_cb_t in_proc_cb,
         hg_proc_cb_t out_proc_cb,
         hg_rpc_cb_t rpc_cb
@@ -195,7 +182,6 @@ HG_Registered_data(
  * and output, as well as issuing the RPC by using HG_Forward().
  * After completion the handle must be freed using HG_Destroy().
  *
- * \param hg_class [IN]         pointer to HG class
  * \param context [IN]          pointer to HG context
  * \param addr [IN]             abstract network address of destination
  * \param id [IN]               registered function ID
@@ -205,7 +191,6 @@ HG_Registered_data(
  */
 HG_EXPORT hg_return_t
 HG_Create(
-        hg_class_t *hg_class,
         hg_context_t *context,
         na_addr_t addr,
         hg_id_t id,
@@ -366,7 +351,6 @@ HG_Respond(
  * assumed that completion of a specific operation will occur only when
  * progress is called.
  *
- * \param hg_class [IN]         pointer to HG class
  * \param context [IN]          pointer to HG context
  * \param timeout [IN]          timeout (in milliseconds)
  *
@@ -374,7 +358,6 @@ HG_Respond(
  */
 HG_EXPORT hg_return_t
 HG_Progress(
-        hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout
         );
@@ -384,7 +367,6 @@ HG_Progress(
  * timeout before returning. Function can return when at least one or more
  * callbacks are triggered (at most max_count).
  *
- * \param hg_class [IN]         pointer to HG class
  * \param context [IN]          pointer to HG context
  * \param timeout [IN]          timeout (in milliseconds)
  * \param max_count [IN]        maximum number of callbacks triggered
@@ -394,7 +376,6 @@ HG_Progress(
  */
 HG_EXPORT hg_return_t
 HG_Trigger(
-        hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout,
         unsigned int max_count,

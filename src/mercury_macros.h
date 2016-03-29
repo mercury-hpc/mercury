@@ -77,7 +77,7 @@ static HG_INLINE hg_return_t \
 /* Register func_name */
 #define MERCURY_REGISTER(hg_class, func_name, in_struct_type_name, \
         out_struct_type_name, rpc_cb) \
-        HG_Register(hg_class, func_name, \
+        HG_Register_name(hg_class, func_name, \
                 BOOST_PP_CAT(hg_proc_, in_struct_type_name), \
                 BOOST_PP_CAT(hg_proc_, out_struct_type_name), rpc_cb)
 
@@ -103,7 +103,7 @@ static HG_INLINE hg_return_t \
 /* Register func_name */
 #define MERCURY_REGISTER(hg_class, func_name, in_struct_type_name, \
         out_struct_type_name, rpc_cb) \
-        HG_Register(hg_class, func_name, hg_proc_ ## in_struct_type_name, \
+        HG_Register_name(hg_class, func_name, hg_proc_ ## in_struct_type_name, \
                 hg_proc_ ## out_struct_type_name, rpc_cb)
 
 #endif /* HG_HAS_BOOST */

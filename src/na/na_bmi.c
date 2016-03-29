@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -238,7 +238,7 @@ static na_return_t
 na_bmi_addr_to_string(
         na_class_t *na_class,
         char       *buf,
-        na_size_t   buf_size,
+        na_size_t  *buf_size,
         na_addr_t   addr
         );
 
@@ -898,10 +898,11 @@ na_bmi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_addr_to_string(na_class_t *na_class, char *buf,
-        na_size_t buf_size, na_addr_t addr)
+        na_size_t *buf_size, na_addr_t addr)
 {
     struct na_bmi_addr *na_bmi_addr = NULL;
     const char *bmi_rev_addr;
+    na_size_t string_len;
     na_return_t ret = NA_SUCCESS;
 
     na_bmi_addr = (struct na_bmi_addr *) addr;
@@ -921,13 +922,16 @@ na_bmi_addr_to_string(na_class_t *na_class, char *buf,
         }
     }
 
-    if (strlen(bmi_rev_addr) > buf_size) {
-        NA_LOG_ERROR("Buffer size too small to copy addr");
-        ret = NA_SIZE_ERROR;
-        goto done;
+    string_len = strlen(bmi_rev_addr);
+    if (buf) {
+        if (string_len >= *buf_size) {
+            NA_LOG_ERROR("Buffer size too small to copy addr");
+            ret = NA_SIZE_ERROR;
+        } else {
+            strcpy(buf, bmi_rev_addr);
+        }
     }
-
-    strcpy(buf, bmi_rev_addr);
+    *buf_size = string_len + 1;
 
 done:
     return ret;
@@ -1801,6 +1805,9 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     /* TODO Sometimes bmi_ret is weird so check error_code as well */
     if (bmi_ret < 0 && (error_code != 0)) {
         NA_LOG_ERROR("BMI_testcontext failed");
+        if (error_code == -BMI_ECANCEL) {
+            NA_LOG_ERROR("error_code = -BMI_ECANCEL");
+        }
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -2154,9 +2161,9 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
         case NA_CB_RECV_EXPECTED:
             /* Check buf_size and actual_size */
             if (!(na_bmi_op_id->cancel & NA_BMI_CANCEL_R) &&
-                 (na_bmi_op_id->info.recv_expected.actual_size !=
-                    na_bmi_op_id->info.recv_expected.buf_size)) {
-                NA_LOG_ERROR("Buffer size and actual transfer size do not match");
+                (na_bmi_op_id->info.recv_expected.actual_size >
+                 na_bmi_op_id->info.recv_expected.buf_size)) {
+                NA_LOG_ERROR("Expected recv size too large for buffer");
                 ret = NA_SIZE_ERROR;
                 goto done;
             }
@@ -2208,11 +2215,11 @@ na_bmi_release(struct na_cb_info *callback_info, void *arg)
 static na_return_t
 na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
 {
+
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
-
     switch (na_bmi_op_id->type) {
         case NA_CB_LOOKUP:
             /* Nothing for now */
@@ -2305,6 +2312,5 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
             ret = NA_INVALID_PARAM;
             break;
     }
-
     return ret;
 }

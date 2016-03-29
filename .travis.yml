@@ -1,6 +1,12 @@
 language: c
+
+os:
+    - linux
+    - osx
+
 compiler:
     - gcc
+    - clang
 
 sudo: false
 
@@ -28,7 +34,7 @@ before_install:
     - echo "Existing directories in $HOME" && ls $HOME
 
 install:
-    - ./Testing/travis_build.sh
+    - ./Testing/script/travis_build.sh
 
 before_script:
     - ls -R $HOME/install
@@ -36,5 +42,5 @@ before_script:
     - export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/install/lib
 
 script:
-    - ctest -VV --output-on-failure -S ./Testing/travis_script.cmake
+    - ctest -VV --output-on-failure -S ./Testing/script/travis_script.cmake
 

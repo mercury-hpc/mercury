@@ -39,7 +39,7 @@ void hg_engine_init(na_bool_t listen, const char* local_addr)
     na_context = NA_Context_create(network_class);
     assert(na_context);
 
-    hg_class = HG_Init(network_class, na_context, NULL);
+    hg_class = HG_Init(network_class, na_context);
     assert(hg_class);
 
     hg_context = HG_Context_create(hg_class);
@@ -71,15 +71,16 @@ static void* hg_progress_fn(void* foo)
 {
     hg_return_t ret;
     unsigned int actual_count;
+    (void)foo;
 
     while(!hg_progress_shutdown_flag)
     {
         do {
-            ret = HG_Trigger(hg_class, hg_context, 0, 1, &actual_count);
+            ret = HG_Trigger(hg_context, 0, 1, &actual_count);
         } while((ret == HG_SUCCESS) && actual_count && !hg_progress_shutdown_flag);
 
         if(!hg_progress_shutdown_flag)
-            HG_Progress(hg_class, hg_context, 100);
+            HG_Progress(hg_context, 100);
     }
 
     return(NULL);
@@ -90,11 +91,11 @@ hg_class_t* hg_engine_get_class(void)
     return(hg_class);
 }
 
-void hg_engine_addr_lookup(const char* name, na_addr_t* addr)
+void hg_engine_addr_lookup(const char* name, na_cb_t cb, void *arg)
 {
     na_return_t ret;
 
-    ret = NA_Addr_lookup_wait(network_class, name, addr);
+    ret = NA_Addr_lookup(network_class, na_context, cb, arg, name, NA_OP_ID_IGNORE);
     assert(ret == NA_SUCCESS);
 
     return;
@@ -105,7 +106,7 @@ void hg_engine_create_handle(na_addr_t addr, hg_id_t id,
 {
     hg_return_t ret;
 
-    ret = HG_Create(hg_class, hg_context, addr, id, handle);
+    ret = HG_Create(hg_context, addr, id, handle);
     assert(ret == HG_SUCCESS);
 
     return;

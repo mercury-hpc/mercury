@@ -60,7 +60,6 @@ int main(int argc, char *argv[])
     hg_request_t *request = NULL;
     hg_handle_t handle;
     na_addr_t addr;
-    struct hg_info *hg_info = NULL;
 
     bulk_write_in_t bulk_write_in_struct;
 
@@ -84,15 +83,11 @@ int main(int argc, char *argv[])
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(hg_class, context, addr, hg_test_bulk_seg_write_id_g,
-            &handle);
+    hg_ret = HG_Create(context, addr, hg_test_bulk_seg_write_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         return EXIT_FAILURE;
     }
-
-    /* Must get info to retrieve bulk class if not provided by user */
-    hg_info = HG_Get_info(handle);
 
     /* This will create a list of variable size segments */
     if (na_test_use_variable_g) {
@@ -142,8 +137,8 @@ int main(int argc, char *argv[])
     }
 
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_info->hg_bulk_class, bulk_size_x, bulk_buf,
-            bulk_sizes, HG_BULK_READ_ONLY, &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_class, bulk_size_x, bulk_buf, bulk_sizes,
+            HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         return EXIT_FAILURE;

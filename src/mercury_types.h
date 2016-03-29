@@ -15,10 +15,7 @@
 #include "mercury_config.h"
 
 typedef struct hg_class hg_class_t;             /* Opaque HG class */
-typedef struct hg_bulk_class hg_bulk_class_t;   /* Opaque HG bulk class */
-
-typedef struct hg_context hg_context_t;             /* Opaque HG context */
-typedef struct hg_bulk_context hg_bulk_context_t;   /* Opaque HG bulk context */
+typedef struct hg_context hg_context_t;         /* Opaque HG context */
 
 typedef hg_uint64_t hg_size_t;  /* Size */
 typedef hg_uint32_t hg_id_t;    /* RPC ID */
@@ -31,11 +28,10 @@ typedef void *hg_op_id_t;       /* Abstract operation id */
 struct hg_info {
     hg_class_t *hg_class;               /* HG class */
     hg_context_t *context;              /* HG context */
-    hg_bulk_class_t *hg_bulk_class;     /* HG Bulk class */
-    hg_bulk_context_t *bulk_context;    /* HG Bulk context */
     na_addr_t addr;                     /* NA address */
     hg_id_t id;                         /* RPC ID */
 };
+
 
 /**
  * Bulk transfer operators.
@@ -90,8 +86,8 @@ struct hg_cb_info {
 struct hg_bulk_cb_info {
     void *arg;                      /* User data */
     hg_return_t ret;                /* Return value */
-    hg_bulk_class_t *hg_bulk_class; /* HG bulk class */
-    hg_bulk_context_t *context;     /* HG bulk context */
+    hg_class_t *hg_class;           /* HG class */
+    hg_context_t *context;          /* HG context */
     hg_bulk_op_t op;                /* Operation type */
     hg_bulk_t origin_handle;        /* HG Bulk origin handle */
     hg_bulk_t local_handle;         /* HG Bulk local handle */

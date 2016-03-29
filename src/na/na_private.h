@@ -105,7 +105,7 @@ struct na_class {
     (*addr_to_string)(
             na_class_t *na_class,
             char       *buf,
-            na_size_t   buf_size,
+            na_size_t  *buf_size,
             na_addr_t   addr
             );
     na_size_t
