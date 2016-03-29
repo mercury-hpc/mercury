@@ -42,11 +42,11 @@ struct hg_proc_buf {
 };
 
 struct hg_proc {
+    hg_class_t *hg_class;               /* HG class */
     hg_proc_op_t op;
     struct hg_proc_buf *current_buf;
     struct hg_proc_buf proc_buf;
     struct hg_proc_buf extra_buf;
-    hg_bulk_class_t *hg_bulk_class;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -89,12 +89,18 @@ hg_proc_buf_free(void *mem_ptr)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_proc_create(void *buf, hg_size_t buf_size, hg_proc_op_t op, hg_proc_hash_t hash,
-        hg_bulk_class_t *hg_bulk_class, hg_proc_t *proc)
+hg_proc_create(hg_class_t *hg_class, void *buf, hg_size_t buf_size,
+    hg_proc_op_t op, hg_proc_hash_t hash, hg_proc_t *proc)
 {
     struct hg_proc *hg_proc = NULL;
     const char *hash_method;
     hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
 
     if (!buf && op != HG_FREE) {
         HG_LOG_ERROR("NULL buffer");
@@ -109,6 +115,7 @@ hg_proc_create(void *buf, hg_size_t buf_size, hg_proc_op_t op, hg_proc_hash_t ha
         goto done;
     }
 
+    hg_proc->hg_class = hg_class;
     hg_proc->op = op;
     hg_proc->proc_buf.buf = buf;
     hg_proc->proc_buf.size = buf_size;
@@ -179,9 +186,6 @@ hg_proc_create(void *buf, hg_size_t buf_size, hg_proc_op_t op, hg_proc_hash_t ha
     /* Default to proc_buf */
     hg_proc->current_buf = &hg_proc->proc_buf;
 
-    /* Set bulk class for later use */
-    hg_proc->hg_bulk_class = hg_bulk_class;
-
     *proc = (struct hg_proc *) hg_proc;
 
 done:
@@ -227,21 +231,21 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-hg_bulk_class_t *
-hg_proc_get_bulk_class(hg_proc_t proc)
+hg_class_t *
+hg_proc_get_class(hg_proc_t proc)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    hg_bulk_class_t *hg_bulk_class = NULL;
+    hg_class_t *hg_class = NULL;
 
     if (!hg_proc) {
         HG_LOG_ERROR("Proc is not initialized");
         goto done;
     }
 
-    hg_bulk_class = hg_proc->hg_bulk_class;
+    hg_class = hg_proc->hg_class;
 
 done:
-    return hg_bulk_class;
+    return hg_class;
 }
 
 /*---------------------------------------------------------------------------*/

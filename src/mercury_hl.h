@@ -84,7 +84,7 @@ HG_Hl_forward_wait(
 /**
  * Initiate a bulk data transfer and wait for its completion.
  *
- * \param context [IN]          pointer to HG bulk context
+ * \param context [IN]          pointer to HG context
  * \param op [IN]               transfer operation:
  *                                  - HG_BULK_PUSH
  *                                  - HG_BULK_PULL
@@ -99,7 +99,7 @@ HG_Hl_forward_wait(
  */
 HG_EXPORT hg_return_t
 HG_Hl_bulk_transfer_wait(
-        hg_bulk_context_t *context,
+        hg_context_t *context,
         hg_bulk_op_t op,
         na_addr_t origin_addr,
         hg_bulk_t origin_handle,

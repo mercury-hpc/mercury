@@ -28,6 +28,9 @@
     #define HG_UTIL_ABI_HIDDEN
 #endif
 
+/* Define if has <opa_primitives.h> */
+#cmakedefine HG_UTIL_HAS_OPA_PRIMITIVES_H
+
 /* Define if has <stdatomic.h> */
 #cmakedefine HG_UTIL_HAS_STDATOMIC_H
 

@@ -49,7 +49,7 @@ HG_Error_to_string(
 /*---------------------------------------------------------------------------*/
 void
 hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_in_handle,
-        struct hg_header_request *header)
+    struct hg_header_request *header)
 {
     header->hg = HG_IDENTIFIER;
     header->protocol = HG_PROTOCOL_VERSION;
@@ -73,8 +73,9 @@ hg_proc_header_response_init(struct hg_header_response *header)
 /*---------------------------------------------------------------------------*/
 hg_return_t
 hg_proc_header_request(void *buf, size_t buf_size,
-        struct hg_header_request *header, hg_proc_op_t op,
-        hg_bulk_class_t *bulk_class, hg_size_t *extra_header_size)
+
+    struct hg_header_request *header, hg_proc_op_t op, hg_class_t *hg_class,
+    hg_size_t *extra_header_size)
 {
     hg_uint32_t n_protocol, n_id, n_cookie;
     hg_uint16_t n_crc16;
@@ -163,7 +164,7 @@ hg_proc_header_request(void *buf, size_t buf_size,
      * safely here because the user payload is copied in this case so we don't
      * have to worry about the extra space taken by the header */
     if (header->flags) {
-        ret = hg_proc_create(buf_ptr, buf_size, op, HG_CRC64, bulk_class, &proc);
+        ret = hg_proc_create(hg_class, buf_ptr, buf_size, op, HG_CRC64, &proc);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not create proc");
             goto done;
@@ -195,7 +196,7 @@ done:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 hg_proc_header_response(void *buf, size_t buf_size,
-        struct hg_header_response *header, hg_proc_op_t op)
+    struct hg_header_response *header, hg_proc_op_t op)
 {
     hg_uint32_t n_ret_code, n_cookie;
     hg_uint16_t n_crc16;

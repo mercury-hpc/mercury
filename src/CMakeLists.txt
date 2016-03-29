@@ -91,6 +91,12 @@ if(MERCURY_USE_CHECKSUMS)
   endif()
 endif()
 
+# Eager bulk transfer
+option(MERCURY_USE_EAGER_BULK "Encode bulk data with RPC when bulk region described is small." ON)
+if(MERCURY_USE_EAGER_BULK)
+  set(HG_HAS_EAGER_BULK 1)
+endif()
+
 # XDR
 option(MERCURY_USE_XDR "Use XDR for generic encoding." OFF)
 if(MERCURY_USE_XDR)

@@ -33,7 +33,6 @@ static na_context_t *hg_test_na_context_g = NULL;
 static hg_bool_t hg_test_is_client_g = HG_FALSE;
 static na_addr_t hg_test_addr_g = NA_ADDR_NULL;
 static int hg_test_rank_g = 0;
-static hg_bulk_class_t *hg_test_bulk_class_g = NULL;
 static hg_class_t *hg_test_class_g = NULL;
 static hg_context_t *hg_test_context_g = NULL;
 static hg_request_class_t *hg_test_request_class_g = NULL;
@@ -85,13 +84,85 @@ static hg_id_t hg_test_finalize2_id_g = 0;
 hg_atomic_int32_t hg_test_finalizing_count_g;
 
 /*---------------------------------------------------------------------------*/
+static na_return_t
+na_addr_lookup_cb(const struct na_cb_info *callback_info)
+{
+    na_addr_t *addr_ptr = (na_addr_t *) callback_info->arg;
+    na_return_t ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        fprintf(stderr, "Return from callback with %s error code\n",
+                NA_Error_to_string(callback_info->ret));
+        return ret;
+    }
+
+    *addr_ptr = callback_info->info.lookup.addr;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr)
+{
+    na_addr_t new_addr = NULL;
+    na_bool_t lookup_completed = NA_FALSE;
+    na_context_t *context = NULL;
+    na_return_t ret = NA_SUCCESS;
+
+    context = NA_Context_create(na_class);
+    if (!context) {
+        fprintf(stderr, "Could not create context\n");
+        goto done;
+    }
+
+    ret = NA_Addr_lookup(na_class, context, &na_addr_lookup_cb, &new_addr, name,
+            NA_OP_ID_IGNORE);
+    if (ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not start NA_Addr_lookup\n");
+        goto done;
+    }
+
+    while (!lookup_completed) {
+        na_return_t trigger_ret;
+        unsigned int actual_count = 0;
+
+        do {
+            trigger_ret = NA_Trigger(context, 0, 1, &actual_count);
+        } while ((trigger_ret == NA_SUCCESS) && actual_count);
+
+        if (new_addr) {
+            lookup_completed = NA_TRUE;
+            *addr = new_addr;
+        }
+
+        if (lookup_completed) break;
+
+        ret = NA_Progress(na_class, context, NA_MAX_IDLE_TIME);
+        if (ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not make progress\n");
+            goto done;
+        }
+    }
+
+    ret = NA_Context_destroy(na_class, context);
+    if (ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not destroy context\n");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 int
 HG_Test_request_progress(unsigned int timeout, void *arg)
 {
     int ret = HG_UTIL_SUCCESS;
 
     (void) arg;
-    if (HG_Progress(hg_test_class_g, hg_test_context_g, timeout) != HG_SUCCESS)
+    if (HG_Progress(hg_test_context_g, timeout) != HG_SUCCESS)
         ret = HG_UTIL_FAIL;
 
     return ret;
@@ -105,8 +176,8 @@ HG_Test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
     int ret = HG_UTIL_SUCCESS;
 
     (void) arg;
-    if (HG_Trigger(hg_test_class_g, hg_test_context_g, timeout, 1,
-            &actual_count) != HG_SUCCESS) ret = HG_UTIL_FAIL;
+    if (HG_Trigger(hg_test_context_g, timeout, 1, &actual_count) != HG_SUCCESS)
+        ret = HG_UTIL_FAIL;
     *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
 
     return ret;
@@ -126,7 +197,7 @@ hg_test_finalize_rpc_cb(const struct hg_cb_info *callback_info)
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_test_finalize_rpc(hg_class_t *hg_class)
+hg_test_finalize_rpc(void)
 {
     hg_return_t hg_ret;
     hg_handle_t handle;
@@ -134,8 +205,8 @@ hg_test_finalize_rpc(hg_class_t *hg_class)
 
     request_object = hg_request_create(hg_test_request_class_g);
 
-    hg_ret = HG_Create(hg_class, hg_test_context_g, hg_test_addr_g,
-            hg_test_finalize_id_g, &handle);
+    hg_ret = HG_Create(hg_test_context_g, hg_test_addr_g, hg_test_finalize_id_g,
+            &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
     }
@@ -159,13 +230,12 @@ hg_test_finalize_rpc(hg_class_t *hg_class)
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_test_finalize_rpc2(hg_class_t *hg_class, na_addr_t addr)
+hg_test_finalize_rpc2(na_addr_t addr)
 {
     hg_return_t hg_ret;
     hg_handle_t handle;
 
-    hg_ret = HG_Create(hg_class, hg_test_context_g, addr,
-            hg_test_finalize2_id_g, &handle);
+    hg_ret = HG_Create(hg_test_context_g, addr, hg_test_finalize2_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
     }
@@ -212,10 +282,9 @@ hg_test_finalize_cb(hg_handle_t handle)
     /* Shut down other servers */
     if (hg_test_addr_table_size_g > 1) {
         unsigned int i;
-        struct hg_info *hg_info = HG_Get_info(handle);
 
         for (i = 1; i < hg_test_addr_table_size_g; i++) {
-            hg_test_finalize_rpc2(hg_info->hg_class, hg_test_na_addr_table_g[i]);
+            hg_test_finalize_rpc2(hg_test_na_addr_table_g[i]);
         }
     }
 
@@ -294,7 +363,7 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank,
 
     hg_test_na_context_g = NA_Context_create(hg_test_na_class_g);
 
-    hg_test_class_g = HG_Init(hg_test_na_class_g, hg_test_na_context_g, NULL);
+    hg_test_class_g = HG_Init(hg_test_na_class_g, hg_test_na_context_g);
     if (!hg_test_class_g) {
         fprintf(stderr, "Could not initialize Mercury\n");
         goto done;
@@ -312,18 +381,12 @@ HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank,
         printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
 
-        hg_test_bulk_class_g = HG_Bulk_init(hg_test_na_class_g, hg_test_na_context_g);
-        if (!hg_test_bulk_class_g) {
-            fprintf(stderr, "Could not initialize HG Bulk class\n");
-            goto done;
-        }
-
         /* Create bulk buffer that can be used for receiving data */
-        HG_Bulk_create(hg_test_bulk_class_g, 1, NULL, &bulk_size, HG_BULK_READWRITE,
+        HG_Bulk_create(hg_test_class_g, 1, NULL, &bulk_size, HG_BULK_READWRITE,
                 &hg_test_local_bulk_handle_g);
     } else {
         /* Look up addr using port name info */
-        na_ret = NA_Addr_lookup_wait(hg_test_na_class_g, test_addr_name, &hg_test_addr_g);
+        na_ret = na_addr_lookup_wait(hg_test_na_class_g, test_addr_name, &hg_test_addr_g);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not find addr %s\n", test_addr_name);
             goto done;
@@ -373,13 +436,7 @@ HG_Test_server_init(int argc, char *argv[], na_addr_t **addr_table,
     printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
 
-    hg_test_bulk_class_g = HG_Bulk_init(hg_test_na_class_g, hg_test_na_context_g);
-    if (!hg_test_bulk_class_g) {
-        fprintf(stderr, "Could not initialize HG Bulk class\n");
-        goto done;
-    }
-
-    hg_test_class_g = HG_Init(hg_test_na_class_g, hg_test_na_context_g, NULL);
+    hg_test_class_g = HG_Init(hg_test_na_class_g, hg_test_na_context_g);
     if (!hg_test_class_g) {
         fprintf(stderr, "Could not initialize HG class\n");
         goto done;
@@ -392,7 +449,7 @@ HG_Test_server_init(int argc, char *argv[], na_addr_t **addr_table,
     hg_test_context_g = HG_Context_create(hg_test_class_g);
 
     /* Create bulk buffer that can be used for receiving data */
-    HG_Bulk_create(hg_test_bulk_class_g, 1, NULL, &bulk_size, HG_BULK_READWRITE,
+    HG_Bulk_create(hg_test_class_g, 1, NULL, &bulk_size, HG_BULK_READWRITE,
             &hg_test_local_bulk_handle_g);
 
     if (hg_test_addr_table_size_g > 1) {
@@ -402,7 +459,7 @@ HG_Test_server_init(int argc, char *argv[], na_addr_t **addr_table,
         for (i = 0; i < hg_test_addr_table_size_g; i++) {
             na_return_t na_ret;
 
-            na_ret = NA_Addr_lookup_wait(hg_test_na_class_g,
+            na_ret = na_addr_lookup_wait(hg_test_na_class_g,
                     hg_test_addr_table_g[i], &hg_test_na_addr_table_g[i]);
             if (na_ret != NA_SUCCESS) {
                 fprintf(stderr, "Could not find addr %s\n", hg_test_addr_table_g[i]);
@@ -434,7 +491,7 @@ HG_Test_finalize(hg_class_t *hg_class)
 
     if (hg_test_is_client_g) {
         /* Terminate server */
-        if (hg_test_rank_g == 0) hg_test_finalize_rpc(hg_class);
+        if (hg_test_rank_g == 0) hg_test_finalize_rpc();
 
         /* Free addr id */
         na_ret = NA_Addr_free(hg_test_na_class_g, hg_test_addr_g);
@@ -475,13 +532,6 @@ HG_Test_finalize(hg_class_t *hg_class)
         goto done;
     }
     hg_test_class_g = NULL;
-
-    ret = HG_Bulk_finalize(hg_test_bulk_class_g);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize HG Bulk class\n");
-        goto done;
-    }
-    hg_test_bulk_class_g = NULL;
 
     na_ret = NA_Context_destroy(hg_test_na_class_g, hg_test_na_context_g);
     if (na_ret != NA_SUCCESS) {

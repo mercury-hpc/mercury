@@ -96,12 +96,12 @@ static hg_return_t my_rpc_handler(hg_handle_t handle)
     /* register local target buffer for bulk access */
     hgi = HG_Get_info(handle);
     assert(hgi);
-    ret = HG_Bulk_create(hgi->hg_bulk_class, 1, &my_rpc_state_p->buffer,
+    ret = HG_Bulk_create(hgi->hg_class, 1, &my_rpc_state_p->buffer,
         &my_rpc_state_p->size, HG_BULK_WRITE_ONLY, &my_rpc_state_p->bulk_handle);
     assert(ret == 0);
 
     /* initiate bulk transfer from client to server */
-    ret = HG_Bulk_transfer(hgi->bulk_context, my_rpc_handler_bulk_cb,
+    ret = HG_Bulk_transfer(hgi->context, my_rpc_handler_bulk_cb,
         my_rpc_state_p, HG_BULK_PULL, hgi->addr, my_rpc_state_p->in.bulk_handle, 0,
         my_rpc_state_p->bulk_handle, 0, my_rpc_state_p->size, HG_OP_ID_IGNORE);
     assert(ret == 0);

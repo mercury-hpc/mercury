@@ -67,6 +67,7 @@ hg_proc_buf_free(
 /**
  * Create a new encoding/decoding processor.
  *
+ * \param hg_class [IN]         HG class
  * \param buf [IN]              pointer to buffer that will be used for
  *                              serialization/deserialization
  * \param buf_size [IN]         buffer size
@@ -74,18 +75,17 @@ hg_proc_buf_free(
  * \param hash [IN]             hash method used for computing checksum
  *                              (if NULL, checksum is not computed)
  *                              hash method: HG_CRC16, HG_CRC64, HG_NOHASH
- * \param hg_bulk_class [IN]    (optional) HG Bulk class
  * \param proc [OUT]            pointer to abstract processor object
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 hg_proc_create(
+        hg_class_t *hg_class,
         void *buf,
         hg_size_t buf_size,
         hg_proc_op_t op,
         hg_proc_hash_t hash,
-        hg_bulk_class_t *hg_bulk_class,
         hg_proc_t *proc
         );
 
@@ -102,14 +102,14 @@ hg_proc_free(
         );
 
 /**
- * Get the HG bulk class associated to the processor.
+ * Get the HG class associated to the processor.
  *
  * \param proc [IN]             abstract processor object
  *
- * \return HG Bulk class
+ * \return HG class
  */
-HG_EXPORT hg_bulk_class_t *
-hg_proc_get_bulk_class(
+HG_EXPORT hg_class_t *
+hg_proc_get_class(
         hg_proc_t proc
         );
 
@@ -561,9 +561,15 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
             if (*handle != HG_BULK_NULL) {
-                buf_size = HG_Bulk_get_serialize_size(*handle);
+                hg_bool_t eager_mode = HG_FALSE;
+#ifdef HG_HAS_EAGER_BULK
+                eager_mode = (hg_proc_get_size_left(proc)
+                    > HG_Bulk_get_serialize_size(*handle, HG_TRUE))
+                    ? HG_TRUE : HG_FALSE;
+#endif
+                buf_size = HG_Bulk_get_serialize_size(*handle, eager_mode);
                 buf = malloc(buf_size);
-                ret = HG_Bulk_serialize(buf, buf_size, *handle);
+                ret = HG_Bulk_serialize(buf, buf_size, eager_mode, *handle);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not serialize bulk handle");
                     return ret;
@@ -597,7 +603,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                 return ret;
             }
             if (buf_size) {
-                hg_bulk_class_t *hg_bulk_class = hg_proc_get_bulk_class(proc);
+                hg_class_t *hg_class = hg_proc_get_class(proc);
 
                 buf = malloc(buf_size);
                 /* Decode serialized buffer */
@@ -606,7 +612,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                     HG_LOG_ERROR("Proc error");
                     return ret;
                 }
-                ret = HG_Bulk_deserialize(hg_bulk_class, handle, buf, buf_size);
+                ret = HG_Bulk_deserialize(hg_class, handle, buf, buf_size);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not deserialize bulk handle");
                     return ret;

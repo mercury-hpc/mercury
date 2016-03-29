@@ -299,11 +299,11 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
 
     /* Create a new block handle to read the data */
-    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
             HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Read bulk data here  */
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_bulk_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_bulk_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
             local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -406,11 +406,11 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
     printf("Start reading first chunk of %lu bytes...\n", nbytes_read);
 
     /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
             HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Read bulk data here  */
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_bulk_seg_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_bulk_seg_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
             local_bulk_handle, 0, nbytes_read, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -423,7 +423,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
 
     printf("Start reading second chunk of %lu bytes...\n", nbytes_read);
 
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_bulk_seg_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_bulk_seg_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, offset,
             local_bulk_handle, offset, nbytes_read, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -865,11 +865,11 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
 
     /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
             HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Read bulk data here  */
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_posix_write_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_posix_write_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
             local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -958,7 +958,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
 
     /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
             HG_BULK_READ_ONLY, &local_bulk_handle);
 
     /* Call bulk_write */
@@ -981,7 +981,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     bulk_args->ret = read_ret;
 
     /* Read bulk data here  */
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_posix_read_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_posix_read_transfer_cb,
             bulk_args, HG_BULK_PUSH, hg_info->addr, origin_bulk_handle, 0,
             local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -1087,7 +1087,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 #endif
 
     /* Read bulk data here  */
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_perf_bulk_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_perf_bulk_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
             local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -1164,8 +1164,8 @@ HG_TEST_RPC_CB(hg_test_nested1, handle)
     /* Get info from handle */
     hg_info = HG_Get_info(handle);
 
-    ret = HG_Create(hg_info->hg_class, hg_info->context, na_addr_table[1],
-            hg_test_nested2_id_g, &forward_handle);
+    ret = HG_Create(hg_info->context, na_addr_table[1], hg_test_nested2_id_g,
+            &forward_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         goto done;

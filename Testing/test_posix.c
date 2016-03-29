@@ -40,8 +40,7 @@ open_rpc(const char *pathname, int flags, mode_t mode)
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(hg_class, context, addr, hg_test_posix_open_id_g,
-            &handle);
+    hg_ret = HG_Create(context, addr, hg_test_posix_open_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         goto done;
@@ -104,8 +103,7 @@ close_rpc(int fd)
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(hg_class, context, addr, hg_test_posix_close_id_g,
-            &handle);
+    hg_ret = HG_Create(context, addr, hg_test_posix_close_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         goto done;
@@ -164,25 +162,20 @@ write_rpc(int fd, void *buf, size_t count)
     hg_bulk_t bulk_handle;
     hg_request_t *request;
     hg_handle_t handle;
-    struct hg_info *hg_info = NULL;
     hg_return_t hg_ret;
     int write_ret = 0;
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(hg_class, context, addr, hg_test_posix_write_id_g,
-            &handle);
+    hg_ret = HG_Create(context, addr, hg_test_posix_write_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         goto done;
     }
 
-    /* Must get info to retrieve bulk class if not provided by user */
-    hg_info = HG_Get_info(handle);
-
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_info->hg_bulk_class, 1, &buf, &count,
-            HG_BULK_READ_ONLY, &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_class, 1, &buf, &count, HG_BULK_READ_ONLY,
+            &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         goto done;
@@ -249,25 +242,20 @@ read_rpc(int fd, void *buf, size_t count)
     hg_bulk_t bulk_handle;
     hg_request_t *request;
     hg_handle_t handle;
-    struct hg_info *hg_info = NULL;
     hg_return_t hg_ret;
     int read_ret = 0;
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(hg_class, context, addr, hg_test_posix_read_id_g,
-            &handle);
+    hg_ret = HG_Create(context, addr, hg_test_posix_read_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         goto done;
     }
 
-    /* Must get info to retrieve bulk class if not provided by user */
-    hg_info = HG_Get_info(handle);
-
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_info->hg_bulk_class, 1, &buf, &count,
-            HG_BULK_READWRITE, &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_class, 1, &buf, &count, HG_BULK_READWRITE,
+            &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         goto done;

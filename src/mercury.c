@@ -169,8 +169,8 @@ hg_get_input(hg_handle_t handle, void *in_struct)
     if (!hg_proc_info->in_proc_cb) goto done;
 
     /* Create a new decoding proc */
-    ret = hg_proc_create(in_buf, in_buf_size, HG_DECODE, HG_CRC64,
-            hg_info->hg_bulk_class, &proc);
+    ret = hg_proc_create(hg_info->hg_class, in_buf, in_buf_size, HG_DECODE,
+            HG_CRC64, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -234,8 +234,8 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     if (!hg_proc_info->in_proc_cb) goto done;
 
     /* Create a new encoding proc */
-    ret = hg_proc_create(in_buf, in_buf_size, HG_ENCODE, HG_CRC64,
-            hg_info->hg_bulk_class, &proc);
+    ret = hg_proc_create(hg_info->hg_class, in_buf, in_buf_size, HG_ENCODE,
+            HG_CRC64, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -313,8 +313,7 @@ hg_free_input(hg_handle_t handle, void *in_struct)
     if (!hg_proc_info->in_proc_cb) goto done;
 
     /* Create a new free proc */
-    ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, hg_info->hg_bulk_class,
-            &proc);
+    ret = hg_proc_create(hg_info->hg_class, NULL, 0, HG_FREE, HG_NOHASH, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -369,8 +368,8 @@ hg_get_output(hg_handle_t handle, void *out_struct)
     if (!hg_proc_info->out_proc_cb) goto done;
 
     /* Create a new encoding proc */
-    ret = hg_proc_create(out_buf, out_buf_size, HG_DECODE, HG_CRC64,
-            hg_info->hg_bulk_class, &proc);
+    ret = hg_proc_create(hg_info->hg_class, out_buf, out_buf_size, HG_DECODE,
+            HG_CRC64, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -432,8 +431,8 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
     if (!hg_proc_info->out_proc_cb) goto done;
 
     /* Create a new encoding proc */
-    ret = hg_proc_create(out_buf, out_buf_size, HG_ENCODE, HG_CRC64,
-            hg_info->hg_bulk_class, &proc);
+    ret = hg_proc_create(hg_info->hg_class, out_buf, out_buf_size, HG_ENCODE,
+            HG_CRC64, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -495,8 +494,7 @@ hg_free_output(hg_handle_t handle, void *out_struct)
     if (!hg_proc_info->out_proc_cb) goto done;
 
     /* Create a new free proc */
-    ret = hg_proc_create(NULL, 0, HG_FREE, HG_NOHASH, hg_info->hg_bulk_class,
-            &proc);
+    ret = hg_proc_create(hg_info->hg_class, NULL, 0, HG_FREE, HG_NOHASH, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -576,10 +574,9 @@ HG_Error_to_string(hg_return_t errnum)
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Init(na_class_t *na_class, na_context_t *na_context,
-    hg_bulk_class_t *hg_bulk_class)
+HG_Init(na_class_t *na_class, na_context_t *na_context)
 {
-    return HG_Core_init(na_class, na_context, hg_bulk_class);
+    return HG_Core_init(na_class, na_context);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -587,13 +584,6 @@ hg_return_t
 HG_Finalize(hg_class_t *hg_class)
 {
     return HG_Core_finalize(hg_class);
-}
-
-/*---------------------------------------------------------------------------*/
-hg_bulk_class_t *
-HG_Get_bulk_class(hg_class_t *hg_class)
-{
-    return HG_Core_get_bulk_class(hg_class);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -608,13 +598,6 @@ hg_return_t
 HG_Context_destroy(hg_context_t *context)
 {
     return HG_Core_context_destroy(context);
-}
-
-/*---------------------------------------------------------------------------*/
-hg_bulk_context_t *
-HG_Get_bulk_context(hg_context_t *hg_context)
-{
-    return HG_Core_get_bulk_context(hg_context);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -738,10 +721,10 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Create(hg_class_t *hg_class, hg_context_t *context, na_addr_t addr,
-    hg_id_t id, hg_handle_t *handle)
+HG_Create(hg_context_t *context, na_addr_t addr, hg_id_t id,
+    hg_handle_t *handle)
 {
-    return HG_Core_create(hg_class, context, addr, id, handle);
+    return HG_Core_create(context, addr, id, handle);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -879,7 +862,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     if (extra_in_buf) {
         struct hg_info *hg_info = HG_Core_get_info(handle);
 
-        ret = HG_Bulk_create(hg_info->hg_bulk_class, 1, &extra_in_buf,
+        ret = HG_Bulk_create(hg_info->hg_class, 1, &extra_in_buf,
                 &extra_in_buf_size, HG_BULK_READ_ONLY, &extra_in_handle);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not create bulk data handle");
@@ -936,17 +919,17 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Progress(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout)
+HG_Progress(hg_context_t *context, unsigned int timeout)
 {
-    return HG_Core_progress(hg_class, context, timeout);
+    return HG_Core_progress(context, timeout);
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Trigger(hg_class_t *hg_class, hg_context_t *context, unsigned int timeout,
-    unsigned int max_count, unsigned int *actual_count)
+HG_Trigger(hg_context_t *context, unsigned int timeout, unsigned int max_count,
+    unsigned int *actual_count)
 {
-    return HG_Core_trigger(hg_class, context, timeout, max_count, actual_count);
+    return HG_Core_trigger(context, timeout, max_count, actual_count);
 }
 
 /*---------------------------------------------------------------------------*/
