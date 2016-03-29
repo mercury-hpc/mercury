@@ -62,6 +62,7 @@ struct hg_context {
     hg_thread_pool_t *self_processing_pool;       /* Thread pool for self processing */
 };
 
+
 /* Info for function map */
 struct hg_rpc_info {
     hg_rpc_cb_t rpc_cb;             /* RPC callback */

@@ -32,6 +32,7 @@ struct hg_info {
     hg_id_t id;                         /* RPC ID */
 };
 
+
 /**
  * Bulk transfer operators.
  */

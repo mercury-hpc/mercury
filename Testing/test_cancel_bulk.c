@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(hg_class, context, addr, hg_test_bulk_write_id_g,
+    hg_ret = HG_Create(context, addr, hg_test_bulk_write_id_g,
             &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
@@ -97,7 +97,7 @@ int main(int argc, char *argv[])
     hg_info = HG_Get_info(handle);
 
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_info->hg_bulk_class, 1, buf_ptr, &bulk_size,
+    hg_ret = HG_Bulk_create(hg_info->hg_class, 1, buf_ptr, &bulk_size,
             HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
