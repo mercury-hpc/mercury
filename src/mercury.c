@@ -248,6 +248,13 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
         goto done;
     }
 
+    /* Flush proc */
+    ret = hg_proc_flush(proc);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Error in proc flush");
+        goto done;
+    }
+
     /* The size of the encoding buffer may have changed at this point
      * --> if the buffer is too large, we need to do:
      *  - 1: send an unexpected message with info + eventual bulk data descriptor
@@ -267,20 +274,11 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     } else {
         *extra_in_buf = NULL;
         *extra_in_buf_size = 0;
-    }
-
-    /* Flush proc */
-    ret = hg_proc_flush(proc);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Error in proc flush");
-        goto done;
-    }
-
-    /* if the request fit in the initial buffer, then we have to add that
-     * size to msg send
-     */
-    if(*extra_in_buf_size == 0)
+        /* if the request fit in the initial buffer, then we have to add that
+         * size to msg send
+         */
         *size_to_send += hg_proc_get_size_used(proc);
+    }
 
 done:
     if (proc != HG_PROC_NULL) hg_proc_free(proc);
@@ -445,18 +443,18 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
         goto done;
     }
 
+    /* Flush proc */
+    ret = hg_proc_flush(proc);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Error in proc flush");
+        goto done;
+    }
+
     /* Get eventual extra buffer
      * TODO need to do something here  */
     if (hg_proc_get_size(proc) > out_buf_size) {
         HG_LOG_WARNING("Output size exceeds NA expected message size");
         ret = HG_SIZE_ERROR;
-        goto done;
-    }
-
-    /* Flush proc */
-    ret = hg_proc_flush(proc);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Error in proc flush");
         goto done;
     }
 
