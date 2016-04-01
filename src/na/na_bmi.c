@@ -2220,6 +2220,8 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
+
+   
     switch (na_bmi_op_id->type) {
         case NA_CB_LOOKUP:
             /* Nothing for now */

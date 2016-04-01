@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
- * UChicago Argonne, LLC and The HDF Group.
+ *               UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -117,17 +117,16 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-#if 0  
-    /* Call cancel should only affect bulk transfer. */
+#if 0
     hg_ret = HG_Cancel(handle);
     if (hg_ret != HG_SUCCESS)
     {
-        fprintf(stderr, "HG_Cancel failed: %d\n", hg_ret);
+        fprintf(stderr, "HG_Cancel() failed: reuturn code = %d\n", hg_ret);
         return EXIT_FAILURE;
     }
-#endif    
+#endif
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
-    
+
     
 
     /* Free memory handle */

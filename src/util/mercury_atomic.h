@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *               UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -147,7 +147,7 @@ hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
         hg_util_int32_t swap_value)
 {
     hg_util_bool_t ret;
-
+    
 #if defined(_WIN32)
     ret = (compare_value == InterlockedCompareExchange(&ptr->value, swap_value,
             compare_value));

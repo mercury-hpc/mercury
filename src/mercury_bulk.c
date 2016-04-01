@@ -46,6 +46,7 @@ struct hg_bulk_op_id {
     hg_bulk_op_t op;                      /* Operation type */
     struct hg_bulk *hg_bulk_origin;       /* Origin handle */
     struct hg_bulk *hg_bulk_local;        /* Local handle */
+    na_op_id_t* na_op_id ;                /* An array of na_op_ids with op_count size*/
 };
 
 /* Segment used to transfer data and map to NA layer */
@@ -238,6 +239,21 @@ hg_bulk_na_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 }
 
 /**
+ * NA_Cancel wrapper
+ */
+static HG_INLINE na_return_t
+hg_bulk_na_cancel(na_class_t *na_class, na_context_t *context, na_cb_t callback,
+               void *arg, na_mem_handle_t local_mem_handle,
+               na_ptr_t HG_BULK_UNUSED local_address, na_offset_t local_offset,
+               na_mem_handle_t remote_mem_handle, na_ptr_t HG_BULK_UNUSED remote_address,
+               na_offset_t remote_offset, na_size_t data_size, na_addr_t remote_addr,
+               na_op_id_t *op_id)
+{
+    return NA_Cancel(na_class, context, op_id);
+}
+
+
+/**
  * Memcpy
  */
 static HG_INLINE na_return_t
@@ -276,6 +292,9 @@ hg_bulk_memcpy_get(na_class_t HG_BULK_UNUSED *na_class,
             (const void *) (remote_address + remote_offset), data_size);
     return callback(&na_cb_info);
 }
+
+
+
 
 /*******************/
 /* Local Variables */
@@ -593,7 +612,7 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
                     hg_bulk_origin->segment_handles[origin_segment_index],
                     hg_bulk_origin->segments[origin_segment_index].address,
                     origin_segment_offset, transfer_size, origin_addr,
-                    NA_OP_ID_IGNORE);
+                    NA_OP_ID_IGNORE /* get op_ids */ );
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("Could not transfer data");
                 ret = HG_NA_ERROR;
@@ -697,6 +716,7 @@ hg_bulk_transfer(hg_context_t *context, hg_bulk_cb_t callback, void *arg,
         goto done;
     }
 
+
     /* Do actual transfer */
     ret = hg_bulk_transfer_pieces(na_bulk_op, origin_addr, hg_bulk_origin,
             origin_segment_start_index, origin_segment_start_offset,
@@ -707,8 +727,10 @@ hg_bulk_transfer(hg_context_t *context, hg_bulk_cb_t callback, void *arg,
         goto done;
     }
 
+
     /* Assign op_id */
     *op_id = (hg_op_id_t) hg_bulk_op_id;
+    
 
 done:
     if (ret != HG_SUCCESS) {
@@ -725,7 +747,7 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
     struct hg_completion_entry *hg_completion_entry = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    /* Mark operation as completed */
+    /* Mark operation as completed. */
     hg_atomic_incr32(&hg_bulk_op_id->completed);
 
     hg_completion_entry = (struct hg_completion_entry *) malloc(sizeof(struct hg_completion_entry));
@@ -1233,13 +1255,20 @@ HG_Bulk_cancel(hg_op_id_t op_id)
         goto done;
     }
 
-    if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_bulk_op_id->completed, 1, 0)) {
+
+     if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_bulk_op_id->completed, 1, 0)) {
         /* TODO must cancel all NA operations issued */
         NA_Cancel(hg_bulk_op_id->hg_class->na_class,
                   hg_bulk_op_id->hg_class->na_context,
-                  NA_OP_ID_NULL);
+                  NA_OP_ID_NULL); // NA_OP_ID_IGNORE
+#if 0
+        NA_Cancel(hg_bulk_op_id->hg_class->na_class,
+                  hg_bulk_op_id->hg_class->na_context,
+                  NA_CB_GET);
+#endif
 
-    }
+     }
+
 
 done:
     return ret;
