@@ -14,8 +14,8 @@
 #include "mercury_proc.h"
 #include "mercury_bulk.h"
 #include "mercury_error.h"
-
 #include "mercury_private.h"
+
 #include "mercury_queue.h"
 #include "mercury_list.h"
 #include "mercury_thread_mutex.h"
@@ -77,11 +77,12 @@ struct hg_self_cb_info {
     void *respond_arg;
 };
 
-/* HG op id */
+/* HG handle */
 struct hg_handle {
     struct hg_info hg_info;             /* HG info */
     hg_cb_t callback;                   /* Callback */
     void *arg;                          /* Callback arguments */
+    hg_cb_type_t cb_type;               /* Callback type */
     na_tag_t tag;                       /* Tag used for request and response */
     hg_uint32_t cookie;                 /* Cookie unique to every RPC call */
     hg_return_t ret;                    /* Return code associated to handle */
@@ -107,6 +108,23 @@ struct hg_handle {
     hg_op_id_t extra_in_op_id;
 };
 
+/* HG op id */
+struct hg_op_info_lookup {
+    hg_addr_t addr;                     /* Address */
+    na_op_id_t na_lookup_op_id;         /* Operation ID for lookup */
+};
+
+struct hg_op_id {
+    struct hg_context *context;         /* Context */
+    hg_cb_type_t type;                  /* Callback type */
+    hg_cb_t callback;                   /* Callback */
+    void *arg;                          /* Callback arguments */
+    hg_atomic_int32_t completed;        /* Operation completed TODO needed ? */
+    union {
+        struct hg_op_info_lookup lookup;
+    } info;
+};
+
 /********************/
 /* Local Prototypes */
 /********************/
@@ -126,7 +144,7 @@ hg_core_get_extra_input(
  */
 static hg_return_t
 hg_core_get_extra_input_cb(
-        const struct hg_bulk_cb_info *callback_info
+        const struct hg_cb_info *callback_info
         );
 
 /**
@@ -215,8 +233,10 @@ hg_core_self_processing_list_check(
  */
 static struct hg_class *
 hg_core_init(
-        na_class_t *na_class,
-        na_context_t *na_context
+        const char *na_info_string,
+        hg_bool_t na_listen,
+        na_class_t *na_init_class,
+        na_context_t *na_init_context
         );
 
 /**
@@ -225,6 +245,74 @@ hg_core_init(
 static hg_return_t
 hg_core_finalize(
         struct hg_class *hg_class
+        );
+
+/**
+ * Lookup addr.
+ */
+static hg_return_t
+hg_core_addr_lookup(
+        struct hg_context *context,
+        hg_cb_t callback,
+        void *arg,
+        const char *name,
+        hg_op_id_t *op_id
+        );
+
+/**
+ * Lookup callback.
+ */
+static na_return_t
+hg_core_addr_lookup_cb(
+        const struct na_cb_info *callback_info
+        );
+
+/**
+ * Complete addr lookup.
+ */
+static hg_return_t
+hg_core_addr_lookup_complete(
+        struct hg_op_id *hg_op_id
+        );
+
+/**
+ * Free addr.
+ */
+static hg_return_t
+hg_core_addr_free(
+        struct hg_class *hg_class,
+        hg_addr_t addr
+        );
+
+
+/**
+ * Self addr.
+ */
+static hg_return_t
+hg_core_addr_self(
+        struct hg_class *hg_class,
+        hg_addr_t *addr
+        );
+
+/**
+ * Dup addr.
+ */
+static hg_return_t
+hg_core_addr_dup(
+        struct hg_class *hg_class,
+        hg_addr_t addr,
+        hg_addr_t *new_addr
+        );
+
+/**
+ * Convert addr to string.
+ */
+static hg_return_t
+hg_core_addr_to_string(
+        struct hg_class *hg_class,
+        char *buf,
+        hg_size_t *buf_size,
+        hg_addr_t addr
         );
 
 /**
@@ -399,6 +487,14 @@ hg_core_trigger(
         );
 
 /**
+ * Trigger callback from HG lookup op ID.
+ */
+static hg_return_t
+hg_core_trigger_lookup_entry(
+        struct hg_op_id *hg_op_id
+        );
+
+/**
  * Trigger callback from HG handle.
  */
 static hg_return_t
@@ -551,13 +647,13 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_get_extra_input_cb(const struct hg_bulk_cb_info *callback_info)
+hg_core_get_extra_input_cb(const struct hg_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
     /* Free bulk handle */
-    ret = HG_Bulk_free(callback_info->local_handle);
+    ret = HG_Bulk_free(callback_info->info.bulk.local_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not free bulk handle");
         goto done;
@@ -566,7 +662,7 @@ hg_core_get_extra_input_cb(const struct hg_bulk_cb_info *callback_info)
     /* TODO should be freed with header request proc but clean that up when
      * extra handle is clean
      */
-    ret = HG_Bulk_free(callback_info->origin_handle);
+    ret = HG_Bulk_free(callback_info->info.bulk.origin_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not free bulk handle");
         goto done;
@@ -816,7 +912,8 @@ hg_core_self_processing_list_check(struct hg_context *context)
 
 /*---------------------------------------------------------------------------*/
 static struct hg_class *
-hg_core_init(na_class_t *na_class, na_context_t *na_context)
+hg_core_init(const char *na_info_string, hg_bool_t na_listen,
+    na_class_t *na_init_class, na_context_t *na_init_context)
 {
     struct hg_class *hg_class = NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -828,13 +925,30 @@ hg_core_init(na_class_t *na_class, na_context_t *na_context)
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-
-    hg_class->na_class = na_class;
-    hg_class->na_context = na_context;
+    hg_class->na_class = na_init_class;
+    hg_class->na_context = na_init_context;
     hg_class->func_map = NULL;
+    hg_class->na_ext_init = (na_init_class && na_init_context) ? HG_TRUE : HG_FALSE;
+
+    /* Initialize NA */
+    if (!hg_class->na_ext_init) {
+        hg_class->na_class = NA_Initialize(na_info_string, na_listen);
+        if (!hg_class->na_class) {
+            HG_LOG_ERROR("Could not initialize NA class");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+
+        hg_class->na_context = NA_Context_create(hg_class->na_class);
+        if (!hg_class->na_context) {
+            HG_LOG_ERROR("Could not create NA context");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+    }
 
     /* Initialize atomic for tags */
-    hg_class->request_max_tag = NA_Msg_get_max_tag(na_class);
+    hg_class->request_max_tag = NA_Msg_get_max_tag(hg_class->na_class);
     hg_atomic_set32(&hg_class->request_tag, 0);
 
     /* Create new function map */
@@ -867,8 +981,200 @@ hg_core_finalize(struct hg_class *hg_class)
     hg_hash_table_free(hg_class->func_map);
     hg_class->func_map = NULL;
 
+    /* Destroy context */
+    if (!hg_class->na_ext_init) {
+        if (hg_class->na_context && NA_Context_destroy(hg_class->na_class,
+                hg_class->na_context) != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not destroy NA context");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+        hg_class->na_context = NULL;
+
+        /* Finalize interface */
+        if (NA_Finalize(hg_class->na_class) != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not finalize NA interface");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+        hg_class->na_class = NULL;
+    }
+
     /* Free HG class */
     free(hg_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
+    const char *name, hg_op_id_t *op_id)
+{
+    na_class_t *na_class = context->hg_class->na_class;
+    na_context_t *na_context = context->hg_class->na_context;
+    struct hg_op_id *hg_op_id = NULL;
+    na_return_t na_ret;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Allocate op_id */
+    hg_op_id = (struct hg_op_id *) malloc(sizeof(struct hg_op_id));
+    if (!hg_op_id) {
+        HG_LOG_ERROR("Could not allocate HG operation ID");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+    hg_op_id->context = context;
+    hg_op_id->type = HG_CB_LOOKUP;
+    hg_op_id->callback = callback;
+    hg_op_id->arg = arg;
+    hg_atomic_set32(&hg_op_id->completed, 0);
+    hg_op_id->info.lookup.addr = HG_ADDR_NULL;
+
+    na_ret = NA_Addr_lookup(na_class, na_context, hg_core_addr_lookup_cb,
+            hg_op_id, name, &hg_op_id->info.lookup.na_lookup_op_id);
+    if (na_ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not start lookup for address %s", name);
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+
+    /* Assign op_id */
+    *op_id = (hg_op_id_t) hg_op_id;
+
+done:
+    if (ret != HG_SUCCESS) {
+        free(hg_op_id);
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+hg_core_addr_lookup_cb(const struct na_cb_info *callback_info)
+{
+    struct hg_op_id *hg_op_id = (struct hg_op_id *) callback_info->arg;
+    na_return_t ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        return ret;
+    }
+
+    /* Assign addr */
+    hg_op_id->info.lookup.addr = (hg_addr_t) callback_info->info.lookup.addr;
+
+    /* Mark as completed */
+    if (hg_core_addr_lookup_complete(hg_op_id) != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete operation");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_addr_lookup_complete(struct hg_op_id *hg_op_id)
+{
+    hg_context_t *context = hg_op_id->context;
+    struct hg_completion_entry *hg_completion_entry = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Mark operation as completed */
+    hg_atomic_incr32(&hg_op_id->completed);
+
+    hg_completion_entry = (struct hg_completion_entry *) malloc(sizeof(struct hg_completion_entry));
+    if (!hg_completion_entry) {
+        HG_LOG_ERROR("Could not allocate HG completion entry");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+    hg_completion_entry->op_type = HG_ADDR;
+    hg_completion_entry->op_id.hg_op_id = hg_op_id;
+
+    ret = hg_core_completion_add(context, hg_completion_entry);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not add HG completion entry to completion queue");
+        goto done;
+    }
+
+done:
+    if (ret != HG_SUCCESS)
+        free(hg_completion_entry);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_addr_free(struct hg_class *hg_class, hg_addr_t addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
+
+    na_ret = NA_Addr_free(hg_class->na_class, (na_addr_t)addr);
+    if (na_ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not free address");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_addr_self(struct hg_class *hg_class, hg_addr_t *addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
+
+    na_ret = NA_Addr_self(hg_class->na_class, (na_addr_t *) addr);
+    if (na_ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not get self address");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_addr_dup(struct hg_class *hg_class, hg_addr_t addr, hg_addr_t *new_addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
+
+    na_ret = NA_Addr_dup(hg_class->na_class, (na_addr_t) addr, (na_addr_t *) new_addr);
+    if (na_ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not duplicate address");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_addr_to_string(struct hg_class *hg_class, char *buf, hg_size_t *buf_size,
+    hg_addr_t addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
+
+    na_ret = NA_Addr_to_string(hg_class->na_class, buf, buf_size, (na_addr_t) addr);
+    if (na_ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not convert address to string");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
 
 done:
     return ret;
@@ -890,10 +1196,11 @@ hg_core_create(struct hg_context *context)
 
     hg_handle->hg_info.hg_class = context->hg_class;
     hg_handle->hg_info.context = context;
-    hg_handle->hg_info.addr = NA_ADDR_NULL;
+    hg_handle->hg_info.addr = HG_ADDR_NULL;
     hg_handle->hg_info.id = 0;
     hg_handle->callback = NULL;
     hg_handle->arg = NULL;
+    hg_handle->cb_type = 0;
     hg_handle->cookie = 0; /* TODO Generate cookie */
     hg_handle->tag = 0;
     hg_handle->ret = HG_SUCCESS;
@@ -952,7 +1259,7 @@ hg_core_destroy(struct hg_handle *hg_handle)
     }
 
     /* Free if mine */
-    if (hg_handle->hg_info.addr != NA_ADDR_NULL && hg_handle->addr_mine)
+    if (hg_handle->hg_info.addr != HG_ADDR_NULL && hg_handle->addr_mine)
         NA_Addr_free(hg_handle->hg_info.hg_class->na_class,
                 hg_handle->hg_info.addr);
 
@@ -1052,6 +1359,7 @@ hg_core_respond_self(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     hg_self_cb_info->respond_arg = arg;
     hg_handle->callback = hg_core_self_cb;
     hg_handle->arg = hg_self_cb_info;
+    hg_handle->cb_type = HG_CB_RESPOND;
 
     /* Complete and add to completion queue */
     ret = hg_core_complete(hg_handle);
@@ -1083,6 +1391,7 @@ hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     /* Set callback */
     hg_handle->callback = callback;
     hg_handle->arg = arg;
+    hg_handle->cb_type = HG_CB_RESPOND;
 
     /* Respond back */
     na_ret = NA_Msg_send_expected(hg_class->na_class, hg_class->na_context,
@@ -1283,7 +1592,7 @@ done:
 static hg_return_t
 hg_core_self_cb(const struct hg_cb_info *callback_info)
 {
-    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->handle;
+    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->info.respond.handle;
     struct hg_self_cb_info *hg_self_cb_info =
             (struct hg_self_cb_info *) callback_info->arg;
     hg_return_t ret;
@@ -1294,9 +1603,8 @@ hg_core_self_cb(const struct hg_cb_info *callback_info)
 
         hg_cb_info.arg = hg_self_cb_info->respond_arg;
         hg_cb_info.ret = HG_SUCCESS; /* TODO report failure */
-        hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
-        hg_cb_info.context = hg_handle->hg_info.context;
-        hg_cb_info.handle = (hg_handle_t) hg_handle;
+        hg_cb_info.type = HG_CB_RESPOND;
+        hg_cb_info.info.respond.handle = (hg_handle_t) hg_handle;
 
         hg_self_cb_info->respond_cb(&hg_cb_info);
     }
@@ -1306,6 +1614,7 @@ hg_core_self_cb(const struct hg_cb_info *callback_info)
     /* Assign forward callback back to handle */
     hg_handle->callback = hg_self_cb_info->forward_cb;
     hg_handle->arg = hg_self_cb_info->forward_arg;
+    hg_handle->cb_type = HG_CB_FORWARD;
 
     /* Increment refcount and push handle back to completion queue */
     hg_atomic_incr32(&hg_handle->ref_count);
@@ -1409,8 +1718,8 @@ hg_core_complete(struct hg_handle *hg_handle)
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-    hg_completion_entry->completion_type = HG_RPC;
-    hg_completion_entry->hg_handle = hg_handle;
+    hg_completion_entry->op_type = HG_RPC;
+    hg_completion_entry->op_id.hg_handle = hg_handle;
 
     ret = hg_core_completion_add(context, hg_completion_entry);
     if (ret != HG_SUCCESS) {
@@ -1692,16 +2001,23 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
          * to the queue while callback gets executed */
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
-        switch(hg_completion_entry->completion_type) {
+        switch(hg_completion_entry->op_type) {
+            case HG_ADDR:
+                ret = hg_core_trigger_lookup_entry(hg_completion_entry->op_id.hg_op_id);
+                if (ret != HG_SUCCESS) {
+                    HG_LOG_ERROR("Could not trigger completion entry");
+                    goto done;
+                }
+                break;
             case HG_RPC:
-                ret = hg_core_trigger_entry(hg_completion_entry->hg_handle);
+                ret = hg_core_trigger_entry(hg_completion_entry->op_id.hg_handle);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not trigger completion entry");
                     goto done;
                 }
                 break;
             case HG_BULK:
-                ret = hg_bulk_trigger_entry(hg_completion_entry->hg_bulk_op_id);
+                ret = hg_bulk_trigger_entry(hg_completion_entry->op_id.hg_bulk_op_id);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not trigger completion entry");
                     goto done;
@@ -1721,6 +2037,29 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
     if (actual_count) *actual_count = count;
 
 done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_trigger_lookup_entry(struct hg_op_id *hg_op_id)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Execute callback */
+    if (hg_op_id->callback) {
+        struct hg_cb_info hg_cb_info;
+
+        hg_cb_info.arg = hg_op_id->arg;
+        hg_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
+        hg_cb_info.type = HG_CB_BULK;
+        hg_cb_info.info.lookup.addr = hg_op_id->info.lookup.addr;
+
+        hg_op_id->callback(&hg_cb_info);
+    }
+
+    /* Free op */
+    free(hg_op_id);
     return ret;
 }
 
@@ -1747,10 +2086,11 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
 
             hg_cb_info.arg = hg_handle->arg;
             hg_cb_info.ret = hg_handle->ret;
-            hg_cb_info.hg_class = hg_handle->hg_info.context->hg_class;
-            hg_cb_info.context = hg_handle->hg_info.context;
-            hg_cb_info.handle = (hg_handle_t) hg_handle;
-
+            hg_cb_info.type = hg_handle->cb_type;
+            if (hg_handle->cb_type == HG_CB_FORWARD)
+                hg_cb_info.info.forward.handle = (hg_handle_t) hg_handle;
+            else if (hg_handle->cb_type == HG_CB_RESPOND)
+                hg_cb_info.info.respond.handle = (hg_handle_t) hg_handle;
             hg_handle->callback(&hg_cb_info);
         }
 
@@ -1801,24 +2141,39 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Core_init(na_class_t *na_class, na_context_t *na_context)
+HG_Core_init(const char *na_info_string, hg_bool_t na_listen)
 {
     struct hg_class *hg_class = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!na_class) {
-        HG_LOG_ERROR("Invalid specified na_class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-
-    }
-    if (!na_context) {
-        HG_LOG_ERROR("Invalid specified na_context");
+    if (!na_info_string) {
+        HG_LOG_ERROR("Invalid specified na_info_string");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    hg_class = hg_core_init(na_class, na_context);
+    hg_class = hg_core_init(na_info_string, na_listen, NULL, NULL);
+    if (!hg_class) {
+        HG_LOG_ERROR("Cannot initialize HG core layer");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+done:
+    if (ret != HG_SUCCESS) {
+        /* Nothing */
+    }
+    return hg_class;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_class_t *
+HG_Core_init_na(na_class_t *na_class, na_context_t *na_context)
+{
+    struct hg_class *hg_class = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_class = hg_core_init(NULL, HG_FALSE, na_class, na_context);
     if (!hg_class) {
         HG_LOG_ERROR("Cannot initialize HG core layer");
         ret = HG_PROTOCOL_ERROR;
@@ -2108,7 +2463,134 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Core_create(hg_context_t *context, na_addr_t addr, hg_id_t id,
+HG_Core_addr_lookup(hg_context_t *context, hg_cb_t callback, void *arg,
+    const char *name, hg_op_id_t *op_id)
+{
+    hg_op_id_t hg_op_id;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    if (!name) {
+        HG_LOG_ERROR("NULL lookup name");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = hg_core_addr_lookup(context, callback, arg, name, &hg_op_id);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not lookup address");
+        goto done;
+    }
+
+    if (op_id && op_id != HG_OP_ID_IGNORE) *op_id = hg_op_id;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_addr_free(hg_class_t *hg_class, hg_addr_t addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = hg_core_addr_free(hg_class, addr);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not free address");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_addr_self(hg_class_t *hg_class, hg_addr_t *addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = hg_core_addr_self(hg_class, addr);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not get self address");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    if (!new_addr) {
+        HG_LOG_ERROR("NULL pointer to destination address");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = hg_core_addr_dup(hg_class, addr, new_addr);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not duplicate address");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_addr_to_string(hg_class_t *hg_class, char *buf, hg_size_t *buf_size,
+    hg_addr_t addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = hg_core_addr_to_string(hg_class, buf, buf_size, addr);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not convert address to string");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle_t *handle)
 {
     struct hg_handle *hg_handle = NULL;
@@ -2119,7 +2601,7 @@ HG_Core_create(hg_context_t *context, na_addr_t addr, hg_id_t id,
         ret = HG_INVALID_PARAM;
         goto done;
     }
-    if (addr == NA_ADDR_NULL) {
+    if (addr == HG_ADDR_NULL) {
         HG_LOG_ERROR("NULL addr");
         ret = HG_INVALID_PARAM;
         goto done;
@@ -2256,6 +2738,7 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     /* Set callback */
     hg_handle->callback = callback;
     hg_handle->arg = arg;
+    hg_handle->cb_type = HG_CB_FORWARD;
 
     /* Increase ref count here so that a call to HG_Destroy does not free the
      * handle but only schedules its completion
@@ -2321,7 +2804,7 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
         HG_LOG_ERROR("Could not encode header");
         goto done;
     }
-    
+
     /* set the actual size of the msg that needs to be transmitted */
     hg_handle->out_buf_used = size_to_send;
 

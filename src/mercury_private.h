@@ -13,8 +13,14 @@
 
 #include "mercury_types.h"
 
+#include "na.h"
+
 #include "mercury_hash_table.h"
 #include "mercury_atomic.h"
+
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
 
 /* HG class */
 struct hg_class {
@@ -23,21 +29,24 @@ struct hg_class {
     hg_hash_table_t *func_map;      /* Function map */
     hg_atomic_int32_t request_tag;  /* Atomic used for tag generation */
     na_tag_t request_max_tag;       /* Max value for tag */
+    hg_bool_t na_ext_init;          /* NA externally initialized */
 };
 
 /* Completion type */
 typedef enum {
+    HG_ADDR,            /*!< Addr completion */
     HG_RPC,             /*!< RPC completion */
     HG_BULK             /*!< Bulk completion */
-} hg_completion_type_t;
+} hg_op_type_t;
 
 /* Completion queue entry */
 struct hg_completion_entry {
-    hg_completion_type_t completion_type;
+    hg_op_type_t op_type;
     union {
+        struct hg_op_id *hg_op_id;
         struct hg_handle *hg_handle;
         struct hg_bulk_op_id *hg_bulk_op_id;
-    };
+    } op_id;
 };
 
 #endif /* MERCURY_PRIVATE_H */

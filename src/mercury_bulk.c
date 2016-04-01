@@ -39,7 +39,7 @@
 struct hg_bulk_op_id {
     struct hg_class *hg_class;            /* HG class */
     hg_context_t *context;                /* Context */
-    hg_bulk_cb_t callback;                /* Callback */
+    hg_cb_t callback;                     /* Callback */
     void *arg;                            /* Callback arguments */
     hg_atomic_int32_t completed;          /* Operation completed TODO needed ? */
     unsigned int op_count;                /* Number of ongoing operations */
@@ -169,7 +169,7 @@ hg_bulk_transfer_pieces(
 static hg_return_t
 hg_bulk_transfer(
         hg_context_t *context,
-        hg_bulk_cb_t callback,
+        hg_cb_t callback,
         void *arg,
         hg_bulk_op_t op,
         na_addr_t origin_addr,
@@ -631,7 +631,7 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_bulk_transfer(hg_context_t *context, hg_bulk_cb_t callback, void *arg,
+hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_bulk_op_t op, na_addr_t origin_addr, struct hg_bulk *hg_bulk_origin,
     hg_size_t origin_offset, struct hg_bulk *hg_bulk_local,
     hg_size_t local_offset, hg_size_t size, hg_op_id_t *op_id)
@@ -735,8 +735,8 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-    hg_completion_entry->completion_type = HG_BULK;
-    hg_completion_entry->hg_bulk_op_id = hg_bulk_op_id;
+    hg_completion_entry->op_type = HG_BULK;
+    hg_completion_entry->op_id.hg_bulk_op_id = hg_bulk_op_id;
 
     ret = hg_core_completion_add(context, hg_completion_entry);
     if (ret != HG_SUCCESS) {
@@ -758,17 +758,16 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
 
     /* Execute callback */
     if (hg_bulk_op_id->callback) {
-        struct hg_bulk_cb_info hg_bulk_cb_info;
+        struct hg_cb_info hg_cb_info;
 
-        hg_bulk_cb_info.arg = hg_bulk_op_id->arg;
-        hg_bulk_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
-        hg_bulk_cb_info.hg_class = hg_bulk_op_id->hg_class;
-        hg_bulk_cb_info.context = hg_bulk_op_id->context;
-        hg_bulk_cb_info.op = hg_bulk_op_id->op;
-        hg_bulk_cb_info.origin_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_origin;
-        hg_bulk_cb_info.local_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_local;
+        hg_cb_info.arg = hg_bulk_op_id->arg;
+        hg_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
+        hg_cb_info.type = HG_CB_BULK;
+        hg_cb_info.info.bulk.op = hg_bulk_op_id->op;
+        hg_cb_info.info.bulk.origin_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_origin;
+        hg_cb_info.info.bulk.local_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_local;
 
-        hg_bulk_op_id->callback(&hg_bulk_cb_info);
+        hg_bulk_op_id->callback(&hg_cb_info);
     }
 
     /* Free op */
@@ -1157,7 +1156,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_transfer(hg_context_t *context, hg_bulk_cb_t callback, void *arg,
+HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_bulk_op_t op, na_addr_t origin_addr, hg_bulk_t origin_handle,
     hg_size_t origin_offset, hg_bulk_t local_handle, hg_size_t local_offset,
     hg_size_t size, hg_op_id_t *op_id)
