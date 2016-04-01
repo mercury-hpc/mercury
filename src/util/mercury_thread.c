@@ -176,14 +176,15 @@ hg_thread_setspecific(hg_thread_key_t key, const void *value)
 
 /*---------------------------------------------------------------------------*/
 int
-hg_thread_getaffinity(hg_thread_t thread, hg_cpu_mask_t *cpu_mask)
+hg_thread_getaffinity(hg_thread_t thread, hg_cpu_set_t *cpu_mask)
 {
     int ret = HG_UTIL_SUCCESS;
 
-#ifdef _WIN32
+#if defined(_WIN32)
     HG_UTIL_ERROR_DEFAULT("not supported");
+#elif defined(__APPLE__)
 #else
-    if (pthread_getaffinity_np(thread, sizeof(cpu_set_t), cpu_mask)) {
+    if (pthread_getaffinity_np(thread, sizeof(hg_cpu_set_t), cpu_mask)) {
         HG_UTIL_ERROR_DEFAULT("pthread_getaffinity_np failed");
         ret = HG_UTIL_FAIL;
     }
@@ -194,17 +195,18 @@ hg_thread_getaffinity(hg_thread_t thread, hg_cpu_mask_t *cpu_mask)
 
 /*---------------------------------------------------------------------------*/
 int
-hg_thread_setaffinity(hg_thread_t thread, const hg_cpu_mask_t *cpu_mask)
+hg_thread_setaffinity(hg_thread_t thread, const hg_cpu_set_t *cpu_mask)
 {
     int ret = HG_UTIL_SUCCESS;
 
-#ifdef _WIN32
+#if defined(_WIN32)
     if (!SetThreadAffinityMask(thread, *cpu_mask)) {
         HG_UTIL_ERROR_DEFAULT("SetThreadAffinityMask failed");
         ret = HG_UTIL_FAIL;
     }
+#elif defined(__APPLE__)
 #else
-    if (pthread_setaffinity_np(thread, sizeof(cpu_set_t), cpu_mask)) {
+    if (pthread_setaffinity_np(thread, sizeof(hg_cpu_set_t), cpu_mask)) {
         HG_UTIL_ERROR_DEFAULT("pthread_setaffinity_np failed");
         ret = HG_UTIL_FAIL;
     }

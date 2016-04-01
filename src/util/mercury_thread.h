@@ -23,7 +23,7 @@
   typedef DWORD hg_thread_ret_t;
   #define HG_THREAD_RETURN_TYPE hg_thread_ret_t WINAPI
   typedef DWORD hg_thread_key_t;
-  typedef DWORD_PTR hg_cpu_mask_t;
+  typedef DWORD_PTR hg_cpu_set_t;
 #else
   #include <pthread.h>
   typedef pthread_t hg_thread_t;
@@ -31,7 +31,18 @@
   typedef void *hg_thread_ret_t;
   #define HG_THREAD_RETURN_TYPE hg_thread_ret_t
   typedef pthread_key_t hg_thread_key_t;
-  typedef cpu_set_t hg_cpu_mask_t;
+#ifdef __APPLE__
+  /* Size definition for CPU sets.  */
+  # define HG_CPU_SETSIZE  1024
+  # define HG_NCPUBITS     (8 * sizeof (hg_cpu_mask_t))
+  /* Type for array elements in 'cpu_set_t'.  */
+  typedef hg_util_uint64_t hg_cpu_mask_t;
+  typedef struct {
+      hg_cpu_mask_t bits[HG_CPU_SETSIZE / HG_NCPUBITS];
+  } hg_cpu_set_t;
+#else
+  typedef cpu_set_t hg_cpu_set_t;
+#endif
 #endif
 
 #ifdef __cplusplus
@@ -139,7 +150,7 @@ hg_thread_setspecific(hg_thread_key_t key, const void *value);
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_EXPORT int
-hg_thread_getaffinity(hg_thread_t thread, hg_cpu_mask_t *cpu_mask);
+hg_thread_getaffinity(hg_thread_t thread, hg_cpu_set_t *cpu_mask);
 
 /**
  * Set affinity mask.
@@ -150,7 +161,7 @@ hg_thread_getaffinity(hg_thread_t thread, hg_cpu_mask_t *cpu_mask);
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_EXPORT int
-hg_thread_setaffinity(hg_thread_t thread, const hg_cpu_mask_t *cpu_mask);
+hg_thread_setaffinity(hg_thread_t thread, const hg_cpu_set_t *cpu_mask);
 
 #ifdef __cplusplus
 }
