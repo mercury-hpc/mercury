@@ -13,14 +13,9 @@
 
 #include "na.h"
 
-/* Remove warnings when plugin does not use callback arguments */
-#if defined(__cplusplus)
-    #define NA_UNUSED
-#elif defined(__GNUC__) && (__GNUC__ >= 4)
-    #define NA_UNUSED __attribute__((unused))
-#else
-    #define NA_UNUSED
-#endif
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
 
 /* NA info definition */
 struct na_info {
@@ -268,6 +263,27 @@ struct na_class {
             );
 };
 
+/*****************/
+/* Public Macros */
+/*****************/
+
+/* Remove warnings when plugin does not use callback arguments */
+#if defined(__cplusplus)
+    #define NA_UNUSED
+#elif defined(__GNUC__) && (__GNUC__ >= 4)
+    #define NA_UNUSED __attribute__((unused))
+#else
+    #define NA_UNUSED
+#endif
+
+/*********************/
+/* Public Prototypes */
+/*********************/
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Private routines for use inside NA plugins */
 
 /**
@@ -290,5 +306,9 @@ na_cb_completion_add(
         na_plugin_cb_t     plugin_callback,
         void              *plugin_callback_args
         );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* NA_PRIVATE_H */
