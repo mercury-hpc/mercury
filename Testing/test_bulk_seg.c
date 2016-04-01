@@ -21,7 +21,7 @@ extern na_bool_t na_test_use_extra_g;
 static hg_return_t
 hg_test_bulk_seg_forward_cb(const struct hg_cb_info *callback_info)
 {
-    hg_handle_t handle = callback_info->handle;
+    hg_handle_t handle = callback_info->info.forward.handle;
     hg_request_t *request = (hg_request_t *) callback_info->arg;
     size_t bulk_write_ret = 0;
     bulk_write_out_t bulk_write_out_struct;
