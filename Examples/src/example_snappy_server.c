@@ -70,7 +70,7 @@ main(void)
     na_context = NA_Context_create(na_class);
 
     /* Initialize Mercury with the desired network abstraction class */
-    hg_class = HG_Init(na_class, na_context);
+    hg_class = HG_Init_na(na_class, na_context);
 
     /* Create HG context */
     hg_context = HG_Context_create(hg_class);

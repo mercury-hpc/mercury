@@ -39,7 +39,7 @@ void hg_engine_init(na_bool_t listen, const char* local_addr)
     na_context = NA_Context_create(network_class);
     assert(na_context);
 
-    hg_class = HG_Init(network_class, na_context);
+    hg_class = HG_Init_na(network_class, na_context);
     assert(hg_class);
 
     hg_context = HG_Context_create(hg_class);

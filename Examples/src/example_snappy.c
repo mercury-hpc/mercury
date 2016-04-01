@@ -31,10 +31,10 @@ struct snappy_transfer_args {
 hg_bool_t snappy_compress_done_target_g = HG_FALSE;
 
 static hg_return_t
-snappy_pull_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info);
+snappy_pull_cb(const struct hg_cb_info *hg_cb_info);
 
 static hg_return_t
-snappy_push_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info);
+snappy_push_cb(const struct hg_cb_info *hg_cb_info);
 
 static hg_return_t
 snappy_compress_done_cb(const struct hg_cb_info *hg_cb_info);
@@ -54,17 +54,17 @@ print_buf(int n, int *buf)
 }
 
 static hg_return_t
-snappy_pull_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+snappy_pull_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct snappy_transfer_args *snappy_transfer_args =
-            (struct snappy_transfer_args *) hg_bulk_cb_info->arg;
+            (struct snappy_transfer_args *) hg_cb_info->arg;
     hg_return_t ret = HG_SUCCESS;
     void *input;
     size_t input_length;
     size_t source_length = HG_Bulk_get_size(snappy_transfer_args->local_input_bulk_handle);
 
     /* Get pointer to input buffer from local handle */
-    HG_Bulk_access(hg_bulk_cb_info->local_handle, 0, source_length,
+    HG_Bulk_access(hg_cb_info->info.bulk.local_handle, 0, source_length,
             HG_BULK_READ_ONLY, 1, &input, &input_length, NULL);
     printf("Transferred input buffer of length: %zu\n", input_length);
     print_buf(20, (int *) input);
@@ -108,10 +108,10 @@ snappy_pull_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
  * pushes the compressed data back */
 
 static hg_return_t
-snappy_push_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+snappy_push_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct snappy_transfer_args *snappy_transfer_args =
-            (struct snappy_transfer_args *) hg_bulk_cb_info->arg;
+            (struct snappy_transfer_args *) hg_cb_info->arg;
     hg_return_t ret = HG_SUCCESS;
     snappy_compress_out_t snappy_compress_output;
 
