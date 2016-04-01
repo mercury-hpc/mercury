@@ -647,10 +647,10 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     /* Map op to NA op */
     switch (op) {
         case HG_BULK_PUSH:
-            na_bulk_op = (is_self || hg_bulk_origin->eager_mode) ?
-                    hg_bulk_memcpy_put : hg_bulk_na_put;
+            na_bulk_op = (is_self) ? hg_bulk_memcpy_put : hg_bulk_na_put;
             break;
         case HG_BULK_PULL:
+            /* Eager mode can only be used when data is pulled from origin */
             na_bulk_op = (is_self || hg_bulk_origin->eager_mode) ?
                     hg_bulk_memcpy_get : hg_bulk_na_get;
             break;
@@ -805,6 +805,8 @@ HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
         case HG_BULK_READWRITE:
             break;
         case HG_BULK_READ_ONLY:
+            break;
+        case HG_BULK_WRITE_ONLY:
             break;
         default:
             HG_LOG_ERROR("Unrecognized handle flag");
