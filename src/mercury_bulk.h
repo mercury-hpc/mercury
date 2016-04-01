@@ -121,15 +121,16 @@ HG_Bulk_get_segment_count(
  * Get size required to serialize bulk handle.
  *
  * \param handle [IN]           abstract bulk handle
- * \param serialize_data [IN]   boolean (passing HG_TRUE adds size of encoding
- *                              actual data along the handle)
+ * \param request_eager [IN]    boolean (passing HG_TRUE adds size of encoding
+ *                              actual data along the handle if handle meets
+ *                              HG_BULK_READ_ONLY flag condition)
  *
  * \return Non-negative value
  */
 HG_EXPORT hg_size_t
 HG_Bulk_get_serialize_size(
         hg_bulk_t handle,
-        hg_bool_t serialize_data
+        hg_bool_t request_eager
         );
 
 /**
@@ -137,9 +138,10 @@ HG_Bulk_get_serialize_size(
  *
  * \param buf [IN/OUT]          pointer to buffer
  * \param buf_size [IN]         buffer size
- * \param serialize_data [IN]   boolean (passing HG_TRUE encodes actual data
+ * \param request_eager [IN]    boolean (passing HG_TRUE encodes actual data
  *                              along the handle, which is more efficient for
- *                              small data)
+ *                              small data, this is only valid if bulk handle
+ *                              has HG_BULK_READ_ONLY permission)
  * \param handle [IN]           abstract bulk handle
  *
  * \return HG_SUCCESS or corresponding HG error code
@@ -148,7 +150,7 @@ HG_EXPORT hg_return_t
 HG_Bulk_serialize(
         void *buf,
         hg_size_t buf_size,
-        hg_bool_t serialize_data,
+        hg_bool_t request_eager,
         hg_bulk_t handle
         );
 

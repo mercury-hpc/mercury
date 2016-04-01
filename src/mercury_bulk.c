@@ -910,7 +910,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_size_t
-HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t serialize_data)
+HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t request_eager)
 {
     struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
     hg_size_t ret = 0;
@@ -928,7 +928,8 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t serialize_data)
         ret += NA_Mem_handle_get_serialize_size(
                 hg_bulk->hg_class->na_class, hg_bulk->segment_handles[i]);
     }
-    if (serialize_data) ret += hg_bulk->total_size;
+    if (request_eager && (hg_bulk->flags == HG_BULK_READ_ONLY))
+        ret += hg_bulk->total_size;
 
 done:
     return ret;
@@ -936,7 +937,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t serialize_data,
+HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
     hg_bulk_t handle)
 {
     struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
@@ -944,6 +945,7 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t serialize_data,
     hg_size_t buf_size_left = buf_size;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
+    hg_bool_t eager_mode;
     hg_uint32_t i;
 
     if (!hg_bulk) {
@@ -966,7 +968,7 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t serialize_data,
         hg_bulk->segment_published = HG_TRUE;
     }
 
-    if (buf_size < HG_Bulk_get_serialize_size(handle, serialize_data)) {
+    if (buf_size < HG_Bulk_get_serialize_size(handle, request_eager)) {
         HG_LOG_ERROR("Buffer size too small for serializing parameter");
         ret = HG_SIZE_ERROR;
         goto done;
@@ -1004,13 +1006,14 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t serialize_data,
                 hg_bulk->hg_class->na_class, hg_bulk->segment_handles[i]);
     }
 
-    /* Add whether data is serialized or not */
-    memcpy(buf_ptr, &serialize_data, sizeof(hg_bool_t));
+    /* Eager mode is used only when data is set to HG_BULK_READ_ONLY */
+    eager_mode = (request_eager && (hg_bulk->flags == HG_BULK_READ_ONLY));
+    memcpy(buf_ptr, &eager_mode, sizeof(hg_bool_t));
     buf_ptr += sizeof(hg_bool_t);
     buf_size_left -= sizeof(hg_bool_t);
 
     /* Add the serialized data */
-    if (serialize_data) {
+    if (eager_mode) {
         for (i = 0; i < hg_bulk->segment_count; i++) {
             memcpy(buf_ptr, (const void *) hg_bulk->segments[i].address,
                     hg_bulk->segments[i].size);
