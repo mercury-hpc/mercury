@@ -11,7 +11,6 @@
 #ifndef MERCURY_THREAD_POOL_H
 #define MERCURY_THREAD_POOL_H
 
-#include "mercury_util_config.h"
 #include "mercury_thread.h"
 
 typedef struct hg_thread_pool hg_thread_pool_t;
