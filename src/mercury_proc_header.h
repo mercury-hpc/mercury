@@ -13,6 +13,10 @@
 
 #include "mercury_types.h"
 
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
 #if defined(__GNUC__) || defined(_WIN32)
 #pragma pack(push,1)
 #else
@@ -56,6 +60,10 @@ struct hg_header_response {
  * flags / error / cookie / crc16 / payload
  */
 
+/*****************/
+/* Public Macros */
+/*****************/
+
 /* Mercury identifier for packets sent */
 #define HG_IDENTIFIER (('H' << 1) | ('G')) /* 0xD7 */
 
@@ -76,6 +84,10 @@ struct hg_header_response {
     #define HG_PROC_HEADER_INLINE HG_INLINE
   #endif
 #endif
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {

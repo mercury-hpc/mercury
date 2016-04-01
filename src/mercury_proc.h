@@ -29,6 +29,10 @@
 #    endif
 #endif
 
+/*****************/
+/* Public Macros */
+/*****************/
+
 #ifndef HG_PROC_INLINE
   #if defined(__GNUC__) && !defined(__GNUC_STDC_INLINE__)
     #define HG_PROC_INLINE extern HG_INLINE
@@ -36,6 +40,10 @@
     #define HG_PROC_INLINE HG_INLINE
   #endif
 #endif
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {
