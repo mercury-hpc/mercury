@@ -63,7 +63,7 @@ typedef enum {
 } hg_proc_hash_t;
 
 /* Error return codes:
- * Functions return 0 for success or -HG_XXX_ERROR for failure */
+ * Functions return 0 for success or HG_XXX_ERROR for failure */
 typedef enum hg_return {
     HG_SUCCESS = 0,     /*!< operation succeeded */
     HG_NA_ERROR,        /*!< error in NA layer */
@@ -73,7 +73,8 @@ typedef enum hg_return {
     HG_NOMEM_ERROR,     /*!< no memory error */
     HG_PROTOCOL_ERROR,  /*!< protocol does not match */
     HG_NO_MATCH,        /*!< no function match */
-    HG_CHECKSUM_ERROR   /*!< checksum error */
+    HG_CHECKSUM_ERROR,  /*!< checksum error */
+    HG_OTHER_ERROR      /*!< error from mercury_util or external to mercury */
 } hg_return_t;
 
 /* Callback operation type */
