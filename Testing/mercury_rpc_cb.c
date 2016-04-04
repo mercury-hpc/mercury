@@ -224,11 +224,11 @@ HG_TEST_RPC_CB(hg_test_rpc_open, handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_bulk_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_bulk_cb_info->arg;
-    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
+            hg_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_cb_info->info.bulk.local_handle;
     hg_return_t ret = HG_SUCCESS;
 
     bulk_write_out_t out_struct;
@@ -324,11 +324,11 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_bulk_seg_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+hg_test_bulk_seg_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_bulk_cb_info->arg;
-    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
+            hg_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_cb_info->info.bulk.local_handle;
     hg_return_t ret = HG_SUCCESS;
 
     bulk_write_out_t out_struct;
@@ -781,11 +781,11 @@ HG_TEST_RPC_CB(hg_test_posix_close, handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_posix_write_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+hg_test_posix_write_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_bulk_cb_info->arg;
-    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
+            hg_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_cb_info->info.bulk.local_handle;
     hg_return_t ret = HG_SUCCESS;
 
     write_out_t out_struct;
@@ -890,11 +890,11 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_posix_read_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+hg_test_posix_read_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_bulk_cb_info->arg;
-    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
+            hg_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_cb_info->info.bulk.local_handle;
     hg_return_t ret = HG_SUCCESS;
 
     write_out_t out_struct;
@@ -1020,10 +1020,10 @@ HG_TEST_RPC_CB(hg_test_perf_rpc, handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_perf_bulk_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_bulk_cb_info->arg;
+            hg_cb_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
 #ifdef MERCURY_TESTING_USE_LOCAL_BULK

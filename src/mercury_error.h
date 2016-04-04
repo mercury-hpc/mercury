@@ -13,6 +13,10 @@
 
 #include "mercury_config.h"
 
+/*****************/
+/* Public Macros */
+/*****************/
+
 /* For compatibility */
 #if defined(__STDC_VERSION__) &&  (__STDC_VERSION__ < 199901L)
   #if defined(__GNUC__) && (__GNUC__ >= 2)

@@ -142,15 +142,15 @@ static hg_return_t my_rpc_cb(const struct hg_cb_info *info)
     assert(info->ret == HG_SUCCESS);
 
     /* decode response */
-    ret = HG_Get_output(info->handle, &out);
+    ret = HG_Get_output(info->info.forward.handle, &out);
     assert(ret == 0);
 
     printf("Got response ret: %d\n", out.ret);
 
     /* clean up resources consumed by this rpc */
     HG_Bulk_free(my_rpc_state_p->bulk_handle);
-    HG_Free_output(info->handle, &out);
-    HG_Destroy(info->handle);
+    HG_Free_output(info->info.forward.handle, &out);
+    HG_Destroy(info->info.forward.handle);
     free(my_rpc_state_p->buffer);
     free(my_rpc_state_p);
 

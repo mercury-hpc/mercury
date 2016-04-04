@@ -13,6 +13,10 @@
 
 #include "mercury_types.h"
 
+/*********************/
+/* Public Prototypes */
+/*********************/
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -117,15 +121,16 @@ HG_Bulk_get_segment_count(
  * Get size required to serialize bulk handle.
  *
  * \param handle [IN]           abstract bulk handle
- * \param serialize_data [IN]   boolean (passing HG_TRUE adds size of encoding
- *                              actual data along the handle)
+ * \param request_eager [IN]    boolean (passing HG_TRUE adds size of encoding
+ *                              actual data along the handle if handle meets
+ *                              HG_BULK_READ_ONLY flag condition)
  *
  * \return Non-negative value
  */
 HG_EXPORT hg_size_t
 HG_Bulk_get_serialize_size(
         hg_bulk_t handle,
-        hg_bool_t serialize_data
+        hg_bool_t request_eager
         );
 
 /**
@@ -133,9 +138,10 @@ HG_Bulk_get_serialize_size(
  *
  * \param buf [IN/OUT]          pointer to buffer
  * \param buf_size [IN]         buffer size
- * \param serialize_data [IN]   boolean (passing HG_TRUE encodes actual data
+ * \param request_eager [IN]    boolean (passing HG_TRUE encodes actual data
  *                              along the handle, which is more efficient for
- *                              small data)
+ *                              small data, this is only valid if bulk handle
+ *                              has HG_BULK_READ_ONLY permission)
  * \param handle [IN]           abstract bulk handle
  *
  * \return HG_SUCCESS or corresponding HG error code
@@ -144,7 +150,7 @@ HG_EXPORT hg_return_t
 HG_Bulk_serialize(
         void *buf,
         hg_size_t buf_size,
-        hg_bool_t serialize_data,
+        hg_bool_t request_eager,
         hg_bulk_t handle
         );
 
@@ -177,7 +183,7 @@ HG_Bulk_deserialize(
  * \param op [IN]               transfer operation:
  *                                  - HG_BULK_PUSH
  *                                  - HG_BULK_PULL
- * \param origin_addr [IN]      abstract NA address of origin
+ * \param origin_addr [IN]      abstract address of origin
  * \param origin_handle [IN]    abstract bulk handle
  * \param origin_offset [IN]    offset
  * \param local_handle [IN]     abstract bulk handle
@@ -190,10 +196,10 @@ HG_Bulk_deserialize(
 HG_EXPORT hg_return_t
 HG_Bulk_transfer(
         hg_context_t *context,
-        hg_bulk_cb_t callback,
+        hg_cb_t callback,
         void *arg,
         hg_bulk_op_t op,
-        na_addr_t origin_addr,
+        hg_addr_t origin_addr,
         hg_bulk_t origin_handle,
         hg_size_t origin_offset,
         hg_bulk_t local_handle,

@@ -47,7 +47,7 @@ snappy_compress_rpc_cb(const struct hg_cb_info *callback_info)
 {
     struct snappy_compress_rpc_args *snappy_compress_rpc_args =
             (struct snappy_compress_rpc_args *) callback_info->arg;
-    hg_handle_t handle = callback_info->handle;
+    hg_handle_t handle = callback_info->info.forward.handle;
 
     int *input;
     size_t source_length;
@@ -233,7 +233,7 @@ main(void)
     na_context = NA_Context_create(na_class);
 
     /* Initialize Mercury with the desired network abstraction class */
-    hg_class = HG_Init(na_class, na_context);
+    hg_class = HG_Init_na(na_class, na_context);
 
     /* Create HG context */
     hg_context = HG_Context_create(hg_class);

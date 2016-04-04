@@ -15,6 +15,10 @@
 
 #include <limits.h>
 
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
 typedef struct na_class na_class_t;     /* Opaque NA class */
 typedef struct na_context na_context_t; /* Opaque NA execution context */
 typedef void *na_addr_t;                /* Abstract NA address */
@@ -30,24 +34,6 @@ struct na_segment {
     na_ptr_t address;   /* Address of the segment */
     na_size_t size;     /* Size of the segment in bytes */
 };
-
-/* Constant values */
-#define NA_ADDR_NULL       ((na_addr_t)0)
-#define NA_OP_ID_NULL      ((na_op_id_t)0)
-#define NA_OP_ID_IGNORE    ((na_op_id_t *)1)
-#define NA_MEM_HANDLE_NULL ((na_mem_handle_t)0)
-
-/* Max timeout */
-#define NA_MAX_IDLE_TIME (3600*1000)
-
-/* Tag upper bound
- * \remark This is not the user tag limit but only the limit imposed by the type */
-#define NA_TAG_UB UINT_MAX
-
-/* The memory attributes associated with the memory handle
- * can be defined as read/write or read only */
-#define NA_MEM_READWRITE  0x00
-#define NA_MEM_READ_ONLY  0x01
 
 /* Error return codes:
  * Functions return 0 for success or NA_XXX_ERROR for failure */
@@ -98,6 +84,32 @@ struct na_cb_info {
 
 /* Callback type */
 typedef na_return_t (*na_cb_t)(const struct na_cb_info *callback_info);
+
+/*****************/
+/* Public Macros */
+/*****************/
+
+/* Constant values */
+#define NA_ADDR_NULL       ((na_addr_t)0)
+#define NA_OP_ID_NULL      ((na_op_id_t)0)
+#define NA_OP_ID_IGNORE    ((na_op_id_t *)1)
+#define NA_MEM_HANDLE_NULL ((na_mem_handle_t)0)
+
+/* Max timeout */
+#define NA_MAX_IDLE_TIME (3600*1000)
+
+/* Tag upper bound
+ * \remark This is not the user tag limit but only the limit imposed by the type */
+#define NA_TAG_UB UINT_MAX
+
+/* The memory attributes associated with the memory handle
+ * can be defined as read/write or read only */
+#define NA_MEM_READWRITE  0x00
+#define NA_MEM_READ_ONLY  0x01
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {

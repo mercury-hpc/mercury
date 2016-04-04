@@ -27,9 +27,9 @@
  *   - MERCURY_GEN_STRUCT_PROC
  */
 
-/*****************************************************************************
- * Private macros
- *****************************************************************************/
+/****************/
+/* Local Macros */
+/****************/
 
 /* Get type / name */
 #define HG_GEN_GET_TYPE(field) BOOST_PP_SEQ_HEAD(field)
@@ -70,9 +70,9 @@ static HG_INLINE hg_return_t \
     return ret; \
 }
 
-/*****************************************************************************
- * Public macros
- *****************************************************************************/
+/*****************/
+/* Public Macros */
+/*****************/
 
 /* Register func_name */
 #define MERCURY_REGISTER(hg_class, func_name, in_struct_type_name, \

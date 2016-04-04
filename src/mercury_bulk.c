@@ -38,7 +38,7 @@
 struct hg_bulk_op_id {
     struct hg_class *hg_class;            /* HG class */
     hg_context_t *context;                /* Context */
-    hg_bulk_cb_t callback;                /* Callback */
+    hg_cb_t callback;                     /* Callback */
     void *arg;                            /* Callback arguments */
     hg_atomic_int32_t completed;          /* Operation completed TODO needed ? */
     unsigned int op_count;                /* Number of ongoing operations */
@@ -169,7 +169,7 @@ hg_bulk_transfer_pieces(
 static hg_return_t
 hg_bulk_transfer(
         hg_context_t *context,
-        hg_bulk_cb_t callback,
+        hg_cb_t callback,
         void *arg,
         hg_bulk_op_t op,
         na_addr_t origin_addr,
@@ -649,7 +649,7 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_bulk_transfer(hg_context_t *context, hg_bulk_cb_t callback, void *arg,
+hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_bulk_op_t op, na_addr_t origin_addr, struct hg_bulk *hg_bulk_origin,
     hg_size_t origin_offset, struct hg_bulk *hg_bulk_local,
     hg_size_t local_offset, hg_size_t size, hg_op_id_t *op_id)
@@ -665,10 +665,10 @@ hg_bulk_transfer(hg_context_t *context, hg_bulk_cb_t callback, void *arg,
     /* Map op to NA op */
     switch (op) {
         case HG_BULK_PUSH:
-            na_bulk_op = (is_self || hg_bulk_origin->eager_mode) ?
-                    hg_bulk_memcpy_put : hg_bulk_na_put;
+            na_bulk_op = (is_self) ? hg_bulk_memcpy_put : hg_bulk_na_put;
             break;
         case HG_BULK_PULL:
+            /* Eager mode can only be used when data is pulled from origin */
             na_bulk_op = (is_self || hg_bulk_origin->eager_mode) ?
                     hg_bulk_memcpy_get : hg_bulk_na_get;
             break;
@@ -756,8 +756,8 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-    hg_completion_entry->completion_type = HG_BULK;
-    hg_completion_entry->hg_bulk_op_id = hg_bulk_op_id;
+    hg_completion_entry->op_type = HG_BULK;
+    hg_completion_entry->op_id.hg_bulk_op_id = hg_bulk_op_id;
 
     ret = hg_core_completion_add(context, hg_completion_entry);
     if (ret != HG_SUCCESS) {
@@ -779,17 +779,16 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
 
     /* Execute callback */
     if (hg_bulk_op_id->callback) {
-        struct hg_bulk_cb_info hg_bulk_cb_info;
+        struct hg_cb_info hg_cb_info;
 
-        hg_bulk_cb_info.arg = hg_bulk_op_id->arg;
-        hg_bulk_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
-        hg_bulk_cb_info.hg_class = hg_bulk_op_id->hg_class;
-        hg_bulk_cb_info.context = hg_bulk_op_id->context;
-        hg_bulk_cb_info.op = hg_bulk_op_id->op;
-        hg_bulk_cb_info.origin_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_origin;
-        hg_bulk_cb_info.local_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_local;
+        hg_cb_info.arg = hg_bulk_op_id->arg;
+        hg_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
+        hg_cb_info.type = HG_CB_BULK;
+        hg_cb_info.info.bulk.op = hg_bulk_op_id->op;
+        hg_cb_info.info.bulk.origin_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_origin;
+        hg_cb_info.info.bulk.local_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_local;
 
-        hg_bulk_op_id->callback(&hg_bulk_cb_info);
+        hg_bulk_op_id->callback(&hg_cb_info);
     }
 
     /* Free op */
@@ -827,6 +826,8 @@ HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
         case HG_BULK_READWRITE:
             break;
         case HG_BULK_READ_ONLY:
+            break;
+        case HG_BULK_WRITE_ONLY:
             break;
         default:
             HG_LOG_ERROR("Unrecognized handle flag");
@@ -930,7 +931,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_size_t
-HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t serialize_data)
+HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t request_eager)
 {
     struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
     hg_size_t ret = 0;
@@ -948,7 +949,8 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t serialize_data)
         ret += NA_Mem_handle_get_serialize_size(
                 hg_bulk->hg_class->na_class, hg_bulk->segment_handles[i]);
     }
-    if (serialize_data) ret += hg_bulk->total_size;
+    if (request_eager && (hg_bulk->flags == HG_BULK_READ_ONLY))
+        ret += hg_bulk->total_size;
 
 done:
     return ret;
@@ -956,7 +958,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t serialize_data,
+HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
     hg_bulk_t handle)
 {
     struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
@@ -964,6 +966,7 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t serialize_data,
     hg_size_t buf_size_left = buf_size;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
+    hg_bool_t eager_mode;
     hg_uint32_t i;
 
     if (!hg_bulk) {
@@ -986,7 +989,7 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t serialize_data,
         hg_bulk->segment_published = HG_TRUE;
     }
 
-    if (buf_size < HG_Bulk_get_serialize_size(handle, serialize_data)) {
+    if (buf_size < HG_Bulk_get_serialize_size(handle, request_eager)) {
         HG_LOG_ERROR("Buffer size too small for serializing parameter");
         ret = HG_SIZE_ERROR;
         goto done;
@@ -1024,13 +1027,14 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t serialize_data,
                 hg_bulk->hg_class->na_class, hg_bulk->segment_handles[i]);
     }
 
-    /* Add whether data is serialized or not */
-    memcpy(buf_ptr, &serialize_data, sizeof(hg_bool_t));
+    /* Eager mode is used only when data is set to HG_BULK_READ_ONLY */
+    eager_mode = (request_eager && (hg_bulk->flags == HG_BULK_READ_ONLY));
+    memcpy(buf_ptr, &eager_mode, sizeof(hg_bool_t));
     buf_ptr += sizeof(hg_bool_t);
     buf_size_left -= sizeof(hg_bool_t);
 
     /* Add the serialized data */
-    if (serialize_data) {
+    if (eager_mode) {
         for (i = 0; i < hg_bulk->segment_count; i++) {
             memcpy(buf_ptr, (const void *) hg_bulk->segments[i].address,
                     hg_bulk->segments[i].size);
@@ -1178,7 +1182,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Bulk_transfer(hg_context_t *context, hg_bulk_cb_t callback, void *arg,
+HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_bulk_op_t op, na_addr_t origin_addr, hg_bulk_t origin_handle,
     hg_size_t origin_offset, hg_bulk_t local_handle, hg_size_t local_offset,
     hg_size_t size, hg_op_id_t *op_id)
@@ -1258,14 +1262,13 @@ HG_Bulk_cancel(hg_op_id_t op_id)
 
      if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_bulk_op_id->completed, 1, 0)) {
         /* TODO must cancel all NA operations issued */
-        NA_Cancel(hg_bulk_op_id->hg_class->na_class,
-                  hg_bulk_op_id->hg_class->na_context,
-                  NA_OP_ID_NULL); // NA_OP_ID_IGNORE
-#if 0
-        NA_Cancel(hg_bulk_op_id->hg_class->na_class,
-                  hg_bulk_op_id->hg_class->na_context,
-                  NA_CB_GET);
-#endif
+         unsigned int i = 0;
+         for(i=0; i < hg_bulk_op_id->op_count; i++) {
+             NA_Cancel(hg_bulk_op_id->hg_class->na_class,
+                       hg_bulk_op_id->hg_class->na_context,
+                       hg_bulk_op_id->na_op_id[i]);
+         }
+
 
      }
 

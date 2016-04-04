@@ -13,9 +13,32 @@
 
 #include "mercury_types.h"
 
+#include "na.h"
+
+/*********************/
+/* Public Prototypes */
+/*********************/
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * Initialize the core Mercury layer.
+ * Must be finalized with HG_Core_finalize().
+ *
+ * \param na_info_string [IN]   host address with port number (e.g.,
+ *                              "tcp://localhost:3344" or
+ *                              "bmi+tcp://localhost:3344")
+ * \param na_listen [IN]        listen for incoming connections
+ *
+ * \return Pointer to HG class or NULL in case of failure
+ */
+HG_EXPORT hg_class_t *
+HG_Core_init(
+        const char *na_info_string,
+        hg_bool_t na_listen
+        );
 
 /**
  * Initialize the Mercury layer from an existing NA class/context.
@@ -24,10 +47,10 @@ extern "C" {
  * \param na_class [IN]         pointer to NA class
  * \param na_context [IN]       pointer to NA context
  *
- * \return HG_SUCCESS or corresponding HG error code
+ * \return Pointer to HG class or NULL in case of failure
  */
 HG_EXPORT hg_class_t *
-HG_Core_init(
+HG_Core_init_na(
         na_class_t *na_class,
         na_context_t *na_context
         );
@@ -137,13 +160,103 @@ HG_Core_registered_data(
         );
 
 /**
+ * Lookup an addr from a peer address/name. Addresses need to be
+ * freed by calling HG_Core_addr_free(). After completion, user callback is
+ * placed into a completion queue and can be triggered using HG_Core_trigger().
+ *
+ * \param context [IN]          pointer to context of execution
+ * \param callback [IN]         pointer to function callback
+ * \param arg [IN]              pointer to data passed to callback
+ * \param name [IN]             lookup name
+ * \param op_id [OUT]           pointer to returned operation ID
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_lookup(
+        hg_context_t *context,
+        hg_cb_t       callback,
+        void         *arg,
+        const char   *name,
+        hg_op_id_t   *op_id
+        );
+
+/**
+ * Free the addr from the list of peers.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param addr [IN]             abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_free(
+        hg_class_t *hg_class,
+        hg_addr_t   addr
+        );
+
+/**
+ * Access self address. Address must be freed with HG_Core_addr_free().
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param addr [OUT]            pointer to abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_self(
+        hg_class_t *hg_class,
+        hg_addr_t  *addr
+        );
+
+/**
+ * Duplicate an existing HG abstract address. The duplicated address can be
+ * stored for later use and the origin address be freed safely. The duplicated
+ * address must be freed with HG_Core_addr_free().
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param addr [IN]             abstract address
+ * \param new_addr [OUT]        pointer to abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_dup(
+        hg_class_t *hg_class,
+        hg_addr_t   addr,
+        hg_addr_t  *new_addr
+        );
+
+/**
+ * Convert an addr to a string (returned string includes the terminating
+ * null byte '\0'). If buf is NULL, the address is not converted and only
+ * the required size of the buffer is returned. If the input value passed
+ * through buf_size is too small, HG_SIZE_ERROR is returned and the buf_size
+ * output is set to the minimum size required.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param buf [IN/OUT]          pointer to destination buffer
+ * \param buf_size [IN/OUT]     pointer to buffer size
+ * \param addr [IN]             abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_to_string(
+        hg_class_t *hg_class,
+        char       *buf,
+        hg_size_t  *buf_size,
+        hg_addr_t   addr
+        );
+
+/**
  * Initiate a new HG RPC using the specified function ID and the local/remote
  * target defined by addr. The HG handle created can be used to query input
  * and output buffers, as well as issuing the RPC by using HG_Core_forward().
  * After completion the handle must be freed using HG_Core_destroy().
  *
  * \param context [IN]          pointer to HG context
- * \param addr [IN]             abstract network address of destination
+ * \param addr [IN]             target address
  * \param id [IN]               registered function ID
  * \param handle [OUT]          pointer to HG handle
  *
@@ -152,7 +265,7 @@ HG_Core_registered_data(
 HG_EXPORT hg_return_t
 HG_Core_create(
         hg_context_t *context,
-        na_addr_t addr,
+        hg_addr_t addr,
         hg_id_t id,
         hg_handle_t *handle
         );
@@ -172,7 +285,7 @@ HG_Core_destroy(
 
 /**
  * Get info from handle.
- * \remark Users must call NA_Addr_dup() to safely re-use the NA address.
+ * \remark Users must call HG_Core_addr_dup() to safely re-use the addr field.
  *
  * \param handle [IN]           HG handle
  *

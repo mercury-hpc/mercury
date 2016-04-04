@@ -26,9 +26,9 @@
  *   - MERCURY_GEN_CALLBACK_STUB
  */
 
-/*****************************************************************************
- * Private macros
- *****************************************************************************/
+/****************/
+/* Local Macros */
+/****************/
 
 /* Return parameter with fixed name */
 #define HG_GEN_RET_PARAM(ret_type) ((ret_type)(ret))
@@ -215,11 +215,15 @@
             goto done; \
         }
 
-/*****************************************************************************
+/*****************/
+/* Public Macros */
+/*****************/
+
+/**
  * Advanced BOOST macros:
  *   - MERCURY_GEN_RPC_STUB
  *   - MERCURY_GEN_CALLBACK_STUB
- *****************************************************************************/
+ */
 
 /* Custom function that applications can define for log purposes (none by default) */
 #ifndef MERCURY_GEN_LOG_MESSAGE

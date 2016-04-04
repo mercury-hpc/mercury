@@ -528,9 +528,8 @@ hg_forward_cb(const struct hg_cb_info *callback_info)
 
         hg_cb_info.arg = hg_forward_cb_info->arg;
         hg_cb_info.ret = callback_info->ret;
-        hg_cb_info.hg_class = callback_info->hg_class;
-        hg_cb_info.context = callback_info->context;
-        hg_cb_info.handle = callback_info->handle;
+        hg_cb_info.type = callback_info->type;
+        hg_cb_info.info = callback_info->info;
 
         hg_forward_cb_info->callback(&hg_cb_info);
     }
@@ -572,9 +571,16 @@ HG_Error_to_string(hg_return_t errnum)
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Init(na_class_t *na_class, na_context_t *na_context)
+HG_Init(const char *na_info_string, hg_bool_t na_listen)
 {
-    return HG_Core_init(na_class, na_context);
+    return HG_Core_init(na_info_string, na_listen);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_class_t *
+HG_Init_na(na_class_t *na_class, na_context_t *na_context)
+{
+    return HG_Core_init_na(na_class, na_context);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -719,7 +725,44 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Create(hg_context_t *context, na_addr_t addr, hg_id_t id,
+HG_Addr_lookup(hg_context_t *context, hg_cb_t callback, void *arg,
+    const char *name, hg_op_id_t *op_id)
+{
+    return HG_Core_addr_lookup(context, callback, arg, name, op_id);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Addr_free(hg_class_t *hg_class, hg_addr_t addr)
+{
+    return HG_Core_addr_free(hg_class, addr);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Addr_self(hg_class_t *hg_class, hg_addr_t *addr)
+{
+    return HG_Core_addr_self(hg_class, addr);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr)
+{
+    return HG_Core_addr_dup(hg_class, addr, new_addr);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Addr_to_string(hg_class_t *hg_class, char *buf, hg_size_t *buf_size,
+    hg_addr_t addr)
+{
+    return HG_Core_addr_to_string(hg_class, buf, buf_size, addr);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle_t *handle)
 {
     return HG_Core_create(context, addr, id, handle);

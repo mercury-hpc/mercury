@@ -43,7 +43,7 @@
  * would still also need to handle callbacks for the HG transfer.
  */
 static hg_return_t my_rpc_handler(hg_handle_t handle);
-static hg_return_t my_rpc_handler_bulk_cb(const struct hg_bulk_cb_info *info);
+static hg_return_t my_rpc_handler_bulk_cb(const struct hg_cb_info *info);
 static void my_rpc_handler_write_cb(union sigval sig);
 
 /* struct used to carry state of overall operation across callbacks */
@@ -110,7 +110,7 @@ static hg_return_t my_rpc_handler(hg_handle_t handle)
 }
 
 /* callback triggered upon completion of bulk transfer */
-static hg_return_t my_rpc_handler_bulk_cb(const struct hg_bulk_cb_info *info)
+static hg_return_t my_rpc_handler_bulk_cb(const struct hg_cb_info *info)
 {
     struct my_rpc_state *my_rpc_state_p = info->arg;
     int ret;

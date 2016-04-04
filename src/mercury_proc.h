@@ -29,6 +29,10 @@
 #    endif
 #endif
 
+/*****************/
+/* Public Macros */
+/*****************/
+
 #ifndef HG_PROC_INLINE
   #if defined(__GNUC__) && !defined(__GNUC_STDC_INLINE__)
     #define HG_PROC_INLINE extern HG_INLINE
@@ -36,6 +40,10 @@
     #define HG_PROC_INLINE HG_INLINE
   #endif
 #endif
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {
@@ -561,15 +569,15 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE:
             if (*handle != HG_BULK_NULL) {
-                hg_bool_t eager_mode = HG_FALSE;
+                hg_bool_t request_eager = HG_FALSE;
 #ifdef HG_HAS_EAGER_BULK
-                eager_mode = (hg_proc_get_size_left(proc)
+                request_eager = (hg_proc_get_size_left(proc)
                     > HG_Bulk_get_serialize_size(*handle, HG_TRUE))
                     ? HG_TRUE : HG_FALSE;
 #endif
-                buf_size = HG_Bulk_get_serialize_size(*handle, eager_mode);
+                buf_size = HG_Bulk_get_serialize_size(*handle, request_eager);
                 buf = malloc(buf_size);
-                ret = HG_Bulk_serialize(buf, buf_size, eager_mode, *handle);
+                ret = HG_Bulk_serialize(buf, buf_size, request_eager, *handle);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not serialize bulk handle");
                     return ret;
