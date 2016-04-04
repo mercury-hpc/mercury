@@ -118,6 +118,18 @@ HG_Context_destroy(
         );
 
 /**
+ * Retrieve the class used to create the given context
+ *
+ * \param context [IN]          pointer to HG context
+ *
+ * \return the associated class
+ */
+HG_EXPORT hg_class_t *
+HG_Context_get_class(
+        hg_context_t *context
+        );
+
+/**
  * Dynamically register a function func_name as an RPC as well as the
  * RPC callback executed when the RPC request ID associated to func_name is
  * received. Associate input and output proc to function ID, so that they can
