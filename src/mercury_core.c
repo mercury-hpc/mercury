@@ -2083,6 +2083,7 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
         if (hg_handle->callback) {
             struct hg_cb_info hg_cb_info;
             hg_cb_info.arg = hg_handle->arg;
+            hg_cb_info.ret = hg_handle->ret;
             hg_cb_info.type = hg_handle->cb_type;
             if (hg_handle->cb_type == HG_CB_FORWARD)
                 hg_cb_info.info.forward.handle = (hg_handle_t) hg_handle;

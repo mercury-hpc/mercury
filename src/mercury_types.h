@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -35,7 +35,6 @@ struct hg_info {
     hg_addr_t addr;             /* HG address */
     hg_id_t id;                 /* RPC ID */
 };
-
 
 /**
  * Bulk transfer operators.
@@ -74,7 +73,7 @@ typedef enum hg_return {
     HG_NOMEM_ERROR,     /*!< no memory error */
     HG_PROTOCOL_ERROR,  /*!< protocol does not match */
     HG_NO_MATCH,        /*!< no function match */
-    HG_CHECKSUM_ERROR,  /*!< checksum error */
+    HG_CHECKSUM_ERROR,   /*!< checksum error */
     HG_CANCELLED        /*!< operation was cancelled */
 } hg_return_t;
 
