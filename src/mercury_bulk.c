@@ -603,6 +603,7 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
         transfer_size = HG_BULK_MIN(remaining_size, transfer_size);
 
         if (na_bulk_op) {
+            na_op_id_t op_id = 0;
             na_ret = na_bulk_op(hg_bulk_origin->hg_class->na_class,
                     hg_bulk_origin->hg_class->na_context,
                     hg_bulk_transfer_cb, hg_bulk_op_id,
@@ -612,12 +613,16 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
                     hg_bulk_origin->segment_handles[origin_segment_index],
                     hg_bulk_origin->segments[origin_segment_index].address,
                     origin_segment_offset, transfer_size, origin_addr,
-                    NA_OP_ID_IGNORE /* get op_ids */ );
+                    &op_id);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("Could not transfer data");
                 ret = HG_NA_ERROR;
                 break;
             }
+            else {
+                hg_bulk_op_id->na_op_id[count] = op_id;
+            }
+            
         }
 
         /* Decrease remaining size from the size of data we transferred */
@@ -642,7 +647,10 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
     }
 
     /* Set number of NA operations issued */
-    if (na_op_count) *na_op_count = count;
+    if (na_op_count) {
+        *na_op_count = count;
+   
+    }
 
     return ret;
 }
@@ -714,6 +722,14 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         HG_LOG_ERROR("Could not get bulk op_count");
         ret = HG_INVALID_PARAM;
         goto done;
+    }
+    else {
+        /* Allocate memory for na op_ids. */
+        hg_bulk_op_id->na_op_id = malloc(sizeof(na_op_id_t) * hg_bulk_op_id->op_count);
+        if (hg_bulk_op_id->na_op_id == NULL) {
+            HG_LOG_ERROR("Could not allocate memory for op_ids.");
+        }
+        
     }
 
 
@@ -1261,17 +1277,26 @@ HG_Bulk_cancel(hg_op_id_t op_id)
 
 
      if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_bulk_op_id->completed, 1, 0)) {
-        /* TODO must cancel all NA operations issued */
+        /* Cancel all NA operations issued */
          unsigned int i = 0;
          for(i=0; i < hg_bulk_op_id->op_count; i++) {
-             NA_Cancel(hg_bulk_op_id->hg_class->na_class,
+             ret = NA_Cancel(hg_bulk_op_id->hg_class->na_class,
                        hg_bulk_op_id->hg_class->na_context,
                        hg_bulk_op_id->na_op_id[i]);
+             if (ret != HG_SUCCESS) {
+                 HG_LOG_ERROR("Could not cancel Bulk op_id.");
+                 ret = HG_NA_ERROR;
+                 goto done;
+             }
          }
 
 
      }
+     /* Should I mark all operation as complete? */
+    
+     /* Should I free memory here or at hg_bulk_trigger_entry()? */
 
+    
 
 done:
     return ret;
