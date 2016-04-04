@@ -28,7 +28,7 @@ extern hg_id_t hg_test_rpc_open_id_g;
 static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
 {
-    hg_handle_t handle = callback_info->handle;
+    hg_handle_t handle = callback_info->info.respond.handle;
     int *ptr = callback_info->arg;
     hg_request_t *request = (hg_request_t *) callback_info->arg;
     int rpc_open_ret;
