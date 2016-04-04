@@ -605,6 +605,13 @@ HG_Context_destroy(hg_context_t *context)
 }
 
 /*---------------------------------------------------------------------------*/
+hg_class_t *
+HG_Context_get_class(hg_context_t *context)
+{
+    return HG_Core_context_get_class(context);
+}
+
+/*---------------------------------------------------------------------------*/
 hg_id_t
 HG_Register_name(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb,
     hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)
