@@ -750,6 +750,9 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
 
 done:
     if (ret != HG_SUCCESS) {
+        if (hg_bulk_op_id->na_op_id != NULL) {
+            free(hg_bulk_op_id->na_op_id);
+        }
         free(hg_bulk_op_id);
     }
     return ret;
@@ -808,6 +811,9 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
     }
 
     /* Free op */
+    if (hg_bulk_op_id->na_op_id != NULL) {
+        free(hg_bulk_op_id->na_op_id);
+    }
     free(hg_bulk_op_id);
     return ret;
 }
@@ -1289,10 +1295,11 @@ HG_Bulk_cancel(hg_op_id_t op_id)
                  goto done;
              }
          }
-
+         /* Race codition may occur. Watch out. */
 
      }
      /* Should I mark all operation as complete? */
+    
     
      /* Should I free memory here or at hg_bulk_trigger_entry()? */
 
