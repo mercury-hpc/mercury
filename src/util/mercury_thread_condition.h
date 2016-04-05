@@ -19,6 +19,10 @@
   typedef pthread_cond_t hg_thread_cond_t;
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Initialize the condition.
  *
@@ -82,5 +86,9 @@ hg_thread_cond_wait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex);
 HG_UTIL_EXPORT int
 hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex,
         unsigned int timeout);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* MERCURY_THREAD_CONDITION_H */

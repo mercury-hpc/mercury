@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -296,13 +296,20 @@ int main(int argc, char *argv[])
 
             if (test_done_g) break;
 
-            NA_Progress(params.network_class, params.context, NA_MAX_IDLE_TIME);
+            na_ret = NA_Progress(params.network_class, params.context, NA_MAX_IDLE_TIME);
+            if (na_ret != NA_SUCCESS) {
+                return EXIT_SUCCESS;
+            }
+            
+            
         }
-
-        na_ret = NA_Addr_free(params.network_class, params.source_addr);
-        if (na_ret != NA_SUCCESS) {
-            fprintf(stderr, "Could not free addr\n");
-            return EXIT_FAILURE;
+        
+        if (na_ret == NA_SUCCESS){
+            na_ret = NA_Addr_free(params.network_class, params.source_addr);
+            if (na_ret != NA_SUCCESS) {
+                fprintf(stderr, "Could not free addr\n");
+                return EXIT_FAILURE;
+            }
         }
         params.source_addr = NA_ADDR_NULL;
         test_done_g = 0;

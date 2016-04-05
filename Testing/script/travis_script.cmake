@@ -31,7 +31,7 @@ endif()
 set(CTEST_BUILD_FLAGS "-j4")
 
 # Build name referenced in cdash
-set(CTEST_BUILD_NAME "travis-ci-$ENV{TRAVIS_OS_NAME}-x64-${lower_mercury_build_configuration}-$ENV{TRAVIS_BUILD_NUMBER}")
+set(CTEST_BUILD_NAME "travis-ci-$ENV{TRAVIS_OS_NAME}-x64-$ENV{CC}-${lower_mercury_build_configuration}-$ENV{TRAVIS_BUILD_NUMBER}")
 
 # Build shared libraries
 set(mercury_build_shared ON)
@@ -83,6 +83,17 @@ if(NOT mercury_build_shared)
   set(dashboard_binary_name ${dashboard_binary_name}-static)
 endif()
 
+# OS specific options
+if(APPLE)
+  set(SOEXT dylib)
+  set(PROC_NAME_OPT -c)
+  set(USE_CCI OFF)
+else()
+  set(SOEXT so)
+  set(PROC_NAME_OPT -r)
+  set(USE_CCI ON)
+endif()
+
 # Initial cache used to build mercury, options can be modified here
 set(dashboard_cache "
 CMAKE_C_FLAGS:STRING=-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -std=gnu99
@@ -100,24 +111,24 @@ MERCURY_USE_BOOST_PP:BOOL=OFF
 MERCURY_USE_XDR:BOOL=OFF
 NA_USE_BMI:BOOL=ON
 BMI_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
-BMI_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libbmi.so
+BMI_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libbmi.${SOEXT}
 NA_BMI_TESTING_PROTOCOL:STRING=tcp
 NA_USE_MPI:BOOL=ON
 OPA_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
-OPA_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libopa.so
-NA_USE_CCI:BOOL=ON
+OPA_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libopa.${SOEXT}
+NA_USE_CCI:BOOL=${USE_CCI}
 CCI_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
-CCI_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libcci.so
+CCI_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libcci.${SOEXT}
 NA_CCI_TESTING_PROTOCOL:STRING=tcp
 MPIEXEC_MAX_NUMPROCS:STRING=4
 
-MERCURY_TEST_INIT_COMMAND:STRING=killall -9 -r hg_client;killall -9 -r hg_server;
+MERCURY_TEST_INIT_COMMAND:STRING=killall -9 ${PROC_NAME_OPT} hg_test_client;killall -9 ${PROC_NAME_OPT} hg_test_server;
 MERCURY_TESTING_CORESIDENT:BOOL=ON
 ")
 
 #set(ENV{CC}  /usr/bin/gcc)
 #set(ENV{CXX} /usr/bin/g++)
 
-include(${CTEST_SOURCE_DIRECTORY}/Testing/mercury_common.cmake)
+include(${CTEST_SOURCE_DIRECTORY}/Testing/script/mercury_common.cmake)
 
 #######################################################################

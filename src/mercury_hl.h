@@ -13,31 +13,37 @@
 
 #include "mercury.h"
 #include "mercury_bulk.h"
+#include "mercury_request.h"
+
+/*****************/
+/* Public Macros */
+/*****************/
 
 /**
  * Define macros so that default classes/contexts can be easily renamed
  * if we ever need to. Users should use macros and not global variables
  * directly.
  */
-#define NA_CLASS_DEFAULT na_class_default_g
-#define NA_CONTEXT_DEFAULT na_context_default_g
-#define NA_ADDR_DEFAULT na_addr_default_g
-
 #define HG_CLASS_DEFAULT hg_class_default_g
 #define HG_CONTEXT_DEFAULT hg_context_default_g
+#define HG_REQUEST_CLASS_DEFAULT hg_request_class_default_g
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* NA default */
-extern HG_EXPORT na_class_t *NA_CLASS_DEFAULT;
-extern HG_EXPORT na_context_t *NA_CONTEXT_DEFAULT;
-extern HG_EXPORT na_addr_t NA_ADDR_DEFAULT;
+/********************/
+/* Public Variables */
+/********************/
 
 /* HG default */
 extern HG_EXPORT hg_class_t *HG_CLASS_DEFAULT;
 extern HG_EXPORT hg_context_t *HG_CONTEXT_DEFAULT;
+extern HG_EXPORT hg_request_class_t *HG_REQUEST_CLASS_DEFAULT;
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 /**
  * Initialize Mercury high-level layer and create default classes/contexts.
@@ -47,16 +53,36 @@ extern HG_EXPORT hg_context_t *HG_CONTEXT_DEFAULT;
  * \remark HG_Hl_finalize() is registered with atexit() so that default
  * classes/contexts are freed at process termination.
  *
- * \param info_string [IN]      host address with port number
- * \param listen [IN]           listen for incoming connections
+ * \param na_info_string [IN]   host address with port number (e.g.,
+ *                              "tcp://localhost:3344" or
+ *                              "bmi+tcp://localhost:3344")
+ * \param na_listen [IN]        listen for incoming connections
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Hl_init(
-        const char *info_string,
-        na_bool_t listen
+        const char *na_info_string,
+        hg_bool_t na_listen
         );
+
+/**
+ * Initialize Mercury high-level layer and create default classes/contexts
+ * from an existing NA class/context.
+ * \remark HG_Hl_finalize() is registered with atexit() so that default
+ * classes/contexts are freed at process termination.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param na_context [IN]       pointer to NA context
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Hl_init_na(
+        na_class_t *na_class,
+        na_context_t *na_context
+        );
+
 
 /**
  * Finalize Mercury high-level layer.
@@ -69,6 +95,21 @@ HG_Hl_finalize(
         );
 
 /**
+ * Lookup an address and wait for its completion. Address must be freed
+ * using HG_Addr_free().
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Hl_addr_lookup_wait(
+        hg_context_t *context,
+        hg_request_class_t *request_class,
+        const char *name,
+        hg_addr_t *addr,
+        unsigned int timeout
+        );
+
+/**
  * Forward a call and wait for its completion. A HG handle must have been
  * previously created. Output can be queried using HG_Get_output() and freed
  * using HG_Free_output().
@@ -77,18 +118,20 @@ HG_Hl_finalize(
  */
 HG_EXPORT hg_return_t
 HG_Hl_forward_wait(
+        hg_request_class_t *request_class,
         hg_handle_t handle,
-        void *in_struct
+        void *in_struct,
+        unsigned int timeout
         );
 
 /**
  * Initiate a bulk data transfer and wait for its completion.
  *
- * \param context [IN]          pointer to HG bulk context
+ * \param context [IN]          pointer to HG context
  * \param op [IN]               transfer operation:
  *                                  - HG_BULK_PUSH
  *                                  - HG_BULK_PULL
- * \param origin_addr [IN]      abstract NA address of origin
+ * \param origin_addr [IN]      abstract address of origin
  * \param origin_handle [IN]    abstract bulk handle
  * \param origin_offset [IN]    offset
  * \param local_handle [IN]     abstract bulk handle
@@ -99,14 +142,16 @@ HG_Hl_forward_wait(
  */
 HG_EXPORT hg_return_t
 HG_Hl_bulk_transfer_wait(
-        hg_bulk_context_t *context,
+        hg_context_t *context,
+        hg_request_class_t *request_class,
         hg_bulk_op_t op,
-        na_addr_t origin_addr,
+        hg_addr_t origin_addr,
         hg_bulk_t origin_handle,
         hg_size_t origin_offset,
         hg_bulk_t local_handle,
         hg_size_t local_offset,
-        hg_size_t size
+        hg_size_t size,
+        unsigned int timeout
         );
 
 #ifdef __cplusplus

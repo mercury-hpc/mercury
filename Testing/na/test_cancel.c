@@ -1,3 +1,12 @@
+/*
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
+ * All rights reserved.
+ *
+ * The full copyright notice, including terms governing use, modification,
+ * and redistribution, is contained in the COPYING file that can be
+ * found at the root of the source code distribution tree.
+ */
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -85,10 +94,10 @@ static na_return_t callback (const struct na_cb_info *callback_info)
 
     *flag = COMPLETION_MAGIC; 
 
-    /* debug
+    /* debug      */
     printf("callback: type: %d ret: %d\n",
            callback_info->type, callback_info->ret);
-     */
+
  
     return NA_SUCCESS;
 }
@@ -127,9 +136,12 @@ int main (int argc, char **argv)
 
     /*
      * BMI specific debug
+  
     gossip_set_debug_mask(1, 0xffffffffffffffff);
     gossip_enable_stderr();
+     
      */
+    
 
     len = NA_Msg_get_max_unexpected_size(class);
     buf = calloc(len, sizeof(char));
@@ -163,12 +175,13 @@ int main (int argc, char **argv)
         fprintf(stderr, "NA_Trigger failed: ret=%d count=%d\n",
                 naret, count);
     }
-
     cancel_unexpected_send (class,
                             context,
                             &server_addr,
                             len,
                             buf);
+
+
 
     cancel_expected_send (class,
                           context,
@@ -198,7 +211,7 @@ int main (int argc, char **argv)
                 &server_addr,
                 len,
                 buf);
- 
+
 done:
     if (found) NA_Addr_free(class, server_addr);
 
@@ -585,7 +598,7 @@ void cancel_get (
                    &op_id);
     if (naret != NA_SUCCESS)
     {
-        fprintf(stderr, "NA_Put failed: %d\n", naret);
+        fprintf(stderr, "NA_Get failed: %d\n", naret);
         global_test_error = 1;
         return;
     }

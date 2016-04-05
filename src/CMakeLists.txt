@@ -38,9 +38,6 @@ set(MERCURY_EXT_LIB_DEPENDENCIES ${NA_EXT_LIB_DEPENDENCIES}
   ${MERCURY_EXT_LIB_DEPENDENCIES}
 )
 
-# Mercury HL
-option(MERCURY_BUILD_HL_LIB "Build High-Level Mercury Library." OFF)
-
 #------------------------------------------------------------------------------
 # External dependencies
 #------------------------------------------------------------------------------
@@ -89,6 +86,12 @@ if(MERCURY_USE_CHECKSUMS)
     include_directories(${MCHECKSUM_INCLUDE_DIR})
     set(MERCURY_EXPORTED_LIBS mchecksum ${MERCURY_EXPORTED_LIBS})
   endif()
+endif()
+
+# Eager bulk transfer
+option(MERCURY_USE_EAGER_BULK "Encode bulk data with RPC when bulk region described is small." ON)
+if(MERCURY_USE_EAGER_BULK)
+  set(HG_HAS_EAGER_BULK 1)
 endif()
 
 # XDR
@@ -157,16 +160,14 @@ endif()
 set(MERCURY_EXPORTED_LIBS mercury ${MERCURY_EXPORTED_LIBS})
 
 # MERCURY HL
-if(MERCURY_BUILD_HL_LIB)
-  add_library(mercury_hl ${MERCURY_HL_SRCS})
-  target_link_libraries(mercury_hl mercury)
-  mercury_set_lib_options(mercury_hl "mercury_hl" ${MERCURY_LIBTYPE})
-  if(MERCURY_ENABLE_COVERAGE)
-    set_coverage_flags(mercury_hl)
-  endif()
-
-  set(MERCURY_EXPORTED_LIBS mercury_hl ${MERCURY_EXPORTED_LIBS})
+add_library(mercury_hl ${MERCURY_HL_SRCS})
+target_link_libraries(mercury_hl mercury)
+mercury_set_lib_options(mercury_hl "mercury_hl" ${MERCURY_LIBTYPE})
+if(MERCURY_ENABLE_COVERAGE)
+  set_coverage_flags(mercury_hl)
 endif()
+
+set(MERCURY_EXPORTED_LIBS mercury_hl ${MERCURY_EXPORTED_LIBS})
 
 #-----------------------------------------------------------------------------
 # Specify project header files to be installed
@@ -199,16 +200,15 @@ install(
   COMPONENT
     headers
 )
-if(MERCURY_BUILD_HL_LIB)
-  install(
-    FILES
-      ${MERCURY_HL_HEADERS}
-    DESTINATION
-      ${MERCURY_INSTALL_INCLUDE_DIR}
-    COMPONENT
-      headers
-  )
-endif()
+
+install(
+  FILES
+    ${MERCURY_HL_HEADERS}
+  DESTINATION
+    ${MERCURY_INSTALL_INCLUDE_DIR}
+  COMPONENT
+    headers
+)
 
 #-----------------------------------------------------------------------------
 # Add Target(s) to CMake Install
@@ -222,17 +222,16 @@ install(
   ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
   RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
 )
-if(MERCURY_BUILD_HL_LIB)
-  install(
-    TARGETS
-      mercury_hl
-    EXPORT
-      ${MERCURY_EXPORTED_TARGETS}
-    LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-    ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
-    RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
-  )
-endif()
+
+install(
+  TARGETS
+    mercury_hl
+  EXPORT
+    ${MERCURY_EXPORTED_TARGETS}
+  LIBRARY DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+  ARCHIVE DESTINATION ${MERCURY_INSTALL_LIB_DIR}
+  RUNTIME DESTINATION ${MERCURY_INSTALL_BIN_DIR}
+)
 
 #-----------------------------------------------------------------------------
 # Add Target(s) to CMake Install for import into other projects

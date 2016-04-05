@@ -9,7 +9,6 @@
  */
 
 #include "mercury_hl.h"
-#include "mercury_request.h"
 #include "mercury_error.h"
 
 #include <stdlib.h>
@@ -21,14 +20,15 @@
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
-struct hg_request_arg {
-    hg_class_t *hg_class;
-    hg_context_t *context;
+struct hg_lookup_request_arg {
+    hg_addr_t *addr_ptr;
+    hg_request_t *request;
 };
 
 /********************/
 /* Local Prototypes */
 /********************/
+
 static int
 hg_hl_request_progress(
         unsigned int timeout,
@@ -43,13 +43,18 @@ hg_hl_request_trigger(
         );
 
 static hg_return_t
+hg_hl_addr_lookup_cb(
+        const struct hg_cb_info *callback_info
+        );
+
+static hg_return_t
 hg_hl_forward_cb(
         const struct hg_cb_info *callback_info
         );
 
 static hg_return_t
 hg_hl_bulk_transfer_cb(
-        const struct hg_bulk_cb_info *callback_info
+        const struct hg_cb_info *callback_info
         );
 
 static void
@@ -61,18 +66,10 @@ hg_hl_finalize(
 /* Local Variables */
 /*******************/
 
-/* NA default */
-na_class_t *NA_CLASS_DEFAULT = NULL;
-na_context_t *NA_CONTEXT_DEFAULT = NULL;
-na_addr_t NA_ADDR_DEFAULT = NULL;
-
 /* HG default */
 hg_class_t *HG_CLASS_DEFAULT = NULL;
 hg_context_t *HG_CONTEXT_DEFAULT = NULL;
-
-/* Internal request class associated to HG default */
-static hg_request_class_t *hg_request_class_g = NULL;
-static struct hg_request_arg hg_request_arg_g = {NULL, NULL};
+hg_request_class_t *HG_REQUEST_CLASS_DEFAULT = NULL;
 
 /* For convenience, register HG_Hl_finalize() */
 static hg_bool_t hg_atexit_g = HG_FALSE;
@@ -81,13 +78,12 @@ static hg_bool_t hg_atexit_g = HG_FALSE;
 static int
 hg_hl_request_progress(unsigned int timeout, void *arg)
 {
-    struct hg_request_arg *hg_request_arg = (struct hg_request_arg *) arg;
+    hg_context_t *context = (hg_context_t *) arg;
     int ret = HG_UTIL_SUCCESS;
 
     (void) timeout;
     /* TODO Fix timeout to 10ms for now */
-    if (HG_Progress(hg_request_arg->hg_class, hg_request_arg->context,
-            10) != HG_SUCCESS)
+    if (HG_Progress(context, 10) != HG_SUCCESS)
         ret = HG_UTIL_FAIL;
 
     return ret;
@@ -97,15 +93,29 @@ hg_hl_request_progress(unsigned int timeout, void *arg)
 static int
 hg_hl_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
 {
-    struct hg_request_arg *hg_request_arg = (struct hg_request_arg *) arg;
+    hg_context_t *context = (hg_context_t *) arg;
     unsigned int actual_count = 0;
     int ret = HG_UTIL_SUCCESS;
 
-    if (HG_Trigger(hg_request_arg->hg_class, hg_request_arg->context, timeout,
-            1, &actual_count) != HG_SUCCESS) ret = HG_UTIL_FAIL;
+    if (HG_Trigger(context, timeout, 1, &actual_count)
+            != HG_SUCCESS) ret = HG_UTIL_FAIL;
     *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
 
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_hl_addr_lookup_cb(const struct hg_cb_info *callback_info)
+{
+    struct hg_lookup_request_arg *request_args =
+            (struct hg_lookup_request_arg *) callback_info->arg;
+
+    *request_args->addr_ptr = callback_info->info.lookup.addr;
+
+    hg_request_complete(request_args->request);
+
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -121,7 +131,7 @@ hg_hl_forward_cb(const struct hg_cb_info *callback_info)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_hl_bulk_transfer_cb(const struct hg_bulk_cb_info *callback_info)
+hg_hl_bulk_transfer_cb(const struct hg_cb_info *callback_info)
 {
     hg_request_t *request = (hg_request_t *) callback_info->arg;
 
@@ -139,9 +149,8 @@ hg_hl_finalize(void)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Hl_init(const char *info_string, na_bool_t listen)
+HG_Hl_init(const char *na_info_string, hg_bool_t na_listen)
 {
-    const char *na_info_string = info_string;
     hg_return_t ret = HG_SUCCESS;
 
     /* First register finalize function if not set */
@@ -163,29 +172,9 @@ HG_Hl_init(const char *info_string, na_bool_t listen)
         goto done;
     }
 
-    /* Initialize NA */
-    if (!NA_CLASS_DEFAULT) {
-        NA_CLASS_DEFAULT = NA_Initialize(na_info_string, listen);
-        if (!NA_CLASS_DEFAULT) {
-            HG_LOG_ERROR("Could not initialize NA class");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
-    }
-
-    /* Create NA context */
-    if (!NA_CONTEXT_DEFAULT) {
-        NA_CONTEXT_DEFAULT = NA_Context_create(NA_CLASS_DEFAULT);
-        if (!NA_CONTEXT_DEFAULT) {
-            HG_LOG_ERROR("Could not create NA context");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
-    }
-
     /* Initialize HG */
     if (!HG_CLASS_DEFAULT) {
-        HG_CLASS_DEFAULT = HG_Init(NA_CLASS_DEFAULT, NA_CONTEXT_DEFAULT, NULL);
+        HG_CLASS_DEFAULT = HG_Init(na_info_string, na_listen);
         if (!HG_CLASS_DEFAULT) {
             HG_LOG_ERROR("Could not initialize HG class");
             ret = HG_PROTOCOL_ERROR;
@@ -204,19 +193,63 @@ HG_Hl_init(const char *info_string, na_bool_t listen)
     }
 
     /* Initialize request class */
-    if (!hg_request_class_g) {
-        hg_request_arg_g.hg_class = HG_CLASS_DEFAULT;
-        hg_request_arg_g.context = HG_CONTEXT_DEFAULT;
-        hg_request_class_g = hg_request_init(hg_hl_request_progress,
-                hg_hl_request_trigger, &hg_request_arg_g);
+    if (!HG_REQUEST_CLASS_DEFAULT) {
+        HG_REQUEST_CLASS_DEFAULT = hg_request_init(hg_hl_request_progress,
+                hg_hl_request_trigger, HG_CONTEXT_DEFAULT);
+        if (!HG_REQUEST_CLASS_DEFAULT) {
+            HG_LOG_ERROR("Could not create HG request class");
+            ret = HG_PROTOCOL_ERROR;
+            goto done;
+        }
     }
 
-    /* Lookup addr */
-    if (!NA_ADDR_DEFAULT && !listen) {
-        if (NA_Addr_lookup_wait(NA_CLASS_DEFAULT, na_info_string,
-                &NA_ADDR_DEFAULT) != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not lookup addr");
-            ret = HG_NA_ERROR;
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Hl_init_na(na_class_t *na_class, na_context_t *na_context)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    /* First register finalize function if not set */
+    if (!hg_atexit_g) {
+        if (atexit(hg_hl_finalize) != 0) {
+            HG_LOG_ERROR("Cannot set exit function");
+            ret = HG_PROTOCOL_ERROR;
+            goto done;
+        }
+        hg_atexit_g = HG_TRUE;
+    }
+
+    /* Initialize HG */
+    if (!HG_CLASS_DEFAULT) {
+        HG_CLASS_DEFAULT = HG_Init_na(na_class, na_context);
+        if (!HG_CLASS_DEFAULT) {
+            HG_LOG_ERROR("Could not initialize HG class");
+            ret = HG_PROTOCOL_ERROR;
+            goto done;
+        }
+    }
+
+    /* Create HG context */
+    if (!HG_CONTEXT_DEFAULT) {
+        HG_CONTEXT_DEFAULT = HG_Context_create(HG_CLASS_DEFAULT);
+        if (!HG_CONTEXT_DEFAULT) {
+            HG_LOG_ERROR("Could not create HG context");
+            ret = HG_PROTOCOL_ERROR;
+            goto done;
+        }
+    }
+
+    /* Initialize request class */
+    if (!HG_REQUEST_CLASS_DEFAULT) {
+        HG_REQUEST_CLASS_DEFAULT = hg_request_init(hg_hl_request_progress,
+                hg_hl_request_trigger, HG_CONTEXT_DEFAULT);
+        if (!HG_REQUEST_CLASS_DEFAULT) {
+            HG_LOG_ERROR("Could not create HG request class");
+            ret = HG_PROTOCOL_ERROR;
             goto done;
         }
     }
@@ -231,19 +264,9 @@ HG_Hl_finalize(void)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    /* Free addr */
-    if (NA_CLASS_DEFAULT) {
-        if (NA_Addr_free(NA_CLASS_DEFAULT, NA_ADDR_DEFAULT) != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not free addr");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
-        NA_ADDR_DEFAULT = NA_ADDR_NULL;
-    }
-
     /* Finalize request class */
-    hg_request_finalize(hg_request_class_g);
-    hg_request_class_g = NULL;
+    hg_request_finalize(HG_REQUEST_CLASS_DEFAULT);
+    HG_REQUEST_CLASS_DEFAULT = NULL;
 
     /* Destroy context */
     ret = HG_Context_destroy(HG_CONTEXT_DEFAULT);
@@ -261,42 +284,70 @@ HG_Hl_finalize(void)
     }
     HG_CLASS_DEFAULT = NULL;
 
-    /* Destroy context */
-    if (NA_CLASS_DEFAULT && NA_Context_destroy(NA_CLASS_DEFAULT,
-            NA_CONTEXT_DEFAULT) != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not destroy NA context");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
-    NA_CONTEXT_DEFAULT = NULL;
-
-    /* Finalize interface */
-    if (NA_Finalize(NA_CLASS_DEFAULT) != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not finalize NA interface");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
-    NA_CLASS_DEFAULT = NULL;
-
 done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Hl_forward_wait(hg_handle_t handle, void *in_struct)
+HG_Hl_addr_lookup_wait(hg_context_t *context, hg_request_class_t *request_class,
+    const char *name, hg_addr_t *addr, unsigned int timeout)
 {
     hg_request_t *request = NULL;
     hg_return_t ret = HG_SUCCESS;
     unsigned int flag = 0;
+    struct hg_lookup_request_arg request_args;
 
-    if (!hg_request_class_g) {
+    if (!request_class) {
         HG_LOG_ERROR("Uninitialized request class");
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
 
-    request = hg_request_create(hg_request_class_g);
+    request = hg_request_create(request_class);
+    request_args.addr_ptr = addr;
+    request_args.request = request;
+
+    /* Forward call to remote addr and get a new request */
+    ret = HG_Addr_lookup(context, hg_hl_addr_lookup_cb, &request_args, name,
+            HG_OP_ID_IGNORE);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not lookup address");
+        goto done;
+    }
+
+    /* Wait for request to be marked completed */
+    hg_request_wait(request, timeout, &flag);
+    if (!flag) {
+        HG_LOG_ERROR("Operation did not complete");
+        ret = HG_TIMEOUT;
+        goto done;
+    }
+
+    /* Free request */
+    hg_request_destroy(request);
+
+done:
+    return ret;
+
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Hl_forward_wait(hg_request_class_t *request_class, hg_handle_t handle,
+    void *in_struct, unsigned int timeout)
+{
+    hg_request_t *request = NULL;
+    hg_return_t ret = HG_SUCCESS;
+    unsigned int flag = 0;
+
+    if (!request_class) {
+        HG_LOG_ERROR("Uninitialized request class");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    request = hg_request_create(request_class);
 
     /* Forward call to remote addr and get a new request */
     ret = HG_Forward(handle, hg_hl_forward_cb, request, in_struct);
@@ -306,7 +357,7 @@ HG_Hl_forward_wait(hg_handle_t handle, void *in_struct)
     }
 
     /* Wait for request to be marked completed */
-    hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
+    hg_request_wait(request, timeout, &flag);
     if (!flag) {
         HG_LOG_ERROR("Operation did not complete");
         ret = HG_TIMEOUT;
@@ -322,21 +373,23 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Hl_bulk_transfer_wait(hg_bulk_context_t *context, hg_bulk_op_t op,
-        na_addr_t origin_addr, hg_bulk_t origin_handle, hg_size_t origin_offset,
-        hg_bulk_t local_handle, hg_size_t local_offset, hg_size_t size)
+HG_Hl_bulk_transfer_wait(hg_context_t *context,
+    hg_request_class_t *request_class, hg_bulk_op_t op,
+    hg_addr_t origin_addr, hg_bulk_t origin_handle, hg_size_t origin_offset,
+    hg_bulk_t local_handle, hg_size_t local_offset, hg_size_t size,
+    unsigned int timeout)
 {
     hg_request_t *request = NULL;
     hg_return_t ret = HG_SUCCESS;
     unsigned int flag = 0;
 
-    if (!hg_request_class_g) {
+    if (!request_class) {
         HG_LOG_ERROR("Uninitialized request class");
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
 
-    request = hg_request_create(hg_request_class_g);
+    request = hg_request_create(request_class);
 
     /* Transfer bulk data */
     ret = HG_Bulk_transfer(context, hg_hl_bulk_transfer_cb, request, op,
@@ -348,7 +401,7 @@ HG_Hl_bulk_transfer_wait(hg_bulk_context_t *context, hg_bulk_op_t op,
     }
 
     /* Wait for request to be marked completed */
-    hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
+    hg_request_wait(request, timeout, &flag);
     if (!flag) {
         HG_LOG_ERROR("Operation did not complete");
         ret = HG_TIMEOUT;

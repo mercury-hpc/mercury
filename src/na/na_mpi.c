@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -322,7 +322,7 @@ static na_return_t
 na_mpi_addr_to_string(
         na_class_t *na_class,
         char       *buf,
-        na_size_t   buf_size,
+        na_size_t  *buf_size,
         na_addr_t   addr
         );
 
@@ -1136,7 +1136,7 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
             mpi_ret = MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE,
                     &provided);
             if (provided != MPI_THREAD_MULTIPLE) {
-                NA_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set");
+                NA_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set.");
                 ret = NA_PROTOCOL_ERROR;
                 goto done;
             }
@@ -1525,26 +1525,33 @@ na_mpi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
+na_mpi_addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
         na_addr_t addr)
 {
     struct na_mpi_addr *mpi_addr = NULL;
+    na_size_t string_len;
+    char port_name[MPI_MAX_PORT_NAME];
     na_return_t ret = NA_SUCCESS;
 
     mpi_addr = (struct na_mpi_addr *) addr;
 
-    if (strlen(mpi_addr->port_name) > buf_size) {
-        NA_LOG_ERROR("Buffer size too small to copy addr");
-        ret = NA_SIZE_ERROR;
-        goto done;
+    if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm) {
+        sprintf(port_name, "rank#%d$", mpi_addr->rank);
+    } else {
+        sprintf(port_name, "%s;rank#%d$", mpi_addr->port_name, mpi_addr->rank);
     }
 
-    if (NA_MPI_PRIVATE_DATA(na_class)->use_static_inter_comm)
-        sprintf(buf, "rank#%d$", mpi_addr->rank);
-    else
-        sprintf(buf, "%s;rank#%d$", mpi_addr->port_name, mpi_addr->rank);
+    string_len = strlen(port_name);
+    if (buf) {
+        if (string_len >= *buf_size) {
+            NA_LOG_ERROR("Buffer size too small to copy addr");
+            ret = NA_SIZE_ERROR;
+        } else {
+            strcpy(buf, port_name);
+        }
+    }
+    *buf_size = string_len + 1;
 
-done:
     return ret;
 }
 
@@ -2561,8 +2568,8 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
                 goto done;
             }
             if (na_mpi_op_id->info.recv_expected.actual_size
-                    != na_mpi_op_id->info.recv_expected.buf_size) {
-                NA_LOG_ERROR("Buffer size and actual transfer size do not match");
+                    > na_mpi_op_id->info.recv_expected.buf_size) {
+                NA_LOG_ERROR("Expected recv size too large for buffer");
                 ret = NA_SIZE_ERROR;
                 goto done;
             }
@@ -2665,7 +2672,7 @@ na_mpi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
                 goto done;
             }
             break;
-        case NA_CB_PUT:
+        case NA_CB_PUT:         /* Related to bulk */
             /* TODO */
             break;
         case NA_CB_GET:

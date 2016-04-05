@@ -19,14 +19,12 @@
  * and then executes indefinitely.
  */
 
-int main(int argc, char **argv) 
+int main(void)
 {
-    hg_id_t my_rpc_id;
-
     hg_engine_init(NA_TRUE, "tcp://localhost:1234");
 
     /* register RPC */
-    my_rpc_id = my_rpc_register();
+    my_rpc_register();
 
     /* this would really be something waiting for shutdown notification */
     while(1)

@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ * UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -13,29 +13,46 @@
 
 #include "mercury_types.h"
 
+#include "na.h"
+
+/*********************/
+/* Public Prototypes */
+/*********************/
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * Initialize the Mercury layer from an existing NA class/context.
+ * Initialize the core Mercury layer.
  * Must be finalized with HG_Core_finalize().
- * \remark Calling HG_Core_init() internally calls HG_Bulk_init() with the same NA
- * class if the HG bulk class passed is NULL. The HG bulk interface can however
- * be initialized with a different NA class and, in this case, must be
- * initialized separately by calling HG_Bulk_init().
  *
- * \param na_class [IN]         pointer to NA class
- * \param na_context [IN]       pointer to NA context
- * \param hg_bulk_class [IN]    pointer to HG bulk class
+ * \param na_info_string [IN]   host address with port number (e.g.,
+ *                              "tcp://localhost:3344" or
+ *                              "bmi+tcp://localhost:3344")
+ * \param na_listen [IN]        listen for incoming connections
  *
- * \return HG_SUCCESS or corresponding HG error code
+ * \return Pointer to HG class or NULL in case of failure
  */
 HG_EXPORT hg_class_t *
 HG_Core_init(
+        const char *na_info_string,
+        hg_bool_t na_listen
+        );
+
+/**
+ * Initialize the Mercury layer from an existing NA class/context.
+ * Must be finalized with HG_Core_finalize().
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param na_context [IN]       pointer to NA context
+ *
+ * \return Pointer to HG class or NULL in case of failure
+ */
+HG_EXPORT hg_class_t *
+HG_Core_init_na(
         na_class_t *na_class,
-        na_context_t *na_context,
-        hg_bulk_class_t *hg_bulk_class
+        na_context_t *na_context
         );
 
 /**
@@ -47,14 +64,6 @@ HG_Core_init(
  */
 HG_EXPORT hg_return_t
 HG_Core_finalize(
-        hg_class_t *hg_class
-        );
-
-/**
- * See HG_Get_bulk_class.
- */
-HG_EXPORT hg_bulk_class_t *
-HG_Core_get_bulk_class(
         hg_class_t *hg_class
         );
 
@@ -83,47 +92,48 @@ HG_Core_context_destroy(
         );
 
 /**
- * See HG_Get_bulk_context.
+ * Retrieve the class used to create the given context
+ *
+ * \param context [IN]          pointer to HG context
+ *
+ * \return the associated class
  */
-HG_EXPORT hg_bulk_context_t *
-HG_Core_get_bulk_context(
-        hg_context_t *hg_context
+HG_EXPORT hg_class_t *
+HG_Core_context_get_class(
+        hg_context_t *context
         );
 
 /**
- * Dynamically register a function func_name as an RPC as well as the
- * RPC callback executed when the RPC request ID associated to func_name is
- * received.
+ * Dynamically register an RPC ID as well as the RPC callback executed
+ * when the RPC request ID is received.
  *
  * \param hg_class [IN]         pointer to HG class
- * \param func_name [IN]        unique name associated to function
+ * \param id [IN]               ID to use to register RPC
  * \param rpc_cb [IN]           RPC callback
  *
- * \return unique ID associated to the registered function
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_id_t
+HG_EXPORT hg_return_t
 HG_Core_register(
         hg_class_t *hg_class,
-        const char *func_name,
+        hg_id_t id,
         hg_rpc_cb_t rpc_cb
         );
 
 /**
- * Indicate whether HG_Core_register() has been called and return associated ID.
+ * Indicate whether HG_Core_register() has been called.
  *
  * \param hg_class [IN]         pointer to HG class
- * \param func_name [IN]        name associated to function
+ * \param id [IN]               function ID
  * \param flag [OUT]            pointer to boolean
- * \param id [OUT]              pointer to ID
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Core_registered(
         hg_class_t *hg_class,
-        const char *func_name,
-        hg_bool_t *flag,
-        hg_id_t *id
+        hg_id_t id,
+        hg_bool_t *flag
         );
 
 /**
@@ -162,14 +172,103 @@ HG_Core_registered_data(
         );
 
 /**
+ * Lookup an addr from a peer address/name. Addresses need to be
+ * freed by calling HG_Core_addr_free(). After completion, user callback is
+ * placed into a completion queue and can be triggered using HG_Core_trigger().
+ *
+ * \param context [IN]          pointer to context of execution
+ * \param callback [IN]         pointer to function callback
+ * \param arg [IN]              pointer to data passed to callback
+ * \param name [IN]             lookup name
+ * \param op_id [OUT]           pointer to returned operation ID
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_lookup(
+        hg_context_t *context,
+        hg_cb_t       callback,
+        void         *arg,
+        const char   *name,
+        hg_op_id_t   *op_id
+        );
+
+/**
+ * Free the addr from the list of peers.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param addr [IN]             abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_free(
+        hg_class_t *hg_class,
+        hg_addr_t   addr
+        );
+
+/**
+ * Access self address. Address must be freed with HG_Core_addr_free().
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param addr [OUT]            pointer to abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_self(
+        hg_class_t *hg_class,
+        hg_addr_t  *addr
+        );
+
+/**
+ * Duplicate an existing HG abstract address. The duplicated address can be
+ * stored for later use and the origin address be freed safely. The duplicated
+ * address must be freed with HG_Core_addr_free().
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param addr [IN]             abstract address
+ * \param new_addr [OUT]        pointer to abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_dup(
+        hg_class_t *hg_class,
+        hg_addr_t   addr,
+        hg_addr_t  *new_addr
+        );
+
+/**
+ * Convert an addr to a string (returned string includes the terminating
+ * null byte '\0'). If buf is NULL, the address is not converted and only
+ * the required size of the buffer is returned. If the input value passed
+ * through buf_size is too small, HG_SIZE_ERROR is returned and the buf_size
+ * output is set to the minimum size required.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param buf [IN/OUT]          pointer to destination buffer
+ * \param buf_size [IN/OUT]     pointer to buffer size
+ * \param addr [IN]             abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_to_string(
+        hg_class_t *hg_class,
+        char       *buf,
+        hg_size_t  *buf_size,
+        hg_addr_t   addr
+        );
+
+/**
  * Initiate a new HG RPC using the specified function ID and the local/remote
  * target defined by addr. The HG handle created can be used to query input
  * and output buffers, as well as issuing the RPC by using HG_Core_forward().
  * After completion the handle must be freed using HG_Core_destroy().
  *
- * \param hg_class [IN]         pointer to HG class
  * \param context [IN]          pointer to HG context
- * \param addr [IN]             abstract network address of destination
+ * \param addr [IN]             target address
  * \param id [IN]               registered function ID
  * \param handle [OUT]          pointer to HG handle
  *
@@ -177,9 +276,8 @@ HG_Core_registered_data(
  */
 HG_EXPORT hg_return_t
 HG_Core_create(
-        hg_class_t *hg_class,
         hg_context_t *context,
-        na_addr_t addr,
+        hg_addr_t addr,
         hg_id_t id,
         hg_handle_t *handle
         );
@@ -199,7 +297,7 @@ HG_Core_destroy(
 
 /**
  * Get info from handle.
- * \remark Users must call NA_Addr_dup() to safely re-use the NA address.
+ * \remark Users must call HG_Core_addr_dup() to safely re-use the addr field.
  *
  * \param handle [IN]           HG handle
  *
@@ -257,6 +355,7 @@ HG_Core_get_output(
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param extra_in_handle [IN]  bulk handle to extra input buffer
+ * \param size_to_send [IN]     size of request to transmit
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -265,7 +364,8 @@ HG_Core_forward(
         hg_handle_t handle,
         hg_cb_t callback,
         void *arg,
-        hg_bulk_t extra_in_handle
+        hg_bulk_t extra_in_handle,
+        hg_size_t size_to_send
         );
 
 /**
@@ -279,6 +379,7 @@ HG_Core_forward(
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param ret_code [IN]         return code included in response
+ * \param size_to_send [IN]     amount of data to send in response
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -287,7 +388,8 @@ HG_Core_respond(
         hg_handle_t handle,
         hg_cb_t callback,
         void *arg,
-        hg_return_t ret_code
+        hg_return_t ret_code,
+        hg_size_t size_to_send
         );
 
 /**
@@ -297,7 +399,6 @@ HG_Core_respond(
  * assumed that completion of a specific operation will occur only when
  * progress is called.
  *
- * \param hg_class [IN]         pointer to HG class
  * \param context [IN]          pointer to HG context
  * \param timeout [IN]          timeout (in milliseconds)
  *
@@ -305,7 +406,6 @@ HG_Core_respond(
  */
 HG_EXPORT hg_return_t
 HG_Core_progress(
-        hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout
         );
@@ -315,7 +415,6 @@ HG_Core_progress(
  * timeout before returning. Function can return when at least one or more
  * callbacks are triggered (at most max_count).
  *
- * \param hg_class [IN]         pointer to HG class
  * \param context [IN]          pointer to HG context
  * \param timeout [IN]          timeout (in milliseconds)
  * \param max_count [IN]        maximum number of callbacks triggered
@@ -325,7 +424,6 @@ HG_Core_progress(
  */
 HG_EXPORT hg_return_t
 HG_Core_trigger(
-        hg_class_t *hg_class,
         hg_context_t *context,
         unsigned int timeout,
         unsigned int max_count,

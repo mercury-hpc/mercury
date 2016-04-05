@@ -36,7 +36,7 @@ project(MERCURY C)
 #------------------------------------------------------------------------------
 set(MERCURY_VERSION_MAJOR "0")
 set(MERCURY_VERSION_MINOR "8")
-set(MERCURY_VERSION_PATCH "2")
+set(MERCURY_VERSION_PATCH "9")
 set(MERCURY_PACKAGE "mercury")
 set(MERCURY_PACKAGE_NAME "MERCURY")
 set(MERCURY_PACKAGE_VERSION "${MERCURY_VERSION_MAJOR}.${MERCURY_VERSION_MINOR}.${MERCURY_VERSION_PATCH}")
@@ -294,7 +294,7 @@ endif()
 # CPack
 #-----------------------------------------------------------------------------
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
-  set(CPACK_PACKAGE_DESCRIPTION_FILE ${MERCURY_SOURCE_DIR}/README)
+  set(CPACK_PACKAGE_DESCRIPTION_FILE ${MERCURY_SOURCE_DIR}/README.md)
   set(CPACK_RESOURCE_FILE_LICENSE ${MERCURY_SOURCE_DIR}/COPYING)
   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "RPC for High-Performance Computing")
   set(CPACK_PACKAGE_NAME "Mercury")

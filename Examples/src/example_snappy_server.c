@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -32,6 +32,7 @@ main(void)
     unsigned minor;
     unsigned patch;
     hg_return_t hg_ret;
+    na_size_t self_addr_string_size = PATH_MAX;
 
     HG_Version_get(&major, &minor, &patch);
 
@@ -42,7 +43,7 @@ main(void)
     /* bmi+tcp://localhost:port */
     na_info_string = getenv(HG_PORT_NAME);
     if (!na_info_string) {
-        fprintf(stderr, HG_PORT_NAME " environment variable must be set");
+        fprintf(stderr, HG_PORT_NAME " environment variable must be set, e.g.:\nMERCURY_PORT_NAME=\"tcp://127.0.0.1:22222\"\n");
         exit(0);
     }
 
@@ -51,7 +52,7 @@ main(void)
 
     /* Get self addr to tell client about */
     NA_Addr_self(na_class, &self_addr);
-    NA_Addr_to_string(na_class, self_addr_string, PATH_MAX, self_addr);
+    NA_Addr_to_string(na_class, self_addr_string, &self_addr_string_size, self_addr);
     NA_Addr_free(na_class, self_addr);
     printf("Server address is: %s\n", self_addr_string);
 
@@ -69,7 +70,7 @@ main(void)
     na_context = NA_Context_create(na_class);
 
     /* Initialize Mercury with the desired network abstraction class */
-    hg_class = HG_Init(na_class, na_context, NULL);
+    hg_class = HG_Init_na(na_class, na_context);
 
     /* Create HG context */
     hg_context = HG_Context_create(hg_class);
@@ -81,14 +82,14 @@ main(void)
     do {
         unsigned int actual_count = 0;
         do {
-            hg_ret = HG_Trigger(hg_class, hg_context, 0 /* timeout */,
+            hg_ret = HG_Trigger(hg_context, 0 /* timeout */,
                     1 /* max count */, &actual_count);
         } while ((hg_ret == HG_SUCCESS) && actual_count);
 
         /* Do not try to make progress anymore if we're done */
         if (snappy_compress_done_target_g) break;
 
-        hg_ret = HG_Progress(hg_class, hg_context, HG_MAX_IDLE_TIME);
+        hg_ret = HG_Progress(hg_context, HG_MAX_IDLE_TIME);
 
     } while (hg_ret == HG_SUCCESS);
 

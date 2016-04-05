@@ -13,6 +13,15 @@
 
 #include "mercury_types.h"
 
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
+#if defined(__GNUC__) || defined(_WIN32)
+#pragma pack(push,1)
+#else
+#warning "Proc header struct padding may not be consistent across platforms."
+#endif
 struct hg_header_request {
      hg_uint8_t  hg;               /* Mercury identifier */
      hg_uint32_t protocol;         /* Version number */
@@ -32,6 +41,9 @@ struct hg_header_response {
     hg_uint8_t  padding;
     /* Should be 96 bits here */
 };
+#if defined(__GNUC__) || defined(_WIN32)
+#pragma pack(pop)
+#endif
 
 /*
  * 0      HG_PROC_HEADER_SIZE              size
@@ -47,6 +59,10 @@ struct hg_header_response {
  * Response:
  * flags / error / cookie / crc16 / payload
  */
+
+/*****************/
+/* Public Macros */
+/*****************/
 
 /* Mercury identifier for packets sent */
 #define HG_IDENTIFIER (('H' << 1) | ('G')) /* 0xD7 */
@@ -68,6 +84,10 @@ struct hg_header_response {
     #define HG_PROC_HEADER_INLINE HG_INLINE
   #endif
 #endif
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {
@@ -108,8 +128,11 @@ hg_proc_header_response_get_size(void)
  *
  */
 HG_EXPORT void
-hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_buf_handle,
-        struct hg_header_request *header);
+hg_proc_header_request_init(
+        hg_id_t id,
+        hg_bulk_t extra_buf_handle,
+        struct hg_header_request *header
+        );
 
 /**
  * Initialize RPC response header.
@@ -118,8 +141,9 @@ hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_buf_handle,
  *
  */
 HG_EXPORT void
-hg_proc_header_response_init(struct hg_header_response *header);
-
+hg_proc_header_response_init(
+        struct hg_header_response *header
+        );
 
 /**
  * Process private information for sending/receiving RPC request.
@@ -128,15 +152,20 @@ hg_proc_header_response_init(struct hg_header_response *header);
  * \param buf_size [IN]         buffer size
  * \param header [IN/OUT]       pointer to header structure
  * \param op [IN]               operation type: HG_ENCODE / HG_DECODE
- * \param bulk_class [IN]       HG bulk class
+ * \param hg_class [IN]         HG class
+ * \param extra_header_size [OUT] bytes added beyond normal header size
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_header_request(void *buf, size_t buf_size,
-        struct hg_header_request *header, hg_proc_op_t op,
-        hg_bulk_class_t *bulk_class);
-
+hg_proc_header_request(
+        void *buf,
+        size_t buf_size,
+        struct hg_header_request *header,
+        hg_proc_op_t op,
+        hg_class_t *hg_class,
+        hg_size_t *extra_header_size
+        );
 /**
  * Process private information for sending/receiving response.
  *
@@ -148,8 +177,12 @@ hg_proc_header_request(void *buf, size_t buf_size,
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_header_response(void *buf, size_t buf_size,
-        struct hg_header_response *header, hg_proc_op_t op);
+hg_proc_header_response(
+        void *buf,
+        size_t buf_size,
+        struct hg_header_response *header,
+        hg_proc_op_t op
+        );
 
 /**
  * Verify private information from request header.
@@ -159,7 +192,9 @@ hg_proc_header_response(void *buf, size_t buf_size,
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_header_request_verify(const struct hg_header_request *header);
+hg_proc_header_request_verify(
+        const struct hg_header_request *header
+        );
 
 /**
  * Verify private information from response header.
@@ -169,7 +204,9 @@ hg_proc_header_request_verify(const struct hg_header_request *header);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_header_response_verify(const struct hg_header_response *header);
+hg_proc_header_response_verify(
+        const struct hg_header_response *header
+        );
 
 #ifdef __cplusplus
 }

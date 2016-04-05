@@ -18,7 +18,7 @@ extern hg_id_t hg_test_overflow_id_g;
 static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
 {
-    hg_handle_t handle = callback_info->handle;
+    hg_handle_t handle = callback_info->info.forward.handle;
     hg_request_t *request = (hg_request_t *) callback_info->arg;
     overflow_out_t out_struct;
     hg_return_t ret = HG_SUCCESS;
@@ -75,7 +75,7 @@ main(int argc, char *argv[])
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(hg_class, context, addr, hg_test_overflow_id_g, &handle);
+    hg_ret = HG_Create(context, addr, hg_test_overflow_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         return EXIT_FAILURE;

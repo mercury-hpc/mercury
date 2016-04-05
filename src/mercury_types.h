@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -11,17 +11,18 @@
 #ifndef MERCURY_TYPES_H
 #define MERCURY_TYPES_H
 
-#include "na.h"
 #include "mercury_config.h"
 
-typedef struct hg_class hg_class_t;             /* Opaque HG class */
-typedef struct hg_bulk_class hg_bulk_class_t;   /* Opaque HG bulk class */
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
 
-typedef struct hg_context hg_context_t;             /* Opaque HG context */
-typedef struct hg_bulk_context hg_bulk_context_t;   /* Opaque HG bulk context */
+typedef struct hg_class hg_class_t;             /* Opaque HG class */
+typedef struct hg_context hg_context_t;         /* Opaque HG context */
 
 typedef hg_uint64_t hg_size_t;  /* Size */
 typedef hg_uint32_t hg_id_t;    /* RPC ID */
+typedef void *hg_addr_t;        /* Abstract HG address */
 typedef void *hg_handle_t;      /* Abstract RPC handle */
 typedef void *hg_bulk_t;        /* Abstract bulk data handle */
 typedef void *hg_proc_t;        /* Abstract serialization processor */
@@ -29,12 +30,10 @@ typedef void *hg_op_id_t;       /* Abstract operation id */
 
 /* HG info struct */
 struct hg_info {
-    hg_class_t *hg_class;               /* HG class */
-    hg_context_t *context;              /* HG context */
-    hg_bulk_class_t *hg_bulk_class;     /* HG Bulk class */
-    hg_bulk_context_t *bulk_context;    /* HG Bulk context */
-    na_addr_t addr;                     /* NA address */
-    hg_id_t id;                         /* RPC ID */
+    hg_class_t *hg_class;       /* HG class */
+    hg_context_t *context;      /* HG context */
+    hg_addr_t addr;             /* HG address */
+    hg_id_t id;                 /* RPC ID */
 };
 
 /**
@@ -74,48 +73,72 @@ typedef enum hg_return {
     HG_NOMEM_ERROR,     /*!< no memory error */
     HG_PROTOCOL_ERROR,  /*!< protocol does not match */
     HG_NO_MATCH,        /*!< no function match */
-    HG_CHECKSUM_ERROR,  /*!< checksum error */
+    HG_CHECKSUM_ERROR,   /*!< checksum error */
     HG_CANCELLED        /*!< operation was cancelled */
 } hg_return_t;
 
+/* Callback operation type */
+typedef enum hg_cb_type {
+    HG_CB_LOOKUP,       /*!< lookup callback */
+    HG_CB_FORWARD,      /*!< forward callback */
+    HG_CB_RESPOND,      /*!< respond callback */
+    HG_CB_BULK          /*!< bulk transfer callback */
+} hg_cb_type_t;
+
 /* Callback info structs */
+struct hg_cb_info_lookup {
+    hg_addr_t addr;     /* HG address */
+};
+
+struct hg_cb_info_forward {
+    hg_handle_t handle; /* HG handle */
+};
+
+struct hg_cb_info_respond {
+    hg_handle_t handle; /* HG handle */
+};
+
+struct hg_cb_info_bulk {
+    hg_bulk_op_t op;            /* Operation type */
+    hg_bulk_t origin_handle;    /* HG Bulk origin handle */
+    hg_bulk_t local_handle;     /* HG Bulk local handle */
+};
+
 struct hg_cb_info {
-    void *arg;              /* User data */
-    hg_return_t ret;        /* Return value */
-    hg_class_t *hg_class;   /* HG class */
-    hg_context_t *context;  /* HG context */
-    hg_handle_t handle;     /* HG handle */
+    void *arg;                  /* User data */
+    hg_return_t ret;            /* Return value */
+    hg_cb_type_t type;          /* Callback type */
+    union {                     /* Union of callback info structures */
+        struct hg_cb_info_lookup lookup;
+        struct hg_cb_info_forward forward;
+        struct hg_cb_info_respond respond;
+        struct hg_cb_info_bulk bulk;
+    } info;
 };
 
-struct hg_bulk_cb_info {
-    void *arg;                      /* User data */
-    hg_return_t ret;                /* Return value */
-    hg_bulk_class_t *hg_bulk_class; /* HG bulk class */
-    hg_bulk_context_t *context;     /* HG bulk context */
-    hg_bulk_op_t op;                /* Operation type */
-    hg_bulk_t origin_handle;        /* HG Bulk origin handle */
-    hg_bulk_t local_handle;         /* HG Bulk local handle */
-};
-
-/* RPC / HG / HG bulk callbacks */
+/* RPC / HG callbacks */
 typedef hg_return_t (*hg_rpc_cb_t)(hg_handle_t handle);
 typedef hg_return_t (*hg_cb_t)(const struct hg_cb_info *callback_info);
-typedef hg_return_t (*hg_bulk_cb_t)(const struct hg_bulk_cb_info *callback_info);
 
 /* Proc callback for serializing/deserializing parameters */
 typedef hg_return_t (*hg_proc_cb_t)(hg_proc_t proc, void *data);
 
+/*****************/
+/* Public Macros */
+/*****************/
+
 /* Constant values */
-#define HG_BULK_READWRITE    NA_MEM_READWRITE
-#define HG_BULK_READ_ONLY    NA_MEM_READ_ONLY
-#define HG_BULK_WRITE_ONLY   NA_MEM_READWRITE
+#define HG_BULK_READWRITE    0x00
+#define HG_BULK_READ_ONLY    0x01
+#define HG_BULK_WRITE_ONLY   0x02
 
-#define HG_MAX_IDLE_TIME     NA_MAX_IDLE_TIME
+#define HG_MAX_IDLE_TIME     (3600*1000)
 
-#define HG_OP_ID_NULL        ((hg_op_id_t)0)
-#define HG_OP_ID_IGNORE      ((hg_op_id_t *)1)
-#define HG_PROC_NULL         ((hg_proc_t)0)
+#define HG_ADDR_NULL         ((hg_addr_t)0)
 #define HG_HANDLE_NULL       ((hg_handle_t)0)
 #define HG_BULK_NULL         ((hg_bulk_t)0)
+#define HG_PROC_NULL         ((hg_proc_t)0)
+#define HG_OP_ID_NULL        ((hg_op_id_t)0)
+#define HG_OP_ID_IGNORE      ((hg_op_id_t *)1)
 
 #endif /* MERCURY_TYPES_H */
