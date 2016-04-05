@@ -46,7 +46,7 @@ struct hg_bulk_op_id {
     hg_bulk_op_t op;                      /* Operation type */
     struct hg_bulk *hg_bulk_origin;       /* Origin handle */
     struct hg_bulk *hg_bulk_local;        /* Local handle */
-    na_op_id_t* na_op_id ;                /* An array of na_op_ids with op_count size*/
+    na_op_id_t* na_op_id ;                /* An array of na_op_ids with op_count size */
 };
 
 /* Segment used to transfer data and map to NA layer */
@@ -801,7 +801,11 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
         struct hg_cb_info hg_cb_info;
 
         hg_cb_info.arg = hg_bulk_op_id->arg;
-        hg_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
+        if (hg_bulk_op_id->op_count != (unsigned int)
+            hg_atomic_get32(&hg_bulk_op_id->op_completed_count))
+            hg_cb_info.ret =  HG_CANCELLED;
+        else
+            hg_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
         hg_cb_info.type = HG_CB_BULK;
         hg_cb_info.info.bulk.op = hg_bulk_op_id->op;
         hg_cb_info.info.bulk.origin_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_origin;
@@ -1296,21 +1300,8 @@ HG_Bulk_cancel(hg_op_id_t op_id)
                  goto done;
              }
          }
-         /* Mark operation as completed. */
-         hg_atomic_incr32(&hg_bulk_op_id->completed);
-#if 0
-         hg_bulk_complete(hg_bulk_op_id);
-
-         /*
-          Calling above will return the following error:
-          
-          Executing bulk_write with fildes 12345...
-          Checking data...
-          Error detected in bulk transfer, bulk_buf[1] = 0, was expecting 1!
-          
-          */
-#endif
          
+         hg_bulk_complete(hg_bulk_op_id);
      }
     
     

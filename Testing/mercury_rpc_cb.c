@@ -236,6 +236,9 @@ hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
     void *buf;
     size_t write_ret;
 
+    if (hg_cb_info->ret == HG_CANCELLED)
+        goto done;
+    
     /* Call bulk_write */
     HG_Bulk_access(local_bulk_handle, 0, bulk_args->nbytes, HG_BULK_READWRITE,
             1, &buf, NULL, NULL);
@@ -258,7 +261,7 @@ hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
-
+done:
     HG_Destroy(bulk_args->handle);
     free(bulk_args);
 
@@ -311,12 +314,14 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
     }
-    /* Call HG_Bulk_Cancel() here. */
+
+    /* Test HG_Bulk_Cancel(). */
     ret = HG_Bulk_cancel(hg_bulk_op_id);
     if (ret != HG_SUCCESS){
         fprintf(stderr, "Could not cancel bulk data\n");
         return ret;
     }
+
 
     HG_Free_input(handle, &in_struct);
 
