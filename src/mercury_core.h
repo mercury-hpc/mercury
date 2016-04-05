@@ -92,6 +92,18 @@ HG_Core_context_destroy(
         );
 
 /**
+ * Retrieve the class used to create the given context
+ *
+ * \param context [IN]          pointer to HG context
+ *
+ * \return the associated class
+ */
+HG_EXPORT hg_class_t *
+HG_Core_context_get_class(
+        hg_context_t *context
+        );
+
+/**
  * Dynamically register an RPC ID as well as the RPC callback executed
  * when the RPC request ID is received.
  *

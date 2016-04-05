@@ -2341,6 +2341,18 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_class_t *
+HG_Core_context_get_class(hg_context_t *context)
+{
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        return NULL;
+    }
+    else
+        return context->hg_class;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_register(hg_class_t *hg_class, hg_id_t id, hg_rpc_cb_t rpc_cb)
 {
