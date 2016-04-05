@@ -214,7 +214,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
 # mercury_test : Lib used by tests contains main test initialization etc
 #------------------------------------------------------------------------------
 add_library(mercury_test STATIC mercury_test.c mercury_rpc_cb.c)
-target_link_libraries(mercury_test mercury na_test ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
+target_link_libraries(mercury_test mercury_hl na_test ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_test)
 endif()
@@ -234,6 +234,7 @@ set(MERCURY_tests
   perf
   overflow
   cancel
+  cancel_bulk
 )
 if(NOT WIN32)
   set(MERCURY_tests ${MERCURY_tests} posix)

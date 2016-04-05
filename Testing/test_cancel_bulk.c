@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *               UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -57,6 +57,7 @@ int main(int argc, char *argv[])
     hg_request_t *request = NULL;
     hg_handle_t handle;
     na_addr_t addr;
+    struct hg_info *hg_info = NULL;
 
     bulk_write_in_t bulk_write_in_struct;
 
@@ -85,14 +86,18 @@ int main(int argc, char *argv[])
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(context, addr, hg_test_bulk_write_id_g, &handle);
+    hg_ret = HG_Create(context, addr, hg_test_bulk_write_id_g,
+            &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         return EXIT_FAILURE;
     }
 
+    /* Must get info to retrieve bulk class if not provided by user */
+    hg_info = HG_Get_info(handle);
+
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_class, 1, buf_ptr, &bulk_size,
+    hg_ret = HG_Bulk_create(hg_info->hg_class, 1, buf_ptr, &bulk_size,
             HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
@@ -106,13 +111,23 @@ int main(int argc, char *argv[])
     /* Forward call to remote addr and get a new request */
     printf("Forwarding bulk_write, op id: %u...\n", hg_test_bulk_write_id_g);
     hg_ret = HG_Forward(handle, hg_test_bulk_forward_cb, request,
-            &bulk_write_in_struct);
+                        &bulk_write_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         return EXIT_FAILURE;
     }
 
+#if 0
+    hg_ret = HG_Cancel(handle);
+    if (hg_ret != HG_SUCCESS)
+    {
+        fprintf(stderr, "HG_Cancel() failed: reuturn code = %d\n", hg_ret);
+        return EXIT_FAILURE;
+    }
+#endif
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+
+    
 
     /* Free memory handle */
     hg_ret = HG_Bulk_free(bulk_handle);

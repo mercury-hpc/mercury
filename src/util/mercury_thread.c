@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -167,6 +167,47 @@ hg_thread_setspecific(hg_thread_key_t key, const void *value)
 #else
     if (pthread_setspecific(key, value)) {
         HG_UTIL_ERROR_DEFAULT("pthread_setspecific failed");
+        ret = HG_UTIL_FAIL;
+    }
+#endif
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_getaffinity(hg_thread_t thread, hg_cpu_set_t *cpu_mask)
+{
+    int ret = HG_UTIL_SUCCESS;
+
+#if defined(_WIN32)
+    HG_UTIL_ERROR_DEFAULT("not supported");
+#elif defined(__APPLE__)
+#else
+    if (pthread_getaffinity_np(thread, sizeof(hg_cpu_set_t), cpu_mask)) {
+        HG_UTIL_ERROR_DEFAULT("pthread_getaffinity_np failed");
+        ret = HG_UTIL_FAIL;
+    }
+#endif
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_setaffinity(hg_thread_t thread, const hg_cpu_set_t *cpu_mask)
+{
+    int ret = HG_UTIL_SUCCESS;
+
+#if defined(_WIN32)
+    if (!SetThreadAffinityMask(thread, *cpu_mask)) {
+        HG_UTIL_ERROR_DEFAULT("SetThreadAffinityMask failed");
+        ret = HG_UTIL_FAIL;
+    }
+#elif defined(__APPLE__)
+#else
+    if (pthread_setaffinity_np(thread, sizeof(hg_cpu_set_t), cpu_mask)) {
+        HG_UTIL_ERROR_DEFAULT("pthread_setaffinity_np failed");
         ret = HG_UTIL_FAIL;
     }
 #endif

@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -43,7 +43,7 @@
  * would still also need to handle callbacks for the HG transfer.
  */
 static hg_return_t my_rpc_handler(hg_handle_t handle);
-static hg_return_t my_rpc_handler_bulk_cb(const struct hg_bulk_cb_info *info);
+static hg_return_t my_rpc_handler_bulk_cb(const struct hg_cb_info *info);
 static void my_rpc_handler_write_cb(union sigval sig);
 
 /* struct used to carry state of overall operation across callbacks */
@@ -96,12 +96,12 @@ static hg_return_t my_rpc_handler(hg_handle_t handle)
     /* register local target buffer for bulk access */
     hgi = HG_Get_info(handle);
     assert(hgi);
-    ret = HG_Bulk_create(hgi->hg_bulk_class, 1, &my_rpc_state_p->buffer,
+    ret = HG_Bulk_create(hgi->hg_class, 1, &my_rpc_state_p->buffer,
         &my_rpc_state_p->size, HG_BULK_WRITE_ONLY, &my_rpc_state_p->bulk_handle);
     assert(ret == 0);
 
     /* initiate bulk transfer from client to server */
-    ret = HG_Bulk_transfer(hgi->bulk_context, my_rpc_handler_bulk_cb,
+    ret = HG_Bulk_transfer(hgi->context, my_rpc_handler_bulk_cb,
         my_rpc_state_p, HG_BULK_PULL, hgi->addr, my_rpc_state_p->in.bulk_handle, 0,
         my_rpc_state_p->bulk_handle, 0, my_rpc_state_p->size, HG_OP_ID_IGNORE);
     assert(ret == 0);
@@ -110,7 +110,7 @@ static hg_return_t my_rpc_handler(hg_handle_t handle)
 }
 
 /* callback triggered upon completion of bulk transfer */
-static hg_return_t my_rpc_handler_bulk_cb(const struct hg_bulk_cb_info *info)
+static hg_return_t my_rpc_handler_bulk_cb(const struct hg_cb_info *info)
 {
     struct my_rpc_state *my_rpc_state_p = info->arg;
     int ret;

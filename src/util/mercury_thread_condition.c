@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -70,7 +70,6 @@ hg_thread_cond_broadcast(hg_thread_cond_t *cond)
 #else
     if (pthread_cond_broadcast(cond)) ret = HG_UTIL_FAIL;
 #endif
-
     return ret;
 }
 
@@ -124,6 +123,5 @@ hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsig
         ret = HG_UTIL_FAIL;
     }
 #endif
-
     return ret;
 }

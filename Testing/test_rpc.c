@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ *               UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -18,7 +18,7 @@ extern hg_id_t hg_test_rpc_open_id_g;
 static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
 {
-    hg_handle_t handle = callback_info->handle;
+    hg_handle_t handle = callback_info->info.forward.handle;
     hg_request_t *request = (hg_request_t *) callback_info->arg;
     int rpc_open_ret;
     int rpc_open_event_id;
@@ -75,7 +75,7 @@ main(int argc, char *argv[])
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(hg_class, context, addr, hg_test_rpc_open_id_g, &handle);
+    hg_ret = HG_Create(context, addr, hg_test_rpc_open_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         return EXIT_FAILURE;

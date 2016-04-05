@@ -250,7 +250,7 @@ static na_return_t
 na_cci_addr_to_string(
 		      na_class_t * na_class,
 		      char *buf,
-		      na_size_t buf_size,
+		      na_size_t *buf_size,
 		      na_addr_t addr
 );
 
@@ -928,17 +928,22 @@ na_cci_addr_is_self(na_class_t NA_UNUSED * na_class, na_addr_t addr)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_addr_to_string(na_class_t NA_UNUSED * na_class, char *buf,
-		      na_size_t buf_size, na_addr_t addr)
+		      na_size_t *buf_size, na_addr_t addr)
 {
 	na_cci_addr_t *na_cci_addr = (na_cci_addr_t *)addr;
+	na_size_t string_len;
 	na_return_t	ret = NA_SUCCESS;
 
-	if (strlen(na_cci_addr->uri) >= buf_size) {
-		NA_LOG_ERROR("Buffer size too small to copy addr");
-		ret = NA_SIZE_ERROR;
-		return ret;
-	}
-	strcpy(buf, na_cci_addr->uri);
+	string_len = strlen(na_cci_addr->uri);
+	if (buf) {
+	    if (string_len >= *buf_size) {
+            NA_LOG_ERROR("Buffer size too small to copy addr");
+            ret = NA_SIZE_ERROR;
+        } else {
+            strcpy(buf, na_cci_addr->uri);
+        }
+    }
+    *buf_size = string_len + 1;
 
 	return ret;
 }
@@ -1998,9 +2003,9 @@ na_cci_complete(na_cci_addr_t *na_cci_addr, na_cci_op_id_t *na_cci_op_id, na_ret
 		break;
 	case NA_CB_RECV_EXPECTED:
 		/* Check buf_size and actual_size */
-		if (na_cci_op_id->info.recv_expected.actual_size !=
+		if (na_cci_op_id->info.recv_expected.actual_size >
 		    na_cci_op_id->info.recv_expected.buf_size) {
-			NA_LOG_ERROR("Buffer size and actual transfer size do not match");
+			NA_LOG_ERROR("Expected recv too large for buffer");
 			ret = NA_SIZE_ERROR;
 			goto out;
 		}

@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -83,12 +83,6 @@ na_info_free(
 static void
 na_info_print(struct na_info *na_info);
 #endif
-
-/* NA_Lookup_wait callback */
-static na_return_t
-na_addr_lookup_cb(
-        const struct na_cb_info *callback_info
-        );
 
 /*******************/
 /* Local Variables */
@@ -597,94 +591,6 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Addr_lookup_wait(na_class_t *na_class, const char *name, na_addr_t *addr)
-{
-    na_addr_t new_addr = NULL;
-    na_bool_t lookup_completed = NA_FALSE;
-    na_context_t *context = NULL;
-    na_return_t ret = NA_SUCCESS;
-
-    if (!na_class) {
-        NA_LOG_ERROR("NULL NA class");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
-    if (!name) {
-        NA_LOG_ERROR("Lookup name is NULL");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
-    if (!addr) {
-        NA_LOG_ERROR("NULL pointer to na_addr_t");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
-
-    context = NA_Context_create(na_class);
-    if (!context) {
-        NA_LOG_ERROR("Could not create context");
-        goto done;
-    }
-
-    ret = NA_Addr_lookup(na_class, context, &na_addr_lookup_cb, &new_addr, name,
-            NA_OP_ID_IGNORE);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not start NA_Addr_lookup");
-        goto done;
-    }
-
-    while (!lookup_completed) {
-        na_return_t trigger_ret;
-        unsigned int actual_count = 0;
-
-        do {
-            trigger_ret = NA_Trigger(context, 0, 1, &actual_count);
-        } while ((trigger_ret == NA_SUCCESS) && actual_count);
-
-        if (new_addr) {
-            lookup_completed = NA_TRUE;
-            *addr = new_addr;
-        }
-
-        if (lookup_completed) break;
-
-        ret = NA_Progress(na_class, context, NA_MAX_IDLE_TIME);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not make progress");
-            goto done;
-        }
-    }
-
-    ret = NA_Context_destroy(na_class, context);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not destroy context");
-        goto done;
-    }
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_addr_lookup_cb(const struct na_cb_info *callback_info)
-{
-    na_addr_t *addr_ptr = (na_addr_t *) callback_info->arg;
-    na_return_t ret = NA_SUCCESS;
-
-    if (callback_info->ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Return from callback with %s error code",
-                NA_Error_to_string(callback_info->ret));
-        return ret;
-    }
-
-    *addr_ptr = callback_info->info.lookup.addr;
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-na_return_t
 NA_Addr_self(na_class_t *na_class, na_addr_t *addr)
 {
     na_return_t ret = NA_SUCCESS;
@@ -790,7 +696,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
+NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
         na_addr_t addr)
 {
     na_return_t ret = NA_SUCCESS;
@@ -800,11 +706,7 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t buf_size,
         ret = NA_INVALID_PARAM;
         goto done;
     }
-    if (!buf) {
-        NA_LOG_ERROR("NULL buffer");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
+    /* buf can be NULL */
     if (!buf_size) {
         NA_LOG_ERROR("NULL buffer size");
         ret = NA_INVALID_PARAM;
@@ -1582,7 +1484,7 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
     /* Try to make progress for remaining time */
     ret = na_class->progress(na_class, context,
             (unsigned int) (remaining * 1000));
-
+    
     hg_thread_mutex_lock(&na_private_context->progress_mutex);
 
     /* At this point, either progress succeeded or failed with NA_TIMEOUT,
@@ -1713,7 +1615,6 @@ NA_Cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
     }
 
     ret = na_class->cancel(na_class, context, op_id);
-
 done:
     return ret;
 }

@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2015 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                         UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -101,7 +101,7 @@ na_addr_t *na_addr_table;
 static HG_INLINE int
 rpc_open(const char *path, rpc_handle_t handle, int *event_id)
 {
-    printf("Called rpc_open of %s with cookie %lu\n", path, handle.cookie);
+    fprintf(stderr, "Called rpc_open of %s with cookie %lu\n", path, handle.cookie);
     *event_id = 232;
     return HG_SUCCESS;
 }
@@ -224,11 +224,11 @@ HG_TEST_RPC_CB(hg_test_rpc_open, handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_bulk_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_bulk_cb_info->arg;
-    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
+            hg_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_cb_info->info.bulk.local_handle;
     hg_return_t ret = HG_SUCCESS;
 
     bulk_write_out_t out_struct;
@@ -236,6 +236,9 @@ hg_test_bulk_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
     void *buf;
     size_t write_ret;
 
+    if (hg_cb_info->ret == HG_CANCELLED)
+        goto done;
+    
     /* Call bulk_write */
     HG_Bulk_access(local_bulk_handle, 0, bulk_args->nbytes, HG_BULK_READWRITE,
             1, &buf, NULL, NULL);
@@ -258,7 +261,7 @@ hg_test_bulk_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
-
+done:
     HG_Destroy(bulk_args->handle);
     free(bulk_args);
 
@@ -275,6 +278,7 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     hg_return_t ret = HG_SUCCESS;
 
     bulk_write_in_t in_struct;
+    hg_op_id_t hg_bulk_op_id;
 
     bulk_args = (struct hg_test_bulk_args *) malloc(
             sizeof(struct hg_test_bulk_args));
@@ -299,17 +303,25 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
 
     /* Create a new block handle to read the data */
-    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
-            HG_BULK_READWRITE, &local_bulk_handle);
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
+                   HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Read bulk data here  */
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_bulk_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_bulk_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
-            local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
+            local_bulk_handle, 0, bulk_args->nbytes, &hg_bulk_op_id /* get op ids instead of HG_OP_ID_IGNORE */ );
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
     }
+
+    /* Test HG_Bulk_Cancel(). */
+    ret = HG_Bulk_cancel(hg_bulk_op_id);
+    if (ret != HG_SUCCESS){
+        fprintf(stderr, "Could not cancel bulk data\n");
+        return ret;
+    }
+
 
     HG_Free_input(handle, &in_struct);
 
@@ -318,11 +330,11 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_bulk_seg_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+hg_test_bulk_seg_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_bulk_cb_info->arg;
-    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
+            hg_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_cb_info->info.bulk.local_handle;
     hg_return_t ret = HG_SUCCESS;
 
     bulk_write_out_t out_struct;
@@ -406,11 +418,11 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
     printf("Start reading first chunk of %lu bytes...\n", nbytes_read);
 
     /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
             HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Read bulk data here  */
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_bulk_seg_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_bulk_seg_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
             local_bulk_handle, 0, nbytes_read, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -423,7 +435,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
 
     printf("Start reading second chunk of %lu bytes...\n", nbytes_read);
 
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_bulk_seg_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_bulk_seg_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, offset,
             local_bulk_handle, offset, nbytes_read, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -775,11 +787,11 @@ HG_TEST_RPC_CB(hg_test_posix_close, handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_posix_write_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+hg_test_posix_write_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_bulk_cb_info->arg;
-    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
+            hg_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_cb_info->info.bulk.local_handle;
     hg_return_t ret = HG_SUCCESS;
 
     write_out_t out_struct;
@@ -865,11 +877,11 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
 
     /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
             HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Read bulk data here  */
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_posix_write_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_posix_write_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
             local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -884,11 +896,11 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_posix_read_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+hg_test_posix_read_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_bulk_cb_info->arg;
-    hg_bulk_t local_bulk_handle = hg_bulk_cb_info->local_handle;
+            hg_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_cb_info->info.bulk.local_handle;
     hg_return_t ret = HG_SUCCESS;
 
     write_out_t out_struct;
@@ -958,7 +970,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
 
     /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
             HG_BULK_READ_ONLY, &local_bulk_handle);
 
     /* Call bulk_write */
@@ -981,7 +993,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     bulk_args->ret = read_ret;
 
     /* Read bulk data here  */
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_posix_read_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_posix_read_transfer_cb,
             bulk_args, HG_BULK_PUSH, hg_info->addr, origin_bulk_handle, 0,
             local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -1014,10 +1026,10 @@ HG_TEST_RPC_CB(hg_test_perf_rpc, handle)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_perf_bulk_transfer_cb(const struct hg_bulk_cb_info *hg_bulk_cb_info)
+hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_bulk_cb_info->arg;
+            hg_cb_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
 #ifdef MERCURY_TESTING_USE_LOCAL_BULK
@@ -1087,7 +1099,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 #endif
 
     /* Read bulk data here  */
-    ret = HG_Bulk_transfer(hg_info->bulk_context, hg_test_perf_bulk_transfer_cb,
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_perf_bulk_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
             local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -1164,8 +1176,8 @@ HG_TEST_RPC_CB(hg_test_nested1, handle)
     /* Get info from handle */
     hg_info = HG_Get_info(handle);
 
-    ret = HG_Create(hg_info->hg_class, hg_info->context, na_addr_table[1],
-            hg_test_nested2_id_g, &forward_handle);
+    ret = HG_Create(hg_info->context, na_addr_table[1], hg_test_nested2_id_g,
+            &forward_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         goto done;

@@ -46,7 +46,7 @@ main(int argc, char *argv[])
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(hg_class, context, addr, hg_test_nested1_id_g, &handle);
+    hg_ret = HG_Create(context, addr, hg_test_nested1_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         return EXIT_FAILURE;

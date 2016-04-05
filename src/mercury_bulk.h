@@ -13,61 +13,13 @@
 
 #include "mercury_types.h"
 
+/*********************/
+/* Public Prototypes */
+/*********************/
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/**
- * Initialize the Mercury bulk layer from an existing NA class/context.
- * Must be finalized with HG_Bulk_finalize().
- * \remark The NA class can be different from the one used for the HG interface.
- *
- * \param na_class [IN]         pointer to NA class
- * \param na_context [IN]       pointer to NA context
- *
- * \return Pointer to HG bulk class or NULL in case of failure
- */
-HG_EXPORT hg_bulk_class_t *
-HG_Bulk_init(
-        na_class_t *na_class,
-        na_context_t *na_context
-        );
-
-/**
- * Finalize the Mercury bulk layer.
- *
- * \param hg_bulk_class [IN]    pointer to HG bulk class
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Bulk_finalize(
-        hg_bulk_class_t *hg_bulk_class
-        );
-
-/**
- * Create a new context. Must be destroyed by calling HG_Bulk_context_destroy().
- *
- * \param hg_bulk_class [IN]    pointer to HG bulk class
- *
- * \return Pointer to HG bulk context or NULL in case of failure
- */
-HG_EXPORT hg_bulk_context_t *
-HG_Bulk_context_create(
-        hg_bulk_class_t *hg_bulk_class
-        );
-
-/**
- * Destroy a context created by HG_Bulk_context_create().
- *
- * \param context [IN]          pointer to HG bulk context
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Bulk_context_destroy(
-        hg_bulk_context_t *context
-        );
 
 /**
  * Create an abstract bulk handle from specified memory segments.
@@ -76,7 +28,7 @@ HG_Bulk_context_destroy(
  * \verbatim HG_Bulk_create(count, NULL, buf_sizes, flags, &handle) \endverbatim
  * memory for the missing buf_ptrs array will be internally allocated.
  *
- * \param hg_bulk_class [IN]    pointer to HG bulk class
+ * \param hg_class [IN]         pointer to HG class
  * \param count [IN]            number of segments
  * \param buf_ptrs [IN]         array of pointers
  * \param buf_sizes [IN]        array of sizes
@@ -90,7 +42,7 @@ HG_Bulk_context_destroy(
  */
 HG_EXPORT hg_return_t
 HG_Bulk_create(
-        hg_bulk_class_t *hg_bulk_class,
+        hg_class_t *hg_class,
         hg_uint32_t count,
         void **buf_ptrs,
         const hg_size_t *buf_sizes,
@@ -169,12 +121,16 @@ HG_Bulk_get_segment_count(
  * Get size required to serialize bulk handle.
  *
  * \param handle [IN]           abstract bulk handle
+ * \param request_eager [IN]    boolean (passing HG_TRUE adds size of encoding
+ *                              actual data along the handle if handle meets
+ *                              HG_BULK_READ_ONLY flag condition)
  *
  * \return Non-negative value
  */
 HG_EXPORT hg_size_t
 HG_Bulk_get_serialize_size(
-        hg_bulk_t handle
+        hg_bulk_t handle,
+        hg_bool_t request_eager
         );
 
 /**
@@ -182,6 +138,10 @@ HG_Bulk_get_serialize_size(
  *
  * \param buf [IN/OUT]          pointer to buffer
  * \param buf_size [IN]         buffer size
+ * \param request_eager [IN]    boolean (passing HG_TRUE encodes actual data
+ *                              along the handle, which is more efficient for
+ *                              small data, this is only valid if bulk handle
+ *                              has HG_BULK_READ_ONLY permission)
  * \param handle [IN]           abstract bulk handle
  *
  * \return HG_SUCCESS or corresponding HG error code
@@ -190,13 +150,14 @@ HG_EXPORT hg_return_t
 HG_Bulk_serialize(
         void *buf,
         hg_size_t buf_size,
+        hg_bool_t request_eager,
         hg_bulk_t handle
         );
 
 /**
  * Deserialize bulk handle from an existing buffer.
  *
- * \param hg_bulk_class [IN]    pointer to HG bulk class
+ * \param hg_class [IN]         pointer to HG class
  * \param handle [OUT]          abstract bulk handle
  * \param buf [IN]              pointer to buffer
  * \param buf_size [IN]         buffer size
@@ -205,7 +166,7 @@ HG_Bulk_serialize(
  */
 HG_EXPORT hg_return_t
 HG_Bulk_deserialize(
-        hg_bulk_class_t *hg_bulk_class,
+        hg_class_t *hg_class,
         hg_bulk_t *handle,
         const void *buf,
         hg_size_t buf_size
@@ -214,15 +175,15 @@ HG_Bulk_deserialize(
 /**
  * Transfer data to/from origin using abstract bulk handles. After completion,
  * user callback is placed into a completion queue and can be triggered using
- * HG_Bulk_trigger().
+ * HG_Trigger().
  *
- * \param context [IN]          pointer to HG bulk context
+ * \param context [IN]          pointer to HG context
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param op [IN]               transfer operation:
  *                                  - HG_BULK_PUSH
  *                                  - HG_BULK_PULL
- * \param origin_addr [IN]      abstract NA address of origin
+ * \param origin_addr [IN]      abstract address of origin
  * \param origin_handle [IN]    abstract bulk handle
  * \param origin_offset [IN]    offset
  * \param local_handle [IN]     abstract bulk handle
@@ -234,65 +195,17 @@ HG_Bulk_deserialize(
  */
 HG_EXPORT hg_return_t
 HG_Bulk_transfer(
-        hg_bulk_context_t *context,
-        hg_bulk_cb_t callback,
+        hg_context_t *context,
+        hg_cb_t callback,
         void *arg,
         hg_bulk_op_t op,
-        na_addr_t origin_addr,
+        hg_addr_t origin_addr,
         hg_bulk_t origin_handle,
         hg_size_t origin_offset,
         hg_bulk_t local_handle,
         hg_size_t local_offset,
         hg_size_t size,
         hg_op_id_t *op_id
-        );
-
-/**
- * Try to progress communication for at most timeout until timeout reached or
- * any completion has occurred.
- * Progress should not be considered as wait, in the sense that it cannot be
- * assumed that completion of a specific operation will occur only when
- * progress is called.
- * \remark Calling HG_Bulk_progress() may only be necessary if a context has
- * been separately created as HG_Progress() will call NA_Progress()/NA_Trigger()
- * on the associated NA context.
- *
- * \param bulk_class [IN]       pointer to HG bulk class
- * \param context [IN]          pointer to HG bulk context
- * \param timeout [IN]          timeout (in milliseconds)
- *
- * \return HG_SUCCESS if any completion has occurred / HG error code otherwise
- */
-HG_EXPORT hg_return_t
-HG_Bulk_progress(
-        hg_bulk_class_t *bulk_class,
-        hg_bulk_context_t *context,
-        unsigned int timeout
-        );
-
-/**
- * Execute at most max_count callbacks. If timeout is non-zero, wait up to
- * timeout before returning. Function can return when at least one or more
- * callbacks are triggered (at most max_count).
- * \remark Calling HG_Bulk_trigger() is only necessary if a context has been
- * separately created as HG_Progress() will call HG_Bulk_trigger() on the same
- * NA context.
- *
- * \param bulk_class [IN]       pointer to HG bulk class
- * \param context [IN]          pointer to HG bulk context
- * \param timeout [IN]          timeout (in milliseconds)
- * \param max_count [IN]        maximum number of callbacks triggered
- * \param actual_count [IN]     actual number of callbacks triggered
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Bulk_trigger(
-        hg_bulk_class_t *bulk_class,
-        hg_bulk_context_t *context,
-        unsigned int timeout,
-        unsigned int max_count,
-        unsigned int *actual_count
         );
 
 /**

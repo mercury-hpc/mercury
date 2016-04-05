@@ -15,6 +15,10 @@
 
 #include <limits.h>
 
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
 typedef struct na_class na_class_t;     /* Opaque NA class */
 typedef struct na_context na_context_t; /* Opaque NA execution context */
 typedef void *na_addr_t;                /* Abstract NA address */
@@ -30,27 +34,6 @@ struct na_segment {
     na_ptr_t address;   /* Address of the segment */
     na_size_t size;     /* Size of the segment in bytes */
 };
-
-/* Constant values */
-#define NA_ADDR_NULL       ((na_addr_t)0)
-#define NA_OP_ID_NULL      ((na_op_id_t)0)
-#define NA_OP_ID_IGNORE    ((na_op_id_t *)1)
-#define NA_MEM_HANDLE_NULL ((na_mem_handle_t)0)
-
-/* Max timeout */
-#define NA_MAX_IDLE_TIME (3600*1000)
-
-/* Tag upper bound
- * \remark This is not the user tag limit but only the limit imposed by the type */
-#define NA_TAG_UB UINT_MAX
-
-/* Max len used for strings that represent an addr */
-#define NA_MAX_ADDR_LEN 256
-
-/* The memory attributes associated with the memory handle
- * can be defined as read/write or read only */
-#define NA_MEM_READWRITE  0x00
-#define NA_MEM_READ_ONLY  0x01
 
 /* Error return codes:
  * Functions return 0 for success or NA_XXX_ERROR for failure */
@@ -101,6 +84,32 @@ struct na_cb_info {
 
 /* Callback type */
 typedef na_return_t (*na_cb_t)(const struct na_cb_info *callback_info);
+
+/*****************/
+/* Public Macros */
+/*****************/
+
+/* Constant values */
+#define NA_ADDR_NULL       ((na_addr_t)0)
+#define NA_OP_ID_NULL      ((na_op_id_t)0)
+#define NA_OP_ID_IGNORE    ((na_op_id_t *)1)
+#define NA_MEM_HANDLE_NULL ((na_mem_handle_t)0)
+
+/* Max timeout */
+#define NA_MAX_IDLE_TIME (3600*1000)
+
+/* Tag upper bound
+ * \remark This is not the user tag limit but only the limit imposed by the type */
+#define NA_TAG_UB UINT_MAX
+
+/* The memory attributes associated with the memory handle
+ * can be defined as read/write or read only */
+#define NA_MEM_READWRITE  0x00
+#define NA_MEM_READ_ONLY  0x01
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {
@@ -211,23 +220,6 @@ NA_Addr_lookup(
         );
 
 /**
- * For compatibility, temporarily provide this routine, which waits until
- * addr gets returned.
- *
- * \param na_class [IN]         pointer to NA class
- * \param name [IN]             lookup name
- * \param addr [OUT]            pointer to abstract address
- *
- * \return NA_SUCCESS or corresponding NA error code
- */
-NA_EXPORT na_return_t
-NA_Addr_lookup_wait(
-        na_class_t *na_class,
-        const char *name,
-        na_addr_t  *addr
-        );
-
-/**
  * Free the addr from the list of peers.
  *
  * \param na_class [IN]         pointer to NA class
@@ -289,12 +281,14 @@ NA_Addr_is_self(
 
 /**
  * Convert an addr to a string (returned string includes the terminating
- * null byte '\0').
+ * null byte '\0'). If buf is NULL, the address is not converted and only
+ * the required size of the buffer is returned. If the input value passed
+ * through buf_size is too small, NA_SIZE_ERROR is returned and the buf_size
+ * output is set to the minimum size required.
  *
  * \param na_class [IN]         pointer to NA class
  * \param buf [IN/OUT]          pointer to destination buffer
- * \param buf_size [IN]         buffer size (max string length is defined
- *                              by NA_MAX_ADDR_LEN)
+ * \param buf_size [IN/OUT]     pointer to buffer size
  * \param addr [IN]             abstract address
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -303,7 +297,7 @@ NA_EXPORT na_return_t
 NA_Addr_to_string(
         na_class_t *na_class,
         char       *buf,
-        na_size_t   buf_size,
+        na_size_t  *buf_size,
         na_addr_t   addr
         );
 
