@@ -1286,6 +1286,7 @@ HG_Bulk_cancel(hg_op_id_t op_id)
         /* Cancel all NA operations issued */
          unsigned int i = 0;
          for(i=0; i < hg_bulk_op_id->op_count; i++) {
+             /* Race codition may occur. Watch out. */
              ret = NA_Cancel(hg_bulk_op_id->hg_class->na_class,
                        hg_bulk_op_id->hg_class->na_context,
                        hg_bulk_op_id->na_op_id[i]);
@@ -1295,14 +1296,24 @@ HG_Bulk_cancel(hg_op_id_t op_id)
                  goto done;
              }
          }
-         /* Race codition may occur. Watch out. */
+         /* Mark operation as completed. */
+         hg_atomic_incr32(&hg_bulk_op_id->completed);
+#if 0
+         hg_bulk_complete(hg_bulk_op_id);
 
+         /*
+          Calling above will return the following error:
+          
+          Executing bulk_write with fildes 12345...
+          Checking data...
+          Error detected in bulk transfer, bulk_buf[1] = 0, was expecting 1!
+          
+          */
+#endif
+         
      }
-     /* Should I mark all operation as complete? */
     
     
-     /* Should I free memory here or at hg_bulk_trigger_entry()? */
-
     
 
 done:
