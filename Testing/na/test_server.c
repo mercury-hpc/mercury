@@ -296,7 +296,10 @@ int main(int argc, char *argv[])
 
             if (test_done_g) break;
 
-            NA_Progress(params.network_class, params.context, NA_MAX_IDLE_TIME);
+            na_ret = NA_Progress(params.network_class, params.context, NA_MAX_IDLE_TIME);
+            if (na_ret != NA_SUCCESS) {
+                return EXIT_SUCCESS;
+            }
         }
 
         na_ret = NA_Addr_free(params.network_class, params.source_addr);

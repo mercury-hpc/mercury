@@ -101,7 +101,7 @@ na_addr_t *na_addr_table;
 static HG_INLINE int
 rpc_open(const char *path, rpc_handle_t handle, int *event_id)
 {
-    printf("Called rpc_open of %s with cookie %lu\n", path, handle.cookie);
+    fprintf(stderr, "Called rpc_open of %s with cookie %lu\n", path, handle.cookie);
     *event_id = 232;
     return HG_SUCCESS;
 }
@@ -236,6 +236,9 @@ hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
     void *buf;
     size_t write_ret;
 
+    if (hg_cb_info->ret == HG_CANCELLED)
+        goto done;
+    
     /* Call bulk_write */
     HG_Bulk_access(local_bulk_handle, 0, bulk_args->nbytes, HG_BULK_READWRITE,
             1, &buf, NULL, NULL);
@@ -258,7 +261,7 @@ hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
-
+done:
     HG_Destroy(bulk_args->handle);
     free(bulk_args);
 
@@ -275,6 +278,7 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     hg_return_t ret = HG_SUCCESS;
 
     bulk_write_in_t in_struct;
+    hg_op_id_t hg_bulk_op_id;
 
     bulk_args = (struct hg_test_bulk_args *) malloc(
             sizeof(struct hg_test_bulk_args));
@@ -300,16 +304,24 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
 
     /* Create a new block handle to read the data */
     HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
-            HG_BULK_READWRITE, &local_bulk_handle);
+                   HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Read bulk data here  */
     ret = HG_Bulk_transfer(hg_info->context, hg_test_bulk_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
-            local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
+            local_bulk_handle, 0, bulk_args->nbytes, &hg_bulk_op_id /* get op ids instead of HG_OP_ID_IGNORE */ );
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
     }
+
+    /* Test HG_Bulk_Cancel(). */
+    ret = HG_Bulk_cancel(hg_bulk_op_id);
+    if (ret != HG_SUCCESS){
+        fprintf(stderr, "Could not cancel bulk data\n");
+        return ret;
+    }
+
 
     HG_Free_input(handle, &in_struct);
 

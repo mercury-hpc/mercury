@@ -234,6 +234,7 @@ set(MERCURY_tests
   perf
   overflow
   cancel
+  cancel_bulk
 )
 if(NOT WIN32)
   set(MERCURY_tests ${MERCURY_tests} posix)

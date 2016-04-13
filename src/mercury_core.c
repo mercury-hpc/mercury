@@ -2127,14 +2127,22 @@ hg_core_cancel(struct hg_handle *hg_handle)
         na_ret = NA_Cancel(hg_class->na_class, hg_class->na_context,
                 hg_handle->na_send_op_id);
         if (na_ret != NA_SUCCESS) {
+            /* If not cancelled, what should we do? */
             HG_LOG_ERROR("Could not cancel send op id");
             ret = HG_NA_ERROR;
             goto done;
         }
+        else {
+            /* If cancel succeeds, put the handle into completion queue,
+               mark it as cancelled. */
+            hg_handle->ret = HG_CANCELLED;
+            ret = hg_core_complete(hg_handle);
+            if (ret != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not complete handle");
+                goto done;
+            }
+        }
     }
-    /* Free op */
-    hg_core_destroy(hg_handle);
-
 done:
     return ret;
 }
