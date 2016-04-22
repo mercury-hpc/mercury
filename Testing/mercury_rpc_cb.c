@@ -93,7 +93,7 @@ extern hg_thread_pool_t *hg_test_thread_pool_g;
 extern hg_bulk_t hg_test_local_bulk_handle_g;
 
 extern hg_id_t hg_test_nested2_id_g;
-na_addr_t *na_addr_table;
+hg_addr_t *hg_addr_table;
 
 /*---------------------------------------------------------------------------*/
 /* Actual definition of the functions that need to be executed */
@@ -468,7 +468,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
 //    bulk_write_in_t  bulk_write_in_struct;
 //    bulk_write_out_t bulk_write_out_struct;
 //
-//    na_addr_t source = HG_Handler_get_addr(handle);
+//    hg_addr_t source = HG_Handler_get_addr(handle);
 //    hg_bulk_t bulk_write_bulk_handle = HG_BULK_NULL;
 //    hg_bulk_t bulk_write_bulk_block_handle = HG_BULK_NULL;
 //    hg_bulk_request_t bulk_write_bulk_request[PIPELINE_SIZE];
@@ -1188,7 +1188,7 @@ HG_TEST_RPC_CB(hg_test_nested1, handle)
     /* Get info from handle */
     hg_info = HG_Get_info(handle);
 
-    ret = HG_Create(hg_info->context, na_addr_table[1], hg_test_nested2_id_g,
+    ret = HG_Create(hg_info->context, hg_addr_table[1], hg_test_nested2_id_g,
             &forward_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");

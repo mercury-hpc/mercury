@@ -60,7 +60,7 @@ main(int argc, char *argv[])
     hg_request_class_t *request_class = NULL;
     hg_request_t *request = NULL;
     hg_handle_t handle;
-    na_addr_t addr;
+    hg_addr_t addr;
     rpc_open_in_t  rpc_open_in_struct;
 
     hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";

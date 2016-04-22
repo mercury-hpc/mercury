@@ -17,7 +17,7 @@
 #include <stdlib.h>
 
 extern hg_atomic_int32_t hg_test_finalizing_count_g;
-extern na_addr_t *na_addr_table;
+extern hg_addr_t *hg_addr_table;
 
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static HG_THREAD_RETURN_TYPE
@@ -54,7 +54,7 @@ main(int argc, char *argv[])
 #endif
     hg_return_t ret = HG_SUCCESS;
 
-    hg_class = HG_Test_server_init(argc, argv, &na_addr_table,
+    hg_class = HG_Test_server_init(argc, argv, &hg_addr_table,
             NULL, &number_of_peers, &context);
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     hg_thread_create(&progress_thread, hg_progress_thread, context);

@@ -19,7 +19,7 @@ extern hg_id_t hg_test_bulk_write_id_g;
 /******************************************************************************/
 int main(int argc, char *argv[])
 {
-    na_addr_t addr;
+    hg_addr_t addr;
 
     rpc_open_in_t  rpc_open_in_struct;
     rpc_open_out_t rpc_open_out_struct;

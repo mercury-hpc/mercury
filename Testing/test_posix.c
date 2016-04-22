@@ -13,7 +13,7 @@
 static hg_class_t *hg_class = NULL;
 static hg_context_t *context = NULL;
 static hg_request_class_t *request_class = NULL;
-static na_addr_t addr = NA_ADDR_NULL;
+static hg_addr_t addr = NA_ADDR_NULL;
 
 extern hg_id_t hg_test_posix_open_id_g;
 extern hg_id_t hg_test_posix_write_id_g;

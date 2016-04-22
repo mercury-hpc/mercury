@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
     hg_request_class_t *request_class = NULL;
     hg_request_t *request = NULL;
     hg_handle_t handle;
-    na_addr_t addr;
+    hg_addr_t addr;
 
     bulk_write_in_t bulk_write_in_struct;
 

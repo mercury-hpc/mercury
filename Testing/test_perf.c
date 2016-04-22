@@ -37,7 +37,7 @@ hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
  *
  */
 static hg_return_t
-measure_rpc(hg_context_t *context, na_addr_t addr,
+measure_rpc(hg_context_t *context, hg_addr_t addr,
     hg_request_class_t *request_class)
 {
     int avg_iter;
@@ -160,7 +160,7 @@ done:
  */
 static hg_return_t
 measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
-    na_addr_t addr, size_t count, hg_request_class_t *request_class)
+    hg_addr_t addr, size_t count, hg_request_class_t *request_class)
 {
     bulk_write_in_t in_struct;
 
@@ -311,7 +311,7 @@ main(int argc, char *argv[])
     hg_request_class_t *request_class = NULL;
     size_t count1 = 1024 / sizeof(int); /* Use small values for eager message */
     size_t count2 = (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE) / sizeof(int);
-    na_addr_t addr;
+    hg_addr_t addr;
 
     hg_class = HG_Test_client_init(argc, argv, &addr, &na_test_comm_rank_g,
             &context, &request_class);

@@ -129,7 +129,7 @@ hg_test_finalize_rpc(void)
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_test_finalize_rpc2(na_addr_t addr)
+hg_test_finalize_rpc2(hg_addr_t addr)
 {
     hg_return_t hg_ret;
     hg_handle_t handle;
@@ -251,7 +251,7 @@ hg_test_register(hg_class_t *hg_class)
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Test_client_init(int argc, char *argv[], na_addr_t *addr, int *rank,
+HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
         hg_context_t **context, hg_request_class_t **request_class)
 {
     char test_addr_name[NA_TEST_MAX_ADDR_NAME];
@@ -311,7 +311,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Test_server_init(int argc, char *argv[], na_addr_t **addr_table,
+HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
         unsigned int *addr_table_size, unsigned int *max_number_of_peers,
         hg_context_t **context)
 {

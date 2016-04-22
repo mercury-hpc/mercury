@@ -18,7 +18,7 @@ extern hg_id_t hg_test_pipeline_write_id_g;
 /*****************************************************************************/
 int main(int argc, char *argv[])
 {
-    na_addr_t addr;
+    hg_addr_t addr;
 
     bulk_write_in_t bulk_write_in_struct;
     bulk_write_out_t bulk_write_out_struct;

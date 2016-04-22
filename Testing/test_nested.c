@@ -35,7 +35,7 @@ main(int argc, char *argv[])
     hg_request_class_t *request_class = NULL;
     hg_request_t *request = NULL;
     hg_handle_t handle;
-    na_addr_t addr;
+    hg_addr_t addr;
     hg_return_t hg_ret;
 
     /* Initialize the interface (for convenience, shipper_test_client_init

@@ -231,7 +231,7 @@ main(int argc, char *argv[])
     hg_class_t *hg_class = NULL;
     hg_context_t *context = NULL;
     hg_request_class_t *request_class = NULL;
-    na_addr_t addr;
+    hg_addr_t addr;
 
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
