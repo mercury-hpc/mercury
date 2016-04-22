@@ -46,6 +46,20 @@ msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
     na_tag_t recv_tag;
     na_return_t ret = NA_SUCCESS;
 
+    if (callback_info->ret == NA_CANCELED) {
+        /* Try again */
+        printf("NA_Msg_recv_unexpected() was successfully canceled\n");
+        ret = NA_Msg_recv_unexpected(params->na_class, params->context,
+            msg_unexpected_recv_cb, params, params->recv_buf,
+            params->recv_buf_len, NA_OP_ID_IGNORE);
+        if (ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not post recv of unexpected message\n");
+        }
+        return ret;
+    } else {
+        printf("NA_Msg_recv_unexpected() was not canceled\n");
+    }
+
     if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
@@ -82,6 +96,20 @@ bulk_put_cb(const struct na_cb_info *callback_info)
     na_tag_t ack_tag = NA_TEST_BULK_ACK_TAG;
     na_return_t ret = NA_SUCCESS;
 
+    if (callback_info->ret == NA_CANCELED) {
+        /* Try again */
+        printf("NA_Put() was successfully canceled\n");
+        ret = NA_Put(params->na_class, params->context, bulk_put_cb, params,
+            params->local_mem_handle, 0, params->remote_mem_handle, 0,
+            params->bulk_size * sizeof(int), params->source_addr, NA_OP_ID_IGNORE);
+        if (ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not start put\n");
+        }
+        return ret;
+    } else {
+        printf("NA_Put() was not canceled\n");
+    }
+
     if (callback_info->ret != NA_SUCCESS) {
         return ret;
     }
@@ -90,7 +118,8 @@ bulk_put_cb(const struct na_cb_info *callback_info)
     printf("Sending end of transfer ack...\n");
     ret = NA_Msg_send_expected(params->na_class, params->context,
         msg_expected_send_final_cb, NULL, params->send_buf,
-        params->send_buf_len, params->source_addr, ack_tag, NA_OP_ID_IGNORE);
+        params->send_buf_len, params->source_addr, ack_tag,
+        NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of acknowledgment\n");
         return ret;
@@ -123,6 +152,21 @@ bulk_get_cb(const struct na_cb_info *callback_info)
     na_return_t ret = NA_SUCCESS;
     unsigned int i;
     na_bool_t error = 0;
+    na_op_id_t op_id;
+
+    if (callback_info->ret == NA_CANCELED) {
+        /* Try again */
+        printf("NA_Get() was successfully canceled\n");
+        ret = NA_Get(params->na_class, params->context, bulk_get_cb, params,
+            params->local_mem_handle, 0, params->remote_mem_handle, 0,
+            params->bulk_size * sizeof(int), params->source_addr, NA_OP_ID_IGNORE);
+        if (ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not start get\n");
+        }
+        return ret;
+    } else {
+        printf("NA_Get() was not canceled\n");
+    }
 
     if (callback_info->ret != NA_SUCCESS) {
         return ret;
@@ -149,11 +193,16 @@ bulk_get_cb(const struct na_cb_info *callback_info)
     printf("Putting %d bytes to remote...\n",
         (int) (params->bulk_size * sizeof(int)));
 
-    ret = NA_Put(params->na_class, params->context, &bulk_put_cb, params,
+    ret = NA_Put(params->na_class, params->context, bulk_put_cb, params,
         params->local_mem_handle, 0, params->remote_mem_handle, 0,
-        params->bulk_size * sizeof(int), params->source_addr, NA_OP_ID_IGNORE);
+        params->bulk_size * sizeof(int), params->source_addr, &op_id);
     if (ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start put\n");
+    }
+
+    ret = NA_Cancel(params->na_class, params->context, op_id);
+    if (ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not cancel put operation\n");
     }
 
     return ret;
@@ -163,6 +212,7 @@ static na_return_t
 mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
+    na_op_id_t op_id;
     na_return_t ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
@@ -182,11 +232,17 @@ mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
     printf("Getting %d bytes from remote...\n",
         (int) (params->bulk_size * sizeof(int)));
 
-    ret = NA_Get(params->na_class, params->context, &bulk_get_cb, params,
+    ret = NA_Get(params->na_class, params->context, bulk_get_cb, params,
         params->local_mem_handle, 0, params->remote_mem_handle, 0,
-        params->bulk_size * sizeof(int), params->source_addr, NA_OP_ID_IGNORE);
+        params->bulk_size * sizeof(int), params->source_addr, &op_id);
     if (ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start get\n");
+        return ret;
+    }
+
+    ret = NA_Cancel(params->na_class, params->context, op_id);
+    if (ret != NA_SUCCESS) {
+        fprintf(stderr, "Could not cancel get operation\n");
     }
 
     return ret;
@@ -272,6 +328,7 @@ main(int argc, char *argv[])
 
     for (peer = 0; peer < number_of_peers; peer++) {
         unsigned int i;
+        na_op_id_t op_id;
 
         /* Reset to 0 */
         for (i = 0; i < params.bulk_size; i++) {
@@ -281,7 +338,17 @@ main(int argc, char *argv[])
         /* Recv a message from a client */
         na_ret = NA_Msg_recv_unexpected(params.na_class, params.context,
             msg_unexpected_recv_cb, &params, params.recv_buf,
-            params.recv_buf_len, NA_OP_ID_IGNORE);
+            params.recv_buf_len, &op_id);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not post recv of unexpected message\n");
+            return EXIT_FAILURE;
+        }
+
+        na_ret = NA_Cancel(params.na_class, params.context, op_id);
+        if (na_ret != NA_SUCCESS) {
+            fprintf(stderr, "Could not cancel recv of unexpected message\n");
+            return EXIT_FAILURE;
+        }
 
         while (!test_done_g) {
             na_return_t trigger_ret;
@@ -296,7 +363,7 @@ main(int argc, char *argv[])
 
             na_ret = NA_Progress(params.na_class, params.context,
                 NA_MAX_IDLE_TIME);
-            if (na_ret != NA_SUCCESS) {
+            if (na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT) {
                 return EXIT_SUCCESS;
             }
         }

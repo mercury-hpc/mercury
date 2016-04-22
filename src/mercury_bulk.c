@@ -41,12 +41,13 @@ struct hg_bulk_op_id {
     hg_cb_t callback;                     /* Callback */
     void *arg;                            /* Callback arguments */
     hg_atomic_int32_t completed;          /* Operation completed TODO needed ? */
+    hg_atomic_int32_t canceled;           /* Operation canceled */
     unsigned int op_count;                /* Number of ongoing operations */
     hg_atomic_int32_t op_completed_count; /* Number of operations completed */
     hg_bulk_op_t op;                      /* Operation type */
     struct hg_bulk *hg_bulk_origin;       /* Origin handle */
     struct hg_bulk *hg_bulk_local;        /* Local handle */
-    na_op_id_t *na_op_id ;                /* An array of na_op_ids with op_count size */
+    na_op_id_t *na_op_ids ;               /* NA operations IDs */
 };
 
 /* Segment used to transfer data and map to NA layer */
@@ -538,8 +539,13 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
             (struct hg_bulk_op_id *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
 
-    if (callback_info->ret != NA_SUCCESS) {
-        return ret;
+    if (callback_info->ret == NA_CANCELED) {
+        /* If canceled, mark handle as canceled */
+        hg_atomic_cas32(&hg_bulk_op_id->canceled, 0, 1);
+    } else if (callback_info->ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Error in NA callback");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
     /* When all NA transfers that correspond to bulk operation complete
@@ -550,6 +556,7 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
         hg_bulk_complete(hg_bulk_op_id);
     }
 
+done:
     return ret;
 }
 
@@ -585,7 +592,6 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
         transfer_size = HG_BULK_MIN(remaining_size, transfer_size);
 
         if (na_bulk_op) {
-            na_op_id_t na_op_id = NA_OP_ID_NULL;
             na_ret = na_bulk_op(hg_bulk_origin->hg_class->na_class,
                     hg_bulk_origin->hg_class->na_context,
                     hg_bulk_transfer_cb, hg_bulk_op_id,
@@ -595,13 +601,11 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
                     hg_bulk_origin->segment_handles[origin_segment_index],
                     hg_bulk_origin->segments[origin_segment_index].address,
                     origin_segment_offset, transfer_size, origin_addr,
-                    &na_op_id);
+                    &hg_bulk_op_id->na_op_ids[count]);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("Could not transfer data");
                 ret = HG_NA_ERROR;
                 break;
-            } else {
-                hg_bulk_op_id->na_op_id[count] = na_op_id;
             }
         }
 
@@ -677,12 +681,13 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_bulk_op_id->callback = callback;
     hg_bulk_op_id->arg = arg;
     hg_atomic_set32(&hg_bulk_op_id->completed, 0);
+    hg_atomic_set32(&hg_bulk_op_id->canceled, 0);
     hg_bulk_op_id->op_count = 0;
     hg_atomic_set32(&hg_bulk_op_id->op_completed_count, 0);
     hg_bulk_op_id->op = op;
     hg_bulk_op_id->hg_bulk_origin = hg_bulk_origin;
     hg_bulk_op_id->hg_bulk_local = hg_bulk_local;
-    hg_bulk_op_id->na_op_id = NULL;
+    hg_bulk_op_id->na_op_ids = NULL;
 
     /* Translate bulk_offset */
     hg_bulk_offset_translate(hg_bulk_origin, origin_offset,
@@ -702,14 +707,13 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         ret = HG_INVALID_PARAM;
         goto done;
     }
-    else {
-        /* Allocate memory for na op_ids */
-        hg_bulk_op_id->na_op_id = malloc(sizeof(na_op_id_t) * hg_bulk_op_id->op_count);
-        if (!hg_bulk_op_id->na_op_id) {
-            HG_LOG_ERROR("Could not allocate memory for op_ids.");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
+
+    /* Allocate memory for NA operation IDs */
+    hg_bulk_op_id->na_op_ids = malloc(sizeof(na_op_id_t) * hg_bulk_op_id->op_count);
+    if (!hg_bulk_op_id->na_op_ids) {
+        HG_LOG_ERROR("Could not allocate memory for op_ids");
+        ret = HG_NOMEM_ERROR;
+        goto done;
     }
 
     /* Do actual transfer */
@@ -726,11 +730,9 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     *op_id = (hg_op_id_t) hg_bulk_op_id;
 
 done:
-    if (ret != HG_SUCCESS) {
-        if (hg_bulk_op_id) {
-            free(hg_bulk_op_id->na_op_id);
-            free(hg_bulk_op_id);
-        }
+    if (ret != HG_SUCCESS && hg_bulk_op_id) {
+        free(hg_bulk_op_id->na_op_ids);
+        free(hg_bulk_op_id);
     }
     return ret;
 }
@@ -778,11 +780,8 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
         struct hg_cb_info hg_cb_info;
 
         hg_cb_info.arg = hg_bulk_op_id->arg;
-        if (hg_bulk_op_id->op_count != (unsigned int)
-            hg_atomic_get32(&hg_bulk_op_id->op_completed_count))
-            hg_cb_info.ret = HG_CANCELLED;
-        else
-            hg_cb_info.ret = HG_SUCCESS; /* TODO report failure */
+        hg_cb_info.ret =
+            hg_atomic_get32(&hg_bulk_op_id->canceled) ? HG_CANCELED : HG_SUCCESS;
         hg_cb_info.type = HG_CB_BULK;
         hg_cb_info.info.bulk.op = hg_bulk_op_id->op;
         hg_cb_info.info.bulk.origin_handle = (hg_bulk_t) hg_bulk_op_id->hg_bulk_origin;
@@ -792,8 +791,7 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
     }
 
     /* Free op */
-    if (hg_bulk_op_id->na_op_id)
-        free(hg_bulk_op_id->na_op_id);
+    free(hg_bulk_op_id->na_op_ids);
     free(hg_bulk_op_id);
 
     return ret;
@@ -1262,25 +1260,24 @@ HG_Bulk_cancel(hg_op_id_t op_id)
         goto done;
     }
 
-     if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_bulk_op_id->completed, 1, 0)) {
+    if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_bulk_op_id->completed, 1, 0)) {
         /* Cancel all NA operations issued */
-         unsigned int i = 0;
+        unsigned int i = 0;
 
-         for(i = 0; i < hg_bulk_op_id->op_count; i++) {
-             na_return_t na_ret;
+        for (i = 0; i < hg_bulk_op_id->op_count; i++) {
+            na_return_t na_ret;
 
-             /* Race codition may occur. Watch out. */
-             na_ret = NA_Cancel(hg_bulk_op_id->hg_class->na_class,
-                     hg_bulk_op_id->hg_class->na_context,
-                     hg_bulk_op_id->na_op_id[i]);
-             if (na_ret != NA_SUCCESS) {
-                 HG_LOG_ERROR("Could not cancel op id");
-                 ret = HG_NA_ERROR;
-                 goto done;
-             }
-         }
-         hg_bulk_complete(hg_bulk_op_id);
-     }
+            /* Race codition may occur. Watch out. */
+            na_ret = NA_Cancel(hg_bulk_op_id->hg_class->na_class,
+                hg_bulk_op_id->hg_class->na_context,
+                hg_bulk_op_id->na_op_ids[i]);
+            if (na_ret != NA_SUCCESS) {
+                HG_LOG_ERROR("Could not cancel op id");
+                ret = HG_NA_ERROR;
+                goto done;
+            }
+        }
+    }
 
 done:
     return ret;

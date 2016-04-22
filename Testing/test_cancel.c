@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013-2014 Argonne National Laboratory, Department of Energy,
- *                    UChicago Argonne, LLC and The HDF Group.
+ * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
  * The full copyright notice, including terms governing use, modification,
@@ -14,31 +14,213 @@
 #include <stdlib.h>
 
 extern hg_id_t hg_test_rpc_open_id_g;
-
-#define COMPLETION_MAGIC 123456
+extern hg_id_t hg_test_bulk_write_id_g;
 
 static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
 {
-    //hg_handle_t handle = callback_info->handle;
-    int *ptr          = callback_info->arg;
-    hg_request_t *request = (hg_request_t *) ptr;
+    hg_handle_t handle = callback_info->info.forward.handle;
+    hg_request_t *request = (hg_request_t *) callback_info->arg;
+    int rpc_open_ret;
+    int rpc_open_event_id;
+    rpc_open_out_t rpc_open_out_struct;
     hg_return_t ret = HG_SUCCESS;
 
-    ptr++;
-    if (callback_info->ret != HG_CANCELLED)
-    {
-        fprintf(stderr, "Callback was not cancelled: %d\n",
-                callback_info->ret);
-        *ptr = 0;
-    }
-    else
-    {
-        *ptr = COMPLETION_MAGIC;
+    if (callback_info->ret != HG_CANCELED) {
+        fprintf(stderr, "Error: HG_Forward() was not canceled: %d\n",
+            callback_info->ret);
+
+        /* Get output */
+        ret = HG_Get_output(handle, &rpc_open_out_struct);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not get output\n");
+            goto done;
+        }
+
+        /* Get output parameters */
+        rpc_open_ret = rpc_open_out_struct.ret;
+        rpc_open_event_id = rpc_open_out_struct.event_id;
+        printf("rpc_open returned: %d with event_id: %d\n", rpc_open_ret,
+            rpc_open_event_id);
+
+        /* Free request */
+        ret = HG_Free_output(handle, &rpc_open_out_struct);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not free output\n");
+            goto done;
+        }
+    } else {
+        printf("HG_Forward() was successfully canceled\n");
     }
 
     hg_request_complete(request);
 
+done:
+    return ret;
+}
+
+static hg_return_t
+hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info)
+{
+    hg_handle_t handle = callback_info->info.forward.handle;
+    hg_request_t *request = (hg_request_t *) callback_info->arg;
+    size_t bulk_write_ret = 0;
+    bulk_write_out_t bulk_write_out_struct;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (callback_info->ret != HG_CANCELED) {
+        /* Get output */
+        ret = HG_Get_output(handle, &bulk_write_out_struct);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not get output\n");
+            goto done;
+        }
+
+        /* Get output parameters */
+        bulk_write_ret = bulk_write_out_struct.ret;
+        printf("bulk_write returned: %zu\n", bulk_write_ret);
+
+        /* Free request */
+        ret = HG_Free_output(handle, &bulk_write_out_struct);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not free output\n");
+            goto done;
+        }
+    } else {
+        printf("HG_Forward() was successfully canceled\n");
+    }
+
+    hg_request_complete(request);
+
+done:
+    return ret;
+}
+
+static hg_return_t
+cancel_rpc(hg_context_t *context, hg_request_class_t *request_class,
+    hg_addr_t addr)
+{
+    hg_request_t *request = NULL;
+    hg_handle_t handle;
+
+    rpc_open_in_t rpc_open_in_struct;
+    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
+    rpc_handle_t rpc_open_handle;
+    hg_return_t ret;
+
+    request = hg_request_create(request_class);
+
+    ret = HG_Create(context, addr, hg_test_rpc_open_id_g, &handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not start call\n");
+        goto done;
+    }
+
+    /* Fill input structure */
+    rpc_open_handle.cookie = 12345;
+    rpc_open_in_struct.path = rpc_open_path;
+    rpc_open_in_struct.handle = rpc_open_handle;
+
+    /* Forward call to remote addr and get a new request */
+    printf("Forwarding rpc_open, op id: %u...\n", hg_test_rpc_open_id_g);
+    ret = HG_Forward(handle, hg_test_rpc_forward_cb, request,
+        &rpc_open_in_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not forward call\n");
+        goto done;
+    }
+
+    ret = HG_Cancel(handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "HG_Cancel failed: %d\n", ret);
+        goto done;
+    }
+
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+
+    /* Complete */
+    ret = HG_Destroy(handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+        goto done;
+    }
+
+    hg_request_destroy(request);
+
+done:
+    return ret;
+}
+
+static hg_return_t
+cancel_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
+    hg_request_class_t *request_class, hg_addr_t addr)
+{
+    hg_request_t *request = NULL;
+    hg_handle_t handle;
+    bulk_write_in_t bulk_write_in_struct;
+    int *bulk_buf = NULL;
+    void *buf_ptr[1];
+    size_t count =  (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE) / sizeof(int);
+    size_t bulk_size = count * sizeof(int);
+    hg_bulk_t bulk_handle = HG_BULK_NULL;
+    hg_return_t ret;
+    size_t i;
+
+    /* Prepare bulk_buf */
+    bulk_buf = (int*) malloc(bulk_size);
+    for (i = 0; i < count; i++) {
+        bulk_buf[i] = i;
+    }
+    *buf_ptr = bulk_buf;
+
+    request = hg_request_create(request_class);
+
+    ret = HG_Create(context, addr, hg_test_bulk_write_id_g, &handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not start call\n");
+        goto done;
+    }
+
+    /* Register memory */
+    ret = HG_Bulk_create(hg_class, 1, buf_ptr, &bulk_size,
+            HG_BULK_READ_ONLY, &bulk_handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not create bulk data handle\n");
+        goto done;
+    }
+
+    /* Fill input structure */
+    bulk_write_in_struct.fildes = -1; /* To tell target to cancel bulk transfer */
+    bulk_write_in_struct.bulk_handle = bulk_handle;
+
+    /* Forward call to remote addr and get a new request */
+    printf("Forwarding bulk_write, op id: %u...\n", hg_test_bulk_write_id_g);
+    ret = HG_Forward(handle, hg_test_bulk_forward_cb, request,
+            &bulk_write_in_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not forward call\n");
+        goto done;
+    }
+
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+
+    /* Free memory handle */
+    ret = HG_Bulk_free(bulk_handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free bulk data handle\n");
+        goto done;
+    }
+
+    /* Complete */
+    ret = HG_Destroy(handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+        goto done;
+    }
+
+    hg_request_destroy(request);
+
+done:
     return ret;
 }
 
@@ -49,72 +231,17 @@ main(int argc, char *argv[])
     hg_class_t *hg_class = NULL;
     hg_context_t *context = NULL;
     hg_request_class_t *request_class = NULL;
-    hg_request_t *request = NULL;
-    hg_handle_t handle;
     na_addr_t addr;
-    rpc_open_in_t  rpc_open_in_struct;
-    void *data[2];
-
-    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
-    rpc_handle_t rpc_open_handle;
-    hg_return_t hg_ret;
 
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
     hg_class = HG_Test_client_init(argc, argv, &addr, NULL, &context,
-            &request_class);
+        &request_class);
 
-    request = hg_request_create(request_class);
+    cancel_rpc(context, request_class, addr);
 
-    hg_ret = HG_Create(context, addr, hg_test_rpc_open_id_g, &handle);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not start call\n");
-        return EXIT_FAILURE;
-    }
-
-    /* Fill input structure */
-    rpc_open_handle.cookie = 12345;
-    rpc_open_in_struct.path = rpc_open_path;
-    rpc_open_in_struct.handle = rpc_open_handle;
-
-    data[0] = request;
-    data[1] = 0;
-
-    /* Forward call to remote addr and get a new request */
-    printf("Forwarding rpc_open, op id: %u...\n", hg_test_rpc_open_id_g);
-    hg_ret = HG_Forward(handle,
-                        hg_test_rpc_forward_cb,
-                        data,
-                        &rpc_open_in_struct);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not forward call\n");
-        return EXIT_FAILURE;
-    }
-
-    hg_ret = HG_Cancel(handle);
-    if (hg_ret != HG_SUCCESS)
-    {
-        fprintf(stderr, "HG_Cancel failed: %d\n", hg_ret);
-        return EXIT_FAILURE;
-    }
-
-    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
-
-    /* Complete */
-    hg_ret = HG_Destroy(handle);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not complete\n");
-        return EXIT_FAILURE;
-    }
-
-    if (data[1] != (void*)COMPLETION_MAGIC)
-    {
-        fprintf(stderr, "callback wasn't called\n");
-        return EXIT_FAILURE;
-    }
-
-    hg_request_destroy(request);
+    cancel_bulk_transfer(hg_class, context, request_class, addr);
 
     HG_Test_finalize(hg_class);
 

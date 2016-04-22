@@ -761,6 +761,7 @@ hg_core_pending_list_cancel(struct hg_context *context)
             break;
         }
 
+        /* Remove the entries as we go */
         if (hg_list_remove_entry(entry) != HG_UTIL_SUCCESS) {
             HG_LOG_ERROR("Could not remove entry");
             ret = HG_INVALID_PARAM;
@@ -1417,8 +1418,13 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
 
-    if (callback_info->ret != NA_SUCCESS) {
-        return ret;
+    if (callback_info->ret == NA_CANCELED) {
+        /* If canceled, mark handle as canceled */
+        hg_handle->ret = HG_CANCELED;
+    } else if (callback_info->ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Error in NA callback");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
     /* Add handle to completion queue only when send_input and recv_output have
@@ -1435,6 +1441,7 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
     }
 
 done:
+    hg_handle->na_send_op_id = NA_OP_ID_NULL;
     return ret;
 }
 
@@ -1446,67 +1453,79 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     struct hg_header_request request_header;
     na_return_t ret = NA_SUCCESS;
 
-    if (callback_info->ret != NA_SUCCESS) {
-        goto done;
-    }
+    if (callback_info->ret == NA_CANCELED) {
+        /* If canceled, mark handle as canceled */
+        hg_handle->ret = HG_CANCELED;
 
-    /* Increment NA completed count */
-    hg_atomic_incr32(&hg_handle->na_completed_count);
+        hg_core_destroy(hg_handle);
+        hg_handle = NULL;
+    } else if (callback_info->ret == NA_SUCCESS) {
+        /* Increment NA completed count */
+        hg_atomic_incr32(&hg_handle->na_completed_count);
 
-    /* Fill unexpected info */
-    hg_handle->hg_info.addr = callback_info->info.recv_unexpected.source;
-    hg_handle->addr_mine = HG_TRUE; /* Address will be freed with handle */
-    hg_handle->tag = callback_info->info.recv_unexpected.tag;
-    if (callback_info->info.recv_unexpected.actual_buf_size
+        /* Fill unexpected info */
+        hg_handle->hg_info.addr = callback_info->info.recv_unexpected.source;
+        hg_handle->addr_mine = HG_TRUE; /* Address will be freed with handle */
+        hg_handle->tag = callback_info->info.recv_unexpected.tag;
+        if (callback_info->info.recv_unexpected.actual_buf_size
             > hg_handle->in_buf_size) {
-        HG_LOG_ERROR("Actual transfer size is too large for unexpected recv");
-        goto done;
-    }
-    hg_handle->in_buf_used = callback_info->info.recv_unexpected.actual_buf_size;
-
-    /* Move handle from pending list to processing list */
-    if (hg_core_pending_list_remove(hg_handle) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not remove handle from pending list");
-        goto done;
-    }
-    if (hg_core_processing_list_add(hg_handle) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not add handle to processing list");
-        goto done;
-    }
-
-    /* As we removed handle from pending list repost unexpected receives */
-    if (NA_Is_listening(hg_handle->hg_info.hg_class->na_class)) {
-        hg_core_listen(hg_handle->hg_info.context);
-    }
-
-    /* Get and verify header */
-    if (hg_core_get_header_request(hg_handle, &request_header) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get request header");
-        goto done;
-    }
-
-    /* Get operation ID from header */
-    hg_handle->hg_info.id = request_header.id;
-    hg_handle->cookie = request_header.cookie;
-
-    if (request_header.flags
-            && (request_header.extra_in_handle != HG_BULK_NULL)) {
-        /* Get extra payload */
-        if (hg_core_get_extra_input(hg_handle, request_header.extra_in_handle)
-                != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not get extra input buffer");
+            HG_LOG_ERROR(
+                "Actual transfer size is too large for unexpected recv");
             goto done;
+        }
+        hg_handle->in_buf_used =
+            callback_info->info.recv_unexpected.actual_buf_size;
+
+        /* Move handle from pending list to processing list */
+        if (hg_core_pending_list_remove(hg_handle) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not remove handle from pending list");
+            goto done;
+        }
+        if (hg_core_processing_list_add(hg_handle) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not add handle to processing list");
+            goto done;
+        }
+
+        /* As we removed handle from pending list repost unexpected receives */
+        if (NA_Is_listening(hg_handle->hg_info.hg_class->na_class)) {
+            hg_core_listen(hg_handle->hg_info.context);
+        }
+
+        /* Get and verify header */
+        if (hg_core_get_header_request(hg_handle, &request_header)
+            != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not get request header");
+            goto done;
+        }
+
+        /* Get operation ID from header */
+        hg_handle->hg_info.id = request_header.id;
+        hg_handle->cookie = request_header.cookie;
+
+        if (request_header.flags
+            && (request_header.extra_in_handle != HG_BULK_NULL)) {
+            /* Get extra payload */
+            if (hg_core_get_extra_input(hg_handle,
+                request_header.extra_in_handle) != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not get extra input buffer");
+                goto done;
+            }
+        } else {
+            /* Process handle */
+            hg_handle->process_rpc_cb = HG_TRUE;
+            if (hg_core_complete(hg_handle) != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not complete rpc handle");
+                goto done;
+            }
         }
     } else {
-        /* Process handle */
-        hg_handle->process_rpc_cb = HG_TRUE;
-        if(hg_core_complete(hg_handle) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not complete rpc handle");
-            goto done;
-        }
+        HG_LOG_ERROR("Error in NA callback");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
 done:
+    if (hg_handle) hg_handle->na_recv_op_id = NA_OP_ID_NULL;
     return ret;
 }
 
@@ -1517,11 +1536,18 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
 
-    if (callback_info->ret != NA_SUCCESS) {
-        return ret;
+    if (callback_info->ret == NA_CANCELED) {
+        /* If canceled, mark handle as canceled */
+        hg_handle->ret = HG_CANCELED;
+    } else if (callback_info->ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Error in NA callback");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
-    /* Remove handle from processing list */
+    /* Remove handle from processing list
+     * NB. Whichever state we're in, reaching that stage means that the
+     * handle was processed. */
     if (hg_core_processing_list_remove(hg_handle) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not remove handle from processing list");
         goto done;
@@ -1539,6 +1565,7 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
     }
 
 done:
+    hg_handle->na_send_op_id = NA_OP_ID_NULL;
     return ret;
 }
 
@@ -1550,26 +1577,31 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
     struct hg_header_response response_header;
     na_return_t ret = NA_SUCCESS;
 
-    if (callback_info->ret != NA_SUCCESS) {
-        return ret;
-    }
+    if (callback_info->ret == NA_CANCELED) {
+        /* If canceled, mark handle as canceled */
+        hg_handle->ret = HG_CANCELED;
+    } else if (callback_info->ret == NA_SUCCESS) {
+        /* Initialize header with default values */
+        hg_proc_header_response_init(&response_header);
 
-    /* Initialize header with default values */
-    hg_proc_header_response_init(&response_header);
+        /* Decode response header */
+        if (hg_proc_header_response(hg_handle->out_buf, hg_handle->out_buf_size,
+                &response_header, HG_DECODE) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not decode header");
+            goto done;
+        }
 
-    /* Decode response header */
-    if (hg_proc_header_response(hg_handle->out_buf, hg_handle->out_buf_size,
-            &response_header, HG_DECODE) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not decode header");
+        /* Verify header and set return code */
+        if (hg_proc_header_response_verify(&response_header) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not verify header");
+            goto done;
+        }
+        hg_handle->ret = (hg_return_t) response_header.ret_code;
+    } else {
+        HG_LOG_ERROR("Error in NA callback");
+        ret = NA_PROTOCOL_ERROR;
         goto done;
     }
-
-    /* Verify header and set return code */
-    if (hg_proc_header_response_verify(&response_header) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not verify header");
-        goto done;
-    }
-    hg_handle->ret = (hg_return_t) response_header.ret_code;
 
     /* Add handle to completion queue only when send_input and recv_output have
      * completed */
@@ -1585,6 +1617,7 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
     }
 
 done:
+    hg_handle->na_recv_op_id = NA_OP_ID_NULL;
     return ret;
 }
 
@@ -2121,28 +2154,19 @@ hg_core_cancel(struct hg_handle *hg_handle)
             goto done;
         }
     }
+
     if (hg_handle->na_send_op_id != NA_OP_ID_NULL) {
         na_return_t na_ret;
 
         na_ret = NA_Cancel(hg_class->na_class, hg_class->na_context,
                 hg_handle->na_send_op_id);
         if (na_ret != NA_SUCCESS) {
-            /* If not cancelled, what should we do? */
             HG_LOG_ERROR("Could not cancel send op id");
             ret = HG_NA_ERROR;
             goto done;
         }
-        else {
-            /* If cancel succeeds, put the handle into completion queue,
-               mark it as cancelled. */
-            hg_handle->ret = HG_CANCELLED;
-            ret = hg_core_complete(hg_handle);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Could not complete handle");
-                goto done;
-            }
-        }
     }
+
 done:
     return ret;
 }
@@ -2279,7 +2303,9 @@ done:
 hg_return_t
 HG_Core_context_destroy(hg_context_t *context)
 {
+    na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
+    unsigned int actual_count;
 
     if (!context) goto done;
 
@@ -2293,6 +2319,12 @@ HG_Core_context_destroy(hg_context_t *context)
     }
     hg_list_free(context->pending_list);
     context->pending_list = NULL;
+
+    /* Trigger everything we can from NA, if something completed it will
+     * be moved to the HG context completion queue */
+    do {
+        na_ret = NA_Trigger(context->hg_class->na_context, 0, 1, &actual_count);
+    } while ((na_ret == NA_SUCCESS) && actual_count);
 
     /* Check that operations have completed */
     ret = hg_core_processing_list_wait(context);

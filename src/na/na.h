@@ -39,14 +39,14 @@ struct na_segment {
  * Functions return 0 for success or NA_XXX_ERROR for failure */
 typedef enum na_return {
     NA_SUCCESS,             /*!< operation succeeded */
-    NA_CANCELED,            /*!< operation was canceled */
     NA_TIMEOUT,             /*!< reached timeout */
     NA_INVALID_PARAM,       /*!< invalid parameter */
     NA_SIZE_ERROR,          /*!< message size error */
     NA_ALIGNMENT_ERROR,     /*!< alignment error */
     NA_PERMISSION_ERROR,    /*!< read/write permission error */
     NA_NOMEM_ERROR,         /*!< no memory error */
-    NA_PROTOCOL_ERROR       /*!< unknown error reported from the protocol layer */
+    NA_PROTOCOL_ERROR,      /*!< unknown error reported from the protocol layer */
+    NA_CANCELED             /*!< operation was canceled */
 } na_return_t;
 
 /* Callback operation type */

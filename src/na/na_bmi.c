@@ -1817,8 +1817,7 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
             goto done;
         }
 
-        if (error_code == -BMI_ECANCEL)
-        {
+        if (error_code == -BMI_ECANCEL) {
             na_bmi_op_id->cancel |= NA_BMI_CANCEL_C;
         }
 
@@ -2098,22 +2097,21 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
         case NA_CB_RECV_UNEXPECTED:
         {
             struct BMI_unexpected_info *unexpected_info = NULL;
-            struct na_bmi_addr *na_bmi_addr = NULL;
-
-            /* Allocate addr */
-            na_bmi_addr = (struct na_bmi_addr *) malloc(
-                    sizeof(struct na_bmi_addr));
-            if (!na_bmi_addr) {
-                NA_LOG_ERROR("Could not allocate BMI addr");
-                ret = NA_NOMEM_ERROR;
-                goto done;
-            }
  
             unexpected_info =
                     na_bmi_op_id->info.recv_unexpected.unexpected_info;
 
-            if (unexpected_info)
-            {
+            if (unexpected_info) {
+                struct na_bmi_addr *na_bmi_addr = NULL;
+
+                /* Allocate addr */
+                na_bmi_addr = (struct na_bmi_addr *) malloc(
+                        sizeof(struct na_bmi_addr));
+                if (!na_bmi_addr) {
+                    NA_LOG_ERROR("Could not allocate BMI addr");
+                    ret = NA_NOMEM_ERROR;
+                    goto done;
+                }
 
                 /* Copy buffer from bmi_unexpected_info */
                 if (unexpected_info->size
@@ -2138,18 +2136,11 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
                     (na_tag_t) unexpected_info->tag;
 
                 BMI_unexpected_free(unexpected_info->addr, unexpected_info->buffer);
-            }
-            else
-            {
+            } else {
                 /* In case of cancellation where no recv'd data */
-                na_bmi_addr->self = NA_TRUE;
-                na_bmi_addr->unexpected = NA_TRUE;
-                na_bmi_addr->bmi_addr = 0;
-
                 callback_info->info.recv_unexpected.actual_buf_size = 0;
-                callback_info->info.recv_unexpected.source = 
-                    (na_addr_t) na_bmi_addr;
-                callback_info->info.recv_unexpected.tag = NA_BMI_MAX_TAG;
+                callback_info->info.recv_unexpected.source = NA_ADDR_NULL;
+                callback_info->info.recv_unexpected.tag = 0;
             }
         }
             break;
@@ -2241,9 +2232,7 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
                 /* Push back unexpected op_id to queue if it does not match */
                 if (na_bmi_pop_op_id != na_bmi_op_id) {
                     na_bmi_msg_unexpected_op_push(na_class, na_bmi_pop_op_id);
-                }
-                else
-                {
+                } else {
                     na_bmi_op_id->cancel = NA_BMI_CANCEL_R;
                     na_bmi_complete(na_bmi_op_id);
                 }
@@ -2281,8 +2270,7 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
             /* cancel ack (expected recv) */
             bmi_ret |= BMI_cancel(na_bmi_op_id->info.put.completion_op_id,
                                  *bmi_context);
-            if (bmi_ret < 0)
-            {
+            if (bmi_ret < 0) {
                 NA_LOG_ERROR("BMI_cancel() failed");
                 ret = NA_PROTOCOL_ERROR;
             }
@@ -2291,14 +2279,14 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
         case NA_CB_GET:
             /* cancel request (unexpected send) */
             bmi_ret = 0;
+
             bmi_ret |= BMI_cancel(na_bmi_op_id->info.get.request_op_id,
                                   *bmi_context);
 
             /* cancel get (expected recv) */
             bmi_ret |= BMI_cancel(na_bmi_op_id->info.get.transfer_op_id,
                                   *bmi_context);
-            if (bmi_ret < 0)
-            {
+            if (bmi_ret < 0) {
                 NA_LOG_ERROR("BMI_cancel() failed");
                 ret = NA_PROTOCOL_ERROR;
             }
