@@ -31,7 +31,7 @@ hg_progress_thread(void *arg)
         if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
             break;
 
-        ret = HG_Progress(context, 1000);
+        ret = HG_Progress(context, 100);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
 
     printf("Exiting\n");
@@ -63,7 +63,7 @@ main(int argc, char *argv[])
         if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
             break;
 
-        ret = HG_Trigger(context, 1000, 1, NULL);
+        ret = HG_Trigger(context, 100, 1, NULL);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
 #else
     do {
