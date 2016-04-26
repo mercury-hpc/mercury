@@ -12,9 +12,8 @@
 #include "na_private.h"
 #include "na_error.h"
 
-#include "mercury_hash_table.h"
 #include "mercury_queue.h"
-#include "mercury_thread.h"
+#include "mercury_list.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_time.h"
 #include "mercury_atomic.h"
@@ -149,6 +148,8 @@ struct na_cci_private_data {
 	hg_thread_mutex_t unexpected_msg_queue_mutex;	/* Mutex */
 	hg_queue_t     *unexpected_op_queue;	/* Unexpected op queue */
 	hg_thread_mutex_t unexpected_op_queue_mutex;	/* Mutex */
+	hg_list_t           *accept_conn_list;          /* List of accepted connections */
+	hg_thread_mutex_t    accept_conn_list_mutex;    /* Mutex */
 	char		*uri;
 };
 
@@ -222,6 +223,9 @@ na_cci_addr_self(
 		 na_class_t * na_class,
 		 na_addr_t * addr
 );
+
+static void
+addr_decref(na_cci_addr_t *na_cci_addr);
 
 /* addr_dup */
 static na_return_t
@@ -576,6 +580,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	if (rc) {
 		NA_LOG_ERROR("cci_init() failed with %s",
 			     cci_strerror(NULL, rc));
+        ret = NA_PROTOCOL_ERROR;
 		goto out;
 	}
 
@@ -584,6 +589,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	if (rc) {
 		NA_LOG_ERROR("cci_get_devices() failed with %s",
 				cci_strerror(NULL, rc));
+        ret = NA_PROTOCOL_ERROR;
 		goto out;
 	}
 
@@ -615,6 +621,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	if (rc) {
 		NA_LOG_ERROR("cci_create_endpoint() failed with %s",
 				cci_strerror(NULL, rc));
+		ret = NA_PROTOCOL_ERROR;
 		goto out;
 	}
 	NA_CCI_PRIVATE_DATA(na_class)->endpoint = endpoint;
@@ -623,6 +630,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	if (rc) {
 		NA_LOG_ERROR("cci_get_opt(URI) failed with %s",
 				cci_strerror(endpoint, rc));
+        ret = NA_PROTOCOL_ERROR;
 		goto out;
 	}
 
@@ -639,8 +647,7 @@ out:
 const char *
 NA_CCI_Get_port_name(na_class_t *na_class)
 {
-	na_cci_private_data_t *priv = na_class->private_data;
-	return priv->uri;
+	return NA_CCI_PRIVATE_DATA(na_class)->uri;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -649,6 +656,7 @@ na_cci_init(na_class_t * na_class)
 {
 	hg_queue_t     *unexpected_msg_queue = NULL;
 	hg_queue_t     *unexpected_op_queue = NULL;
+	hg_list_t      *accept_conn_list = NULL;
 	na_return_t	ret = NA_SUCCESS;
 
 	/* Create queue for unexpected messages */
@@ -669,12 +677,23 @@ na_cci_init(na_class_t * na_class)
 	}
 	NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue = unexpected_op_queue;
 
-	/* Initialize mutex/cond */
+    /* Create list of accepted connections */
+    accept_conn_list = hg_list_new();
+    if (!accept_conn_list) {
+        NA_LOG_ERROR("Could not create accepted connection list");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+    NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list = accept_conn_list;
+
+    /* Initialize mutex/cond */
 	hg_thread_mutex_init(&NA_CCI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
 	hg_thread_mutex_init(
 		  &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
 	hg_thread_mutex_init(
 		   &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_init(
+           &NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list_mutex);
 
 out:
 	if (ret != NA_SUCCESS) {
@@ -692,6 +711,22 @@ na_cci_finalize(na_class_t * na_class)
 	int		rc;
 
 	free(priv->uri);
+
+	/* Free connections */
+	while (!hg_list_is_empty(priv->accept_conn_list)) {
+	    hg_list_entry_t *entry = hg_list_first(priv->accept_conn_list);
+	    na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) hg_list_data(entry);
+
+	    addr_decref(na_cci_addr);
+
+	    /* Remove the entries as we go */
+	    if (hg_list_remove_entry(entry) != HG_UTIL_SUCCESS) {
+	        NA_LOG_ERROR("Could not remove entry");
+	        ret = NA_INVALID_PARAM;
+	    }
+	}
+    /* Free accepted connection list */
+    hg_list_free(priv->accept_conn_list);
 
 	/* Check that unexpected op queue is empty */
 	if (!hg_queue_is_empty(
@@ -732,6 +767,8 @@ na_cci_finalize(na_class_t * na_class)
 		  &priv->unexpected_msg_queue_mutex);
 	hg_thread_mutex_destroy(
 		   &priv->unexpected_op_queue_mutex);
+    hg_thread_mutex_destroy(
+           &priv->accept_conn_list_mutex);
 
 	free(na_class->private_data);
 
@@ -786,7 +823,7 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
 	rc = cci_connect(e, name, uri, strlen(uri) + 1, CCI_CONN_ATTR_RO,
 			na_cci_addr, 0, NULL);
 	if (rc) {
-		NA_LOG_ERROR("cci_connect() failed with %s", cci_strerror(e, rc));
+		NA_LOG_ERROR("cci_connect(%s) failed with %s", name, cci_strerror(e, rc));
 		goto out;
 	}
 
@@ -1646,10 +1683,10 @@ handle_send(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
 	na_cci_addr_t *na_cci_addr = event->send.connection->context;
 
 	if (!na_cci_op_id) {
+	    NA_LOG_ERROR("NULL operation ID");
 		goto out;
-	} else if (na_cci_op_id->canceled) {
-		op_id_decref(na_cci_op_id);
-		goto out;
+	} else if (na_cci_op_id->canceled && ret == NA_SUCCESS) {
+	    ret = NA_CANCELED;
 	}
 
 	ret = na_cci_complete(na_cci_addr, na_cci_op_id, ret);
@@ -1822,7 +1859,7 @@ handle_connect_request(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *cont
 	na_cci_addr_t *na_cci_addr = NULL;
 	int rc = 0;
 
-	na_cci_addr = calloc(1, sizeof(*na_cci_addr));
+    na_cci_addr = calloc(1, sizeof(*na_cci_addr));
 	if (!na_cci_addr) {
 		NA_LOG_ERROR("Unable to allocate na_cci_addr for new peer %s",
 				(const char*)(event->request.data_ptr));
@@ -1894,14 +1931,24 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-handle_accept(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
+handle_accept(na_class_t NA_UNUSED *na_class, na_context_t NA_UNUSED *context,
 		cci_endpoint_t NA_UNUSED *e, cci_event_t *event)
 {
 	na_cci_addr_t *na_cci_addr = event->accept.context;
 
-	na_cci_addr->cci_addr = event->accept.connection;
+    na_cci_addr->cci_addr = event->accept.connection;
 
-	return;
+    /* Add address to accepted connection list */
+    hg_thread_mutex_lock(
+        &NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list_mutex);
+
+    hg_list_insert_head(NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list,
+        (hg_list_value_t) na_cci_addr);
+
+    hg_thread_mutex_unlock(
+        &NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list_mutex);
+
+    return;
 }
 
 /*---------------------------------------------------------------------------*/
