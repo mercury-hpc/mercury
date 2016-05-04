@@ -1212,7 +1212,7 @@ hg_core_create(struct hg_context *context)
     /* Initialize processing buffers and use unexpected message size */
     hg_handle->in_buf = NULL;
     hg_handle->out_buf = NULL;
-    hg_handle->in_buf_size = NA_Msg_get_max_expected_size(na_class);
+    hg_handle->in_buf_size = NA_Msg_get_max_unexpected_size(na_class);
     hg_handle->out_buf_size = NA_Msg_get_max_expected_size(na_class);
     hg_handle->in_buf_used = 0;
     hg_handle->out_buf_used = 0;
