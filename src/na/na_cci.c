@@ -566,7 +566,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
-		  na_bool_t NA_UNUSED listen)
+		  na_bool_t listen)
 {
 	int rc = 0, i = 0;
 	uint32_t caps = 0;
@@ -574,6 +574,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	cci_endpoint_t *endpoint = NULL;
 	char *uri = NULL;
 	na_return_t ret = NA_SUCCESS;
+        char* string_port = NULL;
 
 	/* Initialize CCI */
 	rc = cci_init(CCI_ABI_VERSION, 0, &caps);
@@ -617,7 +618,24 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	}
 
 	/* Create an endpoint using the requested transport */
-	rc = cci_create_endpoint(device, 0, &endpoint, NULL);
+        if(!listen)
+        {
+	    rc = cci_create_endpoint(device, 0, &endpoint, NULL);
+        }
+        else
+        {
+            /* In listen mode then we honor port description */
+            string_port = rindex(na_info->port_name, ':');
+            if(!string_port)
+            {
+                NA_LOG_ERROR("na_cci failed to find port description (portion of string address following :) in HG listen address.\n");
+		ret = NA_PROTOCOL_ERROR;
+		goto out;
+            }
+            string_port++;
+	    rc = cci_create_endpoint_at(device, string_port, 0, &endpoint, NULL);
+        }
+
 	if (rc) {
 		NA_LOG_ERROR("cci_create_endpoint() failed with %s",
 				cci_strerror(NULL, rc));
