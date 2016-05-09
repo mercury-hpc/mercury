@@ -15,23 +15,6 @@ pushd bmi
 make && make install
 popd
 
-# build ssm
-mkdir ssm
-pushd ssm
-cp /homes/soumagne/jenkins/libssm_ref-0.6.6-r2263.tar.gz .
-tar -xzf libssm_ref-0.6.6-r2263.tar.gz
-pushd libssm_ref-0.6.6-r2263
-./configure --prefix=$WORKSPACE/.install CFLAGS=-fPIC
-make && make install
-popd
-cp /homes/soumagne/jenkins/libssmptcp_ref-0.6.6-r2264.tar.gz .
-tar -xzf libssmptcp_ref-0.6.6-r2264.tar.gz
-pushd libssmptcp_ref-0.6.6-r2264
-./configure --prefix=$WORKSPACE/.install CFLAGS=-fPIC CPPFLAGS=-I$WORKSPACE/.install/include
-make && make install
-popd
-popd
-
 # build cci
 CCI_VERSION=master
 mkdir cci

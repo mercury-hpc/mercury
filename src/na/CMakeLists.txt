@@ -76,30 +76,6 @@ if(NA_USE_BMI)
 endif()
 
 
-# SSM
-option(NA_USE_SSM "Use SSM." OFF)
-if(NA_USE_SSM)
-  find_package(SSM REQUIRED)
-  if(SSM_FOUND)
-    message(STATUS "SSM include directory: ${SSM_INCLUDE_DIR}")
-    set(NA_PLUGINS ${NA_PLUGINS} ssm)
-    set(NA_HAS_SSM 1)
-    include_directories(${SSM_INCLUDE_DIR})
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
-      ${SSM_LIBRARIES}
-    )
-    set(NA_EXT_INCLUDE_DEPENDENCIES
-      ${NA_EXT_INCLUDE_DEPENDENCIES}
-      ${SSM_INCLUDE_DIRS}
-    )
-  else()
-     message(FATAL_ERROR "Could not find SSM.")
-  endif()
-endif()
-mark_as_advanced(NA_USE_SSM)
-
-
 # MPI
 option(NA_USE_MPI "Use MPI." OFF)
 if(NA_USE_MPI)
@@ -202,13 +178,6 @@ if(NA_USE_BMI)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_bmi.c
-  )
-endif()
-
-if(NA_USE_SSM)
-  set(NA_SRCS
-    ${NA_SRCS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_ssm.c
   )
 endif()
 
