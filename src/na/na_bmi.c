@@ -813,6 +813,9 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_bmi_addr->self = NA_FALSE;
     na_bmi_op_id->info.lookup.addr = (na_addr_t) na_bmi_addr;
 
+    /* Assign op_id */
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_bmi_op_id;
+
     /* Perform an address lookup */
     bmi_ret = BMI_addr_lookup(&na_bmi_addr->bmi_addr, name);
     if (bmi_ret < 0) {
@@ -827,9 +830,6 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
         NA_LOG_ERROR("Could not complete operation");
         goto done;
     }
-
-    /* Assign op_id */
-    *op_id = (na_op_id_t) na_bmi_op_id;
 
 done:
     if (ret != NA_SUCCESS) {
@@ -993,6 +993,9 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
     na_bmi_op_id->info.send_unexpected.op_id = 0;
     na_bmi_op_id->cancel = 0;
 
+    /* Assign op_id */
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_bmi_op_id;
+
     /* Post the BMI unexpected send request */
     bmi_ret = BMI_post_sendunexpected(
             &na_bmi_op_id->info.send_unexpected.op_id, na_bmi_addr->bmi_addr,
@@ -1012,9 +1015,6 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
             goto done;
         }
     }
-
-    /* Assign op_id */
-    *op_id = (na_op_id_t) na_bmi_op_id;
 
 done:
     if (ret != NA_SUCCESS) {
@@ -1050,6 +1050,9 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_bmi_op_id->info.recv_unexpected.unexpected_info = NULL;
     na_bmi_op_id->cancel = 0;
 
+    /* Assign op_id */
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_bmi_op_id;
+
     /* Try to make progress here from the BMI unexpected queue */
     do {
         ret = na_bmi_progress_unexpected(na_class, context, 0);
@@ -1077,9 +1080,6 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
             goto done;
         }
     }
-
-    /* Assign op_id */
-    *op_id = (na_op_id_t) na_bmi_op_id;
 
 done:
     if (ret != NA_SUCCESS) {
@@ -1216,6 +1216,9 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_bmi_op_id->info.send_expected.op_id = 0;
     na_bmi_op_id->cancel = 0;
 
+    /* Assign op_id */
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_bmi_op_id;
+
     /* Post the BMI send request */
     bmi_ret = BMI_post_send(&na_bmi_op_id->info.send_expected.op_id,
             na_bmi_addr->bmi_addr, buf, bmi_buf_size, BMI_EXT_ALLOC, bmi_tag,
@@ -1234,9 +1237,6 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
             goto done;
         }
     }
-
-    /* Assign op_id */
-    *op_id = (na_op_id_t) na_bmi_op_id;
 
 done:
     if (ret != NA_SUCCESS) {
@@ -1276,6 +1276,9 @@ na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_bmi_op_id->info.recv_expected.actual_size = 0;
     na_bmi_op_id->cancel = 0;
 
+    /* Assign op_id */
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_bmi_op_id;
+
     /* Post the BMI recv request */
     bmi_ret = BMI_post_recv(&na_bmi_op_id->info.recv_expected.op_id,
             na_bmi_addr->bmi_addr, buf, bmi_buf_size,
@@ -1295,9 +1298,6 @@ na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
             goto done;
         }
     }
-
-    /* Assign op_id */
-    *op_id = (na_op_id_t) na_bmi_op_id;
 
 done:
     if (ret != NA_SUCCESS) {
@@ -1489,6 +1489,9 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_bmi_rma_info->completion_tag = na_bmi_gen_rma_tag(na_class);
     na_bmi_op_id->info.put.rma_info = na_bmi_rma_info;
 
+    /* Assign op_id */
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_bmi_op_id;
+
     /* Post the BMI unexpected send request */
     bmi_ret = BMI_post_sendunexpected(
             &na_bmi_op_id->info.put.request_op_id, na_bmi_addr->bmi_addr,
@@ -1538,9 +1541,6 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
         }
     }
-
-    /* Assign op_id */
-    *op_id = (na_op_id_t) na_bmi_op_id;
 
 done:
     if (ret != NA_SUCCESS) {
@@ -1607,6 +1607,9 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_bmi_rma_info->completion_tag = 0; /* not used */
     na_bmi_op_id->info.get.rma_info = na_bmi_rma_info;
 
+    /* Assign op_id */
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_bmi_op_id;
+
     /* Post the BMI unexpected send request */
     bmi_ret = BMI_post_sendunexpected(
             &na_bmi_op_id->info.get.request_op_id, na_bmi_addr->bmi_addr,
@@ -1638,9 +1641,6 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
         }
     }
-
-    /* Assign op_id */
-    *op_id = (na_op_id_t) na_bmi_op_id;
 
 done:
     if (ret != NA_SUCCESS) {
