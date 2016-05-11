@@ -1329,6 +1329,12 @@ NA_Put(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
         goto done;
     }
 
+    /* NOTE: op must be set before the put rather than after - it's possible
+     * for progress/trigger to drop in and free op_id between the (immediate)
+     * completion of the underlying op and return of control to this function
+     */
+    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
+
     ret = na_class->put(na_class, context, callback, arg, local_mem_handle,
             local_offset, remote_mem_handle, remote_offset, data_size,
             remote_addr, op_id);
