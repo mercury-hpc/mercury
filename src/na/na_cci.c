@@ -24,6 +24,7 @@
 #include <inttypes.h>
 #include <sys/queue.h>
 #include <assert.h>
+#include <poll.h>
 
 /****************/
 /* Local Macros */
@@ -151,6 +152,7 @@ struct na_cci_private_data {
 	hg_list_t           *accept_conn_list;          /* List of accepted connections */
 	hg_thread_mutex_t    accept_conn_list_mutex;    /* Mutex */
 	char		*uri;
+	int		fd;
 };
 
 typedef union cci_msg {
@@ -574,6 +576,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	cci_endpoint_t *endpoint = NULL;
 	char *uri = NULL;
 	na_return_t ret = NA_SUCCESS;
+	int fd = 0;
 
 	/* Initialize CCI */
 	rc = cci_init(CCI_ABI_VERSION, 0, &caps);
@@ -617,7 +620,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 	}
 
 	/* Create an endpoint using the requested transport */
-	rc = cci_create_endpoint(device, 0, &endpoint, NULL);
+	rc = cci_create_endpoint(device, 0, &endpoint, &fd);
 	if (rc) {
 		NA_LOG_ERROR("cci_create_endpoint() failed with %s",
 				cci_strerror(NULL, rc));
@@ -625,6 +628,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 		goto out;
 	}
 	NA_CCI_PRIVATE_DATA(na_class)->endpoint = endpoint;
+	NA_CCI_PRIVATE_DATA(na_class)->fd = fd;
 
 	rc = cci_get_opt(endpoint, CCI_OPT_ENDPT_URI, &uri);
 	if (rc) {
@@ -1968,6 +1972,13 @@ na_cci_progress(na_class_t * na_class, na_context_t * context,
 		int		rc;
 		hg_time_t	t1, t2;
 		cci_event_t	*event = NULL;
+
+		struct pollfd pfd;
+
+		pfd.fd = NA_CCI_PRIVATE_DATA(na_class)->fd;
+		pfd.events = POLLIN;
+
+		poll(&pfd, 1, ((int) remaining) * 1000);
 
 		hg_time_get_current(&t1);
 
