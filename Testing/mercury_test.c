@@ -255,7 +255,6 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
         hg_context_t **context, hg_request_class_t **request_class)
 {
     char test_addr_name[NA_TEST_MAX_ADDR_NAME];
-    na_return_t na_ret;
     hg_return_t ret;
 
     hg_test_na_class_g = NA_Test_client_init(argc, argv, test_addr_name,
@@ -286,9 +285,9 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
                 &hg_test_local_bulk_handle_g);
     } else {
         /* Look up addr using port name info */
-        na_ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, HG_REQUEST_CLASS_DEFAULT,
+        ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, HG_REQUEST_CLASS_DEFAULT,
                 test_addr_name, &hg_test_addr_g, HG_MAX_IDLE_TIME);
-        if (na_ret != NA_SUCCESS) {
+        if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not find addr %s\n", test_addr_name);
             goto done;
         }
