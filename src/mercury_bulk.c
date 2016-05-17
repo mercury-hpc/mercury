@@ -578,7 +578,7 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    while (remaining_size > 0) {
+    for (;;) {
         hg_size_t origin_transfer_size, local_transfer_size, transfer_size;
 
         /* Can only transfer smallest size */
@@ -608,9 +608,13 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
                 break;
             }
         }
+        count++;
 
-        /* Decrease remaining size from the size of data we transferred */
+        /* Decrease remaining size from the size of data we transferred
+         * and exit if everything has been transferred */
         remaining_size -= transfer_size;
+        if (!remaining_size)
+            break;
 
         /* Increment offsets from the size of data we transferred */
         origin_segment_offset += transfer_size;
@@ -627,7 +631,6 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
             local_segment_index++;
             local_segment_offset = 0;
         }
-        count++;
     }
 
     /* Set number of NA operations issued */
@@ -1208,6 +1211,12 @@ HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     if (!hg_bulk_origin || !hg_bulk_local) {
         HG_LOG_ERROR("NULL memory handle passed");
         ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    if (!size) {
+        HG_LOG_ERROR("Transfer size must be non-zero");
+        ret = HG_SIZE_ERROR;
         goto done;
     }
 

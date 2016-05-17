@@ -1418,6 +1418,9 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
 
+    /* Reset op ID value */
+    hg_handle->na_send_op_id = NA_OP_ID_NULL;
+
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
         hg_handle->ret = HG_CANCELED;
@@ -1441,7 +1444,6 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
     }
 
 done:
-    hg_handle->na_send_op_id = NA_OP_ID_NULL;
     return ret;
 }
 
@@ -1453,12 +1455,15 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     struct hg_header_request request_header;
     na_return_t ret = NA_SUCCESS;
 
+    /* Reset op ID value */
+    hg_handle->na_recv_op_id = NA_OP_ID_NULL;
+
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
         hg_handle->ret = HG_CANCELED;
 
+        /* May only decrement refcount */
         hg_core_destroy(hg_handle);
-        hg_handle = NULL;
     } else if (callback_info->ret == NA_SUCCESS) {
         /* Increment NA completed count */
         hg_atomic_incr32(&hg_handle->na_completed_count);
@@ -1525,7 +1530,6 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     }
 
 done:
-    if (hg_handle) hg_handle->na_recv_op_id = NA_OP_ID_NULL;
     return ret;
 }
 
@@ -1535,6 +1539,9 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
+
+    /* Reset op ID value */
+    hg_handle->na_send_op_id = NA_OP_ID_NULL;
 
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
@@ -1565,7 +1572,6 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
     }
 
 done:
-    hg_handle->na_send_op_id = NA_OP_ID_NULL;
     return ret;
 }
 
@@ -1576,6 +1582,9 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     struct hg_header_response response_header;
     na_return_t ret = NA_SUCCESS;
+
+    /* Reset op ID value */
+    hg_handle->na_recv_op_id = NA_OP_ID_NULL;
 
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
@@ -1617,7 +1626,6 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
     }
 
 done:
-    hg_handle->na_recv_op_id = NA_OP_ID_NULL;
     return ret;
 }
 
