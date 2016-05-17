@@ -126,9 +126,9 @@ struct na_cci_op_id {
 	na_cb_type_t	type;
 	na_cb_t		callback;	/* Callback */
 	void           *arg;
-	hg_atomic_int32_t refcnt;	/* Reference counter */
-	na_bool_t	completed;	/* Operation completed */
-	na_bool_t	canceled;	/* Operation canceled */
+    hg_atomic_int32_t refcnt; /* Reference counter   */
+    hg_atomic_int32_t completed; /* Operation completed */
+    hg_atomic_int32_t canceled; /* Operation canceled  */
 	union {
 		struct na_cci_info_lookup lookup;
 		struct na_cci_info_send_unexpected send_unexpected;
@@ -799,6 +799,8 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
 	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
+    hg_atomic_set32(&na_cci_op_id->completed, 0);
+    hg_atomic_set32(&na_cci_op_id->canceled, 0);
 
 	/* Allocate addr */
 	na_cci_addr = (na_cci_addr_t *)malloc(sizeof(*na_cci_addr));
@@ -1049,6 +1051,8 @@ na_cci_msg_send_unexpected(na_class_t *na_class,
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
 	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
+    hg_atomic_set32(&na_cci_op_id->completed, 0);
+    hg_atomic_set32(&na_cci_op_id->canceled, 0);
 	na_cci_op_id->info.send_unexpected.op_id = 0;
 
 	/* Assign op_id */
@@ -1103,6 +1107,8 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
 	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
+    hg_atomic_set32(&na_cci_op_id->completed, 0);
+    hg_atomic_set32(&na_cci_op_id->canceled, 0);
 	na_cci_op_id->info.recv_unexpected.buf = buf;
 	na_cci_op_id->info.recv_unexpected.buf_size = (cci_size_t) buf_size;
 
@@ -1274,6 +1280,8 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
 	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
+    hg_atomic_set32(&na_cci_op_id->completed, 0);
+    hg_atomic_set32(&na_cci_op_id->canceled, 0);
 	na_cci_op_id->info.send_expected.op_id = 0;
 
 	/* Assign op_id */
@@ -1339,6 +1347,8 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
 	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
+    hg_atomic_set32(&na_cci_op_id->completed, 0);
+    hg_atomic_set32(&na_cci_op_id->canceled, 0);
 	na_cci_op_id->info.recv_expected.na_cci_addr = na_cci_addr;
 	na_cci_op_id->info.recv_expected.op_id = 0;
 	na_cci_op_id->info.recv_expected.buf = buf;
@@ -1581,6 +1591,8 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
 	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
+    hg_atomic_set32(&na_cci_op_id->completed, 0);
+    hg_atomic_set32(&na_cci_op_id->canceled, 0);
 	na_cci_op_id->info.put.request_op_id = 0;
 	na_cci_op_id->info.put.transfer_op_id = 0;
 	na_cci_op_id->info.put.transfer_completed = NA_FALSE;
@@ -1650,6 +1662,8 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	na_cci_op_id->callback = callback;
 	na_cci_op_id->arg = arg;
 	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
+    hg_atomic_set32(&na_cci_op_id->completed, 0);
+    hg_atomic_set32(&na_cci_op_id->canceled, 0);
 	na_cci_op_id->info.get.request_op_id = 0;
 	na_cci_op_id->info.get.transfer_op_id = 0;
 	na_cci_op_id->info.get.transfer_actual_size = 0;
@@ -1688,7 +1702,7 @@ handle_send(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
 	if (!na_cci_op_id) {
 	    NA_LOG_ERROR("NULL operation ID");
 		goto out;
-	} else if (na_cci_op_id->canceled && ret == NA_SUCCESS) {
+	} else if (hg_atomic_get32(&na_cci_op_id->canceled) && ret == NA_SUCCESS) {
 	    ret = NA_CANCELED;
 	}
 
@@ -2023,7 +2037,7 @@ na_cci_complete(na_cci_addr_t *na_cci_addr, na_cci_op_id_t *na_cci_op_id, na_ret
 	struct na_cb_info *callback_info = NULL;
 
 	/* Mark op id as completed */
-	na_cci_op_id->completed = NA_TRUE;
+	hg_atomic_incr32(&na_cci_op_id->completed);
 
 	/* Allocate callback info */
 	callback_info = (struct na_cb_info *)malloc(sizeof(struct na_cb_info));
@@ -2093,7 +2107,7 @@ na_cci_release(struct na_cb_info *callback_info, void *arg)
 {
 	na_cci_op_id_t *na_cci_op_id = (na_cci_op_id_t *)arg;
 
-	if (na_cci_op_id && !na_cci_op_id->completed) {
+	if (na_cci_op_id && !hg_atomic_get32(&na_cci_op_id->completed)) {
 		NA_LOG_ERROR("Releasing resources from an uncompleted operation");
 	}
 	free(callback_info);
@@ -2109,9 +2123,9 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 	na_cci_addr_t		*na_cci_addr = NULL;
 	na_return_t		ret = NA_SUCCESS;
 
-	if (na_cci_op_id->completed) goto out;
+	if (hg_atomic_get32(&na_cci_op_id->completed)) goto out;
 
-	na_cci_op_id->canceled = NA_TRUE;
+	hg_atomic_incr32(&na_cci_op_id->canceled);
 	op_id_addref(na_cci_op_id); /* will be decremented in handle_*() */
 
 	switch (na_cci_op_id->type) {
@@ -2177,8 +2191,8 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
 		case NA_CB_SEND_EXPECTED:
 		case NA_CB_PUT:
 		case NA_CB_GET:
-			goto out;
-			break;
+		    goto out;
+		    break;
 		default:
 			break;
 	}
