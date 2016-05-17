@@ -719,6 +719,9 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         goto done;
     }
 
+    /* Assign op_id */
+    if (op_id && op_id != HG_OP_ID_IGNORE) *op_id = (hg_op_id_t) hg_bulk_op_id;
+
     /* Do actual transfer */
     ret = hg_bulk_transfer_pieces(na_bulk_op, origin_addr, hg_bulk_origin,
             origin_segment_start_index, origin_segment_start_offset,
@@ -728,9 +731,6 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         HG_LOG_ERROR("Could not transfer data pieces");
         goto done;
     }
-
-    /* Assign op_id */
-    *op_id = (hg_op_id_t) hg_bulk_op_id;
 
 done:
     if (ret != HG_SUCCESS && hg_bulk_op_id) {
@@ -1243,14 +1243,12 @@ HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     }
 
     ret = hg_bulk_transfer(context, callback, arg, op, origin_addr,
-            hg_bulk_origin, origin_offset, hg_bulk_local, local_offset, size,
-            &hg_op_id);
+        hg_bulk_origin, origin_offset, hg_bulk_local, local_offset, size,
+        op_id);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not transfer data");
         goto done;
     }
-
-    if (op_id && op_id != HG_OP_ID_IGNORE) *op_id = hg_op_id;
 
 done:
     return ret;
