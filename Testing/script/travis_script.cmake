@@ -82,7 +82,7 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
   endif()
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
     set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer")
-  endif
+  endif()
 
   # needed by mercury_common.cmake
   set(dashboard_do_memcheck TRUE)
