@@ -19,13 +19,17 @@ env:
   global:
     - MERCURY_DASHBOARD_MODEL="Continuous"
     - MERCURY_NO_LOOP="true"
-    - MERCURY_DO_COVERAGE="false"
-    - MERCURY_DO_MEMCHECK="false"
     - MERCURY_PORT_NAME='tcp://localhost:3344'
   matrix:
     - MERCURY_BUILD_CONFIGURATION="Debug"
     - MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
     - MERCURY_BUILD_CONFIGURATION="Release"
+    - MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
+
+matrix:
+  exclude:
+   - os: osx
+     env: MERCURY_MEMORY_CHECKTYPE="ThreadSanitizer"
 
 branches:
   only:

@@ -30,9 +30,6 @@ endif()
 # Number of jobs to build
 set(CTEST_BUILD_FLAGS "-j4")
 
-# Build name referenced in cdash
-set(CTEST_BUILD_NAME "travis-ci-$ENV{TRAVIS_OS_NAME}-x64-$ENV{CC}-${lower_mercury_build_configuration}-$ENV{TRAVIS_BUILD_NUMBER}")
-
 # Build shared libraries
 set(mercury_build_shared ON)
 set(MERCURY_BUILD_STATIC_LIBRARIES $ENV{MERCURY_BUILD_STATIC_LIBRARIES})
@@ -68,15 +65,31 @@ endif()
 
 # Optional memcheck options
 set(MERCURY_DO_MEMCHECK $ENV{MERCURY_DO_MEMCHECK})
-if(MERCURY_DO_MEMCHECK)
+set(MERCURY_MEMORYCHECK_TYPE "$ENV{MERCURY_MEMORYCHECK_TYPE}")
+if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
   message("Enabling Memcheck")
-  set(CTEST_MEMORYCHECK_COMMAND "/usr/bin/valgrind")
-  set(CTEST_MEMORYCHECK_COMMAND_OPTIONS "--gen-suppressions=all --trace-children=yes --fair-sched=yes -q --leak-check=yes --show-reachable=yes --num-callers=50 -v")
-  #set(CTEST_MEMORYCHECK_SUPPRESSIONS_FILE ${CTEST_SCRIPT_DIRECTORY}/MercuryValgrindSuppressions.supp)
+
+  if(NOT MERCURY_MEMORYCHECK_TYPE)
+    set(MERCURY_MEMORYCHECK_TYPE "Valgrind")
+  endif()
+  string(TOLOWER "-${MERCURY_MEMORYCHECK_TYPE}" lower_mercury_memorycheck_type)
+  set(CTEST_MEMORYCHECK_TYPE ${MERCURY_MEMORYCHECK_TYPE})
+
+  if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "Valgrind")
+    set(CTEST_MEMORYCHECK_COMMAND "/usr/bin/valgrind")
+    set(CTEST_MEMORYCHECK_COMMAND_OPTIONS "--gen-suppressions=all --trace-children=yes --fair-sched=yes -q --leak-check=yes --show-reachable=yes --num-callers=50 -v")
+    #set(CTEST_MEMORYCHECK_SUPPRESSIONS_FILE ${CTEST_SCRIPT_DIRECTORY}/MercuryValgrindSuppressions.supp)
+  endif()
+  if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
+    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer")
+  endif
 
   # needed by mercury_common.cmake
   set(dashboard_do_memcheck TRUE)
 endif()
+
+# Build name referenced in cdash
+set(CTEST_BUILD_NAME "travis-ci-$ENV{TRAVIS_OS_NAME}-x64-$ENV{CC}-${lower_mercury_build_configuration}${lower_mercury_memorycheck_type}-$ENV{TRAVIS_BUILD_NUMBER}")
 
 set(dashboard_binary_name mercury-${lower_mercury_build_configuration})
 if(NOT mercury_build_shared)
@@ -96,7 +109,8 @@ endif()
 
 # Initial cache used to build mercury, options can be modified here
 set(dashboard_cache "
-CMAKE_C_FLAGS:STRING=-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -std=gnu99
+CMAKE_C_FLAGS:STRING=-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -std=gnu99 ${MERCURY_MEMCHECK_FLAGS}
+CMAKE_CXX_FLAGS:STRING=${MERCURY_MEMCHECK_FLAGS}
 
 BUILD_SHARED_LIBS:BOOL=${mercury_build_shared}
 BUILD_TESTING:BOOL=ON

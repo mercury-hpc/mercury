@@ -2,11 +2,18 @@
 
 MPI_VERSION=3.2
 CCI_VERSION=0.3.0
+CMAKE_VERSION_MAJOR=3.5
+CMAKE_VERSION_MINOR=2
 
 set -e
 
 # check to see if install folder exists
 if [ ! -d "$HOME/install/bin" ]; then
+  # get cmake
+  if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
+      cd $HOME && wget https://cmake.org/files/v${CMAKE_VERSION_MAJOR}/cmake-${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}-Linux-x86_64.tar.gz;
+      tar --strip-components=1 -xzC $HOME/install -f cmake-${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}-Linux-x86_64.tar.gz;
+  fi
   # build bmi
   cd $HOME && git clone git://git.mcs.anl.gov/bmi bmi && cd bmi;
   if [[ $TRAVIS_OS_NAME == 'osx' ]]; then
