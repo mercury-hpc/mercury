@@ -27,8 +27,8 @@ if(MERCURY_NO_LOOP)
   set(dashboard_disable_loop TRUE)
 endif()
 
-# Number of jobs to build
-set(CTEST_BUILD_FLAGS "-j4")
+# Number of jobs to build and verbose mode
+set(CTEST_BUILD_FLAGS "-j4 VERBOSE=1")
 
 # Build shared libraries
 set(mercury_build_shared ON)
@@ -81,7 +81,7 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
     #set(CTEST_MEMORYCHECK_SUPPRESSIONS_FILE ${CTEST_SCRIPT_DIRECTORY}/MercuryValgrindSuppressions.supp)
   endif()
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
-    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer")
+    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer -fPIC")
   endif()
 
   # needed by mercury_common.cmake

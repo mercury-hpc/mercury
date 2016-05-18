@@ -43,8 +43,9 @@ install:
 
 before_script:
     - ls -R $HOME/install
-    - export PATH=$PATH:$HOME/install/bin
-    - export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/install/lib
+    - export PATH=$HOME/install/bin:$PATH
+    - export LD_LIBRARY_PATH=$HOME/install/lib:$LD_LIBRARY_PATH
+    - ctest --version
 
 script:
     - ctest -VV --output-on-failure -S ./Testing/script/travis_script.cmake
