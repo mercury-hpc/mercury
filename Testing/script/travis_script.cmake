@@ -82,7 +82,6 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
   endif()
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
     set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer -fPIC -pie")
-    set(ENV{LDFLAGS} "/usr/lib/x86_64-linux-gnu/libtsan.so.0")
   endif()
 
   # needed by mercury_common.cmake

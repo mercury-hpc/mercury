@@ -8,18 +8,19 @@ compiler:
     - gcc
     - clang
 
-sudo: false
+sudo: required
+dist: trusty
 
 addons:
  apt:
    sources:
    - ubuntu-toolchain-r-test
    packages:
-   - gcc-5
-   - g++-5
+   - gcc-6
+   - g++-6
    - binutils
    - libtsan0
-   - libasan2
+   - libasan3
    - liblsan0
 
 cache:
@@ -56,7 +57,7 @@ before_script:
     - ls $HOME/install/bin
     - export PATH=$HOME/install/bin:$PATH
     - export LD_LIBRARY_PATH=$HOME/install/lib:$LD_LIBRARY_PATH
-    - if [[ $TRAVIS_OS_NAME == 'linux' && $CC == 'gcc' ]]; then export CC=gcc-5; export CXX=g++-5; $CC --version; fi
+    - if [[ $TRAVIS_OS_NAME == 'linux' && $CC == 'gcc' ]]; then export CC=gcc-6; export CXX=g++-6; $CC --version; fi
     - ctest --version
 
 script:
