@@ -8,8 +8,7 @@ compiler:
     - gcc
     - clang
 
-sudo: required
-dist: trusty
+sudo: false
 
 addons:
  apt:
@@ -18,6 +17,7 @@ addons:
    packages:
    - gcc-6
    - g++-6
+   - binutils
 
 cache:
   directories:
@@ -50,10 +50,10 @@ install:
     - ./Testing/script/travis_build.sh
 
 before_script:
-    - sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-6 60 --slave /usr/bin/g++ g++ /usr/bin/g++-6
     - ls $HOME/install/bin
     - export PATH=$HOME/install/bin:$PATH
     - export LD_LIBRARY_PATH=$HOME/install/lib:$LD_LIBRARY_PATH
+    - if [[ $TRAVIS_OS_NAME == 'linux' ]]; then export CC=gcc-6; export CXX=g++-6; $CC --version; fi
     - ctest --version
 
 script:
