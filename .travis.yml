@@ -11,6 +11,14 @@ compiler:
 sudo: required
 dist: trusty
 
+addons:
+ apt:
+   sources:
+   - ubuntu-toolchain-r-test
+   packages:
+   - gcc-6
+   - g++-6
+
 cache:
   directories:
     - $HOME/install
@@ -42,6 +50,7 @@ install:
     - ./Testing/script/travis_build.sh
 
 before_script:
+    - sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-6 60 --slave /usr/bin/g++ g++ /usr/bin/g++-6
     - ls $HOME/install/bin
     - export PATH=$HOME/install/bin:$PATH
     - export LD_LIBRARY_PATH=$HOME/install/lib:$LD_LIBRARY_PATH
