@@ -1,5 +1,10 @@
 language: c
 
+branches:
+  only:
+    - master
+    - topic_travis
+
 os:
     - linux
     - osx
