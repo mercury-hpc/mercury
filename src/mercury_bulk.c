@@ -1193,7 +1193,6 @@ HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
 {
     struct hg_bulk *hg_bulk_origin = (struct hg_bulk *) origin_handle;
     struct hg_bulk *hg_bulk_local = (struct hg_bulk *) local_handle;
-    hg_op_id_t hg_op_id;
     hg_return_t ret = HG_SUCCESS;
 
     if (!context) {
