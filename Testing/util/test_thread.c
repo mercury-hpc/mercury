@@ -46,7 +46,7 @@ thread_cb_key(void *arg)
     if (!value_ptr) {
         fprintf(stderr, "Error: No value associated to key\n");
     }
-    if (*value_ptr != 0) {
+    if (*value_ptr != value) {
         fprintf(stderr, "Error: Value is %d\n", *value_ptr);
     }
 
@@ -59,7 +59,7 @@ main(int argc, char *argv[])
 {
     hg_thread_t thread;
     hg_thread_key_t thread_key;
-    int incr;
+    int incr = 0;
     int ret = EXIT_SUCCESS;
 
     (void) argc;
@@ -77,9 +77,9 @@ main(int argc, char *argv[])
 
     hg_thread_create(&thread, thread_cb_sleep, NULL);
     hg_thread_cancel(thread);
+    hg_thread_join(thread);
 
     hg_thread_key_create(&thread_key);
-
     hg_thread_create(&thread, thread_cb_key, &thread_key);
     hg_thread_join(thread);
     hg_thread_key_delete(thread_key);
