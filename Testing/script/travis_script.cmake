@@ -81,7 +81,8 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
     #set(CTEST_MEMORYCHECK_SUPPRESSIONS_FILE ${CTEST_SCRIPT_DIRECTORY}/MercuryValgrindSuppressions.supp)
   endif()
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
-    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer -fPIC -ltsan")
+    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer -fPIC -pie")
+    set(MERCURY_MEMCHECK_LDFLAGS "-L/usr/lib/x86_64-linux-gnu -ltsan")
   endif()
 
   # needed by mercury_common.cmake
@@ -111,6 +112,8 @@ endif()
 set(dashboard_cache "
 CMAKE_C_FLAGS:STRING=-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -std=gnu99 ${MERCURY_MEMCHECK_FLAGS}
 CMAKE_CXX_FLAGS:STRING=${MERCURY_MEMCHECK_FLAGS}
+CMAKE_EXE_LINKER_FLAGS:STRING=${MERCURY_MEMCHECK_LDFLAGS}
+CMAKE_SHARED_LINKER_FLAGS:STRING=${MERCURY_MEMCHECK_LDFLAGS}
 
 BUILD_SHARED_LIBS:BOOL=${mercury_build_shared}
 BUILD_TESTING:BOOL=ON
