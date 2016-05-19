@@ -57,7 +57,7 @@ before_script:
     - ls $HOME/install/bin
     - export PATH=$HOME/install/bin:$PATH
     - export LD_LIBRARY_PATH=$HOME/install/lib:$LD_LIBRARY_PATH
-    - if [[ $TRAVIS_OS_NAME == 'linux' && $CC == 'gcc' ]]; then export CC=gcc-6; export CXX=g++-6; $CC --version; fi
+    - if [[ $TRAVIS_OS_NAME == 'linux' && $CC == 'gcc' ]]; then export CC=gcc-6; export CXX=g++-6; export LD=ld.bfd; $CC --version; $LD --version; $LD --help | grep push; fi
     - ctest --version
 
 script:
