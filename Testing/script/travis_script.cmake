@@ -82,6 +82,8 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
   endif()
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
     set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer -fPIC -pie")
+    # Must add verbosity / Error in build if no memory output file is produced
+    set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
   endif()
 
   # needed by mercury_common.cmake
