@@ -11,7 +11,7 @@ set -e
 if [ ! -d "$HOME/install/bin" ]; then
   # get cmake
   if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
-      cd $HOME && wget http://www.cmake.org/files/v${CMAKE_VERSION_MAJOR}/cmake-${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}-Linux-x86_64.tar.gz;
+      cd $HOME && wget --no-check-certificate http://www.cmake.org/files/v${CMAKE_VERSION_MAJOR}/cmake-${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}-Linux-x86_64.tar.gz;
       tar --strip-components=1 -xzC $HOME/install -f cmake-${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}-Linux-x86_64.tar.gz;
   fi
   # build bmi
