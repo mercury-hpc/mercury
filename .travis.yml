@@ -18,6 +18,9 @@ addons:
    - gcc-5
    - g++-5
    - binutils
+   - libtsan0
+   - libasan2
+   - liblsan0
 
 cache:
   directories:
@@ -38,9 +41,6 @@ matrix:
   exclude:
    - os: osx
      env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
-   - os: linux
-     env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
-     compiler: gcc
 
 branches:
   only:
