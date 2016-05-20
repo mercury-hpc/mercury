@@ -1,10 +1,5 @@
 language: c
 
-branches:
-  only:
-    - master
-    - topic_travis
-
 os:
     - linux
     - osx
@@ -13,20 +8,7 @@ compiler:
     - gcc
     - clang
 
-sudo: required
-dist: trusty
-
-addons:
- apt:
-   sources:
-   - ubuntu-toolchain-r-test
-   packages:
-   - gcc-6
-   - g++-6
-   - binutils
-   - libtsan0
-   - libasan3
-   - liblsan0
+sudo: false
 
 cache:
   directories:
@@ -41,12 +23,6 @@ env:
     - MERCURY_BUILD_CONFIGURATION="Debug"
     - MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
     - MERCURY_BUILD_CONFIGURATION="Release"
-    - MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
-
-matrix:
-  exclude:
-   - os: osx
-     env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
 
 branches:
   only:
@@ -62,7 +38,6 @@ before_script:
     - ls $HOME/install/bin
     - export PATH=$HOME/install/bin:$PATH
     - export LD_LIBRARY_PATH=$HOME/install/lib:$LD_LIBRARY_PATH
-    - if [[ $TRAVIS_OS_NAME == 'linux' && $CC == 'gcc' ]]; then export CC=gcc-6; export CXX=g++-6; export LD=ld.bfd; $CC --version; $LD --version; $LD --help | grep push; fi
     - ctest --version
 
 script:
