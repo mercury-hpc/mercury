@@ -992,9 +992,6 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
         na_cci_op_id->info.recv_unexpected.na_cci_addr = rx->na_cci_addr;
         na_cci_op_id->info.recv_unexpected.tag = rx->tag;
 
-        free(rx->buf);
-        free(rx);
-
         addr_addref(rx->na_cci_addr); /* for na_cci_complete() */
         addr_addref(rx->na_cci_addr); /* for na_cci_addr_free() */
         ret = na_cci_complete(rx->na_cci_addr, na_cci_op_id, NA_SUCCESS);
@@ -1002,6 +999,8 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
             NA_LOG_ERROR("Could not complete operation");
             goto out;
         }
+        free(rx->buf);
+        free(rx);
     } else {
         /* Nothing has been received yet so add op_id to progress queue */
         ret = na_cci_msg_unexpected_op_push(na_class, na_cci_op_id);
