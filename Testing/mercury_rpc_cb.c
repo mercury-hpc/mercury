@@ -15,6 +15,7 @@
 #include "mercury_thread_pool.h"
 #endif
 #include "mercury_atomic.h"
+#include "mercury_thread_mutex.h"
 
 /****************/
 /* Local Macros */
@@ -91,6 +92,7 @@ struct hg_test_bulk_args {
 extern hg_thread_pool_t *hg_test_thread_pool_g;
 #endif
 extern hg_bulk_t hg_test_local_bulk_handle_g;
+extern hg_thread_mutex_t hg_test_local_bulk_handle_mutex_g;
 
 extern hg_id_t hg_test_nested2_id_g;
 hg_addr_t *hg_addr_table;
@@ -1035,7 +1037,7 @@ hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 
 #ifdef MERCURY_TESTING_USE_LOCAL_BULK
     /* Free block handle */
-    ret = HG_Bulk_free(hg_bulk_cb_info->local_handle);
+    ret = HG_Bulk_free(hg_cb_info->info.bulk.local_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not free HG bulk handle\n");
         goto done;
@@ -1091,9 +1093,12 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 
 #ifdef MERCURY_TESTING_USE_LOCAL_BULK
     /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_bulk_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
             HG_BULK_READWRITE, &local_bulk_handle);
 #else
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+    hg_thread_mutex_lock(&hg_test_local_bulk_handle_mutex_g);
+#endif
     local_bulk_handle = hg_test_local_bulk_handle_g;
 #endif
 
@@ -1105,6 +1110,12 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
     }
+
+#ifndef MERCURY_TESTING_USE_LOCAL_BULK
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+    hg_thread_mutex_unlock(&hg_test_local_bulk_handle_mutex_g);
+#endif
+#endif
 
     return ret;
 }

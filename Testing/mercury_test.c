@@ -18,6 +18,7 @@
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 #include "mercury_thread_pool.h"
 #endif
+#include "mercury_thread_mutex.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -37,6 +38,7 @@ static hg_addr_t hg_test_addr_g = HG_ADDR_NULL;
 static int hg_test_rank_g = 0;
 
 hg_bulk_t hg_test_local_bulk_handle_g = HG_BULK_NULL;
+hg_thread_mutex_t hg_test_local_bulk_handle_mutex_g;
 
 static char **hg_test_addr_name_table_g = NULL;
 static hg_addr_t *hg_test_addr_table_g = NULL;
@@ -276,6 +278,7 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
 
         /* In case of self we need the local thread pool */
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
+        hg_thread_mutex_init(&hg_test_local_bulk_handle_mutex_g);
         hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &hg_test_thread_pool_g);
         printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
@@ -326,6 +329,7 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
     hg_atomic_set32(&hg_test_finalizing_count_g, 0);
 
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
+    hg_thread_mutex_init(&hg_test_local_bulk_handle_mutex_g);
     hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &hg_test_thread_pool_g);
     printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
@@ -405,6 +409,7 @@ HG_Test_finalize(hg_class_t *hg_class)
 
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     hg_thread_pool_destroy(hg_test_thread_pool_g);
+    hg_thread_mutex_destroy(&hg_test_local_bulk_handle_mutex_g);
 #endif
 
     /* Finalize interface */
