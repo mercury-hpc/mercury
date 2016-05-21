@@ -38,6 +38,7 @@
 
 struct na_private_class {
     struct na_class na_class; /* Must remain as first field */
+    char * protocol_name;
     na_bool_t listen;
 };
 
@@ -289,6 +290,7 @@ NA_Initialize(const char *info_string, na_bool_t listen)
         ret = NA_NOMEM_ERROR;
         goto done;
     }
+    na_private_class->protocol_name = NULL;
 
     plugin_count = sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
 
@@ -353,10 +355,19 @@ NA_Initialize(const char *info_string, na_bool_t listen)
         NA_LOG_ERROR("Could not initialize plugin");
         goto done;
     }
+    na_private_class->protocol_name = strdup(na_info->protocol_name);
+    if (!na_private_class->protocol_name) {
+        NA_LOG_ERROR("Could not duplicate protocol name");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
     na_private_class->listen = listen;
 
 done:
     if (ret != NA_SUCCESS) {
+        if (na_private_class) {
+            free(na_private_class->protocol_name);
+        }
         free(na_private_class);
         na_private_class = NULL;
     }
@@ -381,6 +392,7 @@ NA_Finalize(na_class_t *na_class)
 
     ret = na_private_class->na_class.finalize(&na_private_class->na_class);
 
+    free(na_private_class->protocol_name);
     free(na_private_class);
 
 done:
@@ -399,6 +411,25 @@ NA_Get_class_name(na_class_t *na_class)
     }
 
     ret = na_class->class_name;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+const char *
+NA_Get_class_protocol(na_class_t *na_class)
+{
+    const char *ret = NULL;
+    struct na_private_class *na_private_class =
+        (struct na_private_class *) na_class;
+
+    if (!na_private_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
+    ret = na_private_class->protocol_name;
 
 done:
     return ret;

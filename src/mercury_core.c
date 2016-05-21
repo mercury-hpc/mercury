@@ -2244,6 +2244,30 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+const char *
+HG_Core_class_get_name(const hg_class_t *hg_class)
+{
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return NULL;
+    }
+    else
+        return NA_Get_class_name(hg_class->na_class);
+}
+
+/*---------------------------------------------------------------------------*/
+const char *
+HG_Core_class_get_protocol(const hg_class_t *hg_class)
+{
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return NULL;
+    }
+    else
+        return NA_Get_class_protocol(hg_class->na_class);
+}
+
+/*---------------------------------------------------------------------------*/
 hg_context_t *
 HG_Core_context_create(hg_class_t *hg_class)
 {

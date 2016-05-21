@@ -68,6 +68,30 @@ HG_Core_finalize(
         );
 
 /**
+ * Obtain the name of the given class.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ *
+ * \return the name of the class, or NULL if not a valid class
+ */
+HG_EXPORT const char *
+HG_Core_class_get_name(
+        const hg_class_t *hg_class
+        );
+
+/**
+ * Obtain the protocol of the given class.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ *
+ * \return the protocol of the class, or NULL if not a valid class
+ */
+HG_EXPORT const char *
+HG_Core_class_get_protocol(
+        const hg_class_t *hg_class
+        );
+
+/**
  * Create a new context. Must be destroyed by calling HG_Core_context_destroy().
  *
  * \param hg_class [IN]         pointer to HG class

@@ -591,6 +591,20 @@ HG_Finalize(hg_class_t *hg_class)
 }
 
 /*---------------------------------------------------------------------------*/
+const char *
+HG_Class_get_name(const hg_class_t *hg_class)
+{
+    return HG_Core_class_get_name(hg_class);
+}
+
+/*---------------------------------------------------------------------------*/
+const char *
+HG_Class_get_protocol(const hg_class_t *hg_class)
+{
+    return HG_Core_class_get_protocol(hg_class);
+}
+
+/*---------------------------------------------------------------------------*/
 hg_context_t *
 HG_Context_create(hg_class_t *hg_class)
 {

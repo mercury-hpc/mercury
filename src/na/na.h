@@ -157,6 +157,18 @@ NA_Get_class_name(
         );
 
 /**
+ * Return the protocol of the NA class.
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return Pointer to NA class protocol or NULL in case of failure
+ */
+NA_EXPORT const char *
+NA_Get_class_protocol(
+        na_class_t *na_class
+        );
+
+/**
  * Test whether class is listening or not.
  *
  * \param na_class [IN]         pointer to NA class
