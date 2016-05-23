@@ -34,8 +34,8 @@ mpicc -show
 # set up testing configuration
 export MERCURY_BUILD_CONFIGURATION="Debug"
 export MERCURY_DASHBOARD_MODEL="Nightly"
-export MERCURY_DO_COVERAGE="true"
-export MERCURY_DO_MEMCHECK="true"
+export MERCURY_DO_COVERAGE="false"
+export MERCURY_DO_MEMCHECK="false"
 
 # export variable needed for bmi testing
 export MERCURY_PORT_NAME='tcp://localhost:3344'
