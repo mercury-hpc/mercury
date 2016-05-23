@@ -2876,10 +2876,13 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
         goto done;
     }
 
+    /* Set error code if any */
+    hg_handle->ret = ret_code;
+
     /* Fill the header */
     hg_proc_header_response_init(&response_header);
     response_header.cookie = hg_handle->cookie;
-    response_header.ret_code = ret_code;
+    response_header.ret_code = hg_handle->ret;
 
     /* Encode response header */
     ret = hg_proc_header_response(hg_handle->out_buf, hg_handle->out_buf_size,
