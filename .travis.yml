@@ -31,6 +31,7 @@ env:
     - MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
     - MERCURY_BUILD_CONFIGURATION="Release"
     - MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
+    - MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
 
 matrix:
   exclude:
@@ -38,6 +39,11 @@ matrix:
      env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
    - os: linux
      env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
+     compiler: clang
+   - os: osx
+     env: MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
+   - os: linux
+     env: MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
      compiler: clang
 
 branches:

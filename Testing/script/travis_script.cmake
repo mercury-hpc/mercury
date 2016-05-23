@@ -75,13 +75,21 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
   string(TOLOWER "-${MERCURY_MEMORYCHECK_TYPE}" lower_mercury_memorycheck_type)
   set(CTEST_MEMORYCHECK_TYPE ${MERCURY_MEMORYCHECK_TYPE})
 
+  # Valgrind
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "Valgrind")
     set(CTEST_MEMORYCHECK_COMMAND "/usr/bin/valgrind")
     set(CTEST_MEMORYCHECK_COMMAND_OPTIONS "--gen-suppressions=all --trace-children=yes --fair-sched=yes -q --leak-check=yes --show-reachable=yes --num-callers=50 -v")
     #set(CTEST_MEMORYCHECK_SUPPRESSIONS_FILE ${CTEST_SCRIPT_DIRECTORY}/MercuryValgrindSuppressions.supp)
   endif()
+  # Tsan
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
     set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer -fPIC -pie")
+    # Must add verbosity / Error in build if no memory output file is produced
+    set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
+  endif()
+  # Asan
+  if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "AddressSanitizer")
+    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=address -fno-omit-frame-pointer -fPIC -pie")
     # Must add verbosity / Error in build if no memory output file is produced
     set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
   endif()
