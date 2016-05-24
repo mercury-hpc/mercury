@@ -69,12 +69,14 @@ hg_request_init(hg_request_progress_func_t progress,
         hg_request_trigger_func_t trigger, void *arg);
 
 /**
- * Finalize the request class.
+ * Finalize the request class. User args that were passed through
+ * hg_request_init() can be retrieved through the \a arg parameter.
  *
  * \param request_class [IN]    pointer to request class
+ * \param arg [IN/OUT]          pointer to init args
  */
 HG_UTIL_EXPORT int
-hg_request_finalize(hg_request_class_t *request_class);
+hg_request_finalize(hg_request_class_t *request_class, void **arg);
 
 /**
  * Create a new request from a specified request class. The progress function

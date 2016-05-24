@@ -265,7 +265,7 @@ HG_Hl_finalize(void)
     hg_return_t ret = HG_SUCCESS;
 
     /* Finalize request class */
-    hg_request_finalize(HG_REQUEST_CLASS_DEFAULT);
+    hg_request_finalize(HG_REQUEST_CLASS_DEFAULT, NULL);
     HG_REQUEST_CLASS_DEFAULT = NULL;
 
     /* Destroy context */

@@ -80,12 +80,13 @@ done:
 
 /*---------------------------------------------------------------------------*/
 int
-hg_request_finalize(hg_request_class_t *request_class)
+hg_request_finalize(hg_request_class_t *request_class, void **arg)
 {
     int ret = HG_UTIL_SUCCESS;
 
     if (!request_class) goto done;
 
+    if (arg) *arg = request_class->arg;
     hg_thread_mutex_destroy(&request_class->progress_mutex);
     hg_thread_cond_destroy(&request_class->progress_cond);
     free(request_class);

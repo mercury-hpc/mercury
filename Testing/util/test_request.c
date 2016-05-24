@@ -77,7 +77,7 @@ main(int argc, char *argv[])
     }
 
     hg_request_destroy(request);
-    hg_request_finalize(request_class);
+    hg_request_finalize(request_class, NULL);
 
     return ret;
 }
