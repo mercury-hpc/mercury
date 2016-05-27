@@ -23,6 +23,14 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
+/* list nodes for storing registered protocols */
+struct hg_protocol_list_node {
+	struct hg_protocol_list_node *next;
+	hg_id_t base_id;
+	char protocol_name[HG_PROTOCOL_NAME_MAX];
+	int version;
+};
+
 /* HG class */
 struct hg_class {
     na_class_t *na_class;           /* NA class */
@@ -30,6 +38,7 @@ struct hg_class {
     hg_atomic_int32_t request_tag;  /* Atomic used for tag generation */
     na_tag_t request_max_tag;       /* Max value for tag */
     hg_bool_t na_ext_init;          /* NA externally initialized */
+    struct hg_protocol_list_node protocol_list; /* list of registered protocols */
 };
 
 /* Completion type */

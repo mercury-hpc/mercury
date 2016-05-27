@@ -27,7 +27,6 @@
 #define HG_CLASS_DEFAULT hg_class_default_g
 #define HG_CONTEXT_DEFAULT hg_context_default_g
 #define HG_REQUEST_CLASS_DEFAULT hg_request_class_default_g
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -151,6 +150,152 @@ HG_Hl_bulk_transfer_wait(
         hg_size_t size,
         unsigned int timeout
         );
+
+/**
+ * struct containing data marshalling routines and the callbacks for one member
+ * RPC of a protocol
+ */
+struct rpc_func_t {
+	/** pointer to input proc callback */
+	hg_return_t (*in_proc_cb)(hg_proc_t, void *);
+	/** pointer to output proc callback */
+	hg_return_t (*out_proc_cb)(hg_proc_t, void *);
+	/** pointer to RPC callback */
+	hg_return_t (*rpc_cb)(hg_handle_t);
+};
+
+/**
+ * Initialization for the HG_Registered_protocol_wait_remote function. Needs to
+ * be called on both the origin and target before the origin can call
+ * HG_Registered_protocol_wait_remote().
+ *
+ * \param hg_class [IN]		pointer to HG class
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+hg_return_t HG_Hl_protocol_init(hg_class_t *hg_class);
+
+/**
+ * Dynamically register an array of RPCs as well as the RPC callbacks executed
+ * when the RPC request ID associated with a member function is received.
+ * Associate input and output proc to RPC ID, so that they can be used to
+ * serialize and deserialize function parameters. The array of RPCs is
+ * considered a protocol. A protocol has a unique name + version combination.
+ * This function is to be called on the server side of the transaction. One
+ * first calls HG_Register_protocol() on the server side, then on the client
+ * side calls HG_Registered_protocol_wait_remote() to obtain the base_id from
+ * the server side, then calls HG_Register_protocol_base() on the client side.
+ *
+ * \param hg_class [IN]		pointer to HG class
+ * \param protocol_name [IN]	unique name associated to this protocol
+ * \param version [IN]		version number of this protocol
+ * \param rpc_func [IN]		array of rpc_func_t structs. Each struct
+ *				contains the name of the rpc call, input proc
+ *				callback and the output proc callback for this
+ *				member function
+ * \param count [IN]		number of RPC functions in this protocol
+ * \param base_id [OUT]		the base RPC id of the protocol. The i-th RPC
+ *				has the RPC ID: bas_id + i
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Hl_register_protocol(
+	hg_class_t *hg_class,
+	char *protocol_name,
+	int version,
+	struct rpc_func_t *rpc_func,
+	int count,
+	hg_id_t  *base_id
+	);
+
+/**
+ * Dynamically register an array of RPCs as well as the RPC callbacks executed
+ * when the RPC request ID associated with a member function is received.
+ * Associate input and output proc to RPC ID, so that they can be used to
+ * serialize and deserialize function parameters. The array of RPCs is called a
+ * protocol. A protocol has a unique name + version combination. A protocol can
+ * be identified by a base ID. Member RPCs of a protocol have continous RPC IDs,
+ * the i-th RPC in a protocol has the RPC id: base ID + i.  This function is to
+ * be called on the client side of the transaction. One first calls
+ * HG_Register_protocol() on the server side, then on the client side calls
+ * HG_Registered_protocol_wait_remote() to obtain the base_id from the server
+ * side, then calls HG_Register_protocol_base() on the client side.
+ *
+ * \param hg_class [IN]		pointer to HG class
+ * \param protocol_name [IN]	unique name associated to this protocol
+ * \param version [IN]		version number of this protocol
+ * \param rpc_func [IN]		array of rpc_func_t structs. Each struct
+ *				contains the input proc callback and the output
+ *				proc callback for one member function
+ * \param count [IN]		number of RPC functions in this protocol
+ * \param base_id [IN]		the base rpc id of the protocol. The i-th RPC
+ *				has the RPC ID: bas_id + i
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Hl_register_protocol_base(
+	hg_class_t *hg_class,
+	char *protocol_name,
+	int version,
+	struct rpc_func_t *rpc_func,
+	int count,
+	hg_id_t  base_id
+	);
+
+/**
+ * Query a remote node to find out if an array of protocols has been registered
+ * on that node. This is a blocking call.
+ *
+ * \param context [IN]		pointer to HG context
+ * \param request_class [IN]	pointer to request class
+ * \param protocol_name [IN]	array of strings which are the name of the
+ *				queried protocols
+ * \param version [IN]		array of version numbers of the queried
+ *				protocols
+ * \param count [IN]		number of protocols to query
+ * \param addr [IN]		abstract address of the remote node
+ * \param results [OUT]		array of ids. results[i] is 0 when the i-th
+ *				protocol is not registerd on the remote node,
+ *				otherwise contains the base ID of the i-th
+ *				protocol on the remote node.
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Hl_registered_protocol_remote_wait(
+	hg_context_t *hg_context,
+	hg_request_class_t *request_class,
+	const char **protocol_name,
+	int *version,
+	int count,
+	hg_addr_t addr,
+	hg_id_t *results,
+	unsigned int timeout);
+
+/**
+ * Query the local node to find out if a protocol has been registered on this
+ * node.
+ *
+ * \param hg_class [IN]		pointer to HG class
+ * \param protocol_name [IN]	strings which is the name of the queried
+ *				protocol
+ * \param version [IN]		version number of the queried protocol
+ * \param result [OUT]		contains the base_id of the protocol if the
+ *				protocol is registered on the local node, 0 if
+ *				the protocol is not registered on the local
+ *				node.
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Hl_registered_protocol(
+	hg_class_t *hg_class,
+	const char *protocol_name,
+	int version,
+	hg_id_t *result
+	);
 
 #ifdef __cplusplus
 }

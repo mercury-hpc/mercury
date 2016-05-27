@@ -76,6 +76,7 @@ typedef enum hg_return {
     HG_NO_MATCH,        /*!< no function match */
     HG_CHECKSUM_ERROR,  /*!< checksum error */
     HG_CANCELED,        /*!< operation was canceled */
+    HG_PROTOCOL_NAME_TOO_LONG,   /*!< prorotocol name too long */
     HG_OTHER_ERROR      /*!< error from mercury_util or external to mercury */
 } hg_return_t;
 
@@ -142,5 +143,7 @@ typedef hg_return_t (*hg_proc_cb_t)(hg_proc_t proc, void *data);
 #define HG_PROC_NULL         ((hg_proc_t)0)
 #define HG_OP_ID_NULL        ((hg_op_id_t)0)
 #define HG_OP_ID_IGNORE      ((hg_op_id_t *)1)
+
+#define HG_PROTOCOL_NAME_MAX 32
 
 #endif /* MERCURY_TYPES_H */

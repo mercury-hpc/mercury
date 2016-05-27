@@ -464,6 +464,33 @@ HG_Core_cancel(
         hg_handle_t handle
         );
 
+/**
+ * Register a protocol with the specified base id.
+ *
+ * \param hg_class [IN]		pointer to hg_class
+ * \param protocol_name [IN]	name of the protocol
+ * \param version [IN]		version of the protocol
+ * \param base_id [IN]		base id of the protocol. The i-th member RPC in
+ *				this protocol has the RPC ID: base_id + i
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_protocol_register_id(hg_class_t *hg_class, char *protocol_name,
+		int version, hg_id_t base_id);
+
+/**
+ * Query if a given protocol_id has been registered locally.
+ *
+ * \param hg_class [IN]		pointer to hg_class
+ * \param protocol_name [IN]	name of the protocol
+ * \param version [IN]		version of the protocol
+ * \param base_id [OUT]		contains 0 if the protocol id is not registered
+ *				locally, contains the base id of the protocol.
+ */
+hg_return_t
+HG_Core_registered_protocol(hg_class_t *hg_class, const char *protocol_name,
+		int version, hg_id_t *base_id);
 #ifdef __cplusplus
 }
 #endif

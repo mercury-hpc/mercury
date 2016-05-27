@@ -163,7 +163,7 @@ endif()
 set(MERCURY_EXPORTED_LIBS mercury ${MERCURY_EXPORTED_LIBS})
 
 # MERCURY HL
-add_library(mercury_hl ${MERCURY_HL_SRCS})
+add_library(mercury_hl ${MERCURY_HL_SRCS} ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.c)
 target_link_libraries(mercury_hl mercury)
 mercury_set_lib_options(mercury_hl "mercury_hl" ${MERCURY_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)

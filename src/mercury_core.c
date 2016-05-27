@@ -2918,7 +2918,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
+HG_EXPORT hg_return_t
 HG_Core_trigger(hg_context_t *context, unsigned int timeout,
     unsigned int max_count, unsigned int *actual_count)
 {
@@ -2961,4 +2961,51 @@ HG_Core_cancel(hg_handle_t handle)
 
 done:
     return ret;
+}
+
+hg_return_t
+HG_Core_protocol_register_id(hg_class_t *hg_class, char *protocol_name,
+		int version, hg_id_t base_id)
+{
+	struct hg_protocol_list_node *tmp_p;
+
+	if (strnlen(protocol_name, HG_PROTOCOL_NAME_MAX + 1)
+			> HG_PROTOCOL_NAME_MAX)
+		return HG_PROTOCOL_NAME_TOO_LONG;
+	tmp_p = &((struct hg_class *) hg_class)->protocol_list;
+
+	while (tmp_p->next != NULL) {
+		tmp_p = tmp_p->next;
+	}
+	tmp_p->next = calloc(1, sizeof(struct hg_protocol_list_node));
+	tmp_p = tmp_p->next;
+	tmp_p->base_id = base_id;
+	memcpy(tmp_p->protocol_name, protocol_name, HG_PROTOCOL_NAME_MAX);
+	tmp_p->version = version;
+
+	return HG_SUCCESS;
+}
+
+hg_return_t
+HG_Core_registered_protocol(hg_class_t *hg_class, const char *protocol_name,
+		int version, hg_id_t *base_id)
+{
+	struct hg_protocol_list_node *tmp_p;
+
+	if (strnlen(protocol_name, HG_PROTOCOL_NAME_MAX + 1)
+			> HG_PROTOCOL_NAME_MAX)
+		return HG_PROTOCOL_NAME_TOO_LONG;
+	*base_id = 0;
+	tmp_p = &((struct hg_class *) hg_class)->protocol_list;
+
+	while (tmp_p->next != NULL) {
+		tmp_p = tmp_p->next;
+		if (strcmp(tmp_p->protocol_name, protocol_name) == 0 &&
+		    tmp_p->version == version) {
+			*base_id = tmp_p->base_id;
+			break;
+		}
+	}
+
+	return HG_SUCCESS;
 }

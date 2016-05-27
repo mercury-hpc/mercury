@@ -28,6 +28,7 @@ endforeach()
 
 set(examples_dependencies
   mercury
+  mercury_hl
   )
 
 add_custom_command(

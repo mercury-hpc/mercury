@@ -35,8 +35,16 @@ function(build_snappy_example example_name)
   target_link_libraries(hg_example_${example_name} mercury ${SNAPPY_LIBRARIES})
 endfunction()
 
+function(build_protocol_example example_name)
+  add_executable(hg_example_${example_name} protocol_common.c example_${example_name}.c)
+  target_link_libraries(hg_example_${example_name} mercury mercury_hl)
+endfunction()
+
 build_rpc_example(rpc_client)
 build_rpc_example(rpc_server)
+
+build_protocol_example(protocol_client)
+build_protocol_example(protocol_server)
 
 if(SNAPPY_FOUND)
   build_snappy_example(snappy_client)
