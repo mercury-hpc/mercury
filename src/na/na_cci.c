@@ -820,15 +820,15 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
 	na_cci_addr->na_cci_op_id = na_cci_op_id;
 	na_cci_op_id->info.lookup.addr = (na_addr_t) na_cci_addr;
 
+	/* Assign op_id */
+	if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_cci_op_id;
+
 	rc = cci_connect(e, name, uri, strlen(uri) + 1, CCI_CONN_ATTR_RO,
 			na_cci_addr, 0, NULL);
 	if (rc) {
 		NA_LOG_ERROR("cci_connect(%s) failed with %s", name, cci_strerror(e, rc));
 		goto out;
 	}
-
-	/* Assign op_id */
-	*op_id = (na_op_id_t) na_cci_op_id;
 
 out:
 	if (ret != NA_SUCCESS) {
@@ -1051,6 +1051,9 @@ na_cci_msg_send_unexpected(na_class_t *na_class,
 	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
 	na_cci_op_id->info.send_unexpected.op_id = 0;
 
+	/* Assign op_id */
+	if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_cci_op_id;
+
 	msg.send.expect = 0;
 	msg.send.bye = 0;
 	msg.send.tag = tag;
@@ -1069,8 +1072,6 @@ na_cci_msg_send_unexpected(na_class_t *na_class,
 		ret = NA_PROTOCOL_ERROR;
 		goto out;
 	}
-	/* Assign op_id */
-	*op_id = (na_op_id_t) na_cci_op_id;
 
 out:
 	if (ret != NA_SUCCESS) {
@@ -1105,6 +1106,9 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
 	na_cci_op_id->info.recv_unexpected.buf = buf;
 	na_cci_op_id->info.recv_unexpected.buf_size = (cci_size_t) buf_size;
 
+	/* Assign op_id */
+	if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_cci_op_id;
+
 	/* Look for an unexpected message already received */
 	rx = na_cci_msg_unexpected_pop(na_class);
 
@@ -1136,9 +1140,6 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
 			goto out;
 		}
 	}
-
-	/* Assign op_id */
-	*op_id = (na_op_id_t) na_cci_op_id;
 
 out:
 	if (ret != NA_SUCCESS) {
@@ -1275,6 +1276,9 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 	hg_atomic_set32(&na_cci_op_id->refcnt, 1);
 	na_cci_op_id->info.send_expected.op_id = 0;
 
+	/* Assign op_id */
+	if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_cci_op_id;
+
 	msg.send.expect = 1;
 	msg.send.bye = 0;
 	msg.send.tag = tag;
@@ -1293,8 +1297,6 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 		ret = NA_PROTOCOL_ERROR;
 		goto out;
 	}
-	/* Assign op_id */
-	*op_id = (na_op_id_t) na_cci_op_id;
 
 out:
 	if (ret != NA_SUCCESS) {
@@ -1344,6 +1346,9 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 	na_cci_op_id->info.recv_expected.actual_size = 0;
 	na_cci_op_id->info.recv_expected.tag = cci_tag;
 
+	/* Assign op_id */
+	if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_cci_op_id;
+
 	/* See if it has already arrived */
 	if (!TAILQ_EMPTY(&na_cci_addr->early)) {
 		TAILQ_FOREACH(rx, &na_cci_addr->early, entry) {
@@ -1367,9 +1372,6 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class, na_context_t * context
 
 	/* Queue the recv request */
 	TAILQ_INSERT_TAIL(&na_cci_addr->rxs, na_cci_op_id, entry);
-
-	/* Assign op_id */
-	*op_id = (na_op_id_t) na_cci_op_id;
 
 out:
 	if (ret != NA_SUCCESS) {
@@ -1588,6 +1590,9 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	na_cci_op_id->info.put.internal_progress = NA_FALSE;
 	na_cci_op_id->info.put.remote_addr = na_cci_addr->cci_addr;
 
+	/* Assign op_id */
+	if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_cci_op_id;
+
 	/* Post the CCI RMA */
 	rc = cci_rma(c, NULL, 0, local, local_offset, remote, remote_offset,
 			length, na_cci_op_id, CCI_FLAG_WRITE);
@@ -1596,9 +1601,6 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 		ret = NA_PROTOCOL_ERROR;
 		goto out;
 	}
-
-	/* Assign op_id */
-	*op_id = (na_op_id_t) na_cci_op_id;
 
 out:
 	if (ret != NA_SUCCESS) {
@@ -1654,6 +1656,9 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 	na_cci_op_id->info.get.internal_progress = NA_FALSE;
 	na_cci_op_id->info.get.remote_addr = na_cci_addr->cci_addr;
 
+	/* Assign op_id */
+	if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_cci_op_id;
+
 	/* Post the CCI RMA */
 	rc = cci_rma(c, NULL, 0, local, local_offset, remote, remote_offset,
 			length, na_cci_op_id, CCI_FLAG_READ);
@@ -1662,8 +1667,6 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 		ret = NA_PROTOCOL_ERROR;
 		goto out;
 	}
-	/* Assign op_id */
-	*op_id = (na_op_id_t) na_cci_op_id;
 
 out:
 	if (ret != NA_SUCCESS) {

@@ -537,7 +537,6 @@ NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 {
     char *name_string = NULL;
     char *short_name = NULL;
-    na_op_id_t na_op_id;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -577,12 +576,10 @@ NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         short_name = name_string;
 
     ret = na_class->addr_lookup(na_class, context, callback, arg, short_name,
-            &na_op_id);
+            op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
-
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
 
 done:
     free(name_string);
@@ -798,7 +795,6 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
-    na_op_id_t na_op_id;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -833,12 +829,10 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_unexpected(na_class, context, callback, arg, buf,
-            buf_size, dest, tag, &na_op_id);
+            buf_size, dest, tag, op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
-
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
 
 done:
     return ret;
@@ -850,7 +844,6 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
         na_op_id_t *op_id)
 {
-    na_op_id_t na_op_id;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -880,12 +873,10 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_unexpected(na_class, context, callback, arg, buf,
-            buf_size, &na_op_id);
+            buf_size, op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
-
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
 
 done:
     return ret;
@@ -897,7 +888,6 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
-    na_op_id_t na_op_id;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -932,12 +922,10 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_expected(na_class, context, callback, arg, buf,
-            buf_size, dest, tag, &na_op_id);
+            buf_size, dest, tag, op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
-
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
 
 done:
     return ret;
@@ -949,7 +937,6 @@ NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
         na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
 {
-    na_op_id_t na_op_id;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -984,12 +971,10 @@ NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_expected(na_class, context, callback, arg, buf,
-            buf_size, source, tag, &na_op_id);
+            buf_size, source, tag, op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
-
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
 
 done:
     return ret;
@@ -1306,7 +1291,6 @@ NA_Put(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
 {
-    na_op_id_t na_op_id;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -1347,12 +1331,10 @@ NA_Put(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
 
     ret = na_class->put(na_class, context, callback, arg, local_mem_handle,
             local_offset, remote_mem_handle, remote_offset, data_size,
-            remote_addr, &na_op_id);
+            remote_addr, op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
-
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
 
 done:
     return ret;
@@ -1365,7 +1347,6 @@ NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
         na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
 {
-    na_op_id_t na_op_id;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -1406,12 +1387,10 @@ NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
 
     ret = na_class->get(na_class, context, callback, arg, local_mem_handle,
             local_offset, remote_mem_handle, remote_offset, data_size,
-            remote_addr, &na_op_id);
+            remote_addr, op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
-
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_op_id;
 
 done:
     return ret;
