@@ -129,9 +129,9 @@ typedef hg_return_t (*hg_proc_cb_t)(hg_proc_t proc, void *data);
 /*****************/
 
 /* Constant values */
-#define HG_BULK_READWRITE    0x00
-#define HG_BULK_READ_ONLY    0x01
-#define HG_BULK_WRITE_ONLY   0x02
+#define HG_BULK_READ_ONLY   0x01
+#define HG_BULK_WRITE_ONLY  0x02
+#define HG_BULK_READWRITE   0x04
 
 #define HG_MAX_IDLE_TIME     (3600*1000)
 

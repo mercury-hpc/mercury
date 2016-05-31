@@ -103,9 +103,10 @@ typedef na_return_t (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_TAG_UB UINT_MAX
 
 /* The memory attributes associated with the memory handle
- * can be defined as read/write or read only */
-#define NA_MEM_READWRITE  0x00
-#define NA_MEM_READ_ONLY  0x01
+ * can be defined as read only, write only or read/write */
+#define NA_MEM_READ_ONLY   0x01
+#define NA_MEM_WRITE_ONLY  0x02
+#define NA_MEM_READWRITE   0x04
 
 /*********************/
 /* Public Prototypes */
