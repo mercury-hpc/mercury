@@ -1306,11 +1306,21 @@ na_cci_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     na_cci_mem_handle_t *na_cci_mem_handle = mem_handle;
     cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
     cci_rma_handle_t *h = NULL;
-    int rc = 0, flags = CCI_FLAG_READ;
+    int rc = 0, flags = 0;
     na_return_t ret = NA_SUCCESS;
 
-    if (na_cci_mem_handle->attr & NA_MEM_READWRITE)
-        flags |= CCI_FLAG_WRITE;
+    switch(na_cci_mem_handle->attr)
+    {
+        case NA_MEM_READ_ONLY:
+            flags = CCI_FLAG_READ;
+            break;
+        case NA_MEM_WRITE_ONLY:
+            flags = CCI_FLAG_WRITE;
+            break;
+        case NA_MEM_READWRITE:
+            flags = CCI_FLAG_READ|CCI_FLAG_WRITE;
+            break;
+    }
 
     rc = cci_rma_register(e, (void*) na_cci_mem_handle->base,
         na_cci_mem_handle->size, flags, &h);
