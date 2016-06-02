@@ -10,40 +10,41 @@ set(MERCURY_BUILD_CONFIGURATION "$ENV{MERCURY_BUILD_CONFIGURATION}")
 if(NOT MERCURY_BUILD_CONFIGURATION)
   set(MERCURY_BUILD_CONFIGURATION "Debug")
 endif()
+string(TOLOWER ${MERCURY_BUILD_CONFIGURATION} lower_mercury_build_configuration)
+set(CTEST_BUILD_CONFIGURATION ${MERCURY_BUILD_CONFIGURATION})
 
 # MERCURY_DASHBOARD_MODEL=Experimental | Nightly | Continuous
 set(MERCURY_DASHBOARD_MODEL "$ENV{MERCURY_DASHBOARD_MODEL}")
 if(NOT MERCURY_DASHBOARD_MODEL)
   set(MERCURY_DASHBOARD_MODEL "Experimental")
 endif()
+set(dashboard_model ${MERCURY_DASHBOARD_MODEL})
+string(TOLOWER ${MERCURY_DASHBOARD_MODEL} lower_mercury_dashboard_model)
 
 # Disable loop when MERCURY_DASHBOARD_MODEL=Continuous
-if($ENV{MERCURY_NO_LOOP})
+set(MERCURY_NO_LOOP $ENV{MERCURY_NO_LOOP})
+if(MERCURY_NO_LOOP)
   message("Disabling looping (if applicable)")
   set(dashboard_disable_loop TRUE)
 endif()
 
+# Number of jobs to build
+set(CTEST_BUILD_FLAGS "-j4")
+
 # Build shared libraries
 set(mercury_build_shared ON)
-
-string(TOLOWER ${MERCURY_DASHBOARD_MODEL} lower_mercury_dashboard_model)
-string(TOLOWER ${MERCURY_BUILD_CONFIGURATION} lower_mercury_build_configuration)
-set(CTEST_BUILD_CONFIGURATION ${MERCURY_BUILD_CONFIGURATION})
-# Number of jobs to build
-set(CTEST_BUILD_FLAGS "-j2")
-# Build name referenced in cdash
-set(CTEST_BUILD_NAME "test-x64-${lower_mercury_dashboard_model}")
 set(MERCURY_BUILD_STATIC_LIBRARIES $ENV{MERCURY_BUILD_STATIC_LIBRARIES})
 if(MERCURY_BUILD_STATIC_LIBRARIES)
   message("Building static libraries")
-  set(CTEST_BUILD_NAME "${CTEST_BUILD_NAME}-static")
   set(mercury_build_shared OFF)
 endif()
 
+# Build name referenced in cdash
+set(CTEST_BUILD_NAME "test-x64-${lower_mercury_dashboard_model}")
+
 set(CTEST_CMAKE_GENERATOR "Unix Makefiles")
 # Must point to the root where we can checkout/build/run the tests
-set(CTEST_DASHBOARD_ROOT 
-  "$ENV{HOME}/workspace/Testing/${MERCURY_DASHBOARD_MODEL}")
+set(CTEST_DASHBOARD_ROOT "$ENV{HOME}/workspace/Testing/${MERCURY_DASHBOARD_MODEL}")
 # Give a site name
 set(CTEST_SITE "$ENV{HOSTNAME}")
 set(CTEST_TEST_TIMEOUT 180) # 3 minute timeout
@@ -82,7 +83,6 @@ set(dashboard_binary_name mercury-${lower_mercury_build_configuration})
 if(NOT mercury_build_shared)
   set(dashboard_binary_name ${dashboard_binary_name}-static)
 endif()
-set(dashboard_model ${MERCURY_DASHBOARD_MODEL})
 
 # Initial cache used to build mercury, options can be modified here
 set(dashboard_cache "
@@ -100,10 +100,12 @@ MERCURY_ENABLE_PARALLEL_TESTING:BOOL=ON
 MERCURY_USE_BOOST_PP:BOOL=OFF
 MERCURY_USE_XDR:BOOL=OFF
 NA_USE_BMI:BOOL=ON
+BMI_INCLUDE_DIR:PATH=/opt/bmi/default/include
+BMI_LIBRARY:FILEPATH=/opt/bmi/default/lib/libbmi.so
 NA_USE_MPI:BOOL=ON
 MPIEXEC_MAX_NUMPROCS:STRING=2
 
-MERCURY_TEST_INIT_COMMAND:STRING=killall -9 -r hg_client;killall -9 -r hg_server;
+MERCURY_TEST_INIT_COMMAND:STRING=killall -9 -r hg_test_client;killall -9 -r hg_test_server;
 MERCURY_TESTING_CORESIDENT:BOOL=ON
 ")
 
