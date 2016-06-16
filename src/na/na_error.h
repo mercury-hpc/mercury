@@ -46,9 +46,9 @@
       fprintf(stdout, "\n");                                            \
   } while (0)
 #else
-  #define NA_LOG_ERROR
-  #define NA_LOG_DEBUG
-  #define NA_LOG_WARNING
+  #define NA_LOG_ERROR(...) (void)0
+  #define NA_LOG_DEBUG(...) (void)0
+  #define NA_LOG_WARNING(...) (void)0
 #endif
 
 #endif /* NA_ERROR_H */

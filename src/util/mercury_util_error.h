@@ -27,14 +27,14 @@
 /* Default error macro */
 #ifdef HG_UTIL_HAS_VERBOSE_ERROR
   #include <stdio.h>
-  #define HG_UTIL_ERROR_DEFAULT(x) {              \
+  #define HG_UTIL_ERROR_DEFAULT(x) do {           \
         fprintf(stderr, "Error "                  \
                 "in %s:%d (%s): "                 \
                 "%s.\n",                          \
                 __FILE__, __LINE__, __func__, x); \
-  }
+  } while(0)
 #else
-  #define HG_UTIL_ERROR_DEFAULT(x)
+  #define HG_UTIL_ERROR_DEFAULT(...) (void)0
 #endif
 
 #endif /* MERCURY_UTIL_ERROR_H */
