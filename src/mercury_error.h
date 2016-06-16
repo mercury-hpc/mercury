@@ -50,9 +50,9 @@
       fprintf(stdout, "\n");                                         \
   } while (0)
 #else
-  #define HG_LOG_ERROR
-  #define HG_LOG_DEBUG
-  #define HG_LOG_WARNING
+  #define HG_LOG_ERROR(...) (void)0
+  #define HG_LOG_DEBUG(...) (void)0
+  #define HG_LOG_WARNING(...) (void)0
 #endif
 
 #endif /* MERCURY_ERROR_H */
