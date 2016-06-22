@@ -127,7 +127,6 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
     char *input_string = NULL;
     char *token = NULL;
     char *locator = NULL;
-    size_t port_name_len;
 
     na_info = (struct na_info *) malloc(sizeof(struct na_info));
     if (!na_info) {
@@ -139,8 +138,6 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
     na_info->class_name = NULL;
     na_info->protocol_name = NULL;
     na_info->host_name = NULL;
-    na_info->port = 0;
-    na_info->port_name = NULL;
 
     /* Copy info string and work from that */
     input_string = strdup(info_string);
@@ -152,8 +149,7 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
 
     /**
      * Strings can be of the format:
-     *   tcp://localhost:3344
-     *   ssm+tcp://localhost:3344
+     *   [<class>+]<protocol>[://[<host string>]]
      */
 
     /* Get first part of string (i.e., class_name+protocol) */
@@ -190,47 +186,33 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
         }
     }
 
-    /* Treat //hostname:port part */
-    token = locator + 2; /* Skip // */
-    token = strtok_r(token, ":", &locator); /* Get hostname */
-
-    na_info->host_name = strdup(token);
-    if (!na_info->host_name) {
-        NA_LOG_ERROR("Could not duplicate NA info host name");
-        ret = NA_NOMEM_ERROR;
+    /* Is the host string empty? */
+    if (locator[0] == '\0') {
         goto done;
     }
-
-    /* Get port number */
-    na_info->port = atoi(locator);
-
-    /* Build port name that can be used by NA class */
-    port_name_len = strlen(info_string);
-    if (na_info->class_name) {
-        /* Remove class_name+ */
-        port_name_len -= (strlen(na_info->class_name) + 1);
-    }
-
-    /**
-     * Strings can be of the format:
-     *   tcp://localhost:3344
-     */
-    na_info->port_name = (char *) malloc(port_name_len + 1);
-    if (!na_info->port_name) {
-        NA_LOG_ERROR("Could not allocate NA info port name");
-        ret = NA_NOMEM_ERROR;
+    /* Format sanity check ("://") */
+    else if (strncmp(locator, "//", 2) != 0) {
+        NA_LOG_ERROR("Bad address string format");
+        ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+    /* :// followed by empty hostname is allowed, explicitly check here */
+    else if (locator[2] == '\0') {
+        goto done;
+    }
+    else {
+        na_info->host_name = strdup(locator+2);
+        if (!na_info->host_name) {
+            NA_LOG_ERROR("Could not duplicate NA info host name");
+            ret = NA_NOMEM_ERROR;
+        }
+    }
 
-    memset(na_info->port_name, '\0', port_name_len + 1);
-    strcpy(na_info->port_name, na_info->protocol_name);
-    strcat(na_info->port_name, info_string +
-            (strlen(info_string) - port_name_len) +
-            strlen(na_info->protocol_name));
-
-    *na_info_ptr = na_info;
 done:
-    if (ret != NA_SUCCESS) {
+    if (ret == NA_SUCCESS) {
+        *na_info_ptr = na_info;
+    }
+    else {
         na_info_free(na_info);
     }
     free(input_string);
@@ -247,7 +229,6 @@ na_info_free(struct na_info *na_info)
     free(na_info->class_name);
     free(na_info->protocol_name);
     free(na_info->host_name);
-    free(na_info->port_name);
     free(na_info);
 }
 
@@ -261,8 +242,6 @@ na_info_print(struct na_info *na_info)
     printf("Class: %s\n", na_info->class_name);
     printf("Protocol: %s\n", na_info->protocol_name);
     printf("Hostname: %s\n", na_info->host_name);
-    printf("Port: %d\n", na_info->port);
-    printf("Port name: %s\n", na_info->port_name);
 }
 #endif
 
@@ -318,6 +297,14 @@ NA_Initialize(const char *info_string, na_bool_t listen)
         if (verified) {
             /* Take the first plugin that supports the protocol */
             if (!na_info->class_name) {
+                /* While we're here, dup the class_name */
+                na_info->class_name = strdup(
+                        na_class_table[plugin_index]->class_name);
+                if (!na_info->class_name) {
+                    NA_LOG_ERROR("unable to dup class name string");
+                    ret = NA_NOMEM_ERROR;
+                    goto done;
+                }
                 plugin_found = NA_TRUE;
                 break;
             }

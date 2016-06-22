@@ -448,10 +448,14 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     cci_endpoint_t *endpoint = NULL;
     char *uri = NULL;
     na_return_t ret = NA_SUCCESS;
-    char *string_port = NULL;
-#ifdef NA_CCI_HAS_POLL
     int fd = 0;
+#ifdef NA_CCI_HAS_POLL
+    int *fdptr = &fd;
+#else
+    int *fdptr = NULL; (void) fd;
 #endif
+
+    (void)listen;
 
     /* Initialize CCI */
     rc = cci_init(CCI_ABI_VERSION, 0, &caps);
@@ -493,28 +497,12 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
         goto out;
     }
 
-    /* Create an endpoint using the requested transport */
-    if(!listen) {
-#ifdef NA_CCI_HAS_POLL
-       rc = cci_create_endpoint(device, 0, &endpoint, &fd);
-#else
-       rc = cci_create_endpoint(device, 0, &endpoint, NULL);
-#endif
-    } else {
-        /* In listen mode we honor the port description */
-        string_port = rindex(na_info->port_name, ':');
-        if (!string_port) {
-            NA_LOG_ERROR("na_cci failed to find port description (portion of string address following :) in HG listen address.\n");
-           ret = NA_PROTOCOL_ERROR;
-           goto out;
-        }
-        string_port++;
-#ifdef NA_CCI_HAS_POLL
-        rc = cci_create_endpoint_at(device, string_port, 0, &endpoint, &fd);
-#else
-        rc = cci_create_endpoint_at(device, string_port, 0, &endpoint, NULL);
-#endif
-    }
+    /* Create unspecified endpoint if no hostname was provided */
+    if (!na_info->host_name)
+        rc = cci_create_endpoint(device, 0, &endpoint, fdptr);
+    else
+        rc = cci_create_endpoint_at(device, na_info->host_name, 0, &endpoint, fdptr);
+
     if (rc) {
         NA_LOG_ERROR("cci_create_endpoint() failed with %s",
             cci_strerror(NULL, rc));

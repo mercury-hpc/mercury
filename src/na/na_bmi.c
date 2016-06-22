@@ -587,8 +587,10 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
         na_bool_t listen)
 {
     char *method_list = NULL;
+    char *listen_addr = NULL;
     int flag;
     size_t method_list_len;
+    size_t listen_addr_len;
     na_return_t ret = NA_SUCCESS;
 
     flag = (listen) ? BMI_INIT_SERVER : 0;
@@ -606,11 +608,25 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
     strcpy(method_list, "bmi_");
     strcat(method_list, na_info->protocol_name);
 
+    if (listen && na_info->host_name) {
+        listen_addr_len = strlen(na_info->protocol_name) + strlen("://localhost:") +
+            strlen(na_info->host_name);
+        listen_addr = (char *) malloc(listen_addr_len+1);
+        if (!listen_addr) {
+            NA_LOG_ERROR("Could not allocate listen_addr");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
+        sprintf(listen_addr, "%s://localhost:%s", na_info->protocol_name,
+                na_info->host_name);
+    }
+
     ret = na_bmi_init(na_class, (listen) ? method_list : NULL,
-            (listen) ? na_info->port_name : NULL, flag);
+            (listen) ? listen_addr : NULL, flag);
 
 done:
     free(method_list);
+    free(listen_addr);
     return ret;
 }
 
