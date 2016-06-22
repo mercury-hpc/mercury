@@ -21,9 +21,7 @@
 struct na_info {
     char *class_name;    /* Class name (e.g., bmi) */
     char *protocol_name; /* Protocol (e.g., tcp, ib) */
-    char *host_name;     /* Host */
-    int   port;          /* Port for communication */
-    char *port_name;     /* Identifies the server and can be used by a client */
+    char *host_name;     /* Host (may be NULL in anonymous mode) */
 };
 
 /* Private callback type for NA plugins */

@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 #ifdef _WIN32
 #include <Winsock2.h>
 #include <Ws2tcpip.h>
@@ -71,6 +72,7 @@ static const struct na_test_opt na_test_opt_g[] = {
 
 static na_bool_t na_test_use_mpi_g = NA_FALSE;
 static na_bool_t na_test_use_cci_g = NA_FALSE;
+static na_bool_t na_test_use_bmi_g = NA_FALSE;
 static na_bool_t na_test_use_static_mpi_g = NA_FALSE;
 na_bool_t na_test_use_self_g = NA_FALSE;
 na_bool_t na_test_use_variable_g = NA_FALSE;
@@ -91,19 +93,13 @@ static void
 na_test_usage(const char *execname);
 
 static const char *
-na_test_gen_config(int argc, char *argv[]);
+na_test_gen_config(int argc, char *argv[], int listen);
 
 static void
 na_test_set_config(const char *addr_name);
 
 static void
 na_test_get_config(char *addr_name, na_size_t len);
-
-static void
-na_test_gethostname(char *name, na_size_t len);
-
-static char *
-na_test_getaddrinfo(const char *hostname);
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -191,19 +187,18 @@ na_test_mpi_finalize(void)
 
 /*---------------------------------------------------------------------------*/
 static const char *
-na_test_gen_config(int argc, char *argv[])
+na_test_gen_config(int argc, char *argv[], int listen)
 {
     char *na_class_name = NULL;
     char *na_protocol_name = NULL;
     static char info_string[NA_TEST_MAX_ADDR_NAME];
-    char na_hostname[NA_TEST_MAX_ADDR_NAME];
     unsigned int na_port = 22222;
     char *info_string_ptr = info_string;
     int opt;
 
     if (argc < 2) {
         na_test_usage(argv[0]);
-        exit(0);
+        exit(1);
     }
 
     while ((opt = na_test_getopt(argc, argv, na_test_short_opt_g,
@@ -211,14 +206,10 @@ na_test_gen_config(int argc, char *argv[])
         switch (opt) {
             case 'h':
                 na_test_usage(argv[0]);
-                exit(0);
+                exit(1);
             case 'c':
                 /* NA class name */
                 na_class_name = strdup(na_test_opt_arg_g);
-                if (strcmp("mpi", na_class_name) == 0)
-                    na_test_use_mpi_g = NA_TRUE;
-                if (strcmp("cci", na_class_name) == 0)
-                    na_test_use_cci_g = NA_TRUE;
                 break;
             case 'p':
                 /* NA protocol name */
@@ -245,19 +236,46 @@ na_test_gen_config(int argc, char *argv[])
 
     memset(info_string, '\0', NA_TEST_MAX_ADDR_NAME);
 
-    /* Add NA class */
-    if (na_class_name)
-        info_string_ptr += sprintf(info_string_ptr, "%s+", na_class_name);
+    if (!na_class_name) {
+        na_test_usage(argv[0]);
+        exit(1);
+    }
 
-    /* Use default if nothing specified */
-    na_protocol_name = (na_protocol_name) ? na_protocol_name : strdup("tcp");
+    if (strcmp("mpi", na_class_name) == 0)
+        na_test_use_mpi_g = NA_TRUE;
+    if (strcmp("cci", na_class_name) == 0)
+        na_test_use_cci_g = NA_TRUE;
+    if (strcmp("bmi", na_class_name) == 0)
+        na_test_use_bmi_g = NA_TRUE;
+
+    info_string_ptr += sprintf(info_string_ptr, "%s+", na_class_name);
+
+    if (!na_protocol_name) {
+        na_test_usage(argv[0]);
+        exit(1);
+    }
+
     info_string_ptr += sprintf(info_string_ptr, "%s", na_protocol_name);
 
-    /* Generate a port number depending on server rank */
-    na_port += na_test_comm_rank_g;
-    na_test_gethostname(na_hostname, NA_TEST_MAX_ADDR_NAME);
-    sprintf(info_string_ptr, "://%s:%d", na_test_getaddrinfo(na_hostname),
-            na_port);
+    if (listen) {
+        if (na_test_use_cci_g && strcmp("sm", na_protocol_name) == 0) {
+            /* special-case SM (pid:id) */
+            if (strcmp("sm", na_protocol_name) == 0) {
+                sprintf(info_string_ptr, "://%d/0", (int) getpid());
+            }
+        }
+        else if (na_test_use_cci_g || na_test_use_bmi_g) {
+            na_port += na_test_comm_rank_g;
+            sprintf(info_string_ptr, "://%d", na_port);
+        }
+        else if (na_test_use_mpi_g) { }
+        else {
+            printf("unknown protocol: %s\n", na_protocol_name);
+            exit(1);
+        }
+    }
+
+    printf("listen:%d, passing string %s\n", listen, info_string);
 
     free(na_class_name);
     free(na_protocol_name);
@@ -300,7 +318,7 @@ na_test_set_config(const char *addr_name)
         if (!config) {
             fprintf(stderr, "Could not open config file from: %s\n",
                     MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
-            exit(0);
+            exit(1);
         }
         for (i = 0; i < na_test_comm_size_g; i++) {
             fprintf(config, "%s\n", na_addr_table[i]);
@@ -335,7 +353,7 @@ na_test_get_config(char *addr_name, na_size_t len)
         if (!config) {
             fprintf(stderr, "Could not open config file from: %s\n",
                     MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
-            exit(0);
+            exit(1);
         }
         fgets(config_addr_name, NA_TEST_MAX_ADDR_NAME, config);
         /* This prevents retaining the newline, if any */
@@ -355,72 +373,6 @@ na_test_get_config(char *addr_name, na_size_t len)
 }
 
 /*---------------------------------------------------------------------------*/
-static void
-na_test_gethostname(char *name, na_size_t len)
-{
-#ifdef _WIN32
-    WORD wVersionRequested;
-    WSADATA wsaData;
-    wVersionRequested = MAKEWORD(2, 0);
-
-    if (WSAStartup(wVersionRequested, &wsaData) != 0)
-        goto done;
-#endif
-
-    gethostname(name, len);
-
-#ifdef _WIN32
-done:
-    WSACleanup();
-#endif
-}
-
-/*---------------------------------------------------------------------------*/
-static char *
-na_test_getaddrinfo(const char *hostname)
-{
-    struct addrinfo hints;
-    struct addrinfo *result, *rp;
-    int s;
-    char *result_addr = NULL;
-#ifdef _WIN32
-    WORD wVersionRequested;
-    WSADATA wsaData;
-    wVersionRequested = MAKEWORD(2, 0);
-
-    if (WSAStartup(wVersionRequested, &wsaData) != 0)
-        goto done;
-#endif
-
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
-
-    s = getaddrinfo(hostname, NULL, &hints, &result);
-    if (s != 0) {
-      fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-      goto done;
-    }
-
-    for (rp = result; rp != NULL; rp = rp->ai_next) {
-        struct sockaddr_in *rp_addr_in =
-                (struct sockaddr_in *) rp->ai_addr;
-        result_addr = inet_ntoa(rp_addr_in->sin_addr);
-        /* Try to avoid localhost addresses */
-        if (strcmp("127.0.0.1", result_addr) != 0)
-            break;
-    }
-
-done:
-    freeaddrinfo(result);
-#ifdef _WIN32
-    WSACleanup();
-#endif
-    return result_addr;
-}
-
-/*---------------------------------------------------------------------------*/
 na_class_t *
 NA_Test_client_init(int argc, char *argv[], char *addr_name,
         na_size_t max_addr_name, int *rank)
@@ -428,7 +380,7 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name,
     const char *info_string = NULL;
     na_class_t *na_class = NULL;
 
-    info_string = na_test_gen_config(argc, argv);
+    info_string = na_test_gen_config(argc, argv, 0);
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
     /* Test run in parallel using mpirun so must intialize MPI to get
@@ -462,9 +414,13 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 {
     na_class_t *na_class = NULL;
     const char *info_string = NULL;
+    char *addr_string = NULL;
+    na_addr_t self_addr = NA_ADDR_NULL;
+    na_size_t addr_string_len = 0;
+    na_return_t nret;
 
     /* TODO call it once first for now to set static MPI */
-    na_test_gen_config(argc, argv);
+    na_test_gen_config(argc, argv, 1);
     na_test_opt_ind_g = 1;
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
@@ -473,25 +429,23 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
     na_test_mpi_init(NA_TRUE);
 #endif
 
-    info_string = na_test_gen_config(argc, argv);
+    info_string = na_test_gen_config(argc, argv, 1);
 
     na_class = NA_Initialize(info_string, NA_TRUE);
 
-#ifdef NA_HAS_MPI
-    if (na_test_use_mpi_g) {
-        na_test_set_config(NA_MPI_Get_port_name(na_class));
-    } else
-#endif
-#ifdef NA_HAS_CCI
-    if (na_test_use_cci_g) {
-	    const char *uri = NA_CCI_Get_port_name(na_class);
-	    na_test_set_config(uri);
-    } else
-#endif
-    {
-        /* Gather strings and write config */
-        na_test_set_config(info_string);
-    }
+    nret = NA_Addr_self(na_class, &self_addr);
+    assert(nret == NA_SUCCESS);
+
+    nret = NA_Addr_to_string(na_class, NULL, &addr_string_len, self_addr);
+    assert(nret == NA_SUCCESS);
+
+    addr_string = malloc(addr_string_len);
+    assert(addr_string);
+
+    nret = NA_Addr_to_string(na_class, addr_string, &addr_string_len, self_addr);
+    assert(nret == NA_SUCCESS);
+
+    na_test_set_config(addr_string);
 
     /* As many entries in addr table as number of server ranks */
     if (addr_table_size) *addr_table_size = na_addr_table_size;

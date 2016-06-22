@@ -34,22 +34,21 @@ macro(add_na_test_comm test_name server client comm protocol)
     set(test_args ${test_args} --protocol ${protocol})
   endif()
 
-  # Dynamic client/server test
-  add_test(NAME "na_${full_test_name}"
-    COMMAND $<TARGET_FILE:mercury_test_driver>
-    --server $<TARGET_FILE:na_test_${server}>
-    --client $<TARGET_FILE:na_test_${client}> ${test_args}
-  )
-
   # Static client/server test
-  if(${comm} STREQUAL "mpi")
-    set(static_test_name ${full_test_name}_static)
+  if(${comm} STREQUAL "mpi" AND ${protocol} STREQUAL "static")
     set(static_test_args ${test_args} --static)
-    add_test(NAME "na_${static_test_name}"
+    add_test(NAME "na_${full_test_name}"
       COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
       ${MPIEXEC_PREFLAGS} $<TARGET_FILE:na_test_${server}> ${MPIEXEC_POSTFLAGS}
       ${static_test_args} : ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
       ${MPIEXEC_PREFLAGS} $<TARGET_FILE:na_test_${client}> ${static_test_args}
+    )
+  else()
+    # Dynamic client/server test
+    add_test(NAME "na_${full_test_name}"
+      COMMAND $<TARGET_FILE:mercury_test_driver>
+      --server $<TARGET_FILE:na_test_${server}>
+      --client $<TARGET_FILE:na_test_${client}> ${test_args}
     )
   endif()
 endmacro()

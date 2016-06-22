@@ -1105,6 +1105,18 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
     /* Check flags */
     if (strcmp(na_info->protocol_name, "static") == 0)
         flags |= MPI_INIT_STATIC;
+    else if (strcmp(na_info->protocol_name, "dynamic") != 0) {
+        NA_LOG_ERROR("Unknown protocol name for MPI, "
+                "expected \"dynamic\" or \"static\". Falling back to dynamic");
+        goto done;
+    }
+
+    /* ensure user didn't pass in a host string (it's ignored) */
+    if (na_info->host_name != NULL) {
+        NA_LOG_ERROR("Host name is unused when initializing MPI");
+        goto done;
+    }
+
     listening = (na_bool_t) (flags & MPI_INIT_SERVER);
     NA_MPI_PRIVATE_DATA(na_class)->listening = listening;
 

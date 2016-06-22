@@ -56,18 +56,18 @@ mark_as_advanced(MERCURY_TESTING_CORESIDENT)
 # (case where the NA plugin defines multiple protocols)
 #------------------------------------------------------------------------------
 if(NA_USE_BMI)
-  set(NA_BMI_TESTING_PROTOCOL "" CACHE STRING "Protocol(s) used for testing (e.g., tcp;ib).")
+  set(NA_BMI_TESTING_PROTOCOL "tcp" CACHE STRING "Protocol(s) used for testing (e.g., tcp;ib).")
   mark_as_advanced(NA_BMI_TESTING_PROTOCOL)
 endif()
 
 #Does not really make sense for MPI (so do not add an option for it)
-#if(NA_USE_MPI)
-#  set(NA_MPI_TESTING_PROTOCOL "" CACHE STRING "Protocol(s) used for testing (e.g., tcp;ib).")
-#  mark_as_advanced(NA_MPI_TESTING_PROTOCOL)
-#endif()
+if(NA_USE_MPI)
+  set(NA_MPI_TESTING_PROTOCOL "dynamic;static" CACHE STRING "Protocol(s) used for testing (e.g., dynamic;static).")
+  mark_as_advanced(NA_MPI_TESTING_PROTOCOL)
+endif()
 
 if(NA_USE_CCI)
-  set(NA_CCI_TESTING_PROTOCOL "" CACHE STRING "Protocol(s) used for testing (e.g., tcp;ib).")
+  set(NA_CCI_TESTING_PROTOCOL "tcp;sm" CACHE STRING "Protocol(s) used for testing (e.g., tcp;sm).")
   mark_as_advanced(NA_CCI_TESTING_PROTOCOL)
 endif()
 
@@ -131,22 +131,21 @@ macro(add_mercury_test_comm test_name comm protocol opt)
     set(test_args ${test_args} --${opt})
   endif()
 
-  # Dynamic client/server test
-  add_test(NAME "mercury_${full_test_name}"
-    COMMAND $<TARGET_FILE:mercury_test_driver>
-    --server $<TARGET_FILE:hg_test_server>
-    --client $<TARGET_FILE:hg_test_${test_name}> ${test_args}
-  )
-
   # Static client/server test
-  if(${comm} STREQUAL "mpi")
-    set(static_test_name ${full_test_name}_static)
+  if(${comm} STREQUAL "mpi" AND ${protocol} STREQUAL "static")
     set(static_test_args ${test_args} --static)
-    add_test(NAME "mercury_${static_test_name}"
+    add_test(NAME "mercury_${full_test_name}"
       COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
       ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_server> ${MPIEXEC_POSTFLAGS}
       ${static_test_args} : ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
       ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${static_test_args}
+    )
+  else()
+    # Dynamic client/server test
+    add_test(NAME "mercury_${full_test_name}"
+      COMMAND $<TARGET_FILE:mercury_test_driver>
+      --server $<TARGET_FILE:hg_test_server>
+      --client $<TARGET_FILE:hg_test_${test_name}> ${test_args}
     )
   endif()
 
@@ -175,8 +174,6 @@ function(add_mercury_test test_name)
       foreach(protocol ${NA_${upper_comm}_TESTING_PROTOCOL})
         add_mercury_test_comm(${test_name} ${comm} ${protocol} "")
       endforeach()
-    else()
-      add_mercury_test_comm(${test_name} ${comm} "" "")
     endif()
   endforeach()
 endfunction()
