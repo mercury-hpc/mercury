@@ -1931,10 +1931,18 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_return_t ret = NA_SUCCESS;
     int mpi_ret;
 
-    if (mpi_remote_mem_handle->attr != NA_MEM_READWRITE) {
-        NA_LOG_ERROR("Registered memory requires write permission");
-        ret = NA_PERMISSION_ERROR;
-        goto done;
+    switch (mpi_remote_mem_handle->attr) {
+        case NA_MEM_READ_ONLY:
+            NA_LOG_ERROR("Registered memory requires write permission");
+            ret = NA_PERMISSION_ERROR;
+            goto done;
+        case NA_MEM_WRITE_ONLY:
+        case NA_MEM_READWRITE:
+            break;
+        default:
+            NA_LOG_ERROR("Invalid memory access flag");
+            ret = NA_INVALID_PARAM;
+            goto done;
     }
 
     /* Allocate op_id */
@@ -2024,6 +2032,20 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     struct na_mpi_rma_info *na_mpi_rma_info = NULL;
     na_return_t ret = NA_SUCCESS;
     int mpi_ret;
+
+    switch (mpi_remote_mem_handle->attr) {
+        case NA_MEM_WRITE_ONLY:
+            NA_LOG_ERROR("Registered memory requires read permission");
+            ret = NA_PERMISSION_ERROR;
+            goto done;
+        case NA_MEM_READ_ONLY:
+        case NA_MEM_READWRITE:
+            break;
+        default:
+            NA_LOG_ERROR("Invalid memory access flag");
+            ret = NA_INVALID_PARAM;
+            goto done;
+    }
 
     /* Allocate op_id */
     na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
