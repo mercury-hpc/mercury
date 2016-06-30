@@ -4,7 +4,8 @@ CMAKE_VERSION_MAJOR=3.5
 CMAKE_VERSION_MINOR=2
 GCC_VERSION=6.1.0
 MPI_VERSION=3.2
-CCI_VERSION=0.3.0
+# CCI_VERSION=0.3.0
+CCI_REVISION=394637afe1e858966b493f2f33baf036a2a0fc0a
 
 set -e
 
@@ -30,9 +31,12 @@ if [ ! -d "$HOME/install/bin" ]; then
   tar -xzf mpich-${MPI_VERSION}.tar.gz;
   cd mpich-${MPI_VERSION} && ./configure --disable-fortran --prefix=$HOME/install && make -j2 -s && make install;
   # CCI
-  cd $HOME && wget http://cci-forum.com/wp-content/uploads/2015/12/cci-${CCI_VERSION}.tar.gz
-  tar -xzf cci-${CCI_VERSION}.tar.gz;
-  cd cci-${CCI_VERSION} && ./configure --prefix=$HOME/install && make -j2 -s && make install;
+  cd $HOME && git clone https://github.com/CCI/cci.git cci && cd cci;
+  git reset ${CCI_REVISION} --hard
+  ./configure --prefix=$HOME/install && make -j2 -s && make install;
+  # wget http://cci-forum.com/wp-content/uploads/2015/12/cci-${CCI_VERSION}.tar.gz
+  # tar -xzf cci-${CCI_VERSION}.tar.gz;
+  # cd cci-${CCI_VERSION} && ./configure --prefix=$HOME/install && make -j2 -s && make install;
 else
   echo "Using cached directory";
 fi
