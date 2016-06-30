@@ -33,7 +33,7 @@ if [ ! -d "$HOME/install/bin" ]; then
   # CCI
   cd $HOME && git clone https://github.com/CCI/cci.git cci && cd cci;
   git reset ${CCI_REVISION} --hard
-  ./configure --prefix=$HOME/install && make -j2 -s && make install;
+  ./autogen.pl && ./configure --prefix=$HOME/install && make -j2 -s && make install;
   # wget http://cci-forum.com/wp-content/uploads/2015/12/cci-${CCI_VERSION}.tar.gz
   # tar -xzf cci-${CCI_VERSION}.tar.gz;
   # cd cci-${CCI_VERSION} && ./configure --prefix=$HOME/install && make -j2 -s && make install;
