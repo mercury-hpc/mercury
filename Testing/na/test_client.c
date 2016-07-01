@@ -211,6 +211,7 @@ main(int argc, char *argv[])
     na_return_t na_ret;
     unsigned int i;
 
+    printf("ZZZ na client\n");
     /* Initialize the interface */
     params.na_class = NA_Test_client_init(argc, argv, server_name,
             NA_TEST_MAX_ADDR_NAME, NULL);
