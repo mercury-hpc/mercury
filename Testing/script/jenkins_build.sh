@@ -16,14 +16,13 @@ make && make install
 popd
 
 # build cci
-CCI_VERSION=master
+CCI_VERSION=2.0
 mkdir cci
 pushd cci
-cp /homes/soumagne/jenkins/cci-${CCI_VERSION}.tar.gz .
+wget http://cci-forum.com/wp-content/uploads/2016/06/cci-${CCI_VERSION}.tar.gz
 tar -xzf cci-${CCI_VERSION}.tar.gz
 pushd cci-${CCI_VERSION}
-./configure --prefix=$WORKSPACE/.install --enable-static
-make && make install
+./configure --prefix=$WORKSPACE/.install --enable-static && make && make install
 popd
 popd
 
