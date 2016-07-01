@@ -132,6 +132,10 @@ if(NA_USE_CCI)
       ${NA_EXT_INCLUDE_DEPENDENCIES}
       ${CCI_INCLUDE_DIRS}
     )
+    option(NA_CCI_USE_POLL "Use poll() to block until progress is made." OFF)
+    if(NA_CCI_USE_POLL)
+      set(NA_CCI_HAS_POLL 1)
+    endif()
     include(CheckCSourceCompiles)
     check_c_source_compiles("#include <cci.h>
       int main(int argc, char **argv) {

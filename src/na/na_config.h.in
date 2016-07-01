@@ -32,6 +32,7 @@
 #cmakedefine NA_MPI_HAS_GNI_SETUP
 #cmakedefine NA_HAS_SSM
 #cmakedefine NA_HAS_CCI
+#cmakedefine NA_CCI_HAS_POLL
 
 #cmakedefine NA_HAS_VERBOSE_ERROR
 
