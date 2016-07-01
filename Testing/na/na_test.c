@@ -447,6 +447,9 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 
     na_test_set_config(addr_string);
 
+    free(addr_string);
+    NA_Addr_free(na_class, self_addr);
+
     /* As many entries in addr table as number of server ranks */
     if (addr_table_size) *addr_table_size = na_addr_table_size;
 
