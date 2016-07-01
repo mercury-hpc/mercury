@@ -64,12 +64,6 @@ if(NA_USE_BMI)
       ${NA_EXT_INCLUDE_DEPENDENCIES}
       ${BMI_INCLUDE_DIRS}
     )
-    include(CheckCSourceCompiles)
-    check_c_source_compiles("#include <bmi.h>
-      int main(int argc, char **argv) {
-        BMI_set_info(0,BMI_ZOID_POST_TIMEOUT,0);
-      }
-     " HAVE_BMI_ZOID_TIMEOUT)
   else()
     message(FATAL_ERROR "Could not find BMI.")
   endif()
@@ -136,12 +130,6 @@ if(NA_USE_CCI)
     if(NA_CCI_USE_POLL)
       set(NA_CCI_HAS_POLL 1)
     endif()
-    include(CheckCSourceCompiles)
-    check_c_source_compiles("#include <cci.h>
-      int main(int argc, char **argv) {
-        cci_finalize();
-      }
-      " HAVE_CCI_FINALIZE)
   else()
     message(FATAL_ERROR "Could not find CCI.")
   endif()
