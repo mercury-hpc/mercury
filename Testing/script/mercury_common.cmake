@@ -30,7 +30,6 @@
 #   dashboard_source_name     = Name of source directory (Mercury)
 #   dashboard_binary_name     = Name of binary directory (Mercury-build)
 #   dashboard_cache           = Initial CMakeCache.txt file content
-#   dashboard_disable_update  = Disable source tree update if done externally
 #   dashboard_do_coverage     = True to enable coverage (ex: gcov)
 #   dashboard_do_memcheck     = True to enable memcheck (ex: valgrind)
 #   CTEST_BUILD_FLAGS         = build tool arguments (ex: -j2)
@@ -326,17 +325,15 @@ while(NOT dashboard_done)
   endif()
   
   # Look for updates.
-  if(NOT dashboard_disable_update)
-    ctest_update(SOURCE ${CTEST_SOURCE_DIRECTORY}
-                 RETURN_VALUE count)
-    safe_message("Found ${count} changed files")
+  ctest_update(SOURCE ${CTEST_SOURCE_DIRECTORY}
+               RETURN_VALUE count)
+  safe_message("Found ${count} changed files")
  
-    # get newest submodule info
-    execute_process(
-      COMMAND "${CTEST_GIT_COMMAND}" submodule update --init
-      WORKING_DIRECTORY "${CTEST_SOURCE_DIRECTORY}"
-      )
-  endif()
+  # get newest submodule info
+  execute_process(
+    COMMAND "${CTEST_GIT_COMMAND}" submodule update --init
+    WORKING_DIRECTORY "${CTEST_SOURCE_DIRECTORY}"
+    )
  
   if(dashboard_fresh OR NOT dashboard_continuous OR count GREATER 0)
     ctest_configure()

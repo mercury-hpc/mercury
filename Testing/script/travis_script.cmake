@@ -27,9 +27,8 @@ if(MERCURY_NO_LOOP)
   set(dashboard_disable_loop TRUE)
 endif()
 
-# Disable source tree update
-message("Disabling source tree update")
-set(dashboard_disable_update TRUE)
+# Disable source tree update and use current version
+set(CTEST_UPDATE_VERSION_ONLY TRUE)
 
 # Number of jobs to build and verbose mode
 set(CTEST_BUILD_FLAGS "-j4")
