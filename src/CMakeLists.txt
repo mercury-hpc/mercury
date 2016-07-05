@@ -284,7 +284,9 @@ set(MERCURY_INCLUDES_INSTALL_TIME
 
 # Pkg-config configuration
 if(NOT WIN32)
-  string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
+  if(CMAKE_BUILD_TYPE)
+    string(TOLOWER ${CMAKE_BUILD_TYPE} lower_cmake_build_type)
+  endif()
 
   foreach(exported_lib ${MERCURY_EXPORTED_LIBS})
     if(lower_cmake_build_type MATCHES "debug")
@@ -310,7 +312,9 @@ if(NOT WIN32)
       set(MERCURY_EXT_LIB_DEPENDENCIES_LIST ${MERCURY_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path} -l${lib_name})
     endif()
   endforeach()
-  list(REMOVE_DUPLICATES MERCURY_EXT_LIB_DEPENDENCIES_LIST)
+  if(MERCURY_EXT_LIB_DEPENDENCIES_LIST)
+    list(REMOVE_DUPLICATES MERCURY_EXT_LIB_DEPENDENCIES_LIST)
+  endif()
 
   foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES_LIST})
     set(MERCURY_LIB_DEPENDENCIES "${MERCURY_LIB_DEPENDENCIES} ${lib_dep}")
