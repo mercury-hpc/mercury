@@ -254,6 +254,7 @@ main(int argc, char *argv[])
     struct na_test_params params;
     na_return_t na_ret;
 
+    printf("ZZZ na server\n");
     /* Initialize the interface */
     params.na_class = NA_Test_server_init(argc, argv, NA_TRUE, NULL, NULL,
         &number_of_peers);
