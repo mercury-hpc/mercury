@@ -46,6 +46,7 @@ hg_progress_thread(void *arg)
 int
 main(int argc, char *argv[])
 {
+    printf("ZZZ hg server\n");
     hg_class_t *hg_class = NULL;
     hg_context_t *context = NULL;
     unsigned int number_of_peers;
