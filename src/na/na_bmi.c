@@ -2155,6 +2155,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
                 if (unexpected_info->size
                       > na_bmi_op_id->info.recv_unexpected.buf_size) {
                     NA_LOG_ERROR("Buffer too small to recv unexpected data");
+                    free(na_bmi_addr);
                     ret = NA_SIZE_ERROR;
                     goto done;
                 }

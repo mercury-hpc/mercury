@@ -73,7 +73,7 @@ na_test_getopt(int argc, char *argv[], const char *opts,
             }
         }
 
-        if (l_opts[i].name == NULL) {
+        if (l_opts && l_opts[i].name == NULL) {
             /* exhausted all of the l_opts we have and still didn't match */
             fprintf(stderr, "%s: unknown option \"%s\"\n", argv[0], arg);
             opt_opt = '?';

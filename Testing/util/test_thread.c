@@ -45,11 +45,13 @@ thread_cb_key(void *arg)
     value_ptr = (int *) hg_thread_getspecific(*thread_key);
     if (!value_ptr) {
         fprintf(stderr, "Error: No value associated to key\n");
+        goto done;
     }
     if (*value_ptr != value) {
         fprintf(stderr, "Error: Value is %d\n", *value_ptr);
     }
 
+done:
     hg_thread_exit(thread_ret);
     return thread_ret;
 }

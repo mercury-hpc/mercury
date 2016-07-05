@@ -966,6 +966,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
 done:
     if (ret != HG_SUCCESS) {
         hg_core_finalize(hg_class);
+        hg_class = NULL;
     }
     return hg_class;
 }
@@ -1001,10 +1002,10 @@ hg_core_finalize(struct hg_class *hg_class)
         hg_class->na_class = NULL;
     }
 
+done:
     /* Free HG class */
     free(hg_class);
 
-done:
     return ret;
 }
 
@@ -2327,6 +2328,7 @@ done:
     if (ret != HG_SUCCESS && context) {
         hg_queue_free(context->completion_queue);
         free(context);
+        context = NULL;
     }
     return context;
 }
@@ -2925,6 +2927,10 @@ HG_Core_progress(hg_context_t *context, unsigned int timeout)
      * RPCs */
     if (NA_Is_listening(context->hg_class->na_class)) {
         ret = hg_core_listen(context);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not listen");
+            goto done;
+        }
     }
 
     /* Make progress on the HG layer */

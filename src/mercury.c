@@ -698,6 +698,9 @@ HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
     }
 
 done:
+    if (ret != HG_SUCCESS) {
+        free(hg_proc_info);
+    }
     return ret;
 }
 
