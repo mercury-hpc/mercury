@@ -187,7 +187,7 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
     }
 
     /* Is the host string empty? */
-    if (locator[0] == '\0') {
+    if (!locator || locator[0] == '\0') {
         goto done;
     }
     /* Format sanity check ("://") */
