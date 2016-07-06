@@ -1,0 +1,25 @@
+From 394637afe1e858966b493f2f33baf036a2a0fc0a Mon Sep 17 00:00:00 2001
+From: Scott Atchley <atchleyes@ornl.gov>
+Date: Wed, 29 Jun 2016 15:01:55 -0400
+Subject: [PATCH] sm: set the device's pid when not using config
+
+Fix suggested by John Jenkins <jenkins@mcs.anl.gov>
+---
+ src/plugins/ctp/sm/ctp_sm_api.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/plugins/ctp/sm/ctp_sm_api.c b/src/plugins/ctp/sm/ctp_sm_api.c
+index 91ce369..2cb98db 100644
+--- a/src/plugins/ctp/sm/ctp_sm_api.c
++++ b/src/plugins/ctp/sm/ctp_sm_api.c
+@@ -320,6 +320,7 @@ static int ctp_sm_init(cci_plugin_ctp_t *plugin, uint32_t abi_ver, uint32_t flag
+ 		if (ret)
+ 			goto out;
+ 
++		sdev->pid = pid;
+ 		sdev->id = 0;
+ 
+ 		device->up = 1;
+-- 
+2.5.5
+

@@ -22,6 +22,7 @@ pushd cci
 wget http://cci-forum.com/wp-content/uploads/2016/06/cci-${CCI_VERSION}.tar.gz
 tar -xzf cci-${CCI_VERSION}.tar.gz
 pushd cci-${CCI_VERSION}
+patch -p1 < $MERCURY_WORKSPACE_DIR/Testing/script/cci_sm.patch
 ./configure --prefix=$WORKSPACE/.install --enable-static && make && make install
 popd
 popd
