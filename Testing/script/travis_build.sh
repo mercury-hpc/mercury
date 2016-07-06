@@ -18,6 +18,10 @@ if [ ! -d "$HOME/install/bin" ]; then
       cd $HOME && wget ftp://ftp.gnu.org/gnu/gcc/gcc-${GCC_VERSION}/gcc-${GCC_VERSION}.tar.bz2;
       tar -xjf gcc-${GCC_VERSION}.tar.bz2;
       cd gcc-${GCC_VERSION} && ./configure --disable-bootstrap --enable-languages=c,c++ --prefix=$HOME/install --enable-shared --enable-threads=posix --enable-checking=release --with-system-zlib --enable-linker-build-id --with-linker-hash-style=gnu --enable-initfini-array --disable-libgcj --without-isl --enable-gnu-indirect-function --with-tune=generic --disable-multilib && make -j2 -s && make install;
+  else # OSX
+      # CMake
+      cd $HOME && wget --no-check-certificate http://www.cmake.org/files/v${CMAKE_VERSION_MAJOR}/cmake-${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}-Darwin-x86_64.tar.gz;
+      tar --strip-components=3 -xzC $HOME/install -f cmake-${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}-Darwin-x86_64.tar.gz;
   fi
   # BMI
   cd $HOME && git clone git://git.mcs.anl.gov/bmi bmi && cd bmi;
