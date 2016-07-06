@@ -69,8 +69,13 @@ msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
     params->source_addr = callback_info->info.recv_unexpected.source;
     recv_tag = callback_info->info.recv_unexpected.tag;
 
-    test_bulk_prepare(params);
     test_send_respond(params, recv_tag + 1);
+#ifdef NA_HAS_CCI
+    if (strcmp(NA_Get_class_name(params->na_class), "cci") == 0)
+        test_bulk_prepare(params);
+    else
+#endif
+        test_done_g = 1;
 
     return ret;
 }

@@ -241,7 +241,10 @@ main(int argc, char *argv[])
 
     cancel_rpc(context, request_class, addr);
 
-    cancel_bulk_transfer(hg_class, context, request_class, addr);
+#ifdef NA_HAS_CCI
+    if (strcmp(HG_Class_get_name(hg_class), "cci") == 0)
+        cancel_bulk_transfer(hg_class, context, request_class, addr);
+#endif
 
     HG_Test_finalize(hg_class);
 

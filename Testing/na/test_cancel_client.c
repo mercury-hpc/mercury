@@ -10,6 +10,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "na_test.h"
 
@@ -75,7 +76,12 @@ msg_expected_recv_cb(const struct na_cb_info *callback_info)
 
     printf("Received msg (%s) from server\n", params->recv_buf);
 
-    test_bulk(params);
+#ifdef NA_HAS_CCI
+    if (strcmp(NA_Get_class_name(params->na_class), "cci") == 0)
+        test_bulk(params);
+    else
+#endif
+        test_done_g = 1;
 
     return ret;
 }
