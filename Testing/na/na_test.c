@@ -275,8 +275,6 @@ na_test_gen_config(int argc, char *argv[], int listen)
         }
     }
 
-    printf("listen:%d, passing string %s\n", listen, info_string);
-
     free(na_class_name);
     free(na_protocol_name);
     return info_string;
@@ -388,6 +386,7 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name,
     na_test_mpi_init(NA_FALSE);
 #endif
 
+    printf("Initializing NA with %s\n", info_string);
     na_class = NA_Initialize(info_string, NA_FALSE);
 
     /* Get config from file if self option is not passed */
@@ -431,6 +430,7 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 
     info_string = na_test_gen_config(argc, argv, 1);
 
+    printf("Initializing NA with %s\n", info_string);
     na_class = NA_Initialize(info_string, NA_TRUE);
 
     nret = NA_Addr_self(na_class, &self_addr);
