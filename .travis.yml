@@ -8,8 +8,6 @@ compiler:
     - gcc
     - clang
 
-osx_image: xcode7.3
-
 sudo: false
 
 addons:
