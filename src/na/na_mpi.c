@@ -1074,7 +1074,12 @@ done:
 static na_bool_t
 na_mpi_check_protocol(const char NA_UNUSED *protocol_name)
 {
-    return NA_TRUE;
+    if (protocol_name == NULL ||
+            (strcmp(protocol_name, "dynamic") != 0 &&
+            strcmp(protocol_name, "static")  != 0))
+        return NA_FALSE;
+    else
+        return NA_TRUE;
 }
 
 /*---------------------------------------------------------------------------*/
