@@ -14,9 +14,6 @@
 #ifdef NA_HAS_MPI
 #include "na_mpi.h"
 #endif
-#ifdef NA_HAS_CCI
-#include "na_cci.h"
-#endif
 #ifdef MERCURY_HAS_PARALLEL_TESTING
 #include <mpi.h>
 #endif
@@ -35,6 +32,9 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
+#ifdef NA_HAS_CCI
+#include <sys/prctl.h>
+#endif
 #endif
 
 /****************/
@@ -274,6 +274,15 @@ na_test_gen_config(int argc, char *argv[], int listen)
             exit(1);
         }
     }
+#if defined(NA_HAS_CCI) && defined(PR_SET_PTRACER) && defined(PR_SET_PTRACER_ANY)
+    if (na_test_use_cci_g && strcmp("sm", na_protocol_name) == 0) {
+        /* Enable CMA on systems with YAMA */
+        if (prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0) < 0) {
+            fprintf(stderr, "could not set ptracer\n");
+            exit(1);
+        }
+    }
+#endif
 
     free(na_class_name);
     free(na_protocol_name);
@@ -413,9 +422,9 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 {
     na_class_t *na_class = NULL;
     const char *info_string = NULL;
-    char *addr_string = NULL;
+    char addr_string[NA_TEST_MAX_ADDR_NAME];
     na_addr_t self_addr = NA_ADDR_NULL;
-    na_size_t addr_string_len = 0;
+    na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
     na_return_t nret;
 
     /* TODO call it once first for now to set static MPI */
@@ -434,21 +443,17 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
     na_class = NA_Initialize(info_string, NA_TRUE);
 
     nret = NA_Addr_self(na_class, &self_addr);
-    assert(nret == NA_SUCCESS);
-
-    nret = NA_Addr_to_string(na_class, NULL, &addr_string_len, self_addr);
-    assert(nret == NA_SUCCESS);
-
-    addr_string = malloc(addr_string_len);
-    assert(addr_string);
+    if (nret != NA_SUCCESS) {
+        fprintf(stderr, "Could not get self addr\n");
+    }
 
     nret = NA_Addr_to_string(na_class, addr_string, &addr_string_len, self_addr);
-    assert(nret == NA_SUCCESS);
+    if (nret != NA_SUCCESS) {
+        fprintf(stderr, "Could not convert addr to string\n");
+    }
+    NA_Addr_free(na_class, self_addr);
 
     na_test_set_config(addr_string);
-
-    free(addr_string);
-    NA_Addr_free(na_class, self_addr);
 
     /* As many entries in addr table as number of server ranks */
     if (addr_table_size) *addr_table_size = na_addr_table_size;
