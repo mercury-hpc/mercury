@@ -186,15 +186,17 @@ hg_proc_get_size_left(
         );
 
 /**
- * Get pointer to current buffer (for manual encoding).
+ * Get pointer to current buffer. Will reserve data_size for manual encoding.
  *
  * \param proc [IN]             abstract processor object
+ * \param data_size [IN]        data size
  *
  * \return Buffer pointer
  */
 HG_EXPORT void *
-hg_proc_get_buf_ptr(
-        hg_proc_t proc
+hg_proc_save_ptr(
+        hg_proc_t proc,
+        hg_size_t data_size
         );
 
 #ifdef HG_HAS_XDR
@@ -210,20 +212,6 @@ hg_proc_get_xdr_ptr(
         hg_proc_t proc
         );
 #endif
-
-/**
- * Set new buffer pointer (for manual encoding).
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param buf_ptr [IN]          pointer to buffer used by the processor
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-hg_proc_set_buf_ptr(
-        hg_proc_t proc,
-        void *buf_ptr
-        );
 
 /**
  * Get eventual extra buffer used by processor.
@@ -304,7 +292,7 @@ hg_proc_memcpy(
  *
  * \return incremented pointer to buf
  */
-static HG_INLINE void *
+static HG_PROC_INLINE void *
 hg_proc_buf_memcpy(void *buf, void *data, hg_size_t data_size, hg_proc_op_t op)
 {
     const void *src = NULL;
@@ -337,8 +325,6 @@ HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int64_t(hg_proc_t proc,
         hg_int64_t *data);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint64_t(hg_proc_t proc,
         hg_uint64_t *data);
-HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_raw(hg_proc_t proc, void *buf,
-        hg_size_t buf_size);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
         hg_bulk_t *handle);
 
@@ -363,6 +349,10 @@ HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
 #define hg_proc_hg_ptr_t      hg_proc_hg_uint64_t
 #define hg_proc_hg_size_t     hg_proc_hg_uint64_t
 #define hg_proc_hg_id_t       hg_proc_hg_uint32_t
+
+/* For now, map hg_proc_raw to hg_proc_memcpy */
+#define hg_proc_raw     hg_proc_memcpy
+
 
 /**
  * Generic processing routine.
@@ -528,33 +518,6 @@ hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data)
  * Generic processing routine.
  *
  * \param proc [IN/OUT]         abstract processor object
- * \param buf [IN/OUT]          pointer to buffer
- * \param buf_size [IN]         buffer size
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_PROC_INLINE hg_return_t
-hg_proc_raw(hg_proc_t proc, void *buf, hg_size_t buf_size)
-{
-    hg_uint8_t *buf_ptr;
-    hg_uint8_t *buf_ptr_lim = (hg_uint8_t*) buf + buf_size;
-    hg_return_t ret = HG_SUCCESS;
-
-    for (buf_ptr = (hg_uint8_t*) buf; buf_ptr < buf_ptr_lim; buf_ptr++) {
-        ret = hg_proc_uint8_t(proc, buf_ptr);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Proc error");
-            break;
-        }
-    }
-
-    return ret;
-}
-
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
  * \param handle [IN/OUT]       pointer to bulk handle
  *
  * \return HG_SUCCESS or corresponding HG error code
@@ -567,24 +530,19 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
     hg_uint64_t buf_size = 0;
 
     switch (hg_proc_get_op(proc)) {
-        case HG_ENCODE:
-            if (*handle != HG_BULK_NULL) {
-                hg_bool_t request_eager = HG_FALSE;
+        case HG_ENCODE: {
+            hg_bool_t request_eager = HG_FALSE;
+
+            if (*handle == HG_BULK_NULL) {
+                /* If HG_BULK_NULL set 0 to buf_size */
+                buf_size = 0;
+            } else {
 #ifdef HG_HAS_EAGER_BULK
                 request_eager = (hg_proc_get_size_left(proc)
                     > HG_Bulk_get_serialize_size(*handle, HG_TRUE))
                     ? HG_TRUE : HG_FALSE;
 #endif
                 buf_size = HG_Bulk_get_serialize_size(*handle, request_eager);
-                buf = malloc(buf_size);
-                ret = HG_Bulk_serialize(buf, buf_size, request_eager, *handle);
-                if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Could not serialize bulk handle");
-                    return ret;
-                }
-            } else {
-                /* If HG_BULK_NULL set 0 to buf_size */
-                buf_size = 0;
             }
             /* Encode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
@@ -593,16 +551,15 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                 return ret;
             }
             if (buf_size) {
-                /* Encode serialized buffer */
-                ret = hg_proc_raw(proc, buf, buf_size);
+                buf = hg_proc_save_ptr(proc, buf_size);
+                ret = HG_Bulk_serialize(buf, buf_size, request_eager, *handle);
                 if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Proc error");
+                    HG_LOG_ERROR("Could not serialize bulk handle");
                     return ret;
                 }
-                free(buf);
-                buf = NULL;
             }
-            break;
+        }
+        break;
         case HG_DECODE:
             /* Decode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
@@ -613,20 +570,12 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
             if (buf_size) {
                 hg_class_t *hg_class = hg_proc_get_class(proc);
 
-                buf = malloc(buf_size);
-                /* Decode serialized buffer */
-                ret = hg_proc_raw(proc, buf, buf_size);
-                if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Proc error");
-                    return ret;
-                }
+                buf = hg_proc_save_ptr(proc, buf_size);
                 ret = HG_Bulk_deserialize(hg_class, handle, buf, buf_size);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not deserialize bulk handle");
                     return ret;
                 }
-                free(buf);
-                buf = NULL;
             } else {
                 /* If buf_size is 0, define handle to HG_BULK_NULL */
                 *handle = HG_BULK_NULL;
