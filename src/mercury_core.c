@@ -106,6 +106,9 @@ struct hg_handle {
     void *extra_in_buf;
     hg_size_t extra_in_buf_size;
     hg_op_id_t extra_in_op_id;
+
+    struct hg_rpc_info *hg_rpc_info;    /* Associated RPC info */
+    void *private_data;                 /* Private data */
 };
 
 /* HG op id */
@@ -328,6 +331,23 @@ hg_core_create(
  */
 static void
 hg_core_destroy(
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Set private data.
+ */
+void
+hg_core_set_private_data(
+        struct hg_handle *hg_handle,
+        void *private_data
+        );
+
+/**
+ * Get private data.
+ */
+void *
+hg_core_get_private_data(
         struct hg_handle *hg_handle
         );
 
@@ -1241,6 +1261,9 @@ hg_core_create(struct hg_context *context)
     hg_handle->extra_in_buf_size = 0;
     hg_handle->extra_in_op_id = HG_OP_ID_NULL;
 
+    hg_handle->hg_rpc_info = NULL;
+    hg_handle->private_data = NULL;
+
 done:
     if (ret != HG_SUCCESS) {
         hg_core_destroy(hg_handle);
@@ -1274,6 +1297,27 @@ hg_core_destroy(struct hg_handle *hg_handle)
 
 done:
     return;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_core_set_private_data(struct hg_handle *hg_handle, void *private_data)
+{
+    hg_handle->private_data = private_data;
+}
+
+/*---------------------------------------------------------------------------*/
+void *
+hg_core_get_private_data(struct hg_handle *hg_handle)
+{
+    void *data;
+
+    if (hg_handle->hg_rpc_info)
+        data = hg_handle->hg_rpc_info->data;
+    else
+        data = hg_handle->private_data;
+
+    return data;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1730,6 +1774,9 @@ hg_core_process(struct hg_handle *hg_handle)
         ret = HG_INVALID_PARAM;
         goto done;
     }
+
+    /* Cache RPC info */
+    hg_handle->hg_rpc_info = hg_rpc_info;
 
     /* Increment ref count here so that a call to HG_Destroy in user's RPC
      * callback does not free the handle but only schedules its completion */
