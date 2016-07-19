@@ -77,6 +77,11 @@ struct hg_self_cb_info {
     void *respond_arg;
 };
 
+/* HG addr */
+struct hg_addr {
+    na_addr_t addr;
+};
+
 /* HG handle */
 struct hg_handle {
     struct hg_info hg_info;             /* HG info */

@@ -22,7 +22,7 @@ typedef struct hg_context hg_context_t; /* Opaque HG context */
 
 typedef hg_uint64_t hg_size_t;          /* Size */
 typedef hg_uint32_t hg_id_t;            /* RPC ID */
-typedef void *hg_addr_t;                /* Abstract HG address */
+typedef struct hg_addr *hg_addr_t;      /* Abstract HG address */
 typedef struct hg_handle *hg_handle_t;  /* Abstract RPC handle */
 typedef struct hg_bulk *hg_bulk_t;      /* Abstract bulk data handle */
 typedef struct hg_proc *hg_proc_t;      /* Abstract serialization processor */
