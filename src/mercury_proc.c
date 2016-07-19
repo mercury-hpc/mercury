@@ -177,6 +177,9 @@ hg_proc_create(hg_class_t *hg_class, void *buf, hg_size_t buf_size,
         case HG_CRC16:
             hash_method = "crc16";
             break;
+        case HG_CRC32:
+            hash_method = "crc32";
+            break;
         case HG_CRC64:
             hash_method = "crc64";
             break;

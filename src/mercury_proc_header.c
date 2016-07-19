@@ -163,7 +163,7 @@ hg_proc_header_request(void *buf, size_t buf_size,
      * safely here because the user payload is copied in this case so we don't
      * have to worry about the extra space taken by the header */
     if (header->flags) {
-        ret = hg_proc_create(hg_class, buf_ptr, buf_size, op, HG_CRC64, &proc);
+        ret = hg_proc_create(hg_class, buf_ptr, buf_size, op, HG_CHECKSUM_DEFAULT, &proc);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not create proc");
             goto done;

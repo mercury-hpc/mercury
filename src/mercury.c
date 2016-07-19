@@ -170,7 +170,7 @@ hg_get_input(hg_handle_t handle, void *in_struct)
 
     /* Create a new decoding proc */
     ret = hg_proc_create(hg_info->hg_class, in_buf, in_buf_size, HG_DECODE,
-            HG_CRC64, &proc);
+            HG_CHECKSUM_DEFAULT, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -235,7 +235,7 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
 
     /* Create a new encoding proc */
     ret = hg_proc_create(hg_info->hg_class, in_buf, in_buf_size, HG_ENCODE,
-            HG_CRC64, &proc);
+            HG_CHECKSUM_DEFAULT, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -367,7 +367,7 @@ hg_get_output(hg_handle_t handle, void *out_struct)
 
     /* Create a new encoding proc */
     ret = hg_proc_create(hg_info->hg_class, out_buf, out_buf_size, HG_DECODE,
-            HG_CRC64, &proc);
+            HG_CHECKSUM_DEFAULT, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -430,7 +430,7 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
 
     /* Create a new encoding proc */
     ret = hg_proc_create(hg_info->hg_class, out_buf, out_buf_size, HG_ENCODE,
-            HG_CRC64, &proc);
+            HG_CHECKSUM_DEFAULT, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;

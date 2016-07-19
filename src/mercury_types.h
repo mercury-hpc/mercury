@@ -58,6 +58,7 @@ typedef enum {
  */
 typedef enum {
     HG_CRC16,
+    HG_CRC32,
     HG_CRC64,
     HG_NOHASH
 } hg_proc_hash_t;
