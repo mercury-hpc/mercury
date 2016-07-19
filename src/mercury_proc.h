@@ -214,6 +214,22 @@ hg_proc_get_xdr_ptr(
 #endif
 
 /**
+ * Restore pointer from current buffer.
+ *
+ * \param proc [IN]             abstract processor object
+ * \param data [IN]             pointer to data
+ * \param data_size [IN]        data size
+ *
+ * \return Buffer pointer
+ */
+HG_EXPORT hg_return_t
+hg_proc_restore_ptr(
+        hg_proc_t proc,
+        void *data,
+        hg_size_t data_size
+        );
+
+/**
  * Get eventual extra buffer used by processor.
  *
  * \param proc [IN]             abstract processor object
@@ -557,6 +573,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                     HG_LOG_ERROR("Could not serialize bulk handle");
                     return ret;
                 }
+                hg_proc_restore_ptr(proc, buf, buf_size);
             }
         }
         break;
@@ -576,6 +593,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                     HG_LOG_ERROR("Could not deserialize bulk handle");
                     return ret;
                 }
+                hg_proc_restore_ptr(proc, buf, buf_size);
             } else {
                 /* If buf_size is 0, define handle to HG_BULK_NULL */
                 *handle = HG_BULK_NULL;
