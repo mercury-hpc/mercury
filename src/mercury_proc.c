@@ -448,7 +448,7 @@ hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
     }
 
     ptr = hg_proc->current_buf->buf_ptr;
-    hg_proc->current_buf->buf_ptr += data_size;
+    hg_proc->current_buf->buf_ptr = (char *) hg_proc->current_buf->buf_ptr + data_size;
     hg_proc->current_buf->size_left -= data_size;
 #ifdef HG_HAS_XDR
     cur_pos = xdr_getpos(&hg_proc->current_buf->xdr);
