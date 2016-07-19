@@ -18,6 +18,7 @@
 #include "mercury_atomic.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 /****************/
