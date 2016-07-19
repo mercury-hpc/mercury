@@ -48,6 +48,7 @@ void hg_engine_init(na_bool_t listen, const char* local_addr)
     /* start up thread to drive progress */
     ret = pthread_create(&hg_progress_tid, NULL, hg_progress_fn, NULL);
     assert(ret == 0);
+    (void)ret;
 
     return;
 }
@@ -62,6 +63,7 @@ void hg_engine_finalize(void)
     /* wait for it to shutdown cleanly */
     ret = pthread_join(hg_progress_tid, NULL);
     assert(ret == 0);
+    (void)ret;
 
     return;
 }
@@ -97,6 +99,7 @@ void hg_engine_addr_lookup(const char* name, na_cb_t cb, void *arg)
 
     ret = NA_Addr_lookup(network_class, na_context, cb, arg, name, NA_OP_ID_IGNORE);
     assert(ret == NA_SUCCESS);
+    (void)ret;
 
     return;
 }
@@ -108,6 +111,7 @@ void hg_engine_create_handle(na_addr_t addr, hg_id_t id,
 
     ret = HG_Create(hg_context, addr, id, handle);
     assert(ret == HG_SUCCESS);
+    (void)ret;
 
     return;
 }

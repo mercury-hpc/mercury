@@ -129,6 +129,7 @@ static na_return_t lookup_cb(const struct na_cb_info *callback_info)
     in.input_val = my_rpc_state_p->value;
     ret = HG_Forward(my_rpc_state_p->handle, my_rpc_cb, my_rpc_state_p, &in);
     assert(ret == 0);
+    (void)ret;
 
     return(NA_SUCCESS);
 }
@@ -145,6 +146,7 @@ static hg_return_t my_rpc_cb(const struct hg_cb_info *info)
     /* decode response */
     ret = HG_Get_output(info->info.forward.handle, &out);
     assert(ret == 0);
+    (void)ret;
 
     printf("Got response ret: %d\n", out.ret);
 

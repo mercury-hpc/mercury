@@ -11,6 +11,7 @@
 #include "example_snappy.h"
 
 #include <snappy-c.h>
+#include <stdio.h>
 
     /* wrapping a compression routine is a little different than a read or
      * write, as one is transforming the data and needs to send it back to the
