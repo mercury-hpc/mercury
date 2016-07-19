@@ -32,7 +32,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
-#ifdef NA_HAS_CCI
+#if defined(NA_HAS_CCI) && defined(HG_TESTING_HAS_SYSPRCTL_H)
 #include <sys/prctl.h>
 #endif
 #endif
