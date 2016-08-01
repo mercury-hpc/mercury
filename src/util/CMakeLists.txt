@@ -151,7 +151,7 @@ install(
   FILES
     ${MERCURY_HEADERS}
   DESTINATION
-    ${MERCURY_INSTALL_INCLUDE_DIR}/mercury_util
+    ${MERCURY_INSTALL_INCLUDE_DIR}
   COMPONENT
     headers
 )

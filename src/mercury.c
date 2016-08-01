@@ -51,6 +51,23 @@ struct hg_forward_cb_info {
 /********************/
 
 /**
+ * Set private data.
+ */
+extern void
+hg_core_set_private_data(
+        struct hg_handle *hg_handle,
+        void *private_data
+        );
+
+/**
+ * Get private data.
+ */
+extern void *
+hg_core_get_private_data(
+        struct hg_handle *hg_handle
+        );
+
+/**
  * Decode and get input structure.
  */
 static hg_return_t
@@ -158,10 +175,9 @@ hg_get_input(hg_handle_t handle, void *in_struct)
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
-            hg_info->id);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get registered data");
+        HG_LOG_ERROR("Could not get proc info");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -170,7 +186,7 @@ hg_get_input(hg_handle_t handle, void *in_struct)
 
     /* Create a new decoding proc */
     ret = hg_proc_create(hg_info->hg_class, in_buf, in_buf_size, HG_DECODE,
-            HG_CRC64, &proc);
+            HG_CHECKSUM_DEFAULT, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -223,10 +239,9 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
-            hg_info->id);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get registered data");
+        HG_LOG_ERROR("Could not get proc info");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -235,7 +250,7 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
 
     /* Create a new encoding proc */
     ret = hg_proc_create(hg_info->hg_class, in_buf, in_buf_size, HG_ENCODE,
-            HG_CRC64, &proc);
+            HG_CHECKSUM_DEFAULT, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -300,10 +315,9 @@ hg_free_input(hg_handle_t handle, void *in_struct)
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
-            hg_info->id);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get registered data");
+        HG_LOG_ERROR("Could not get proc info");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -355,10 +369,9 @@ hg_get_output(hg_handle_t handle, void *out_struct)
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
-            hg_info->id);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get registered data");
+        HG_LOG_ERROR("Could not get proc info");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -367,7 +380,7 @@ hg_get_output(hg_handle_t handle, void *out_struct)
 
     /* Create a new encoding proc */
     ret = hg_proc_create(hg_info->hg_class, out_buf, out_buf_size, HG_DECODE,
-            HG_CRC64, &proc);
+            HG_CHECKSUM_DEFAULT, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -418,10 +431,9 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
-            hg_info->id);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get registered data");
+        HG_LOG_ERROR("Could not get proc info");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -430,7 +442,7 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
 
     /* Create a new encoding proc */
     ret = hg_proc_create(hg_info->hg_class, out_buf, out_buf_size, HG_ENCODE,
-            HG_CRC64, &proc);
+            HG_CHECKSUM_DEFAULT, &proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create proc");
         goto done;
@@ -481,10 +493,9 @@ hg_free_output(hg_handle_t handle, void *out_struct)
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_info->hg_class,
-            hg_info->id);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
     if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get registered data");
+        HG_LOG_ERROR("Could not get proc info");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -789,7 +800,33 @@ hg_return_t
 HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle_t *handle)
 {
-    return HG_Core_create(context, addr, id, handle);
+    struct hg_handle *hg_handle = NULL;
+    struct hg_proc_info *hg_proc_info = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL pointer to HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_create(context, addr, id, &hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Cannot create HG handle");
+        goto done;
+    }
+    hg_proc_info = (struct hg_proc_info *)
+        HG_Core_registered_data(HG_Core_context_get_class(context), id);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get registered data");
+        goto done;
+    }
+    hg_core_set_private_data(hg_handle, hg_proc_info);
+
+    *handle = (hg_handle_t) hg_handle;
+
+done:
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/

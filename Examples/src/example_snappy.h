@@ -32,7 +32,7 @@
 MERCURY_GEN_PROC(snappy_compress_in_t,
         ((hg_bulk_t)(input_bulk_handle))
         ((hg_bulk_t)(compressed_bulk_handle))
-        );
+        )
 
 /* snappy_compress_out_t will contain output members:
  * - ret: snappy_status enum, the return type uses hg_int32_t as a base type
@@ -40,7 +40,7 @@ MERCURY_GEN_PROC(snappy_compress_in_t,
 MERCURY_GEN_PROC(snappy_compress_out_t,
         ((hg_int32_t)(ret))
         ((hg_size_t)(compressed_length))
-        );
+        )
 
 /**
  * Convenient to have both origin and target call a "register" routine

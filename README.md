@@ -42,6 +42,8 @@ Plugin requirements
 To make use of the BMI plugin, please do:
 
     git clone git://git.mcs.anl.gov/bmi && cd bmi
+    # If you are building BMI on an OSX platform, then apply the following patch:
+    # patch -p1 < patches/bmi-osx.patch
     ./prepare && ./configure --enable-shared --enable-bmi-only
     make && make install
 

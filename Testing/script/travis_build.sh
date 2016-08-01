@@ -35,8 +35,9 @@ if [ ! -d "$HOME/install/bin" ]; then
   cd mpich-${MPI_VERSION} && ./configure --disable-fortran --prefix=$HOME/install && make -j2 -s && make install;
   # CCI
   cd $HOME && wget http://cci-forum.com/wp-content/uploads/2016/06/cci-${CCI_VERSION}.tar.gz
-  tar -xzf cci-${CCI_VERSION}.tar.gz;
-  cd cci-${CCI_VERSION} && ./configure --prefix=$HOME/install && make -j2 -s && make install;
+  tar -xzf cci-${CCI_VERSION}.tar.gz && cd cci-${CCI_VERSION};
+  patch -p1 < ${TRAVIS_BUILD_DIR}/Testing/script/cci_sm.patch
+  ./configure --prefix=$HOME/install && make -j2 -s && make install;
 else
   echo "Using cached directory";
 fi

@@ -13,6 +13,7 @@
 #include <aio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdio.h>
 #include <fcntl.h>
 
 #include "example_rpc.h"
@@ -105,6 +106,7 @@ static hg_return_t my_rpc_handler(hg_handle_t handle)
         my_rpc_state_p, HG_BULK_PULL, hgi->addr, my_rpc_state_p->in.bulk_handle, 0,
         my_rpc_state_p->bulk_handle, 0, my_rpc_state_p->size, HG_OP_ID_IGNORE);
     assert(ret == 0);
+    (void)ret;
 
     return(0);
 }
@@ -139,6 +141,7 @@ static hg_return_t my_rpc_handler_bulk_cb(const struct hg_cb_info *info)
     /* post async write (just dump data to stdout) */
     ret = aio_write(&my_rpc_state_p->acb);
     assert(ret == 0);
+    (void)ret;
 
     return(0);
 }
@@ -163,6 +166,7 @@ static void my_rpc_handler_write_cb(union sigval sig)
      */
     ret = HG_Respond(my_rpc_state_p->handle, NULL, NULL, &out);
     assert(ret == HG_SUCCESS);
+    (void)ret;
     
     HG_Bulk_free(my_rpc_state_p->bulk_handle);
     HG_Destroy(my_rpc_state_p->handle);

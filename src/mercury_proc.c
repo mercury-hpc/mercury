@@ -26,6 +26,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/****************/
+/* Local Macros */
+/****************/
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
+
 struct hg_proc_buf {
     void *    buf;       /* Pointer to allocated buffer */
     void *    buf_ptr;   /* Pointer to current position */
@@ -48,6 +56,26 @@ struct hg_proc {
     struct hg_proc_buf proc_buf;
     struct hg_proc_buf extra_buf;
 };
+
+/********************/
+/* Local Prototypes */
+/********************/
+
+/**
+ * Update checksum.
+ */
+#ifdef HG_HAS_CHECKSUMS
+static HG_PROC_INLINE hg_return_t
+hg_proc_mchecksum_update(
+        hg_proc_t proc,
+        void *data,
+        hg_size_t data_size
+        );
+#endif
+
+/*******************/
+/* Local Variables */
+/*******************/
 
 /*---------------------------------------------------------------------------*/
 void *
@@ -149,6 +177,9 @@ hg_proc_create(hg_class_t *hg_class, void *buf, hg_size_t buf_size,
         case HG_CRC16:
             hash_method = "crc16";
             break;
+        case HG_CRC32:
+            hash_method = "crc32";
+            break;
         case HG_CRC64:
             hash_method = "crc64";
             break;
@@ -161,8 +192,7 @@ hg_proc_create(hg_class_t *hg_class, void *buf, hg_size_t buf_size,
 #ifdef HG_HAS_CHECKSUMS
         int checksum_ret;
 
-        checksum_ret = mchecksum_init(hash_method,
-                &hg_proc->proc_buf.checksum);
+        checksum_ret = mchecksum_init(hash_method, &hg_proc->proc_buf.checksum);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_LOG_ERROR("Could not initialize checksum");
             ret = HG_CHECKSUM_ERROR;
@@ -397,17 +427,33 @@ done:
 
 /*---------------------------------------------------------------------------*/
 void *
-hg_proc_get_buf_ptr(hg_proc_t proc)
+hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
     void *ptr = NULL;
+#ifdef HG_HAS_XDR
+    unsigned int cur_pos;
+#endif
 
     if (!hg_proc) {
         HG_LOG_ERROR("Proc is not initialized");
         goto done;
     }
 
+    /* If not enough space allocate extra space if encoding or
+     * just get extra buffer if decoding */
+    if (data_size && hg_proc->current_buf->size_left < data_size) {
+        hg_proc_set_size(proc, hg_proc->proc_buf.size +
+                hg_proc->extra_buf.size + data_size);
+    }
+
     ptr = hg_proc->current_buf->buf_ptr;
+    hg_proc->current_buf->buf_ptr = (char *) hg_proc->current_buf->buf_ptr + data_size;
+    hg_proc->current_buf->size_left -= data_size;
+#ifdef HG_HAS_XDR
+    cur_pos = xdr_getpos(&hg_proc->current_buf->xdr);
+    xdr_setpos(&hg_proc->current_buf->xdr, cur_pos + data_size);
+#endif
 
 done:
     return ptr;
@@ -431,32 +477,16 @@ hg_proc_get_xdr_ptr(hg_proc_t proc)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_proc_set_buf_ptr(hg_proc_t proc, void *buf_ptr)
+hg_proc_restore_ptr(hg_proc_t proc, void *data, hg_size_t data_size)
 {
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    ptrdiff_t new_pos, lim_pos;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_proc) {
-        HG_LOG_ERROR("Proc is not initialized");
-        ret = HG_INVALID_PARAM;
+#ifdef HG_HAS_CHECKSUMS
+    ret = hg_proc_mchecksum_update(proc, data, data_size);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not update checksum");
         goto done;
     }
-
-    /* Work out new position */
-    new_pos = (char *) buf_ptr - (char *) hg_proc->current_buf->buf;
-    lim_pos = (ptrdiff_t) hg_proc->current_buf->size;
-    if (new_pos > lim_pos) {
-        HG_LOG_ERROR("Out of memory");
-        ret = HG_SIZE_ERROR;
-        return ret;
-    }
-
-    hg_proc->current_buf->buf_ptr   = buf_ptr;
-    hg_proc->current_buf->size_left = hg_proc->current_buf->size -
-            (hg_size_t) new_pos;
-#ifdef HG_HAS_XDR
-    xdr_setpos(&hg_proc->current_buf->xdr, new_pos);
 #endif
 
 done:
@@ -549,7 +579,7 @@ hg_proc_flush(hg_proc_t proc)
 
     if (hg_proc_get_op(proc) == HG_ENCODE) {
         checksum_ret = mchecksum_get(hg_proc->current_buf->checksum,
-                base_checksum, checksum_size, 1);
+                base_checksum, checksum_size, MCHECKSUM_FINALIZE);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_LOG_ERROR("Could not get checksum");
             ret = HG_CHECKSUM_ERROR;
@@ -557,9 +587,8 @@ hg_proc_flush(hg_proc_t proc)
         }
     }
 
-
     /* Process checksum (TODO should that depend on the encoding method) */
-    ret = hg_proc_raw(proc, base_checksum, checksum_size);
+    ret = hg_proc_memcpy(proc, base_checksum, checksum_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Proc error");
         goto done;
@@ -574,7 +603,7 @@ hg_proc_flush(hg_proc_t proc)
         }
 
         checksum_ret = mchecksum_get(hg_proc->current_buf->checksum,
-                new_checksum, checksum_size, 1);
+                new_checksum, checksum_size, MCHECKSUM_FINALIZE);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_LOG_ERROR("Could not get checksum");
             ret = HG_CHECKSUM_ERROR;
@@ -670,6 +699,31 @@ hg_proc_memcpy(hg_proc_t proc, void *data, hg_size_t data_size)
     hg_proc->current_buf->size_left -= data_size;
 
 #ifdef HG_HAS_CHECKSUMS
+    ret = hg_proc_mchecksum_update(proc, data, data_size);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not update checksum");
+        goto done;
+    }
+#endif
+
+done:
+    return ret;
+}
+
+#ifdef HG_HAS_CHECKSUMS
+/*---------------------------------------------------------------------------*/
+static HG_PROC_INLINE hg_return_t
+hg_proc_mchecksum_update(hg_proc_t proc, void *data, hg_size_t data_size)
+{
+    struct hg_proc *hg_proc = (struct hg_proc *) proc;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_proc) {
+        HG_LOG_ERROR("Proc is not initialized");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
     /* Update checksum */
     if (hg_proc->current_buf->update_checksum) {
         int checksum_ret;
@@ -682,8 +736,8 @@ hg_proc_memcpy(hg_proc_t proc, void *data, hg_size_t data_size)
             goto done;
         }
     }
-#endif
 
 done:
     return ret;
 }
+#endif

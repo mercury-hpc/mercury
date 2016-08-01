@@ -17,16 +17,16 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
-typedef struct hg_class hg_class_t;             /* Opaque HG class */
-typedef struct hg_context hg_context_t;         /* Opaque HG context */
+typedef struct hg_class hg_class_t;     /* Opaque HG class */
+typedef struct hg_context hg_context_t; /* Opaque HG context */
 
-typedef hg_uint64_t hg_size_t;  /* Size */
-typedef hg_uint32_t hg_id_t;    /* RPC ID */
-typedef void *hg_addr_t;        /* Abstract HG address */
-typedef void *hg_handle_t;      /* Abstract RPC handle */
-typedef void *hg_bulk_t;        /* Abstract bulk data handle */
-typedef void *hg_proc_t;        /* Abstract serialization processor */
-typedef void *hg_op_id_t;       /* Abstract operation id */
+typedef hg_uint64_t hg_size_t;          /* Size */
+typedef hg_uint32_t hg_id_t;            /* RPC ID */
+typedef struct hg_addr *hg_addr_t;      /* Abstract HG address */
+typedef struct hg_handle *hg_handle_t;  /* Abstract RPC handle */
+typedef struct hg_bulk *hg_bulk_t;      /* Abstract bulk data handle */
+typedef struct hg_proc *hg_proc_t;      /* Abstract serialization processor */
+typedef struct hg_op_id *hg_op_id_t;    /* Abstract operation id */
 
 /* HG info struct */
 struct hg_info {
@@ -58,6 +58,7 @@ typedef enum {
  */
 typedef enum {
     HG_CRC16,
+    HG_CRC32,
     HG_CRC64,
     HG_NOHASH
 } hg_proc_hash_t;

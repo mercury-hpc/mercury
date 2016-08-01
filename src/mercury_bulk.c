@@ -1175,7 +1175,7 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
         }
     }
 
-    *handle = hg_bulk;
+    *handle = (hg_bulk_t) hg_bulk;
 
 done:
     if (ret != HG_SUCCESS) {
@@ -1187,7 +1187,7 @@ done:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
-    hg_bulk_op_t op, na_addr_t origin_addr, hg_bulk_t origin_handle,
+    hg_bulk_op_t op, hg_addr_t origin_addr, hg_bulk_t origin_handle,
     hg_size_t origin_offset, hg_bulk_t local_handle, hg_size_t local_offset,
     hg_size_t size, hg_op_id_t *op_id)
 {

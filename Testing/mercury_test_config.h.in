@@ -34,4 +34,7 @@
 #cmakedefine MERCURY_TESTING_HAS_VERIFY_DATA
 #cmakedefine MERCURY_TESTING_TEMP_DIRECTORY "@MERCURY_TESTING_TEMP_DIRECTORY@"
 
+/* Define if has <sys/prctl.h> */
+#cmakedefine HG_TESTING_HAS_SYSPRCTL_H
+
 #endif /* MERCURY_TEST_CONFIG_H */
