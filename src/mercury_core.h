@@ -377,7 +377,9 @@ HG_Core_get_output(
  *
  * \param handle [IN]           HG handle
  * \param callback [IN]         pointer to function callback
- * \param arg [IN]              pointer to data passed to callback
+ * \param usercb [IN]           user-level callback
+ * \param userarg [IN]          arg for usercb
+ * \param extra_in_buf [IN]     extra input buffer
  * \param extra_in_handle [IN]  bulk handle to extra input buffer
  * \param size_to_send [IN]     size of request to transmit
  *
@@ -387,7 +389,9 @@ HG_EXPORT hg_return_t
 HG_Core_forward(
         hg_handle_t handle,
         hg_cb_t callback,
-        void *arg,
+        hg_cb_t usercb,
+        void *userarg,
+        void *extra_in_buf,
         hg_bulk_t extra_in_handle,
         hg_size_t size_to_send
         );

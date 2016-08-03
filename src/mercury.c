@@ -525,27 +525,30 @@ done:
 static hg_return_t
 hg_forward_cb(const struct hg_cb_info *callback_info)
 {
-    struct hg_forward_cb_info *hg_forward_cb_info =
-            (struct hg_forward_cb_info *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
-    /* Free eventual extra input buffer and handle */
-    HG_Bulk_free(hg_forward_cb_info->extra_in_handle);
-    free(hg_forward_cb_info->extra_in_buf);
+    /*
+     * callback_info->type should be HG_CB_INTFORWARD.  we'll turn it
+     * into a HG_CB_FORWARD and pass up to the user.
+     */
 
-    /* Execute callback */
-    if (hg_forward_cb_info->callback) {
+    /* Free eventual extra input buffer and handle */
+    HG_Bulk_free(callback_info->info.intforward.extra_in_handle);
+    free(callback_info->info.intforward.extra_in_buf);
+
+    /* Execute user callback */
+    if (callback_info->info.intforward.usercb) {
         struct hg_cb_info hg_cb_info;
 
-        hg_cb_info.arg = hg_forward_cb_info->arg;
+        hg_cb_info.arg = callback_info->info.intforward.userarg;
         hg_cb_info.ret = callback_info->ret;
-        hg_cb_info.type = callback_info->type;
-        hg_cb_info.info = callback_info->info;
+        hg_cb_info.type = HG_CB_FORWARD;   /* converted from INTFORWARD */
+        hg_cb_info.info.forward.handle =
+            callback_info->info.intforward.handle;
 
-        hg_forward_cb_info->callback(&hg_cb_info);
+        callback_info->info.intforward.usercb(&hg_cb_info);
     }
 
-    free(hg_forward_cb_info);
     return ret;
 }
 
@@ -935,27 +938,15 @@ done:
 hg_return_t
 HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
 {
-    struct hg_forward_cb_info *hg_forward_cb_info = NULL;
     hg_bulk_t extra_in_handle = HG_BULK_NULL;
     void *extra_in_buf = NULL;
     hg_size_t extra_in_buf_size;
     hg_return_t ret = HG_SUCCESS;
     hg_size_t size_to_send;
 
-    hg_forward_cb_info = (struct hg_forward_cb_info *) malloc(
-            sizeof(struct hg_forward_cb_info));
-    if (!hg_forward_cb_info) {
-        HG_LOG_ERROR("Could not allocate HG forward callback info");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
-    hg_forward_cb_info->callback = callback;
-    hg_forward_cb_info->arg = arg;
-    hg_forward_cb_info->extra_in_handle = HG_BULK_NULL;
-    hg_forward_cb_info->extra_in_buf = NULL;
-
     /* Serialize input */
-    ret = hg_set_input(handle, in_struct, &extra_in_buf, &extra_in_buf_size, &size_to_send);
+    ret = hg_set_input(handle, in_struct, &extra_in_buf, &extra_in_buf_size,
+                       &size_to_send);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not set input");
         goto done;
@@ -970,22 +961,17 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
             HG_LOG_ERROR("Could not create bulk data handle");
             goto done;
         }
-        hg_forward_cb_info->extra_in_handle = extra_in_handle;
-        hg_forward_cb_info->extra_in_buf = extra_in_buf;
     }
 
     /* Send request */
-    ret = HG_Core_forward(handle, hg_forward_cb, hg_forward_cb_info,
-            extra_in_handle, size_to_send);
+    ret = HG_Core_forward(handle, hg_forward_cb, callback, arg, extra_in_buf,
+                          extra_in_handle, size_to_send);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not forward call");
         goto done;
     }
 
 done:
-    if (ret != HG_SUCCESS) {
-        free(hg_forward_cb_info);
-    }
     return ret;
 }
 

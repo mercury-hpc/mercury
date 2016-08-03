@@ -100,6 +100,10 @@ struct hg_handle {
     hg_bool_t addr_mine;                /* NA Addr created by HG */
     hg_bool_t process_rpc_cb;           /* RPC callback must be processed */
 
+    hg_cb_t forw_usercb;                /* forw: user callback fn */
+    void *forw_extra_in_buf;            /* forw: extra buf (XXX needed?) */
+    hg_bulk_t forw_extra_in_handle;     /* forw: extra in bulk handle */
+
     void *in_buf;                       /* Input buffer */
     na_size_t in_buf_size;              /* Input buffer size */
     na_size_t in_buf_used;              /* Amount of input buffer used */
@@ -2145,10 +2149,20 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
             hg_cb_info.arg = hg_handle->arg;
             hg_cb_info.ret = hg_handle->ret;
             hg_cb_info.type = hg_handle->cb_type;
-            if (hg_handle->cb_type == HG_CB_FORWARD)
+            if (hg_handle->cb_type == HG_CB_INTFORWARD) {
+                hg_cb_info.info.intforward.handle = (hg_handle_t) hg_handle;
+                hg_cb_info.info.intforward.usercb = hg_handle->forw_usercb;
+                hg_cb_info.info.intforward.userarg = hg_handle->arg;
+                hg_cb_info.info.intforward.extra_in_handle =
+                    hg_handle->forw_extra_in_handle;
+                hg_cb_info.info.intforward.extra_in_buf =
+                    hg_handle->forw_extra_in_buf;
+            } else if (hg_handle->cb_type == HG_CB_FORWARD) {
                 hg_cb_info.info.forward.handle = (hg_handle_t) hg_handle;
-            else if (hg_handle->cb_type == HG_CB_RESPOND)
+            } else if (hg_handle->cb_type == HG_CB_RESPOND) {
                 hg_cb_info.info.respond.handle = (hg_handle_t) hg_handle;
+            }
+            
             hg_handle->callback(&hg_cb_info);
         }
 
@@ -2802,8 +2816,9 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
-    hg_bulk_t extra_in_handle, hg_size_t size_to_send)
+HG_Core_forward(hg_handle_t handle, hg_cb_t callback, hg_cb_t usercb,
+                void *userarg, void *extra_in_buf, hg_bulk_t extra_in_handle,
+                hg_size_t size_to_send)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     struct hg_header_request request_header;
@@ -2819,8 +2834,11 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
 
     /* Set callback */
     hg_handle->callback = callback;
-    hg_handle->arg = arg;
-    hg_handle->cb_type = HG_CB_FORWARD;
+    hg_handle->arg = userarg;          /* this is arg for usercb */
+    hg_handle->forw_usercb = usercb;
+    hg_handle->forw_extra_in_buf = extra_in_buf;
+    hg_handle->forw_extra_in_handle = extra_in_handle;
+    hg_handle->cb_type = HG_CB_INTFORWARD;
 
     /* Increase ref count here so that a call to HG_Destroy does not free the
      * handle but only schedules its completion
