@@ -12,6 +12,13 @@
 #define MERCURY_TYPES_H
 
 #include "mercury_config.h"
+#include "mercury_util_config.h"
+
+#ifdef HG_UTIL_HAS_SYS_QUEUE_H
+#include <sys/queue.h>
+#else
+#include "mercury_sys_queue.h"
+#endif
 
 /*************************************/
 /* Public Type and Struct Definition */
