@@ -51,7 +51,7 @@ msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
         printf("NA_Msg_recv_unexpected() was successfully canceled\n");
         ret = NA_Msg_recv_unexpected(params->na_class, params->context,
             msg_unexpected_recv_cb, params, params->recv_buf,
-            params->recv_buf_len, NA_OP_ID_IGNORE);
+            params->recv_buf_len, NULL, NA_OP_ID_IGNORE);
         if (ret != NA_SUCCESS) {
             fprintf(stderr, "Could not post recv of unexpected message\n");
         }
@@ -123,7 +123,7 @@ bulk_put_cb(const struct na_cb_info *callback_info)
     printf("Sending end of transfer ack...\n");
     ret = NA_Msg_send_expected(params->na_class, params->context,
         msg_expected_send_final_cb, NULL, params->send_buf,
-        params->send_buf_len, params->source_addr, ack_tag,
+        params->send_buf_len, params->source_addr, ack_tag, NULL,
         NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of acknowledgment\n");
@@ -263,7 +263,7 @@ test_send_respond(struct na_test_params *params, na_tag_t send_tag)
 
     na_ret = NA_Msg_send_expected(params->na_class, params->context,
         NULL, NULL, params->send_buf, params->send_buf_len, params->source_addr,
-        send_tag, NA_OP_ID_IGNORE);
+        send_tag, NULL, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of message\n");
         return EXIT_FAILURE;
@@ -298,7 +298,8 @@ test_bulk_prepare(struct na_test_params *params)
     printf("Receiving remote memory handle...\n");
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
         mem_handle_expected_recv_cb, params, params->recv_buf,
-        params->recv_buf_len, params->source_addr, bulk_tag, NA_OP_ID_IGNORE);
+        params->recv_buf_len, params->source_addr, bulk_tag, NULL,
+        NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start recv of memory handle\n");
         return EXIT_FAILURE;
@@ -343,7 +344,7 @@ main(int argc, char *argv[])
         /* Recv a message from a client */
         na_ret = NA_Msg_recv_unexpected(params.na_class, params.context,
             msg_unexpected_recv_cb, &params, params.recv_buf,
-            params.recv_buf_len, &op_id);
+            params.recv_buf_len, NULL, &op_id);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not post recv of unexpected message\n");
             return EXIT_FAILURE;

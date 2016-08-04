@@ -133,6 +133,7 @@ struct na_cci_op_id {
     hg_atomic_int32_t refcnt; /* Reference counter   */
     hg_atomic_int32_t completed; /* Operation completed */
     hg_atomic_int32_t canceled; /* Operation canceled  */
+    struct na_cb_completion_data comp_data;
     union {
         struct na_cci_info_lookup lookup;
         struct na_cci_info_send_unexpected send_unexpected;
@@ -247,25 +248,25 @@ na_cci_msg_get_max_tag(na_class_t * na_class);
 static na_return_t
 na_cci_msg_send_unexpected(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t * op_id);
+    na_addr_t dest, na_tag_t tag, na_op_id_t op_id_in, na_op_id_t * op_id);
 
 /* msg_recv_unexpected */
 static na_return_t
 na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_op_id_t * op_id);
+    na_op_id_t op_id_in, na_op_id_t * op_id);
 
 /* msg_send_expected */
 static na_return_t
 na_cci_msg_send_expected(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t * op_id);
+    na_addr_t dest, na_tag_t tag, na_op_id_t op_id_in, na_op_id_t * op_id);
 
 /* msg_recv_expected */
 static na_return_t
 na_cci_msg_recv_expected(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_addr_t source, na_tag_t tag, na_op_id_t * op_id);
+    na_addr_t source, na_tag_t tag, na_op_id_t op_id_in, na_op_id_t * op_id);
 
 static na_return_t
 na_cci_msg_unexpected_push(na_class_t * na_class,
@@ -359,6 +360,8 @@ const na_class_t na_cci_class_g = {
     na_cci_msg_get_max_expected_size,       /* msg_get_max_expected_size */
     na_cci_msg_get_max_unexpected_size,     /* msg_get_max_expected_size */
     na_cci_msg_get_max_tag,                 /* msg_get_max_tag */
+    NULL,                                   /* prealloc_op_id */
+    NULL,                                   /* prealloc_op_id_free */
     na_cci_msg_send_unexpected,             /* msg_send_unexpected */
     na_cci_msg_recv_unexpected,             /* msg_recv_unexpected */
     na_cci_msg_send_expected,               /* msg_send_expected */
@@ -906,7 +909,7 @@ na_cci_msg_get_max_tag(na_class_t NA_UNUSED * na_class)
 static na_return_t
 na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t * context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t * op_id)
+    na_addr_t dest, na_tag_t tag, na_op_id_t op_id_in, na_op_id_t * op_id)
 {
     na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) dest;
     na_cci_op_id_t *na_cci_op_id = NULL;
@@ -973,7 +976,7 @@ out:
 static na_return_t
 na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_op_id_t * op_id)
+    na_op_id_t op_id_in, na_op_id_t * op_id)
 {
     na_cci_op_id_t *na_cci_op_id = NULL;
     struct na_cci_info_recv_unexpected *rx = NULL;
@@ -1138,7 +1141,7 @@ na_cci_msg_unexpected_op_pop(na_class_t * na_class)
 static na_return_t
 na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t * op_id)
+    na_addr_t dest, na_tag_t tag, na_op_id_t op_id_in, na_op_id_t * op_id)
 {
     na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) dest;
     na_cci_op_id_t *na_cci_op_id = NULL;
@@ -1205,7 +1208,8 @@ out:
 static na_return_t
 na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class,
     na_context_t * context, na_cb_t callback, void *arg, void *buf,
-    na_size_t buf_size, na_addr_t source, na_tag_t tag, na_op_id_t * op_id)
+    na_size_t buf_size, na_addr_t source, na_tag_t tag, na_op_id_t op_id_in, 
+    na_op_id_t * op_id)
 {
     cci_size_t cci_buf_size = (cci_size_t) buf_size;
     na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) source;
@@ -1959,13 +1963,8 @@ na_cci_complete(na_cci_addr_t *na_cci_addr, na_cci_op_id_t *na_cci_op_id,
     /* Mark op id as completed */
     hg_atomic_incr32(&na_cci_op_id->completed);
 
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    /* Init callback info */
+    callback_info = &na_cci_op_id->comp_data.callback_info;
     callback_info->arg = na_cci_op_id->arg;
     callback_info->ret = ret;
     callback_info->type = na_cci_op_id->type;
@@ -2006,16 +2005,16 @@ na_cci_complete(na_cci_addr_t *na_cci_addr, na_cci_op_id_t *na_cci_op_id,
             break;
     }
 
-    ret = na_cb_completion_add(na_cci_op_id->context, na_cci_op_id->callback,
-        callback_info, &na_cci_release, na_cci_op_id);
+    na_cci_op_id->comp_data.callback = na_cci_op_id->callback;
+    na_cci_op_id->comp_data.plugin_callback = &na_cci_release;
+    na_cci_op_id->comp_data.plugin_callback_args = na_cci_op_id;
+    
+    ret = na_cb_completion_add(na_cci_op_id->context, &na_cci_op_id->comp_data);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not add callback to completion queue");
     }
 
 out:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
     if (na_cci_addr)
         addr_decref(na_cci_addr);
     return ret;
@@ -2030,7 +2029,6 @@ na_cci_release(struct na_cb_info *callback_info, void *arg)
     if (na_cci_op_id && !hg_atomic_get32(&na_cci_op_id->completed)) {
         NA_LOG_ERROR("Releasing resources from an uncompleted operation");
     }
-    free(callback_info);
     op_id_decref(na_cci_op_id);
 }
 

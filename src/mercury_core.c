@@ -116,6 +116,8 @@ struct hg_handle {
     na_size_t out_buf_size;             /* Output buffer size */
     na_size_t out_buf_used;             /* Amount of output buffer used */
 
+    na_op_id_t na_send_prealloc_op_id;  /* Preallocated NA state for sending */
+    na_op_id_t na_recv_prealloc_op_id;  /* Preallocated NA state for recving */
     na_op_id_t na_send_op_id;           /* Operation ID for send */
     na_op_id_t na_recv_op_id;           /* Operation ID for recv */
     hg_atomic_int32_t na_completed_count; /* Number of NA operations completed */
@@ -1231,6 +1233,12 @@ hg_core_create(struct hg_context *context)
         goto done;
     }
 
+    /* ignore prealloc failures, they will set the op_id to NULL */
+    NA_Prealloc_op_id(na_class, context->hg_class->na_context,
+                      &hg_handle->na_send_prealloc_op_id);
+    NA_Prealloc_op_id(na_class, context->hg_class->na_context,
+                      &hg_handle->na_recv_prealloc_op_id);
+
     hg_handle->na_send_op_id = NA_OP_ID_NULL;
     hg_handle->na_recv_op_id = NA_OP_ID_NULL;
     hg_atomic_set32(&hg_handle->na_completed_count, 0);
@@ -1256,16 +1264,26 @@ done:
 static void
 hg_core_destroy(struct hg_handle *hg_handle)
 {
+    struct hg_class *hg_class;
+    
     if (!hg_handle) goto done;
 
     if (hg_atomic_decr32(&hg_handle->ref_count)) {
         /* Cannot free yet */
         goto done;
     }
+    hg_class = hg_handle->hg_info.hg_class;
 
+    if (hg_handle->na_send_prealloc_op_id)
+        NA_Prealloc_op_id_free(hg_class->na_class, hg_class->na_context,
+                               hg_handle->na_send_prealloc_op_id);
+    if (hg_handle->na_recv_prealloc_op_id)
+        NA_Prealloc_op_id_free(hg_class->na_class, hg_class->na_context,
+                               hg_handle->na_recv_prealloc_op_id);
+    
     /* Free if mine */
     if (hg_handle->hg_info.addr != HG_ADDR_NULL && hg_handle->addr_mine)
-        NA_Addr_free(hg_handle->hg_info.hg_class->na_class,
+        NA_Addr_free(hg_class->na_class,
                 hg_handle->hg_info.addr);
 
     hg_proc_buf_free(hg_handle->in_buf);
@@ -1340,7 +1358,8 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_class->na_context,
             hg_core_recv_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_size, hg_handle->hg_info.addr,
-            hg_handle->tag, &hg_handle->na_recv_op_id);
+            hg_handle->tag, hg_handle->na_recv_prealloc_op_id,
+            &hg_handle->na_recv_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post recv for output buffer");
         ret = HG_NA_ERROR;
@@ -1352,6 +1371,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
             hg_class->na_context, hg_core_send_input_cb, hg_handle,
             hg_handle->in_buf, hg_handle->in_buf_used,
             hg_handle->hg_info.addr, hg_handle->tag,
+            hg_handle->na_send_prealloc_op_id,
             &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for input buffer");
@@ -1423,7 +1443,8 @@ hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     na_ret = NA_Msg_send_expected(hg_class->na_class, hg_class->na_context,
             hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_used, hg_handle->hg_info.addr,
-            hg_handle->tag, &hg_handle->na_send_op_id);
+            hg_handle->tag, hg_handle->na_send_prealloc_op_id,
+            &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for output buffer");
         ret = HG_NA_ERROR;
@@ -1845,7 +1866,8 @@ hg_core_listen(struct hg_context *context)
         /* Post a new unexpected receive */
         na_ret = NA_Msg_recv_unexpected(hg_class->na_class, hg_class->na_context,
                 hg_core_recv_input_cb, hg_handle, hg_handle->in_buf,
-                hg_handle->in_buf_size, &hg_handle->na_recv_op_id);
+                hg_handle->in_buf_size, hg_handle->na_recv_prealloc_op_id,
+                &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post unexpected recv for input buffer");
             ret = HG_NA_ERROR;

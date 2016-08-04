@@ -131,7 +131,7 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
             &msg_expected_recv_cb, params, params->recv_buf,
             params->recv_buf_len, params->server_addr, send_tag + 1,
-            NA_OP_ID_IGNORE);
+            NULL, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not prepost recv of expected message\n");
         return EXIT_FAILURE;
@@ -139,7 +139,7 @@ test_send(struct na_test_params *params, na_tag_t send_tag)
 
     na_ret = NA_Msg_send_unexpected(params->na_class, params->context,
             NULL, NULL, params->send_buf, params->send_buf_len,
-            params->server_addr, send_tag, NA_OP_ID_IGNORE);
+            params->server_addr, send_tag, NULL, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of unexpected message\n");
         return EXIT_FAILURE;
@@ -184,7 +184,7 @@ test_bulk(struct na_test_params *params)
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
             &ack_expected_recv_cb, params, params->recv_buf,
             params->recv_buf_len, params->server_addr, ack_tag,
-            NA_OP_ID_IGNORE);
+            NULL, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start receive of acknowledgment\n");
         return EXIT_FAILURE;
@@ -194,7 +194,7 @@ test_bulk(struct na_test_params *params)
     printf("Sending local memory handle...\n");
     na_ret = NA_Msg_send_expected(params->na_class, params->context,
             NULL, NULL, params->send_buf, params->send_buf_len,
-            params->server_addr, bulk_tag, NA_OP_ID_IGNORE);
+            params->server_addr, bulk_tag, NULL, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of memory handle\n");
         return EXIT_FAILURE;
