@@ -38,6 +38,7 @@
 struct hg_bulk_op_id {
     struct hg_class *hg_class;            /* HG class */
     hg_context_t *context;                /* Context */
+    struct hg_completion_entry compent;   /* Completion queue */
     hg_cb_t callback;                     /* Callback */
     void *arg;                            /* Callback arguments */
     hg_atomic_int32_t completed;          /* Operation completed TODO needed ? */
@@ -751,12 +752,7 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
     /* Mark operation as completed */
     hg_atomic_incr32(&hg_bulk_op_id->completed);
 
-    hg_completion_entry = (struct hg_completion_entry *) malloc(sizeof(struct hg_completion_entry));
-    if (!hg_completion_entry) {
-        HG_LOG_ERROR("Could not allocate HG completion entry");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    hg_completion_entry = &hg_bulk_op_id->compent;
     hg_completion_entry->op_type = HG_BULK;
     hg_completion_entry->op_id.hg_bulk_op_id = hg_bulk_op_id;
 
@@ -767,8 +763,6 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
     }
 
 done:
-    if (ret != HG_SUCCESS)
-        free(hg_completion_entry);
     return ret;
 }
 
