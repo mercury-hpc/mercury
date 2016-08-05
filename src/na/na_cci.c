@@ -244,6 +244,19 @@ na_cci_msg_get_max_unexpected_size(na_class_t * na_class);
 static na_tag_t
 na_cci_msg_get_max_tag(na_class_t * na_class);
 
+/* prealloc */
+static na_return_t
+na_cci_prealloc_op_id(
+    na_class_t *na_class,
+    na_context_t *context,
+    na_op_id_t *op_id);
+
+static na_return_t
+na_cci_prealloc_op_id_free(
+    na_class_t *na_class,
+    na_context_t *context,
+    na_op_id_t op_id);
+
 /* msg_send_unexpected */
 static na_return_t
 na_cci_msg_send_unexpected(na_class_t * na_class, na_context_t * context,
@@ -360,8 +373,8 @@ const na_class_t na_cci_class_g = {
     na_cci_msg_get_max_expected_size,       /* msg_get_max_expected_size */
     na_cci_msg_get_max_unexpected_size,     /* msg_get_max_expected_size */
     na_cci_msg_get_max_tag,                 /* msg_get_max_tag */
-    NULL,                                   /* prealloc_op_id */
-    NULL,                                   /* prealloc_op_id_free */
+    na_cci_prealloc_op_id,                  /* prealloc_op_id */
+    na_cci_prealloc_op_id_free,             /* prealloc_op_id_free */
     na_cci_msg_send_unexpected,             /* msg_send_unexpected */
     na_cci_msg_recv_unexpected,             /* msg_recv_unexpected */
     na_cci_msg_send_expected,               /* msg_send_expected */
@@ -671,7 +684,7 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    /* Allocate op_id */
+    /* Allocate op_id (XXX: calloc zeros too, needed?) */
     na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
     if (!na_cci_op_id) {
         NA_LOG_ERROR("Could not allocate NA CCI operation ID");
@@ -904,6 +917,37 @@ na_cci_msg_get_max_tag(na_class_t NA_UNUSED * na_class)
 
     return max_tag;
 }
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_cci_prealloc_op_id(na_class_t NA_UNUSED *na_class,
+    na_context_t NA_UNUSED *na_context, na_op_id_t *op_id)
+{
+    struct na_cci_op_id *precci_op_id;
+
+    /* optional: if malloc fails we still return success */
+    precci_op_id = (struct na_cci_op_id *) malloc(sizeof(struct na_cci_op_id));
+    if (precci_op_id) {
+        /* the preallocation holds a reference to prevent freeing */
+        hg_atomic_set32(&precci_op_id->refcnt, 1);
+    }
+
+    *op_id = precci_op_id;    /* will be null if malloc failed */
+    
+    return(NA_SUCCESS);    
+}
+                      
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_cci_prealloc_op_id_free(na_class_t NA_UNUSED *na_class,
+    na_context_t NA_UNUSED *na_context, na_op_id_t op_id)
+{
+    struct na_cci_op_id *na_cci_op_id = (struct na_cci_op_id *) op_id;
+
+    op_id_decref(na_cci_op_id);  /* should drop to 0 and free */
+
+    return(NA_SUCCESS);
+}
+
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
@@ -926,18 +970,27 @@ na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t * context,
 
     addr_addref(na_cci_addr); /* for na_cci_complete() */
 
-    /* Allocate op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Use preallocated op_id if given, otherwise allocate one */
+    na_cci_op_id = op_id_in;
+    if (na_cci_op_id) {
+        hg_atomic_incr32(&na_cci_op_id->refcnt);  /* should be 2 now */
+    } else {
+        /* XXX: calloc? */
+        na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not allocate NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
+        hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     }
+        
+    /* now na_cci_op_id is not null and has the correct ref count */
+    
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_SEND_UNEXPECTED;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
     na_cci_op_id->info.send_unexpected.op_id = 0;
@@ -967,7 +1020,8 @@ na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t * context,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        free(na_cci_op_id);
+        if (na_cci_op_id)
+            op_id_decref(na_cci_op_id); /* frees if not preallocated */
     }
     return ret;
 }
@@ -982,18 +1036,27 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
     struct na_cci_info_recv_unexpected *rx = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    /* Allocate na_op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Use preallocated op_id if given, otherwise allocate one */
+    na_cci_op_id = op_id_in;
+    if (na_cci_op_id) {
+        hg_atomic_incr32(&na_cci_op_id->refcnt);  /* should be 2 now */
+    } else {
+        /* XXX: calloc? */
+        na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not allocate NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
+        hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     }
+        
+    /* now na_cci_op_id is not null and has the correct ref count */
+    
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_RECV_UNEXPECTED;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
     na_cci_op_id->info.recv_unexpected.buf = buf;
@@ -1036,7 +1099,8 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
 
 out:
     if (ret != NA_SUCCESS) {
-        free(na_cci_op_id);
+        if (na_cci_op_id)
+            op_id_decref(na_cci_op_id);  /* frees if not preallocated */
     }
     return ret;
 }
@@ -1158,18 +1222,27 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 
     addr_addref(na_cci_addr); /* for na_cci_complete() */
 
-    /* Allocate op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Use preallocated op_id if given, otherwise allocate one */
+    na_cci_op_id = op_id_in;
+    if (na_cci_op_id) {
+        hg_atomic_incr32(&na_cci_op_id->refcnt);  /* should be 2 now */
+    } else {
+        /* XXX: calloc? */
+        na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not allocate NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
+        hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     }
+        
+    /* now na_cci_op_id is not null and has the correct ref count */
+    
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_SEND_EXPECTED;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
     na_cci_op_id->info.send_expected.op_id = 0;
@@ -1199,7 +1272,8 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        free(na_cci_op_id);
+        if (na_cci_op_id)
+            op_id_decref(na_cci_op_id);  /* frees if not preallocated */
     }
     return ret;
 }
@@ -1226,18 +1300,27 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class,
 
     addr_addref(na_cci_addr); /* for na_cci_complete() */
 
-    /* Allocate na_op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Use preallocated op_id if given, otherwise allocate one */
+    na_cci_op_id = op_id_in;
+    if (na_cci_op_id) {
+        hg_atomic_incr32(&na_cci_op_id->refcnt);  /* should be 2 now */
+    } else {
+        /* XXX: calloc? */
+        na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not allocate NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
+        hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     }
+        
+    /* now na_cci_op_id is not null and has the correct ref count */
+    
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_RECV_EXPECTED;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
     na_cci_op_id->info.recv_expected.na_cci_addr = na_cci_addr;
@@ -1278,7 +1361,8 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        free(na_cci_op_id);
+        if (na_cci_op_id)
+            op_id_decref(na_cci_op_id);  /* frees if not preallocated */
     }
     return ret;
 }
@@ -2022,7 +2106,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-na_cci_release(struct na_cb_info *callback_info, void *arg)
+na_cci_release(struct na_cb_info NA_UNUSED *callback_info, void *arg)
 {
     na_cci_op_id_t *na_cci_op_id = (na_cci_op_id_t *) arg;
 
