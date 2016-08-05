@@ -1053,7 +1053,7 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Get or allocat op_id */
+    /* Use preallocated op_id if given, otherwise allocate one */
     na_bmi_op_id = op_id_in;
     if (na_bmi_op_id == NULL) {    
         na_bmi_op_id = (struct na_bmi_op_id *)
@@ -1114,7 +1114,7 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     struct na_bmi_op_id *na_bmi_op_id;
     na_return_t ret = NA_SUCCESS;
 
-    /* Get or allocat op_id */
+    /* Use preallocated op_id if given, otherwise allocate one */
     na_bmi_op_id = op_id_in;
     if (na_bmi_op_id == NULL) {    
         na_bmi_op_id = (struct na_bmi_op_id *)
@@ -1289,7 +1289,7 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Get or allocate op_id */
+    /* Use preallocated op_id if given, otherwise allocate one */
     na_bmi_op_id = op_id_in;
     if (na_bmi_op_id == NULL) {    
         na_bmi_op_id = (struct na_bmi_op_id *)
@@ -1354,7 +1354,7 @@ na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Get or allocate op_id */
+    /* Use preallocated op_id if given, otherwise allocate one */
     na_bmi_op_id = op_id_in;
     if (na_bmi_op_id == NULL) {    
         na_bmi_op_id = (struct na_bmi_op_id *)
