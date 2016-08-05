@@ -58,6 +58,22 @@ endif()
 # Setup CMake Environment
 #------------------------------------------------------------------------------
 if(APPLE)
+  # We are doing a unix-style install i.e. everything will be installed in
+  # CMAKE_INSTALL_PREFIX/bin and CMAKE_INSTALL_PREFIX/lib etc. as on other unix
+  # platforms. We still need to setup CMAKE_INSTALL_NAME_DIR correctly so that
+  # the binaries point to appropriate location for the libraries.
+
+  # 1. Make CMAKE_INSTALL_PREFIX publicly accessible, if it was hidden in
+  #    previous pass
+  get_property(is_internal CACHE CMAKE_INSTALL_PREFIX PROPERTY TYPE)
+  if(is_internal STREQUAL "INTERNAL")
+    set(CMAKE_INSTALL_PREFIX ${CACHED_CMAKE_INSTALL_PREFIX} CACHE PATH "Install prefix" FORCE)
+  else()
+    set(CMAKE_INSTALL_PREFIX ${CACHED_CMAKE_INSTALL_PREFIX} CACHE PATH "Install prefix")
+  endif()
+  unset(MACOSX_APP_INSTALL_PREFIX CACHE)
+
+  set(CMAKE_INSTALL_NAME_DIR "@rpath/")
   mark_as_advanced(
     CMAKE_OSX_ARCHITECTURES
     CMAKE_OSX_DEPLOYMENT_TARGET
