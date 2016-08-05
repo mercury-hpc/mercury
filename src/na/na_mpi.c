@@ -1612,7 +1612,7 @@ na_mpi_msg_get_max_tag(na_class_t NA_UNUSED *na_class)
 static na_return_t
 na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, NA_UNSED na_op_id_t op_id_in,
+        na_addr_t dest, na_tag_t tag, NA_UNUSED na_op_id_t op_id_in,
         na_op_id_t *op_id)
 {
     int mpi_buf_size = (int) buf_size;
@@ -2664,7 +2664,7 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
 
     na_mpi_op_id->comp_data.callback = na_mpi_op_id->callback;
     na_mpi_op_id->comp_data.plugin_callback = &na_mpi_release;
-    na_mpi_op_id->comp_data.plugin_callback_args = na_bmi_op_id;
+    na_mpi_op_id->comp_data.plugin_callback_args = na_mpi_op_id;
     
     ret = na_cb_completion_add(na_mpi_op_id->context, &na_mpi_op_id->comp_data);
     if (ret != NA_SUCCESS) {
