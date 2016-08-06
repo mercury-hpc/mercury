@@ -1701,7 +1701,7 @@ hg_core_self_cb(const struct hg_cb_info *callback_info)
     /* Assign forward callback back to handle */
     hg_handle->callback = hg_self_cb_info->forward_cb;
     hg_handle->arg = hg_self_cb_info->forward_arg;
-    hg_handle->cb_type = HG_CB_FORWARD;
+    hg_handle->cb_type = HG_CB_INTFORWARD;
 
     /* Increment refcount and push handle back to completion queue */
     hg_atomic_incr32(&hg_handle->ref_count);
