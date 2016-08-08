@@ -62,6 +62,7 @@ struct hg_context {
     hg_thread_mutex_t completion_queue_mutex;     /* Completion queue mutex */
     hg_thread_cond_t completion_queue_cond;       /* Completion queue cond */
     hg_handlelist_t pending_list;                 /* List of pending handles */
+    hg_bool_t recycle_pending_handles;            /* Recycle pending handles */
     hg_thread_mutex_t pending_list_mutex;         /* Pending list mutex */
     hg_handlelist_t processing_list;              /* List of handles being processed */
     hg_thread_mutex_t processing_list_mutex;      /* Processing list mutex */
@@ -104,6 +105,7 @@ struct hg_handle {
     hg_return_t ret;                    /* Return code associated to handle */
     hg_bool_t addr_mine;                /* NA Addr created by HG */
     hg_bool_t process_rpc_cb;           /* RPC callback must be processed */
+    hg_bool_t recyclable_handle;        /* Can be recycled into pending list */
 
     hg_cb_t forw_usercb;                /* forw: user callback fn */
     void *forw_extra_in_buf;            /* forw: extra buf (XXX needed?) */
@@ -345,7 +347,8 @@ hg_core_addr_to_string(
  */
 static struct hg_handle *
 hg_core_create(
-        struct hg_context *context
+        struct hg_context *context,
+        hg_bool_t can_recycle
         );
 
 /**
@@ -353,6 +356,14 @@ hg_core_create(
  */
 static void
 hg_core_destroy(
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Recycle handle back to pending list.
+ */
+static void
+hg_core_recycle_to_pending_or_destroy(
         struct hg_handle *hg_handle
         );
 
@@ -1187,7 +1198,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static struct hg_handle *
-hg_core_create(struct hg_context *context)
+hg_core_create(struct hg_context *context, hg_bool_t can_recycle)
 {
     na_class_t *na_class = context->hg_class->na_class;
     struct hg_handle *hg_handle = NULL;
@@ -1211,6 +1222,7 @@ hg_core_create(struct hg_context *context)
     hg_handle->ret = HG_SUCCESS;
     hg_handle->addr_mine = HG_FALSE;
     hg_handle->process_rpc_cb = HG_FALSE;
+    hg_handle->recyclable_handle = can_recycle;  /* for pending list */
 
     /* Initialize processing buffers and use unexpected message size */
     hg_handle->in_buf = NULL;
@@ -1294,6 +1306,76 @@ hg_core_destroy(struct hg_handle *hg_handle)
     free(hg_handle);
 
 done:
+    return;
+}
+
+/*---------------------------------------------------------------------------*/
+/*
+ * this will either recycle the handle, or destroy it.
+ */
+static void
+hg_core_recycle_to_pending_or_destroy(struct hg_handle *hg_handle)
+{
+    struct hg_class *hg_class = hg_handle->hg_info.hg_class;
+    struct hg_context *hg_context = hg_handle->hg_info.context;
+    na_return_t na_ret;
+
+    /* reset handle */
+
+    /* Free addr if mine */
+    if (hg_handle->hg_info.addr != HG_ADDR_NULL && hg_handle->addr_mine) {
+        NA_Addr_free(hg_class->na_class, hg_handle->hg_info.addr);
+    }
+    hg_handle->hg_info.addr = HG_ADDR_NULL;
+    hg_handle->callback = NULL;
+    hg_handle->ret = HG_SUCCESS;
+    hg_handle->addr_mine = HG_FALSE;
+    hg_handle->process_rpc_cb = HG_FALSE;
+    hg_handle->in_buf_used = 0;
+    hg_handle->out_buf_used = 0;
+    hg_handle->na_send_op_id = HG_OP_ID_NULL;
+    hg_handle->na_recv_op_id = HG_OP_ID_NULL;
+    hg_atomic_set32(&hg_handle->na_completed_count, 0);
+    if (hg_handle->extra_in_buf)
+        free(hg_handle->extra_in_buf);
+    hg_handle->extra_in_buf = NULL;
+    hg_handle->extra_in_buf_size = 0;
+    hg_handle->extra_in_op_id = HG_OP_ID_NULL;
+    hg_handle->hg_rpc_info = NULL;
+    hg_handle->private_data = NULL;
+
+    hg_thread_mutex_lock(&hg_context->pending_list_mutex);
+
+    LIST_INSERT_HEAD(&hg_context->pending_list, hg_handle, ppl);
+
+    if (hg_context->recycle_pending_handles == HG_FALSE) {
+
+        na_ret = NA_CANCELED;  /* we stopped recycling */
+
+    } else {
+
+        /* Post a new unexpected receive */
+        na_ret = NA_Msg_recv_unexpected(hg_class->na_class, hg_class->na_context,
+                hg_core_recv_input_cb, hg_handle, hg_handle->in_buf,
+                hg_handle->in_buf_size, hg_handle->na_recv_prealloc_op_id,
+                &hg_handle->na_recv_op_id);
+
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not post recycle unexpected recv for input");
+        }
+    }
+
+    if (na_ret != NA_SUCCESS)
+        LIST_REMOVE(hg_handle, ppl);
+
+    hg_thread_mutex_unlock(&hg_context->pending_list_mutex);
+
+    /* if we failed, just destroy it */
+    if (na_ret != NA_SUCCESS) {
+        hg_handle->recyclable_handle = HG_FALSE;
+        hg_core_destroy(hg_handle);
+    }
+
     return;
 }
 
@@ -1854,7 +1936,7 @@ hg_core_listen(struct hg_context *context)
     for (nentry = 0; nentry < HG_MAX_UNEXPECTED_RECV; nentry++) {
 
         /* Create a new handle */
-        hg_handle = hg_core_create(context);
+        hg_handle = hg_core_create(context, HG_TRUE);
         if (!hg_handle) {
             HG_LOG_ERROR("Could not create HG handle");
             ret = HG_NOMEM_ERROR;
@@ -2174,8 +2256,19 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
             hg_handle->callback(&hg_cb_info);
         }
 
-        /* Free op */
-        hg_core_destroy(hg_handle);
+        /* recycle or free the handle */
+        if (hg_handle->recyclable_handle == HG_TRUE &&
+            hg_atomic_get32(&hg_handle->ref_count) == 1) {
+
+            /* this will either recycle it or free it */
+            hg_core_recycle_to_pending_or_destroy(hg_handle);
+
+        } else {
+
+            /* free it */
+            hg_core_destroy(hg_handle);
+        }
+
     }
 
 done:
@@ -2330,6 +2423,8 @@ HG_Core_context_create(hg_class_t *hg_class)
     TAILQ_INIT(&context->completion_queue);
 
     LIST_INIT(&context->pending_list);
+    context->recycle_pending_handles =
+        (NA_Is_listening(hg_class->na_class) == NA_TRUE) ? HG_TRUE : HG_FALSE;
     LIST_INIT(&context->processing_list);
     LIST_INIT(&context->self_processing_list);
 
@@ -2360,6 +2455,11 @@ HG_Core_context_destroy(hg_context_t *context)
     unsigned int actual_count;
 
     if (!context) goto done;
+
+    /* Disable recycling and its NA unexpected read ops */
+    hg_thread_mutex_lock(&context->pending_list_mutex);
+    context->recycle_pending_handles = HG_FALSE;
+    hg_thread_mutex_unlock(&context->pending_list_mutex);
 
     /* Check pending list */
     if (hg_core_pending_list_check(context) == HG_TRUE) {
@@ -2707,7 +2807,7 @@ HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     }
 
     /* Create new handle */
-    hg_handle = hg_core_create(context);
+    hg_handle = hg_core_create(context, HG_FALSE);
     if (!hg_handle) {
         HG_LOG_ERROR("Could not create HG handle");
         ret = HG_NOMEM_ERROR;
