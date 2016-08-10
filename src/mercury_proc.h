@@ -301,23 +301,23 @@ hg_proc_memcpy(
  * Inline prototypes (do not remove)
  */
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int8_t(hg_proc_t proc,
-        hg_int8_t *data);
+        void *data);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint8_t(hg_proc_t proc,
-        hg_uint8_t *data);
+        void *data);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int16_t(hg_proc_t proc,
-        hg_int16_t *data);
+        void *data);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint16_t(hg_proc_t proc,
-        hg_uint16_t *data);
+        void *data);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int32_t(hg_proc_t proc,
-        hg_int32_t *data);
+        void *data);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint32_t(hg_proc_t proc,
-        hg_uint32_t *data);
+        void *data);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int64_t(hg_proc_t proc,
-        hg_int64_t *data);
+        void *data);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint64_t(hg_proc_t proc,
-        hg_uint64_t *data);
+        void *data);
 HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
-        hg_bulk_t *handle);
+        void *handle);
 HG_EXPORT HG_PROC_INLINE void *hg_proc_buf_memcpy(void *buf, void *data,
     hg_size_t data_size, hg_proc_op_t op);
 
@@ -356,7 +356,7 @@ HG_EXPORT HG_PROC_INLINE void *hg_proc_buf_memcpy(void *buf, void *data,
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PROC_INLINE hg_return_t
-hg_proc_hg_int8_t(hg_proc_t proc, hg_int8_t *data)
+hg_proc_hg_int8_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
@@ -376,7 +376,7 @@ hg_proc_hg_int8_t(hg_proc_t proc, hg_int8_t *data)
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PROC_INLINE hg_return_t
-hg_proc_hg_uint8_t(hg_proc_t proc, hg_uint8_t *data)
+hg_proc_hg_uint8_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
@@ -396,7 +396,7 @@ hg_proc_hg_uint8_t(hg_proc_t proc, hg_uint8_t *data)
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PROC_INLINE hg_return_t
-hg_proc_hg_int16_t(hg_proc_t proc, hg_int16_t *data)
+hg_proc_hg_int16_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
@@ -416,7 +416,7 @@ hg_proc_hg_int16_t(hg_proc_t proc, hg_int16_t *data)
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PROC_INLINE hg_return_t
-hg_proc_hg_uint16_t(hg_proc_t proc, hg_uint16_t *data)
+hg_proc_hg_uint16_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
@@ -436,7 +436,7 @@ hg_proc_hg_uint16_t(hg_proc_t proc, hg_uint16_t *data)
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PROC_INLINE hg_return_t
-hg_proc_hg_int32_t(hg_proc_t proc, hg_int32_t *data)
+hg_proc_hg_int32_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
@@ -456,7 +456,7 @@ hg_proc_hg_int32_t(hg_proc_t proc, hg_int32_t *data)
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PROC_INLINE hg_return_t
-hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *data)
+hg_proc_hg_uint32_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
@@ -476,7 +476,7 @@ hg_proc_hg_uint32_t(hg_proc_t proc, hg_uint32_t *data)
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PROC_INLINE hg_return_t
-hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data)
+hg_proc_hg_int64_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
@@ -496,7 +496,7 @@ hg_proc_hg_int64_t(hg_proc_t proc, hg_int64_t *data)
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PROC_INLINE hg_return_t
-hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data)
+hg_proc_hg_uint64_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
 #ifdef HG_HAS_XDR
@@ -516,26 +516,27 @@ hg_proc_hg_uint64_t(hg_proc_t proc, hg_uint64_t *data)
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PROC_INLINE hg_return_t
-hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
+hg_proc_hg_bulk_t(hg_proc_t proc, void *handle)
 {
     hg_return_t ret = HG_SUCCESS;
     void *buf = NULL;
+    hg_bulk_t *bulk = (hg_bulk_t*)handle;
     hg_uint64_t buf_size = 0;
 
     switch (hg_proc_get_op(proc)) {
         case HG_ENCODE: {
             hg_bool_t request_eager = HG_FALSE;
 
-            if (*handle == HG_BULK_NULL) {
+            if (*bulk == HG_BULK_NULL) {
                 /* If HG_BULK_NULL set 0 to buf_size */
                 buf_size = 0;
             } else {
 #ifdef HG_HAS_EAGER_BULK
                 request_eager = (hg_proc_get_size_left(proc)
-                    > HG_Bulk_get_serialize_size(*handle, HG_TRUE))
+                    > HG_Bulk_get_serialize_size(*bulk, HG_TRUE))
                     ? HG_TRUE : HG_FALSE;
 #endif
-                buf_size = HG_Bulk_get_serialize_size(*handle, request_eager);
+                buf_size = HG_Bulk_get_serialize_size(*bulk, request_eager);
             }
             /* Encode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
@@ -545,7 +546,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
             }
             if (buf_size) {
                 buf = hg_proc_save_ptr(proc, buf_size);
-                ret = HG_Bulk_serialize(buf, buf_size, request_eager, *handle);
+                ret = HG_Bulk_serialize(buf, buf_size, request_eager, *bulk);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not serialize bulk handle");
                     return ret;
@@ -565,7 +566,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                 hg_class_t *hg_class = hg_proc_get_class(proc);
 
                 buf = hg_proc_save_ptr(proc, buf_size);
-                ret = HG_Bulk_deserialize(hg_class, handle, buf, buf_size);
+                ret = HG_Bulk_deserialize(hg_class, bulk, buf, buf_size);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not deserialize bulk handle");
                     return ret;
@@ -573,19 +574,19 @@ hg_proc_hg_bulk_t(hg_proc_t proc, hg_bulk_t *handle)
                 hg_proc_restore_ptr(proc, buf, buf_size);
             } else {
                 /* If buf_size is 0, define handle to HG_BULK_NULL */
-                *handle = HG_BULK_NULL;
+                *bulk = HG_BULK_NULL;
             }
             break;
         case HG_FREE:
-            if (*handle != HG_BULK_NULL) {
-                ret = HG_Bulk_free(*handle);
+            if (*bulk != HG_BULK_NULL) {
+                ret = HG_Bulk_free(*bulk);
                 if (ret != HG_SUCCESS) {
                     HG_LOG_ERROR("Could not free bulk handle");
                     return ret;
                 }
-                *handle = HG_BULK_NULL;
+                *bulk = HG_BULK_NULL;
             } else {
-                /* If *handle is HG_BULK_NULL, just return success */
+                /* If *bulk is HG_BULK_NULL, just return success */
                 ret = HG_SUCCESS;
             }
             break;
