@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
 
 /****************/
 /* Local Macros */
@@ -123,7 +124,7 @@ struct na_bmi_op_id {
     na_cb_type_t type;
     na_cb_t callback; /* Callback */
     void *arg;
-    na_bool_t prealloced;
+    hg_atomic_int32_t refcnt;
     na_bool_t completed; /* Operation completed */
     struct na_cb_completion_data comp_data;
     union {
@@ -533,6 +534,26 @@ const na_class_t na_bmi_class_g = {
         na_bmi_cancel                         /* cancel */
 };
 
+
+/********************/
+/* Helper functions */
+/********************/
+
+static void
+op_id_decref(struct na_bmi_op_id *na_bmi_op_id)
+{
+    assert(hg_atomic_get32(&na_bmi_op_id->refcnt) > 0);
+
+    /* If there are more references, return */
+    if (hg_atomic_decr32(&na_bmi_op_id->refcnt))
+        return;
+
+    /* No more references, cleanup */
+    free(na_bmi_op_id);
+
+    return;
+}
+
 /********************/
 /* Plugin callbacks */
 /********************/
@@ -837,7 +858,7 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_bmi_op_id->type = NA_CB_LOOKUP;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->prealloced = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->refcnt, 1);
     na_bmi_op_id->completed = NA_FALSE;
     na_bmi_op_id->cancel = 0;
 
@@ -874,7 +895,8 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
 done:
     if (ret != NA_SUCCESS) {
         free(na_bmi_addr);
-        free(na_bmi_op_id);
+        if (na_bmi_op_id)
+            op_id_decref(na_bmi_op_id);
     }
     return ret;
 }
@@ -1014,7 +1036,7 @@ na_bmi_prealloc_op_id(na_class_t NA_UNUSED *na_class,
     /* optional: if malloc fails we still return success */
     prebmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
     if (prebmi_op_id) {
-        prebmi_op_id->prealloced = NA_TRUE;
+        hg_atomic_set32(&prebmi_op_id->refcnt, 1);
     }
 
     *op_id = prebmi_op_id;    /* will be null if malloc failed */
@@ -1029,11 +1051,7 @@ na_bmi_prealloc_op_id_free(na_class_t NA_UNUSED *na_class,
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
 
-    if (na_bmi_op_id->prealloced != NA_TRUE) {
-        NA_LOG_ERROR("Attempt to prealloc free non-preallocated op_id!");
-    } else {
-        free(na_bmi_op_id);
-    }
+    op_id_decref(na_bmi_op_id);
 
     return(NA_SUCCESS);
 }
@@ -1055,7 +1073,9 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
 
     /* Use preallocated op_id if given, otherwise allocate one */
     na_bmi_op_id = op_id_in;
-    if (na_bmi_op_id == NULL) {    
+    if (na_bmi_op_id) {
+        hg_atomic_incr32(&na_bmi_op_id->refcnt); /* gain ref on prealloc */
+    } else {
         na_bmi_op_id = (struct na_bmi_op_id *)
             malloc(sizeof(struct na_bmi_op_id));
         if (!na_bmi_op_id) {
@@ -1063,7 +1083,7 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
             ret = NA_NOMEM_ERROR;
             goto done;
         }
-        na_bmi_op_id->prealloced = NA_FALSE;
+        hg_atomic_set32(&na_bmi_op_id->refcnt, 1);
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_SEND_UNEXPECTED;
@@ -1098,8 +1118,8 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
 
 done:
     if (ret != NA_SUCCESS) {
-        if (na_bmi_op_id && na_bmi_op_id->prealloced == NA_FALSE)
-            free(na_bmi_op_id);
+        if (na_bmi_op_id)
+            op_id_decref(na_bmi_op_id);
     }
     return ret;
 }
@@ -1116,7 +1136,9 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Use preallocated op_id if given, otherwise allocate one */
     na_bmi_op_id = op_id_in;
-    if (na_bmi_op_id == NULL) {    
+    if (na_bmi_op_id) {
+        hg_atomic_incr32(&na_bmi_op_id->refcnt); /* gain ref on prealloc */
+    } else {
         na_bmi_op_id = (struct na_bmi_op_id *)
             malloc(sizeof(struct na_bmi_op_id));
         if (!na_bmi_op_id) {
@@ -1124,7 +1146,7 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
             ret = NA_NOMEM_ERROR;
             goto done;
         }
-        na_bmi_op_id->prealloced = NA_FALSE;
+        hg_atomic_set32(&na_bmi_op_id->refcnt, 1);
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_RECV_UNEXPECTED;
@@ -1169,8 +1191,8 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        if (na_bmi_op_id && na_bmi_op_id->prealloced == NA_FALSE)
-            free(na_bmi_op_id);
+        if (na_bmi_op_id)
+            op_id_decref(na_bmi_op_id);
     }
     free(unexpected_info);
     return ret;
@@ -1291,7 +1313,9 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
     /* Use preallocated op_id if given, otherwise allocate one */
     na_bmi_op_id = op_id_in;
-    if (na_bmi_op_id == NULL) {    
+    if (na_bmi_op_id) {
+        hg_atomic_incr32(&na_bmi_op_id->refcnt); /* gain ref on prealloc */
+    } else {
         na_bmi_op_id = (struct na_bmi_op_id *)
             malloc(sizeof(struct na_bmi_op_id));
         if (!na_bmi_op_id) {
@@ -1299,7 +1323,7 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
             ret = NA_NOMEM_ERROR;
             goto done;
         }
-        na_bmi_op_id->prealloced = NA_FALSE;
+        hg_atomic_set32(&na_bmi_op_id->refcnt, 1);
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_SEND_EXPECTED;
@@ -1333,8 +1357,8 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        if (na_bmi_op_id && na_bmi_op_id->prealloced == NA_FALSE)
-            free(na_bmi_op_id);
+        if (na_bmi_op_id)
+            op_id_decref(na_bmi_op_id);
     }
     return ret;
 }
@@ -1356,7 +1380,9 @@ na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
     /* Use preallocated op_id if given, otherwise allocate one */
     na_bmi_op_id = op_id_in;
-    if (na_bmi_op_id == NULL) {    
+    if (na_bmi_op_id) {
+        hg_atomic_incr32(&na_bmi_op_id->refcnt); /* gain ref on prealloc */
+    } else {
         na_bmi_op_id = (struct na_bmi_op_id *)
             malloc(sizeof(struct na_bmi_op_id));
         if (!na_bmi_op_id) {
@@ -1364,7 +1390,7 @@ na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
             ret = NA_NOMEM_ERROR;
             goto done;
         }
-        na_bmi_op_id->prealloced = NA_FALSE;
+        hg_atomic_set32(&na_bmi_op_id->refcnt, 1);
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_RECV_EXPECTED;
@@ -1401,8 +1427,8 @@ na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        if (na_bmi_op_id && na_bmi_op_id->prealloced == NA_FALSE)
-            free(na_bmi_op_id);
+        if (na_bmi_op_id)
+            op_id_decref(na_bmi_op_id);
     }
     return ret;
 }
@@ -1570,7 +1596,7 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_bmi_op_id->type = NA_CB_PUT;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->prealloced = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->refcnt, 1);
     na_bmi_op_id->completed = NA_FALSE;
     na_bmi_op_id->info.put.request_op_id = 0;
     na_bmi_op_id->info.put.transfer_op_id = 0;
@@ -1654,7 +1680,8 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_bmi_op_id);
+        if (na_bmi_op_id)
+            op_id_decref(na_bmi_op_id);
         free(na_bmi_rma_info);
     }
     return ret;
@@ -1706,7 +1733,7 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_bmi_op_id->type = NA_CB_GET;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->prealloced = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->refcnt, 1);
     na_bmi_op_id->completed = NA_FALSE;
     na_bmi_op_id->info.get.request_op_id = 0;
     na_bmi_op_id->info.get.transfer_op_id = 0;
@@ -1769,7 +1796,8 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_bmi_op_id);
+        if (na_bmi_op_id)
+            op_id_decref(na_bmi_op_id);
         free(na_bmi_rma_info);
     }
     return ret;
@@ -2066,6 +2094,7 @@ na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_bmi_op_id->context = context;
     na_bmi_op_id->callback = NULL;
     na_bmi_op_id->arg = NULL;
+    hg_atomic_set32(&na_bmi_op_id->refcnt, 1);
     na_bmi_op_id->completed = NA_FALSE;
 
     switch (na_bmi_rma_info->op) {
@@ -2145,7 +2174,8 @@ na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_bmi_op_id);
+        if (na_bmi_op_id)
+            op_id_decref(na_bmi_op_id);
         free(na_bmi_rma_info);
     }
     return ret;
@@ -2316,8 +2346,7 @@ na_bmi_release(NA_UNUSED struct na_cb_info *callback_info, void *arg)
     if (na_bmi_op_id && !na_bmi_op_id->completed) {
         NA_LOG_ERROR("Releasing resources from an uncompleted operation");
     }
-    if (na_bmi_op_id->prealloced == NA_FALSE)
-        free(na_bmi_op_id);
+    op_id_decref(na_bmi_op_id);
 }
 
 /*---------------------------------------------------------------------------*/
