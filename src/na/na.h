@@ -354,6 +354,42 @@ NA_Msg_get_max_tag(
         ) NA_WARN_UNUSED_RESULT;
 
 /**
+ * preallocate an op_id_t for the higher level code to save and pass back
+ * to us to use when it is needed (rather than have the low-level code
+ * malloc op_id_t's all the time).   this is optional.  if the lower-level
+ * NA doesn't support preallocation we just put null in the op_id and
+ * return success.  if we do preallocate an op_id, then we hold a reference
+ * to it which later must be released with NA_Prealloc_op_id_free().
+ *
+ * \param na_class [IN]   pointer to NA class
+ * \param context [IN]    pointer to context of execution
+ * \param op_id [OUT]     filled with pointer to preallocated op_id_t
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Prealloc_op_id(na_class_t *na_class,
+        na_context_t *context,
+        na_op_id_t *op_id
+                  );          
+
+/**
+ * free preallocated op_id_t.   high level code calls this when it
+ * is done with a preallocated op_id.
+ *
+ * \param na_class [IN]   pointer to NA class
+ * \param context [IN]    pointer to context of execution
+ * \param op_id [IN]      pointer to preallocated op_id_t
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Prealloc_op_id_free(na_class_t *na_class,
+        na_context_t *context,
+        na_op_id_t op_id
+                  );          
+
+/**
  * Send an unexpected message to dest.
  * Unexpected sends do not require a matching receive to complete. After
  * completion, user callback is placed into a completion queue and can be
@@ -370,6 +406,7 @@ NA_Msg_get_max_tag(
  * \param buf_size [IN]         buffer size
  * \param dest [IN]             abstract address of destination
  * \param tag [IN]              tag attached to message
+ * \param op_id_in [IN]         optional preallocated op_id we can use
  * \param op_id [OUT]           pointer to returned operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -384,6 +421,7 @@ NA_Msg_send_unexpected(
         na_size_t     buf_size,
         na_addr_t     dest,
         na_tag_t      tag,
+        na_op_id_t    op_id_in,
         na_op_id_t   *op_id
         );
 
@@ -399,6 +437,7 @@ NA_Msg_send_unexpected(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
+ * \param op_id_in [IN]         optional preallocated op_id we can use
  * \param op_id [OUT]           pointer to returned operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -411,6 +450,7 @@ NA_Msg_recv_unexpected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        na_op_id_t    op_id_in,
         na_op_id_t   *op_id
         );
 
@@ -430,6 +470,7 @@ NA_Msg_recv_unexpected(
  * \param buf_size [IN]         buffer size
  * \param dest [IN]             abstract address of destination
  * \param tag [IN]              tag attached to message
+ * \param op_id_in [IN]         optional preallocated op_id we can use
  * \param op_id [OUT]           pointer to returned operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -444,6 +485,7 @@ NA_Msg_send_expected(
         na_size_t     buf_size,
         na_addr_t     dest,
         na_tag_t      tag,
+        na_op_id_t    op_id_in,
         na_op_id_t   *op_id
         );
 
@@ -459,6 +501,7 @@ NA_Msg_send_expected(
  * \param buf_size [IN]         buffer size
  * \param source [IN]           abstract address of source
  * \param tag [IN]              matching tag used to receive message
+ * \param op_id_in [IN]         optional preallocated op_id we can use
  * \param op_id [OUT]           pointer to returned operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -473,6 +516,7 @@ NA_Msg_recv_expected(
         na_size_t     buf_size,
         na_addr_t     source,
         na_tag_t      tag,
+        na_op_id_t    op_id_in,
         na_op_id_t   *op_id
         );
 

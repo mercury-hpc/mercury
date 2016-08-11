@@ -46,17 +46,27 @@
 /* Local Type and Struct Definition */
 /************************************/
 
+/* HG handle list */
+struct hg_handle;
+LIST_HEAD(hg_handlelist, hg_handle);
+typedef struct hg_handlelist hg_handlelist_t;
+
+/* HG completions queue */
+TAILQ_HEAD(hg_compqueue, hg_completion_entry);
+typedef struct hg_compqueue hg_compqueue_t;
+
 /* HG context */
 struct hg_context {
     struct hg_class *hg_class;                    /* HG class */
-    hg_queue_t *completion_queue;                 /* Completion queue */
+    hg_compqueue_t completion_queue;              /* Completion queue */
     hg_thread_mutex_t completion_queue_mutex;     /* Completion queue mutex */
     hg_thread_cond_t completion_queue_cond;       /* Completion queue cond */
-    hg_list_t *pending_list;                      /* List of pending handles */
+    hg_handlelist_t pending_list;                 /* List of pending handles */
+    hg_bool_t recycle_pending_handles;            /* Recycle pending handles */
     hg_thread_mutex_t pending_list_mutex;         /* Pending list mutex */
-    hg_list_t *processing_list;                   /* List of handles being processed */
+    hg_handlelist_t processing_list;              /* List of handles being processed */
     hg_thread_mutex_t processing_list_mutex;      /* Processing list mutex */
-    hg_list_t *self_processing_list;              /* List of handles being processed */
+    hg_handlelist_t self_processing_list;         /* List of handles being processed */
     hg_thread_mutex_t self_processing_list_mutex; /* Processing list mutex */
     hg_thread_cond_t self_processing_list_cond;   /* Processing list cond */
     hg_thread_pool_t *self_processing_pool;       /* Thread pool for self processing */
@@ -85,6 +95,8 @@ struct hg_addr {
 /* HG handle */
 struct hg_handle {
     struct hg_info hg_info;             /* HG info */
+    struct hg_completion_entry compent; /* Completion queue */
+    LIST_ENTRY(hg_handle) ppl;          /* Pending/processing list linkage */
     hg_cb_t callback;                   /* Callback */
     void *arg;                          /* Callback arguments */
     hg_cb_type_t cb_type;               /* Callback type */
@@ -92,8 +104,12 @@ struct hg_handle {
     hg_uint32_t cookie;                 /* Cookie unique to every RPC call */
     hg_return_t ret;                    /* Return code associated to handle */
     hg_bool_t addr_mine;                /* NA Addr created by HG */
-    hg_list_entry_t *entry;             /* Entry in pending / processing lists */
     hg_bool_t process_rpc_cb;           /* RPC callback must be processed */
+    hg_bool_t recyclable_handle;        /* Can be recycled into pending list */
+
+    hg_cb_t forw_usercb;                /* forw: user callback fn */
+    void *forw_extra_in_buf;            /* forw: extra buf (XXX needed?) */
+    hg_bulk_t forw_extra_in_handle;     /* forw: extra in bulk handle */
 
     void *in_buf;                       /* Input buffer */
     na_size_t in_buf_size;              /* Input buffer size */
@@ -102,6 +118,8 @@ struct hg_handle {
     na_size_t out_buf_size;             /* Output buffer size */
     na_size_t out_buf_used;             /* Amount of output buffer used */
 
+    na_op_id_t na_send_prealloc_op_id;  /* Preallocated NA state for sending */
+    na_op_id_t na_recv_prealloc_op_id;  /* Preallocated NA state for recving */
     na_op_id_t na_send_op_id;           /* Operation ID for send */
     na_op_id_t na_recv_op_id;           /* Operation ID for recv */
     hg_atomic_int32_t na_completed_count; /* Number of NA operations completed */
@@ -124,6 +142,7 @@ struct hg_op_info_lookup {
 
 struct hg_op_id {
     struct hg_context *context;         /* Context */
+    struct hg_completion_entry compent; /* Completion queue */
     hg_cb_type_t type;                  /* Callback type */
     hg_cb_t callback;                   /* Callback */
     void *arg;                          /* Callback arguments */
@@ -328,7 +347,8 @@ hg_core_addr_to_string(
  */
 static struct hg_handle *
 hg_core_create(
-        struct hg_context *context
+        struct hg_context *context,
+        hg_bool_t can_recycle
         );
 
 /**
@@ -336,6 +356,14 @@ hg_core_create(
  */
 static void
 hg_core_destroy(
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Recycle handle back to pending list.
+ */
+static void
+hg_core_recycle_to_pending_or_destroy(
         struct hg_handle *hg_handle
         );
 
@@ -742,11 +770,7 @@ hg_core_pending_list_remove(struct hg_handle *hg_handle)
 
     hg_thread_mutex_lock(&hg_handle->hg_info.context->pending_list_mutex);
 
-    if (hg_list_remove_entry(hg_handle->entry) != HG_UTIL_SUCCESS) {
-        HG_LOG_ERROR("Could not remove entry");
-        ret = HG_INVALID_PARAM;
-    }
-    hg_handle->entry = NULL;
+    LIST_REMOVE(hg_handle, ppl);
 
     hg_thread_mutex_unlock(&hg_handle->hg_info.context->pending_list_mutex);
 
@@ -761,7 +785,7 @@ hg_core_pending_list_check(struct hg_context *context)
 
     hg_thread_mutex_lock(&context->pending_list_mutex);
 
-    ret = (hg_list_is_empty(context->pending_list) == HG_UTIL_TRUE) ? HG_FALSE : HG_TRUE;
+    ret = (LIST_EMPTY(&context->pending_list)) ? HG_FALSE : HG_TRUE;
 
     hg_thread_mutex_unlock(&context->pending_list_mutex);
 
@@ -776,9 +800,8 @@ hg_core_pending_list_cancel(struct hg_context *context)
 
     hg_thread_mutex_lock(&context->pending_list_mutex);
 
-    while (!hg_list_is_empty(context->pending_list)) {
-        hg_list_entry_t *entry = hg_list_first(context->pending_list);
-        struct hg_handle *hg_handle = (struct hg_handle *) hg_list_data(entry);
+    while (!LIST_EMPTY(&context->pending_list)) {
+        struct hg_handle *hg_handle = LIST_FIRST(&context->pending_list);
 
         ret = hg_core_cancel(hg_handle);
         if (ret != HG_SUCCESS) {
@@ -787,11 +810,7 @@ hg_core_pending_list_cancel(struct hg_context *context)
         }
 
         /* Remove the entries as we go */
-        if (hg_list_remove_entry(entry) != HG_UTIL_SUCCESS) {
-            HG_LOG_ERROR("Could not remove entry");
-            ret = HG_INVALID_PARAM;
-            break;
-        }
+        LIST_REMOVE(hg_handle, ppl);
     }
 
     hg_thread_mutex_unlock(&context->pending_list_mutex);
@@ -803,19 +822,12 @@ hg_core_pending_list_cancel(struct hg_context *context)
 static hg_return_t
 hg_core_processing_list_add(struct hg_handle *hg_handle)
 {
-    hg_list_entry_t *new_entry = NULL;
     hg_return_t ret = HG_SUCCESS;
 
     hg_thread_mutex_lock(&hg_handle->hg_info.context->processing_list_mutex);
 
-    new_entry = hg_list_insert_head(hg_handle->hg_info.context->processing_list,
-            (hg_list_value_t) hg_handle);
-    if (!new_entry) {
-        HG_LOG_ERROR("Could not append entry");
-        ret = HG_NOMEM_ERROR;
-    } else {
-        hg_handle->entry = new_entry;
-    }
+    LIST_INSERT_HEAD(&hg_handle->hg_info.context->processing_list,
+                     hg_handle, ppl);
 
     hg_thread_mutex_unlock(&hg_handle->hg_info.context->processing_list_mutex);
 
@@ -830,11 +842,7 @@ hg_core_processing_list_remove(struct hg_handle *hg_handle)
 
     hg_thread_mutex_lock(&hg_handle->hg_info.context->processing_list_mutex);
 
-    if (hg_list_remove_entry(hg_handle->entry) != HG_UTIL_SUCCESS) {
-        HG_LOG_ERROR("Could not remove entry");
-        ret = HG_INVALID_PARAM;
-    }
-    hg_handle->entry = NULL;
+    LIST_REMOVE(hg_handle, ppl);
 
     hg_thread_mutex_unlock(&hg_handle->hg_info.context->processing_list_mutex);
 
@@ -859,7 +867,8 @@ hg_core_processing_list_wait(struct hg_context *context)
 
         hg_thread_mutex_lock(&context->processing_list_mutex);
 
-        processing_list_empty = hg_list_is_empty(context->processing_list);
+        processing_list_empty =
+            LIST_EMPTY(&context->processing_list) ? HG_TRUE : HG_FALSE;
 
         hg_thread_mutex_unlock(&context->processing_list_mutex);
 
@@ -880,19 +889,12 @@ done:
 static hg_return_t
 hg_core_self_processing_list_add(struct hg_handle *hg_handle)
 {
-    hg_list_entry_t *new_entry = NULL;
     hg_return_t ret = HG_SUCCESS;
 
     hg_thread_mutex_lock(&hg_handle->hg_info.context->self_processing_list_mutex);
 
-    new_entry = hg_list_insert_head(hg_handle->hg_info.context->self_processing_list,
-            (hg_list_value_t) hg_handle);
-    if (!new_entry) {
-        HG_LOG_ERROR("Could not append entry");
-        ret = HG_NOMEM_ERROR;
-    } else {
-        hg_handle->entry = new_entry;
-    }
+    LIST_INSERT_HEAD(&hg_handle->hg_info.context->self_processing_list,
+                     hg_handle, ppl);
 
     hg_thread_mutex_unlock(&hg_handle->hg_info.context->self_processing_list_mutex);
 
@@ -906,13 +908,7 @@ hg_core_self_processing_list_remove(struct hg_handle *hg_handle)
     hg_return_t ret = HG_SUCCESS;
 
     hg_thread_mutex_lock(&hg_handle->hg_info.context->self_processing_list_mutex);
-
-    /* Remove handle from self processing list at this point */
-    if (hg_list_remove_entry(hg_handle->entry) != HG_UTIL_SUCCESS) {
-        HG_LOG_ERROR("Could not remove entry");
-        ret = HG_INVALID_PARAM;
-    }
-    hg_handle->entry = NULL;
+    LIST_REMOVE(hg_handle, ppl);
 
     hg_thread_cond_signal(&hg_handle->hg_info.context->self_processing_list_cond);
 
@@ -929,7 +925,7 @@ hg_core_self_processing_list_check(struct hg_context *context)
 
     hg_thread_mutex_lock(&context->self_processing_list_mutex);
 
-    ret = (hg_list_is_empty(context->self_processing_list) == HG_UTIL_TRUE) ? HG_FALSE : HG_TRUE;
+    ret = LIST_EMPTY(&context->self_processing_list) ? HG_FALSE : HG_TRUE;
 
     hg_thread_mutex_unlock(&context->self_processing_list_mutex);
 
@@ -1113,12 +1109,7 @@ hg_core_addr_lookup_complete(struct hg_op_id *hg_op_id)
     /* Mark operation as completed */
     hg_atomic_incr32(&hg_op_id->completed);
 
-    hg_completion_entry = (struct hg_completion_entry *) malloc(sizeof(struct hg_completion_entry));
-    if (!hg_completion_entry) {
-        HG_LOG_ERROR("Could not allocate HG completion entry");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    hg_completion_entry = &hg_op_id->compent;
     hg_completion_entry->op_type = HG_ADDR;
     hg_completion_entry->op_id.hg_op_id = hg_op_id;
 
@@ -1129,8 +1120,6 @@ hg_core_addr_lookup_complete(struct hg_op_id *hg_op_id)
     }
 
 done:
-    if (ret != HG_SUCCESS)
-        free(hg_completion_entry);
     return ret;
 }
 
@@ -1209,7 +1198,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static struct hg_handle *
-hg_core_create(struct hg_context *context)
+hg_core_create(struct hg_context *context, hg_bool_t can_recycle)
 {
     na_class_t *na_class = context->hg_class->na_class;
     struct hg_handle *hg_handle = NULL;
@@ -1232,8 +1221,8 @@ hg_core_create(struct hg_context *context)
     hg_handle->tag = 0;
     hg_handle->ret = HG_SUCCESS;
     hg_handle->addr_mine = HG_FALSE;
-    hg_handle->entry = NULL;
     hg_handle->process_rpc_cb = HG_FALSE;
+    hg_handle->recyclable_handle = can_recycle;  /* for pending list */
 
     /* Initialize processing buffers and use unexpected message size */
     hg_handle->in_buf = NULL;
@@ -1255,6 +1244,12 @@ hg_core_create(struct hg_context *context)
         ret = HG_NOMEM_ERROR;
         goto done;
     }
+
+    /* ignore prealloc failures, they will set the op_id to NULL */
+    NA_Prealloc_op_id(na_class, context->hg_class->na_context,
+                      &hg_handle->na_send_prealloc_op_id);
+    NA_Prealloc_op_id(na_class, context->hg_class->na_context,
+                      &hg_handle->na_recv_prealloc_op_id);
 
     hg_handle->na_send_op_id = NA_OP_ID_NULL;
     hg_handle->na_recv_op_id = NA_OP_ID_NULL;
@@ -1281,16 +1276,26 @@ done:
 static void
 hg_core_destroy(struct hg_handle *hg_handle)
 {
+    struct hg_class *hg_class;
+    
     if (!hg_handle) goto done;
 
     if (hg_atomic_decr32(&hg_handle->ref_count)) {
         /* Cannot free yet */
         goto done;
     }
+    hg_class = hg_handle->hg_info.hg_class;
 
+    if (hg_handle->na_send_prealloc_op_id)
+        NA_Prealloc_op_id_free(hg_class->na_class, hg_class->na_context,
+                               hg_handle->na_send_prealloc_op_id);
+    if (hg_handle->na_recv_prealloc_op_id)
+        NA_Prealloc_op_id_free(hg_class->na_class, hg_class->na_context,
+                               hg_handle->na_recv_prealloc_op_id);
+    
     /* Free if mine */
     if (hg_handle->hg_info.addr != HG_ADDR_NULL && hg_handle->addr_mine)
-        NA_Addr_free(hg_handle->hg_info.hg_class->na_class,
+        NA_Addr_free(hg_class->na_class,
                 hg_handle->hg_info.addr);
 
     hg_proc_buf_free(hg_handle->in_buf);
@@ -1301,6 +1306,76 @@ hg_core_destroy(struct hg_handle *hg_handle)
     free(hg_handle);
 
 done:
+    return;
+}
+
+/*---------------------------------------------------------------------------*/
+/*
+ * this will either recycle the handle, or destroy it.
+ */
+static void
+hg_core_recycle_to_pending_or_destroy(struct hg_handle *hg_handle)
+{
+    struct hg_class *hg_class = hg_handle->hg_info.hg_class;
+    struct hg_context *hg_context = hg_handle->hg_info.context;
+    na_return_t na_ret;
+
+    /* reset handle */
+
+    /* Free addr if mine */
+    if (hg_handle->hg_info.addr != HG_ADDR_NULL && hg_handle->addr_mine) {
+        NA_Addr_free(hg_class->na_class, hg_handle->hg_info.addr);
+    }
+    hg_handle->hg_info.addr = HG_ADDR_NULL;
+    hg_handle->callback = NULL;
+    hg_handle->ret = HG_SUCCESS;
+    hg_handle->addr_mine = HG_FALSE;
+    hg_handle->process_rpc_cb = HG_FALSE;
+    hg_handle->in_buf_used = 0;
+    hg_handle->out_buf_used = 0;
+    hg_handle->na_send_op_id = HG_OP_ID_NULL;
+    hg_handle->na_recv_op_id = HG_OP_ID_NULL;
+    hg_atomic_set32(&hg_handle->na_completed_count, 0);
+    if (hg_handle->extra_in_buf)
+        free(hg_handle->extra_in_buf);
+    hg_handle->extra_in_buf = NULL;
+    hg_handle->extra_in_buf_size = 0;
+    hg_handle->extra_in_op_id = HG_OP_ID_NULL;
+    hg_handle->hg_rpc_info = NULL;
+    hg_handle->private_data = NULL;
+
+    hg_thread_mutex_lock(&hg_context->pending_list_mutex);
+
+    LIST_INSERT_HEAD(&hg_context->pending_list, hg_handle, ppl);
+
+    if (hg_context->recycle_pending_handles == HG_FALSE) {
+
+        na_ret = NA_CANCELED;  /* we stopped recycling */
+
+    } else {
+
+        /* Post a new unexpected receive */
+        na_ret = NA_Msg_recv_unexpected(hg_class->na_class, hg_class->na_context,
+                hg_core_recv_input_cb, hg_handle, hg_handle->in_buf,
+                hg_handle->in_buf_size, hg_handle->na_recv_prealloc_op_id,
+                &hg_handle->na_recv_op_id);
+
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not post recycle unexpected recv for input");
+        }
+    }
+
+    if (na_ret != NA_SUCCESS)
+        LIST_REMOVE(hg_handle, ppl);
+
+    hg_thread_mutex_unlock(&hg_context->pending_list_mutex);
+
+    /* if we failed, just destroy it */
+    if (na_ret != NA_SUCCESS) {
+        hg_handle->recyclable_handle = HG_FALSE;
+        hg_core_destroy(hg_handle);
+    }
+
     return;
 }
 
@@ -1365,7 +1440,8 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_class->na_context,
             hg_core_recv_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_size, hg_handle->hg_info.addr,
-            hg_handle->tag, &hg_handle->na_recv_op_id);
+            hg_handle->tag, hg_handle->na_recv_prealloc_op_id,
+            &hg_handle->na_recv_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post recv for output buffer");
         ret = HG_NA_ERROR;
@@ -1377,6 +1453,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
             hg_class->na_context, hg_core_send_input_cb, hg_handle,
             hg_handle->in_buf, hg_handle->in_buf_used,
             hg_handle->hg_info.addr, hg_handle->tag,
+            hg_handle->na_send_prealloc_op_id,
             &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for input buffer");
@@ -1448,7 +1525,8 @@ hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     na_ret = NA_Msg_send_expected(hg_class->na_class, hg_class->na_context,
             hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_used, hg_handle->hg_info.addr,
-            hg_handle->tag, &hg_handle->na_send_op_id);
+            hg_handle->tag, hg_handle->na_send_prealloc_op_id,
+            &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for output buffer");
         ret = HG_NA_ERROR;
@@ -1705,7 +1783,7 @@ hg_core_self_cb(const struct hg_cb_info *callback_info)
     /* Assign forward callback back to handle */
     hg_handle->callback = hg_self_cb_info->forward_cb;
     hg_handle->arg = hg_self_cb_info->forward_arg;
-    hg_handle->cb_type = HG_CB_FORWARD;
+    hg_handle->cb_type = HG_CB_INTFORWARD;
 
     /* Increment refcount and push handle back to completion queue */
     hg_atomic_incr32(&hg_handle->ref_count);
@@ -1806,12 +1884,7 @@ hg_core_complete(struct hg_handle *hg_handle)
     struct hg_completion_entry *hg_completion_entry = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    hg_completion_entry = (struct hg_completion_entry *) malloc(sizeof(struct hg_completion_entry));
-    if (!hg_completion_entry) {
-        HG_LOG_ERROR("Could not allocate HG completion entry");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    hg_completion_entry = &hg_handle->compent;
     hg_completion_entry->op_type = HG_RPC;
     hg_completion_entry->op_id.hg_handle = hg_handle;
 
@@ -1822,8 +1895,6 @@ hg_core_complete(struct hg_handle *hg_handle)
     }
 
 done:
-    if (ret != HG_SUCCESS)
-        free(hg_completion_entry);
     return ret;
 }
 
@@ -1837,18 +1908,12 @@ hg_core_completion_add(struct hg_context *context,
     hg_thread_mutex_lock(&context->completion_queue_mutex);
 
     /* Add handle to completion queue */
-    if (hg_queue_push_head(context->completion_queue,
-            (hg_queue_value_t)hg_completion_entry) != HG_UTIL_SUCCESS) {
-        HG_LOG_ERROR("Could not push completion data to completion queue");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    TAILQ_INSERT_HEAD(&context->completion_queue, hg_completion_entry, q);
 
     /* Callback is pushed to the completion queue when something completes
      * so wake up anyone waiting in the trigger */
     hg_thread_cond_signal(&context->completion_queue_cond);
 
-done:
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
     return ret;
 }
@@ -1865,33 +1930,26 @@ hg_core_listen(struct hg_context *context)
 
     hg_thread_mutex_lock(&context->pending_list_mutex);
 
-    if (!hg_list_is_empty(context->pending_list)) goto done;
+    if (!LIST_EMPTY(&context->pending_list)) goto done;
 
     /* Create a bunch of handles and post unexpected receives */
     for (nentry = 0; nentry < HG_MAX_UNEXPECTED_RECV; nentry++) {
-        hg_list_entry_t *new_entry = NULL;
 
         /* Create a new handle */
-        hg_handle = hg_core_create(context);
+        hg_handle = hg_core_create(context, HG_TRUE);
         if (!hg_handle) {
             HG_LOG_ERROR("Could not create HG handle");
             ret = HG_NOMEM_ERROR;
             goto done;
         }
 
-        new_entry = hg_list_insert_head(context->pending_list,
-                (hg_list_value_t) hg_handle);
-        if (!new_entry) {
-            HG_LOG_ERROR("Could not append handle to pending list");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
-        hg_handle->entry = new_entry;
+        LIST_INSERT_HEAD(&context->pending_list, hg_handle, ppl);
 
         /* Post a new unexpected receive */
         na_ret = NA_Msg_recv_unexpected(hg_class->na_class, hg_class->na_context,
                 hg_core_recv_input_cb, hg_handle, hg_handle->in_buf,
-                hg_handle->in_buf_size, &hg_handle->na_recv_op_id);
+                hg_handle->in_buf_size, hg_handle->na_recv_prealloc_op_id,
+                &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post unexpected recv for input buffer");
             ret = HG_NA_ERROR;
@@ -1913,7 +1971,7 @@ hg_core_progress_self(struct hg_context *context, unsigned int timeout)
     hg_thread_mutex_lock(&context->self_processing_list_mutex);
 
     /* If something is in self processing list, wait timeout ms */
-    while (!hg_list_is_empty(context->self_processing_list)) {
+    while (!LIST_EMPTY(&context->self_processing_list)) {
         hg_bool_t completion_queue_empty;
 
         /* Otherwise wait timeout ms */
@@ -1928,8 +1986,8 @@ hg_core_progress_self(struct hg_context *context, unsigned int timeout)
         /* Is completion queue empty */
         hg_thread_mutex_lock(&context->completion_queue_mutex);
 
-        completion_queue_empty = (hg_bool_t) hg_queue_is_empty(
-                context->completion_queue);
+        completion_queue_empty =
+            (TAILQ_EMPTY(&context->completion_queue)) ? HG_TRUE : HG_FALSE;
 
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
@@ -1967,8 +2025,8 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
     /* Is completion queue empty */
     hg_thread_mutex_lock(&context->completion_queue_mutex);
 
-    completion_queue_empty = (hg_bool_t) hg_queue_is_empty(
-            context->completion_queue);
+    completion_queue_empty =
+        (TAILQ_EMPTY(&context->completion_queue)) ? HG_TRUE : HG_FALSE;
 
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
@@ -2063,7 +2121,7 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
         hg_thread_mutex_lock(&context->completion_queue_mutex);
 
         /* Is completion queue empty */
-        while (hg_queue_is_empty(context->completion_queue)) {
+        while (TAILQ_EMPTY(&context->completion_queue)) {
             if (!timeout) {
                 /* Timeout is 0 so leave */
                 ret = HG_TIMEOUT;
@@ -2082,8 +2140,9 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
         }
 
         /* Completion queue should not be empty now */
-        hg_completion_entry = (struct hg_completion_entry *) hg_queue_pop_tail(
-                context->completion_queue);
+        hg_completion_entry = TAILQ_LAST(&context->completion_queue,
+                                         hg_compqueue);
+        TAILQ_REMOVE(&context->completion_queue, hg_completion_entry, q);
         if (!hg_completion_entry) {
             HG_LOG_ERROR("NULL completion entry");
             ret = HG_INVALID_PARAM;
@@ -2124,7 +2183,6 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
 
         }
 
-        free(hg_completion_entry);
         count++;
     }
 
@@ -2181,15 +2239,36 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
             hg_cb_info.arg = hg_handle->arg;
             hg_cb_info.ret = hg_handle->ret;
             hg_cb_info.type = hg_handle->cb_type;
-            if (hg_handle->cb_type == HG_CB_FORWARD)
+            if (hg_handle->cb_type == HG_CB_INTFORWARD) {
+                hg_cb_info.info.intforward.handle = (hg_handle_t) hg_handle;
+                hg_cb_info.info.intforward.usercb = hg_handle->forw_usercb;
+                hg_cb_info.info.intforward.userarg = hg_handle->arg;
+                hg_cb_info.info.intforward.extra_in_handle =
+                    hg_handle->forw_extra_in_handle;
+                hg_cb_info.info.intforward.extra_in_buf =
+                    hg_handle->forw_extra_in_buf;
+            } else if (hg_handle->cb_type == HG_CB_FORWARD) {
                 hg_cb_info.info.forward.handle = (hg_handle_t) hg_handle;
-            else if (hg_handle->cb_type == HG_CB_RESPOND)
+            } else if (hg_handle->cb_type == HG_CB_RESPOND) {
                 hg_cb_info.info.respond.handle = (hg_handle_t) hg_handle;
+            }
+            
             hg_handle->callback(&hg_cb_info);
         }
 
-        /* Free op */
-        hg_core_destroy(hg_handle);
+        /* recycle or free the handle */
+        if (hg_handle->recyclable_handle == HG_TRUE &&
+            hg_atomic_get32(&hg_handle->ref_count) == 1) {
+
+            /* this will either recycle it or free it */
+            hg_core_recycle_to_pending_or_destroy(hg_handle);
+
+        } else {
+
+            /* free it */
+            hg_core_destroy(hg_handle);
+        }
+
     }
 
 done:
@@ -2341,31 +2420,14 @@ HG_Core_context_create(hg_class_t *hg_class)
     }
 
     context->hg_class = hg_class;
-    context->completion_queue = hg_queue_new();
-    if (!context->completion_queue) {
-        HG_LOG_ERROR("Could not create completion queue");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    TAILQ_INIT(&context->completion_queue);
 
-    context->pending_list = hg_list_new();
-    if (!context->pending_list) {
-        HG_LOG_ERROR("Could not create pending list");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
-    context->processing_list = hg_list_new();
-    if (!context->processing_list) {
-        HG_LOG_ERROR("Could not create processing list");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
-    context->self_processing_list = hg_list_new();
-    if (!context->self_processing_list) {
-        HG_LOG_ERROR("Could not create self processing list");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    LIST_INIT(&context->pending_list);
+    context->recycle_pending_handles =
+        (NA_Is_listening(hg_class->na_class) == NA_TRUE) ? HG_TRUE : HG_FALSE;
+    LIST_INIT(&context->processing_list);
+    LIST_INIT(&context->self_processing_list);
+
     context->self_processing_pool = NULL;
 
     /* Initialize completion queue mutex/cond */
@@ -2378,7 +2440,6 @@ HG_Core_context_create(hg_class_t *hg_class)
 
 done:
     if (ret != HG_SUCCESS && context) {
-        hg_queue_free(context->completion_queue);
         free(context);
         context = NULL;
     }
@@ -2395,6 +2456,11 @@ HG_Core_context_destroy(hg_context_t *context)
 
     if (!context) goto done;
 
+    /* Disable recycling and its NA unexpected read ops */
+    hg_thread_mutex_lock(&context->pending_list_mutex);
+    context->recycle_pending_handles = HG_FALSE;
+    hg_thread_mutex_unlock(&context->pending_list_mutex);
+
     /* Check pending list */
     if (hg_core_pending_list_check(context) == HG_TRUE) {
         ret = hg_core_pending_list_cancel(context);
@@ -2403,8 +2469,6 @@ HG_Core_context_destroy(hg_context_t *context)
             goto done;
         }
     }
-    hg_list_free(context->pending_list);
-    context->pending_list = NULL;
 
     /* Trigger everything we can from NA, if something completed it will
      * be moved to the HG context completion queue */
@@ -2418,13 +2482,11 @@ HG_Core_context_destroy(hg_context_t *context)
         HG_LOG_ERROR("Could not wait on processing list");
         goto done;
     }
-    hg_list_free(context->processing_list);
-    context->processing_list = NULL;
 
     /* Check that completion queue is empty now */
     hg_thread_mutex_lock(&context->completion_queue_mutex);
 
-    if (!hg_queue_is_empty(context->completion_queue)) {
+    if (!TAILQ_EMPTY(&context->completion_queue)) {
         HG_LOG_ERROR("Completion queue should be empty");
         ret = HG_PROTOCOL_ERROR;
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
@@ -2433,14 +2495,8 @@ HG_Core_context_destroy(hg_context_t *context)
 
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
-    /* Destroy completion queue */
-    hg_queue_free(context->completion_queue);
-    context->completion_queue = NULL;
-
     /* Destroy self processing pool if created */
     hg_thread_pool_destroy(context->self_processing_pool);
-    hg_list_free(context->self_processing_list);
-    context->self_processing_list = NULL;
 
     /* Destroy completion queue mutex/cond */
     hg_thread_mutex_destroy(&context->completion_queue_mutex);
@@ -2751,7 +2807,7 @@ HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     }
 
     /* Create new handle */
-    hg_handle = hg_core_create(context);
+    hg_handle = hg_core_create(context, HG_FALSE);
     if (!hg_handle) {
         HG_LOG_ERROR("Could not create HG handle");
         ret = HG_NOMEM_ERROR;
@@ -2858,8 +2914,9 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
-    hg_bulk_t extra_in_handle, hg_size_t size_to_send)
+HG_Core_forward(hg_handle_t handle, hg_cb_t callback, hg_cb_t usercb,
+                void *userarg, void *extra_in_buf, hg_bulk_t extra_in_handle,
+                hg_size_t size_to_send)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     struct hg_header_request request_header;
@@ -2875,8 +2932,11 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
 
     /* Set callback */
     hg_handle->callback = callback;
-    hg_handle->arg = arg;
-    hg_handle->cb_type = HG_CB_FORWARD;
+    hg_handle->arg = userarg;          /* this is arg for usercb */
+    hg_handle->forw_usercb = usercb;
+    hg_handle->forw_extra_in_buf = extra_in_buf;
+    hg_handle->forw_extra_in_handle = extra_in_handle;
+    hg_handle->cb_type = HG_CB_INTFORWARD;
 
     /* Increase ref count here so that a call to HG_Destroy does not free the
      * handle but only schedules its completion

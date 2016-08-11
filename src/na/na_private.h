@@ -13,6 +13,14 @@
 
 #include "na.h"
 
+#include "mercury_util_config.h"
+#ifdef HG_UTIL_HAS_SYS_QUEUE_H
+#include <sys/queue.h>
+#else
+#include "mercury_sys_queue.h"
+#endif
+
+
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
@@ -114,6 +122,18 @@ struct na_class {
             na_class_t *na_class
             );
     na_return_t
+    (*prealloc_op_id)(
+            na_class_t   *na_class,
+            na_context_t *context,
+            na_op_id_t   *op_id
+            );
+    na_return_t
+    (*prealloc_op_id_free)(
+            na_class_t   *na_class,
+            na_context_t *context,
+            na_op_id_t    op_id
+            );
+    na_return_t
     (*msg_send_unexpected)(
             na_class_t   *na_class,
             na_context_t *context,
@@ -123,6 +143,7 @@ struct na_class {
             na_size_t     buf_size,
             na_addr_t     dest,
             na_tag_t      tag,
+            na_op_id_t    op_id_in,
             na_op_id_t   *op_id
             );
     na_return_t
@@ -133,6 +154,7 @@ struct na_class {
             void         *arg,
             void         *buf,
             na_size_t     buf_size,
+            na_op_id_t    op_id_in,
             na_op_id_t   *op_id
             );
     na_return_t
@@ -145,6 +167,7 @@ struct na_class {
             na_size_t     buf_size,
             na_addr_t     dest,
             na_tag_t      tag,
+            na_op_id_t    op_id_in,
             na_op_id_t   *op_id
             );
     na_return_t
@@ -157,6 +180,7 @@ struct na_class {
             na_size_t     buf_size,
             na_addr_t     source,
             na_tag_t      tag,
+            na_op_id_t    op_id_in,
             na_op_id_t   *op_id
             );
     na_return_t
@@ -261,6 +285,16 @@ struct na_class {
             );
 };
 
+/* Completion data stored in completion queue */
+struct na_cb_completion_data {
+    na_cb_t callback;
+    struct na_cb_info callback_info;
+    na_plugin_cb_t plugin_callback;
+    void *plugin_callback_args;
+    TAILQ_ENTRY(na_cb_completion_data) q;
+};
+
+
 /*****************/
 /* Public Macros */
 /*****************/
@@ -288,21 +322,14 @@ extern "C" {
  * Add callback to context completion queue.
  *
  * \param context [IN]              pointer to context of execution
- * \param callback [IN]             pointer to function
- * \param callback_info [IN]        callback info struct
- * \param plugin_callback [IN]      Callback which will be called after the user
- *                                  callback returns.
- * \param plugin_callback_args [IN] Argument to pass to the plugin_callback
+ * \param completion_data [IN]      data to add to queue
  *
  * \return NA_SUCCESS or corresponding NA error code (failure is not an option)
  */
 NA_EXPORT na_return_t
 na_cb_completion_add(
         na_context_t      *context,
-        na_cb_t            callback,
-        struct na_cb_info *callback_info,
-        na_plugin_cb_t     plugin_callback,
-        void              *plugin_callback_args
+        struct na_cb_completion_data *completion_data
         );
 
 #ifdef __cplusplus

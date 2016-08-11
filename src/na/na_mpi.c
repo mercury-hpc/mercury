@@ -148,6 +148,7 @@ struct na_mpi_op_id {
     void *arg;
     na_bool_t completed; /* Operation completed */
     na_bool_t canceled;  /* Operation canceled */
+    struct na_cb_completion_data comp_data;
     union {
       struct na_mpi_info_lookup lookup;
       struct na_mpi_info_send_unexpected send_unexpected;
@@ -354,6 +355,7 @@ na_mpi_msg_send_unexpected(
         na_size_t     buf_size,
         na_addr_t     dest,
         na_tag_t      tag,
+        na_op_id_t    op_id_in,
         na_op_id_t   *op_id
         );
 
@@ -366,6 +368,7 @@ na_mpi_msg_recv_unexpected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        na_op_id_t    op_id_in,
         na_op_id_t   *op_id
         );
 
@@ -380,6 +383,7 @@ na_mpi_msg_send_expected(
         na_size_t     buf_size,
         na_addr_t     dest,
         na_tag_t      tag,
+        na_op_id_t    op_id_in,
         na_op_id_t   *op_id
         );
 
@@ -394,6 +398,7 @@ na_mpi_msg_recv_expected(
         na_size_t     buf_size,
         na_addr_t     source,
         na_tag_t      tag,
+        na_op_id_t    op_id_in,
         na_op_id_t   *op_id
         );
 
@@ -564,6 +569,8 @@ const na_class_t na_mpi_class_g = {
         na_mpi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
         na_mpi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
         na_mpi_msg_get_max_tag,               /* msg_get_max_tag */
+        NULL,                                 /* prealloc_op_id */
+        NULL,                                 /* prealloc_op_id_free */
         na_mpi_msg_send_unexpected,           /* msg_send_unexpected */
         na_mpi_msg_recv_unexpected,           /* msg_recv_unexpected */
         na_mpi_msg_send_expected,             /* msg_send_expected */
@@ -1605,7 +1612,8 @@ na_mpi_msg_get_max_tag(na_class_t NA_UNUSED *na_class)
 static na_return_t
 na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+        na_addr_t dest, na_tag_t tag, NA_UNUSED na_op_id_t op_id_in,
+        na_op_id_t *op_id)
 {
     int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;
@@ -1655,7 +1663,7 @@ done:
 static na_return_t
 na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_op_id_t *op_id)
+        NA_UNUSED na_op_id_t op_id_in, na_op_id_t *op_id)
 {
     struct na_mpi_op_id *na_mpi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1711,7 +1719,8 @@ done:
 static na_return_t
 na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+        na_addr_t dest, na_tag_t tag, NA_UNUSED na_op_id_t op_id_in,
+        na_op_id_t *op_id)
 {
     int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;
@@ -1761,7 +1770,8 @@ done:
 static na_return_t
 na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
+        na_addr_t source, na_tag_t tag, NA_UNUSED na_op_id_t op_id_in,
+        na_op_id_t *op_id)
 {
     int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;
@@ -2552,13 +2562,8 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
     /* Mark op id as completed */
     na_mpi_op_id->completed = NA_TRUE;
 
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    /* Init callback info */
+    callback_info = &na_mpi_op_id->comp_data.callback_info;
     callback_info->arg = na_mpi_op_id->arg;
     callback_info->ret = (na_mpi_op_id->canceled) ? NA_CANCELED : ret;
     callback_info->type = na_mpi_op_id->type;
@@ -2657,30 +2662,29 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
             break;
     }
 
-    ret = na_cb_completion_add(na_mpi_op_id->context, na_mpi_op_id->callback,
-            callback_info, &na_mpi_release, na_mpi_op_id);
+    na_mpi_op_id->comp_data.callback = na_mpi_op_id->callback;
+    na_mpi_op_id->comp_data.plugin_callback = &na_mpi_release;
+    na_mpi_op_id->comp_data.plugin_callback_args = na_mpi_op_id;
+    
+    ret = na_cb_completion_add(na_mpi_op_id->context, &na_mpi_op_id->comp_data);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not add callback to completion queue");
         goto done;
     }
 
 done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static void
-na_mpi_release(struct na_cb_info *callback_info, void *arg)
+na_mpi_release(NA_UNUSED struct na_cb_info *callback_info, void *arg)
 {
     struct na_mpi_op_id *na_mpi_op_id = (struct na_mpi_op_id *) arg;
 
     if (na_mpi_op_id && !na_mpi_op_id->completed) {
         NA_LOG_ERROR("Releasing resources from an uncompleted operation");
     }
-    free(callback_info);
     free(na_mpi_op_id);
 }
 

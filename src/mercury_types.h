@@ -12,6 +12,13 @@
 #define MERCURY_TYPES_H
 
 #include "mercury_config.h"
+#include "mercury_util_config.h"
+
+#ifdef HG_UTIL_HAS_SYS_QUEUE_H
+#include <sys/queue.h>
+#else
+#include "mercury_sys_queue.h"
+#endif
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -84,8 +91,13 @@ typedef enum hg_cb_type {
     HG_CB_LOOKUP,       /*!< lookup callback */
     HG_CB_FORWARD,      /*!< forward callback */
     HG_CB_RESPOND,      /*!< respond callback */
-    HG_CB_BULK          /*!< bulk transfer callback */
+    HG_CB_BULK,         /*!< bulk transfer callback */
+    HG_CB_INTFORWARD    /*!< internal forward callback */
 } hg_cb_type_t;
+
+/* HG callback */
+struct hg_cb_info;      /* defined below */
+typedef hg_return_t (*hg_cb_t)(const struct hg_cb_info *callback_info);
 
 /* Callback info structs */
 struct hg_cb_info_lookup {
@@ -94,6 +106,14 @@ struct hg_cb_info_lookup {
 
 struct hg_cb_info_forward {
     hg_handle_t handle; /* HG handle */
+};
+
+struct hg_cb_info_intforward {
+    hg_handle_t handle;        /* HG handle */
+    hg_cb_t usercb;            /* user-level callback */
+    void *userarg;             /* user arg */
+    hg_bulk_t extra_in_handle; /* extra buf handle if handle isn't big enough */
+    void *extra_in_buf;        /* extra buf itself */
 };
 
 struct hg_cb_info_respond {
@@ -115,12 +135,12 @@ struct hg_cb_info {
         struct hg_cb_info_forward forward;
         struct hg_cb_info_respond respond;
         struct hg_cb_info_bulk bulk;
+        struct hg_cb_info_intforward intforward;
     } info;
 };
 
-/* RPC / HG callbacks */
+/* RPC callback */
 typedef hg_return_t (*hg_rpc_cb_t)(hg_handle_t handle);
-typedef hg_return_t (*hg_cb_t)(const struct hg_cb_info *callback_info);
 
 /* Proc callback for serializing/deserializing parameters */
 typedef hg_return_t (*hg_proc_cb_t)(hg_proc_t proc, void *data);

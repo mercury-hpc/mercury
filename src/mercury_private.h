@@ -42,6 +42,7 @@ typedef enum {
 /* Completion queue entry */
 struct hg_completion_entry {
     hg_op_type_t op_type;
+    TAILQ_ENTRY(hg_completion_entry) q;
     union {
         struct hg_op_id *hg_op_id;
         struct hg_handle *hg_handle;

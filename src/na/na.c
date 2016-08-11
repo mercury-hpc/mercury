@@ -42,24 +42,20 @@ struct na_private_class {
     na_bool_t listen;
 };
 
+/* NA completions queue */
+TAILQ_HEAD(na_compqueue, na_cb_completion_data);
+typedef struct na_compqueue na_compqueue_t;
+
 /* Private context / do not expose private members to plugins */
 struct na_private_context {
     struct na_context context;  /* Must remain as first field */
     na_class_t *na_class;       /* Pointer to NA class */
-    hg_queue_t *completion_queue;
+    na_compqueue_t completion_queue;
     hg_thread_mutex_t completion_queue_mutex;
     hg_thread_cond_t completion_queue_cond;
     hg_thread_mutex_t progress_mutex;
     hg_thread_cond_t progress_cond;
     na_bool_t progressing;
-};
-
-/* Completion data stored in completion queue */
-struct na_cb_completion_data {
-    na_cb_t callback;
-    struct na_cb_info *callback_info;
-    na_plugin_cb_t plugin_callback;
-    void *plugin_callback_args;
 };
 
 /********************/
@@ -471,12 +467,7 @@ NA_Context_create(na_class_t *na_class)
     }
 
     /* Initialize completion queue */
-    na_private_context->completion_queue = hg_queue_new();
-    if (!na_private_context->completion_queue) {
-        NA_LOG_ERROR("Could not create completion queue");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    TAILQ_INIT(&na_private_context->completion_queue);
 
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&na_private_context->completion_queue_mutex);
@@ -513,7 +504,7 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
     /* Check that completion queue is empty now */
     hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
-    if (!hg_queue_is_empty(na_private_context->completion_queue)) {
+    if (!TAILQ_EMPTY(&na_private_context->completion_queue)) {
         NA_LOG_ERROR("Completion queue should be empty");
         ret = NA_PROTOCOL_ERROR;
         hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
@@ -527,10 +518,6 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
             goto done;
         }
     }
-
-    /* Destroy completion queue */
-    hg_queue_free(na_private_context->completion_queue);
-    na_private_context->completion_queue = NULL;
 
     hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
 
@@ -809,9 +796,57 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
+NA_Prealloc_op_id(na_class_t *na_class, na_context_t *context,
+        na_op_id_t *op_id)          
+{
+    na_return_t ret = NA_SUCCESS;
+
+    *op_id = NULL;    /* ensure caller gets something valid */
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!na_class->prealloc_op_id) {
+        /* optional prealloc_op_id not provided, so we skip it */
+        goto done;
+    }
+
+    ret = na_class->prealloc_op_id(na_class, context, op_id);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Prealloc_op_id_free(na_class_t *na_class, na_context_t *context,
+        na_op_id_t op_id)          
+{
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!op_id || !na_class->prealloc_op_id_free) {
+        /* no preallocated op_id or free function?  skip it */
+        goto done;
+    }
+
+    ret = na_class->prealloc_op_id_free(na_class, context, op_id);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
 NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+        na_addr_t dest, na_tag_t tag, na_op_id_t op_id_in, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -847,7 +882,7 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_unexpected(na_class, context, callback, arg, buf,
-            buf_size, dest, tag, op_id);
+                                        buf_size, dest, tag, op_id_in, op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
@@ -860,7 +895,7 @@ done:
 na_return_t
 NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_op_id_t *op_id)
+        na_op_id_t op_id_in, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -891,7 +926,7 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_unexpected(na_class, context, callback, arg, buf,
-            buf_size, op_id);
+                                        buf_size, op_id_in, op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
@@ -904,7 +939,8 @@ done:
 na_return_t
 NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+        na_addr_t dest, na_tag_t tag, na_op_id_t op_id_in,
+        na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -940,7 +976,7 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_expected(na_class, context, callback, arg, buf,
-            buf_size, dest, tag, op_id);
+                                      buf_size, dest, tag, op_id_in, op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
@@ -953,7 +989,7 @@ done:
 na_return_t
 NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
+        na_addr_t source, na_tag_t tag, na_op_id_t op_id_in, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -989,7 +1025,7 @@ NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_expected(na_class, context, callback, arg, buf,
-            buf_size, source, tag, op_id);
+                                      buf_size, source, tag, op_id_in, op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
@@ -1517,8 +1553,9 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
         /* Is completion queue empty */
-        completion_queue_empty = (na_bool_t) hg_queue_is_empty(
-                na_private_context->completion_queue);
+        completion_queue_empty =
+            (TAILQ_EMPTY(&na_private_context->completion_queue)) ? NA_TRUE
+            : NA_FALSE;
 
         while (completion_queue_empty) {
             /* TODO needed ? */
@@ -1550,8 +1587,10 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         }
 
         /* Completion queue should not be empty now */
-        completion_data = (struct na_cb_completion_data *)
-                    hg_queue_pop_tail(na_private_context->completion_queue);
+        completion_data = TAILQ_LAST(&na_private_context->completion_queue,
+                                     na_compqueue);
+        TAILQ_REMOVE(&na_private_context->completion_queue,
+                     completion_data, q);
         if (!completion_data) {
             NA_LOG_ERROR("NULL completion data");
             ret = NA_INVALID_PARAM;
@@ -1566,15 +1605,14 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         /* Execute callback */
         if (completion_data->callback) {
             /* TODO should return error from callback ? */
-            completion_data->callback(completion_data->callback_info);
+            completion_data->callback(&completion_data->callback_info);
         }
 
         /* Execute plugin callback (free resources etc) */
         if (completion_data->plugin_callback)
-            completion_data->plugin_callback(completion_data->callback_info,
+            completion_data->plugin_callback(&completion_data->callback_info,
                     completion_data->plugin_callback_args);
 
-        free(completion_data);
         count++;
     }
 
@@ -1639,37 +1677,16 @@ NA_Error_to_string(na_return_t errnum)
 /*---------------------------------------------------------------------------*/
 na_return_t
 na_cb_completion_add(na_context_t *context,
-        na_cb_t callback, struct na_cb_info *callback_info,
-        na_plugin_cb_t plugin_callback, void *plugin_callback_args)
+                     struct na_cb_completion_data *completion_data)
 {
     struct na_private_context *na_private_context =
             (struct na_private_context *) context;
     na_return_t ret = NA_SUCCESS;
-    struct na_cb_completion_data *completion_data = NULL;
-
-    completion_data = (struct na_cb_completion_data *)
-            malloc(sizeof(struct na_cb_completion_data));
-    if (!completion_data) {
-        NA_LOG_ERROR("Could not allocate completion data struct");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-
-    completion_data->callback = callback;
-    completion_data->callback_info = callback_info;
-    completion_data->plugin_callback = plugin_callback;
-    completion_data->plugin_callback_args = plugin_callback_args;
 
     hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
-    if (hg_queue_push_head(na_private_context->completion_queue,
-            (hg_queue_value_t) completion_data) != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not push completion data to completion queue");
-        ret = NA_NOMEM_ERROR;
-        hg_thread_mutex_unlock(
-                &na_private_context->completion_queue_mutex);
-        goto done;
-    }
+    TAILQ_INSERT_HEAD(&na_private_context->completion_queue,
+                      completion_data, q);
 
     /* Callback is pushed to the completion queue when something completes
      * so wake up anyone waiting in the trigger */
@@ -1677,6 +1694,5 @@ na_cb_completion_add(na_context_t *context,
 
     hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
 
-done:
     return ret;
 }
