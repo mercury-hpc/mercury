@@ -223,7 +223,6 @@ hg_time_stamp(void)
 #ifdef _WIN32
     /* TODO not implemented */
 #else
-    const char *time_format = "%a, %d %b %y %T %Z";
     struct tm *local_time;
     time_t t;
 
@@ -235,7 +234,7 @@ hg_time_stamp(void)
         return ret;
     }
 
-    if (strftime(buf, HG_UTIL_STAMP_MAX, time_format, local_time) == 0) {
+    if (strftime(buf, HG_UTIL_STAMP_MAX, "%a, %d %b %Y %T %Z", local_time) == 0) {
         HG_UTIL_ERROR_DEFAULT("Could not format time");
         ret = NULL;
         return ret;
