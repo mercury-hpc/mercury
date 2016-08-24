@@ -73,6 +73,11 @@ if(NA_USE_CCI)
   check_include_files("sys/prctl.h" HG_TESTING_HAS_SYSPRCTL_H)
 endif()
 
+if(NA_USE_SM)
+  set(NA_SM_TESTING_PROTOCOL "sm" CACHE STRING "Protocol(s) used for testing (e.g., sm).")
+  mark_as_advanced(NA_SM_TESTING_PROTOCOL)
+endif()
+
 #------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
 #------------------------------------------------------------------------------

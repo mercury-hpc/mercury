@@ -27,12 +27,24 @@
     #define NA_ABI_HIDDEN
 #endif
 
+/* BMI */
 #cmakedefine NA_HAS_BMI
+
+/* MPI */
 #cmakedefine NA_HAS_MPI
 #cmakedefine NA_MPI_HAS_GNI_SETUP
+
+/* CCI */
 #cmakedefine NA_HAS_CCI
 #cmakedefine NA_CCI_HAS_POLL
 
+/* NA SM */
+#cmakedefine NA_HAS_SM
+#cmakedefine NA_SM_HAS_CMA
+#cmakedefine NA_SM_SHM_PREFIX "@NA_SM_SHM_PREFIX@"
+#cmakedefine NA_SM_TMP_DIRECTORY "@NA_SM_TMP_DIRECTORY@"
+
+/* Build Options */
 #cmakedefine NA_HAS_VERBOSE_ERROR
 
 #cmakedefine NA_BUILD_SHARED_LIBS
