@@ -62,7 +62,8 @@ int main(int argc, char *argv[])
 
     int fildes = 12345;
     int *bulk_buf = NULL;
-    void *buf_ptr[1];
+    void *buf_ptrs[2];
+    size_t buf_sizes[2];
     size_t count =  (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE) / sizeof(int);
     size_t bulk_size = count * sizeof(int);
     hg_bulk_t bulk_handle = HG_BULK_NULL;
@@ -71,11 +72,14 @@ int main(int argc, char *argv[])
     size_t i;
 
     /* Prepare bulk_buf */
-    bulk_buf = (int*) malloc(bulk_size);
+    bulk_buf = (int *) malloc(bulk_size);
     for (i = 0; i < count; i++) {
         bulk_buf[i] = i;
     }
-    *buf_ptr = bulk_buf;
+    buf_ptrs[0] = bulk_buf;
+    buf_sizes[0] = bulk_size;
+    buf_ptrs[1] = NULL;
+    buf_sizes[1] = 0;
 
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
@@ -92,7 +96,7 @@ int main(int argc, char *argv[])
     }
 
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_class, 1, buf_ptr, &bulk_size,
+    hg_ret = HG_Bulk_create(hg_class, 2, buf_ptrs, buf_sizes,
             HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");

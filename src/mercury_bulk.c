@@ -279,6 +279,48 @@ hg_bulk_memcpy_get(na_class_t HG_BULK_UNUSED *na_class,
     return callback(&na_cb_info);
 }
 
+/**
+ * Serialize memcpy
+ */
+static HG_INLINE na_return_t
+hg_bulk_serialize_memcpy(char **dest, ssize_t *dest_left, const void *src,
+    size_t n)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if ((*dest_left -= (ssize_t) n) < 0) {
+        HG_LOG_ERROR("Buffer size too small");
+        ret = HG_SIZE_ERROR;
+        goto done;
+    }
+    memcpy(*dest, src, n);
+    *dest += n;
+
+done:
+    return ret;
+}
+
+/**
+ * Deserialize memcpy
+ */
+static HG_INLINE na_return_t
+hg_bulk_deserialize_memcpy(const char **src, ssize_t *src_left, void *dest,
+    size_t n)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if ((*src_left -= (ssize_t) n) < 0) {
+        HG_LOG_ERROR("Buffer size too small");
+        ret = HG_SIZE_ERROR;
+        goto done;
+    }
+    memcpy(dest, *src, n);
+    *src += n;
+
+done:
+    return ret;
+}
+
 /*******************/
 /* Local Variables */
 /*******************/
@@ -312,8 +354,8 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
     hg_bulk->ref_count = 1;
 
     /* Allocate segment sizes */
-    hg_bulk->segments = (struct hg_bulk_segment *) malloc(hg_bulk->segment_count
-            * sizeof(struct hg_bulk_segment));
+    hg_bulk->segments = (struct hg_bulk_segment *) malloc(
+        hg_bulk->segment_count * sizeof(struct hg_bulk_segment));
     if (!hg_bulk->segments) {
         HG_LOG_ERROR("Could not allocate segment array");
         ret = HG_NOMEM_ERROR;
@@ -321,8 +363,8 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
     }
 
     /* Allocate segment handles */
-    hg_bulk->segment_handles = (na_mem_handle_t *) malloc(hg_bulk->segment_count
-            * sizeof(na_mem_handle_t));
+    hg_bulk->segment_handles = (na_mem_handle_t *) malloc(
+        hg_bulk->segment_count * sizeof(na_mem_handle_t));
     if (!hg_bulk->segment_handles) {
         HG_LOG_ERROR("Could not allocate mem handle array");
         ret = HG_NOMEM_ERROR;
@@ -356,19 +398,14 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
     /* Loop over the list of segments and register them */
     for (i = 0; i < hg_bulk->segment_count; i++) {
         hg_bulk->segments[i].size = buf_sizes[i];
-        if (!hg_bulk->segments[i].size) {
-            HG_LOG_ERROR("Invalid segment size");
-            ret = HG_INVALID_PARAM;
-            goto done;
-        }
         hg_bulk->total_size += hg_bulk->segments[i].size;
 
-        if (buf_ptrs && buf_ptrs[i])
+        if (buf_ptrs)
             hg_bulk->segments[i].address = (hg_ptr_t) buf_ptrs[i];
         else {
             /* Use calloc to avoid uninitialized memory used for transfer */
             hg_bulk->segments[i].address = (hg_ptr_t) calloc(
-                    hg_bulk->segments[i].size, sizeof(char));
+                hg_bulk->segments[i].size, sizeof(char));
             if (!hg_bulk->segments[i].address) {
                 HG_LOG_ERROR("Could not allocate segment");
                 ret = HG_NOMEM_ERROR;
@@ -376,20 +413,23 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
             }
         }
 
-        na_ret = NA_Mem_handle_create(hg_class->na_class,
+        if (hg_bulk->segments[i].address) {
+            na_ret = NA_Mem_handle_create(hg_class->na_class,
                 (void *) hg_bulk->segments[i].address,
                 hg_bulk->segments[i].size, flags, &hg_bulk->segment_handles[i]);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("NA_Mem_handle_create failed");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+            if (na_ret != NA_SUCCESS) {
+                HG_LOG_ERROR("NA_Mem_handle_create failed");
+                ret = HG_NA_ERROR;
+                goto done;
+            }
 
-        na_ret = NA_Mem_register(hg_class->na_class, hg_bulk->segment_handles[i]);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("NA_Mem_register failed");
-            ret = HG_NA_ERROR;
-            goto done;
+            na_ret = NA_Mem_register(hg_class->na_class,
+                hg_bulk->segment_handles[i]);
+            if (na_ret != NA_SUCCESS) {
+                HG_LOG_ERROR("NA_Mem_register failed");
+                ret = HG_NA_ERROR;
+                goto done;
+            }
         }
     }
 
@@ -407,7 +447,6 @@ static hg_return_t
 hg_bulk_free(struct hg_bulk *hg_bulk)
 {
     hg_return_t ret = HG_SUCCESS;
-    na_return_t na_ret;
     unsigned int i;
 
     if (!hg_bulk) goto done;
@@ -420,6 +459,11 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
         /* Unregister/free NA memory handles */
         if (hg_bulk->segment_published) {
             for (i = 0; i < hg_bulk->segment_count; i++) {
+                na_return_t na_ret;
+
+                if (!hg_bulk->segment_handles[i])
+                    continue;
+
                 na_ret = NA_Mem_unpublish(hg_bulk->hg_class->na_class,
                         hg_bulk->segment_handles[i]);
                 if (na_ret != NA_SUCCESS) {
@@ -430,6 +474,11 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
         }
 
         for (i = 0; i < hg_bulk->segment_count; i++) {
+            na_return_t na_ret;
+
+            if (!hg_bulk->segment_handles[i])
+                continue;
+
             na_ret = NA_Mem_deregister(hg_bulk->hg_class->na_class,
                     hg_bulk->segment_handles[i]);
             if (na_ret != NA_SUCCESS) {
@@ -441,6 +490,7 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("NA_Mem_handle_free failed");
             }
+            hg_bulk->segment_handles[i] = NULL;
         }
 
         free(hg_bulk->segment_handles);
@@ -946,13 +996,23 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t request_eager)
         goto done;
     }
 
+    /* Segments */
     ret = sizeof(hg_bulk->total_size) + sizeof(hg_bulk->segment_count)
-            + hg_bulk->segment_count * sizeof(struct hg_bulk_segment)
-            + sizeof(hg_bulk->eager_mode);
+        + hg_bulk->segment_count * sizeof(*hg_bulk->segments);
+
+    /* NA mem handles */
     for (i = 0; i < hg_bulk->segment_count; i++) {
-        ret += NA_Mem_handle_get_serialize_size(
+        na_size_t serialize_size = 0;
+
+        if (hg_bulk->segment_handles[i]) {
+            serialize_size = NA_Mem_handle_get_serialize_size(
                 hg_bulk->hg_class->na_class, hg_bulk->segment_handles[i]);
+        }
+        ret += sizeof(serialize_size) + serialize_size;
     }
+
+    /* Eager mode */
+    ret += sizeof(hg_bulk->eager_mode);
     if (request_eager && (hg_bulk->flags == HG_BULK_READ_ONLY))
         ret += hg_bulk->total_size;
 
@@ -966,10 +1026,9 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
     hg_bulk_t handle)
 {
     struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
-    char *buf_ptr = (char*) buf;
-    hg_size_t buf_size_left = buf_size;
+    char *buf_ptr = (char *) buf;
+    ssize_t buf_size_left = (ssize_t) buf_size;
     hg_return_t ret = HG_SUCCESS;
-    na_return_t na_ret;
     hg_bool_t eager_mode;
     hg_uint32_t i;
 
@@ -982,8 +1041,13 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
     /* Publish handle at this point if not published yet */
     if (!hg_bulk->segment_published) {
         for (i = 0; i < hg_bulk->segment_count; i++) {
+            na_return_t na_ret;
+
+            if (!hg_bulk->segment_handles[i])
+                continue;
+
             na_ret = NA_Mem_publish(hg_bulk->hg_class->na_class,
-                    hg_bulk->segment_handles[i]);
+                hg_bulk->segment_handles[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("NA_Mem_publish failed");
                 ret = HG_NA_ERROR;
@@ -993,59 +1057,87 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
         hg_bulk->segment_published = HG_TRUE;
     }
 
-    if (buf_size < HG_Bulk_get_serialize_size(handle, request_eager)) {
-        HG_LOG_ERROR("Buffer size too small for serializing parameter");
-        ret = HG_SIZE_ERROR;
+    /* Add the total size of the segments */
+    ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left,
+        &hg_bulk->total_size, sizeof(hg_bulk->total_size));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not encode total size");
         goto done;
     }
 
-    /* Add the size of the data */
-    memcpy(buf_ptr, &hg_bulk->total_size, sizeof(hg_size_t));
-    buf_ptr += sizeof(hg_size_t);
-    buf_size_left -= sizeof(hg_size_t);
+    /* Add the number of segments */
+    ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left,
+        &hg_bulk->segment_count, sizeof(hg_bulk->segment_count));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not encode segment count");
+        goto done;
+    }
 
-    /* Add the number of handles */
-    memcpy(buf_ptr, &hg_bulk->segment_count, sizeof(hg_uint32_t));
-    buf_ptr += sizeof(hg_uint32_t);
-    buf_size_left -= sizeof(hg_uint32_t);
-
-    /* Add the list of sizes */
+    /* Add the array of segments */
     for (i = 0; i < hg_bulk->segment_count; i++) {
-        memcpy(buf_ptr, &hg_bulk->segments[i], sizeof(struct hg_bulk_segment));
-        buf_ptr += sizeof(struct hg_bulk_segment);
-        buf_size_left -= sizeof(struct hg_bulk_segment);
+        ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left,
+            &hg_bulk->segments[i], sizeof(hg_bulk->segments[i]));
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not encode segment");
+            goto done;
+        }
     }
 
     /* Add the NA memory handles */
     for (i = 0; i < hg_bulk->segment_count; i++) {
-        na_ret = NA_Mem_handle_serialize(hg_bulk->hg_class->na_class,
-                buf_ptr, buf_size_left, hg_bulk->segment_handles[i]);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not serialize memory handle");
-            ret = HG_NA_ERROR;
-            break;
+        na_size_t serialize_size = 0;
+        na_return_t na_ret;
+
+        if (hg_bulk->segment_handles[i]) {
+            serialize_size = NA_Mem_handle_get_serialize_size(
+                hg_bulk->hg_class->na_class, hg_bulk->segment_handles[i]);
         }
-        buf_ptr += NA_Mem_handle_get_serialize_size(
-                hg_bulk->hg_class->na_class, hg_bulk->segment_handles[i]);
-        buf_size_left -= NA_Mem_handle_get_serialize_size(
-                hg_bulk->hg_class->na_class, hg_bulk->segment_handles[i]);
+        ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left, &serialize_size,
+            sizeof(serialize_size));
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not encode serialize size");
+            goto done;
+        }
+        if (hg_bulk->segment_handles[i]) {
+            na_ret = NA_Mem_handle_serialize(hg_bulk->hg_class->na_class,
+                buf_ptr, buf_size_left, hg_bulk->segment_handles[i]);
+            if (na_ret != NA_SUCCESS) {
+                HG_LOG_ERROR("Could not serialize memory handle");
+                ret = HG_NA_ERROR;
+                break;
+            }
+            buf_ptr += serialize_size;
+            buf_size_left -= serialize_size;
+        }
     }
 
     /* Eager mode is used only when data is set to HG_BULK_READ_ONLY */
     eager_mode = (request_eager && (hg_bulk->flags == HG_BULK_READ_ONLY));
-    memcpy(buf_ptr, &eager_mode, sizeof(hg_bool_t));
-    buf_ptr += sizeof(hg_bool_t);
-    buf_size_left -= sizeof(hg_bool_t);
+    ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left, &eager_mode,
+        sizeof(eager_mode));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not encode eager_mode bool");
+        goto done;
+    }
 
     /* Add the serialized data */
     if (eager_mode) {
         for (i = 0; i < hg_bulk->segment_count; i++) {
-            memcpy(buf_ptr, (const void *) hg_bulk->segments[i].address,
-                    hg_bulk->segments[i].size);
-            buf_ptr += hg_bulk->segments[i].size;
-            buf_size_left -= hg_bulk->segments[i].size;
+            if (!hg_bulk->segments[i].size)
+                continue;
+
+            ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left,
+                (const void *) hg_bulk->segments[i].address,
+                hg_bulk->segments[i].size);
+            if (ret != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not encode segment data");
+                goto done;
+            }
         }
     }
+
+    if (buf_size_left)
+        HG_LOG_WARNING("Buf size left greater than 0, %zd", buf_size_left);
 
 done:
     return ret;
@@ -1057,10 +1149,9 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
     hg_size_t buf_size)
 {
     struct hg_bulk *hg_bulk = NULL;
-    const char *buf_ptr = (const char*) buf;
-    hg_size_t buf_size_left = buf_size;
+    const char *buf_ptr = (const char *) buf;
+    ssize_t buf_size_left = (ssize_t) buf_size;
     hg_return_t ret = HG_SUCCESS;
-    na_return_t na_ret;
     hg_uint32_t i;
 
     if (!handle) {
@@ -1075,38 +1166,27 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
         ret = HG_NOMEM_ERROR;
         goto done;
     }
+    memset(hg_bulk, 0, sizeof(struct hg_bulk));
     hg_bulk->hg_class = hg_class;
-    hg_bulk->total_size = 0;
-    hg_bulk->segment_count = 0;
-    hg_bulk->segments = NULL;
-    hg_bulk->segment_handles = NULL;
-    hg_bulk->segment_published = HG_FALSE;
-    hg_bulk->segment_alloc = HG_FALSE;
-    hg_bulk->flags = 0;
-    hg_bulk->eager_mode = HG_FALSE;
     hg_bulk->ref_count = 1;
 
-    /* Get the size of the data */
-    memcpy(&hg_bulk->total_size, buf_ptr, sizeof(hg_size_t));
-    buf_ptr += sizeof(hg_size_t);
-    buf_size_left -= sizeof(hg_size_t);
-    if (!hg_bulk->total_size) {
-        HG_LOG_ERROR("NULL total size");
-        ret = HG_SIZE_ERROR;
+    /* Get the total size of the segments */
+    ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
+        &hg_bulk->total_size, sizeof(hg_bulk->total_size));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not decode total size");
         goto done;
     }
 
-    /* Get the number of handles */
-    memcpy(&hg_bulk->segment_count, buf_ptr, sizeof(hg_uint32_t));
-    buf_ptr += sizeof(hg_uint32_t);
-    buf_size_left -= sizeof(hg_uint32_t);
-    if (!hg_bulk->segment_count) {
-        HG_LOG_ERROR("NULL segment count");
-        ret = HG_INVALID_PARAM;
+    /* Get the number of segments */
+    ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
+        &hg_bulk->segment_count, sizeof(hg_bulk->segment_count));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not decode segment count");
         goto done;
     }
 
-    /* Add the segment array */
+    /* Get the array of segments */
     hg_bulk->segments = (struct hg_bulk_segment *) malloc(
             hg_bulk->segment_count * sizeof(struct hg_bulk_segment));
     if (!hg_bulk->segments) {
@@ -1115,51 +1195,63 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
         goto done;
     }
     for (i = 0; i < hg_bulk->segment_count; i++) {
-        memcpy(&hg_bulk->segments[i], buf_ptr, sizeof(struct hg_bulk_segment));
-        buf_ptr += sizeof(struct hg_bulk_segment);
-        buf_size_left -= sizeof(struct hg_bulk_segment);
-        if (!hg_bulk->segments[i].size) {
-            HG_LOG_ERROR("NULL segment size");
-            ret = HG_SIZE_ERROR;
+        ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
+            &hg_bulk->segments[i], sizeof(hg_bulk->segments[i]));
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not decode segment");
             goto done;
         }
-        /* fprintf(stderr, "Segment[%lu] = %lu bytes\n", i, hg_bulk->segments[i].size); */
     }
 
+    /* Get the NA memory handles */
     hg_bulk->segment_handles = (na_mem_handle_t *) malloc(
             hg_bulk->segment_count * sizeof(na_mem_handle_t));
     if (!hg_bulk->segment_handles) {
-        HG_LOG_ERROR("Could not allocate mem handle list");
+        HG_LOG_ERROR("Could not allocate NA memory handle array");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
+
     for (i = 0; i < hg_bulk->segment_count; i++) {
-        hg_bulk->segment_handles[i] = NA_MEM_HANDLE_NULL;
-    }
-    for (i = 0; i < hg_bulk->segment_count; i++) {
-        na_size_t serialize_size = NA_Mem_handle_get_serialize_size(
-                hg_bulk->hg_class->na_class, hg_bulk->segment_handles[i]);
-        na_ret = NA_Mem_handle_deserialize(hg_bulk->hg_class->na_class,
-                &hg_bulk->segment_handles[i],
-                buf_ptr, buf_size_left);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not deserialize memory handle");
-            ret = HG_NA_ERROR;
+        na_size_t serialize_size;
+        na_return_t na_ret;
+
+        ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
+            &serialize_size, sizeof(serialize_size));
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not decode serialize size");
             goto done;
         }
-        buf_ptr += serialize_size;
-        buf_size_left -= serialize_size;
+        if (serialize_size) {
+            na_ret = NA_Mem_handle_deserialize(hg_bulk->hg_class->na_class,
+                &hg_bulk->segment_handles[i], buf_ptr, buf_size_left);
+            if (na_ret != NA_SUCCESS) {
+                HG_LOG_ERROR("Could not deserialize memory handle");
+                ret = HG_NA_ERROR;
+                goto done;
+            }
+            buf_ptr += serialize_size;
+            buf_size_left -= serialize_size;
+        } else {
+            hg_bulk->segment_handles[i] = NA_MEM_HANDLE_NULL;
+        }
     }
 
-    /* Add whether data is serialized or not */
-    memcpy(&hg_bulk->eager_mode, buf_ptr, sizeof(hg_bool_t));
-    buf_ptr += sizeof(hg_bool_t);
-    buf_size_left -= sizeof(hg_bool_t);
+    /* Get whether data is serialized or not */
+    ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
+        &hg_bulk->eager_mode, sizeof(hg_bulk->eager_mode));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not decode eager_mode bool");
+        goto done;
+    }
 
-    /* Add the serialized data */
+    /* Get the serialized data */
     if (hg_bulk->eager_mode) {
         hg_bulk->segment_alloc = HG_TRUE;
         for (i = 0; i < hg_bulk->segment_count; i++) {
+            if (!hg_bulk->segments[i].size)
+                continue;
+
             /* Use calloc to avoid uninitialized memory used for transfer */
             hg_bulk->segments[i].address = (hg_ptr_t) calloc(
                     hg_bulk->segments[i].size, sizeof(char));
@@ -1168,12 +1260,18 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
                 ret = HG_NOMEM_ERROR;
                 goto done;
             }
-            memcpy((void *) hg_bulk->segments[i].address, buf_ptr,
-                    hg_bulk->segments[i].size);
-            buf_ptr += hg_bulk->segments[i].size;
-            buf_size_left -= hg_bulk->segments[i].size;
+            ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
+                (void *) hg_bulk->segments[i].address,
+                hg_bulk->segments[i].size);
+            if (ret != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not decode segment data");
+                goto done;
+            }
         }
     }
+
+    if (buf_size_left)
+        HG_LOG_WARNING("Buf size left greater than 0, %zd", buf_size_left);
 
     *handle = (hg_bulk_t) hg_bulk;
 

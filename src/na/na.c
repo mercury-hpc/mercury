@@ -1212,6 +1212,11 @@ NA_Mem_handle_get_serialize_size(na_class_t *na_class,
         NA_LOG_ERROR("NULL NA class");
         goto done;
     }
+    if (mem_handle == NA_MEM_HANDLE_NULL) {
+        NA_LOG_ERROR("NULL memory handle");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
     /* mem_handle parameter is optional */
     if (!na_class->mem_handle_get_serialize_size) {
         NA_LOG_ERROR("mem_handle_get_serialize_size plugin callback is not defined");
