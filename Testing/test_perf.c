@@ -18,6 +18,8 @@
 
 #define RPC_SKIP 20
 #define BULK_SKIP 20
+#define NDIGITS 9
+#define NWIDTH 13
 
 extern int na_test_comm_rank_g;
 extern int na_test_comm_size_g;
@@ -87,8 +89,8 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
     NA_Test_barrier();
 
     if (na_test_comm_rank_g == 0) printf("%*s%*s%*s%*s%*s%*s",
-            10, "# Time (s)", 10, "Min (s)", 10, "Max (s)",
-            12, "Calls (c/s)", 12, "Min (c/s)", 12, "Max (c/s)");
+        NWIDTH, "#    Time (s)", NWIDTH, "Min (s)", NWIDTH, "Max (s)",
+        NWIDTH, "Calls (c/s)", NWIDTH, "Min (c/s)", NWIDTH, "Max (c/s)");
     if (na_test_comm_rank_g == 0) printf("\n");
 
     /* RPC benchmark */
@@ -143,10 +145,10 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
 
         /* At this point we have received everything so work out the bandwidth */
         if (na_test_comm_rank_g == 0) {
-            printf("%*f%*f%*f%*.*f%*.*f%*.*f\r",
-                10, part_time_read, 10, min_time_read, 10, max_time_read,
-                12, 2, calls_per_sec, 12, 2, min_calls_per_sec, 12, 2,
-                max_calls_per_sec);
+            printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\r", NWIDTH, NDIGITS,
+                part_time_read, NWIDTH, NDIGITS, min_time_read, NWIDTH, NDIGITS,
+                max_time_read, NWIDTH, NDIGITS, calls_per_sec, NWIDTH, NDIGITS,
+                min_calls_per_sec, NWIDTH, NDIGITS, max_calls_per_sec);
         }
     }
     if (na_test_comm_rank_g == 0) printf("\n");
@@ -231,8 +233,8 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     NA_Test_barrier();
 
     if (na_test_comm_rank_g == 0) printf("%*s%*s%*s%*s%*s%*s",
-            10, "# Time (s)", 10, "Min (s)", 10, "Max (s)",
-            12, "BW (MB/s)", 12, "Min (MB/s)", 12, "Max (MB/s)");
+        NWIDTH, "#    Time (s)", NWIDTH, "Min (s)", NWIDTH, "Max (s)",
+        NWIDTH, "BW (MB/s)", NWIDTH, "Min (MB/s)", NWIDTH, "Max (MB/s)");
     if (na_test_comm_rank_g == 0) printf("\n");
 
     /* Bulk data benchmark */
@@ -273,10 +275,10 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
         /* At this point we have received everything so work out the bandwidth */
         if (na_test_comm_rank_g == 0) {
-            printf("%*f%*f%*f%*.*f%*.*f%*.*f\r",
-                10, part_time_read, 10, min_time_read, 10, max_time_read,
-                12, 2, read_bandwidth, 12, 2, min_read_bandwidth, 12, 2,
-                max_read_bandwidth);
+            printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\r", NWIDTH, NDIGITS,
+                part_time_read, NWIDTH, NDIGITS, min_time_read, NWIDTH, NDIGITS,
+                max_time_read, NWIDTH, NDIGITS, read_bandwidth, NWIDTH, NDIGITS,
+                min_read_bandwidth, NWIDTH, NDIGITS, max_read_bandwidth);
         }
     }
     if (na_test_comm_rank_g == 0) printf("\n");
