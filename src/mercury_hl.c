@@ -81,9 +81,7 @@ hg_hl_request_progress(unsigned int timeout, void *arg)
     hg_context_t *context = (hg_context_t *) arg;
     int ret = HG_UTIL_SUCCESS;
 
-    (void) timeout;
-    /* TODO Fix timeout to 10ms for now */
-    if (HG_Progress(context, 10) != HG_SUCCESS)
+    if (HG_Progress(context, timeout) != HG_SUCCESS)
         ret = HG_UTIL_FAIL;
 
     return ret;
