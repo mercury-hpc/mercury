@@ -73,7 +73,7 @@ if(APPLE)
   endif()
   unset(MACOSX_APP_INSTALL_PREFIX CACHE)
 
-  set(CMAKE_INSTALL_NAME_DIR "@rpath/")
+  set(CMAKE_INSTALL_NAME_DIR "@rpath")
   mark_as_advanced(
     CMAKE_OSX_ARCHITECTURES
     CMAKE_OSX_DEPLOYMENT_TARGET
