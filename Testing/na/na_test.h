@@ -12,6 +12,7 @@
 #define NA_TEST_H
 
 #include "na.h"
+#include "na_error.h"
 #include "mercury_test_config.h"
 
 #define NA_TEST_MAX_ADDR_NAME 256

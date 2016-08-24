@@ -19,7 +19,10 @@
 #define NA_TEST_BULK_TAG 102
 #define NA_TEST_BULK_ACK_TAG 103
 
-static int test_done_g = 0;
+static int test_msg_done_g = 0;
+static int test_msg_recv_done_g = 0;
+static int test_msg_send_done_g = 0;
+static int test_bulk_done_g = 0;
 
 /* Test parameters */
 struct na_test_params {
@@ -33,10 +36,11 @@ struct na_test_params {
     na_size_t recv_buf_len;
     na_size_t bulk_size;
     na_mem_handle_t local_mem_handle;
+    int ret;
 };
 
 /* NA test routines */
-static int test_send(struct na_test_params *params, na_tag_t send_tag);
+static int test_msg_forward(struct na_test_params *params);
 static int test_bulk(struct na_test_params *params);
 
 /* NA test user-defined callbacks */
@@ -44,7 +48,6 @@ static na_return_t
 lookup_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
-    na_tag_t send_tag = NA_TEST_SEND_TAG;
     na_return_t ret = NA_SUCCESS;
 
     if (callback_info->ret != NA_SUCCESS) {
@@ -53,7 +56,7 @@ lookup_cb(const struct na_cb_info *callback_info)
 
     params->server_addr = callback_info->info.lookup.addr;
 
-    test_send(params, send_tag);
+    params->ret = test_msg_forward(params);
 
     return ret;
 }
@@ -68,9 +71,34 @@ msg_expected_recv_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
-    printf("Received msg (%s) from server\n", params->recv_buf);
+    printf("Received msg (%s)\n", params->recv_buf);
 
-    test_bulk(params);
+    test_msg_recv_done_g = 1;
+    if (test_msg_recv_done_g && test_msg_send_done_g) {
+        test_msg_done_g = 1;
+        params->ret = test_bulk(params);
+    }
+
+    return ret;
+}
+
+static na_return_t
+msg_unexpected_send_cb(const struct na_cb_info *callback_info)
+{
+    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
+    na_return_t ret = NA_SUCCESS;
+
+    if (callback_info->ret != NA_SUCCESS) {
+        return ret;
+    }
+
+    printf("Sent msg (%s)\n", params->send_buf);
+
+    test_msg_send_done_g = 1;
+    if (test_msg_recv_done_g && test_msg_send_done_g) {
+        test_msg_done_g = 1;
+        params->ret = test_bulk(params);
+    }
 
     return ret;
 }
@@ -99,108 +127,117 @@ ack_expected_recv_cb(const struct na_cb_info *callback_info)
         }
     }
     if (!error) printf("Successfully reset %zu bytes!\n",
-            params->bulk_size * sizeof(int));
+        params->bulk_size * sizeof(int));
 
     ret = NA_Mem_deregister(params->na_class, params->local_mem_handle);
     if (ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not unregister memory\n");
-        return ret;
+        NA_LOG_ERROR("Could not deregister memory");
+        goto done;
     }
 
     ret = NA_Mem_handle_free(params->na_class, params->local_mem_handle);
     if (ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not free memory handle\n");
-        return ret;
+        NA_LOG_ERROR("Could not free memory handle");
+        goto done;
     }
 
-    test_done_g = 1;
+    test_bulk_done_g = 1;
 
+done:
     return ret;
 }
 
 /* NA test routines */
 static int
-test_send(struct na_test_params *params, na_tag_t send_tag)
+test_msg_forward(struct na_test_params *params)
 {
     na_return_t na_ret;
+    int ret = EXIT_SUCCESS;
 
     /* Send a message to addr */
     sprintf(params->send_buf, "Hello Server!");
 
     /* Preposting response */
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
-            &msg_expected_recv_cb, params, params->recv_buf,
-            params->recv_buf_len, params->server_addr, send_tag + 1,
-            NA_OP_ID_IGNORE);
+        msg_expected_recv_cb, params, params->recv_buf, params->recv_buf_len,
+        params->server_addr, NA_TEST_SEND_TAG + 1, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not prepost recv of expected message\n");
-        return EXIT_FAILURE;
+        NA_LOG_ERROR("Could not prepost recv of expected message");
+        ret = EXIT_FAILURE;
+        goto done;
     }
 
     na_ret = NA_Msg_send_unexpected(params->na_class, params->context,
-            NULL, NULL, params->send_buf, params->send_buf_len,
-            params->server_addr, send_tag, NA_OP_ID_IGNORE);
+        msg_unexpected_send_cb, params, params->send_buf, params->send_buf_len,
+        params->server_addr, NA_TEST_SEND_TAG, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not start send of unexpected message\n");
-        return EXIT_FAILURE;
+        NA_LOG_ERROR("Could not start send of unexpected message");
+        ret = EXIT_FAILURE;
+        goto done;
     }
 
-    return EXIT_SUCCESS;
+done:
+    return ret;
 }
 
 static int
 test_bulk(struct na_test_params *params)
 {
-    na_tag_t bulk_tag = NA_TEST_BULK_TAG, ack_tag = NA_TEST_BULK_ACK_TAG;
     na_return_t na_ret;
+    int ret = EXIT_SUCCESS;
 
     /* Register memory */
     printf("Registering local memory...\n");
     na_ret = NA_Mem_handle_create(params->na_class, params->bulk_buf,
-            sizeof(int) * params->bulk_size, NA_MEM_READWRITE,
-            &params->local_mem_handle);
+        sizeof(int) * params->bulk_size, NA_MEM_READWRITE,
+        &params->local_mem_handle);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not create bulk handle\n");
-        return EXIT_FAILURE;
+        NA_LOG_ERROR("Could not create NA memory handle");
+        ret = EXIT_FAILURE;
+        goto done;
     }
 
     na_ret = NA_Mem_register(params->na_class, params->local_mem_handle);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not create bulk handle\n");
-        return EXIT_FAILURE;
+        NA_LOG_ERROR("Could not register NA memory handle");
+        ret = EXIT_FAILURE;
+        goto done;
     }
 
     /* Serialize mem handle */
     printf("Serializing bulk memory handle...\n");
     na_ret = NA_Mem_handle_serialize(params->na_class, params->send_buf,
-            params->send_buf_len, params->local_mem_handle);
+        params->send_buf_len, params->local_mem_handle);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not serialize memory handle\n");
-        return EXIT_FAILURE;
+        NA_LOG_ERROR("Could not serialize memory handle");
+        ret = EXIT_FAILURE;
+        goto done;
     }
 
     /* Recv completion ack */
     printf("Preposting recv of transfer ack...\n");
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
-            &ack_expected_recv_cb, params, params->recv_buf,
-            params->recv_buf_len, params->server_addr, ack_tag,
-            NA_OP_ID_IGNORE);
+        &ack_expected_recv_cb, params, params->recv_buf, params->recv_buf_len,
+        params->server_addr, NA_TEST_BULK_ACK_TAG, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not start receive of acknowledgment\n");
-        return EXIT_FAILURE;
+        NA_LOG_ERROR("Could not start receive of ack");
+        ret = EXIT_FAILURE;
+        goto done;
     }
 
     /* Send mem handle */
     printf("Sending local memory handle...\n");
-    na_ret = NA_Msg_send_expected(params->na_class, params->context,
-            NULL, NULL, params->send_buf, params->send_buf_len,
-            params->server_addr, bulk_tag, NA_OP_ID_IGNORE);
+    na_ret = NA_Msg_send_expected(params->na_class, params->context, NULL,
+        NULL, params->send_buf, params->send_buf_len, params->server_addr,
+        NA_TEST_BULK_TAG, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not start send of memory handle\n");
-        return EXIT_FAILURE;
+        NA_LOG_ERROR("Could not start send of memory handle");
+        ret = EXIT_FAILURE;
+        goto done;
     }
 
-    return EXIT_SUCCESS;
+done:
+    return ret;
 }
 
 int
@@ -210,18 +247,19 @@ main(int argc, char *argv[])
     struct na_test_params params;
     na_return_t na_ret;
     unsigned int i;
+    int ret = EXIT_SUCCESS;
 
     /* Initialize the interface */
     params.na_class = NA_Test_client_init(argc, argv, server_name,
-            NA_TEST_MAX_ADDR_NAME, NULL);
+    NA_TEST_MAX_ADDR_NAME, NULL);
 
     params.context = NA_Context_create(params.na_class);
 
     /* Allocate send and recv bufs */
     params.send_buf_len = NA_Msg_get_max_unexpected_size(params.na_class);
     params.recv_buf_len = params.send_buf_len;
-    params.send_buf = (char*) calloc(params.send_buf_len, sizeof(char));
-    params.recv_buf = (char*) calloc(params.recv_buf_len, sizeof(char));
+    params.send_buf = (char *) calloc(params.send_buf_len, sizeof(char));
+    params.recv_buf = (char *) calloc(params.recv_buf_len, sizeof(char));
 
     /* Prepare bulk_buf */
     params.bulk_size = NA_TEST_BULK_SIZE;
@@ -231,14 +269,15 @@ main(int argc, char *argv[])
     }
 
     /* Perform an address lookup on the target */
-    na_ret = NA_Addr_lookup(params.na_class, params.context, &lookup_cb,
-            &params, server_name, NA_OP_ID_IGNORE);
+    na_ret = NA_Addr_lookup(params.na_class, params.context, lookup_cb, &params,
+        server_name, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not start lookup of addr %s\n", server_name);
-        return EXIT_FAILURE;
+        NA_LOG_ERROR("Could not start lookup of addr %s", server_name);
+        ret = EXIT_FAILURE;
+        goto done;
     }
 
-    while(!test_done_g) {
+    while (1) {
         na_return_t trigger_ret;
         unsigned int actual_count = 0;
 
@@ -246,18 +285,25 @@ main(int argc, char *argv[])
             trigger_ret = NA_Trigger(params.context, 0, 1, &actual_count);
         } while ((trigger_ret == NA_SUCCESS) && actual_count);
 
-        if (test_done_g) break;
+        if (test_msg_done_g && test_bulk_done_g)
+            break;
 
-        NA_Progress(params.na_class, params.context, NA_MAX_IDLE_TIME);
+        na_ret = NA_Progress(params.na_class, params.context, NA_MAX_IDLE_TIME);
+        if (na_ret != NA_SUCCESS) {
+            ret = EXIT_FAILURE;
+            goto done;
+        }
     }
 
+    ret = params.ret;
     printf("Finalizing...\n");
 
     /* Free memory and addresses */
     na_ret = NA_Addr_free(params.na_class, params.server_addr);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not free addr\n");
-        return EXIT_FAILURE;
+        NA_LOG_ERROR("Could not free addr");
+        ret = EXIT_FAILURE;
+        goto done;
     }
 
     free(params.recv_buf);
@@ -268,5 +314,6 @@ main(int argc, char *argv[])
 
     NA_Test_finalize(params.na_class);
 
-    return EXIT_SUCCESS;
+done:
+    return ret;
 }

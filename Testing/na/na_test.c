@@ -32,7 +32,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
-#if defined(NA_HAS_CCI) && defined(HG_TESTING_HAS_SYSPRCTL_H)
+#if defined(HG_TESTING_HAS_SYSPRCTL_H)
 #include <sys/prctl.h>
 #endif
 #endif
@@ -70,9 +70,6 @@ static const struct na_test_opt na_test_opt_g[] = {
     { NULL, 0, '\0' } /* Must add this at the end */
 };
 
-static na_bool_t na_test_use_mpi_g = NA_FALSE;
-static na_bool_t na_test_use_cci_g = NA_FALSE;
-static na_bool_t na_test_use_bmi_g = NA_FALSE;
 static na_bool_t na_test_use_static_mpi_g = NA_FALSE;
 na_bool_t na_test_use_self_g = NA_FALSE;
 na_bool_t na_test_use_variable_g = NA_FALSE;
@@ -127,7 +124,7 @@ na_test_mpi_init(na_bool_t server)
 #ifdef NA_MPI_HAS_GNI_SETUP
     /* Setup GNI job before initializing MPI */
     if (NA_MPI_Gni_job_setup() != NA_SUCCESS) {
-        fprintf(stderr, "Could not setup GNI job\n");
+        NA_LOG_ERROR("Could not setup GNI job");
         return;
     }
 #endif
@@ -136,7 +133,7 @@ na_test_mpi_init(na_bool_t server)
 
         MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
         if (provided != MPI_THREAD_MULTIPLE) {
-            fprintf(stderr, "MPI_THREAD_MULTIPLE cannot be set\n");
+            NA_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set");
         }
 
         /* Only if we do static MPMD MPI */
@@ -151,7 +148,7 @@ na_test_mpi_init(na_bool_t server)
             mpi_ret = MPI_Comm_split(MPI_COMM_WORLD, color, global_rank,
                     &na_test_comm_g);
             if (mpi_ret != MPI_SUCCESS) {
-                fprintf(stderr, "Could not split communicator\n");
+                NA_LOG_ERROR("Could not split communicator");
             }
 #ifdef NA_HAS_MPI
             /* Set init comm that will be used to setup NA MPI */
@@ -241,13 +238,6 @@ na_test_gen_config(int argc, char *argv[], int listen)
         exit(1);
     }
 
-    if (strcmp("mpi", na_class_name) == 0)
-        na_test_use_mpi_g = NA_TRUE;
-    if (strcmp("cci", na_class_name) == 0)
-        na_test_use_cci_g = NA_TRUE;
-    if (strcmp("bmi", na_class_name) == 0)
-        na_test_use_bmi_g = NA_TRUE;
-
     info_string_ptr += sprintf(info_string_ptr, "%s+", na_class_name);
 
     if (!na_protocol_name) {
@@ -257,32 +247,31 @@ na_test_gen_config(int argc, char *argv[], int listen)
 
     info_string_ptr += sprintf(info_string_ptr, "%s", na_protocol_name);
 
-    if (listen) {
-        if (na_test_use_cci_g && strcmp("sm", na_protocol_name) == 0) {
+    if (strcmp("sm", na_protocol_name) == 0) {
+        if (listen) {
             /* special-case SM (pid:id) */
-            if (strcmp("sm", na_protocol_name) == 0) {
-                sprintf(info_string_ptr, "://%d/0", (int) getpid());
-            }
+            sprintf(info_string_ptr, "://%d/0", (int) getpid());
         }
-        else if (na_test_use_cci_g || na_test_use_bmi_g) {
+#if defined(PR_SET_PTRACER) && defined(PR_SET_PTRACER_ANY)
+        /* Enable CMA on systems with YAMA */
+        if (prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0) < 0) {
+            NA_LOG_ERROR("Could not set ptracer\n");
+            exit(1);
+        }
+#endif
+    } else if (strcmp("tcp", na_protocol_name) == 0) {
+        if (listen) {
             na_port += na_test_comm_rank_g;
             sprintf(info_string_ptr, "://%d", na_port);
         }
-        else if (na_test_use_mpi_g) { }
-        else {
-            printf("unknown protocol: %s\n", na_protocol_name);
-            exit(1);
-        }
+    } else if (strcmp("static", na_protocol_name) == 0) {
+        /* Nothing */
+    } else if (strcmp("dynamic", na_protocol_name) == 0) {
+        /* Nothing */
+    } else {
+        NA_LOG_ERROR("Unknown protocol: %s", na_protocol_name);
+        exit(1);
     }
-#if defined(NA_HAS_CCI) && defined(PR_SET_PTRACER) && defined(PR_SET_PTRACER_ANY)
-    if (na_test_use_cci_g && strcmp("sm", na_protocol_name) == 0) {
-        /* Enable CMA on systems with YAMA */
-        if (prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0) < 0) {
-            fprintf(stderr, "could not set ptracer\n");
-            exit(1);
-        }
-    }
-#endif
 
     free(na_class_name);
     free(na_protocol_name);
@@ -323,7 +312,7 @@ na_test_set_config(const char *addr_name)
         config = fopen(MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME,
                 "w+");
         if (!config) {
-            fprintf(stderr, "Could not open config file from: %s\n",
+            NA_LOG_ERROR("Could not open config file from: %s",
                     MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
             exit(1);
         }
@@ -358,7 +347,7 @@ na_test_get_config(char *addr_name, na_size_t len)
         config = fopen(MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME,
                 "r");
         if (!config) {
-            fprintf(stderr, "Could not open config file from: %s\n",
+            NA_LOG_ERROR("Could not open config file from: %s",
                     MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
             exit(1);
         }
@@ -444,12 +433,12 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 
     nret = NA_Addr_self(na_class, &self_addr);
     if (nret != NA_SUCCESS) {
-        fprintf(stderr, "Could not get self addr\n");
+        NA_LOG_ERROR("Could not get self addr");
     }
 
     nret = NA_Addr_to_string(na_class, addr_string, &addr_string_len, self_addr);
     if (nret != NA_SUCCESS) {
-        fprintf(stderr, "Could not convert addr to string\n");
+        NA_LOG_ERROR("Could not convert addr to string");
     }
     NA_Addr_free(na_class, self_addr);
 
@@ -485,7 +474,7 @@ NA_Test_finalize(na_class_t *na_class)
 
     ret = NA_Finalize(na_class);
     if (ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not finalize NA interface\n");
+        NA_LOG_ERROR("Could not finalize NA interface");
         goto done;
     }
 
