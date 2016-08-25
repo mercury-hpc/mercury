@@ -84,7 +84,7 @@ struct hg_bulk {
     hg_bool_t segment_alloc;             /* Allocated memory to mirror data */
     hg_uint8_t flags;                    /* Permission flags */
     hg_bool_t eager_mode;                /* Eager transfer */
-    hg_uint32_t ref_count;               /* Reference count */
+    hg_atomic_int32_t ref_count;         /* Reference count */
 };
 
 /********************/
@@ -351,7 +351,7 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
     hg_bulk->segment_alloc = (!buf_ptrs);
     hg_bulk->flags = flags;
     hg_bulk->eager_mode = HG_FALSE;
-    hg_bulk->ref_count = 1;
+    hg_atomic_set32(&hg_bulk->ref_count, 1);
 
     /* Allocate segment sizes */
     hg_bulk->segments = (struct hg_bulk_segment *) malloc(
@@ -451,7 +451,8 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
 
     if (!hg_bulk) goto done;
 
-    if (--hg_bulk->ref_count) {
+    if (hg_atomic_decr32(&hg_bulk->ref_count)) {
+        /* Cannot free yet */
         goto done;
     }
 
@@ -739,7 +740,9 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_atomic_set32(&hg_bulk_op_id->op_completed_count, 0);
     hg_bulk_op_id->op = op;
     hg_bulk_op_id->hg_bulk_origin = hg_bulk_origin;
+    hg_atomic_incr32(&hg_bulk_origin->ref_count); /* Increment ref count */
     hg_bulk_op_id->hg_bulk_local = hg_bulk_local;
+    hg_atomic_incr32(&hg_bulk_local->ref_count); /* Increment ref count */
     hg_bulk_op_id->na_op_ids = NULL;
 
     /* Translate bulk_offset */
@@ -843,10 +846,23 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
         hg_bulk_op_id->callback(&hg_cb_info);
     }
 
+    /* Decrement ref_count */
+    ret = hg_bulk_free(hg_bulk_op_id->hg_bulk_origin);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not free bulk handle");
+        goto done;
+    }
+    ret = hg_bulk_free(hg_bulk_op_id->hg_bulk_local);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not free bulk handle");
+        goto done;
+    }
+
     /* Free op */
     free(hg_bulk_op_id->na_op_ids);
     free(hg_bulk_op_id);
 
+done:
     return ret;
 }
 
@@ -1168,7 +1184,7 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
     }
     memset(hg_bulk, 0, sizeof(struct hg_bulk));
     hg_bulk->hg_class = hg_class;
-    hg_bulk->ref_count = 1;
+    hg_atomic_set32(&hg_bulk->ref_count, 1);
 
     /* Get the total size of the segments */
     ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
