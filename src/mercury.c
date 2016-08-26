@@ -51,6 +51,14 @@ struct hg_forward_cb_info {
 /********************/
 
 /**
+ * Increment ref count on handle.
+ */
+extern int
+hg_core_incr_ref(
+        struct hg_handle *hg_handle
+        );
+
+/**
  * Set private data.
  */
 extern void
@@ -163,6 +171,10 @@ hg_get_input(hg_handle_t handle, void *in_struct)
     hg_return_t ret = HG_SUCCESS;
 
     if (!in_struct) goto done;
+
+    /* Increment ref count on handle so that it remains valid until free_input
+     * is called */
+    hg_core_incr_ref(handle);
 
     /* Get input buffer */
     ret = HG_Core_get_input(handle, &in_buf, &in_buf_size);
@@ -338,10 +350,15 @@ hg_free_input(hg_handle_t handle, void *in_struct)
         goto done;
     }
 
+    /* Decrement ref count or free */
+    ret = HG_Core_destroy(handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not decrement handle ref count");
+        goto done;
+    }
+
 done:
     if (proc != HG_PROC_NULL) hg_proc_free(proc);
-    proc = HG_PROC_NULL;
-
     return ret;
 }
 
@@ -357,6 +374,10 @@ hg_get_output(hg_handle_t handle, void *out_struct)
     hg_return_t ret = HG_SUCCESS;
 
     if (!out_struct) goto done;
+
+    /* Increment ref count on handle so that it remains valid until free_output
+     * is called */
+    hg_core_incr_ref(handle);
 
     /* Get output buffer */
     ret = HG_Core_get_output(handle, &out_buf, &out_buf_size);
@@ -513,6 +534,13 @@ hg_free_output(hg_handle_t handle, void *out_struct)
     ret = hg_proc_info->out_proc_cb(proc, out_struct);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not free allocated parameters");
+        goto done;
+    }
+
+    /* Decrement ref count or free */
+    ret = HG_Core_destroy(handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not decrement handle ref count");
         goto done;
     }
 

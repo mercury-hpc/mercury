@@ -340,6 +340,14 @@ hg_core_destroy(
         );
 
 /**
+ * Increment ref count on handle.
+ */
+int
+hg_core_incr_ref(
+        struct hg_handle *hg_handle
+        );
+
+/**
  * Set private data.
  */
 void
@@ -1302,6 +1310,13 @@ hg_core_destroy(struct hg_handle *hg_handle)
 
 done:
     return;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_core_incr_ref(struct hg_handle *hg_handle)
+{
+    return hg_atomic_incr32(&hg_handle->ref_count);
 }
 
 /*---------------------------------------------------------------------------*/

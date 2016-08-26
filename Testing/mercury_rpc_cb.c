@@ -82,7 +82,7 @@ struct hg_test_bulk_args {
     size_t nbytes;
     hg_atomic_int32_t completed_transfers;
     ssize_t ret;
-    bulk_write_in_t in_struct;
+    int fildes;
 };
 
 /*******************/
@@ -254,7 +254,7 @@ hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
         HG_Bulk_access(local_bulk_handle, 0, bulk_args->nbytes,
             HG_BULK_READWRITE, 1, &buf, NULL, NULL);
 
-        write_ret = bulk_write(bulk_args->in_struct.fildes, buf, 0,
+        write_ret = bulk_write(bulk_args->fildes, buf, 0,
             bulk_args->nbytes, 1);
 
         /* Fill output structure */
@@ -276,7 +276,6 @@ hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
     }
 
 done:
-    HG_Free_input(bulk_args->handle, &bulk_args->in_struct);
     HG_Destroy(bulk_args->handle);
     free(bulk_args);
 
@@ -290,6 +289,7 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     struct hg_test_bulk_args *bulk_args = NULL;
+    bulk_write_in_t in_struct;
     hg_return_t ret = HG_SUCCESS;
     int fildes;
 
@@ -305,17 +305,18 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     hg_info = HG_Get_info(handle);
 
     /* Get input parameters and data */
-    ret = HG_Get_input(handle, &bulk_args->in_struct);
+    ret = HG_Get_input(handle, &in_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input\n");
         return ret;
     }
 
     /* Get parameters */
-    fildes = bulk_args->in_struct.fildes;
-    origin_bulk_handle = bulk_args->in_struct.bulk_handle;
+    fildes = in_struct.fildes;
+    origin_bulk_handle = in_struct.bulk_handle;
 
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
+    bulk_args->fildes = fildes;
 
     /* Create a new block handle to read the data */
     HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
@@ -339,6 +340,7 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
         }
     }
 
+    HG_Free_input(handle, &in_struct);
     return ret;
 }
 
@@ -363,7 +365,7 @@ hg_test_bulk_seg_transfer_cb(const struct hg_cb_info *hg_cb_info)
     HG_Bulk_access(local_bulk_handle, 0, bulk_args->nbytes, HG_BULK_READWRITE,
             1, &buf, NULL, NULL);
 
-    write_ret = bulk_write(bulk_args->in_struct.fildes, buf, 0,
+    write_ret = bulk_write(bulk_args->fildes, buf, 0,
         bulk_args->nbytes, 1);
 
     /* Fill output structure */
@@ -383,7 +385,6 @@ hg_test_bulk_seg_transfer_cb(const struct hg_cb_info *hg_cb_info)
         return ret;
     }
 
-    HG_Free_input(bulk_args->handle, &bulk_args->in_struct);
     HG_Destroy(bulk_args->handle);
     free(bulk_args);
 
@@ -401,6 +402,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
     size_t nbytes_read;
     ptrdiff_t offset;
     hg_return_t ret = HG_SUCCESS;
+    bulk_write_in_t in_struct;
 
     bulk_args = (struct hg_test_bulk_args *) malloc(
             sizeof(struct hg_test_bulk_args));
@@ -412,18 +414,19 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
     hg_info = HG_Get_info(handle);
 
     /* Get input parameters and data */
-    ret = HG_Get_input(handle, &bulk_args->in_struct);
+    ret = HG_Get_input(handle, &in_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input\n");
         return ret;
     }
 
     /* Get parameters */
-    origin_bulk_handle = bulk_args->in_struct.bulk_handle;
+    origin_bulk_handle = in_struct.bulk_handle;
     hg_atomic_set32(&bulk_args->completed_transfers, 0);
 
     /* Create a new block handle to read the data */
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
+    bulk_args->fildes = in_struct.fildes;
 
     /* For testing purposes try to read the data in two blocks of different sizes */
     nbytes_read = bulk_args->nbytes / 2 + 16;
@@ -456,6 +459,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
         return ret;
     }
 
+    HG_Free_input(handle, &in_struct);
     return ret;
 }
 
@@ -827,8 +831,8 @@ hg_test_posix_write_transfer_cb(const struct hg_cb_info *hg_cb_info)
         }
     }
 
-    printf("Calling write with fd: %d\n", bulk_args->in_struct.fildes);
-    write_ret = write(bulk_args->in_struct.fildes, buf, bulk_args->nbytes);
+    printf("Calling write with fd: %d\n", bulk_args->fildes);
+    write_ret = write(bulk_args->fildes, buf, bulk_args->nbytes);
 
     /* Fill output structure */
     out_struct.ret = write_ret;
@@ -847,7 +851,6 @@ hg_test_posix_write_transfer_cb(const struct hg_cb_info *hg_cb_info)
         return ret;
     }
 
-    HG_Free_input(bulk_args->handle, &bulk_args->in_struct);
     HG_Destroy(bulk_args->handle);
     free(bulk_args);
 
@@ -863,6 +866,7 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     struct hg_test_bulk_args *bulk_args = NULL;
+    bulk_write_in_t in_struct;
 
     bulk_args = (struct hg_test_bulk_args *) malloc(
             sizeof(struct hg_test_bulk_args));
@@ -874,16 +878,17 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
     hg_info = HG_Get_info(handle);
 
     /* Get input struct */
-    ret = HG_Get_input(handle, &bulk_args->in_struct);
+    ret = HG_Get_input(handle, &in_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input struct\n");
         return ret;
     }
 
-    origin_bulk_handle = bulk_args->in_struct.bulk_handle;
+    origin_bulk_handle = in_struct.bulk_handle;
 
     /* Create a new block handle to read the data */
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
+    bulk_args->fildes = in_struct.fildes;
 
     /* Create a new bulk handle to read the data */
     HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
@@ -898,6 +903,7 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
         return ret;
     }
 
+    HG_Free_input(handle, &in_struct);
     return ret;
 }
 
@@ -929,7 +935,6 @@ hg_test_posix_read_transfer_cb(const struct hg_cb_info *hg_cb_info)
         return ret;
     }
 
-    HG_Free_input(bulk_args->handle, &bulk_args->in_struct);
     HG_Destroy(bulk_args->handle);
     free(bulk_args);
 
@@ -945,6 +950,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     struct hg_test_bulk_args *bulk_args = NULL;
+    bulk_write_in_t in_struct;
 
     void *buf;
     ssize_t read_ret;
@@ -963,16 +969,17 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     hg_info = HG_Get_info(handle);
 
     /* Get input struct */
-    ret = HG_Get_input(handle, &bulk_args->in_struct);
+    ret = HG_Get_input(handle, &in_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input struct\n");
         return ret;
     }
 
-    origin_bulk_handle = bulk_args->in_struct.bulk_handle;
+    origin_bulk_handle = in_struct.bulk_handle;
 
     /* Create a new block handle to read the data */
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
+    bulk_args->fildes = in_struct.fildes;
 
     /* Create a new bulk handle to read the data */
     HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
@@ -982,8 +989,8 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     HG_Bulk_access(local_bulk_handle, 0, bulk_args->nbytes, HG_BULK_READWRITE,
             1, &buf, NULL, NULL);
 
-    printf("Calling read with fd: %d\n", bulk_args->in_struct.fildes);
-    read_ret = read(bulk_args->in_struct.fildes, buf, bulk_args->nbytes);
+    printf("Calling read with fd: %d\n", in_struct.fildes);
+    read_ret = read(in_struct.fildes, buf, bulk_args->nbytes);
 
     /* Check bulk buf */
     buf_ptr = (const int*) buf;
@@ -1006,6 +1013,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
         return ret;
     }
 
+    HG_Free_input(handle, &in_struct);
     return ret;
 }
 #endif /* _WIN32 */
@@ -1052,7 +1060,6 @@ hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
     }
 
 done:
-    HG_Free_input(bulk_args->handle, &bulk_args->in_struct);
     HG_Destroy(bulk_args->handle);
     free(bulk_args);
 
@@ -1068,6 +1075,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     struct hg_test_bulk_args *bulk_args = NULL;
+    bulk_write_in_t in_struct;
 
     bulk_args = (struct hg_test_bulk_args *) malloc(
             sizeof(struct hg_test_bulk_args));
@@ -1079,17 +1087,18 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
     hg_info = HG_Get_info(handle);
 
     /* Get input struct */
-    ret = HG_Get_input(handle, &bulk_args->in_struct);
+    ret = HG_Get_input(handle, &in_struct);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not get input struct\n");
         return ret;
     }
 
-    origin_bulk_handle = bulk_args->in_struct.bulk_handle;
+    origin_bulk_handle = in_struct.bulk_handle;
     hg_atomic_set32(&bulk_args->completed_transfers, 0);
 
     /* Create a new block handle to read the data */
     bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
+    bulk_args->fildes = in_struct.fildes;
 
 #ifdef MERCURY_TESTING_USE_LOCAL_BULK
     /* Create a new bulk handle to read the data */
@@ -1117,6 +1126,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 #endif
 #endif
 
+    HG_Free_input(handle, &in_struct);
     return ret;
 }
 
