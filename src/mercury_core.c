@@ -49,7 +49,7 @@
 /* HG context */
 struct hg_context {
     struct hg_class *hg_class;                    /* HG class */
-    hg_queue_t *completion_queue;                 /* Completion queue */
+    HG_QUEUE_HEAD(hg_completion_entry) completion_queue; /* Completion queue */
     hg_thread_mutex_t completion_queue_mutex;     /* Completion queue mutex */
     hg_thread_cond_t completion_queue_cond;       /* Completion queue cond */
     hg_list_t *pending_list;                      /* List of pending handles */
@@ -1852,18 +1852,12 @@ hg_core_completion_add(struct hg_context *context,
     hg_thread_mutex_lock(&context->completion_queue_mutex);
 
     /* Add handle to completion queue */
-    if (hg_queue_push_head(context->completion_queue,
-            (hg_queue_value_t)hg_completion_entry) != HG_UTIL_SUCCESS) {
-        HG_LOG_ERROR("Could not push completion data to completion queue");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    HG_QUEUE_PUSH_TAIL(&context->completion_queue, hg_completion_entry, entry);
 
     /* Callback is pushed to the completion queue when something completes
      * so wake up anyone waiting in the trigger */
     hg_thread_cond_signal(&context->completion_queue_cond);
 
-done:
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
     return ret;
 }
@@ -1943,8 +1937,7 @@ hg_core_progress_self(struct hg_context *context, unsigned int timeout)
         /* Is completion queue empty */
         hg_thread_mutex_lock(&context->completion_queue_mutex);
 
-        completion_queue_empty = (hg_bool_t) hg_queue_is_empty(
-                context->completion_queue);
+        completion_queue_empty = HG_QUEUE_IS_EMPTY(&context->completion_queue);
 
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
@@ -1982,8 +1975,8 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
     /* Is completion queue empty */
     hg_thread_mutex_lock(&context->completion_queue_mutex);
 
-    completion_queue_empty = (hg_bool_t) hg_queue_is_empty(
-            context->completion_queue);
+    completion_queue_empty = (hg_bool_t) HG_QUEUE_IS_EMPTY(
+            &context->completion_queue);
 
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
 
@@ -2078,7 +2071,7 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
         hg_thread_mutex_lock(&context->completion_queue_mutex);
 
         /* Is completion queue empty */
-        while (hg_queue_is_empty(context->completion_queue)) {
+        while (HG_QUEUE_IS_EMPTY(&context->completion_queue)) {
             if (!timeout) {
                 /* Timeout is 0 so leave */
                 ret = HG_TIMEOUT;
@@ -2097,14 +2090,14 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
         }
 
         /* Completion queue should not be empty now */
-        hg_completion_entry = (struct hg_completion_entry *) hg_queue_pop_tail(
-                context->completion_queue);
+        hg_completion_entry = HG_QUEUE_FIRST(&context->completion_queue);
         if (!hg_completion_entry) {
             HG_LOG_ERROR("NULL completion entry");
             ret = HG_INVALID_PARAM;
             hg_thread_mutex_unlock(&context->completion_queue_mutex);
             goto done;
         }
+        HG_QUEUE_POP_HEAD(&context->completion_queue, entry);
 
         /* Unlock now so that other threads can eventually add callbacks
          * to the queue while callback gets executed */
@@ -2356,12 +2349,7 @@ HG_Core_context_create(hg_class_t *hg_class)
     }
 
     context->hg_class = hg_class;
-    context->completion_queue = hg_queue_new();
-    if (!context->completion_queue) {
-        HG_LOG_ERROR("Could not create completion queue");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    HG_QUEUE_INIT(&context->completion_queue);
 
     context->pending_list = hg_list_new();
     if (!context->pending_list) {
@@ -2393,7 +2381,6 @@ HG_Core_context_create(hg_class_t *hg_class)
 
 done:
     if (ret != HG_SUCCESS && context) {
-        hg_queue_free(context->completion_queue);
         free(context);
         context = NULL;
     }
@@ -2439,7 +2426,7 @@ HG_Core_context_destroy(hg_context_t *context)
     /* Check that completion queue is empty now */
     hg_thread_mutex_lock(&context->completion_queue_mutex);
 
-    if (!hg_queue_is_empty(context->completion_queue)) {
+    if (!HG_QUEUE_IS_EMPTY(&context->completion_queue)) {
         HG_LOG_ERROR("Completion queue should be empty");
         ret = HG_PROTOCOL_ERROR;
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
@@ -2447,10 +2434,6 @@ HG_Core_context_destroy(hg_context_t *context)
     }
 
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
-
-    /* Destroy completion queue */
-    hg_queue_free(context->completion_queue);
-    context->completion_queue = NULL;
 
     /* Destroy self processing pool if created */
     hg_thread_pool_destroy(context->self_processing_pool);

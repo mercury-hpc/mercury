@@ -92,7 +92,6 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_queue.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.c

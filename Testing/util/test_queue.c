@@ -5,65 +5,60 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+struct my_entry {
+    int value;
+    HG_QUEUE_ENTRY(my_entry) entry;
+};
+
+HG_QUEUE_HEAD_DECL(my_head, my_entry);
+
 int
-main(int argc, char *argv[])
+main(void)
 {
-    hg_queue_t *queue = NULL;
+    HG_QUEUE_HEAD_INIT(my_head, queue);
     int ret = EXIT_SUCCESS;
     int value1 = 10, value2 = 20;
+    struct my_entry my_entry1 = { .value = value1 };
+    struct my_entry my_entry2 = { .value = value2 };
 
-    (void) argc;
-    (void) argv;
-
-    queue = hg_queue_new();
-
-    if (!hg_queue_is_empty(queue)) {
+    if (!HG_QUEUE_IS_EMPTY(&queue)) {
         fprintf(stderr, "Error: queue should be empty\n");
         ret = EXIT_FAILURE;
         goto done;
     }
 
-    hg_queue_push_head(queue, (hg_queue_value_t) &value1);
+    HG_QUEUE_PUSH_TAIL(&queue, &my_entry1, entry);
 
-    if (value1 != *((int *) hg_queue_peek_head(queue))) {
+    if (value1 != HG_QUEUE_FIRST(&queue)->value) {
         fprintf(stderr, "Error: values do not match\n");
         ret = EXIT_FAILURE;
         goto done;
     }
 
-    if (hg_queue_is_empty(queue)) {
+    if (HG_QUEUE_IS_EMPTY(&queue)) {
         fprintf(stderr, "Error: queue should not be empty\n");
         ret = EXIT_FAILURE;
         goto done;
     }
 
-    hg_queue_push_tail(queue, (hg_queue_value_t) &value2);
+    HG_QUEUE_PUSH_TAIL(&queue, &my_entry2, entry);
 
-    if (value2 != *((int *) hg_queue_peek_tail(queue))) {
+    HG_QUEUE_POP_HEAD(&queue, entry);
+
+    if (value2 != HG_QUEUE_FIRST(&queue)->value) {
         fprintf(stderr, "Error: values do not match\n");
         ret = EXIT_FAILURE;
         goto done;
     }
 
-    if (value2 != *((int *) hg_queue_pop_tail(queue))) {
-        fprintf(stderr, "Error: values do not match\n");
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_QUEUE_POP_HEAD(&queue, entry);
 
-    if (value1 != *((int *) hg_queue_pop_head(queue))) {
-        fprintf(stderr, "Error: values do not match\n");
-        ret = EXIT_FAILURE;
-        goto done;
-    }
-
-    if (!hg_queue_is_empty(queue)) {
+    if (!HG_QUEUE_IS_EMPTY(&queue)) {
         fprintf(stderr, "Error: queue should be empty\n");
         ret = EXIT_FAILURE;
         goto done;
     }
 
 done:
-    hg_queue_free(queue);
     return ret;
 }

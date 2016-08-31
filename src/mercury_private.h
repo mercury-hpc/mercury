@@ -17,6 +17,7 @@
 
 #include "mercury_hash_table.h"
 #include "mercury_atomic.h"
+#include "mercury_queue.h"
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -47,6 +48,7 @@ struct hg_completion_entry {
         struct hg_handle *hg_handle;
         struct hg_bulk_op_id *hg_bulk_op_id;
     } op_id;
+    HG_QUEUE_ENTRY(hg_completion_entry) entry;
 };
 
 #endif /* MERCURY_PRIVATE_H */

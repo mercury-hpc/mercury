@@ -42,24 +42,25 @@ struct na_private_class {
     na_bool_t listen;
 };
 
-/* Private context / do not expose private members to plugins */
-struct na_private_context {
-    struct na_context context;  /* Must remain as first field */
-    na_class_t *na_class;       /* Pointer to NA class */
-    hg_queue_t *completion_queue;
-    hg_thread_mutex_t completion_queue_mutex;
-    hg_thread_cond_t completion_queue_cond;
-    hg_thread_mutex_t progress_mutex;
-    hg_thread_cond_t progress_cond;
-    na_bool_t progressing;
-};
-
 /* Completion data stored in completion queue */
 struct na_cb_completion_data {
     na_cb_t callback;
     struct na_cb_info *callback_info;
     na_plugin_cb_t plugin_callback;
     void *plugin_callback_args;
+    HG_QUEUE_ENTRY(na_cb_completion_data) entry;
+};
+
+/* Private context / do not expose private members to plugins */
+struct na_private_context {
+    struct na_context context;  /* Must remain as first field */
+    na_class_t *na_class;       /* Pointer to NA class */
+    HG_QUEUE_HEAD(na_cb_completion_data) completion_queue;
+    hg_thread_mutex_t completion_queue_mutex;
+    hg_thread_cond_t completion_queue_cond;
+    hg_thread_mutex_t progress_mutex;
+    hg_thread_cond_t progress_cond;
+    na_bool_t progressing;
 };
 
 /********************/
@@ -471,12 +472,7 @@ NA_Context_create(na_class_t *na_class)
     }
 
     /* Initialize completion queue */
-    na_private_context->completion_queue = hg_queue_new();
-    if (!na_private_context->completion_queue) {
-        NA_LOG_ERROR("Could not create completion queue");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    HG_QUEUE_INIT(&na_private_context->completion_queue);
 
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&na_private_context->completion_queue_mutex);
@@ -513,7 +509,7 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
     /* Check that completion queue is empty now */
     hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
-    if (!hg_queue_is_empty(na_private_context->completion_queue)) {
+    if (!HG_QUEUE_IS_EMPTY(&na_private_context->completion_queue)) {
         NA_LOG_ERROR("Completion queue should be empty");
         ret = NA_PROTOCOL_ERROR;
         hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
@@ -527,10 +523,6 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
             goto done;
         }
     }
-
-    /* Destroy completion queue */
-    hg_queue_free(na_private_context->completion_queue);
-    na_private_context->completion_queue = NULL;
 
     hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
 
@@ -1522,8 +1514,8 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
         /* Is completion queue empty */
-        completion_queue_empty = (na_bool_t) hg_queue_is_empty(
-                na_private_context->completion_queue);
+        completion_queue_empty = (na_bool_t) HG_QUEUE_IS_EMPTY(
+                &na_private_context->completion_queue);
 
         while (completion_queue_empty) {
             /* TODO needed ? */
@@ -1555,14 +1547,14 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         }
 
         /* Completion queue should not be empty now */
-        completion_data = (struct na_cb_completion_data *)
-                    hg_queue_pop_tail(na_private_context->completion_queue);
+        completion_data = HG_QUEUE_FIRST(&na_private_context->completion_queue);
         if (!completion_data) {
             NA_LOG_ERROR("NULL completion data");
             ret = NA_INVALID_PARAM;
             hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
             goto done;
         }
+        HG_QUEUE_POP_HEAD(&na_private_context->completion_queue, entry);
 
         /* Unlock now so that other threads can eventually add callbacks
          * to the queue while callback gets executed */
@@ -1667,14 +1659,8 @@ na_cb_completion_add(na_context_t *context,
 
     hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
-    if (hg_queue_push_head(na_private_context->completion_queue,
-            (hg_queue_value_t) completion_data) != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not push completion data to completion queue");
-        ret = NA_NOMEM_ERROR;
-        hg_thread_mutex_unlock(
-                &na_private_context->completion_queue_mutex);
-        goto done;
-    }
+    HG_QUEUE_PUSH_TAIL(&na_private_context->completion_queue, completion_data,
+        entry);
 
     /* Callback is pushed to the completion queue when something completes
      * so wake up anyone waiting in the trigger */

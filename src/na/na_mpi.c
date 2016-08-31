@@ -157,6 +157,7 @@ struct na_mpi_op_id {
       struct na_mpi_info_put put;
       struct na_mpi_info_get get;
     } info;
+    HG_QUEUE_ENTRY(na_mpi_op_id) entry;
 };
 
 struct na_mpi_private_data {
@@ -175,8 +176,8 @@ struct na_mpi_private_data {
     hg_list_t         *remote_list;       /* List of connected remotes */
     hg_thread_mutex_t  remote_list_mutex; /* Mutex */
 
-    hg_queue_t        *unexpected_op_queue;        /* Unexpected op queue */
-    hg_thread_mutex_t  unexpected_op_queue_mutex;  /* Mutex */
+    HG_QUEUE_HEAD(na_mpi_op_id) unexpected_op_queue; /* Unexpected op queue */
+    hg_thread_mutex_t  unexpected_op_queue_mutex;    /* Mutex */
 
     hg_atomic_int32_t  rma_tag;              /* Atomic RMA tag value */
 
@@ -910,11 +911,8 @@ na_mpi_msg_unexpected_op_push(na_class_t *na_class,
     hg_thread_mutex_lock(
             &NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
-    if (hg_queue_push_head(NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue,
-            (hg_queue_value_t) na_mpi_op_id) != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not push ID to unexpected op queue");
-        ret = NA_NOMEM_ERROR;
-    }
+    HG_QUEUE_PUSH_TAIL(&NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+        na_mpi_op_id, entry);
 
     hg_thread_mutex_unlock(
             &NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
@@ -927,15 +925,14 @@ static struct na_mpi_op_id *
 na_mpi_msg_unexpected_op_pop(na_class_t *na_class)
 {
     struct na_mpi_op_id *na_mpi_op_id;
-    hg_queue_value_t queue_value;
 
     hg_thread_mutex_lock(
             &NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
-    queue_value = hg_queue_pop_tail(
-            NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue);
-    na_mpi_op_id = (queue_value != HG_QUEUE_NULL) ?
-            (struct na_mpi_op_id *) queue_value : NULL;
+    na_mpi_op_id = HG_QUEUE_FIRST(
+        &NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue);
+    HG_QUEUE_POP_HEAD(&NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+        entry);
 
     hg_thread_mutex_unlock(
             &NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
@@ -1090,7 +1087,6 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
     int mpi_ext_initialized = 0;
     na_bool_t listening, use_static_inter_comm;
     hg_list_t *op_id_list = NULL, *remote_list = NULL;
-    hg_queue_t *unexpected_op_queue = NULL;
     int flags = (listen) ? MPI_INIT_SERVER : 0;
     int mpi_ret;
     int *attr_val, attr_flag;
@@ -1105,7 +1101,7 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
     NA_MPI_PRIVATE_DATA(na_class)->accept_thread = 0;
     NA_MPI_PRIVATE_DATA(na_class)->remote_list = NULL;
     NA_MPI_PRIVATE_DATA(na_class)->op_id_list = NULL;
-    NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue = NULL;
+    HG_QUEUE_INIT(&NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue);
 
     /* Check flags */
     if (strcmp(na_info->protocol_name, "static") == 0)
@@ -1216,15 +1212,6 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
     }
     NA_MPI_PRIVATE_DATA(na_class)->op_id_list = op_id_list;
 
-    /* Create queue for making progress on unexpected operation IDs */
-    unexpected_op_queue = hg_queue_new();
-    if (!unexpected_op_queue) {
-        NA_LOG_ERROR("Could not create unexpected op queue");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue = unexpected_op_queue;
-
     /* Initialize mutex/cond */
     hg_thread_mutex_init(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
     hg_thread_cond_init(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond);
@@ -1299,14 +1286,11 @@ na_mpi_finalize(na_class_t *na_class)
     hg_list_free(NA_MPI_PRIVATE_DATA(na_class)->remote_list);
 
     /* Check that unexpected op queue is empty */
-    if (!hg_queue_is_empty(
-            NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue)) {
+    if (!HG_QUEUE_IS_EMPTY(
+            &NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue)) {
         NA_LOG_ERROR("Unexpected op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
     }
-
-    /* Free unexpected op queue */
-    hg_queue_free(NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue);
 
     /* Free op id list */
     hg_list_free(NA_MPI_PRIVATE_DATA(na_class)->op_id_list);

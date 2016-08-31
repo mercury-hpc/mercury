@@ -53,6 +53,11 @@ struct na_bmi_addr {
     na_bool_t  self;       /* Boolean for self */
 };
 
+struct na_bmi_unexpected_info {
+    struct BMI_unexpected_info info;
+    HG_QUEUE_ENTRY(na_bmi_unexpected_info) entry;
+};
+
 struct na_bmi_mem_handle {
     na_ptr_t base;     /* Initial address of memory */
     na_size_t size;    /* Size of memory */
@@ -134,16 +139,17 @@ struct na_bmi_op_id {
       struct na_bmi_info_get get;
     } info;
     uint64_t cancel;
+    HG_QUEUE_ENTRY(na_bmi_op_id) entry;
 };
 
 struct na_bmi_private_data {
-    char *listen_addr;                            /* Listen addr */
-    hg_thread_mutex_t test_unexpected_mutex;      /* Mutex */
-    hg_queue_t *unexpected_msg_queue;             /* Unexpected message queue */
-    hg_thread_mutex_t unexpected_msg_queue_mutex; /* Mutex */
-    hg_queue_t *unexpected_op_queue;              /* Unexpected op queue */
-    hg_thread_mutex_t unexpected_op_queue_mutex;  /* Mutex */
-    hg_atomic_int32_t rma_tag;                    /* Atomic RMA tag value */
+    char *listen_addr;                               /* Listen addr */
+    hg_thread_mutex_t test_unexpected_mutex;         /* Mutex */
+    HG_QUEUE_HEAD(na_bmi_unexpected_info) unexpected_msg_queue; /* Unexpected message queue */
+    hg_thread_mutex_t unexpected_msg_queue_mutex;    /* Mutex */
+    HG_QUEUE_HEAD(na_bmi_op_id) unexpected_op_queue; /* Unexpected op queue */
+    hg_thread_mutex_t unexpected_op_queue_mutex;     /* Mutex */
+    hg_atomic_int32_t rma_tag;                       /* Atomic RMA tag value */
 };
 
 /********************/
@@ -315,11 +321,11 @@ na_bmi_msg_recv_expected(
 
 static na_return_t
 na_bmi_msg_unexpected_push(
-        na_class_t                 *na_class,
-        struct BMI_unexpected_info *unexpected_info
+        na_class_t                    *na_class,
+        struct na_bmi_unexpected_info *unexpected_info
         );
 
-static struct BMI_unexpected_info *
+static struct na_bmi_unexpected_info *
 na_bmi_msg_unexpected_pop(
         na_class_t *na_class);
 
@@ -636,8 +642,6 @@ static na_return_t
 na_bmi_init(na_class_t *na_class, const char *method_list,
         const char *listen_addr, int flags)
 {
-    hg_queue_t *unexpected_msg_queue = NULL;
-    hg_queue_t *unexpected_op_queue = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
@@ -649,8 +653,8 @@ na_bmi_init(na_class_t *na_class, const char *method_list,
     }
     NA_BMI_PRIVATE_DATA(na_class)->listen_addr = (listen_addr) ?
             strdup(listen_addr) : NULL;
-    NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue = NULL;
-    NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue = NULL;
+    HG_QUEUE_INIT(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
+    HG_QUEUE_INIT(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue);
 
     /* Initialize BMI */
     bmi_ret = BMI_initialize(method_list, listen_addr, flags);
@@ -659,24 +663,6 @@ na_bmi_init(na_class_t *na_class, const char *method_list,
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
-
-    /* Create queue for unexpected messages */
-    unexpected_msg_queue = hg_queue_new();
-    if (!unexpected_msg_queue) {
-        NA_LOG_ERROR("Could not create unexpected message queue");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue = unexpected_msg_queue;
-
-    /* Create queue for making progress on operation IDs */
-    unexpected_op_queue = hg_queue_new();
-    if (!unexpected_op_queue) {
-        NA_LOG_ERROR("Could not create unexpected op queue");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue = unexpected_op_queue;
 
     /* Initialize mutex/cond */
     hg_thread_mutex_init(&NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
@@ -708,24 +694,18 @@ na_bmi_finalize(na_class_t *na_class)
     }
 
     /* Check that unexpected op queue is empty */
-    if (!hg_queue_is_empty(
-            NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue)) {
+    if (!HG_QUEUE_IS_EMPTY(
+            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue)) {
         NA_LOG_ERROR("Unexpected op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
     }
 
-    /* Free unexpected op queue */
-    hg_queue_free(NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue);
-
     /* Check that unexpected message queue is empty */
-    if (!hg_queue_is_empty(
-            NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue)) {
+    if (!HG_QUEUE_IS_EMPTY(
+            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue)) {
         NA_LOG_ERROR("Unexpected msg queue should be empty");
         ret = NA_PROTOCOL_ERROR;
     }
-
-    /* Free unexpected message queue */
-    hg_queue_free(NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
 
     /* Finalize BMI */
     bmi_ret = BMI_finalize();
@@ -1046,7 +1026,7 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
         na_op_id_t *op_id)
 {
-    struct BMI_unexpected_info *unexpected_info = NULL;
+    struct na_bmi_unexpected_info *unexpected_info = NULL;
     struct na_bmi_op_id *na_bmi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
 
@@ -1083,7 +1063,7 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     unexpected_info = na_bmi_msg_unexpected_pop(na_class);
 
     if (unexpected_info) {
-        na_bmi_op_id->info.recv_unexpected.unexpected_info = unexpected_info;
+        na_bmi_op_id->info.recv_unexpected.unexpected_info = &unexpected_info->info;
         ret = na_bmi_complete(na_bmi_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not complete operation");
@@ -1109,7 +1089,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_msg_unexpected_push(na_class_t *na_class,
-        struct BMI_unexpected_info *unexpected_info)
+        struct na_bmi_unexpected_info *unexpected_info)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1122,11 +1102,8 @@ na_bmi_msg_unexpected_push(na_class_t *na_class,
     hg_thread_mutex_lock(
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
 
-    if (hg_queue_push_head(NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
-            (hg_queue_value_t) unexpected_info) != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not push unexpected info to unexpected msg queue");
-        ret = NA_NOMEM_ERROR;
-    }
+    HG_QUEUE_PUSH_TAIL(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
+        unexpected_info, entry);
 
     hg_thread_mutex_unlock(
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
@@ -1136,19 +1113,16 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static struct BMI_unexpected_info *
+static struct na_bmi_unexpected_info *
 na_bmi_msg_unexpected_pop(na_class_t *na_class)
 {
-    struct BMI_unexpected_info *unexpected_info;
-    hg_queue_value_t queue_value;
+    struct na_bmi_unexpected_info *unexpected_info;
 
     hg_thread_mutex_lock(
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
 
-    queue_value = hg_queue_pop_tail(
-            NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
-    unexpected_info = (queue_value != HG_QUEUE_NULL) ?
-            (struct BMI_unexpected_info *) queue_value : NULL;
+    unexpected_info = HG_QUEUE_FIRST(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
+    HG_QUEUE_POP_HEAD(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue, entry);
 
     hg_thread_mutex_unlock(
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
@@ -1171,11 +1145,8 @@ na_bmi_msg_unexpected_op_push(na_class_t *na_class,
 
     hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
-    if (hg_queue_push_head(NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue,
-            (hg_queue_value_t) na_bmi_op_id) != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not push ID to unexpected op queue");
-        ret = NA_NOMEM_ERROR;
-    }
+    HG_QUEUE_PUSH_TAIL(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+        na_bmi_op_id, entry);
 
     hg_thread_mutex_unlock(
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
@@ -1189,17 +1160,17 @@ static struct na_bmi_op_id *
 na_bmi_msg_unexpected_op_pop(na_class_t *na_class)
 {
     struct na_bmi_op_id *na_bmi_op_id;
-    hg_queue_value_t queue_value;
 
-    hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_lock(
+        &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
-    queue_value = hg_queue_pop_tail(
-            NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue);
-    na_bmi_op_id = (queue_value != HG_QUEUE_NULL) ?
-            (struct na_bmi_op_id *) queue_value : NULL;
+    na_bmi_op_id = HG_QUEUE_FIRST(
+        &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue);
+    HG_QUEUE_POP_HEAD(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+        entry);
 
     hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+        &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
     return na_bmi_op_id;
 }
@@ -1742,7 +1713,7 @@ na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
 {
     int outcount = 0;
     struct BMI_unexpected_info test_unexpected_info;
-    struct BMI_unexpected_info *unexpected_info = NULL;
+    struct na_bmi_unexpected_info *unexpected_info = NULL;
     struct na_bmi_op_id *na_bmi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
@@ -1770,20 +1741,20 @@ na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
         }
         /* If no error and message arrived, keep a copy of the struct in
          * the unexpected message queue */
-        unexpected_info = (struct BMI_unexpected_info*)
-                            malloc(sizeof(struct BMI_unexpected_info));
+        unexpected_info = (struct na_bmi_unexpected_info *)
+                            malloc(sizeof(struct na_bmi_unexpected_info));
         if (!unexpected_info) {
             NA_LOG_ERROR("Could not allocate unexpected info");
             ret = NA_NOMEM_ERROR;
             goto done;
         }
 
-        memcpy(unexpected_info, &test_unexpected_info,
+        memcpy(&unexpected_info->info, &test_unexpected_info,
                 sizeof(struct BMI_unexpected_info));
 
-        if (unexpected_info->tag == NA_BMI_RMA_REQUEST_TAG) {
+        if (unexpected_info->info.tag == NA_BMI_RMA_REQUEST_TAG) {
             /* Make RMA progress */
-            ret = na_bmi_progress_rma(na_class, context, unexpected_info);
+            ret = na_bmi_progress_rma(na_class, context, &unexpected_info->info);
             if (ret != NA_SUCCESS) {
                 NA_LOG_ERROR("Could not make RMA progress");
                 goto done;
@@ -1795,7 +1766,7 @@ na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
                 /* If an op id was pushed, associate unexpected info to this
                  * operation ID and complete operation */
                 na_bmi_op_id->info.recv_unexpected.unexpected_info =
-                        unexpected_info;
+                        &unexpected_info->info;
                 ret = na_bmi_complete(na_bmi_op_id);
                 if (ret != NA_SUCCESS) {
                     NA_LOG_ERROR("Could not complete operation");

@@ -20,9 +20,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
-#include <inttypes.h>
-#include <sys/queue.h>
 #include <assert.h>
 #ifdef NA_CCI_HAS_POLL
 #include <poll.h>
@@ -52,8 +49,8 @@ typedef struct na_cci_private_data na_cci_private_data_t;
 /* na_cci_addr */
 struct na_cci_addr {
     cci_connection_t *cci_addr; /* CCI addr */
-    TAILQ_HEAD(prx,na_cci_op_id) rxs; /* Posted recvs */
-    TAILQ_HEAD(erx,na_cci_info_recv_expected) early; /* Expected recvs not yet posted */
+    HG_QUEUE_HEAD(na_cci_op_id) rxs; /* Posted recvs */
+    HG_QUEUE_HEAD(na_cci_info_recv_expected) early; /* Expected recvs not yet posted */
     char *uri; /* Peer's URI */
     na_cci_op_id_t *na_cci_op_id; /* For addr_lookup() */
     hg_atomic_int32_t refcnt; /* Reference counter */
@@ -87,6 +84,7 @@ struct na_cci_info_recv_unexpected {
     cci_size_t actual_size;
     na_cci_addr_t *na_cci_addr;
     cci_msg_tag_t tag;
+    HG_QUEUE_ENTRY(na_cci_info_recv_unexpected) entry;
 };
 
 struct na_cci_info_send_expected {
@@ -95,7 +93,7 @@ struct na_cci_info_send_expected {
 
 struct na_cci_info_recv_expected {
     na_cci_addr_t *na_cci_addr;
-    TAILQ_ENTRY(na_cci_info_recv_expected)
+    HG_QUEUE_ENTRY(na_cci_info_recv_expected)
     entry;
     cci_op_id_t op_id; /* CCI operation ID */
     void *buf;
@@ -125,7 +123,7 @@ struct na_cci_info_get {
 
 /* na_cci_op_id  TODO uint64_t cookie for cancel ? */
 struct na_cci_op_id {
-    TAILQ_ENTRY(na_cci_op_id) entry;
+    HG_QUEUE_ENTRY(na_cci_op_id) entry;
     na_context_t *context;
     na_cb_type_t type;
     na_cb_t callback; /* Callback */
@@ -146,11 +144,11 @@ struct na_cci_op_id {
 
 struct na_cci_private_data {
     cci_endpoint_t *endpoint;
-    TAILQ_HEAD(crx,na_cci_op_id) early; /* Unexpected rxs not yet posted */
+    HG_QUEUE_HEAD(na_cci_op_id) early; /* Unexpected rxs not yet posted */
     hg_thread_mutex_t test_unexpected_mutex; /* Mutex */
-    hg_queue_t *unexpected_msg_queue; /* Posted unexpected message queue */
+    HG_QUEUE_HEAD(na_cci_info_recv_unexpected) unexpected_msg_queue; /* Posted unexpected message queue */
     hg_thread_mutex_t unexpected_msg_queue_mutex; /* Mutex */
-    hg_queue_t *unexpected_op_queue; /* Unexpected op queue */
+    HG_QUEUE_HEAD(na_cci_op_id) unexpected_op_queue; /* Unexpected op queue */
     hg_thread_mutex_t unexpected_op_queue_mutex; /* Mutex */
     hg_list_t *accept_conn_list; /* List of accepted connections */
     hg_thread_mutex_t accept_conn_list_mutex; /* Mutex */
@@ -542,28 +540,11 @@ NA_CCI_Get_port_name(na_class_t *na_class)
 static na_return_t
 na_cci_init(na_class_t * na_class)
 {
-    hg_queue_t *unexpected_msg_queue = NULL;
-    hg_queue_t *unexpected_op_queue = NULL;
     hg_list_t *accept_conn_list = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    /* Create queue for unexpected messages */
-    unexpected_msg_queue = hg_queue_new();
-    if (!unexpected_msg_queue) {
-        NA_LOG_ERROR("Could not create unexpected message queue");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
-    NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue = unexpected_msg_queue;
-
-    /* Create queue for making progress on operation IDs */
-    unexpected_op_queue = hg_queue_new();
-    if (!unexpected_op_queue) {
-        NA_LOG_ERROR("Could not create unexpected op queue");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
-    NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue = unexpected_op_queue;
+    HG_QUEUE_INIT(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
+    HG_QUEUE_INIT(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue);
 
     /* Create list of accepted connections */
     accept_conn_list = hg_list_new();
@@ -617,20 +598,16 @@ na_cci_finalize(na_class_t * na_class)
     hg_list_free(priv->accept_conn_list);
 
     /* Check that unexpected op queue is empty */
-    if (!hg_queue_is_empty(priv->unexpected_op_queue)) {
+    if (!HG_QUEUE_IS_EMPTY(&priv->unexpected_op_queue)) {
         NA_LOG_ERROR("Unexpected op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
     }
-    /* Free unexpected op queue */
-    hg_queue_free(priv->unexpected_op_queue);
 
     /* Check that unexpected message queue is empty */
-    if (!hg_queue_is_empty(priv->unexpected_msg_queue)) {
+    if (!HG_QUEUE_IS_EMPTY(&priv->unexpected_msg_queue)) {
         NA_LOG_ERROR("Unexpected msg queue should be empty");
         ret = NA_PROTOCOL_ERROR;
     }
-    /* Free unexpected message queue */
-    hg_queue_free(NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
 
     rc = cci_destroy_endpoint(priv->endpoint);
     if (rc) {
@@ -691,8 +668,8 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
         goto out;
     }
     na_cci_addr->cci_addr = NULL;
-    TAILQ_INIT(&na_cci_addr->rxs);
-    TAILQ_INIT(&na_cci_addr->early);
+    HG_QUEUE_INIT(&na_cci_addr->rxs);
+    HG_QUEUE_INIT(&na_cci_addr->early);
     na_cci_addr->uri = strdup(name);
     /* one for the lookup callback and one for the caller to hold until addr_free().
      * na_cci_complete will decref for the lookup callback.
@@ -1053,11 +1030,9 @@ na_cci_msg_unexpected_push(na_class_t * na_class,
     hg_thread_mutex_lock(
         &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
 
-    if (hg_queue_push_head(NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
-        (hg_queue_value_t) rx) != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not push unexpected info to unexpected msg queue");
-        ret = NA_NOMEM_ERROR;
-    }
+    HG_QUEUE_PUSH_TAIL(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
+        rx, entry);
+
     hg_thread_mutex_unlock(
         &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
 
@@ -1070,15 +1045,13 @@ static struct na_cci_info_recv_unexpected *
 na_cci_msg_unexpected_pop(na_class_t * na_class)
 {
     struct na_cci_info_recv_unexpected *rx;
-    hg_queue_value_t queue_value;
 
     hg_thread_mutex_lock(
         &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
 
-    queue_value = hg_queue_pop_tail(
-    NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
-    rx = (queue_value != HG_QUEUE_NULL) ?
-        (struct na_cci_info_recv_unexpected *) queue_value : NULL;
+    rx = HG_QUEUE_FIRST(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
+    HG_QUEUE_POP_HEAD(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
+        entry);
 
     hg_thread_mutex_unlock(
         &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
@@ -1101,11 +1074,9 @@ na_cci_msg_unexpected_op_push(na_class_t * na_class,
     hg_thread_mutex_lock(
         &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
-    if (hg_queue_push_head(NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue,
-        (hg_queue_value_t) na_cci_op_id) != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not push ID to unexpected op queue");
-        ret = NA_NOMEM_ERROR;
-    }
+    HG_QUEUE_PUSH_TAIL(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+        na_cci_op_id, entry);
+
     hg_thread_mutex_unlock(
         &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
@@ -1118,15 +1089,14 @@ static na_cci_op_id_t *
 na_cci_msg_unexpected_op_pop(na_class_t * na_class)
 {
     na_cci_op_id_t *na_cci_op_id;
-    hg_queue_value_t queue_value;
 
     hg_thread_mutex_lock(
         &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
-    queue_value = hg_queue_pop_tail(
-    NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue);
-    na_cci_op_id =
-        (queue_value != HG_QUEUE_NULL) ? (na_cci_op_id_t *) queue_value : NULL;
+    na_cci_op_id = HG_QUEUE_FIRST(
+        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue);
+    HG_QUEUE_POP_HEAD(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+        entry);
 
     hg_thread_mutex_unlock(
         &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
@@ -1248,15 +1218,16 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class,
         *op_id = (na_op_id_t) na_cci_op_id;
 
     /* See if it has already arrived */
-    if (!TAILQ_EMPTY(&na_cci_addr->early)) {
-        TAILQ_FOREACH(rx, &na_cci_addr->early, entry) {
+    if (!HG_QUEUE_IS_EMPTY(&na_cci_addr->early)) {
+        HG_QUEUE_FOREACH(rx, &na_cci_addr->early, entry) {
             if (rx->tag == cci_tag) {
                 /* Found, copy to final buffer, and complete it */
                 na_size_t len =
                     buf_size > rx->buf_size ? buf_size : rx->buf_size;
                 memcpy(buf, rx->buf, len);
                 na_cci_op_id->info.recv_expected.actual_size = len;
-                TAILQ_REMOVE(&na_cci_addr->early, rx, entry);
+                HG_QUEUE_REMOVE(&na_cci_addr->early, rx,
+                    na_cci_info_recv_expected, entry);
                 free(rx->buf);
                 free(rx);
                 ret = na_cci_complete(na_cci_addr, na_cci_op_id, NA_SUCCESS);
@@ -1269,7 +1240,7 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class,
     }
 
     /* Queue the recv request */
-    TAILQ_INSERT_TAIL(&na_cci_addr->rxs, na_cci_op_id, entry);
+    HG_QUEUE_PUSH_TAIL(&na_cci_addr->rxs, na_cci_op_id, entry);
 
 out:
     if (ret != NA_SUCCESS) {
@@ -1636,7 +1607,7 @@ handle_recv_expected(na_class_t NA_UNUSED *na_class,
     int rc = 0;
     na_return_t ret;
 
-    TAILQ_FOREACH(na_cci_op_id, &na_cci_addr->rxs, entry) {
+    HG_QUEUE_FOREACH(na_cci_op_id, &na_cci_addr->rxs, entry) {
         if (na_cci_op_id->info.recv_expected.tag == msg->send.tag) {
             na_size_t len = msg_len;
 
@@ -1644,7 +1615,7 @@ handle_recv_expected(na_class_t NA_UNUSED *na_class,
                 len = na_cci_op_id->info.recv_expected.buf_size;
             memcpy(na_cci_op_id->info.recv_expected.buf, msg->send.data, len);
             na_cci_op_id->info.recv_expected.actual_size = len;
-            TAILQ_REMOVE(&na_cci_addr->rxs, na_cci_op_id, entry);
+            HG_QUEUE_REMOVE(&na_cci_addr->rxs, na_cci_op_id, na_cci_op_id, entry);
             ret = na_cci_complete(na_cci_addr, na_cci_op_id, NA_SUCCESS);
             if (ret != NA_SUCCESS) {
                 NA_LOG_ERROR("Could not complete expected recv");
@@ -1670,7 +1641,7 @@ handle_recv_expected(na_class_t NA_UNUSED *na_class,
     rx->buf_size = rx->actual_size = msg_len;
     rx->tag = msg->send.tag;
 
-    TAILQ_INSERT_TAIL(&na_cci_addr->early, rx, entry);
+    HG_QUEUE_PUSH_TAIL(&na_cci_addr->early, rx, entry);
 
 out:
     if (rc) {
@@ -1791,8 +1762,8 @@ handle_connect_request(na_class_t NA_UNUSED *class,
         goto out;
     }
 
-    TAILQ_INIT(&na_cci_addr->rxs);
-    TAILQ_INIT(&na_cci_addr->early);
+    HG_QUEUE_INIT(&na_cci_addr->rxs);
+    HG_QUEUE_INIT(&na_cci_addr->early);
 
     na_cci_addr->uri = strdup(event->request.data_ptr);
     if (!na_cci_addr->uri) {
@@ -2096,10 +2067,10 @@ na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
             /* we can't decref in handle_recv_expected() */
             op_id_decref(na_cci_op_id);
 
-            TAILQ_FOREACH(tmp, &na_cci_addr->rxs, entry)
+            HG_QUEUE_FOREACH(tmp, &na_cci_addr->rxs, entry)
             {
                 if (tmp == na_cci_op_id) {
-                    TAILQ_REMOVE(&na_cci_addr->rxs, tmp, entry);
+                    HG_QUEUE_REMOVE(&na_cci_addr->rxs, tmp, na_cci_op_id, entry);
                     found = 1;
                 }
             }
