@@ -352,18 +352,17 @@ main(int argc, char *argv[])
 
         test_msg_done_g = 0;
         test_bulk_done_g = 0;
+        /* Free memory and addresses */
+        na_ret = NA_Addr_free(params.na_class, params.source_addr);
+        if (na_ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not free addr");
+            ret = EXIT_FAILURE;
+            goto done;
+        }
     }
 
     ret = params.ret;
     printf("Finalizing...\n");
-
-    /* Free memory and addresses */
-    na_ret = NA_Addr_free(params.na_class, params.source_addr);
-    if (na_ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not free addr");
-        ret = EXIT_FAILURE;
-        goto done;
-    }
 
     free(params.bulk_buf);
     free(params.recv_buf);
