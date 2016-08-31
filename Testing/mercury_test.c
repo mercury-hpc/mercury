@@ -142,7 +142,7 @@ hg_test_finalize_rpc2(hg_addr_t addr)
     }
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(handle, hg_test_finalize_rpc_cb, NULL, NULL);
+    hg_ret = HG_Forward(handle, NULL, NULL, NULL);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
     }
