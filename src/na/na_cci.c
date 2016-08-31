@@ -991,7 +991,6 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
         na_cci_op_id->info.recv_unexpected.tag = rx->tag;
 
         addr_addref(rx->na_cci_addr); /* for na_cci_complete() */
-        addr_addref(rx->na_cci_addr); /* for na_cci_addr_free() */
         ret = na_cci_complete(rx->na_cci_addr, na_cci_op_id, NA_SUCCESS);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not complete operation");
