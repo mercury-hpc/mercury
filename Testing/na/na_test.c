@@ -106,9 +106,9 @@ na_test_usage(const char *execname)
     printf("  OPTIONS\n");
     printf("     -h,   --help         Print a usage message and exit\n");
     printf("     -c,   --comm         Select NA plugin\n"
-           "                          NA plugins: bmi, mpi, ssm\n");
+           "                          NA plugins: bmi, mpi, cci, etc\n");
     printf("     -p,   --protocol     Select plugin protocol\n"
-           "                          Available protocols: tcp, ib\n");
+           "                          Available protocols: tcp, ib, etc\n");
 }
 
 /*---------------------------------------------------------------------------*/

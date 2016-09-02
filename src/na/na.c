@@ -95,9 +95,6 @@ extern na_class_t na_bmi_class_g;
 #ifdef NA_HAS_MPI
 extern na_class_t na_mpi_class_g;
 #endif
-#ifdef NA_HAS_SSM
-extern na_class_t na_ssm_class_g;
-#endif
 #ifdef NA_HAS_CCI
 extern na_class_t na_cci_class_g;
 #endif
@@ -108,9 +105,6 @@ static const na_class_t *na_class_table[] = {
 #endif
 #ifdef NA_HAS_MPI
     &na_mpi_class_g,
-#endif
-#ifdef NA_HAS_SSM
-    &na_ssm_class_g,
 #endif
 #ifdef NA_HAS_CCI
     &na_cci_class_g,
