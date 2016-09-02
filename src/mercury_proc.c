@@ -487,6 +487,12 @@ hg_proc_restore_ptr(hg_proc_t proc, void *data, hg_size_t data_size)
         HG_LOG_ERROR("Could not update checksum");
         goto done;
     }
+#else
+    /* Silent warning */
+    (void)proc;
+    (void)data;
+    (void)data_size;
+    goto done;
 #endif
 
 done:
