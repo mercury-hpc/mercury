@@ -1013,7 +1013,8 @@ hg_core_finalize(struct hg_class *hg_class)
     if (!hg_class) goto done;
 
     /* Delete function map */
-    hg_hash_table_free(hg_class->func_map);
+    if(hg_class->func_map)
+        hg_hash_table_free(hg_class->func_map);
     hg_class->func_map = NULL;
 
     /* Destroy context */
