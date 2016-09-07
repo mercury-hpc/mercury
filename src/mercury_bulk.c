@@ -406,7 +406,6 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
             continue;
 
         if (use_register_segment) {
-            HG_LOG_DEBUG("Calling NA_Mem_handle_create_segments");
             struct na_segment *na_segments =
                 (struct na_segment *) hg_bulk->segments;
             na_size_t na_segment_count = (na_size_t) hg_bulk->segment_count;
