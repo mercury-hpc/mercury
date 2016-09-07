@@ -73,8 +73,6 @@ hg_thread_pool_worker(void *args)
 
 unlock:
     hg_thread_mutex_unlock(&pool->mutex);
-
-done:
     hg_thread_exit(ret);
     return ret;
 }
