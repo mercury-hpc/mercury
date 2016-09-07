@@ -1313,8 +1313,8 @@ na_bmi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
           goto done;
     }
     na_bmi_mem_handle->base = bmi_buf_base;
-    na_bmi_mem_handle->size = bmi_buf_size;
-    na_bmi_mem_handle->attr = flags;
+    na_bmi_mem_handle->size = (na_size_t) bmi_buf_size;
+    na_bmi_mem_handle->attr = (na_uint8_t) flags;
 
     *mem_handle = (na_mem_handle_t) na_bmi_mem_handle;
 
@@ -1722,7 +1722,8 @@ na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
     hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
 
     /* Test unexpected message */
-    bmi_ret = BMI_testunexpected(1, &outcount, &test_unexpected_info, timeout);
+    bmi_ret = BMI_testunexpected(1, &outcount, &test_unexpected_info,
+            (int) timeout);
 
     hg_thread_mutex_unlock(
             &NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
@@ -1810,7 +1811,8 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
     /* Return as soon as something completes or timeout is reached */
     bmi_ret = BMI_testcontext(1, &bmi_op_id, &outcount, &error_code,
-            &bmi_actual_size, (void **) &na_bmi_op_id, timeout, *bmi_context);
+            &bmi_actual_size, (void **) &na_bmi_op_id, (int) timeout,
+            *bmi_context);
 
     /* TODO Sometimes bmi_ret is weird so check error_code as well */
     if (bmi_ret < 0 && (error_code != 0)) {
@@ -1938,7 +1940,7 @@ na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
         ret = NA_NOMEM_ERROR;
         goto done;
     }
-    memcpy(na_bmi_rma_info, unexpected_info->buffer, unexpected_info->size);
+    memcpy(na_bmi_rma_info, unexpected_info->buffer, (size_t) unexpected_info->size);
 
     /* Allocate na_op_id */
     na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
@@ -2132,7 +2134,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
                     goto done;
                 }
                 memcpy(na_bmi_op_id->info.recv_unexpected.buf,
-                    unexpected_info->buffer, unexpected_info->size);
+                    unexpected_info->buffer, (size_t) unexpected_info->size);
 
                 na_bmi_addr->self = NA_FALSE;
                 na_bmi_addr->unexpected = NA_TRUE;

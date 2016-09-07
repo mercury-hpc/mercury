@@ -204,7 +204,7 @@ write_rpc(int fd, void *buf, size_t count)
     }
 
     /* Get output parameters */
-    write_ret = write_out_struct.ret;
+    write_ret = (int) write_out_struct.ret;
 
     /* Free request */
     hg_ret = HG_Free_output(handle, &write_out_struct);
@@ -284,7 +284,7 @@ read_rpc(int fd, void *buf, size_t count)
     }
 
     /* Get output parameters */
-    read_ret = read_out_struct.ret;
+    read_ret = (int) read_out_struct.ret;
 
     /* Free request */
     hg_ret = HG_Free_output(handle, &read_out_struct);
@@ -356,7 +356,7 @@ main(int argc, char *argv[])
     write_buf = (int*) malloc(sizeof(int) * n_ints);
     read_buf =  (int*) malloc(sizeof(int) * n_ints);
     for (i = 0; i < n_ints; i++) {
-        write_buf[i] = i;
+        write_buf[i] = (int) i;
         read_buf[i] = 0;
     }
 

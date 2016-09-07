@@ -28,7 +28,7 @@ struct na_test_params {
     na_addr_t server_addr;
     char *send_buf;
     char *recv_buf;
-    int *bulk_buf;
+    unsigned int *bulk_buf;
     na_size_t send_buf_len;
     na_size_t recv_buf_len;
     na_size_t bulk_size;
@@ -331,7 +331,8 @@ main(int argc, char **argv)
 
     /* Prepare bulk_buf */
     params.bulk_size = NA_TEST_BULK_SIZE;
-    params.bulk_buf = (int*) malloc(params.bulk_size * sizeof(int));
+    params.bulk_buf = (unsigned int *) malloc(
+        params.bulk_size * sizeof(unsigned int));
     for (i = 0; i < params.bulk_size; i++) {
         params.bulk_buf[i] = i;
     }

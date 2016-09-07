@@ -261,7 +261,7 @@ na_test_gen_config(int argc, char *argv[], int listen)
 #endif
     } else if (strcmp("tcp", na_protocol_name) == 0) {
         if (listen) {
-            na_port += na_test_comm_rank_g;
+            na_port += (unsigned int) na_test_comm_rank_g;
             sprintf(info_string_ptr, "://%d", na_port);
         }
     } else if (strcmp("static", na_protocol_name) == 0) {
@@ -283,7 +283,7 @@ static void
 na_test_set_config(const char *addr_name)
 {
     FILE *config = NULL;
-    int max_port_name_length = 256; /* default set to 256 */
+    unsigned int max_port_name_length = 256; /* default set to 256 */
     int i;
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
@@ -291,14 +291,14 @@ na_test_set_config(const char *addr_name)
 #endif
 
     /* Allocate table addrs */
-    na_addr_table = (char**) malloc(na_test_comm_size_g * sizeof(char*));
+    na_addr_table = (char**) malloc((unsigned int) na_test_comm_size_g * sizeof(char*));
     for (i = 0; i < na_test_comm_size_g; i++) {
         na_addr_table[i] = (char*) malloc(max_port_name_length);
     }
 
     strcpy(na_addr_table[na_test_comm_rank_g], addr_name);
 
-    na_addr_table_size = na_test_comm_size_g;
+    na_addr_table_size = (unsigned int) na_test_comm_size_g;
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
     for (i = 0; i < na_test_comm_size_g; i++) {

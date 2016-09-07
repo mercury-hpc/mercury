@@ -599,9 +599,10 @@ hg_core_gen_request_tag(struct hg_class *hg_class)
     na_tag_t tag = 0;
 
     /* Compare and swap tag if reached max tag */
-    if (!hg_atomic_cas32(&hg_class->request_tag, hg_class->request_max_tag, 0)) {
+    if (!hg_atomic_cas32(&hg_class->request_tag,
+        (hg_util_int32_t) hg_class->request_max_tag, 0)) {
         /* Increment tag */
-        tag = hg_atomic_incr32(&hg_class->request_tag);
+        tag = (na_tag_t) hg_atomic_incr32(&hg_class->request_tag);
     }
 
     return tag;

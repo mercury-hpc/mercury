@@ -131,14 +131,14 @@ int main(int argc, char *argv[])
             bulk_sizes[i] = bulk_size_y * sizeof(int);
             bulk_buf[i] = malloc(bulk_sizes[i]);
             for (j = 0; j < bulk_size_y; j++) {
-                ((int **) (bulk_buf))[i][j] = i * bulk_size_y + j;
+                ((int **) (bulk_buf))[i][j] = (int) (i * bulk_size_y + j);
             }
         }
     }
 
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_class, bulk_size_x, bulk_buf, bulk_sizes,
-            HG_BULK_READ_ONLY, &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_class, (hg_uint32_t) bulk_size_x, bulk_buf,
+        bulk_sizes, HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         return EXIT_FAILURE;

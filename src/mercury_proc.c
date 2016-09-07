@@ -90,7 +90,7 @@ hg_proc_buf_alloc(hg_size_t size)
     alignment = system_info.dwPageSize;
     mem_ptr = _aligned_malloc(size, alignment);
 #else
-    alignment = sysconf(_SC_PAGE_SIZE);
+    alignment = (hg_size_t) sysconf(_SC_PAGE_SIZE);
 
     if (posix_memalign(&mem_ptr, alignment, size) != 0) {
         HG_LOG_ERROR("posix_memalign failed");
@@ -351,7 +351,7 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
     GetSystemInfo(&system_info);
     page_size = system_info.dwPageSize;
 #else
-    page_size = sysconf(_SC_PAGE_SIZE);
+    page_size = (hg_size_t) sysconf(_SC_PAGE_SIZE);
 #endif
     new_buf_size = ((hg_size_t)(req_buf_size / page_size) + 1) * page_size;
 
@@ -376,10 +376,10 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
         }
 
         /* Copy proc_buf (should be small) */
-        memcpy(hg_proc->extra_buf.buf, hg_proc->proc_buf.buf, current_pos);
+        memcpy(hg_proc->extra_buf.buf, hg_proc->proc_buf.buf, (size_t) current_pos);
         hg_proc->extra_buf.size = new_buf_size;
         hg_proc->extra_buf.buf_ptr = (char *) hg_proc->extra_buf.buf + current_pos;
-        hg_proc->extra_buf.size_left = hg_proc->extra_buf.size - current_pos;
+        hg_proc->extra_buf.size_left = hg_proc->extra_buf.size - (size_t) current_pos;
         hg_proc->extra_buf.is_mine = 1;
 
         /* Switch buffer */
@@ -400,7 +400,7 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
         hg_proc->extra_buf.buf = new_buf;
         hg_proc->extra_buf.size = new_buf_size;
         hg_proc->extra_buf.buf_ptr = (char *) hg_proc->extra_buf.buf + current_pos;
-        hg_proc->extra_buf.size_left = hg_proc->extra_buf.size - current_pos;
+        hg_proc->extra_buf.size_left = hg_proc->extra_buf.size - (size_t) current_pos;
     }
 
 done:

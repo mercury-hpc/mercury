@@ -949,10 +949,10 @@ na_mpi_gen_rma_tag(na_class_t *na_class)
     /* Compare and swap tag if reached max tag */
     if (hg_atomic_cas32(&NA_MPI_PRIVATE_DATA(na_class)->rma_tag,
             NA_MPI_MAX_RMA_TAG, NA_MPI_RMA_TAG)) {
-        tag = NA_MPI_RMA_TAG;
+        tag = (na_tag_t) NA_MPI_RMA_TAG;
     } else {
         /* Increment tag */
-        tag = hg_atomic_incr32(&NA_MPI_PRIVATE_DATA(na_class)->rma_tag);
+        tag = (na_tag_t) hg_atomic_incr32(&NA_MPI_PRIVATE_DATA(na_class)->rma_tag);
     }
 
     return tag;
@@ -1580,7 +1580,7 @@ na_mpi_msg_get_max_unexpected_size(na_class_t NA_UNUSED *na_class)
 static na_tag_t
 na_mpi_msg_get_max_tag(na_class_t NA_UNUSED *na_class)
 {
-    na_tag_t max_tag = NA_MPI_MAX_TAG;
+    na_tag_t max_tag = (na_tag_t) NA_MPI_MAX_TAG;
 
     return max_tag;
 }
@@ -1813,7 +1813,7 @@ na_mpi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     }
     na_mpi_mem_handle->base = mpi_buf_base;
     na_mpi_mem_handle->size = mpi_buf_size;
-    na_mpi_mem_handle->attr = flags;
+    na_mpi_mem_handle->attr = (na_uint8_t) flags;
 
     *mem_handle = (na_mem_handle_t) na_mpi_mem_handle;
 
@@ -1994,7 +1994,7 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* Simply do a non blocking synchronous send */
     mpi_ret = MPI_Issend((char*) mpi_local_mem_handle->base + mpi_local_offset,
-            mpi_length, MPI_BYTE, na_mpi_addr->rank, na_mpi_rma_info->tag,
+            mpi_length, MPI_BYTE, na_mpi_addr->rank, (int) na_mpi_rma_info->tag,
             na_mpi_addr->rma_comm, &na_mpi_op_id->info.put.data_request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_LOG_ERROR("MPI_Issend() failed");
@@ -2096,7 +2096,7 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* Simply do an asynchronous recv */
     mpi_ret = MPI_Irecv((char*) mpi_local_mem_handle->base + mpi_local_offset,
-            mpi_length, MPI_BYTE, na_mpi_addr->rank, na_mpi_rma_info->tag,
+            mpi_length, MPI_BYTE, na_mpi_addr->rank, (int) na_mpi_rma_info->tag,
             na_mpi_addr->rma_comm, &na_mpi_op_id->info.get.data_request);
     if (mpi_ret != MPI_SUCCESS) {
         NA_LOG_ERROR("MPI_Irecv() failed");
@@ -2340,7 +2340,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
             mpi_ret = MPI_Irecv(
                     (char*) na_mpi_rma_info->base + na_mpi_rma_info->disp,
                     na_mpi_rma_info->count, MPI_BYTE, na_mpi_addr->rank,
-                    na_mpi_rma_info->tag, na_mpi_addr->rma_comm,
+                    (int) na_mpi_rma_info->tag, na_mpi_addr->rma_comm,
                     &na_mpi_op_id->info.put.data_request);
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("MPI_Irecv() failed");
@@ -2360,7 +2360,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
             mpi_ret = MPI_Isend(
                     (char*) na_mpi_rma_info->base + na_mpi_rma_info->disp,
                     na_mpi_rma_info->count, MPI_BYTE, na_mpi_addr->rank,
-                    na_mpi_rma_info->tag, na_mpi_addr->rma_comm,
+                    (int) na_mpi_rma_info->tag, na_mpi_addr->rma_comm,
                     &na_mpi_op_id->info.get.data_request);
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("MPI_Isend() failed");

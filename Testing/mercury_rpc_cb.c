@@ -16,6 +16,7 @@
 #endif
 #include "mercury_atomic.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_rpc_cb.h"
 
 /****************/
 /* Local Macros */
@@ -400,7 +401,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     struct hg_test_bulk_args *bulk_args = NULL;
     size_t nbytes_read;
-    ptrdiff_t offset;
+    size_t offset;
     hg_return_t ret = HG_SUCCESS;
     bulk_write_in_t in_struct;
 

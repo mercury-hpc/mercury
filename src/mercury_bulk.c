@@ -1148,14 +1148,14 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
         }
         if (hg_bulk->na_mem_handles[i]) {
             na_ret = NA_Mem_handle_serialize(hg_bulk->hg_class->na_class,
-                buf_ptr, buf_size_left, hg_bulk->na_mem_handles[i]);
+                buf_ptr, (na_size_t) buf_size_left, hg_bulk->na_mem_handles[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("Could not serialize memory handle");
                 ret = HG_NA_ERROR;
                 break;
             }
             buf_ptr += serialize_size;
-            buf_size_left -= serialize_size;
+            buf_size_left -= (ssize_t) serialize_size;
         }
     }
 
@@ -1280,14 +1280,14 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
         }
         if (serialize_size) {
             na_ret = NA_Mem_handle_deserialize(hg_bulk->hg_class->na_class,
-                &hg_bulk->na_mem_handles[i], buf_ptr, buf_size_left);
+                &hg_bulk->na_mem_handles[i], buf_ptr, (na_size_t) buf_size_left);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("Could not deserialize memory handle");
                 ret = HG_NA_ERROR;
                 goto done;
             }
             buf_ptr += serialize_size;
-            buf_size_left -= serialize_size;
+            buf_size_left -= (ssize_t) serialize_size;
         } else {
             hg_bulk->na_mem_handles[i] = NA_MEM_HANDLE_NULL;
         }

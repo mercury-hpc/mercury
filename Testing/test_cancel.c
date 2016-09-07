@@ -169,7 +169,7 @@ cancel_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     /* Prepare bulk_buf */
     bulk_buf = (int*) malloc(bulk_size);
     for (i = 0; i < count; i++) {
-        bulk_buf[i] = i;
+        bulk_buf[i] = (int) i;
     }
     *buf_ptr = bulk_buf;
 
