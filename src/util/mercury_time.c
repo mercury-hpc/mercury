@@ -109,7 +109,7 @@ hg_time_get_current(hg_time_t *tv)
     tv->tv_sec  = monotonic_nsec / 1000000000;
     tv->tv_usec = (monotonic_nsec - tv->tv_sec) / 1000;
 #else
-    if (clock_gettime(CLOCK_MONOTONIC, &tp)) {
+    if (clock_gettime(CLOCK_MONOTONIC_RAW, &tp)) {
         HG_UTIL_ERROR_DEFAULT("clock_gettime failed");
         ret = HG_UTIL_FAIL;
         return ret;

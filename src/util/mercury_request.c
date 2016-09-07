@@ -188,7 +188,7 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
             hg_time_get_current(&t1);
             if (hg_thread_cond_timedwait(&request->request_class->progress_cond,
                     &request->request_class->progress_mutex,
-                    (unsigned int) (remaining * 1000)) != HG_UTIL_SUCCESS) {
+                    (unsigned int) (remaining * 1000.0)) != HG_UTIL_SUCCESS) {
                 /* Timeout occurred so leave */
                 break;
             }
@@ -207,7 +207,7 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
         hg_time_get_current(&t3);
 
         request->request_class->progress_func(
-                (unsigned int) (remaining * 1000),
+                (unsigned int) (remaining * 1000.0),
                 request->request_class->arg);
 
         hg_time_get_current(&t4);

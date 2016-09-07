@@ -2011,47 +2011,47 @@ hg_core_progress(struct hg_context *context, unsigned int timeout)
     hg_return_t ret = HG_SUCCESS;
 
     do {
-        hg_time_t t1, t2, t3;
+        hg_time_t t1, t2;
         unsigned int progress_timeout;
         hg_bool_t do_self_progress = hg_core_self_processing_list_check(context);
-
-        hg_time_get_current(&t1);
 
         /* Make progress on NA (do not block if something is already in
          * self processing list) */
         if (do_self_progress) {
+            hg_time_get_current(&t1);
             ret = hg_core_progress_self(context, HG_NA_MIN_TIMEOUT);
             if (ret == HG_SUCCESS)
                 break; /* Progressed */
-            else
+            else {
                 if (ret != HG_TIMEOUT) {
                     HG_LOG_ERROR("Could not make progress on local requests");
                     goto done;
                 }
-        }
-
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-        if (remaining < 0) {
-            /* Give a chance to call progress with timeout of 0 if no progress yet */
-            remaining = 0;
+            }
+            hg_time_get_current(&t2);
+            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            if (remaining < 0) {
+                /* Give a chance to call progress with timeout of 0 if no progress yet */
+                remaining = 0;
+            }
         }
 
         /* Make progress on NA (do not block if something is already in
          * self processing list) */
         progress_timeout = (do_self_progress) ?  HG_NA_MIN_TIMEOUT :
-                (unsigned int) (remaining * 1000);
+                (unsigned int) (remaining * 1000.0);
+        hg_time_get_current(&t1);
         ret = hg_core_progress_na(context, progress_timeout);
         if (ret == HG_SUCCESS)
             break; /* Progressed */
-        else
+        else {
             if (ret != HG_TIMEOUT) {
                 HG_LOG_ERROR("Could not make progress on NA");
                 goto done;
             }
-
-        hg_time_get_current(&t3);
-        remaining -= hg_time_to_double(hg_time_subtract(t3, t2));
+        }
+        hg_time_get_current(&t2);
+        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
     } while (remaining > 0);
 
 done:

@@ -1689,7 +1689,7 @@ na_bmi_progress(na_class_t *na_class, na_context_t *context,
          * testcontext will ignore the timeout and immediately return).
          * [verified this in the source] */
         ret = na_bmi_progress_expected(na_class, context,
-                (unsigned int) (remaining * 1000));
+                (unsigned int) (remaining * 1000.0));
         if (ret != NA_SUCCESS) {
             if (ret != NA_TIMEOUT) {
                 NA_LOG_ERROR("Could not make expected progress");
