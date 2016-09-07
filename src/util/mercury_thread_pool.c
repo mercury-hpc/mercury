@@ -11,24 +11,21 @@
 #include "mercury_thread_pool.h"
 #include "mercury_thread_condition.h"
 #include "mercury_util_error.h"
+#include "mercury_queue.h"
 
 #include <stdlib.h>
-
-typedef struct hg_thread_work hg_thread_work_t;
 
 struct hg_thread_work {
     hg_thread_func_t func;
     void *args;
-    hg_thread_work_t *next;
+    HG_QUEUE_ENTRY(hg_thread_work) entry;
 };
 
 struct hg_thread_pool {
     unsigned int sleeping_worker_count;
     unsigned int thread_count;
     hg_thread_t *threads;
-    unsigned int queue_size;
-    hg_thread_work_t *queue_head;
-    hg_thread_work_t *queue_tail;
+    HG_QUEUE_HEAD(hg_thread_work) queue;
     int shutdown;
     hg_thread_mutex_t mutex;
     hg_thread_cond_t cond;
@@ -42,51 +39,31 @@ hg_thread_pool_worker(void *args)
 {
     hg_thread_ret_t ret = 0;
     hg_thread_pool_t *pool = (hg_thread_pool_t*) args;
-    hg_thread_work_t *work;
+    struct hg_thread_work *work;
 
     while (1) {
-        if (hg_thread_mutex_lock(&pool->mutex) != HG_UTIL_SUCCESS) {
-            HG_UTIL_ERROR_DEFAULT("Cannot lock pool mutex");
-            goto done;
-        }
+        hg_thread_mutex_lock(&pool->mutex);
 
         /* If not shutting down and nothing to do, worker sleeps */
-        while (!pool->shutdown && (pool->queue_size == 0)) {
-            pool->sleeping_worker_count ++;
+        while (!pool->shutdown && HG_QUEUE_IS_EMPTY(&pool->queue)) {
+            pool->sleeping_worker_count++;
             if (hg_thread_cond_wait(&pool->cond, &pool->mutex) != HG_UTIL_SUCCESS) {
                 HG_UTIL_ERROR_DEFAULT("Thread cannot wait on condition variable");
                 goto unlock;
             }
-            pool->sleeping_worker_count --;
+            pool->sleeping_worker_count--;
         }
 
-        if (pool->shutdown && (pool->queue_size == 0)) {
+        if (pool->shutdown && HG_QUEUE_IS_EMPTY(&pool->queue)) {
             goto unlock;
         }
 
         /* Grab our task */
-        work = pool->queue_head;
-        if (!work) {
-            HG_UTIL_ERROR_DEFAULT("Work task cannot be NULL");
-            goto unlock;
-        }
-        pool->queue_size --;
-        if (pool->queue_size == 0) {
-            pool->queue_head = NULL;
-            pool->queue_tail = NULL;
-        } else {
-            if (!work->next) {
-                HG_UTIL_ERROR_DEFAULT("Next work task cannot be NULL");
-                goto unlock;
-            }
-            pool->queue_head = work->next;
-        }
+        work = HG_QUEUE_FIRST(&pool->queue);
+        HG_QUEUE_POP_HEAD(&pool->queue, entry);
 
         /* Unlock */
-        if (hg_thread_mutex_unlock(&pool->mutex) != HG_UTIL_SUCCESS) {
-            HG_UTIL_ERROR_DEFAULT("Cannot unlock pool mutex");
-            goto done;
-        }
+        hg_thread_mutex_unlock(&pool->mutex);
 
         /* Get to work */
         (*work->func)(work->args);
@@ -95,10 +72,7 @@ hg_thread_pool_worker(void *args)
     }
 
 unlock:
-    if (hg_thread_mutex_unlock(&pool->mutex) != HG_UTIL_SUCCESS) {
-        HG_UTIL_ERROR_DEFAULT("Cannot unlock pool mutex");
-        goto done;
-    }
+    hg_thread_mutex_unlock(&pool->mutex);
 
 done:
     hg_thread_exit(ret);
@@ -128,9 +102,7 @@ hg_thread_pool_init(unsigned int thread_count, hg_thread_pool_t **pool)
     priv_pool->sleeping_worker_count = 0;
     priv_pool->thread_count = thread_count;
     priv_pool->threads = NULL;
-    priv_pool->queue_size = 0;
-    priv_pool->queue_head = NULL;
-    priv_pool->queue_tail = NULL;
+    HG_QUEUE_INIT(&priv_pool->queue);
     priv_pool->shutdown = 0;
 
     if (hg_thread_mutex_init(&priv_pool->mutex) != HG_UTIL_SUCCESS) {
@@ -183,11 +155,7 @@ hg_thread_pool_destroy(hg_thread_pool_t *pool)
     if (!pool) goto done;
 
     if (pool->threads) {
-        if (hg_thread_mutex_lock(&pool->mutex) != HG_UTIL_SUCCESS) {
-            HG_UTIL_ERROR_DEFAULT("Cannot lock pool mutex");
-            ret = HG_UTIL_FAIL;
-            goto done;
-        }
+        hg_thread_mutex_lock(&pool->mutex);
 
         pool->shutdown = 1;
 
@@ -196,11 +164,7 @@ hg_thread_pool_destroy(hg_thread_pool_t *pool)
             ret = HG_UTIL_FAIL;
         }
 
-        if (hg_thread_mutex_unlock(&pool->mutex) != HG_UTIL_SUCCESS) {
-            HG_UTIL_ERROR_DEFAULT("Cannot unlock pool mutex");
-            ret = HG_UTIL_FAIL;
-            goto done;
-        }
+        hg_thread_mutex_unlock(&pool->mutex);
 
         if (ret != HG_UTIL_SUCCESS) goto done;
 
@@ -238,7 +202,7 @@ int
 hg_thread_pool_post(hg_thread_pool_t *pool, hg_thread_func_t f, void *args)
 {
     int ret = HG_UTIL_SUCCESS;
-    hg_thread_work_t *work = NULL;
+    struct hg_thread_work *work = NULL;
 
     if (!pool) {
         HG_UTIL_ERROR_DEFAULT("Thread pool not initialized");
@@ -252,7 +216,7 @@ hg_thread_pool_post(hg_thread_pool_t *pool, hg_thread_func_t f, void *args)
         goto done;
     }
 
-    work = (hg_thread_work_t*) malloc(sizeof(hg_thread_work_t));
+    work = (struct hg_thread_work *) malloc(sizeof(struct hg_thread_work));
     if (!work) {
         HG_UTIL_ERROR_DEFAULT("Could not allocate pool work");
         ret = HG_UTIL_FAIL;
@@ -260,13 +224,8 @@ hg_thread_pool_post(hg_thread_pool_t *pool, hg_thread_func_t f, void *args)
     }
     work->func = f;
     work->args = args;
-    work->next = NULL;
 
-    if (hg_thread_mutex_lock(&pool->mutex) != HG_UTIL_SUCCESS) {
-        HG_UTIL_ERROR_DEFAULT("Cannot lock pool mutex");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+    hg_thread_mutex_lock(&pool->mutex);
 
     /* Are we shutting down ? */
     if (pool->shutdown) {
@@ -276,14 +235,7 @@ hg_thread_pool_post(hg_thread_pool_t *pool, hg_thread_func_t f, void *args)
     }
 
     /* Add task to task queue */
-    if(pool->queue_size == 0) {
-        pool->queue_head = work;
-        pool->queue_tail = pool->queue_head;
-    } else {
-        pool->queue_tail->next = work;
-        pool->queue_tail = work;
-    }
-    pool->queue_size++;
+    HG_QUEUE_PUSH_TAIL(&pool->queue, work, entry);
 
     /* Wake up sleeping worker */
     if (pool->sleeping_worker_count) {
@@ -294,10 +246,7 @@ hg_thread_pool_post(hg_thread_pool_t *pool, hg_thread_func_t f, void *args)
     }
 
 unlock:
-    if (hg_thread_mutex_unlock(&pool->mutex) != HG_UTIL_SUCCESS) {
-        HG_UTIL_ERROR_DEFAULT("Cannot unlock pool mutex");
-        ret = HG_UTIL_FAIL;
-    }
+    hg_thread_mutex_unlock(&pool->mutex);
 
 done:
     if (ret != HG_UTIL_SUCCESS) {
