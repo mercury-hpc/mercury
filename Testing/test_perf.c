@@ -162,15 +162,17 @@ done:
  */
 static hg_return_t
 measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
-    hg_addr_t addr, size_t count, hg_request_class_t *request_class)
+    hg_addr_t addr, size_t total_size, size_t segment_size,
+    hg_request_class_t *request_class)
 {
     bulk_write_in_t in_struct;
 
-    int *bulk_buf;
-    void *buf_ptr[1];
+    void **buf_ptrs;
+    size_t *buf_sizes;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     size_t nbytes;
     double nmbytes;
+    unsigned int nsegments;
     hg_handle_t handle;
 
     int avg_iter;
@@ -180,18 +182,39 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     size_t i;
 
     /* Prepare bulk_buf */
-    nbytes = count * sizeof(int);
+    nbytes = (total_size / sizeof(int)) * sizeof(int);
     nmbytes = (double) nbytes / (1024 * 1024);
+    nsegments = (unsigned int)(nbytes / segment_size);
     if (na_test_comm_rank_g == 0) {
-        printf("# Reading Bulk Data (%f MB) with %d client(s) -- loop %d time(s)\n",
+        if (segment_size == total_size)
+            printf("# Reading Bulk Data (%f MB) with %d client(s) -- loop %d time(s)\n",
                 nmbytes, na_test_comm_size_g, MERCURY_TESTING_MAX_LOOP);
+        else
+            printf("# Reading Bulk Data (%f MB, %d segments) with %d client(s) -- loop %d time(s)\n",
+                nmbytes, nsegments, na_test_comm_size_g, MERCURY_TESTING_MAX_LOOP);
     }
 
-    bulk_buf = (int *) malloc(nbytes);
-    for (i = 0; i < count; i++) {
-        bulk_buf[i] = (int) i;
+    if (segment_size == total_size) {
+        int *bulk_buf = (int *) malloc(nbytes);
+        for (i = 0; i < nbytes / sizeof(int); i++) {
+            bulk_buf[i] = (int) i;
+        }
+        buf_ptrs = (void **) malloc(sizeof(void *));
+        *buf_ptrs = bulk_buf;
+        buf_sizes = &nbytes;
+    } else {
+        int **bulk_buf = (int **) malloc(nsegments * sizeof(int *));
+        buf_sizes = (size_t *) malloc(nsegments * sizeof(size_t));
+        for (i = 0; i < nsegments; i++) {
+            size_t j;
+
+            bulk_buf[i] = (int *) malloc(segment_size);
+            buf_sizes[i] = segment_size;
+            for (j = 0; j < segment_size / sizeof(int); j++)
+                bulk_buf[i][j] = (int) (j + i * segment_size / sizeof(int));
+        }
+        buf_ptrs = (void **) bulk_buf;
     }
-    *buf_ptr = bulk_buf;
 
     ret = HG_Create(context, addr, hg_test_perf_bulk_id_g, &handle);
     if (ret != HG_SUCCESS) {
@@ -200,8 +223,8 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     }
 
     /* Register memory */
-    ret = HG_Bulk_create(hg_class, 1, buf_ptr, &nbytes, HG_BULK_READ_ONLY,
-            &bulk_handle);
+    ret = HG_Bulk_create(hg_class, nsegments, buf_ptrs, buf_sizes,
+        HG_BULK_READ_ONLY, &bulk_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         goto done;
@@ -291,7 +314,14 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     }
 
     /* Free bulk data */
-    free(bulk_buf);
+    if (segment_size != total_size) {
+        for (i = 0; i < nsegments; i++)
+            free(buf_ptrs[i]);
+        free(buf_sizes);
+    } else {
+        free(*buf_ptrs);
+    }
+    free(buf_ptrs);
 
     /* Complete */
     ret = HG_Destroy(handle);
@@ -311,8 +341,8 @@ main(int argc, char *argv[])
     hg_class_t *hg_class = NULL;
     hg_context_t *context = NULL;
     hg_request_class_t *request_class = NULL;
-    size_t count1 = 1024 / sizeof(int); /* Use small values for eager message */
-    size_t count2 = (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE) / sizeof(int);
+    size_t size_small = 1024; /* Use small values for eager message */
+    size_t size_big = (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE);
     hg_addr_t addr;
 
     hg_class = HG_Test_client_init(argc, argv, &addr, &na_test_comm_rank_g,
@@ -336,7 +366,7 @@ main(int argc, char *argv[])
     }
 
     /* Run Bulk test (eager) */
-    measure_bulk_transfer(hg_class, context, addr, count1, request_class);
+    measure_bulk_transfer(hg_class, context, addr, size_small, size_small, request_class);
 
     if (na_test_comm_rank_g == 0) {
         printf("###############################################################################\n");
@@ -345,7 +375,16 @@ main(int argc, char *argv[])
     }
 
     /* Run Bulk test (rma) */
-    measure_bulk_transfer(hg_class, context, addr, count2, request_class);
+    measure_bulk_transfer(hg_class, context, addr, size_big, size_big, request_class);
+
+    if (na_test_comm_rank_g == 0) {
+        printf("###############################################################################\n");
+        printf("# Bulk test (rma non-contiguous)\n");
+        printf("###############################################################################\n");
+    }
+
+    /* Run Bulk test (non-contiguous) */
+    measure_bulk_transfer(hg_class, context, addr, size_big, size_big / 1024, request_class);
 
     HG_Test_finalize(hg_class);
 
