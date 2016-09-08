@@ -55,7 +55,7 @@ hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_in_handle,
     header->protocol = HG_PROTOCOL_VERSION;
     header->id = id;
     header->flags = (hg_uint8_t) (extra_in_handle != HG_BULK_NULL);
-    header->cookie = (hg_uint32_t) rand();
+    header->cookie = 0; /* TODO not used for now */
     header->crc16 = 0;
     header->extra_in_handle = extra_in_handle;
 }
