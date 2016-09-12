@@ -207,7 +207,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Hl_init_na(na_class_t *na_class, na_context_t *na_context)
+HG_Hl_init_na(na_class_t *na_class)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -223,7 +223,7 @@ HG_Hl_init_na(na_class_t *na_class, na_context_t *na_context)
 
     /* Initialize HG */
     if (!HG_CLASS_DEFAULT) {
-        HG_CLASS_DEFAULT = HG_Init_na(na_class, na_context);
+        HG_CLASS_DEFAULT = HG_Init_na(na_class);
         if (!HG_CLASS_DEFAULT) {
             HG_LOG_ERROR("Could not initialize HG class");
             ret = HG_PROTOCOL_ERROR;

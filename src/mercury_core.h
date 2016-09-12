@@ -45,14 +45,12 @@ HG_Core_init(
  * Must be finalized with HG_Core_finalize().
  *
  * \param na_class [IN]         pointer to NA class
- * \param na_context [IN]       pointer to NA context
  *
  * \return Pointer to HG class or NULL in case of failure
  */
 HG_EXPORT hg_class_t *
 HG_Core_init_na(
-        na_class_t *na_class,
-        na_context_t *na_context
+        na_class_t *na_class
         );
 
 /**

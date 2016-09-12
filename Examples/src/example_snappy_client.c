@@ -26,7 +26,7 @@
 struct snappy_lookup_args {
     hg_class_t *hg_class;
     hg_context_t *hg_context;
-    na_addr_t na_target_addr;
+    hg_addr_t hg_target_addr;
 };
 
 struct snappy_compress_rpc_args {
@@ -185,19 +185,19 @@ snappy_compress_rpc(hg_class_t *hg_class, hg_context_t *hg_context,
     return 0;
 }
 
-static na_return_t
-snappy_lookup_cb(const struct na_cb_info *callback_info)
+static hg_return_t
+snappy_lookup_cb(const struct hg_cb_info *callback_info)
 {
     struct snappy_lookup_args *snappy_lookup_args =
                 (struct snappy_lookup_args *) callback_info->arg;
-    snappy_lookup_args->na_target_addr = callback_info->info.lookup.addr;
+    snappy_lookup_args->hg_target_addr = callback_info->info.lookup.addr;
 
     /* Register RPC */
     snappy_compress_id_g = snappy_compress_register(snappy_lookup_args->hg_class);
 
     /* Send RPC to target */
     snappy_compress_rpc(snappy_lookup_args->hg_class, snappy_lookup_args->hg_context,
-            snappy_lookup_args->na_target_addr);
+            snappy_lookup_args->hg_target_addr);
 
     return NA_SUCCESS;
 }
@@ -207,8 +207,6 @@ main(void)
 {
     const char *na_info_string = NULL;
 
-    na_class_t *na_class;
-    na_context_t *na_context;
     char target_addr_string[PATH_MAX], *p;
     FILE *na_config = NULL;
     struct snappy_lookup_args snappy_lookup_args;
@@ -226,14 +224,8 @@ main(void)
     }
     printf("Using %s\n", na_info_string);
 
-    /* Initialize NA */
-    na_class = NA_Initialize(na_info_string, NA_FALSE);
-
-    /* Create NA context */
-    na_context = NA_Context_create(na_class);
-
     /* Initialize Mercury with the desired network abstraction class */
-    hg_class = HG_Init_na(na_class, na_context);
+    hg_class = HG_Init(na_info_string, NA_FALSE);
 
     /* Create HG context */
     hg_context = HG_Context_create(hg_class);
@@ -255,8 +247,8 @@ main(void)
     /* Look up target address */
     snappy_lookup_args.hg_class = hg_class;
     snappy_lookup_args.hg_context = hg_context;
-    NA_Addr_lookup(na_class, na_context, snappy_lookup_cb, &snappy_lookup_args,
-            target_addr_string, NA_OP_ID_IGNORE);
+    HG_Addr_lookup(hg_context, snappy_lookup_cb, &snappy_lookup_args,
+            target_addr_string, HG_OP_ID_IGNORE);
 
     /* Poke progress engine and check for events */
     do {
@@ -273,13 +265,10 @@ main(void)
     } while (hg_ret == HG_SUCCESS);
 
     /* Finalize */
-    NA_Addr_free(na_class, snappy_lookup_args.na_target_addr);
+    HG_Addr_free(hg_class, snappy_lookup_args.hg_target_addr);
 
     HG_Context_destroy(hg_context);
     HG_Finalize(hg_class);
-
-    NA_Context_destroy(na_class, na_context);
-    NA_Finalize(na_class);
 
     return EXIT_SUCCESS;
 }

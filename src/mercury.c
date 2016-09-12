@@ -617,9 +617,9 @@ HG_Init(const char *na_info_string, hg_bool_t na_listen)
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Init_na(na_class_t *na_class, na_context_t *na_context)
+HG_Init_na(na_class_t *na_class)
 {
-    return HG_Core_init_na(na_class, na_context);
+    return HG_Core_init_na(na_class);
 }
 
 /*---------------------------------------------------------------------------*/

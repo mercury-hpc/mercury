@@ -35,7 +35,7 @@ static hg_id_t my_rpc_id;
 
 static hg_return_t my_rpc_cb(const struct hg_cb_info *info);
 static void run_my_rpc(int value);
-static na_return_t lookup_cb(const struct na_cb_info *callback_info);
+static hg_return_t lookup_cb(const struct hg_cb_info *callback_info);
 
 /* struct used to carry state of overall operation across callbacks */
 struct my_rpc_state
@@ -56,7 +56,7 @@ int main(void)
     /* NOTE: the address here is mainly used to identify the transport; this
      * is a client and will not be listening for requests.
      */
-    hg_engine_init(NA_FALSE, "tcp://localhost:1234");
+    hg_engine_init(NA_FALSE, "tcp");
     my_rpc_id = my_rpc_register();
 
     /* issue 4 RPCs (these will proceed concurrently using callbacks) */
@@ -92,7 +92,7 @@ static void run_my_rpc(int value)
     return;
 }
 
-static na_return_t lookup_cb(const struct na_cb_info *callback_info)
+static hg_return_t lookup_cb(const struct hg_cb_info *callback_info)
 {
     na_addr_t svr_addr = callback_info->info.lookup.addr;
     my_rpc_in_t in;

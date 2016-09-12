@@ -26,7 +26,6 @@
 /* HG class */
 struct hg_class {
     na_class_t *na_class;           /* NA class */
-    na_context_t *na_context;       /* NA context */
     hg_hash_table_t *func_map;      /* Function map */
     hg_atomic_int32_t request_tag;  /* Atomic used for tag generation */
     na_tag_t request_max_tag;       /* Max value for tag */

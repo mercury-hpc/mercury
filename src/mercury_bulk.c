@@ -94,6 +94,14 @@ struct hg_bulk {
 /********************/
 
 /**
+ * Get NA context.
+ */
+extern na_context_t *
+hg_core_get_na_context(
+        struct hg_context *context
+        );
+
+/**
  * Create handle.
  */
 static hg_return_t
@@ -653,8 +661,8 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
         }
 
         if (na_bulk_op) {
-            na_ret = na_bulk_op(hg_bulk_origin->hg_class->na_class,
-                hg_bulk_origin->hg_class->na_context,
+            na_ret = na_bulk_op(hg_bulk_op_id->hg_class->na_class,
+                hg_core_get_na_context(hg_bulk_op_id->context),
                 hg_bulk_transfer_cb, hg_bulk_op_id,
                 hg_bulk_local->na_mem_handles[local_segment_index],
                 hg_bulk_local->segments[local_segment_index].address,
@@ -1421,15 +1429,15 @@ HG_Bulk_cancel(hg_op_id_t op_id)
     }
 
     if (HG_UTIL_TRUE != hg_atomic_cas32(&hg_bulk_op_id->completed, 1, 0)) {
-        /* Cancel all NA operations issued */
         unsigned int i = 0;
 
+        /* Cancel all NA operations issued */
         for (i = 0; i < hg_bulk_op_id->op_count; i++) {
             na_return_t na_ret;
 
-            /* Race codition may occur. Watch out. */
+            /* Cancel NA operation */
             na_ret = NA_Cancel(hg_bulk_op_id->hg_class->na_class,
-                hg_bulk_op_id->hg_class->na_context,
+                hg_core_get_na_context(hg_bulk_op_id->context),
                 hg_bulk_op_id->na_op_ids[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("Could not cancel op id");

@@ -21,7 +21,7 @@
 
 int main(void)
 {
-    hg_engine_init(NA_TRUE, "tcp://localhost:1234");
+    hg_engine_init(NA_TRUE, "tcp://1234");
 
     /* register RPC */
     my_rpc_register();

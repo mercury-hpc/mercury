@@ -20,7 +20,6 @@
  */
 
 static na_class_t *network_class = NULL;
-static na_context_t *na_context = NULL;
 static hg_context_t *hg_context = NULL;
 static hg_class_t *hg_class = NULL;
 
@@ -36,10 +35,7 @@ void hg_engine_init(na_bool_t listen, const char* local_addr)
     network_class = NA_Initialize(local_addr, listen);
     assert(network_class);
 
-    na_context = NA_Context_create(network_class);
-    assert(na_context);
-
-    hg_class = HG_Init_na(network_class, na_context);
+    hg_class = HG_Init_na(network_class);
     assert(hg_class);
 
     hg_context = HG_Context_create(hg_class);
@@ -93,11 +89,11 @@ hg_class_t* hg_engine_get_class(void)
     return(hg_class);
 }
 
-void hg_engine_addr_lookup(const char* name, na_cb_t cb, void *arg)
+void hg_engine_addr_lookup(const char* name, hg_cb_t cb, void *arg)
 {
     na_return_t ret;
 
-    ret = NA_Addr_lookup(network_class, na_context, cb, arg, name, NA_OP_ID_IGNORE);
+    ret = HG_Addr_lookup(hg_context, cb, arg, name, HG_OP_ID_IGNORE);
     assert(ret == NA_SUCCESS);
     (void)ret;
 

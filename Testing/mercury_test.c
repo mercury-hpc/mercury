@@ -32,7 +32,6 @@
 /* Local Variables */
 /*******************/
 static na_class_t *hg_test_na_class_g = NULL;
-static na_context_t *hg_test_na_context_g = NULL;
 static hg_bool_t hg_test_is_client_g = HG_FALSE;
 static hg_addr_t hg_test_addr_g = HG_ADDR_NULL;
 static int hg_test_rank_g = 0;
@@ -262,9 +261,7 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
     hg_test_na_class_g = NA_Test_client_init(argc, argv, test_addr_name,
             NA_TEST_MAX_ADDR_NAME, &hg_test_rank_g);
 
-    hg_test_na_context_g = NA_Context_create(hg_test_na_class_g);
-
-    ret = HG_Hl_init_na(hg_test_na_class_g, hg_test_na_context_g);
+    ret = HG_Hl_init_na(hg_test_na_class_g);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not initialize Mercury\n");
         goto done;
@@ -323,8 +320,6 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
     hg_test_na_class_g = NA_Test_server_init(argc, argv, NA_FALSE,
             &hg_test_addr_name_table_g, &hg_test_addr_table_size_g, max_number_of_peers);
 
-    hg_test_na_context_g = NA_Context_create(hg_test_na_class_g);
-
     /* Initalize atomic variable to finalize server */
     hg_atomic_set32(&hg_test_finalizing_count_g, 0);
 
@@ -334,7 +329,7 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
     printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
 
-    ret = HG_Hl_init_na(hg_test_na_class_g, hg_test_na_context_g);
+    ret = HG_Hl_init_na(hg_test_na_class_g);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not initialize Mercury\n");
         goto done;
@@ -418,13 +413,6 @@ HG_Test_finalize(hg_class_t *hg_class)
         fprintf(stderr, "Could not finalize HG\n");
         goto done;
     }
-
-    na_ret = NA_Context_destroy(hg_test_na_class_g, hg_test_na_context_g);
-    if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not destroy NA context\n");
-        goto done;
-    }
-    hg_test_na_context_g = NULL;
 
     na_ret = NA_Test_finalize(hg_test_na_class_g);
     if (na_ret != NA_SUCCESS) {

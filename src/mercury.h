@@ -67,18 +67,16 @@ HG_Init(
         );
 
 /**
- * Initialize the Mercury layer from an existing NA class/context.
+ * Initialize the Mercury layer from an existing NA class.
  * Must be finalized with HG_Finalize().
  *
  * \param na_class [IN]         pointer to NA class
- * \param na_context [IN]       pointer to NA context
  *
  * \return Pointer to HG class or NULL in case of failure
  */
 HG_EXPORT hg_class_t *
 HG_Init_na(
-        na_class_t *na_class,
-        na_context_t *na_context
+        na_class_t *na_class
         );
 
 /**

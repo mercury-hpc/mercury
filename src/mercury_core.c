@@ -49,6 +49,7 @@
 /* HG context */
 struct hg_context {
     struct hg_class *hg_class;                    /* HG class */
+    na_context_t *na_context;                     /* NA context */
     HG_QUEUE_HEAD(hg_completion_entry) completion_queue; /* Completion queue */
     hg_thread_mutex_t completion_queue_mutex;     /* Completion queue mutex */
     hg_thread_cond_t completion_queue_cond;       /* Completion queue cond */
@@ -243,8 +244,7 @@ static struct hg_class *
 hg_core_init(
         const char *na_info_string,
         hg_bool_t na_listen,
-        na_class_t *na_init_class,
-        na_context_t *na_init_context
+        na_class_t *na_init_class
         );
 
 /**
@@ -253,6 +253,14 @@ hg_core_init(
 static hg_return_t
 hg_core_finalize(
         struct hg_class *hg_class
+        );
+
+/**
+ * Get NA context.
+ */
+na_context_t *
+hg_core_get_na_context(
+        struct hg_context *context
         );
 
 /**
@@ -948,7 +956,7 @@ hg_core_self_processing_list_check(struct hg_context *context)
 /*---------------------------------------------------------------------------*/
 static struct hg_class *
 hg_core_init(const char *na_info_string, hg_bool_t na_listen,
-    na_class_t *na_init_class, na_context_t *na_init_context)
+    na_class_t *na_init_class)
 {
     struct hg_class *hg_class = NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -961,22 +969,14 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
         goto done;
     }
     hg_class->na_class = na_init_class;
-    hg_class->na_context = na_init_context;
     hg_class->func_map = NULL;
-    hg_class->na_ext_init = (na_init_class && na_init_context) ? HG_TRUE : HG_FALSE;
+    hg_class->na_ext_init = (na_init_class) ? HG_TRUE : HG_FALSE;
 
     /* Initialize NA */
     if (!hg_class->na_ext_init) {
         hg_class->na_class = NA_Initialize(na_info_string, na_listen);
         if (!hg_class->na_class) {
             HG_LOG_ERROR("Could not initialize NA class");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
-
-        hg_class->na_context = NA_Context_create(hg_class->na_class);
-        if (!hg_class->na_context) {
-            HG_LOG_ERROR("Could not create NA context");
             ret = HG_NA_ERROR;
             goto done;
         }
@@ -1020,14 +1020,6 @@ hg_core_finalize(struct hg_class *hg_class)
 
     /* Destroy context */
     if (!hg_class->na_ext_init) {
-        if (hg_class->na_context && NA_Context_destroy(hg_class->na_class,
-                hg_class->na_context) != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not destroy NA context");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
-        hg_class->na_context = NULL;
-
         /* Finalize interface */
         if (NA_Finalize(hg_class->na_class) != NA_SUCCESS) {
             HG_LOG_ERROR("Could not finalize NA interface");
@@ -1045,12 +1037,19 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+na_context_t *
+hg_core_get_na_context(struct hg_context *context)
+{
+    return context->na_context;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
     const char *name, hg_op_id_t *op_id)
 {
     na_class_t *na_class = context->hg_class->na_class;
-    na_context_t *na_context = context->hg_class->na_context;
+    na_context_t *na_context = context->na_context;
     struct hg_op_id *hg_op_id = NULL;
     na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
@@ -1372,6 +1371,7 @@ static hg_return_t
 hg_core_forward_na(struct hg_handle *hg_handle)
 {
     struct hg_class *hg_class = hg_handle->hg_info.hg_class;
+    struct hg_context *hg_context = hg_handle->hg_info.context;
     na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
 
@@ -1379,7 +1379,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     hg_handle->tag = hg_core_gen_request_tag(hg_handle->hg_info.hg_class);
 
     /* Pre-post the recv message (output) */
-    na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_class->na_context,
+    na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_context->na_context,
             hg_core_recv_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_size, hg_handle->hg_info.addr,
             hg_handle->tag, &hg_handle->na_recv_op_id);
@@ -1391,7 +1391,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
 
     /* And post the send message (input) */
     na_ret = NA_Msg_send_unexpected(hg_class->na_class,
-            hg_class->na_context, hg_core_send_input_cb, hg_handle,
+            hg_context->na_context, hg_core_send_input_cb, hg_handle,
             hg_handle->in_buf, hg_handle->in_buf_used,
             hg_handle->hg_info.addr, hg_handle->tag,
             &hg_handle->na_send_op_id);
@@ -1453,6 +1453,7 @@ static hg_return_t
 hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
 {
     struct hg_class *hg_class = hg_handle->hg_info.hg_class;
+    struct hg_context *hg_context = hg_handle->hg_info.context;
     na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
 
@@ -1462,7 +1463,7 @@ hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     hg_handle->cb_type = HG_CB_RESPOND;
 
     /* Respond back */
-    na_ret = NA_Msg_send_expected(hg_class->na_class, hg_class->na_context,
+    na_ret = NA_Msg_send_expected(hg_class->na_class, hg_context->na_context,
             hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_used, hg_handle->hg_info.addr,
             hg_handle->tag, &hg_handle->na_send_op_id);
@@ -1900,7 +1901,7 @@ hg_core_listen(struct hg_context *context)
         hg_handle->entry = new_entry;
 
         /* Post a new unexpected receive */
-        na_ret = NA_Msg_recv_unexpected(hg_class->na_class, hg_class->na_context,
+        na_ret = NA_Msg_recv_unexpected(hg_class->na_class, context->na_context,
                 hg_core_recv_input_cb, hg_handle, hg_handle->in_buf,
                 hg_handle->in_buf_size, &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
@@ -1971,7 +1972,7 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
     /* Trigger everything we can from NA, if something completed it will
      * be moved to the HG context completion queue */
     do {
-        na_ret = NA_Trigger(hg_class->na_context, 0, 1, &actual_count);
+        na_ret = NA_Trigger(context->na_context, 0, 1, &actual_count);
     } while ((na_ret == NA_SUCCESS) && actual_count);
 
     /* Is completion queue empty */
@@ -1986,7 +1987,7 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
     if (!completion_queue_empty) goto done;
 
     /* Otherwise try to make progress on NA */
-    na_ret = NA_Progress(hg_class->na_class, hg_class->na_context, timeout);
+    na_ret = NA_Progress(hg_class->na_class, context->na_context, timeout);
     switch (na_ret) {
         case NA_SUCCESS:
             /* Progressed */
@@ -2211,13 +2212,14 @@ static hg_return_t
 hg_core_cancel(struct hg_handle *hg_handle)
 {
     struct hg_class *hg_class = hg_handle->hg_info.hg_class;
+    struct hg_context *hg_context = hg_handle->hg_info.context;
     hg_return_t ret = HG_SUCCESS;
 
     /* Cancel all NA operations issued */
     if (hg_handle->na_recv_op_id != NA_OP_ID_NULL) {
         na_return_t na_ret;
 
-        na_ret = NA_Cancel(hg_class->na_class, hg_class->na_context,
+        na_ret = NA_Cancel(hg_class->na_class, hg_context->na_context,
                 hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not cancel recv op id");
@@ -2229,7 +2231,7 @@ hg_core_cancel(struct hg_handle *hg_handle)
     if (hg_handle->na_send_op_id != NA_OP_ID_NULL) {
         na_return_t na_ret;
 
-        na_ret = NA_Cancel(hg_class->na_class, hg_class->na_context,
+        na_ret = NA_Cancel(hg_class->na_class, hg_context->na_context,
                 hg_handle->na_send_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not cancel send op id");
@@ -2255,7 +2257,7 @@ HG_Core_init(const char *na_info_string, hg_bool_t na_listen)
         goto done;
     }
 
-    hg_class = hg_core_init(na_info_string, na_listen, NULL, NULL);
+    hg_class = hg_core_init(na_info_string, na_listen, NULL);
     if (!hg_class) {
         HG_LOG_ERROR("Cannot initialize HG core layer");
         ret = HG_PROTOCOL_ERROR;
@@ -2271,12 +2273,12 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Core_init_na(na_class_t *na_class, na_context_t *na_context)
+HG_Core_init_na(na_class_t *na_class)
 {
     struct hg_class *hg_class = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    hg_class = hg_core_init(NULL, HG_FALSE, na_class, na_context);
+    hg_class = hg_core_init(NULL, HG_FALSE, na_class);
     if (!hg_class) {
         HG_LOG_ERROR("Cannot initialize HG core layer");
         ret = HG_PROTOCOL_ERROR;
@@ -2353,6 +2355,12 @@ HG_Core_context_create(hg_class_t *hg_class)
     context->hg_class = hg_class;
     HG_QUEUE_INIT(&context->completion_queue);
 
+    context->na_context = NA_Context_create(hg_class->na_class);
+    if (!context->na_context) {
+        HG_LOG_ERROR("Could not create NA context");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
     context->pending_list = hg_list_new();
     if (!context->pending_list) {
         HG_LOG_ERROR("Could not create pending list");
@@ -2413,7 +2421,7 @@ HG_Core_context_destroy(hg_context_t *context)
     /* Trigger everything we can from NA, if something completed it will
      * be moved to the HG context completion queue */
     do {
-        na_ret = NA_Trigger(context->hg_class->na_context, 0, 1, &actual_count);
+        na_ret = NA_Trigger(context->na_context, 0, 1, &actual_count);
     } while ((na_ret == NA_SUCCESS) && actual_count);
 
     /* Check that operations have completed */
@@ -2436,6 +2444,15 @@ HG_Core_context_destroy(hg_context_t *context)
     }
 
     hg_thread_mutex_unlock(&context->completion_queue_mutex);
+
+    /* Destroy NA context */
+    if (context->na_context && NA_Context_destroy(context->hg_class->na_class,
+            context->na_context) != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not destroy NA context");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+    context->na_context = NULL;
 
     /* Destroy self processing pool if created */
     hg_thread_pool_destroy(context->self_processing_pool);

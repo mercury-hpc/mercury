@@ -20,10 +20,8 @@ main(void)
 {
     const char *na_info_string = NULL;
 
-    na_class_t *na_class;
-    na_context_t * na_context;
     char self_addr_string[PATH_MAX];
-    na_addr_t self_addr;
+    hg_addr_t self_addr;
     FILE *na_config = NULL;
 
     hg_class_t *hg_class;
@@ -32,7 +30,7 @@ main(void)
     unsigned minor;
     unsigned patch;
     hg_return_t hg_ret;
-    na_size_t self_addr_string_size = PATH_MAX;
+    hg_size_t self_addr_string_size = PATH_MAX;
 
     HG_Version_get(&major, &minor, &patch);
 
@@ -47,13 +45,13 @@ main(void)
         exit(0);
     }
 
-    /* Initialize NA */
-    na_class = NA_Initialize(na_info_string, NA_TRUE);
+    /* Initialize Mercury with the desired network abstraction class */
+    hg_class = HG_Init(na_info_string, NA_TRUE);
 
     /* Get self addr to tell client about */
-    NA_Addr_self(na_class, &self_addr);
-    NA_Addr_to_string(na_class, self_addr_string, &self_addr_string_size, self_addr);
-    NA_Addr_free(na_class, self_addr);
+    HG_Addr_self(hg_class, &self_addr);
+    HG_Addr_to_string(hg_class, self_addr_string, &self_addr_string_size, self_addr);
+    HG_Addr_free(hg_class, self_addr);
     printf("Server address is: %s\n", self_addr_string);
 
     /* Write addr to a file */
@@ -65,12 +63,6 @@ main(void)
     }
     fprintf(na_config, "%s\n", self_addr_string);
     fclose(na_config);
-
-    /* Create NA context */
-    na_context = NA_Context_create(na_class);
-
-    /* Initialize Mercury with the desired network abstraction class */
-    hg_class = HG_Init_na(na_class, na_context);
 
     /* Create HG context */
     hg_context = HG_Context_create(hg_class);
@@ -96,9 +88,6 @@ main(void)
     /* Finalize */
     HG_Context_destroy(hg_context);
     HG_Finalize(hg_class);
-
-    NA_Context_destroy(na_class, na_context);
-    NA_Finalize(na_class);
 
     return EXIT_SUCCESS;
 }

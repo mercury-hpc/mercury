@@ -67,20 +67,18 @@ HG_Hl_init(
         );
 
 /**
- * Initialize Mercury high-level layer and create default classes/contexts
- * from an existing NA class/context.
+ * Initialize Mercury high-level layer and create default class
+ * from an existing NA class.
  * \remark HG_Hl_finalize() is registered with atexit() so that default
  * classes/contexts are freed at process termination.
  *
  * \param na_class [IN]         pointer to NA class
- * \param na_context [IN]       pointer to NA context
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Hl_init_na(
-        na_class_t *na_class,
-        na_context_t *na_context
+        na_class_t *na_class
         );
 
 
