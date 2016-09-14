@@ -15,6 +15,7 @@
 #include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
 #include "mercury_time.h"
+#include "mercury_atomic.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -58,6 +59,7 @@ struct na_private_context {
     HG_QUEUE_HEAD(na_cb_completion_data) completion_queue;
     hg_thread_mutex_t completion_queue_mutex;
     hg_thread_cond_t completion_queue_cond;
+    hg_atomic_int32_t completion_queue_updated; /* Completion queue updated */
     hg_thread_mutex_t progress_mutex;
     hg_thread_cond_t progress_cond;
     na_bool_t progressing;
@@ -467,6 +469,7 @@ NA_Context_create(na_class_t *na_class)
 
     /* Initialize completion queue */
     HG_QUEUE_INIT(&na_private_context->completion_queue);
+    hg_atomic_set32(&na_private_context->completion_queue_updated, NA_FALSE);
 
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&na_private_context->completion_queue_mutex);
@@ -1413,6 +1416,7 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
             (struct na_private_context *) context;
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     na_return_t ret = NA_TIMEOUT;
+    na_bool_t completion_queue_updated = NA_FALSE;
 
     if (!na_class) {
         NA_LOG_ERROR("NULL NA class");
@@ -1467,10 +1471,22 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
 
     hg_thread_mutex_unlock(&na_private_context->progress_mutex);
 
+    if (hg_atomic_cas32(&na_private_context->completion_queue_updated, NA_TRUE,
+        NA_FALSE)) {
+        completion_queue_updated = NA_TRUE;
+    }
+
+    /* If something was in context completion queue just return */
+    if (completion_queue_updated) {
+        ret = NA_SUCCESS; /* Progressed */
+        goto unlock;
+    }
+
     /* Try to make progress for remaining time */
     ret = na_class->progress(na_class, context,
             (unsigned int) (remaining * 1000.0));
 
+unlock:
     hg_thread_mutex_lock(&na_private_context->progress_mutex);
 
     /* At this point, either progress succeeded or failed with NA_TIMEOUT,
@@ -1649,6 +1665,8 @@ na_cb_completion_add(na_context_t *context,
 
     HG_QUEUE_PUSH_TAIL(&na_private_context->completion_queue, completion_data,
         entry);
+
+    hg_atomic_set32(&na_private_context->completion_queue_updated, NA_TRUE);
 
     /* Callback is pushed to the completion queue when something completes
      * so wake up anyone waiting in the trigger */

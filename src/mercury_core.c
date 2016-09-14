@@ -22,6 +22,7 @@
 #include "mercury_thread_condition.h"
 #include "mercury_thread_pool.h"
 #include "mercury_time.h"
+#include "mercury_atomic.h"
 
 #include <stdlib.h>
 
@@ -53,7 +54,7 @@ struct hg_context {
     HG_QUEUE_HEAD(hg_completion_entry) completion_queue; /* Completion queue */
     hg_thread_mutex_t completion_queue_mutex;     /* Completion queue mutex */
     hg_thread_cond_t completion_queue_cond;       /* Completion queue cond */
-    hg_bool_t completion_queue_updated;           /* Completion queue updated */
+    hg_atomic_int32_t completion_queue_updated;   /* Completion queue updated */
     hg_list_t *pending_list;                      /* List of pending handles */
     hg_thread_mutex_t pending_list_mutex;         /* Pending list mutex */
     hg_list_t *processing_list;                   /* List of handles being processed */
@@ -1858,7 +1859,7 @@ hg_core_completion_add(struct hg_context *context,
     /* Add handle to completion queue */
     HG_QUEUE_PUSH_TAIL(&context->completion_queue, hg_completion_entry, entry);
 
-    context->completion_queue_updated = HG_TRUE;
+    hg_atomic_set32(&context->completion_queue_updated, HG_TRUE);
 
     /* Callback is pushed to the completion queue when something completes
      * so wake up anyone waiting in the trigger */
@@ -1968,11 +1969,12 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
 {
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_return_t ret = HG_TIMEOUT;
+    hg_bool_t progressed = HG_FALSE;
+    hg_bool_t completion_queue_updated = HG_FALSE;
 
     for (;;) {
         struct hg_class *hg_class = context->hg_class;
         unsigned int actual_count = 0;
-        hg_bool_t completion_queue_updated = HG_FALSE;
         na_return_t na_ret;
         hg_time_t t1, t2;
 
@@ -1985,17 +1987,13 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
         /* We can't only verify that the completion queue is empty, we need
          * to check whether it was updated or not, as the completion queue
          * may have been emptied in the meantime */
-        hg_thread_mutex_lock(&context->completion_queue_mutex);
-
-        completion_queue_updated = context->completion_queue_updated;
-
-        /* Reset it to false until we check again */
-        context->completion_queue_updated = HG_FALSE;
-
-        hg_thread_mutex_unlock(&context->completion_queue_mutex);
+        if (hg_atomic_cas32(&context->completion_queue_updated, HG_TRUE,
+            HG_FALSE)) {
+            completion_queue_updated = HG_TRUE;
+        }
 
         /* If something was in context completion queue just return */
-        if (completion_queue_updated) {
+        if (completion_queue_updated || progressed) {
             ret = HG_SUCCESS; /* Progressed */
             break;
         }
@@ -2009,10 +2007,11 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
 
-        if (na_ret == NA_SUCCESS)
+        if (na_ret == NA_SUCCESS) {
             /* Trigger NA callbacks and check whether we completed something */
+            progressed = HG_TRUE;
             continue;
-        else if (na_ret == NA_TIMEOUT) {
+        } else if (na_ret == NA_TIMEOUT) {
             break;
         } else {
             HG_LOG_ERROR("Could not make NA Progress");
@@ -2374,7 +2373,7 @@ HG_Core_context_create(hg_class_t *hg_class)
 
     context->hg_class = hg_class;
     HG_QUEUE_INIT(&context->completion_queue);
-    context->completion_queue_updated = HG_FALSE;
+    hg_atomic_set32(&context->completion_queue_updated, HG_FALSE);
 
     context->na_context = NA_Context_create(hg_class->na_class);
     if (!context->na_context) {
