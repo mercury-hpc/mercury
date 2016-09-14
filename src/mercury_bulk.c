@@ -831,20 +831,30 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
     /* Mark operation as completed */
     hg_atomic_incr32(&hg_bulk_op_id->completed);
 
-    hg_completion_entry = (struct hg_completion_entry *) malloc(
-        sizeof(struct hg_completion_entry));
-    if (!hg_completion_entry) {
-        HG_LOG_ERROR("Could not allocate HG completion entry");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
-    hg_completion_entry->op_type = HG_BULK;
-    hg_completion_entry->op_id.hg_bulk_op_id = hg_bulk_op_id;
+    if (hg_bulk_op_id->hg_bulk_origin->eager_mode) {
+        /* In the case of eager bulk transfer, directly trigger the operation
+         * to avoid potential deadlocks */
+        ret = hg_bulk_trigger_entry(hg_bulk_op_id);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not trigger completion entry");
+            goto done;
+        }
+    } else {
+        hg_completion_entry = (struct hg_completion_entry *) malloc(
+            sizeof(struct hg_completion_entry));
+        if (!hg_completion_entry) {
+            HG_LOG_ERROR("Could not allocate HG completion entry");
+            ret = HG_NOMEM_ERROR;
+            goto done;
+        }
+        hg_completion_entry->op_type = HG_BULK;
+        hg_completion_entry->op_id.hg_bulk_op_id = hg_bulk_op_id;
 
-    ret = hg_core_completion_add(context, hg_completion_entry);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not add HG completion entry to completion queue");
-        goto done;
+        ret = hg_core_completion_add(context, hg_completion_entry);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not add HG completion entry to completion queue");
+            goto done;
+        }
     }
 
 done:
