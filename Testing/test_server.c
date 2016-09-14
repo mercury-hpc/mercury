@@ -77,7 +77,7 @@ main(int argc, char *argv[])
             break;
 
         ret = HG_Progress(context, HG_MAX_IDLE_TIME);
-    } while (ret == HG_SUCCESS);
+    } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
 #endif
 
     printf("# Finalizing...\n");
