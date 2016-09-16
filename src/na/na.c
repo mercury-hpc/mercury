@@ -1579,9 +1579,9 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         count++;
     }
 
-    if (actual_count) *actual_count = count;
-
 done:
+    if ((ret == NA_SUCCESS || ret == NA_TIMEOUT) && actual_count)
+        *actual_count = count;
     return ret;
 }
 

@@ -2158,9 +2158,9 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
         count++;
     }
 
-    if (actual_count) *actual_count = count;
-
 done:
+    if ((ret == HG_SUCCESS || ret == HG_TIMEOUT) && actual_count)
+        *actual_count = count;
     return ret;
 }
 
