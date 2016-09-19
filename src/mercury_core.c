@@ -1969,7 +1969,6 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
 {
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_return_t ret = HG_TIMEOUT;
-    hg_bool_t progressed = HG_FALSE;
     hg_bool_t completion_queue_updated = HG_FALSE;
 
     for (;;) {
@@ -1993,10 +1992,13 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
         }
 
         /* If something was in context completion queue just return */
-        if (completion_queue_updated || progressed) {
+        if (completion_queue_updated) {
             ret = HG_SUCCESS; /* Progressed */
             break;
         }
+
+        if (remaining < 0)
+            break;
 
         hg_time_get_current(&t1);
 
@@ -2009,7 +2011,6 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
 
         if (na_ret == NA_SUCCESS) {
             /* Trigger NA callbacks and check whether we completed something */
-            progressed = HG_TRUE;
             continue;
         } else if (na_ret == NA_TIMEOUT) {
             break;
