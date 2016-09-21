@@ -33,7 +33,7 @@ hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data)
     if (*thread == NULL) ret = HG_UTIL_FAIL;
 #else
     if (pthread_create(thread, NULL, f, data)) {
-        HG_UTIL_ERROR_DEFAULT("pthread_create failed");
+        HG_UTIL_ERROR_DEFAULT("pthread_create() failed");
         ret = HG_UTIL_FAIL;
     }
 #endif
@@ -63,7 +63,7 @@ hg_thread_join(hg_thread_t thread)
     CloseHandle(thread);
 #else
     if (pthread_join(thread, NULL)) {
-        HG_UTIL_ERROR_DEFAULT("pthread_join failed");
+        HG_UTIL_ERROR_DEFAULT("pthread_join() failed");
         ret = HG_UTIL_FAIL;
     }
 #endif
@@ -82,9 +82,26 @@ hg_thread_cancel(hg_thread_t thread)
     CloseHandle(thread);
 #else
     if (pthread_cancel(thread)) {
-        HG_UTIL_ERROR_DEFAULT("pthread_cancel failed");
+        HG_UTIL_ERROR_DEFAULT("pthread_cancel() failed");
         ret = HG_UTIL_FAIL;
     }
+#endif
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_thread_yield(void)
+{
+    int ret = HG_UTIL_SUCCESS;
+
+#ifdef _WIN32
+    SwitchToThread();
+#elif defined(__APPLE__)
+    pthread_yield_np();
+#else
+    pthread_yield();
 #endif
 
     return ret;
@@ -104,12 +121,12 @@ hg_thread_key_create(hg_thread_key_t *key)
 
 #ifdef _WIN32
     if ((*key = TlsAlloc()) == TLS_OUT_OF_INDEXES) {
-        HG_UTIL_ERROR_DEFAULT("TlsAlloc failed");
+        HG_UTIL_ERROR_DEFAULT("TlsAlloc() failed");
         ret = HG_UTIL_FAIL;
     }
 #else
     if (pthread_key_create(key, NULL)) {
-        HG_UTIL_ERROR_DEFAULT("pthread_key_create failed");
+        HG_UTIL_ERROR_DEFAULT("pthread_key_create() failed");
         ret = HG_UTIL_FAIL;
     }
 #endif
@@ -125,12 +142,12 @@ hg_thread_key_delete(hg_thread_key_t key)
 
 #ifdef _WIN32
     if (!TlsFree(key)) {
-        HG_UTIL_ERROR_DEFAULT("TlsFree failed");
+        HG_UTIL_ERROR_DEFAULT("TlsFree() failed");
         ret = HG_UTIL_FAIL;
     }
 #else
     if (pthread_key_delete(key)) {
-        HG_UTIL_ERROR_DEFAULT("pthread_key_delete failed");
+        HG_UTIL_ERROR_DEFAULT("pthread_key_delete() failed");
         ret = HG_UTIL_FAIL;
     }
 #endif
@@ -161,12 +178,12 @@ hg_thread_setspecific(hg_thread_key_t key, const void *value)
 
 #ifdef _WIN32
     if (!TlsSetValue(key, (LPVOID) value)) {
-        HG_UTIL_ERROR_DEFAULT("TlsSetValue failed");
+        HG_UTIL_ERROR_DEFAULT("TlsSetValue() failed");
         ret = HG_UTIL_FAIL;
     }
 #else
     if (pthread_setspecific(key, value)) {
-        HG_UTIL_ERROR_DEFAULT("pthread_setspecific failed");
+        HG_UTIL_ERROR_DEFAULT("pthread_setspecific() failed");
         ret = HG_UTIL_FAIL;
     }
 #endif
@@ -183,9 +200,11 @@ hg_thread_getaffinity(hg_thread_t thread, hg_cpu_set_t *cpu_mask)
 #if defined(_WIN32)
     HG_UTIL_ERROR_DEFAULT("not supported");
 #elif defined(__APPLE__)
+    (void)thread;
+    (void)cpu_mask;
 #else
     if (pthread_getaffinity_np(thread, sizeof(hg_cpu_set_t), cpu_mask)) {
-        HG_UTIL_ERROR_DEFAULT("pthread_getaffinity_np failed");
+        HG_UTIL_ERROR_DEFAULT("pthread_getaffinity_np() failed");
         ret = HG_UTIL_FAIL;
     }
 #endif
@@ -201,13 +220,15 @@ hg_thread_setaffinity(hg_thread_t thread, const hg_cpu_set_t *cpu_mask)
 
 #if defined(_WIN32)
     if (!SetThreadAffinityMask(thread, *cpu_mask)) {
-        HG_UTIL_ERROR_DEFAULT("SetThreadAffinityMask failed");
+        HG_UTIL_ERROR_DEFAULT("SetThreadAffinityMask() failed");
         ret = HG_UTIL_FAIL;
     }
 #elif defined(__APPLE__)
+    (void)thread;
+    (void)cpu_mask;
 #else
     if (pthread_setaffinity_np(thread, sizeof(hg_cpu_set_t), cpu_mask)) {
-        HG_UTIL_ERROR_DEFAULT("pthread_setaffinity_np failed");
+        HG_UTIL_ERROR_DEFAULT("pthread_setaffinity_np() failed");
         ret = HG_UTIL_FAIL;
     }
 #endif

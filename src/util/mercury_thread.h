@@ -100,6 +100,14 @@ HG_UTIL_EXPORT int
 hg_thread_cancel(hg_thread_t thread);
 
 /**
+ * Yield the processor.
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_thread_yield(void);
+
+/**
  * Create a thread-specific data key visible to all threads in the process.
  *
  * \param key [OUT]             pointer to thread key object
