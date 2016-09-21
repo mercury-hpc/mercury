@@ -153,7 +153,7 @@ hg_atomic_or32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 #if defined(_WIN32)
     ret = InterlockedOrNoFence(&ptr->value, value);
 #elif defined(__APPLE__)
-    ret = OSAtomicOr32Orig(value, &ptr->value);
+    ret = OSAtomicOr32Orig((uint32_t) value, (volatile uint32_t *) &ptr->value);
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_fetch_or_explicit(ptr, value, memory_order_acq_rel);
 #else
@@ -179,7 +179,7 @@ hg_atomic_xor32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 #if defined(_WIN32)
     ret = InterlockedXorNoFence(&ptr->value, value);
 #elif defined(__APPLE__)
-    ret = OSAtomicXor32Orig(value, &ptr->value);
+    ret = OSAtomicXor32Orig((uint32_t) value, (volatile uint32_t *) &ptr->value);
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_fetch_xor_explicit(ptr, value, memory_order_acq_rel);
 #else
@@ -205,7 +205,7 @@ hg_atomic_and32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 #if defined(_WIN32)
     ret = InterlockedAndNoFence(&ptr->value, value);
 #elif defined(__APPLE__)
-    ret = OSAtomicAnd32Orig(value, &ptr->value);
+    ret = OSAtomicAnd32Orig((uint32_t) value, (volatile uint32_t *) &ptr->value);
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_fetch_and_explicit(ptr, value, memory_order_acq_rel);
 #else
