@@ -33,7 +33,7 @@ if(NOT WIN32 AND NOT APPLE)
 endif()
 
 # Atomics
-if(NOT WIN32 AND NOT APPLE)
+if(NOT WIN32)
   # Detect stdatomic
   check_include_files("stdatomic.h" HG_UTIL_HAS_STDATOMIC_H)
   # OpenPA

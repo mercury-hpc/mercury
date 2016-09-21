@@ -223,7 +223,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     }
 
     /* Register memory */
-    ret = HG_Bulk_create(hg_class, nsegments, buf_ptrs, buf_sizes,
+    ret = HG_Bulk_create(hg_class, nsegments, buf_ptrs, (hg_size_t *) buf_sizes,
         HG_BULK_READ_ONLY, &bulk_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");

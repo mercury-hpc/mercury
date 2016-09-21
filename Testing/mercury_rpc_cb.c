@@ -104,7 +104,7 @@ hg_addr_t *hg_addr_table;
 static HG_INLINE int
 rpc_open(const char *path, rpc_handle_t handle, int *event_id)
 {
-    printf("Called rpc_open of %s with cookie %lu\n", path, handle.cookie);
+    printf("Called rpc_open of %s with cookie %llu\n", path, handle.cookie);
     *event_id = 232;
     return HG_SUCCESS;
 }
@@ -320,7 +320,7 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
     bulk_args->fildes = fildes;
 
     /* Create a new block handle to read the data */
-    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, (hg_size_t *) &bulk_args->nbytes,
         HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Pull bulk data */
@@ -435,7 +435,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
     printf("Start reading first chunk of %lu bytes...\n", nbytes_read);
 
     /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, (hg_size_t *) &bulk_args->nbytes,
             HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Pull bulk data */
@@ -892,7 +892,7 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
     bulk_args->fildes = in_struct.fildes;
 
     /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, (hg_size_t *) &bulk_args->nbytes,
             HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Pull bulk data */
@@ -983,7 +983,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     bulk_args->fildes = in_struct.fildes;
 
     /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, (hg_size_t *) &bulk_args->nbytes,
             HG_BULK_READ_ONLY, &local_bulk_handle);
 
     /* Call bulk_write */

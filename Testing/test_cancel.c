@@ -59,6 +59,7 @@ done:
     return ret;
 }
 
+#ifdef NA_HAS_CCI
 static hg_return_t
 hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info)
 {
@@ -95,6 +96,7 @@ hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info)
 done:
     return ret;
 }
+#endif
 
 static hg_return_t
 cancel_rpc(hg_context_t *context, hg_request_class_t *request_class,
@@ -151,6 +153,7 @@ done:
     return ret;
 }
 
+#ifdef NA_HAS_CCI
 static hg_return_t
 cancel_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     hg_request_class_t *request_class, hg_addr_t addr)
@@ -182,7 +185,7 @@ cancel_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     }
 
     /* Register memory */
-    ret = HG_Bulk_create(hg_class, 1, buf_ptr, &bulk_size,
+    ret = HG_Bulk_create(hg_class, 1, buf_ptr, (hg_size_t *) &bulk_size,
             HG_BULK_READ_ONLY, &bulk_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
@@ -223,6 +226,7 @@ cancel_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 done:
     return ret;
 }
+#endif
 
 /******************************************************************************/
 int

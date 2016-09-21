@@ -49,10 +49,10 @@ thread_cb_incr64(void *arg)
 
     incr = hg_atomic_incr64(atomic_int64);
     if (!incr)
-        fprintf(stderr, "Error: incr is %ld\n", incr);
+        fprintf(stderr, "Error: incr is %lld\n", incr);
     incr = hg_atomic_decr64(atomic_int64);
     if (incr)
-        fprintf(stderr, "Error: incr is %ld\n", incr);
+        fprintf(stderr, "Error: incr is %lld\n", incr);
 
     hg_thread_exit(thread_ret);
     return thread_ret;
@@ -119,7 +119,7 @@ main(int argc, char *argv[])
 
     value64 = hg_atomic_get64(&atomic_int64);
     if (value64 != 100) {
-        fprintf(stderr, "Error: atomic value is %ld\n", value64);
+        fprintf(stderr, "Error: atomic value is %lld\n", value64);
         ret = EXIT_FAILURE;
     }
 

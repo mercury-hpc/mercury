@@ -174,7 +174,7 @@ write_rpc(int fd, void *buf, size_t count)
     }
 
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_class, 1, &buf, &count, HG_BULK_READ_ONLY,
+    hg_ret = HG_Bulk_create(hg_class, 1, &buf, (hg_size_t *) &count, HG_BULK_READ_ONLY,
             &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
@@ -254,7 +254,7 @@ read_rpc(int fd, void *buf, size_t count)
     }
 
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_class, 1, &buf, &count, HG_BULK_READWRITE,
+    hg_ret = HG_Bulk_create(hg_class, 1, &buf, (hg_size_t *) &count, HG_BULK_READWRITE,
             &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");

@@ -138,7 +138,7 @@ int main(int argc, char *argv[])
 
     /* Register memory */
     hg_ret = HG_Bulk_create(hg_class, (hg_uint32_t) bulk_size_x, bulk_buf,
-        bulk_sizes, HG_BULK_READ_ONLY, &bulk_handle);
+        (hg_size_t *) bulk_sizes, HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         return EXIT_FAILURE;

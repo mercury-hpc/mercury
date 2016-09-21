@@ -281,7 +281,7 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
 #endif
 
         /* Create bulk buffer that can be used for receiving data */
-        HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, &bulk_size, HG_BULK_READWRITE,
+        HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, (hg_size_t *) &bulk_size, HG_BULK_READWRITE,
                 &hg_test_local_bulk_handle_g);
     } else {
         /* Look up addr using port name info */
@@ -339,7 +339,7 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
     hg_test_register(HG_CLASS_DEFAULT);
 
     /* Create bulk buffer that can be used for receiving data */
-    HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, &bulk_size, HG_BULK_READWRITE,
+    HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, (hg_size_t *) &bulk_size, HG_BULK_READWRITE,
             &hg_test_local_bulk_handle_g);
 
     if (hg_test_addr_table_size_g > 1) {
