@@ -37,7 +37,9 @@ struct na_test_params {
 
 /* NA test routines */
 static int test_send(struct na_test_params *params);
+#ifdef NA_HAS_CCI
 static int test_bulk(struct na_test_params *params);
+#endif
 
 /* NA test user-defined callbacks */
 static na_return_t
@@ -146,7 +148,7 @@ ack_expected_recv_cb(const struct na_cb_info *callback_info)
     }
     if (!error)
         printf("Successfully reset %zu bytes!\n",
-            params->bulk_size * sizeof(int));
+            (size_t) params->bulk_size * sizeof(int));
 
     ret = NA_Mem_deregister(params->na_class, params->local_mem_handle);
     if (ret != NA_SUCCESS) {
@@ -247,6 +249,7 @@ test_send(struct na_test_params *params)
     return EXIT_SUCCESS;
 }
 
+#ifdef NA_HAS_CCI
 static int
 test_bulk(struct na_test_params *params)
 {
@@ -308,6 +311,7 @@ test_bulk(struct na_test_params *params)
 
     return EXIT_SUCCESS;
 }
+#endif
 
 int
 main(int argc, char **argv)

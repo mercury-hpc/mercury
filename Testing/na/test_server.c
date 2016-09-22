@@ -160,7 +160,7 @@ bulk_get_cb(const struct na_cb_info *callback_info)
     }
     if (!error)
         printf("Successfully transfered %zu bytes!\n",
-            params->bulk_size * sizeof(int));
+            (size_t) params->bulk_size * sizeof(int));
 
     /* Reset bulk_buf */
     printf("Resetting buffer\n");
@@ -241,7 +241,7 @@ static int
 test_msg_respond(struct na_test_params *params, na_tag_t send_tag)
 {
     na_return_t na_ret;
-    int ret;
+    int ret = EXIT_SUCCESS;
 
     /* Respond back */
     sprintf(params->send_buf, "Hello Client!");

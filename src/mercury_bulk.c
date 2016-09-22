@@ -293,7 +293,7 @@ hg_bulk_memcpy_get(na_class_t HG_BULK_UNUSED *na_class,
 /**
  * Serialize memcpy
  */
-static HG_INLINE na_return_t
+static HG_INLINE hg_return_t
 hg_bulk_serialize_memcpy(char **dest, ssize_t *dest_left, const void *src,
     size_t n)
 {
@@ -314,7 +314,7 @@ done:
 /**
  * Deserialize memcpy
  */
-static HG_INLINE na_return_t
+static HG_INLINE hg_return_t
 hg_bulk_deserialize_memcpy(const char **src, ssize_t *src_left, void *dest,
     size_t n)
 {

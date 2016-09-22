@@ -37,7 +37,9 @@ struct na_test_params {
 
 /* NA test routines */
 static int test_send_respond(struct na_test_params *params, na_tag_t send_tag);
+#ifdef NA_HAS_CCI
 static int test_bulk_prepare(struct na_test_params *params);
+#endif
 
 static na_return_t
 msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
@@ -188,7 +190,7 @@ bulk_get_cb(const struct na_cb_info *callback_info)
     }
     if (!error)
         printf("Successfully transfered %zu bytes!\n",
-            params->bulk_size * sizeof(int));
+            (size_t) params->bulk_size * sizeof(int));
 
     /* Reset bulk_buf */
     printf("Resetting buffer\n");
@@ -272,6 +274,7 @@ test_send_respond(struct na_test_params *params, na_tag_t send_tag)
     return EXIT_SUCCESS;
 }
 
+#ifdef NA_HAS_CCI
 static int
 test_bulk_prepare(struct na_test_params *params)
 {
@@ -306,6 +309,7 @@ test_bulk_prepare(struct na_test_params *params)
 
     return EXIT_SUCCESS;
 }
+#endif
 
 int
 main(int argc, char *argv[])
