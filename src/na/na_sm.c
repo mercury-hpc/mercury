@@ -196,7 +196,7 @@ struct na_sm_info_lookup {
 struct na_sm_info_recv_unexpected {
     void *buf;
     size_t buf_size;
-    struct na_sm_unexpected_info *unexpected_info;
+    struct na_sm_unexpected_info unexpected_info;
 };
 
 /* Expected recv info */
@@ -1709,18 +1709,7 @@ na_sm_progress_unexpected(na_class_t *na_class, struct na_sm_addr *poll_addr,
     struct na_sm_op_id *na_sm_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    /* If no error and message arrived, keep a copy of the struct in
-     * the unexpected message queue */
-    na_sm_unexpected_info = (struct na_sm_unexpected_info *) malloc(
-        sizeof(struct na_sm_unexpected_info));
-    if (!na_sm_unexpected_info) {
-        NA_LOG_ERROR("Could not allocate unexpected info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    na_sm_unexpected_info->na_sm_addr = poll_addr;
-    na_sm_unexpected_info->na_sm_hdr = na_sm_hdr;
-
+    /* Pop op ID from queue */
     hg_thread_mutex_lock(
         &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
     na_sm_op_id = HG_QUEUE_FIRST(
@@ -1729,17 +1718,31 @@ na_sm_progress_unexpected(na_class_t *na_class, struct na_sm_addr *poll_addr,
         entry);
     hg_thread_mutex_unlock(
         &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+
     if (na_sm_op_id) {
         /* If an op id was pushed, associate unexpected info to this
          * operation ID and complete operation */
-        na_sm_op_id->info.recv_unexpected.unexpected_info =
-            na_sm_unexpected_info;
+        na_sm_op_id->info.recv_unexpected.unexpected_info.na_sm_addr = poll_addr;
+        na_sm_op_id->info.recv_unexpected.unexpected_info.na_sm_hdr = na_sm_hdr;
+
         ret = na_sm_complete(na_sm_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not complete operation");
             goto done;
         }
     } else {
+        /* If no error and message arrived, keep a copy of the struct in
+         * the unexpected message queue (should rarely happen) */
+        na_sm_unexpected_info = (struct na_sm_unexpected_info *) malloc(
+            sizeof(struct na_sm_unexpected_info));
+        if (!na_sm_unexpected_info) {
+            NA_LOG_ERROR("Could not allocate unexpected info");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
+        na_sm_unexpected_info->na_sm_addr = poll_addr;
+        na_sm_unexpected_info->na_sm_hdr = na_sm_hdr;
+
         /* Otherwise push the unexpected message into our unexpected queue so
          * that we can treat it later when a recv_unexpected is posted */
         hg_thread_mutex_lock(
@@ -1824,7 +1827,7 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id)
             break;
         case NA_CB_RECV_UNEXPECTED: {
             struct na_sm_unexpected_info *na_sm_unexpected_info =
-                na_sm_op_id->info.recv_unexpected.unexpected_info;
+                &na_sm_op_id->info.recv_unexpected.unexpected_info;
             struct na_sm_copy_buf *na_sm_copy_buf;
 
             if (canceled) {
@@ -1855,7 +1858,6 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id)
             /* Free copy buffer atomically */
             na_sm_free_copy_buf(na_sm_copy_buf,
                 na_sm_unexpected_info->na_sm_hdr.hdr.buf_idx);
-            free(na_sm_unexpected_info);
             break;
         }
         case NA_CB_SEND_EXPECTED:
@@ -2094,9 +2096,9 @@ na_sm_op_create(na_class_t NA_UNUSED *na_class)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
 
-    static int ntimes = 1;
-    NA_LOG_DEBUG("Called %d times", ntimes);
-    ntimes++;
+//    static int ntimes = 1;
+//    NA_LOG_DEBUG("Called %d times", ntimes);
+//    ntimes++;
     na_sm_op_id = (struct na_sm_op_id *) malloc(sizeof(struct na_sm_op_id));
     if (!na_sm_op_id) {
         NA_LOG_ERROR("Could not allocate NA SM operation ID");
@@ -2535,7 +2537,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
     na_sm_op_id->info.recv_unexpected.buf = buf;
     na_sm_op_id->info.recv_unexpected.buf_size = buf_size;
-    na_sm_op_id->info.recv_unexpected.unexpected_info = NULL;
+    na_sm_op_id->info.recv_unexpected.unexpected_info.na_sm_addr = NULL;
 
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
@@ -2552,7 +2554,9 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
     if (na_sm_unexpected_info) {
         na_sm_op_id->info.recv_unexpected.unexpected_info =
-            na_sm_unexpected_info;
+            *na_sm_unexpected_info;
+        free(na_sm_unexpected_info);
+
         ret = na_sm_complete(na_sm_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not complete operation");
