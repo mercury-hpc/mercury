@@ -8,200 +8,113 @@
  * found at the root of the source code distribution tree.
  */
 
-/*
- * Copyright (c) 2005-2008, Simon Howard
+/* Code below is derived from sys/queue.h which follows the below notice:
  *
- * Permission to use, copy, modify, and/or distribute this software
- * for any purpose with or without fee is hereby granted, provided
- * that the above copyright notice and this permission notice appear
- * in all copies.
+ * Copyright (c) 1991, 1993
+ *  The Regents of the University of California.  All rights reserved.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
- * WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
- * AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR
- * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
- * LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
- * NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
- * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
+ *  @(#)queue.h 8.5 (Berkeley) 8/20/94
  */
 
 #ifndef MERCURY_LIST_H
 #define MERCURY_LIST_H
 
-#include "mercury_util_config.h"
+#define HG_LIST_HEAD_INITIALIZER(name)  { NULL }
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#define HG_LIST_HEAD_INIT(struct_head_name, var_name)   \
+    struct struct_head_name var_name = HG_LIST_HEAD_INITIALIZER(var_name)
 
-typedef struct hg_list hg_list_t;
+#define HG_LIST_HEAD_DECL(struct_head_name, struct_entry_name)  \
+    struct struct_head_name {                                   \
+        struct struct_entry_name *head;                         \
+    }
 
-/**
- * Represents an entry in a doubly-linked list.
- */
+#define HG_LIST_HEAD(struct_entry_name)     \
+    struct {                                \
+        struct struct_entry_name *head;     \
+    }
 
-typedef struct hg_list_entry hg_list_entry_t;
+#define HG_LIST_ENTRY(struct_entry_name)    \
+    struct {                                \
+        struct struct_entry_name *next;     \
+        struct struct_entry_name **prev;    \
+    }
 
-/**
- * A value stored in a list.
- */
+#define HG_LIST_INIT(head_ptr) do {         \
+    (head_ptr)->head = NULL;                \
+} while (/*CONSTCOND*/0)
 
-typedef void *hg_list_value_t;
+#define HG_LIST_IS_EMPTY(head_ptr)          \
+    ((head_ptr)->head == NULL)
 
-/**
- * A null \ref hg_list_value_t.
- */
+#define HG_LIST_FIRST(head_ptr)             \
+    ((head_ptr)->head)
 
-#define HG_LIST_NULL ((void *) 0)
+#define HG_LIST_NEXT(entry_ptr, entry_field_name)   \
+    ((entry_ptr)->entry_field_name.next)
 
-/**
- * Callback function used to determine of two values in a list are
- * equal.
- *
- * \param value1      The first value to compare.
- * \param value2      The second value to compare.
- * \return            A non-zero value if value1 and value2 are equal, zero
- *                    if they are not equal.
- */
-typedef int (*hg_list_equal_func_t)(hg_list_value_t value1, hg_list_value_t value2);
+#define HG_LIST_INSERT_AFTER(list_entry_ptr, entry_ptr, entry_field_name) do { \
+    if (((entry_ptr)->entry_field_name.next =                               \
+        (list_entry_ptr)->entry_field_name.next) != NULL)                   \
+        (list_entry_ptr)->entry_field_name.next->entry_field_name.prev =    \
+            &(entry_ptr)->entry_field_name.next;                            \
+    (list_entry_ptr)->entry_field_name.next = (entry_ptr);                  \
+    (entry_ptr)->entry_field_name.prev =                                    \
+        &(list_entry_ptr)->entry_field_name.next;                           \
+} while (/*CONSTCOND*/0)
 
-/**
- * Create a new list.
- *
- * \return           A new list, or NULL if it was not possible to allocate
- *                   the memory.
- */
-HG_UTIL_EXPORT hg_list_t *
-hg_list_new(void);
+#define HG_LIST_INSERT_BEFORE(list_entry_ptr, entry_ptr, entry_field_name) do { \
+    (entry_ptr)->entry_field_name.prev =                    \
+        (list_entry_ptr)->entry_field_name.prev;            \
+    (entry_ptr)->entry_field_name.next = (list_entry_ptr);  \
+    *(list_entry_ptr)->entry_field_name.prev = (entry_ptr); \
+    (list_entry_ptr)->entry_field_name.prev =               \
+        &(entry_ptr)->entry_field_name.next;                \
+} while (/*CONSTCOND*/0)
 
-/**
- * Free an entire list.
- *
- * \param list         The list to free.
- */
-HG_UTIL_EXPORT void
-hg_list_free(hg_list_t *list);
+#define HG_LIST_INSERT_HEAD(head_ptr, entry_ptr, entry_field_name) do {     \
+    if (((entry_ptr)->entry_field_name.next = (head_ptr)->head) != NULL)    \
+        (head_ptr)->head->entry_field_name.prev =                           \
+            &(entry_ptr)->entry_field_name.next;                            \
+    (head_ptr)->head = (entry_ptr);                                         \
+    (entry_ptr)->entry_field_name.prev = &(head_ptr)->head;                 \
+} while (/*CONSTCOND*/0)
 
-/**
- * Append a value to the head of a list.
- *
- * \param list         Pointer to the list to insert to.
- * \param data         The value to insert.
- *
- * \return             The new entry in the list, or NULL if it was not
- *                     possible to allocate the memory for the new entry.
- */
-HG_UTIL_EXPORT hg_list_entry_t *
-hg_list_insert_head(hg_list_t *list, hg_list_value_t data);
+/* TODO would be nice to not have any condition */
+#define HG_LIST_REMOVE(entry_ptr, entry_field_name) do {                      \
+    if ((entry_ptr)->entry_field_name.next != NULL)                           \
+        (entry_ptr)->entry_field_name.next->entry_field_name.prev =           \
+            (entry_ptr)->entry_field_name.prev;                               \
+    *(entry_ptr)->entry_field_name.prev = (entry_ptr)->entry_field_name.next; \
+} while (/*CONSTCOND*/0)
 
-/**
- * Insert a value before a specific entry in a list.
- *
- * \param entry        Pointer to the list entry.
- * \param data         The value to insert.
- *
- * \return             The new entry in the list, or NULL if it was not
- *                     possible to allocate the memory for the new entry.
- */
-HG_UTIL_EXPORT hg_list_entry_t *
-hg_list_insert_before(hg_list_entry_t *entry, hg_list_value_t data);
-
-/**
- * Insert a value after a specific entry in a list.
- *
- * \param entry        Pointer to the list entry.
- * \param data         The value to insert.
- *
- * \return             The new entry in the list, or NULL if it was not
- *                     possible to allocate the memory for the new entry.
- */
-HG_UTIL_EXPORT hg_list_entry_t *
-hg_list_insert_after(hg_list_entry_t *entry, hg_list_value_t data);
-
-/**
- * Query if any values are currently in a list.
- *
- * \param queue      The list.
- *
- * \return           False if the list is not empty, true if the queue is empty.
- */
-HG_UTIL_EXPORT hg_util_bool_t
-hg_list_is_empty(hg_list_t *list);
-
-/**
- * Retrieve the first entry in a list.
- *
- * \param list         Pointer to the list.
- *
- * \return             The first entry in the list, or NULL if there was no
- *                     entry in the list.
- */
-HG_UTIL_EXPORT hg_list_entry_t *
-hg_list_first(hg_list_t *list);
-
-/** 
- * Retrieve the next entry in a list.
- *
- * \param entry        Pointer to the list entry.
- *
- * \return             The next entry in the list, or NULL if this was the
- *                     last entry in the list.
- */
-HG_UTIL_EXPORT hg_list_entry_t *
-hg_list_next(hg_list_entry_t *entry);
-
-/**
- * Retrieve the value at a list entry.
- *
- * \param entry        Pointer to the list entry.
- *
- * \return             The value stored at the list entry.
- */
-HG_UTIL_EXPORT hg_list_value_t
-hg_list_data(hg_list_entry_t *entry);
-
-/**
- * Remove an entry from a list.
- *
- * \param entry      The list entry to remove.
- *
- * \return           Non-negative on success or negative on failure
- */
-HG_UTIL_EXPORT int
-hg_list_remove_entry(hg_list_entry_t *entry);
-
-/**
- * Remove all occurrences of a particular value from a list.
- *
- * \param list       Pointer to the list.
- * \param callback   Function to invoke to compare values in the list
- *                   with the value to be removed.
- * \param data       The value to remove from the list.
- *
- * \return           The number of entries removed from the list.
- */
-HG_UTIL_EXPORT unsigned int
-hg_list_remove_data(hg_list_t *list, hg_list_equal_func_t callback,
-        hg_list_value_t data);
-
-/**
- * Find the entry for a particular value in a list.
- *
- * \param list           The list to search.
- * \param callback       Function to invoke to compare values in the list
- *                       with the value to be searched for.
- * \param data           The value to search for.
- * \return               The list entry of the item being searched for, or
- *                       NULL if not found.
- */
-HG_UTIL_EXPORT hg_list_entry_t *
-hg_list_find_data(hg_list_t *list, hg_list_equal_func_t callback,
-        hg_list_value_t data);
-
-#ifdef __cplusplus
-}
-#endif
+#define HG_LIST_FOREACH(var, head_ptr, entry_field_name)    \
+    for ((var) = ((head_ptr)->head);                        \
+        (var);                                              \
+        (var) = ((var)->entry_field_name.next))
 
 #endif /* MERCURY_LIST_H */
-

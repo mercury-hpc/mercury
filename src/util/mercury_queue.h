@@ -97,7 +97,7 @@
         (var) = ((var)->entry_field_name.next))
 
 /**
- * Avoid using those for performance reasons
+ * Avoid using those for performance reasons or use mercury_list.h instead
  */
 
 #define HG_QUEUE_REMOVE(head_ptr, entry_ptr, type, entry_field_name) do {   \
