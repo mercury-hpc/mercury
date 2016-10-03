@@ -12,6 +12,7 @@
 #define NA_PRIVATE_H
 
 #include "na.h"
+#include "mercury_queue.h"
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -25,13 +26,23 @@ struct na_info {
 };
 
 /* Private callback type for NA plugins */
-typedef void (*na_plugin_cb_t)(struct na_cb_info *callback_info, void *arg);
+typedef void (*na_plugin_cb_t)(void *arg);
 
 /* NA execution context, plugins may use plugin context if protocol supports
  * progress on separate contexts/queues/etc */
 typedef void *na_plugin_context_t;
 struct na_context {
     na_plugin_context_t plugin_context;
+};
+
+/* Completion data stored in completion queue */
+struct na_cb_completion_data {
+    na_cb_t callback;                   /* Pointer to function */
+    struct na_cb_info callback_info;    /* Callback info struct */
+    na_plugin_cb_t plugin_callback;     /* Callback which will be called after
+                                         * the user callback returns. */
+    void *plugin_callback_args;         /* Argument to plugin_callback */
+    HG_QUEUE_ENTRY(na_cb_completion_data) entry; /* Completion queue entry */
 };
 
 /* NA class definition */
@@ -63,6 +74,15 @@ struct na_class {
     (*context_destroy)(
             na_class_t *na_class,
             na_plugin_context_t plugin_context
+            );
+    na_op_id_t
+    (*op_create)(
+            na_class_t *na_class
+            );
+    na_return_t
+    (*op_destroy)(
+            na_class_t *na_class,
+            na_op_id_t op_id
             );
     na_return_t
     (*addr_lookup)(
@@ -287,22 +307,15 @@ extern "C" {
 /**
  * Add callback to context completion queue.
  *
- * \param context [IN]              pointer to context of execution
- * \param callback [IN]             pointer to function
- * \param callback_info [IN]        callback info struct
- * \param plugin_callback [IN]      Callback which will be called after the user
- *                                  callback returns.
- * \param plugin_callback_args [IN] Argument to pass to the plugin_callback
+ * \param context [IN]                  pointer to context of execution
+ * \param na_cb_completion_data [IN]    pointer to completion data
  *
  * \return NA_SUCCESS or corresponding NA error code (failure is not an option)
  */
 NA_EXPORT na_return_t
 na_cb_completion_add(
-        na_context_t      *context,
-        na_cb_t            callback,
-        struct na_cb_info *callback_info,
-        na_plugin_cb_t     plugin_callback,
-        void              *plugin_callback_args
+        na_context_t                 *context,
+        struct na_cb_completion_data *na_cb_completion_data
         );
 
 #ifdef __cplusplus

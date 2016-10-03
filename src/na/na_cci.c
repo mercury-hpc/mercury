@@ -56,6 +56,7 @@ struct na_cci_addr {
     hg_atomic_int32_t refcnt; /* Reference counter */
     na_bool_t unexpected; /* Address generated from unexpected recv */
     na_bool_t self; /* Boolean for self */
+    HG_LIST_ENTRY(na_cci_addr) entry;
 };
 
 struct na_cci_mem_handle {
@@ -140,6 +141,7 @@ struct na_cci_op_id {
         struct na_cci_info_put put;
         struct na_cci_info_get get;
     } info;
+    struct na_cb_completion_data completion_data;
 };
 
 struct na_cci_private_data {
@@ -150,7 +152,7 @@ struct na_cci_private_data {
     hg_thread_mutex_t unexpected_msg_queue_mutex; /* Mutex */
     HG_QUEUE_HEAD(na_cci_op_id) unexpected_op_queue; /* Unexpected op queue */
     hg_thread_mutex_t unexpected_op_queue_mutex; /* Mutex */
-    hg_list_t *accept_conn_list; /* List of accepted connections */
+    HG_LIST_HEAD(na_cci_addr) accept_conn_list; /* List of accepted connections */
     hg_thread_mutex_t accept_conn_list_mutex; /* Mutex */
     char *uri;
 #ifdef NA_CCI_HAS_POLL
@@ -179,6 +181,9 @@ typedef union cci_msg {
 /* Local Prototypes */
 /********************/
 
+static void
+op_id_decref(na_cci_op_id_t *na_cci_op_id);
+
 /* check_protocol */
 static na_bool_t
 na_cci_check_protocol(const char *protocol_name);
@@ -201,6 +206,14 @@ na_cci_init(na_class_t * na_class);
 /* finalize */
 static na_return_t
 na_cci_finalize(na_class_t * na_class);
+
+/* op_create */
+static na_op_id_t
+na_cci_op_create(na_class_t *na_class);
+
+/* op_destroy */
+static na_return_t
+na_cci_op_destroy(na_class_t *na_class, na_op_id_t op_id);
 
 /* addr_lookup */
 static na_return_t
@@ -330,7 +343,7 @@ na_cci_complete(na_cci_addr_t *na_cci_addr, struct na_cci_op_id *na_cci_op_id,
     na_return_t ret);
 
 static void
-na_cci_release(struct na_cb_info *callback_info, void *arg);
+na_cci_release(void *arg);
 
 /* cancel */
 static na_return_t
@@ -348,6 +361,8 @@ const na_class_t na_cci_class_g = {
     na_cci_finalize,                        /* finalize */
     NULL,                                   /* context_create */
     NULL,                                   /* context_destroy */
+    na_cci_op_create,                       /* op_create */
+    na_cci_op_destroy,                      /* op_destroy */
     na_cci_addr_lookup,                     /* addr_lookup */
     na_cci_addr_free,                       /* addr_free */
     na_cci_addr_self,                       /* addr_self */
@@ -540,20 +555,11 @@ NA_CCI_Get_port_name(na_class_t *na_class)
 static na_return_t
 na_cci_init(na_class_t * na_class)
 {
-    hg_list_t *accept_conn_list = NULL;
     na_return_t ret = NA_SUCCESS;
 
     HG_QUEUE_INIT(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
     HG_QUEUE_INIT(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue);
-
-    /* Create list of accepted connections */
-    accept_conn_list = hg_list_new();
-    if (!accept_conn_list) {
-        NA_LOG_ERROR("Could not create accepted connection list");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
-    NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list = accept_conn_list;
+    HG_LIST_INIT(&NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list);
 
     /* Initialize mutex/cond */
     hg_thread_mutex_init(&NA_CCI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
@@ -564,7 +570,6 @@ na_cci_init(na_class_t * na_class)
     hg_thread_mutex_init(
         &NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list_mutex);
 
-out:
     if (ret != NA_SUCCESS) {
         na_cci_finalize(na_class);
     }
@@ -582,20 +587,12 @@ na_cci_finalize(na_class_t * na_class)
     free(priv->uri);
 
     /* Free connections */
-    while (!hg_list_is_empty(priv->accept_conn_list)) {
-        hg_list_entry_t *entry = hg_list_first(priv->accept_conn_list);
-        na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) hg_list_data(entry);
+    while (!HG_LIST_IS_EMPTY(&priv->accept_conn_list)) {
+        na_cci_addr_t *na_cci_addr = HG_LIST_FIRST(&priv->accept_conn_list);
+        HG_LIST_REMOVE(na_cci_addr, entry);
 
         addr_decref(na_cci_addr);
-
-        /* Remove the entries as we go */
-        if (hg_list_remove_entry(entry) != HG_UTIL_SUCCESS) {
-            NA_LOG_ERROR("Could not remove entry");
-            ret = NA_INVALID_PARAM;
-        }
     }
-    /* Free accepted connection list */
-    hg_list_free(priv->accept_conn_list);
 
     /* Check that unexpected op queue is empty */
     if (!HG_QUEUE_IS_EMPTY(&priv->unexpected_op_queue)) {
@@ -634,8 +631,40 @@ na_cci_finalize(na_class_t * na_class)
 }
 
 /*---------------------------------------------------------------------------*/
+static na_op_id_t
+na_cci_op_create(na_class_t NA_UNUSED *na_class)
+{
+    na_cci_op_id_t *na_cci_op_id = NULL;
+
+    na_cci_op_id = (na_cci_op_id_t *) malloc(sizeof(na_cci_op_id_t));
+    if (!na_cci_op_id) {
+        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
+        goto done;
+    }
+    memset(na_cci_op_id, 0, sizeof(na_cci_op_id_t));
+    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
+    /* Completed by default */
+    hg_atomic_set32(&na_cci_op_id->completed, 1);
+
+done:
+    return (na_op_id_t) na_cci_op_id;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
+na_cci_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
+{
+    na_cci_op_id_t *na_cci_op_id = (na_cci_op_id_t *) op_id;
+    na_return_t ret = NA_SUCCESS;
+
+    op_id_decref(na_cci_op_id);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_cci_addr_lookup(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, const char *name, na_op_id_t * op_id)
 {
     cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
@@ -645,18 +674,22 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    /* Allocate op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_cci_op_id = (na_cci_op_id_t *) *op_id;
+        hg_atomic_incr32(&na_cci_op_id->refcnt);
+    } else {
+        na_cci_op_id = (na_cci_op_id_t *) na_cci_op_create(na_class);
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not create NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
     }
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_LOOKUP;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
 
@@ -674,17 +707,17 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
     /* one for the lookup callback and one for the caller to hold until addr_free().
      * na_cci_complete will decref for the lookup callback.
      */
-    hg_atomic_set32(&na_cci_addr->refcnt, 2);
+    hg_atomic_set32(&na_cci_addr->refcnt, 1);
     na_cci_addr->unexpected = NA_FALSE;
     na_cci_addr->self = NA_FALSE;
     na_cci_addr->na_cci_op_id = na_cci_op_id;
     na_cci_op_id->info.lookup.addr = (na_addr_t) na_cci_addr;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE)
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_cci_op_id;
 
-    rc = cci_connect(e, name, uri, strlen(uri) + 1, CCI_CONN_ATTR_RO,
+    rc = cci_connect(e, name, uri, (uint32_t) strlen(uri) + 1, CCI_CONN_ATTR_RO,
         na_cci_addr, 0, NULL);
     if (rc) {
         NA_LOG_ERROR("cci_connect(%s) failed with %s", name,
@@ -695,7 +728,7 @@ na_cci_addr_lookup(na_class_t NA_UNUSED * na_class, na_context_t * context,
 out:
     if (ret != NA_SUCCESS) {
         free(na_cci_addr);
-        free(na_cci_op_id);
+        na_cci_op_destroy(na_class, na_cci_op_id);
     }
     return ret;
 }
@@ -900,24 +933,28 @@ na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t * context,
 
     addr_addref(na_cci_addr); /* for na_cci_complete() */
 
-    /* Allocate op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_cci_op_id = (na_cci_op_id_t *) *op_id;
+        hg_atomic_incr32(&na_cci_op_id->refcnt);
+    } else {
+        na_cci_op_id = (na_cci_op_id_t *) na_cci_op_create(na_class);
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not create NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
     }
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_SEND_UNEXPECTED;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
     na_cci_op_id->info.send_unexpected.op_id = 0;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE)
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_cci_op_id;
 
     msg.send.expect = 0;
@@ -941,7 +978,7 @@ na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t * context,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        free(na_cci_op_id);
+        na_cci_op_destroy(na_class, na_cci_op_id);
     }
     return ret;
 }
@@ -956,25 +993,29 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
     struct na_cci_info_recv_unexpected *rx = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    /* Allocate na_op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_cci_op_id = (na_cci_op_id_t *) *op_id;
+        hg_atomic_incr32(&na_cci_op_id->refcnt);
+    } else {
+        na_cci_op_id = (na_cci_op_id_t *) na_cci_op_create(na_class);
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not create NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
     }
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_RECV_UNEXPECTED;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
     na_cci_op_id->info.recv_unexpected.buf = buf;
     na_cci_op_id->info.recv_unexpected.buf_size = (cci_size_t) buf_size;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE)
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_cci_op_id;
 
     /* Look for an unexpected message already received */
@@ -1009,7 +1050,7 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
 
 out:
     if (ret != NA_SUCCESS) {
-        free(na_cci_op_id);
+        na_cci_op_destroy(na_class, na_cci_op_id);
     }
     return ret;
 }
@@ -1124,24 +1165,28 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 
     addr_addref(na_cci_addr); /* for na_cci_complete() */
 
-    /* Allocate op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_cci_op_id = (na_cci_op_id_t *) *op_id;
+        hg_atomic_incr32(&na_cci_op_id->refcnt);
+    } else {
+        na_cci_op_id = (na_cci_op_id_t *) na_cci_op_create(na_class);
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not create NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
     }
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_SEND_EXPECTED;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
     na_cci_op_id->info.send_expected.op_id = 0;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE)
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_cci_op_id;
 
     msg.send.expect = 1;
@@ -1165,14 +1210,14 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        free(na_cci_op_id);
+        na_cci_op_destroy(na_class, na_cci_op_id);
     }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class,
+na_cci_msg_recv_expected(na_class_t * na_class,
     na_context_t * context, na_cb_t callback, void *arg, void *buf,
     na_size_t buf_size, na_addr_t source, na_tag_t tag, na_op_id_t * op_id)
 {
@@ -1191,18 +1236,22 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class,
 
     addr_addref(na_cci_addr); /* for na_cci_complete() */
 
-    /* Allocate na_op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_cci_op_id = (na_cci_op_id_t *) *op_id;
+        hg_atomic_incr32(&na_cci_op_id->refcnt);
+    } else {
+        na_cci_op_id = (na_cci_op_id_t *) na_cci_op_create(na_class);
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not create NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
     }
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_RECV_EXPECTED;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
     na_cci_op_id->info.recv_expected.na_cci_addr = na_cci_addr;
@@ -1213,7 +1262,7 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class,
     na_cci_op_id->info.recv_expected.tag = cci_tag;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE)
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_cci_op_id;
 
     /* See if it has already arrived */
@@ -1244,7 +1293,7 @@ na_cci_msg_recv_expected(na_class_t NA_UNUSED * na_class,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        free(na_cci_op_id);
+        na_cci_op_destroy(na_class, na_cci_op_id);
     }
     return ret;
 }
@@ -1270,7 +1319,7 @@ na_cci_mem_handle_create(na_class_t NA_UNUSED * na_class, void *buf,
 
     na_cci_mem_handle->base = cci_buf_base;
     na_cci_mem_handle->size = cci_buf_size;
-    na_cci_mem_handle->attr = flags;
+    na_cci_mem_handle->attr = (na_uint8_t) flags;
 
     *mem_handle = (na_mem_handle_t) na_cci_mem_handle;
 
@@ -1453,18 +1502,22 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 
     addr_addref(na_cci_addr); /* for na_cci_complete() */
 
-    /* Allocate op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_cci_op_id = (na_cci_op_id_t *) *op_id;
+        hg_atomic_incr32(&na_cci_op_id->refcnt);
+    } else {
+        na_cci_op_id = (na_cci_op_id_t *) na_cci_op_create(na_class);
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not create NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
     }
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_PUT;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
     na_cci_op_id->info.put.request_op_id = 0;
@@ -1477,7 +1530,7 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
     na_cci_op_id->info.put.remote_addr = na_cci_addr->cci_addr;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE)
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_cci_op_id;
 
     /* Post the CCI RMA */
@@ -1492,7 +1545,7 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        free(na_cci_op_id);
+        na_cci_op_destroy(na_class, na_cci_op_id);
     }
     return ret;
 }
@@ -1525,18 +1578,22 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 
     addr_addref(na_cci_addr); /* for na_cci_complete() */
 
-    /* Allocate op_id */
-    na_cci_op_id = (na_cci_op_id_t *) calloc(1, sizeof(*na_cci_op_id));
-    if (!na_cci_op_id) {
-        NA_LOG_ERROR("Could not allocate NA CCI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_cci_op_id = (na_cci_op_id_t *) *op_id;
+        hg_atomic_incr32(&na_cci_op_id->refcnt);
+    } else {
+        na_cci_op_id = (na_cci_op_id_t *) na_cci_op_create(na_class);
+        if (!na_cci_op_id) {
+            NA_LOG_ERROR("Could not create NA CCI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
     }
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_GET;
     na_cci_op_id->callback = callback;
     na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
     hg_atomic_set32(&na_cci_op_id->completed, 0);
     hg_atomic_set32(&na_cci_op_id->canceled, 0);
     na_cci_op_id->info.get.request_op_id = 0;
@@ -1546,7 +1603,7 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
     na_cci_op_id->info.get.remote_addr = na_cci_addr->cci_addr;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE)
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_cci_op_id;
 
     /* Post the CCI RMA */
@@ -1561,7 +1618,7 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        free(na_cci_op_id);
+        na_cci_op_destroy(na_class, na_cci_op_id);
     }
     return ret;
 }
@@ -1836,10 +1893,8 @@ handle_accept(na_class_t NA_UNUSED *na_class, na_context_t NA_UNUSED *context,
     /* Add address to accepted connection list */
     hg_thread_mutex_lock(
         &NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list_mutex);
-
-    hg_list_insert_head(NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list,
-        (hg_list_value_t) na_cci_addr);
-
+    HG_LIST_INSERT_HEAD(&NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list,
+        na_cci_addr, entry);
     hg_thread_mutex_unlock(
         &NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list_mutex);
 
@@ -1932,19 +1987,15 @@ na_cci_complete(na_cci_addr_t *na_cci_addr, na_cci_op_id_t *na_cci_op_id,
     /* Mark op id as completed */
     hg_atomic_incr32(&na_cci_op_id->completed);
 
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    /* Init callback info */
+    callback_info = &na_cci_op_id->completion_data.callback_info;
     callback_info->arg = na_cci_op_id->arg;
     callback_info->ret = ret;
     callback_info->type = na_cci_op_id->type;
 
     switch (na_cci_op_id->type) {
         case NA_CB_LOOKUP:
+            addr_addref(na_cci_op_id->info.lookup.addr);
             callback_info->info.lookup.addr = na_cci_op_id->info.lookup.addr;
             break;
         case NA_CB_RECV_UNEXPECTED: {
@@ -1979,16 +2030,17 @@ na_cci_complete(na_cci_addr_t *na_cci_addr, na_cci_op_id_t *na_cci_op_id,
             break;
     }
 
-    ret = na_cb_completion_add(na_cci_op_id->context, na_cci_op_id->callback,
-        callback_info, &na_cci_release, na_cci_op_id);
+    na_cci_op_id->completion_data.callback = na_cci_op_id->callback;
+    na_cci_op_id->completion_data.plugin_callback = na_cci_release;
+    na_cci_op_id->completion_data.plugin_callback_args = na_cci_op_id;
+
+    ret = na_cb_completion_add(na_cci_op_id->context,
+       &na_cci_op_id->completion_data);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not add callback to completion queue");
     }
 
 out:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
     if (na_cci_addr)
         addr_decref(na_cci_addr);
     return ret;
@@ -1996,21 +2048,20 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-na_cci_release(struct na_cb_info *callback_info, void *arg)
+na_cci_release(void *arg)
 {
     na_cci_op_id_t *na_cci_op_id = (na_cci_op_id_t *) arg;
 
     if (na_cci_op_id && !hg_atomic_get32(&na_cci_op_id->completed)) {
         NA_LOG_ERROR("Releasing resources from an uncompleted operation");
     }
-    free(callback_info);
     op_id_decref(na_cci_op_id);
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_cancel(na_class_t NA_UNUSED * na_class, na_context_t NA_UNUSED * context,
-    na_op_id_t NA_UNUSED op_id)
+na_cci_cancel(na_class_t * na_class, na_context_t NA_UNUSED * context,
+    na_op_id_t op_id)
 {
     na_cci_op_id_t *na_cci_op_id = (na_cci_op_id_t *) op_id;
     na_cci_addr_t *na_cci_addr = NULL;

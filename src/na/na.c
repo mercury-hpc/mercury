@@ -43,15 +43,6 @@ struct na_private_class {
     na_bool_t listen;
 };
 
-/* Completion data stored in completion queue */
-struct na_cb_completion_data {
-    na_cb_t callback;
-    struct na_cb_info *callback_info;
-    na_plugin_cb_t plugin_callback;
-    void *plugin_callback_args;
-    HG_QUEUE_ENTRY(na_cb_completion_data) entry;
-};
-
 /* Private context / do not expose private members to plugins */
 struct na_private_context {
     struct na_context context;  /* Must remain as first field */
@@ -72,15 +63,15 @@ struct na_private_context {
 /* Parse host string and fill info */
 static na_return_t
 na_info_parse(
-        const char *host_string,
-        struct na_info **na_info_ptr
-        );
+    const char *host_string,
+    struct na_info **na_info_ptr
+    );
 
 /* Free host info */
 static void
 na_info_free(
-        struct na_info *na_info
-        );
+    struct na_info *na_info
+    );
 
 #ifdef NA_DEBUG
 /* Print NA info */
@@ -260,7 +251,7 @@ NA_Initialize(const char *info_string, na_bool_t listen)
     }
 
     na_private_class = (struct na_private_class *) malloc(
-            sizeof(struct na_private_class));
+        sizeof(struct na_private_class));
     if (!na_private_class) {
         NA_LOG_ERROR("Could not allocate class");
         ret = NA_NOMEM_ERROR;
@@ -289,14 +280,14 @@ NA_Initialize(const char *info_string, na_bool_t listen)
             goto done;
         }
         verified = na_class_table[plugin_index]->check_protocol(
-                na_info->protocol_name);
+            na_info->protocol_name);
 
         if (verified) {
             /* Take the first plugin that supports the protocol */
             if (!na_info->class_name) {
                 /* While we're here, dup the class_name */
                 na_info->class_name = strdup(
-                        na_class_table[plugin_index]->class_name);
+                    na_class_table[plugin_index]->class_name);
                 if (!na_info->class_name) {
                     NA_LOG_ERROR("unable to dup class name string");
                     ret = NA_NOMEM_ERROR;
@@ -313,7 +304,7 @@ NA_Initialize(const char *info_string, na_bool_t listen)
                 goto done;
             }
             if (strcmp(na_class_table[plugin_index]->class_name,
-                    na_info->class_name) == 0) {
+                na_info->class_name) == 0) {
                 plugin_found = NA_TRUE;
                 break;
             }
@@ -334,7 +325,7 @@ NA_Initialize(const char *info_string, na_bool_t listen)
         goto done;
     }
     ret = na_private_class->na_class.initialize(&na_private_class->na_class,
-            na_info, listen);
+        na_info, listen);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not initialize plugin");
         goto done;
@@ -364,7 +355,7 @@ na_return_t
 NA_Finalize(na_class_t *na_class)
 {
     struct na_private_class *na_private_class =
-            (struct na_private_class *) na_class;
+        (struct na_private_class *) na_class;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_private_class) goto done;
@@ -424,7 +415,7 @@ na_bool_t
 NA_Is_listening(na_class_t *na_class)
 {
     struct na_private_class *na_private_class =
-            (struct na_private_class *) na_class;
+        (struct na_private_class *) na_class;
     na_bool_t ret = NA_FALSE;
 
     if (!na_private_class) {
@@ -452,7 +443,7 @@ NA_Context_create(na_class_t *na_class)
     }
 
     na_private_context = (struct na_private_context *) malloc(
-            sizeof(struct na_private_context));
+        sizeof(struct na_private_context));
     if (!na_private_context) {
         NA_LOG_ERROR("Could not allocate context");
         ret = NA_NOMEM_ERROR;
@@ -461,7 +452,7 @@ NA_Context_create(na_class_t *na_class)
 
     if (na_class->context_create) {
         ret = na_class->context_create(na_class,
-                &na_private_context->context.plugin_context);
+            &na_private_context->context.plugin_context);
         if (ret != NA_SUCCESS) {
             goto done;
         }
@@ -493,7 +484,7 @@ na_return_t
 NA_Context_destroy(na_class_t *na_class, na_context_t *context)
 {
     struct na_private_context *na_private_context =
-            (struct na_private_context *) context;
+        (struct na_private_context *) context;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -515,7 +506,7 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
 
     if (na_class->context_destroy) {
         ret = na_class->context_destroy(na_class,
-                na_private_context->context.plugin_context);
+            na_private_context->context.plugin_context);
         if (ret != NA_SUCCESS) {
             goto done;
         }
@@ -538,9 +529,56 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+na_op_id_t
+NA_Op_create(na_class_t *na_class)
+{
+    na_op_id_t ret = NA_OP_ID_NULL;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+    if (!na_class->op_create) {
+        /* Not provided */
+        goto done;
+    }
+
+    ret = na_class->op_create(na_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Op_destroy(na_class_t *na_class, na_op_id_t op_id)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (op_id == NA_OP_ID_NULL) {
+        /* Nothing to do */
+        goto done;
+    }
+    if (!na_class->op_destroy) {
+        /* Not provided */
+        goto done;
+    }
+
+    ret = na_class->op_destroy(na_class, op_id);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 na_return_t
 NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-        void *arg, const char *name, na_op_id_t *op_id)
+    void *arg, const char *name, na_op_id_t *op_id)
 {
     char *name_string = NULL;
     char *short_name = NULL;
@@ -583,7 +621,7 @@ NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         short_name = name_string;
 
     ret = na_class->addr_lookup(na_class, context, callback, arg, short_name,
-            op_id);
+        op_id);
     if (ret != NA_SUCCESS) {
         goto done;
     }
@@ -701,7 +739,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
-        na_addr_t addr)
+    na_addr_t addr)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -799,8 +837,8 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
-        na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
+    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -836,10 +874,7 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_unexpected(na_class, context, callback, arg, buf,
-            buf_size, dest, tag, op_id);
-    if (ret != NA_SUCCESS) {
-        goto done;
-    }
+        buf_size, dest, tag, op_id);
 
 done:
     return ret;
@@ -848,8 +883,8 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
-        na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_op_id_t *op_id)
+    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
+    na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -880,10 +915,7 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_unexpected(na_class, context, callback, arg, buf,
-            buf_size, op_id);
-    if (ret != NA_SUCCESS) {
-        goto done;
-    }
+        buf_size, op_id);
 
 done:
     return ret;
@@ -892,8 +924,8 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
-        na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
+    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -929,10 +961,7 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_expected(na_class, context, callback, arg, buf,
-            buf_size, dest, tag, op_id);
-    if (ret != NA_SUCCESS) {
-        goto done;
-    }
+        buf_size, dest, tag, op_id);
 
 done:
     return ret;
@@ -941,8 +970,8 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
-        na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
+    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
+    na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -978,10 +1007,7 @@ NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_expected(na_class, context, callback, arg, buf,
-            buf_size, source, tag, op_id);
-    if (ret != NA_SUCCESS) {
-        goto done;
-    }
+        buf_size, source, tag, op_id);
 
 done:
     return ret;
@@ -990,7 +1016,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
-        unsigned long flags, na_mem_handle_t *mem_handle)
+    unsigned long flags, na_mem_handle_t *mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1016,7 +1042,7 @@ NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
     }
 
     ret = na_class->mem_handle_create(na_class, buf, buf_size, flags,
-            mem_handle);
+        mem_handle);
 
 done:
     return ret;
@@ -1025,8 +1051,8 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
-        na_size_t segment_count, unsigned long flags,
-        na_mem_handle_t *mem_handle)
+    na_size_t segment_count, unsigned long flags,
+    na_mem_handle_t *mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1052,7 +1078,7 @@ NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
     }
 
     ret = na_class->mem_handle_create_segments(na_class, segments,
-            segment_count, flags, mem_handle);
+        segment_count, flags, mem_handle);
 
 done:
     return ret;
@@ -1193,7 +1219,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_size_t
 NA_Mem_handle_get_serialize_size(na_class_t *na_class,
-        na_mem_handle_t mem_handle)
+    na_mem_handle_t mem_handle)
 {
     na_size_t ret = 0;
 
@@ -1221,7 +1247,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
-        na_mem_handle_t mem_handle)
+    na_mem_handle_t mem_handle)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1260,7 +1286,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
-        const void *buf, na_size_t buf_size)
+    const void *buf, na_size_t buf_size)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1299,9 +1325,9 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Put(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
-        na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-        na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
+    na_mem_handle_t local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
+    na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1342,11 +1368,8 @@ NA_Put(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
     }
 
     ret = na_class->put(na_class, context, callback, arg, local_mem_handle,
-            local_offset, remote_mem_handle, remote_offset, data_size,
-            remote_addr, op_id);
-    if (ret != NA_SUCCESS) {
-        goto done;
-    }
+        local_offset, remote_mem_handle, remote_offset, data_size,
+        remote_addr, op_id);
 
 done:
     return ret;
@@ -1355,9 +1378,9 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
-        na_mem_handle_t local_mem_handle, na_offset_t local_offset,
-        na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
+    na_mem_handle_t local_mem_handle, na_offset_t local_offset,
+    na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
+    na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1398,11 +1421,8 @@ NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
     }
 
     ret = na_class->get(na_class, context, callback, arg, local_mem_handle,
-            local_offset, remote_mem_handle, remote_offset, data_size,
-            remote_addr, op_id);
-    if (ret != NA_SUCCESS) {
-        goto done;
-    }
+        local_offset, remote_mem_handle, remote_offset, data_size,
+        remote_addr, op_id);
 
 done:
     return ret;
@@ -1413,7 +1433,7 @@ na_return_t
 NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
 {
     struct na_private_context *na_private_context =
-            (struct na_private_context *) context;
+        (struct na_private_context *) context;
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     na_return_t ret = NA_TIMEOUT;
     na_bool_t completion_queue_updated = NA_FALSE;
@@ -1452,8 +1472,8 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
         hg_time_get_current(&t1);
 
         if (hg_thread_cond_timedwait(&na_private_context->progress_cond,
-                &na_private_context->progress_mutex,
-                (unsigned int) (remaining * 1000.0)) != HG_UTIL_SUCCESS) {
+            &na_private_context->progress_mutex,
+            (unsigned int) (remaining * 1000.0)) != HG_UTIL_SUCCESS) {
             /* Timeout occurred so leave */
             hg_thread_mutex_unlock(&na_private_context->progress_mutex);
             goto done;
@@ -1484,7 +1504,7 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
 
     /* Try to make progress for remaining time */
     ret = na_class->progress(na_class, context,
-            (unsigned int) (remaining * 1000.0));
+        (unsigned int) (remaining * 1000.0));
 
 unlock:
     hg_thread_mutex_lock(&na_private_context->progress_mutex);
@@ -1503,7 +1523,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
-        unsigned int *actual_count)
+    unsigned int *actual_count)
 {
     na_return_t ret = NA_SUCCESS;
     unsigned int count = 0;
@@ -1517,7 +1537,7 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
     while (count < max_count) {
         struct na_cb_completion_data *completion_data = NULL;
         struct na_private_context *na_private_context =
-                (struct na_private_context *) context;
+            (struct na_private_context *) context;
 
         hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
@@ -1526,7 +1546,7 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
             /* If queue is empty and already triggered something, just leave */
             if (count) {
                 hg_thread_mutex_unlock(
-                        &na_private_context->completion_queue_mutex);
+                    &na_private_context->completion_queue_mutex);
                 goto done;
             }
 
@@ -1534,18 +1554,18 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
                 /* Timeout is 0 so leave */
                 ret = NA_TIMEOUT;
                 hg_thread_mutex_unlock(
-                        &na_private_context->completion_queue_mutex);
+                    &na_private_context->completion_queue_mutex);
                 goto done;
             }
             /* Otherwise wait timeout ms */
             if (hg_thread_cond_timedwait(
-                    &na_private_context->completion_queue_cond,
-                    &na_private_context->completion_queue_mutex, timeout)
-                    != HG_UTIL_SUCCESS) {
+                &na_private_context->completion_queue_cond,
+                &na_private_context->completion_queue_mutex, timeout)
+                != HG_UTIL_SUCCESS) {
                 /* Timeout occurred so leave */
                 ret = NA_TIMEOUT;
                 hg_thread_mutex_unlock(
-                        &na_private_context->completion_queue_mutex);
+                    &na_private_context->completion_queue_mutex);
                 goto done;
             }
         }
@@ -1567,15 +1587,14 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         /* Execute callback */
         if (completion_data->callback) {
             /* TODO should return error from callback ? */
-            completion_data->callback(completion_data->callback_info);
+            completion_data->callback(&completion_data->callback_info);
         }
 
         /* Execute plugin callback (free resources etc) */
         if (completion_data->plugin_callback)
-            completion_data->plugin_callback(completion_data->callback_info,
-                    completion_data->plugin_callback_args);
+            completion_data->plugin_callback(
+                completion_data->plugin_callback_args);
 
-        free(completion_data);
         count++;
     }
 
@@ -1640,31 +1659,16 @@ NA_Error_to_string(na_return_t errnum)
 /*---------------------------------------------------------------------------*/
 na_return_t
 na_cb_completion_add(na_context_t *context,
-        na_cb_t callback, struct na_cb_info *callback_info,
-        na_plugin_cb_t plugin_callback, void *plugin_callback_args)
+    struct na_cb_completion_data *na_cb_completion_data)
 {
     struct na_private_context *na_private_context =
-            (struct na_private_context *) context;
+        (struct na_private_context *) context;
     na_return_t ret = NA_SUCCESS;
-    struct na_cb_completion_data *completion_data = NULL;
-
-    completion_data = (struct na_cb_completion_data *)
-            malloc(sizeof(struct na_cb_completion_data));
-    if (!completion_data) {
-        NA_LOG_ERROR("Could not allocate completion data struct");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-
-    completion_data->callback = callback;
-    completion_data->callback_info = callback_info;
-    completion_data->plugin_callback = plugin_callback;
-    completion_data->plugin_callback_args = plugin_callback_args;
 
     hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
 
-    HG_QUEUE_PUSH_TAIL(&na_private_context->completion_queue, completion_data,
-        entry);
+    HG_QUEUE_PUSH_TAIL(&na_private_context->completion_queue,
+        na_cb_completion_data, entry);
 
     hg_atomic_set32(&na_private_context->completion_queue_updated, NA_TRUE);
 
@@ -1674,6 +1678,5 @@ na_cb_completion_add(na_context_t *context,
 
     hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
 
-done:
     return ret;
 }

@@ -181,7 +181,6 @@ NA_Is_listening(
         na_class_t *na_class
         );
 
-
 /**
  * Create a new context.
  *
@@ -209,16 +208,53 @@ NA_Context_destroy(
         );
 
 /**
+ * Allocate an operation ID for the higher level layer to save and
+ * pass back to the NA layer rather than have the NA layer allocate operation
+ * IDs all the time. This is optional but recommended for performance.
+ * Allocating an operation ID gives ownership of that ID to the higher level
+ * layer, hence it must be explicitly released with NA_Op_destroy() when it
+ * is no longer needed.
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return valid operation ID or NA_OP_ID_NULL
+ */
+NA_EXPORT na_op_id_t
+NA_Op_create(
+        na_class_t *na_class
+        );
+
+/**
+ * Destroy operation ID created with NA_Op_create().
+ * Reference counting prevents involuntary free.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
+ * \param op_id [IN]            operation ID
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Op_destroy(
+        na_class_t *na_class,
+        na_op_id_t op_id
+        );
+
+/**
  * Lookup an addr from a peer address/name. Addresses need to be
  * freed by calling NA_Addr_free(). After completion, user callback is placed
  * into a completion queue and can be triggered using NA_Trigger().
+ * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
+ * a new operation ID will be internally created and returned. Users may also
+ * manually create an operation ID through NA_Op_create() and pass it through
+ * op_id for future use and prevent multiple ID creation.
  *
  * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param name [IN]             lookup name
- * \param op_id [OUT]           pointer to returned operation ID
+ * \param op_id [IN/OUT]        pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
@@ -361,6 +397,10 @@ NA_Msg_get_max_tag(
  * \remark Note also that unexpected messages do not require an unexpected
  * receive to be posted at the destination before sending the message and the
  * destination is allowed to drop the message without notification.
+ * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
+ * a new operation ID will be internally created and returned. Users may also
+ * manually create an operation ID through NA_Op_create() and pass it through
+ * op_id for future use and prevent multiple ID creation.
  *
  * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
@@ -370,7 +410,7 @@ NA_Msg_get_max_tag(
  * \param buf_size [IN]         buffer size
  * \param dest [IN]             abstract address of destination
  * \param tag [IN]              tag attached to message
- * \param op_id [OUT]           pointer to returned operation ID
+ * \param op_id [IN/OUT]        pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
@@ -392,6 +432,10 @@ NA_Msg_send_unexpected(
  * Unexpected receives may wait on ANY_TAG and ANY_SOURCE depending on the
  * implementation. After completion, user callback is placed into a completion
  * queue and can be triggered using NA_Trigger().
+ * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
+ * a new operation ID will be internally created and returned. Users may also
+ * manually create an operation ID through NA_Op_create() and pass it through
+ * op_id for future use and prevent multiple ID creation.
  *
  * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
@@ -399,7 +443,7 @@ NA_Msg_send_unexpected(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
- * \param op_id [OUT]           pointer to returned operation ID
+ * \param op_id [IN/OUT]        pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
@@ -421,6 +465,10 @@ NA_Msg_recv_unexpected(
  * an expected receive to be posted at the destination before sending the
  * message, otherwise the destination is allowed to drop the message without
  * notification.
+ * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
+ * a new operation ID will be internally created and returned. Users may also
+ * manually create an operation ID through NA_Op_create() and pass it through
+ * op_id for future use and prevent multiple ID creation.
  *
  * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
@@ -430,7 +478,7 @@ NA_Msg_recv_unexpected(
  * \param buf_size [IN]         buffer size
  * \param dest [IN]             abstract address of destination
  * \param tag [IN]              tag attached to message
- * \param op_id [OUT]           pointer to returned operation ID
+ * \param op_id [IN/OUT]        pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
@@ -450,6 +498,10 @@ NA_Msg_send_expected(
 /**
  * Receive an expected message from source. After completion, user callback is
  * placed into a completion queue and can be triggered using NA_Trigger().
+ * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
+ * a new operation ID will be internally created and returned. Users may also
+ * manually create an operation ID through NA_Op_create() and pass it through
+ * op_id for future use and prevent multiple ID creation.
  *
  * \param na_class [IN]         pointer to NA class
  * \param context [IN]          pointer to context of execution
@@ -459,7 +511,7 @@ NA_Msg_send_expected(
  * \param buf_size [IN]         buffer size
  * \param source [IN]           abstract address of source
  * \param tag [IN]              matching tag used to receive message
- * \param op_id [OUT]           pointer to returned operation ID
+ * \param op_id [IN/OUT]        pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
@@ -604,8 +656,6 @@ NA_Mem_unpublish(
         na_mem_handle_t  mem_handle
         );
 
-
-
 /**
  * Get size required to serialize handle.
  *
@@ -668,6 +718,10 @@ NA_Mem_handle_deserialize(
  * given offset/size. After completion, user callback is placed into a
  * completion queue and can be triggered using NA_Trigger().
  * \remark Memory must be registered and handles exchanged between peers.
+ * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
+ * a new operation ID will be internally created and returned. Users may also
+ * manually create an operation ID through NA_Op_create() and pass it through
+ * op_id for future use and prevent multiple ID creation.
  *
  * \param na_class [IN]          pointer to NA class
  * \param context [IN]           pointer to context of execution
@@ -679,7 +733,7 @@ NA_Mem_handle_deserialize(
  * \param remote_offset [IN]     remote offset
  * \param data_size [IN]         size of data that needs to be transferred
  * \param remote_addr [IN]       abstract address of remote destination
- * \param op_id [OUT]            pointer to returned operation ID
+ * \param op_id [IN/OUT]         pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
@@ -701,6 +755,10 @@ NA_Put(
 /**
  * Get data from remote target. After completion, user callback is placed into
  * a completion queue and can be triggered using NA_Trigger().
+ * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
+ * a new operation ID will be internally created and returned. Users may also
+ * manually create an operation ID through NA_Op_create() and pass it through
+ * op_id for future use and prevent multiple ID creation.
  *
  * \param na_class [IN]          pointer to NA class
  * \param context [IN]           pointer to context of execution
@@ -712,7 +770,7 @@ NA_Put(
  * \param remote_offset [IN]     remote offset
  * \param data_size [IN]         size of data that needs to be transferred
  * \param remote_addr [IN]       abstract address of remote source
- * \param op_id [OUT]            pointer to returned operation ID
+ * \param op_id [IN/OUT]         pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */

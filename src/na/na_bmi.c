@@ -139,7 +139,9 @@ struct na_bmi_op_id {
       struct na_bmi_info_get get;
     } info;
     uint64_t cancel;
+    hg_atomic_int32_t ref_count;    /* Ref count */
     HG_QUEUE_ENTRY(na_bmi_op_id) entry;
+    struct na_cb_completion_data completion_data;
 };
 
 struct na_bmi_private_data {
@@ -206,6 +208,19 @@ static na_return_t
 na_bmi_context_destroy(
         na_class_t          *na_class,
         na_plugin_context_t  context
+        );
+
+/* op_create */
+static na_op_id_t
+na_bmi_op_create(
+        na_class_t      *na_class
+        );
+
+/* op_destroy */
+static na_return_t
+na_bmi_op_destroy(
+        na_class_t      *na_class,
+        na_op_id_t       op_id
         );
 
 /* addr_lookup */
@@ -464,8 +479,7 @@ na_bmi_complete(
 
 static void
 na_bmi_release(
-        struct na_cb_info *callback_info,
-        void              *arg
+        void *arg
         );
 
 /* cancel */
@@ -488,6 +502,8 @@ const na_class_t na_bmi_class_g = {
         na_bmi_finalize,                      /* finalize */
         na_bmi_context_create,                /* context_create */
         na_bmi_context_destroy,               /* context_destroy */
+        na_bmi_op_create,                     /* op_create */
+        na_bmi_op_destroy,                    /* op_destroy */
         na_bmi_addr_lookup,                   /* addr_lookup */
         na_bmi_addr_free,                     /* addr_free */
         na_bmi_addr_self,                     /* addr_self */
@@ -775,8 +791,43 @@ na_bmi_context_destroy(na_class_t NA_UNUSED *na_class,
 }
 
 /*---------------------------------------------------------------------------*/
+static na_op_id_t
+na_bmi_op_create(na_class_t NA_UNUSED *na_class)
+{
+    struct na_bmi_op_id *na_bmi_op_id = NULL;
+
+    na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
+    if (!na_bmi_op_id) {
+        NA_LOG_ERROR("Could not allocate NA BMI operation ID");
+        goto done;
+    }
+    memset(na_bmi_op_id, 0, sizeof(struct na_bmi_op_id));
+    hg_atomic_set32(&na_bmi_op_id->ref_count, 1);
+
+done:
+    return (na_op_id_t) na_bmi_op_id;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
+na_bmi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
+{
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
+    na_return_t ret = NA_SUCCESS;
+
+    if (hg_atomic_decr32(&na_bmi_op_id->ref_count)) {
+        /* Cannot free yet */
+        goto done;
+    }
+    free(na_bmi_op_id);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_addr_lookup(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const char *name, na_op_id_t *op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = NULL;
@@ -784,12 +835,17 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Allocate op_id */
-    na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
-    if (!na_bmi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
+        hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    } else {
+        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
+        if (!na_bmi_op_id) {
+            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_LOOKUP;
@@ -811,7 +867,8 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_bmi_op_id->info.lookup.addr = (na_addr_t) na_bmi_addr;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_bmi_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_bmi_op_id;
 
     /* Perform an address lookup */
     bmi_ret = BMI_addr_lookup(&na_bmi_addr->bmi_addr, name);
@@ -831,7 +888,7 @@ na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
 done:
     if (ret != NA_SUCCESS) {
         free(na_bmi_addr);
-        free(na_bmi_op_id);
+        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
     }
     return ret;
 }
@@ -963,7 +1020,7 @@ na_bmi_msg_get_max_tag(na_class_t NA_UNUSED *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
+na_bmi_msg_send_unexpected(na_class_t *na_class,
         na_context_t *context, na_cb_t callback, void *arg, const void *buf,
         na_size_t buf_size, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
@@ -975,12 +1032,17 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Allocate op_id */
-    na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
-    if (!na_bmi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
+        hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    } else {
+        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
+        if (!na_bmi_op_id) {
+            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_SEND_UNEXPECTED;
@@ -991,7 +1053,8 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
     na_bmi_op_id->cancel = 0;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_bmi_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_bmi_op_id;
 
     /* Post the BMI unexpected send request */
     bmi_ret = BMI_post_sendunexpected(
@@ -1015,7 +1078,7 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_bmi_op_id);
+        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
     }
     return ret;
 }
@@ -1030,12 +1093,17 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     struct na_bmi_op_id *na_bmi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    /* Allocate na_op_id */
-    na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
-    if (!na_bmi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
+        hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    } else {
+        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
+        if (!na_bmi_op_id) {
+            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_RECV_UNEXPECTED;
@@ -1048,7 +1116,8 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_bmi_op_id->cancel = 0;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_bmi_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_bmi_op_id;
 
     /* Try to make progress here from the BMI unexpected queue */
     do {
@@ -1080,7 +1149,7 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_bmi_op_id);
+        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
     }
     free(unexpected_info);
     return ret;
@@ -1177,7 +1246,7 @@ na_bmi_msg_unexpected_op_pop(na_class_t *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
+na_bmi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
         na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
@@ -1189,12 +1258,17 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Allocate op_id */
-    na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
-    if (!na_bmi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
+        hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    } else {
+        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
+        if (!na_bmi_op_id) {
+            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_SEND_EXPECTED;
@@ -1205,7 +1279,8 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_bmi_op_id->cancel = 0;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_bmi_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_bmi_op_id;
 
     /* Post the BMI send request */
     bmi_ret = BMI_post_send(&na_bmi_op_id->info.send_expected.op_id,
@@ -1228,14 +1303,14 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_bmi_op_id);
+        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
     }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
+na_bmi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
         na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
 {
@@ -1247,12 +1322,17 @@ na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    /* Allocate na_op_id */
-    na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
-    if (!na_bmi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
+        hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    } else {
+        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
+        if (!na_bmi_op_id) {
+            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_RECV_EXPECTED;
@@ -1265,7 +1345,8 @@ na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_bmi_op_id->cancel = 0;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_bmi_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = (na_op_id_t) na_bmi_op_id;
 
     /* Post the BMI recv request */
     bmi_ret = BMI_post_recv(&na_bmi_op_id->info.recv_expected.op_id,
@@ -1289,7 +1370,7 @@ na_bmi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_bmi_op_id);
+        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
     }
     return ret;
 }
@@ -1446,12 +1527,17 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    /* Allocate op_id */
-    na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
-    if (!na_bmi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
+        hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    } else {
+        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
+        if (!na_bmi_op_id) {
+            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_PUT;
@@ -1486,7 +1572,8 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_bmi_op_id->info.put.rma_info = na_bmi_rma_info;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_bmi_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = (na_op_id_t) na_bmi_op_id;
 
     /* Post the BMI unexpected send request */
     bmi_ret = BMI_post_sendunexpected(
@@ -1540,7 +1627,7 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_bmi_op_id);
+        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
         free(na_bmi_rma_info);
     }
     return ret;
@@ -1581,12 +1668,17 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    /* Allocate op_id */
-    na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
-    if (!na_bmi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
+        hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    } else {
+        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
+        if (!na_bmi_op_id) {
+            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_GET;
@@ -1618,7 +1710,8 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_bmi_op_id->info.get.rma_info = na_bmi_rma_info;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_bmi_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_bmi_op_id;
 
     /* Post the BMI unexpected send request */
     bmi_ret = BMI_post_sendunexpected(
@@ -1654,7 +1747,7 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_bmi_op_id);
+        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
         free(na_bmi_rma_info);
     }
     return ret;
@@ -1867,7 +1960,7 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
                         /* Transfer is now done so free RMA info */
                         free(na_bmi_op_id->info.put.rma_info);
                         na_bmi_op_id->info.put.rma_info = NULL;
-                        na_bmi_release(NULL, na_bmi_op_id);
+                        na_bmi_release(na_bmi_op_id);
                     } else {
                         /* No internal progress but actual put */
                         ret = na_bmi_complete(na_bmi_op_id);
@@ -1889,7 +1982,7 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
                         /* Transfer is now done so free RMA info */
                         free(na_bmi_op_id->info.get.rma_info);
                         na_bmi_op_id->info.get.rma_info = NULL;
-                        na_bmi_release(NULL, na_bmi_op_id);
+                        na_bmi_release(na_bmi_op_id);
                     } else {
                         /* No internal progress but actual get */
                         ret = na_bmi_complete(na_bmi_op_id);
@@ -1943,7 +2036,7 @@ na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
     memcpy(na_bmi_rma_info, unexpected_info->buffer, (size_t) unexpected_info->size);
 
     /* Allocate na_op_id */
-    na_bmi_op_id = (struct na_bmi_op_id *) malloc(sizeof(struct na_bmi_op_id));
+    na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
     if (!na_bmi_op_id) {
         NA_LOG_ERROR("Could not allocate NA BMI operation ID");
         ret = NA_NOMEM_ERROR;
@@ -2019,7 +2112,7 @@ na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
                 free(na_bmi_op_id->info.get.rma_info);
                 na_bmi_op_id->info.get.rma_info = NULL;
-                na_bmi_release(NULL, na_bmi_op_id);
+                na_bmi_release(na_bmi_op_id);
             }
             break;
         default:
@@ -2072,7 +2165,7 @@ na_bmi_progress_rma_completion(struct na_bmi_op_id *na_bmi_op_id)
 
         free(na_bmi_op_id->info.put.rma_info);
         na_bmi_op_id->info.put.rma_info = NULL;
-        na_bmi_release(NULL, na_bmi_op_id);
+        na_bmi_release(na_bmi_op_id);
     }
 
 done:
@@ -2089,13 +2182,8 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
     /* Mark op id as completed */
     na_bmi_op_id->completed = NA_TRUE;
 
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    /* Init callback info */
+    callback_info = &na_bmi_op_id->completion_data.callback_info;
     callback_info->arg = na_bmi_op_id->arg;
     callback_info->ret = ((na_bmi_op_id->cancel & NA_BMI_CANCEL_R) ? NA_CANCELED : ret);
     callback_info->type = na_bmi_op_id->type;
@@ -2185,31 +2273,31 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
             break;
     }
 
-    ret = na_cb_completion_add(na_bmi_op_id->context, na_bmi_op_id->callback,
-            callback_info, &na_bmi_release, na_bmi_op_id);
+    na_bmi_op_id->completion_data.callback = na_bmi_op_id->callback;
+    na_bmi_op_id->completion_data.plugin_callback = na_bmi_release;
+    na_bmi_op_id->completion_data.plugin_callback_args = na_bmi_op_id;
+
+    ret = na_cb_completion_add(na_bmi_op_id->context,
+        &na_bmi_op_id->completion_data);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not add callback to completion queue");
         goto done;
     }
 
 done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static void
-na_bmi_release(struct na_cb_info *callback_info, void *arg)
+na_bmi_release(void *arg)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) arg;
 
     if (na_bmi_op_id && !na_bmi_op_id->completed) {
         NA_LOG_ERROR("Releasing resources from an uncompleted operation");
     }
-    free(callback_info);
-    free(na_bmi_op_id);
+    na_bmi_op_destroy(NULL, (na_op_id_t) na_bmi_op_id);
 }
 
 /*---------------------------------------------------------------------------*/

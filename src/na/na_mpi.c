@@ -70,6 +70,7 @@ struct na_mpi_addr {
     na_bool_t self;              /* Boolean for self */
     na_bool_t dynamic;           /* Address generated using MPI DPM routines */
     char      port_name[MPI_MAX_PORT_NAME]; /* String version of addr */
+    HG_LIST_ENTRY(na_mpi_addr) entry;
 };
 
 /* na_mpi_mem_handle */
@@ -157,7 +158,8 @@ struct na_mpi_op_id {
       struct na_mpi_info_put put;
       struct na_mpi_info_get get;
     } info;
-    HG_QUEUE_ENTRY(na_mpi_op_id) entry;
+    HG_LIST_ENTRY(na_mpi_op_id) entry;
+    struct na_cb_completion_data completion_data;
 };
 
 struct na_mpi_private_data {
@@ -173,16 +175,16 @@ struct na_mpi_private_data {
     hg_thread_cond_t   accept_cond;   /* Cond */
     na_bool_t          accepting;     /* Is in MPI_Comm_accept */
 
-    hg_list_t         *remote_list;       /* List of connected remotes */
-    hg_thread_mutex_t  remote_list_mutex; /* Mutex */
+    HG_LIST_HEAD(na_mpi_addr) remote_list;  /* List of connected remotes */
+    hg_thread_mutex_t  remote_list_mutex;   /* Mutex */
 
     HG_QUEUE_HEAD(na_mpi_op_id) unexpected_op_queue; /* Unexpected op queue */
     hg_thread_mutex_t  unexpected_op_queue_mutex;    /* Mutex */
 
     hg_atomic_int32_t  rma_tag;              /* Atomic RMA tag value */
 
-    hg_list_t         *op_id_list;        /* List of na_mpi_op_ids */
-    hg_thread_mutex_t  op_id_list_mutex;  /* Mutex */
+    HG_LIST_HEAD(na_mpi_op_id) op_id_list;  /* List of na_mpi_op_ids */
+    hg_thread_mutex_t  op_id_list_mutex;    /* Mutex */
 };
 
 /********************/
@@ -221,31 +223,10 @@ na_mpi_disconnect(
         struct na_mpi_addr *na_mpi_addr
         );
 
-/* remote_list_append */
-static na_return_t
-na_mpi_remote_list_append(
-        na_class_t         *na_class,
-        struct na_mpi_addr *na_mpi_addr
-        );
-
-/* remote_list_remove */
-static na_return_t
-na_mpi_remote_list_remove(
-        na_class_t         *na_class,
-        struct na_mpi_addr *na_mpi_addr
-        );
-
 /* remote_list_disconnect */
 static na_return_t
 na_mpi_remote_list_disconnect(
         na_class_t *na_class
-        );
-
-/* op_id_list_add */
-static na_return_t
-na_mpi_op_id_list_append(
-        na_class_t          *na_class,
-        struct na_mpi_op_id *na_mpi_op_id
         );
 
 /* msg_unexpected_op_push */
@@ -532,7 +513,6 @@ na_mpi_complete(
 /* na_mpi_release */
 static void
 na_mpi_release(
-        struct na_cb_info *callback_info,
         void              *arg
         );
 
@@ -556,6 +536,8 @@ const na_class_t na_mpi_class_g = {
         na_mpi_finalize,                      /* finalize */
         NULL,                                 /* context_create */
         NULL,                                 /* context_destroy */
+        NULL,                                 /* op_create */
+        NULL,                                 /* op_destroy */
         na_mpi_addr_lookup,                   /* addr_lookup */
         na_mpi_addr_free,                     /* addr_free */
         na_mpi_addr_self,                     /* addr_self */
@@ -595,13 +577,6 @@ const uint32_t key_value = GNI_PKEY_USER_START + 1;
 /********************/
 /* Plugin callbacks */
 /********************/
-
-/*---------------------------------------------------------------------------*/
-static NA_INLINE int
-pointer_equal(void *location1, void *location2)
-{
-    return location1 == location2;
-}
 
 /*---------------------------------------------------------------------------*/
 static HG_THREAD_RETURN_TYPE
@@ -762,7 +737,10 @@ na_mpi_accept(na_class_t *na_class)
     memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
 
     /* Add comms to list of connected remotes */
-    ret = na_mpi_remote_list_append(na_class, na_mpi_addr);
+    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
+    HG_LIST_INSERT_HEAD(&NA_MPI_PRIVATE_DATA(na_class)->remote_list,
+        na_mpi_addr, entry);
+    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
 
 done:
     return ret;
@@ -799,105 +777,26 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_remote_list_append(na_class_t *na_class, struct na_mpi_addr *na_mpi_addr)
-{
-    na_return_t ret = NA_SUCCESS;
-    hg_list_entry_t *new_entry = NULL;
-
-    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
-
-    new_entry = hg_list_insert_head(NA_MPI_PRIVATE_DATA(na_class)->remote_list,
-            (hg_list_value_t) na_mpi_addr);
-    if (!new_entry) {
-        NA_LOG_ERROR("Could not append entry");
-        ret = NA_NOMEM_ERROR;
-    }
-
-    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_mpi_remote_list_remove(na_class_t *na_class, struct na_mpi_addr *na_mpi_addr)
-{
-    na_return_t ret = NA_SUCCESS;
-    hg_list_entry_t *entry = NULL;
-
-    /* Process list of remotes */
-    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
-
-    /* Remove handle from list if not found */
-    entry = hg_list_find_data(NA_MPI_PRIVATE_DATA(na_class)->remote_list,
-            pointer_equal, (hg_list_value_t) na_mpi_addr);
-    if (entry && (HG_UTIL_FAIL == hg_list_remove_entry(entry))) {
-        NA_LOG_ERROR("Could not remove entry");
-        ret = NA_PROTOCOL_ERROR;
-    }
-
-    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
 na_mpi_remote_list_disconnect(na_class_t *na_class)
 {
     na_return_t ret = NA_SUCCESS;
 
-    /* Process list of communicators */
     hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
 
-    if (!hg_list_is_empty(NA_MPI_PRIVATE_DATA(na_class)->remote_list)) {
-        hg_list_entry_t *entry = hg_list_first(NA_MPI_PRIVATE_DATA(na_class)->remote_list);
+    /* Process list of communicators */
+    while (!HG_LIST_IS_EMPTY(&NA_MPI_PRIVATE_DATA(na_class)->remote_list)) {
+        struct na_mpi_addr *na_mpi_addr =
+            HG_LIST_FIRST(&NA_MPI_PRIVATE_DATA(na_class)->remote_list);
+        HG_LIST_REMOVE(na_mpi_addr, entry);
 
-        while (entry) {
-            hg_list_entry_t *next_entry = hg_list_next(entry);
-            struct na_mpi_addr *na_mpi_addr =
-                    (struct na_mpi_addr *) hg_list_data(entry);
-
-            ret = na_mpi_disconnect(na_class, na_mpi_addr);
-            if (ret != NA_SUCCESS) {
-                goto done;
-            }
-
-            if (HG_UTIL_FAIL == hg_list_remove_entry(entry)) {
-                NA_LOG_ERROR("Could not remove entry");
-                ret = NA_PROTOCOL_ERROR;
-                goto done;
-            }
-
-            entry = next_entry;
+        ret = na_mpi_disconnect(na_class, na_mpi_addr);
+        if (ret != NA_SUCCESS) {
+            goto done;
         }
     }
 
  done:
     hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_mpi_op_id_list_append(na_class_t *na_class,
-        struct na_mpi_op_id *na_mpi_op_id)
-{
-    na_return_t ret = NA_SUCCESS;
-    hg_list_entry_t *new_entry = NULL;
-
-    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
-
-    new_entry = hg_list_insert_head(NA_MPI_PRIVATE_DATA(na_class)->op_id_list,
-            (hg_list_value_t) na_mpi_op_id);
-    if (!new_entry) {
-        NA_LOG_ERROR("Could not append entry");
-        ret = NA_NOMEM_ERROR;
-    }
-
-    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
-
     return ret;
 }
 
@@ -1086,7 +985,6 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
 {
     int mpi_ext_initialized = 0;
     na_bool_t listening, use_static_inter_comm;
-    hg_list_t *op_id_list = NULL, *remote_list = NULL;
     int flags = (listen) ? MPI_INIT_SERVER : 0;
     int mpi_ret;
     int *attr_val, attr_flag;
@@ -1099,8 +997,8 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
         goto done;
     }
     NA_MPI_PRIVATE_DATA(na_class)->accept_thread = 0;
-    NA_MPI_PRIVATE_DATA(na_class)->remote_list = NULL;
-    NA_MPI_PRIVATE_DATA(na_class)->op_id_list = NULL;
+    HG_LIST_INIT(&NA_MPI_PRIVATE_DATA(na_class)->remote_list);
+    HG_LIST_INIT(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list);
     HG_QUEUE_INIT(&NA_MPI_PRIVATE_DATA(na_class)->unexpected_op_queue);
 
     /* Check flags */
@@ -1195,23 +1093,6 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
         }
     }
 
-    /* Initialize lists */
-    remote_list = hg_list_new();
-    if (!remote_list) {
-        NA_LOG_ERROR("Could not create remote list");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    NA_MPI_PRIVATE_DATA(na_class)->remote_list = remote_list;
-
-    op_id_list = hg_list_new();
-    if (!op_id_list) {
-        NA_LOG_ERROR("Could not create op id list");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    NA_MPI_PRIVATE_DATA(na_class)->op_id_list = op_id_list;
-
     /* Initialize mutex/cond */
     hg_thread_mutex_init(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
     hg_thread_cond_init(&NA_MPI_PRIVATE_DATA(na_class)->accept_cond);
@@ -1283,7 +1164,6 @@ na_mpi_finalize(na_class_t *na_class)
     }
     /* Process list of communicators */
     na_mpi_remote_list_disconnect(na_class);
-    hg_list_free(NA_MPI_PRIVATE_DATA(na_class)->remote_list);
 
     /* Check that unexpected op queue is empty */
     if (!HG_QUEUE_IS_EMPTY(
@@ -1291,9 +1171,6 @@ na_mpi_finalize(na_class_t *na_class)
         NA_LOG_ERROR("Unexpected op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
     }
-
-    /* Free op id list */
-    hg_list_free(NA_MPI_PRIVATE_DATA(na_class)->op_id_list);
 
     /* Free the private dup'ed comm */
     mpi_ret = MPI_Comm_free(&NA_MPI_PRIVATE_DATA(na_class)->intra_comm);
@@ -1432,10 +1309,10 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
     hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->accept_mutex);
 
     /* Add addr to list of addresses */
-    ret = na_mpi_remote_list_append(na_class, na_mpi_addr);
-    if (ret != NA_SUCCESS) {
-        goto done;
-    }
+    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
+    HG_LIST_INSERT_HEAD(&NA_MPI_PRIVATE_DATA(na_class)->remote_list,
+        na_mpi_addr, entry);
+    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
 
     /* TODO MPI calls are blocking and so is na_mpi_addr_lookup,
      * i.e. we always complete here for now */
@@ -1504,9 +1381,17 @@ na_mpi_addr_free(na_class_t *na_class, na_addr_t addr)
     if (na_mpi_addr->self) {
         free(na_mpi_addr);
     } else {
+        struct na_mpi_addr *var = NULL;
+
         /* Remove addr from list of addresses */
-        ret = na_mpi_remote_list_remove(na_class, na_mpi_addr);
-        if (ret != NA_SUCCESS) goto done;
+        hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
+        HG_LIST_FOREACH(var, &NA_MPI_PRIVATE_DATA(na_class)->remote_list, entry) {
+            if (var == na_mpi_addr) {
+                HG_LIST_REMOVE(var, entry);
+                break;
+            }
+        }
+        hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
 
         /* Free addr */
         ret = na_mpi_disconnect(na_class, na_mpi_addr);
@@ -1626,7 +1511,10 @@ na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     /* Append op_id to op_id list */
-    ret = na_mpi_op_id_list_append(na_class, na_mpi_op_id);
+    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
+    HG_LIST_INSERT_HEAD(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list,
+        na_mpi_op_id, entry);
+    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
 
 done:
     if (ret != NA_SUCCESS) {
@@ -1732,7 +1620,10 @@ na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     }
 
     /* Append op_id to op_id list assign op_id */
-    ret = na_mpi_op_id_list_append(na_class, na_mpi_op_id);
+    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
+    HG_LIST_INSERT_HEAD(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list,
+        na_mpi_op_id, entry);
+    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
 
 done:
     if (ret != NA_SUCCESS) {
@@ -1784,7 +1675,10 @@ na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     }
 
     /* Append op_id to op_id list */
-    ret = na_mpi_op_id_list_append(na_class, na_mpi_op_id);
+    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
+    HG_LIST_INSERT_HEAD(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list,
+        na_mpi_op_id, entry);
+    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
 
 done:
     if (ret != NA_SUCCESS) {
@@ -2003,7 +1897,10 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* Append op_id to op_id list */
-    ret = na_mpi_op_id_list_append(na_class, na_mpi_op_id);
+    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
+    HG_LIST_INSERT_HEAD(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list,
+        na_mpi_op_id, entry);
+    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
 
 done:
     if (ret != NA_SUCCESS) {
@@ -2105,7 +2002,10 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* Append op_id to op_id list */
-    ret = na_mpi_op_id_list_append(na_class, na_mpi_op_id);
+    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
+    HG_LIST_INSERT_HEAD(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list,
+        na_mpi_op_id, entry);
+    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
 
 done:
     if (ret != NA_SUCCESS) {
@@ -2169,57 +2069,48 @@ na_mpi_progress_unexpected(na_class_t *na_class, na_context_t *context,
     /* Process list of communicators */
     hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->remote_list_mutex);
 
-    if (!hg_list_is_empty(NA_MPI_PRIVATE_DATA(na_class)->remote_list)) {
-        hg_list_entry_t *entry = hg_list_first(NA_MPI_PRIVATE_DATA(na_class)->remote_list);
+    HG_LIST_FOREACH(probe_addr, &NA_MPI_PRIVATE_DATA(na_class)->remote_list, entry) {
+        MPI_Status status1, status2;
+        int flag = 0;
 
-        while (entry) {
-            MPI_Status status1, status2;
-            int flag = 0;
-            probe_addr = (struct na_mpi_addr *) hg_list_data(entry);
+        /* First look for user unexpected message */
+        mpi_ret = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, probe_addr->comm,
+            &flag, &status1);
+        if (mpi_ret != MPI_SUCCESS) {
+            NA_LOG_ERROR("MPI_Iprobe() failed");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
 
-            /* First look for user unexpected message */
-            mpi_ret = MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, probe_addr->comm,
-                    &flag, &status1);
-            if (mpi_ret != MPI_SUCCESS) {
-                NA_LOG_ERROR("MPI_Iprobe() failed");
-                ret = NA_PROTOCOL_ERROR;
+        if (flag) {
+            ret = na_mpi_progress_unexpected_msg(na_class, context,
+                probe_addr, &status1);
+            if (ret != NA_SUCCESS) {
+                if (ret != NA_TIMEOUT) {
+                    NA_LOG_ERROR("Could not make unexpected MSG progress");
+                    goto done;
+                }
+            } else
+                break; /* Progressed */
+        }
+
+        /* Look for internal unexpected RMA requests */
+        mpi_ret = MPI_Iprobe(probe_addr->rank, NA_MPI_RMA_REQUEST_TAG,
+            probe_addr->rma_comm, &flag, &status2);
+        if (mpi_ret != MPI_SUCCESS) {
+            NA_LOG_ERROR("MPI_Iprobe() failed");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
+
+        if (flag) {
+            ret = na_mpi_progress_unexpected_rma(na_class, context,
+                probe_addr, &status2);
+            if (ret != NA_SUCCESS) {
+                NA_LOG_ERROR("Could not make unexpected RMA progress");
                 goto done;
-            }
-
-            if (flag) {
-                ret = na_mpi_progress_unexpected_msg(na_class, context,
-                        probe_addr, &status1);
-                if (ret != NA_SUCCESS) {
-                    if (ret != NA_TIMEOUT) {
-                        NA_LOG_ERROR("Could not make unexpected MSG progress");
-                        goto done;
-                    }
-                } else
-                    break; /* Progressed */
-            }
-
-            /* Look for internal unexpected RMA requests */
-            mpi_ret = MPI_Iprobe(probe_addr->rank, NA_MPI_RMA_REQUEST_TAG,
-                    probe_addr->rma_comm, &flag, &status2);
-            if (mpi_ret != MPI_SUCCESS) {
-                NA_LOG_ERROR("MPI_Iprobe() failed");
-                ret = NA_PROTOCOL_ERROR;
-                goto done;
-            }
-
-            if (flag) {
-                ret = na_mpi_progress_unexpected_rma(na_class, context,
-                        probe_addr, &status2);
-                if (ret != NA_SUCCESS) {
-                    if (ret != NA_TIMEOUT) {
-                        NA_LOG_ERROR("Could not make unexpected RMA progress");
-                        goto done;
-                    }
-                } else
-                    break; /* Progressed */
-            }
-
-            entry = hg_list_next(entry);
+            } else
+                break; /* Progressed */
         }
     }
 
@@ -2285,7 +2176,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
     struct na_mpi_rma_info *na_mpi_rma_info = NULL;
     struct na_mpi_op_id *na_mpi_op_id = NULL;
     int unexpected_buf_size = 0;
-    na_return_t ret = NA_TIMEOUT;
+    na_return_t ret = NA_SUCCESS;
     int mpi_ret;
 
     MPI_Get_count(status, MPI_BYTE, &unexpected_buf_size);
@@ -2375,11 +2266,10 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
     }
 
     /* Add op_id to list */
-    ret = na_mpi_op_id_list_append(na_class, na_mpi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not append op id to op id list");
-        goto done;
-    }
+    hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
+    HG_LIST_INSERT_HEAD(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list,
+        na_mpi_op_id, entry);
+    hg_thread_mutex_unlock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
 
 done:
     if (ret != NA_SUCCESS) {
@@ -2394,28 +2284,19 @@ static na_return_t
 na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
         unsigned int NA_UNUSED timeout)
 {
-    hg_list_entry_t *entry = NULL;
     struct na_mpi_op_id *na_mpi_op_id = NULL;
-    MPI_Request *request = NULL;
     na_return_t ret = NA_TIMEOUT;
-    int mpi_ret = 0;
 
     hg_thread_mutex_lock(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list_mutex);
 
-    if (hg_list_is_empty(NA_MPI_PRIVATE_DATA(na_class)->op_id_list)) {
-        goto done;
-    }
-
-    entry = hg_list_first(NA_MPI_PRIVATE_DATA(na_class)->op_id_list);
-
-    while (entry) {
+    na_mpi_op_id = HG_LIST_FIRST(&NA_MPI_PRIVATE_DATA(na_class)->op_id_list);
+    while (na_mpi_op_id) {
+        MPI_Request *request = NULL;
         na_bool_t internal = NA_FALSE; /* Only used to complete internal ops */
         struct na_mpi_rma_info **rma_info = NULL;
         na_bool_t complete_op_id = NA_TRUE;
-        int flag = 0;
+        int flag = 0, mpi_ret = 0;
         MPI_Status *status = MPI_STATUS_IGNORE;
-
-        na_mpi_op_id = (struct na_mpi_op_id *) hg_list_data(entry);
 
         /* If the op_id is marked as completed, something is wrong */
         if (na_mpi_op_id->completed) {
@@ -2489,7 +2370,7 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
             goto done;
         }
         if (!flag) {
-            entry = hg_list_next(entry);
+            na_mpi_op_id = HG_LIST_NEXT(na_mpi_op_id, entry);
             continue;
         }
 
@@ -2499,23 +2380,26 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
          * to completion queue */
         if (internal) {
             na_mpi_op_id->completed = NA_TRUE;
+            /* Remove entry from list */
+            HG_LIST_REMOVE(na_mpi_op_id, entry);
 
             free(*rma_info);
             *rma_info = NULL;
-            na_mpi_release(NULL, na_mpi_op_id);
+            na_mpi_release(na_mpi_op_id);
         } else {
             if (!complete_op_id) {
-                entry = hg_list_next(entry);
+                na_mpi_op_id = HG_LIST_NEXT(na_mpi_op_id, entry);
                 continue;
             }
+            /* Remove entry from list */
+            HG_LIST_REMOVE(na_mpi_op_id, entry);
+
             ret = na_mpi_complete(na_mpi_op_id);
             if (ret != NA_SUCCESS) {
                 NA_LOG_ERROR("Could not complete operation");
                 goto done;
             }
         }
-        /* Remove entry from list */
-        hg_list_remove_entry(entry);
         ret = NA_SUCCESS; /* progressed */
         break;
     }
@@ -2536,13 +2420,8 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
     /* Mark op id as completed */
     na_mpi_op_id->completed = NA_TRUE;
 
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    /* Init callback info */
+    callback_info = &na_mpi_op_id->completion_data.callback_info;
     callback_info->arg = na_mpi_op_id->arg;
     callback_info->ret = (na_mpi_op_id->canceled) ? NA_CANCELED : ret;
     callback_info->type = na_mpi_op_id->type;
@@ -2641,30 +2520,30 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
             break;
     }
 
-    ret = na_cb_completion_add(na_mpi_op_id->context, na_mpi_op_id->callback,
-            callback_info, &na_mpi_release, na_mpi_op_id);
+    na_mpi_op_id->completion_data.callback = na_mpi_op_id->callback;
+    na_mpi_op_id->completion_data.plugin_callback = na_mpi_release;
+    na_mpi_op_id->completion_data.plugin_callback_args = na_mpi_op_id;
+
+    ret = na_cb_completion_add(na_mpi_op_id->context,
+        &na_mpi_op_id->completion_data);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not add callback to completion queue");
         goto done;
     }
 
 done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static void
-na_mpi_release(struct na_cb_info *callback_info, void *arg)
+na_mpi_release(void *arg)
 {
     struct na_mpi_op_id *na_mpi_op_id = (struct na_mpi_op_id *) arg;
 
     if (na_mpi_op_id && !na_mpi_op_id->completed) {
         NA_LOG_ERROR("Releasing resources from an uncompleted operation");
     }
-    free(callback_info);
     free(na_mpi_op_id);
 }
 
