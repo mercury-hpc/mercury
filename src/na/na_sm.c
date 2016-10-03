@@ -220,7 +220,9 @@ struct na_sm_op_id {
         struct na_sm_info_recv_unexpected recv_unexpected;
         struct na_sm_info_recv_expected recv_expected;
     } info;
+    hg_atomic_int32_t ref_count;    /* Ref count */
     HG_QUEUE_ENTRY(na_sm_op_id) entry;
+    struct na_cb_completion_data completion_data;
 };
 
 /* Private data */
@@ -454,11 +456,10 @@ na_sm_complete(
     );
 
 /**
- * Release memory from callback info.
+ * Release memory.
  */
 static void
 na_sm_release(
-    struct na_cb_info *callback_info,
     void *arg
     );
 
@@ -480,6 +481,19 @@ na_sm_initialize(
 static na_return_t
 na_sm_finalize(
     na_class_t *na_class
+    );
+
+/* op_create */
+static na_op_id_t
+na_sm_op_create(
+    na_class_t *na_class
+    );
+
+/* op_destroy */
+static na_return_t
+na_sm_op_destroy(
+    na_class_t *na_class,
+    na_op_id_t op_id
     );
 
 /* addr_lookup */
@@ -707,6 +721,8 @@ const na_class_t na_sm_class_g = {
     na_sm_finalize,                         /* finalize */
     NULL,                                   /* context_create */
     NULL,                                   /* context_destroy */
+    na_sm_op_create,                        /* op_create */
+    na_sm_op_destroy,                       /* op_destroy */
     na_sm_addr_lookup,                      /* addr_lookup */
     na_sm_addr_free,                        /* addr_free */
     na_sm_addr_self,                        /* addr_self */
@@ -1794,13 +1810,8 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id)
     /* Mark op id as completed */
     hg_atomic_set32(&na_sm_op_id->completed, NA_TRUE);
 
-    /* Allocate callback info */
-    callback_info = (struct na_cb_info *) malloc(sizeof(struct na_cb_info));
-    if (!callback_info) {
-        NA_LOG_ERROR("Could not allocate callback info");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    /* Init callback info */
+    callback_info = &na_sm_op_id->completion_data.callback_info;
     callback_info->arg = na_sm_op_id->arg;
     callback_info->ret = (canceled) ? NA_CANCELED : ret;
     callback_info->type = na_sm_op_id->type;
@@ -1861,31 +1872,31 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id)
             break;
     }
 
-    ret = na_cb_completion_add(na_sm_op_id->context, na_sm_op_id->callback,
-        callback_info, na_sm_release, na_sm_op_id);
+    na_sm_op_id->completion_data.callback = na_sm_op_id->callback;
+    na_sm_op_id->completion_data.plugin_callback = na_sm_release;
+    na_sm_op_id->completion_data.plugin_callback_args = na_sm_op_id;
+
+    ret = na_cb_completion_add(na_sm_op_id->context,
+        &na_sm_op_id->completion_data);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not add callback to completion queue");
         goto done;
     }
 
 done:
-    if (ret != NA_SUCCESS) {
-        free(callback_info);
-    }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static void
-na_sm_release(struct na_cb_info *callback_info, void *arg)
+na_sm_release(void *arg)
 {
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) arg;
 
     if (na_sm_op_id && !hg_atomic_get32(&na_sm_op_id->completed)) {
         NA_LOG_ERROR("Releasing resources from an uncompleted operation");
     }
-    free(callback_info);
-    free(na_sm_op_id);
+    na_sm_op_destroy(NULL, na_sm_op_id);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2078,8 +2089,46 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+static na_op_id_t
+na_sm_op_create(na_class_t NA_UNUSED *na_class)
+{
+    struct na_sm_op_id *na_sm_op_id = NULL;
+
+    static int ntimes = 1;
+    NA_LOG_DEBUG("Called %d times", ntimes);
+    ntimes++;
+    na_sm_op_id = (struct na_sm_op_id *) malloc(sizeof(struct na_sm_op_id));
+    if (!na_sm_op_id) {
+        NA_LOG_ERROR("Could not allocate NA SM operation ID");
+        goto done;
+    }
+    memset(na_sm_op_id, 0, sizeof(struct na_sm_op_id));
+    hg_atomic_set32(&na_sm_op_id->ref_count, 1);
+
+done:
+    return (na_op_id_t) na_sm_op_id;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
+na_sm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
+{
+    struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
+    na_return_t ret = NA_SUCCESS;
+
+    if (hg_atomic_decr32(&na_sm_op_id->ref_count)) {
+        /* Cannot free yet */
+        goto done;
+    }
+    free(na_sm_op_id);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const char *name, na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
@@ -2090,12 +2139,17 @@ na_sm_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
     int conn_sock, local_notify, remote_notify;
     na_return_t ret = NA_SUCCESS;
 
-    /* Allocate op_id */
-    na_sm_op_id = (struct na_sm_op_id *) malloc(sizeof(struct na_sm_op_id));
-    if (!na_sm_op_id) {
-        NA_LOG_ERROR("Could not allocate NA SM operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        hg_atomic_incr32(&na_sm_op_id->ref_count);
+    } else {
+        na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
+        if (!na_sm_op_id) {
+            NA_LOG_ERROR("Could not allocate NA SM operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_sm_op_id->context = context;
     na_sm_op_id->type = NA_CB_LOOKUP;
@@ -2176,7 +2230,7 @@ na_sm_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
     }
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE)
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = na_sm_op_id;
 
     /* Push op ID to lookup op queue */
@@ -2190,7 +2244,7 @@ na_sm_addr_lookup(na_class_t NA_UNUSED *na_class, na_context_t *context,
 done:
     if (ret != NA_SUCCESS) {
         free(na_sm_addr);
-        free(na_sm_op_id);
+        na_sm_op_destroy(na_class, (na_op_id_t) na_sm_op_id);
     }
     return ret;
 }
@@ -2364,9 +2418,9 @@ na_sm_msg_get_max_tag(na_class_t NA_UNUSED *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
-    na_context_t *context, na_cb_t callback, void *arg, const void *buf,
-    na_size_t buf_size, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
+    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
+    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest;
@@ -2380,12 +2434,17 @@ na_sm_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
         goto done;
     }
 
-    /* Allocate op_id */
-    na_sm_op_id = (struct na_sm_op_id *) malloc(sizeof(struct na_sm_op_id));
-    if (!na_sm_op_id) {
-        NA_LOG_ERROR("Could not allocate NA SM operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        hg_atomic_incr32(&na_sm_op_id->ref_count);
+    } else {
+        na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
+        if (!na_sm_op_id) {
+            NA_LOG_ERROR("Could not allocate NA SM operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_sm_op_id->context = context;
     na_sm_op_id->type = NA_CB_SEND_UNEXPECTED;
@@ -2423,7 +2482,8 @@ na_sm_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
     }
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_sm_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_sm_op_id;
 
     /* Immediate completion, add directly to completion queue. */
     ret = na_sm_complete(na_sm_op_id);
@@ -2433,6 +2493,9 @@ na_sm_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
     }
 
 done:
+    if (ret != NA_SUCCESS) {
+        na_sm_op_destroy(na_class, (na_op_id_t) na_sm_op_id);
+    }
     return ret;
 }
 
@@ -2452,12 +2515,17 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         goto done;
     }
 
-    /* Allocate na_op_id */
-    na_sm_op_id = (struct na_sm_op_id *) malloc(sizeof(struct na_sm_op_id));
-    if (!na_sm_op_id) {
-        NA_LOG_ERROR("Could not allocate NA SM operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        hg_atomic_incr32(&na_sm_op_id->ref_count);
+    } else {
+        na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
+        if (!na_sm_op_id) {
+            NA_LOG_ERROR("Could not allocate NA SM operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_sm_op_id->context = context;
     na_sm_op_id->type = NA_CB_RECV_UNEXPECTED;
@@ -2470,7 +2538,8 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_sm_op_id->info.recv_unexpected.unexpected_info = NULL;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_sm_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_sm_op_id;
 
     /* Look for an unexpected message already received */
     hg_thread_mutex_lock(
@@ -2501,7 +2570,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_sm_op_id);
+        na_sm_op_destroy(na_class, (na_op_id_t) na_sm_op_id);
     }
     return ret;
 }
@@ -2524,12 +2593,17 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
         goto done;
     }
 
-    /* Allocate op_id */
-    na_sm_op_id = (struct na_sm_op_id *) malloc(sizeof(struct na_sm_op_id));
-    if (!na_sm_op_id) {
-        NA_LOG_ERROR("Could not allocate NA SM operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        hg_atomic_incr32(&na_sm_op_id->ref_count);
+    } else {
+        na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
+        if (!na_sm_op_id) {
+            NA_LOG_ERROR("Could not allocate NA SM operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_sm_op_id->context = context;
     na_sm_op_id->type = NA_CB_SEND_EXPECTED;
@@ -2567,7 +2641,8 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     }
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_sm_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_sm_op_id;
 
     /* Immediate completion, add directly to completion queue. */
     ret = na_sm_complete(na_sm_op_id);
@@ -2577,12 +2652,15 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     }
 
 done:
+    if (ret != NA_SUCCESS) {
+        na_sm_op_destroy(na_class, (na_op_id_t) na_sm_op_id);
+    }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
+na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
     na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
 {
@@ -2595,12 +2673,17 @@ na_sm_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
         goto done;
     }
 
-    /* Allocate na_op_id */
-    na_sm_op_id = (struct na_sm_op_id *) malloc(sizeof(struct na_sm_op_id));
-    if (!na_sm_op_id) {
-        NA_LOG_ERROR("Could not allocate NA SM operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        hg_atomic_incr32(&na_sm_op_id->ref_count);
+    } else {
+        na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
+        if (!na_sm_op_id) {
+            NA_LOG_ERROR("Could not allocate NA SM operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_sm_op_id->context = context;
     na_sm_op_id->type = NA_CB_RECV_EXPECTED;
@@ -2614,7 +2697,8 @@ na_sm_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_sm_op_id->info.recv_expected.tag = tag;
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_sm_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_sm_op_id;
 
     /* Expected messages must always be pre-posted, therefore a message should
      * never arrive before that call returns (not completes), simply add
@@ -2628,7 +2712,7 @@ na_sm_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_sm_op_id);
+        na_sm_op_destroy(na_class, (na_op_id_t) na_sm_op_id);
     }
     return ret;
 }
@@ -2867,12 +2951,17 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    /* Allocate op_id */
-    na_sm_op_id = (struct na_sm_op_id *) malloc(sizeof(struct na_sm_op_id));
-    if (!na_sm_op_id) {
-        NA_LOG_ERROR("Could not allocate NA SM operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        hg_atomic_incr32(&na_sm_op_id->ref_count);
+    } else {
+        na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
+        if (!na_sm_op_id) {
+            NA_LOG_ERROR("Could not allocate NA SM operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_sm_op_id->context = context;
     na_sm_op_id->type = NA_CB_PUT;
@@ -2882,7 +2971,8 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_sm_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_sm_op_id;
 
     /* Translate local offset, skip this step if not necessary */
     if (local_offset || length != na_sm_mem_handle_local->len) {
@@ -2937,6 +3027,9 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
 done:
+    if (ret != NA_SUCCESS) {
+        na_sm_op_destroy(na_class, (na_op_id_t) na_sm_op_id);
+    }
     return ret;
 }
 
@@ -2972,12 +3065,17 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    /* Allocate op_id */
-    na_sm_op_id = (struct na_sm_op_id *) malloc(sizeof(struct na_sm_op_id));
-    if (!na_sm_op_id) {
-        NA_LOG_ERROR("Could not allocate NA SM operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        hg_atomic_incr32(&na_sm_op_id->ref_count);
+    } else {
+        na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
+        if (!na_sm_op_id) {
+            NA_LOG_ERROR("Could not allocate NA SM operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
     }
     na_sm_op_id->context = context;
     na_sm_op_id->type = NA_CB_GET;
@@ -2987,7 +3085,8 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
     /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = na_sm_op_id;
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_sm_op_id;
 
     /* Translate local offset, skip this step if not necessary */
     if (local_offset || length != na_sm_mem_handle_local->len) {
@@ -3042,6 +3141,9 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
 done:
+    if (ret != NA_SUCCESS) {
+        na_sm_op_destroy(na_class, (na_op_id_t) na_sm_op_id);
+    }
     return ret;
 }
 
