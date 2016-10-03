@@ -20,7 +20,7 @@
 #elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
   #include <opa_primitives.h>
   typedef OPA_int_t hg_atomic_int32_t;
-  typedef OPA_int_t hg_atomic_int64_t; /* Not supported */
+  /* 64-bit atomic not supported */
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
   #include <stdatomic.h>
   typedef _Atomic hg_util_int32_t hg_atomic_int32_t;
@@ -253,6 +253,7 @@ hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
     return ret;
 }
 
+#ifndef HG_UTIL_HAS_OPA_PRIMITIVES_H
 /**
  * Set atomic value (64-bit integer).
  *
@@ -264,8 +265,6 @@ hg_atomic_set64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 {
 #if defined(_WIN32)
     ptr->value = value;
-#elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    OPA_store_int(ptr, value);
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     atomic_store_explicit(ptr, value, memory_order_release);
 #elif defined(__APPLE__)
@@ -289,8 +288,6 @@ hg_atomic_get64(hg_atomic_int64_t *ptr)
 
 #if defined(_WIN32)
     ret = ptr->value;
-#elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = OPA_load_int(ptr);
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_load_explicit(ptr, memory_order_acquire);
 #elif defined(__APPLE__)
@@ -316,8 +313,6 @@ hg_atomic_incr64(hg_atomic_int64_t *ptr)
 
 #if defined(_WIN32)
     ret = InterlockedIncrementNoFence64(&ptr->value);
-#elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = OPA_fetch_and_incr_int(ptr) + 1;
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_fetch_add_explicit(ptr, 1, memory_order_acq_rel) + 1;
 #elif defined(__APPLE__)
@@ -343,8 +338,6 @@ hg_atomic_decr64(hg_atomic_int64_t *ptr)
 
 #if defined(_WIN32)
     ret = InterlockedDecrementNoFence64(&ptr->value);
-#elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = OPA_fetch_and_decr_int(ptr) - 1;
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_fetch_sub_explicit(ptr, 1, memory_order_acq_rel) - 1;
 #elif defined(__APPLE__)
@@ -449,8 +442,6 @@ hg_atomic_cas64(hg_atomic_int64_t *ptr, hg_util_int64_t compare_value,
 #if defined(_WIN32)
     ret = (compare_value == InterlockedCompareExchangeNoFence64(&ptr->value,
         swap_value, compare_value));
-#elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-    ret = (hg_util_bool_t) (compare_value == OPA_cas_int(ptr, compare_value, swap_value));
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
     ret = atomic_compare_exchange_strong_explicit(ptr, &compare_value, swap_value,
         memory_order_acq_rel, memory_order_acquire);
@@ -462,6 +453,7 @@ hg_atomic_cas64(hg_atomic_int64_t *ptr, hg_util_int64_t compare_value,
 
     return ret;
 }
+#endif /* HG_UTIL_HAS_OPA_PRIMITIVES_H */
 
 #ifdef __cplusplus
 }

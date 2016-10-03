@@ -40,6 +40,7 @@ thread_cb_cas32(void *arg)
     return thread_ret;
 }
 
+#ifndef HG_UTIL_HAS_OPA_PRIMITIVES_H
 static HG_THREAD_RETURN_TYPE
 thread_cb_incr64(void *arg)
 {
@@ -73,15 +74,18 @@ thread_cb_cas64(void *arg)
     hg_thread_exit(thread_ret);
     return thread_ret;
 }
+#endif
 
 int
 main(int argc, char *argv[])
 {
     hg_thread_t thread, thread1;
     hg_atomic_int32_t atomic_int32;
-    hg_atomic_int64_t atomic_int64;
     hg_util_int32_t value32 = 0;
+#ifndef HG_UTIL_HAS_OPA_PRIMITIVES_H
+    hg_atomic_int64_t atomic_int64;
     hg_util_int64_t value64 = 0;
+#endif
     int ret = EXIT_SUCCESS;
 
     (void) argc;
@@ -105,6 +109,7 @@ main(int argc, char *argv[])
         ret = EXIT_FAILURE;
     }
 
+#ifndef HG_UTIL_HAS_OPA_PRIMITIVES_H
     /* Atomic 64 test */
     hg_thread_init(&thread);
     hg_atomic_set64(&atomic_int64, value64);
@@ -122,6 +127,7 @@ main(int argc, char *argv[])
         fprintf(stderr, "Error: atomic value is %lld\n", value64);
         ret = EXIT_FAILURE;
     }
+#endif
 
     return ret;
 }
