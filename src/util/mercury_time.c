@@ -63,6 +63,11 @@ hg_time_get_current(hg_time_t *tv)
     uint64_t monotonic_nsec;
 #else
     struct timespec tp;
+#ifdef CLOCK_MONOTONIC_RAW
+    clockid_t clock_id = CLOCK_MONOTONIC_RAW;
+#else
+    clockid_t clock_id = CLOCK_MONOTONIC;
+#endif
 #endif
 
     if (!tv) {
@@ -109,7 +114,7 @@ hg_time_get_current(hg_time_t *tv)
     tv->tv_sec  = monotonic_nsec / 1000000000;
     tv->tv_usec = (monotonic_nsec - tv->tv_sec) / 1000;
 #else
-    if (clock_gettime(CLOCK_MONOTONIC_RAW, &tp)) {
+    if (clock_gettime(clock_id, &tp)) {
         HG_UTIL_ERROR_DEFAULT("clock_gettime failed");
         ret = HG_UTIL_FAIL;
         return ret;
