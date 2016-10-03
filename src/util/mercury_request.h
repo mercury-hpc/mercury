@@ -102,6 +102,16 @@ HG_UTIL_EXPORT int
 hg_request_destroy(hg_request_t *request);
 
 /**
+ * Reset an existing request so that it can be safely re-used.
+ *
+ * \param request [IN/OUT]      pointer to request
+ *
+ * \return Pointer to request or NULL in case of failure
+ */
+HG_UTIL_EXPORT int
+hg_request_reset(hg_request_t *request);
+
+/**
  * Mark the request as completed. (most likely called by a callback triggered
  * after a call to trigger)
  *

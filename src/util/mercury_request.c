@@ -128,6 +128,17 @@ hg_request_destroy(hg_request_t *request)
 
 /*---------------------------------------------------------------------------*/
 int
+hg_request_reset(hg_request_t *request)
+{
+    int ret = HG_UTIL_SUCCESS;
+
+    hg_atomic_set32(&request->completed, HG_UTIL_FALSE);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+int
 hg_request_complete(hg_request_t *request)
 {
     int ret = HG_UTIL_SUCCESS;
