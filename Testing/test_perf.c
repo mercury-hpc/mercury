@@ -44,6 +44,8 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
 {
     int avg_iter;
     double time_read = 0, min_time_read = 0, max_time_read = 0;
+    hg_handle_t handle;
+    hg_request_t *request;
     hg_return_t ret = HG_SUCCESS;
 
     size_t i;
@@ -55,19 +57,16 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
 
     if (na_test_comm_rank_g == 0) printf("# Warming up...\n");
 
+    ret = HG_Create(context, addr, hg_test_perf_rpc_id_g, &handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not start call\n");
+        goto done;
+    }
+
+    request = hg_request_create(request_class);
+
     /* Warm up for RPC */
     for (i = 0; i < RPC_SKIP; i++) {
-        hg_request_t *request;
-        hg_handle_t handle;
-
-        request = hg_request_create(request_class);
-
-        ret = HG_Create(context, addr, hg_test_perf_rpc_id_g, &handle);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not start call\n");
-            goto done;
-        }
-
         ret = HG_Forward(handle, hg_test_perf_forward_cb, request, NULL);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
@@ -75,15 +74,7 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
-
-        /* Complete */
-        ret = HG_Destroy(handle);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not complete\n");
-            goto done;
-        }
-
-        hg_request_destroy(request);
+        hg_request_reset(request);
     }
 
     NA_Test_barrier();
@@ -95,19 +86,9 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
 
     /* RPC benchmark */
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
-        hg_request_t *request;
-        hg_handle_t handle;
         hg_time_t t1, t2;
         double td, part_time_read;
         double calls_per_sec, min_calls_per_sec, max_calls_per_sec;
-
-        request = hg_request_create(request_class);
-
-        ret = HG_Create(context, addr, hg_test_perf_rpc_id_g, &handle);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not start call\n");
-            goto done;
-        }
 
         hg_time_get_current(&t1);
 
@@ -129,14 +110,7 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
         min_time_read = (td < min_time_read) ? td : min_time_read;
         max_time_read = (td > max_time_read) ? td : max_time_read;
 
-        /* Complete */
-        ret = HG_Destroy(handle);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not complete\n");
-            goto done;
-        }
-
-        hg_request_destroy(request);
+        hg_request_reset(request);
 
         part_time_read = time_read / (avg_iter + 1);
         calls_per_sec = na_test_comm_size_g / part_time_read;
@@ -152,6 +126,15 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
         }
     }
     if (na_test_comm_rank_g == 0) printf("\n");
+
+    hg_request_destroy(request);
+
+    /* Complete */
+    ret = HG_Destroy(handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not complete\n");
+        goto done;
+    }
 
 done:
     return ret;
@@ -174,6 +157,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     double nmbytes;
     unsigned int nsegments;
     hg_handle_t handle;
+    hg_request_t *request;
 
     int avg_iter;
     double time_read = 0, min_time_read = 0, max_time_read = 0;
@@ -222,6 +206,8 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         goto done;
     }
 
+    request = hg_request_create(request_class);
+
     /* Register memory */
     ret = HG_Bulk_create(hg_class, nsegments, buf_ptrs, (hg_size_t *) buf_sizes,
         HG_BULK_READ_ONLY, &bulk_handle);
@@ -238,10 +224,6 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
     /* Warm up for bulk data */
     for (i = 0; i < BULK_SKIP; i++) {
-        hg_request_t *request;
-
-        request = hg_request_create(request_class);
-
         ret = HG_Forward(handle, hg_test_perf_forward_cb, request, &in_struct);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
@@ -249,8 +231,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
-
-        hg_request_destroy(request);
+        hg_request_reset(request);
     }
 
     NA_Test_barrier();
@@ -262,12 +243,9 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
     /* Bulk data benchmark */
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
-        hg_request_t *request;
         hg_time_t t1, t2;
         double td, part_time_read;
         double read_bandwidth, min_read_bandwidth, max_read_bandwidth;
-
-        request = hg_request_create(request_class);
 
         hg_time_get_current(&t1);
 
@@ -289,7 +267,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         min_time_read = (td < min_time_read) ? td : min_time_read;
         max_time_read = (td > max_time_read) ? td : max_time_read;
 
-        hg_request_destroy(request);
+        hg_request_reset(request);
 
         part_time_read = time_read / (avg_iter + 1);
         read_bandwidth = nmbytes * na_test_comm_size_g / part_time_read;
@@ -322,6 +300,8 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         free(*buf_ptrs);
     }
     free(buf_ptrs);
+
+    hg_request_destroy(request);
 
     /* Complete */
     ret = HG_Destroy(handle);
