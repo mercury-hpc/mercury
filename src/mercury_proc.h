@@ -76,6 +76,24 @@ hg_proc_buf_free(
  * Create a new encoding/decoding processor.
  *
  * \param hg_class [IN]         HG class
+ * \param hash [IN]             hash method used for computing checksum
+ *                              (if NULL, checksum is not computed)
+ *                              hash method: HG_CRC16, HG_CRC64, HG_NOHASH
+ * \param proc [OUT]            pointer to abstract processor object
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+hg_proc_create(
+        hg_class_t *hg_class,
+        hg_proc_hash_t hash,
+        hg_proc_t *proc
+        );
+
+/**
+ * Create a new encoding/decoding processor.
+ *
+ * \param hg_class [IN]         HG class
  * \param buf [IN]              pointer to buffer that will be used for
  *                              serialization/deserialization
  * \param buf_size [IN]         buffer size
@@ -88,7 +106,7 @@ hg_proc_buf_free(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_proc_create(
+hg_proc_create_set(
         hg_class_t *hg_class,
         void *buf,
         hg_size_t buf_size,
@@ -107,6 +125,25 @@ hg_proc_create(
 HG_EXPORT hg_return_t
 hg_proc_free(
         hg_proc_t proc
+        );
+
+/**
+ * Reset the processor.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param buf [IN]              pointer to buffer that will be used for
+ *                              serialization/deserialization
+ * \param buf_size [IN]         buffer size
+ * \param op [IN]               operation type: HG_ENCODE / HG_DECODE / HG_FREE
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+hg_proc_reset(
+        hg_proc_t proc,
+        void *buf,
+        hg_size_t buf_size,
+        hg_proc_op_t op
         );
 
 /**

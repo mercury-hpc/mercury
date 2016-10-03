@@ -208,6 +208,15 @@ hg_core_finalize(
         );
 
 /**
+ * Set handle create callback.
+ */
+void
+hg_core_set_handle_create_callback(
+        struct hg_class *hg_class,
+        handle_create_cb_t handle_create_callback
+        );
+
+/**
  * Get NA context.
  */
 na_context_t *
@@ -854,6 +863,14 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+void
+hg_core_set_handle_create_callback(struct hg_class *hg_class,
+    handle_create_cb_t handle_create_callback)
+{
+    hg_class->handle_create_callback = handle_create_callback;
+}
+
+/*---------------------------------------------------------------------------*/
 na_context_t *
 hg_core_get_na_context(struct hg_context *context)
 {
@@ -1066,6 +1083,7 @@ hg_core_create(struct hg_context *context)
         goto done;
     }
 
+    /* Create NA operation IDs */
     hg_handle->na_send_op_id = NA_Op_create(na_class);
     hg_handle->na_recv_op_id = NA_Op_create(na_class);
     if (hg_handle->na_recv_op_id || hg_handle->na_send_op_id) {
@@ -1079,7 +1097,19 @@ hg_core_create(struct hg_context *context)
     }
     hg_atomic_set32(&hg_handle->na_completed_count, 0);
 
+    /* Set refcount to 1 */
     hg_atomic_set32(&hg_handle->ref_count, 1);
+
+    /* Execute context callback on handle, this allows upper layers to allocate
+     * private data on handle creation */
+    if (context->hg_class->handle_create_callback) {
+        ret = context->hg_class->handle_create_callback(context->hg_class,
+            (hg_handle_t) hg_handle);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Error in HG handle create callback");
+            goto done;
+        }
+    }
 
 done:
     if (ret != HG_SUCCESS) {
@@ -1778,8 +1808,6 @@ hg_core_reset_post(struct hg_handle *hg_handle)
     hg_handle->extra_in_buf_size = 0;
     hg_handle->extra_in_op_id = HG_OP_ID_NULL;
     hg_handle->hg_rpc_info = NULL;
-    hg_handle->private_data = NULL;
-    hg_handle->private_free_callback = NULL;
 
     /* Safe to repost */
     ret = hg_core_post(hg_handle);
@@ -2654,6 +2682,7 @@ HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle_t *handle)
 {
     struct hg_handle *hg_handle = NULL;
+    struct hg_rpc_info *hg_rpc_info;
     hg_return_t ret = HG_SUCCESS;
 
     if (!context) {
@@ -2681,6 +2710,18 @@ HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     }
     hg_handle->hg_info.addr = addr;
     hg_handle->hg_info.id = id;
+
+    /* Retrieve exe function from function map */
+    hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
+        context->hg_class->func_map, (hg_hash_table_key_t) &id);
+    if (!hg_rpc_info) {
+        HG_LOG_ERROR("Could not find RPC ID in function map");
+        ret = HG_NO_MATCH;
+        goto done;
+    }
+
+    /* Cache RPC info */
+    hg_handle->hg_rpc_info = hg_rpc_info;
 
     *handle = (hg_handle_t) hg_handle;
 

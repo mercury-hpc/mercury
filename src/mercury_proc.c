@@ -117,8 +117,7 @@ hg_proc_buf_free(void *mem_ptr)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_proc_create(hg_class_t *hg_class, void *buf, hg_size_t buf_size,
-    hg_proc_op_t op, hg_proc_hash_t hash, hg_proc_t *proc)
+hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
 {
     struct hg_proc *hg_proc = NULL;
     const char *hash_method;
@@ -130,47 +129,14 @@ hg_proc_create(hg_class_t *hg_class, void *buf, hg_size_t buf_size,
         goto done;
     }
 
-    if (!buf && op != HG_FREE) {
-        HG_LOG_ERROR("NULL buffer");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-
     hg_proc = (struct hg_proc *) malloc(sizeof(struct hg_proc));
     if (!hg_proc) {
         HG_LOG_ERROR("Could not allocate proc");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-
+    memset(hg_proc, 0, sizeof(struct hg_proc));
     hg_proc->hg_class = hg_class;
-    hg_proc->op = op;
-    hg_proc->proc_buf.buf = buf;
-    hg_proc->proc_buf.size = buf_size;
-    hg_proc->proc_buf.buf_ptr = buf;
-    hg_proc->proc_buf.size_left = buf_size;
-    hg_proc->proc_buf.is_mine = 0;
-#ifdef HG_HAS_CHECKSUMS
-    hg_proc->proc_buf.checksum = MCHECKSUM_OBJECT_NULL;
-    hg_proc->proc_buf.update_checksum = 0;
-#endif
-#ifdef HG_HAS_XDR
-    switch (op) {
-        case HG_ENCODE:
-            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf, buf_size, XDR_ENCODE);
-            break;
-        case HG_DECODE:
-            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf, buf_size, XDR_DECODE);
-            break;
-        case HG_FREE:
-            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf, buf_size, XDR_FREE);
-            break;
-        default:
-            HG_LOG_ERROR("Unknown proc operation");
-            ret = HG_INVALID_PARAM;
-            goto done;
-    }
-#endif
 
     /* Map enum to string */
     switch (hash) {
@@ -203,11 +169,6 @@ hg_proc_create(hg_class_t *hg_class, void *buf, hg_size_t buf_size,
     }
 
     /* Do not allocate extra buffer yet */
-    hg_proc->extra_buf.buf = NULL;
-    hg_proc->extra_buf.size = 0;
-    hg_proc->extra_buf.buf_ptr = NULL;
-    hg_proc->extra_buf.size_left = 0;
-    hg_proc->extra_buf.is_mine = 0;
 #ifdef HG_HAS_CHECKSUMS
     hg_proc->extra_buf.checksum = hg_proc->proc_buf.checksum;
     hg_proc->extra_buf.update_checksum = hg_proc->proc_buf.update_checksum;
@@ -222,6 +183,32 @@ done:
     if (ret != HG_SUCCESS) {
         free(hg_proc);
     }
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+hg_proc_create_set(hg_class_t *hg_class, void *buf, hg_size_t buf_size,
+    hg_proc_op_t op, hg_proc_hash_t hash, hg_proc_t *proc)
+{
+    hg_proc_t hg_proc;
+    hg_return_t ret = HG_SUCCESS;
+
+    ret = hg_proc_create(hg_class, hash, &hg_proc);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not create proc");
+        goto done;
+    }
+
+    ret = hg_proc_reset(hg_proc, buf, buf_size, op);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not reset proc");
+        goto done;
+    }
+
+    *proc = hg_proc;
+
+done:
     return ret;
 }
 
@@ -255,6 +242,78 @@ hg_proc_free(hg_proc_t proc)
     /* Free proc */
     free(hg_proc);
     hg_proc = NULL;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
+{
+    struct hg_proc *hg_proc = (struct hg_proc *) proc;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_proc) goto done;
+
+    if (!buf && op != HG_FREE) {
+        HG_LOG_ERROR("NULL buffer");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    hg_proc->op = op;
+#ifdef HG_HAS_XDR
+    switch (op) {
+        case HG_ENCODE:
+            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf, buf_size, XDR_ENCODE);
+            break;
+        case HG_DECODE:
+            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf, buf_size, XDR_DECODE);
+            break;
+        case HG_FREE:
+            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf, buf_size, XDR_FREE);
+            break;
+        default:
+            HG_LOG_ERROR("Unknown proc operation");
+            ret = HG_INVALID_PARAM;
+            goto done;
+    }
+#endif
+
+    /* Reset proc buf */
+    hg_proc->proc_buf.buf = buf;
+    hg_proc->proc_buf.size = buf_size;
+    hg_proc->proc_buf.buf_ptr = buf;
+    hg_proc->proc_buf.size_left = buf_size;
+    hg_proc->proc_buf.is_mine = 0;
+#ifdef HG_HAS_CHECKSUMS
+    /* Reset checksum */
+    if (hg_proc->proc_buf.checksum != MCHECKSUM_OBJECT_NULL) {
+        int checksum_ret;
+
+        checksum_ret = mchecksum_reset(hg_proc->proc_buf.checksum);
+        if (checksum_ret != MCHECKSUM_SUCCESS) {
+            HG_LOG_ERROR("Could not reset checksum");
+            ret = HG_CHECKSUM_ERROR;
+        }
+        hg_proc->proc_buf.update_checksum = 1;
+    }
+#endif
+
+    /* Reset extra buf */
+    hg_proc->extra_buf.buf = NULL;
+    hg_proc->extra_buf.size = 0;
+    hg_proc->extra_buf.buf_ptr = NULL;
+    hg_proc->extra_buf.size_left = 0;
+    hg_proc->extra_buf.is_mine = 0;
+    /* Do not allocate extra buffer yet */
+#ifdef HG_HAS_CHECKSUMS
+    hg_proc->extra_buf.checksum = hg_proc->proc_buf.checksum;
+    hg_proc->extra_buf.update_checksum = hg_proc->proc_buf.update_checksum;
+#endif
+
+    /* Default to proc_buf */
+    hg_proc->current_buf = &hg_proc->proc_buf;
 
 done:
     return ret;

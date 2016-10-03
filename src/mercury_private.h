@@ -23,6 +23,9 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
+/* Private callback type for HG layer */
+typedef hg_return_t (*handle_create_cb_t)(hg_class_t *, hg_handle_t);
+
 /* HG class */
 struct hg_class {
     na_class_t *na_class;           /* NA class */
@@ -30,6 +33,7 @@ struct hg_class {
     hg_atomic_int32_t request_tag;  /* Atomic used for tag generation */
     na_tag_t request_max_tag;       /* Max value for tag */
     hg_bool_t na_ext_init;          /* NA externally initialized */
+    handle_create_cb_t handle_create_callback; /* Callback executed on hg_core_create */
 };
 
 /* Completion type */

@@ -9,6 +9,7 @@
  */
 
 #include "mercury.h"
+#include "mercury_private.h"
 
 #include "mercury_hash_string.h"
 #include "mercury_proc.h"
@@ -40,7 +41,8 @@ struct hg_proc_info {
 
 /* Private handle data */
 struct hg_private_data {
-    struct hg_proc_info *hg_proc_info;  /* Pointer to proc info */
+    hg_proc_t in_proc;
+    hg_proc_t out_proc;
     hg_cb_t callback;                   /* Callback */
     void *arg;                          /* Callback args */
     hg_bulk_t extra_in_handle;          /* Extra bulk handle */
@@ -50,6 +52,15 @@ struct hg_private_data {
 /********************/
 /* Local Prototypes */
 /********************/
+
+/**
+ * Set handle create callback on context.
+ */
+extern void
+hg_core_set_handle_create_callback(
+        hg_class_t *hg_class,
+        handle_create_cb_t handle_create_callback
+        );
 
 /**
  * Increment ref count on handle.
@@ -78,7 +89,7 @@ hg_core_get_private_data(
         );
 
 /**
- * Get RPC data.
+ * Get RPC registered data.
  */
 extern void *
 hg_core_get_rpc_data(
@@ -170,13 +181,66 @@ hg_proc_info_free(void *arg)
 }
 
 /*---------------------------------------------------------------------------*/
+/**
+ * Free function for private data.
+ */
+static HG_INLINE void
+hg_private_data_free(void *arg)
+{
+    struct hg_private_data *hg_private_data = (struct hg_private_data *) arg;
+
+    if (hg_private_data->in_proc != HG_PROC_NULL)
+        hg_proc_free(hg_private_data->in_proc);
+    if (hg_private_data->out_proc != HG_PROC_NULL)
+        hg_proc_free(hg_private_data->out_proc);
+    free(hg_private_data);
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_private_data_alloc(hg_class_t *hg_class, hg_handle_t handle)
+{
+    struct hg_private_data *hg_private_data = NULL;
+    hg_return_t ret;
+
+    /* Create private data to wrap callbacks etc */
+    hg_private_data = (struct hg_private_data *) malloc(
+        sizeof(struct hg_private_data));
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not allocate private data");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+    ret = hg_proc_create(hg_class, HG_CHECKSUM_DEFAULT,
+        &hg_private_data->in_proc);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Cannot create HG proc");
+        goto done;
+    }
+    ret = hg_proc_create(hg_class, HG_CHECKSUM_DEFAULT,
+        &hg_private_data->out_proc);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Cannot create HG proc");
+        goto done;
+    }
+    hg_private_data->callback = NULL;
+    hg_private_data->arg = NULL;
+    hg_private_data->extra_in_buf = NULL;
+    hg_private_data->extra_in_handle = HG_BULK_NULL;
+    hg_core_set_private_data(handle, hg_private_data, hg_private_data_free);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_get_input(hg_handle_t handle, void *in_struct)
 {
     void *in_buf;
     hg_size_t in_buf_size;
-    struct hg_info *hg_info;
-    struct hg_proc_info *hg_proc_info;
+    struct hg_proc_info *hg_proc_info = NULL;
+    struct hg_private_data *hg_private_data = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
@@ -193,9 +257,6 @@ hg_get_input(hg_handle_t handle, void *in_struct)
         goto done;
     }
 
-    /* Get info from handle */
-    hg_info = HG_Core_get_info(handle);
-
     /* Retrieve proc function from function map */
     hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
     if (!hg_proc_info) {
@@ -203,14 +264,21 @@ hg_get_input(hg_handle_t handle, void *in_struct)
         ret = HG_NO_MATCH;
         goto done;
     }
-
     if (!hg_proc_info->in_proc_cb) goto done;
 
-    /* Create a new decoding proc */
-    ret = hg_proc_create(hg_info->hg_class, in_buf, in_buf_size, HG_DECODE,
-            HG_CHECKSUM_DEFAULT, &proc);
+    /* Retrieve private data */
+    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_NO_MATCH;
+        goto done;
+    }
+    proc = hg_private_data->in_proc;
+
+    /* Reset proc */
+    ret = hg_proc_reset(proc, in_buf, in_buf_size, HG_DECODE);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not create proc");
+        HG_LOG_ERROR("Could not reset proc");
         goto done;
     }
 
@@ -229,7 +297,6 @@ hg_get_input(hg_handle_t handle, void *in_struct)
     }
 
 done:
-    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }
 
@@ -240,9 +307,8 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
 {
     void *in_buf;
     hg_size_t in_buf_size;
-    struct hg_info *hg_info;
-    struct hg_private_data *hg_private_data;
-    struct hg_proc_info *hg_proc_info;
+    struct hg_proc_info *hg_proc_info = NULL;
+    struct hg_private_data *hg_private_data = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
@@ -258,25 +324,28 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
         goto done;
     }
 
-    /* Get info from handle */
-    hg_info = HG_Core_get_info(handle);
-
     /* Retrieve proc function from function map */
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get proc info");
+        ret = HG_NO_MATCH;
+        goto done;
+    }
+    if (!hg_proc_info->in_proc_cb) goto done;
+
+    /* Retrieve private data */
     hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_NO_MATCH;
         goto done;
     }
-    hg_proc_info = hg_private_data->hg_proc_info;
+    proc = hg_private_data->in_proc;
 
-    if (!hg_proc_info->in_proc_cb) goto done;
-
-    /* Create a new encoding proc */
-    ret = hg_proc_create(hg_info->hg_class, in_buf, in_buf_size, HG_ENCODE,
-            HG_CHECKSUM_DEFAULT, &proc);
+    /* Reset proc */
+    ret = hg_proc_reset(proc, in_buf, in_buf_size, HG_ENCODE);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not create proc");
+        HG_LOG_ERROR("Could not reset proc");
         goto done;
     }
 
@@ -320,7 +389,6 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     }
 
 done:
-    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }
 
@@ -328,15 +396,12 @@ done:
 static hg_return_t
 hg_free_input(hg_handle_t handle, void *in_struct)
 {
-    struct hg_info *hg_info;
-    struct hg_proc_info *hg_proc_info;
+    struct hg_proc_info *hg_proc_info = NULL;
+    struct hg_private_data *hg_private_data = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
     if (!in_struct) goto done;
-
-    /* Get info from handle */
-    hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
     hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
@@ -345,13 +410,21 @@ hg_free_input(hg_handle_t handle, void *in_struct)
         ret = HG_NO_MATCH;
         goto done;
     }
-
     if (!hg_proc_info->in_proc_cb) goto done;
 
-    /* Create a new free proc */
-    ret = hg_proc_create(hg_info->hg_class, NULL, 0, HG_FREE, HG_NOHASH, &proc);
+    /* Retrieve private data */
+    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_NO_MATCH;
+        goto done;
+    }
+    proc = hg_private_data->in_proc;
+
+    /* Reset proc */
+    ret = hg_proc_reset(proc, NULL, 0, HG_FREE);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not create proc");
+        HG_LOG_ERROR("Could not reset proc");
         goto done;
     }
 
@@ -370,7 +443,6 @@ hg_free_input(hg_handle_t handle, void *in_struct)
     }
 
 done:
-    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }
 
@@ -380,9 +452,8 @@ hg_get_output(hg_handle_t handle, void *out_struct)
 {
     void *out_buf;
     hg_size_t out_buf_size;
-    struct hg_info *hg_info;
-    struct hg_private_data *hg_private_data;
-    struct hg_proc_info *hg_proc_info;
+    struct hg_proc_info *hg_proc_info = NULL;
+    struct hg_private_data *hg_private_data = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
@@ -399,25 +470,28 @@ hg_get_output(hg_handle_t handle, void *out_struct)
         goto done;
     }
 
-    /* Get info from handle */
-    hg_info = HG_Core_get_info(handle);
-
     /* Retrieve proc function from function map */
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get proc info");
+        ret = HG_NO_MATCH;
+        goto done;
+    }
+    if (!hg_proc_info->out_proc_cb) goto done;
+
+    /* Retrieve private data */
     hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_NO_MATCH;
         goto done;
     }
-    hg_proc_info = hg_private_data->hg_proc_info;
+    proc = hg_private_data->out_proc;
 
-    if (!hg_proc_info->out_proc_cb) goto done;
-
-    /* Create a new encoding proc */
-    ret = hg_proc_create(hg_info->hg_class, out_buf, out_buf_size, HG_DECODE,
-            HG_CHECKSUM_DEFAULT, &proc);
+    /* Reset proc */
+    ret = hg_proc_reset(proc, out_buf, out_buf_size, HG_DECODE);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not create proc");
+        HG_LOG_ERROR("Could not reset proc");
         goto done;
     }
 
@@ -436,7 +510,6 @@ hg_get_output(hg_handle_t handle, void *out_struct)
     }
 
 done:
-    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }
 
@@ -446,8 +519,8 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
 {
     void *out_buf;
     hg_size_t out_buf_size;
-    struct hg_info *hg_info;
     struct hg_proc_info *hg_proc_info = NULL;
+    struct hg_private_data *hg_private_data = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
     *size_to_send = hg_proc_header_response_get_size();
@@ -462,9 +535,6 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
         goto done;
     }
 
-    /* Get info from handle */
-    hg_info = HG_Core_get_info(handle);
-
     /* Retrieve proc function from function map */
     hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
     if (!hg_proc_info) {
@@ -472,14 +542,21 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
         ret = HG_NO_MATCH;
         goto done;
     }
-
     if (!hg_proc_info->out_proc_cb) goto done;
 
-    /* Create a new encoding proc */
-    ret = hg_proc_create(hg_info->hg_class, out_buf, out_buf_size, HG_ENCODE,
-            HG_CHECKSUM_DEFAULT, &proc);
+    /* Retrieve private data */
+    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_NO_MATCH;
+        goto done;
+    }
+    proc = hg_private_data->out_proc;
+
+    /* Reset proc */
+    ret = hg_proc_reset(proc, out_buf, out_buf_size, HG_ENCODE);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not create proc");
+        HG_LOG_ERROR("Could not reset proc");
         goto done;
     }
 
@@ -509,7 +586,6 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
     *size_to_send += hg_proc_get_size_used(proc);
 
 done:
-    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }
 
@@ -517,32 +593,35 @@ done:
 static hg_return_t
 hg_free_output(hg_handle_t handle, void *out_struct)
 {
-    struct hg_info *hg_info;
-    struct hg_private_data *hg_private_data;
     struct hg_proc_info *hg_proc_info = NULL;
+    struct hg_private_data *hg_private_data = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
     if (!out_struct) goto done;
 
-    /* Get info from handle */
-    hg_info = HG_Core_get_info(handle);
-
     /* Retrieve proc function from function map */
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get proc info");
+        ret = HG_NO_MATCH;
+        goto done;
+    }
+    if (!hg_proc_info->out_proc_cb) goto done;
+
+    /* Retrieve private data */
     hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_NO_MATCH;
         goto done;
     }
-    hg_proc_info = hg_private_data->hg_proc_info;
+    proc = hg_private_data->out_proc;
 
-    if (!hg_proc_info->out_proc_cb) goto done;
-
-    /* Create a new free proc */
-    ret = hg_proc_create(hg_info->hg_class, NULL, 0, HG_FREE, HG_NOHASH, &proc);
+    /* Reset proc */
+    ret = hg_proc_reset(proc, NULL, 0, HG_FREE);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not create proc");
+        HG_LOG_ERROR("Could not reset proc");
         goto done;
     }
 
@@ -561,7 +640,6 @@ hg_free_output(hg_handle_t handle, void *out_struct)
     }
 
 done:
-    if (proc != HG_PROC_NULL) hg_proc_free(proc);
     return ret;
 }
 
@@ -627,14 +705,38 @@ HG_Error_to_string(hg_return_t errnum)
 hg_class_t *
 HG_Init(const char *na_info_string, hg_bool_t na_listen)
 {
-    return HG_Core_init(na_info_string, na_listen);
+    hg_class_t *hg_class = NULL;
+
+    hg_class = HG_Core_init(na_info_string, na_listen);
+    if (!hg_class) {
+        HG_LOG_ERROR("Could not create HG class");
+        goto done;
+    }
+
+    /* Set private data allocation on HG handle create */
+    hg_core_set_handle_create_callback(hg_class, hg_private_data_alloc);
+
+done:
+    return hg_class;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
 HG_Init_na(na_class_t *na_class)
 {
-    return HG_Core_init_na(na_class);
+    hg_class_t *hg_class = NULL;
+
+    hg_class = HG_Core_init_na(na_class);
+    if (!hg_class) {
+        HG_LOG_ERROR("Could not create HG class");
+        goto done;
+    }
+
+    /* Set private data allocation on HG handle create */
+    hg_core_set_handle_create_callback(hg_class, hg_private_data_alloc);
+
+done:
+    return hg_class;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -843,9 +945,7 @@ hg_return_t
 HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle_t *handle)
 {
-    struct hg_handle *hg_handle = NULL;
-    struct hg_private_data *hg_private_data = NULL;
-    struct hg_proc_info *hg_proc_info = NULL;
+    hg_handle_t hg_handle = HG_HANDLE_NULL;
     hg_return_t ret = HG_SUCCESS;
 
     if (!handle) {
@@ -859,27 +959,6 @@ HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
         HG_LOG_ERROR("Cannot create HG handle");
         goto done;
     }
-    hg_proc_info = (struct hg_proc_info *)
-        HG_Core_registered_data(HG_Core_context_get_class(context), id);
-    if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get registered data");
-        goto done;
-    }
-
-    /* Create private data to wrap callbacks etc */
-    hg_private_data = (struct hg_private_data *) malloc(
-        sizeof(struct hg_private_data));
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not allocate private data");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
-    hg_private_data->hg_proc_info = hg_proc_info;
-    hg_private_data->callback = NULL;
-    hg_private_data->arg = NULL;
-    hg_private_data->extra_in_buf = NULL;
-    hg_private_data->extra_in_handle = HG_BULK_NULL;
-    hg_core_set_private_data(hg_handle, hg_private_data, free);
 
     *handle = (hg_handle_t) hg_handle;
 
