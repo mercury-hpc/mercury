@@ -227,7 +227,7 @@ set(MERCURY_tests
 #  pipeline
   perf
   overflow
-  cancel
+#  cancel
 )
 if(NOT WIN32)
   set(MERCURY_tests ${MERCURY_tests} posix)
