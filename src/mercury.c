@@ -38,12 +38,13 @@ struct hg_proc_info {
     void (*free_callback)(void *);  /* User data free callback */
 };
 
-/* Info for wrapping forward callback */
-struct hg_forward_cb_info {
-    hg_cb_t callback;
-    void *arg;
-    hg_bulk_t extra_in_handle;
-    void *extra_in_buf;
+/* Private handle data */
+struct hg_private_data {
+    struct hg_proc_info *hg_proc_info;  /* Pointer to proc info */
+    hg_cb_t callback;                   /* Callback */
+    void *arg;                          /* Callback args */
+    hg_bulk_t extra_in_handle;          /* Extra bulk handle */
+    void *extra_in_buf;                 /* Extra bulk buf */
 };
 
 /********************/
@@ -64,7 +65,8 @@ hg_core_incr_ref(
 extern void
 hg_core_set_private_data(
         struct hg_handle *hg_handle,
-        void *private_data
+        void *private_data,
+        void (*private_free_callback)(void *)
         );
 
 /**
@@ -72,6 +74,14 @@ hg_core_set_private_data(
  */
 extern void *
 hg_core_get_private_data(
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Get RPC data.
+ */
+extern void *
+hg_core_get_rpc_data(
         struct hg_handle *hg_handle
         );
 
@@ -187,7 +197,7 @@ hg_get_input(hg_handle_t handle, void *in_struct)
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
         ret = HG_NO_MATCH;
@@ -231,6 +241,7 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     void *in_buf;
     hg_size_t in_buf_size;
     struct hg_info *hg_info;
+    struct hg_private_data *hg_private_data;
     struct hg_proc_info *hg_proc_info;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -251,12 +262,13 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
-    if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get proc info");
+    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
         ret = HG_NO_MATCH;
         goto done;
     }
+    hg_proc_info = hg_private_data->hg_proc_info;
 
     if (!hg_proc_info->in_proc_cb) goto done;
 
@@ -327,7 +339,7 @@ hg_free_input(hg_handle_t handle, void *in_struct)
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
         ret = HG_NO_MATCH;
@@ -369,6 +381,7 @@ hg_get_output(hg_handle_t handle, void *out_struct)
     void *out_buf;
     hg_size_t out_buf_size;
     struct hg_info *hg_info;
+    struct hg_private_data *hg_private_data;
     struct hg_proc_info *hg_proc_info;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -390,12 +403,13 @@ hg_get_output(hg_handle_t handle, void *out_struct)
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
-    if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get proc info");
+    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
         ret = HG_NO_MATCH;
         goto done;
     }
+    hg_proc_info = hg_private_data->hg_proc_info;
 
     if (!hg_proc_info->out_proc_cb) goto done;
 
@@ -452,7 +466,7 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
         ret = HG_NO_MATCH;
@@ -504,7 +518,8 @@ static hg_return_t
 hg_free_output(hg_handle_t handle, void *out_struct)
 {
     struct hg_info *hg_info;
-    struct hg_proc_info *hg_proc_info;
+    struct hg_private_data *hg_private_data;
+    struct hg_proc_info *hg_proc_info = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
@@ -514,12 +529,13 @@ hg_free_output(hg_handle_t handle, void *out_struct)
     hg_info = HG_Core_get_info(handle);
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_private_data(handle);
-    if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get proc info");
+    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
         ret = HG_NO_MATCH;
         goto done;
     }
+    hg_proc_info = hg_private_data->hg_proc_info;
 
     if (!hg_proc_info->out_proc_cb) goto done;
 
@@ -553,27 +569,26 @@ done:
 static hg_return_t
 hg_forward_cb(const struct hg_cb_info *callback_info)
 {
-    struct hg_forward_cb_info *hg_forward_cb_info =
-            (struct hg_forward_cb_info *) callback_info->arg;
+    struct hg_private_data *hg_private_data =
+            (struct hg_private_data *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
     /* Free eventual extra input buffer and handle */
-    HG_Bulk_free(hg_forward_cb_info->extra_in_handle);
-    free(hg_forward_cb_info->extra_in_buf);
+    HG_Bulk_free(hg_private_data->extra_in_handle);
+    free(hg_private_data->extra_in_buf);
 
     /* Execute callback */
-    if (hg_forward_cb_info->callback) {
+    if (hg_private_data->callback) {
         struct hg_cb_info hg_cb_info;
 
-        hg_cb_info.arg = hg_forward_cb_info->arg;
+        hg_cb_info.arg = hg_private_data->arg;
         hg_cb_info.ret = callback_info->ret;
         hg_cb_info.type = callback_info->type;
         hg_cb_info.info = callback_info->info;
 
-        hg_forward_cb_info->callback(&hg_cb_info);
+        hg_private_data->callback(&hg_cb_info);
     }
 
-    free(hg_forward_cb_info);
     return ret;
 }
 
@@ -829,6 +844,7 @@ HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle_t *handle)
 {
     struct hg_handle *hg_handle = NULL;
+    struct hg_private_data *hg_private_data = NULL;
     struct hg_proc_info *hg_proc_info = NULL;
     hg_return_t ret = HG_SUCCESS;
 
@@ -849,7 +865,21 @@ HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
         HG_LOG_ERROR("Could not get registered data");
         goto done;
     }
-    hg_core_set_private_data(hg_handle, hg_proc_info);
+
+    /* Create private data to wrap callbacks etc */
+    hg_private_data = (struct hg_private_data *) malloc(
+        sizeof(struct hg_private_data));
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not allocate private data");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+    hg_private_data->hg_proc_info = hg_proc_info;
+    hg_private_data->callback = NULL;
+    hg_private_data->arg = NULL;
+    hg_private_data->extra_in_buf = NULL;
+    hg_private_data->extra_in_handle = HG_BULK_NULL;
+    hg_core_set_private_data(hg_handle, hg_private_data, free);
 
     *handle = (hg_handle_t) hg_handle;
 
@@ -963,27 +993,27 @@ done:
 hg_return_t
 HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
 {
-    struct hg_forward_cb_info *hg_forward_cb_info = NULL;
+    struct hg_private_data *hg_private_data = NULL;
     hg_bulk_t extra_in_handle = HG_BULK_NULL;
     void *extra_in_buf = NULL;
     hg_size_t extra_in_buf_size;
     hg_return_t ret = HG_SUCCESS;
     hg_size_t size_to_send;
 
-    hg_forward_cb_info = (struct hg_forward_cb_info *) malloc(
-            sizeof(struct hg_forward_cb_info));
-    if (!hg_forward_cb_info) {
-        HG_LOG_ERROR("Could not allocate HG forward callback info");
-        ret = HG_NOMEM_ERROR;
+    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_NO_MATCH;
         goto done;
     }
-    hg_forward_cb_info->callback = callback;
-    hg_forward_cb_info->arg = arg;
-    hg_forward_cb_info->extra_in_handle = HG_BULK_NULL;
-    hg_forward_cb_info->extra_in_buf = NULL;
+    hg_private_data->callback = callback;
+    hg_private_data->arg = arg;
+    hg_private_data->extra_in_handle = HG_BULK_NULL;
+    hg_private_data->extra_in_buf = NULL;
 
     /* Serialize input */
-    ret = hg_set_input(handle, in_struct, &extra_in_buf, &extra_in_buf_size, &size_to_send);
+    ret = hg_set_input(handle, in_struct, &extra_in_buf, &extra_in_buf_size,
+        &size_to_send);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not set input");
         goto done;
@@ -998,22 +1028,19 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
             HG_LOG_ERROR("Could not create bulk data handle");
             goto done;
         }
-        hg_forward_cb_info->extra_in_handle = extra_in_handle;
-        hg_forward_cb_info->extra_in_buf = extra_in_buf;
+        hg_private_data->extra_in_handle = extra_in_handle;
+        hg_private_data->extra_in_buf = extra_in_buf;
     }
 
     /* Send request */
-    ret = HG_Core_forward(handle, hg_forward_cb, hg_forward_cb_info,
-            extra_in_handle, size_to_send);
+    ret = HG_Core_forward(handle, hg_forward_cb, hg_private_data,
+        extra_in_handle, size_to_send);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not forward call");
         goto done;
     }
 
 done:
-    if (ret != HG_SUCCESS) {
-        free(hg_forward_cb_info);
-    }
     return ret;
 }
 

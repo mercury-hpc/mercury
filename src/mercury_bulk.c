@@ -49,6 +49,7 @@ struct hg_bulk_op_id {
     struct hg_bulk *hg_bulk_origin;       /* Origin handle */
     struct hg_bulk *hg_bulk_local;        /* Local handle */
     na_op_id_t *na_op_ids ;               /* NA operations IDs */
+    struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
 };
 
 /* Segment used to transfer data and map to NA layer */
@@ -606,7 +607,8 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
         /* If canceled, mark handle as canceled */
         hg_atomic_cas32(&hg_bulk_op_id->canceled, 0, 1);
     } else if (callback_info->ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Error in NA callback");
+        HG_LOG_ERROR("Error in NA callback: %s",
+            NA_Error_to_string(callback_info->ret));
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -727,6 +729,7 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         (hg_bulk_origin->hg_class->na_class->mem_handle_create_segments
             && !is_self) ? HG_TRUE : HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
+    unsigned int i;
 
     /* Map op to NA op */
     switch (op) {
@@ -798,6 +801,8 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         ret = HG_NOMEM_ERROR;
         goto done;
     }
+    for (i = 0; i < hg_bulk_op_id->op_count; i++)
+        hg_bulk_op_id->na_op_ids[i] = NA_OP_ID_NULL;
 
     /* Assign op_id */
     if (op_id && op_id != HG_OP_ID_IGNORE) *op_id = (hg_op_id_t) hg_bulk_op_id;
@@ -825,7 +830,6 @@ static hg_return_t
 hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
 {
     hg_context_t *context = hg_bulk_op_id->context;
-    struct hg_completion_entry *hg_completion_entry = NULL;
     hg_return_t ret = HG_SUCCESS;
 
     /* Mark operation as completed */
@@ -840,13 +844,9 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
             goto done;
         }
     } else {
-        hg_completion_entry = (struct hg_completion_entry *) malloc(
-            sizeof(struct hg_completion_entry));
-        if (!hg_completion_entry) {
-            HG_LOG_ERROR("Could not allocate HG completion entry");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
+        struct hg_completion_entry *hg_completion_entry =
+            &hg_bulk_op_id->hg_completion_entry;
+
         hg_completion_entry->op_type = HG_BULK;
         hg_completion_entry->op_id.hg_bulk_op_id = hg_bulk_op_id;
 
@@ -858,8 +858,6 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
     }
 
 done:
-    if (ret != HG_SUCCESS)
-        free(hg_completion_entry);
     return ret;
 }
 
