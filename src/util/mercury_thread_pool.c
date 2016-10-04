@@ -11,15 +11,8 @@
 #include "mercury_thread_pool.h"
 #include "mercury_thread_condition.h"
 #include "mercury_util_error.h"
-#include "mercury_queue.h"
 
 #include <stdlib.h>
-
-struct hg_thread_work {
-    hg_thread_func_t func;
-    void *args;
-    HG_QUEUE_ENTRY(hg_thread_work) entry;
-};
 
 struct hg_thread_pool {
     unsigned int sleeping_worker_count;
@@ -67,8 +60,6 @@ hg_thread_pool_worker(void *args)
 
         /* Get to work */
         (*work->func)(work->args);
-
-        free(work);
     }
 
 unlock:
@@ -197,10 +188,9 @@ done:
 
 /*---------------------------------------------------------------------------*/
 int
-hg_thread_pool_post(hg_thread_pool_t *pool, hg_thread_func_t f, void *args)
+hg_thread_pool_post(hg_thread_pool_t *pool, struct hg_thread_work *work)
 {
     int ret = HG_UTIL_SUCCESS;
-    struct hg_thread_work *work = NULL;
 
     if (!pool) {
         HG_UTIL_ERROR_DEFAULT("Thread pool not initialized");
@@ -208,20 +198,17 @@ hg_thread_pool_post(hg_thread_pool_t *pool, hg_thread_func_t f, void *args)
         goto done;
     }
 
-    if (!f) {
-        HG_UTIL_ERROR_DEFAULT("Function pointer cannot be NULL");
+    if (!work) {
+        HG_UTIL_ERROR_DEFAULT("Thread work cannot be NULL");
         ret = HG_UTIL_FAIL;
         goto done;
     }
 
-    work = (struct hg_thread_work *) malloc(sizeof(struct hg_thread_work));
-    if (!work) {
-        HG_UTIL_ERROR_DEFAULT("Could not allocate pool work");
+    if (!work->func) {
+        HG_UTIL_ERROR_DEFAULT("Function pointer cannot be NULL");
         ret = HG_UTIL_FAIL;
         goto done;
     }
-    work->func = f;
-    work->args = args;
 
     hg_thread_mutex_lock(&pool->mutex);
 
@@ -247,8 +234,5 @@ unlock:
     hg_thread_mutex_unlock(&pool->mutex);
 
 done:
-    if (ret != HG_UTIL_SUCCESS) {
-        free(work);
-    }
     return ret;
 }

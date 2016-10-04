@@ -12,8 +12,15 @@
 #define MERCURY_THREAD_POOL_H
 
 #include "mercury_thread.h"
+#include "mercury_queue.h"
 
 typedef struct hg_thread_pool hg_thread_pool_t;
+
+struct hg_thread_work {
+    hg_thread_func_t func;
+    void *args;
+    HG_QUEUE_ENTRY(hg_thread_work) entry; /* Internal */
+};
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,18 +49,16 @@ HG_UTIL_EXPORT int
 hg_thread_pool_destroy(hg_thread_pool_t *pool);
 
 /**
- * Post the work function f to the pool. Note that the operation may
- * be queued depending on the number of threads and number of tasks already
- * running.
+ * Post work to the pool. Note that the operation may be queued depending on
+ * the number of threads and number of tasks already running.
  *
  * \param pool [IN/OUT]         pointer to pool object
- * \param f [IN]                pointer to function
- * \param args [IN]             pointer to data that can be passed to function f
+ * \param work [IN]             pointer to work struct
  *
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_EXPORT int
-hg_thread_pool_post(hg_thread_pool_t *pool, hg_thread_func_t f, void *args);
+hg_thread_pool_post(hg_thread_pool_t *pool, struct hg_thread_work *work);
 
 #ifdef __cplusplus
 }

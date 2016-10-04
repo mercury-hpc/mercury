@@ -31,6 +31,11 @@
 #endif
 
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
+extern struct hg_thread_work *
+hg_core_get_thread_work(
+        hg_handle_t handle
+        );
+
 #define HG_TEST_RPC_CB(func_name, handle) \
     static hg_return_t \
     func_name ## _thread_cb(hg_handle_t handle)
@@ -54,10 +59,12 @@
         hg_return_t \
         func_name ## _cb(hg_handle_t handle) \
         { \
+            struct hg_thread_work *work = hg_core_get_thread_work(handle); \
             hg_return_t ret = HG_SUCCESS; \
             \
-            hg_thread_pool_post(hg_test_thread_pool_g, func_name ## _thread, \
-                    handle); \
+            work->func = func_name ## _thread; \
+            work->args = handle; \
+            hg_thread_pool_post(hg_test_thread_pool_g, work); \
             \
             return ret; \
         }

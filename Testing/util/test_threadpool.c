@@ -48,6 +48,7 @@ main(int argc, char *argv[])
 {
     int i;
     hg_thread_pool_t *thread_pool;
+    struct hg_thread_work work[POOL_NUM_POSTS];
     int ret = EXIT_SUCCESS;
 
     (void) argc;
@@ -56,7 +57,9 @@ main(int argc, char *argv[])
     hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &thread_pool);
 
     for (i = 0; i < POOL_NUM_POSTS; i++) {
-        hg_thread_pool_post(thread_pool, myfunc, NULL);
+        work[i].func = myfunc;
+        work[i].args = NULL;
+        hg_thread_pool_post(thread_pool, &work[i]);
     }
 
     /* printf("Finalizing...\n"); */

@@ -122,6 +122,8 @@ struct hg_handle {
     struct hg_rpc_info *hg_rpc_info;    /* Associated RPC info */
     void *private_data;                 /* Private data */
     void (*private_free_callback)(void *); /* Private data free callback */
+
+    struct hg_thread_work thread_work;  /* Used for self processing */
 };
 
 /* HG op id */
@@ -340,6 +342,14 @@ hg_core_get_private_data(
 void *
 hg_core_get_rpc_data(
         struct hg_handle *hg_handle
+        );
+
+/**
+ * Get thread work (TODO internal use but could provide some hooks).
+ */
+struct hg_thread_work *
+hg_core_get_thread_work(
+        hg_handle_t handle
         );
 
 /**
@@ -1190,6 +1200,13 @@ hg_core_get_rpc_data(struct hg_handle *hg_handle)
 }
 
 /*---------------------------------------------------------------------------*/
+struct hg_thread_work *
+hg_core_get_thread_work(hg_handle_t handle)
+{
+    return &((struct hg_handle *) handle)->thread_work;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_forward_self(struct hg_handle *hg_handle)
 {
@@ -1197,7 +1214,7 @@ hg_core_forward_self(struct hg_handle *hg_handle)
 
     if (!hg_handle->hg_info.context->self_processing_pool)
         hg_thread_pool_init(HG_MAX_SELF_THREADS,
-                &hg_handle->hg_info.context->self_processing_pool);
+            &hg_handle->hg_info.context->self_processing_pool);
 
     /* Add handle to self processing list */
     hg_thread_mutex_lock(&hg_handle->hg_info.context->self_processing_list_mutex);
@@ -1206,8 +1223,10 @@ hg_core_forward_self(struct hg_handle *hg_handle)
     hg_thread_mutex_unlock(&hg_handle->hg_info.context->self_processing_list_mutex);
 
     /* Post operation to self processing pool */
+    hg_handle->thread_work.func = hg_core_process_thread;
+    hg_handle->thread_work.args = hg_handle;
     hg_thread_pool_post(hg_handle->hg_info.context->self_processing_pool,
-            hg_core_process_thread, hg_handle);
+        &hg_handle->thread_work);
 
     return ret;
 }
