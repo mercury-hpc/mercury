@@ -126,9 +126,11 @@ struct na_bmi_info_get {
 struct na_bmi_op_id {
     na_context_t *context;
     na_cb_type_t type;
-    na_cb_t callback; /* Callback */
+    na_cb_t callback;               /* Callback */
     void *arg;
-    na_bool_t completed; /* Operation completed */
+    hg_atomic_int32_t ref_count;    /* Ref count */
+    hg_atomic_int32_t completed;    /* Operation completed */
+    uint64_t cancel;
     union {
       struct na_bmi_info_lookup lookup;
       struct na_bmi_info_send_unexpected send_unexpected;
@@ -138,10 +140,8 @@ struct na_bmi_op_id {
       struct na_bmi_info_put put;
       struct na_bmi_info_get get;
     } info;
-    uint64_t cancel;
-    hg_atomic_int32_t ref_count;    /* Ref count */
-    HG_QUEUE_ENTRY(na_bmi_op_id) entry;
     struct na_cb_completion_data completion_data;
+    HG_QUEUE_ENTRY(na_bmi_op_id) entry;
 };
 
 struct na_bmi_private_data {
@@ -803,6 +803,8 @@ na_bmi_op_create(na_class_t NA_UNUSED *na_class)
     }
     memset(na_bmi_op_id, 0, sizeof(struct na_bmi_op_id));
     hg_atomic_set32(&na_bmi_op_id->ref_count, 1);
+    /* Completed by default */
+    hg_atomic_set32(&na_bmi_op_id->completed, 1);
 
 done:
     return (na_op_id_t) na_bmi_op_id;
@@ -851,7 +853,7 @@ na_bmi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_bmi_op_id->type = NA_CB_LOOKUP;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->completed, 0);
     na_bmi_op_id->cancel = 0;
 
     /* Allocate addr */
@@ -1048,7 +1050,7 @@ na_bmi_msg_send_unexpected(na_class_t *na_class,
     na_bmi_op_id->type = NA_CB_SEND_UNEXPECTED;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->completed, 0);
     na_bmi_op_id->info.send_unexpected.op_id = 0;
     na_bmi_op_id->cancel = 0;
 
@@ -1109,7 +1111,7 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_bmi_op_id->type = NA_CB_RECV_UNEXPECTED;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->completed, 0);
     na_bmi_op_id->info.recv_unexpected.buf = buf;
     na_bmi_op_id->info.recv_unexpected.buf_size = (bmi_size_t) buf_size;
     na_bmi_op_id->info.recv_unexpected.unexpected_info = NULL;
@@ -1274,7 +1276,7 @@ na_bmi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_bmi_op_id->type = NA_CB_SEND_EXPECTED;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->completed, 0);
     na_bmi_op_id->info.send_expected.op_id = 0;
     na_bmi_op_id->cancel = 0;
 
@@ -1338,7 +1340,7 @@ na_bmi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_bmi_op_id->type = NA_CB_RECV_EXPECTED;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->completed, 0);
     na_bmi_op_id->info.recv_expected.op_id = 0;
     na_bmi_op_id->info.recv_expected.buf_size = bmi_buf_size;
     na_bmi_op_id->info.recv_expected.actual_size = 0;
@@ -1543,7 +1545,7 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_bmi_op_id->type = NA_CB_PUT;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->completed, 0);
     na_bmi_op_id->info.put.request_op_id = 0;
     na_bmi_op_id->info.put.transfer_op_id = 0;
     na_bmi_op_id->info.put.transfer_completed = NA_FALSE;
@@ -1606,7 +1608,7 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Post the BMI recv request */
     bmi_ret = BMI_post_recv(
             &na_bmi_op_id->info.put.completion_op_id, na_bmi_addr->bmi_addr,
-            &na_bmi_op_id->completed, sizeof(na_bool_t),
+            &na_bmi_op_id->info.put.transfer_completed, sizeof(na_bool_t),
             &na_bmi_op_id->info.put.completion_actual_size,
             BMI_EXT_ALLOC, na_bmi_rma_info->completion_tag, na_bmi_op_id,
             *bmi_context, NULL);
@@ -1684,7 +1686,7 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_bmi_op_id->type = NA_CB_GET;
     na_bmi_op_id->callback = callback;
     na_bmi_op_id->arg = arg;
-    na_bmi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->completed, 0);
     na_bmi_op_id->info.get.request_op_id = 0;
     na_bmi_op_id->info.get.transfer_op_id = 0;
     na_bmi_op_id->info.get.transfer_actual_size = 0;
@@ -1955,7 +1957,7 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
                 }
                 else if (na_bmi_op_id->info.put.completion_op_id == bmi_op_id) {
                     if (na_bmi_op_id->info.put.internal_progress) {
-                        na_bmi_op_id->completed = NA_TRUE;
+                        hg_atomic_set32(&na_bmi_op_id->completed, 1);
 
                         /* Transfer is now done so free RMA info */
                         free(na_bmi_op_id->info.put.rma_info);
@@ -1977,7 +1979,7 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
             case NA_CB_GET:
                 if (na_bmi_op_id->info.get.transfer_op_id == bmi_op_id) {
                     if (na_bmi_op_id->info.get.internal_progress) {
-                        na_bmi_op_id->completed = NA_TRUE;
+                        hg_atomic_set32(&na_bmi_op_id->completed, 1);
 
                         /* Transfer is now done so free RMA info */
                         free(na_bmi_op_id->info.get.rma_info);
@@ -2046,7 +2048,7 @@ na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_bmi_op_id->context = context;
     na_bmi_op_id->callback = NULL;
     na_bmi_op_id->arg = NULL;
-    na_bmi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->completed, 0);
 
     switch (na_bmi_rma_info->op) {
         /* Remote wants to do a put so wait in a recv */
@@ -2108,7 +2110,7 @@ na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
             }
 
             if (bmi_ret) {
-                na_bmi_op_id->completed = NA_TRUE;
+                hg_atomic_set32(&na_bmi_op_id->completed, 1);
 
                 free(na_bmi_op_id->info.get.rma_info);
                 na_bmi_op_id->info.get.rma_info = NULL;
@@ -2152,7 +2154,8 @@ na_bmi_progress_rma_completion(struct na_bmi_op_id *na_bmi_op_id)
 
     /* Send an ack to tell the server that the data is here */
     bmi_ret = BMI_post_send(&na_bmi_op_id->info.put.completion_op_id,
-            na_bmi_op_id->info.put.remote_addr, &na_bmi_op_id->completed,
+            na_bmi_op_id->info.put.remote_addr,
+            &na_bmi_op_id->info.put.transfer_completed,
             sizeof(na_bool_t), BMI_EXT_ALLOC, na_bmi_rma_info->completion_tag,
             na_bmi_op_id, *bmi_context, NULL);
     if (bmi_ret < 0) {
@@ -2161,7 +2164,7 @@ na_bmi_progress_rma_completion(struct na_bmi_op_id *na_bmi_op_id)
         goto done;
     }
     if (bmi_ret) {
-        na_bmi_op_id->completed = NA_TRUE;
+        hg_atomic_set32(&na_bmi_op_id->completed, 1);
 
         free(na_bmi_op_id->info.put.rma_info);
         na_bmi_op_id->info.put.rma_info = NULL;
@@ -2180,7 +2183,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
     na_return_t ret = NA_SUCCESS;
 
     /* Mark op id as completed */
-    na_bmi_op_id->completed = NA_TRUE;
+    hg_atomic_set32(&na_bmi_op_id->completed, 1);
 
     /* Init callback info */
     callback_info = &na_bmi_op_id->completion_data.callback_info;
@@ -2294,7 +2297,7 @@ na_bmi_release(void *arg)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) arg;
 
-    if (na_bmi_op_id && !na_bmi_op_id->completed) {
+    if (na_bmi_op_id && !hg_atomic_get32(&na_bmi_op_id->completed)) {
         NA_LOG_ERROR("Releasing resources from an uncompleted operation");
     }
     na_bmi_op_destroy(NULL, (na_op_id_t) na_bmi_op_id);
@@ -2308,6 +2311,9 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
+
+    if (hg_atomic_get32(&na_bmi_op_id->completed))
+        goto done;
 
     switch (na_bmi_op_id->type) {
         case NA_CB_LOOKUP:
@@ -2399,5 +2405,6 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
             break;
     }
 
+done:
     return ret;
 }
