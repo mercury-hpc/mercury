@@ -111,8 +111,9 @@ hg_addr_t *hg_addr_table;
 static HG_INLINE int
 rpc_open(const char *path, rpc_handle_t handle, int *event_id)
 {
-    printf("Called rpc_open of %s with cookie %llu\n", path, handle.cookie);
-    *event_id = 232;
+    printf("Called rpc_open of %s with cookie %lu\n", path,
+        (unsigned long) handle.cookie);
+    *event_id = (int) handle.cookie;
     return HG_SUCCESS;
 }
 

@@ -12,6 +12,7 @@
 #include "na_test.h"
 
 #include "mercury_time.h"
+#include "mercury_atomic.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,10 +28,30 @@ extern int na_test_comm_size_g;
 extern hg_id_t hg_test_perf_rpc_id_g;
 extern hg_id_t hg_test_perf_bulk_id_g;
 
+struct hg_test_perf_args {
+    hg_request_t *request;
+    unsigned int op_count;
+    hg_atomic_int32_t op_completed_count;
+};
+
 static hg_return_t
-hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
+hg_test_perf_forward_cb1(const struct hg_cb_info *callback_info)
 {
     hg_request_complete((hg_request_t *) callback_info->arg);
+
+    return HG_SUCCESS;
+}
+
+static hg_return_t
+hg_test_perf_forward_cb2(const struct hg_cb_info *callback_info)
+{
+    struct hg_test_perf_args *args =
+        (struct hg_test_perf_args *) callback_info->arg;
+
+    if ((unsigned int) hg_atomic_incr32(&args->op_completed_count)
+        == args->op_count) {
+        hg_request_complete(args->request);
+    }
 
     return HG_SUCCESS;
 }
@@ -39,7 +60,7 @@ hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
  *
  */
 static hg_return_t
-measure_rpc(hg_context_t *context, hg_addr_t addr,
+measure_rpc1(hg_context_t *context, hg_addr_t addr,
     hg_request_class_t *request_class)
 {
     int avg_iter;
@@ -67,7 +88,7 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
 
     /* Warm up for RPC */
     for (i = 0; i < RPC_SKIP; i++) {
-        ret = HG_Forward(handle, hg_test_perf_forward_cb, request, NULL);
+        ret = HG_Forward(handle, hg_test_perf_forward_cb1, request, NULL);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
             goto done;
@@ -92,7 +113,7 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
 
         hg_time_get_current(&t1);
 
-        ret = HG_Forward(handle, hg_test_perf_forward_cb, request, NULL);
+        ret = HG_Forward(handle, hg_test_perf_forward_cb1, request, NULL);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
             goto done;
@@ -137,6 +158,102 @@ measure_rpc(hg_context_t *context, hg_addr_t addr,
     }
 
 done:
+    return ret;
+}
+
+static hg_return_t
+measure_rpc2(hg_context_t *context, hg_addr_t addr,
+    hg_request_class_t *request_class)
+{
+    hg_handle_t *handles = NULL;
+    hg_request_t *request;
+    struct hg_test_perf_args args;
+    hg_time_t t1, t2;
+    unsigned int nloop = 32;
+    double td, time_read, calls_per_sec;
+
+    hg_return_t ret = HG_SUCCESS;
+
+    size_t i;
+
+    if (na_test_comm_rank_g == 0) {
+        printf("# Executing RPC with %d client(s) -- loop %d time(s)\n",
+                na_test_comm_size_g, nloop);
+    }
+
+    if (na_test_comm_rank_g == 0) printf("# Warming up...\n");
+
+    handles = malloc(nloop * sizeof(hg_handle_t));
+
+    for (i = 0; i < nloop; i++) {
+        ret = HG_Create(context, addr, hg_test_perf_rpc_id_g, &handles[i]);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not start call\n");
+            goto done;
+        }
+    }
+
+    request = hg_request_create(request_class);
+    hg_atomic_set32(&args.op_completed_count, 0);
+    args.op_count = RPC_SKIP;
+    args.request = request;
+
+    /* Warm up for RPC */
+    for (i = 0; i < RPC_SKIP; i++) {
+        ret = HG_Forward(handles[i], hg_test_perf_forward_cb2, &args, NULL);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not forward call\n");
+            goto done;
+        }
+    }
+
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+    hg_request_reset(request);
+    NA_Test_barrier();
+
+    if (na_test_comm_rank_g == 0) printf("%*s%*s",
+        NWIDTH, "#    Time (s)", NWIDTH, "Calls (c/s)");
+    if (na_test_comm_rank_g == 0) printf("\n");
+
+    /* RPC benchmark */
+    hg_atomic_set32(&args.op_completed_count, 0);
+    args.op_count = nloop;
+
+    hg_time_get_current(&t1);
+    for (i = 0; i < nloop; i++) {
+        ret = HG_Forward(handles[i], hg_test_perf_forward_cb2, &args, NULL);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not forward call\n");
+            goto done;
+        }
+    }
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+    hg_time_get_current(&t2);
+    NA_Test_barrier();
+
+    td = hg_time_to_double(hg_time_subtract(t2, t1));
+    time_read = td / nloop;
+    calls_per_sec = na_test_comm_size_g / time_read;
+
+    /* At this point we have received everything so work out the bandwidth */
+    if (na_test_comm_rank_g == 0) {
+        printf("%*.*f%*.*g\n", NWIDTH, NDIGITS, time_read,
+            NWIDTH, NDIGITS, calls_per_sec);
+    }
+
+    hg_request_destroy(request);
+
+    /* Complete */
+    for (i = 0; i < nloop; i++) {
+        ret = HG_Destroy(handles[i]);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not complete\n");
+            goto done;
+        }
+    }
+
+done:
+    free(handles);
     return ret;
 }
 
@@ -224,7 +341,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
     /* Warm up for bulk data */
     for (i = 0; i < BULK_SKIP; i++) {
-        ret = HG_Forward(handle, hg_test_perf_forward_cb, request, &in_struct);
+        ret = HG_Forward(handle, hg_test_perf_forward_cb1, request, &in_struct);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
             goto done;
@@ -249,7 +366,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
         hg_time_get_current(&t1);
 
-        ret = HG_Forward(handle, hg_test_perf_forward_cb, request, &in_struct);
+        ret = HG_Forward(handle, hg_test_perf_forward_cb1, request, &in_struct);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
             goto done;
@@ -335,7 +452,10 @@ main(int argc, char *argv[])
     }
 
     /* Run RPC test */
-    measure_rpc(context, addr, request_class);
+    measure_rpc1(context, addr, request_class);
+
+    /* Run RPC test */
+    measure_rpc2(context, addr, request_class);
 
     NA_Test_barrier();
 
