@@ -119,6 +119,9 @@ struct hg_handle {
     hg_size_t extra_in_buf_size;
     hg_op_id_t extra_in_op_id;
 
+    struct hg_header_request in_header; /* Input header */
+    struct hg_header_response out_header; /* Output header */
+
     struct hg_rpc_info *hg_rpc_info;    /* Associated RPC info */
     void *private_data;                 /* Private data */
     void (*private_free_callback)(void *); /* Private data free callback */
@@ -709,9 +712,6 @@ hg_core_get_header_request(struct hg_handle *hg_handle,
     hg_return_t ret = HG_SUCCESS;
     hg_size_t extra_header_size;
 
-    /* Initialize header with default values */
-    hg_proc_header_request_init(0, HG_BULK_NULL, request_header);
-
     /* Decode request header */
     ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
             request_header, HG_DECODE, hg_handle->hg_info.hg_class, &extra_header_size);
@@ -1093,6 +1093,10 @@ hg_core_create(struct hg_context *context)
         goto done;
     }
 
+    /* Init in/out header */
+    hg_proc_header_request_init(&hg_handle->in_header);
+    hg_proc_header_response_init(&hg_handle->out_header);
+
     /* Create NA operation IDs */
     hg_handle->na_send_op_id = NA_Op_create(na_class);
     hg_handle->na_recv_op_id = NA_Op_create(na_class);
@@ -1149,6 +1153,9 @@ hg_core_destroy(struct hg_handle *hg_handle)
         hg_handle->na_send_op_id);
     NA_Op_destroy(hg_handle->hg_info.hg_class->na_class,
         hg_handle->na_recv_op_id);
+
+    hg_proc_header_request_finalize(&hg_handle->in_header);
+    hg_proc_header_response_finalize(&hg_handle->out_header);
 
     hg_proc_buf_free(hg_handle->in_buf);
     hg_proc_buf_free(hg_handle->out_buf);
@@ -1385,7 +1392,6 @@ static na_return_t
 hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
-    struct hg_header_request request_header;
     na_return_t ret = NA_SUCCESS;
 
     /* Reset op ID value */
@@ -1426,21 +1432,21 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         hg_thread_mutex_unlock(&hg_handle->hg_info.context->processing_list_mutex);
 
         /* Get and verify header */
-        if (hg_core_get_header_request(hg_handle, &request_header)
+        if (hg_core_get_header_request(hg_handle, &hg_handle->in_header)
             != HG_SUCCESS) {
             HG_LOG_ERROR("Could not get request header");
             goto done;
         }
 
         /* Get operation ID from header */
-        hg_handle->hg_info.id = request_header.id;
-        hg_handle->cookie = request_header.cookie;
+        hg_handle->hg_info.id = hg_handle->in_header.id;
+        hg_handle->cookie = hg_handle->in_header.cookie;
 
-        if (request_header.flags
-            && (request_header.extra_in_handle != HG_BULK_NULL)) {
+        if (hg_handle->in_header.flags
+            && (hg_handle->in_header.extra_in_handle != HG_BULK_NULL)) {
             /* Get extra payload */
             if (hg_core_get_extra_input(hg_handle,
-                request_header.extra_in_handle) != HG_SUCCESS) {
+                hg_handle->in_header.extra_in_handle) != HG_SUCCESS) {
                 HG_LOG_ERROR("Could not get extra input buffer");
                 goto done;
             }
@@ -1509,7 +1515,6 @@ static na_return_t
 hg_core_recv_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
-    struct hg_header_response response_header;
     na_return_t ret = NA_SUCCESS;
 
     /* Reset op ID value */
@@ -1520,22 +1525,19 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
         /* If canceled, mark handle as canceled */
         hg_handle->ret = HG_CANCELED;
     } else if (callback_info->ret == NA_SUCCESS) {
-        /* Initialize header with default values */
-        hg_proc_header_response_init(&response_header);
-
         /* Decode response header */
         if (hg_proc_header_response(hg_handle->out_buf, hg_handle->out_buf_size,
-                &response_header, HG_DECODE) != HG_SUCCESS) {
+                &hg_handle->out_header, HG_DECODE) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not decode header");
             goto done;
         }
 
         /* Verify header and set return code */
-        if (hg_proc_header_response_verify(&response_header) != HG_SUCCESS) {
+        if (hg_proc_header_response_verify(&hg_handle->out_header) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not verify header");
             goto done;
         }
-        hg_handle->ret = (hg_return_t) response_header.ret_code;
+        hg_handle->ret = (hg_return_t) hg_handle->out_header.ret_code;
     } else {
         HG_LOG_ERROR("Error in NA callback");
         ret = NA_PROTOCOL_ERROR;
@@ -1607,19 +1609,18 @@ hg_core_process_thread(void *arg)
 {
     hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
     struct hg_handle *hg_handle = (struct hg_handle *) arg;
-    struct hg_header_request request_header;
 
     /* Get and verify header */
-    if (hg_core_get_header_request(hg_handle, &request_header) != HG_SUCCESS) {
+    if (hg_core_get_header_request(hg_handle, &hg_handle->in_header) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get request header");
         goto done;
     }
 
     /* Check extra arguments */
-    if (request_header.flags
-            && (request_header.extra_in_handle != HG_BULK_NULL)) {
+    if (hg_handle->in_header.flags
+            && (hg_handle->in_header.extra_in_handle != HG_BULK_NULL)) {
         /* Get extra payload */
-        if (hg_core_get_extra_input(hg_handle, request_header.extra_in_handle)
+        if (hg_core_get_extra_input(hg_handle, hg_handle->in_header.extra_in_handle)
                 != HG_SUCCESS) {
             HG_LOG_ERROR("Could not get extra input buffer");
             goto done;
@@ -2853,7 +2854,6 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     hg_bulk_t extra_in_handle, hg_size_t size_to_send)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
-    struct hg_header_request request_header;
     hg_return_t (*hg_forward)(struct hg_handle *hg_handle);
     hg_return_t ret = HG_SUCCESS;
     hg_size_t extra_header_size = 0;
@@ -2875,12 +2875,13 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     hg_atomic_incr32(&hg_handle->ref_count);
 
     /* Set header */
-    hg_proc_header_request_init(hg_handle->hg_info.id, extra_in_handle,
-            &request_header);
+    hg_handle->in_header.id = hg_handle->hg_info.id;
+    hg_handle->in_header.extra_in_handle = extra_in_handle;
+    hg_handle->in_header.flags = (hg_uint8_t) (extra_in_handle != HG_BULK_NULL);
 
     /* Encode request header */
     ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
-            &request_header, HG_ENCODE, hg_handle->hg_info.hg_class,
+            &hg_handle->in_header, HG_ENCODE, hg_handle->hg_info.hg_class,
             &extra_header_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not encode header");
@@ -2912,7 +2913,6 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t (*hg_respond)(struct hg_handle *hg_handle, hg_cb_t callback,
             void *arg);
-    struct hg_header_response response_header;
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_handle) {
@@ -2925,13 +2925,12 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
     hg_handle->ret = ret_code;
 
     /* Fill the header */
-    hg_proc_header_response_init(&response_header);
-    response_header.cookie = hg_handle->cookie;
-    response_header.ret_code = hg_handle->ret;
+    hg_handle->out_header.cookie = hg_handle->cookie;
+    hg_handle->out_header.ret_code = hg_handle->ret;
 
     /* Encode response header */
     ret = hg_proc_header_response(hg_handle->out_buf, hg_handle->out_buf_size,
-            &response_header, HG_ENCODE);
+            &hg_handle->out_header, HG_ENCODE);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not encode header");
         goto done;

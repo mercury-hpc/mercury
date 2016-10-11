@@ -12,6 +12,9 @@
 #define MERCURY_PROC_HEADER_H
 
 #include "mercury_types.h"
+#ifdef HG_HAS_CHECKSUMS
+  #include <mchecksum.h>
+#endif
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -31,6 +34,9 @@ struct hg_header_request {
      hg_uint16_t crc16;            /* CRC16 checksum */
      /* Should be 128 bits here */
      hg_bulk_t   extra_in_handle;  /* Extra handle (large data) */
+#ifdef HG_HAS_CHECKSUMS
+    mchecksum_object_t checksum;
+#endif
 };
 
 struct hg_header_response {
@@ -40,6 +46,9 @@ struct hg_header_response {
     hg_uint16_t crc16;      /* CRC16 checksum */
     hg_uint8_t  padding;
     /* Should be 96 bits here */
+#ifdef HG_HAS_CHECKSUMS
+    mchecksum_object_t checksum;
+#endif
 };
 #if defined(__GNUC__) || defined(_WIN32)
 #pragma pack(pop)
@@ -122,15 +131,11 @@ hg_proc_header_response_get_size(void)
 /**
  * Initialize RPC request header.
  *
- * \param id [IN]               registered function ID
- * \param extra_buf_handle [IN] extra bulk handle
  * \param header [IN/OUT]       pointer to request header structure
  *
  */
 HG_EXPORT void
 hg_proc_header_request_init(
-        hg_id_t id,
-        hg_bulk_t extra_buf_handle,
         struct hg_header_request *header
         );
 
@@ -142,6 +147,28 @@ hg_proc_header_request_init(
  */
 HG_EXPORT void
 hg_proc_header_response_init(
+        struct hg_header_response *header
+        );
+
+/**
+ * Finalize RPC request header.
+ *
+ * \param header [IN/OUT]       pointer to request header structure
+ *
+ */
+HG_EXPORT void
+hg_proc_header_request_finalize(
+        struct hg_header_request *header
+        );
+
+/**
+ * Finalize RPC response header.
+ *
+ * \param header [IN/OUT]       pointer to response header structure
+ *
+ */
+HG_EXPORT void
+hg_proc_header_response_finalize(
         struct hg_header_response *header
         );
 

@@ -14,11 +14,6 @@
 #include "mercury_proc_header.h"
 #include "mercury_proc.h"
 
-#ifdef HG_HAS_CHECKSUMS
-  #include <mchecksum.h>
-  #include <mchecksum_error.h>
-#endif
-
 #ifdef _WIN32
   #include <winsock2.h>
 #else
@@ -48,16 +43,19 @@ HG_Error_to_string(
 
 /*---------------------------------------------------------------------------*/
 void
-hg_proc_header_request_init(hg_id_t id, hg_bulk_t extra_in_handle,
-    struct hg_header_request *header)
+hg_proc_header_request_init(struct hg_header_request *header)
 {
     header->hg = HG_IDENTIFIER;
     header->protocol = HG_PROTOCOL_VERSION;
-    header->id = id;
-    header->flags = (hg_uint8_t) (extra_in_handle != HG_BULK_NULL);
+    header->id = 0;
+    header->flags = 0;
     header->cookie = 0; /* TODO not used for now */
     header->crc16 = 0;
-    header->extra_in_handle = extra_in_handle;
+    header->extra_in_handle = HG_BULK_NULL;
+#ifdef HG_HAS_CHECKSUMS
+    /* Create a new CRC16 checksum */
+    mchecksum_init("crc16", &header->checksum);
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -68,6 +66,32 @@ hg_proc_header_response_init(struct hg_header_response *header)
     header->ret_code = 0;
     header->cookie = 0;
     header->crc16 = 0;
+#ifdef HG_HAS_CHECKSUMS
+    /* Create a new CRC16 checksum */
+    mchecksum_init("crc16", &header->checksum);
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_proc_header_request_finalize(struct hg_header_request *header)
+{
+#ifdef HG_HAS_CHECKSUMS
+    mchecksum_destroy(header->checksum);
+#else
+    (void) header;
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_proc_header_response_finalize(struct hg_header_response *header)
+{
+#ifdef HG_HAS_CHECKSUMS
+    mchecksum_destroy(header->checksum);
+#else
+    (void) header;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -79,9 +103,6 @@ hg_proc_header_request(void *buf, size_t buf_size,
     hg_uint32_t n_protocol, n_id, n_cookie;
     hg_uint16_t n_crc16;
     void *buf_ptr = buf;
-#ifdef HG_HAS_CHECKSUMS
-    mchecksum_object_t checksum = MCHECKSUM_OBJECT_NULL;
-#endif
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
     *extra_header_size = 0;
@@ -91,11 +112,6 @@ hg_proc_header_request(void *buf, size_t buf_size,
         ret = HG_INVALID_PARAM;
         goto done;
     }
-
-#ifdef HG_HAS_CHECKSUMS
-    /* Create a new CRC16 checksum */
-    mchecksum_init("crc16", &checksum);
-#endif
 
     /* Mercury header */
     if (op == HG_ENCODE) {
@@ -107,36 +123,36 @@ hg_proc_header_request(void *buf, size_t buf_size,
     /* hg */
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &header->hg, sizeof(hg_uint8_t), op);
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_update(checksum, &header->hg, sizeof(hg_uint8_t));
+    mchecksum_update(header->checksum, &header->hg, sizeof(hg_uint8_t));
 #endif
 
     /* protocol */
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_protocol, sizeof(hg_uint32_t), op);
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_update(checksum, &n_protocol, sizeof(hg_uint32_t));
+    mchecksum_update(header->checksum, &n_protocol, sizeof(hg_uint32_t));
 #endif
 
     /* id */
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_id, sizeof(hg_uint32_t), op);
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_update(checksum, &n_id, sizeof(hg_uint32_t));
+    mchecksum_update(header->checksum, &n_id, sizeof(hg_uint32_t));
 #endif
 
     /* flags */
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &header->flags, sizeof(hg_uint8_t), op);
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_update(checksum, &header->flags, sizeof(hg_uint8_t));
+    mchecksum_update(header->checksum, &header->flags, sizeof(hg_uint8_t));
 #endif
 
     /* cookie */
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_cookie, sizeof(hg_uint32_t), op);
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_update(checksum, &n_cookie, sizeof(hg_uint32_t));
+    mchecksum_update(header->checksum, &n_cookie, sizeof(hg_uint32_t));
 #endif
 
     /* crc16 */
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_get(checksum, &header->crc16, sizeof(hg_uint16_t),
+    mchecksum_get(header->checksum, &header->crc16, sizeof(hg_uint16_t),
             MCHECKSUM_FINALIZE);
 #endif
     if (op == HG_ENCODE) {
@@ -186,7 +202,7 @@ hg_proc_header_request(void *buf, size_t buf_size,
 
 done:
 #ifdef HG_HAS_CHECKSUMS
-    if (checksum != MCHECKSUM_OBJECT_NULL) mchecksum_destroy(checksum);
+    mchecksum_reset(header->checksum);
 #endif
     if (proc != HG_PROC_NULL) hg_proc_free(proc);
     proc = HG_PROC_NULL;
@@ -201,9 +217,6 @@ hg_proc_header_response(void *buf, size_t buf_size,
     hg_uint32_t n_ret_code, n_cookie;
     hg_uint16_t n_crc16;
     void *buf_ptr = buf;
-#ifdef HG_HAS_CHECKSUMS
-    mchecksum_object_t checksum = MCHECKSUM_OBJECT_NULL;
-#endif
     hg_return_t ret = HG_SUCCESS;
 
     if (buf_size < sizeof(struct hg_header_response)) {
@@ -211,11 +224,6 @@ hg_proc_header_response(void *buf, size_t buf_size,
         ret = HG_SIZE_ERROR;
         goto done;
     }
-
-#ifdef HG_HAS_CHECKSUMS
-    /* Create a new CRC16 checksum */
-    mchecksum_init("crc16", &checksum);
-#endif
 
     /* Mercury header */
     if (op == HG_ENCODE) {
@@ -226,24 +234,24 @@ hg_proc_header_response(void *buf, size_t buf_size,
     /* flags */
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &header->flags, sizeof(hg_uint8_t), op);
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_update(checksum, &header->flags, sizeof(hg_uint8_t));
+    mchecksum_update(header->checksum, &header->flags, sizeof(hg_uint8_t));
 #endif
 
     /* error */
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_ret_code, sizeof(hg_uint32_t), op);
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_update(checksum, &n_ret_code, sizeof(hg_uint32_t));
+    mchecksum_update(header->checksum, &n_ret_code, sizeof(hg_uint32_t));
 #endif
 
     /* cookie */
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_cookie, sizeof(hg_uint32_t), op);
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_update(checksum, &n_cookie, sizeof(hg_uint32_t));
+    mchecksum_update(header->checksum, &n_cookie, sizeof(hg_uint32_t));
 #endif
 
     /* crc16 */
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_get(checksum, &header->crc16, sizeof(hg_uint16_t),
+    mchecksum_get(header->checksum, &header->crc16, sizeof(hg_uint16_t),
             MCHECKSUM_FINALIZE);
 #endif
     if (op == HG_ENCODE) {
@@ -267,7 +275,7 @@ hg_proc_header_response(void *buf, size_t buf_size,
 
 done:
 #ifdef HG_HAS_CHECKSUMS
-    if (checksum != MCHECKSUM_OBJECT_NULL) mchecksum_destroy(checksum);
+    mchecksum_reset(header->checksum);
 #endif
     return ret;
 }
