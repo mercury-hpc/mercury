@@ -274,42 +274,56 @@ NA_Initialize(const char *info_string, na_bool_t listen)
     while (plugin_index < plugin_count) {
         na_bool_t verified = NA_FALSE;
 
+        if (!na_class_table[plugin_index]->class_name) {
+            NA_LOG_ERROR("class name is not defined");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
+
         if (!na_class_table[plugin_index]->check_protocol) {
             NA_LOG_ERROR("check_protocol plugin callback is not defined");
             ret = NA_PROTOCOL_ERROR;
             goto done;
         }
+
+        /* Skip check protocol if class name does not match */
+        if (na_info->class_name) {
+            if (strcmp(na_class_table[plugin_index]->class_name,
+                na_info->class_name) != 0) {
+                plugin_index++;
+                continue;
+            }
+        }
+
+        /* Check that protocol is supported */
         verified = na_class_table[plugin_index]->check_protocol(
             na_info->protocol_name);
-
-        if (verified) {
-            /* Take the first plugin that supports the protocol */
-            if (!na_info->class_name) {
-                /* While we're here, dup the class_name */
-                na_info->class_name = strdup(
-                    na_class_table[plugin_index]->class_name);
-                if (!na_info->class_name) {
-                    NA_LOG_ERROR("unable to dup class name string");
-                    ret = NA_NOMEM_ERROR;
-                    goto done;
-                }
-                plugin_found = NA_TRUE;
-                break;
-            }
-
-            /* Otherwise try to use the plugin name */
-            if (!na_class_table[plugin_index]->class_name) {
-                NA_LOG_ERROR("class name is not defined");
+        if (!verified) {
+            if (na_info->class_name) {
+                NA_LOG_ERROR("Specified class name does not support request protocol");
                 ret = NA_PROTOCOL_ERROR;
                 goto done;
             }
-            if (strcmp(na_class_table[plugin_index]->class_name,
-                na_info->class_name) == 0) {
-                plugin_found = NA_TRUE;
-                break;
+            plugin_index++;
+            continue;
+        }
+
+        /* If no class name specified, take the first plugin that supports
+         * the protocol */
+        if (!na_info->class_name) {
+            /* While we're here, dup the class_name */
+            na_info->class_name = strdup(
+                na_class_table[plugin_index]->class_name);
+            if (!na_info->class_name) {
+                NA_LOG_ERROR("unable to dup class name string");
+                ret = NA_NOMEM_ERROR;
+                goto done;
             }
         }
-        plugin_index++;
+
+        /* All checks have passed */
+        plugin_found = NA_TRUE;
+        break;
     }
 
     if (!plugin_found) {
