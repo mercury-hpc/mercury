@@ -446,6 +446,13 @@ na_cci_check_protocol(const char *protocol_name)
     if (device)
         accept = NA_TRUE;
 
+    /* Finalize CCI */
+    ret = cci_finalize();
+    if (ret) {
+        NA_LOG_ERROR("CCI_finalize() failed with %s", cci_strerror(NULL, ret));
+        goto out;
+    }
+
 out:
     return accept;
 }
