@@ -1932,8 +1932,6 @@ na_sm_check_protocol(const char *protocol_name)
 
     if (!strcmp("sm", protocol_name))
         accept = NA_TRUE;
-    else
-        NA_LOG_ERROR("Request protocol %s is not available", protocol_name);
 
     return accept;
 }
@@ -2162,6 +2160,7 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
     char filename[NA_SM_MAX_FILENAME];
     char pathname[NA_SM_MAX_FILENAME];
     int conn_sock, local_notify, remote_notify;
+    char *name_string = NULL, *short_name = NULL;
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate op_id if not provided */
@@ -2193,8 +2192,24 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
     memset(na_sm_addr, 0, sizeof(struct na_sm_addr));
     hg_atomic_set32(&na_sm_addr->ref_count, 1);
 
+    /**
+     * Clean up name, strings can be of the format:
+     *   <protocol>://<host string>
+     */
+    name_string = strdup(name);
+    if (!name_string) {
+        NA_LOG_ERROR("Could not duplicate string");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+    if (strstr(name_string, "/") != NULL) {
+         strtok_r(name_string, "/", &short_name);
+         short_name++;
+    } else
+         short_name = name_string;
+
     /* Get PID / ID from name */
-    sscanf(name, "%d:%u", &na_sm_addr->pid, &na_sm_addr->id);
+    sscanf(short_name, "%d:%u", &na_sm_addr->pid, &na_sm_addr->id);
 
     /* Open shared ring buf */
     NA_SM_GEN_RING_NAME(filename, na_sm_addr);
@@ -2286,6 +2301,7 @@ done:
         free(na_sm_addr);
         na_sm_op_destroy(na_class, (na_op_id_t) na_sm_op_id);
     }
+    free(name_string);
     return ret;
 }
 
