@@ -718,7 +718,7 @@ na_sm_cancel(
 
 const na_class_t na_sm_class_g = {
     NULL,                                   /* private_data */
-    "sm",                                   /* name */
+    "na",                                   /* name */
     na_sm_check_protocol,                   /* check_protocol */
     na_sm_initialize,                       /* initialize */
     na_sm_finalize,                         /* finalize */
