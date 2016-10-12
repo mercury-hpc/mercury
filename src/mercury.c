@@ -761,6 +761,28 @@ HG_Class_get_protocol(const hg_class_t *hg_class)
 }
 
 /*---------------------------------------------------------------------------*/
+hg_size_t
+HG_Class_get_input_eager_size(const hg_class_t *hg_class)
+{
+    hg_size_t ret = HG_Core_class_get_input_eager_size(hg_class);
+    if (ret > HG_CHECKSUM_MAX_SIZE)
+        return ret - HG_CHECKSUM_MAX_SIZE;
+    else
+        return 0;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_size_t
+HG_Class_get_output_eager_size(const hg_class_t *hg_class)
+{
+    hg_size_t ret = HG_Core_class_get_output_eager_size(hg_class);
+    if (ret > HG_CHECKSUM_MAX_SIZE)
+        return ret - HG_CHECKSUM_MAX_SIZE;
+    else
+        return 0;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_context_t *
 HG_Context_create(hg_class_t *hg_class)
 {

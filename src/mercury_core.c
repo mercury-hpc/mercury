@@ -2295,6 +2295,51 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_size_t
+HG_Core_class_get_input_eager_size(const hg_class_t *hg_class)
+{
+    hg_size_t ret = 0, unexp, header;
+
+    if (hg_class == NULL) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
+#ifndef HG_HAS_XDR
+    unexp  = NA_Msg_get_max_unexpected_size(hg_class->na_class);
+    header = hg_proc_header_request_get_size();
+    if (unexp > header)
+        ret = unexp - header;
+#endif
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_size_t
+HG_Core_class_get_output_eager_size(const hg_class_t *hg_class)
+{
+    hg_size_t ret = 0, exp, header;
+
+    if (hg_class == NULL) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
+#ifndef HG_HAS_XDR
+    exp    = NA_Msg_get_max_expected_size(hg_class->na_class);
+    header = hg_proc_header_response_get_size();
+    if (exp > header)
+        ret = exp - header;
+#endif
+
+done:
+    return ret;
+}
+
+
+/*---------------------------------------------------------------------------*/
 hg_context_t *
 HG_Core_context_create(hg_class_t *hg_class)
 {
