@@ -116,6 +116,34 @@ HG_Class_get_protocol(
         );
 
 /**
+ * Obtain the maximum eager size for sending RPC inputs, for a given class.
+ * NOTE: This doesn't currently work when using XDR encoding.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ *
+ * \return the maximum size, or 0 if hg_class is not a valid class or XDR is
+ * being used
+ */
+HG_EXPORT hg_size_t
+HG_Class_get_input_eager_size(
+        const hg_class_t *hg_class
+        );
+
+/**
+ * Obtain the maximum eager size for sending RPC outputs, for a given class.
+ * NOTE: This doesn't currently work when using XDR encoding.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ *
+ * \return the maximum size, or 0 if hg_class is not a valid class or XDR is
+ * being used
+ */
+HG_EXPORT hg_size_t
+HG_Class_get_output_eager_size(
+        const hg_class_t *hg_class
+        );
+
+/**
  * Create a new context. Must be destroyed by calling HG_Context_destroy().
  *
  * \param hg_class [IN]         pointer to HG class

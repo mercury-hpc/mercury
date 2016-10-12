@@ -33,6 +33,14 @@
 /* Public Macros */
 /*****************/
 
+/* FIXME: this is based on mchecksum's currently supported hash methods, which
+ * aren't exposed. The largest is crc64. There must be a better way... */
+#ifdef HG_HAS_CHECKSUMS
+#    define HG_CHECKSUM_MAX_SIZE 8
+#else
+#    define HG_CHECKSUM_MAX_SIZE 0
+#endif
+
 #ifndef HG_PROC_INLINE
   #if defined(__GNUC__) && !defined(__GNUC_STDC_INLINE__)
     #define HG_PROC_INLINE extern HG_INLINE
