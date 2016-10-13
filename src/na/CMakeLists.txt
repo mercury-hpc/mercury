@@ -136,7 +136,7 @@ if(NA_USE_SM)
     include(CheckFunctionExists)
     check_function_exists(process_vm_readv NA_SM_HAS_CMA)
     if(NA_SM_HAS_CMA)
-      set(NA_PLUGINS ${NA_PLUGINS} sm)
+      set(NA_PLUGINS ${NA_PLUGINS} na)
       set(NA_HAS_SM 1)
       set(NA_SM_SHM_PREFIX "na_sm" CACHE STRING
         "Prefix to use for SHM file name.")

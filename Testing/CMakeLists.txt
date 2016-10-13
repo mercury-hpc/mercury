@@ -74,8 +74,8 @@ if(NA_USE_CCI)
 endif()
 
 if(NA_USE_SM)
-  set(NA_SM_TESTING_PROTOCOL "sm" CACHE STRING "Protocol(s) used for testing (e.g., sm).")
-  mark_as_advanced(NA_SM_TESTING_PROTOCOL)
+  set(NA_NA_TESTING_PROTOCOL "sm" CACHE STRING "Protocol(s) used for testing (e.g., sm).")
+  mark_as_advanced(NA_NA_TESTING_PROTOCOL)
 endif()
 
 #------------------------------------------------------------------------------

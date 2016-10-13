@@ -79,10 +79,12 @@
             na_sm_addr->pid, na_sm_addr->id);           \
     } while (0)
 
-#define NA_SM_GEN_RING_NAME(filename, na_sm_addr)                   \
-    do {                                                            \
-        sprintf(filename, "%s-%d-%u-%u", NA_SM_SHM_PREFIX,          \
-            na_sm_addr->pid, na_sm_addr->id, na_sm_addr->conn_id);  \
+#define NA_SM_SEND_NAME "s"
+#define NA_SM_RECV_NAME "r"
+#define NA_SM_GEN_RING_NAME(filename, pair_name, na_sm_addr)            \
+    do {                                                                \
+        sprintf(filename, "%s-%d-%u-%u-" pair_name, NA_SM_SHM_PREFIX,   \
+            na_sm_addr->pid, na_sm_addr->id, na_sm_addr->conn_id);      \
     } while (0)
 
 #define NA_SM_GEN_SOCK_PATH(pathname, na_sm_addr)               \
@@ -160,8 +162,8 @@ struct na_sm_addr {
     pid_t pid;                              /* PID */
     unsigned int id;                        /* SM ID */
     unsigned int conn_id;                   /* Connection ID */
-    struct na_sm_ring_buf *na_sm_send_ring_buf; /* Shared ring buffer */
-    struct na_sm_ring_buf *na_sm_recv_ring_buf; /* Shared ring buffer */
+    struct na_sm_ring_buf *na_sm_send_ring_buf; /* Shared send ring buffer */
+    struct na_sm_ring_buf *na_sm_recv_ring_buf; /* Shared recv ring buffer */
     struct na_sm_copy_buf *na_sm_copy_buf;  /* Shared copy buffer */
     na_bool_t accepted;                     /* Created on accept */
     na_bool_t self;                         /* Self address */
@@ -1095,23 +1097,8 @@ na_sm_setup_shm(na_class_t *na_class, struct na_sm_addr *na_sm_addr)
 {
     char filename[NA_SM_MAX_FILENAME], pathname[NA_SM_MAX_FILENAME];
     struct na_sm_copy_buf *na_sm_copy_buf = NULL;
-    struct na_sm_ring_buf *na_sm_ring_buf = NULL;
     int listen_sock;
     na_return_t ret = NA_SUCCESS;
-
-    /* Set up new ring buffer for connection ID, self addr is 0 */
-    NA_SM_GEN_RING_NAME(filename, na_sm_addr);
-    na_sm_addr->conn_id++;
-    na_sm_ring_buf = (struct na_sm_ring_buf *) na_sm_open_shared_buf(filename,
-        sizeof(struct na_sm_ring_buf), NA_TRUE);
-    if (!na_sm_ring_buf) {
-        NA_LOG_ERROR("Could not create ring buf");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-    /* Initialize ring buffer */
-    na_sm_ring_buf_init(na_sm_ring_buf);
-    na_sm_addr->na_sm_recv_ring_buf = na_sm_ring_buf;
 
     /* Create SHM buffer */
     NA_SM_GEN_SHM_NAME(filename, na_sm_addr);
@@ -1555,9 +1542,10 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr)
         goto done;
     }
 
-    /* Set up new ring buffer for connection ID */
+    /* Set up ring buffer pair (send/recv) for connection IDs */
     na_sm_addr->conn_id = NA_SM_PRIVATE_DATA(na_class)->self_addr->conn_id;
-    NA_SM_GEN_RING_NAME(filename, NA_SM_PRIVATE_DATA(na_class)->self_addr);
+    NA_SM_GEN_RING_NAME(filename, NA_SM_SEND_NAME,
+        NA_SM_PRIVATE_DATA(na_class)->self_addr);
     na_sm_ring_buf = (struct na_sm_ring_buf *) na_sm_open_shared_buf(filename,
         sizeof(struct na_sm_ring_buf), NA_TRUE);
     if (!na_sm_ring_buf) {
@@ -1568,8 +1556,19 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr)
     /* Initialize ring buffer */
     na_sm_ring_buf_init(na_sm_ring_buf);
     na_sm_addr->na_sm_send_ring_buf = na_sm_ring_buf;
-    na_sm_addr->na_sm_recv_ring_buf =
-        NA_SM_PRIVATE_DATA(na_class)->self_addr->na_sm_recv_ring_buf;
+
+    NA_SM_GEN_RING_NAME(filename, NA_SM_RECV_NAME,
+        NA_SM_PRIVATE_DATA(na_class)->self_addr);
+    na_sm_ring_buf = (struct na_sm_ring_buf *) na_sm_open_shared_buf(filename,
+        sizeof(struct na_sm_ring_buf), NA_TRUE);
+    if (!na_sm_ring_buf) {
+        NA_LOG_ERROR("Could not open ring buf");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+    /* Initialize ring buffer */
+    na_sm_ring_buf_init(na_sm_ring_buf);
+    na_sm_addr->na_sm_recv_ring_buf = na_sm_ring_buf;
 
     /* Send connection ID */
     ret = na_sm_send_conn_id(na_sm_addr);
@@ -1636,7 +1635,19 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr)
             }
             poll_addr->sock_progress = NA_SM_SOCK_DONE;
 
-            NA_SM_GEN_RING_NAME(filename, poll_addr);
+            /* Open remote ring buf pair (send and recv names correspond to
+             * remote ring buffer pair) */
+            NA_SM_GEN_RING_NAME(filename, NA_SM_RECV_NAME, poll_addr);
+            na_sm_ring_buf = (struct na_sm_ring_buf *) na_sm_open_shared_buf(
+                filename, sizeof(struct na_sm_ring_buf), NA_FALSE);
+            if (!na_sm_ring_buf) {
+                NA_LOG_ERROR("Could not open ring buf");
+                ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
+            poll_addr->na_sm_send_ring_buf = na_sm_ring_buf;
+
+            NA_SM_GEN_RING_NAME(filename, NA_SM_SEND_NAME, poll_addr);
             na_sm_ring_buf = (struct na_sm_ring_buf *) na_sm_open_shared_buf(
                 filename, sizeof(struct na_sm_ring_buf), NA_FALSE);
             if (!na_sm_ring_buf) {
@@ -2155,7 +2166,6 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     struct na_sm_addr *na_sm_addr = NULL;
-    struct na_sm_ring_buf *na_sm_ring_buf = NULL;
     struct na_sm_copy_buf *na_sm_copy_buf = NULL;
     char filename[NA_SM_MAX_FILENAME];
     char pathname[NA_SM_MAX_FILENAME];
@@ -2210,17 +2220,6 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
 
     /* Get PID / ID from name */
     sscanf(short_name, "%d:%u", &na_sm_addr->pid, &na_sm_addr->id);
-
-    /* Open shared ring buf */
-    NA_SM_GEN_RING_NAME(filename, na_sm_addr);
-    na_sm_ring_buf = (struct na_sm_ring_buf *) na_sm_open_shared_buf(
-        filename, sizeof(struct na_sm_ring_buf), NA_FALSE);
-    if (!na_sm_ring_buf) {
-        NA_LOG_ERROR("Could not open ring buf");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-    na_sm_addr->na_sm_send_ring_buf = na_sm_ring_buf;
 
     /* Open shared copy buf */
     NA_SM_GEN_SHM_NAME(filename, na_sm_addr);
@@ -2328,7 +2327,8 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
     const char *copy_buf_name = NULL, *send_ring_buf_name = NULL,
         *recv_ring_buf_name = NULL, *pathname = NULL;
     char na_sm_copy_buf_name[NA_SM_MAX_FILENAME],
-        na_sm_ring_buf_name[NA_SM_MAX_FILENAME],
+        na_sm_send_ring_buf_name[NA_SM_MAX_FILENAME],
+        na_sm_recv_ring_buf_name[NA_SM_MAX_FILENAME],
         na_sock_name[NA_SM_MAX_FILENAME];
     na_return_t ret = NA_SUCCESS;
 
@@ -2370,11 +2370,16 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
         }
         /* Close ring buf */
         if (na_sm_addr->accepted) {
-            sprintf(na_sm_ring_buf_name, "%s-%d-%d-%d", NA_SM_SHM_PREFIX,
-                NA_SM_PRIVATE_DATA(na_class)->self_addr->pid,
+            sprintf(na_sm_send_ring_buf_name, "%s-%d-%d-%d-%s",
+                NA_SM_SHM_PREFIX, NA_SM_PRIVATE_DATA(na_class)->self_addr->pid,
                 NA_SM_PRIVATE_DATA(na_class)->self_addr->id,
-                na_sm_addr->conn_id);
-            send_ring_buf_name = na_sm_ring_buf_name;
+                na_sm_addr->conn_id, NA_SM_SEND_NAME);
+            sprintf(na_sm_recv_ring_buf_name, "%s-%d-%d-%d-%s",
+                NA_SM_SHM_PREFIX, NA_SM_PRIVATE_DATA(na_class)->self_addr->pid,
+                NA_SM_PRIVATE_DATA(na_class)->self_addr->id,
+                na_sm_addr->conn_id, NA_SM_RECV_NAME);
+            send_ring_buf_name = na_sm_send_ring_buf_name;
+            recv_ring_buf_name = na_sm_recv_ring_buf_name;
         }
     } else if (na_sm_addr->na_sm_copy_buf) { /* Self addr and listen */
         ret = na_sm_poll_deregister(na_class, NA_SM_ACCEPT, na_sm_addr);
@@ -2382,11 +2387,7 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
             NA_LOG_ERROR("Could not delete listen from poll set");
             goto done;
         }
-        sprintf(na_sm_ring_buf_name, "%s-%d-%d-%d", NA_SM_SHM_PREFIX,
-            NA_SM_PRIVATE_DATA(na_class)->self_addr->pid,
-            NA_SM_PRIVATE_DATA(na_class)->self_addr->id,
-            0);
-        recv_ring_buf_name = na_sm_ring_buf_name;
+
         NA_SM_GEN_SHM_NAME(na_sm_copy_buf_name, na_sm_addr);
         copy_buf_name = na_sm_copy_buf_name;
         NA_SM_GEN_SOCK_PATH(na_sock_name, na_sm_addr);
@@ -2730,7 +2731,8 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
     memcpy(na_sm_addr->na_sm_copy_buf->buf[idx_reserved], buf, buf_size);
 
-//    NA_LOG_DEBUG("Pushed header msg: type=%d, buf_idx=%d, buf_size=%d, tag=%d",
+//    NA_LOG_DEBUG("Pushed header msg to addr %d: type=%d, buf_idx=%d, buf_size=%d, tag=%d",
+//        na_sm_addr->conn_id,
 //        na_sm_hdr.hdr.type, na_sm_hdr.hdr.buf_idx,
 //        na_sm_hdr.hdr.buf_size, na_sm_hdr.hdr.tag);
     if (!na_sm_ring_buf_push(na_sm_addr->na_sm_send_ring_buf, na_sm_hdr)) {
