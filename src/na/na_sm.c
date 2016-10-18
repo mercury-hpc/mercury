@@ -194,7 +194,7 @@ struct na_sm_mem_handle {
 
 /* Lookup info */
 struct na_sm_info_lookup {
-    na_addr_t addr;
+    struct na_sm_addr *na_sm_addr;
 };
 
 /* Unexpected recv info */
@@ -215,9 +215,7 @@ struct na_sm_info_recv_expected {
 /* Operation ID */
 struct na_sm_op_id {
     na_context_t *context;
-    na_cb_type_t type;
-    na_cb_t callback;               /* Callback */
-    void *arg;
+    struct na_cb_completion_data completion_data;
     hg_atomic_int32_t completed;    /* Operation completed */
     hg_atomic_int32_t canceled;     /* Operation canceled */
     union {
@@ -227,7 +225,6 @@ struct na_sm_op_id {
     } info;
     hg_atomic_int32_t ref_count;    /* Ref count */
     HG_QUEUE_ENTRY(na_sm_op_id) entry;
-    struct na_cb_completion_data completion_data;
 };
 
 /* Private data */
@@ -1666,7 +1663,7 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr)
             hg_thread_mutex_unlock(
                 &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
 
-            na_sm_op_id->info.lookup.addr = (na_addr_t) poll_addr;
+            na_sm_op_id->info.lookup.na_sm_addr = poll_addr;
 
             /* Completion */
             ret = na_sm_complete(na_sm_op_id);
@@ -1849,13 +1846,12 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id)
 
     /* Init callback info */
     callback_info = &na_sm_op_id->completion_data.callback_info;
-    callback_info->arg = na_sm_op_id->arg;
     callback_info->ret = (canceled) ? NA_CANCELED : ret;
-    callback_info->type = na_sm_op_id->type;
 
-    switch (na_sm_op_id->type) {
+    switch (callback_info->type) {
         case NA_CB_LOOKUP:
-            callback_info->info.lookup.addr = na_sm_op_id->info.lookup.addr;
+            callback_info->info.lookup.addr =
+                (na_addr_t) na_sm_op_id->info.lookup.na_sm_addr;
             break;
         case NA_CB_SEND_UNEXPECTED:
             break;
@@ -1907,10 +1903,6 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id)
             ret = NA_INVALID_PARAM;
             break;
     }
-
-    na_sm_op_id->completion_data.callback = na_sm_op_id->callback;
-    na_sm_op_id->completion_data.plugin_callback = na_sm_release;
-    na_sm_op_id->completion_data.plugin_callback_args = na_sm_op_id;
 
     ret = na_cb_completion_add(na_sm_op_id->context,
         &na_sm_op_id->completion_data);
@@ -2135,8 +2127,11 @@ na_sm_op_create(na_class_t NA_UNUSED *na_class)
     }
     memset(na_sm_op_id, 0, sizeof(struct na_sm_op_id));
     hg_atomic_set32(&na_sm_op_id->ref_count, 1);
-    /* Completed by default */
-    hg_atomic_set32(&na_sm_op_id->completed, NA_TRUE);
+    hg_atomic_set32(&na_sm_op_id->completed, NA_TRUE); /* Completed by default */
+
+    /* Set op ID release callbacks */
+    na_sm_op_id->completion_data.plugin_callback = na_sm_release;
+    na_sm_op_id->completion_data.plugin_callback_args = na_sm_op_id;
 
 done:
     return (na_op_id_t) na_sm_op_id;
@@ -2186,9 +2181,9 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
         }
     }
     na_sm_op_id->context = context;
-    na_sm_op_id->type = NA_CB_LOOKUP;
-    na_sm_op_id->callback = callback;
-    na_sm_op_id->arg = arg;
+    na_sm_op_id->completion_data.callback_info.type = NA_CB_LOOKUP;
+    na_sm_op_id->completion_data.callback = callback;
+    na_sm_op_id->completion_data.callback_info.arg = arg;
     hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
@@ -2212,14 +2207,14 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
         ret = NA_NOMEM_ERROR;
         goto done;
     }
-    if (strstr(name_string, "/") != NULL) {
-         strtok_r(name_string, "/", &short_name);
-         short_name++;
+    if (strstr(name_string, ":") != NULL) {
+         strtok_r(name_string, ":", &short_name);
+         short_name += 2;
     } else
          short_name = name_string;
 
     /* Get PID / ID from name */
-    sscanf(short_name, "%d:%u", &na_sm_addr->pid, &na_sm_addr->id);
+    sscanf(short_name, "%d/%u", &na_sm_addr->pid, &na_sm_addr->id);
 
     /* Open shared copy buf */
     NA_SM_GEN_SHM_NAME(filename, na_sm_addr);
@@ -2450,7 +2445,7 @@ na_sm_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
     char addr_string[NA_SM_MAX_FILENAME];
     na_return_t ret = NA_SUCCESS;
 
-    sprintf(addr_string, "%d:%u", na_sm_addr->pid, na_sm_addr->id);
+    sprintf(addr_string, "%d/%u", na_sm_addr->pid, na_sm_addr->id);
     string_len = strlen(addr_string);
     if (buf) {
         if (string_len >= *buf_size) {
@@ -2522,9 +2517,9 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         }
     }
     na_sm_op_id->context = context;
-    na_sm_op_id->type = NA_CB_SEND_UNEXPECTED;
-    na_sm_op_id->callback = callback;
-    na_sm_op_id->arg = arg;
+    na_sm_op_id->completion_data.callback_info.type = NA_CB_SEND_UNEXPECTED;
+    na_sm_op_id->completion_data.callback = callback;
+    na_sm_op_id->completion_data.callback_info.arg = arg;
     hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
@@ -2617,9 +2612,9 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         }
     }
     na_sm_op_id->context = context;
-    na_sm_op_id->type = NA_CB_RECV_UNEXPECTED;
-    na_sm_op_id->callback = callback;
-    na_sm_op_id->arg = arg;
+    na_sm_op_id->completion_data.callback_info.type = NA_CB_RECV_UNEXPECTED;
+    na_sm_op_id->completion_data.callback = callback;
+    na_sm_op_id->completion_data.callback_info.arg = arg;
     hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
     na_sm_op_id->info.recv_unexpected.buf = buf;
@@ -2699,9 +2694,9 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
         }
     }
     na_sm_op_id->context = context;
-    na_sm_op_id->type = NA_CB_SEND_EXPECTED;
-    na_sm_op_id->callback = callback;
-    na_sm_op_id->arg = arg;
+    na_sm_op_id->completion_data.callback_info.type = NA_CB_SEND_EXPECTED;
+    na_sm_op_id->completion_data.callback = callback;
+    na_sm_op_id->completion_data.callback_info.arg = arg;
     hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
@@ -2794,9 +2789,9 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         }
     }
     na_sm_op_id->context = context;
-    na_sm_op_id->type = NA_CB_RECV_EXPECTED;
-    na_sm_op_id->callback = callback;
-    na_sm_op_id->arg = arg;
+    na_sm_op_id->completion_data.callback_info.type = NA_CB_RECV_EXPECTED;
+    na_sm_op_id->completion_data.callback = callback;
+    na_sm_op_id->completion_data.callback_info.arg = arg;
     hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
     na_sm_op_id->info.recv_expected.buf = buf;
@@ -3072,9 +3067,9 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         }
     }
     na_sm_op_id->context = context;
-    na_sm_op_id->type = NA_CB_PUT;
-    na_sm_op_id->callback = callback;
-    na_sm_op_id->arg = arg;
+    na_sm_op_id->completion_data.callback_info.type = NA_CB_PUT;
+    na_sm_op_id->completion_data.callback = callback;
+    na_sm_op_id->completion_data.callback_info.arg = arg;
     hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
@@ -3186,9 +3181,9 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         }
     }
     na_sm_op_id->context = context;
-    na_sm_op_id->type = NA_CB_GET;
-    na_sm_op_id->callback = callback;
-    na_sm_op_id->arg = arg;
+    na_sm_op_id->completion_data.callback_info.type = NA_CB_GET;
+    na_sm_op_id->completion_data.callback = callback;
+    na_sm_op_id->completion_data.callback_info.arg = arg;
     hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
@@ -3341,7 +3336,7 @@ na_sm_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
     if (hg_atomic_get32(&na_sm_op_id->completed))
         goto done;
 
-    switch (na_sm_op_id->type) {
+    switch (na_sm_op_id->completion_data.callback_info.type) {
         case NA_CB_LOOKUP:
             /* Nothing */
             break;
