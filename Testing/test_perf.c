@@ -161,6 +161,7 @@ done:
     return ret;
 }
 
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static hg_return_t
 measure_rpc2(hg_context_t *context, hg_addr_t addr,
     hg_request_class_t *request_class)
@@ -168,24 +169,22 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
     hg_handle_t *handles = NULL;
     hg_request_t *request;
     struct hg_test_perf_args args;
-    hg_time_t t1, t2;
-    unsigned int nloop = 32;
-    double td, time_read, calls_per_sec;
-
+    double time_read = 0, min_time_read = 0, max_time_read = 0;
+    unsigned int nhandles = MERCURY_TESTING_NUM_THREADS;
     hg_return_t ret = HG_SUCCESS;
-
     size_t i;
+    unsigned int op_count = 0;
 
     if (na_test_comm_rank_g == 0) {
-        printf("# Executing RPC with %d client(s) -- loop %d time(s)\n",
-                na_test_comm_size_g, nloop);
+        printf("# Executing RPC with %d client(s) -- loop %d time(s) (%u handles)\n",
+                na_test_comm_size_g, MERCURY_TESTING_MAX_LOOP, nhandles);
     }
 
     if (na_test_comm_rank_g == 0) printf("# Warming up...\n");
 
-    handles = malloc(nloop * sizeof(hg_handle_t));
+    handles = malloc(nhandles * sizeof(hg_handle_t));
 
-    for (i = 0; i < nloop; i++) {
+    for (i = 0; i < nhandles; i++) {
         ret = HG_Create(context, addr, hg_test_perf_rpc_id_g, &handles[i]);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not start call\n");
@@ -195,11 +194,11 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
 
     request = hg_request_create(request_class);
     hg_atomic_set32(&args.op_completed_count, 0);
-    args.op_count = RPC_SKIP;
+    args.op_count = nhandles;
     args.request = request;
 
     /* Warm up for RPC */
-    for (i = 0; i < RPC_SKIP; i++) {
+    for (i = 0; i < nhandles; i++) {
         ret = HG_Forward(handles[i], hg_test_perf_forward_cb2, &args, NULL);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not forward call\n");
@@ -209,42 +208,69 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
     hg_request_reset(request);
+
     NA_Test_barrier();
 
-    if (na_test_comm_rank_g == 0) printf("%*s%*s",
-        NWIDTH, "#    Time (s)", NWIDTH, "Calls (c/s)");
+    /* RPC benchmark */
+    if (na_test_comm_rank_g == 0) printf("%*s%*s%*s%*s%*s%*s",
+        NWIDTH, "#    Time (s)", NWIDTH, "Min (s)", NWIDTH, "Max (s)",
+        NWIDTH, "Calls (c/s)", NWIDTH, "Min (c/s)", NWIDTH, "Max (c/s)");
     if (na_test_comm_rank_g == 0) printf("\n");
 
     /* RPC benchmark */
-    hg_atomic_set32(&args.op_completed_count, 0);
-    args.op_count = nloop;
+    while (op_count < MERCURY_TESTING_MAX_LOOP) {
+        hg_time_t t1, t2;
+        double td, tb, part_time_read;
+        double calls_per_sec, min_calls_per_sec, max_calls_per_sec;
 
-    hg_time_get_current(&t1);
-    for (i = 0; i < nloop; i++) {
-        ret = HG_Forward(handles[i], hg_test_perf_forward_cb2, &args, NULL);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not forward call\n");
-            goto done;
+        if ((MERCURY_TESTING_MAX_LOOP - op_count) < nhandles) {
+            args.op_count = MERCURY_TESTING_MAX_LOOP - op_count;
+        }
+        hg_atomic_set32(&args.op_completed_count, 0);
+
+        hg_time_get_current(&t1);
+        for (i = 0; i < nhandles && op_count < MERCURY_TESTING_MAX_LOOP;
+            i++, op_count++) {
+            ret = HG_Forward(handles[i], hg_test_perf_forward_cb2, &args, NULL);
+            if (ret != HG_SUCCESS) {
+                fprintf(stderr, "Could not forward call\n");
+                goto done;
+            }
+        }
+
+        hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+        hg_time_get_current(&t2);
+
+        td = hg_time_to_double(hg_time_subtract(t2, t1));
+        hg_request_reset(request);
+
+        time_read += td;
+        tb = td / (double) args.op_count;
+        if (!min_time_read) min_time_read = tb;
+        min_time_read = (tb < min_time_read) ? tb : min_time_read;
+        max_time_read = (tb > max_time_read) ? tb : max_time_read;
+
+        part_time_read = time_read / (double) op_count;
+        calls_per_sec = na_test_comm_size_g / part_time_read;
+        min_calls_per_sec = na_test_comm_size_g / max_time_read;
+        max_calls_per_sec = na_test_comm_size_g / min_time_read;
+
+        /* At this point we have received everything so work out the bandwidth */
+        if (na_test_comm_rank_g == 0) {
+            printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\r", NWIDTH, NDIGITS,
+                part_time_read, NWIDTH, NDIGITS, min_time_read, NWIDTH, NDIGITS,
+                max_time_read, NWIDTH, NDIGITS, calls_per_sec, NWIDTH, NDIGITS,
+                min_calls_per_sec, NWIDTH, NDIGITS, max_calls_per_sec);
         }
     }
-    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
-    hg_time_get_current(&t2);
-    NA_Test_barrier();
-
-    td = hg_time_to_double(hg_time_subtract(t2, t1));
-    time_read = td / nloop;
-    calls_per_sec = na_test_comm_size_g / time_read;
-
-    /* At this point we have received everything so work out the bandwidth */
-    if (na_test_comm_rank_g == 0) {
-        printf("%*.*f%*.*g\n", NWIDTH, NDIGITS, time_read,
-            NWIDTH, NDIGITS, calls_per_sec);
-    }
+    if (na_test_comm_rank_g == 0) printf("\n");
 
     hg_request_destroy(request);
 
+    NA_Test_barrier();
+
     /* Complete */
-    for (i = 0; i < nloop; i++) {
+    for (i = 0; i < nhandles; i++) {
         ret = HG_Destroy(handles[i]);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not complete\n");
@@ -256,6 +282,7 @@ done:
     free(handles);
     return ret;
 }
+#endif
 
 /**
  *
