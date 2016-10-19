@@ -481,8 +481,10 @@ main(int argc, char *argv[])
     /* Run RPC test */
     measure_rpc1(context, addr, request_class);
 
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
     /* Run RPC test */
     measure_rpc2(context, addr, request_class);
+#endif
 
     NA_Test_barrier();
 
