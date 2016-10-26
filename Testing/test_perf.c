@@ -42,6 +42,7 @@ hg_test_perf_forward_cb1(const struct hg_cb_info *callback_info)
     return HG_SUCCESS;
 }
 
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static hg_return_t
 hg_test_perf_forward_cb2(const struct hg_cb_info *callback_info)
 {
@@ -55,6 +56,7 @@ hg_test_perf_forward_cb2(const struct hg_cb_info *callback_info)
 
     return HG_SUCCESS;
 }
+#endif
 
 /**
  *
@@ -170,7 +172,7 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
     hg_request_t *request;
     struct hg_test_perf_args args;
     double time_read = 0, min_time_read = 0, max_time_read = 0;
-    unsigned int nhandles = MERCURY_TESTING_NUM_THREADS;
+    unsigned int nhandles = MERCURY_TESTING_NUM_THREADS * 2;
     hg_return_t ret = HG_SUCCESS;
     size_t i;
     unsigned int op_count = 0;
