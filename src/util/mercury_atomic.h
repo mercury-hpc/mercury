@@ -455,6 +455,26 @@ hg_atomic_cas64(hg_atomic_int64_t *ptr, hg_util_int64_t compare_value,
 }
 #endif /* HG_UTIL_HAS_OPA_PRIMITIVES_H */
 
+/**
+ * Memory barrier.
+ *
+ */
+static HG_UTIL_INLINE void
+hg_atomic_fence()
+{
+#if defined(_WIN32)
+
+#elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
+    OPA_read_write_barrier();
+#elif defined(HG_UTIL_HAS_STDATOMIC_H)
+    atomic_thread_fence(memory_order_acq_rel);
+#elif defined(__APPLE__)
+    OSMemoryBarrier();
+#else
+    #error "Not supported on this platform."
+#endif
+}
+
 #ifdef __cplusplus
 }
 #endif
