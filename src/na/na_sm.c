@@ -118,8 +118,34 @@ typedef union {
     na_uint64_t val;
 } na_sm_cacheline_hdr_t;
 
-/* Shared ring buffer
- * see https://github.com/freebsd/freebsd/blob/master/sys/sys/buf_ring.h
+/* Shared ring buffer implementation derived from:
+ * https://github.com/freebsd/freebsd/blob/master/sys/sys/buf_ring.h
+ *
+ * -
+ * Copyright (c) 2007-2009 Kip Macy <kmacy@freebsd.org>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
  */
 struct na_sm_ring_buf {
     na_sm_cacheline_atomic_int32_t prod_head;
@@ -214,6 +240,7 @@ struct na_sm_info_recv_expected {
 
 /* Operation ID */
 struct na_sm_op_id {
+    na_class_t *na_class;
     na_context_t *context;
     struct na_cb_completion_data completion_data;
     hg_atomic_int32_t completed;    /* Operation completed */
@@ -241,6 +268,7 @@ struct na_sm_private_data {
     hg_thread_mutex_t lookup_op_queue_mutex;
     hg_thread_mutex_t unexpected_op_queue_mutex;
     hg_thread_mutex_t expected_op_queue_mutex;
+    hg_thread_mutex_t copy_buf_mutex;
 };
 
 /********************/
@@ -376,8 +404,11 @@ na_sm_notify_decr(
  * Reserve shared copy buf.
  */
 static NA_INLINE na_return_t
-na_sm_reserve_copy_buf(
+na_sm_reserve_and_copy_buf(
+    na_class_t *na_class,
     struct na_sm_copy_buf *na_sm_copy_buf,
+    const void *buf,
+    size_t buf_size,
     unsigned int *idx_reserved
     );
 
@@ -385,8 +416,11 @@ na_sm_reserve_copy_buf(
  * Free shared copy buf.
  */
 static NA_INLINE void
-na_sm_free_copy_buf(
+na_sm_copy_and_free_buf(
+    na_class_t *na_class,
     struct na_sm_copy_buf *na_sm_copy_buf,
+    void *buf,
+    size_t buf_size,
     unsigned int idx_reserved
     );
 
@@ -1293,14 +1327,13 @@ na_sm_ring_buf_push(struct na_sm_ring_buf *na_sm_ring_buf,
     hg_util_int32_t prod_head, prod_next, cons_tail;
     na_bool_t ret = NA_TRUE;
 
-//    critical_enter();
     do {
         prod_head = hg_atomic_get32(&na_sm_ring_buf->prod_head.val);
         prod_next = (prod_head + 1) & (NA_SM_NUM_BUFS - 1);
         cons_tail = hg_atomic_get32(&na_sm_ring_buf->cons_tail.val);
 
         if (prod_next == cons_tail) {
-//            rmb();
+            hg_atomic_fence();
             if (prod_head == hg_atomic_get32(&na_sm_ring_buf->prod_head.val) &&
                 cons_tail == hg_atomic_get32(&na_sm_ring_buf->cons_tail.val)) {
                 /* Full */
@@ -1325,7 +1358,7 @@ na_sm_ring_buf_push(struct na_sm_ring_buf *na_sm_ring_buf,
         hg_thread_yield();
 
     hg_atomic_set32(&na_sm_ring_buf->prod_tail.val, prod_next);
-//    critical_exit();
+
 done:
     return ret;
 }
@@ -1403,58 +1436,73 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
-na_sm_reserve_copy_buf(struct na_sm_copy_buf *na_sm_copy_buf,
+na_sm_reserve_and_copy_buf(na_class_t *na_class,
+    struct na_sm_copy_buf *na_sm_copy_buf, const void *buf, size_t buf_size,
     unsigned int *idx_reserved)
 {
-    hg_util_int64_t available;
     hg_util_int64_t bits = 1ULL;
     na_return_t ret = NA_SIZE_ERROR;
-    unsigned int i;
+    unsigned int i = 0;
 
-    for (i = 0; i < NA_SM_NUM_BUFS - 1; i++) {
-        available = hg_atomic_get64(&na_sm_copy_buf->available.val);
-        if (!available) {
+    hg_thread_mutex_lock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
+
+    do {
+        hg_util_int64_t available = hg_atomic_get64(
+            &na_sm_copy_buf->available.val);
+        if (!available)
             /* Nothing available */
             break;
+        if ((available & bits) != bits) {
+            /* Already reserved */
+            hg_atomic_fence();
+            i++;
+            bits <<= 1;
+            continue;
         }
 
-        if ((available & bits) == bits) {
-            if (hg_atomic_cas64(&na_sm_copy_buf->available.val, available,
-                available & ~bits)) {
-                *idx_reserved = i;
-//                NA_LOG_DEBUG("Reserved %u is:\n%s", i,
-//                    itoa(hg_atomic_get64(&na_sm_copy_buf->available.val), 2));
-                ret = NA_SUCCESS;
-                break;
-            }
-            /* Can't use atomic XOR directly, if there is a race and the cas
-             * fails, we should be able to pick the next one available */
+        if (hg_atomic_cas64(&na_sm_copy_buf->available.val, available,
+            available & ~bits)) {
+            /* Reservation succeeded, copy buffer */
+            memcpy(na_sm_copy_buf->buf[i], buf, buf_size);
+            *idx_reserved = i;
+//            NA_LOG_DEBUG("Reserved %u is:\n%s", i,
+//                itoa(hg_atomic_get64(&na_sm_copy_buf->available.val), 2));
+            ret = NA_SUCCESS;
+            break;
         }
-        bits <<= 1;
-    }
+        /* Can't use atomic XOR directly, if there is a race and the cas
+         * fails, we should be able to pick the next one available */
+    } while (i < (NA_SM_NUM_BUFS - 1));
 
+    hg_thread_mutex_unlock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_sm_free_copy_buf(struct na_sm_copy_buf *na_sm_copy_buf,
+na_sm_copy_and_free_buf(na_class_t *na_class,
+    struct na_sm_copy_buf *na_sm_copy_buf, void *buf, size_t buf_size,
     unsigned int idx_reserved)
 {
     hg_util_int64_t bits = 1LL << idx_reserved;
+#ifndef HG_UTIL_HAS_STDATOMIC_H
+    hg_util_int64_t available;
+#endif
 
-#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H) && !defined(__APPLE__)
+    hg_thread_mutex_lock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
+
+    memcpy(buf, na_sm_copy_buf->buf[idx_reserved], buf_size);
+
+#ifdef HG_UTIL_HAS_STDATOMIC_H
     hg_atomic_or64(&na_sm_copy_buf->available.val, bits);
 #else
-    hg_util_int64_t available;
-
-again:
-    available = hg_atomic_get64(&na_sm_copy_buf->available.val);
-
-    if (!hg_atomic_cas64(&na_sm_copy_buf->available.val, available,
-        (available | bits)))
-        goto again;
+    do {
+        available = hg_atomic_get64(&na_sm_copy_buf->available.val);
+    } while (!hg_atomic_cas64(&na_sm_copy_buf->available.val, available,
+        (available | bits)));
 #endif
+
+    hg_thread_mutex_unlock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1704,9 +1752,6 @@ na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr)
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
-//    NA_LOG_DEBUG("Popped header msg: type=%d, buf_idx=%d, buf_size=%d, tag=%d",
-//        na_sm_hdr.hdr.type, na_sm_hdr.hdr.buf_idx,
-//        na_sm_hdr.hdr.buf_size, na_sm_hdr.hdr.tag);
 
     switch (na_sm_hdr.hdr.type) {
         case NA_CB_RECV_UNEXPECTED:
@@ -1816,10 +1861,10 @@ na_sm_progress_expected(na_class_t *na_class, struct na_sm_addr *poll_addr,
         goto done;
     }
 
-    /* Copy buffer */
-    memcpy(na_sm_op_id->info.recv_expected.buf,
-        poll_addr->na_sm_copy_buf->buf[na_sm_hdr.hdr.buf_idx],
-        na_sm_hdr.hdr.buf_size);
+    /* Copy and free buffer atomically */
+    na_sm_copy_and_free_buf(na_class, poll_addr->na_sm_copy_buf,
+        na_sm_op_id->info.recv_expected.buf, na_sm_hdr.hdr.buf_size,
+        na_sm_hdr.hdr.buf_idx);
 
     ret = na_sm_complete(na_sm_op_id);
     if (ret != NA_SUCCESS) {
@@ -1828,8 +1873,6 @@ na_sm_progress_expected(na_class_t *na_class, struct na_sm_addr *poll_addr,
     }
 
 done:
-    /* Free copy buffer atomically */
-    na_sm_free_copy_buf(poll_addr->na_sm_copy_buf, na_sm_hdr.hdr.buf_idx);
     return ret;
 }
 
@@ -1840,9 +1883,6 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id)
     struct na_cb_info *callback_info = NULL;
     na_bool_t canceled = (na_bool_t) hg_atomic_get32(&na_sm_op_id->canceled);
     na_return_t ret = NA_SUCCESS;
-
-    /* Mark op id as completed */
-    hg_atomic_set32(&na_sm_op_id->completed, NA_TRUE);
 
     /* Init callback info */
     callback_info = &na_sm_op_id->completion_data.callback_info;
@@ -1871,12 +1911,6 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id)
             /* Increment addr ref count */
             hg_atomic_incr32(&na_sm_unexpected_info->na_sm_addr->ref_count);
 
-            /* Copy buffer from na_sm_unexpected_info */
-            na_sm_copy_buf = na_sm_unexpected_info->na_sm_addr->na_sm_copy_buf;
-            memcpy(na_sm_op_id->info.recv_unexpected.buf,
-                na_sm_copy_buf->buf[na_sm_unexpected_info->na_sm_hdr.hdr.buf_idx],
-                na_sm_unexpected_info->na_sm_hdr.hdr.buf_size);
-
             /* Fill callback info */
             callback_info->info.recv_unexpected.actual_buf_size =
                 (na_size_t) na_sm_unexpected_info->na_sm_hdr.hdr.buf_size;
@@ -1885,8 +1919,11 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id)
             callback_info->info.recv_unexpected.tag =
                 (na_tag_t) na_sm_unexpected_info->na_sm_hdr.hdr.tag;
 
-            /* Free copy buffer atomically */
-            na_sm_free_copy_buf(na_sm_copy_buf,
+            /* Copy and free buffer atomically */
+            na_sm_copy_buf = na_sm_unexpected_info->na_sm_addr->na_sm_copy_buf;
+            na_sm_copy_and_free_buf(na_sm_op_id->na_class, na_sm_copy_buf,
+                na_sm_op_id->info.recv_unexpected.buf,
+                na_sm_unexpected_info->na_sm_hdr.hdr.buf_size,
                 na_sm_unexpected_info->na_sm_hdr.hdr.buf_idx);
             break;
         }
@@ -1903,6 +1940,9 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id)
             ret = NA_INVALID_PARAM;
             break;
     }
+
+    /* Mark op id as completed */
+    hg_atomic_set32(&na_sm_op_id->completed, NA_TRUE);
 
     ret = na_cb_completion_add(na_sm_op_id->context,
         &na_sm_op_id->completion_data);
@@ -2032,6 +2072,8 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
             &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
     hg_thread_mutex_init(
             &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
+    hg_thread_mutex_init(
+             &NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
 
 done:
     return ret;
@@ -2107,6 +2149,8 @@ na_sm_finalize(na_class_t *na_class)
             &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
     hg_thread_mutex_destroy(
             &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
+    hg_thread_mutex_destroy(
+             &NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
 
     free(na_class->private_data);
 
@@ -2116,7 +2160,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_op_id_t
-na_sm_op_create(na_class_t NA_UNUSED *na_class)
+na_sm_op_create(na_class_t *na_class)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
 
@@ -2126,6 +2170,7 @@ na_sm_op_create(na_class_t NA_UNUSED *na_class)
         goto done;
     }
     memset(na_sm_op_id, 0, sizeof(struct na_sm_op_id));
+    na_sm_op_id->na_class = na_class;
     hg_atomic_set32(&na_sm_op_id->ref_count, 1);
     hg_atomic_set32(&na_sm_op_id->completed, NA_TRUE); /* Completed by default */
 
@@ -2526,7 +2571,8 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     /* Try to reserve buffer atomically */
     do {
         hg_time_get_current(&t1);
-        ret = na_sm_reserve_copy_buf(na_sm_addr->na_sm_copy_buf, &idx_reserved);
+        ret = na_sm_reserve_and_copy_buf(na_class, na_sm_addr->na_sm_copy_buf,
+            buf, buf_size, &idx_reserved);
         if (ret == NA_SUCCESS)
             break;
 
@@ -2546,12 +2592,6 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_sm_hdr.hdr.buf_idx = idx_reserved & 0xff;
     na_sm_hdr.hdr.buf_size = buf_size & 0xffff;
     na_sm_hdr.hdr.tag = tag;
-
-    memcpy(na_sm_addr->na_sm_copy_buf->buf[idx_reserved], buf, buf_size);
-
-//    NA_LOG_DEBUG("Pushed header msg: type=%d, buf_idx=%d, buf_size=%d, tag=%d",
-//        na_sm_hdr.hdr.type, na_sm_hdr.hdr.buf_idx,
-//        na_sm_hdr.hdr.buf_size, na_sm_hdr.hdr.tag);
     if (!na_sm_ring_buf_push(na_sm_addr->na_sm_send_ring_buf, na_sm_hdr)) {
         NA_LOG_ERROR("Full ring buffer");
         ret = NA_PROTOCOL_ERROR;
@@ -2703,7 +2743,8 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     /* Try to reserve buffer atomically */
     do {
         hg_time_get_current(&t1);
-        ret = na_sm_reserve_copy_buf(na_sm_addr->na_sm_copy_buf, &idx_reserved);
+        ret = na_sm_reserve_and_copy_buf(na_class, na_sm_addr->na_sm_copy_buf,
+            buf, buf_size, &idx_reserved);
         if (ret == NA_SUCCESS)
             break;
 
@@ -2723,13 +2764,6 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_sm_hdr.hdr.buf_idx = idx_reserved & 0xff;
     na_sm_hdr.hdr.buf_size = buf_size & 0xffff;
     na_sm_hdr.hdr.tag = tag;
-
-    memcpy(na_sm_addr->na_sm_copy_buf->buf[idx_reserved], buf, buf_size);
-
-//    NA_LOG_DEBUG("Pushed header msg to addr %d: type=%d, buf_idx=%d, buf_size=%d, tag=%d",
-//        na_sm_addr->conn_id,
-//        na_sm_hdr.hdr.type, na_sm_hdr.hdr.buf_idx,
-//        na_sm_hdr.hdr.buf_size, na_sm_hdr.hdr.tag);
     if (!na_sm_ring_buf_push(na_sm_addr->na_sm_send_ring_buf, na_sm_hdr)) {
         NA_LOG_ERROR("Full ring buffer");
         ret = NA_PROTOCOL_ERROR;
@@ -3282,7 +3316,6 @@ na_sm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
                 goto done;
             }
 
-//            NA_LOG_DEBUG("Received event type: %d", na_sm_poll_data->type);
             switch (na_sm_poll_data->type) {
                 case NA_SM_ACCEPT:
                     ret = na_sm_progress_accept(na_class, na_sm_poll_data->addr);
