@@ -13,28 +13,20 @@
 
 #include "mercury_util_config.h"
 
-/* For compatibility */
-#if defined(__STDC_VERSION__) &&  (__STDC_VERSION__ < 199901L)
-  #if defined(__GNUC__) && (__GNUC__ >= 2)
-    #define __func__ __FUNCTION__
-  #else
-    #define __func__ "<unknown>"
-  #endif
-#elif defined(_WIN32)
-  #define __func__ __FUNCTION__
-#endif
-
 /* Default error macro */
 #ifdef HG_UTIL_HAS_VERBOSE_ERROR
-  #include <stdio.h>
-  #define HG_UTIL_ERROR_DEFAULT(x) do {           \
-        fprintf(stderr, "Error "                  \
-                "in %s:%d (%s): "                 \
-                "%s.\n",                          \
-                __FILE__, __LINE__, __func__, x); \
-  } while(0)
+  #include <mercury_log.h>
+  #define HG_UTIL_LOG_MODULE_NAME "HG Util"
+  #define HG_UTIL_LOG_ERROR(...)                                \
+      HG_LOG_WRITE_ERROR(HG_UTIL_LOG_MODULE_NAME, __VA_ARGS__)
+  #define HG_UTIL_LOG_DEBUG(...)                                \
+      HG_LOG_WRITE_DEBUG(HG_UTIL_LOG_MODULE_NAME, __VA_ARGS__)
+  #define HG_UTIL_LOG_WARNING(...)                              \
+      HG_LOG_WRITE_WARNING(HG_UTIL_LOG_MODULE_NAME, __VA_ARGS__)
 #else
-  #define HG_UTIL_ERROR_DEFAULT(...) (void)0
+  #define HG_UTIL_LOG_ERROR(...) (void)0
+  #define HG_UTIL_LOG_DEBUG(...) (void)0
+  #define HG_UTIL_LOG_WARNING(...) (void)0
 #endif
 
 #endif /* MERCURY_UTIL_ERROR_H */

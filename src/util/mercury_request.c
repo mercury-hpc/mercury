@@ -63,7 +63,7 @@ hg_request_init(hg_request_progress_func_t progress_func,
     hg_request_class = (struct hg_request_class *)
             malloc(sizeof(struct hg_request_class));
     if (!hg_request_class) {
-        HG_UTIL_ERROR_DEFAULT("Could not allocate hg_request_class");
+        HG_UTIL_LOG_ERROR("Could not allocate hg_request_class");
         goto done;
     }
 
@@ -103,7 +103,7 @@ hg_request_create(hg_request_class_t *request_class)
 
     hg_request = (struct hg_request *) malloc(sizeof(struct hg_request));
     if (!hg_request) {
-        HG_UTIL_ERROR_DEFAULT("Could not allocate hg_request");
+        HG_UTIL_LOG_ERROR("Could not allocate hg_request");
         goto done;
     }
 

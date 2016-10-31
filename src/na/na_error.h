@@ -13,38 +13,16 @@
 
 #include "na_config.h"
 
-/* For compatibility */
-#if defined(__STDC_VERSION__) &&  (__STDC_VERSION__ < 199901L)
-  #if defined(__GNUC__) && (__GNUC__ >= 2)
-    #define __func__ __FUNCTION__
-  #else
-    #define __func__ "<unknown>"
-  #endif
-#elif defined(_WIN32)
-  #define __func__ __FUNCTION__
-#endif
-
 /* Default error macro */
 #ifdef NA_HAS_VERBOSE_ERROR
-  #include <stdio.h>
-  #define NA_LOG_ERROR(...) do {                                            \
-      fprintf(stderr, "NA: Error in %s:%d\n", __FILE__, __LINE__);          \
-      fprintf(stderr, " # %s(): ", __func__);                               \
-      fprintf(stderr, __VA_ARGS__);                                         \
-      fprintf(stderr, "\n");                                                \
-  } while (0)
-  #define NA_LOG_DEBUG(...) do {                                \
-      fprintf(stdout, "NA: in %s:%d\n", __FILE__, __LINE__);    \
-      fprintf(stdout, " # %s(): ", __func__);                   \
-      fprintf(stdout, __VA_ARGS__);                             \
-      fprintf(stdout, "\n");                                    \
-  } while (0)
-  #define NA_LOG_WARNING(...) do {                                      \
-      fprintf(stdout, "NA: Warning in %s:%d\n", __FILE__, __LINE__);    \
-      fprintf(stdout, " # %s(): ", __func__);                           \
-      fprintf(stdout, __VA_ARGS__);                                     \
-      fprintf(stdout, "\n");                                            \
-  } while (0)
+  #include <mercury_log.h>
+  #define NA_LOG_MODULE_NAME "NA"
+  #define NA_LOG_ERROR(...)                                 \
+      HG_LOG_WRITE_ERROR(NA_LOG_MODULE_NAME, __VA_ARGS__)
+  #define NA_LOG_DEBUG(...)                                 \
+      HG_LOG_WRITE_DEBUG(NA_LOG_MODULE_NAME, __VA_ARGS__)
+  #define NA_LOG_WARNING(...)                               \
+      HG_LOG_WRITE_WARNING(NA_LOG_MODULE_NAME, __VA_ARGS__)
 #else
   #define NA_LOG_ERROR(...) (void)0
   #define NA_LOG_DEBUG(...) (void)0

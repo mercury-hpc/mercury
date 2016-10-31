@@ -17,38 +17,16 @@
 /* Public Macros */
 /*****************/
 
-/* For compatibility */
-#if defined(__STDC_VERSION__) &&  (__STDC_VERSION__ < 199901L)
-  #if defined(__GNUC__) && (__GNUC__ >= 2)
-    #define __func__ __FUNCTION__
-  #else
-    #define __func__ "<unknown>"
-  #endif
-#elif defined(_WIN32)
-  #define __func__ __FUNCTION__
-#endif
-
 /* Default error macro */
 #ifdef HG_HAS_VERBOSE_ERROR
-  #include <stdio.h>
-  #define HG_LOG_ERROR(...) do {                                   \
-      fprintf(stderr, "HG: Error in %s:%d\n", __FILE__, __LINE__); \
-      fprintf(stderr, " # %s(): ", __func__);                      \
-      fprintf(stderr, __VA_ARGS__);                                \
-      fprintf(stderr, "\n");                                       \
-  } while (0)
-  #define HG_LOG_DEBUG(...) do {                             \
-      fprintf(stdout, "HG: in %s:%d\n", __FILE__, __LINE__); \
-      fprintf(stdout, " # %s(): ", __func__);                \
-      fprintf(stdout, __VA_ARGS__);                          \
-      fprintf(stdout, "\n");                                 \
-  } while (0)
-  #define HG_LOG_WARNING(...) do {                                   \
-      fprintf(stdout, "HG: Warning in %s:%d\n", __FILE__, __LINE__); \
-      fprintf(stdout, " # %s(): ", __func__);                        \
-      fprintf(stdout, __VA_ARGS__);                                  \
-      fprintf(stdout, "\n");                                         \
-  } while (0)
+  #include <mercury_log.h>
+  #define HG_LOG_MODULE_NAME "HG"
+  #define HG_LOG_ERROR(...)                                 \
+      HG_LOG_WRITE_ERROR(HG_LOG_MODULE_NAME, __VA_ARGS__)
+  #define HG_LOG_DEBUG(...)                                 \
+      HG_LOG_WRITE_DEBUG(HG_LOG_MODULE_NAME, __VA_ARGS__)
+  #define HG_LOG_WARNING(...)                               \
+      HG_LOG_WRITE_WARNING(HG_LOG_MODULE_NAME, __VA_ARGS__)
 #else
   #define HG_LOG_ERROR(...) (void)0
   #define HG_LOG_DEBUG(...) (void)0

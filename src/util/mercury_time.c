@@ -71,7 +71,7 @@ hg_time_get_current(hg_time_t *tv)
 #endif
 
     if (!tv) {
-        HG_UTIL_ERROR_DEFAULT("NULL pointer to hg_time_t");
+        HG_UTIL_LOG_ERROR("NULL pointer to hg_time_t");
         ret = HG_UTIL_FAIL;
         return ret;
     }
@@ -115,7 +115,7 @@ hg_time_get_current(hg_time_t *tv)
     tv->tv_usec = (monotonic_nsec - tv->tv_sec) / 1000;
 #else
     if (clock_gettime(clock_id, &tp)) {
-        HG_UTIL_ERROR_DEFAULT("clock_gettime failed");
+        HG_UTIL_LOG_ERROR("clock_gettime failed");
         ret = HG_UTIL_FAIL;
         return ret;
     }
@@ -203,7 +203,7 @@ hg_time_sleep(const hg_time_t rqt, hg_time_t *rmt)
     rqtp.tv_nsec = rqt.tv_usec * 1000;
 
     if (nanosleep(&rqtp, &rmtp)) {
-        HG_UTIL_ERROR_DEFAULT("nanosleep failed");
+        HG_UTIL_LOG_ERROR("nanosleep failed");
         ret = HG_UTIL_FAIL;
         return ret;
     }
@@ -234,13 +234,13 @@ hg_time_stamp(void)
     t = time(NULL);
     local_time = localtime(&t);
     if (local_time == NULL) {
-        HG_UTIL_ERROR_DEFAULT("Could not get local time");
+        HG_UTIL_LOG_ERROR("Could not get local time");
         ret = NULL;
         return ret;
     }
 
     if (strftime(buf, HG_UTIL_STAMP_MAX, "%a, %d %b %Y %T %Z", local_time) == 0) {
-        HG_UTIL_ERROR_DEFAULT("Could not format time");
+        HG_UTIL_LOG_ERROR("Could not format time");
         ret = NULL;
         return ret;
     }

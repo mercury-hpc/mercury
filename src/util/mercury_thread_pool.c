@@ -41,7 +41,7 @@ hg_thread_pool_worker(void *args)
         while (!pool->shutdown && HG_QUEUE_IS_EMPTY(&pool->queue)) {
             pool->sleeping_worker_count++;
             if (hg_thread_cond_wait(&pool->cond, &pool->mutex) != HG_UTIL_SUCCESS) {
-                HG_UTIL_ERROR_DEFAULT("Thread cannot wait on condition variable");
+                HG_UTIL_LOG_ERROR("Thread cannot wait on condition variable");
                 goto unlock;
             }
             pool->sleeping_worker_count--;
@@ -77,14 +77,14 @@ hg_thread_pool_init(unsigned int thread_count, hg_thread_pool_t **pool)
     unsigned int i;
 
     if (!pool) {
-        HG_UTIL_ERROR_DEFAULT("Cannot pass NULL pointer");
+        HG_UTIL_LOG_ERROR("Cannot pass NULL pointer");
         ret = HG_UTIL_FAIL;
         goto done;
     }
 
     priv_pool = (hg_thread_pool_t*) malloc(sizeof(hg_thread_pool_t));
     if (!priv_pool) {
-        HG_UTIL_ERROR_DEFAULT("Could not allocate thread pool");
+        HG_UTIL_LOG_ERROR("Could not allocate thread pool");
         ret = HG_UTIL_FAIL;
         goto done;
     }
@@ -95,19 +95,19 @@ hg_thread_pool_init(unsigned int thread_count, hg_thread_pool_t **pool)
     priv_pool->shutdown = 0;
 
     if (hg_thread_mutex_init(&priv_pool->mutex) != HG_UTIL_SUCCESS) {
-        HG_UTIL_ERROR_DEFAULT("Could not initialize mutex");
+        HG_UTIL_LOG_ERROR("Could not initialize mutex");
         ret = HG_UTIL_FAIL;
         goto done;
     }
     if (hg_thread_cond_init(&priv_pool->cond) != HG_UTIL_SUCCESS) {
-        HG_UTIL_ERROR_DEFAULT("Could not initialize thread condition");
+        HG_UTIL_LOG_ERROR("Could not initialize thread condition");
         ret = HG_UTIL_FAIL;
         goto done;
     }
 
     priv_pool->threads = (hg_thread_t*) malloc(thread_count * sizeof(hg_thread_t));
     if (!priv_pool->threads) {
-        HG_UTIL_ERROR_DEFAULT("Could not allocate thread pool array");
+        HG_UTIL_LOG_ERROR("Could not allocate thread pool array");
         ret = HG_UTIL_FAIL;
         goto done;
     }
@@ -116,7 +116,7 @@ hg_thread_pool_init(unsigned int thread_count, hg_thread_pool_t **pool)
     for (i = 0; i < thread_count; i++) {
         if (hg_thread_create(&priv_pool->threads[i], hg_thread_pool_worker,
                 (void*) priv_pool) != HG_UTIL_SUCCESS) {
-            HG_UTIL_ERROR_DEFAULT("Could not create thread");
+            HG_UTIL_LOG_ERROR("Could not create thread");
             ret = HG_UTIL_FAIL;
             goto done;
         }
@@ -149,7 +149,7 @@ hg_thread_pool_destroy(hg_thread_pool_t *pool)
         pool->shutdown = 1;
 
         if (hg_thread_cond_broadcast(&pool->cond) != HG_UTIL_SUCCESS) {
-            HG_UTIL_ERROR_DEFAULT("Could not broadcast condition signal");
+            HG_UTIL_LOG_ERROR("Could not broadcast condition signal");
             ret = HG_UTIL_FAIL;
         }
 
@@ -159,7 +159,7 @@ hg_thread_pool_destroy(hg_thread_pool_t *pool)
 
         for(i = 0; i < pool->thread_count; i++) {
             if (hg_thread_join(pool->threads[i]) != HG_UTIL_SUCCESS) {
-                HG_UTIL_ERROR_DEFAULT("Could not join thread");
+                HG_UTIL_LOG_ERROR("Could not join thread");
                 ret = HG_UTIL_FAIL;
                 goto done;
             }
@@ -170,12 +170,12 @@ hg_thread_pool_destroy(hg_thread_pool_t *pool)
     pool->threads = NULL;
 
     if (hg_thread_mutex_destroy(&pool->mutex) != HG_UTIL_SUCCESS) {
-        HG_UTIL_ERROR_DEFAULT("Could not destroy mutex");
+        HG_UTIL_LOG_ERROR("Could not destroy mutex");
         ret = HG_UTIL_FAIL;
         goto done;
     }
     if (hg_thread_cond_destroy(&pool->cond) != HG_UTIL_SUCCESS){
-        HG_UTIL_ERROR_DEFAULT("Could not destroy thread condition");
+        HG_UTIL_LOG_ERROR("Could not destroy thread condition");
         ret = HG_UTIL_FAIL;
         goto done;
     }
@@ -193,19 +193,19 @@ hg_thread_pool_post(hg_thread_pool_t *pool, struct hg_thread_work *work)
     int ret = HG_UTIL_SUCCESS;
 
     if (!pool) {
-        HG_UTIL_ERROR_DEFAULT("Thread pool not initialized");
+        HG_UTIL_LOG_ERROR("Thread pool not initialized");
         ret = HG_UTIL_FAIL;
         goto done;
     }
 
     if (!work) {
-        HG_UTIL_ERROR_DEFAULT("Thread work cannot be NULL");
+        HG_UTIL_LOG_ERROR("Thread work cannot be NULL");
         ret = HG_UTIL_FAIL;
         goto done;
     }
 
     if (!work->func) {
-        HG_UTIL_ERROR_DEFAULT("Function pointer cannot be NULL");
+        HG_UTIL_LOG_ERROR("Function pointer cannot be NULL");
         ret = HG_UTIL_FAIL;
         goto done;
     }
@@ -214,7 +214,7 @@ hg_thread_pool_post(hg_thread_pool_t *pool, struct hg_thread_work *work)
 
     /* Are we shutting down ? */
     if (pool->shutdown) {
-        HG_UTIL_ERROR_DEFAULT("Pool is shutting down");
+        HG_UTIL_LOG_ERROR("Pool is shutting down");
         ret = HG_UTIL_FAIL;
         goto unlock;
     }
@@ -225,7 +225,7 @@ hg_thread_pool_post(hg_thread_pool_t *pool, struct hg_thread_work *work)
     /* Wake up sleeping worker */
     if (pool->sleeping_worker_count) {
         if (hg_thread_cond_signal(&pool->cond) != HG_UTIL_SUCCESS) {
-            HG_UTIL_ERROR_DEFAULT("Cannot signal pool condition");
+            HG_UTIL_LOG_ERROR("Cannot signal pool condition");
             ret = HG_UTIL_FAIL;
         }
     }
