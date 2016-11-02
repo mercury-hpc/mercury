@@ -314,14 +314,6 @@ hg_core_destroy(
         );
 
 /**
- * Increment ref count on handle.
- */
-int
-hg_core_incr_ref(
-        struct hg_handle *hg_handle
-        );
-
-/**
  * Set private data.
  */
 void
@@ -1169,13 +1161,6 @@ hg_core_destroy(struct hg_handle *hg_handle)
 
 done:
     return;
-}
-
-/*---------------------------------------------------------------------------*/
-int
-hg_core_incr_ref(struct hg_handle *hg_handle)
-{
-    return hg_atomic_incr32(&hg_handle->ref_count);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2820,6 +2805,25 @@ HG_Core_destroy(hg_handle_t handle)
         }
     } else
         hg_core_destroy(hg_handle);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_ref_incr(hg_handle_t handle)
+{
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_handle) {
+        HG_LOG_ERROR("NULL pointer to HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_atomic_incr32(&hg_handle->ref_count);
 
 done:
     return ret;

@@ -63,14 +63,6 @@ hg_core_set_handle_create_callback(
         );
 
 /**
- * Increment ref count on handle.
- */
-extern int
-hg_core_incr_ref(
-        struct hg_handle *hg_handle
-        );
-
-/**
  * Set private data.
  */
 extern void
@@ -248,7 +240,7 @@ hg_get_input(hg_handle_t handle, void *in_struct)
 
     /* Increment ref count on handle so that it remains valid until free_input
      * is called */
-    hg_core_incr_ref(handle);
+    HG_Core_ref_incr(handle);
 
     /* Get input buffer */
     ret = HG_Core_get_input(handle, &in_buf, &in_buf_size);
@@ -461,7 +453,7 @@ hg_get_output(hg_handle_t handle, void *out_struct)
 
     /* Increment ref count on handle so that it remains valid until free_output
      * is called */
-    hg_core_incr_ref(handle);
+    HG_Core_ref_incr(handle);
 
     /* Get output buffer */
     ret = HG_Core_get_output(handle, &out_buf, &out_buf_size);
@@ -993,6 +985,13 @@ hg_return_t
 HG_Destroy(hg_handle_t handle)
 {
     return HG_Core_destroy(handle);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Ref_incr(hg_handle_t handle)
+{
+    return HG_Core_ref_incr(handle);
 }
 
 /*---------------------------------------------------------------------------*/

@@ -372,8 +372,8 @@ HG_Create(
         );
 
 /**
- * Destroy HG handle. Resources associated to the handle are freed when the
- * reference count is null.
+ * Destroy HG handle. Decrement reference count, resources associated to the
+ * handle are freed when the reference count is null.
  *
  * \param handle [IN]           HG handle
  *
@@ -382,6 +382,18 @@ HG_Create(
 HG_EXPORT hg_return_t
 HG_Destroy(
         hg_handle_t handle
+        );
+
+/**
+ * Increment ref count on handle.
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Ref_incr(
+        hg_handle_t hg_handle
         );
 
 /**
