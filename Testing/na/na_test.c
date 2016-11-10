@@ -262,7 +262,7 @@ na_test_gen_config(int argc, char *argv[], int listen)
     } else if (strcmp("tcp", na_protocol_name) == 0) {
         if (listen) {
             na_port += (unsigned int) na_test_comm_rank_g;
-            sprintf(info_string_ptr, "://%d", na_port);
+            sprintf(info_string_ptr, "://localhost:%d", na_port);
         }
     } else if (strcmp("static", na_protocol_name) == 0) {
         /* Nothing */

@@ -520,8 +520,16 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     /* Create unspecified endpoint if no hostname was provided */
     if (!na_info->host_name)
         rc = cci_create_endpoint(device, 0, &endpoint, fdptr);
-    else
-        rc = cci_create_endpoint_at(device, na_info->host_name, 0, &endpoint, fdptr);
+    else {
+        char *service = na_info->host_name;
+
+        /* Pass only port if TCP */
+        if (strcmp(na_info->protocol_name, "tcp") == 0) {
+            if (strstr(na_info->host_name, ":") != NULL)
+                 strtok_r(na_info->host_name, ":", &service);
+        }
+        rc = cci_create_endpoint_at(device, service, 0, &endpoint, fdptr);
+    }
 
     if (rc) {
         NA_LOG_ERROR("cci_create_endpoint() failed with %s",

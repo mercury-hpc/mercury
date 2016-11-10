@@ -24,6 +24,14 @@
 /****************/
 /* Local Macros */
 /****************/
+
+/* Max addr name */
+#define NA_BMI_MAX_ADDR_NAME 256
+
+/* Default host/port */
+#define NA_BMI_DEFAULT_HOST "localhost"
+#define NA_BMI_DEFAULT_PORT 22222
+
 /* Msg sizes */
 #define NA_BMI_UNEXPECTED_SIZE 4096
 #define NA_BMI_EXPECTED_SIZE   NA_BMI_UNEXPECTED_SIZE
@@ -609,47 +617,38 @@ static na_return_t
 na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
         na_bool_t listen)
 {
-    char *method_list = NULL;
-    char *listen_addr = NULL;
+    char method_list[NA_BMI_MAX_ADDR_NAME];
+    char listen_addr[NA_BMI_MAX_ADDR_NAME];
     int flag;
-    size_t method_list_len;
-    size_t listen_addr_len;
     na_return_t ret = NA_SUCCESS;
 
     flag = (listen) ? BMI_INIT_SERVER : 0;
 
-    method_list_len = strlen("bmi_") + strlen(na_info->protocol_name) + 1;
-    method_list = (char *) malloc(method_list_len);
-    if (!method_list) {
-        NA_LOG_ERROR("Could not allocate method_list");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-
-    memset(method_list, '\0', method_list_len);
-
+    memset(method_list, '\0', NA_BMI_MAX_ADDR_NAME);
     strcpy(method_list, "bmi_");
-    strcat(method_list, na_info->protocol_name);
+    strncat(method_list, na_info->protocol_name,
+        NA_BMI_MAX_ADDR_NAME - strlen(method_list));
 
-    if (listen && na_info->host_name) {
-        listen_addr_len = strlen(na_info->protocol_name) + strlen("://localhost:") +
-            strlen(na_info->host_name);
-        listen_addr = (char *) malloc(listen_addr_len+1);
-        if (!listen_addr) {
-            NA_LOG_ERROR("Could not allocate listen_addr");
-            ret = NA_NOMEM_ERROR;
+    if (listen) {
+        int desc_len = 0;
+        if (na_info->host_name) {
+            desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s",
+                na_info->protocol_name, na_info->host_name);
+        } else {
+            desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s:%d",
+                na_info->protocol_name, NA_BMI_DEFAULT_HOST, NA_BMI_DEFAULT_PORT);
+        }
+        if (desc_len > NA_BMI_MAX_ADDR_NAME) {
+            NA_LOG_ERROR("Exceeding max addr name");
+            ret = NA_SIZE_ERROR;
             goto done;
         }
-        sprintf(listen_addr, "%s://localhost:%s", na_info->protocol_name,
-                na_info->host_name);
     }
 
     ret = na_bmi_init(na_class, (listen) ? method_list : NULL,
             (listen) ? listen_addr : NULL, flag);
 
 done:
-    free(method_list);
-    free(listen_addr);
     return ret;
 }
 
