@@ -19,6 +19,7 @@
 #include "mercury_time.h"
 #include "mercury_atomic.h"
 #include "mercury_thread.h"
+#include "mercury_poll.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -35,7 +36,6 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -59,7 +59,6 @@
 /* Msg sizes */
 #define NA_SM_UNEXPECTED_SIZE   4096
 #define NA_SM_EXPECTED_SIZE     NA_SM_UNEXPECTED_SIZE
-#define NA_SM_EPOLL_MAX_EVENTS  64
 
 /* Max tag */
 #define NA_SM_MAX_TAG           NA_TAG_UB
@@ -172,6 +171,7 @@ typedef enum na_sm_poll_type {
 
 /* Poll data */
 struct na_sm_poll_data {
+    na_class_t *na_class;
     na_sm_poll_type_t type;  /* Type of operation */
     struct na_sm_addr *addr; /* Address */
 };
@@ -257,7 +257,7 @@ struct na_sm_op_id {
 /* Private data */
 struct na_sm_private_data {
     struct na_sm_addr *self_addr;
-    int epollfd;
+    hg_poll_set_t *poll_set;
     HG_QUEUE_HEAD(na_sm_addr) accepted_addr_queue;
     HG_QUEUE_HEAD(na_sm_unexpected_info) unexpected_msg_queue;
     HG_QUEUE_HEAD(na_sm_op_id) lookup_op_queue;
@@ -359,6 +359,23 @@ na_sm_recv_addr_info(
     );
 
 /**
+ * Send connection ID.
+ */
+static na_return_t
+na_sm_send_conn_id(
+    struct na_sm_addr *na_sm_addr
+    );
+
+/**
+ * Recv connection ID.
+ */
+static na_return_t
+na_sm_recv_conn_id(
+    struct na_sm_addr *na_sm_addr,
+    na_bool_t *received
+    );
+
+/**
  * Initialize ring buffer.
  */
 static void
@@ -397,7 +414,8 @@ na_sm_notify_incr(
  */
 static na_return_t
 na_sm_notify_decr(
-    int fd
+    int fd,
+    na_bool_t *notified
     );
 
 /**
@@ -437,12 +455,22 @@ na_sm_offset_translate(
     );
 
 /**
+ * Progress callback
+ */
+static int
+na_sm_progress_cb(
+    void *arg,
+    hg_util_bool_t *progressed
+    );
+
+/**
  * Progress on accept.
  */
 static na_return_t
 na_sm_progress_accept(
     na_class_t *na_class,
-    struct na_sm_addr *poll_addr
+    struct na_sm_addr *poll_addr,
+    na_bool_t *progressed
     );
 
 /**
@@ -451,7 +479,8 @@ na_sm_progress_accept(
 static na_return_t
 na_sm_progress_sock(
     na_class_t *na_class,
-    struct na_sm_addr *poll_addr
+    struct na_sm_addr *poll_addr,
+    na_bool_t *progressed
     );
 
 /**
@@ -460,7 +489,8 @@ na_sm_progress_sock(
 static na_return_t
 na_sm_progress_notify(
     na_class_t *na_class,
-    struct na_sm_addr *poll_addr
+    struct na_sm_addr *poll_addr,
+    na_bool_t *progressed
     );
 
 /**
@@ -1033,8 +1063,7 @@ na_sm_poll_register(na_class_t *na_class, na_sm_poll_type_t poll_type,
 {
     struct na_sm_poll_data *na_sm_poll_data = NULL;
     struct na_sm_poll_data **na_sm_poll_data_ptr = NULL;
-    struct epoll_event ev;
-    unsigned int flags = EPOLLIN;
+    unsigned int flags = HG_POLLIN;
     int fd;
     na_return_t ret = NA_SUCCESS;
 
@@ -1046,12 +1075,10 @@ na_sm_poll_register(na_class_t *na_class, na_sm_poll_type_t poll_type,
         case NA_SM_SOCK:
             fd = na_sm_addr->sock;
             na_sm_poll_data_ptr = &na_sm_addr->sock_poll_data;
-            flags |= EPOLLET; /* Will get everything */
             break;
         case NA_SM_NOTIFY:
             fd = na_sm_addr->local_notify;
             na_sm_poll_data_ptr = &na_sm_addr->local_notify_poll_data;
-            /* Do not use EPOLLET with SEMAPHORE */
             break;
         default:
             NA_LOG_ERROR("Invalid poll type");
@@ -1065,15 +1092,14 @@ na_sm_poll_register(na_class_t *na_class, na_sm_poll_type_t poll_type,
         ret = NA_NOMEM_ERROR;
         goto done;
     }
+    na_sm_poll_data->na_class = na_class;
     na_sm_poll_data->type = poll_type;
     na_sm_poll_data->addr = na_sm_addr;
     *na_sm_poll_data_ptr = na_sm_poll_data;
-    ev.events = flags;
-    ev.data.ptr = na_sm_poll_data;
 
-    if (epoll_ctl(NA_SM_PRIVATE_DATA(na_class)->epollfd, EPOLL_CTL_ADD,
-        fd, &ev) == -1) {
-        NA_LOG_ERROR("epoll_ctl() failed (%s)", strerror(errno));
+    if (hg_poll_add(NA_SM_PRIVATE_DATA(na_class)->poll_set, fd, flags,
+        na_sm_progress_cb, na_sm_poll_data) != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("hg_poll_add failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -1110,9 +1136,9 @@ na_sm_poll_deregister(na_class_t *na_class, na_sm_poll_type_t poll_type,
             goto done;
     }
 
-    if (epoll_ctl(NA_SM_PRIVATE_DATA(na_class)->epollfd, EPOLL_CTL_DEL,
-        fd, NULL) == -1) {
-        NA_LOG_ERROR("epoll_ctl() failed (%s)", strerror(errno));
+    if (hg_poll_remove(NA_SM_PRIVATE_DATA(na_class)->poll_set,
+        fd) != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("hg_poll_remove failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -1289,7 +1315,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_recv_conn_id(struct na_sm_addr *na_sm_addr)
+na_sm_recv_conn_id(struct na_sm_addr *na_sm_addr, na_bool_t *received)
 {
     ssize_t nrecv;
     na_return_t ret = NA_SUCCESS;
@@ -1297,10 +1323,15 @@ na_sm_recv_conn_id(struct na_sm_addr *na_sm_addr)
     /* Receive remote conn ID */
     nrecv = recv(na_sm_addr->sock, &na_sm_addr->conn_id, sizeof(unsigned int), 0);
     if (nrecv == -1) {
+        if (errno == EAGAIN) {
+            *received = NA_FALSE;
+            goto done;
+        }
         NA_LOG_ERROR("recv() failed (%s)", strerror(errno));
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+    *received = NA_TRUE;
 
 done:
     return ret;
@@ -1417,7 +1448,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_notify_decr(int fd)
+na_sm_notify_decr(int fd, na_bool_t *notified)
 {
     uint64_t count;
     ssize_t s;
@@ -1425,10 +1456,15 @@ na_sm_notify_decr(int fd)
 
     s = read(fd, &count, sizeof(uint64_t));
     if (s != sizeof(uint64_t)) {
+        if (errno == EAGAIN) {
+            *notified = NA_FALSE;
+            goto done;
+        }
         NA_LOG_ERROR("read() failed (%s)", strerror(errno));
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+    *notified = NA_TRUE;
 
 done:
     return ret;
@@ -1544,8 +1580,60 @@ na_sm_offset_translate(struct na_sm_mem_handle *mem_handle, na_offset_t offset,
 }
 
 /*---------------------------------------------------------------------------*/
+static int
+na_sm_progress_cb(void *arg, hg_util_bool_t *progressed)
+{
+    na_class_t *na_class;
+    struct na_sm_poll_data *na_sm_poll_data = (struct na_sm_poll_data *) arg;
+    na_return_t na_ret;
+
+    if (!na_sm_poll_data) {
+        NA_LOG_ERROR("NULL SM poll data");
+        na_ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+    na_class = na_sm_poll_data->na_class;
+
+    switch (na_sm_poll_data->type) {
+        case NA_SM_ACCEPT:
+            na_ret = na_sm_progress_accept(na_class, na_sm_poll_data->addr,
+                (hg_util_bool_t *) progressed);
+            if (na_ret != NA_SUCCESS) {
+                NA_LOG_ERROR("Could not make progress on accept");
+                goto done;
+            }
+            break;
+        case NA_SM_SOCK:
+            na_ret = na_sm_progress_sock(na_class, na_sm_poll_data->addr,
+                (hg_util_bool_t *) progressed);
+            if (na_ret != NA_SUCCESS) {
+                NA_LOG_ERROR("Could not make progress on sock");
+                goto done;
+            }
+            break;
+        case NA_SM_NOTIFY:
+            na_ret = na_sm_progress_notify(na_class, na_sm_poll_data->addr,
+                (hg_util_bool_t *) progressed);
+            if (na_ret != NA_SUCCESS) {
+                NA_LOG_ERROR("Could not make progress on notify");
+                goto done;
+            }
+            break;
+        default:
+            NA_LOG_ERROR("Unknown poll data type");
+            na_ret = NA_PROTOCOL_ERROR;
+            goto done;
+            break;
+    }
+
+done:
+    return (na_ret == NA_SUCCESS) ? HG_UTIL_SUCCESS : HG_UTIL_FAIL;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr)
+na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
+    na_bool_t *progressed)
 {
     struct na_sm_addr *na_sm_addr = NULL;
     struct na_sm_ring_buf *na_sm_ring_buf = NULL;
@@ -1560,6 +1648,10 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr)
     }
     conn_sock = accept4(poll_addr->sock, NULL, NULL, SOCK_NONBLOCK);
     if (conn_sock == -1) {
+        if (errno == EAGAIN) {
+            *progressed = NA_FALSE;
+            goto done;
+        }
         NA_LOG_ERROR("accept() failed (%s)", strerror(errno));
         ret = NA_PROTOCOL_ERROR;
         goto done;
@@ -1634,13 +1726,16 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr)
     hg_thread_mutex_unlock(
         &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_mutex);
 
+    *progressed = NA_TRUE;
+
 done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr)
+na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
+    na_bool_t *progressed)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1670,12 +1765,17 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr)
             char filename[NA_SM_MAX_FILENAME];
             struct na_sm_ring_buf *na_sm_ring_buf;
             struct na_sm_op_id *na_sm_op_id;
+            na_bool_t received = NA_FALSE;
 
             /* Receive connection ID */
-            ret = na_sm_recv_conn_id(poll_addr);
+            ret = na_sm_recv_conn_id(poll_addr, &received);
             if (ret != NA_SUCCESS) {
-                NA_LOG_ERROR("Could not connection ID");
+                NA_LOG_ERROR("Could not recv connection ID");
                 ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
+            if (!received) {
+                *progressed = NA_FALSE;
                 goto done;
             }
             poll_addr->sock_progress = NA_SM_SOCK_DONE;
@@ -1725,6 +1825,7 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr)
             /* TODO Silently ignore */
             break;
     }
+    *progressed = NA_TRUE;
 
 done:
     return ret;
@@ -1732,15 +1833,21 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr)
+na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr,
+    na_bool_t *progressed)
 {
     na_sm_cacheline_hdr_t na_sm_hdr;
+    na_bool_t notified = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
 
-    ret = na_sm_notify_decr(poll_addr->local_notify);
+    ret = na_sm_notify_decr(poll_addr->local_notify, &notified);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not get completion notification");
         ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+    if (!notified) {
+        *progressed = NA_FALSE;
         goto done;
     }
 
@@ -1771,6 +1878,7 @@ na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr)
             ret = NA_PROTOCOL_ERROR;
             break;
     }
+    *progressed = NA_TRUE;
 
 done:
     return ret;
@@ -1987,7 +2095,8 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     static unsigned int id = 0;
     struct na_sm_addr *na_sm_addr = NULL;
     pid_t pid;
-    int epollfd, local_notify;
+    hg_poll_set_t *poll_set;
+    int local_notify;
     na_return_t ret = NA_SUCCESS;
 
     /* TODO parse host name */
@@ -2005,17 +2114,17 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
         ret = NA_NOMEM_ERROR;
         goto done;
     }
-    NA_SM_PRIVATE_DATA(na_class)->epollfd = 0;
+    NA_SM_PRIVATE_DATA(na_class)->poll_set = 0;
     NA_SM_PRIVATE_DATA(na_class)->self_addr = NULL;
 
     /* Create poll set to wait for events */
-    epollfd = epoll_create1(0);
-    if (epollfd == -1) {
-        NA_LOG_ERROR("epoll_create1() failed (%s)", strerror(errno));
+    poll_set = hg_poll_create();
+    if (!poll_set) {
+        NA_LOG_ERROR("cannot create poll set");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
-    NA_SM_PRIVATE_DATA(na_class)->epollfd = epollfd;
+    NA_SM_PRIVATE_DATA(na_class)->poll_set = poll_set;
 
     /* Create self addr */
     na_sm_addr = (struct na_sm_addr *) malloc(sizeof(struct na_sm_addr));
@@ -2131,9 +2240,9 @@ na_sm_finalize(na_class_t *na_class)
         NA_LOG_ERROR("Could not free self addr");
         goto done;
     }
-    /* Close poll descriptor */
-    if (close(NA_SM_PRIVATE_DATA(na_class)->epollfd) == -1) {
-        NA_LOG_ERROR("close() failed (%s)", strerror(errno));
+    /* Close poll set */
+    if (hg_poll_destroy(NA_SM_PRIVATE_DATA(na_class)->poll_set) != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("hg_poll_destroy() failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -3293,62 +3402,23 @@ na_sm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
     na_return_t ret = NA_TIMEOUT;
 
     do {
-        struct epoll_event events[NA_SM_EPOLL_MAX_EVENTS];
         hg_time_t t1, t2;
-        int nfds, i;
+        hg_util_bool_t progressed;
 
         hg_time_get_current(&t1);
 
-        nfds = epoll_wait(NA_SM_PRIVATE_DATA(na_class)->epollfd, events,
-            NA_SM_EPOLL_MAX_EVENTS, (int)(remaining * 1000.0));
-        if (nfds == -1 && errno != EINTR) {
-            NA_LOG_ERROR("epoll_wait() failed (%s)", strerror(errno));
+        if (hg_poll_wait(NA_SM_PRIVATE_DATA(na_class)->poll_set,
+            (int)(remaining * 1000.0), &progressed) != HG_UTIL_SUCCESS) {
+            NA_LOG_ERROR("hg_poll_wait() failed");
             ret = NA_PROTOCOL_ERROR;
             goto done;
         }
 
-        for (i = 0; i < nfds; ++i) {
-            struct na_sm_poll_data *na_sm_poll_data =
-                (struct na_sm_poll_data *) events[i].data.ptr;
-            if (!na_sm_poll_data) {
-                NA_LOG_ERROR("NULL SM poll data");
-                ret = NA_PROTOCOL_ERROR;
-                goto done;
-            }
-
-            switch (na_sm_poll_data->type) {
-                case NA_SM_ACCEPT:
-                    ret = na_sm_progress_accept(na_class, na_sm_poll_data->addr);
-                    if (ret != NA_SUCCESS) {
-                        NA_LOG_ERROR("Could not make progress on accept");
-                        goto done;
-                    }
-                    break;
-                case NA_SM_SOCK:
-                    ret = na_sm_progress_sock(na_class, na_sm_poll_data->addr);
-                    if (ret != NA_SUCCESS) {
-                        NA_LOG_ERROR("Could not make progress on sock");
-                        goto done;
-                    }
-                    break;
-                case NA_SM_NOTIFY:
-                    ret = na_sm_progress_notify(na_class, na_sm_poll_data->addr);
-                    if (ret != NA_SUCCESS) {
-                        NA_LOG_ERROR("Could not make progress on notify");
-                        goto done;
-                    }
-                    break;
-                default:
-                    NA_LOG_ERROR("Unknown poll data type");
-                    ret = NA_PROTOCOL_ERROR;
-                    goto done;
-                    break;
-            }
-        }
-
         /* We progressed, return success */
-        if (ret == NA_SUCCESS)
+        if (progressed) {
+            ret = NA_SUCCESS;
             break;
+        }
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
