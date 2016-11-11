@@ -34,6 +34,9 @@
 /* Define if has <stdatomic.h> */
 #cmakedefine HG_UTIL_HAS_STDATOMIC_H
 
+/* Define if has <sys/epoll.h> */
+#cmakedefine HG_UTIL_HAS_SYSEPOLL_H
+
 /* Define if has verbose error */
 #cmakedefine HG_UTIL_HAS_VERBOSE_ERROR
 

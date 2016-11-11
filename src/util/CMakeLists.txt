@@ -32,6 +32,9 @@ if(NOT WIN32 AND NOT APPLE)
   )
 endif()
 
+# Detect <sys/epoll.h>
+check_include_files("sys/epoll.h" HG_UTIL_HAS_SYSEPOLL_H)
+
 # Atomics
 if(NOT WIN32)
   # Detect stdatomic
@@ -89,6 +92,7 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.c
@@ -130,6 +134,7 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_queue.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h

@@ -16,16 +16,17 @@ endfunction()
 #------------------------------------------------------------------------------
 # Set list of tests
 set(MERCURY_util_tests
+  atomic
+  hash_table
+  list
+  poll
+  queue
+  request
   thread
   thread_mutex
   thread_condition
-  atomic
   threadpool
-  request
   time
-  hash_table
-  queue
-  list
 )
 
 foreach(test_name ${MERCURY_util_tests})
