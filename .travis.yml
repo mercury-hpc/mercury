@@ -2,20 +2,14 @@ language: c
 
 os:
     - linux
-    - osx
 
 compiler:
     - gcc
     - clang
 
 sudo: false
-
-addons:
-  apt:
-    packages:
-    - libgmp-dev
-    - libmpfr-dev
-    - libmpc-dev
+dist: trusty
+group: beta
 
 cache:
   directories:
@@ -35,13 +29,9 @@ env:
 
 matrix:
   exclude:
-   - os: osx
-     env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
    - os: linux
      env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
      compiler: clang
-   - os: osx
-     env: MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
    - os: linux
      env: MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
      compiler: clang

@@ -86,13 +86,13 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
   endif()
   # Tsan
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
-    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer -fPIC -pie")
+    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer -fPIC")
     # Must add verbosity / Error in build if no memory output file is produced
     set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
   endif()
   # Asan
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "AddressSanitizer")
-    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=address -fno-omit-frame-pointer -fPIC -pie")
+    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=address -fno-omit-frame-pointer -fPIC")
     # Must add verbosity / Error in build if no memory output file is produced
     set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
   endif()
@@ -122,7 +122,7 @@ endif()
 
 # Initial cache used to build mercury, options can be modified here
 set(dashboard_cache "
-CMAKE_C_FLAGS:STRING=-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -std=gnu99 ${MERCURY_MEMCHECK_FLAGS}
+CMAKE_C_FLAGS:STRING=-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -Wconversion -Wmissing-prototypes -pedantic -Wpointer-arith -Wformat=2 ${MERCURY_MEMCHECK_FLAGS}
 CMAKE_CXX_FLAGS:STRING=${MERCURY_MEMCHECK_FLAGS}
 
 BUILD_SHARED_LIBS:BOOL=${mercury_build_shared}
@@ -146,11 +146,11 @@ OPA_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libopa.${SOEXT}
 NA_USE_CCI:BOOL=${USE_CCI}
 CCI_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
 CCI_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libcci.${SOEXT}
-NA_CCI_TESTING_PROTOCOL:STRING=tcp;sm
+NA_CCI_TESTING_PROTOCOL:STRING=tcp
 MPIEXEC_MAX_NUMPROCS:STRING=4
 
 MERCURY_TEST_INIT_COMMAND:STRING=killall -9 ${PROC_NAME_OPT} hg_test_client;killall -9 ${PROC_NAME_OPT} hg_test_server;
-MERCURY_TESTING_CORESIDENT:BOOL=ON
+MERCURY_TESTING_CORESIDENT:BOOL=OFF
 MERCURY_TESTING_MAX_LOOP:STRING=10
 ")
 
