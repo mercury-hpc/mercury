@@ -1,8 +1,8 @@
 #!/bin/bash
 
-CMAKE_VERSION_MAJOR=3.5
-CMAKE_VERSION_MINOR=2
-GCC_VERSION=6.1.0
+CMAKE_VERSION_MAJOR=3.7
+CMAKE_VERSION_MINOR=0
+GCC_VERSION=6.2.0
 MPI_VERSION=3.2
 CCI_VERSION=2.0
 
@@ -36,7 +36,7 @@ if [ ! -d "$HOME/install/bin" ]; then
   # CCI
   cd $HOME && wget http://cci-forum.com/wp-content/uploads/2016/06/cci-${CCI_VERSION}.tar.gz
   tar -xzf cci-${CCI_VERSION}.tar.gz && cd cci-${CCI_VERSION};
-  patch -p1 < ${TRAVIS_BUILD_DIR}/Testing/script/cci_sm.patch
+  patch -p1 < ${TRAVIS_BUILD_DIR}/Testing/script/cci_20161114.patch
   ./configure --prefix=$HOME/install && make -j2 -s && make install;
 else
   echo "Using cached directory";
