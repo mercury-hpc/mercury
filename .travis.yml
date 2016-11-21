@@ -2,6 +2,7 @@ language: c
 
 os:
     - linux
+    - osx
 
 compiler:
     - gcc
@@ -29,9 +30,13 @@ env:
 
 matrix:
   exclude:
+   - os: osx
+     env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
    - os: linux
      env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
      compiler: clang
+   - os: osx
+     env: MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
    - os: linux
      env: MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
      compiler: clang
@@ -40,9 +45,12 @@ branches:
   only:
     - master
     - topic_travis
+    - travis_cron
 
 before_install:
     - echo "Existing directories in $HOME" && ls $HOME
+    - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
+    - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install mpich; fi
 
 install:
     - ./Testing/script/travis_build.sh
