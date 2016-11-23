@@ -82,6 +82,7 @@ msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
     return ret;
 }
 
+#ifdef NA_HAS_CCI
 static na_return_t
 msg_expected_send_final_cb(const struct na_cb_info *callback_info)
 {
@@ -254,6 +255,7 @@ mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
 
     return ret;
 }
+#endif
 
 static int
 test_send_respond(struct na_test_params *params, na_tag_t send_tag)
