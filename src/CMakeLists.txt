@@ -86,7 +86,7 @@ if(MERCURY_USE_CHECKSUMS)
     include_directories(${MCHECKSUM_INCLUDE_DIR})
     set(MERCURY_EXPORTED_LIBS mchecksum ${MERCURY_EXPORTED_LIBS})
   endif()
-  set(MERCURY_CHECKSUM_DEFAULT CRC64 CACHE STRING "Choose the type of checksum used by default.")
+  set(MERCURY_CHECKSUM_DEFAULT CRC32 CACHE STRING "Choose the type of checksum used by default.")
   # Set the possible values of checksum type for cmake-gui
   set_property(CACHE MERCURY_CHECKSUM_DEFAULT PROPERTY STRINGS "CRC16" "CRC32" "CRC64")
 endif()
