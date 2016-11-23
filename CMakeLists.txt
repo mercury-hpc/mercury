@@ -268,7 +268,7 @@ install(
 )
 
 #-----------------------------------------------------------------------------
-# Configure the hdf5-config-version .cmake file for the install directory
+# Configure the mercury-config-version .cmake file for the install directory
 #-----------------------------------------------------------------------------
 configure_file(
   ${MERCURY_SOURCE_DIR}/CMake/mercury-config-version.cmake.in
@@ -307,7 +307,7 @@ if(NOT MERCURY_EXTERNALLY_CONFIGURED)
   set(CPACK_RESOURCE_FILE_LICENSE ${MERCURY_SOURCE_DIR}/COPYING)
   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "RPC for High-Performance Computing")
   set(CPACK_PACKAGE_NAME "Mercury")
-  set(CPACK_PACKAGE_VENDOR "Argonne National Laboratories / The HDF Group")
+  set(CPACK_PACKAGE_VENDOR "Argonne National Laboratory / The HDF Group")
   set(CPACK_PACKAGE_VERSION_MAJOR ${MERCURY_VERSION_MAJOR})
   set(CPACK_PACKAGE_VERSION_MINOR ${MERCURY_VERSION_MINOR})
   set(CPACK_PACKAGE_VERSION_PATCH ${MERCURY_VERSION_PATCH})
