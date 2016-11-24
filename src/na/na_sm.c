@@ -1851,8 +1851,11 @@ na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr,
         goto done;
     }
 
-    if (poll_addr == NA_SM_PRIVATE_DATA(na_class)->self_addr)
+    if (poll_addr == NA_SM_PRIVATE_DATA(na_class)->self_addr) {
+        /* Local notification */
+        *progressed = NA_TRUE;
         goto done;
+    }
 
     if (!na_sm_ring_buf_pop(poll_addr->na_sm_recv_ring_buf, &na_sm_hdr)) {
         NA_LOG_ERROR("Empty ring buffer");
@@ -3422,7 +3425,7 @@ na_sm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-    } while (remaining > 0);
+    } while ((int)(remaining * 1000.0) > 0);
 
 done:
     return ret;
