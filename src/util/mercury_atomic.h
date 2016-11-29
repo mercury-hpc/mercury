@@ -23,8 +23,13 @@
   /* 64-bit atomic not supported */
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
   #include <stdatomic.h>
+#ifdef __INTEL_COMPILER
+  typedef atomic_int hg_atomic_int32_t;
+  typedef atomic_llong hg_atomic_int64_t;
+#else
   typedef _Atomic hg_util_int32_t hg_atomic_int32_t;
   typedef _Atomic hg_util_int64_t hg_atomic_int64_t;
+#endif
 #elif defined(__APPLE__)
   #include <libkern/OSAtomic.h>
   typedef struct { volatile hg_util_int32_t value; } hg_atomic_int32_t;
@@ -467,7 +472,10 @@ hg_atomic_fence()
 #elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     OPA_read_write_barrier();
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
+#ifdef __INTEL_COMPILER
+#else
     atomic_thread_fence(memory_order_acq_rel);
+#endif
 #elif defined(__APPLE__)
     OSMemoryBarrier();
 #else
