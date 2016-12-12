@@ -60,10 +60,6 @@ if(NA_USE_BMI)
       ${NA_EXT_LIB_DEPENDENCIES}
       ${BMI_LIBRARIES}
     )
-    set(NA_EXT_INCLUDE_DEPENDENCIES
-      ${NA_EXT_INCLUDE_DEPENDENCIES}
-      ${BMI_INCLUDE_DIRS}
-    )
   else()
     message(FATAL_ERROR "Could not find BMI.")
   endif()
@@ -121,10 +117,6 @@ if(NA_USE_CCI)
     set(NA_EXT_LIB_DEPENDENCIES
       ${NA_EXT_LIB_DEPENDENCIES}
       ${CCI_LIBRARIES}
-    )
-    set(NA_EXT_INCLUDE_DEPENDENCIES
-      ${NA_EXT_INCLUDE_DEPENDENCIES}
-      ${CCI_INCLUDE_DIRS}
     )
     option(NA_CCI_USE_POLL "Use poll() to block until progress is made." OFF)
     if(NA_CCI_USE_POLL)
@@ -220,24 +212,10 @@ set(NA_HEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/na_config.h
 )
 
-if(NA_USE_BMI)
-  set(NA_HEADERS
-    ${NA_HEADERS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_bmi.h
-  )
-endif()
-
 if(NA_USE_MPI)
   set(NA_HEADERS
     ${NA_HEADERS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.h
-  )
-endif()
-
-if(NA_USE_CCI)
-  set(NA_HEADERS
-    ${NA_HEADERS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_cci.h
   )
 endif()
 

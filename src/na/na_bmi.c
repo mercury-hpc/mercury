@@ -8,7 +8,6 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "na_bmi.h"
 #include "na_private.h"
 #include "na_error.h"
 
@@ -16,6 +15,8 @@
 #include "mercury_thread_mutex.h"
 #include "mercury_time.h"
 #include "mercury_atomic.h"
+
+#include <bmi.h>
 
 #include <stdlib.h>
 #include <string.h>

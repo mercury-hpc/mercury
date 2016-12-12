@@ -8,7 +8,6 @@
  * root of the source code distribution tree.
  */
 
-#include "na_cci.h"
 #include "na_private.h"
 #include "na_error.h"
 
@@ -17,6 +16,8 @@
 #include "mercury_thread_mutex.h"
 #include "mercury_time.h"
 #include "mercury_atomic.h"
+
+#include <cci.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -557,13 +558,6 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 
 out:
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-const char *
-NA_CCI_Get_port_name(na_class_t *na_class)
-{
-    return NA_CCI_PRIVATE_DATA(na_class)->uri;
 }
 
 /*---------------------------------------------------------------------------*/
