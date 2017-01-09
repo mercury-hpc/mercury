@@ -20,6 +20,7 @@
 #include "mercury_atomic.h"
 #include "mercury_thread.h"
 #include "mercury_poll.h"
+#include "mercury_event.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -36,7 +37,6 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 
@@ -402,23 +402,6 @@ na_sm_ring_buf_pop(
     );
 
 /**
- * Increment notification.
- */
-static na_return_t
-na_sm_notify_incr(
-    int fd
-    );
-
-/**
- * Decrement notification.
- */
-static na_return_t
-na_sm_notify_decr(
-    int fd,
-    na_bool_t *notified
-    );
-
-/**
  * Reserve shared copy buf.
  */
 static NA_INLINE na_return_t
@@ -759,6 +742,13 @@ na_sm_get(
     na_op_id_t *op_id
     );
 
+/* get_poll_fd */
+static int
+na_sm_get_poll_fd(
+    na_class_t      *na_class,
+    na_context_t    *context
+    );
+
 /* progress */
 static na_return_t
 na_sm_progress(
@@ -814,6 +804,7 @@ const na_class_t na_sm_class_g = {
     na_sm_mem_handle_deserialize,           /* mem_handle_deserialize */
     na_sm_put,                              /* put */
     na_sm_get,                              /* get */
+    na_sm_get_poll_fd,                      /* get_poll_fd */
     na_sm_progress,                         /* progress */
     na_sm_cancel                            /* cancel */
 };
@@ -1428,49 +1419,6 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
-na_sm_notify_incr(int fd)
-{
-    uint64_t count = 1;
-    ssize_t s;
-    na_return_t ret = NA_SUCCESS;
-
-    s = write(fd, &count, sizeof(uint64_t));
-    if (s != sizeof(uint64_t)) {
-        NA_LOG_ERROR("write() failed (%s)", strerror(errno));
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_sm_notify_decr(int fd, na_bool_t *notified)
-{
-    uint64_t count;
-    ssize_t s;
-    na_return_t ret = NA_SUCCESS;
-
-    s = read(fd, &count, sizeof(uint64_t));
-    if (s != sizeof(uint64_t)) {
-        if (errno == EAGAIN) {
-            *notified = NA_FALSE;
-            goto done;
-        }
-        NA_LOG_ERROR("read() failed (%s)", strerror(errno));
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-    *notified = NA_TRUE;
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
 na_sm_reserve_and_copy_buf(na_class_t *na_class,
     struct na_sm_copy_buf *na_sm_copy_buf, const void *buf, size_t buf_size,
@@ -1739,8 +1687,10 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
 {
     na_return_t ret = NA_SUCCESS;
 
-    if (poll_addr == NA_SM_PRIVATE_DATA(na_class)->self_addr)
+    if (poll_addr == NA_SM_PRIVATE_DATA(na_class)->self_addr) {
+        *progressed = NA_FALSE;
         goto done;
+    }
 
     switch (poll_addr->sock_progress) {
         case NA_SM_ADDR_INFO: {
@@ -1759,6 +1709,9 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
                 goto done;
             }
             poll_addr->sock_progress = NA_SM_SOCK_DONE;
+
+            /* Progressed */
+            *progressed = NA_TRUE;
         }
         break;
         case NA_SM_CONN_ID: {
@@ -1819,13 +1772,16 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
                 NA_LOG_ERROR("Could not complete operation");
                 goto done;
             }
+
+            /* Progressed */
+            *progressed = NA_TRUE;
         }
         break;
         default:
-            /* TODO Silently ignore */
+            /* TODO Silently ignore, no progress */
+            *progressed = NA_FALSE;
             break;
     }
-    *progressed = NA_TRUE;
 
 done:
     return ret;
@@ -1840,8 +1796,8 @@ na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr,
     na_bool_t notified = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
 
-    ret = na_sm_notify_decr(poll_addr->local_notify, &notified);
-    if (ret != NA_SUCCESS) {
+    if (hg_event_get(poll_addr->local_notify, (hg_util_bool_t *) &notified)
+        != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not get completion notification");
         ret = NA_PROTOCOL_ERROR;
         goto done;
@@ -2150,9 +2106,9 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
         }
     }
     /* Create local signal event on self address */
-    local_notify = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE);
-    if (local_notify == -1) {
-        NA_LOG_ERROR("eventfd() failed (%s)", strerror(errno));
+    local_notify = hg_event_create();
+    if (local_notify == HG_UTIL_FAIL) {
+        NA_LOG_ERROR("hg_event_create() failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -2404,18 +2360,18 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
 
     /* TODO move to server */
     /* Create local signal event */
-    local_notify = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE);
-    if (local_notify == -1) {
-        NA_LOG_ERROR("eventfd() failed (%s)", strerror(errno));
+    local_notify = hg_event_create();
+    if (local_notify == HG_UTIL_FAIL) {
+        NA_LOG_ERROR("hg_event_create() failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
     na_sm_addr->local_notify = local_notify;
 
     /* Create remote signal event */
-    remote_notify = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE);
-    if (remote_notify == -1) {
-        NA_LOG_ERROR("eventfd() failed (%s)", strerror(errno));
+    remote_notify = hg_event_create();
+    if (remote_notify == HG_UTIL_FAIL) {
+        NA_LOG_ERROR("hg_event_create() failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -2503,8 +2459,8 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
     }
 
     /* Close file descriptors */
-    if (close(na_sm_addr->local_notify) == -1) {
-        NA_LOG_ERROR("close() failed (%s)", strerror(errno));
+    if (hg_event_destroy(na_sm_addr->local_notify) == HG_UTIL_FAIL) {
+        NA_LOG_ERROR("hg_event_destroy() failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -2515,8 +2471,8 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
             NA_LOG_ERROR("Could not delete sock from poll set");
             goto done;
         }
-        if (close(na_sm_addr->remote_notify) == -1) {
-            NA_LOG_ERROR("close() failed (%s)", strerror(errno));
+        if (hg_event_destroy(na_sm_addr->remote_notify) == HG_UTIL_FAIL) {
+            NA_LOG_ERROR("hg_event_destroy() failed");
             ret = NA_PROTOCOL_ERROR;
             goto done;
         }
@@ -2711,9 +2667,9 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     /* Notify remote */
-    ret = na_sm_notify_incr(na_sm_addr->remote_notify);
-    if (ret != NA_SUCCESS) {
+    if (hg_event_set(na_sm_addr->remote_notify) != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not send completion notification");
+        ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -2883,9 +2839,9 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     }
 
     /* Notify remote */
-    ret = na_sm_notify_incr(na_sm_addr->remote_notify);
-    if (ret != NA_SUCCESS) {
+    if (hg_event_set(na_sm_addr->remote_notify) != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not send completion notification");
+        ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -3261,10 +3217,10 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* Notify local completion */
-    ret = na_sm_notify_incr(
-        NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify);
-    if (ret != NA_SUCCESS) {
+    if (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
+        != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not signal local completion");
+        ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -3375,10 +3331,10 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* Notify local completion */
-    ret = na_sm_notify_incr(
-        NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify);
-    if (ret != NA_SUCCESS) {
+    if (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
+        != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not signal local completion");
+        ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -3394,6 +3350,20 @@ done:
         na_sm_op_destroy(na_class, (na_op_id_t) na_sm_op_id);
     }
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_sm_get_poll_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
+{
+    int fd;
+
+    fd = hg_poll_get_fd(NA_SM_PRIVATE_DATA(na_class)->poll_set);
+    if (fd == HG_UTIL_FAIL) {
+        NA_LOG_ERROR("Could not get poll fd from poll set");
+    }
+
+    return fd;
 }
 
 /*---------------------------------------------------------------------------*/
