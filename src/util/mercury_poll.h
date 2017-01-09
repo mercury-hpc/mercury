@@ -66,6 +66,16 @@ HG_UTIL_EXPORT int
 hg_poll_destroy(hg_poll_set_t *poll_set);
 
 /**
+ * Get a file descriptor from an existing poll set.
+ *
+ * \param poll_set [IN]         pointer to poll set
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_poll_get_fd(hg_poll_set_t *poll_set);
+
+/**
  * Add file descriptor to poll set.
  *
  * \param poll_set [IN]         pointer to poll set

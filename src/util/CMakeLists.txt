@@ -35,6 +35,9 @@ endif()
 # Detect <sys/epoll.h>
 check_include_files("sys/epoll.h" HG_UTIL_HAS_SYSEPOLL_H)
 
+# Detect <sys/eventfd.h>
+check_include_files("sys/eventfd.h" HG_UTIL_HAS_SYSEVENTFD_H)
+
 # Atomics
 if(NOT WIN32)
   # Detect stdatomic
@@ -89,6 +92,7 @@ configure_file(
 # Set sources
 #------------------------------------------------------------------------------
 set(MERCURY_UTIL_SRCS
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_event.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.c
@@ -130,6 +134,7 @@ install(
 #-----------------------------------------------------------------------------
 set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_event.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_string.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hash_table.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_list.h

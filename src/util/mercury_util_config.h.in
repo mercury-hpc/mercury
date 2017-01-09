@@ -37,6 +37,9 @@
 /* Define if has <sys/epoll.h> */
 #cmakedefine HG_UTIL_HAS_SYSEPOLL_H
 
+/* Define if has <sys/eventfd.h> */
+#cmakedefine HG_UTIL_HAS_SYSEVENTFD_H
+
 /* Define if has verbose error */
 #cmakedefine HG_UTIL_HAS_VERBOSE_ERROR
 

@@ -91,6 +91,9 @@ hg_poll_destroy(hg_poll_set_t *poll_set)
 {
     int ret = HG_UTIL_SUCCESS;
 
+    if (!poll_set)
+        goto done;
+
 #if defined(_WIN32)
 
 #else
@@ -116,6 +119,29 @@ done:
 
 /*---------------------------------------------------------------------------*/
 int
+hg_poll_get_fd(hg_poll_set_t *poll_set)
+{
+    int fd;
+
+    if (!poll_set) {
+        HG_UTIL_LOG_ERROR("NULL poll set");
+        fd = HG_UTIL_FAIL;
+        goto done;
+    }
+#if defined(_WIN32)
+
+#elif defined(HG_UTIL_HAS_SYSEPOLL_H)
+    fd = poll_set->fd;
+#else
+
+#endif
+
+done:
+    return fd;
+}
+
+/*---------------------------------------------------------------------------*/
+int
 hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
     hg_poll_cb_t poll_cb, void *poll_arg)
 {
@@ -123,7 +149,13 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
 #ifdef HG_UTIL_HAS_SYSEPOLL_H
     struct epoll_event ev;
 #endif
-    int ret = 0;
+    int ret = HG_UTIL_SUCCESS;
+
+    if (!poll_set) {
+        HG_UTIL_LOG_ERROR("NULL poll set");
+        ret = HG_UTIL_FAIL;
+        goto done;
+    }
 
     hg_poll_data = malloc(sizeof(struct hg_poll_data));
     if (!hg_poll_data) {
@@ -160,8 +192,14 @@ int
 hg_poll_remove(hg_poll_set_t *poll_set, int fd)
 {
     struct hg_poll_data *hg_poll_data;
-    int ret = HG_UTIL_FAIL;
+    hg_util_bool_t found = HG_UTIL_FALSE;
+    int ret = HG_UTIL_SUCCESS;
 
+    if (!poll_set) {
+        HG_UTIL_LOG_ERROR("NULL poll set");
+        ret = HG_UTIL_FAIL;
+        goto done;
+    }
 #if defined(_WIN32)
 
 #elif defined(HG_UTIL_HAS_SYSEPOLL_H)
@@ -174,7 +212,7 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
         if (hg_poll_data->fd == fd) {
             HG_LIST_REMOVE(hg_poll_data, entry);
             free(hg_poll_data);
-            ret = HG_UTIL_SUCCESS;
+            found = HG_UTIL_TRUE;
             break;
         }
     }
@@ -183,17 +221,17 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
         if (hg_poll_data->pollfd.fd == fd) {
             HG_LIST_REMOVE(hg_poll_data, entry);
             free(hg_poll_data);
-            ret = HG_UTIL_SUCCESS;
+            found = HG_UTIL_TRUE;
             break;
         }
     }
 #endif
-    poll_set->nfds--;
-
-    if (ret != HG_UTIL_SUCCESS) {
+    if (!found) {
         HG_UTIL_LOG_ERROR("Could not find fd in poll_set");
+        ret = HG_UTIL_FAIL;
         goto done;
     }
+    poll_set->nfds--;
 
 done:
     return ret;
@@ -205,6 +243,12 @@ hg_poll_wait(hg_poll_set_t *poll_set, int timeout, hg_util_bool_t *progressed)
 {
     hg_util_bool_t poll_progressed = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
+
+    if (!poll_set) {
+        HG_UTIL_LOG_ERROR("NULL poll set");
+        ret = HG_UTIL_FAIL;
+        goto done;
+    }
 
     if (timeout) {
 #if defined(_WIN32)
