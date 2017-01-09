@@ -118,10 +118,6 @@ if(NA_USE_CCI)
       ${NA_EXT_LIB_DEPENDENCIES}
       ${CCI_LIBRARIES}
     )
-    option(NA_CCI_USE_POLL "Use poll() to block until progress is made." OFF)
-    if(NA_CCI_USE_POLL)
-      set(NA_CCI_HAS_POLL 1)
-    endif()
   else()
     message(FATAL_ERROR "Could not find CCI.")
   endif()

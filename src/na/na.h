@@ -789,6 +789,12 @@ NA_Get(
         na_op_id_t      *op_id
         );
 
+NA_EXPORT int
+NA_Get_poll_fd(
+        na_class_t      *na_class,
+        na_context_t    *context
+        );
+
 /**
  * Try to progress communication for at most timeout until timeout reached or
  * any completion has occurred.

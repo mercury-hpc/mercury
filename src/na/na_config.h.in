@@ -36,7 +36,6 @@
 
 /* CCI */
 #cmakedefine NA_HAS_CCI
-#cmakedefine NA_CCI_HAS_POLL
 
 /* NA SM */
 #cmakedefine NA_HAS_SM

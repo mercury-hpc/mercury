@@ -1449,6 +1449,30 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+int
+NA_Get_poll_fd(na_class_t *na_class, na_context_t *context)
+{
+    int ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+    if (!context) {
+        NA_LOG_ERROR("NULL context");
+        goto done;
+    }
+    if (!na_class->get_poll_fd) {
+        goto done;
+    }
+
+    ret = na_class->get_poll_fd(na_class, context);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 na_return_t
 NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
 {

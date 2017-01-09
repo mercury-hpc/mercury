@@ -47,7 +47,7 @@ struct na_cb_completion_data {
 
 /* NA class definition */
 struct na_class {
-    void *private_data; /* Plugin private data */
+    void *private_data;     /* Plugin private data */
     const char *class_name; /* Class name */
 
     /* plugin callbacks */
@@ -266,6 +266,11 @@ struct na_class {
             na_size_t        length,
             na_addr_t        remote_addr,
             na_op_id_t      *op_id
+            );
+    int
+    (*get_poll_fd)(
+            na_class_t      *na_class,
+            na_context_t    *context
             );
     na_return_t
     (*progress)(

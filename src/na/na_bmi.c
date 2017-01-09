@@ -538,6 +538,7 @@ const na_class_t na_bmi_class_g = {
         na_bmi_mem_handle_deserialize,        /* mem_handle_deserialize */
         na_bmi_put,                           /* put */
         na_bmi_get,                           /* get */
+        NULL,                                 /* get_poll_fd */
         na_bmi_progress,                      /* progress */
         na_bmi_cancel                         /* cancel */
 };

@@ -22,9 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#ifdef NA_CCI_HAS_POLL
 #include <poll.h>
-#endif
 
 /****************/
 /* Local Macros */
@@ -156,9 +154,7 @@ struct na_cci_private_data {
     HG_LIST_HEAD(na_cci_addr) accept_conn_list; /* List of accepted connections */
     hg_thread_mutex_t accept_conn_list_mutex; /* Mutex */
     char *uri;
-#ifdef NA_CCI_HAS_POLL
     int fd;
-#endif
 };
 
 typedef union cci_msg {
@@ -334,6 +330,10 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_op_id_t * op_id);
 
+/* get_poll_fd */
+static int
+na_cci_get_poll_fd(na_class_t *na_class, na_context_t *context);
+
 /* progress */
 static na_return_t
 na_cci_progress(na_class_t * na_class, na_context_t * context,
@@ -389,6 +389,7 @@ const na_class_t na_cci_class_g = {
     na_cci_mem_handle_deserialize,          /* mem_handle_deserialize */
     na_cci_put,                             /* put */
     na_cci_get,                             /* get */
+    na_cci_get_poll_fd,                     /* get_poll_fd */
     na_cci_progress,                        /* progress */
     na_cci_cancel                           /* cancel */
 };
@@ -470,11 +471,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     char *uri = NULL;
     na_return_t ret = NA_SUCCESS;
     int fd = 0;
-#ifdef NA_CCI_HAS_POLL
     int *fdptr = &fd;
-#else
-    int *fdptr = NULL; (void) fd;
-#endif
 
     (void)listen;
 
@@ -539,9 +536,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
         goto out;
     }
     NA_CCI_PRIVATE_DATA(na_class)->endpoint = endpoint;
-#ifdef NA_CCI_HAS_POLL
     NA_CCI_PRIVATE_DATA(na_class)->fd = fd;
-#endif
 
     rc = cci_get_opt(endpoint, CCI_OPT_ENDPT_URI, &uri);
     if (rc) {
@@ -1633,6 +1628,13 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
+static int
+na_cci_get_poll_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
+{
+    return NA_CCI_PRIVATE_DATA(na_class)->fd;
+}
+
+/*---------------------------------------------------------------------------*/
 static void
 handle_send(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
     cci_endpoint_t NA_UNUSED *e, cci_event_t *event)
@@ -1923,13 +1925,10 @@ na_cci_progress(na_class_t * na_class, na_context_t * context,
         int rc;
         hg_time_t t1, t2;
         cci_event_t *event = NULL;
-#ifdef NA_CCI_HAS_POLL
         struct pollfd pfd;
-#endif
 
         hg_time_get_current(&t1);
 
-#ifdef NA_CCI_HAS_POLL
         if(remaining > 0)
         {
             pfd.fd = NA_CCI_PRIVATE_DATA(na_class)->fd;
@@ -1937,7 +1936,6 @@ na_cci_progress(na_class_t * na_class, na_context_t * context,
 
             poll(&pfd, 1, (int)(remaining * 1000.0));
         }
-#endif
 
         rc = cci_get_event(e, &event);
         if (rc) {
