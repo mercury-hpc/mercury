@@ -95,6 +95,13 @@ if(MERCURY_USE_CHECKSUMS)
   set_property(CACHE MERCURY_CHECKSUM_DEFAULT PROPERTY STRINGS "CRC16" "CRC32" "CRC64")
 endif()
 
+# Coresident RPC
+option(MERCURY_USE_SELF_FORWARD "Execute RPC call locally and bypass NA layer when using NA self address." OFF)
+if(MERCURY_USE_SELF_FORWARD)
+  set(HG_HAS_SELF_FORWARD 1)
+endif()
+set(MERCURY_USE_SELF_FORWARD PARENT_SCOPE)
+
 # Eager bulk transfer
 option(MERCURY_USE_EAGER_BULK "Encode bulk data with RPC when bulk region described is small." ON)
 if(MERCURY_USE_EAGER_BULK)

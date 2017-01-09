@@ -44,6 +44,7 @@
 #else
     #define HG_CHECKSUM_DEFAULT HG_NOHASH
 #endif
+#cmakedefine HG_HAS_SELF_FORWARD
 #cmakedefine HG_HAS_EAGER_BULK
 #cmakedefine HG_HAS_XDR
 

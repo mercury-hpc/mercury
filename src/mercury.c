@@ -9,7 +9,6 @@
  */
 
 #include "mercury.h"
-#include "mercury_private.h"
 
 #include "mercury_hash_string.h"
 #include "mercury_proc.h"
@@ -30,6 +29,9 @@
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
+
+/* Private callback type for HG layer */
+typedef hg_return_t (*handle_create_cb_t)(hg_class_t *, hg_handle_t);
 
 /* Info for function map */
 struct hg_proc_info {

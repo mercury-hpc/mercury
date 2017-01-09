@@ -90,6 +90,18 @@ HG_Core_class_get_protocol(
         );
 
 /**
+ * Obtain the underlying NA class.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ *
+ * \return Pointer to NA class or NULL if not a valid class
+ */
+HG_EXPORT na_class_t *
+HG_Core_class_get_na(
+        const hg_class_t *hg_class
+        );
+
+/**
  * Obtain the maximum eager size for sending RPC inputs, for a given class.
  * NOTE: This doesn't currently work when using XDR encoding.
  *

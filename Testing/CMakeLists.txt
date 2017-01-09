@@ -48,8 +48,10 @@ set(MERCURY_TESTING_TEMP_DIRECTORY "." CACHE PATH
   "Location to use for temp data (default is current directory).")
 mark_as_advanced(MERCURY_TESTING_TEMP_DIRECTORY)
 
-option(MERCURY_TESTING_CORESIDENT "Enable testing of coresident mode." OFF)
-mark_as_advanced(MERCURY_TESTING_CORESIDENT)
+if(MERCURY_USE_SELF_FORWARD)
+  option(MERCURY_TESTING_CORESIDENT "Enable testing of coresident mode." OFF)
+  mark_as_advanced(MERCURY_TESTING_CORESIDENT)
+endif()
 
 #------------------------------------------------------------------------------
 # NA protocols used for testing

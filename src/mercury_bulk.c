@@ -9,9 +9,13 @@
  */
 
 #include "mercury_bulk.h"
-#include "mercury_error.h"
+#include "mercury_core.h"
 #include "mercury_private.h"
+#include "mercury_error.h"
+
 #include "na_private.h"
+
+#include "mercury_atomic.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -346,8 +350,9 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
     struct hg_bulk *hg_bulk = NULL;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
+    na_class_t *na_class = HG_Core_class_get_na(hg_class);
     hg_bool_t use_register_segment = (hg_bool_t)
-            (hg_class->na_class->mem_handle_create_segments && count > 1);
+        (na_class->mem_handle_create_segments && count > 1);
     unsigned int i;
 
     hg_bulk = (struct hg_bulk *) malloc(sizeof(struct hg_bulk));
@@ -418,16 +423,15 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
             struct na_segment *na_segments =
                 (struct na_segment *) hg_bulk->segments;
             na_size_t na_segment_count = (na_size_t) hg_bulk->segment_count;
-            na_ret = NA_Mem_handle_create_segments(hg_class->na_class,
-                na_segments, na_segment_count, flags,
-                &hg_bulk->na_mem_handles[i]);
+            na_ret = NA_Mem_handle_create_segments(na_class, na_segments,
+                na_segment_count, flags, &hg_bulk->na_mem_handles[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("NA_Mem_handle_create_segments failed");
                 ret = HG_NA_ERROR;
                 goto done;
             }
         } else {
-            na_ret = NA_Mem_handle_create(hg_class->na_class,
+            na_ret = NA_Mem_handle_create(na_class,
                 (void *) hg_bulk->segments[i].address,
                 hg_bulk->segments[i].size, flags, &hg_bulk->na_mem_handles[i]);
             if (na_ret != NA_SUCCESS) {
@@ -437,8 +441,7 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
             }
         }
         /* Register segment */
-        na_ret = NA_Mem_register(hg_class->na_class,
-            hg_bulk->na_mem_handles[i]);
+        na_ret = NA_Mem_register(na_class, hg_bulk->na_mem_handles[i]);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("NA_Mem_register failed");
             ret = HG_NA_ERROR;
@@ -470,6 +473,8 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
     }
 
     if (hg_bulk->na_mem_handles) {
+        na_class_t *na_class = HG_Core_class_get_na(hg_bulk->hg_class);
+
         /* Unregister/free NA memory handles */
         if (hg_bulk->segment_published) {
             for (i = 0; i < hg_bulk->na_mem_handle_count; i++) {
@@ -478,8 +483,7 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
                 if (!hg_bulk->na_mem_handles[i])
                     continue;
 
-                na_ret = NA_Mem_unpublish(hg_bulk->hg_class->na_class,
-                    hg_bulk->na_mem_handles[i]);
+                na_ret = NA_Mem_unpublish(na_class, hg_bulk->na_mem_handles[i]);
                 if (na_ret != NA_SUCCESS) {
                     HG_LOG_ERROR("NA_Mem_unpublish failed");
                 }
@@ -493,14 +497,12 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
             if (!hg_bulk->na_mem_handles[i])
                 continue;
 
-            na_ret = NA_Mem_deregister(hg_bulk->hg_class->na_class,
-                hg_bulk->na_mem_handles[i]);
+            na_ret = NA_Mem_deregister(na_class, hg_bulk->na_mem_handles[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("NA_Mem_deregister failed");
             }
 
-            na_ret = NA_Mem_handle_free(hg_bulk->hg_class->na_class,
-                hg_bulk->na_mem_handles[i]);
+            na_ret = NA_Mem_handle_free(na_class, hg_bulk->na_mem_handles[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("NA_Mem_handle_free failed");
             }
@@ -663,7 +665,7 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
         }
 
         if (na_bulk_op) {
-            na_ret = na_bulk_op(hg_bulk_op_id->hg_class->na_class,
+            na_ret = na_bulk_op(HG_Core_class_get_na(hg_bulk_op_id->hg_class),
                 hg_core_get_na_context(hg_bulk_op_id->context),
                 hg_bulk_transfer_cb, hg_bulk_op_id,
                 hg_bulk_local->na_mem_handles[local_segment_index],
@@ -723,11 +725,10 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         local_segment_start_offset = local_offset;
     struct hg_bulk_op_id *hg_bulk_op_id = NULL;
     na_bulk_op_t na_bulk_op;
-    hg_bool_t is_self = NA_Addr_is_self(hg_bulk_origin->hg_class->na_class,
-        origin_addr);
+    na_class_t *na_class = HG_Core_class_get_na(hg_bulk_origin->hg_class);
+    hg_bool_t is_self = NA_Addr_is_self(na_class, origin_addr);
     hg_bool_t scatter_gather =
-        (hg_bulk_origin->hg_class->na_class->mem_handle_create_segments
-            && !is_self) ? HG_TRUE : HG_FALSE;
+        (na_class->mem_handle_create_segments && !is_self) ? HG_TRUE : HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
     unsigned int i;
 
@@ -1062,7 +1063,8 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t request_eager)
 
         if (hg_bulk->na_mem_handles[i]) {
             serialize_size = NA_Mem_handle_get_serialize_size(
-                hg_bulk->hg_class->na_class, hg_bulk->na_mem_handles[i]);
+                HG_Core_class_get_na(hg_bulk->hg_class),
+                hg_bulk->na_mem_handles[i]);
         }
         ret += sizeof(serialize_size) + serialize_size;
     }
@@ -1086,6 +1088,7 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
     ssize_t buf_size_left = (ssize_t) buf_size;
     hg_return_t ret = HG_SUCCESS;
     hg_bool_t eager_mode;
+    na_class_t *na_class;
     hg_uint32_t i;
 
     if (!hg_bulk) {
@@ -1093,6 +1096,9 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
         ret = HG_INVALID_PARAM;
         goto done;
     }
+
+    /* Get NA class */
+    na_class = HG_Core_class_get_na(hg_bulk->hg_class);
 
     /* Publish handle at this point if not published yet */
     if (!hg_bulk->segment_published) {
@@ -1102,8 +1108,7 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
             if (!hg_bulk->na_mem_handles[i])
                 continue;
 
-            na_ret = NA_Mem_publish(hg_bulk->hg_class->na_class,
-                hg_bulk->na_mem_handles[i]);
+            na_ret = NA_Mem_publish(na_class, hg_bulk->na_mem_handles[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("NA_Mem_publish failed");
                 ret = HG_NA_ERROR;
@@ -1154,7 +1159,7 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
 
         if (hg_bulk->na_mem_handles[i]) {
             serialize_size = NA_Mem_handle_get_serialize_size(
-                hg_bulk->hg_class->na_class, hg_bulk->na_mem_handles[i]);
+                na_class, hg_bulk->na_mem_handles[i]);
         }
         ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left, &serialize_size,
             sizeof(serialize_size));
@@ -1163,8 +1168,8 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
             goto done;
         }
         if (hg_bulk->na_mem_handles[i]) {
-            na_ret = NA_Mem_handle_serialize(hg_bulk->hg_class->na_class,
-                buf_ptr, (na_size_t) buf_size_left, hg_bulk->na_mem_handles[i]);
+            na_ret = NA_Mem_handle_serialize(na_class, buf_ptr,
+                (na_size_t) buf_size_left, hg_bulk->na_mem_handles[i]);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("Could not serialize memory handle");
                 ret = HG_NA_ERROR;
@@ -1295,8 +1300,10 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
             goto done;
         }
         if (serialize_size) {
-            na_ret = NA_Mem_handle_deserialize(hg_bulk->hg_class->na_class,
-                &hg_bulk->na_mem_handles[i], buf_ptr, (na_size_t) buf_size_left);
+            na_ret = NA_Mem_handle_deserialize(
+                HG_Core_class_get_na(hg_bulk->hg_class),
+                &hg_bulk->na_mem_handles[i], buf_ptr,
+                (na_size_t) buf_size_left);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("Could not deserialize memory handle");
                 ret = HG_NA_ERROR;
@@ -1444,7 +1451,7 @@ HG_Bulk_cancel(hg_op_id_t op_id)
             na_return_t na_ret;
 
             /* Cancel NA operation */
-            na_ret = NA_Cancel(hg_bulk_op_id->hg_class->na_class,
+            na_ret = NA_Cancel(HG_Core_class_get_na(hg_bulk_op_id->hg_class),
                 hg_core_get_na_context(hg_bulk_op_id->context),
                 hg_bulk_op_id->na_op_ids[i]);
             if (na_ret != NA_SUCCESS) {
