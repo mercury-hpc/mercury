@@ -40,6 +40,9 @@
 /* Define if has <sys/eventfd.h> */
 #cmakedefine HG_UTIL_HAS_SYSEVENTFD_H
 
+/* Define if has <sys/event.h> */
+#cmakedefine HG_UTIL_HAS_SYSEVENT_H
+
 /* Define if has verbose error */
 #cmakedefine HG_UTIL_HAS_VERBOSE_ERROR
 

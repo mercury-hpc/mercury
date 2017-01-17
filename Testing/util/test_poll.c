@@ -52,6 +52,22 @@ main(void)
     /* Reset progressed */
     progressed = HG_UTIL_FALSE;
 
+    /* Wait with timeout 0 */
+    hg_poll_wait(poll_set, 0, &progressed);
+    if (progressed) {
+        /* We do not expect success */
+        fprintf(stderr, "Error: did not progress correctly\n");
+        ret = EXIT_FAILURE;
+    }
+
+    /* Wait with timeout */
+    hg_poll_wait(poll_set, 100, &progressed);
+    if (progressed) {
+        /* We do not expect success */
+        fprintf(stderr, "Error: did not progress correctly\n");
+        ret = EXIT_FAILURE;
+    }
+
     /* Set event */
     hg_event_set(event_fd);
 

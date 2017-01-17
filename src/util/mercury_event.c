@@ -16,12 +16,15 @@
 #else
 #include <errno.h>
 #include <string.h>
-#ifdef HG_UTIL_HAS_SYSEVENTFD_H
-#include <sys/eventfd.h>
 #include <unistd.h>
-#else
-
+#if defined(HG_UTIL_HAS_SYSEVENTFD_H)
+#include <sys/eventfd.h>
+#elif defined(HG_UTIL_HAS_SYSEVENT_H)
+#include <sys/event.h>
+/* User-defined ident */
+#define HG_EVENT_IDENT 42
 #endif
+
 #endif
 
 /*---------------------------------------------------------------------------*/
@@ -36,6 +39,26 @@ hg_event_create(void)
     fd = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE);
     if (fd == -1) {
         HG_UTIL_LOG_ERROR("eventfd() failed (%s)", strerror(errno));
+        goto done;
+    }
+#elif defined(HG_UTIL_HAS_SYSEVENT_H)
+    struct kevent kev;
+    struct timespec timeout = {0, 0};
+
+    /* Create kqueue */
+    fd = kqueue();
+    if (fd == -1) {
+        HG_UTIL_LOG_ERROR("kqueue() failed (%s)", strerror(errno));
+        goto done;
+    }
+
+    EV_SET(&kev, HG_EVENT_IDENT, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, NULL);
+
+    /* Add user-defined event to kqueue */
+    if (kevent(fd, &kev, 1, NULL, 0, &timeout) == -1) {
+        HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
+        hg_event_destroy(fd);
+        fd = 0;
         goto done;
     }
 #else
@@ -81,6 +104,18 @@ hg_event_set(int fd)
         ret = HG_UTIL_FAIL;
         goto done;
     }
+#elif defined(HG_UTIL_HAS_SYSEVENT_H)
+    struct kevent kev;
+    struct timespec timeout = {0, 0};
+
+    EV_SET(&kev, HG_EVENT_IDENT, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
+
+    /* Trigger user-defined event */
+    if (kevent(fd, &kev, 1, NULL, 0, &timeout) == -1) {
+        HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
+        ret = HG_UTIL_FAIL;
+        goto done;
+    }
 #else
 
 #endif
@@ -110,6 +145,20 @@ hg_event_get(int fd, hg_util_bool_t *signaled)
         goto done;
     }
     event_signal = HG_UTIL_TRUE;
+#elif defined(HG_UTIL_HAS_SYSEVENT_H)
+    struct kevent kev;
+    int nfds;
+    struct timespec timeout = {0, 0};
+
+    /* Check user-defined event */
+    nfds = kevent(fd, NULL, 0, &kev, 1, &timeout);
+    if (nfds == -1) {
+        HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
+        ret = HG_UTIL_FAIL;
+        goto done;
+    }
+    if (nfds > 0 && kev.ident == HG_EVENT_IDENT)
+        event_signal = HG_UTIL_TRUE;
 #else
 
 #endif

@@ -38,6 +38,9 @@ check_include_files("sys/epoll.h" HG_UTIL_HAS_SYSEPOLL_H)
 # Detect <sys/eventfd.h>
 check_include_files("sys/eventfd.h" HG_UTIL_HAS_SYSEVENTFD_H)
 
+# Detect <sys/event.h>
+check_include_files("sys/event.h" HG_UTIL_HAS_SYSEVENT_H)
+
 # Atomics
 if(NOT WIN32)
   # Detect stdatomic
