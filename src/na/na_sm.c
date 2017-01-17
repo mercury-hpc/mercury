@@ -31,15 +31,16 @@
 #else
 #include <unistd.h>
 #include <sys/types.h>
-#include <sys/uio.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <sys/stat.h>
-
 #include <sys/socket.h>
 #include <sys/un.h>
+#ifdef NA_SM_HAS_CMA
+#include <sys/uio.h>
+#else
 
+#endif
 #endif
 
 /****************/
@@ -933,12 +934,23 @@ na_sm_create_sock(const char *pathname, na_bool_t na_listen, int *sock)
     int fd;
 
     /* Create a non-blocking socket so that we can poll for incoming connections */
+#ifdef SOCK_NONBLOCK
     fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK, 0);
+#else
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+#endif
     if (fd == -1) {
         NA_LOG_ERROR("socket() failed (%s)", strerror(errno));
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+#ifndef SOCK_NONBLOCK
+    if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
+        NA_LOG_ERROR("fcntl() failed (%s)", strerror(errno));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    };
+#endif
 
     memset(&addr, 0, sizeof(struct sockaddr_un));
     addr.sun_family = AF_UNIX;
@@ -1594,7 +1606,11 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+#ifdef SOCK_NONBLOCK
     conn_sock = accept4(poll_addr->sock, NULL, NULL, SOCK_NONBLOCK);
+#else
+    conn_sock = accept(poll_addr->sock, NULL, NULL);
+#endif
     if (conn_sock == -1) {
         if (errno == EAGAIN) {
             *progressed = NA_FALSE;
@@ -1604,6 +1620,13 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+#ifndef SOCK_NONBLOCK
+    if (fcntl(conn_sock, F_SETFL, O_NONBLOCK) == -1) {
+        NA_LOG_ERROR("fcntl() failed (%s)", strerror(errno));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    };
+#endif
 
     /* Allocate new addr and pass it to poll set */
     na_sm_addr = (struct na_sm_addr *) malloc(sizeof(struct na_sm_addr));
@@ -2360,12 +2383,17 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
 
     /* TODO move to server */
     /* Create local signal event */
+#ifdef HG_UTIL_HAS_SYSEVENTFD_H
     local_notify = hg_event_create();
     if (local_notify == HG_UTIL_FAIL) {
         NA_LOG_ERROR("hg_event_create() failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+#else
+    const char *path =
+    local_notify = mkfifo("", S_IRUSR | S_IWUSR);
+#endif
     na_sm_addr->local_notify = local_notify;
 
     /* Create remote signal event */
@@ -3203,8 +3231,12 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         riovcnt = na_sm_mem_handle_remote->iovcnt;
     }
 
+#ifdef NA_SM_HAS_CMA
     nwrite = process_vm_writev(na_sm_addr->pid, local_iov, liovcnt, remote_iov,
         riovcnt, /* unused */0);
+#else
+
+#endif
     if (nwrite < 0) {
         NA_LOG_ERROR("process_vm_writev() failed (%s)", strerror(errno));
         ret = NA_PROTOCOL_ERROR;
@@ -3317,8 +3349,12 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         riovcnt = na_sm_mem_handle_remote->iovcnt;
     }
 
+#ifdef NA_SM_HAS_CMA
     nread = process_vm_readv(na_sm_addr->pid, local_iov, liovcnt, remote_iov,
         riovcnt, /* unused */0);
+#else
+
+#endif
     if (nread < 0) {
         NA_LOG_ERROR("process_vm_readv() failed (%s)", strerror(errno));
         ret = NA_PROTOCOL_ERROR;
