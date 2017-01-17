@@ -1,4 +1,5 @@
 #include "mercury_poll.h"
+#include "mercury_event.h"
 
 #include "mercury_test_config.h"
 
@@ -6,28 +7,17 @@
 #include <stdlib.h>
 
 struct hg_test_poll_cb_args {
-    unsigned int num_cb;
+    int event_fd;
 };
 
 static int
-poll_cb1(void *arg, hg_util_bool_t *progressed)
+poll_cb(void *arg, hg_util_bool_t *progressed)
 {
     struct hg_test_poll_cb_args *poll_cb_args =
         (struct hg_test_poll_cb_args *) arg;
 
-    poll_cb_args->num_cb++;
-    *progressed = HG_UTIL_TRUE;
-    return HG_UTIL_SUCCESS;
-}
+    hg_event_get(poll_cb_args->event_fd, progressed);
 
-static int
-poll_cb2(void *arg, hg_util_bool_t *progressed)
-{
-    struct hg_test_poll_cb_args *poll_cb_args =
-        (struct hg_test_poll_cb_args *) arg;
-
-    poll_cb_args->num_cb++;
-    *progressed = HG_UTIL_FALSE;
     return HG_UTIL_SUCCESS;
 }
 
@@ -37,29 +27,45 @@ main(void)
     struct hg_test_poll_cb_args poll_cb_args;
     hg_poll_set_t *poll_set;
     hg_util_bool_t progressed;
+    int event_fd;
     int ret = EXIT_SUCCESS;
 
     poll_set = hg_poll_create();
+    event_fd = hg_event_create();
 
-    poll_cb_args.num_cb = 0;
+    poll_cb_args.event_fd = event_fd;
 
-    /* Fake descriptor */
-    hg_poll_add(poll_set, 0, HG_POLLOUT, poll_cb1, &poll_cb_args);
+    /* Add event descriptor */
+    hg_poll_add(poll_set, event_fd, HG_POLLIN, poll_cb, &poll_cb_args);
 
-    /* Fake descriptor */
-    hg_poll_add(poll_set, 1, HG_POLLIN, poll_cb2, &poll_cb_args);
+    /* Set event */
+    hg_event_set(event_fd);
 
     /* Wait with timeout 0 */
     hg_poll_wait(poll_set, 0, &progressed);
-    if (!progressed || poll_cb_args.num_cb != 2) {
+    if (!progressed) {
         /* We expect success */
         fprintf(stderr, "Error: did not progress correctly\n");
         ret = EXIT_FAILURE;
     }
 
-    hg_poll_remove(poll_set, 0);
-    hg_poll_remove(poll_set, 1);
+    /* Reset progressed */
+    progressed = HG_UTIL_FALSE;
+
+    /* Set event */
+    hg_event_set(event_fd);
+
+    /* Wait with timeout */
+    hg_poll_wait(poll_set, 1000, &progressed);
+    if (!progressed) {
+        /* We expect success */
+        fprintf(stderr, "Error: did not progress correctly\n");
+        ret = EXIT_FAILURE;
+    }
+
+    hg_poll_remove(poll_set, event_fd);
     hg_poll_destroy(poll_set);
+    hg_event_destroy(event_fd);
 
     return ret;
 }
