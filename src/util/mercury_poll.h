@@ -31,17 +31,11 @@ typedef struct hg_poll_set hg_poll_set_t;
  */
 typedef int (*hg_poll_cb_t)(void *arg, hg_util_bool_t *progressed);
 
-#if defined(_WIN32)
-
-#elif defined(HG_UTIL_HAS_SYSEPOLL_H)
-#include <sys/epoll.h>
-#define HG_POLLIN   EPOLLIN     /* Ready to read.   */
-#define HG_POLLOUT  EPOLLOUT    /* Ready to write.  */
-#else
-#include <poll.h>
-#define HG_POLLIN   POLLIN      /* Ready to read.   */
-#define HG_POLLOUT  POLLOUT     /* Ready to write.  */
-#endif
+/**
+ * Polling events.
+ */
+#define HG_POLLIN   0x001   /* Ready to read.   */
+#define HG_POLLOUT  0x004   /* Ready to write.  */
 
 #ifdef __cplusplus
 extern "C" {

@@ -224,7 +224,7 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
     /* TODO */
 #elif defined(HG_UTIL_HAS_SYSEPOLL_H)
     hg_poll_data->fd = fd;
-    ev.events = flags;
+    ev.events = poll_flags;
     ev.data.ptr = hg_poll_data;
 
     if (epoll_ctl(poll_set->fd, EPOLL_CTL_ADD, fd, &ev) == -1) {
@@ -233,7 +233,7 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
         goto done;
     }
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
-    EV_SET(&hg_poll_data->kev, fd, EVFILT_READ, EV_ADD, 0, 0, hg_poll_data);
+    EV_SET(&hg_poll_data->kev, fd, poll_flags, EV_ADD, 0, 0, hg_poll_data);
 
     if (kevent(poll_set->fd, &hg_poll_data->kev, 1, NULL, 0, &timeout) == -1) {
         HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
@@ -242,7 +242,7 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
     }
 #else
     hg_poll_data->pollfd.fd = fd;
-    hg_poll_data->pollfd.events = (short int) flags;
+    hg_poll_data->pollfd.events = (short int) poll_flags;
     hg_poll_data->pollfd.revents = 0;
 
     /* TODO limit on number of fds for now but could malloc/reallocate */
