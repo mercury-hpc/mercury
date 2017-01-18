@@ -54,6 +54,15 @@ if(NOT MERCURY_INSTALL_DATA_DIR)
   set(MERCURY_INSTALL_DATA_DIR ${CMAKE_INSTALL_PREFIX}/share)
 endif()
 
+# Setting this ensures that "make install" will leave rpaths to external
+# libraries intact on "make install". This ensures that one can install a
+# version of Mercury on the build machine without any issues. If this not
+# desired, simply specify CMAKE_INSTALL_RPATH_USE_LINK_PATH when configuring
+# Mercury and "make install" will strip all rpaths, which is default behavior.
+if(NOT CMAKE_INSTALL_RPATH_USE_LINK_PATH)
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+endif()
+
 #------------------------------------------------------------------------------
 # Setup CMake Environment
 #------------------------------------------------------------------------------
