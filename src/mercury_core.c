@@ -841,8 +841,8 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
         ret = HG_NOMEM_ERROR;
         goto done;
     }
+    memset(hg_class, 0, sizeof(struct hg_class));
     hg_class->na_class = na_init_class;
-    hg_class->func_map = NULL;
     hg_class->na_ext_init = (na_init_class) ? HG_TRUE : HG_FALSE;
 
     /* Initialize NA */
@@ -1786,8 +1786,8 @@ hg_core_completion_add(struct hg_context *context,
 
 #ifdef HG_HAS_SELF_FORWARD
     /* Notify completion */
-    if (hg_event_set(context->completion_queue_notify)
-        != HG_UTIL_SUCCESS) {
+    if (context->completion_queue_notify
+        && hg_event_set(context->completion_queue_notify) != HG_UTIL_SUCCESS) {
         HG_LOG_ERROR("Could not signal completion queue");
         ret = HG_PROTOCOL_ERROR;
     }
