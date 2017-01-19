@@ -126,23 +126,19 @@ endif()
 # SM
 option(NA_USE_SM "Use shared-memory plugin." OFF)
 if(NA_USE_SM)
-  if(APPLE OR WIN32)
+  if(WIN32)
     message(FATAL_ERROR "SM plugin not supported on this platform yet.")
   else()
     include(CheckFunctionExists)
     check_function_exists(process_vm_readv NA_SM_HAS_CMA)
-    if(NA_SM_HAS_CMA)
-      set(NA_PLUGINS ${NA_PLUGINS} na)
-      set(NA_HAS_SM 1)
-      set(NA_SM_SHM_PREFIX "na_sm" CACHE STRING
-        "Prefix to use for SHM file name.")
-      set(NA_SM_TMP_DIRECTORY "/tmp" CACHE PATH
-        "Location to use for NA SM temp data.")
-      mark_as_advanced(NA_SM_SHM_PREFIX)
-      mark_as_advanced(NA_SM_TMP_DIRECTORY)
-    else()
-      message(FATAL_ERROR "Cross-memory attach not available on this platform.")
-    endif()
+    set(NA_PLUGINS ${NA_PLUGINS} na)
+    set(NA_HAS_SM 1)
+    set(NA_SM_SHM_PREFIX "na_sm" CACHE STRING
+      "Prefix to use for SHM file name.")
+    set(NA_SM_TMP_DIRECTORY "/tmp" CACHE PATH
+      "Location to use for NA SM temp data.")
+    mark_as_advanced(NA_SM_SHM_PREFIX)
+    mark_as_advanced(NA_SM_TMP_DIRECTORY)
   endif()
 endif()
 

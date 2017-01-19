@@ -36,10 +36,11 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#ifdef NA_SM_HAS_CMA
+#if defined(NA_SM_HAS_CMA)
 #include <sys/uio.h>
-#else
-
+#elif defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
 #endif
 #endif
 
@@ -717,6 +718,7 @@ na_sm_mem_handle_create(
     na_mem_handle_t *mem_handle
     );
 
+#ifdef NA_SM_HAS_CMA
 /* mem_handle_create_segments */
 static na_return_t
 na_sm_mem_handle_create_segments(
@@ -726,6 +728,7 @@ na_sm_mem_handle_create_segments(
     unsigned long flags,
     na_mem_handle_t *mem_handle
     );
+#endif
 
 /* mem_handle_free */
 static na_return_t
@@ -842,7 +845,11 @@ const na_class_t na_sm_class_g = {
     na_sm_msg_send_expected,                /* msg_send_expected */
     na_sm_msg_recv_expected,                /* msg_recv_expected */
     na_sm_mem_handle_create,                /* mem_handle_create */
+#ifdef NA_SM_HAS_CMA
     na_sm_mem_handle_create_segments,       /* mem_handle_create_segments */
+#else
+    NULL,                                   /* mem_handle_create_segments */
+#endif
     na_sm_mem_handle_free,                  /* mem_handle_free */
     NULL,                                   /* mem_register */
     NULL,                                   /* mem_deregister */
@@ -3272,6 +3279,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef NA_SM_HAS_CMA
 static na_return_t
 na_sm_mem_handle_create_segments(na_class_t NA_UNUSED *na_class,
     struct na_segment *segments, na_size_t segment_count, unsigned long flags,
@@ -3317,6 +3325,7 @@ na_sm_mem_handle_create_segments(na_class_t NA_UNUSED *na_class,
 done:
     return ret;
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
@@ -3456,7 +3465,12 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     struct iovec *local_iov, *remote_iov;
     unsigned long liovcnt, riovcnt;
     na_return_t ret = NA_SUCCESS;
+#if defined(NA_SM_HAS_CMA)
     ssize_t nwrite;
+#elif defined(__APPLE__)
+    kern_return_t kret;
+    mach_port_name_t remote_task;
+#endif
 
     switch (na_sm_mem_handle_remote->flags) {
         case NA_MEM_READ_ONLY:
@@ -3519,12 +3533,9 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         riovcnt = na_sm_mem_handle_remote->iovcnt;
     }
 
-#ifdef NA_SM_HAS_CMA
+#if defined(NA_SM_HAS_CMA)
     nwrite = process_vm_writev(na_sm_addr->pid, local_iov, liovcnt, remote_iov,
         riovcnt, /* unused */0);
-#else
-
-#endif
     if (nwrite < 0) {
         NA_LOG_ERROR("process_vm_writev() failed (%s)", strerror(errno));
         ret = NA_PROTOCOL_ERROR;
@@ -3535,6 +3546,28 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         ret = NA_SIZE_ERROR;
         goto done;
     }
+#elif defined(__APPLE__)
+    kret = task_for_pid(mach_task_self(), na_sm_addr->pid, &remote_task);
+    if (kret != KERN_SUCCESS) {
+        NA_LOG_ERROR("task_for_pid() failed (%s)\n"
+                     "Permission must be set to access remote memory, please refer to the documentation for instructions.", mach_error_string(kret));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    if (liovcnt > 1 || riovcnt > 1) {
+        NA_LOG_ERROR("Non-contiguous transfers are not supported");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    kret = mach_vm_write(remote_task, remote_iov->iov_base, local_iov->iov_base, length);
+    if (kret != KERN_SUCCESS) {
+        NA_LOG_ERROR("mach_vm_write() failed (%s)", mach_error_string(kret));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+#endif
 
     /* Notify local completion */
     if (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
@@ -3574,7 +3607,13 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     struct iovec *local_iov, *remote_iov;
     unsigned long liovcnt, riovcnt;
     na_return_t ret = NA_SUCCESS;
+#if defined(NA_SM_HAS_CMA)
     ssize_t nread;
+#elif defined(__APPLE__)
+    mach_vm_size_t nread;
+    kern_return_t kret;
+    mach_port_name_t remote_task;
+#endif
 
     switch (na_sm_mem_handle_remote->flags) {
         case NA_MEM_WRITE_ONLY:
@@ -3637,17 +3676,37 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         riovcnt = na_sm_mem_handle_remote->iovcnt;
     }
 
-#ifdef NA_SM_HAS_CMA
+#if defined(NA_SM_HAS_CMA)
     nread = process_vm_readv(na_sm_addr->pid, local_iov, liovcnt, remote_iov,
         riovcnt, /* unused */0);
-#else
-
-#endif
     if (nread < 0) {
         NA_LOG_ERROR("process_vm_readv() failed (%s)", strerror(errno));
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+#elif defined(__APPLE__)
+    kret = task_for_pid(mach_task_self(), na_sm_addr->pid, &remote_task);
+    if (kret != KERN_SUCCESS) {
+        NA_LOG_ERROR("task_for_pid() failed (%s)\n"
+                     "Permission must be set to access remote memory, please refer to the documentation for instructions.", mach_error_string(kret));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    if (liovcnt > 1 || riovcnt > 1) {
+        NA_LOG_ERROR("Non-contiguous transfers are not supported");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    kret = mach_vm_read_overwrite(remote_task, remote_iov->iov_base, length,
+        local_iov->iov_base, &nread);
+    if (kret != KERN_SUCCESS) {
+        NA_LOG_ERROR("mach_vm_read_overwrite() failed (%s)", mach_error_string(kret));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+#endif
     if ((na_size_t)nread != length) {
         NA_LOG_ERROR("Read %ld bytes, was expecting %lu bytes", nread, length);
         ret = NA_SIZE_ERROR;
