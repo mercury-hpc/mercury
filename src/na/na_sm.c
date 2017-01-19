@@ -79,19 +79,28 @@
             na_sm_addr->pid, na_sm_addr->id);           \
     } while (0)
 
-#define NA_SM_SEND_NAME "s"
-#define NA_SM_RECV_NAME "r"
+#define NA_SM_GEN_SOCK_PATH(pathname, na_sm_addr)               \
+    do {                                                        \
+        sprintf(pathname, "%s/%s/%d/%u", NA_SM_TMP_DIRECTORY,   \
+            NA_SM_SHM_PREFIX, na_sm_addr->pid, na_sm_addr->id); \
+    } while (0)
+
+#define NA_SM_SEND_NAME "s" /* used for pair_name */
+#define NA_SM_RECV_NAME "r" /* used for pair_name */
 #define NA_SM_GEN_RING_NAME(filename, pair_name, na_sm_addr)            \
     do {                                                                \
         sprintf(filename, "%s-%d-%u-%u-" pair_name, NA_SM_SHM_PREFIX,   \
             na_sm_addr->pid, na_sm_addr->id, na_sm_addr->conn_id);      \
     } while (0)
 
-#define NA_SM_GEN_SOCK_PATH(pathname, na_sm_addr)               \
-    do {                                                        \
-        sprintf(pathname, "%s/%s/%d/%u", NA_SM_TMP_DIRECTORY,   \
-            NA_SM_SHM_PREFIX, na_sm_addr->pid, na_sm_addr->id); \
+#ifndef HG_UTIL_HAS_SYSEVENTFD_H
+#define NA_SM_GEN_FIFO_NAME(filename, pair_name, na_sm_addr)            \
+    do {                                                                \
+        sprintf(filename, "%s/%s/%d/%u/fifo-%u-" pair_name,             \
+            NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX, na_sm_addr->pid,     \
+            na_sm_addr->id, na_sm_addr->conn_id);                       \
     } while (0)
+#endif
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -314,6 +323,44 @@ na_sm_close_sock(
     const char *pathname
     );
 
+#ifndef HG_UTIL_HAS_SYSEVENTFD_H
+
+/**
+ * Create event using named pipe.
+ */
+static int
+na_sm_event_create(
+    const char *filename
+    );
+
+/**
+ * Destroy event.
+ */
+static na_return_t
+na_sm_event_destroy(
+    const char *filename,
+    int fd
+    );
+
+/**
+ * Set event.
+ */
+static na_return_t
+na_sm_event_set(
+    int fd
+    );
+
+/**
+ * Get event.
+ */
+static na_return_t
+na_sm_event_get(
+    int fd,
+    na_bool_t *signaled
+    );
+
+#endif
+
 /**
  * Register addr to poll set.
  */
@@ -356,7 +403,8 @@ na_sm_send_addr_info(
  */
 static na_return_t
 na_sm_recv_addr_info(
-    struct na_sm_addr *na_sm_addr
+    struct na_sm_addr *na_sm_addr,
+    na_bool_t *received
     );
 
 /**
@@ -1060,6 +1108,106 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+#ifndef HG_UTIL_HAS_SYSEVENTFD_H
+
+static int
+na_sm_event_create(const char *filename)
+{
+    int fd = -1;
+
+    /* Create FIFO */
+    if (mkfifo(filename, S_IRUSR | S_IWUSR) == - 1) {
+        NA_LOG_ERROR("mkfifo() failed (%s)", strerror(errno));
+        goto done;
+    }
+
+    /* Open FIFO (RDWR for convenience) */
+    fd = open(filename, O_RDWR);
+    if (fd == -1) {
+        NA_LOG_ERROR("open() failed (%s)", strerror(errno));
+        goto done;
+    }
+
+    /* Set FIFO to be non-blocking */
+    if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
+        NA_LOG_ERROR("fcntl() failed (%s)", strerror(errno));
+        close(fd);
+        fd = -1;
+        goto done;
+    };
+
+done:
+    return fd;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+na_sm_event_destroy(const char *filename, int fd)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    if (close(fd) == -1) {
+        NA_LOG_ERROR("close() failed (%s)", strerror(errno));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    if (filename && unlink(filename) == -1) {
+        NA_LOG_ERROR("unlink() failed (%s)", strerror(errno));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+na_sm_event_set(int fd)
+{
+    na_return_t ret = NA_SUCCESS;
+    uint64_t count = 1;
+    ssize_t s;
+
+    s = write(fd, &count, sizeof(uint64_t));
+    if (s != sizeof(uint64_t)) {
+        NA_LOG_ERROR("write() failed (%s)", strerror(errno));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+na_sm_event_get(int fd, na_bool_t *signaled)
+{
+    na_return_t ret = NA_SUCCESS;
+    na_bool_t event_signal = NA_FALSE;
+    uint64_t count = 1;
+    ssize_t s;
+
+    s = read(fd, &count, sizeof(uint64_t));
+    if (s != sizeof(uint64_t)) {
+        if (errno == EAGAIN)
+            goto done;
+        NA_LOG_ERROR("read() failed (%s)", strerror(errno));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+    event_signal = NA_TRUE;
+
+    if (signaled) *signaled = event_signal;
+
+done:
+    return ret;
+}
+
+#endif
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_poll_register(na_class_t *na_class, na_sm_poll_type_t poll_type,
     struct na_sm_addr *na_sm_addr)
@@ -1198,16 +1346,6 @@ static na_return_t
 na_sm_send_addr_info(na_class_t *na_class, struct na_sm_addr *na_sm_addr)
 {
     struct msghdr msg = {0};
-    struct cmsghdr *cmsg;
-    /* Contains the file descriptors to pass */
-    int fds[2] = {na_sm_addr->local_notify, na_sm_addr->remote_notify};
-    union {
-        /* ancillary data buffer, wrapped in a union in order to ensure
-           it is suitably aligned */
-        char buf[CMSG_SPACE(sizeof(fds))];
-        struct cmsghdr align;
-    } u;
-    int *fdptr;
     ssize_t nsend;
     struct iovec iovec[2];
     na_return_t ret = NA_SUCCESS;
@@ -1219,6 +1357,75 @@ na_sm_send_addr_info(na_class_t *na_class, struct na_sm_addr *na_sm_addr)
     iovec[1].iov_len = sizeof(unsigned int);
     msg.msg_iov = iovec;
     msg.msg_iovlen = 2;
+
+    nsend = sendmsg(na_sm_addr->sock, &msg, 0);
+    if (nsend == -1) {
+        NA_LOG_ERROR("sendmsg() failed (%s)", strerror(errno));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_recv_addr_info(struct na_sm_addr *na_sm_addr, na_bool_t *received)
+{
+    struct msghdr msg = {0};
+    ssize_t nrecv;
+    struct iovec iovec[2];
+    na_return_t ret = NA_SUCCESS;
+
+    /* Receive remote PID / ID */
+    iovec[0].iov_base = &na_sm_addr->pid;
+    iovec[0].iov_len = sizeof(pid_t);
+    iovec[1].iov_base = &na_sm_addr->id;
+    iovec[1].iov_len = sizeof(unsigned int);
+    msg.msg_iov = iovec;
+    msg.msg_iovlen = 2;
+
+    nrecv = recvmsg(na_sm_addr->sock, &msg, 0);
+    if (nrecv == -1) {
+        if (errno == EAGAIN) {
+            *received = NA_FALSE;
+            goto done;
+        }
+        NA_LOG_ERROR("recvmsg() failed (%s)", strerror(errno));
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+    *received = NA_TRUE;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_send_conn_id(struct na_sm_addr *na_sm_addr)
+{
+    struct msghdr msg = {0};
+    struct cmsghdr *cmsg;
+    /* Contains the file descriptors to pass */
+    int fds[2] = {na_sm_addr->local_notify, na_sm_addr->remote_notify};
+    union {
+        /* ancillary data buffer, wrapped in a union in order to ensure
+           it is suitably aligned */
+        char buf[CMSG_SPACE(sizeof(fds))];
+        struct cmsghdr align;
+    } u;
+    int *fdptr;
+    struct iovec iovec[1];
+    ssize_t nsend;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Send local PID / ID */
+    iovec[0].iov_base = &na_sm_addr->conn_id;
+    iovec[0].iov_len = sizeof(unsigned int);
+    msg.msg_iov = iovec;
+    msg.msg_iovlen = 1;
 
     /* Send notify event descriptors as ancillary data */
     msg.msg_control = u.buf;
@@ -1234,7 +1441,7 @@ na_sm_send_addr_info(na_class_t *na_class, struct na_sm_addr *na_sm_addr)
 
     nsend = sendmsg(na_sm_addr->sock, &msg, 0);
     if (nsend == -1) {
-        NA_LOG_ERROR("sendmsg failed (%s)", strerror(errno));
+        NA_LOG_ERROR("sendmsg() failed (%s)", strerror(errno));
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -1245,7 +1452,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_recv_addr_info(struct na_sm_addr *na_sm_addr)
+na_sm_recv_conn_id(struct na_sm_addr *na_sm_addr, na_bool_t *received)
 {
     struct msghdr msg = {0};
     struct cmsghdr *cmsg;
@@ -1258,16 +1465,14 @@ na_sm_recv_addr_info(struct na_sm_addr *na_sm_addr)
         struct cmsghdr align;
     } u;
     ssize_t nrecv;
-    struct iovec iovec[2];
+    struct iovec iovec[1];
     na_return_t ret = NA_SUCCESS;
 
     /* Receive remote PID / ID */
-    iovec[0].iov_base = &na_sm_addr->pid;
-    iovec[0].iov_len = sizeof(pid_t);
-    iovec[1].iov_base = &na_sm_addr->id;
-    iovec[1].iov_len = sizeof(unsigned int);
+    iovec[0].iov_base = &na_sm_addr->conn_id;
+    iovec[0].iov_len = sizeof(unsigned int);
     msg.msg_iov = iovec;
-    msg.msg_iovlen = 2;
+    msg.msg_iovlen = 1;
 
     /* Recv notify event descriptor as ancillary data */
     msg.msg_control = u.buf;
@@ -1275,10 +1480,15 @@ na_sm_recv_addr_info(struct na_sm_addr *na_sm_addr)
 
     nrecv = recvmsg(na_sm_addr->sock, &msg, 0);
     if (nrecv == -1) {
+        if (errno == EAGAIN) {
+            *received = NA_FALSE;
+            goto done;
+        }
         NA_LOG_ERROR("recvmsg() failed (%s)", strerror(errno));
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+    *received = NA_TRUE;
 
     /* Retrieve ancillary data */
     cmsg = CMSG_FIRSTHDR(&msg);
@@ -1292,49 +1502,6 @@ na_sm_recv_addr_info(struct na_sm_addr *na_sm_addr)
     /* Invert descriptors so that local is remote and remote is local */
     na_sm_addr->local_notify = fds[1];
     na_sm_addr->remote_notify = fds[0];
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_sm_send_conn_id(struct na_sm_addr *na_sm_addr)
-{
-    ssize_t nsend;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Send local conn ID */
-    nsend = send(na_sm_addr->sock, &na_sm_addr->conn_id, sizeof(unsigned int), 0);
-    if (nsend == -1) {
-        NA_LOG_ERROR("send failed (%s)", strerror(errno));
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_sm_recv_conn_id(struct na_sm_addr *na_sm_addr, na_bool_t *received)
-{
-    ssize_t nrecv;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Receive remote conn ID */
-    nrecv = recv(na_sm_addr->sock, &na_sm_addr->conn_id, sizeof(unsigned int), 0);
-    if (nrecv == -1) {
-        if (errno == EAGAIN) {
-            *received = NA_FALSE;
-            goto done;
-        }
-        NA_LOG_ERROR("recv() failed (%s)", strerror(errno));
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-    *received = NA_TRUE;
 
 done:
     return ret;
@@ -1598,7 +1765,7 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
     struct na_sm_addr *na_sm_addr = NULL;
     struct na_sm_ring_buf *na_sm_ring_buf = NULL;
     char filename[NA_SM_MAX_FILENAME];
-    int conn_sock;
+    int conn_sock, local_notify, remote_notify;
     na_return_t ret = NA_SUCCESS;
 
     if (poll_addr != NA_SM_PRIVATE_DATA(na_class)->self_addr) {
@@ -1678,7 +1845,64 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
     na_sm_ring_buf_init(na_sm_ring_buf);
     na_sm_addr->na_sm_recv_ring_buf = na_sm_ring_buf;
 
-    /* Send connection ID */
+    /* Create local signal event */
+#ifdef HG_UTIL_HAS_SYSEVENTFD_H
+    local_notify = hg_event_create();
+    if (local_notify == HG_UTIL_FAIL) {
+        NA_LOG_ERROR("hg_event_create() failed");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+#else
+    /**
+     * If eventfd is not supported, we need to explicitly use named pipes in
+     * this case as kqueue file descriptors cannot be exchanged through
+     * ancillary data
+     */
+    NA_SM_GEN_FIFO_NAME(filename, NA_SM_RECV_NAME,
+        NA_SM_PRIVATE_DATA(na_class)->self_addr);
+    local_notify = na_sm_event_create(filename);
+    if (local_notify == -1) {
+        NA_LOG_ERROR("na_sm_event_create() failed");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+#endif
+    na_sm_addr->local_notify = local_notify;
+
+    /* Create remote signal event */
+#ifdef HG_UTIL_HAS_SYSEVENTFD_H
+    remote_notify = hg_event_create();
+    if (remote_notify == HG_UTIL_FAIL) {
+        NA_LOG_ERROR("hg_event_create() failed");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+#else
+    /**
+     * If eventfd is not supported, we need to explicitly use named pipes in
+     * this case as kqueue file descriptors cannot be exchanged through
+     * ancillary data
+     */
+    NA_SM_GEN_FIFO_NAME(filename, NA_SM_SEND_NAME,
+        NA_SM_PRIVATE_DATA(na_class)->self_addr);
+    remote_notify = na_sm_event_create(filename);
+    if (remote_notify == -1) {
+        NA_LOG_ERROR("na_sm_event_create() failed");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+#endif
+    na_sm_addr->remote_notify = remote_notify;
+
+    /* Add local notify to poll set */
+    ret = na_sm_poll_register(na_class, NA_SM_NOTIFY, na_sm_addr);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not add notify to poll set");
+        goto done;
+    }
+
+    /* Send connection ID / event IDs */
     ret = na_sm_send_conn_id(na_sm_addr);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not send connection ID");
@@ -1717,20 +1941,20 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
 
     switch (poll_addr->sock_progress) {
         case NA_SM_ADDR_INFO: {
-            /* Receive addr info */
-            ret = na_sm_recv_addr_info(poll_addr);
+            na_bool_t received = NA_FALSE;
+
+            /* Receive addr info (PID / ID) */
+            ret = na_sm_recv_addr_info(poll_addr, &received);
             if (ret != NA_SUCCESS) {
                 NA_LOG_ERROR("Could not recv addr info");
                 ret = NA_PROTOCOL_ERROR;
                 goto done;
             }
-
-            /* Add local notify to poll set */
-            ret = na_sm_poll_register(na_class, NA_SM_NOTIFY, poll_addr);
-            if (ret != NA_SUCCESS) {
-                NA_LOG_ERROR("Could not add notify to poll set");
+            if (!received) {
+                *progressed = NA_FALSE;
                 goto done;
             }
+
             poll_addr->sock_progress = NA_SM_SOCK_DONE;
 
             /* Progressed */
@@ -1743,7 +1967,7 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
             struct na_sm_op_id *na_sm_op_id;
             na_bool_t received = NA_FALSE;
 
-            /* Receive connection ID */
+            /* Receive connection ID / event IDs */
             ret = na_sm_recv_conn_id(poll_addr, &received);
             if (ret != NA_SUCCESS) {
                 NA_LOG_ERROR("Could not recv connection ID");
@@ -1777,6 +2001,13 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
                 goto done;
             }
             poll_addr->na_sm_recv_ring_buf = na_sm_ring_buf;
+
+            /* Add received local notify to poll set */
+            ret = na_sm_poll_register(na_class, NA_SM_NOTIFY, poll_addr);
+            if (ret != NA_SUCCESS) {
+                NA_LOG_ERROR("Could not add notify to poll set");
+                goto done;
+            }
 
             hg_thread_mutex_lock(
                 &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
@@ -1819,20 +2050,39 @@ na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr,
     na_bool_t notified = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
 
+    if (poll_addr == NA_SM_PRIVATE_DATA(na_class)->self_addr) {
+        /* Local notification */
+        if (hg_event_get(poll_addr->local_notify, (hg_util_bool_t *) &notified)
+            != HG_UTIL_SUCCESS) {
+            NA_LOG_ERROR("Could not get completion notification");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
+        if (!notified) {
+            *progressed = NA_FALSE;
+            goto done;
+        }
+        *progressed = NA_TRUE;
+        goto done;
+    }
+
+    /* Remote notification */
+#ifdef HG_UTIL_HAS_SYSEVENTFD_H
     if (hg_event_get(poll_addr->local_notify, (hg_util_bool_t *) &notified)
         != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not get completion notification");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
-    if (!notified) {
-        *progressed = NA_FALSE;
+#else
+    if (na_sm_event_get(poll_addr->local_notify, &notified) != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not get completion notification");
+        ret = NA_PROTOCOL_ERROR;
         goto done;
     }
-
-    if (poll_addr == NA_SM_PRIVATE_DATA(na_class)->self_addr) {
-        /* Local notification */
-        *progressed = NA_TRUE;
+#endif
+    if (!notified) {
+        *progressed = NA_FALSE;
         goto done;
     }
 
@@ -2300,7 +2550,7 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
     struct na_sm_copy_buf *na_sm_copy_buf = NULL;
     char filename[NA_SM_MAX_FILENAME];
     char pathname[NA_SM_MAX_FILENAME];
-    int conn_sock, local_notify, remote_notify;
+    int conn_sock;
     char *name_string = NULL, *short_name = NULL;
     na_return_t ret = NA_SUCCESS;
 
@@ -2381,38 +2631,7 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
         goto done;
     }
 
-    /* TODO move to server */
-    /* Create local signal event */
-#ifdef HG_UTIL_HAS_SYSEVENTFD_H
-    local_notify = hg_event_create();
-    if (local_notify == HG_UTIL_FAIL) {
-        NA_LOG_ERROR("hg_event_create() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-#else
-    const char *path =
-    local_notify = mkfifo("", S_IRUSR | S_IWUSR);
-#endif
-    na_sm_addr->local_notify = local_notify;
-
-    /* Create remote signal event */
-    remote_notify = hg_event_create();
-    if (remote_notify == HG_UTIL_FAIL) {
-        NA_LOG_ERROR("hg_event_create() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-    na_sm_addr->remote_notify = remote_notify;
-
-    /* Add local notify to poll set */
-    ret = na_sm_poll_register(na_class, NA_SM_NOTIFY, na_sm_addr);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add notify to poll set");
-        goto done;
-    }
-
-    /* Send addr info */
+    /* Send addr info (PID / ID) */
     ret = na_sm_send_addr_info(na_class, na_sm_addr);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not send addr info");
@@ -2479,33 +2698,38 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
         goto done;
     }
 
-    /* Deregister file descriptors from poll set */
+    /* Deregister event file descriptors from poll set */
     ret = na_sm_poll_deregister(na_class, NA_SM_NOTIFY, na_sm_addr);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not delete notify from poll set");
         goto done;
     }
 
-    /* Close file descriptors */
+    /* Destroy local event */
+#ifdef HG_UTIL_HAS_SYSEVENTFD_H
     if (hg_event_destroy(na_sm_addr->local_notify) == HG_UTIL_FAIL) {
         NA_LOG_ERROR("hg_event_destroy() failed");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+#endif
 
-    if (!na_sm_addr->self) { /* Created by connect or accept */
+    if (!na_sm_addr->self) { /* Created by lookup/connect or accept */
+#ifndef HG_UTIL_HAS_SYSEVENTFD_H
+        char na_sm_local_event_name[NA_SM_MAX_FILENAME],
+            na_sm_remote_event_name[NA_SM_MAX_FILENAME];
+        const char *local_event_name = NULL, *remote_event_name = NULL;
+#endif
+
+        /* Deregister sock file descriptor */
         ret = na_sm_poll_deregister(na_class, NA_SM_SOCK, na_sm_addr);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not delete sock from poll set");
             goto done;
         }
-        if (hg_event_destroy(na_sm_addr->remote_notify) == HG_UTIL_FAIL) {
-            NA_LOG_ERROR("hg_event_destroy() failed");
-            ret = NA_PROTOCOL_ERROR;
-            goto done;
-        }
-        /* Close ring buf */
-        if (na_sm_addr->accepted) {
+
+        if (na_sm_addr->accepted) { /* Create by accept */
+            /* Get file names from ring bufs / events to delete files */
             sprintf(na_sm_send_ring_buf_name, "%s-%d-%d-%d-%s",
                 NA_SM_SHM_PREFIX, NA_SM_PRIVATE_DATA(na_class)->self_addr->pid,
                 NA_SM_PRIVATE_DATA(na_class)->self_addr->id,
@@ -2516,28 +2740,76 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
                 na_sm_addr->conn_id, NA_SM_RECV_NAME);
             send_ring_buf_name = na_sm_send_ring_buf_name;
             recv_ring_buf_name = na_sm_recv_ring_buf_name;
+
+#ifndef HG_UTIL_HAS_SYSEVENTFD_H
+            sprintf(na_sm_local_event_name, "%s/%s/%d/%u/fifo-%u-%s",
+                NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX,
+                NA_SM_PRIVATE_DATA(na_class)->self_addr->pid,
+                NA_SM_PRIVATE_DATA(na_class)->self_addr->id,
+                na_sm_addr->conn_id, NA_SM_RECV_NAME);
+            sprintf(na_sm_remote_event_name, "%s/%s/%d/%u/fifo-%u-%s",
+                NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX,
+                NA_SM_PRIVATE_DATA(na_class)->self_addr->pid,
+                NA_SM_PRIVATE_DATA(na_class)->self_addr->id,
+                na_sm_addr->conn_id, NA_SM_SEND_NAME);
+            local_event_name = na_sm_local_event_name;
+            remote_event_name = na_sm_remote_event_name;
+#endif
         }
-    } else if (na_sm_addr->na_sm_copy_buf) { /* Self addr and listen */
-        ret = na_sm_poll_deregister(na_class, NA_SM_ACCEPT, na_sm_addr);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not delete listen from poll set");
+
+        /* Destroy events */
+#ifdef HG_UTIL_HAS_SYSEVENTFD_H
+        if (hg_event_destroy(na_sm_addr->remote_notify) == HG_UTIL_FAIL) {
+            NA_LOG_ERROR("hg_event_destroy() failed");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
+#else
+        if (na_sm_event_destroy(local_event_name, na_sm_addr->local_notify)
+            != NA_SUCCESS) {
+            NA_LOG_ERROR("na_sm_event_destroy() failed");
+            ret = NA_PROTOCOL_ERROR;
             goto done;
         }
 
-        NA_SM_GEN_SHM_NAME(na_sm_copy_buf_name, na_sm_addr);
-        copy_buf_name = na_sm_copy_buf_name;
-        NA_SM_GEN_SOCK_PATH(na_sock_name, na_sm_addr);
-        pathname = na_sock_name;
+        if (na_sm_event_destroy(remote_event_name, na_sm_addr->remote_notify)
+            != NA_SUCCESS) {
+            NA_LOG_ERROR("na_sm_event_destroy() failed");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
+#endif
+    } else {
+#ifndef HG_UTIL_HAS_SYSEVENTFD_H
+        /* Destroy local event */
+        if (hg_event_destroy(na_sm_addr->local_notify) == HG_UTIL_FAIL) {
+            NA_LOG_ERROR("hg_event_destroy() failed");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
+#endif
+        if (na_sm_addr->na_sm_copy_buf) { /* Self addr and listen */
+            ret = na_sm_poll_deregister(na_class, NA_SM_ACCEPT, na_sm_addr);
+            if (ret != NA_SUCCESS) {
+                NA_LOG_ERROR("Could not delete listen from poll set");
+                goto done;
+            }
+
+            NA_SM_GEN_SHM_NAME(na_sm_copy_buf_name, na_sm_addr);
+            copy_buf_name = na_sm_copy_buf_name;
+            NA_SM_GEN_SOCK_PATH(na_sock_name, na_sm_addr);
+            pathname = na_sock_name;
+        }
     }
 
-    /* Close sock */
+    /* Close sock (delete also tmp dir if pathname is set) */
     ret = na_sm_close_sock(na_sm_addr->sock, pathname);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not close sock");
         goto done;
     }
 
-    /* Close ring buf */
+    /* Close ring buf (send) */
     ret = na_sm_close_shared_buf(send_ring_buf_name,
         na_sm_addr->na_sm_send_ring_buf, sizeof(struct na_sm_ring_buf));
     if (ret != NA_SUCCESS) {
@@ -2545,7 +2817,7 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
         goto done;
     }
 
-    /* Close ring buf */
+    /* Close ring buf (recv) */
     ret = na_sm_close_shared_buf(recv_ring_buf_name,
         na_sm_addr->na_sm_recv_ring_buf, sizeof(struct na_sm_ring_buf));
     if (ret != NA_SUCCESS) {
@@ -2695,11 +2967,19 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     /* Notify remote */
+#ifdef HG_UTIL_HAS_SYSEVENTFD_H
     if (hg_event_set(na_sm_addr->remote_notify) != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not send completion notification");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+#else
+    if (na_sm_event_set(na_sm_addr->remote_notify) != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not send completion notification");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+#endif
 
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
@@ -2867,11 +3147,19 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     }
 
     /* Notify remote */
+#ifdef HG_UTIL_HAS_SYSEVENTFD_H
     if (hg_event_set(na_sm_addr->remote_notify) != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not send completion notification");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+#else
+    if (na_sm_event_set(na_sm_addr->remote_notify) != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not send completion notification");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+#endif
 
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
