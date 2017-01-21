@@ -1913,7 +1913,6 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
     ret = na_sm_send_conn_id(na_sm_addr);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not send connection ID");
-        ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -3569,18 +3568,18 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 #endif
 
+    /* Immediate completion */
+    ret = na_sm_complete(na_sm_op_id);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not complete operation");
+        goto done;
+    }
+
     /* Notify local completion */
     if (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
         != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not signal local completion");
         ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    /* Immediate completion */
-    ret = na_sm_complete(na_sm_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not complete operation");
         goto done;
     }
 
@@ -3713,18 +3712,18 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         goto done;
     }
 
+    /* Immediate completion */
+    ret = na_sm_complete(na_sm_op_id);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not complete operation");
+        goto done;
+    }
+
     /* Notify local completion */
     if (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
         != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("Could not signal local completion");
         ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    /* Immediate completion */
-    ret = na_sm_complete(na_sm_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not complete operation");
         goto done;
     }
 
