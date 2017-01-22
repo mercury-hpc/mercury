@@ -1655,7 +1655,7 @@ na_sm_copy_and_free_buf(na_class_t *na_class,
     unsigned int idx_reserved)
 {
     hg_util_int64_t bits = 1LL << idx_reserved;
-#ifndef HG_UTIL_HAS_STDATOMIC_H
+#if defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     hg_util_int64_t available;
 #endif
 
@@ -1663,7 +1663,7 @@ na_sm_copy_and_free_buf(na_class_t *na_class,
 
     memcpy(buf, na_sm_copy_buf->buf[idx_reserved], buf_size);
 
-#ifdef HG_UTIL_HAS_STDATOMIC_H
+#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     hg_atomic_or64(&na_sm_copy_buf->available.val, bits);
 #else
     do {
