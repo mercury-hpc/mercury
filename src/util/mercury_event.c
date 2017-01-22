@@ -133,7 +133,7 @@ hg_event_get(int fd, hg_util_bool_t *signaled)
 #if defined(_WIN32)
 
 #elif defined(HG_UTIL_HAS_SYSEVENTFD_H)
-    uint64_t count = 1;
+    uint64_t count = 0;
     ssize_t s;
 
     s = read(fd, &count, sizeof(uint64_t));
