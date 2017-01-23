@@ -61,6 +61,7 @@ before_script:
     - export LD_LIBRARY_PATH=$HOME/install/lib:$HOME/install/lib64:$LD_LIBRARY_PATH
     - $CC --version
     - ctest --version
+    - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then cat /proc/sys/kernel/yama/ptrace_scope; fi
 
 script:
     - ctest -VV --output-on-failure -S ./Testing/script/travis_script.cmake

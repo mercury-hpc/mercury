@@ -48,7 +48,11 @@ set(CTEST_DASHBOARD_ROOT "$ENV{TRAVIS_BUILD_DIR}/..")
 set(CTEST_SOURCE_DIRECTORY "$ENV{TRAVIS_BUILD_DIR}")
 # Give a site name
 set(CTEST_SITE "worker.travis-ci.org")
-set(CTEST_TEST_TIMEOUT 180) # 3 minute timeout
+if(APPLE)
+  set(CTEST_TEST_TIMEOUT 180) # 180s timeout
+else()
+  set(CTEST_TEST_TIMEOUT 60) # 60s timeout
+endif()
 
 # Optional coverage options
 set(MERCURY_DO_COVERAGE $ENV{MERCURY_DO_COVERAGE})
@@ -114,10 +118,12 @@ if(APPLE)
   set(SOEXT dylib)
   set(PROC_NAME_OPT -c)
   set(USE_CCI OFF)
+  set(USE_SM OFF)
 else()
   set(SOEXT so)
   set(PROC_NAME_OPT -r)
   set(USE_CCI ON)
+  set(USE_SM ON)
 endif()
 
 # Initial cache used to build mercury, options can be modified here
@@ -135,6 +141,7 @@ COVERAGE_COMMAND:FILEPATH=${CTEST_COVERAGE_COMMAND}
 MERCURY_ENABLE_COVERAGE:BOOL=${dashboard_do_coverage}
 MERCURY_ENABLE_PARALLEL_TESTING:BOOL=ON
 MERCURY_USE_BOOST_PP:BOOL=OFF
+MERCURY_USE_SELF_FORWARD:BOOL=ON
 MERCURY_USE_XDR:BOOL=OFF
 NA_USE_BMI:BOOL=ON
 BMI_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
@@ -147,6 +154,7 @@ NA_USE_CCI:BOOL=${USE_CCI}
 CCI_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
 CCI_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libcci.${SOEXT}
 NA_CCI_TESTING_PROTOCOL:STRING=tcp
+NA_USE_SM:BOOL=${USE_SM}
 MPIEXEC_MAX_NUMPROCS:STRING=4
 
 MERCURY_TEST_INIT_COMMAND:STRING=killall -9 ${PROC_NAME_OPT} hg_test_client;killall -9 ${PROC_NAME_OPT} hg_test_server;

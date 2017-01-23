@@ -1,3 +1,128 @@
+From 747bf45698ad294d1736795f84df303ecfe1a4d5 Mon Sep 17 00:00:00 2001
+From: Scott Atchley <atchleyes@ornl.gov>
+Date: Wed, 29 Jun 2016 15:01:55 -0400
+Subject: [PATCH] sm: set the device's pid when not using config
+
+Fix suggested by John Jenkins <jenkins@mcs.anl.gov>
+
+sm: fix leaks when closing a conn
+
+Ignore *dSYM, *patch, *txt
+
+tests: add connect_test
+
+This test will stress connection setup. Parameters include number of
+endpoints, number of threads per endpoint, number of open connections
+per endpoint. It will run until N connections are processed or for T
+seconds.
+
+This code brings up the test state, the control endpoint, opens a
+connection between the control endpoints, and creates the threads (which
+promptly exit).
+
+Need to implement the test connections.
+
+tcp: only read from the pipe once
+
+when reaping an event
+
+tcp: convert to array of pollfds per endpoint
+
+Convert TCP connection pfd pointer which points to a pollfd in the above
+array. Maintain a bitmap of available pollfd slots in the array. Have
+each connection cache its index in the array.
+
+tcp: implement blocking mode without polling
+
+tcp: #define _GNU_SOURCE
+
+for ffsll() on Linux
+
+tcp: don't leak tep->fds
+
+Reported by Jeff Oliver <jeffrey.v.olivier@intel.com>
+
+tcp: free tep->fd_bits as well
+
+Also, if realloc() succeeds and uses a new buffer, free the old buffer.
+
+tcp: no need to free original buffer
+
+if realloc() succeeds.
+
+sock: reduce minimum MSS to 1000 bytes less header
+
+sm: do not queue blocking send
+
+Also, put the tx if silent or blocking.
+Also, if CMA fails, warn once.
+
+verbs: improve connection handling
+
+sm: fix race condition during init
+
+When multiple processes are starting up on the same node, they race to
+create the device's path. Handle the errors properly.
+
+Reported by John Jenkins <jenkins@mcs.anl.gov>
+
+tcp: don't leak the RMA completion MSG
+
+Reported by Preethika Kasu <preethika.kasu@gmail.com>
+
+verbs: return correct error if ibv_post_send fails
+
+sm: do not dereference conn before NULL check
+
+in sm_free_conn(). We already checked for NULL but we dereferenced it
+before checking. Check before dereferencing.
+
+Reported by Ross Miller <rgmiller@ornl.gov>
+
+sm: print remote length
+
+If the RMA length + remote offset exceeds the remote registration's
+length, print the remote registration length, not the local length.
+
+Reported by Ross Miller <rgmiller@ornl.gov>
+
+tcp: close socket and do not open two
+
+When connecting, only open one socket. We were opening two and we leaked
+the first one.
+
+Close the socket before calling release_pollfd() because it sets the fd
+to -1.
+
+Bug reported by Wenzhao Zhang <wzhang27@ncsu.edu>
+
+tcp: fix race between during accept
+
+Move the connection lock to before sending the connection reply to
+avoid the race with the client's conn ack.
+
+Avoid namespace conflicts for initialized
+
+Add cci_ prefix.
+
+Reported by and suggested fix by Wenzhao Zhang <wzhang27@ncsu.edu>
+
+tcp: don't leak rx during accept
+---
+ .gitignore                            |   4 +
+ include/cci_lib_types.h               |   4 +-
+ src/api/finalize.c                    |   8 +-
+ src/api/init.c                        |  10 +-
+ src/plugins/ctp/sm/ctp_sm_api.c       |  88 +++-
+ src/plugins/ctp/sock/ctp_sock.h       |   2 +-
+ src/plugins/ctp/tcp/ctp_tcp.h         |  24 +-
+ src/plugins/ctp/tcp/ctp_tcp_api.c     | 252 ++++++++---
+ src/plugins/ctp/verbs/ctp_verbs.h     |   4 +-
+ src/plugins/ctp/verbs/ctp_verbs_api.c | 150 +++++--
+ src/tests/connect_test.c              | 780 ++++++++++++++++++++++++++++++++++
+ 11 files changed, 1181 insertions(+), 145 deletions(-)
+ create mode 100644 src/tests/connect_test.c
+
 diff --git a/include/cci_lib_types.h b/include/cci_lib_types.h
 index 493d27e..501f96d 100644
 --- a/include/cci_lib_types.h
@@ -343,7 +468,7 @@ index 604185c..e552123 100644
  	/*! Mutex */
  	pthread_mutex_t lock;
 diff --git a/src/plugins/ctp/tcp/ctp_tcp_api.c b/src/plugins/ctp/tcp/ctp_tcp_api.c
-index ecba822..a60ff32 100644
+index ecba822..3e6c679 100644
 --- a/src/plugins/ctp/tcp/ctp_tcp_api.c
 +++ b/src/plugins/ctp/tcp/ctp_tcp_api.c
 @@ -10,6 +10,7 @@
@@ -477,7 +602,7 @@ index ecba822..a60ff32 100644
  		}
  
  		pthread_mutex_lock(&ep->lock);
-@@ -1131,12 +1158,12 @@ static int ctp_tcp_accept(cci_event_t *event, const void *context)
+@@ -1131,15 +1158,17 @@ static int ctp_tcp_accept(cci_event_t *event, const void *context)
  
  	tx->len = sizeof(*hdr) + sizeof(*hs);
  
@@ -492,7 +617,12 @@ index ecba822..a60ff32 100644
  	TAILQ_INSERT_HEAD(&tconn->pending, &tx->evt, entry);
  	pthread_mutex_unlock(&tconn->lock);
  
-@@ -1188,7 +1215,7 @@ static int ctp_tcp_reject(cci_event_t *event)
++	tcp_put_rx(rx);
++
+ 	CCI_EXIT;
+ 
+ 	return CCI_SUCCESS;
+@@ -1188,7 +1217,7 @@ static int ctp_tcp_reject(cci_event_t *event)
  	memset(&reject, 0, sizeof(reject));
  	tcp_pack_conn_reply(&reject, CCI_ECONNREFUSED, b);
  
@@ -501,7 +631,7 @@ index ecba822..a60ff32 100644
  			NULL, 0, &offset);
  
  	memset(name, 0, sizeof(name));
-@@ -1253,6 +1280,89 @@ static int tcp_getaddrinfo(const char *uri, in_addr_t * in, uint16_t * port)
+@@ -1253,6 +1282,89 @@ static int tcp_getaddrinfo(const char *uri, in_addr_t * in, uint16_t * port)
  	return CCI_SUCCESS;
  }
  
@@ -591,7 +721,7 @@ index ecba822..a60ff32 100644
  static inline int
  tcp_new_conn(cci__ep_t *ep, struct sockaddr_in sin, int fd, cci__conn_t **connp)
  {
-@@ -1282,7 +1392,10 @@ tcp_new_conn(cci__ep_t *ep, struct sockaddr_in sin, int fd, cci__conn_t **connp)
+@@ -1282,7 +1394,10 @@ tcp_new_conn(cci__ep_t *ep, struct sockaddr_in sin, int fd, cci__conn_t **connp)
  	tconn = conn->priv;
  	tconn->conn = conn;
  	tconn->refcnt = 1; /* one for the caller */
@@ -603,7 +733,7 @@ index ecba822..a60ff32 100644
  	if (fd != -1)
  		tconn->status = TCP_CONN_ACTIVE1;
  	else
-@@ -1295,13 +1408,14 @@ tcp_new_conn(cci__ep_t *ep, struct sockaddr_in sin, int fd, cci__conn_t **connp)
+@@ -1295,13 +1410,14 @@ tcp_new_conn(cci__ep_t *ep, struct sockaddr_in sin, int fd, cci__conn_t **connp)
  
  	ret = pthread_mutex_init(&tconn->lock, &attr);
  	if (ret)
@@ -620,7 +750,7 @@ index ecba822..a60ff32 100644
  	free(tconn);
  out_with_conn:
  	free(conn);
-@@ -1316,11 +1430,11 @@ tcp_monitor_fd(cci__ep_t *ep, cci__conn_t *conn, int events)
+@@ -1316,11 +1432,11 @@ tcp_monitor_fd(cci__ep_t *ep, cci__conn_t *conn, int events)
  	tcp_dev_t *tdev = dev->priv;
  	tcp_conn_t *tconn = conn->priv;
  
@@ -634,7 +764,7 @@ index ecba822..a60ff32 100644
  	if (ret)
  		goto out;
  
-@@ -1331,11 +1445,11 @@ tcp_monitor_fd(cci__ep_t *ep, cci__conn_t *conn, int events)
+@@ -1331,11 +1447,11 @@ tcp_monitor_fd(cci__ep_t *ep, cci__conn_t *conn, int events)
  		debug(CCI_DB_CONN, "%s: setting socket buffer sizes to %u",
  			__func__, bufsize);
  
@@ -648,7 +778,7 @@ index ecba822..a60ff32 100644
  		if (ret) debug(CCI_DB_EP, "%s: unable to set SO_RCVBUF (%s)",
  				__func__, strerror(errno));
  
-@@ -1343,7 +1457,7 @@ tcp_monitor_fd(cci__ep_t *ep, cci__conn_t *conn, int events)
+@@ -1343,7 +1459,7 @@ tcp_monitor_fd(cci__ep_t *ep, cci__conn_t *conn, int events)
  	}
  
  	pthread_mutex_lock(&ep->lock);
@@ -657,7 +787,7 @@ index ecba822..a60ff32 100644
  	pthread_mutex_unlock(&ep->lock);
  
  out:
-@@ -1476,15 +1590,6 @@ static int ctp_tcp_connect(cci_endpoint_t * endpoint, const char *server_uri,
+@@ -1476,15 +1592,6 @@ static int ctp_tcp_connect(cci_endpoint_t * endpoint, const char *server_uri,
  	tx->len += data_len;
  	assert(tx->len <= ep->buffer_len);
  
@@ -673,7 +803,7 @@ index ecba822..a60ff32 100644
  	/* we will have to check for POLLOUT to determine when
  	 * the connect completed
  	 */
-@@ -1503,7 +1608,7 @@ static int ctp_tcp_connect(cci_endpoint_t * endpoint, const char *server_uri,
+@@ -1503,7 +1610,7 @@ static int ctp_tcp_connect(cci_endpoint_t * endpoint, const char *server_uri,
  
  again:
  	/* ok, initiate connect()... */
@@ -682,7 +812,7 @@ index ecba822..a60ff32 100644
  	if (ret) {
  		ret = errno;
  		if (ret == EINTR) {
-@@ -1520,7 +1625,7 @@ again:
+@@ -1520,7 +1627,7 @@ again:
  	} else {
  		/* TODO connect completed, send CONN_REQUEST */
  		debug(CCI_DB_CONN, "%s: connect() completed", __func__);
@@ -691,7 +821,7 @@ index ecba822..a60ff32 100644
  	}
  
  	conn_decref(ep, conn); /* drop our reference */
-@@ -1537,10 +1642,6 @@ out:
+@@ -1537,10 +1644,6 @@ out:
  		pthread_mutex_unlock(&ep->lock);
  
  		free((char *)conn->uri);
@@ -702,7 +832,7 @@ index ecba822..a60ff32 100644
  		free(conn->priv);
  		free(conn);
  	}
-@@ -1708,12 +1809,15 @@ static int ctp_tcp_get_event(cci_endpoint_t * endpoint, cci_event_t ** const eve
+@@ -1708,12 +1811,15 @@ static int ctp_tcp_get_event(cci_endpoint_t * endpoint, cci_event_t ** const eve
  	pthread_mutex_unlock(&ep->lock);
  
  	/* drain fd so that they can block again */
@@ -719,7 +849,7 @@ index ecba822..a60ff32 100644
  	}
  
  	*event = &ev->event;
-@@ -1839,7 +1943,7 @@ tcp_progress_conn_sends(cci__conn_t *conn)
+@@ -1839,7 +1945,7 @@ tcp_progress_conn_sends(cci__conn_t *conn)
  			"offset %"PRIuPTR" tx %u", __func__, (void*)tx->buffer,
  			tx->len, (void*)tx->rma_ptr, tx->rma_len, tx->offset, tx->id);
  
@@ -728,7 +858,7 @@ index ecba822..a60ff32 100644
  				tx->rma_ptr, tx->rma_len, &tx->offset);
  		if (ret) {
  			if (ret == EAGAIN || ret == EINTR) {
-@@ -1910,7 +2014,7 @@ tcp_queue_tx(tcp_ep_t *tep, tcp_conn_t *tconn, cci__evt_t *evt)
+@@ -1910,7 +2016,7 @@ tcp_queue_tx(tcp_ep_t *tep, tcp_conn_t *tconn, cci__evt_t *evt)
  {
  	pthread_mutex_lock(&tconn->lock);
  	TAILQ_INSERT_TAIL(&tconn->queued, evt, entry);
@@ -737,7 +867,7 @@ index ecba822..a60ff32 100644
  	pthread_mutex_unlock(&tconn->lock);
  }
  
-@@ -2028,7 +2132,7 @@ static int tcp_send_common(cci_connection_t * connection,
+@@ -2028,7 +2134,7 @@ static int tcp_send_common(cci_connection_t * connection,
  	/* if unreliable, try to send */
  	if (!is_reliable) {
      again:
@@ -746,7 +876,7 @@ index ecba822..a60ff32 100644
  				tx->rma_len, &tx->offset);
  		if (ret == CCI_SUCCESS) {
  			if (tx->offset < tx->len)
-@@ -2404,7 +2508,7 @@ static int ctp_tcp_rma(cci_connection_t * connection,
+@@ -2404,7 +2510,7 @@ static int ctp_tcp_rma(cci_connection_t * connection,
  	for (i = 0; i < cnt; i++)
  		TAILQ_INSERT_TAIL(&tconn->queued, &(txs[i])->evt, entry);
  	TAILQ_INSERT_TAIL(&tconn->rmas, rma_op, rmas);
@@ -755,7 +885,7 @@ index ecba822..a60ff32 100644
  	pthread_mutex_unlock(&tconn->lock);
  
  	TAILQ_INSERT_TAIL(&tep->rma_ops, rma_op, entry);
-@@ -2449,14 +2553,14 @@ tcp_handle_listen_socket(cci__ep_t *ep, cci__conn_t *listen_conn)
+@@ -2449,14 +2555,14 @@ tcp_handle_listen_socket(cci__ep_t *ep, cci__conn_t *listen_conn)
  
  	tconn = conn->priv;
  
@@ -772,7 +902,7 @@ index ecba822..a60ff32 100644
  
  	ret = tcp_monitor_fd(ep, conn, POLLIN);
  	if (ret)
-@@ -2530,9 +2634,11 @@ tcp_handle_conn_request(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx, uint32_t
+@@ -2530,9 +2636,11 @@ tcp_handle_conn_request(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx, uint32_t
  	uint32_t rx_cnt, mss, ka, ignore;
  	tcp_ep_t *tep = ep->priv;
  
@@ -785,7 +915,7 @@ index ecba822..a60ff32 100644
  		goto out;
  	}
  
-@@ -2605,9 +2711,11 @@ tcp_handle_conn_reply(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
+@@ -2605,9 +2713,11 @@ tcp_handle_conn_reply(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
  		rx->evt.event.connect.connection = NULL;
  
  	if (accepted) {
@@ -798,7 +928,7 @@ index ecba822..a60ff32 100644
  			tcp_conn_set_closing(ep, conn);
  			rx->evt.event.connect.status = CCI_ERROR;
  			rx->evt.event.connect.connection = NULL;
-@@ -2715,7 +2823,7 @@ tcp_handle_send(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
+@@ -2715,7 +2825,7 @@ tcp_handle_send(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
  	debug(CCI_DB_MSG, "%s: recv'd MSG from conn %p with len %u",
  		__func__, (void*)conn, len);
  
@@ -807,7 +937,7 @@ index ecba822..a60ff32 100644
  	if (ret) {
  		/* TODO handle error */
  		goto out;
-@@ -2777,7 +2885,7 @@ tcp_handle_rma_write(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
+@@ -2777,7 +2887,7 @@ tcp_handle_rma_write(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
  	debug(CCI_DB_MSG, "%s: recv'ing RMA_WRITE on conn %p with len %u",
  		__func__, (void*)conn, len);
  
@@ -816,7 +946,7 @@ index ecba822..a60ff32 100644
  	if (ret) {
  		/* TODO handle error */
  		goto out;
-@@ -2816,7 +2924,7 @@ tcp_handle_rma_write(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
+@@ -2816,7 +2926,7 @@ tcp_handle_rma_write(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
  		/* valid remote handle, copy the data */
  		debug(CCI_DB_INFO, "%s: recv'ing data into target buffer", __func__);
  		ptr = (void*)((uintptr_t)remote->start + (uintptr_t) remote_offset);
@@ -825,7 +955,7 @@ index ecba822..a60ff32 100644
  		debug(CCI_DB_MSG, "%s: recv'd data into target buffer", __func__);
  		if (ret)
  			debug(CCI_DB_MSG, "%s: recv'ing RMA WRITE payload failed with %s",
-@@ -2832,7 +2940,7 @@ tcp_handle_rma_write(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
+@@ -2832,7 +2942,7 @@ tcp_handle_rma_write(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
  			if (l > (int) (len - offset))
  				l = len - offset;
  
@@ -834,7 +964,7 @@ index ecba822..a60ff32 100644
  			offset += l;
  		} while (offset < len);
  	}
-@@ -2869,7 +2977,7 @@ tcp_handle_rma_read_request(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
+@@ -2869,7 +2979,7 @@ tcp_handle_rma_read_request(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
  	debug(CCI_DB_MSG, "%s: recv'ing RMA_READ_REQUEST on conn %p with len %u",
  		__func__, (void*)conn, len);
  
@@ -843,7 +973,7 @@ index ecba822..a60ff32 100644
  	if (ret) {
  		/* TODO handle error */
  		goto out;
-@@ -3016,7 +3124,7 @@ tcp_progress_rma(cci__ep_t *ep, cci__conn_t *conn,
+@@ -3016,7 +3126,7 @@ tcp_progress_rma(cci__ep_t *ep, cci__conn_t *conn,
  						1,
  						rma_op->context,
  						rma_op->flags,
@@ -852,7 +982,7 @@ index ecba822..a60ff32 100644
  			if (ret) {
  				tx->evt.event.send.status = ret;
  				pthread_mutex_lock(&ep->lock);
-@@ -3103,7 +3211,7 @@ tcp_handle_rma_read_reply(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
+@@ -3103,7 +3213,7 @@ tcp_handle_rma_read_reply(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
  	debug(CCI_DB_MSG, "%s: recv'ing RMA_READ_REPLY on conn %p with len %u",
  		__func__, (void*)conn, len);
  
@@ -861,7 +991,7 @@ index ecba822..a60ff32 100644
  	if (ret) {
  		/* TODO handle error */
  		debug(CCI_DB_MSG, "%s: recv_msg() returned %s",
-@@ -3143,7 +3251,7 @@ tcp_handle_rma_read_reply(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
+@@ -3143,7 +3253,7 @@ tcp_handle_rma_read_reply(cci__ep_t *ep, cci__conn_t *conn, tcp_rx_t *rx,
  	/* valid local handle, copy the data */
  	debug(CCI_DB_INFO, "%s: recv'ing data into target buffer", __func__);
  	ptr = (void*)((uintptr_t)local->start + (uintptr_t) local_offset);
@@ -870,7 +1000,7 @@ index ecba822..a60ff32 100644
  	debug(CCI_DB_MSG, "%s: recv'd data into target buffer", __func__);
  	if (ret)
  		debug(CCI_DB_MSG, "%s: recv'ing RMA READ payload failed with %s",
-@@ -3240,7 +3348,7 @@ tcp_handle_recv(cci__ep_t *ep, cci__conn_t *conn)
+@@ -3240,7 +3350,7 @@ tcp_handle_recv(cci__ep_t *ep, cci__conn_t *conn)
  	rx->evt.conn = conn;
  	hdr = rx->buffer;
  
@@ -879,7 +1009,7 @@ index ecba822..a60ff32 100644
  	if (ret) {
  		/* TODO handle error */
  		debug(CCI_DB_MSG, "%s: tcp_recv_msg() returned %d (rx=%p hdr=%p)",
-@@ -3367,10 +3475,6 @@ delete_conn_locked(cci__conn_t *conn)
+@@ -3367,10 +3477,6 @@ delete_conn_locked(cci__conn_t *conn)
  
  	free((char *)conn->uri);
  
@@ -890,7 +1020,7 @@ index ecba822..a60ff32 100644
  	free(tconn);
  	free(conn);
  	return;
-@@ -3496,11 +3600,11 @@ tcp_poll_events(cci__ep_t *ep)
+@@ -3496,11 +3602,11 @@ tcp_poll_events(cci__ep_t *ep)
  	/* Note: we have a ref on this conn */
  
  	if (!tconn->is_listener && tconn->status > TCP_CONN_INIT)
@@ -904,7 +1034,7 @@ index ecba822..a60ff32 100644
  	if (ret < 1) {
  		if (ret == -1) {
  			ret = errno;
-@@ -3512,7 +3616,7 @@ tcp_poll_events(cci__ep_t *ep)
+@@ -3512,7 +3618,7 @@ tcp_poll_events(cci__ep_t *ep)
  		goto out;
  	}
  
@@ -913,7 +1043,7 @@ index ecba822..a60ff32 100644
  
  	events(revents, str, POLL_EVENTS_LEN);
  	debug(CCI_DB_EP, "%s: poll() on conn %p found events %s", __func__,
-@@ -3591,11 +3695,11 @@ tcp_poll_events(cci__ep_t *ep)
+@@ -3591,11 +3697,11 @@ tcp_poll_events(cci__ep_t *ep)
  
  		if (tconn->status == TCP_CONN_ACTIVE1) {
      again:
@@ -927,7 +1057,7 @@ index ecba822..a60ff32 100644
  				if (errno == EBADF) {
  					/* TODO close connection */
  					assert(0);
-@@ -3611,7 +3715,7 @@ tcp_poll_events(cci__ep_t *ep)
+@@ -3611,7 +3717,7 @@ tcp_poll_events(cci__ep_t *ep)
  					__func__, (void*)conn);
  				pthread_mutex_lock(&ep->lock);
  				tconn->status = TCP_CONN_ACTIVE2;
@@ -936,7 +1066,7 @@ index ecba822..a60ff32 100644
  				pthread_mutex_unlock(&ep->lock);
  			} else {
  				/* TODO close connection */
-@@ -3636,11 +3740,21 @@ out:
+@@ -3636,11 +3742,21 @@ out:
  static void *tcp_progress_thread(void *arg)
  {
  	cci__ep_t *ep = (cci__ep_t *) arg;
@@ -1991,3 +2121,6 @@ index 0000000..47ac556
 +
 +	return 0;
 +}
+-- 
+2.9.3
+
