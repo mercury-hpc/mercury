@@ -73,6 +73,9 @@
 #define NA_SM_MIN(a, b) \
     (a < b) ? a : b
 
+/* Struct msghdr initializer */
+#define NA_SM_MSGHDR_INITIALIZER {NULL, 0, NULL, 0, NULL, 0, 0}
+
 /* Default filenames/paths */
 #define NA_SM_GEN_SHM_NAME(filename, na_sm_addr)        \
     do {                                                \
@@ -493,6 +496,7 @@ na_sm_offset_translate(
 static int
 na_sm_progress_cb(
     void *arg,
+    unsigned int timeout,
     hg_util_bool_t *progressed
     );
 
@@ -1352,7 +1356,7 @@ done:
 static na_return_t
 na_sm_send_addr_info(na_class_t *na_class, struct na_sm_addr *na_sm_addr)
 {
-    struct msghdr msg = {0};
+    struct msghdr msg = NA_SM_MSGHDR_INITIALIZER;
     ssize_t nsend;
     struct iovec iovec[2];
     na_return_t ret = NA_SUCCESS;
@@ -1380,7 +1384,7 @@ done:
 static na_return_t
 na_sm_recv_addr_info(struct na_sm_addr *na_sm_addr, na_bool_t *received)
 {
-    struct msghdr msg = {0};
+    struct msghdr msg = NA_SM_MSGHDR_INITIALIZER;
     ssize_t nrecv;
     struct iovec iovec[2];
     na_return_t ret = NA_SUCCESS;
@@ -1413,7 +1417,7 @@ done:
 static na_return_t
 na_sm_send_conn_id(struct na_sm_addr *na_sm_addr)
 {
-    struct msghdr msg = {0};
+    struct msghdr msg = NA_SM_MSGHDR_INITIALIZER;
     struct cmsghdr *cmsg;
     /* Contains the file descriptors to pass */
     int fds[2] = {na_sm_addr->local_notify, na_sm_addr->remote_notify};
@@ -1461,7 +1465,7 @@ done:
 static na_return_t
 na_sm_recv_conn_id(struct na_sm_addr *na_sm_addr, na_bool_t *received)
 {
-    struct msghdr msg = {0};
+    struct msghdr msg = NA_SM_MSGHDR_INITIALIZER;
     struct cmsghdr *cmsg;
     int *fdptr;
     int fds[2];
@@ -1610,7 +1614,7 @@ na_sm_reserve_and_copy_buf(na_class_t *na_class,
     struct na_sm_copy_buf *na_sm_copy_buf, const void *buf, size_t buf_size,
     unsigned int *idx_reserved)
 {
-    hg_util_int64_t bits = 1ULL;
+    hg_util_int64_t bits = 1LL;
     na_return_t ret = NA_SIZE_ERROR;
     unsigned int i = 0;
 
@@ -1715,7 +1719,8 @@ na_sm_offset_translate(struct na_sm_mem_handle *mem_handle, na_offset_t offset,
 
 /*---------------------------------------------------------------------------*/
 static int
-na_sm_progress_cb(void *arg, hg_util_bool_t *progressed)
+na_sm_progress_cb(void *arg, unsigned int NA_UNUSED timeout,
+    hg_util_bool_t *progressed)
 {
     na_class_t *na_class;
     struct na_sm_poll_data *na_sm_poll_data = (struct na_sm_poll_data *) arg;
@@ -3763,7 +3768,7 @@ na_sm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
         hg_time_get_current(&t1);
 
         if (hg_poll_wait(NA_SM_PRIVATE_DATA(na_class)->poll_set,
-            (int)(remaining * 1000.0), &progressed) != HG_UTIL_SUCCESS) {
+            (unsigned int) (remaining * 1000.0), &progressed) != HG_UTIL_SUCCESS) {
             NA_LOG_ERROR("hg_poll_wait() failed");
             ret = NA_PROTOCOL_ERROR;
             goto done;

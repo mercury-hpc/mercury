@@ -530,6 +530,7 @@ hg_core_progress_na(
 static int
 hg_core_progress_self_cb(
         void *arg,
+        unsigned int timeout,
         hg_util_bool_t *progressed
         );
 #endif
@@ -540,6 +541,7 @@ hg_core_progress_self_cb(
 static int
 hg_core_progress_na_cb(
         void *arg,
+        unsigned int timeout,
         hg_util_bool_t *progressed
         );
 
@@ -1913,7 +1915,8 @@ done:
 /*---------------------------------------------------------------------------*/
 #ifdef HG_HAS_SELF_FORWARD
 static int
-hg_core_progress_self_cb(void *arg, hg_util_bool_t *progressed)
+hg_core_progress_self_cb(void *arg, unsigned int HG_UNUSED timeout,
+    hg_util_bool_t *progressed)
 {
     struct hg_context *context = (struct hg_context *) arg;
     hg_util_bool_t notified = HG_UTIL_FALSE;
@@ -1947,7 +1950,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static int
-hg_core_progress_na_cb(void *arg, hg_util_bool_t *progressed)
+hg_core_progress_na_cb(void *arg, unsigned int timeout,
+    hg_util_bool_t *progressed)
 {
     struct hg_context *context = (struct hg_context *) arg;
     struct hg_class *hg_class = context->hg_class;
@@ -1973,7 +1977,7 @@ trigger:
     }
 
     /* Check progress on NA */
-    na_ret = NA_Progress(hg_class->na_class, context->na_context, 0);
+    na_ret = NA_Progress(hg_class->na_class, context->na_context, timeout);
     if (na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT) {
         HG_LOG_ERROR("Could not make progress on NA");
         ret = HG_UTIL_FAIL;
@@ -2060,7 +2064,7 @@ hg_core_progress_poll(struct hg_context *context, unsigned int timeout)
 
         hg_time_get_current(&t1);
 
-        if (hg_poll_wait(context->poll_set, (int)(remaining * 1000.0),
+        if (hg_poll_wait(context->poll_set, (unsigned int)(remaining * 1000.0),
             &progressed) != HG_UTIL_SUCCESS) {
             HG_LOG_ERROR("hg_poll_wait() failed");
             ret = HG_PROTOCOL_ERROR;
