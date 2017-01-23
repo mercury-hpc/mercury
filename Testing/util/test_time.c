@@ -4,12 +4,14 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 int
 main(int argc, char *argv[])
 {
     hg_time_t t1, t2, diff1, diff2;
     hg_time_t sleep_time = {1, 0};
+    double epsilon = 1e-9;
     double t1_double, t2_double;
     int ret = EXIT_SUCCESS;
 
@@ -55,7 +57,7 @@ main(int argc, char *argv[])
     diff2 = hg_time_subtract(hg_time_subtract(t2, t1), sleep_time);
 
     /* Should be equal */
-    if (hg_time_to_double(diff1) != hg_time_to_double(diff2)) {
+    if (fabs(hg_time_to_double(diff1) - hg_time_to_double(diff2)) > epsilon) {
         fprintf(stderr, "Error: diff1 != diff2\n");
         ret = EXIT_FAILURE;
         goto done;

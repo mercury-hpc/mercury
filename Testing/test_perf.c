@@ -66,7 +66,7 @@ measure_rpc1(hg_context_t *context, hg_addr_t addr,
     hg_request_class_t *request_class)
 {
     int avg_iter;
-    double time_read = 0, min_time_read = 0, max_time_read = 0;
+    double time_read = 0, min_time_read = -1, max_time_read = 0;
     hg_handle_t handle;
     hg_request_t *request;
     hg_return_t ret = HG_SUCCESS;
@@ -129,7 +129,7 @@ measure_rpc1(hg_context_t *context, hg_addr_t addr,
         td = hg_time_to_double(hg_time_subtract(t2, t1));
 
         time_read += td;
-        if (!min_time_read) min_time_read = time_read;
+        if (min_time_read < 0) min_time_read = time_read;
         min_time_read = (td < min_time_read) ? td : min_time_read;
         max_time_read = (td > max_time_read) ? td : max_time_read;
 
@@ -171,7 +171,7 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
     hg_handle_t *handles = NULL;
     hg_request_t *request;
     struct hg_test_perf_args args;
-    double time_read = 0, min_time_read = 0, max_time_read = 0;
+    double time_read = 0, min_time_read = -1, max_time_read = 0;
     unsigned int nhandles = MERCURY_TESTING_NUM_THREADS * 2;
     hg_return_t ret = HG_SUCCESS;
     size_t i;
@@ -248,7 +248,7 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
 
         time_read += td;
         tb = td / (double) args.op_count;
-        if (!min_time_read) min_time_read = tb;
+        if (min_time_read < 0) min_time_read = tb;
         min_time_read = (tb < min_time_read) ? tb : min_time_read;
         max_time_read = (tb > max_time_read) ? tb : max_time_read;
 
@@ -306,7 +306,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     hg_request_t *request;
 
     int avg_iter;
-    double time_read = 0, min_time_read = 0, max_time_read = 0;
+    double time_read = 0, min_time_read = -1, max_time_read = 0;
 
     hg_return_t ret = HG_SUCCESS;
     size_t i;
@@ -409,7 +409,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         td = hg_time_to_double(hg_time_subtract(t2, t1));
 
         time_read += td;
-        if (!min_time_read) min_time_read = time_read;
+        if (min_time_read < 0) min_time_read = time_read;
         min_time_read = (td < min_time_read) ? td : min_time_read;
         max_time_read = (td > max_time_read) ? td : max_time_read;
 
