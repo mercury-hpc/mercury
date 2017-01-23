@@ -25,11 +25,13 @@ typedef struct hg_poll_set hg_poll_set_t;
  * indicates whether progress has been done after that call returns.
  *
  * \param arg [IN]              pointer to user data
+ * \param timeout [IN]          timeout (ms) -- carried from hg_poll_wait()
  * \param progressed [OUT]      pointer to boolean indicating progress made
  *
  * \return Non-negative on success or negative on failure
  */
-typedef int (*hg_poll_cb_t)(void *arg, hg_util_bool_t *progressed);
+typedef int (*hg_poll_cb_t)(void *arg, unsigned int timeout,
+    hg_util_bool_t *progressed);
 
 /**
  * Polling events.
@@ -110,7 +112,8 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd);
  * \return Non-negative on success or negative on failure
  */
 HG_UTIL_EXPORT int
-hg_poll_wait(hg_poll_set_t *poll_set, int timeout, hg_util_bool_t *progressed);
+hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
+    hg_util_bool_t *progressed);
 
 #ifdef __cplusplus
 }

@@ -344,7 +344,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 int
-hg_poll_wait(hg_poll_set_t *poll_set, int timeout, hg_util_bool_t *progressed)
+hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
+    hg_util_bool_t *progressed)
 {
     hg_util_bool_t poll_progressed = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
@@ -362,7 +363,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, int timeout, hg_util_bool_t *progressed)
         struct epoll_event events[HG_POLL_MAX_EVENTS];
         int nfds, i;
 
-        nfds = epoll_wait(poll_set->fd, events, HG_POLL_MAX_EVENTS, timeout);
+        nfds = epoll_wait(poll_set->fd, events, HG_POLL_MAX_EVENTS, (int) timeout);
         if (nfds == -1 && errno != EINTR) {
             HG_UTIL_LOG_ERROR("epoll_wait() failed (%s)", strerror(errno));
             ret = HG_UTIL_FAIL;
@@ -381,7 +382,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, int timeout, hg_util_bool_t *progressed)
                 int poll_ret = HG_UTIL_SUCCESS;
 
                 poll_ret = hg_poll_data->poll_cb(
-                    hg_poll_data->poll_arg, &poll_cb_progressed);
+                    hg_poll_data->poll_arg, timeout, &poll_cb_progressed);
                 if (poll_ret != HG_UTIL_SUCCESS) {
                     HG_UTIL_LOG_ERROR("poll cb failed");
                     ret = HG_UTIL_FAIL;
@@ -421,7 +422,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, int timeout, hg_util_bool_t *progressed)
                 int poll_ret = HG_UTIL_SUCCESS;
 
                 poll_ret = hg_poll_data->poll_cb(
-                    hg_poll_data->poll_arg, &poll_cb_progressed);
+                    hg_poll_data->poll_arg, timeout, &poll_cb_progressed);
                 if (poll_ret != HG_UTIL_SUCCESS) {
                     HG_UTIL_LOG_ERROR("poll cb failed");
                     ret = HG_UTIL_FAIL;
@@ -439,7 +440,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, int timeout, hg_util_bool_t *progressed)
         for (i = 0; i < poll_set->nfds; i++)
             poll_set->poll_fds[i].revents = 0;
 
-        nfds = poll(poll_set->poll_fds, poll_set->nfds, timeout);
+        nfds = poll(poll_set->poll_fds, poll_set->nfds, (int) timeout);
         if (nfds == -1 && errno != EINTR) {
             HG_UTIL_LOG_ERROR("poll() failed (%s)", strerror(errno));
             ret = HG_UTIL_FAIL;
@@ -458,7 +459,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, int timeout, hg_util_bool_t *progressed)
                         int poll_ret = HG_UTIL_SUCCESS;
 
                         poll_ret = hg_poll_data->poll_cb(
-                            hg_poll_data->poll_arg, &poll_progressed);
+                            hg_poll_data->poll_arg, timeout, &poll_progressed);
                         if (poll_ret != HG_UTIL_SUCCESS) {
                             HG_UTIL_LOG_ERROR("poll cb failed");
                             ret = HG_UTIL_FAIL;
@@ -482,7 +483,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, int timeout, hg_util_bool_t *progressed)
                 int poll_ret = HG_UTIL_SUCCESS;
 
                 poll_ret = hg_poll_data->poll_cb(
-                    hg_poll_data->poll_arg, &poll_cb_progressed);
+                    hg_poll_data->poll_arg, timeout, &poll_cb_progressed);
                 if (poll_ret != HG_UTIL_SUCCESS) {
                     HG_UTIL_LOG_ERROR("poll cb failed");
                     ret = HG_UTIL_FAIL;
