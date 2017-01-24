@@ -3003,6 +3003,14 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         goto done;
     }
 
+    /* Notify local completion */
+    if (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
+        != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("Could not signal local completion");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
 done:
     if (ret != NA_SUCCESS) {
         na_sm_op_destroy(na_class, (na_op_id_t) na_sm_op_id);
@@ -3180,6 +3188,14 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     ret = na_sm_complete(na_sm_op_id);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not complete operation");
+        goto done;
+    }
+
+    /* Notify local completion */
+    if (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
+        != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("Could not signal local completion");
+        ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
