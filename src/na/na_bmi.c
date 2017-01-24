@@ -2299,7 +2299,7 @@ na_bmi_release(void *arg)
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) arg;
 
     if (na_bmi_op_id && !hg_atomic_get32(&na_bmi_op_id->completed)) {
-        NA_LOG_ERROR("Releasing resources from an uncompleted operation");
+        NA_LOG_WARNING("Releasing resources from an uncompleted operation");
     }
     na_bmi_op_destroy(NULL, (na_op_id_t) na_bmi_op_id);
 }
