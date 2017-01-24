@@ -122,7 +122,7 @@ if(APPLE)
 else()
   set(SOEXT so)
   set(PROC_NAME_OPT -r)
-  set(USE_CCI ON)
+  set(USE_CCI OFF)
   set(USE_SM ON)
 endif()
 
