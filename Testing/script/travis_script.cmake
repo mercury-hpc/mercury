@@ -48,11 +48,7 @@ set(CTEST_DASHBOARD_ROOT "$ENV{TRAVIS_BUILD_DIR}/..")
 set(CTEST_SOURCE_DIRECTORY "$ENV{TRAVIS_BUILD_DIR}")
 # Give a site name
 set(CTEST_SITE "worker.travis-ci.org")
-if(APPLE)
-  set(CTEST_TEST_TIMEOUT 180) # 180s timeout
-else()
-  set(CTEST_TEST_TIMEOUT 60) # 60s timeout
-endif()
+set(CTEST_TEST_TIMEOUT 180) # 180s timeout
 
 # Optional coverage options
 set(MERCURY_DO_COVERAGE $ENV{MERCURY_DO_COVERAGE})
