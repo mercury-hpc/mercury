@@ -471,7 +471,6 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     char *uri = NULL;
     na_return_t ret = NA_SUCCESS;
     int fd = 0;
-    int *fdptr = &fd;
 
     (void)listen;
 
@@ -517,7 +516,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 
     /* Create unspecified endpoint if no hostname was provided */
     if (!na_info->host_name)
-        rc = cci_create_endpoint(device, 0, &endpoint, fdptr);
+        rc = cci_create_endpoint(device, 0, &endpoint, &fd);
     else {
         char *service = na_info->host_name;
 
@@ -526,7 +525,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
             if (strstr(na_info->host_name, ":") != NULL)
                  strtok_r(na_info->host_name, ":", &service);
         }
-        rc = cci_create_endpoint_at(device, service, 0, &endpoint, fdptr);
+        rc = cci_create_endpoint_at(device, service, 0, &endpoint, &fd);
     }
 
     if (rc) {
@@ -1925,17 +1924,8 @@ na_cci_progress(na_class_t * na_class, na_context_t * context,
         int rc;
         hg_time_t t1, t2;
         cci_event_t *event = NULL;
-        struct pollfd pfd;
 
         hg_time_get_current(&t1);
-
-        if(remaining > 0)
-        {
-            pfd.fd = NA_CCI_PRIVATE_DATA(na_class)->fd;
-            pfd.events = POLLIN;
-
-            poll(&pfd, 1, (int)(remaining * 1000.0));
-        }
 
         rc = cci_get_event(e, &event);
         if (rc) {
