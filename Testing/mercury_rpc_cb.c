@@ -259,7 +259,6 @@ HG_TEST_RPC_CB(hg_test_rpc_open_no_resp, handle)
     HG_Free_input(handle, &in_struct);
     HG_Destroy(handle);
 
-    HG_LOG_DEBUG("Here");
     return ret;
 }
 
