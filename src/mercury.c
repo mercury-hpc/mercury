@@ -878,6 +878,13 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
+{
+    return HG_Core_registered(hg_class, id, flag);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Register_data(hg_class_t *hg_class, hg_id_t id, void *data,
     void (*free_callback)(void *))
 {
