@@ -71,14 +71,15 @@ endif()
 if(NA_USE_CCI)
   set(NA_CCI_TESTING_PROTOCOL "tcp;sm" CACHE STRING "Protocol(s) used for testing (e.g., tcp;sm).")
   mark_as_advanced(NA_CCI_TESTING_PROTOCOL)
-  # Detect <sys/prctl.h>
-  check_include_files("sys/prctl.h" HG_TESTING_HAS_SYSPRCTL_H)
 endif()
 
 if(NA_USE_SM)
   set(NA_NA_TESTING_PROTOCOL "sm" CACHE STRING "Protocol(s) used for testing (e.g., sm).")
   mark_as_advanced(NA_NA_TESTING_PROTOCOL)
 endif()
+
+# Detect <sys/prctl.h>
+check_include_files("sys/prctl.h" HG_TESTING_HAS_SYSPRCTL_H)
 
 #------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
