@@ -58,11 +58,12 @@ typedef hg_return_t (*handle_create_cb_t)(hg_class_t *, hg_handle_t);
 
 /* HG class */
 struct hg_class {
-    na_class_t *na_class;           /* NA class */
-    hg_hash_table_t *func_map;      /* Function map */
-    hg_atomic_int32_t request_tag;  /* Atomic used for tag generation */
-    na_tag_t request_max_tag;       /* Max value for tag */
-    hg_bool_t na_ext_init;          /* NA externally initialized */
+    na_class_t *na_class;               /* NA class */
+    hg_hash_table_t *func_map;          /* Function map */
+    hg_thread_mutex_t func_map_mutex;   /* Function map mutex */
+    hg_atomic_int32_t request_tag;      /* Atomic used for tag generation */
+    na_tag_t request_max_tag;           /* Max value for tag */
+    hg_bool_t na_ext_init;              /* NA externally initialized */
     handle_create_cb_t handle_create_callback; /* Callback executed on hg_core_create */
 #ifdef HG_HAS_SELF_FORWARD
     hg_thread_pool_t *self_processing_pool; /* Thread pool for self processing */
@@ -874,6 +875,9 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     hg_hash_table_register_free_functions(hg_class->func_map, free,
             hg_core_func_map_value_free);
 
+    /* Initialize mutex */
+    hg_thread_mutex_init(&hg_class->func_map_mutex);
+
 done:
     if (ret != HG_SUCCESS) {
         hg_core_finalize(hg_class);
@@ -899,6 +903,9 @@ hg_core_finalize(struct hg_class *hg_class)
     if(hg_class->func_map)
         hg_hash_table_free(hg_class->func_map);
     hg_class->func_map = NULL;
+
+    /* Destroy mutex */
+    hg_thread_mutex_destroy(&hg_class->func_map_mutex);
 
     if (!hg_class->na_ext_init) {
         /* Finalize interface */
@@ -1720,8 +1727,10 @@ hg_core_process(struct hg_handle *hg_handle)
     hg_return_t ret = HG_SUCCESS;
 
     /* Retrieve exe function from function map */
+    hg_thread_mutex_lock(&hg_class->func_map_mutex);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
             hg_class->func_map, (hg_hash_table_key_t) &hg_handle->hg_info.id);
+    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
     if (!hg_rpc_info) {
         HG_LOG_WARNING("Could not find RPC ID in function map");
         ret = HG_NO_MATCH;
@@ -2674,6 +2683,7 @@ HG_Core_register(hg_class_t *hg_class, hg_id_t id, hg_rpc_cb_t rpc_cb)
     hg_id_t *func_key = NULL;
     struct hg_rpc_info *hg_rpc_info = NULL;
     hg_return_t ret = HG_SUCCESS;
+    int hash_ret;
 
     if (!hg_class) {
         HG_LOG_ERROR("NULL HG class");
@@ -2703,8 +2713,11 @@ HG_Core_register(hg_class_t *hg_class, hg_id_t id, hg_rpc_cb_t rpc_cb)
     hg_rpc_info->data = NULL;
     hg_rpc_info->free_callback = NULL;
 
-    if (!hg_hash_table_insert(hg_class->func_map, (hg_hash_table_key_t) func_key,
-            hg_rpc_info)) {
+    hg_thread_mutex_lock(&hg_class->func_map_mutex);
+    hash_ret = hg_hash_table_insert(hg_class->func_map,
+        (hg_hash_table_key_t) func_key, hg_rpc_info);
+    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
+    if (!hash_ret) {
         HG_LOG_ERROR("Could not insert RPC ID into function map (already registered?)");
         ret = HG_INVALID_PARAM;
         goto done;
@@ -2736,8 +2749,10 @@ HG_Core_registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
         goto done;
     }
 
+    hg_thread_mutex_lock(&hg_class->func_map_mutex);
     *flag = (hg_bool_t) (hg_hash_table_lookup(hg_class->func_map,
             (hg_hash_table_key_t) &id) != HG_HASH_TABLE_NULL);
+    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
 
 done:
     return ret;
@@ -2757,8 +2772,10 @@ HG_Core_register_data(hg_class_t *hg_class, hg_id_t id, void *data,
         goto done;
     }
 
+    hg_thread_mutex_lock(&hg_class->func_map_mutex);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(hg_class->func_map,
             (hg_hash_table_key_t) &id);
+    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
     if (!hg_rpc_info) {
         HG_LOG_ERROR("Could not find RPC ID in function map");
         ret = HG_NO_MATCH;
@@ -2786,8 +2803,10 @@ HG_Core_registered_data(hg_class_t *hg_class, hg_id_t id)
         goto done;
     }
 
+    hg_thread_mutex_lock(&hg_class->func_map_mutex);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(hg_class->func_map,
             (hg_hash_table_key_t) &id);
+    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
     if (!hg_rpc_info) {
         HG_LOG_ERROR("Could not find RPC ID in function map");
         goto done;
@@ -2813,8 +2832,10 @@ HG_Core_registered_disable_response(hg_class_t *hg_class, hg_id_t id,
         goto done;
     }
 
+    hg_thread_mutex_lock(&hg_class->func_map_mutex);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
         hg_class->func_map, (hg_hash_table_key_t) &id);
+    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
     if (!hg_rpc_info) {
         HG_LOG_ERROR("Could not find RPC ID in function map");
         goto done;
@@ -2985,8 +3006,10 @@ HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle->hg_info.id = id;
 
     /* Retrieve exe function from function map */
+    hg_thread_mutex_lock(&context->hg_class->func_map_mutex);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
         context->hg_class->func_map, (hg_hash_table_key_t) &id);
+    hg_thread_mutex_unlock(&context->hg_class->func_map_mutex);
     if (!hg_rpc_info) {
         HG_LOG_ERROR("Could not find RPC ID in function map");
         ret = HG_NO_MATCH;
