@@ -86,6 +86,11 @@ struct hg_header_response {
 #define HG_VERSION ((HG_VERSION_MAJOR << 24) | (HG_VERSION_MINOR << 16) \
         | HG_VERSION_PATCH)
 
+/* Flags */
+#define HG_PROC_HEADER_BULK_EXTRA   0x01    /* Extra bulk handle */
+#define HG_PROC_HEADER_NO_RESPONSE  0x04    /* No response required */
+
+/* Inline */
 #ifndef HG_PROC_HEADER_INLINE
   #if defined(__GNUC__) && !defined(__GNUC_STDC_INLINE__)
     #define HG_PROC_HEADER_INLINE extern HG_INLINE

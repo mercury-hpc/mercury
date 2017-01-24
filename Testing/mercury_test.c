@@ -51,6 +51,7 @@ hg_thread_pool_t *hg_test_thread_pool_g = NULL;
 
 /* test_rpc */
 hg_id_t hg_test_rpc_open_id_g = 0;
+hg_id_t hg_test_rpc_open_id_no_resp_g = 0;
 
 /* test_bulk */
 hg_id_t hg_test_bulk_write_id_g = 0;
@@ -200,6 +201,13 @@ hg_test_register(hg_class_t *hg_class)
     /* test_rpc */
     hg_test_rpc_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_rpc_open",
             rpc_open_in_t, rpc_open_out_t, hg_test_rpc_open_cb);
+
+    /* Disable response */
+    hg_test_rpc_open_id_no_resp_g = MERCURY_REGISTER(hg_class,
+        "hg_test_rpc_open_no_resp", rpc_open_in_t, rpc_open_out_t,
+        hg_test_rpc_open_no_resp_cb);
+    HG_Registered_disable_response(hg_class, hg_test_rpc_open_id_no_resp_g,
+        HG_TRUE);
 
     /* test_bulk */
     hg_test_bulk_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_bulk_write",

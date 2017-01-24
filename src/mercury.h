@@ -260,6 +260,27 @@ HG_Registered_data(
         );
 
 /**
+ * Disable response for a given RPC ID. This allows an origin process to send an
+ * RPC to a target without waiting for a response. The RPC completes locally and
+ * the callback on the origin is therefore pushed to the completion queue once
+ * the RPC send is completed. By default, all RPCs expect a response to
+ * be sent back.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param id [IN]               registered function ID
+ * \param disable [IN]          boolean (HG_TRUE to disable
+ *                                       HG_FALSE to re-enable)
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Registered_disable_response(
+        hg_class_t *hg_class,
+        hg_id_t id,
+        hg_bool_t disable
+        );
+
+/**
  * Lookup an addr from a peer address/name. Addresses need to be
  * freed by calling HG_Addr_free(). After completion, user callback is
  * placed into a completion queue and can be triggered using HG_Trigger().

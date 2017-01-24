@@ -178,7 +178,7 @@ hg_proc_header_request(void *buf, size_t buf_size,
     /* Encode/decode extra_bulk_handle if flags have been set, we can do that
      * safely here because the user payload is copied in this case so we don't
      * have to worry about the extra space taken by the header */
-    if (header->flags) {
+    if (header->flags & HG_PROC_HEADER_BULK_EXTRA) {
         ret = hg_proc_create_set(hg_class, buf_ptr, buf_size, op,
             HG_CHECKSUM_DEFAULT, &proc);
         if (ret != HG_SUCCESS) {

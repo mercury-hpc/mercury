@@ -234,6 +234,36 @@ HG_TEST_RPC_CB(hg_test_rpc_open, handle)
 }
 
 /*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_rpc_open_no_resp, handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+    rpc_open_in_t  in_struct;
+    hg_const_string_t path;
+    rpc_handle_t rpc_handle;
+    int event_id;
+
+    /* Get input buffer */
+    ret = HG_Get_input(handle, &in_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not get input\n");
+        return ret;
+    }
+
+    /* Get parameters */
+    path = in_struct.path;
+    rpc_handle = in_struct.handle;
+
+    /* Call rpc_open */
+    rpc_open(path, rpc_handle, &event_id);
+
+    HG_Free_input(handle, &in_struct);
+    HG_Destroy(handle);
+
+    HG_LOG_DEBUG("Here");
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
@@ -1245,6 +1275,7 @@ HG_TEST_RPC_CB(hg_test_nested2, handle)
 
 /*---------------------------------------------------------------------------*/
 HG_TEST_THREAD_CB(hg_test_rpc_open)
+HG_TEST_THREAD_CB(hg_test_rpc_open_no_resp)
 HG_TEST_THREAD_CB(hg_test_bulk_write)
 HG_TEST_THREAD_CB(hg_test_bulk_seg_write)
 //HG_TEST_THREAD_CB(hg_test_pipeline_write)

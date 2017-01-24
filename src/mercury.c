@@ -921,6 +921,14 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Registered_disable_response(hg_class_t *hg_class, hg_id_t id,
+    hg_bool_t disable)
+{
+    return HG_Core_registered_disable_response(hg_class, id, disable);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Addr_lookup(hg_context_t *context, hg_cb_t callback, void *arg,
     const char *name, hg_op_id_t *op_id)
 {

@@ -95,6 +95,7 @@ struct hg_context {
 /* Info for function map */
 struct hg_rpc_info {
     hg_rpc_cb_t rpc_cb;             /* RPC callback */
+    hg_bool_t no_response;          /* RPC response not expected */
     void *data;                     /* User data */
     void (*free_callback)(void *);  /* User data free callback */
 };
@@ -151,6 +152,7 @@ struct hg_handle {
     struct hg_header_response out_header; /* Output header */
 
     struct hg_rpc_info *hg_rpc_info;    /* Associated RPC info */
+    hg_bool_t no_response;              /* Require response or not */
     void *private_data;                 /* Private data */
     void (*private_free_callback)(void *); /* Private data free callback */
 
@@ -1308,15 +1310,17 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     /* Generate tag */
     hg_handle->tag = hg_core_gen_request_tag(hg_handle->hg_info.hg_class);
 
-    /* Pre-post the recv message (output) */
-    na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_context->na_context,
+    /* Pre-post the recv message (output) if response is expected */
+    if (!hg_handle->hg_rpc_info->no_response) {
+        na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_context->na_context,
             hg_core_recv_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_size, hg_handle->hg_info.addr,
             hg_handle->tag, &hg_handle->na_recv_op_id);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not post recv for output buffer");
-        ret = HG_NA_ERROR;
-        goto done;
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not post recv for output buffer");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
     }
 
     /* And post the send message (input) */
@@ -1413,6 +1417,8 @@ static na_return_t
 hg_core_send_input_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
+    /* If we expect a response, there needs to be 2 NA operations in total */
+    int completed_count = hg_handle->no_response ? 1 : 2;
     na_return_t ret = NA_SUCCESS;
 
     /* Reset op ID value */
@@ -1430,7 +1436,7 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
 
     /* Add handle to completion queue only when send_input and recv_output have
      * completed */
-    if (hg_atomic_incr32(&hg_handle->na_completed_count) == 2) {
+    if (hg_atomic_incr32(&hg_handle->na_completed_count) == completed_count) {
         /* Reset completed count */
         hg_atomic_set32(&hg_handle->na_completed_count, 0);
 
@@ -1499,17 +1505,19 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         /* Get operation ID from header */
         hg_handle->hg_info.id = hg_handle->in_header.id;
         hg_handle->cookie = hg_handle->in_header.cookie;
+        hg_handle->no_response = (hg_handle->in_header.flags
+            & HG_PROC_HEADER_NO_RESPONSE) ? HG_TRUE : HG_FALSE;
 
-        if (hg_handle->in_header.flags
+        /* Get extra payload if flag HG_PROC_HEADER_BULK is set */
+        if ((hg_handle->in_header.flags & HG_PROC_HEADER_BULK_EXTRA)
             && (hg_handle->in_header.extra_in_handle != HG_BULK_NULL)) {
-            /* Get extra payload */
             if (hg_core_get_extra_input(hg_handle,
                 hg_handle->in_header.extra_in_handle) != HG_SUCCESS) {
                 HG_LOG_ERROR("Could not get extra input buffer");
                 goto done;
             }
         } else {
-            /* Process handle */
+            /* Otherwise, mark handle ready for processing */
             hg_handle->process_rpc_cb = HG_TRUE;
             if (hg_core_complete(hg_handle) != HG_SUCCESS) {
                 HG_LOG_ERROR("Could not complete rpc handle");
@@ -1603,7 +1611,7 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
     }
 
     /* Add handle to completion queue only when send_input and recv_output have
-     * completed */
+     * completed, 2 NA operations in total */
     if (hg_atomic_incr32(&hg_handle->na_completed_count) == 2) {
         /* Reset completed count */
         hg_atomic_set32(&hg_handle->na_completed_count, 0);
@@ -1678,7 +1686,7 @@ hg_core_process_thread(void *arg)
     }
 
     /* Check extra arguments */
-    if (hg_handle->in_header.flags
+    if ((hg_handle->in_header.flags & HG_PROC_HEADER_BULK_EXTRA)
             && (hg_handle->in_header.extra_in_handle != HG_BULK_NULL)) {
         /* Get extra payload */
         if (hg_core_get_extra_input(hg_handle, hg_handle->in_header.extra_in_handle)
@@ -1715,7 +1723,7 @@ hg_core_process(struct hg_handle *hg_handle)
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
             hg_class->func_map, (hg_hash_table_key_t) &hg_handle->hg_info.id);
     if (!hg_rpc_info) {
-        HG_LOG_ERROR("Could not find RPC ID in function map");
+        HG_LOG_WARNING("Could not find RPC ID in function map");
         ret = HG_NO_MATCH;
         goto done;
     }
@@ -1900,6 +1908,7 @@ hg_core_reset_post(struct hg_handle *hg_handle)
     hg_handle->extra_in_buf_size = 0;
     hg_handle->extra_in_op_id = HG_OP_ID_NULL;
     hg_handle->hg_rpc_info = NULL;
+    hg_handle->no_response = HG_FALSE;
 
     /* Safe to repost */
     ret = hg_core_post(hg_handle);
@@ -2198,15 +2207,35 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if(hg_handle->process_rpc_cb) {
+    if (hg_handle->process_rpc_cb) {
         /* Handle will now be processed */
         hg_handle->process_rpc_cb = HG_FALSE;
 
         /* Run RPC callback */
         ret = hg_core_process(hg_handle);
-        if(ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not process handle");
-            goto done;
+        if (ret != HG_SUCCESS && !hg_handle->no_response) {
+            /* Respond in case of error */
+            ret = HG_Core_respond(hg_handle, NULL, NULL, ret,
+                hg_proc_header_response_get_size());
+            if (ret != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not respond");
+                goto done;
+            }
+        }
+
+        /* Complete handle if no response required */
+        if (hg_handle->no_response) {
+            /* Remove handle from processing list
+             * NB. Whichever state we're in, reaching that stage means that the
+             * handle was processed. */
+            hg_thread_mutex_lock(&hg_handle->hg_info.context->processing_list_mutex);
+            HG_LIST_REMOVE(hg_handle, entry);
+            hg_thread_mutex_unlock(&hg_handle->hg_info.context->processing_list_mutex);
+
+            if (hg_core_complete(hg_handle) != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not complete operation");
+                goto done;
+            }
         }
     } else {
         /* Execute user callback */
@@ -2670,6 +2699,7 @@ HG_Core_register(hg_class_t *hg_class, hg_id_t id, hg_rpc_cb_t rpc_cb)
     }
 
     hg_rpc_info->rpc_cb = rpc_cb;
+    hg_rpc_info->no_response = HG_FALSE;
     hg_rpc_info->data = NULL;
     hg_rpc_info->free_callback = NULL;
 
@@ -2767,6 +2797,32 @@ HG_Core_registered_data(hg_class_t *hg_class, hg_id_t id)
 
 done:
    return data;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_registered_disable_response(hg_class_t *hg_class, hg_id_t id,
+    hg_bool_t disable)
+{
+    struct hg_rpc_info *hg_rpc_info = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
+        hg_class->func_map, (hg_hash_table_key_t) &id);
+    if (!hg_rpc_info) {
+        HG_LOG_ERROR("Could not find RPC ID in function map");
+        goto done;
+    }
+    hg_rpc_info->no_response = disable;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2940,6 +2996,9 @@ HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     /* Cache RPC info */
     hg_handle->hg_rpc_info = hg_rpc_info;
 
+    /* Copy no response flag */
+    hg_handle->no_response = hg_rpc_info->no_response;
+
     *handle = (hg_handle_t) hg_handle;
 
 done:
@@ -3075,6 +3134,7 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
 #endif
     hg_return_t ret = HG_SUCCESS;
     hg_size_t extra_header_size = 0;
+    hg_uint8_t flags = 0;
 
     if (!hg_handle) {
         HG_LOG_ERROR("NULL handle");
@@ -3095,7 +3155,11 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     /* Set header */
     hg_handle->in_header.id = hg_handle->hg_info.id;
     hg_handle->in_header.extra_in_handle = extra_in_handle;
-    hg_handle->in_header.flags = (hg_uint8_t) (extra_in_handle != HG_BULK_NULL);
+    flags = (extra_in_handle != HG_BULK_NULL)
+        ? HG_PROC_HEADER_BULK_EXTRA : 0x00;
+    hg_handle->in_header.flags |= flags;
+    flags = (hg_handle->no_response) ? HG_PROC_HEADER_NO_RESPONSE : 0x00;
+    hg_handle->in_header.flags |= flags;
 
     /* Encode request header */
     ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
@@ -3142,6 +3206,13 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
     if (!hg_handle) {
         HG_LOG_ERROR("NULL handle");
         ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    /* Cannot respond if no_response flag set */
+    if (hg_handle->no_response) {
+        HG_LOG_ERROR("Sending response was disabled on that RPC");
+        ret = HG_PROTOCOL_ERROR;
         goto done;
     }
 
