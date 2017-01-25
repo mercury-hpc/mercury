@@ -1052,8 +1052,11 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t request_eager)
         goto done;
     }
 
+    /* Permission flags */
+    ret = sizeof(hg_bulk->flags);
+
     /* Segments */
-    ret = sizeof(hg_bulk->total_size) + sizeof(hg_bulk->segment_count)
+    ret += sizeof(hg_bulk->total_size) + sizeof(hg_bulk->segment_count)
         + hg_bulk->segment_count * sizeof(*hg_bulk->segments);
 
     /* NA mem handles */
@@ -1116,6 +1119,14 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
             }
         }
         hg_bulk->segment_published = HG_TRUE;
+    }
+
+    /* Add the permission flags */
+    ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left,
+        &hg_bulk->flags, sizeof(hg_bulk->flags));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not encode permission flags");
+        goto done;
     }
 
     /* Add the total size of the segments */
@@ -1238,6 +1249,14 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
     memset(hg_bulk, 0, sizeof(struct hg_bulk));
     hg_bulk->hg_class = hg_class;
     hg_atomic_set32(&hg_bulk->ref_count, 1);
+
+    /* Get the permission flags */
+    ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
+        &hg_bulk->flags, sizeof(hg_bulk->flags));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not decode permission flags");
+        goto done;
+    }
 
     /* Get the total size of the segments */
     ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
@@ -1410,7 +1429,20 @@ HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
 
     switch (op) {
         case HG_BULK_PUSH:
+            if (!(hg_bulk_origin->flags & HG_BULK_WRITE_ONLY)
+                || !(hg_bulk_local->flags & HG_BULK_READ_ONLY)) {
+                HG_LOG_ERROR("Invalid permission flags for PUSH operation");
+                ret = HG_INVALID_PARAM;
+                goto done;
+            }
+            break;
         case HG_BULK_PULL:
+            if (!(hg_bulk_origin->flags & HG_BULK_READ_ONLY)
+                || !(hg_bulk_local->flags & HG_BULK_WRITE_ONLY)) {
+                HG_LOG_ERROR("Invalid permission flags for PULL operation");
+                ret = HG_INVALID_PARAM;
+                goto done;
+            }
             break;
         default:
             HG_LOG_ERROR("Unknown bulk operation");

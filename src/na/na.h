@@ -106,7 +106,7 @@ typedef na_return_t (*na_cb_t)(const struct na_cb_info *callback_info);
  * can be defined as read only, write only or read/write */
 #define NA_MEM_READ_ONLY   0x01
 #define NA_MEM_WRITE_ONLY  0x02
-#define NA_MEM_READWRITE   0x04
+#define NA_MEM_READWRITE   0x03
 
 /*********************/
 /* Public Prototypes */
