@@ -18,10 +18,15 @@ Architectures supported
 =======================
 
    Architectures supported by MPI implementations are supported by the
-   network abstraction layer. Both MPI and BMI plugins fully
+   network abstraction layer. MPI, BMI (tcp) and SM plugins fully
    implement the network abstraction layer and are currently supported.
+   The CCI plugin is still experimental and underlying CCI transport plugins
+   (tcp, sm, verbs, gni) may require additional testing or upcoming fixes.
    Additional plugins are currently in development and will be added in
    future releases to support additional network protocols.
+
+   See the [plugin requirements](#plugin-requirements) section for
+   plugin requirement details.
 
 Documentation
 =============
@@ -42,7 +47,7 @@ Plugin requirements
 To make use of the BMI plugin, please do:
 
     git clone git://git.mcs.anl.gov/bmi && cd bmi
-    # If you are building BMI on an OSX platform, then apply the following patch:
+    # If you are building BMI on a MacOS platform, then apply the following patch:
     # patch -p1 < patches/bmi-osx.patch
     ./prepare && ./configure --enable-shared --enable-bmi-only
     make && make install
@@ -52,6 +57,13 @@ implementation (MPICH2 v1.4.1 or higher / OpenMPI v1.6 or higher) with
 `MPI_THREAD_MULTIPLE` available on targets that will accept remote
 connections. Processes that are _not_ accepting incoming connections are
 _not_ required to have a multithreaded level of execution.
+
+To make use of the native NA SM (shared-memory) plugin on Linux,
+the cross-memory attach (CMA) feature introduced in kernel v3.2 is required.
+The yama security module must also be configured to allow remote process memory
+to be accessed (see this [page][yama]). On MacOS, code signing with inclusion of
+the na_sm.plist file into the binary is currently required to allow process
+memory to be accessed.
 
 To make use of the CCI plugin, please refer to the CCI build instructions
 available on this [page][cci].
@@ -109,6 +121,7 @@ Type 'c' multiple times and choose suitable options. Recommended options are:
     NA_USE_BMI                       ON/OFF
     NA_USE_MPI                       ON/OFF
     NA_USE_CCI                       ON/OFF
+    NA_USE_SM                        ON/OFF
 
 Setting include directory and library paths may require you to toggle to
 the advanced mode by typing 't'. Once you are done and do not see any
@@ -183,4 +196,5 @@ Here is the current continuous testing status for the master branch:
 [cci]: http://cci-forum.com/?page_id=46
 [travis-ci-svg]: https://travis-ci.org/mercury-hpc/mercury.svg
 [travis-ci-link]: https://travis-ci.org/mercury-hpc/mercury
+[yama]: https://www.kernel.org/doc/Documentation/security/Yama.txt
 
