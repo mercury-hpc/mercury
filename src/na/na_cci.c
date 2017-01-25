@@ -22,7 +22,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include <poll.h>
 
 /****************/
 /* Local Macros */
