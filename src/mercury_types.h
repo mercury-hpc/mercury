@@ -130,17 +130,23 @@ typedef hg_return_t (*hg_proc_cb_t)(hg_proc_t proc, void *data);
 /*****************/
 
 /* Constant values */
+#define HG_ADDR_NULL        ((hg_addr_t)0)
+#define HG_HANDLE_NULL      ((hg_handle_t)0)
+#define HG_BULK_NULL        ((hg_bulk_t)0)
+#define HG_PROC_NULL        ((hg_proc_t)0)
+#define HG_OP_ID_NULL       ((hg_op_id_t)0)
+#define HG_OP_ID_IGNORE     ((hg_op_id_t *)1)
+
+/* Max timeout */
+#define HG_MAX_IDLE_TIME    (3600*1000)
+
+/* HG size max */
+#define HG_SIZE_MAX         UINT64_MAX
+
+/* The memory attributes associated with the bulk handle
+ * can be defined as read only, write only or read/write */
 #define HG_BULK_READ_ONLY   0x01
 #define HG_BULK_WRITE_ONLY  0x02
 #define HG_BULK_READWRITE   0x03
-
-#define HG_MAX_IDLE_TIME     (3600*1000)
-
-#define HG_ADDR_NULL         ((hg_addr_t)0)
-#define HG_HANDLE_NULL       ((hg_handle_t)0)
-#define HG_BULK_NULL         ((hg_bulk_t)0)
-#define HG_PROC_NULL         ((hg_proc_t)0)
-#define HG_OP_ID_NULL        ((hg_op_id_t)0)
-#define HG_OP_ID_IGNORE      ((hg_op_id_t *)1)
 
 #endif /* MERCURY_TYPES_H */

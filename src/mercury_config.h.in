@@ -71,6 +71,8 @@
     typedef unsigned __int32 hg_uint32_t;
     typedef unsigned __int16 hg_uint16_t;
     typedef unsigned __int8  hg_uint8_t;
+    /* Limits on Integer Constants */
+    #define UINT64_MAX _UI64_MAX
 #else
     #include <stdint.h>
     #include <stddef.h>
