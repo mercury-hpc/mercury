@@ -1,7 +1,456 @@
 ================
+v0.9.0
+================
+Jerome Soumagne (365):
+  2017-01-25 Update README file
+  2017-01-25 Update mercury version to 0.9.0
+  2017-01-25 Update mchecksum submodule
+  2017-01-25 Remove no longer used poll header in NA CCI
+  2017-01-25 Add HG_SIZE_MAX macro (fixes #60)
+  2017-01-25 Check permission flag in HG_Bulk_transfer() (fixes #84)
+  2017-01-24 Restore timeout to 180s in testing
+  2017-01-24 Detect sys/prctl.h for all plugins
+  2017-01-24 Disable CCI in travis testing
+  2017-01-24 Warning in NA BMI
+  2017-01-24 No need for internal polling in NA CCI after mercury poll update
+  2017-01-24 Remove debug message
+  2017-01-24 Add missing HG_Register() function (fixes #56)
+  2017-01-24 Fix HG hash lookup/insert thread safety
+  2017-01-24 Add support for one-way RPCs (fixes #108)
+  2017-01-24 Fix immediate completion notification of sends in NA SM
+  2017-01-23 Update mercury core and NA SM after poll changes
+  2017-01-23 Carry timeout to mercury poll callback
+  2017-01-22 Fix a few warnings in Testing
+  2017-01-21 Initialize count to 0 in hg_event_get
+  2017-01-21 Fix NA SM to not use hg_atomic_or64 if not available
+  2017-01-21 Add limited support for 64-bit atomics with OPA
+  2017-01-20 Fix race in NA SM bulk event set
+  2017-01-23 Update travis testing config and dependencies
+  2016-11-21 Add OSX builds
+  2017-01-19 Add support for mach_vm read/write to NA SM on MacOS
+  2017-01-18 Move NA SM event creation to listener
+  2017-01-17 Cleanup mercury poll flags
+  2017-01-17 Fix uninitialized HG core class
+  2017-01-17 Start adding tweaks to NA SM when no CMA support available
+  2017-01-17 Add support for kqueue (MacOS) for mercury poll
+  2017-01-17 Tweak test poll and add event
+  2017-01-08 Switch mercury core progress function to use unlerlying NA poll fds
+  2017-01-08 Update NA SM plugin after event/poll changes
+  2017-01-08 Add NA_Get_poll_fd() function to expose polling file descriptor from NA plugins
+  2017-01-08 Add mercury_event util interface for event signaling through file descriptor
+  2016-11-23 Missed progressed set to true on local NA SM notification
+  2016-11-10 Update NA SM to use mercury_poll interface and busy wait when timeout is 0
+  2016-11-10 Add mercury_poll in util for polling/busy wait abstraction
+  2016-10-26 Potential race fix in NA SM atomic reservation
+  2016-10-18 Clean up NA SM and keep string format pid/id
+  2016-10-13 Generate ring buffer pair for NA SM
+  2016-10-12 Fix NA SM lookup to accept <protocol>://<host string> strings
+  2016-10-12 Make NA SM default SM plugin
+  2016-10-11 Remove EPOLLET for NA SM eventfd
+  2016-10-03 Remove unexpected info allocation in NA SM
+  2016-10-02 Update NA SM after NA_Op_create() and completion callback changes
+  2016-08-24 Add first support for NA SM plugin
+  2017-01-17 Fix RPATH to external libraries by setting CMAKE_INSTALL_RPATH_USE_LINK_PATH
+  2016-12-14 Fix CMake error when mchecksum has no dependency
+  2016-12-12 BMI / CCI external include dependencies no longer needed
+  2016-12-12 Update mchecksum submodule and fix ext lib dependencies
+  2016-11-29 Use predefined atomic int types when using Intel icc (fixes #147)
+  2016-11-23 Update mckecksum submodule
+  2016-11-23 Switch to CRC32 by default
+  2016-11-23 Typo fixes in CMakeLists.txt
+  2016-11-23 Fix some warnings in NA test cancel
+  2016-11-14 Simplify continuous build to only run on linux
+  2016-11-14 Update travis build
+  2016-11-10 Allow user to pass hostname when initializing NA BMI (fixes #145)
+  2016-11-02 Add HG_Ref_incr() and HG_Core_ref_incr() to increment ref count on handle (fixes #144)
+  2016-10-31 Add mercury_log in mercury util and allow output redirection
+  2016-10-26 Add hg_atomic_fence in mercury_atomic
+  2016-10-26 Tweak number of in-flight operations in test perf
+  2016-10-19 Fix undefined reference in test_perf
+  2016-10-18 Tweak test perf to use multiple handles in flight
+  2016-10-11 Update tests to have multiple RPCs in flight
+  2016-10-11 Do not bother checking other NA plugins if NA class name was specified
+  2016-10-11 Call CCI finalize in na_cci_check_protocol
+  2016-10-11 Fix MERCURY_CHECKSUM_DEFAULT cmake option
+  2016-10-07 Prevent completed NA BMI OP ID to be canceled
+  2016-10-04 Fix util thread pool to prevent allocation on post
+  2016-10-03 Re-use existing procs instead of creating new ones
+  2016-10-03 Disable cancel test for now
+  2016-10-02 Fix use of CLOCK_MONOTONIC_RAW (fixes #140)
+  2016-10-02 Make test perf re-use existing requests/handles
+  2016-10-02 Fix HG handle to use pre-allocated NA OP IDs
+  2016-10-02 Add NA_Op_create()/NA_Op_destroy() calls to prevent multiple allocations
+  2016-10-02 Disable and check 64-bit atomics with OPA
+  2016-10-02 Add hg_request_reset() to re-use existing request object
+  2016-10-02 Rework mercury_list to provide macros similar to sys/queue.h
+  2016-09-21 A few more compiler warning fixes
+  2016-09-21 Fix use of stdatomic on OSX
+  2016-09-21 Add hg_thread_yield() to mercury thread
+  2016-09-21 Fix warning in mercury atomic on OSX
+  2016-09-19 Fix missing timeout check introduced in recent change
+  2016-09-16 Fix actual_count return value on HG/NA_TIMEOUT in HG/NA trigger functions
+  2016-09-14 Use atomic to exit when completion queue is updated
+  2016-09-14 Increase loop count for travis testing
+  2016-09-13 Trigger callback and bypass completion queue when doing eager bulk transfer
+  2016-09-13 Fix HG_Progress() to not exit before context's completion queue update
+  2016-09-13 Update submodules to use http url
+  2016-09-12 Create NA context with HG context
+  2016-09-08 Disable cookie for now (fixes #137)
+  2016-09-08 Add non-contiguous RMA to test perf
+  2016-09-07 Fix conversion warnings
+  2016-09-07 Fix warning in mercury_thread_pool
+  2016-09-07 Fixes for timeout (float conversion etc)
+  2016-09-07 Remove debug comment in HG bulk
+  2016-09-02 Cleanup old references to SSM
+  2016-09-07 Re-enable NA_Mem_register_segments in HG bulk
+  2016-09-07 Clean up threadpool to use mercury queue
+  2016-09-02 Fix warning in mercury proc
+  2016-08-31 Fix refcount leak on addr in NA CCI
+  2016-08-31 Fix for test nested
+  2016-08-31 Fix memory leak in NA test server
+  2016-08-31 Rework mercury_queue to provide macros similar to sys/queue.h
+  2016-08-26 Increment ref count on HG core handle when calling Get_input/output
+  2016-08-24 Fix bulk handle ref count, remains valid until transfer is complete (fix #122)
+  2016-08-24 Tweak number of digits in perf test
+  2016-08-24 Fix mercury bulk encode/decode when handle is variable size
+  2016-08-24 Fix mercury HL to use timeout correctly
+  2016-08-24 Rework NA test simple and clean up NA test library
+  2016-08-24 Fix warning in mercury time
+  2016-08-24 Modify mercury atomics to remove extra synchronization
+  2016-08-24 Remove extra slash in INSTALL_NAME_DIR on OS X
+  2016-08-05 Use INSTALL_NAME_DIR on OSX builds (fixes #125)
+  2016-07-19 Fix warnings in examples
+  2016-07-19 Fix missing include in NA BMI
+  2016-07-19 Fix type of hg_addr_t
+  2016-07-19 Cache proc info / keep caching private for now (fix #51)
+  2016-07-19 Fix mercury types to use pointer to struct
+  2016-07-19 Fix hg_proc_buf_memcpy to use HG_EXPORT HG_PROC_INLINE
+  2016-07-19 Check <sys/prctl.h> include file
+  2016-07-19 Disable NA cancel test for now
+  2016-07-19 Add option to choose default type of checksum
+  2016-07-19 Fix previous commit when mchecksum is enabled
+  2016-07-18 Prevent extra copy when encoding hg_bulk_t (should fix #119)
+  2016-07-18 Fix mercury_util install path (fixes #120)
+  2016-07-11 Enable sm test in travis
+  2016-07-06 Enable cancel tests
+  2016-07-06 A few printf tweaks in NA test
+  2016-07-06 Update jenkins build to use cci sm patch
+  2016-07-05 Use CMake 3.5.2 on OSX w/travis
+  2016-07-05 Revert "Update travis osx image"
+  2016-07-05 Update travis osx image
+  2016-07-05 CMake fixes for policies
+  2016-07-05 Use after free and potential leak fixes
+  2016-07-05 Fix segfault when evaluating locator in na_info_parse
+  2016-07-05 Use CTEST_UPDATE_VERSION_ONLY instead of disabling update step
+  2016-07-05 Disable source tree update when running CTest w/travis
+  2016-07-01 Update jenkins build to use new CCI
+  2016-07-01 Drop some useless compile checks for NA BMI and NA CCI
+  2016-07-01 Add NA_CCI_USE_POLL option in CMake
+  2016-06-30 Stick with using CCI tarball on travis because of autogen requirements
+  2016-06-30 Missing autogen.pl in travis script
+  2016-06-30 Update CCI to latest revision in travis
+  2016-06-29 Fix NA MPI and NA BMI to use NA_MEM_WRITE_ONLY memory access flags
+  2016-06-16 Update mchecksum submodule for error macro fixes
+  2016-06-16 Fix remaining error macros according to previous fix
+  2016-06-10 Update mchecksum submodule for pc config changes
+  2016-06-02 Sync testing scripts
+  2016-05-31 Modify memory access flags so that bitwise operations work as expected
+  2016-05-31 Remove cov/memcheck env variables from jenkins script
+  2016-05-25 Update doxygen mainpage file with new website etc
+  2016-05-24 Add argument to hg_request_finalize() to retrieve arg from hg_request_init() (fixes #44)
+  2016-05-23 Add cancelation support for NA MPI
+  2016-05-23 Set return code correctly in HG_Core_respond()
+  2016-05-23  Enable support for AddressSanitizer builds in travis (only w/GCC)
+  2016-05-23 Disable coverage and memcheck in jenkins build
+  2016-05-20 Update kwsys submodule
+  2016-05-20 Add mutex around global bulk handle for test perf
+  2016-05-20 NA CCI: Fix use after free of na_cci_info_recv_unexpected struct
+  2016-05-19 Enable support for ThreadSanitizer builds in travis (only w/GCC)
+  2016-05-20 Disable ThreadSanitizer in master branch for now
+  2016-05-19 Add topic_travis to travis branches (for testing)
+  2016-05-19 Change default linker in travis build
+  2016-05-19 Try again with travis trusty
+  2016-05-19 Try to pass ltsan again to travis
+  2016-05-19 Try to pass ltsan again to travis
+  2016-05-19 Try to pass ltsan again to travis
+  2016-05-19 Pass ltsan to gcc travis flags
+  2016-05-19 Re-enable thread sanitizer for gcc
+  2016-05-19 Fix unused variable in mercury bulk
+  2016-05-19 Fix test util thread
+  2016-05-19 More tweaks to travis config
+  2016-05-19 Do not check certificate in travis
+  2016-05-19 More tweaks to travis config
+  2016-05-19 More tweaks to travis config
+  2016-05-18 Update travis to use gcc 6
+  2016-05-18 Missing fPIC flag to MERCURY_MEMCHECK_FLAGS
+  2016-05-18 Reduce verbosity in travis build
+  2016-05-18 Add fpie option to travis memcheck
+  2016-05-18 A few more fixes to enable ThreadSanitizer memcheck in travis
+  2016-05-18 Missed closing bracket in travis script
+  2016-05-18 Fix typo in travis script
+  2016-05-18 Enable ThreadSanitizer memcheck type in travis
+  2016-05-18 Use trusty dist for travis
+  2016-05-17 Fix race in op ID assignment in HG_Bulk_transfer
+  2016-05-17 Fix formatting (space/tabs) in NA CCI
+  2016-05-17 Make completed/canceled atomics in NA CCI
+  2016-05-17 Fix races in tests when input is freed after bulk transfer completes
+  2016-05-17 Fix warning for return type in test
+  2016-05-17 Fix race when na op ID was reset after handle is freed
+  2016-04-26 Fix CCI plugin to free accepted addresses/connections
+  2016-04-22 Reduce timeout in test server
+  2016-04-22 Fix na_addr_t/hg_addr_t in tests
+  2016-04-22 Disable cancel tests for now
+  2016-04-22 Rework NA test cancel to follow callback approach
+  2016-04-13 Bring HG and HG Bulk cancel changes from Joe
+  2016-04-12 Fix and update headers
+  2016-04-01 Start fixing hg_thread_set/getaffinity on OSX to make build pass
+  2016-04-01 Limit eager bulk transfer to HG_BULK_READ_ONLY bulk handles (fixes #83)
+  2016-04-01 Update examples after last changes
+  2016-04-01 Fix HG_BULK_WRITE_ONLY flag not handled
+  2016-04-01 Fix tests after HG_Addr* changes
+  2016-04-01 Clean up headers
+  2016-04-01 Add HG_Addr_lookup(), HG_Addr_free(), HG_Addr_self(), HG_Addr_dup(), HG_Addr_to_string(). Add also HG_Core* versions
+             of these routines that map to NA_Addr* routines.
+  2016-04-01 Clean up NA interface
+  2016-04-01 Add hg_thread_get/setaffinity() to set CPU affinity
+  2016-03-28 Fix missing extern C declarations in util (fixes #78)
+  2016-03-27 Add MERCURY_USE_EAGER_BULK option
+  2016-03-25 Update examples after latest mercury changes
+  2016-03-24 Increment version number to 0.8.9
+  2016-03-24 Make HG bulk use HG context / HG class (fixes #23).
+  2016-03-21 Remove NA_Addr_lookup_wait() from NA (fixes #65)
+  2016-03-21 Mark SSM plugin as advanced
+  2016-03-21 Add support for bulk eager transfers
+  2016-03-20 Force use of OPA if stdatomic.h is not found
+  2016-03-20 Pack request/response structs to avoid extra padding (fixes #71)
+  2016-03-20 Let option to use OPA (for compilers that don't support stdatomic)
+  2016-02-12 Modify NA_Addr_to_string to return buffer size needed (fixes #41)
+  2016-02-11 Clean HG_Register and HG_Core_register to take id instead of func_name (fixes #56)
+  2016-02-10 Update CMakeLists.txt to include renamed README file
+  2016-02-10 Fix a formatting in README file
+  2016-02-10 Update README file with recent instructions
+  2016-02-08 Fix cmake empty build dir detection when running tests
+  2016-02-08 A few more fixes to travis script - Disable CCI on OSX
+  2016-02-08 Move testing script files to Testing/script
+  2016-02-08 Add compiler name if front of travis build
+  2016-02-08 Add OSX and clang to travis build
+  2016-02-08 Update travis build with latest MPI/CCI
+  2016-01-26 Move HG_* functions to mercury.h / Rename mercury core functions to HG_Core_*
+  2016-01-26 Fix return type of HG_Bulk_get_size() (fixes #49)
+  2016-01-22 Add NA_Get_class_name() to retrieve plugin name from NA classi (fixes #47)
+  2016-01-14 Use sys/queue.h for mercury queue
+  2015-12-03 Clean up mercury_list API and use list from sys/queue.h
+  2015-12-10 Fix typo in FindBMI.cmake
+  2015-12-10 Update kwsys submodule
+  2015-12-03 Link util tests to mercury util only
+  2015-08-18 Update and add examples
+  2015-07-19 Disable testing of cci sm on travis for now
+  2015-07-19 Disable cma in CCI sm in travis build
+  2015-07-19 Use cma in CCI sm in travis build
+  2015-07-19 Fix travis_build.sh script
+  2015-07-19 Fix travis install
+  2015-07-19 Check travis home
+  2015-07-19 Tweaks for travis testing
+  2015-07-16 More tweaks to ctest/cdash script for travis
+  2015-07-16 Tweak ctest/cdash script for travis
+  2015-07-15 Add debug/relwithdebinfo/release modes to travis testing
+  2015-07-15 Use tarball instead of git for cci travis testing
+  2015-07-15 Add cci in travis testing
+  2015-07-15 Fix travis hostname
+  2015-07-15 Add travis hostname
+  2015-07-15 Fixes for travis testing
+  2015-07-15 Add travis configuration
+  2015-07-15 Jenkins test script cleanup
+  2015-07-15 Fix hdfgroup domain for CDash
+  2015-07-01 Add test for nested RPC (requires 2 servers)
+  2015-05-14 Update kwsys submodule
+  2015-05-14 Fix target name for DoxygenDoc
+  2015-05-14 Add BUILD_EXAMPLES option and snappy example from Rob Latham
+  2015-05-07 Remove unused NA test
+  2015-05-07 na_cci: Fix na_cci_addr_self to include correct uri and some cleanup
+  2015-05-07 Fix na_bmi_addr_self and na_mpi_addr_self to include server port name
+  2015-04-28 na: cleanup NA BMI/MPI plugins
+  2015-04-28 mercury_bulk: cleanup / reset context to NULL
+  2015-04-28 mercury: cleanup / reset hg_handle to NULL
+  2015-04-28 Use stdatomic instead of OpenPA if available
+  2015-04-23 Update documentation.
+  2015-04-20 na_cci: fix na_cci_addr_self and refcnt
+  2015-04-17 Update copyright date
+  2015-04-16 Fix coresident execution with callback API (NB. call executed in separate thread)
+  2015-04-10 Return NA_SUCCESS for NA BMI and NA MPI correctly, i.e. when something completes, NA_TIMEOUT otherwise
+  2015-02-27 Update CCI version used for testing - use master for now
+  2015-02-26 Update CCI version used for testing
+  2015-02-25 Remove debug line in NA MPI
+  2015-02-25 Fix return type of test proc routines
+  2015-02-24 Fixes for WIN32
+  2015-02-17 Fix doc
+  2015-02-17 Add mercury HL layer which provides default classes/contexts
+  2015-02-13 Clean up mercury_macros.h and remove high-level macros
+  2015-02-13 Do not print error message when HG_Progress times out
+  2015-02-06 Allow hg_request_t objects to be re-used once they complete
+  2014-12-15 Enable CCI in jenkins testing
+  2014-12-15 Add NA_CCI_TESTING_PROTOCOL option
+  2014-12-15 Turn off debug in SSM plugin
+  2014-11-30 HG bulk: do not enter hg_thread_cond_timedwait if timeout is 0
+  2014-11-30 Initialize response header correctly before decoding it
+  2014-11-30 Add MERCURY_USE_CHECKSUMS option
+  2014-11-26 Re-use bulk handle in perf test
+  2014-11-20 Clean NA BMI and NA MPI plugins
+  2014-11-20 Add basic implementation of na_mpi_cancel
+  2014-11-20 Remove NA_UNUSED from na_bmi_cancel
+  2014-11-20 Add first HG_Cancel implementation
+  2014-11-20 Rename completed_count to na_completed_count
+  2014-11-20 Add basic implementation of na_bmi_cancel
+  2014-11-20 Remove trigger thread from test server
+  2014-11-20 Fix memory leak in HG bulk
+  2014-11-20 Cleanup CMakeLists.txt
+  2014-11-20 Update CMake policies
+  2014-11-20 Update CPACK_PACKAGE_DESCRIPTION_SUMMARY
+  2014-11-20 Update copyright date
+  2014-11-20 Update mchecksum submodule
+  2014-11-19 Clean up testing directory
+  2014-11-18 Add option NA_XXX_TESTING_PROTOCOL to specify protocols used for testing
+  2014-11-17 Fix bulk interface to use NA_Mem_register/publish
+  2014-11-17 Check NA plugin callback definition
+  2014-11-17 Fix remaining HG_FAIL/HG_ERROR_DEFAULT macros
+  2014-11-06 Clean up test server
+  2014-11-06 Tweak test server
+  2014-11-06 Tweak test perf
+  2014-11-06 Fix to 256 the number of unexpected messages started by the server
+  2014-11-06 Remove unnecessary mutex in NA_Addr_lookup_wait
+  2014-11-06 Remove na_class_info struct and integrate name/check_protocol/initialize callbacks into na_class struct
+  2014-11-04 Update kwsys submodule
+  2014-11-04 Check invalid parameters in NA
+  2014-11-04 Fixes for overflow test
+  2014-11-04 Return error code to client in case of overflow
+  2014-11-03 Add hg_size_t type / use hg_size_t instead of size_t
+  2014-10-30 Add overflow test
+  2014-10-30 Return error if output exceeds expected message size
+  2014-10-27 Cleanup test_request test
+  2014-10-27 Rename test_scale to test_perf
+  2014-10-27 Fix hg_handle refcount so that handles created through HG_Create can be used multiple times with HG_Forward
+  2014-10-27 Modify posix test to use callback API
+  2014-10-27 Rename hg_request_object_t to hg_request_t
+  2014-10-27 Fix error log message
+  2014-10-23 Fixes for not entering hg_thread_cond_timedwait if timeout is 0
+  2014-10-22 Fix handling of HG_Forward arguments in case of overflow
+  2014-10-22 Cleanup in mercury_proc
+  2014-10-21 Update texting for bulk seg test
+  2014-10-20 Fix timeout in HG_Progress
+  2014-10-07 Do not read config file if test uses self addr
+  2014-10-07 Fix bulk test after callback changes
+  2014-10-06 Clean up test and enable bulk test again
+  2014-10-06 Update mercury layer after mercury core changes
+  2014-10-06 Add HG bulk class to hg_proc_create
+  2014-10-06 Modify HG_Get_info to return pointer to info struct
+  2014-10-06 Update documentation
+  2014-10-03 Return from hg_request_finalize if request_class NULL
+  2014-09-19 Use request emulation in tests
+  2014-09-19 More fixes and cleanup for mercury core
+  2014-09-19 Change request_verify and response_verify to use pointer to struct
+  2014-09-19 Expose hg_bulk_t in hg_bulk_cb_info
+  2014-09-12 Make progress on local context for hg_test_finalize_rpc
+  2014-09-12 Fix hg_progress / trigger and processing list
+  2014-09-12 Fix HG_Register free
+  2014-09-12 Fix test server
+  2014-09-12 Return from queue free is queue is NULL
+  2014-09-12 Fix return value of HG_Register
+  2014-09-12 Fix HG_Bulk_context_create and destroy
+  2014-09-11 Fix testing suite for callbacks
+  2014-09-11 First implementation of mercury and mercury core using callbacks
+  2014-09-11 Remove HG_ERROR_DEFAULT and HG_FAIL error code
+  2014-09-11 Add listen flag to NA class
+  2014-09-11 Remove mercury_handler and mercury_private
+  2014-08-19 Add callback API for mercury / separate layers and add mercury core Remove mercury_handler
+  2014-05-20 Implement HG bulk API
+  2014-05-19 Add NA_Mem_publish and corresponding callback for NA plugins
+  2014-05-13 More implementation of HG Bulk callbacks Add hg_bulk_op_id / complete operation and move to completion queue when NA
+             sub-operations complete Add HG_Bulk_progress/HG_Bulk_trigger Remove hg_bulk_request_t type Remove static variables
+             from HG Bulk
+  2014-05-09 More API fixes for callbacks
+  2014-05-02 Add callbacks to mercury interface
+  2014-04-30 Add first callback version of HG bulk
+
+Scott Atchley (23):
+  2016-06-02 Add blocking support to na_cci (fixes #72)
+  2015-05-08 na_cci: in na_cci_addr_to_str(), we could have a buffer overflow if the strlen of the URI equals the buffer length
+             leaving no room for a NULL
+  2014-12-18 na_cci: remove unused function
+  2014-12-17 na_cci: use properly scoped variable
+  2014-11-25 na_cci: reference count op_id
+  2014-11-25 na_cci: improve addr ref counting
+  2014-11-21 na_cci: implement cancel
+  2014-11-20 na_cci: ref count na_cci_addr_t and defer cleanup
+  2014-11-20 na_cci: fail communication if no connection
+  2014-11-20 na_cci: only send the cci_rma_handle_t
+  2014-11-19 na_cci: send bye message when freeing addr
+  2014-11-19 na_cci: fix bug when handling devices
+  2014-11-18 na_cci: destroy the endpoint in finalize
+  2014-11-18 na_cci: add copyright for UT-Battelle, LLC
+  2014-11-18 na_cci: add NA_CCI_Get_port_name()
+  2014-11-18 Support testing using CCI
+  2014-11-17 na_cci: pass na_cci_addr to connect
+  2014-11-17 na_cci: don't allocate a 2ng priv struct
+  2014-11-16 na_cci: add connection setup
+  2014-11-14 na_cci: handle send completions
+  2014-11-14 na_cci: improve recv_expected path
+  2014-11-14 na_cci: initial commit
+  2014-11-17 Fix newline retained in fgets when passing port_name in NA test
+
+John Jenkins (16):
+  2016-10-12 size getters for eager mode RPC arg xfers
+  2016-08-10 Match proc function signatures for provided types (close #128)
+  2016-07-08 Actually check protocol in mpi (close #117)
+  2016-07-01 Fixes leaks introduced by #112 (closes #114)
+  2016-06-22 Rework address parsing in mercury (closes #112)
+  2016-06-10 Remove another APPLE check for pc generation (closes #104)
+  2016-06-10 Rm unnecessary APPLE check for pc generation (merge #103)
+  2016-05-20 Add HG_Class_get_name/HG_Class_get_protocol (#100)
+  2016-05-10 Reorder op_id assignment (merges #99)
+  2016-05-09 Remove SSM plugin (#98)
+  2016-05-04 Typo in input buffer size (#94)
+  2016-04-01 add hg_request_complete_cb convenience function
+  2016-04-04 add HG_Context_get_class
+  2016-03-30 Call hg_proc_flush() before looking at extra input buffer (fixes #79) This prevents the checksum from being added to
+             the input buffer if it was already full.
+  2016-02-02 put request library limitations up front
+  2016-01-28 add hg to hg-bulk getters
+
+Phil Carns (8):
+  2016-09-05 Prevent segfault if HG_Init() fails (close #136)
+  2016-08-18 Skip poll() call if there is no remaining timeout (close #134)
+  2016-07-10 Add note about patching BMI for OSX (close #118)
+  2016-06-30 Update na_cci to use cci_create_endpoint_at() (fixes #101)
+  2016-06-02 Update na_cci to use new NA_MEM flag conventions (#102)
+  2016-03-19 Defer RPC callback execution to HG_Trigger()
+  2016-03-06 use short sends for req/response
+  2016-03-04 avoid calling lookup_wait in threaded example
+
+Kevin Harms (6):
+  2016-01-14 Fixes and test case
+  2015-01-07 Add test support for unex_send, ex_send, unex_recv, ex_recv, put and get. All tests pass with na_bmi.
+  2015-01-07 Complete support for cancel in na_bmi. All operations can be cancelled.
+  2014-12-05 Add cancel test to build rules
+  2014-12-05 Cancel now works correctly for implemented operations
+  2014-12-05 Simple cancellation test case
+
+H. Joe Lee (1):
+  2016-03-10 Fixed na test for cancel.
+
+Jeff Olivier (1):
+  2016-06-16 Update mercury_error.h
+
+Jonathan Jenkins (1):
+  2014-10-23 Do not enter hg_thread_cond_timedwait if timeout is 0 in HG_Trigger
+
+Rob Latham (1):
+  2014-12-15 MPI_TAG_UB is a key to an attribute placed on a communicator.  We cannot use it directly.
+
+================
 v0.8.2
 ================
-Jerome Soumagne (58):
+Jerome Soumagne (59):
+  2014-11-19 Update CHANGELOG
   2014-11-19 Update README
   2014-11-19 Update version to 0.8.2
   2014-10-17 Fixes to high-level macros after previous changes
