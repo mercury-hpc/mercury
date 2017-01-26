@@ -114,9 +114,10 @@ struct na_bmi_info_recv_expected {
 struct na_bmi_info_put {
     bmi_op_id_t request_op_id;
     bmi_op_id_t transfer_op_id;
-    na_bool_t   transfer_completed;
+    hg_atomic_int32_t transfer_completed;
     bmi_size_t  transfer_actual_size;
     bmi_op_id_t completion_op_id;
+    na_bool_t   completion_flag;
     bmi_size_t  completion_actual_size;
     na_bool_t   internal_progress;
     BMI_addr_t  remote_addr;
@@ -1549,9 +1550,10 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     hg_atomic_set32(&na_bmi_op_id->completed, 0);
     na_bmi_op_id->info.put.request_op_id = 0;
     na_bmi_op_id->info.put.transfer_op_id = 0;
-    na_bmi_op_id->info.put.transfer_completed = NA_FALSE;
+    hg_atomic_set32(&na_bmi_op_id->info.put.transfer_completed, NA_FALSE);
     na_bmi_op_id->info.put.transfer_actual_size = 0;
     na_bmi_op_id->info.put.completion_op_id = 0;
+    na_bmi_op_id->info.put.completion_flag = NA_FALSE;
     na_bmi_op_id->info.put.completion_actual_size = 0;
     na_bmi_op_id->info.put.internal_progress = NA_FALSE;
     na_bmi_op_id->info.put.remote_addr = na_bmi_addr->bmi_addr;
@@ -1603,13 +1605,13 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* Immediate completion */
     if (bmi_ret) {
-        na_bmi_op_id->info.put.transfer_completed = NA_TRUE;
+        hg_atomic_set32(&na_bmi_op_id->info.put.transfer_completed, NA_TRUE);
     }
 
     /* Post the BMI recv request */
     bmi_ret = BMI_post_recv(
             &na_bmi_op_id->info.put.completion_op_id, na_bmi_addr->bmi_addr,
-            &na_bmi_op_id->info.put.transfer_completed, sizeof(na_bool_t),
+            &na_bmi_op_id->info.put.completion_flag, sizeof(na_bool_t),
             &na_bmi_op_id->info.put.completion_actual_size,
             BMI_EXT_ALLOC, na_bmi_rma_info->completion_tag, na_bmi_op_id,
             *bmi_context, NULL);
@@ -1948,13 +1950,15 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
                 ret = na_bmi_complete(na_bmi_op_id);
                 break;
             case NA_CB_PUT:
-                if (!na_bmi_op_id->info.put.transfer_completed &&
-                        na_bmi_op_id->info.put.transfer_op_id == bmi_op_id) {
-                    na_bmi_op_id->info.put.transfer_completed = NA_TRUE;
-                    /* Progress completion and send an ack after the put */
-                    ret = (na_bmi_op_id->info.put.internal_progress) ?
-                            na_bmi_progress_rma_completion(na_bmi_op_id) :
-                            NA_SUCCESS;
+                if (!hg_atomic_get32(&na_bmi_op_id->info.put.transfer_completed)
+                    && na_bmi_op_id->info.put.transfer_op_id == bmi_op_id) {
+                    if (na_bmi_op_id->info.put.internal_progress) {
+                        hg_atomic_set32(&na_bmi_op_id->info.put.transfer_completed, NA_TRUE);
+                        /* Progress completion and send an ack after the put */
+                        ret = na_bmi_progress_rma_completion(na_bmi_op_id);
+                    } else {
+                        /* Nothing */
+                    }
                 }
                 else if (na_bmi_op_id->info.put.completion_op_id == bmi_op_id) {
                     if (na_bmi_op_id->info.put.internal_progress) {
@@ -1965,6 +1969,13 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
                         na_bmi_op_id->info.put.rma_info = NULL;
                         na_bmi_release(na_bmi_op_id);
                     } else {
+                        /* Check ack completion flag */
+                        if (!na_bmi_op_id->info.put.completion_flag) {
+                            NA_LOG_ERROR("Error during transfer, ack received is %u",
+                                na_bmi_op_id->info.put.completion_flag);
+                            ret = NA_PROTOCOL_ERROR;
+                            goto done;
+                        }
                         /* No internal progress but actual put */
                         ret = na_bmi_complete(na_bmi_op_id);
                     }
@@ -2057,9 +2068,10 @@ na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
             na_bmi_op_id->type = NA_CB_PUT;
             na_bmi_op_id->info.put.request_op_id = 0;
             na_bmi_op_id->info.put.transfer_op_id = 0;
-            na_bmi_op_id->info.put.transfer_completed = NA_FALSE;
+            hg_atomic_set32(&na_bmi_op_id->info.put.transfer_completed, NA_FALSE);
             na_bmi_op_id->info.put.transfer_actual_size = 0;
             na_bmi_op_id->info.put.completion_op_id = 0;
+            na_bmi_op_id->info.put.completion_flag = NA_FALSE;
             na_bmi_op_id->info.put.completion_actual_size = 0;
             na_bmi_op_id->info.put.internal_progress = NA_TRUE;
             na_bmi_op_id->info.put.remote_addr = unexpected_info->addr;
@@ -2082,7 +2094,7 @@ na_bmi_progress_rma(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
             /* Immediate completion */
             if (bmi_ret) {
-                na_bmi_op_id->info.put.transfer_completed = NA_TRUE;
+                hg_atomic_set32(&na_bmi_op_id->info.put.transfer_completed, NA_TRUE);
                 ret = na_bmi_progress_rma_completion(na_bmi_op_id);
             }
             break;
@@ -2143,6 +2155,7 @@ na_bmi_progress_rma_completion(struct na_bmi_op_id *na_bmi_op_id)
     bmi_context_id *bmi_context =
             (bmi_context_id *) na_bmi_op_id->context->plugin_context;
     int bmi_ret;
+    na_bool_t completed = NA_TRUE;
 
     /* Only use this to send an ack when the put completes */
     if (na_bmi_op_id->type != NA_CB_PUT) {
@@ -2155,10 +2168,9 @@ na_bmi_progress_rma_completion(struct na_bmi_op_id *na_bmi_op_id)
 
     /* Send an ack to tell the server that the data is here */
     bmi_ret = BMI_post_send(&na_bmi_op_id->info.put.completion_op_id,
-            na_bmi_op_id->info.put.remote_addr,
-            &na_bmi_op_id->info.put.transfer_completed,
-            sizeof(na_bool_t), BMI_EXT_ALLOC, na_bmi_rma_info->completion_tag,
-            na_bmi_op_id, *bmi_context, NULL);
+            na_bmi_op_id->info.put.remote_addr, &completed, sizeof(na_bool_t),
+            BMI_EXT_ALLOC, na_bmi_rma_info->completion_tag, na_bmi_op_id,
+            *bmi_context, NULL);
     if (bmi_ret < 0) {
         NA_LOG_ERROR("BMI_post_send() failed");
         ret = NA_PROTOCOL_ERROR;
