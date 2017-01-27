@@ -2313,7 +2313,7 @@ na_sm_release(void *arg)
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) arg;
 
     if (na_sm_op_id && !hg_atomic_get32(&na_sm_op_id->completed)) {
-        NA_LOG_ERROR("Releasing resources from an uncompleted operation");
+        NA_LOG_WARNING("Releasing resources from an uncompleted operation");
     }
     na_sm_op_destroy(NULL, na_sm_op_id);
 }
