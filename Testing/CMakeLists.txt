@@ -69,7 +69,7 @@ if(NA_USE_MPI)
 endif()
 
 if(NA_USE_CCI)
-  set(NA_CCI_TESTING_PROTOCOL "tcp;sm" CACHE STRING "Protocol(s) used for testing (e.g., tcp;sm).")
+  set(NA_CCI_TESTING_PROTOCOL "tcp" CACHE STRING "Protocol(s) used for testing (e.g., tcp;sm).")
   mark_as_advanced(NA_CCI_TESTING_PROTOCOL)
 endif()
 
