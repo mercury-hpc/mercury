@@ -248,17 +248,28 @@ na_test_gen_config(int argc, char *argv[], int listen)
     info_string_ptr += sprintf(info_string_ptr, "%s", na_protocol_name);
 
     if (strcmp("sm", na_protocol_name) == 0) {
-        if (listen) {
-            /* special-case SM (pid:id) */
-            sprintf(info_string_ptr, "://%d/0", (int) getpid());
-        }
 #if defined(PR_SET_PTRACER) && defined(PR_SET_PTRACER_ANY)
+        FILE *scope_config;
+        int yama_val = '0';
+
+        /* Try to open ptrace_scope */
+        scope_config = fopen("/proc/sys/kernel/yama/ptrace_scope", "r");
+        if (scope_config) {
+            yama_val = fgetc(scope_config);
+            fclose(scope_config);
+        }
+
         /* Enable CMA on systems with YAMA */
-        if (prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0) < 0) {
+        if ((yama_val != '0')
+            && prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0) < 0) {
             NA_LOG_ERROR("Could not set ptracer\n");
             exit(1);
         }
 #endif
+        if (listen) {
+            /* special-case SM (pid:id) */
+            sprintf(info_string_ptr, "://%d/0", (int) getpid());
+        }
     } else if (strcmp("tcp", na_protocol_name) == 0) {
         if (listen) {
             na_port += (unsigned int) na_test_comm_rank_g;
