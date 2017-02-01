@@ -56,8 +56,6 @@
 
 #define NA_SM_LISTEN_BACKLOG    64
 
-#define NA_SM_RESERVE_TIMEOUT   5
-
 /* Msg sizes */
 #define NA_SM_UNEXPECTED_SIZE   4096
 #define NA_SM_EXPECTED_SIZE     NA_SM_UNEXPECTED_SIZE
@@ -237,6 +235,14 @@ struct na_sm_info_lookup {
     struct na_sm_addr *na_sm_addr;
 };
 
+/* Send unexpected and expected */
+struct na_sm_info_send {
+    void *buf;
+    size_t buf_size;
+    struct na_sm_addr *na_sm_addr;
+    na_tag_t tag;
+};
+
 /* Unexpected recv info */
 struct na_sm_info_recv_unexpected {
     void *buf;
@@ -261,6 +267,7 @@ struct na_sm_op_id {
     hg_atomic_int32_t canceled;     /* Operation canceled */
     union {
         struct na_sm_info_lookup lookup;
+        struct na_sm_info_send send;
         struct na_sm_info_recv_unexpected recv_unexpected;
         struct na_sm_info_recv_expected recv_expected;
     } info;
@@ -277,11 +284,13 @@ struct na_sm_private_data {
     HG_QUEUE_HEAD(na_sm_op_id) lookup_op_queue;
     HG_QUEUE_HEAD(na_sm_op_id) unexpected_op_queue;
     HG_QUEUE_HEAD(na_sm_op_id) expected_op_queue;
+    HG_QUEUE_HEAD(na_sm_op_id) deferred_op_queue;
     hg_thread_mutex_t accepted_addr_queue_mutex;
     hg_thread_mutex_t unexpected_msg_queue_mutex;
     hg_thread_mutex_t lookup_op_queue_mutex;
     hg_thread_mutex_t unexpected_op_queue_mutex;
     hg_thread_mutex_t expected_op_queue_mutex;
+    hg_thread_mutex_t deferred_op_queue_mutex;
     hg_thread_mutex_t copy_buf_mutex;
 };
 
@@ -476,6 +485,35 @@ na_sm_copy_and_free_buf(
     void *buf,
     size_t buf_size,
     unsigned int idx_reserved
+    );
+
+/**
+ * Defer message and push it to deferred queue.
+ */
+static na_return_t
+na_sm_msg_push(
+    na_class_t *na_class,
+    const void *buf,
+    na_size_t buf_size,
+    struct na_sm_addr *na_sm_addr,
+    na_tag_t tag,
+    struct na_sm_op_id *na_sm_op_id
+    );
+
+/**
+ * Check for deferred message and try to repost it.
+ */
+static na_return_t
+na_sm_msg_pop(
+    na_class_t *na_class
+    );
+
+/**
+ * Check for deferred messages and try to repost them.
+ */
+static na_return_t
+na_sm_msg_deferred_check_and_repost(
+    na_class_t *na_class
     );
 
 /**
@@ -1680,6 +1718,190 @@ na_sm_copy_and_free_buf(na_class_t *na_class,
 }
 
 /*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_msg_insert(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id,
+    na_cb_type_t cb_type, struct na_sm_addr *na_sm_addr,
+    unsigned int idx_reserved, na_size_t buf_size, na_tag_t tag)
+{
+    na_sm_cacheline_hdr_t na_sm_hdr;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Post the SM send request */
+    na_sm_hdr.hdr.type = cb_type;
+    na_sm_hdr.hdr.buf_idx = idx_reserved & 0xff;
+    na_sm_hdr.hdr.buf_size = buf_size & 0xffff;
+    na_sm_hdr.hdr.tag = tag;
+    if (!na_sm_ring_buf_push(na_sm_addr->na_sm_send_ring_buf, na_sm_hdr)) {
+        NA_LOG_ERROR("Full ring buffer");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    /* Notify remote */
+#ifdef HG_UTIL_HAS_SYSEVENTFD_H
+    if (hg_event_set(na_sm_addr->remote_notify) != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("Could not send completion notification");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+#else
+    if (na_sm_event_set(na_sm_addr->remote_notify) != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not send completion notification");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+#endif
+
+    /* Immediate completion, add directly to completion queue. */
+    ret = na_sm_complete(na_sm_op_id);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not complete operation");
+        goto done;
+    }
+
+    /* Notify local completion */
+    if (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
+        != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("Could not signal local completion");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_msg_push(na_class_t *na_class, const void *buf, na_size_t buf_size,
+    struct na_sm_addr *na_sm_addr, na_tag_t tag,
+    struct na_sm_op_id *na_sm_op_id)
+{
+    na_return_t ret = NA_SUCCESS;
+    void *copy_buf;
+
+    /* Copy user buffer */
+    copy_buf = malloc(buf_size);
+    if (!copy_buf) {
+        NA_LOG_ERROR("Could not allocate copy buffer");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+    memcpy(copy_buf, buf, buf_size);
+
+    /* Send info */
+    na_sm_op_id->info.send.buf = copy_buf;
+    na_sm_op_id->info.send.buf_size = buf_size;
+    na_sm_op_id->info.send.na_sm_addr = na_sm_addr;
+    na_sm_op_id->info.send.tag = tag;
+
+    /* Push the request to queue, it will be treated when there is space */
+    hg_thread_mutex_lock(
+        &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
+    HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue,
+        na_sm_op_id, entry);
+    hg_thread_mutex_unlock(
+        &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_msg_pop(na_class_t *na_class)
+{
+    unsigned int idx_reserved;
+    struct na_sm_op_id *na_sm_op_id;
+    na_cb_type_t recv_op;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Push the request to queue, it will be treated when there is space */
+    hg_thread_mutex_lock(
+        &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
+    na_sm_op_id = HG_QUEUE_FIRST(
+        &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue);
+
+    /* Map send CB type to recv CB type */
+    switch (na_sm_op_id->completion_data.callback_info.type) {
+        case NA_CB_SEND_UNEXPECTED:
+            recv_op = NA_CB_RECV_UNEXPECTED;
+            break;
+        case NA_CB_SEND_EXPECTED:
+            recv_op = NA_CB_RECV_EXPECTED;
+            break;
+        default:
+            NA_LOG_ERROR("Operation not supported");
+            ret = NA_INVALID_PARAM;
+            goto done;
+    }
+
+    /* Try to reserve buffer atomically */
+    ret = na_sm_reserve_and_copy_buf(na_class,
+        na_sm_op_id->info.send.na_sm_addr->na_sm_copy_buf,
+        na_sm_op_id->info.send.buf, na_sm_op_id->info.send.buf_size,
+        &idx_reserved);
+    if (ret != NA_SUCCESS) {
+        /* Still can't post */
+        goto done;
+    }
+
+    /* Can now free buf */
+    free(na_sm_op_id->info.send.buf);
+    na_sm_op_id->info.send.buf = NULL;
+
+    /* Insert message into ring buffer (complete OP ID) */
+    ret = na_sm_msg_insert(na_class, na_sm_op_id, recv_op,
+        na_sm_op_id->info.send.na_sm_addr, idx_reserved,
+        na_sm_op_id->info.send.buf_size, na_sm_op_id->info.send.tag);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not insert message");
+        goto done;
+    }
+
+done:
+    if (ret == NA_SUCCESS) {
+        HG_QUEUE_POP_HEAD(&NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue,
+            entry);
+    }
+    hg_thread_mutex_unlock(
+        &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_msg_deferred_check_and_repost(na_class_t *na_class)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    for (;;) {
+        na_bool_t deferred_queue_empty = NA_TRUE;
+
+        hg_thread_mutex_lock(
+            &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
+        deferred_queue_empty = HG_QUEUE_IS_EMPTY(
+            &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue);
+        hg_thread_mutex_unlock(
+            &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
+
+        if (deferred_queue_empty)
+            break;
+
+        ret = na_sm_msg_pop(na_class);
+        if (ret != NA_SUCCESS) {
+            if (ret != NA_SIZE_ERROR) {
+                NA_LOG_ERROR("Could not check for deferred message");
+            }
+            break;
+        }
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static void
 na_sm_offset_translate(struct na_sm_mem_handle *mem_handle, na_offset_t offset,
     na_size_t length, struct iovec *iov, unsigned long *iovcnt)
@@ -2412,6 +2634,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue);
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue);
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->expected_op_queue);
+    HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue);
 
     /* Initialize mutexes */
     hg_thread_mutex_init(
@@ -2424,6 +2647,8 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
             &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
     hg_thread_mutex_init(
             &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
+    hg_thread_mutex_init(
+            &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
     hg_thread_mutex_init(
              &NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
 
@@ -2441,7 +2666,7 @@ na_sm_finalize(na_class_t *na_class)
         goto done;
     }
 
-    /* Check that unexpected op queue is empty */
+    /* Check that lookup op queue is empty */
     if (!HG_QUEUE_IS_EMPTY(&NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue)) {
         NA_LOG_ERROR("Lookup op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
@@ -2459,9 +2684,15 @@ na_sm_finalize(na_class_t *na_class)
         ret = NA_PROTOCOL_ERROR;
     }
 
-    /* Check that unexpected message queue is empty */
+    /* Check that expected op queue is empty */
     if (!HG_QUEUE_IS_EMPTY(&NA_SM_PRIVATE_DATA(na_class)->expected_op_queue)) {
         NA_LOG_ERROR("Expected op queue should be empty");
+        ret = NA_PROTOCOL_ERROR;
+    }
+
+    /* Check that deferred op queue is empty */
+    if (!HG_QUEUE_IS_EMPTY(&NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue)) {
+        NA_LOG_ERROR("Deferred op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
     }
 
@@ -2501,6 +2732,8 @@ na_sm_finalize(na_class_t *na_class)
             &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
     hg_thread_mutex_destroy(
             &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
+    hg_thread_mutex_destroy(
+            &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
     hg_thread_mutex_destroy(
              &NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
 
@@ -2917,9 +3150,6 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     struct na_sm_op_id *na_sm_op_id = NULL;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest;
     unsigned int idx_reserved;
-    na_sm_cacheline_hdr_t na_sm_hdr;
-    hg_time_t t1, t2;
-    double remaining = NA_SM_RESERVE_TIMEOUT;
     na_return_t ret = NA_SUCCESS;
 
     if (buf_size > NA_SM_UNEXPECTED_SIZE) {
@@ -2947,67 +3177,27 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
-    /* Try to reserve buffer atomically */
-    do {
-        hg_time_get_current(&t1);
-        ret = na_sm_reserve_and_copy_buf(na_class, na_sm_addr->na_sm_copy_buf,
-            buf, buf_size, &idx_reserved);
-        if (ret == NA_SUCCESS)
-            break;
-
-        /* Spin wait */
-        hg_thread_yield();
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-    } while (remaining > 0);
-
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not reserve copy buffer");
-        goto done;
-    }
-
-    /* Post the SM send request */
-    na_sm_hdr.hdr.type = NA_CB_RECV_UNEXPECTED;
-    na_sm_hdr.hdr.buf_idx = idx_reserved & 0xff;
-    na_sm_hdr.hdr.buf_size = buf_size & 0xffff;
-    na_sm_hdr.hdr.tag = tag;
-    if (!na_sm_ring_buf_push(na_sm_addr->na_sm_send_ring_buf, na_sm_hdr)) {
-        NA_LOG_ERROR("Full ring buffer");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    /* Notify remote */
-#ifdef HG_UTIL_HAS_SYSEVENTFD_H
-    if (hg_event_set(na_sm_addr->remote_notify) != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not send completion notification");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-#else
-    if (na_sm_event_set(na_sm_addr->remote_notify) != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not send completion notification");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-#endif
-
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = na_sm_op_id;
 
-    /* Immediate completion, add directly to completion queue. */
-    ret = na_sm_complete(na_sm_op_id);
+    /* Try to reserve buffer atomically */
+    ret = na_sm_reserve_and_copy_buf(na_class, na_sm_addr->na_sm_copy_buf,
+        buf, buf_size, &idx_reserved);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not complete operation");
+        ret = na_sm_msg_push(na_class, buf, buf_size, na_sm_addr, tag,
+            na_sm_op_id);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not defer send unexpected operation");
+        }
         goto done;
     }
 
-    /* Notify local completion */
-    if (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
-        != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not signal local completion");
-        ret = NA_PROTOCOL_ERROR;
+    /* Insert message into ring buffer (complete OP ID) */
+    ret = na_sm_msg_insert(na_class, na_sm_op_id, NA_CB_RECV_UNEXPECTED,
+        na_sm_addr, idx_reserved, buf_size, tag);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not insert message");
         goto done;
     }
 
@@ -3105,9 +3295,6 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     struct na_sm_op_id *na_sm_op_id = NULL;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest;
     unsigned int idx_reserved;
-    na_sm_cacheline_hdr_t na_sm_hdr;
-    hg_time_t t1, t2;
-    double remaining = NA_SM_RESERVE_TIMEOUT;
     na_return_t ret = NA_SUCCESS;
 
     if (buf_size > NA_SM_EXPECTED_SIZE) {
@@ -3135,67 +3322,27 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
     hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
-    /* Try to reserve buffer atomically */
-    do {
-        hg_time_get_current(&t1);
-        ret = na_sm_reserve_and_copy_buf(na_class, na_sm_addr->na_sm_copy_buf,
-            buf, buf_size, &idx_reserved);
-        if (ret == NA_SUCCESS)
-            break;
-
-        /* Spin wait */
-        hg_thread_yield();
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-    } while (remaining > 0);
-
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not reserve copy buffer");
-        goto done;
-    }
-
-    /* Post the SM send request */
-    na_sm_hdr.hdr.type = NA_CB_RECV_EXPECTED;
-    na_sm_hdr.hdr.buf_idx = idx_reserved & 0xff;
-    na_sm_hdr.hdr.buf_size = buf_size & 0xffff;
-    na_sm_hdr.hdr.tag = tag;
-    if (!na_sm_ring_buf_push(na_sm_addr->na_sm_send_ring_buf, na_sm_hdr)) {
-        NA_LOG_ERROR("Full ring buffer");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    /* Notify remote */
-#ifdef HG_UTIL_HAS_SYSEVENTFD_H
-    if (hg_event_set(na_sm_addr->remote_notify) != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not send completion notification");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-#else
-    if (na_sm_event_set(na_sm_addr->remote_notify) != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not send completion notification");
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-#endif
-
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = na_sm_op_id;
 
-    /* Immediate completion, add directly to completion queue. */
-    ret = na_sm_complete(na_sm_op_id);
+    /* Try to reserve buffer atomically */
+    ret = na_sm_reserve_and_copy_buf(na_class, na_sm_addr->na_sm_copy_buf,
+        buf, buf_size, &idx_reserved);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not complete operation");
+        ret = na_sm_msg_push(na_class, buf, buf_size, na_sm_addr, tag,
+            na_sm_op_id);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not defer send expected operation");
+        }
         goto done;
     }
 
-    /* Notify local completion */
-    if (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
-        != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("Could not signal local completion");
-        ret = NA_PROTOCOL_ERROR;
+    /* Insert message into ring buffer (complete OP ID) */
+    ret = na_sm_msg_insert(na_class, na_sm_op_id, NA_CB_RECV_EXPECTED,
+        na_sm_addr, idx_reserved, buf_size, tag);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not insert message");
         goto done;
     }
 
@@ -3780,6 +3927,15 @@ na_sm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
     do {
         hg_time_t t1, t2;
         hg_util_bool_t progressed;
+        na_return_t deferred_ret;
+
+        /* Check for deferred messages */
+        deferred_ret = na_sm_msg_deferred_check_and_repost(na_class);
+        if (deferred_ret != NA_SUCCESS && deferred_ret != NA_SIZE_ERROR) {
+            NA_LOG_ERROR("Could not check for deferred messages");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
 
         hg_time_get_current(&t1);
 
