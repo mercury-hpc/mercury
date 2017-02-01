@@ -35,6 +35,7 @@ static na_class_t *hg_test_na_class_g = NULL;
 static hg_bool_t hg_test_is_client_g = HG_FALSE;
 static hg_addr_t hg_test_addr_g = HG_ADDR_NULL;
 static int hg_test_rank_g = 0;
+static hg_request_class_t *hg_test_request_class_g = NULL;
 
 hg_bulk_t hg_test_local_bulk_handle_g = HG_BULK_NULL;
 hg_thread_mutex_t hg_test_local_bulk_handle_mutex_g;
@@ -85,6 +86,39 @@ static hg_id_t hg_test_finalize2_id_g = 0;
 hg_atomic_int32_t hg_test_finalizing_count_g;
 
 /*---------------------------------------------------------------------------*/
+static int
+hg_test_request_progress(unsigned int timeout, void *arg)
+{
+    hg_context_t *context = (hg_context_t *) arg;
+    int ret = HG_UTIL_SUCCESS;
+
+#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
+    (void) timeout;
+    if (HG_Progress(context, 0) != HG_SUCCESS)
+#else
+    if (HG_Progress(context, timeout) != HG_SUCCESS)
+#endif
+        ret = HG_UTIL_FAIL;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
+{
+    hg_context_t *context = (hg_context_t *) arg;
+    unsigned int actual_count = 0;
+    int ret = HG_UTIL_SUCCESS;
+
+    if (HG_Trigger(context, timeout, 1, &actual_count)
+            != HG_SUCCESS) ret = HG_UTIL_FAIL;
+    *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_test_finalize_rpc_cb(const struct hg_cb_info *callback_info)
 {
@@ -104,7 +138,7 @@ hg_test_finalize_rpc(void)
     hg_handle_t handle;
     hg_request_t *request_object = NULL;
 
-    request_object = hg_request_create(HG_REQUEST_CLASS_DEFAULT);
+    request_object = hg_request_create(hg_test_request_class_g);
 
     hg_ret = HG_Create(HG_CONTEXT_DEFAULT, hg_test_addr_g, hg_test_finalize_id_g,
             &handle);
@@ -275,6 +309,15 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
         goto done;
     }
 
+    /* Create request class */
+    hg_test_request_class_g = hg_request_init(hg_test_request_progress,
+        hg_test_request_trigger, HG_CONTEXT_DEFAULT);
+    if (!hg_test_request_class_g) {
+        HG_LOG_ERROR("Could not create HG request class");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
     if (na_test_use_self_g) {
         size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
 
@@ -293,7 +336,7 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
                 &hg_test_local_bulk_handle_g);
     } else {
         /* Look up addr using port name info */
-        ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, HG_REQUEST_CLASS_DEFAULT,
+        ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, hg_test_request_class_g,
                 test_addr_name, &hg_test_addr_g, HG_MAX_IDLE_TIME);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not find addr %s\n", test_addr_name);
@@ -310,7 +353,7 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
     if (addr) *addr = hg_test_addr_g;
     if (rank) *rank = hg_test_rank_g;
     if (context) *context = HG_CONTEXT_DEFAULT;
-    if (request_class) * request_class = HG_REQUEST_CLASS_DEFAULT;
+    if (request_class) *request_class = hg_test_request_class_g;
 
 done:
     return HG_CLASS_DEFAULT;
@@ -343,6 +386,15 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
         goto done;
     }
 
+    /* Create request class */
+    hg_test_request_class_g = hg_request_init(hg_test_request_progress,
+        hg_test_request_trigger, HG_CONTEXT_DEFAULT);
+    if (!hg_test_request_class_g) {
+        HG_LOG_ERROR("Could not create HG request class");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
     /* Register test routines */
     hg_test_register(HG_CLASS_DEFAULT);
 
@@ -355,7 +407,7 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
 
         hg_test_addr_table_g = (hg_addr_t *) malloc(hg_test_addr_table_size_g * sizeof(hg_addr_t));
         for (i = 0; i < hg_test_addr_table_size_g; i++) {
-            ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, HG_REQUEST_CLASS_DEFAULT,
+            ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, hg_test_request_class_g,
                     hg_test_addr_name_table_g[i], &hg_test_addr_table_g[i], HG_MAX_IDLE_TIME);
             if (ret != HG_SUCCESS) {
                 fprintf(stderr, "Could not find addr %s\n", hg_test_addr_name_table_g[i]);
@@ -414,6 +466,10 @@ HG_Test_finalize(hg_class_t *hg_class)
     hg_thread_pool_destroy(hg_test_thread_pool_g);
     hg_thread_mutex_destroy(&hg_test_local_bulk_handle_mutex_g);
 #endif
+
+    /* Finalize request class */
+    hg_request_finalize(hg_test_request_class_g, NULL);
+    hg_test_request_class_g = NULL;
 
     /* Finalize interface */
     ret = HG_Hl_finalize();

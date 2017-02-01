@@ -13,18 +13,24 @@ set(MERCURY_TESTING_NUM_THREADS "8" CACHE STRING
   "Number of server threads used for testing.")
 mark_as_advanced(MERCURY_TESTING_NUM_THREADS)
 
-option(MERCURY_TESTING_USE_THREAD_POOL
-  "Run tests using thread pool." ON)
+option(MERCURY_TESTING_USE_BUSY_WAIT
+  "Run tests using busy waiting instead of polling." OFF)
+if(MERCURY_TESTING_USE_BUSY_WAIT)
+  set(MERCURY_TESTING_HAS_BUSY_WAIT ON)
+endif()
+mark_as_advanced(MERCURY_TESTING_USE_BUSY_WAIT)
+
+option(MERCURY_TESTING_USE_THREAD_POOL "Run tests using thread pool." ON)
 if(MERCURY_TESTING_USE_THREAD_POOL)
   set(MERCURY_TESTING_HAS_THREAD_POOL ON)
-endif(MERCURY_TESTING_USE_THREAD_POOL)
+endif()
 mark_as_advanced(MERCURY_TESTING_USE_THREAD_POOL)
 
 option(MERCURY_TESTING_VERIFY_DATA
   "Verify data when running tests (disable when measuring bandwidth)." ON)
 if(MERCURY_TESTING_VERIFY_DATA)
   set(MERCURY_TESTING_HAS_VERIFY_DATA ON)
-endif(MERCURY_TESTING_VERIFY_DATA)
+endif()
 mark_as_advanced(MERCURY_TESTING_VERIFY_DATA)
 
 option(MERCURY_ENABLE_PARALLEL_TESTING

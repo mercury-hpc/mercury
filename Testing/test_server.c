@@ -19,6 +19,14 @@
 extern hg_atomic_int32_t hg_test_finalizing_count_g;
 extern hg_addr_t *hg_addr_table;
 
+#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
+#define HG_TEST_PROGRESS_TIMEOUT    0
+#define HG_TEST_TRIGGER_TIMEOUT     0
+#else
+#define HG_TEST_PROGRESS_TIMEOUT    100
+#define HG_TEST_TRIGGER_TIMEOUT     HG_MAX_IDLE_TIME
+#endif
+
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static HG_THREAD_RETURN_TYPE
 hg_progress_thread(void *arg)
@@ -31,7 +39,7 @@ hg_progress_thread(void *arg)
         if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
             break;
 
-        ret = HG_Progress(context, 100);
+        ret = HG_Progress(context, HG_TEST_PROGRESS_TIMEOUT);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
 
     printf("Exiting\n");
@@ -63,7 +71,7 @@ main(int argc, char *argv[])
         if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
             break;
 
-        ret = HG_Trigger(context, HG_MAX_IDLE_TIME, 1, NULL);
+        ret = HG_Trigger(context, HG_TEST_TRIGGER_TIMEOUT, 1, NULL);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
 #else
     do {
@@ -76,7 +84,8 @@ main(int argc, char *argv[])
         if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
             break;
 
-        ret = HG_Progress(context, HG_MAX_IDLE_TIME);
+        /* Use same value as HG_TEST_TRIGGER_TIMEOUT for convenience */
+        ret = HG_Progress(context, HG_TEST_TRIGGER_TIMEOUT);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
 #endif
 
