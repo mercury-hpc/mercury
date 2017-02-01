@@ -16,6 +16,8 @@
 extern hg_id_t hg_test_rpc_open_id_g;
 extern hg_id_t hg_test_rpc_open_id_no_resp_g;
 
+#define NINFLIGHT 128
+
 struct forward_cb_args {
     hg_request_t *request;
     rpc_handle_t *rpc_handle;
@@ -197,6 +199,12 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     rpc_open_in_t  rpc_open_in_struct;
     hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle1, rpc_open_handle2;
+    /* Used for multiple in-flight RPCs */
+    hg_request_t *request_m[NINFLIGHT];
+    hg_handle_t handle_m[NINFLIGHT];
+    struct forward_cb_args forward_cb_args_m[NINFLIGHT];
+    rpc_handle_t rpc_open_handle_m[NINFLIGHT];
+    unsigned int i;
 
     /* Create request 1 */
     request1 = hg_request_create(request_class);
@@ -265,6 +273,43 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
 
     hg_request_destroy(request1);
     hg_request_destroy(request2);
+
+    /**
+     * Forwarding multiple requests
+     */
+    printf("Creating %u requests...\n", NINFLIGHT);
+    for (i = 0; i < NINFLIGHT; i++) {
+	    request_m[i] = hg_request_create(request_class);
+	    hg_ret = HG_Create(context, addr, hg_test_rpc_open_id_g, handle_m + i );
+	    if (hg_ret != HG_SUCCESS) {
+		    fprintf(stderr, "Could not start call\n");
+		    goto done;
+	    }
+	    rpc_open_handle_m[i].cookie = i;
+	    rpc_open_in_struct.path = rpc_open_path;
+	    rpc_open_in_struct.handle = rpc_open_handle_m[i];
+	    printf(" %d Forwarding rpc_open, op id: %u...\n", i, hg_test_rpc_open_id_g);
+	    forward_cb_args_m[i].request = request_m[i];
+	    forward_cb_args_m[i].rpc_handle = &rpc_open_handle_m[i];
+	    hg_ret = HG_Forward(handle_m[i], hg_test_rpc_forward_cb, &forward_cb_args_m[i],
+	        &rpc_open_in_struct);
+	    if (hg_ret != HG_SUCCESS) {
+		    fprintf(stderr, "Could not forward call\n");
+		    goto done;
+	    }
+    }
+
+    /* Complete */
+    for (i = 0; i < NINFLIGHT; i++) {
+	    hg_request_wait(request_m[i], HG_MAX_IDLE_TIME, NULL);
+
+	    hg_ret = HG_Destroy(handle_m[i]);
+	    if (hg_ret != HG_SUCCESS) {
+		    fprintf(stderr, "Could not destroy\n");
+		    goto done;
+	    }
+	    hg_request_destroy(request_m[i]);
+    }
 
 done:
     return hg_ret;
