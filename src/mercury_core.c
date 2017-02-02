@@ -2199,7 +2199,7 @@ hg_core_trigger_lookup_entry(struct hg_op_id *hg_op_id)
 
         hg_cb_info.arg = hg_op_id->arg;
         hg_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
-        hg_cb_info.type = HG_CB_BULK;
+        hg_cb_info.type = HG_CB_LOOKUP;
         hg_cb_info.info.lookup.addr = hg_op_id->info.lookup.addr;
 
         hg_op_id->callback(&hg_cb_info);
