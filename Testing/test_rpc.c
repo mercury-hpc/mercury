@@ -16,7 +16,7 @@
 extern hg_id_t hg_test_rpc_open_id_g;
 extern hg_id_t hg_test_rpc_open_id_no_resp_g;
 
-#define NINFLIGHT 128
+#define NINFLIGHT 32
 
 struct forward_cb_args {
     hg_request_t *request;
@@ -310,6 +310,7 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
 	    }
 	    hg_request_destroy(request_m[i]);
     }
+    printf("Done\n");
 
 done:
     return hg_ret;
