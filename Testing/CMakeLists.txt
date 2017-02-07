@@ -56,8 +56,11 @@ mark_as_advanced(MERCURY_TESTING_TEMP_DIRECTORY)
 
 if(MERCURY_USE_SELF_FORWARD)
   option(MERCURY_TESTING_CORESIDENT "Enable testing of coresident mode." OFF)
-  mark_as_advanced(MERCURY_TESTING_CORESIDENT)
+else()
+  set(MERCURY_TESTING_CORESIDENT "OFF" CACHE BOOL
+    "Enable testing of coresident mode." FORCE)
 endif()
+mark_as_advanced(MERCURY_TESTING_CORESIDENT)
 
 #------------------------------------------------------------------------------
 # NA protocols used for testing
