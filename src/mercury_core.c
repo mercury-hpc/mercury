@@ -3140,6 +3140,13 @@ HG_Core_get_output(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
         goto done;
     }
 
+    /* Cannot respond if no_response flag set */
+    if (hg_handle->no_response) {
+        HG_LOG_ERROR("No output was produced on that RPC (no response)");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
     hg_core_get_output(hg_handle, out_buf, out_buf_size);
 
 done:
@@ -3164,6 +3171,14 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
         ret = HG_INVALID_PARAM;
         goto done;
     }
+#ifndef HG_HAS_SELF_FORWARD
+    if (NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
+        hg_handle->hg_info.addr)) {
+        HG_LOG_ERROR("Not enabled, please enable HG_USE_SELF_FORWARD");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+#endif
 
     /* Set callback */
     hg_handle->callback = callback;
@@ -3231,7 +3246,14 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
         ret = HG_INVALID_PARAM;
         goto done;
     }
-
+#ifndef HG_HAS_SELF_FORWARD
+    if (NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
+        hg_handle->hg_info.addr)) {
+        HG_LOG_ERROR("Not enabled, please enable HG_USE_SELF_FORWARD");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+#endif
     /* Cannot respond if no_response flag set */
     if (hg_handle->no_response) {
         HG_LOG_ERROR("Sending response was disabled on that RPC");
