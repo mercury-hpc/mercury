@@ -7,7 +7,7 @@ includedir=@MERCURY_INSTALL_INCLUDE_DIR@
 Name: mercury
 Description: RPC Library for High-Performance Computing
 Version: @MERCURY_PACKAGE_VERSION@
-URL: http://trac.mcs.anl.gov/projects/mercury
+URL: http://mercury-hpc.github.io/
 Requires:
 Libs: -L${libdir} @MERCURY_LIBRARIES@
 Libs.private: @MERCURY_LIB_DEPENDENCIES@
