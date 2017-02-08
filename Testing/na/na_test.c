@@ -56,11 +56,12 @@ static int mpi_internally_initialized = NA_FALSE;
 static char **na_addr_table = NULL;
 static unsigned int na_addr_table_size = 0;
 
-static const char *na_test_short_opt_g = "hc:p:sSVE";
+static const char *na_test_short_opt_g = "hc:p:H:sSVE";
 static const struct na_test_opt na_test_opt_g[] = {
     { "help", no_arg, 'h'},
     { "comm", require_arg, 'c' },
     { "protocol", require_arg, 'p' },
+    { "host", require_arg, 'H' },
     { "static", no_arg, 's' },
 //    { "device", require_arg, 'd' },
 //    { "iface", require_arg, 'i' }
@@ -109,6 +110,8 @@ na_test_usage(const char *execname)
            "                          NA plugins: bmi, mpi, cci, etc\n");
     printf("     -p,   --protocol     Select plugin protocol\n"
            "                          Available protocols: tcp, ib, etc\n");
+    printf("     -H,   --host         Select hostname / IP address to use\n"
+           "                          Default: localhost\n");
 }
 
 /*---------------------------------------------------------------------------*/
@@ -188,6 +191,7 @@ na_test_gen_config(int argc, char *argv[], int listen)
 {
     char *na_class_name = NULL;
     char *na_protocol_name = NULL;
+    char *na_hostname = NULL;
     static char info_string[NA_TEST_MAX_ADDR_NAME];
     unsigned int na_port = 22222;
     char *info_string_ptr = info_string;
@@ -211,6 +215,10 @@ na_test_gen_config(int argc, char *argv[], int listen)
             case 'p':
                 /* NA protocol name */
                 na_protocol_name = strdup(na_test_opt_arg_g);
+                break;
+            case 'H':
+                /* hostname */
+                na_hostname = strdup(na_test_opt_arg_g);
                 break;
             case 's':
                 na_test_use_static_mpi_g = NA_TRUE;
@@ -270,16 +278,13 @@ na_test_gen_config(int argc, char *argv[], int listen)
             /* special-case SM (pid:id) */
             sprintf(info_string_ptr, "://%d/0", (int) getpid());
         }
-    } else if (strcmp("tcp", na_protocol_name) == 0) {
+    } else if ((strcmp("tcp", na_protocol_name) == 0)
+        || (strcmp("verbs", na_protocol_name) == 0)) {
         if (listen) {
+            const char *hostname = na_hostname ? na_hostname : "localhost";
             na_port += (unsigned int) na_test_comm_rank_g;
-            sprintf(info_string_ptr, "://localhost:%d", na_port);
+            sprintf(info_string_ptr, "://%s:%d", hostname, na_port);
         }
-    } else if (strcmp("verbs", na_protocol_name) == 0) {
-         if (listen) {
-             na_port += (unsigned int) na_test_comm_rank_g;
-             sprintf(info_string_ptr, "://localhost:%d", na_port);
-         }
     } else if (strcmp("static", na_protocol_name) == 0) {
         /* Nothing */
     } else if (strcmp("dynamic", na_protocol_name) == 0) {
@@ -291,6 +296,7 @@ na_test_gen_config(int argc, char *argv[], int listen)
 
     free(na_class_name);
     free(na_protocol_name);
+    free(na_hostname);
     return info_string;
 }
 

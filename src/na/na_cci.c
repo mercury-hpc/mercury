@@ -23,6 +23,12 @@
 #include <string.h>
 #include <assert.h>
 
+#include <sys/types.h>
+#include <ifaddrs.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+
 /****************/
 /* Local Macros */
 /****************/
@@ -460,6 +466,58 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
+na_cci_check_interface(const char *hostname, char **device_name)
+{
+    struct ifaddrs *ifaddrs, *ifaddr;
+    na_return_t ret = NA_SUCCESS;
+
+    if (getifaddrs(&ifaddrs) == -1) {
+        NA_LOG_ERROR("getifaddrs() failed");
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* Check and compare interfaces */
+    for (ifaddr = ifaddrs; ifaddr != NULL; ifaddr = ifaddr->ifa_next) {
+        char host[NI_MAXHOST];
+        char ip[INET_ADDRSTRLEN];
+
+        if (ifaddr->ifa_addr == NULL)
+            continue;
+
+        if (ifaddr->ifa_addr->sa_family != AF_INET)
+            continue;
+
+        /* Get hostname */
+        if (getnameinfo(ifaddr->ifa_addr, sizeof(struct sockaddr_in), host,
+            NI_MAXHOST, NULL, 0, 0) != 0) {
+            NA_LOG_ERROR("Name could not be resolved for: %s", ifaddr->ifa_name);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+
+        /* Get IP */
+        if (!inet_ntop(ifaddr->ifa_addr->sa_family,
+            &((struct sockaddr_in *) ifaddr->ifa_addr)->sin_addr, ip,
+            INET_ADDRSTRLEN)) {
+            NA_LOG_ERROR("IP could not be resolved for: %s", ifaddr->ifa_name);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+
+        /* Compare IP and hostname */
+        if (!strcmp(host, hostname) || !strcmp(ip, hostname)) {
+            *device_name = strdup(ifaddr->ifa_name);
+            break;
+        }
+    }
+
+out:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
 na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     na_bool_t listen)
 {
@@ -470,6 +528,10 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     char *uri = NULL;
     na_return_t ret = NA_SUCCESS;
     int fd = 0;
+    char *device_name = NULL;
+    char *hostname = NULL;
+    char *service = na_info->host_name;
+    na_bool_t device_found = NA_FALSE;
 
     (void)listen;
 
@@ -490,6 +552,36 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
         goto out;
     }
 
+    /* Get hostname/port info if available (tcp or verbs) */
+    if ((((strcmp(na_info->protocol_name, "tcp") == 0)
+        || strcmp(na_info->protocol_name, "verbs") == 0))
+        && na_info->host_name && strstr(na_info->host_name, ":")) {
+        hostname = strdup(na_info->host_name);
+        if (!hostname) {
+            NA_LOG_ERROR("Could not duplicate string");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
+
+        /* Extract hostname */
+        strtok_r(hostname, ":", &service);
+
+        /* Somehow loopback interface is not supported */
+        if (strcmp("localhost", hostname)
+            && strcmp("127.0.0.1", hostname)) {
+            ret = na_cci_check_interface(hostname, &device_name);
+            if (ret != NA_SUCCESS) {
+                NA_LOG_ERROR("Could not check interfaces");
+                goto out;
+            }
+
+            /* Allow for passing device name directly */
+            if (!device_name)
+                device_name = strdup(hostname);
+        }
+    }
+
+    /* Check devices */
     for (i = 0;; i++) {
         device = devices[i];
 
@@ -498,12 +590,21 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
 
         if (!strcmp(device->transport, na_info->protocol_name)) {
             if (!device->up) {
-                NA_LOG_ERROR("device %s tranport %s is down", device->name,
+                NA_LOG_WARNING("device %s transport %s is down", device->name,
                     device->transport);
                 continue;
             }
+            if (device_name && strcmp(device->name, device_name))
+                continue; /* did not match */
+
+            device_found = NA_TRUE;
             break;
         }
+    }
+    if (!device_found) {
+        NA_LOG_ERROR("Could not find requested device");
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
     }
 
     na_class->private_data = malloc(sizeof(struct na_cci_private_data));
@@ -513,20 +614,11 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
         goto out;
     }
 
-    /* Create unspecified endpoint if no hostname was provided */
-    if (!na_info->host_name)
-        rc = cci_create_endpoint(device, 0, &endpoint, &fd);
-    else {
-        char *service = na_info->host_name;
-
-        /* Pass only port if TCP */
-        if (strcmp(na_info->protocol_name, "tcp") == 0) {
-            if (strstr(na_info->host_name, ":") != NULL)
-                 strtok_r(na_info->host_name, ":", &service);
-        }
+    /* Create unspecified endpoint if service is set */
+    if (service)
         rc = cci_create_endpoint_at(device, service, 0, &endpoint, &fd);
-    }
-
+    else
+        rc = cci_create_endpoint(device, 0, &endpoint, &fd);
     if (rc) {
         NA_LOG_ERROR("cci_create_endpoint() failed with %s",
             cci_strerror(NULL, rc));
@@ -550,6 +642,8 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     ret = na_cci_init(na_class);
 
 out:
+    free(hostname);
+    free(device_name);
     return ret;
 }
 
@@ -2049,7 +2143,7 @@ na_cci_release(void *arg)
     na_cci_op_id_t *na_cci_op_id = (na_cci_op_id_t *) arg;
 
     if (na_cci_op_id && !hg_atomic_get32(&na_cci_op_id->completed)) {
-        NA_LOG_ERROR("Releasing resources from an uncompleted operation");
+        NA_LOG_WARNING("Releasing resources from an uncompleted operation");
     }
     op_id_decref(na_cci_op_id);
 }
