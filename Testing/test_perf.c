@@ -508,14 +508,16 @@ main(int argc, char *argv[])
     /* Run Bulk test (rma) */
     measure_bulk_transfer(hg_class, context, addr, size_big, size_big, request_class);
 
-    if (na_test_comm_rank_g == 0) {
-        printf("###############################################################################\n");
-        printf("# Bulk test (rma non-contiguous)\n");
-        printf("###############################################################################\n");
-    }
+    if (strcmp(HG_Class_get_name(hg_class), "cci")) {
+        if (na_test_comm_rank_g == 0) {
+            printf("###############################################################################\n");
+            printf("# Bulk test (rma non-contiguous)\n");
+            printf("###############################################################################\n");
+        }
 
-    /* Run Bulk test (non-contiguous) */
-    measure_bulk_transfer(hg_class, context, addr, size_big, size_big / 1024, request_class);
+        /* Run Bulk test (non-contiguous) */
+        measure_bulk_transfer(hg_class, context, addr, size_big, size_big / 1024, request_class);
+    }
 
     HG_Test_finalize(hg_class);
 
