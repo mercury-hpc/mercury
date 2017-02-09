@@ -2695,11 +2695,6 @@ HG_Core_register(hg_class_t *hg_class, hg_id_t id, hg_rpc_cb_t rpc_cb)
         ret = HG_INVALID_PARAM;
         goto done;
     }
-    if (!rpc_cb) {
-        HG_LOG_ERROR("NULL RPC callback");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
 
     /* Allocate the key */
     func_key = (hg_id_t *) malloc(sizeof(hg_id_t));
