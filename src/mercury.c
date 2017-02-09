@@ -1024,6 +1024,11 @@ HG_Get_input(hg_handle_t handle, void *in_struct)
 {
     hg_return_t ret = HG_SUCCESS;
 
+    if (handle == HG_HANDLE_NULL) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!in_struct) {
         HG_LOG_ERROR("NULL pointer to input struct");
         ret = HG_INVALID_PARAM;
@@ -1046,6 +1051,11 @@ HG_Free_input(hg_handle_t handle, void *in_struct)
 {
     hg_return_t ret = HG_SUCCESS;
 
+    if (handle == HG_HANDLE_NULL) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!in_struct) {
         HG_LOG_ERROR("NULL pointer to input struct");
         ret = HG_INVALID_PARAM;
@@ -1068,6 +1078,11 @@ HG_Get_output(hg_handle_t handle, void *out_struct)
 {
     hg_return_t ret = HG_SUCCESS;
 
+    if (handle == HG_HANDLE_NULL) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!out_struct) {
         HG_LOG_ERROR("NULL pointer to output struct");
         ret = HG_INVALID_PARAM;
@@ -1090,6 +1105,11 @@ HG_Free_output(hg_handle_t handle, void *out_struct)
 {
     hg_return_t ret = HG_SUCCESS;
 
+    if (handle == HG_HANDLE_NULL) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!out_struct) {
         HG_LOG_ERROR("NULL pointer to output struct");
         ret = HG_INVALID_PARAM;
@@ -1117,6 +1137,13 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     hg_return_t ret = HG_SUCCESS;
     hg_size_t size_to_send;
 
+    if (handle == HG_HANDLE_NULL) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    /* Retrieve private data */
     hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
@@ -1168,6 +1195,12 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
     hg_return_t ret = HG_SUCCESS;
     hg_return_t ret_code = HG_SUCCESS;
     hg_size_t size_to_send;
+
+    if (handle == HG_HANDLE_NULL) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
 
     /* Serialize output */
     ret = hg_set_output(handle, out_struct, &size_to_send);

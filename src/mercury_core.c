@@ -2348,6 +2348,11 @@ HG_Core_init_na(na_class_t *na_class)
     struct hg_class *hg_class = NULL;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!na_class) {
+        HG_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
     hg_class = hg_core_init(NULL, HG_FALSE, na_class);
     if (!hg_class) {
         HG_LOG_ERROR("Cannot initialize HG core layer");
@@ -2690,6 +2695,11 @@ HG_Core_register(hg_class_t *hg_class, hg_id_t id, hg_rpc_cb_t rpc_cb)
         ret = HG_INVALID_PARAM;
         goto done;
     }
+    if (!rpc_cb) {
+        HG_LOG_ERROR("NULL RPC callback");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
 
     /* Allocate the key */
     func_key = (hg_id_t *) malloc(sizeof(hg_id_t));
@@ -2742,7 +2752,6 @@ HG_Core_registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
         ret = HG_INVALID_PARAM;
         goto done;
     }
-
     if (!flag) {
         HG_LOG_ERROR("NULL flag");
         ret = HG_INVALID_PARAM;
@@ -2858,7 +2867,11 @@ HG_Core_addr_lookup(hg_context_t *context, hg_cb_t callback, void *arg,
         ret = HG_INVALID_PARAM;
         goto done;
     }
-
+    if (!callback) {
+        HG_LOG_ERROR("NULL callback");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!name) {
         HG_LOG_ERROR("NULL lookup name");
         ret = HG_INVALID_PARAM;
@@ -2908,6 +2921,11 @@ HG_Core_addr_self(hg_class_t *hg_class, hg_addr_t *addr)
         ret = HG_INVALID_PARAM;
         goto done;
     }
+    if (!addr) {
+        HG_LOG_ERROR("NULL pointer to address");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
 
     ret = hg_core_addr_self(hg_class, addr);
     if (ret != HG_SUCCESS) {
@@ -2930,7 +2948,6 @@ HG_Core_addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr)
         ret = HG_INVALID_PARAM;
         goto done;
     }
-
     if (!new_addr) {
         HG_LOG_ERROR("NULL pointer to destination address");
         ret = HG_INVALID_PARAM;
