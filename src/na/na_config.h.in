@@ -37,6 +37,9 @@
 /* CCI */
 #cmakedefine NA_HAS_CCI
 
+/* OFI */
+#cmakedefine NA_HAS_OFI
+
 /* NA SM */
 #cmakedefine NA_HAS_SM
 #cmakedefine NA_SM_HAS_CMA

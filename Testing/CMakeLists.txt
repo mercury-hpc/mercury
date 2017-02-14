@@ -82,6 +82,11 @@ if(NA_USE_CCI)
   mark_as_advanced(NA_CCI_TESTING_PROTOCOL)
 endif()
 
+if(NA_USE_OFI)
+  set(NA_OFI_TESTING_PROTOCOL "socket;verbs;stl" CACHE STRING "Protocol(s) used for testing (e.g., socket;verbs;stl).")
+  mark_as_advanced(NA_OIF_TESTING_PROTOCOL)
+endif()
+
 if(NA_USE_SM)
   set(NA_NA_TESTING_PROTOCOL "sm" CACHE STRING "Protocol(s) used for testing (e.g., sm).")
   mark_as_advanced(NA_NA_TESTING_PROTOCOL)
