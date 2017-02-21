@@ -2026,11 +2026,9 @@ na_cci_progress(na_class_t * na_class, na_context_t * context,
                 NA_LOG_ERROR("cci_return_event() failed %s",
                     cci_strerror(e, rc));
 
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-            if (remaining < 0)
-                break; /* Return NA_TIMEOUT */
-            continue;
+            /* Not ready yet, some internal CCI traffic can trigger a POLLIN
+             * that does not result in a CCI event being returned */
+            break;
         }
 
         /* We got an event, handle it */
