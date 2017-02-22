@@ -1034,6 +1034,7 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
             (na_bool_t) mpi_ext_initialized;
 
     if (!mpi_ext_initialized) {
+        int provided;
 #ifdef NA_MPI_HAS_GNI_SETUP
         /* Setup GNI job before initializing MPI */
         if (NA_MPI_Gni_job_setup() != NA_SUCCESS) {
@@ -1042,21 +1043,14 @@ na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
             goto done;
         }
 #endif
-        if (listening) {
-            int provided;
-            /* Listening implies creation of listening thread so use that to
-             * be safe */
-            mpi_ret = MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE,
-                    &provided);
-            if (provided != MPI_THREAD_MULTIPLE) {
-                NA_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set");
-                ret = NA_PROTOCOL_ERROR;
-                goto done;
-            }
-        } else {
-            /* Here we assume that the application is not using threads
-             * TODO add an option for init_thread ? */
-            mpi_ret = MPI_Init(NULL, NULL);
+        /* Listening implies creation of listening thread so use that to
+         * be safe */
+        mpi_ret = MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE,
+            &provided);
+        if (provided != MPI_THREAD_MULTIPLE) {
+            NA_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
         }
         if (mpi_ret != MPI_SUCCESS) {
             NA_LOG_ERROR("Could not initialize MPI");
