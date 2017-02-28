@@ -1511,6 +1511,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 
         /* Get operation ID from header */
         hg_handle->hg_info.id = hg_handle->in_header.id;
+        hg_handle->hg_info.mplex_id = hg_handle->in_header.mplex_id;
         hg_handle->cookie = hg_handle->in_header.cookie;
         hg_handle->no_response = (hg_handle->in_header.flags
             & HG_PROC_HEADER_NO_RESPONSE) ? HG_TRUE : HG_FALSE;
@@ -3210,6 +3211,7 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     hg_handle->in_header.flags |= flags;
     flags = (hg_handle->no_response) ? HG_PROC_HEADER_NO_RESPONSE : 0x00;
     hg_handle->in_header.flags |= flags;
+    hg_handle->in_header.mplex_id = hg_handle->hg_info.mplex_id;
 
     /* Encode request header */
     ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,

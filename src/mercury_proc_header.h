@@ -31,6 +31,7 @@ struct hg_header_request {
      hg_id_t     id;               /* RPC request identifier */
      hg_uint8_t  flags;            /* Flags (extra buffer) */
      hg_uint32_t cookie;           /* Random cookie */
+     hg_uint32_t mplex_id;         /* Multiplexing identifier */
      hg_uint16_t crc16;            /* CRC16 checksum */
      /* Should be 128 bits here */
      hg_bulk_t   extra_in_handle;  /* Extra handle (large data) */
@@ -63,7 +64,7 @@ struct hg_header_response {
  *
  * Request:
  * mercury byte / protocol version number / rpc id / flags (e.g. for extra buf) /
- * random cookie / crc16 / (bulk handle, there is space since payload is copied)
+ * random cookie / mplex_id / crc16 / (bulk handle, there is space since payload is copied)
  *
  * Response:
  * flags / error / cookie / crc16 / payload
@@ -77,7 +78,7 @@ struct hg_header_response {
 #define HG_IDENTIFIER (('H' << 1) | ('G')) /* 0xD7 */
 
 /* Mercury protocol version number */
-#define HG_PROTOCOL_VERSION 0x00000002
+#define HG_PROTOCOL_VERSION 0x00000003
 
 /* Encode/decode version number into uint32 */
 #define HG_GET_MAJOR(value) ((value >> 24) & 0xFF)

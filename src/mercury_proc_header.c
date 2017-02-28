@@ -50,6 +50,7 @@ hg_proc_header_request_init(struct hg_header_request *header)
     header->id = 0;
     header->flags = 0;
     header->cookie = 0; /* TODO not used for now */
+    header->mplex_id = 0;
     header->crc16 = 0;
     header->extra_in_handle = HG_BULK_NULL;
 #ifdef HG_HAS_CHECKSUMS
@@ -100,7 +101,7 @@ hg_proc_header_request(void *buf, size_t buf_size,
     struct hg_header_request *header, hg_proc_op_t op, hg_class_t *hg_class,
     hg_size_t *extra_header_size)
 {
-    hg_uint32_t n_protocol, n_id, n_cookie;
+    hg_uint32_t n_protocol, n_id, n_cookie, n_mplex_id;
     hg_uint16_t n_crc16;
     void *buf_ptr = buf;
     hg_proc_t proc = HG_PROC_NULL;
@@ -118,6 +119,7 @@ hg_proc_header_request(void *buf, size_t buf_size,
         n_protocol = htonl(header->protocol);
         n_id = htonl((hg_uint32_t) header->id);
         n_cookie = htonl(header->cookie);
+        n_mplex_id = htonl(header->mplex_id);
     }
 
     /* hg */
@@ -150,6 +152,12 @@ hg_proc_header_request(void *buf, size_t buf_size,
     mchecksum_update(header->checksum, &n_cookie, sizeof(hg_uint32_t));
 #endif
 
+    /* mplex_id */
+    buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_mplex_id, sizeof(hg_uint32_t), op);
+#ifdef HG_HAS_CHECKSUMS
+    mchecksum_update(header->checksum, &n_mplex_id, sizeof(hg_uint32_t));
+#endif
+
     /* crc16 */
 #ifdef HG_HAS_CHECKSUMS
     mchecksum_get(header->checksum, &header->crc16, sizeof(hg_uint16_t),
@@ -173,6 +181,7 @@ hg_proc_header_request(void *buf, size_t buf_size,
         header->protocol = ntohl(n_protocol);
         header->id = (hg_id_t) ntohl(n_id);
         header->cookie = ntohl(n_cookie);
+        header->mplex_id = ntohl(n_mplex_id);
     }
 
     /* Encode/decode extra_bulk_handle if flags have been set, we can do that
@@ -306,6 +315,7 @@ hg_proc_header_request_verify(const struct hg_header_request *header)
     printf("ID: %d\n", header.id);
     printf("FLAGS: 0x%02X\n", header.flags);
     printf("COOKIE: 0x%08X\n", header.cookie);
+    printf("MPLEX_ID: 0x%08X\n", header.mplex_id);
     printf("CRC16: 0x%04hX\n", header.crc16);
      */
 
