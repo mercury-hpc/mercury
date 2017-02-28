@@ -885,6 +885,26 @@ HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Registered_name(hg_class_t *hg_class, const char *func_name, hg_id_t *id, hg_bool_t *flag)
+{
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return HG_INVALID_PARAM;
+    }
+
+    if (!func_name) {
+        HG_LOG_ERROR("NULL string");
+        return HG_INVALID_PARAM;
+    }
+
+    /* Generate an ID from the function name */
+    *id = hg_hash_string(func_name);
+
+    return HG_Core_registered(hg_class, *id, flag);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Register_data(hg_class_t *hg_class, hg_id_t id, void *data,
     void (*free_callback)(void *))
 {
