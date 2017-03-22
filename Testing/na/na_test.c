@@ -290,7 +290,7 @@ na_test_gen_config(int argc, char *argv[], int listen)
     } else if (strcmp("dynamic", na_protocol_name) == 0) {
         /* Nothing */
     } else if (strcmp("sockets", na_protocol_name) == 0 ||
-               strcmp("stl", na_protocol_name) == 0) {
+               strcmp("psm2", na_protocol_name) == 0) {
         /* Nothing */
     } else {
         NA_LOG_ERROR("Unknown protocol: %s", na_protocol_name);

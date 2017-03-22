@@ -76,6 +76,11 @@ na_ofi_config_init()
     char *interface;
     char *node_list_file;
     int port;
+    struct ifaddrs *if_addrs = NULL;
+    struct ifaddrs *ifa = NULL;
+    void *tmp_ptr;
+    const char *ip_str = NULL;
+    int rc;
     na_return_t ret = NA_SUCCESS;
 
     interface = getenv("OFI_INTERFACE");
@@ -88,6 +93,63 @@ na_ofi_config_init()
         }
     } else {
         na_ofi_conf.noc_interface = NULL;
+        NA_LOG_ERROR("ENV OFI_INTERFACE not set.");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    rc = getifaddrs(&if_addrs);
+    if (rc != 0) {
+        NA_LOG_ERROR("cannot getifaddrs, errno: %d(%s).\n",
+                     errno, strerror(errno));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    for (ifa = if_addrs; ifa != NULL; ifa = ifa->ifa_next) {
+        if (strcmp(ifa->ifa_name, na_ofi_conf.noc_interface))
+            continue;
+        if (ifa->ifa_addr == NULL)
+            continue;
+        memset(na_ofi_conf.noc_ip_str, 0, INET_ADDRSTRLEN);
+        if (ifa->ifa_addr->sa_family == AF_INET) {
+            /* check it is a valid IPv4 Address */
+            tmp_ptr =
+            &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+            ip_str = inet_ntop(AF_INET, tmp_ptr, na_ofi_conf.noc_ip_str,
+                         INET_ADDRSTRLEN);
+            if (ip_str == NULL) {
+                NA_LOG_ERROR("inet_ntop failed, errno: %d(%s).\n",
+                    errno, strerror(errno));
+                freeifaddrs(if_addrs);
+                ret = NA_PROTOCOL_ERROR;
+                goto out;
+            }
+            if (strcmp(ip_str, "127.0.0.1") == 0) {
+                continue;
+            }
+            /*
+            NA_LOG_DEBUG("Get interface %s IPv4 Address %s\n",
+                         ifa->ifa_name, na_ofi_conf.noc_ip_str);
+            */
+            break;
+        } else if (ifa->ifa_addr->sa_family == AF_INET6) {
+            /* check it is a valid IPv6 Address */
+            /*
+             * tmp_ptr =
+             * &((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+             * inet_ntop(AF_INET6, tmp_ptr, na_ofi_conf.noc_ip_str,
+             *           INET6_ADDRSTRLEN);
+             * C_DEBUG("Get %s IPv6 Address %s\n",
+             *         ifa->ifa_name, na_ofi_conf.noc_ip_str);
+             */
+        }
+    }
+    freeifaddrs(if_addrs);
+    if (ip_str == NULL) {
+        NA_LOG_ERROR("no IP addr found.\n");
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
     }
 
     port_str = getenv("OFI_PORT");
@@ -173,6 +235,7 @@ na_ofi_config_node_list(struct fid_av *av_hdl)
     char *line = NULL;
     int host, port, host_cnt, port_cnt, i, j;
     fi_addr_t fi_addr;
+    size_t len;
     int rc;
     na_return_t ret = NA_SUCCESS;
 
@@ -190,7 +253,13 @@ na_ofi_config_node_list(struct fid_av *av_hdl)
     }
 
     for (; fgets(input, NA_OFI_CONFIG_LINE_MAX, fp); free(line)) {
+        len = strlen(input);
+        if (len <= 5)
+            continue;
         line = strdup(input);
+        /* remove tail space */
+        for (p = input + len - 1; isspace(*p); p--)
+            *p = '\0';
         /* ignore starting space */
         for (p = input; isspace(*p); p++) ;
         /* ignore blank line or comment line (started by "#") */
@@ -270,6 +339,8 @@ na_ofi_config_node_list(struct fid_av *av_hdl)
                      line, host_str, host, host_cnt, port_str, port, port_cnt);
         */
         for (i = 0; i < host_cnt; i++) {
+            struct fi_info *tmp_info = NULL;
+
             if (host_cnt > 1) {
                 if (i == 0)
                     locator = strchr(host_str, '[');
@@ -278,18 +349,29 @@ na_ofi_config_node_list(struct fid_av *av_hdl)
             for (j = 0; j < port_cnt; j++) {
                 if (port_cnt > 1)
                     sprintf(port_str, "%d", port + j);
+
                 /* insert to AV */
-                rc = fi_av_insertsvc(av_hdl, host_str, port_str, &fi_addr,
-                                     0 /* flags */, NULL /* context */);
+                rc = fi_getinfo(NA_OFI_VERSION, host_str, port_str,
+                                0 /* flags */, NULL /* hints */, &tmp_info);
+                if (rc != 0) {
+                    NA_LOG_ERROR("fi_getinfo (%s:%s) failed, rc: %d(%s).",
+                                 host_str, port_str, rc, fi_strerror(-rc));
+                    ret = NA_PROTOCOL_ERROR;
+                    goto out;
+                }
+                rc = fi_av_insert(av_hdl, tmp_info->dest_addr, 1, &fi_addr,
+                                  0 /* flags */, NULL /* context */);
+                //rc = fi_av_insertsvc(av_hdl, host_str, port_str, &fi_addr,
+                //                     0 /* flags */, NULL /* context */);
+                fi_freeinfo(tmp_info);
                 if (rc < 0) {
-                    NA_LOG_ERROR("fi_av_insertsvc failed(host %s, port %s), "
-                                 "rc: %d(%s).", host_str, port_str,
-                                 rc, fi_strerror(-rc));
+                    NA_LOG_ERROR("fi_av_insertsvc failed(%s:%s), rc: %d(%s).",
+                                 host_str, port_str, rc, fi_strerror(-rc));
                     ret = NA_PROTOCOL_ERROR;
                     goto out;
                 } else if (rc != 1) {
-                    NA_LOG_ERROR("fi_av_insertsvc failed(host %s, port %s), "
-                                 "rc: %d.", host_str, port_str, rc);
+                    NA_LOG_ERROR("fi_av_insertsvc failed(%s:%s), rc: %d.",
+                                 host_str, port_str, rc);
                     ret = NA_PROTOCOL_ERROR;
                     goto out;
                 }

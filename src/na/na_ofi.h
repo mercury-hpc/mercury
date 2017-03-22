@@ -57,6 +57,9 @@
 #include <rdma/fi_cm.h>
 #include <rdma/fi_errno.h>
 
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+
 #ifdef __cplusplus
 extern		"C" {
 #endif
@@ -67,7 +70,7 @@ extern		"C" {
  * layouts that are compatible with this version.
  */
 #ifndef NA_OFI_VERSION
-#define NA_OFI_VERSION FI_VERSION(1, 4)
+#define NA_OFI_VERSION FI_VERSION(1, 5)
 #endif
 
 #ifndef NA_OFI_MAX_URI_LEN
@@ -81,6 +84,12 @@ extern		"C" {
 #ifndef NA_OFI_MAX_PORT_LEN
 #define NA_OFI_MAX_PORT_LEN (16)
 #endif
+
+enum na_ofi_prov_type {
+    NA_OFI_PROV_SOCKETS,
+    NA_OFI_PROV_PSM2,
+    NA_OFI_PROV_VERBS,
+};
 
 /**
  * NA OFI plugin configuration:
@@ -120,6 +129,8 @@ struct na_ofi_config {
     hg_atomic_int32_t noc_port_cli;
     /* path of the node list file */
     char *noc_node_list_file;
+    /* IP addr str for the noc_interface */
+    char noc_ip_str[INET_ADDRSTRLEN];
 };
 
 na_return_t na_ofi_config_init();
