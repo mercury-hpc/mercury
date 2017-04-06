@@ -253,10 +253,10 @@ na_ofi_config_node_list(struct fid_av *av_hdl)
     }
 
     for (; fgets(input, NA_OFI_CONFIG_LINE_MAX, fp); free(line)) {
+        line = strdup(input);
         len = strlen(input);
         if (len <= 5)
             continue;
-        line = strdup(input);
         /* remove tail space */
         for (p = input + len - 1; isspace(*p); p--)
             *p = '\0';
