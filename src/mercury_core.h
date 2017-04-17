@@ -129,7 +129,6 @@ HG_Core_class_get_output_eager_size(
         const hg_class_t *hg_class
         );
 
-
 /**
  * Create a new context. Must be destroyed by calling HG_Core_context_destroy().
  *
@@ -399,7 +398,7 @@ HG_Core_ref_incr(
  *
  * \return Pointer to info or NULL in case of failure
  */
-HG_EXPORT struct hg_info *
+HG_EXPORT const struct hg_info *
 HG_Core_get_info(
         hg_handle_t handle
         );

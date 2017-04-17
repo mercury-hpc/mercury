@@ -441,7 +441,7 @@ HG_Ref_incr(
  *
  * \return Pointer to info or NULL in case of failure
  */
-HG_EXPORT struct hg_info *
+HG_EXPORT const struct hg_info *
 HG_Get_info(
         hg_handle_t handle
         );

@@ -2478,7 +2478,6 @@ done:
     return ret;
 }
 
-
 /*---------------------------------------------------------------------------*/
 hg_context_t *
 HG_Core_context_create(hg_class_t *hg_class)
@@ -3091,7 +3090,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-struct hg_info *
+const struct hg_info *
 HG_Core_get_info(hg_handle_t handle)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;

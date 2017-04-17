@@ -1012,7 +1012,7 @@ HG_Ref_incr(hg_handle_t handle)
 }
 
 /*---------------------------------------------------------------------------*/
-struct hg_info *
+const struct hg_info *
 HG_Get_info(hg_handle_t handle)
 {
     return HG_Core_get_info(handle);
@@ -1164,7 +1164,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     }
 
     if (extra_in_buf) {
-        struct hg_info *hg_info = HG_Core_get_info(handle);
+        const struct hg_info *hg_info = HG_Core_get_info(handle);
 
         ret = HG_Bulk_create(hg_info->hg_class, 1, &extra_in_buf,
                 &extra_in_buf_size, HG_BULK_READ_ONLY, &extra_in_handle);
