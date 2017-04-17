@@ -323,7 +323,7 @@ done:
 /*---------------------------------------------------------------------------*/
 HG_TEST_RPC_CB(hg_test_bulk_write, handle)
 {
-    struct hg_info *hg_info = NULL;
+    const struct hg_info *hg_info = NULL;
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     struct hg_test_bulk_args *bulk_args = NULL;
@@ -433,7 +433,7 @@ done:
 /*---------------------------------------------------------------------------*/
 HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
 {
-    struct hg_info *hg_info = NULL;
+    const struct hg_info *hg_info = NULL;
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     struct hg_test_bulk_args *bulk_args = NULL;
@@ -900,7 +900,7 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    struct hg_info *hg_info = NULL;
+    const struct hg_info *hg_info = NULL;
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     struct hg_test_bulk_args *bulk_args = NULL;
@@ -984,7 +984,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    struct hg_info *hg_info = NULL;
+    const struct hg_info *hg_info = NULL;
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     struct hg_test_bulk_args *bulk_args = NULL;
@@ -1108,8 +1108,7 @@ done:
 HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 {
     hg_return_t ret = HG_SUCCESS;
-
-    struct hg_info *hg_info = NULL;
+    const struct hg_info *hg_info = NULL;
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     struct hg_test_bulk_args *bulk_args = NULL;
@@ -1224,7 +1223,7 @@ hg_test_nested1_forward_cb(const struct hg_cb_info *callback_info)
 HG_TEST_RPC_CB(hg_test_nested1, handle)
 {
     hg_handle_t forward_handle;
-    struct hg_info *hg_info = NULL;
+    const struct hg_info *hg_info = NULL;
     hg_return_t ret = HG_SUCCESS;
 
     printf("In hg_test_nested1\n");

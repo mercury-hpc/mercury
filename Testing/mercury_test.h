@@ -23,6 +23,34 @@
 #endif
 #include "test_overflow.h"
 
+/* Default error macro */
+#ifdef HG_HAS_VERBOSE_ERROR
+  #include <mercury_log.h>
+  #define HG_TEST_LOG_MODULE_NAME "HG Test"
+  #define HG_TEST_LOG_ERROR(...)                                \
+      HG_LOG_WRITE_ERROR(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__)
+  #define HG_TEST_LOG_WARNING(...)                              \
+      HG_LOG_WRITE_WARNING(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__)
+#else
+  #define HG_TEST_LOG_ERROR(...) (void)0
+  #define HG_TEST_LOG_WARNING(...) (void)0
+#endif
+
+#define HG_TEST(x) do {         \
+    printf("Testing %-62s", x); \
+    fflush(stdout);             \
+} while (0)
+
+#define HG_PASSED() do {        \
+    puts(" PASSED");            \
+    fflush(stdout);             \
+} while (0)
+
+#define HG_FAILED() do {        \
+    puts("*FAILED*");           \
+    fflush(stdout);             \
+} while (0)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
