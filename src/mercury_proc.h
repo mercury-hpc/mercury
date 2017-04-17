@@ -58,29 +58,6 @@ extern "C" {
 #endif
 
 /**
- * Can be used to allocate a buffer that will be used by the generic processor.
- * Buffer should be freed using hg_proc_buf_free().
- *
- * \param size [IN]             request buffer size
- *
- * \return Pointer to memory address or NULL if allocation failed
- */
-HG_EXPORT void *
-hg_proc_buf_alloc(
-        hg_size_t size
-        );
-
-/**
- * Free memory which has been previously allocated using hg_proc_buf_alloc().
- *
- * \param mem_ptr [IN]          pointer to memory address
- */
-HG_EXPORT void
-hg_proc_buf_free(
-        void *mem_ptr
-        );
-
-/**
  * Create a new encoding/decoding processor.
  *
  * \param hg_class [IN]         HG class

@@ -78,44 +78,6 @@ hg_proc_mchecksum_update(
 /*******************/
 
 /*---------------------------------------------------------------------------*/
-void *
-hg_proc_buf_alloc(hg_size_t size)
-{
-    hg_size_t alignment;
-    void *mem_ptr = NULL;
-
-#ifdef _WIN32
-    SYSTEM_INFO system_info;
-    GetSystemInfo (&system_info);
-    alignment = system_info.dwPageSize;
-    mem_ptr = _aligned_malloc(size, alignment);
-#else
-    alignment = (hg_size_t) sysconf(_SC_PAGE_SIZE);
-
-    if (posix_memalign(&mem_ptr, alignment, size) != 0) {
-        HG_LOG_ERROR("posix_memalign failed");
-        return NULL;
-    }
-#endif
-    if (mem_ptr) {
-        memset(mem_ptr, 0, size);
-    }
-
-    return mem_ptr;
-}
-
-/*---------------------------------------------------------------------------*/
-void
-hg_proc_buf_free(void *mem_ptr)
-{
-#ifdef _WIN32
-    _aligned_free(mem_ptr);
-#else
-    free(mem_ptr);
-#endif
-}
-
-/*---------------------------------------------------------------------------*/
 hg_return_t
 hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
 {

@@ -34,6 +34,7 @@ struct hg_info {
     hg_context_t *context;      /* HG context */
     hg_addr_t addr;             /* HG address */
     hg_id_t id;                 /* RPC ID */
+    hg_uint8_t target_id;       /* Target ID */
 };
 
 /**

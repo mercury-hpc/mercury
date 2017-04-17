@@ -36,9 +36,8 @@
 /* Local Macros */
 /****************/
 
-#define HG_MAX_UNEXPECTED_RECV 256 /* TODO Variable */
-#define HG_MAX_SELF_THREADS 4
-#define HG_NA_MIN_TIMEOUT 0
+#define HG_CORE_MAX_SELF_THREADS    4
+#define HG_CORE_MASK_NBITS          8
 
 /* Remove warnings when routine does not use arguments */
 #if defined(__cplusplus)
@@ -63,17 +62,22 @@ struct hg_class {
     hg_thread_mutex_t func_map_mutex;   /* Function map mutex */
     hg_atomic_int32_t request_tag;      /* Atomic used for tag generation */
     na_tag_t request_max_tag;           /* Max value for tag */
+    unsigned int na_max_tag_msb;        /* MSB of NA max tag */
+    hg_bool_t use_tag_mask;             /* Can use tag masking or not */
     hg_bool_t na_ext_init;              /* NA externally initialized */
     handle_create_cb_t handle_create_callback; /* Callback executed on hg_core_create */
 #ifdef HG_HAS_SELF_FORWARD
     hg_thread_pool_t *self_processing_pool; /* Thread pool for self processing */
 #endif
+    hg_atomic_int32_t n_contexts;       /* Atomic used for number of contexts */
 };
 
 /* HG context */
 struct hg_context {
     struct hg_class *hg_class;                    /* HG class */
     na_context_t *na_context;                     /* NA context */
+    hg_uint8_t id;                                /* Context ID */
+    na_tag_t request_mask;                        /* Request tag mask */
     HG_QUEUE_HEAD(hg_completion_entry) completion_queue; /* Completion queue */
     hg_thread_mutex_t completion_queue_mutex;     /* Completion queue mutex */
     hg_thread_cond_t completion_queue_cond;       /* Completion queue cond */
@@ -82,7 +86,7 @@ struct hg_context {
     hg_thread_mutex_t pending_list_mutex;         /* Pending list mutex */
     HG_LIST_HEAD(hg_handle) processing_list;      /* List of handles being processed */
     hg_thread_mutex_t processing_list_mutex;      /* Processing list mutex */
-    hg_bool_t norepost;                           /* Prevent reposts */
+    hg_bool_t finalizing;                         /* Prevent reposts */
     struct hg_poll_set *poll_set;                 /* Context poll set */
 #ifdef HG_HAS_SELF_FORWARD
     int completion_queue_notify;
@@ -128,13 +132,15 @@ struct hg_handle {
     hg_bool_t addr_mine;                /* NA Addr created by HG */
     HG_LIST_ENTRY(hg_handle) entry;     /* Entry in pending / processing lists */
     struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
-    hg_bool_t listen;                   /* Created in listen */
+    hg_bool_t repost;                   /* Repost handle on completion (listen) */
     hg_bool_t process_rpc_cb;           /* RPC callback must be processed */
 
     void *in_buf;                       /* Input buffer */
+    void *in_buf_plugin_data;           /* Input buffer NA plugin data */
     na_size_t in_buf_size;              /* Input buffer size */
     na_size_t in_buf_used;              /* Amount of input buffer used */
     void *out_buf;                      /* Output buffer */
+    void *out_buf_plugin_data;          /* Output buffer NA plugin data */
     na_size_t out_buf_size;             /* Output buffer size */
     na_size_t out_buf_used;             /* Amount of output buffer used */
 
@@ -497,8 +503,10 @@ hg_core_completion_add(
  * Start listening for incoming RPC requests.
  */
 static hg_return_t
-hg_core_listen(
-        struct hg_context *context
+hg_core_context_post(
+        struct hg_context *context,
+        unsigned int request_count,
+        hg_bool_t repost
         );
 
 /**
@@ -640,19 +648,42 @@ hg_core_func_map_value_free(hg_hash_table_value_t value)
 
 /*---------------------------------------------------------------------------*/
 /**
+ * Find tag most significant bit.
+ */
+static HG_INLINE unsigned int
+hg_core_tag_msb(na_tag_t tag)
+{
+    unsigned int ret = 0;
+
+    while (tag >>= 1)
+        ret++;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+/**
  * Generate a new tag.
  */
 static HG_INLINE na_tag_t
-hg_core_gen_request_tag(struct hg_class *hg_class)
+hg_core_gen_request_tag(struct hg_class *hg_class,
+    struct hg_handle *hg_handle)
 {
     na_tag_t tag = 0;
+    na_tag_t request_tag = 0;
 
     /* Compare and swap tag if reached max tag */
     if (!hg_atomic_cas32(&hg_class->request_tag,
         (hg_util_int32_t) hg_class->request_max_tag, 0)) {
         /* Increment tag */
-        tag = (na_tag_t) hg_atomic_incr32(&hg_class->request_tag);
+        request_tag = (na_tag_t) hg_atomic_incr32(&hg_class->request_tag);
     }
+
+    /* Use handle target ID if tag mask is enabled */
+    tag = (hg_handle->hg_info.target_id && hg_class->use_tag_mask) ?
+        (na_tag_t) (hg_handle->hg_info.target_id << (hg_class->na_max_tag_msb
+            + 1 - HG_CORE_MASK_NBITS)) | request_tag
+        : request_tag;
 
     return tag;
 }
@@ -784,6 +815,10 @@ hg_core_pending_list_cancel(struct hg_context *context)
         struct hg_handle *hg_handle = HG_LIST_FIRST(&context->pending_list);
         HG_LIST_REMOVE(hg_handle, entry);
 
+        /* Prevent reposts */
+        hg_handle->repost = HG_FALSE;
+
+        /* Cancel handle */
         ret = hg_core_cancel(hg_handle);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not cancel handle");
@@ -837,6 +872,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     na_class_t *na_init_class)
 {
     struct hg_class *hg_class = NULL;
+    na_tag_t na_max_tag;
     hg_return_t ret = HG_SUCCESS;
 
     /* Create new HG class */
@@ -860,9 +896,27 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
         }
     }
 
+    /* Compute max request tag */
+    na_max_tag = NA_Msg_get_max_tag(hg_class->na_class);
+    if (!na_max_tag) {
+        HG_LOG_ERROR("NA Max tag is not defined");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+    hg_class->use_tag_mask = NA_Check_feature(hg_class->na_class,
+        NA_HAS_TAG_MASK);
+    hg_class->request_max_tag =
+        (hg_class->use_tag_mask) ? na_max_tag >> HG_CORE_MASK_NBITS :
+            na_max_tag;
+
+    /* Find MSB of na_max_tag */
+    hg_class->na_max_tag_msb = hg_core_tag_msb(na_max_tag);
+
     /* Initialize atomic for tags */
-    hg_class->request_max_tag = NA_Msg_get_max_tag(hg_class->na_class);
     hg_atomic_set32(&hg_class->request_tag, 0);
+
+    /* No context created yet */
+    hg_atomic_set32(&hg_class->n_contexts, 0);
 
     /* Create new function map */
     hg_class->func_map = hg_hash_table_new(hg_core_int_hash, hg_core_int_equal);
@@ -893,6 +947,12 @@ hg_core_finalize(struct hg_class *hg_class)
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_class) goto done;
+
+    if (hg_atomic_get32(&hg_class->n_contexts) != 0) {
+        HG_LOG_ERROR("HG contexts must be destroyed before finalizing HG");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
 
 #ifdef HG_HAS_SELF_FORWARD
     /* Destroy self processing pool if created */
@@ -1126,19 +1186,22 @@ hg_core_create(struct hg_context *context)
     hg_handle->hg_info.context = context;
     hg_handle->hg_info.addr = HG_ADDR_NULL;
     hg_handle->hg_info.id = 0;
+    hg_handle->hg_info.target_id = 0;
     hg_handle->ret = HG_SUCCESS;
 
     /* Initialize processing buffers and use unexpected message size */
     hg_handle->in_buf_size = NA_Msg_get_max_unexpected_size(na_class);
     hg_handle->out_buf_size = NA_Msg_get_max_expected_size(na_class);
 
-    hg_handle->in_buf = hg_proc_buf_alloc(hg_handle->in_buf_size);
+    hg_handle->in_buf = NA_Msg_buf_alloc(na_class, hg_handle->in_buf_size,
+        &hg_handle->in_buf_plugin_data);
     if (!hg_handle->in_buf) {
         HG_LOG_ERROR("Could not allocate buffer for input");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-    hg_handle->out_buf = hg_proc_buf_alloc(hg_handle->out_buf_size);
+    hg_handle->out_buf = NA_Msg_buf_alloc(na_class, hg_handle->out_buf_size,
+        &hg_handle->out_buf_plugin_data);
     if (!hg_handle->out_buf) {
         HG_LOG_ERROR("Could not allocate buffer for output");
         ret = HG_NOMEM_ERROR;
@@ -1189,6 +1252,8 @@ done:
 static void
 hg_core_destroy(struct hg_handle *hg_handle)
 {
+    na_return_t na_ret;
+
     if (!hg_handle) goto done;
 
     if (hg_atomic_decr32(&hg_handle->ref_count)) {
@@ -1201,16 +1266,26 @@ hg_core_destroy(struct hg_handle *hg_handle)
         NA_Addr_free(hg_handle->hg_info.hg_class->na_class,
                 hg_handle->hg_info.addr);
 
-    NA_Op_destroy(hg_handle->hg_info.hg_class->na_class,
+    na_ret = NA_Op_destroy(hg_handle->hg_info.hg_class->na_class,
         hg_handle->na_send_op_id);
+    if (na_ret != NA_SUCCESS)
+        HG_LOG_ERROR("Could not destroy NA op ID");
     NA_Op_destroy(hg_handle->hg_info.hg_class->na_class,
         hg_handle->na_recv_op_id);
+    if (na_ret != NA_SUCCESS)
+        HG_LOG_ERROR("Could not destroy NA op ID");
 
     hg_proc_header_request_finalize(&hg_handle->in_header);
     hg_proc_header_response_finalize(&hg_handle->out_header);
 
-    hg_proc_buf_free(hg_handle->in_buf);
-    hg_proc_buf_free(hg_handle->out_buf);
+    na_ret = NA_Msg_buf_free(hg_handle->hg_info.hg_class->na_class,
+        hg_handle->in_buf, hg_handle->in_buf_plugin_data);
+    if (na_ret != NA_SUCCESS)
+        HG_LOG_ERROR("Could not destroy NA input msg buffer");
+    na_ret = NA_Msg_buf_free(hg_handle->hg_info.hg_class->na_class,
+        hg_handle->out_buf, hg_handle->out_buf_plugin_data);
+    if (na_ret != NA_SUCCESS)
+        HG_LOG_ERROR("Could not destroy NA output msg buffer");
 
     free(hg_handle->extra_in_buf);
 
@@ -1267,7 +1342,7 @@ hg_core_forward_self(struct hg_handle *hg_handle)
 
     /* Initialize thread pool if not initialized yet */
     if (!hg_handle->hg_info.hg_class->self_processing_pool) {
-        hg_thread_pool_init(HG_MAX_SELF_THREADS,
+        hg_thread_pool_init(HG_CORE_MAX_SELF_THREADS,
             &hg_handle->hg_info.hg_class->self_processing_pool);
     }
 
@@ -1315,7 +1390,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     hg_return_t ret = HG_SUCCESS;
 
     /* Generate tag */
-    hg_handle->tag = hg_core_gen_request_tag(hg_handle->hg_info.hg_class);
+    hg_handle->tag = hg_core_gen_request_tag(hg_class, hg_handle);
 
     /* Pre-post the recv message (output) if response is expected */
     if (!hg_handle->hg_rpc_info->no_response) {
@@ -1512,6 +1587,8 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         /* Get operation ID from header */
         hg_handle->hg_info.id = hg_handle->in_header.id;
         hg_handle->cookie = hg_handle->in_header.cookie;
+        /* TODO assign target ID from cookie directly for now */
+        hg_handle->hg_info.target_id = hg_handle->cookie & 0xff;
         hg_handle->no_response = (hg_handle->in_header.flags
             & HG_PROC_HEADER_NO_RESPONSE) ? HG_TRUE : HG_FALSE;
 
@@ -1817,7 +1894,8 @@ hg_core_completion_add(struct hg_context *context,
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_listen(struct hg_context *context)
+hg_core_context_post(struct hg_context *context, unsigned int request_count,
+    hg_bool_t repost)
 {
     hg_bool_t pending_list_empty = HG_FALSE;
     unsigned int nentry = 0;
@@ -1832,7 +1910,7 @@ hg_core_listen(struct hg_context *context)
     }
 
     /* Create a bunch of handles and post unexpected receives */
-    for (nentry = 0; nentry < HG_MAX_UNEXPECTED_RECV; nentry++) {
+    for (nentry = 0; nentry < request_count; nentry++) {
         struct hg_handle *hg_handle = NULL;
 
         /* Create a new handle */
@@ -1842,8 +1920,9 @@ hg_core_listen(struct hg_context *context)
             ret = HG_NOMEM_ERROR;
             goto done;
         }
-        /* Increment ref count to not free handle unless requested */
-        hg_handle->listen = HG_TRUE;
+
+        /* Repost handle on completion if told so */
+        hg_handle->repost = repost;
 
         ret = hg_core_post(hg_handle);
         if (ret != HG_SUCCESS) {
@@ -1872,7 +1951,8 @@ hg_core_post(struct hg_handle *hg_handle)
     /* Post a new unexpected receive */
     na_ret = NA_Msg_recv_unexpected(hg_class->na_class, context->na_context,
             hg_core_recv_input_cb, hg_handle, hg_handle->in_buf,
-            hg_handle->in_buf_size, &hg_handle->na_recv_op_id);
+            hg_handle->in_buf_size, context->request_mask,
+            &hg_handle->na_recv_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post unexpected recv for input buffer");
         ret = HG_NA_ERROR;
@@ -1899,6 +1979,7 @@ hg_core_reset_post(struct hg_handle *hg_handle)
     }
     hg_handle->hg_info.addr = HG_ADDR_NULL;
     hg_handle->hg_info.id = 0;
+    hg_handle->hg_info.target_id = 0;
     hg_handle->callback = NULL;
     hg_handle->arg = NULL;
     hg_handle->cb_type = 0;
@@ -2262,7 +2343,7 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
         }
 
         /* Repost handle if we were listening, otherwise destroy it */
-        if (hg_handle->listen && !hg_handle->hg_info.context->norepost) {
+        if (hg_handle->repost && !hg_handle->hg_info.context->finalizing) {
             /* Repost handle */
             ret = hg_core_reset_post(hg_handle);
             if (ret != HG_SUCCESS) {
@@ -2543,15 +2624,8 @@ HG_Core_context_create(hg_class_t *hg_class)
         context->progress = hg_core_progress_na;
     }
 
-    /* If we are listening, try to post unexpected receives and treat incoming
-     * RPCs */
-    if (NA_Is_listening(context->hg_class->na_class)) {
-        ret = hg_core_listen(context);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not listen");
-            goto done;
-        }
-    }
+    /* Increment context count of parent class */
+    hg_atomic_incr32(&hg_class->n_contexts);
 
 done:
     if (ret != HG_SUCCESS && context) {
@@ -2573,9 +2647,9 @@ HG_Core_context_destroy(hg_context_t *context)
     if (!context) goto done;
 
     /* Prevent repost of handles */
-    context->norepost = HG_TRUE;
+    context->finalizing = HG_TRUE;
 
-    /* Check pending list */
+    /* Check pending list and cancel posted handles */
     if (!HG_LIST_IS_EMPTY(&context->pending_list)) {
         ret = hg_core_pending_list_cancel(context);
         if (ret != HG_SUCCESS) {
@@ -2657,6 +2731,9 @@ HG_Core_context_destroy(hg_context_t *context)
     hg_thread_mutex_destroy(&context->self_processing_list_mutex);
 #endif
 
+    /* Decrement context count of parent class */
+    hg_atomic_decr32(&context->hg_class->n_contexts);
+
     free(context);
 
 done:
@@ -2675,6 +2752,73 @@ HG_Core_context_get_class(hg_context_t *context)
     }
 
     ret = context->hg_class;
+
+ done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_context_set_id(hg_context_t *context, hg_uint8_t id)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    context->id = id;
+    context->request_mask = (id && context->hg_class->use_tag_mask) ?
+        (na_tag_t) (id << (context->hg_class->na_max_tag_msb
+            + 1 - HG_CORE_MASK_NBITS)) : 0;
+
+ done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_uint8_t
+HG_Core_context_get_id(hg_context_t *context)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = context->id;
+
+ done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_context_post(hg_context_t *context, unsigned int request_count,
+    hg_bool_t repost)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    if (!request_count) {
+        HG_LOG_ERROR("Request count must be greater than 0");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = hg_core_context_post(context, request_count, repost);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not post requests on context");
+        goto done;
+    }
 
  done:
     return ret;
@@ -3056,7 +3200,7 @@ HG_Core_destroy(hg_handle_t handle)
     }
 
     /* Repost handle if we were listening, otherwise destroy it */
-    if (hg_handle->listen && !hg_handle->hg_info.context->norepost) {
+    if (hg_handle->repost && !hg_handle->hg_info.context->finalizing) {
         /* Repost handle */
         ret = hg_core_reset_post(hg_handle);
         if (ret != HG_SUCCESS) {
@@ -3102,6 +3246,25 @@ HG_Core_get_info(hg_handle_t handle)
     }
 
     ret = &hg_handle->hg_info;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_set_target_id(hg_handle_t handle, hg_uint8_t target_id)
+{
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_handle->hg_info.target_id = target_id;
 
 done:
     return ret;
@@ -3203,11 +3366,11 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
 
     /* Set header */
     hg_handle->in_header.id = hg_handle->hg_info.id;
+    hg_handle->in_header.cookie = hg_handle->hg_info.target_id;
     hg_handle->in_header.extra_in_handle = extra_in_handle;
-    flags = (extra_in_handle != HG_BULK_NULL)
-        ? HG_PROC_HEADER_BULK_EXTRA : 0x00;
+    flags = (extra_in_handle != HG_BULK_NULL) ? HG_PROC_HEADER_BULK_EXTRA : 0;
     hg_handle->in_header.flags |= flags;
-    flags = (hg_handle->no_response) ? HG_PROC_HEADER_NO_RESPONSE : 0x00;
+    flags = (hg_handle->no_response) ? HG_PROC_HEADER_NO_RESPONSE : 0;
     hg_handle->in_header.flags |= flags;
 
     /* Encode request header */

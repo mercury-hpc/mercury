@@ -166,6 +166,52 @@ HG_Core_context_get_class(
         );
 
 /**
+ * Set user-defined context ID, this can be used for multiplexing incoming
+ * RPC requests and define an RPC tag identifier. Only RPC requests that match
+ * the same context ID will be received (Tags are internally generated).
+ *
+ * \param context [IN]          pointer to HG context
+ * \param id [IN]               user-defined context ID (max value of 255)
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_context_set_id(
+        hg_context_t *context,
+        hg_uint8_t id
+        );
+
+/**
+ * Retrieve context ID from context.
+ *
+ * \param context [IN]          pointer to HG context
+ *
+ * \return Non-negative integer (max value of 255) or 0 if no ID has been set
+ */
+HG_EXPORT hg_uint8_t
+HG_Core_context_get_id(
+        hg_context_t *context
+        );
+
+/**
+ * Post requests associated to context in order to receive incoming RPCs.
+ * Requests are automatically re-posted after completion depending on the
+ * value of \repost.
+ *
+ * \param context [IN]          pointer to HG context
+ * \param request_count [IN]    number of requests
+ * \param repost [IN]           boolean, when HG_TRUE, requests are re-posted
+ *
+ * \return the associated class
+ */
+HG_EXPORT hg_return_t
+HG_Core_context_post(
+        hg_context_t *context,
+        unsigned int request_count,
+        hg_bool_t repost
+        );
+
+/**
  * Dynamically register an RPC ID as well as the RPC callback executed
  * when the RPC request ID is received.
  *
@@ -392,6 +438,7 @@ HG_Core_ref_incr(
 
 /**
  * Get info from handle.
+ *
  * \remark Users must call HG_Core_addr_dup() to safely re-use the addr field.
  *
  * \param handle [IN]           HG handle
@@ -401,6 +448,21 @@ HG_Core_ref_incr(
 HG_EXPORT const struct hg_info *
 HG_Core_get_info(
         hg_handle_t handle
+        );
+
+/**
+ * Set target ID that will receive and process RPC request
+ * (target ID is defined on target context).
+ *
+ * \param handle [IN]           HG handle
+ * \param target_id [IN]        user-defined target ID
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_set_target_id(
+        hg_handle_t handle,
+        hg_uint8_t target_id
         );
 
 /**
