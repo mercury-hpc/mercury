@@ -146,6 +146,12 @@ HG_Class_get_output_eager_size(
 /**
  * Create a new context. Must be destroyed by calling HG_Context_destroy().
  *
+ * \remark This routine is internally equivalent to:
+ *   - HG_Core_context_create()
+ *   - HG_Core_context_set_id() with context ID set to 0
+ *   - If listening
+ *       - HG_Core_context_post() with repost set to HG_TRUE
+ *
  * \param hg_class [IN]         pointer to HG class
  *
  * \return Pointer to HG context or NULL in case of failure
@@ -153,6 +159,31 @@ HG_Class_get_output_eager_size(
 HG_EXPORT hg_context_t *
 HG_Context_create(
         hg_class_t *hg_class
+        );
+
+/**
+ * Create a new context with a user-defined context identifier. The context
+ * identifier can be used to route RPC requests to specific contexts by using
+ * HG_Set_target_id(). Note that the ID can be used as a mask, meaning that
+ * requests sent to two separate contexts with the same ID will be received and
+ * processed by either of these two contexts.
+ * Context must be destroyed by calling HG_Context_destroy().
+ *
+ * \remark This routine is internally equivalent to:
+ *   - HG_Core_context_create()
+ *   - HG_Core_context_set_id() with specified context ID
+ *   - If listening
+ *       - HG_Core_context_post() with repost set to HG_TRUE
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param target_id [IN]        user-defined target ID
+ *
+ * \return Pointer to HG context or NULL in case of failure
+ */
+HG_EXPORT hg_context_t *
+HG_Context_create_id(
+        hg_class_t *hg_class,
+        hg_uint8_t target_id
         );
 
 /**
@@ -168,14 +199,26 @@ HG_Context_destroy(
         );
 
 /**
- * Retrieve the class used to create the given context
+ * Retrieve the class used to create the given context.
  *
  * \param context [IN]          pointer to HG context
  *
- * \return the associated class
+ * \return Pointer to associated HG class or NULL if not a valid context
  */
 HG_EXPORT hg_class_t *
 HG_Context_get_class(
+        hg_context_t *context
+        );
+
+/**
+ * Retrieve context ID from context (max value of 255).
+ *
+ * \param context [IN]          pointer to HG context
+ *
+ * \return Non-negative integer (max value of 255) or 0 if no ID has been set
+ */
+HG_EXPORT hg_uint8_t
+HG_Context_get_id(
         hg_context_t *context
         );
 
@@ -200,6 +243,25 @@ HG_Register_name(
         hg_proc_cb_t in_proc_cb,
         hg_proc_cb_t out_proc_cb,
         hg_rpc_cb_t rpc_cb
+        );
+
+/*
+ * Indicate whether HG_Register_name() has been called for the RPC specified by
+ * func_name.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param func_name [IN]        function name
+ * \param id [OUT]              registered RPC ID
+ * \param flag [OUT]            pointer to boolean
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Registered_name(
+        hg_class_t *hg_class,
+        const char *func_name,
+        hg_id_t *id,
+        hg_bool_t *flag
         );
 
 /**
@@ -390,7 +452,7 @@ HG_Addr_to_string(
 /**
  * Initiate a new HG RPC using the specified function ID and the local/remote
  * target defined by addr. The HG handle created can be used to query input
- * and output, as well as issuing the RPC by using HG_Forward().
+ * and output, as well as issuing the RPC by calling HG_Forward().
  * After completion the handle must be freed using HG_Destroy().
  *
  * \param context [IN]          pointer to HG context
@@ -435,6 +497,7 @@ HG_Ref_incr(
 
 /**
  * Get info from handle.
+ *
  * \remark Users must call HG_Addr_dup() to safely re-use the addr field.
  *
  * \param handle [IN]           HG handle
@@ -448,11 +511,11 @@ HG_Get_info(
 
 /**
  * Get input from handle (requires registration of input proc to deserialize
- * parameters).
+ * parameters). Input must be freed using HG_Free_input().
+ *
  * \remark This is equivalent to:
  *   - HG_Core_get_input()
  *   - Call hg_proc to deserialize parameters
- * Input must be freed using HG_Free_input().
  *
  * \param handle [IN]           HG handle
  * \param in_struct [IN/OUT]    pointer to input structure
@@ -483,11 +546,12 @@ HG_Free_input(
 
 /**
  * Get output from handle (requires registration of output proc to deserialize
- * parameters).
+ * parameters). Output must be freed using HG_Free_output().
+ *
  * \remark This is equivalent to:
  *   - HG_Core_get_output()
  *   - Call hg_proc to deserialize parameters
- * Output must be freed using HG_Free_output().
+ *
  *
  * \param handle [IN]           HG handle
  * \param out_struct [IN/OUT]   pointer to output structure
@@ -517,11 +581,27 @@ HG_Free_output(
         );
 
 /**
+ * Set target ID that will receive and process RPC request
+ * (target ID is defined on target context, see HG_Context_create_id()).
+ *
+ * \param handle [IN]           HG handle
+ * \param target_id [IN]        user-defined target ID
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Set_target_id(
+        hg_handle_t handle,
+        hg_uint8_t target_id
+        );
+
+/**
  * Forward a call to a local/remote target using an existing HG handle.
  * Input structure can be passed and parameters serialized using a previously
  * registered input proc. After completion, user callback is placed into a
  * completion queue and can be triggered using HG_Trigger(). RPC output can
  * be queried using HG_Get_output() and freed using HG_Free_output().
+ *
  * \remark This routine is internally equivalent to:
  *   - HG_Core_get_input()
  *   - Call hg_proc to serialize parameters
@@ -547,6 +627,7 @@ HG_Forward(
  * Output structure can be passed and parameters serialized using a previously
  * registered output proc. After completion, user callback is placed into a
  * completion queue and can be triggered using HG_Trigger().
+ *
  * \remark This routine is internally equivalent to:
  *   - HG_Core_get_output()
  *   - Call hg_proc to serialize parameters

@@ -22,6 +22,8 @@
 /* Local Macros */
 /****************/
 
+#define HG_MAX_UNEXPECTED_RECV 256 /* TODO Variable */
+
 /* Convert value to string */
 #define HG_ERROR_STRING_MACRO(def, value, string) \
   if (value == def) string = #def
@@ -780,7 +782,40 @@ HG_Class_get_output_eager_size(const hg_class_t *hg_class)
 hg_context_t *
 HG_Context_create(hg_class_t *hg_class)
 {
-    return HG_Core_context_create(hg_class);
+    return HG_Context_create_id(hg_class, 0);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_context_t *
+HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t target_id)
+{
+    hg_context_t *context = NULL;
+    hg_return_t ret;
+
+    context = HG_Core_context_create(hg_class);
+    if (!context) {
+        HG_LOG_ERROR("Could not create context");
+        goto done;
+    }
+
+    /* Set context ID */
+    ret = HG_Core_context_set_id(context, target_id);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not set context ID");
+        goto done;
+    }
+
+    /* If we are listening, start posting requests */
+    if (NA_Is_listening(HG_Core_class_get_na(hg_class))) {
+        ret = HG_Core_context_post(context, HG_MAX_UNEXPECTED_RECV, HG_TRUE);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not post context requests");
+            goto done;
+        }
+    }
+
+done:
+    return context;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -798,9 +833,16 @@ HG_Context_get_class(hg_context_t *context)
 }
 
 /*---------------------------------------------------------------------------*/
+hg_uint8_t
+HG_Context_get_id(hg_context_t *context)
+{
+    return HG_Core_context_get_id(context);
+}
+
+/*---------------------------------------------------------------------------*/
 hg_id_t
-HG_Register_name(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_proc_cb,
-    hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)
+HG_Register_name(hg_class_t *hg_class, const char *func_name,
+    hg_proc_cb_t in_proc_cb, hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)
 {
     hg_id_t id = 0;
     hg_return_t ret = HG_SUCCESS;
@@ -827,6 +869,40 @@ HG_Register_name(hg_class_t *hg_class, const char *func_name, hg_proc_cb_t in_pr
 
 done:
     return id;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Registered_name(hg_class_t *hg_class, const char *func_name, hg_id_t *id,
+    hg_bool_t *flag)
+{
+    hg_id_t rpc_id = 0;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    if (!func_name) {
+        HG_LOG_ERROR("NULL string");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    /* Generate an ID from the function name */
+    rpc_id = hg_hash_string(func_name);
+
+    ret = HG_Core_registered(hg_class, rpc_id, flag);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not check for registered RPC id");
+        goto done;
+    }
+
+    if (id) *id = rpc_id;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1124,6 +1200,13 @@ HG_Free_output(hg_handle_t handle, void *out_struct)
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Set_target_id(hg_handle_t handle, hg_uint8_t target_id)
+{
+    return HG_Core_set_target_id(handle, target_id);
 }
 
 /*---------------------------------------------------------------------------*/
