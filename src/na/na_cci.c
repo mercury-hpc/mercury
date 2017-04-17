@@ -265,7 +265,7 @@ na_cci_msg_send_unexpected(na_class_t * na_class, na_context_t * context,
 /* msg_recv_unexpected */
 static na_return_t
 na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
+    na_cb_t callback, void *arg, void *buf, na_size_t buf_size, na_tag_t mask,
     na_op_id_t * op_id);
 
 /* msg_send_expected */
@@ -365,6 +365,7 @@ const na_class_t na_cci_class_g = {
     na_cci_check_protocol,                  /* check_protocol */
     na_cci_initialize,                      /* initialize */
     na_cci_finalize,                        /* finalize */
+    NULL,                                   /* check_feature */
     NULL,                                   /* context_create */
     NULL,                                   /* context_destroy */
     na_cci_op_create,                       /* op_create */
@@ -377,6 +378,8 @@ const na_class_t na_cci_class_g = {
     na_cci_addr_to_string,                  /* addr_to_string */
     na_cci_msg_get_max_expected_size,       /* msg_get_max_expected_size */
     na_cci_msg_get_max_unexpected_size,     /* msg_get_max_expected_size */
+    NULL,                                   /* msg_buf_alloc */
+    NULL,                                   /* msg_buf_free */
     na_cci_msg_get_max_tag,                 /* msg_get_max_tag */
     na_cci_msg_send_unexpected,             /* msg_send_unexpected */
     na_cci_msg_recv_unexpected,             /* msg_recv_unexpected */
@@ -1083,7 +1086,7 @@ out:
 static na_return_t
 na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_op_id_t * op_id)
+    na_tag_t NA_UNUSED mask, na_op_id_t * op_id)
 {
     na_cci_op_id_t *na_cci_op_id = NULL;
     struct na_cci_info_recv_unexpected *rx = NULL;

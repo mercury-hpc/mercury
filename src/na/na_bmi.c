@@ -211,13 +211,13 @@ na_bmi_finalize(
 static na_return_t
 na_bmi_context_create(
         na_class_t          *na_class,
-        na_plugin_context_t *context
+        void               **context
         );
 
 static na_return_t
 na_bmi_context_destroy(
         na_class_t          *na_class,
-        na_plugin_context_t  context
+        void                *context
         );
 
 /* op_create */
@@ -313,6 +313,7 @@ na_bmi_msg_recv_unexpected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        na_tag_t      mask,
         na_op_id_t   *op_id
         );
 
@@ -510,6 +511,7 @@ const na_class_t na_bmi_class_g = {
         na_bmi_check_protocol,                /* check_protocol */
         na_bmi_initialize,                    /* initialize */
         na_bmi_finalize,                      /* finalize */
+        NULL,                                 /* check_feature */
         na_bmi_context_create,                /* context_create */
         na_bmi_context_destroy,               /* context_destroy */
         na_bmi_op_create,                     /* op_create */
@@ -522,6 +524,8 @@ const na_class_t na_bmi_class_g = {
         na_bmi_addr_to_string,                /* addr_to_string */
         na_bmi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
         na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
+        NULL,                                 /* msg_buf_alloc */
+        NULL,                                 /* msg_buf_free */
         na_bmi_msg_get_max_tag,               /* msg_get_max_tag */
         na_bmi_msg_send_unexpected,           /* msg_send_unexpected */
         na_bmi_msg_recv_unexpected,           /* msg_recv_unexpected */
@@ -749,8 +753,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_context_create(na_class_t NA_UNUSED *na_class,
-        na_plugin_context_t *context)
+na_bmi_context_create(na_class_t NA_UNUSED *na_class, void **context)
 {
     bmi_context_id *bmi_context = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -771,7 +774,7 @@ na_bmi_context_create(na_class_t NA_UNUSED *na_class,
         goto done;
     }
 
-    *context = (bmi_context_id *) bmi_context;
+    *context = bmi_context;
 
 done:
     return ret;
@@ -779,8 +782,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_context_destroy(na_class_t NA_UNUSED *na_class,
-        na_plugin_context_t context)
+na_bmi_context_destroy(na_class_t NA_UNUSED *na_class, void *context)
 {
     bmi_context_id *bmi_context = (bmi_context_id *) context;
     na_return_t ret = NA_SUCCESS;
@@ -1091,7 +1093,7 @@ done:
 static na_return_t
 na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_op_id_t *op_id)
+        na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
 {
     struct na_bmi_unexpected_info *unexpected_info = NULL;
     struct na_bmi_op_id *na_bmi_op_id = NULL;

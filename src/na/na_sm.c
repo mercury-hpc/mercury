@@ -624,6 +624,13 @@ na_sm_finalize(
     na_class_t *na_class
     );
 
+/* check_feature */
+static na_bool_t
+na_sm_check_feature(
+    na_class_t *na_class,
+    na_uint8_t feature
+    );
+
 /* op_create */
 static na_op_id_t
 na_sm_op_create(
@@ -719,6 +726,7 @@ na_sm_msg_recv_unexpected(
     void *arg,
     void *buf,
     na_size_t buf_size,
+    na_tag_t mask,
     na_op_id_t *op_id
     );
 
@@ -869,6 +877,7 @@ const na_class_t na_sm_class_g = {
     na_sm_check_protocol,                   /* check_protocol */
     na_sm_initialize,                       /* initialize */
     na_sm_finalize,                         /* finalize */
+    na_sm_check_feature,                    /* check_feature */
     NULL,                                   /* context_create */
     NULL,                                   /* context_destroy */
     na_sm_op_create,                        /* op_create */
@@ -881,6 +890,8 @@ const na_class_t na_sm_class_g = {
     na_sm_addr_to_string,                   /* addr_to_string */
     na_sm_msg_get_max_expected_size,        /* msg_get_max_expected_size */
     na_sm_msg_get_max_unexpected_size,      /* msg_get_max_expected_size */
+    NULL,                                   /* msg_buf_alloc */
+    NULL,                                   /* msg_buf_free */
     na_sm_msg_get_max_tag,                  /* msg_get_max_tag */
     na_sm_msg_send_unexpected,              /* msg_send_unexpected */
     na_sm_msg_recv_unexpected,              /* msg_recv_unexpected */
@@ -2744,6 +2755,23 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+static na_bool_t
+na_sm_check_feature(na_class_t NA_UNUSED *na_class, na_uint8_t feature)
+{
+    na_bool_t ret = NA_FALSE;
+
+    switch (feature) {
+        case NA_HAS_TAG_MASK:
+            ret = NA_FALSE;
+            break;
+        default:
+            break;
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_op_id_t
 na_sm_op_create(na_class_t *na_class)
 {
@@ -3212,14 +3240,14 @@ done:
 static na_return_t
 na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_op_id_t *op_id)
+    na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
 {
     struct na_sm_unexpected_info *na_sm_unexpected_info;
     struct na_sm_op_id *na_sm_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
 
     if (buf_size > NA_SM_UNEXPECTED_SIZE) {
-        NA_LOG_ERROR("Exceeds unexpected size");
+        NA_LOG_ERROR("Exceeds unexpected size, %d", buf_size);
         ret = NA_SIZE_ERROR;
         goto done;
     }

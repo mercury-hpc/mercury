@@ -53,7 +53,7 @@ msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
         printf("NA_Msg_recv_unexpected() was successfully canceled\n");
         ret = NA_Msg_recv_unexpected(params->na_class, params->context,
             msg_unexpected_recv_cb, params, params->recv_buf,
-            params->recv_buf_len, NA_OP_ID_IGNORE);
+            params->recv_buf_len, 0, NA_OP_ID_IGNORE);
         if (ret != NA_SUCCESS) {
             fprintf(stderr, "Could not post recv of unexpected message\n");
         }
@@ -349,7 +349,7 @@ main(int argc, char *argv[])
         /* Recv a message from a client */
         na_ret = NA_Msg_recv_unexpected(params.na_class, params.context,
             msg_unexpected_recv_cb, &params, params.recv_buf,
-            params.recv_buf_len, &op_id);
+            params.recv_buf_len, 0, &op_id);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not post recv of unexpected message\n");
             return EXIT_FAILURE;

@@ -17,6 +17,11 @@
 #include "mercury_time.h"
 #include "mercury_atomic.h"
 
+#ifdef _WIN32
+  #include <windows.h>
+#else
+  #include <unistd.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -78,6 +83,18 @@ na_info_free(
 static void
 na_info_print(struct na_info *na_info);
 #endif
+
+/* Allocate msg buffer */
+static void *
+na_msg_buf_alloc(
+    na_size_t size
+    );
+
+/* Free msg buffer */
+static void
+na_msg_buf_free(
+    void *mem_ptr
+    );
 
 /*******************/
 /* Local Variables */
@@ -238,6 +255,44 @@ na_info_print(struct na_info *na_info)
     printf("Hostname: %s\n", na_info->host_name);
 }
 #endif
+
+/*---------------------------------------------------------------------------*/
+static void *
+na_msg_buf_alloc(na_size_t size)
+{
+    na_size_t alignment;
+    void *mem_ptr = NULL;
+
+#ifdef _WIN32
+    SYSTEM_INFO system_info;
+    GetSystemInfo (&system_info);
+    alignment = system_info.dwPageSize;
+    mem_ptr = _aligned_malloc(size, alignment);
+#else
+    alignment = (na_size_t) sysconf(_SC_PAGE_SIZE);
+
+    if (posix_memalign(&mem_ptr, alignment, size) != 0) {
+        NA_LOG_ERROR("posix_memalign failed");
+        return NULL;
+    }
+#endif
+    if (mem_ptr) {
+        memset(mem_ptr, 0, size);
+    }
+
+    return mem_ptr;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+na_msg_buf_free(void *mem_ptr)
+{
+#ifdef _WIN32
+    _aligned_free(mem_ptr);
+#else
+    free(mem_ptr);
+#endif
+}
 
 /*---------------------------------------------------------------------------*/
 na_class_t *
@@ -444,6 +499,27 @@ NA_Is_listening(na_class_t *na_class)
     }
 
     ret = na_private_class->listen;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_bool_t
+NA_Check_feature(na_class_t *na_class, na_uint8_t feature)
+{
+    na_bool_t ret = NA_FALSE;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+    if (!na_class->check_feature) {
+        NA_LOG_ERROR("check_feature plugin callback is not defined");
+        goto done;
+    }
+
+    ret = na_class->check_feature(na_class, feature);
 
 done:
     return ret;
@@ -813,6 +889,73 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+void *
+NA_Msg_buf_alloc(na_class_t *na_class, na_size_t buf_size, void **plugin_data)
+{
+    void *ret = NULL;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        goto done;
+    }
+    if (!plugin_data) {
+        NA_LOG_ERROR("NULL pointer to plugin data");
+        goto done;
+    }
+
+    if (na_class->msg_buf_alloc)
+        ret = na_class->msg_buf_alloc(na_class, buf_size, plugin_data);
+    else {
+        ret = na_msg_buf_alloc(buf_size);
+        *plugin_data = (void *)1; /* Sanity check on free */
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!plugin_data) {
+        NA_LOG_ERROR("NULL pointer to plugin data");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    if (na_class->msg_buf_free)
+        ret = na_class->msg_buf_free(na_class, buf, plugin_data);
+    else {
+        if (plugin_data != (void *)1) {
+            NA_LOG_ERROR("Invalid plugin data value");
+            ret = NA_PROTOCOL_ERROR;
+            goto done;
+        }
+        na_msg_buf_free(buf);
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 na_size_t
 NA_Msg_get_max_unexpected_size(na_class_t *na_class)
 {
@@ -903,7 +1046,7 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
+    na_cb_t callback, void *arg, void *buf, na_size_t buf_size, na_tag_t mask,
     na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
@@ -935,7 +1078,7 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_unexpected(na_class, context, callback, arg, buf,
-        buf_size, op_id);
+        buf_size, mask, op_id);
 
 done:
     return ret;

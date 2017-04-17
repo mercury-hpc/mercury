@@ -108,6 +108,9 @@ typedef na_return_t (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_MEM_WRITE_ONLY  0x02
 #define NA_MEM_READWRITE   0x03
 
+/* Supported features */
+#define NA_HAS_TAG_MASK    0x01
+
 /*********************/
 /* Public Prototypes */
 /*********************/
@@ -155,7 +158,7 @@ NA_Finalize(
 NA_EXPORT const char *
 NA_Get_class_name(
         na_class_t *na_class
-        );
+        ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Return the protocol of the NA class.
@@ -167,7 +170,7 @@ NA_Get_class_name(
 NA_EXPORT const char *
 NA_Get_class_protocol(
         na_class_t *na_class
-        );
+        ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Test whether class is listening or not.
@@ -179,7 +182,23 @@ NA_Get_class_protocol(
 NA_EXPORT na_bool_t
 NA_Is_listening(
         na_class_t *na_class
-        );
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Test whether NA feature is supported by plugin or not.
+ * List of queryable features are:
+ *      - NA_HAS_TAG_MASK
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param feature  [IN]         ID of requested feature
+ *
+ * \return NA_TRUE if supported or NA_FALSE if not
+ */
+NA_EXPORT na_bool_t
+NA_Check_feature(
+        na_class_t *na_class,
+        na_uint8_t feature
+        ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Create a new context.
@@ -191,7 +210,7 @@ NA_Is_listening(
 NA_EXPORT na_context_t *
 NA_Context_create(
         na_class_t *na_class
-        );
+        ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Destroy a context created by using NA_Context_create().
@@ -244,6 +263,7 @@ NA_Op_destroy(
  * Lookup an addr from a peer address/name. Addresses need to be
  * freed by calling NA_Addr_free(). After completion, user callback is placed
  * into a completion queue and can be triggered using NA_Trigger().
+ *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
  * a new operation ID will be internally created and returned. Users may also
  * manually create an operation ID through NA_Op_create() and pass it through
@@ -377,6 +397,43 @@ NA_Msg_get_max_unexpected_size(
         ) NA_WARN_UNUSED_RESULT;
 
 /**
+ * Allocate buf_size bytes and return a pointer to the allocated memory.
+ * The memory is initialized. If size is 0, NA_Msg_buf_alloc() returns
+ * NULL. The plugin_data output parameter can be used by the underlying plugin
+ * implementation to store internal memory information.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param buf_size [IN]         buffer size
+ * \param plugin_data [OUT]     pointer to internal plugin data
+ *
+ * \return Pointer to allocated memory or NULL in case of failure
+ */
+NA_EXPORT void *
+NA_Msg_buf_alloc(
+        na_class_t *na_class,
+        na_size_t buf_size,
+        void **plugin_data
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
+ * The NA_Msg_buf_free() function releases the memory space pointed to by buf,
+ * which must have been returned by a previous call to NA_Msg_buf_alloc().
+ * If buf is NULL, no operation is performed.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param buf [IN]              pointer to buffer
+ * \param plugin_data [IN]      pointer to internal plugin data
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Msg_buf_free(
+        na_class_t *na_class,
+        void *buf,
+        void *plugin_data
+        );
+
+/**
  * Get the maximum tag value that can be used by send/recv (both expected and
  * unexpected).
  *
@@ -397,6 +454,7 @@ NA_Msg_get_max_tag(
  * \remark Note also that unexpected messages do not require an unexpected
  * receive to be posted at the destination before sending the message and the
  * destination is allowed to drop the message without notification.
+ *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
  * a new operation ID will be internally created and returned. Users may also
  * manually create an operation ID through NA_Op_create() and pass it through
@@ -428,10 +486,12 @@ NA_Msg_send_unexpected(
         );
 
 /**
- * Receive an unexpected message.
- * Unexpected receives may wait on ANY_TAG and ANY_SOURCE depending on the
- * implementation. After completion, user callback is placed into a completion
- * queue and can be triggered using NA_Trigger().
+ * Receive an unexpected message. Unexpected receives may wait on any tag and
+ * any source depending on the implementation, a tag mask allows for messages
+ * to be ignored if the plugin has defined the NA_HAS_TAG_MASK feature
+ * (see NA_Check_feature() for more details). After completion, user callback
+ * is placed into a completion queue and can be triggered using NA_Trigger().
+ *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
  * a new operation ID will be internally created and returned. Users may also
  * manually create an operation ID through NA_Op_create() and pass it through
@@ -443,6 +503,7 @@ NA_Msg_send_unexpected(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
+ * \param mask [IN]             tag mask
  * \param op_id [IN/OUT]        pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -455,6 +516,7 @@ NA_Msg_recv_unexpected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        na_tag_t      mask,
         na_op_id_t   *op_id
         );
 
@@ -465,6 +527,7 @@ NA_Msg_recv_unexpected(
  * an expected receive to be posted at the destination before sending the
  * message, otherwise the destination is allowed to drop the message without
  * notification.
+ *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
  * a new operation ID will be internally created and returned. Users may also
  * manually create an operation ID through NA_Op_create() and pass it through
@@ -498,6 +561,7 @@ NA_Msg_send_expected(
 /**
  * Receive an expected message from source. After completion, user callback is
  * placed into a completion queue and can be triggered using NA_Trigger().
+ *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
  * a new operation ID will be internally created and returned. Users may also
  * manually create an operation ID through NA_Op_create() and pass it through
@@ -718,6 +782,7 @@ NA_Mem_handle_deserialize(
  * given offset/size. After completion, user callback is placed into a
  * completion queue and can be triggered using NA_Trigger().
  * \remark Memory must be registered and handles exchanged between peers.
+ *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
  * a new operation ID will be internally created and returned. Users may also
  * manually create an operation ID through NA_Op_create() and pass it through
@@ -755,6 +820,7 @@ NA_Put(
 /**
  * Get data from remote target. After completion, user callback is placed into
  * a completion queue and can be triggered using NA_Trigger().
+ *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
  * a new operation ID will be internally created and returned. Users may also
  * manually create an operation ID through NA_Op_create() and pass it through
@@ -789,11 +855,22 @@ NA_Get(
         na_op_id_t      *op_id
         );
 
+/**
+ * Retrieve file descriptor from NA plugin when supported. The descriptor
+ * can be used by upper layers for manual polling through the usual
+ * OS select/poll/epoll calls.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
+ *
+ * \return Non-negative integer if supported, 0 if not implemented and negative
+ * in case of error.
+ */
 NA_EXPORT int
 NA_Get_poll_fd(
         na_class_t      *na_class,
         na_context_t    *context
-        );
+        ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Try to progress communication for at most timeout until timeout reached or
