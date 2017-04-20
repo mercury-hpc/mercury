@@ -58,6 +58,14 @@ struct na_ofi_domain {
     struct fid_domain *nod_domain; /* Access domain handle */
     struct fid_mr *nod_mr; /* Memory region handle */
     struct fid_av *nod_av; /* Address vector handle */
+    /*
+     * Address hash-table, to map the source-side address to fi_addr_t.
+     * The key is 64bits value serialized from source-side IP+Port (see
+     * na_ofi_reqhdr_2_key), the value is fi_addr_t.
+     */
+    hg_hash_table_t *nod_addr_ht;
+    /* the rwlock to protect nod_addr_ht */
+    hg_thread_rwlock_t nod_rwlock;
     uint32_t nod_refcount; /* Refcount of this domain */
     size_t nod_src_addrlen;
     size_t nod_dest_addrlen;
@@ -72,6 +80,13 @@ struct na_ofi_global_data {
     hg_atomic_int32_t nog_init_flag; /* Initialization flag */
 } nofi_gdata;
 
+enum {
+    NA_OFI_MR_SCALABLE,
+    NA_OFI_MR_BASIC,
+};
+
+int na_ofi_mr_mode = NA_OFI_MR_SCALABLE;
+
 /****************/
 /* Local Macros */
 /****************/
@@ -82,6 +97,7 @@ struct na_ofi_global_data {
 #define NA_OFI_EXPECTED_TAG_FLAG (0x100000000ULL)
 #define NA_OFI_UNEXPECTED_TAG_IGNORE (0xFFFFFFFFULL)
 
+/* the predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
 
 #if !defined(container_of)
@@ -108,6 +124,7 @@ struct na_ofi_private_data {
     HG_QUEUE_HEAD(na_ofi_op_id) nop_unexpected_op_queue;
     hg_thread_mutex_t nop_unexpected_op_mutex;
     char *nop_uri; /* URI address string */
+    na_ofi_reqhdr_t nop_req_hdr; /* request header */
 };
 
 #define NA_OFI_PRIVATE_DATA(na_class) \
@@ -122,6 +139,8 @@ struct na_ofi_addr {
 };
 
 struct na_ofi_mem_handle {
+    struct fid_mr *nom_mr_hdl; /* FI MR handle */
+    na_uint64_t nom_mr_key; /* FI MR key */
     na_ptr_t nom_base; /* Initial address of memory */
     na_size_t nom_size; /* Size of memory */
     na_uint8_t nom_attr; /* Flag of operation access */
@@ -183,6 +202,206 @@ struct na_ofi_op_id {
     } noo_info;
     struct na_cb_completion_data noo_completion_data;
 };
+
+/********************/
+/* Local Helpers */
+/********************/
+
+#define na_ofi_bswap16(x) ((x) >> 8 | ((x) & 0xFFU) << 8)
+#define na_ofi_bswap32(x) ((na_ofi_bswap16((x) >> 16) & 0xFFFFU) |\
+                           (na_ofi_bswap16((x) & 0xFFFFU) << 16))
+#define na_ofi_bswap32s(x) do { *(x) = na_ofi_bswap32(*(x)); } while (0)
+
+static inline na_bool_t
+na_ofi_with_reqhdr(na_class_t *na_class)
+{
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+
+    return domain->nod_prov_type != NA_OFI_PROV_PSM2;
+}
+
+/**
+ * Converts the inline header to a 64 bits key to search corresponding FI addr.
+ */
+static inline na_uint64_t
+na_ofi_reqhdr_2_key(na_ofi_reqhdr_t *hdr)
+{
+    return (((na_uint64_t)hdr->fih_ip) << 32 | hdr->fih_port);
+}
+
+static int
+av_addr_ht_key_equal(hg_hash_table_key_t vlocation1,
+                     hg_hash_table_key_t vlocation2)
+{
+    return *((na_uint64_t *) vlocation1) == *((na_uint64_t *) vlocation2);
+}
+
+static unsigned int
+av_addr_ht_key_hash(hg_hash_table_key_t vlocation)
+{
+    na_uint64_t key = *((na_uint64_t *) vlocation);
+    na_uint32_t hi, lo;
+
+    hi = key >> 32;
+    lo = (key & 0xFFFFFFFFU);
+
+    return ((hi & 0xFFFF0000U) | (lo & 0xFFFFU));
+}
+
+static void
+av_addr_ht_key_free(hg_hash_table_key_t key)
+{
+    free((na_uint64_t *) key);
+}
+
+static void
+av_addr_ht_value_free(hg_hash_table_value_t value)
+{
+    free((fi_addr_t *) value);
+}
+
+static na_return_t
+na_ofi_av_insert(na_class_t *na_class, char *node_str, char *service_str,
+                 fi_addr_t *fi_addr)
+{
+    struct na_ofi_domain *domain;
+    struct fi_info *tmp_info = NULL;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    /* address resolution by fi AV */
+    domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    assert(domain != NULL);
+
+    rc = fi_getinfo(NA_OFI_VERSION, node_str, service_str, 0 /* flags */,
+                    NULL /* hints */, &tmp_info);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_getinfo (%s:%s) failed, rc: %d(%s).",
+                     node_str, service_str, rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+    rc = fi_av_insert(domain->nod_av, tmp_info->dest_addr, 1, fi_addr,
+                      0 /* flags */, NULL /* context */);
+    /* fi_av_insertsvc not supported by PSM2 provider */
+    //rc = fi_av_insertsvc(domain->nod_av, node_str, service_str,
+    //                     fi_addr, 0 /* flags */, NULL /* context */)
+    fi_freeinfo(tmp_info);
+    if (rc < 0) {
+        NA_LOG_ERROR("fi_av_insertsvc failed(node %s, service %s), rc: %d(%s).",
+                     node_str, service_str, rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    } else if (rc != 1) {
+        NA_LOG_ERROR("fi_av_insert failed(node %s, service %s), rc: %d.",
+                     node_str, service_str, rc);
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* The below just to verify the AV address resolution */
+    /*
+    void *peer_addr;
+    size_t addrlen;
+    char peer_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'};
+
+    addrlen = domain->nod_src_addrlen;
+    peer_addr = malloc(addrlen);
+    if (peer_addr == NULL) {
+        NA_LOG_ERROR("Could not allocate peer_addr.");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+    rc = fi_av_lookup(domain->nod_av, *fi_addr, peer_addr, &addrlen);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_av_lookup failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+    addrlen = NA_OFI_MAX_URI_LEN;
+    fi_av_straddr(domain->nod_av, peer_addr, peer_addr_str, &addrlen);
+    NA_LOG_DEBUG("node %s, service %s, peer address %s.",
+                 node_str, service_str, peer_addr_str);
+    free(peer_addr);
+    */
+
+out:
+    return ret;
+}
+
+/* lookup the address hash-table */
+static na_return_t
+na_ofi_addr_ht_lookup(na_class_t *na_class, na_ofi_reqhdr_t *reqhdr,
+                      fi_addr_t *src_addr)
+{
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    na_uint64_t addr_key, *new_key;
+    fi_addr_t *fi_addr, tmp_addr, *new_value;
+    char *node, service[16];
+    struct in_addr in;
+    na_return_t ret = NA_SUCCESS;
+
+    addr_key = na_ofi_reqhdr_2_key(reqhdr);
+    hg_thread_rwlock_rdlock(&domain->nod_rwlock);
+    fi_addr = hg_hash_table_lookup(domain->nod_addr_ht, &addr_key);
+    if (fi_addr != HG_HASH_TABLE_NULL) {
+        /*
+        in.s_addr = reqhdr->fih_ip;
+        node = inet_ntoa(in);
+        NA_LOG_DEBUG("hg_hash_table_lookup(%s:%d) succeed, fi_addr: %d.\n",
+                     node, reqhdr->fih_port, *fi_addr);
+        */
+        *src_addr = *fi_addr;
+        hg_thread_rwlock_release_rdlock(&domain->nod_rwlock);
+        return ret;
+    }
+    hg_thread_rwlock_release_rdlock(&domain->nod_rwlock);
+
+    in.s_addr = reqhdr->fih_ip;
+    node = inet_ntoa(in);
+    memset(service, 0, 16);
+    sprintf(service, "%d", reqhdr->fih_port);
+
+    ret = na_ofi_av_insert(na_class, node, service, &tmp_addr);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("na_ofi_av_insert(%s:%s) failed, ret: %d.",
+                     node, service, ret);
+        goto out;
+    }
+    *src_addr = tmp_addr;
+
+    hg_thread_rwlock_wrlock(&domain->nod_rwlock);
+    fi_addr = hg_hash_table_lookup(domain->nod_addr_ht, &addr_key);
+    if (fi_addr != HG_HASH_TABLE_NULL) {
+        /* in race condition, use addr in HT and remove the new addr from AV */
+        *src_addr = *fi_addr;
+        hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
+        fi_av_remove(domain->nod_av, &tmp_addr, 1 /* count */, 0 /* flag */);
+        return ret;
+    }
+    new_key = (na_uint64_t *)malloc(sizeof(*new_key));
+    new_value = (fi_addr_t *)malloc(sizeof(*new_value));
+    if (new_key == NULL || new_value == NULL) {
+        NA_LOG_ERROR("cannot allocate memory for new_key/new_value.");
+        ret = NA_NOMEM_ERROR;
+        goto unlock;
+    }
+    *new_key = addr_key;
+    *new_value = tmp_addr;
+    if (hg_hash_table_insert(domain->nod_addr_ht, new_key, new_value) == 0) {
+        NA_LOG_ERROR("hg_hash_table_insert(%s:%s) failed.", node, service);
+        ret = NA_NOMEM_ERROR;
+    } else {
+        /*
+        NA_LOG_DEBUG("hg_hash_table_insert(%s:%s) succeed, fi_addr: %d.",
+                     node, service, tmp_addr);
+        */
+    }
+unlock:
+    hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
+out:
+    return ret;
+}
 
 /********************/
 /* Local Prototypes */
@@ -423,7 +642,6 @@ na_ofi_getinfo()
 
     hints->mode               = FI_CONTEXT;
     hints->ep_attr->type      = FI_EP_RDM;
-    /* notes: verbs provider does not support FI_SOURCE and FI_MR_SCALABLE */
     hints->caps               = FI_TAGGED | FI_RMA | FI_SOURCE;// FI_SOURCE_ERR;
     hints->tx_attr->msg_order = FI_ORDER_SAS;
     hints->rx_attr->msg_order = FI_ORDER_SAS;
@@ -433,11 +651,10 @@ na_ofi_getinfo()
     hints->domain_attr->data_progress    = FI_PROGRESS_MANUAL;
     hints->domain_attr->av_type          = FI_AV_MAP;
     hints->domain_attr->resource_mgmt    = FI_RM_ENABLED;
-    hints->domain_attr->mr_mode          = FI_MR_SCALABLE;
-    /*
-    if (na_ofi_conf.noc_interface != NULL)
-        hints->domain_attr->name = strdup(na_ofi_conf.noc_interface);
-    */
+    if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
+        hints->domain_attr->mr_mode      = FI_MR_SCALABLE;
+    else
+        hints->domain_attr->mr_mode      = FI_MR_BASIC;
 
     /**
      * fi_getinfo:  returns information about fabric services.
@@ -540,7 +757,11 @@ na_ofi_domain_decref_locked(struct na_ofi_domain *domain)
                  domain->nod_prov_name, domain->nod_refcount);
     */
     if (domain->nod_refcount == 0) {
-        fi_close(&domain->nod_mr->fid);
+        hg_hash_table_free(domain->nod_addr_ht);
+        domain->nod_addr_ht = NULL;
+        hg_thread_rwlock_destroy(&domain->nod_rwlock);
+        if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
+            fi_close(&domain->nod_mr->fid);
         fi_close(&domain->nod_av->fid);
         fi_close(&domain->nod_domain->fid);
         fi_close(&domain->nod_fabric->fid);
@@ -598,6 +819,57 @@ na_ofi_check_protocol(const char *protocol_name)
 
 out:
     return accept;
+}
+
+/*---------------------------------------------------------------------------*/
+/**
+ * Generate the request header for NA class. Can be called after nop_uri being
+ * initialized (for example "sockets://192.168.42.170:7779").
+ */
+static inline na_return_t
+na_ofi_gen_req_hdr(struct na_ofi_private_data *priv)
+{
+    char *uri = NULL, *locator, *ip_str;
+    na_uint32_t port;
+    struct in_addr in;
+    int rc;
+    na_return_t ret = NA_SUCCESS;
+
+    uri = strdup(priv->nop_uri);
+    if (uri == NULL) {
+        NA_LOG_ERROR("strdup nop_uri failed.");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+    locator = strrchr(uri, ':');
+    if (locator == NULL) {
+        ret = NA_INVALID_PARAM;
+        goto out;
+    }
+    *locator++ = '\0';
+    port = atoi(locator);
+    locator = strrchr(uri, '/');
+    if (locator == NULL) {
+        ret = NA_INVALID_PARAM;
+        goto out;
+    }
+    ip_str = locator + 1;
+
+    rc = inet_aton(ip_str, &in);
+    if (rc == 0) {
+        NA_LOG_ERROR("Bad IP addr: %s.", ip_str);
+        ret = NA_INVALID_PARAM;
+        goto out;
+    }
+    priv->nop_req_hdr.fih_feats = 0;
+    priv->nop_req_hdr.fih_magic = NA_OFI_HDR_MAGIC;
+    priv->nop_req_hdr.fih_ip = in.s_addr;
+    priv->nop_req_hdr.fih_port = port;
+
+out:
+    if (uri != NULL)
+        free(uri);
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -691,8 +963,32 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         NA_LOG_ERROR("no provider for protocol_name %s found.",
                      na_info->protocol_name);
         free(domain);
-        ret = NA_PROTOCOL_ERROR;
         hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* create addr hash-table */
+    domain->nod_addr_ht = hg_hash_table_new(av_addr_ht_key_hash,
+                                            av_addr_ht_key_equal);
+    if (domain->nod_addr_ht == NULL) {
+        NA_LOG_ERROR("hg_hash_table_new failed.");
+        free(domain);
+        nofi_gdata_decref_locked(); /* rollback refcount taken above */
+        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+    hg_hash_table_register_free_functions(domain->nod_addr_ht,
+                                          av_addr_ht_key_free,
+                                          av_addr_ht_value_free);
+    rc = hg_thread_rwlock_init(&domain->nod_rwlock);
+    if (rc != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("hg_hash_table_new failed.");
+        free(domain);
+        nofi_gdata_decref_locked(); /* rollback refcount taken above */
+        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
+        ret = NA_NOMEM_ERROR;
         goto out;
     }
 
@@ -702,6 +998,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
                    NULL);             /* Optional context for fabric events */
     if (rc != 0) {
         NA_LOG_ERROR("fi_fabric failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        hg_hash_table_free(domain->nod_addr_ht);
+        hg_thread_rwlock_destroy(&domain->nod_rwlock);
         free(domain);
         ret = NA_PROTOCOL_ERROR;
         nofi_gdata_decref_locked(); /* rollback refcount taken above */
@@ -716,6 +1014,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
                    NULL);        /* Optional context for domain events */
     if (rc != 0) {
         NA_LOG_ERROR("fi_domain failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        hg_hash_table_free(domain->nod_addr_ht);
+        hg_thread_rwlock_destroy(&domain->nod_rwlock);
         fi_close(&fabric_hdl->fid);
         free(domain);
         nofi_gdata_decref_locked(); /* rollback refcount taken above */
@@ -724,19 +1024,24 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         goto out;
     }
 
-    /* create MR, now exports all memory range for RMA */
-    rc = fi_mr_reg(domain_hdl, (void *)0, UINT64_MAX,
-                   FI_REMOTE_READ | FI_REMOTE_WRITE, 0ULL /* offset */,
-                   NA_OFI_RMA_KEY, 0 /* flags */, &mr_hdl, NULL /* context */);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        fi_close(&domain_hdl->fid);
-        fi_close(&fabric_hdl->fid);
-        free(domain);
-        nofi_gdata_decref_locked(); /* rollback refcount taken above */
-        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
+    /* For MR_SCALABLE, create MR, now exports all memory range for RMA */
+    if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE) {
+        rc = fi_mr_reg(domain_hdl, (void *)0, UINT64_MAX,
+                       FI_REMOTE_READ | FI_REMOTE_WRITE, 0ULL /* offset */,
+                       NA_OFI_RMA_KEY, 0 /* flags */, &mr_hdl,
+                       NULL /* context */);
+        if (rc != 0) {
+            hg_hash_table_free(domain->nod_addr_ht);
+            hg_thread_rwlock_destroy(&domain->nod_rwlock);
+            NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
+            fi_close(&domain_hdl->fid);
+            fi_close(&fabric_hdl->fid);
+            free(domain);
+            nofi_gdata_decref_locked(); /* rollback refcount taken above */
+            hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
     }
 
     /* Open fi address vector */
@@ -744,7 +1049,10 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     rc = fi_av_open(domain_hdl, &av_attr, &av_hdl, NULL);
     if (rc != 0) {
         NA_LOG_ERROR("fi_av_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        fi_close(&mr_hdl->fid);
+        hg_hash_table_free(domain->nod_addr_ht);
+        hg_thread_rwlock_destroy(&domain->nod_rwlock);
+        if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
+            fi_close(&mr_hdl->fid);
         fi_close(&domain_hdl->fid);
         fi_close(&fabric_hdl->fid);
         free(domain);
@@ -763,7 +1071,10 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         domain->nod_prov_type = NA_OFI_PROV_VERBS;
     } else {
         NA_LOG_ERROR("bad domain->nod_prov_name %s.", domain->nod_prov_name);
-        fi_close(&mr_hdl->fid);
+        hg_hash_table_free(domain->nod_addr_ht);
+        hg_thread_rwlock_destroy(&domain->nod_rwlock);
+        if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
+            fi_close(&mr_hdl->fid);
         fi_close(&domain_hdl->fid);
         fi_close(&fabric_hdl->fid);
         free(domain);
@@ -775,28 +1086,13 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     domain->nod_prov = prov;
     domain->nod_fabric = fabric_hdl;
     domain->nod_domain = domain_hdl;
-    domain->nod_mr = mr_hdl;
+    if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
+        domain->nod_mr = mr_hdl;
     domain->nod_av = av_hdl;
     domain->nod_refcount = 0;
     domain->nod_src_addrlen = prov->src_addrlen;
     domain->nod_dest_addrlen = prov->dest_addrlen;
     na_ofi_domain_addref_locked(domain);
-
-    /* TODO node_list insert can be removed after libfabric 1.5 */
-    if (domain->nod_prov_type != NA_OFI_PROV_PSM2) {
-        ret = na_ofi_config_node_list(av_hdl);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("na_ofi_config_node_list failed, ret %d.", ret);
-            fi_close(&mr_hdl->fid);
-            fi_close(&domain_hdl->fid);
-            fi_close(&fabric_hdl->fid);
-            free(domain);
-            nofi_gdata_decref_locked(); /* rollback refcount taken above */
-            hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
-    }
 
     /* insert to domain list */
     HG_LIST_INSERT_HEAD(&nofi_gdata.nog_domain_list, domain, nod_entry);
@@ -815,12 +1111,13 @@ create_ep:
     }
 
     if (na_ofi_conf.noc_port_cons == NA_TRUE) {
-        if (listen)
+        if (listen) {
             port = hg_atomic_incr32(&na_ofi_conf.noc_port);
-        else
-            port = hg_atomic_incr32(&na_ofi_conf.noc_port_cli);
-        sprintf(port_str, "%d", port);
-        service = port_str;
+            sprintf(port_str, "%d", port);
+            service = port_str;
+        } else {
+            service = NULL;
+        }
     } else {
         service = NULL;
     }
@@ -924,6 +1221,12 @@ retry_getname:
     if (priv->nop_uri == NULL) {
         NA_LOG_ERROR("Could not strdup nop_uri.");
         ret = NA_NOMEM_ERROR;
+        goto ep_bind_err;
+    }
+    ret = na_ofi_gen_req_hdr(priv);
+    if (ret != NA_SUCCESS) {
+        free(priv->nop_uri);
+        NA_LOG_ERROR("na_ofi_gen_req_hdr failed, ret: %d.", ret);
         goto ep_bind_err;
     }
     NA_LOG_DEBUG("created endpoint addr %s.\n", priv->nop_uri);
@@ -1157,10 +1460,7 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     struct na_ofi_addr *na_ofi_addr = NULL;
     char node_str[NA_OFI_MAX_NODE_LEN] = {'\0'};
     char service_str[NA_OFI_MAX_PORT_LEN] = {'\0'};
-    struct na_ofi_domain *domain;
-    struct fi_info *tmp_info = NULL;
     na_return_t ret = NA_SUCCESS;
-    int rc;
 
     /* Allocate op_id */
     na_ofi_op_id = (struct na_ofi_op_id *)calloc(1, sizeof(*na_ofi_op_id));
@@ -1200,63 +1500,13 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* address resolution by fi AV */
-    domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-    assert(domain != NULL);
-
-    rc = fi_getinfo(NA_OFI_VERSION, node_str, service_str, 0 /* flags */,
-                    NULL /* hints */, &tmp_info);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_getinfo (%s:%s) failed, rc: %d(%s).",
-                     node_str, service_str, rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
+    ret = na_ofi_av_insert(na_class, node_str, service_str,
+                           &na_ofi_addr->noa_addr);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("na_ofi_av_insert(%s:%s) failed, ret: %d.",
+                     node_str, service_str, ret);
         goto out;
     }
-    rc = fi_av_insert(domain->nod_av, tmp_info->dest_addr, 1,
-                      &na_ofi_addr->noa_addr, 0 /* flags */,
-                      NULL /* context */);
-    /* fi_av_insertsvc not supported by PSM2 provider */
-    //rc = fi_av_insertsvc(domain->nod_av, node_str, service_str,
-    //                     &na_ofi_addr->noa_addr, 0 /* flags */,
-    //                     NULL /* context */)
-    fi_freeinfo(tmp_info);
-    if (rc < 0) {
-        NA_LOG_ERROR("fi_av_insertsvc failed(node %s, service %s), rc: %d(%s).",
-                     node_str, service_str, rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    } else if (rc != 1) {
-        NA_LOG_ERROR("fi_av_insert failed(node %s, service %s), rc: %d.",
-                     node_str, service_str, rc);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-
-    /* The below just to verify the AV address resolution */
-    /*
-    void *peer_addr;
-    size_t addrlen;
-    char peer_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'};
-
-    addrlen = domain->nod_src_addrlen;
-    peer_addr = malloc(addrlen);
-    if (peer_addr == NULL) {
-        NA_LOG_ERROR("Could not allocate peer_addr.");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
-    rc = fi_av_lookup(domain->nod_av, na_ofi_addr->noa_addr,
-                      peer_addr, &addrlen);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_av_lookup failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-    addrlen = NA_OFI_MAX_URI_LEN;
-    fi_av_straddr(domain->nod_av, peer_addr, peer_addr_str, &addrlen);
-    NA_LOG_DEBUG("node %s, service %s, peer address %s.",
-                 node_str, service_str, peer_addr_str);
-    free(peer_addr);
-    */
 
     /* As the fi_av_insert is blocking, always complete here */
     ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, NA_SUCCESS);
@@ -1399,7 +1649,10 @@ na_ofi_msg_get_max_unexpected_size(na_class_t NA_UNUSED *na_class)
 static na_size_t
 na_ofi_msg_get_reserved_unexpected_size(na_class_t *na_class)
 {
-    return 0;
+    if (na_ofi_with_reqhdr(na_class) == NA_TRUE)
+        return sizeof(na_ofi_reqhdr_t);
+    else
+        return 0;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1475,10 +1728,12 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
     na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
-    struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct fid_ep *ep_hdl = priv->nop_ep;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)dest;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
     struct iovec iov;
+    void *reqhdr = buf;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -1508,6 +1763,14 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_ofi_op_id;
+
+    /*
+     * For those providers that don't support FI_SOURCE/FI_SOURCE_ERR, insert
+     * the request header to piggyback the source address of request for
+     * unexpected message.
+     */
+    if (na_ofi_with_reqhdr(na_class) == NA_TRUE)
+        memcpy(reqhdr, &priv->nop_req_hdr, sizeof(priv->nop_req_hdr));
 
     /* Post the FI unexpected send request */
     iov.iov_base = buf;
@@ -1784,8 +2047,48 @@ static na_return_t
 na_ofi_mem_register(na_class_t NA_UNUSED *na_class,
     na_mem_handle_t NA_UNUSED mem_handle)
 {
+    na_ofi_mem_handle_t *na_ofi_mem_handle = mem_handle;
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    na_uint64_t access;
+    int rc = 0;
+    na_return_t ret = NA_SUCCESS;
+
     /* nothing to do for scalable memory registration mode */
-    return NA_SUCCESS;
+    if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
+        return NA_SUCCESS;
+
+    switch (na_ofi_mem_handle->nom_attr) {
+        case NA_MEM_READ_ONLY:
+            access = FI_REMOTE_READ;
+            break;
+        case NA_MEM_WRITE_ONLY:
+            access = FI_REMOTE_WRITE;
+            break;
+        case NA_MEM_READWRITE:
+            access = FI_REMOTE_READ | FI_REMOTE_WRITE;
+            break;
+        default:
+            NA_LOG_ERROR("Invalid memory access flag");
+            ret = NA_INVALID_PARAM;
+            goto out;
+    }
+
+    //access = FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE;
+    //access = FI_REMOTE_READ | FI_REMOTE_WRITE;
+    rc = fi_mr_reg(domain->nod_domain, (void *)na_ofi_mem_handle->nom_base,
+                   na_ofi_mem_handle->nom_size, access, 0ULL /* offset */,
+                   na_ofi_mem_handle->nom_base, 0 /* flags */,
+                   &na_ofi_mem_handle->nom_mr_hdl, NULL /* context */);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    na_ofi_mem_handle->nom_mr_key = fi_mr_key(na_ofi_mem_handle->nom_mr_hdl);
+
+out:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1873,6 +2176,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     struct iovec iov;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *) remote_addr;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
+    na_uint64_t rma_key;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -1905,12 +2209,13 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Post the OFI RMA write */
     iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
     iov.iov_len = length;
+    rma_key = (na_ofi_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
+              ofi_remote_mem_handle->nom_mr_key;
     do {
         rc = fi_writev(ep_hdl, &iov, NULL /* desc */, 1 /* count */,
                        na_ofi_addr->noa_addr,
-                       (uint64_t)ofi_remote_mem_handle->nom_base +
-                       remote_offset,
-                       NA_OFI_RMA_KEY, &na_ofi_op_id->noo_fi_ctx);
+                       (na_uint64_t)ofi_remote_mem_handle->nom_base +
+                       remote_offset, rma_key, &na_ofi_op_id->noo_fi_ctx);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -1948,6 +2253,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *) remote_addr;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
+    na_uint64_t rma_key;
     int rc;
 
     na_ofi_addr_addref(na_ofi_addr); /* for na_ofi_complete() */
@@ -1979,11 +2285,13 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Post the OFI RMA read */
     iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
     iov.iov_len = length;
+    rma_key = (na_ofi_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
+              ofi_remote_mem_handle->nom_mr_key;
     do {
         rc = fi_readv(ep_hdl, &iov, NULL /* desc */, 1 /* count */,
                       na_ofi_addr->noa_addr,
-                      (uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
-                      NA_OFI_RMA_KEY, &na_ofi_op_id->noo_fi_ctx);
+                      (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
+                      rma_key, &na_ofi_op_id->noo_fi_ctx);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -2035,6 +2343,7 @@ na_ofi_handle_recv_event(na_class_t *na_class,
     struct fi_cq_tagged_entry *cq_event)
 {
     struct na_ofi_addr *peer_addr = NULL;
+    na_ofi_reqhdr_t *reqhdr;
     na_ofi_op_id_t *na_ofi_op_id;
     na_return_t ret = NA_SUCCESS;
 
@@ -2056,11 +2365,32 @@ na_ofi_handle_recv_event(na_class_t *na_class,
         assert(na_ofi_op_id->noo_type == NA_CB_RECV_UNEXPECTED);
         assert(na_ofi_op_id->noo_info.noo_recv_unexpected.noi_buf ==
                cq_event->buf);
+
         peer_addr = na_ofi_addr_alloc(NULL);
         if (peer_addr == NULL) {
             NA_LOG_ERROR("na_ofi_addr_alloc failed");
             return;
         }
+
+        if (na_ofi_with_reqhdr(na_class) == NA_TRUE) {
+            reqhdr = cq_event->buf;
+            /* check magic number and swap byte order when needed */
+            if (reqhdr->fih_magic == na_ofi_bswap32(NA_OFI_HDR_MAGIC)) {
+                na_ofi_bswap32s(&reqhdr->fih_feats);
+                na_ofi_bswap32s(&reqhdr->fih_ip);
+                na_ofi_bswap32s(&reqhdr->fih_port);
+            } else if (reqhdr->fih_magic != NA_OFI_HDR_MAGIC) {
+                NA_LOG_ERROR("illegal magic number, 0x%x.", reqhdr->fih_magic);
+                ret = NA_PROTOCOL_ERROR;
+                goto out;
+            }
+            ret = na_ofi_addr_ht_lookup(na_class, reqhdr, &src_addr);
+            if (ret != NA_SUCCESS) {
+                NA_LOG_ERROR("na_ofi_addr_ht_lookup failed, ret: %d.", ret);
+                goto out;
+            }
+        }
+
         peer_addr->noa_addr = src_addr;
         /* For unexpected msg, take one extra ref to be released by
          * NA_Addr_free() (see hg_handle->addr_mine). */
@@ -2110,8 +2440,9 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
 {
     /* Convert timeout in ms into seconds */
     double remaining = timeout / 1000.0;
-    struct fid_cq *cq_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_cq;
-    struct fid_av *av_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_av;
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct fid_cq *cq_hdl = priv->nop_cq;
+    struct fid_av *av_hdl = priv->nop_domain->nod_av;
     na_return_t ret = NA_TIMEOUT;
 
     do {
@@ -2124,7 +2455,10 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
 
         hg_time_get_current(&t1);
 
-        rc = fi_cq_readfrom(cq_hdl, &cq_event, 1, &src_addr);
+        if (na_ofi_with_reqhdr(na_class) == NA_FALSE)
+            rc = fi_cq_readfrom(cq_hdl, &cq_event, 1, &src_addr);
+        else
+            rc = fi_cq_read(cq_hdl, &cq_event, 1);
         if (rc == -FI_EAGAIN) {
             hg_time_get_current(&t2);
             remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
@@ -2169,12 +2503,13 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 NA_LOG_ERROR("fi_cq_readerr got err: %d(%s), "
                              "prov_errno: %d(%s).",
                              cq_err.err, fi_strerror(cq_err.err),
-                             cq_err.prov_errno, fi_strerror(cq_err.prov_errno));
+                             cq_err.prov_errno,
+                             fi_strerror(-cq_err.prov_errno));
                 rc = NA_PROTOCOL_ERROR;
                 break;
             }
         } else if (rc <= 0) {
-            NA_LOG_ERROR("fi_cq_readfrom() failed, rc: %d(%s).",
+            NA_LOG_ERROR("fi_cq_read(/_readfrom() failed, rc: %d(%s).",
                          rc, fi_strerror(-rc));
             rc = NA_PROTOCOL_ERROR;
             break;

@@ -46,6 +46,8 @@
 #include "mercury_queue.h"
 #include "mercury_list.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_thread_rwlock.h"
+#include "mercury_hash_table.h"
 #include "mercury_time.h"
 #include "mercury_atomic.h"
 
@@ -57,6 +59,8 @@
 #include <rdma/fi_cm.h>
 #include <rdma/fi_errno.h>
 
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 
@@ -85,11 +89,28 @@ extern		"C" {
 #define NA_OFI_MAX_PORT_LEN (16)
 #endif
 
+#ifndef NA_OFI_HDR_MAGIC
+#define NA_OFI_HDR_MAGIC (0x0f106688)
+#endif
+
 enum na_ofi_prov_type {
     NA_OFI_PROV_SOCKETS,
     NA_OFI_PROV_PSM2,
     NA_OFI_PROV_VERBS,
 };
+
+/**
+ * Inline header for NA_OFI (16 bytes).
+ *
+ * It is mainly to piggyback the source-side IP/port address for the unexpected
+ * message. For those providers that does not support FI_SOURCE/FI_SOURCE_ERR.
+ */
+typedef struct {
+    na_uint32_t fih_feats; /* feature bits */
+    na_uint32_t fih_magic; /* magic number for byte-order checking */
+    na_uint32_t fih_ip; /* IP addr in integer */
+    na_uint32_t fih_port; /* Port number */
+} na_ofi_reqhdr_t;
 
 /**
  * NA OFI plugin configuration:
@@ -100,19 +121,6 @@ enum na_ofi_prov_type {
  * 2. environment variable - "OFI_INTERFACE"
  *    Set is as the network device name to be used for OFI communication, for
  *    example "eth0", "ib0" or "ens33" etc.
- *
- * TODO: the below can be removed after libfabric 1.5, as we need not to insert
- *       all nodes' addresses to AV after the version.
- * 3. environment variable - "OFI_PORT_CLI"
- *    Set it as a port number, when creating client NA classes it will use the
- *    consecutive port numbers start from it.
- *    When it is not set, then will use random port number.
- * 4. environment variable - "OFI_NODE_LIST"
- *    Set it as the path of a file which includes all the nodes' addresses, with
- *    the format of:
- *    10.10.22.34:4566
- *    10.32.22.[1-32]:[4566-4573]
- *    which is the IP addresses and port numbers.
  */
 struct na_ofi_config {
     /* flag of using consecutive port number for NA classes */
@@ -122,20 +130,12 @@ struct na_ofi_config {
     /* the NIC interface (for domain_attr->name hint of fi_getinfo */
     char *noc_interface;
 
-    /* TODO: the below fields can be removed after libfabric 1.5 */
-
-    /* if (noc_port_cons == true), then (noc_port_cli + 1) is next available
-     * port for client */
-    hg_atomic_int32_t noc_port_cli;
-    /* path of the node list file */
-    char *noc_node_list_file;
     /* IP addr str for the noc_interface */
     char noc_ip_str[INET_ADDRSTRLEN];
 };
 
 na_return_t na_ofi_config_init();
 void na_ofi_config_fini();
-na_return_t na_ofi_config_node_list(struct fid_av *av_hdl);
 
 extern struct na_ofi_config na_ofi_conf;
 
