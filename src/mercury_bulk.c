@@ -977,6 +977,26 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Bulk_ref_incr(hg_bulk_t handle)
+{
+    struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_bulk) {
+        HG_LOG_ERROR("NULL memory handle passed");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    /* Increment ref count */
+    hg_atomic_incr32(&hg_bulk->ref_count);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Bulk_access(hg_bulk_t handle, hg_size_t offset, hg_size_t size,
     hg_uint8_t flags, hg_uint32_t max_count, void **buf_ptrs,
     hg_size_t *buf_sizes, hg_uint32_t *actual_count)

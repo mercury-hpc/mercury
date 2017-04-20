@@ -63,6 +63,18 @@ HG_Bulk_free(
         );
 
 /**
+ * Increment ref count on bulk handle.
+ *
+ * \param handle [IN]           abstract bulk handle
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_ref_incr(
+        hg_bulk_t handle
+        );
+
+/**
  * Access bulk handle to retrieve memory segments abstracted by handle.
  * \remark When using mercury in co-resident mode (i.e., when addr passed is
  * self addr), this function allows to avoid copy of bulk data by directly
