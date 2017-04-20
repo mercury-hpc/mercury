@@ -514,12 +514,9 @@ NA_Check_feature(na_class_t *na_class, na_uint8_t feature)
         NA_LOG_ERROR("NULL NA class");
         goto done;
     }
-    if (!na_class->check_feature) {
-        NA_LOG_ERROR("check_feature plugin callback is not defined");
-        goto done;
-    }
 
-    ret = na_class->check_feature(na_class, feature);
+    if (na_class->check_feature)
+        ret = na_class->check_feature(na_class, feature);
 
 done:
     return ret;
