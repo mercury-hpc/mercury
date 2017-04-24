@@ -655,6 +655,13 @@ na_sm_addr_lookup(
     na_op_id_t *op_id
     );
 
+/* addr_free */
+static na_return_t
+na_sm_addr_free(
+    na_class_t *na_class,
+    na_addr_t addr
+    );
+
 /* addr_self */
 static na_return_t
 na_sm_addr_self(
@@ -662,11 +669,12 @@ na_sm_addr_self(
     na_addr_t *addr
     );
 
-/* addr_free */
+/* addr_dup */
 static na_return_t
-na_sm_addr_free(
+na_sm_addr_dup(
     na_class_t *na_class,
-    na_addr_t addr
+    na_addr_t   addr,
+    na_addr_t  *new_addr
     );
 
 /* addr_is_self */
@@ -885,7 +893,7 @@ const na_class_t na_sm_class_g = {
     na_sm_addr_lookup,                      /* addr_lookup */
     na_sm_addr_free,                        /* addr_free */
     na_sm_addr_self,                        /* addr_self */
-    NULL,                                   /* addr_dup */
+    na_sm_addr_dup,                         /* addr_dup */
     na_sm_addr_is_self,                     /* addr_is_self */
     na_sm_addr_to_string,                   /* addr_to_string */
     na_sm_msg_get_max_expected_size,        /* msg_get_max_expected_size */
@@ -2933,21 +2941,6 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_addr_self(na_class_t *na_class, na_addr_t *addr)
-{
-    struct na_sm_addr *na_sm_addr = NA_SM_PRIVATE_DATA(na_class)->self_addr;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Increment refcount */
-    hg_atomic_incr32(&na_sm_addr->ref_count);
-
-    *addr = (na_addr_t) na_sm_addr;
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
 na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
 {
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) addr;
@@ -3108,6 +3101,37 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
     free(na_sm_addr);
 
 done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_addr_self(na_class_t *na_class, na_addr_t *addr)
+{
+    struct na_sm_addr *na_sm_addr = NA_SM_PRIVATE_DATA(na_class)->self_addr;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Increment refcount */
+    hg_atomic_incr32(&na_sm_addr->ref_count);
+
+    *addr = (na_addr_t) na_sm_addr;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_addr_dup(na_class_t NA_UNUSED *na_class, na_addr_t addr,
+    na_addr_t *new_addr)
+{
+    struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) addr;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Increment refcount */
+    hg_atomic_incr32(&na_sm_addr->ref_count);
+
+    *new_addr = (na_addr_t) na_sm_addr;
+
     return ret;
 }
 
