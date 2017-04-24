@@ -60,6 +60,7 @@ struct na_bmi_addr {
     BMI_addr_t bmi_addr;   /* BMI addr */
     na_bool_t  unexpected; /* Address generated from unexpected recv */
     na_bool_t  self;       /* Boolean for self */
+    hg_atomic_int32_t ref_count; /* Ref count */
 };
 
 struct na_bmi_unexpected_info {
@@ -244,6 +245,13 @@ na_bmi_addr_lookup(
         na_op_id_t   *op_id
         );
 
+/* addr_free */
+static na_return_t
+na_bmi_addr_free(
+        na_class_t *na_class,
+        na_addr_t   addr
+        );
+
 /* addr_self */
 static na_return_t
 na_bmi_addr_self(
@@ -251,11 +259,12 @@ na_bmi_addr_self(
         na_addr_t  *addr
         );
 
-/* addr_free */
+/* addr_dup */
 static na_return_t
-na_bmi_addr_free(
+na_bmi_addr_dup(
         na_class_t *na_class,
-        na_addr_t   addr
+        na_addr_t   addr,
+        na_addr_t  *new_addr
         );
 
 /* addr_is_self */
@@ -519,7 +528,7 @@ const na_class_t na_bmi_class_g = {
         na_bmi_addr_lookup,                   /* addr_lookup */
         na_bmi_addr_free,                     /* addr_free */
         na_bmi_addr_self,                     /* addr_self */
-        NULL,                                 /* addr_dup */
+        na_bmi_addr_dup,                      /* addr_dup */
         na_bmi_addr_is_self,                  /* addr_is_self */
         na_bmi_addr_to_string,                /* addr_to_string */
         na_bmi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
@@ -870,6 +879,7 @@ na_bmi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_bmi_addr->bmi_addr = 0;
     na_bmi_addr->unexpected = NA_FALSE;
     na_bmi_addr->self = NA_FALSE;
+    hg_atomic_set32(&na_bmi_addr->ref_count, 1);
     na_bmi_op_id->info.lookup.addr = (na_addr_t) na_bmi_addr;
 
     /* Assign op_id */
@@ -916,6 +926,7 @@ na_bmi_addr_self(na_class_t NA_UNUSED *na_class, na_addr_t *addr)
     na_bmi_addr->bmi_addr = 0;
     na_bmi_addr->unexpected = NA_FALSE;
     na_bmi_addr->self = NA_TRUE;
+    hg_atomic_set32(&na_bmi_addr->ref_count, 1);
 
     *addr = (na_addr_t) na_bmi_addr;
 
@@ -924,6 +935,21 @@ done:
         free(na_bmi_addr);
     }
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_bmi_addr_dup(na_class_t NA_UNUSED *na_class, na_addr_t addr,
+    na_addr_t *new_addr)
+{
+    struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) addr;
+
+    /* Increment refcount */
+    hg_atomic_incr32(&na_bmi_addr->ref_count);
+
+    *new_addr = (na_addr_t) na_bmi_addr;
+
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -940,9 +966,15 @@ na_bmi_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
         return ret;
     }
 
+    if (hg_atomic_decr32(&na_bmi_addr->ref_count)) {
+        /* Cannot free yet */
+        goto done;
+    }
+
     free(na_bmi_addr);
     na_bmi_addr = NULL;
 
+done:
     return ret;
 }
 
@@ -2245,6 +2277,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
                 na_bmi_addr->self = NA_FALSE;
                 na_bmi_addr->unexpected = NA_TRUE;
                 na_bmi_addr->bmi_addr = unexpected_info->addr;
+                hg_atomic_set32(&na_bmi_addr->ref_count, 1);
 
                 /* Fill callback info */
                 callback_info->info.recv_unexpected.actual_buf_size =
