@@ -962,6 +962,24 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+na_size_t
+NA_Msg_get_reserved_unexpected_size(na_class_t *na_class)
+{
+    na_size_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
+    if (na_class->msg_get_reserved_unexpected_size != NULL)
+        ret = na_class->msg_get_reserved_unexpected_size(na_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 na_tag_t
 NA_Msg_get_max_tag(na_class_t *na_class)
 {

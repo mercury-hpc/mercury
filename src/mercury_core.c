@@ -722,7 +722,8 @@ hg_core_get_input(struct hg_handle *hg_handle, void **in_buf,
 {
     /* No offset if extra buffer since only the user payload is copied */
     hg_size_t header_offset = (hg_handle->extra_in_buf) ? 0 :
-            hg_proc_header_request_get_size();
+            hg_proc_header_request_get_size(
+                    HG_Core_get_info(hg_handle)->hg_class);
 
     /* Space must be left for request header */
     *in_buf = (char *) ((hg_handle->extra_in_buf) ?
@@ -2745,7 +2746,7 @@ HG_Core_class_get_input_eager_size(const hg_class_t *hg_class)
 
 #ifndef HG_HAS_XDR
     unexp  = NA_Msg_get_max_unexpected_size(hg_class->na_class);
-    header = hg_proc_header_request_get_size();
+    header = hg_proc_header_request_get_size(hg_class);
     if (unexp > header)
         ret = unexp - header;
 #endif

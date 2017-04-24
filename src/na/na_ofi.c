@@ -242,6 +242,9 @@ na_ofi_msg_get_max_expected_size(na_class_t *na_class);
 static na_size_t
 na_ofi_msg_get_max_unexpected_size(na_class_t *na_class);
 
+static na_size_t
+na_ofi_msg_get_reserved_unexpected_size(na_class_t *na_class);
+
 static na_tag_t
 na_ofi_msg_get_max_tag(na_class_t *na_class);
 
@@ -255,7 +258,7 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 static na_return_t
 na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_op_id_t *op_id);
+    na_tag_t mask, na_op_id_t *op_id);
 
 /* msg_send_expected */
 static na_return_t
@@ -336,6 +339,7 @@ const na_class_t na_ofi_class_g = {
     na_ofi_check_protocol,                  /* check_protocol */
     na_ofi_initialize,                      /* initialize */
     na_ofi_finalize,                        /* finalize */
+    NULL,                                   /* check_feature */
     NULL,                                   /* context_create */
     NULL,                                   /* context_destroy */
     na_ofi_op_create,                       /* op_create */
@@ -347,7 +351,10 @@ const na_class_t na_ofi_class_g = {
     na_ofi_addr_is_self,                    /* addr_is_self */
     na_ofi_addr_to_string,                  /* addr_to_string */
     na_ofi_msg_get_max_expected_size,       /* msg_get_max_expected_size */
-    na_ofi_msg_get_max_unexpected_size,     /* msg_get_max_expected_size */
+    na_ofi_msg_get_max_unexpected_size,     /* msg_get_max_unexpected_size */
+    na_ofi_msg_get_reserved_unexpected_size,/* msg_get_reserved_unexpected_size */
+    NULL,                                   /* msg_buf_alloc */
+    NULL,                                   /* msg_buf_free */
     na_ofi_msg_get_max_tag,                 /* msg_get_max_tag */
     na_ofi_msg_send_unexpected,             /* msg_send_unexpected */
     na_ofi_msg_recv_unexpected,             /* msg_recv_unexpected */
@@ -1389,6 +1396,13 @@ na_ofi_msg_get_max_unexpected_size(na_class_t NA_UNUSED *na_class)
 }
 
 /*---------------------------------------------------------------------------*/
+static na_size_t
+na_ofi_msg_get_reserved_unexpected_size(na_class_t *na_class)
+{
+    return 0;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_tag_t
 na_ofi_msg_get_max_tag(na_class_t NA_UNUSED *na_class)
 {
@@ -1526,7 +1540,7 @@ out:
 static na_return_t
 na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_op_id_t *op_id)
+    na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
 {
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
     na_ofi_op_id_t *na_ofi_op_id = NULL;

@@ -532,7 +532,8 @@ const na_class_t na_bmi_class_g = {
         na_bmi_addr_is_self,                  /* addr_is_self */
         na_bmi_addr_to_string,                /* addr_to_string */
         na_bmi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
-        na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
+        na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_unexpected_size */
+        NULL,                                 /* msg_get_reserved_unexpected_size */
         NULL,                                 /* msg_buf_alloc */
         NULL,                                 /* msg_buf_free */
         na_bmi_msg_get_max_tag,               /* msg_get_max_tag */

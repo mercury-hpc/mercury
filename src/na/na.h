@@ -433,6 +433,20 @@ NA_Msg_buf_free(
         );
 
 /**
+ * Get the reserved size of unexpected send/recv message. The reserved space
+ * starts from the beginning of the unexpected message. NA layer can piggyback
+ * some information by using the reserved space.
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_size_t
+NA_Msg_get_reserved_unexpected_size(
+        na_class_t *na_class
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
  * Get the maximum tag value that can be used by send/recv (both expected and
  * unexpected).
  *

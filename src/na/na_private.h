@@ -133,6 +133,10 @@ struct na_class {
     (*msg_get_max_unexpected_size)(
             na_class_t *na_class
             );
+    na_size_t
+    (*msg_get_reserved_unexpected_size)(
+            na_class_t *na_class
+            );
     void *
     (*msg_buf_alloc)(
             na_class_t *na_class,

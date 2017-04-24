@@ -308,7 +308,8 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    *size_to_send = hg_proc_header_request_get_size();
+    *size_to_send = hg_proc_header_request_get_size(
+                            HG_Core_get_info(handle)->hg_class);
 
     if (!in_struct)
         goto done;
