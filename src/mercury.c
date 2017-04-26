@@ -827,14 +827,14 @@ HG_Context_destroy(hg_context_t *context)
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Context_get_class(hg_context_t *context)
+HG_Context_get_class(const hg_context_t *context)
 {
     return HG_Core_context_get_class(context);
 }
 
 /*---------------------------------------------------------------------------*/
 hg_uint8_t
-HG_Context_get_id(hg_context_t *context)
+HG_Context_get_id(const hg_context_t *context)
 {
     return HG_Core_context_get_id(context);
 }

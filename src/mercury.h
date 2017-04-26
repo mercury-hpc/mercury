@@ -207,7 +207,7 @@ HG_Context_destroy(
  */
 HG_EXPORT hg_class_t *
 HG_Context_get_class(
-        hg_context_t *context
+        const hg_context_t *context
         );
 
 /**
@@ -219,7 +219,7 @@ HG_Context_get_class(
  */
 HG_EXPORT hg_uint8_t
 HG_Context_get_id(
-        hg_context_t *context
+        const hg_context_t *context
         );
 
 /**

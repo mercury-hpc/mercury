@@ -2742,7 +2742,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Core_context_get_class(hg_context_t *context)
+HG_Core_context_get_class(const hg_context_t *context)
 {
     hg_class_t *ret = NULL;
 
@@ -2780,7 +2780,7 @@ HG_Core_context_set_id(hg_context_t *context, hg_uint8_t id)
 
 /*---------------------------------------------------------------------------*/
 hg_uint8_t
-HG_Core_context_get_id(hg_context_t *context)
+HG_Core_context_get_id(const hg_context_t *context)
 {
     hg_return_t ret = HG_SUCCESS;
 
