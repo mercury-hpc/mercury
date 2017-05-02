@@ -16,12 +16,8 @@
 #include "mercury_thread_condition.h"
 #include "mercury_time.h"
 #include "mercury_atomic.h"
+#include "mercury_mem.h"
 
-#ifdef _WIN32
-  #include <windows.h>
-#else
-  #include <unistd.h>
-#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -83,18 +79,6 @@ na_info_free(
 static void
 na_info_print(struct na_info *na_info);
 #endif
-
-/* Allocate msg buffer */
-static void *
-na_msg_buf_alloc(
-    na_size_t size
-    );
-
-/* Free msg buffer */
-static void
-na_msg_buf_free(
-    void *mem_ptr
-    );
 
 /*******************/
 /* Local Variables */
@@ -255,44 +239,6 @@ na_info_print(struct na_info *na_info)
     printf("Hostname: %s\n", na_info->host_name);
 }
 #endif
-
-/*---------------------------------------------------------------------------*/
-static void *
-na_msg_buf_alloc(na_size_t size)
-{
-    na_size_t alignment;
-    void *mem_ptr = NULL;
-
-#ifdef _WIN32
-    SYSTEM_INFO system_info;
-    GetSystemInfo (&system_info);
-    alignment = system_info.dwPageSize;
-    mem_ptr = _aligned_malloc(size, alignment);
-#else
-    alignment = (na_size_t) sysconf(_SC_PAGE_SIZE);
-
-    if (posix_memalign(&mem_ptr, alignment, size) != 0) {
-        NA_LOG_ERROR("posix_memalign failed");
-        return NULL;
-    }
-#endif
-    if (mem_ptr) {
-        memset(mem_ptr, 0, size);
-    }
-
-    return mem_ptr;
-}
-
-/*---------------------------------------------------------------------------*/
-void
-na_msg_buf_free(void *mem_ptr)
-{
-#ifdef _WIN32
-    _aligned_free(mem_ptr);
-#else
-    free(mem_ptr);
-#endif
-}
 
 /*---------------------------------------------------------------------------*/
 na_class_t *
@@ -796,6 +742,9 @@ NA_Addr_free(na_class_t *na_class, na_addr_t addr)
         ret = NA_INVALID_PARAM;
         goto done;
     }
+    if (addr == NA_ADDR_NULL)
+        /* Nothing to do */
+        goto done;
     if (!na_class->addr_free) {
         NA_LOG_ERROR("addr_free plugin callback is not defined");
         ret = NA_PROTOCOL_ERROR;
@@ -907,7 +856,14 @@ NA_Msg_buf_alloc(na_class_t *na_class, na_size_t buf_size, void **plugin_data)
     if (na_class->msg_buf_alloc)
         ret = na_class->msg_buf_alloc(na_class, buf_size, plugin_data);
     else {
-        ret = na_msg_buf_alloc(buf_size);
+        na_size_t page_size = (na_size_t) hg_mem_get_page_size();
+
+        ret = hg_mem_aligned_alloc(page_size, buf_size);
+        if (!ret) {
+            NA_LOG_ERROR("Could not allocate %d bytes", (int) buf_size);
+            goto done;
+        }
+        memset(ret, 0, buf_size);
         *plugin_data = (void *)1; /* Sanity check on free */
     }
 
@@ -945,7 +901,7 @@ NA_Msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
             ret = NA_PROTOCOL_ERROR;
             goto done;
         }
-        na_msg_buf_free(buf);
+        hg_mem_aligned_free(buf);
     }
 
 done:

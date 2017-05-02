@@ -21,6 +21,7 @@
 #include "mercury_thread.h"
 #include "mercury_poll.h"
 #include "mercury_event.h"
+#include "mercury_mem.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -301,7 +302,7 @@ struct na_sm_private_data {
 /**
  * Open shared buf.
  */
-static void *
+static NA_INLINE void *
 na_sm_open_shared_buf(
     const char *name,
     size_t buf_size,
@@ -311,7 +312,7 @@ na_sm_open_shared_buf(
 /**
  * Close shared buf.
  */
-static na_return_t
+static NA_INLINE na_return_t
 na_sm_close_shared_buf(
     const char *filename,
     void *buf,
@@ -956,89 +957,31 @@ na_sm_print_addr(struct na_sm_addr *na_sm_addr)
 */
 
 /*---------------------------------------------------------------------------*/
-static void *
+static NA_INLINE void *
 na_sm_open_shared_buf(const char *name, size_t buf_size, na_bool_t create)
 {
-    int fd = 0;
-    int flags = O_RDWR;
-    void *buf = NULL;
-    na_size_t page_size;
-    na_return_t ret = NA_SUCCESS;
+    na_size_t page_size = (na_size_t) hg_mem_get_page_size();
+    void *ret = NULL;
 
-    if (create)
-        flags |= O_CREAT;
-    fd = shm_open(name, flags, S_IRUSR | S_IWUSR);
-    if (fd < 0) {
-        NA_LOG_ERROR("shm_open() failed (%s)", strerror(errno));
-        ret = NA_PROTOCOL_ERROR;
+    /* Check alignment */
+    if (buf_size / page_size * page_size != buf_size) {
+        NA_LOG_ERROR(
+            "Not aligned properly, page size=%zu bytes, copy buf=%zu bytes",
+            page_size, buf_size);
         goto done;
     }
 
-    if (create) {
-        if (ftruncate(fd, (off_t) buf_size) < 0) {
-            NA_LOG_ERROR("ftruncate() failed (%s)", strerror(errno));
-            ret = NA_PROTOCOL_ERROR;
-            goto done;
-        }
-
-        /* Get page size */
-#ifdef _WIN32
-        SYSTEM_INFO system_info;
-        GetSystemInfo (&system_info);
-        page_size = system_info.dwPageSize;
-#else
-        page_size = (na_size_t) sysconf(_SC_PAGE_SIZE);
-#endif
-        if (buf_size/page_size * page_size != buf_size) {
-            NA_LOG_ERROR(
-                "Not aligned properly, page size=%zu bytes, copy buf=%zu bytes",
-                page_size, buf_size);
-            ret = NA_SIZE_ERROR;
-            goto done;
-        }
-    }
-
-    buf = mmap(NULL, buf_size, PROT_WRITE | PROT_READ, MAP_SHARED, fd, 0);
-    if (buf == MAP_FAILED) {
-        NA_LOG_ERROR("mmap() failed (%s)", strerror(errno));
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    /* The file descriptor can be closed without affecting the memory mapping */
-    if (close(fd) == -1) {
-        NA_LOG_ERROR("close() failed (%s)", strerror(errno));
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-done:
-    if (ret != NA_SUCCESS) {
-        /* TODO free buf */
-    }
-    return buf;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_sm_close_shared_buf(const char *filename, void *buf, size_t buf_size)
-{
-    na_return_t ret = NA_SUCCESS;
-
-    if (buf && munmap(buf, buf_size) == -1) {
-        NA_LOG_ERROR("munmap() failed (%s)", strerror(errno));
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    if (filename && shm_unlink(filename) == -1) {
-        NA_LOG_ERROR("shm_unlink() failed (%s)", strerror(errno));
-        ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    ret = hg_mem_shm_map(name, buf_size, create);
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_return_t
+na_sm_close_shared_buf(const char *filename, void *buf, size_t buf_size)
+{
+    return hg_mem_shm_unmap(filename, buf, buf_size);
 }
 
 /*---------------------------------------------------------------------------*/

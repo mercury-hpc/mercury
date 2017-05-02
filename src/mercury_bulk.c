@@ -189,7 +189,7 @@ hg_bulk_transfer(
         hg_cb_t callback,
         void *arg,
         hg_bulk_op_t op,
-        na_addr_t origin_addr,
+        struct hg_addr *origin_addr,
         struct hg_bulk *hg_bulk_origin,
         hg_size_t origin_offset,
         struct hg_bulk *hg_bulk_local,
@@ -716,17 +716,19 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
-    hg_bulk_op_t op, na_addr_t origin_addr, struct hg_bulk *hg_bulk_origin,
-    hg_size_t origin_offset, struct hg_bulk *hg_bulk_local,
-    hg_size_t local_offset, hg_size_t size, hg_op_id_t *op_id)
+    hg_bulk_op_t op, struct hg_addr *origin_addr,
+    struct hg_bulk *hg_bulk_origin, hg_size_t origin_offset,
+    struct hg_bulk *hg_bulk_local, hg_size_t local_offset, hg_size_t size,
+    hg_op_id_t *op_id)
 {
     hg_uint32_t origin_segment_start_index = 0, local_segment_start_index = 0;
     hg_size_t origin_segment_start_offset = origin_offset,
         local_segment_start_offset = local_offset;
     struct hg_bulk_op_id *hg_bulk_op_id = NULL;
     na_bulk_op_t na_bulk_op;
+    na_addr_t na_origin_addr = HG_Core_addr_get_na(origin_addr);
     na_class_t *na_class = HG_Core_class_get_na(hg_bulk_origin->hg_class);
-    hg_bool_t is_self = NA_Addr_is_self(na_class, origin_addr);
+    hg_bool_t is_self = NA_Addr_is_self(na_class, na_origin_addr);
     hg_bool_t scatter_gather =
         (na_class->mem_handle_create_segments && !is_self) ? HG_TRUE : HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
@@ -809,7 +811,7 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     if (op_id && op_id != HG_OP_ID_IGNORE) *op_id = (hg_op_id_t) hg_bulk_op_id;
 
     /* Do actual transfer */
-    ret = hg_bulk_transfer_pieces(na_bulk_op, origin_addr, hg_bulk_origin,
+    ret = hg_bulk_transfer_pieces(na_bulk_op, na_origin_addr, hg_bulk_origin,
         origin_segment_start_index, origin_segment_start_offset, hg_bulk_local,
         local_segment_start_index, local_segment_start_offset, size,
         scatter_gather, hg_bulk_op_id, NULL);
@@ -1417,7 +1419,7 @@ HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         goto done;
     }
 
-    if (origin_addr == NA_ADDR_NULL) {
+    if (origin_addr == HG_ADDR_NULL) {
         HG_LOG_ERROR("NULL addr passed");
         ret = HG_INVALID_PARAM;
         goto done;

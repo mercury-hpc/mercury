@@ -117,7 +117,10 @@ struct hg_self_cb_info {
 
 /* HG addr */
 struct hg_addr {
-    na_addr_t addr;
+    na_addr_t na_addr;                  /* Underlying NA address */
+    hg_bool_t local;                    /* Address is local */
+    hg_bool_t is_mine;                  /* Created internally or not */
+    hg_atomic_int32_t ref_count;        /* Reference count */
 };
 
 /* HG handle */
@@ -129,7 +132,6 @@ struct hg_handle {
     na_tag_t tag;                       /* Tag used for request and response */
     hg_uint32_t cookie;                 /* Cookie unique to every RPC call */
     hg_return_t ret;                    /* Return code associated to handle */
-    hg_bool_t addr_mine;                /* NA Addr created by HG */
     HG_LIST_ENTRY(hg_handle) entry;     /* Entry in pending / processing lists */
     struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
     hg_bool_t repost;                   /* Repost handle on completion (listen) */
@@ -168,7 +170,7 @@ struct hg_handle {
 
 /* HG op id */
 struct hg_op_info_lookup {
-    hg_addr_t addr;                     /* Address */
+    struct hg_addr *hg_addr;            /* Address */
     na_op_id_t na_lookup_op_id;         /* Operation ID for lookup */
 };
 
@@ -267,6 +269,14 @@ hg_core_get_na_context(
         );
 
 /**
+ * Create addr.
+ */
+static struct hg_addr *
+hg_core_addr_create(
+        void
+        );
+
+/**
  * Lookup addr.
  */
 static hg_return_t
@@ -300,7 +310,7 @@ hg_core_addr_lookup_complete(
 static hg_return_t
 hg_core_addr_free(
         struct hg_class *hg_class,
-        hg_addr_t addr
+        struct hg_addr *hg_addr
         );
 
 
@@ -310,7 +320,7 @@ hg_core_addr_free(
 static hg_return_t
 hg_core_addr_self(
         struct hg_class *hg_class,
-        hg_addr_t *addr
+        struct hg_addr **self_addr
         );
 
 /**
@@ -319,8 +329,8 @@ hg_core_addr_self(
 static hg_return_t
 hg_core_addr_dup(
         struct hg_class *hg_class,
-        hg_addr_t addr,
-        hg_addr_t *new_addr
+        struct hg_addr *hg_addr,
+        struct hg_addr **hg_new_addr
         );
 
 /**
@@ -331,7 +341,7 @@ hg_core_addr_to_string(
         struct hg_class *hg_class,
         char *buf,
         hg_size_t *buf_size,
-        hg_addr_t addr
+        struct hg_addr *hg_addr
         );
 
 /**
@@ -1000,6 +1010,25 @@ hg_core_get_na_context(struct hg_context *context)
 }
 
 /*---------------------------------------------------------------------------*/
+static struct hg_addr *
+hg_core_addr_create(void)
+{
+    struct hg_addr *hg_addr = NULL;
+
+    hg_addr = (struct hg_addr *) malloc(sizeof(struct hg_addr));
+    if (!hg_addr) {
+        HG_LOG_ERROR("Could not allocate HG addr");
+        goto done;
+    }
+    memset(hg_addr, 0, sizeof(struct hg_addr));
+    hg_addr->na_addr = NA_ADDR_NULL;
+    hg_atomic_set32(&hg_addr->ref_count, 1);
+
+done:
+    return hg_addr;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
     const char *name, hg_op_id_t *op_id)
@@ -1007,6 +1036,7 @@ hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
     na_class_t *na_class = context->hg_class->na_class;
     na_context_t *na_context = context->na_context;
     struct hg_op_id *hg_op_id = NULL;
+    struct hg_addr *hg_addr = NULL;
     na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
 
@@ -1022,8 +1052,17 @@ hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
     hg_op_id->callback = callback;
     hg_op_id->arg = arg;
     hg_atomic_set32(&hg_op_id->completed, 0);
-    hg_op_id->info.lookup.addr = HG_ADDR_NULL;
+    hg_op_id->info.lookup.hg_addr = NULL;
     hg_op_id->info.lookup.na_lookup_op_id = NA_OP_ID_NULL;
+
+    /* Allocate addr */
+    hg_addr = hg_core_addr_create();
+    if (!hg_addr) {
+        HG_LOG_ERROR("Could not create HG addr");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+    hg_op_id->info.lookup.hg_addr = hg_addr;
 
     /* Assign op_id */
     if (op_id && op_id != HG_OP_ID_IGNORE)
@@ -1057,7 +1096,10 @@ hg_core_addr_lookup_cb(const struct na_cb_info *callback_info)
     }
 
     /* Assign addr */
-    hg_op_id->info.lookup.addr = (hg_addr_t) callback_info->info.lookup.addr;
+    hg_op_id->info.lookup.hg_addr->na_addr = callback_info->info.lookup.addr;
+
+    /* TODO could determine here if address is local */
+//    hg_op_id->info.lookup.addr->local = HG_FALSE;
 
     /* Mark as completed */
     if (hg_core_addr_lookup_complete(hg_op_id) != HG_SUCCESS) {
@@ -1096,17 +1138,25 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_addr_free(struct hg_class *hg_class, hg_addr_t addr)
+hg_core_addr_free(struct hg_class *hg_class, struct hg_addr *hg_addr)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    na_ret = NA_Addr_free(hg_class->na_class, (na_addr_t)addr);
+    if (!hg_addr) goto done;
+
+    if (hg_atomic_decr32(&hg_addr->ref_count)) {
+        /* Cannot free yet */
+        goto done;
+    }
+
+    na_ret = NA_Addr_free(hg_class->na_class, hg_addr->na_addr);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not free address");
         ret = HG_NA_ERROR;
         goto done;
     }
+    free(hg_addr);
 
 done:
     return ret;
@@ -1114,34 +1164,66 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_addr_self(struct hg_class *hg_class, hg_addr_t *addr)
+hg_core_addr_self(struct hg_class *hg_class, struct hg_addr **self_addr)
 {
+    struct hg_addr *hg_addr = NULL;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    na_ret = NA_Addr_self(hg_class->na_class, (na_addr_t *) addr);
+    hg_addr = hg_core_addr_create();
+    if (!hg_addr) {
+        HG_LOG_ERROR("Could not create HG addr");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+
+    na_ret = NA_Addr_self(hg_class->na_class, &hg_addr->na_addr);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not get self address");
         ret = HG_NA_ERROR;
         goto done;
     }
 
+    *self_addr = hg_addr;
+
 done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_addr_dup(struct hg_class *hg_class, hg_addr_t addr, hg_addr_t *new_addr)
+hg_core_addr_dup(struct hg_class *hg_class, struct hg_addr *hg_addr,
+    struct hg_addr **hg_new_addr)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    na_ret = NA_Addr_dup(hg_class->na_class, (na_addr_t) addr, (na_addr_t *) new_addr);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not duplicate address");
-        ret = HG_NA_ERROR;
-        goto done;
+    /**
+     * If address is internal, create a new copy to prevent repost
+     * operations to modify underlying NA address, otherwise simply increment
+     * refcount of original address.
+     */
+    if (hg_addr->is_mine) {
+        struct hg_addr *dup = NULL;
+
+        dup = hg_core_addr_create();
+        if (!dup) {
+            HG_LOG_ERROR("Could not create HG addr");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
+        na_ret = NA_Addr_dup(hg_class->na_class, hg_addr->na_addr,
+            &dup->na_addr);
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not duplicate address");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+        dup->local = hg_addr->local;
+        *hg_new_addr = dup;
+    } else {
+        hg_atomic_incr32(&hg_addr->ref_count);
+        *hg_new_addr = hg_addr;
     }
 
 done:
@@ -1151,12 +1233,13 @@ done:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_addr_to_string(struct hg_class *hg_class, char *buf, hg_size_t *buf_size,
-    hg_addr_t addr)
+    struct hg_addr *hg_addr)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    na_ret = NA_Addr_to_string(hg_class->na_class, buf, buf_size, (na_addr_t) addr);
+    na_ret = NA_Addr_to_string(hg_class->na_class, buf, buf_size,
+        hg_addr->na_addr);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not convert address to string");
         ret = HG_NA_ERROR;
@@ -1261,10 +1344,8 @@ hg_core_destroy(struct hg_handle *hg_handle)
         goto done;
     }
 
-    /* Free if mine */
-    if (hg_handle->hg_info.addr != HG_ADDR_NULL && hg_handle->addr_mine)
-        NA_Addr_free(hg_handle->hg_info.hg_class->na_class,
-                hg_handle->hg_info.addr);
+    /* Remove reference to HG addr */
+    hg_core_addr_free(hg_handle->hg_info.hg_class, hg_handle->hg_info.addr);
 
     na_ret = NA_Op_destroy(hg_handle->hg_info.hg_class->na_class,
         hg_handle->na_send_op_id);
@@ -1396,7 +1477,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     if (!hg_handle->hg_rpc_info->no_response) {
         na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_context->na_context,
             hg_core_recv_output_cb, hg_handle, hg_handle->out_buf,
-            hg_handle->out_buf_size, hg_handle->hg_info.addr,
+            hg_handle->out_buf_size, hg_handle->hg_info.addr->na_addr,
             hg_handle->tag, &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post recv for output buffer");
@@ -1409,7 +1490,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_send_unexpected(hg_class->na_class,
             hg_context->na_context, hg_core_send_input_cb, hg_handle,
             hg_handle->in_buf, hg_handle->in_buf_used,
-            hg_handle->hg_info.addr, hg_handle->tag,
+            hg_handle->hg_info.addr->na_addr, hg_handle->tag,
             &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for input buffer");
@@ -1480,7 +1561,7 @@ hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     /* Respond back */
     na_ret = NA_Msg_send_expected(hg_class->na_class, hg_context->na_context,
             hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
-            hg_handle->out_buf_used, hg_handle->hg_info.addr,
+            hg_handle->out_buf_used, hg_handle->hg_info.addr->na_addr,
             hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for output buffer");
@@ -1555,8 +1636,12 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         hg_atomic_incr32(&hg_handle->na_completed_count);
 
         /* Fill unexpected info */
-        hg_handle->hg_info.addr = callback_info->info.recv_unexpected.source;
-        hg_handle->addr_mine = HG_TRUE; /* Address will be freed with handle */
+        hg_handle->hg_info.addr->na_addr =
+            callback_info->info.recv_unexpected.source;
+
+        /* TODO determine if addr is local */
+//        hg_handle->hg_info.addr->local = HG_FALSE;
+
         hg_handle->tag = callback_info->info.recv_unexpected.tag;
         if (callback_info->info.recv_unexpected.actual_buf_size
             > hg_handle->in_buf_size) {
@@ -1912,6 +1997,7 @@ hg_core_context_post(struct hg_context *context, unsigned int request_count,
     /* Create a bunch of handles and post unexpected receives */
     for (nentry = 0; nentry < request_count; nentry++) {
         struct hg_handle *hg_handle = NULL;
+        struct hg_addr *hg_addr = NULL;
 
         /* Create a new handle */
         hg_handle = hg_core_create(context);
@@ -1920,6 +2006,17 @@ hg_core_context_post(struct hg_context *context, unsigned int request_count,
             ret = HG_NOMEM_ERROR;
             goto done;
         }
+
+        /* Create internal addresses */
+        hg_addr = hg_core_addr_create();
+        if (!hg_addr) {
+            HG_LOG_ERROR("Could not create HG addr");
+            ret = NA_NOMEM_ERROR;
+            goto done;
+        }
+        /* To safely repost handle and prevent externally referenced address */
+        hg_addr->is_mine = HG_TRUE;
+        hg_handle->hg_info.addr = hg_addr;
 
         /* Repost handle on completion if told so */
         hg_handle->repost = repost;
@@ -1972,12 +2069,12 @@ hg_core_reset_post(struct hg_handle *hg_handle)
     if (hg_atomic_decr32(&hg_handle->ref_count))
         goto done;
 
-    if (hg_handle->hg_info.addr != HG_ADDR_NULL && hg_handle->addr_mine) {
-        /* Free address if mine */
+    /* Reset source address */
+    if (hg_handle->hg_info.addr->na_addr != NA_ADDR_NULL) {
         NA_Addr_free(hg_handle->hg_info.hg_class->na_class,
-            hg_handle->hg_info.addr);
+            hg_handle->hg_info.addr->na_addr);
+        hg_handle->hg_info.addr->na_addr = NA_ADDR_NULL;
     }
-    hg_handle->hg_info.addr = HG_ADDR_NULL;
     hg_handle->hg_info.id = 0;
     hg_handle->hg_info.target_id = 0;
     hg_handle->callback = NULL;
@@ -1986,7 +2083,6 @@ hg_core_reset_post(struct hg_handle *hg_handle)
     hg_handle->tag = 0;
     hg_handle->cookie = 0;
     hg_handle->ret = HG_SUCCESS;
-    hg_handle->addr_mine = HG_FALSE;
     hg_handle->in_buf_used = 0;
     hg_handle->out_buf_used = 0;
     hg_atomic_set32(&hg_handle->na_completed_count, 0);
@@ -2281,7 +2377,7 @@ hg_core_trigger_lookup_entry(struct hg_op_id *hg_op_id)
         hg_cb_info.arg = hg_op_id->arg;
         hg_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
         hg_cb_info.type = HG_CB_LOOKUP;
-        hg_cb_info.info.lookup.addr = hg_op_id->info.lookup.addr;
+        hg_cb_info.info.lookup.addr = hg_op_id->info.lookup.hg_addr;
 
         hg_op_id->callback(&hg_cb_info);
     }
@@ -3049,6 +3145,23 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+na_addr_t
+HG_Core_addr_get_na(hg_addr_t addr)
+{
+    na_addr_t ret = NA_ADDR_NULL;
+
+    if (addr == HG_ADDR_NULL) {
+        HG_LOG_ERROR("NULL addr");
+        goto done;
+    }
+
+    ret = addr->na_addr;
+
+done:
+     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_addr_self(hg_class_t *hg_class, hg_addr_t *addr)
 {
@@ -3083,6 +3196,11 @@ HG_Core_addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr)
 
     if (!hg_class) {
         HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    if (addr == HG_ADDR_NULL) {
+        HG_LOG_ERROR("NULL addr");
         ret = HG_INVALID_PARAM;
         goto done;
     }
@@ -3158,9 +3276,10 @@ HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
         goto done;
     }
     hg_handle->hg_info.addr = addr;
+    hg_atomic_incr32(&addr->ref_count); /* Increase ref to addr */
     hg_handle->hg_info.id = id;
 
-    /* Retrieve exe function from function map */
+    /* Retrieve ID function from function map */
     hg_thread_mutex_lock(&context->hg_class->func_map_mutex);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
         context->hg_class->func_map, (hg_hash_table_key_t) &id);
@@ -3347,7 +3466,7 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     }
 #ifndef HG_HAS_SELF_FORWARD
     if (NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
-        hg_handle->hg_info.addr)) {
+        hg_handle->hg_info.addr->na_addr)) {
         HG_LOG_ERROR("Not enabled, please enable HG_USE_SELF_FORWARD");
         ret = HG_INVALID_PARAM;
         goto done;
@@ -3389,7 +3508,8 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
      * through NA and pre-post response */
 #ifdef HG_HAS_SELF_FORWARD
     hg_forward = NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
-            hg_handle->hg_info.addr) ? hg_core_forward_self : hg_core_forward_na;
+            hg_handle->hg_info.addr->na_addr) ? hg_core_forward_self :
+            hg_core_forward_na;
     ret = hg_forward(hg_handle);
 #else
     ret = hg_core_forward_na(hg_handle);
@@ -3422,7 +3542,7 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
     }
 #ifndef HG_HAS_SELF_FORWARD
     if (NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
-        hg_handle->hg_info.addr)) {
+        hg_handle->hg_info.addr->na_addr)) {
         HG_LOG_ERROR("Not enabled, please enable HG_USE_SELF_FORWARD");
         ret = HG_INVALID_PARAM;
         goto done;
@@ -3457,7 +3577,8 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
      * through NA and pre-post response */
 #ifdef HG_HAS_SELF_FORWARD
     hg_respond = NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
-            hg_handle->hg_info.addr) ? hg_core_respond_self : hg_core_respond_na;
+            hg_handle->hg_info.addr->na_addr) ? hg_core_respond_self :
+            hg_core_respond_na;
     ret = hg_respond(hg_handle, callback, arg);
 #else
     ret = hg_core_respond_na(hg_handle, callback, arg);
