@@ -131,14 +131,18 @@ if(NA_USE_SM)
   else()
     include(CheckFunctionExists)
     check_function_exists(process_vm_readv NA_SM_HAS_CMA)
-    set(NA_PLUGINS ${NA_PLUGINS} na)
-    set(NA_HAS_SM 1)
-    set(NA_SM_SHM_PREFIX "na_sm" CACHE STRING
-      "Prefix to use for SHM file name.")
-    set(NA_SM_TMP_DIRECTORY "/tmp" CACHE PATH
-      "Location to use for NA SM temp data.")
-    mark_as_advanced(NA_SM_SHM_PREFIX)
-    mark_as_advanced(NA_SM_TMP_DIRECTORY)
+    if(NA_SM_HAS_CMA OR APPLE)
+      set(NA_PLUGINS ${NA_PLUGINS} na)
+      set(NA_HAS_SM 1)
+      set(NA_SM_SHM_PREFIX "na_sm" CACHE STRING
+        "Prefix to use for SHM file name.")
+      set(NA_SM_TMP_DIRECTORY "/tmp" CACHE PATH
+        "Location to use for NA SM temp data.")
+      mark_as_advanced(NA_SM_SHM_PREFIX)
+      mark_as_advanced(NA_SM_TMP_DIRECTORY)
+    else()
+      message(FATAL_ERROR "Platform does not meet NA SM requirements.")
+    endif()
   endif()
 endif()
 
