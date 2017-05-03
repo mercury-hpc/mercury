@@ -93,7 +93,7 @@ na_ofi_config_init()
     } else {
         na_ofi_conf.noc_interface = NULL;
         NA_LOG_ERROR("ENV OFI_INTERFACE not set.");
-        ret = NA_NOMEM_ERROR;
+        ret = NA_INVALID_PARAM;
         goto out;
     }
 
@@ -155,7 +155,6 @@ na_ofi_config_init()
     if (port_str == NULL || strlen(port_str) == 0) {
         na_ofi_conf.noc_port_cons = NA_FALSE;
         hg_atomic_set32(&na_ofi_conf.noc_port, 0);
-        na_ofi_conf.noc_interface = NULL;
         goto out;
     }
     if (is_integer_str(port_str) == NA_FALSE) {

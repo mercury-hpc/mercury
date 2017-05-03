@@ -50,13 +50,27 @@
 /********************/
 /* Global Variables */
 /********************/
+
+enum na_ofi_prov_type {
+    NA_OFI_PROV_SOCKETS,
+    NA_OFI_PROV_PSM2,
+    NA_OFI_PROV_VERBS,
+};
+
+enum na_ofi_mr_mode {
+    NA_OFI_MR_SCALABLE,
+    NA_OFI_MR_BASIC,
+};
+
 struct na_ofi_domain {
     enum na_ofi_prov_type nod_prov_type; /* OFI provider type */
+    enum na_ofi_mr_mode nod_mr_mode; /* OFI memory region mode */
     char *nod_prov_name; /* OFI provider name */
     struct fi_info *nod_prov; /* OFI provider handle */
     struct fid_fabric *nod_fabric; /* Fabric domain handle */
     struct fid_domain *nod_domain; /* Access domain handle */
-    struct fid_mr *nod_mr; /* Memory region handle */
+    /* Memory region handle, only valid for MR_SCALABLE */
+    struct fid_mr *nod_mr;
     struct fid_av *nod_av; /* Address vector handle */
     /*
      * Address hash-table, to map the source-side address to fi_addr_t.
@@ -79,13 +93,6 @@ struct na_ofi_global_data {
     hg_thread_mutex_t nog_mutex; /* Protects all fields above */
     hg_atomic_int32_t nog_init_flag; /* Initialization flag */
 } nofi_gdata;
-
-enum {
-    NA_OFI_MR_SCALABLE,
-    NA_OFI_MR_BASIC,
-};
-
-int na_ofi_mr_mode = NA_OFI_MR_SCALABLE;
 
 /****************/
 /* Local Macros */
@@ -144,6 +151,7 @@ struct na_ofi_mem_handle {
     na_ptr_t nom_base; /* Initial address of memory */
     na_size_t nom_size; /* Size of memory */
     na_uint8_t nom_attr; /* Flag of operation access */
+    na_uint8_t nom_remote; /* Flag of remote handle */
 };
 
 struct na_ofi_info_lookup {
@@ -642,7 +650,7 @@ na_ofi_getinfo()
 
     hints->mode               = FI_CONTEXT;
     hints->ep_attr->type      = FI_EP_RDM;
-    hints->caps               = FI_TAGGED | FI_RMA | FI_SOURCE;// FI_SOURCE_ERR;
+    hints->caps               = FI_TAGGED | FI_RMA;
     hints->tx_attr->msg_order = FI_ORDER_SAS;
     hints->rx_attr->msg_order = FI_ORDER_SAS;
 
@@ -651,10 +659,6 @@ na_ofi_getinfo()
     hints->domain_attr->data_progress    = FI_PROGRESS_MANUAL;
     hints->domain_attr->av_type          = FI_AV_MAP;
     hints->domain_attr->resource_mgmt    = FI_RM_ENABLED;
-    if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
-        hints->domain_attr->mr_mode      = FI_MR_SCALABLE;
-    else
-        hints->domain_attr->mr_mode      = FI_MR_BASIC;
 
     /**
      * fi_getinfo:  returns information about fabric services.
@@ -760,7 +764,7 @@ na_ofi_domain_decref_locked(struct na_ofi_domain *domain)
         hg_hash_table_free(domain->nod_addr_ht);
         domain->nod_addr_ht = NULL;
         hg_thread_rwlock_destroy(&domain->nod_rwlock);
-        if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
+        if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE && domain->nod_mr != NULL)
             fi_close(&domain->nod_mr->fid);
         fi_close(&domain->nod_av->fid);
         fi_close(&domain->nod_domain->fid);
@@ -881,7 +885,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     struct na_ofi_domain *domain;
     struct fid_fabric *fabric_hdl;
     struct fid_domain *domain_hdl;
-    struct fid_mr *mr_hdl;
+    struct fid_mr *mr_hdl = NULL;
     struct fid_av *av_hdl;
     struct fid_cq *cq_hdl;
     struct fid_ep *ep_hdl;
@@ -968,6 +972,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         goto out;
     }
 
+    domain->nod_prov = prov;
     /* create addr hash-table */
     domain->nod_addr_ht = hg_hash_table_new(av_addr_ht_key_hash,
                                             av_addr_ht_key_equal);
@@ -1007,6 +1012,33 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         goto out;
     }
 
+    domain->nod_prov_name = strdup(na_info->protocol_name);
+    if (!strcmp(domain->nod_prov_name, "sockets")) {
+        domain->nod_prov_type = NA_OFI_PROV_SOCKETS;
+        /* sockets provider without MR_BASIC supporting */
+        domain->nod_prov->domain_attr->mr_mode = FI_MR_SCALABLE;
+        domain->nod_mr_mode = NA_OFI_MR_SCALABLE;
+    } else if (!strcmp(domain->nod_prov_name, "psm2")) {
+        domain->nod_prov_type = NA_OFI_PROV_PSM2;
+        domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
+        domain->nod_prov->domain_attr->mr_mode = FI_MR_BASIC;
+        domain->nod_mr_mode = NA_OFI_MR_BASIC;
+    } else if (!strcmp(domain->nod_prov_name, "verbs")) {
+        domain->nod_prov_type = NA_OFI_PROV_VERBS;
+        domain->nod_prov->domain_attr->mr_mode = FI_MR_BASIC;
+        domain->nod_mr_mode = NA_OFI_MR_BASIC;
+    } else {
+        NA_LOG_ERROR("bad domain->nod_prov_name %s.", domain->nod_prov_name);
+        hg_hash_table_free(domain->nod_addr_ht);
+        hg_thread_rwlock_destroy(&domain->nod_rwlock);
+        fi_close(&fabric_hdl->fid);
+        free(domain);
+        nofi_gdata_decref_locked(); /* rollback refcount taken above */
+        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
     /* Create the fi access domain */
     rc = fi_domain(fabric_hdl,   /* In:  Fabric object */
                    prov,         /* In:  Provider */
@@ -1025,7 +1057,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     }
 
     /* For MR_SCALABLE, create MR, now exports all memory range for RMA */
-    if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE) {
+    if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) {
         rc = fi_mr_reg(domain_hdl, (void *)0, UINT64_MAX,
                        FI_REMOTE_READ | FI_REMOTE_WRITE, 0ULL /* offset */,
                        NA_OFI_RMA_KEY, 0 /* flags */, &mr_hdl,
@@ -1051,7 +1083,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         NA_LOG_ERROR("fi_av_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
         hg_hash_table_free(domain->nod_addr_ht);
         hg_thread_rwlock_destroy(&domain->nod_rwlock);
-        if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
+        if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE)
             fi_close(&mr_hdl->fid);
         fi_close(&domain_hdl->fid);
         fi_close(&fabric_hdl->fid);
@@ -1062,31 +1094,9 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         goto out;
     }
 
-    domain->nod_prov_name = strdup(na_info->protocol_name);
-    if (!strcmp(domain->nod_prov_name, "sockets")) {
-        domain->nod_prov_type = NA_OFI_PROV_SOCKETS;
-    } else if (!strcmp(domain->nod_prov_name, "psm2")) {
-        domain->nod_prov_type = NA_OFI_PROV_PSM2;
-    } else if (!strcmp(domain->nod_prov_name, "verbs")) {
-        domain->nod_prov_type = NA_OFI_PROV_VERBS;
-    } else {
-        NA_LOG_ERROR("bad domain->nod_prov_name %s.", domain->nod_prov_name);
-        hg_hash_table_free(domain->nod_addr_ht);
-        hg_thread_rwlock_destroy(&domain->nod_rwlock);
-        if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
-            fi_close(&mr_hdl->fid);
-        fi_close(&domain_hdl->fid);
-        fi_close(&fabric_hdl->fid);
-        free(domain);
-        nofi_gdata_decref_locked(); /* rollback refcount taken above */
-        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-    domain->nod_prov = prov;
     domain->nod_fabric = fabric_hdl;
     domain->nod_domain = domain_hdl;
-    if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
+    if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE)
         domain->nod_mr = mr_hdl;
     domain->nod_av = av_hdl;
     domain->nod_refcount = 0;
@@ -2023,6 +2033,7 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     na_ofi_mem_handle->nom_base = (na_ptr_t)buf;
     na_ofi_mem_handle->nom_size = buf_size;
     na_ofi_mem_handle->nom_attr = (na_uint8_t)flags;
+    na_ofi_mem_handle->nom_remote = 0;
 
     *mem_handle = (na_mem_handle_t) na_ofi_mem_handle;
 
@@ -2054,7 +2065,7 @@ na_ofi_mem_register(na_class_t NA_UNUSED *na_class,
     na_return_t ret = NA_SUCCESS;
 
     /* nothing to do for scalable memory registration mode */
-    if (na_ofi_mr_mode == NA_OFI_MR_SCALABLE)
+    if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE)
         return NA_SUCCESS;
 
     switch (na_ofi_mem_handle->nom_attr) {
@@ -2093,10 +2104,30 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_mem_deregister(na_class_t NA_UNUSED *na_class,
-    na_mem_handle_t NA_UNUSED mem_handle)
+na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
+    na_ofi_mem_handle_t *na_ofi_mem_handle = mem_handle;
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    int rc;
+
     /* nothing to do for scalable memory registration mode */
+    if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE)
+        return NA_SUCCESS;
+
+    if (na_ofi_mem_handle->nom_mr_hdl == NULL) {
+        NA_LOG_ERROR("invalid parameter - NULL na_ofi_mem_handle->nom_mr_hdl.");
+        return NA_PROTOCOL_ERROR;
+    }
+
+    if (na_ofi_mem_handle->nom_remote != 0)
+        return NA_SUCCESS;
+
+    rc = fi_close(&na_ofi_mem_handle->nom_mr_hdl->fid);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        return NA_PROTOCOL_ERROR;
+    }
+
     return NA_SUCCESS;
 }
 
@@ -2154,6 +2185,7 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
 
     /* Copy struct */
     memcpy(na_ofi_mem_handle, buf, sizeof(struct na_ofi_mem_handle));
+    na_ofi_mem_handle->nom_remote = 1;
 
     *mem_handle = (na_mem_handle_t) na_ofi_mem_handle;
 
@@ -2169,6 +2201,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id)
 {
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     na_ofi_mem_handle_t *ofi_local_mem_handle =
         (na_ofi_mem_handle_t *) local_mem_handle;
     na_ofi_mem_handle_t *ofi_remote_mem_handle =
@@ -2209,7 +2242,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Post the OFI RMA write */
     iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
     iov.iov_len = length;
-    rma_key = (na_ofi_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
+    rma_key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
               ofi_remote_mem_handle->nom_mr_key;
     do {
         rc = fi_writev(ep_hdl, &iov, NULL /* desc */, 1 /* count */,
@@ -2244,6 +2277,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id)
 {
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
     na_ofi_mem_handle_t *ofi_local_mem_handle =
         (na_ofi_mem_handle_t *) local_mem_handle;
@@ -2285,7 +2319,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Post the OFI RMA read */
     iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
     iov.iov_len = length;
-    rma_key = (na_ofi_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
+    rma_key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
               ofi_remote_mem_handle->nom_mr_key;
     do {
         rc = fi_readv(ep_hdl, &iov, NULL /* desc */, 1 /* count */,

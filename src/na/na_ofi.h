@@ -93,12 +93,6 @@ extern		"C" {
 #define NA_OFI_HDR_MAGIC (0x0f106688)
 #endif
 
-enum na_ofi_prov_type {
-    NA_OFI_PROV_SOCKETS,
-    NA_OFI_PROV_PSM2,
-    NA_OFI_PROV_VERBS,
-};
-
 /**
  * Inline header for NA_OFI (16 bytes).
  *
