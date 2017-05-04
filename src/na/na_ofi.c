@@ -1018,11 +1018,13 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         /* sockets provider without MR_BASIC supporting */
         domain->nod_prov->domain_attr->mr_mode = FI_MR_SCALABLE;
         domain->nod_mr_mode = NA_OFI_MR_SCALABLE;
+#if defined(FI_SOURCE_ERR)
     } else if (!strcmp(domain->nod_prov_name, "psm2")) {
         domain->nod_prov_type = NA_OFI_PROV_PSM2;
         domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
         domain->nod_prov->domain_attr->mr_mode = FI_MR_BASIC;
         domain->nod_mr_mode = NA_OFI_MR_BASIC;
+#endif
     } else if (!strcmp(domain->nod_prov_name, "verbs")) {
         domain->nod_prov_type = NA_OFI_PROV_VERBS;
         domain->nod_prov->domain_attr->mr_mode = FI_MR_BASIC;
