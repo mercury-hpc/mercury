@@ -74,7 +74,11 @@ extern		"C" {
  * layouts that are compatible with this version.
  */
 #ifndef NA_OFI_VERSION
+#if FI_MINOR_VERSION >= 5
 #define NA_OFI_VERSION FI_VERSION(1, 5)
+#else
+#define NA_OFI_VERSION FI_VERSION(1, 4)
+#endif
 #endif
 
 #ifndef NA_OFI_MAX_URI_LEN
