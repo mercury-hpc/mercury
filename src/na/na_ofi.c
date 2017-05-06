@@ -1979,6 +1979,7 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->noo_arg = arg;
     hg_atomic_set32(&na_ofi_op_id->noo_completed, 0);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, 0);
+    na_ofi_op_id->noo_addr = na_ofi_addr;
     na_ofi_op_id->noo_info.noo_recv_expected.noi_buf = buf;
     na_ofi_op_id->noo_info.noo_recv_expected.noi_buf_size = buf_size;
     na_ofi_op_id->noo_info.noo_recv_expected.noi_tag = tag;
@@ -2363,7 +2364,7 @@ na_ofi_handle_send_event(na_class_t NA_UNUSED *class,
     na_ofi_addr = (na_ofi_addr_t *)na_ofi_op_id->noo_addr;
 
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
-        ret = NA_CANCELED;
+        return;
 
     ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, ret);
     if (ret != NA_SUCCESS)
@@ -2385,13 +2386,13 @@ na_ofi_handle_recv_event(na_class_t *na_class,
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
                                 noo_fi_ctx);
-    if (hg_atomic_get32(&na_ofi_op_id->noo_canceled)) {
-        ret = NA_CANCELED;
-        goto out;
-    }
+    if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
+        return;
 
     if (cq_event->tag & ~NA_OFI_UNEXPECTED_TAG_IGNORE) {
         assert(na_ofi_op_id->noo_type == NA_CB_RECV_EXPECTED);
+        peer_addr = na_ofi_op_id->noo_addr;
+        assert(peer_addr != NULL);
         assert(na_ofi_op_id->noo_info.noo_recv_expected.noi_buf ==
                cq_event->buf);
         assert(na_ofi_op_id->noo_info.noo_recv_expected.noi_tag ==
@@ -2433,7 +2434,7 @@ na_ofi_handle_recv_event(na_class_t *na_class,
         na_ofi_addr_addref(peer_addr);
 
         na_ofi_op_id->noo_addr = peer_addr;
-        na_ofi_op_id->noo_info.noo_recv_expected.noi_tag = cq_event->tag;
+        na_ofi_op_id->noo_info.noo_recv_unexpected.noi_tag = cq_event->tag;
         na_ofi_op_id->noo_info.noo_recv_unexpected.noi_msg_size = cq_event->len;
         na_ofi_msg_unexpected_op_remove(na_class, na_ofi_op_id);
     }
@@ -2460,7 +2461,7 @@ na_ofi_handle_rma_event(na_class_t NA_UNUSED *class,
     na_ofi_addr = (na_ofi_addr_t *)na_ofi_op_id->noo_addr;
 
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
-        ret = NA_CANCELED;
+        return;
 
     ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, ret);
     if (ret != NA_SUCCESS)
@@ -2516,6 +2517,9 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 cq_event.flags = cq_err.flags;
                 cq_event.buf = NULL;
                 cq_event.len = 0;
+                NA_LOG_DEBUG("got a FI_ECANCELED event, cq_event.flags 0x%x.",
+                             cq_err.flags);
+                continue;
             } else if (cq_err.err == FI_EADDRNOTAVAIL) {
                 rc = fi_av_insert(av_hdl, cq_err.err_data, 1, &tmp_addr,
                                   0 /* flags */, NULL /* context */);
@@ -2684,12 +2688,9 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
         break;
     case NA_CB_RECV_UNEXPECTED:
         rc = fi_cancel(&ep_hdl->fid, &na_ofi_op_id->noo_fi_ctx);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_cancel unexpected recv failed, rc: %d(%s).",
+        if (rc != 0)
+            NA_LOG_DEBUG("fi_cancel unexpected recv failed, rc: %d(%s).",
                          rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
 
         tmp = first = na_ofi_msg_unexpected_op_pop(na_class);
         do {
@@ -2710,25 +2711,29 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
                 goto out;
             }
         } while (tmp != na_ofi_op_id);
+
+        ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, NA_CANCELED);
         break;
     case NA_CB_RECV_EXPECTED:
         rc = fi_cancel(&ep_hdl->fid, &na_ofi_op_id->noo_fi_ctx);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_cancel expected recv failed, rc: %d(%s).",
+        if (rc != 0)
+            NA_LOG_DEBUG("fi_cancel expected recv failed, rc: %d(%s).",
                          rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-        }
+
+        na_ofi_addr = (na_ofi_addr_t *)na_ofi_op_id->noo_addr;
+        ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, NA_CANCELED);
         break;
     case NA_CB_SEND_UNEXPECTED:
     case NA_CB_SEND_EXPECTED:
     case NA_CB_PUT:
     case NA_CB_GET:
         rc = fi_cancel(&ep_hdl->fid, &na_ofi_op_id->noo_fi_ctx);
-        if (rc != 0) {
+        if (rc != 0)
             NA_LOG_DEBUG("fi_cancel (op type %d) failed, rc: %d(%s).",
                          na_ofi_op_id->noo_type, rc, fi_strerror(-rc));
-            ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, NA_CANCELED);
-        }
+
+        na_ofi_addr = (na_ofi_addr_t *)na_ofi_op_id->noo_addr;
+        ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, NA_CANCELED);
         break;
     default:
         break;
