@@ -2237,6 +2237,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_ofi_op_id->noo_arg = arg;
     hg_atomic_set32(&na_ofi_op_id->noo_completed, 0);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, 0);
+    na_ofi_op_id->noo_addr = na_ofi_addr;
 
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
@@ -2314,6 +2315,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_ofi_op_id->noo_arg = arg;
     hg_atomic_set32(&na_ofi_op_id->noo_completed, 0);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, 0);
+    na_ofi_op_id->noo_addr = na_ofi_addr;
 
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
