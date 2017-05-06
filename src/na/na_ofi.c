@@ -2659,9 +2659,8 @@ na_ofi_release(void *arg)
 {
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) arg;
 
-    if (na_ofi_op_id && !hg_atomic_get32(&na_ofi_op_id->noo_completed)) {
-        NA_LOG_ERROR("Releasing resources from an uncompleted operation");
-    }
+    if (na_ofi_op_id && !hg_atomic_get32(&na_ofi_op_id->noo_completed))
+        NA_LOG_WARNING("Releasing resources from an uncompleted operation");
 
     na_ofi_op_id_decref(na_ofi_op_id);
 }
