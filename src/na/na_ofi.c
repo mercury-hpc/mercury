@@ -250,7 +250,7 @@ av_addr_ht_key_hash(hg_hash_table_key_t vlocation)
     na_uint64_t key = *((na_uint64_t *) vlocation);
     na_uint32_t hi, lo;
 
-    hi = key >> 32;
+    hi = (na_uint32_t) (key >> 32);
     lo = (key & 0xFFFFFFFFU);
 
     return ((hi & 0xFFFF0000U) | (lo & 0xFFFFU));
@@ -851,7 +851,7 @@ na_ofi_gen_req_hdr(struct na_ofi_private_data *priv)
         goto out;
     }
     *locator++ = '\0';
-    port = atoi(locator);
+    port = (na_uint32_t) atoi(locator);
     locator = strrchr(uri, '/');
     if (locator == NULL) {
         ret = NA_INVALID_PARAM;
@@ -1222,7 +1222,7 @@ retry_getname:
         free(ep_addr);
         goto ep_bind_err;
     }
-    addrlen -= rc;
+    addrlen -= (size_t) rc;
     if (domain->nod_prov_type == NA_OFI_PROV_PSM2)
         snprintf(ep_addr_str + rc, addrlen, "%s:%s", na_ofi_conf.noc_ip_str,
                  service);
@@ -1744,10 +1744,9 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     struct fid_ep *ep_hdl = priv->nop_ep;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)dest;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
-    struct iovec iov;
-    void *reqhdr = buf;
+    void *reqhdr = (void *) buf; /* TODO would be nice to keep the const */
     na_return_t ret = NA_SUCCESS;
-    int rc;
+    ssize_t rc;
 
     na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
 
@@ -1785,10 +1784,8 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         memcpy(reqhdr, &priv->nop_req_hdr, sizeof(priv->nop_req_hdr));
 
     /* Post the FI unexpected send request */
-    iov.iov_base = buf;
-    iov.iov_len = buf_size;
     do {
-        rc = fi_tsendv(ep_hdl, &iov, NULL /* desc */, 1 /* count */,
+        rc = fi_tsend(ep_hdl, buf, buf_size, NULL /* desc */,
                        na_ofi_addr->noa_addr, tag, &na_ofi_op_id->noo_fi_ctx);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
@@ -1797,8 +1794,8 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
             break;
     } while (1);
     if (rc) {
-        NA_LOG_ERROR("fi_tsendv(unexpected) to %s failed, rc: %d(%s)",
-                     na_ofi_addr->noa_uri, rc, fi_strerror(-rc));
+        NA_LOG_ERROR("fi_tsend(unexpected) to %s failed, rc: %d(%s)",
+                     na_ofi_addr->noa_uri, rc, fi_strerror((int) -rc));
         ret = NA_PROTOCOL_ERROR;
     }
 
@@ -1819,9 +1816,8 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 {
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
-    struct iovec iov;
     na_return_t ret = NA_SUCCESS;
-    int rc;
+    ssize_t rc;
 
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
@@ -1852,10 +1848,8 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_ofi_msg_unexpected_op_push(na_class, na_ofi_op_id);
 
     /* Post the FI unexpected recv request */
-    iov.iov_base = buf;
-    iov.iov_len = buf_size;
     do {
-        rc = fi_trecvv(ep_hdl, &iov, NULL /* desc */, 1 /* count */,
+        rc = fi_trecv(ep_hdl, buf, buf_size, NULL /* desc */,
                        FI_ADDR_UNSPEC, 1 /* tag */,
                        NA_OFI_UNEXPECTED_TAG_IGNORE, &na_ofi_op_id->noo_fi_ctx);
         /* for EAGAIN, progress and do it again */
@@ -1865,8 +1859,8 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
             break;
     } while (1);
     if (rc) {
-        NA_LOG_ERROR("fi_trecvv(unexpected) failed, rc: %d(%s)",
-                     rc, fi_strerror(-rc));
+        NA_LOG_ERROR("fi_trecv(unexpected) failed, rc: %d(%s)",
+                     rc, fi_strerror((int) -rc));
         na_ofi_msg_unexpected_op_remove(na_class, na_ofi_op_id);
         ret = NA_PROTOCOL_ERROR;
     }
@@ -1886,9 +1880,8 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)dest;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
-    struct iovec iov;
     na_return_t ret = NA_SUCCESS;
-    int rc;
+    ssize_t rc;
 
     na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
 
@@ -1918,10 +1911,8 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Post the FI expected send request */
-    iov.iov_base = buf;
-    iov.iov_len = buf_size;
     do {
-        rc = fi_tsendv(ep_hdl, &iov, NULL /* desc */, 1 /* count */,
+        rc = fi_tsend(ep_hdl, buf, buf_size, NULL /* desc */,
                        na_ofi_addr->noa_addr, NA_OFI_EXPECTED_TAG_FLAG | tag,
                        &na_ofi_op_id->noo_fi_ctx);
         /* for EAGAIN, progress and do it again */
@@ -1931,8 +1922,8 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
             break;
     } while (1);
     if (rc) {
-        NA_LOG_ERROR("fi_tsendv(expected) to %s failed, rc: %d(%s)",
-                     na_ofi_addr->noa_uri, rc, fi_strerror(-rc));
+        NA_LOG_ERROR("fi_tsend(expected) to %s failed, rc: %d(%s)",
+                     na_ofi_addr->noa_uri, rc, fi_strerror((int) -rc));
         ret = NA_PROTOCOL_ERROR;
     }
 
@@ -1954,9 +1945,8 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)source;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
-    struct iovec iov;
     na_return_t ret = NA_SUCCESS;
-    int rc;
+    ssize_t rc;
 
     na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
 
@@ -1989,10 +1979,8 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Post the FI expected recv request */
-    iov.iov_base = buf;
-    iov.iov_len = buf_size;
     do {
-        rc = fi_trecvv(ep_hdl, &iov, NULL /* desc */, 1 /* count */,
+        rc = fi_trecv(ep_hdl, buf, buf_size, NULL /* desc */,
                        na_ofi_addr->noa_addr, NA_OFI_EXPECTED_TAG_FLAG | tag,
                        0 /* ignore */, &na_ofi_op_id->noo_fi_ctx);
         /* for EAGAIN, progress and do it again */
@@ -2002,8 +1990,8 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
             break;
     } while (1);
     if (rc) {
-        NA_LOG_ERROR("fi_trecvv(expected) failed, rc: %d(%s)",
-                     rc, fi_strerror(-rc));
+        NA_LOG_ERROR("fi_trecv(expected) failed, rc: %d(%s)",
+                     rc, fi_strerror((int) -rc));
         ret = NA_PROTOCOL_ERROR;
     }
 
@@ -2214,7 +2202,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_ofi_op_id_t *na_ofi_op_id = NULL;
     na_uint64_t rma_key;
     na_return_t ret = NA_SUCCESS;
-    int rc;
+    ssize_t rc;
 
     na_ofi_addr_addref(na_ofi_addr); /* for na_ofi_complete() */
 
@@ -2261,7 +2249,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     } while (1);
     if (rc) {
         NA_LOG_ERROR("fi_writev() to %s failed, rc: %d(%s)",
-                     na_ofi_addr->noa_uri, rc, fi_strerror(-rc));
+                     na_ofi_addr->noa_uri, rc, fi_strerror((int) -rc));
         ret = NA_PROTOCOL_ERROR;
     }
 
@@ -2292,7 +2280,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_ofi_op_id_t *na_ofi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     na_uint64_t rma_key;
-    int rc;
+    ssize_t rc;
 
     na_ofi_addr_addref(na_ofi_addr); /* for na_ofi_complete() */
 
@@ -2339,7 +2327,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     } while (1);
     if (rc) {
         NA_LOG_ERROR("fi_readv() from %s failed, rc: %d(%s)",
-                     na_ofi_addr->noa_uri, rc, fi_strerror(-rc));
+                     na_ofi_addr->noa_uri, rc, fi_strerror((int) -rc));
         ret = NA_PROTOCOL_ERROR;
     }
 
@@ -2436,7 +2424,8 @@ na_ofi_handle_recv_event(na_class_t *na_class,
         na_ofi_addr_addref(peer_addr);
 
         na_ofi_op_id->noo_addr = peer_addr;
-        na_ofi_op_id->noo_info.noo_recv_unexpected.noi_tag = cq_event->tag;
+        /* TODO check max tag */
+        na_ofi_op_id->noo_info.noo_recv_unexpected.noi_tag = (na_tag_t) cq_event->tag;
         na_ofi_op_id->noo_info.noo_recv_unexpected.noi_msg_size = cq_event->len;
         na_ofi_msg_unexpected_op_remove(na_class, na_ofi_op_id);
     }
@@ -2510,7 +2499,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             rc = fi_cq_readerr(cq_hdl, &cq_err, 0 /* flags */);
             if (rc != 1) {
                 NA_LOG_ERROR("fi_cq_readerr() failed, rc: %d(%s).",
-                             rc, fi_strerror(-rc));
+                             rc, fi_strerror((int) -rc));
                 rc = NA_PROTOCOL_ERROR;
                 break;
             }
@@ -2527,7 +2516,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                                   0 /* flags */, NULL /* context */);
                 if (rc < 0) {
                     NA_LOG_ERROR("fi_av_insertsvc failed, rc: %d(%s).",
-                                 rc, fi_strerror(-rc));
+                                 rc, fi_strerror((int) -rc));
                     ret = NA_PROTOCOL_ERROR;
                     break;
                 } else if (rc != 1) {
@@ -2552,7 +2541,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             }
         } else if (rc <= 0) {
             NA_LOG_ERROR("fi_cq_read(/_readfrom() failed, rc: %d(%s).",
-                         rc, fi_strerror(-rc));
+                         rc, fi_strerror((int) -rc));
             rc = NA_PROTOCOL_ERROR;
             break;
         }
@@ -2676,7 +2665,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
     na_ofi_op_id_t *na_ofi_op_id = (na_ofi_op_id_t *) op_id;
     na_ofi_op_id_t *tmp = NULL, *first = NULL;
     na_ofi_addr_t *na_ofi_addr = NULL;
-    int rc;
+    ssize_t rc;
     na_return_t ret = NA_SUCCESS;
 
     if (hg_atomic_get32(&na_ofi_op_id->noo_completed))
@@ -2691,7 +2680,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
         rc = fi_cancel(&ep_hdl->fid, &na_ofi_op_id->noo_fi_ctx);
         if (rc != 0)
             NA_LOG_DEBUG("fi_cancel unexpected recv failed, rc: %d(%s).",
-                         rc, fi_strerror(-rc));
+                         rc, fi_strerror((int) -rc));
 
         tmp = first = na_ofi_msg_unexpected_op_pop(na_class);
         do {
@@ -2719,7 +2708,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
         rc = fi_cancel(&ep_hdl->fid, &na_ofi_op_id->noo_fi_ctx);
         if (rc != 0)
             NA_LOG_DEBUG("fi_cancel expected recv failed, rc: %d(%s).",
-                         rc, fi_strerror(-rc));
+                         rc, fi_strerror((int) -rc));
 
         na_ofi_addr = (na_ofi_addr_t *)na_ofi_op_id->noo_addr;
         ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, NA_CANCELED);
@@ -2731,7 +2720,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
         rc = fi_cancel(&ep_hdl->fid, &na_ofi_op_id->noo_fi_ctx);
         if (rc != 0)
             NA_LOG_DEBUG("fi_cancel (op type %d) failed, rc: %d(%s).",
-                         na_ofi_op_id->noo_type, rc, fi_strerror(-rc));
+                         na_ofi_op_id->noo_type, rc, fi_strerror((int) -rc));
 
         na_ofi_addr = (na_ofi_addr_t *)na_ofi_op_id->noo_addr;
         ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, NA_CANCELED);
