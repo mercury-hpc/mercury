@@ -242,7 +242,6 @@ if(NA_USE_OFI)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_ofi.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/na_ofi_conf.c
   )
 endif()
 

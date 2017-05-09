@@ -36,8 +36,29 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "na_ofi.h"
+#include "na_private.h"
+#include "na_error.h"
 
+#include "mercury_list.h"
+#include "mercury_thread_mutex.h"
+#include "mercury_thread_rwlock.h"
+#include "mercury_hash_table.h"
+#include "mercury_time.h"
+#include "mercury_atomic.h"
+
+#include <rdma/fabric.h>
+#include <rdma/fi_domain.h>
+#include <rdma/fi_endpoint.h>
+#include <rdma/fi_rma.h>
+#include <rdma/fi_tagged.h>
+#include <rdma/fi_cm.h>
+#include <rdma/fi_errno.h>
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -97,6 +118,23 @@ struct na_ofi_global_data {
 /****************/
 /* Local Macros */
 /****************/
+
+/**
+ * FI VERSION provides binary backward and forward compatibility support.
+ * Specify the version of OFI is coded to, the provider will select struct
+ * layouts that are compatible with this version.
+ */
+#if FI_MINOR_VERSION >= 5
+#define NA_OFI_VERSION FI_VERSION(1, 5)
+#else
+#define NA_OFI_VERSION FI_VERSION(1, 4)
+#endif
+
+#define NA_OFI_MAX_URI_LEN (128)
+#define NA_OFI_MAX_NODE_LEN (64)
+#define NA_OFI_MAX_PORT_LEN (16)
+#define NA_OFI_HDR_MAGIC (0x0f106688)
+
 /* Max tag */
 #define NA_OFI_MAX_TAG ((1 << 30) -1)
 
@@ -121,6 +159,19 @@ struct na_ofi_global_data {
 typedef struct na_ofi_op_id na_ofi_op_id_t;
 typedef struct na_ofi_addr na_ofi_addr_t;
 typedef struct na_ofi_mem_handle na_ofi_mem_handle_t;
+
+/**
+ * Inline header for NA_OFI (16 bytes).
+ *
+ * It is mainly to piggyback the source-side IP/port address for the unexpected
+ * message. For those providers that does not support FI_SOURCE/FI_SOURCE_ERR.
+ */
+typedef struct {
+    na_uint32_t fih_feats; /* feature bits */
+    na_uint32_t fih_magic; /* magic number for byte-order checking */
+    na_uint32_t fih_ip; /* IP addr in integer */
+    na_uint32_t fih_port; /* Port number */
+} na_ofi_reqhdr_t;
 
 struct na_ofi_private_data {
     struct na_ofi_domain *nop_domain; /* Point back to access domain */
@@ -623,12 +674,6 @@ na_ofi_getinfo()
         goto out;
     }
 
-    ret = na_ofi_config_init();
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("na_ofi_config_init failed, ret %d.", ret);
-        goto out;
-    }
-
     /**
      * Hints to query && filter providers.
      *
@@ -721,7 +766,6 @@ nofi_gdata_decref_locked()
         nofi_gdata.nog_providers = NULL;
         HG_LIST_INIT(&nofi_gdata.nog_domain_list);
         hg_atomic_set32(&nofi_gdata.nog_init_flag, 0);
-        na_ofi_config_fini();
     }
 }
 
@@ -826,6 +870,72 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_check_interface(const char *hostname, char *node, size_t node_len,
+    char *domain, size_t domain_len)
+{
+    struct ifaddrs *ifaddrs = NULL, *ifaddr;
+    na_return_t ret = NA_SUCCESS;
+    na_bool_t found = NA_FALSE;
+
+    if (getifaddrs(&ifaddrs) == -1) {
+        NA_LOG_ERROR("getifaddrs() failed");
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* Check and compare interfaces */
+    for (ifaddr = ifaddrs; ifaddr != NULL; ifaddr = ifaddr->ifa_next) {
+        char host[NI_MAXHOST];
+        char ip[INET_ADDRSTRLEN]; /* This restricts to ipv4 addresses */
+
+        if (ifaddr->ifa_addr == NULL)
+            continue;
+
+        if (ifaddr->ifa_addr->sa_family != AF_INET)
+            continue;
+
+        /* Get hostname */
+        if (getnameinfo(ifaddr->ifa_addr, sizeof(struct sockaddr_in), host,
+            NI_MAXHOST, NULL, 0, 0) != 0) {
+            NA_LOG_ERROR("Name could not be resolved for: %s", ifaddr->ifa_name);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+
+        /* Get IP */
+        if (!inet_ntop(ifaddr->ifa_addr->sa_family,
+            &((struct sockaddr_in *) ifaddr->ifa_addr)->sin_addr, ip,
+            INET_ADDRSTRLEN)) {
+            NA_LOG_ERROR("IP could not be resolved for: %s", ifaddr->ifa_name);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+
+        /* Compare hostnames / device names */
+        if (!strcmp(host, hostname) || !strcmp(ip, hostname) ||
+            !strcmp(ifaddr->ifa_name, hostname)) {
+            if (node_len)
+               strncpy(node, ip, node_len);
+            if (domain_len)
+               strncpy(domain, ifaddr->ifa_name, domain_len);
+            found = NA_TRUE;
+            break;
+        }
+    }
+
+    /* Allow for passing hostname/device name directly if no match */
+    if (!found) {
+        strncpy(node, hostname, node_len);
+        strncpy(domain, hostname, domain_len);
+    }
+
+out:
+    freeifaddrs(ifaddrs);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 /**
  * Generate the request header for NA class. Can be called after nop_uri being
  * initialized (for example "sockets://192.168.42.170:7779").
@@ -879,7 +989,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
-    na_bool_t listen)
+    na_bool_t NA_UNUSED listen)
 {
     struct na_ofi_private_data *priv;
     struct na_ofi_domain *domain;
@@ -894,9 +1004,9 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     struct fi_info *prov;
     void *ep_addr;
     char ep_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'};
-    char port_str[NA_OFI_MAX_PORT_LEN] = {'\0'};
-    char *service;
-    int port;
+    char node[NA_OFI_MAX_URI_LEN] = {'\0'};
+    char domain_name[NA_OFI_MAX_URI_LEN] = {'\0'};
+    char *service = NULL;
     size_t addrlen;
     na_bool_t found = NA_FALSE;
     na_bool_t retried = NA_FALSE;
@@ -913,6 +1023,20 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
                  "host_name %s.\n", na_info->class_name, na_info->protocol_name,
                  na_info->host_name);
     */
+    /* Get hostname/port info if available */
+    if (na_info->host_name) {
+        /* Extract hostname */
+        if (strstr(na_info->host_name, ":"))
+            strtok_r(na_info->host_name, ":", &service);
+
+        /* Try to get matching IP/device */
+        ret = na_ofi_check_interface(na_info->host_name, node,
+            NA_OFI_MAX_URI_LEN, domain_name, NA_OFI_MAX_URI_LEN);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not check interfaces");
+            goto out;
+        }
+    }
 
     hg_thread_mutex_lock(&nofi_gdata.nog_mutex);
 
@@ -921,18 +1045,17 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
      * providers. The endpoints with same provider name can reuse the same
      * na_ofi_domain.
      */
-    domain = HG_LIST_FIRST(&nofi_gdata.nog_domain_list);
-    for (; domain != NULL; domain = HG_LIST_NEXT(domain, nod_entry)) {
+    HG_LIST_FOREACH(domain, &nofi_gdata.nog_domain_list, nod_entry) {
         if (strcmp(domain->nod_prov_name, na_info->protocol_name) != 0)
             continue;
+
         if (domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
-            !strcmp(na_ofi_conf.noc_interface,
-                    domain->nod_prov->domain_attr->name)) {
+            !strcmp(domain_name, domain->nod_prov->domain_attr->name)) {
             na_ofi_domain_addref_locked(domain);
             hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
             goto create_ep;
         }
-    };
+    }
 
     /**
      * No fi domain reusable, search the provider and open fi fabric/domain/av
@@ -948,24 +1071,25 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     prov = nofi_gdata.nog_providers;
     while (prov != NULL) {
         if (!strcmp(na_info->protocol_name, prov->fabric_attr->prov_name) &&
-            (!strcmp(na_info->protocol_name, "psm2") ||
-             !strcmp(na_ofi_conf.noc_interface, prov->domain_attr->name))) {
+            (!strcmp(na_info->protocol_name, "psm2") || !na_info->host_name ||
+            !strcmp(domain_name, prov->domain_attr->name))) {
             /*
             NA_LOG_DEBUG("mode 0x%llx, fabric_attr - prov_name %s, name - %s, "
                          "domain_attr - name %s.", prov->mode,
                          prov->fabric_attr->prov_name, prov->fabric_attr->name,
                          prov->domain_attr->name);
             */
+
             found = NA_TRUE;
             nofi_gdata_addref_locked();
             break;
         }
         prov = prov->next;
-    };
+    }
 
     if (found == NA_FALSE) {
-        NA_LOG_ERROR("no provider for protocol_name %s found.",
-                     na_info->protocol_name);
+        NA_LOG_ERROR("No provider found for \"%s\" protocol on domain \"%s\"",
+                     na_info->protocol_name, domain_name);
         free(domain);
         hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
         ret = NA_PROTOCOL_ERROR;
@@ -1122,22 +1246,11 @@ create_ep:
         goto out;
     }
 
-    if (na_ofi_conf.noc_port_cons == NA_TRUE) {
-        if (listen) {
-            port = hg_atomic_incr32(&na_ofi_conf.noc_port);
-            sprintf(port_str, "%d", port);
-            service = port_str;
-        } else {
-            service = NULL;
-        }
-    } else {
-        service = NULL;
-    }
-
-    rc = fi_getinfo(NA_OFI_VERSION, na_ofi_conf.noc_ip_str, service, FI_SOURCE,
+    rc = fi_getinfo(NA_OFI_VERSION, node, service, FI_SOURCE,
                     domain->nod_prov, &priv->nop_fi_info);
     if (rc != 0) {
-        NA_LOG_ERROR("fi_getinfo failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        NA_LOG_ERROR("fi_getinfo(%s, %s) failed, rc: %d(%s).", node, service,
+            rc, fi_strerror(-rc));
         ret = NA_PROTOCOL_ERROR;
         goto getinfo_err;
     }
@@ -1224,8 +1337,7 @@ retry_getname:
     }
     addrlen -= (size_t) rc;
     if (domain->nod_prov_type == NA_OFI_PROV_PSM2)
-        snprintf(ep_addr_str + rc, addrlen, "%s:%s", na_ofi_conf.noc_ip_str,
-                 service);
+        snprintf(ep_addr_str + rc, addrlen, "%s:%s", node, service);
     else
         fi_av_straddr(domain->nod_av, ep_addr, ep_addr_str + rc, &addrlen);
     priv->nop_uri = strdup(ep_addr_str);
