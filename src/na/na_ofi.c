@@ -2623,8 +2623,8 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 cq_event.flags = cq_err.flags;
                 cq_event.buf = NULL;
                 cq_event.len = 0;
-                NA_LOG_DEBUG("got a FI_ECANCELED event, cq_event.flags 0x%x.",
-                             cq_err.flags);
+//                NA_LOG_DEBUG("got a FI_ECANCELED event, cq_event.flags 0x%x.",
+//                             cq_err.flags);
                 continue;
             } else if (cq_err.err == FI_EADDRNOTAVAIL) {
                 rc = fi_av_insert(av_hdl, cq_err.err_data, 1, &tmp_addr,
