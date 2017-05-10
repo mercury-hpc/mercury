@@ -2495,15 +2495,11 @@ na_ofi_handle_recv_event(na_class_t *na_class,
         assert(na_ofi_op_id->noo_type == NA_CB_RECV_EXPECTED);
         peer_addr = na_ofi_op_id->noo_addr;
         assert(peer_addr != NULL);
-        assert(na_ofi_op_id->noo_info.noo_recv_expected.noi_buf ==
-               cq_event->buf);
         assert(na_ofi_op_id->noo_info.noo_recv_expected.noi_tag ==
                (cq_event->tag & ~NA_OFI_EXPECTED_TAG_FLAG));
         na_ofi_op_id->noo_info.noo_recv_expected.noi_msg_size = cq_event->len;
     } else {
         assert(na_ofi_op_id->noo_type == NA_CB_RECV_UNEXPECTED);
-        assert(na_ofi_op_id->noo_info.noo_recv_unexpected.noi_buf ==
-               cq_event->buf);
 
         peer_addr = na_ofi_addr_alloc(NULL);
         if (peer_addr == NULL) {
@@ -2512,7 +2508,7 @@ na_ofi_handle_recv_event(na_class_t *na_class,
         }
 
         if (na_ofi_with_reqhdr(na_class) == NA_TRUE) {
-            reqhdr = cq_event->buf;
+            reqhdr = na_ofi_op_id->noo_info.noo_recv_unexpected.noi_buf;
             /* check magic number and swap byte order when needed */
             if (reqhdr->fih_magic == na_ofi_bswap32(NA_OFI_HDR_MAGIC)) {
                 na_ofi_bswap32s(&reqhdr->fih_feats);
