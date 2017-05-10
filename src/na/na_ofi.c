@@ -1246,7 +1246,7 @@ create_ep:
         goto out;
     }
 
-    rc = fi_getinfo(NA_OFI_VERSION, node, service, FI_SOURCE,
+    rc = fi_getinfo(NA_OFI_VERSION, node, service, FI_SOURCE | FI_NUMERICHOST,
                     domain->nod_prov, &priv->nop_fi_info);
     if (rc != 0) {
         NA_LOG_ERROR("fi_getinfo(%s, %s) failed, rc: %d(%s).", node, service,
