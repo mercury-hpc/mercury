@@ -76,6 +76,7 @@ enum na_ofi_prov_type {
     NA_OFI_PROV_SOCKETS,
     NA_OFI_PROV_PSM2,
     NA_OFI_PROV_VERBS,
+    NA_OFI_PROV_GNI
 };
 
 enum na_ofi_mr_mode {
@@ -1050,6 +1051,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
             continue;
 
         if (domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
+            domain->nod_prov_type == NA_OFI_PROV_GNI ||
             !strcmp(domain_name, domain->nod_prov->domain_attr->name)) {
             na_ofi_domain_addref_locked(domain);
             hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
@@ -1071,7 +1073,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     prov = nofi_gdata.nog_providers;
     while (prov != NULL) {
         if (!strcmp(na_info->protocol_name, prov->fabric_attr->prov_name) &&
-            (!strcmp(na_info->protocol_name, "psm2") || !na_info->host_name ||
+            (!strcmp(na_info->protocol_name, "psm2") ||
+             !strcmp(na_info->protocol_name, "gni") || !na_info->host_name ||
             !strcmp(domain_name, prov->domain_attr->name))) {
             /*
             NA_LOG_DEBUG("mode 0x%llx, fabric_attr - prov_name %s, name - %s, "
@@ -1151,6 +1154,10 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 #endif
     } else if (!strcmp(domain->nod_prov_name, "verbs")) {
         domain->nod_prov_type = NA_OFI_PROV_VERBS;
+        domain->nod_prov->domain_attr->mr_mode = FI_MR_BASIC;
+        domain->nod_mr_mode = NA_OFI_MR_BASIC;
+    } else if (!strcmp(domain->nod_prov_name, "gni")) {
+        domain->nod_prov_type = NA_OFI_PROV_GNI;
         domain->nod_prov->domain_attr->mr_mode = FI_MR_BASIC;
         domain->nod_mr_mode = NA_OFI_MR_BASIC;
     } else {
@@ -1336,7 +1343,7 @@ retry_getname:
         goto ep_bind_err;
     }
     addrlen -= (size_t) rc;
-    if (domain->nod_prov_type == NA_OFI_PROV_PSM2)
+    if (domain->nod_prov_type == NA_OFI_PROV_PSM2 || domain->nod_prov_type == NA_OFI_PROV_GNI)
         snprintf(ep_addr_str + rc, addrlen, "%s:%s", node, service);
     else
         fi_av_straddr(domain->nod_av, ep_addr, ep_addr_str + rc, &addrlen);
