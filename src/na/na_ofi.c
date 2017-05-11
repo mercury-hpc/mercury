@@ -2319,6 +2319,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     struct iovec iov;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *) remote_addr;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
+    void *local_desc;
     na_uint64_t rma_key;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
@@ -2353,10 +2354,11 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Post the OFI RMA write */
     iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
     iov.iov_len = length;
+    local_desc = fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
     rma_key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
               ofi_remote_mem_handle->nom_mr_key;
     do {
-        rc = fi_writev(ep_hdl, &iov, NULL /* desc */, 1 /* count */,
+        rc = fi_writev(ep_hdl, &iov, &local_desc, 1 /* count */,
                        na_ofi_addr->noa_addr,
                        (na_uint64_t)ofi_remote_mem_handle->nom_base +
                        remote_offset, rma_key, &na_ofi_op_id->noo_fi_ctx);
@@ -2398,6 +2400,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *) remote_addr;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
+    void *local_desc;
     na_uint64_t rma_key;
     ssize_t rc;
 
@@ -2431,10 +2434,12 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Post the OFI RMA read */
     iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
     iov.iov_len = length;
+    local_desc = fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
     rma_key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
               ofi_remote_mem_handle->nom_mr_key;
+
     do {
-        rc = fi_readv(ep_hdl, &iov, NULL /* desc */, 1 /* count */,
+        rc = fi_readv(ep_hdl, &iov, &local_desc, 1 /* count */,
                       na_ofi_addr->noa_addr,
                       (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
                       rma_key, &na_ofi_op_id->noo_fi_ctx);
