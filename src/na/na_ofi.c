@@ -2354,7 +2354,8 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Post the OFI RMA write */
     iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
     iov.iov_len = length;
-    local_desc = fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
+    local_desc = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NULL :
+              fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
     rma_key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
               ofi_remote_mem_handle->nom_mr_key;
     do {
@@ -2434,7 +2435,8 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Post the OFI RMA read */
     iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
     iov.iov_len = length;
-    local_desc = fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
+    local_desc = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NULL :
+              fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
     rma_key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
               ofi_remote_mem_handle->nom_mr_key;
 
