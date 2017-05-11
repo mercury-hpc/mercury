@@ -280,15 +280,23 @@ na_test_gen_config(int argc, char *argv[], int listen)
         }
     } else if ((strcmp("tcp", na_protocol_name) == 0)
         || (strcmp("verbs", na_protocol_name) == 0)
-        || (strcmp("sockets", na_protocol_name) == 0)
-        || (strcmp("gni", na_protocol_name) == 0)) {
-        const char *hostname = na_hostname ? na_hostname : "localhost";
-        na_port += (unsigned int) na_test_comm_rank_g;
-        sprintf(info_string_ptr, "://%s:%d", hostname, na_port);
+        || (strcmp("sockets", na_protocol_name) == 0)) {
+        if (listen) {
+            const char *hostname = na_hostname ? na_hostname : "localhost";
+            na_port += (unsigned int) na_test_comm_rank_g;
+            sprintf(info_string_ptr, "://%s:%d", hostname, na_port);
+        } else {
+            const char *hostname = na_hostname ? na_hostname : "localhost";
+            sprintf(info_string_ptr, "://%s", hostname);
+        }
     } else if (strcmp("static", na_protocol_name) == 0) {
         /* Nothing */
     } else if (strcmp("dynamic", na_protocol_name) == 0) {
         /* Nothing */
+    } else if (strcmp("gni", na_protocol_name) == 0) {
+        const char *hostname = na_hostname ? na_hostname : "localhost";
+        na_port += (unsigned int) na_test_comm_rank_g;
+        sprintf(info_string_ptr, "://%s:%d", hostname, na_port);
     } else if (strcmp("psm2", na_protocol_name) == 0) {
         /* Nothing */
     } else {
