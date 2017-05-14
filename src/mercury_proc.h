@@ -303,6 +303,23 @@ hg_proc_flush(
         );
 
 /**
+ * Decoding routine that will update pointer to refer to raw memory in
+ * original message buffer 
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ * \param data_size [IN]        data size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+hg_proc_memcpy_decode_in_place(
+        hg_proc_t proc,
+        void **data,
+        hg_size_t data_size
+        );
+
+/**
  * Base proc routine using memcpy().
  * \remark Only uses memcpy() / use hg_proc_raw() for encoding raw buffers.
  *

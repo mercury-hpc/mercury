@@ -658,6 +658,47 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+hg_proc_memcpy_decode_in_place(hg_proc_t proc, void **data, hg_size_t data_size)
+{
+    struct hg_proc *hg_proc = (struct hg_proc *) proc;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_proc) {
+        HG_LOG_ERROR("Proc is not initialized");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    if (hg_proc->op != HG_DECODE) {
+        HG_LOG_ERROR("hg_proc_memcpy_decode_in_place() is only for decoding");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    *data = hg_proc->current_buf->buf_ptr;
+    hg_proc->current_buf->buf_ptr = hg_proc->current_buf->buf_ptr + data_size;
+    hg_proc->current_buf->size_left -= data_size;
+
+#ifdef HG_HAS_CHECKSUMS
+    /* Update checksum */
+    if (hg_proc->current_buf->update_checksum) {
+        int checksum_ret;
+
+        checksum_ret = mchecksum_update(hg_proc->current_buf->checksum, *data,
+                data_size);
+        if (checksum_ret != MCHECKSUM_SUCCESS) {
+            HG_LOG_ERROR("Could not update checksum");
+            ret = HG_CHECKSUM_ERROR;
+            goto done;
+        }
+    }
+#endif
+
+done:
+    return ret;
+}
+/*---------------------------------------------------------------------------*/
+hg_return_t
 hg_proc_memcpy(hg_proc_t proc, void *data, hg_size_t data_size)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
