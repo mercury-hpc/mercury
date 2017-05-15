@@ -335,9 +335,9 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_op_id_t * op_id);
 
-/* get_poll_fd */
+/* poll_get_fd */
 static int
-na_cci_get_poll_fd(na_class_t *na_class, na_context_t *context);
+na_cci_poll_get_fd(na_class_t *na_class, na_context_t *context);
 
 /* progress */
 static na_return_t
@@ -397,7 +397,8 @@ const na_class_t na_cci_class_g = {
     na_cci_mem_handle_deserialize,          /* mem_handle_deserialize */
     na_cci_put,                             /* put */
     na_cci_get,                             /* get */
-    na_cci_get_poll_fd,                     /* get_poll_fd */
+    na_cci_poll_get_fd,                     /* poll_get_fd */
+    NULL,                                   /* poll_try_wait */
     na_cci_progress,                        /* progress */
     na_cci_cancel                           /* cancel */
 };
@@ -1724,7 +1725,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static int
-na_cci_get_poll_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
+na_cci_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
     return NA_CCI_PRIVATE_DATA(na_class)->fd;
 }

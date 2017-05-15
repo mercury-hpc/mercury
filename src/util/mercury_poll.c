@@ -48,6 +48,8 @@ struct hg_poll_data {
 struct hg_poll_set {
     int fd;
     unsigned int nfds;
+    hg_poll_try_wait_cb_t try_wait_cb;
+    void *try_wait_arg;
 #if defined(HG_UTIL_HAS_SYSEPOLL_H) || defined(HG_UTIL_HAS_SYSEVENT_H)
     /* Nothing */
 #else
@@ -75,6 +77,7 @@ hg_poll_create(void)
 #else
     HG_LIST_INIT(&hg_poll_set->poll_data_list);
     hg_poll_set->nfds = 0;
+    hg_poll_set->try_wait_cb = NULL;
 #if defined(HG_UTIL_HAS_SYSEPOLL_H)
     ret = epoll_create1(0);
     if (ret == -1) {
@@ -160,6 +163,26 @@ hg_poll_get_fd(hg_poll_set_t *poll_set)
 
 done:
     return fd;
+}
+
+/*---------------------------------------------------------------------------*/
+int
+hg_poll_set_try_wait(hg_poll_set_t *poll_set, hg_poll_try_wait_cb_t try_wait_cb,
+    void *arg)
+{
+    int ret = HG_UTIL_SUCCESS;
+
+    if (!poll_set) {
+        HG_UTIL_LOG_ERROR("NULL poll set");
+        ret = HG_UTIL_FAIL;
+        goto done;
+    }
+
+    poll_set->try_wait_cb = try_wait_cb;
+    poll_set->try_wait_arg = arg;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -356,7 +379,8 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
         goto done;
     }
 
-    if (timeout) {
+    if (timeout && (!poll_set->try_wait_cb || (poll_set->try_wait_cb
+        && poll_set->try_wait_cb(poll_set->try_wait_arg))))  {
 #if defined(_WIN32)
 
 #elif defined(HG_UTIL_HAS_SYSEPOLL_H)

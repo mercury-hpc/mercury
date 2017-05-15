@@ -567,7 +567,8 @@ const na_class_t na_mpi_class_g = {
         na_mpi_mem_handle_deserialize,        /* mem_handle_deserialize */
         na_mpi_put,                           /* put */
         na_mpi_get,                           /* get */
-        NULL,                                 /* get_poll_fd */
+        NULL,                                 /* poll_get_fd */
+        NULL,                                 /* poll_try_wait */
         na_mpi_progress,                      /* progress */
         na_mpi_cancel                         /* cancel */
 };

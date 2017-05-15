@@ -285,7 +285,12 @@ struct na_class {
             na_op_id_t      *op_id
             );
     int
-    (*get_poll_fd)(
+    (*na_poll_get_fd)(
+            na_class_t      *na_class,
+            na_context_t    *context
+            );
+    na_bool_t
+    (*na_poll_try_wait)(
             na_class_t      *na_class,
             na_context_t    *context
             );

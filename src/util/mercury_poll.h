@@ -21,6 +21,16 @@
 typedef struct hg_poll_set hg_poll_set_t;
 
 /**
+ * Callback that can be used to signal when it is safe to block on the
+ * poll set or if blocking could hang the application.
+ *
+ * \param arg [IN]              function argument
+ *
+ * \return HG_UTIL_TRUE if it is safe to block or HG_UTIL_FALSE otherwise
+ */
+typedef hg_util_bool_t (*hg_poll_try_wait_cb_t)(void *arg);
+
+/**
  * Polling callback, arg can be used to pass user arguments, progressed
  * indicates whether progress has been done after that call returns.
  *
@@ -72,13 +82,28 @@ HG_UTIL_EXPORT int
 hg_poll_get_fd(hg_poll_set_t *poll_set);
 
 /**
+ * Set a callback that can be used to signal when it is safe to block on the
+ * poll set or if blocking could hang the application, in which case behavior
+ * is the same as passing a timeout of 0.
+ *
+ * \param poll_set [IN]         pointer to poll set
+ * \param try_wait_cb [IN]      function pointer
+ * \param try_wait_arg [IN]     function pointer argument
+ *
+ * \return Non-negative on success or negative on failure
+ */
+HG_UTIL_EXPORT int
+hg_poll_set_try_wait(hg_poll_set_t *poll_set, hg_poll_try_wait_cb_t try_wait_cb,
+    void *try_wait_arg);
+
+/**
  * Add file descriptor to poll set.
  *
  * \param poll_set [IN]         pointer to poll set
  * \param fd [IN]               file descriptor
  * \param flags [IN]            polling flags (HG_POLLIN, etc)
  * \param poll_cb [IN]          function pointer
- * \param poll_cb_args [IN]     function pointer
+ * \param poll_cb_args [IN]     function pointer argument
  *
  * \return Non-negative on success or negative on failure
  */

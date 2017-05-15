@@ -567,6 +567,14 @@ hg_core_progress_na_cb(
         );
 
 /**
+ * Callback for HG poll progress that determines when it is safe to block.
+ */
+static HG_INLINE hg_util_bool_t
+hg_core_poll_try_wait_cb(
+        void *arg
+        );
+
+/**
  * Make progress.
  */
 static hg_return_t
@@ -1073,6 +1081,14 @@ hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not start lookup for address %s", name);
         ret = HG_NA_ERROR;
+        goto done;
+    }
+
+    /* TODO to avoid blocking after lookup make progress on the HG layer with
+     * timeout of 0 */
+    ret = context->progress(context, 0);
+    if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
+        HG_LOG_ERROR("Could not make progress");
         goto done;
     }
 
@@ -2247,6 +2263,14 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+static HG_INLINE hg_util_bool_t
+hg_core_poll_try_wait_cb(void *arg)
+{
+    return NA_Poll_try_wait(((struct hg_context *) arg)->hg_class->na_class,
+        ((struct hg_context *) arg)->na_context);
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_progress_poll(struct hg_context *context, unsigned int timeout)
 {
@@ -2711,10 +2735,12 @@ HG_Core_context_create(hg_class_t *hg_class)
 
     /* If NA plugin exposes fd, add it to poll set and use appropriate
      * progress function */
-    na_poll_fd = NA_Get_poll_fd(hg_class->na_class, context->na_context);
+    na_poll_fd = NA_Poll_get_fd(hg_class->na_class, context->na_context);
     if (na_poll_fd > 0) {
         hg_poll_add(context->poll_set, na_poll_fd, HG_POLLIN,
             hg_core_progress_na_cb, context);
+        hg_poll_set_try_wait(context->poll_set, hg_core_poll_try_wait_cb,
+            context);
         context->progress = hg_core_progress_poll;
     } else {
         context->progress = hg_core_progress_na;
@@ -2794,7 +2820,7 @@ HG_Core_context_destroy(hg_context_t *context)
 #endif
 
     /* If NA plugin exposes fd, remove it from poll set */
-    na_poll_fd = NA_Get_poll_fd(context->hg_class->na_class,
+    na_poll_fd = NA_Poll_get_fd(context->hg_class->na_class,
         context->na_context);
     if ((na_poll_fd > 0)
         && (hg_poll_remove(context->poll_set, na_poll_fd) != HG_UTIL_SUCCESS)) {

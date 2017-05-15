@@ -1546,26 +1546,47 @@ done:
 
 /*---------------------------------------------------------------------------*/
 int
-NA_Get_poll_fd(na_class_t *na_class, na_context_t *context)
+NA_Poll_get_fd(na_class_t *na_class, na_context_t *context)
 {
     int ret = 0;
 
     if (!na_class) {
         NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
         goto done;
     }
     if (!context) {
         NA_LOG_ERROR("NULL context");
+        ret = NA_INVALID_PARAM;
         goto done;
     }
-    if (!na_class->get_poll_fd) {
+    if (!na_class->na_poll_get_fd) {
         goto done;
     }
 
-    ret = na_class->get_poll_fd(na_class, context);
+    ret = na_class->na_poll_get_fd(na_class, context);
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_bool_t
+NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
+{
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        return NA_FALSE;
+    }
+    if (!context) {
+        NA_LOG_ERROR("NULL context");
+        return NA_FALSE;
+    }
+
+    /* Optional */
+    return (!na_class->na_poll_try_wait
+        || (na_class->na_poll_try_wait
+            && na_class->na_poll_try_wait(na_class, context)));
 }
 
 /*---------------------------------------------------------------------------*/

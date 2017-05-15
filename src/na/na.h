@@ -867,10 +867,25 @@ NA_Get(
  * in case of error.
  */
 NA_EXPORT int
-NA_Get_poll_fd(
+NA_Poll_get_fd(
         na_class_t      *na_class,
         na_context_t    *context
         ) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Used to signal when it is safe to block on the class/context poll descriptor
+ * or if blocking could hang the application.
+ *
+ * \param na_class [IN]         pointer to NA class
+ * \param context [IN]          pointer to context of execution
+ *
+ * \return NA_TRUE if it is safe to block or NA_FALSE otherwise
+ */
+NA_EXPORT na_bool_t
+NA_Poll_try_wait(
+        na_class_t      *na_class,
+        na_context_t    *context
+        );
 
 /**
  * Try to progress communication for at most timeout until timeout reached or

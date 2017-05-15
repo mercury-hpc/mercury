@@ -822,9 +822,9 @@ na_sm_get(
     na_op_id_t *op_id
     );
 
-/* get_poll_fd */
+/* poll_get_fd */
 static int
-na_sm_get_poll_fd(
+na_sm_poll_get_fd(
     na_class_t      *na_class,
     na_context_t    *context
     );
@@ -891,7 +891,8 @@ const na_class_t na_sm_class_g = {
     na_sm_mem_handle_deserialize,           /* mem_handle_deserialize */
     na_sm_put,                              /* put */
     na_sm_get,                              /* get */
-    na_sm_get_poll_fd,                      /* get_poll_fd */
+    na_sm_poll_get_fd,                      /* poll_get_fd */
+    NULL,                                   /* poll_try_wait */
     na_sm_progress,                         /* progress */
     na_sm_cancel                            /* cancel */
 };
@@ -3738,7 +3739,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static int
-na_sm_get_poll_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
+na_sm_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
     int fd;
 
