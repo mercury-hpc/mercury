@@ -592,6 +592,14 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
 
+/* poll_get_fd */
+static int
+na_ofi_poll_get_fd(na_class_t *na_class, na_context_t *context);
+
+/* poll_try_wait */
+static na_bool_t
+na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context);
+
 /* progress */
 static na_return_t
 na_ofi_progress(na_class_t *na_class, na_context_t *context,
@@ -651,7 +659,8 @@ const na_class_t na_ofi_class_g = {
     na_ofi_mem_handle_deserialize,          /* mem_handle_deserialize */
     na_ofi_put,                             /* put */
     na_ofi_get,                             /* get */
-    NULL,                                   /* get_poll_fd */
+    na_ofi_poll_get_fd,                     /* poll_get_fd */
+    na_ofi_poll_try_wait,                   /* poll_try_wait */
     na_ofi_progress,                        /* progress */
     na_ofi_cancel                           /* cancel */
 };
@@ -661,7 +670,7 @@ const na_class_t na_ofi_class_g = {
 /*****************/
 
 static int
-na_ofi_getinfo()
+na_ofi_getinfo(const char *protocol_name)
 {
     struct fi_info *hints;
     struct fi_info *providers = NULL;
@@ -701,8 +710,17 @@ na_ofi_getinfo()
     hints->rx_attr->msg_order = FI_ORDER_SAS;
 
     hints->domain_attr->threading        = FI_THREAD_UNSPEC;
-    hints->domain_attr->control_progress = FI_PROGRESS_MANUAL;
-    hints->domain_attr->data_progress    = FI_PROGRESS_MANUAL;
+    if (!strcmp(protocol_name, "sockets")) {
+        /* As "sockets" provider does not support manual progress and wait
+         * objects, set progress to auto for now. Note that the provider
+         * effectively creates a thread for internal progress in that case.
+         */
+        hints->domain_attr->control_progress = FI_PROGRESS_AUTO;
+        hints->domain_attr->data_progress    = FI_PROGRESS_AUTO;
+    } else {
+        hints->domain_attr->control_progress = FI_PROGRESS_MANUAL;
+        hints->domain_attr->data_progress    = FI_PROGRESS_MANUAL;
+    }
     hints->domain_attr->av_type          = FI_AV_MAP;
     hints->domain_attr->resource_mgmt    = FI_RM_ENABLED;
 
@@ -842,7 +860,7 @@ na_ofi_check_protocol(const char *protocol_name)
     na_bool_t accept = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
 
-    ret = na_ofi_getinfo();
+    ret = na_ofi_getinfo(protocol_name);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
         goto out;
@@ -1014,7 +1032,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    ret = na_ofi_getinfo();
+    ret = na_ofi_getinfo(na_info->protocol_name);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
         goto out;
@@ -1277,6 +1295,8 @@ create_ep:
 
     /* Create fi completion queue for events */
     cq_attr.format = FI_CQ_FORMAT_TAGGED;
+    cq_attr.wait_obj = FI_WAIT_FD; /* Wait on file descriptor */
+    cq_attr.wait_cond = FI_CQ_COND_NONE;
     rc = fi_cq_open(domain->nod_domain, &cq_attr, &cq_hdl, NULL);
     if (rc != 0) {
         NA_LOG_ERROR("fi_cq_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
@@ -2581,6 +2601,35 @@ na_ofi_handle_rma_event(na_class_t NA_UNUSED *class,
         NA_LOG_ERROR("Unable to complete send");
 
     return;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_ofi_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
+{
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    int fd = 0, rc;
+
+    rc = fi_control(&priv->nop_cq->fid, FI_GETWAIT, &fd);
+    if (rc == -FI_ENOSYS) {
+        NA_LOG_WARNING("%s provider does not support wait objects",
+            priv->nop_domain->nod_prov_name);
+    } else if (rc < 0)
+        NA_LOG_ERROR("fi_control() failed, rc: %d(%s).",
+            rc, fi_strerror((int) -rc));
+
+    return fd;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_bool_t
+na_ofi_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
+{
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct fid *fids[1];
+
+    fids[0] = &priv->nop_cq->fid;
+    return (fi_trywait(priv->nop_domain->nod_fabric, fids, 1) == FI_SUCCESS);
 }
 
 /*---------------------------------------------------------------------------*/
