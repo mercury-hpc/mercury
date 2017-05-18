@@ -42,7 +42,7 @@ include_directories(${NA_SOURCE_DIR}/../util)
 # for NA plugin libraries/dependencies.
 # (Refer Mercury-Trac #15)
 #------------------------------------------------------------------------------
-include_directories(
+include_directories(BEFORE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
 )

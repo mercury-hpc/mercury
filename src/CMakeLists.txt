@@ -1,7 +1,7 @@
 #------------------------------------------------------------------------------
 # Include source and build directories
 #------------------------------------------------------------------------------
-include_directories(
+include_directories(BEFORE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra
@@ -12,7 +12,7 @@ include_directories(
 #------------------------------------------------------------------------------
 # UTIL
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
-include_directories(
+include_directories(BEFORE
   ${CMAKE_CURRENT_SOURCE_DIR}/util
   ${CMAKE_CURRENT_BINARY_DIR}/util
 )
@@ -26,7 +26,7 @@ set(MERCURY_EXT_LIB_DEPENDENCIES  ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
 
 # NA
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
-include_directories(
+include_directories(BEFORE
   ${CMAKE_CURRENT_SOURCE_DIR}/na
   ${CMAKE_CURRENT_BINARY_DIR}/na
 )
