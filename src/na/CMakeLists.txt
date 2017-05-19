@@ -17,6 +17,9 @@ if(NOT NA_INSTALL_DATA_DIR)
   set(NA_INSTALL_DATA_DIR ${CMAKE_INSTALL_PREFIX}/share)
 endif()
 
+#------------------------------------------------------------------------------
+# Setup cmake module
+#------------------------------------------------------------------------------
 set(NA_CMAKE_DIR "${NA_SOURCE_DIR}/CMake")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${NA_CMAKE_DIR})
 
@@ -29,24 +32,22 @@ if(NOT NA_EXPORTED_TARGETS)
 endif()
 
 #------------------------------------------------------------------------------
-# External dependencies
+# Include source and build directories
 #------------------------------------------------------------------------------
-# mercury_util
-include_directories(${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES})
-include_directories(${NA_SOURCE_DIR}/../util)
-
-#------------------------------------------------------------------------------
-# Set sources - 1
-# Setting this before NA_USE_XXX to avoid header file conflict if Mercury 
-# was previously installed in $INSTALL_PREFIX and this prefix is also used
-# for NA plugin libraries/dependencies.
-# (Refer Mercury-Trac #15)
-#------------------------------------------------------------------------------
-include_directories(BEFORE
+include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 
+#------------------------------------------------------------------------------
+# Internal dependencies
+#------------------------------------------------------------------------------
+# UTIL
+include_directories(${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES})
+
+#------------------------------------------------------------------------------
+# External dependencies / NA plugins
+#------------------------------------------------------------------------------
 # BMI
 option(NA_USE_BMI "Use BMI." OFF)
 if(NA_USE_BMI)
@@ -170,7 +171,7 @@ configure_file(
 )
 
 #------------------------------------------------------------------------------
-# Set sources - 2
+# Set sources
 #------------------------------------------------------------------------------
 set(NA_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/na.c

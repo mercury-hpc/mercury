@@ -98,12 +98,11 @@ configure_file(
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_test_config.h
 )
 
-include_directories(BEFORE
+include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
+  ${MERCURY_INCLUDES_BUILD_TIME}
 )
-
-include_directories(${MERCURY_INCLUDES_BUILD_TIME})
 
 if(MERCURY_ENABLE_PARALLEL_TESTING)
   find_package(MPI REQUIRED)

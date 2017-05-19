@@ -7,7 +7,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_UTIL_CMAKE_DIR})
 #------------------------------------------------------------------------------
 # Include source and build directories
 #------------------------------------------------------------------------------
-include_directories(BEFORE
+include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
 )
