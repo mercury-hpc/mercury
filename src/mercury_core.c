@@ -1046,7 +1046,7 @@ hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
     struct hg_op_id *hg_op_id = NULL;
     struct hg_addr *hg_addr = NULL;
     na_return_t na_ret;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, progress_ret;
 
     /* Allocate op_id */
     hg_op_id = (struct hg_op_id *) malloc(sizeof(struct hg_op_id));
@@ -1086,9 +1086,10 @@ hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
 
     /* TODO to avoid blocking after lookup make progress on the HG layer with
      * timeout of 0 */
-    ret = context->progress(context, 0);
-    if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
+    progress_ret = context->progress(context, 0);
+    if (progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT) {
         HG_LOG_ERROR("Could not make progress");
+        ret = progress_ret;
         goto done;
     }
 
