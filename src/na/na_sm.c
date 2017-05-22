@@ -2684,13 +2684,6 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
         goto done;
     }
 
-    /* Send addr info (PID / ID) */
-    ret = na_sm_send_addr_info(na_class, na_sm_addr);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not send addr info");
-        goto done;
-    }
-
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = na_sm_op_id;
@@ -2702,6 +2695,13 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
         na_sm_op_id, entry);
     hg_thread_mutex_unlock(
         &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
+
+    /* Send addr info (PID / ID) */
+    ret = na_sm_send_addr_info(na_class, na_sm_addr);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not send addr info");
+        goto done;
+    }
 
 done:
     if (ret != NA_SUCCESS) {
