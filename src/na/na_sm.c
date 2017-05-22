@@ -285,13 +285,11 @@ struct na_sm_private_data {
     HG_QUEUE_HEAD(na_sm_op_id) lookup_op_queue;
     HG_QUEUE_HEAD(na_sm_op_id) unexpected_op_queue;
     HG_QUEUE_HEAD(na_sm_op_id) expected_op_queue;
-    HG_QUEUE_HEAD(na_sm_op_id) deferred_op_queue;
     hg_thread_mutex_t accepted_addr_queue_mutex;
     hg_thread_mutex_t unexpected_msg_queue_mutex;
     hg_thread_mutex_t lookup_op_queue_mutex;
     hg_thread_mutex_t unexpected_op_queue_mutex;
     hg_thread_mutex_t expected_op_queue_mutex;
-    hg_thread_mutex_t deferred_op_queue_mutex;
     hg_thread_mutex_t copy_buf_mutex;
 };
 
@@ -486,35 +484,6 @@ na_sm_copy_and_free_buf(
     void *buf,
     size_t buf_size,
     unsigned int idx_reserved
-    );
-
-/**
- * Defer message and push it to deferred queue.
- */
-static na_return_t
-na_sm_msg_push(
-    na_class_t *na_class,
-    const void *buf,
-    na_size_t buf_size,
-    struct na_sm_addr *na_sm_addr,
-    na_tag_t tag,
-    struct na_sm_op_id *na_sm_op_id
-    );
-
-/**
- * Check for deferred message and try to repost it.
- */
-static na_return_t
-na_sm_msg_pop(
-    na_class_t *na_class
-    );
-
-/**
- * Check for deferred messages and try to repost them.
- */
-static na_return_t
-na_sm_msg_deferred_check_and_repost(
-    na_class_t *na_class
     );
 
 /**
@@ -1735,136 +1704,6 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
-na_sm_msg_push(na_class_t *na_class, const void *buf, na_size_t buf_size,
-    struct na_sm_addr *na_sm_addr, na_tag_t tag,
-    struct na_sm_op_id *na_sm_op_id)
-{
-    na_return_t ret = NA_SUCCESS;
-    void *copy_buf;
-
-    /* Copy user buffer */
-    copy_buf = malloc(buf_size);
-    if (!copy_buf) {
-        NA_LOG_ERROR("Could not allocate copy buffer");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
-    memcpy(copy_buf, buf, buf_size);
-
-    /* Send info */
-    na_sm_op_id->info.send.buf = copy_buf;
-    na_sm_op_id->info.send.buf_size = buf_size;
-    na_sm_op_id->info.send.na_sm_addr = na_sm_addr;
-    na_sm_op_id->info.send.tag = tag;
-
-    /* Push the request to queue, it will be treated when there is space */
-    hg_thread_mutex_lock(
-        &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
-    HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue,
-        na_sm_op_id, entry);
-    hg_thread_mutex_unlock(
-        &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_sm_msg_pop(na_class_t *na_class)
-{
-    unsigned int idx_reserved;
-    struct na_sm_op_id *na_sm_op_id;
-    na_cb_type_t recv_op;
-    na_return_t ret = NA_SUCCESS;
-
-    /* Push the request to queue, it will be treated when there is space */
-    hg_thread_mutex_lock(
-        &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
-    na_sm_op_id = HG_QUEUE_FIRST(
-        &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue);
-
-    /* Map send CB type to recv CB type */
-    switch (na_sm_op_id->completion_data.callback_info.type) {
-        case NA_CB_SEND_UNEXPECTED:
-            recv_op = NA_CB_RECV_UNEXPECTED;
-            break;
-        case NA_CB_SEND_EXPECTED:
-            recv_op = NA_CB_RECV_EXPECTED;
-            break;
-        default:
-            NA_LOG_ERROR("Operation not supported");
-            ret = NA_INVALID_PARAM;
-            goto done;
-    }
-
-    /* Try to reserve buffer atomically */
-    ret = na_sm_reserve_and_copy_buf(na_class,
-        na_sm_op_id->info.send.na_sm_addr->na_sm_copy_buf,
-        na_sm_op_id->info.send.buf, na_sm_op_id->info.send.buf_size,
-        &idx_reserved);
-    if (ret != NA_SUCCESS) {
-        /* Still can't post */
-        goto done;
-    }
-
-    /* Can now free buf */
-    free(na_sm_op_id->info.send.buf);
-    na_sm_op_id->info.send.buf = NULL;
-
-    /* Insert message into ring buffer (complete OP ID) */
-    ret = na_sm_msg_insert(na_class, na_sm_op_id, recv_op,
-        na_sm_op_id->info.send.na_sm_addr, idx_reserved,
-        na_sm_op_id->info.send.buf_size, na_sm_op_id->info.send.tag);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not insert message");
-        goto done;
-    }
-
-done:
-    if (ret == NA_SUCCESS) {
-        HG_QUEUE_POP_HEAD(&NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue,
-            entry);
-    }
-    hg_thread_mutex_unlock(
-        &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_sm_msg_deferred_check_and_repost(na_class_t *na_class)
-{
-    na_return_t ret = NA_SUCCESS;
-
-    for (;;) {
-        na_bool_t deferred_queue_empty = NA_TRUE;
-
-        hg_thread_mutex_lock(
-            &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
-        deferred_queue_empty = HG_QUEUE_IS_EMPTY(
-            &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue);
-        hg_thread_mutex_unlock(
-            &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
-
-        if (deferred_queue_empty)
-            break;
-
-        ret = na_sm_msg_pop(na_class);
-        if (ret != NA_SUCCESS) {
-            if (ret != NA_SIZE_ERROR) {
-                NA_LOG_ERROR("Could not check for deferred message");
-            }
-            break;
-        }
-    }
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
 static void
 na_sm_offset_translate(struct na_sm_mem_handle *mem_handle, na_offset_t offset,
     na_size_t length, struct iovec *iov, unsigned long *iovcnt)
@@ -2597,7 +2436,6 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue);
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue);
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->expected_op_queue);
-    HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue);
 
     /* Initialize mutexes */
     hg_thread_mutex_init(
@@ -2610,8 +2448,6 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
             &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
     hg_thread_mutex_init(
             &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
-    hg_thread_mutex_init(
-            &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
     hg_thread_mutex_init(
              &NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
 
@@ -2653,12 +2489,6 @@ na_sm_finalize(na_class_t *na_class)
         ret = NA_PROTOCOL_ERROR;
     }
 
-    /* Check that deferred op queue is empty */
-    if (!HG_QUEUE_IS_EMPTY(&NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue)) {
-        NA_LOG_ERROR("Deferred op queue should be empty");
-        ret = NA_PROTOCOL_ERROR;
-    }
-
     /* Check that accepted addr queue is empty */
     while (!HG_QUEUE_IS_EMPTY(&NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue)) {
         struct na_sm_addr *na_sm_addr = HG_QUEUE_FIRST(
@@ -2695,8 +2525,6 @@ na_sm_finalize(na_class_t *na_class)
             &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
     hg_thread_mutex_destroy(
             &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
-    hg_thread_mutex_destroy(
-            &NA_SM_PRIVATE_DATA(na_class)->deferred_op_queue_mutex);
     hg_thread_mutex_destroy(
              &NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
 
@@ -3178,16 +3006,21 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         *op_id = na_sm_op_id;
 
     /* Try to reserve buffer atomically */
-    ret = na_sm_reserve_and_copy_buf(na_class, na_sm_addr->na_sm_copy_buf,
-        buf, buf_size, &idx_reserved);
-    if (ret != NA_SUCCESS) {
-        ret = na_sm_msg_push(na_class, buf, buf_size, na_sm_addr, tag,
-            na_sm_op_id);
+    do {
+        ret = na_sm_reserve_and_copy_buf(na_class, na_sm_addr->na_sm_copy_buf,
+            buf, buf_size, &idx_reserved);
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not defer send unexpected operation");
+            na_return_t progress_ret = na_sm_progress(na_class, context, 0);
+
+            if (progress_ret != NA_SUCCESS && progress_ret != NA_TIMEOUT) {
+                NA_LOG_ERROR("Could not make progress");
+                ret = progress_ret;
+                goto done;
+            }
+            continue;
         }
-        goto done;
-    }
+        break;
+    } while (1);
 
     /* Insert message into ring buffer (complete OP ID) */
     ret = na_sm_msg_insert(na_class, na_sm_op_id, NA_CB_RECV_UNEXPECTED,
@@ -3323,16 +3156,21 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
         *op_id = na_sm_op_id;
 
     /* Try to reserve buffer atomically */
-    ret = na_sm_reserve_and_copy_buf(na_class, na_sm_addr->na_sm_copy_buf,
-        buf, buf_size, &idx_reserved);
-    if (ret != NA_SUCCESS) {
-        ret = na_sm_msg_push(na_class, buf, buf_size, na_sm_addr, tag,
-            na_sm_op_id);
+    do {
+        ret = na_sm_reserve_and_copy_buf(na_class, na_sm_addr->na_sm_copy_buf,
+            buf, buf_size, &idx_reserved);
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not defer send expected operation");
+            na_return_t progress_ret = na_sm_progress(na_class, context, 0);
+
+            if (progress_ret != NA_SUCCESS && progress_ret != NA_TIMEOUT) {
+                NA_LOG_ERROR("Could not make progress");
+                ret = progress_ret;
+                goto done;
+            }
+            continue;
         }
-        goto done;
-    }
+        break;
+    } while (1);
 
     /* Insert message into ring buffer (complete OP ID) */
     ret = na_sm_msg_insert(na_class, na_sm_op_id, NA_CB_RECV_EXPECTED,
@@ -3923,15 +3761,6 @@ na_sm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
     do {
         hg_time_t t1, t2;
         hg_util_bool_t progressed;
-        na_return_t deferred_ret;
-
-        /* Check for deferred messages */
-        deferred_ret = na_sm_msg_deferred_check_and_repost(na_class);
-        if (deferred_ret != NA_SUCCESS && deferred_ret != NA_SIZE_ERROR) {
-            NA_LOG_ERROR("Could not check for deferred messages");
-            ret = NA_PROTOCOL_ERROR;
-            goto done;
-        }
 
         hg_time_get_current(&t1);
 
