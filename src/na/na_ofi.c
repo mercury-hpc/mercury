@@ -177,6 +177,7 @@ typedef struct {
 struct na_ofi_private_data {
     struct na_ofi_domain *nop_domain; /* Point back to access domain */
     struct fi_info *nop_fi_info; /* fi info for the endpoint */
+    struct fid_wait *nop_wait; /* Wait set handle */
     struct fid_cq *nop_cq; /* Completion queue handle */
     struct fid_ep *nop_ep; /* Endpoint to communicate on */
     /* Unexpected op queue */
@@ -1016,10 +1017,12 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     struct fid_domain *domain_hdl;
     struct fid_mr *mr_hdl = NULL;
     struct fid_av *av_hdl;
+    struct fid_wait *wait_hdl = NULL;
     struct fid_cq *cq_hdl;
     struct fid_ep *ep_hdl;
     struct fi_av_attr av_attr = {0};
     struct fi_cq_attr cq_attr = {0};
+    struct fi_wait_attr wait_attr = {0};
     struct fi_info *prov;
     void *ep_addr;
     char ep_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'};
@@ -1293,9 +1296,28 @@ create_ep:
         goto ep_create_err;
     }
 
+    /**
+     * TODO: for now only sockets provider supports wait on fd.
+     * Open wait set for other providers.
+     */
+    if (domain->nod_prov_type != NA_OFI_PROV_SOCKETS) {
+        wait_attr.wait_obj = FI_WAIT_UNSPEC;
+        rc = fi_wait_open(domain->nod_fabric, &wait_attr, &wait_hdl);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_wait_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto wait_open_err;
+        }
+    }
+
     /* Create fi completion queue for events */
     cq_attr.format = FI_CQ_FORMAT_TAGGED;
-    cq_attr.wait_obj = FI_WAIT_FD; /* Wait on file descriptor */
+    if (wait_hdl) {
+        cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
+        cq_attr.wait_set = wait_hdl;
+    } else {
+        cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
+    }
     cq_attr.wait_cond = FI_CQ_COND_NONE;
     rc = fi_cq_open(domain->nod_domain, &cq_attr, &cq_hdl, NULL);
     if (rc != 0) {
@@ -1328,6 +1350,7 @@ create_ep:
     }
 
     priv->nop_domain = domain;
+    priv->nop_wait = wait_hdl;
     priv->nop_cq = cq_hdl;
     priv->nop_ep = ep_hdl;
     HG_QUEUE_INIT(&priv->nop_unexpected_op_queue);
@@ -1389,6 +1412,8 @@ ep_bind_err:
     fi_close(&cq_hdl->fid);
 cq_open_err:
     fi_close(&ep_hdl->fid);
+wait_open_err:
+    if (wait_hdl) fi_close(&wait_hdl->fid);
 ep_create_err:
     fi_freeinfo(priv->nop_fi_info);
 getinfo_err:
@@ -1418,6 +1443,15 @@ na_ofi_finalize(na_class_t *na_class)
                      rc, fi_strerror(-rc));
         ret = NA_PROTOCOL_ERROR;
         goto out;
+    }
+
+    if (priv->nop_wait) {
+        rc = fi_close(&priv->nop_wait->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close wait failed, rc: %d(%s).", rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
     }
 
     rc = fi_close(&priv->nop_cq->fid);
@@ -2642,6 +2676,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid_cq *cq_hdl = priv->nop_cq;
     struct fid_av *av_hdl = priv->nop_domain->nod_av;
+    struct fid_wait *wait_hdl = priv->nop_wait;
     na_return_t ret = NA_TIMEOUT;
 
     do {
@@ -2653,6 +2688,16 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
         fi_addr_t tmp_addr;
 
         hg_time_get_current(&t1);
+
+        if (timeout && wait_hdl) {
+            int rc_wait = fi_wait(wait_hdl, (int) (remaining * 1000.0));
+            if (rc_wait != FI_SUCCESS) {
+                NA_LOG_ERROR("fi_wait() failed, rc: %d(%s).",
+                    rc, fi_strerror((int) -rc));
+                ret = NA_PROTOCOL_ERROR;
+                break;
+            }
+        }
 
         if (na_ofi_with_reqhdr(na_class) == NA_FALSE)
             rc = fi_cq_readfrom(cq_hdl, &cq_event, 1, &src_addr);
