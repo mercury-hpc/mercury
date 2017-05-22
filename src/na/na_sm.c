@@ -1040,8 +1040,9 @@ na_sm_create_sock(const char *pathname, na_bool_t na_listen, int *sock)
 
             strcat(stat_path, current);
             if (stat(stat_path, &sb) == -1) {
-                if (mkdir(stat_path, 0775) == -1) {
-                    NA_LOG_ERROR("Could not create directory: %s", stat_path);
+                if (mkdir(stat_path, 0775) == -1 && errno != EEXIST) {
+                    NA_LOG_ERROR("Could not create directory: %s (%s)",
+                        stat_path, strerror(errno));
                     ret = NA_PROTOCOL_ERROR;
                     goto done;
                 }
