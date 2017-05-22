@@ -280,6 +280,7 @@ na_test_gen_config(int argc, char *argv[], int listen)
         }
     } else if ((strcmp("tcp", na_protocol_name) == 0)
         || (strcmp("verbs", na_protocol_name) == 0)
+        || (strcmp("psm2", na_protocol_name) == 0)
         || (strcmp("sockets", na_protocol_name) == 0)) {
         if (listen) {
             const char *hostname = na_hostname ? na_hostname : "localhost";
@@ -297,8 +298,6 @@ na_test_gen_config(int argc, char *argv[], int listen)
         const char *hostname = na_hostname ? na_hostname : "localhost";
         na_port += (unsigned int) na_test_comm_rank_g;
         sprintf(info_string_ptr, "://%s:%d", hostname, na_port);
-    } else if (strcmp("psm2", na_protocol_name) == 0) {
-        /* Nothing */
     } else {
         NA_LOG_ERROR("Unknown protocol: %s", na_protocol_name);
         exit(1);
