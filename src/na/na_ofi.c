@@ -185,6 +185,8 @@ struct na_ofi_private_data {
     hg_thread_mutex_t nop_unexpected_op_mutex;
     char *nop_uri; /* URI address string */
     na_ofi_reqhdr_t nop_req_hdr; /* request header */
+    /* nop_mutex only used for verbs provider as it is not thread safe now */
+    hg_thread_mutex_t nop_mutex;
 };
 
 #define NA_OFI_PRIVATE_DATA(na_class) \
@@ -273,6 +275,26 @@ struct na_ofi_op_id {
                            (na_ofi_bswap16((x) & 0xFFFFU) << 16))
 #define na_ofi_bswap32s(x) do { *(x) = na_ofi_bswap32(*(x)); } while (0)
 
+static inline void
+na_ofi_class_lock(na_class_t *na_class)
+{
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_domain *domain = priv->nop_domain;
+
+    if (domain->nod_prov_type == NA_OFI_PROV_VERBS)
+        hg_thread_mutex_lock(&priv->nop_mutex);
+}
+
+static inline void
+na_ofi_class_unlock(na_class_t *na_class)
+{
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_domain *domain = priv->nop_domain;
+
+    if (domain->nod_prov_type == NA_OFI_PROV_VERBS)
+        hg_thread_mutex_unlock(&priv->nop_mutex);
+}
+
 static inline na_bool_t
 na_ofi_with_reqhdr(na_class_t *na_class)
 {
@@ -342,8 +364,10 @@ na_ofi_av_insert(na_class_t *na_class, char *node_str, char *service_str,
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
+    na_ofi_class_lock(na_class);
     rc = fi_av_insert(domain->nod_av, tmp_info->dest_addr, 1, fi_addr,
                       0 /* flags */, NULL /* context */);
+    na_ofi_class_unlock(na_class);
     /* fi_av_insertsvc not supported by PSM2 provider */
     //rc = fi_av_insertsvc(domain->nod_av, node_str, service_str,
     //                     fi_addr, 0 /* flags */, NULL /* context */)
@@ -715,13 +739,13 @@ na_ofi_getinfo(const char *protocol_name)
         goto out;
     }
 
-    hints->mode               = FI_CONTEXT;
-    hints->ep_attr->type      = FI_EP_RDM;
-    hints->caps               = FI_TAGGED | FI_RMA;
-    hints->tx_attr->msg_order = FI_ORDER_SAS;
-    hints->rx_attr->msg_order = FI_ORDER_SAS;
+    hints->mode          = FI_CONTEXT | FI_LOCAL_MR;
+    hints->ep_attr->type = FI_EP_RDM;
+    hints->caps          = FI_TAGGED | FI_RMA;
+    //hints->tx_attr->msg_order = FI_ORDER_SAS;
+    //hints->rx_attr->msg_order = FI_ORDER_SAS;
 
-    hints->domain_attr->threading        = FI_THREAD_UNSPEC;
+    hints->domain_attr->threading = FI_THREAD_UNSPEC;
     if (!strcmp(protocol_name, "sockets")) {
         /* As "sockets" provider does not support manual progress and wait
          * objects, set progress to auto for now. Note that the provider
@@ -733,8 +757,9 @@ na_ofi_getinfo(const char *protocol_name)
         hints->domain_attr->control_progress = FI_PROGRESS_MANUAL;
         hints->domain_attr->data_progress    = FI_PROGRESS_MANUAL;
     }
-    hints->domain_attr->av_type          = FI_AV_MAP;
-    hints->domain_attr->resource_mgmt    = FI_RM_ENABLED;
+    hints->domain_attr->av_type       = FI_AV_MAP;
+    hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
+    hints->domain_attr->mr_mode       = ~(FI_MR_BASIC | FI_MR_SCALABLE);
 
     /**
      * fi_getinfo:  returns information about fabric services.
@@ -884,8 +909,8 @@ na_ofi_check_protocol(const char *protocol_name)
     while (prov != NULL) {
         /*
         NA_LOG_DEBUG("fabric_attr - prov_name %s, name - %s, "
-                     "domain_attr - name %s.", prov->fabric_attr->prov_name,
-                     prov->fabric_attr->name, prov->domain_attr->name);
+                     "domain_attr - name %s, mode: 0x%llx, domain_attr->mode 0x%llx, caps: 0x%llx.", prov->fabric_attr->prov_name,
+                     prov->fabric_attr->name, prov->domain_attr->name, prov->mode, prov->domain_attr->mode, prov->caps);
         */
         if (!strcmp(protocol_name, prov->fabric_attr->prov_name)) {
             accept = NA_TRUE;
@@ -1020,7 +1045,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
-    na_bool_t NA_UNUSED listen)
+    na_bool_t listen)
 {
     struct na_ofi_private_data *priv;
     struct na_ofi_domain *domain;
@@ -1084,6 +1109,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
         if (domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
             domain->nod_prov_type == NA_OFI_PROV_GNI ||
+            domain->nod_prov_type == NA_OFI_PROV_VERBS ||
             !strcmp(domain_name, domain->nod_prov->domain_attr->name)) {
             na_ofi_domain_addref_locked(domain);
             hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
@@ -1106,15 +1132,16 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     while (prov != NULL) {
         if (!strcmp(na_info->protocol_name, prov->fabric_attr->prov_name) &&
             (!strcmp(na_info->protocol_name, "psm2") ||
-             !strcmp(na_info->protocol_name, "gni") || !na_info->host_name ||
-            !strcmp(domain_name, prov->domain_attr->name))) {
+             !strcmp(na_info->protocol_name, "gni") ||
+             !strcmp(na_info->protocol_name, "verbs") ||
+             !na_info->host_name ||
+             !strcmp(domain_name, prov->domain_attr->name))) {
             /*
             NA_LOG_DEBUG("mode 0x%llx, fabric_attr - prov_name %s, name - %s, "
                          "domain_attr - name %s.", prov->mode,
                          prov->fabric_attr->prov_name, prov->fabric_attr->name,
                          prov->domain_attr->name);
             */
-
             found = NA_TRUE;
             nofi_gdata_addref_locked();
             break;
@@ -1175,22 +1202,23 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     if (!strcmp(domain->nod_prov_name, "sockets")) {
         domain->nod_prov_type = NA_OFI_PROV_SOCKETS;
         /* sockets provider without MR_BASIC supporting */
-        domain->nod_prov->domain_attr->mr_mode = FI_MR_SCALABLE;
+        domain->nod_prov->domain_attr->mr_mode |= FI_MR_SCALABLE;
         domain->nod_mr_mode = NA_OFI_MR_SCALABLE;
 #if defined(FI_SOURCE_ERR)
     } else if (!strcmp(domain->nod_prov_name, "psm2")) {
         domain->nod_prov_type = NA_OFI_PROV_PSM2;
         domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
-        domain->nod_prov->domain_attr->mr_mode = FI_MR_BASIC;
+        domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
         domain->nod_mr_mode = NA_OFI_MR_BASIC;
 #endif
     } else if (!strcmp(domain->nod_prov_name, "verbs")) {
         domain->nod_prov_type = NA_OFI_PROV_VERBS;
-        domain->nod_prov->domain_attr->mr_mode = FI_MR_BASIC;
+        domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
+        domain->nod_prov->rx_attr->mode |= FI_CONTEXT;
         domain->nod_mr_mode = NA_OFI_MR_BASIC;
     } else if (!strcmp(domain->nod_prov_name, "gni")) {
         domain->nod_prov_type = NA_OFI_PROV_GNI;
-        domain->nod_prov->domain_attr->mr_mode = FI_MR_BASIC;
+        domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
         domain->nod_mr_mode = NA_OFI_MR_BASIC;
     } else {
         NA_LOG_ERROR("bad domain->nod_prov_name %s.", domain->nod_prov_name);
@@ -1295,7 +1323,7 @@ create_ep:
     }
     assert(priv->nop_fi_info != NULL);
 
-    priv->nop_fi_info->addr_format = FI_SOCKADDR_IN;
+    //priv->nop_fi_info->addr_format = FI_SOCKADDR_IN;
     /* Create a transport level communication endpoint */
     rc = fi_endpoint(domain->nod_domain,   /* In:  Domain object */
                      priv->nop_fi_info,    /* In:  Provider */
@@ -1306,6 +1334,10 @@ create_ep:
         ret = NA_PROTOCOL_ERROR;
         goto ep_create_err;
     }
+
+    /* verbs provider does not support FI_WAIT_FD/FI_WAIT_SET now */
+    if (domain->nod_prov_type == NA_OFI_PROV_VERBS)
+        goto no_wait_obj;
 
     /**
      * TODO: for now only sockets provider supports wait on fd.
@@ -1330,6 +1362,7 @@ create_ep:
         cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
     }
     cq_attr.wait_cond = FI_CQ_COND_NONE;
+no_wait_obj:
     rc = fi_cq_open(domain->nod_domain, &cq_attr, &cq_hdl, NULL);
     if (rc != 0) {
         NA_LOG_ERROR("fi_cq_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
@@ -1366,6 +1399,7 @@ create_ep:
     priv->nop_ep = ep_hdl;
     HG_QUEUE_INIT(&priv->nop_unexpected_op_queue);
     hg_thread_mutex_init(&priv->nop_unexpected_op_mutex);
+    hg_thread_mutex_init(&priv->nop_mutex);
     na_class->private_data = priv;
 
     addrlen = domain->nod_src_addrlen;
@@ -1397,7 +1431,8 @@ retry_getname:
         goto ep_bind_err;
     }
     addrlen -= (size_t) rc;
-    if (domain->nod_prov_type == NA_OFI_PROV_PSM2 || domain->nod_prov_type == NA_OFI_PROV_GNI)
+    if (domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
+        domain->nod_prov_type == NA_OFI_PROV_GNI)
         snprintf(ep_addr_str + rc, addrlen, "%s:%s", node, service);
     else
         fi_av_straddr(domain->nod_av, ep_addr, ep_addr_str + rc, &addrlen);
@@ -1475,6 +1510,7 @@ na_ofi_finalize(na_class_t *na_class)
     na_ofi_domain_decref(priv->nop_domain);
 
     hg_thread_mutex_destroy(&priv->nop_unexpected_op_mutex);
+    hg_thread_mutex_destroy(&priv->nop_mutex);
     fi_freeinfo(priv->nop_fi_info);
     free(priv->nop_uri);
     free(priv);
@@ -2041,8 +2077,10 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Post the FI unexpected send request */
     do {
+        na_ofi_class_lock(na_class);
         rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl, na_ofi_addr->noa_addr, tag,
                       &na_ofi_op_id->noo_fi_ctx);
+        na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -2070,7 +2108,8 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
     void *plugin_data, na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
 {
-    struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct fid_ep *ep_hdl = priv->nop_ep;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
     struct fid_mr *mr_hdl = plugin_data;
     na_return_t ret = NA_SUCCESS;
@@ -2106,9 +2145,11 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Post the FI unexpected recv request */
     do {
+        na_ofi_class_lock(na_class);
         rc = fi_trecv(ep_hdl, buf, buf_size, mr_hdl, FI_ADDR_UNSPEC,
                       1 /* tag */, NA_OFI_UNEXPECTED_TAG_IGNORE,
                       &na_ofi_op_id->noo_fi_ctx);
+        na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -2134,7 +2175,8 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
     void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
-    struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct fid_ep *ep_hdl = priv->nop_ep;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)dest;
     struct fid_mr *mr_hdl = plugin_data;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
@@ -2170,9 +2212,11 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 
     /* Post the FI expected send request */
     do {
+        na_ofi_class_lock(na_class);
         rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl, na_ofi_addr->noa_addr,
                       NA_OFI_EXPECTED_TAG_FLAG | tag,
                       &na_ofi_op_id->noo_fi_ctx);
+        na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -2200,7 +2244,8 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
     void *plugin_data, na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
 {
-    struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct fid_ep *ep_hdl = priv->nop_ep;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)source;
     struct fid_mr *mr_hdl = plugin_data;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
@@ -2239,9 +2284,11 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 
     /* Post the FI expected recv request */
     do {
+        na_ofi_class_lock(na_class);
         rc = fi_trecv(ep_hdl, buf, buf_size, mr_hdl, na_ofi_addr->noa_addr,
                       NA_OFI_EXPECTED_TAG_FLAG | tag, 0 /* ignore */,
                       &na_ofi_op_id->noo_fi_ctx);
+        na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -2498,10 +2545,12 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     rma_key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
               ofi_remote_mem_handle->nom_mr_key;
     do {
+        na_ofi_class_lock(na_class);
         rc = fi_writev(ep_hdl, &iov, &local_desc, 1 /* count */,
                        na_ofi_addr->noa_addr,
                        (na_uint64_t)ofi_remote_mem_handle->nom_base +
                        remote_offset, rma_key, &na_ofi_op_id->noo_fi_ctx);
+        na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -2580,10 +2629,12 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
               ofi_remote_mem_handle->nom_mr_key;
 
     do {
+        na_ofi_class_lock(na_class);
         rc = fi_readv(ep_hdl, &iov, &local_desc, 1 /* count */,
                       na_ofi_addr->noa_addr,
                       (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
                       rma_key, &na_ofi_op_id->noo_fi_ctx);
+        na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -2729,6 +2780,9 @@ na_ofi_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     int fd = 0, rc;
 
+    if (priv->nop_wait == NULL)
+        return 0;
+
     rc = fi_control(&priv->nop_cq->fid, FI_GETWAIT, &fd);
     if (rc == -FI_ENOSYS) {
         NA_LOG_WARNING("%s provider does not support wait objects",
@@ -2784,10 +2838,12 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             }
         }
 
+        na_ofi_class_lock(na_class);
         if (na_ofi_with_reqhdr(na_class) == NA_FALSE)
             rc = fi_cq_readfrom(cq_hdl, &cq_event, 1, &src_addr);
         else
             rc = fi_cq_read(cq_hdl, &cq_event, 1);
+        na_ofi_class_unlock(na_class);
         if (rc == -FI_EAGAIN) {
             hg_time_get_current(&t2);
             remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
@@ -2797,7 +2853,9 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
         } else if (rc == -FI_EAVAIL) {
             /* error available */
             memset(&cq_err, 0, sizeof(cq_err));
+            na_ofi_class_lock(na_class);
             rc = fi_cq_readerr(cq_hdl, &cq_err, 0 /* flags */);
+            na_ofi_class_unlock(na_class);
             if (rc != 1) {
                 NA_LOG_ERROR("fi_cq_readerr() failed, rc: %d(%s).",
                              rc, fi_strerror((int) -rc));
@@ -2813,8 +2871,10 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
 //                             cq_err.flags);
                 continue;
             } else if (cq_err.err == FI_EADDRNOTAVAIL) {
+                na_ofi_class_lock(na_class);
                 rc = fi_av_insert(av_hdl, cq_err.err_data, 1, &tmp_addr,
                                   0 /* flags */, NULL /* context */);
+                na_ofi_class_unlock(na_class);
                 if (rc < 0) {
                     NA_LOG_ERROR("fi_av_insertsvc failed, rc: %d(%s).",
                                  rc, fi_strerror((int) -rc));
@@ -2872,6 +2932,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
         };
 
     } while (remaining > 0 && ret != NA_SUCCESS);
+
 
     return ret;
 }
@@ -2978,7 +3039,9 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
     case NA_CB_LOOKUP:
         break;
     case NA_CB_RECV_UNEXPECTED:
+        na_ofi_class_lock(na_class);
         rc = fi_cancel(&ep_hdl->fid, &na_ofi_op_id->noo_fi_ctx);
+        na_ofi_class_unlock(na_class);
         if (rc != 0)
             NA_LOG_DEBUG("fi_cancel unexpected recv failed, rc: %d(%s).",
                          rc, fi_strerror((int) -rc));
@@ -3006,7 +3069,9 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
         ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, NA_CANCELED);
         break;
     case NA_CB_RECV_EXPECTED:
+        na_ofi_class_lock(na_class);
         rc = fi_cancel(&ep_hdl->fid, &na_ofi_op_id->noo_fi_ctx);
+        na_ofi_class_unlock(na_class);
         if (rc != 0)
             NA_LOG_DEBUG("fi_cancel expected recv failed, rc: %d(%s).",
                          rc, fi_strerror((int) -rc));
@@ -3018,7 +3083,9 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
     case NA_CB_SEND_EXPECTED:
     case NA_CB_PUT:
     case NA_CB_GET:
+        na_ofi_class_lock(na_class);
         rc = fi_cancel(&ep_hdl->fid, &na_ofi_op_id->noo_fi_ctx);
+        na_ofi_class_unlock(na_class);
         if (rc != 0)
             NA_LOG_DEBUG("fi_cancel (op type %d) failed, rc: %d(%s).",
                          na_ofi_op_id->noo_type, rc, fi_strerror((int) -rc));
