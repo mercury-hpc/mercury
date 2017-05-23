@@ -4,11 +4,14 @@
 #  OFI_INCLUDE_DIRS - The OFI include directories
 #  OFI_LIBRARIES - The libraries needed to use OFI
 
+find_package(PkgConfig)
+pkg_check_modules(PC_OFI QUIET libfabric)
+
 find_path(OFI_INCLUDE_DIR rdma/fabric.h
-  HINTS /usr/local/include /usr/include)
+  HINTS ${PC_OFI_INCLUDEDIR} ${PC_OFI_INCLUDE_DIRS})
 
 find_library(OFI_LIBRARY NAMES fabric
-  PATHS /usr/local/lib /usr/lib)
+  HINTS ${PC_OFI_LIBDIR} ${PC_OFI_LIBRARY_DIRS})
 
 set(OFI_INCLUDE_DIRS ${OFI_INCLUDE_DIR})
 set(OFI_LIBRARIES ${OFI_LIBRARY})
