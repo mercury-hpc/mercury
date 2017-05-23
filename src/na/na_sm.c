@@ -2927,7 +2927,7 @@ na_sm_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
     char addr_string[NA_SM_MAX_FILENAME];
     na_return_t ret = NA_SUCCESS;
 
-    sprintf(addr_string, "%d/%u", na_sm_addr->pid, na_sm_addr->id);
+    sprintf(addr_string, "sm://%d/%u", na_sm_addr->pid, na_sm_addr->id);
     string_len = strlen(addr_string);
     if (buf) {
         if (string_len >= *buf_size) {
