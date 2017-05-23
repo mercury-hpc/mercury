@@ -911,6 +911,7 @@ HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
     hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb)
 {
     struct hg_proc_info *hg_proc_info = NULL;
+    hg_bool_t registered;
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_class) {
@@ -919,30 +920,47 @@ HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
         goto done;
     }
 
-    hg_proc_info = (struct hg_proc_info *) malloc(sizeof(struct hg_proc_info));
-    if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not allocate proc info");
-        ret = HG_NOMEM_ERROR;
+    /* Check if already registered */
+    ret = HG_Registered(hg_class, id, &registered);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not check for registered RPC id");
         goto done;
     }
 
-    hg_proc_info->in_proc_cb = in_proc_cb;
-    hg_proc_info->out_proc_cb = out_proc_cb;
-    hg_proc_info->data = NULL;
-    hg_proc_info->free_callback = NULL;
-
-    /* Register RPC callback */
+    /* Register RPC (register only RPC callback if already registered) */
     ret = HG_Core_register(hg_class, id, rpc_cb);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not register RPC id");
         goto done;
     }
 
-    /* Attach proc info to RPC ID */
-    ret = HG_Core_register_data(hg_class, id, hg_proc_info, hg_proc_info_free);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not set proc info");
-        goto done;
+    if (!registered) {
+        hg_proc_info = (struct hg_proc_info *) malloc(sizeof(struct hg_proc_info));
+        if (!hg_proc_info) {
+            HG_LOG_ERROR("Could not allocate proc info");
+            ret = HG_NOMEM_ERROR;
+            goto done;
+        }
+        hg_proc_info->in_proc_cb = in_proc_cb;
+        hg_proc_info->out_proc_cb = out_proc_cb;
+        hg_proc_info->data = NULL;
+        hg_proc_info->free_callback = NULL;
+
+        /* Attach proc info to RPC ID */
+        ret = HG_Core_register_data(hg_class, id, hg_proc_info, hg_proc_info_free);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not set proc info");
+            goto done;
+        }
+    } else {
+        /* Retrieve proc function from function map */
+        hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
+        if (!hg_proc_info) {
+            HG_LOG_ERROR("Could not get registered data");
+            goto done;
+        }
+        hg_proc_info->in_proc_cb = in_proc_cb;
+        hg_proc_info->out_proc_cb = out_proc_cb;
     }
 
 done:
