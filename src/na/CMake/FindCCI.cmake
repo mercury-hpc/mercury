@@ -4,11 +4,14 @@
 #  CCI_INCLUDE_DIRS - The CCI include directories
 #  CCI_LIBRARIES - The libraries needed to use CCI
 
+find_package(PkgConfig)
+pkg_check_modules(PC_CCI QUIET cci)
+
 find_path(CCI_INCLUDE_DIR cci.h
-  HINTS /usr/local/include /usr/include)
+  HINTS ${PC_CCI_INCLUDEDIR} ${PC_CCI_INCLUDE_DIRS})
 
 find_library(CCI_LIBRARY NAMES cci
-  PATHS /usr/local/lib /usr/lib)
+  HINTS ${PC_CCI_LIBDIR} ${PC_CCI_LIBRARY_DIRS})
 
 set(CCI_INCLUDE_DIRS ${CCI_INCLUDE_DIR})
 set(CCI_LIBRARIES ${CCI_LIBRARY})
