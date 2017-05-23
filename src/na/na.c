@@ -334,7 +334,7 @@ NA_Initialize(const char *info_string, na_bool_t listen)
     }
 
     if (!plugin_found) {
-        NA_LOG_ERROR("No suitable plugin was found");
+        NA_LOG_ERROR("No suitable plugin found that matches %s", info_string);
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
