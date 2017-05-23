@@ -519,12 +519,23 @@ na_ofi_addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
 static na_size_t
 na_ofi_msg_get_max_expected_size(na_class_t *na_class);
 
+/* msg_get_max_unexpected_size */
 static na_size_t
 na_ofi_msg_get_max_unexpected_size(na_class_t *na_class);
 
+/* msg_get_reserved_unexpected_size */
 static na_size_t
 na_ofi_msg_get_reserved_unexpected_size(na_class_t *na_class);
 
+/* msg_buf_alloc */
+static void *
+na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data);
+
+/* msg_buf_free */
+static na_return_t
+na_ofi_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data);
+
+/* msg_get_max_tag */
 static na_tag_t
 na_ofi_msg_get_max_tag(na_class_t *na_class);
 
@@ -532,25 +543,25 @@ na_ofi_msg_get_max_tag(na_class_t *na_class);
 static na_return_t
 na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id);
+    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id);
 
 /* msg_recv_unexpected */
 static na_return_t
 na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_tag_t mask, na_op_id_t *op_id);
+    void *plugin_data, na_tag_t mask, na_op_id_t *op_id);
 
 /* msg_send_expected */
 static na_return_t
 na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id);
+    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id);
 
 /* msg_recv_expected */
 static na_return_t
 na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_addr_t source, na_tag_t tag, na_op_id_t *op_id);
+    void *plugin_data, na_addr_t source, na_tag_t tag, na_op_id_t *op_id);
 
 /* mem_handle */
 static na_return_t
@@ -641,8 +652,8 @@ const na_class_t na_ofi_class_g = {
     na_ofi_msg_get_max_expected_size,       /* msg_get_max_expected_size */
     na_ofi_msg_get_max_unexpected_size,     /* msg_get_max_unexpected_size */
     na_ofi_msg_get_reserved_unexpected_size,/* msg_get_reserved_unexpected_size */
-    NULL,                                   /* msg_buf_alloc */
-    NULL,                                   /* msg_buf_free */
+    na_ofi_msg_buf_alloc,                   /* msg_buf_alloc */
+    na_ofi_msg_buf_free,                    /* msg_buf_free */
     na_ofi_msg_get_max_tag,                 /* msg_get_max_tag */
     na_ofi_msg_send_unexpected,             /* msg_send_unexpected */
     na_ofi_msg_recv_unexpected,             /* msg_recv_unexpected */
@@ -1213,9 +1224,9 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     /* For MR_SCALABLE, create MR, now exports all memory range for RMA */
     if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) {
         rc = fi_mr_reg(domain_hdl, (void *)0, UINT64_MAX,
-                       FI_REMOTE_READ | FI_REMOTE_WRITE, 0ULL /* offset */,
-                       NA_OFI_RMA_KEY, 0 /* flags */, &mr_hdl,
-                       NULL /* context */);
+                       FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE,
+                       0ULL /* offset */, NA_OFI_RMA_KEY, 0 /* flags */,
+                       &mr_hdl, NULL /* context */);
         if (rc != 0) {
             hg_hash_table_free(domain->nod_addr_ht);
             hg_thread_rwlock_destroy(&domain->nod_rwlock);
@@ -1841,6 +1852,77 @@ na_ofi_msg_get_reserved_unexpected_size(na_class_t *na_class)
 }
 
 /*---------------------------------------------------------------------------*/
+static void *
+na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
+{
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    na_size_t alignment;
+    void *mem_ptr = NULL;
+    struct fid_mr *mr_hdl = NULL;
+    int rc;
+
+#ifdef _WIN32
+    SYSTEM_INFO system_info;
+    GetSystemInfo (&system_info);
+    alignment = system_info.dwPageSize;
+    mem_ptr = _aligned_malloc(size, alignment);
+#else
+    alignment = (na_size_t) sysconf(_SC_PAGE_SIZE);
+
+    if (posix_memalign(&mem_ptr, alignment, size) != 0) {
+        NA_LOG_ERROR("posix_memalign failed");
+        return NULL;
+    }
+#endif
+    if (mem_ptr)
+        memset(mem_ptr, 0, size);
+
+    rc = fi_mr_reg(domain->nod_domain, mem_ptr, size, FI_SEND | FI_RECV,
+                   0ULL /* offset */, (na_uint64_t)mem_ptr /* request_key */,
+                   0 /* flags */, &mr_hdl, NULL /* context */);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
+#ifdef _WIN32
+        _aligned_free(mem_ptr);
+#else
+        free(mem_ptr);
+#endif
+        return NULL;
+    }
+
+    if (plugin_data != NULL)
+        *plugin_data = mr_hdl;
+
+    return mem_ptr;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_msg_buf_free(na_class_t NA_UNUSED *na_class, void *buf,
+    void *plugin_data)
+{
+    struct fid_mr *mr_hdl = plugin_data;
+    int rc;
+
+    if (mr_hdl != NULL) {
+        rc = fi_close(&mr_hdl->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close mr_hdl failed, rc: %d(%s).",
+                         rc, fi_strerror(-rc));
+            return NA_PROTOCOL_ERROR;
+        }
+    }
+
+#ifdef _WIN32
+    _aligned_free(buf);
+#else
+    free(buf);
+#endif
+
+    return NA_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_tag_t
 na_ofi_msg_get_max_tag(na_class_t NA_UNUSED *na_class)
 {
@@ -1911,12 +1993,13 @@ na_ofi_msg_unexpected_op_pop(na_class_t * na_class)
 static na_return_t
 na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid_ep *ep_hdl = priv->nop_ep;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)dest;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
+    struct fid_mr *mr_hdl = plugin_data;
     void *reqhdr = (void *) buf; /* TODO would be nice to keep the const */
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
@@ -1958,8 +2041,8 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Post the FI unexpected send request */
     do {
-        rc = fi_tsend(ep_hdl, buf, buf_size, NULL /* desc */,
-                       na_ofi_addr->noa_addr, tag, &na_ofi_op_id->noo_fi_ctx);
+        rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl, na_ofi_addr->noa_addr, tag,
+                      &na_ofi_op_id->noo_fi_ctx);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -1985,10 +2068,11 @@ out:
 static na_return_t
 na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
+    void *plugin_data, na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
 {
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
+    struct fid_mr *mr_hdl = plugin_data;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
@@ -2022,9 +2106,9 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Post the FI unexpected recv request */
     do {
-        rc = fi_trecv(ep_hdl, buf, buf_size, NULL /* desc */,
-                       FI_ADDR_UNSPEC, 1 /* tag */,
-                       NA_OFI_UNEXPECTED_TAG_IGNORE, &na_ofi_op_id->noo_fi_ctx);
+        rc = fi_trecv(ep_hdl, buf, buf_size, mr_hdl, FI_ADDR_UNSPEC,
+                      1 /* tag */, NA_OFI_UNEXPECTED_TAG_IGNORE,
+                      &na_ofi_op_id->noo_fi_ctx);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -2048,10 +2132,11 @@ out:
 static na_return_t
 na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)dest;
+    struct fid_mr *mr_hdl = plugin_data;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
@@ -2085,9 +2170,9 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 
     /* Post the FI expected send request */
     do {
-        rc = fi_tsend(ep_hdl, buf, buf_size, NULL /* desc */,
-                       na_ofi_addr->noa_addr, NA_OFI_EXPECTED_TAG_FLAG | tag,
-                       &na_ofi_op_id->noo_fi_ctx);
+        rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl, na_ofi_addr->noa_addr,
+                      NA_OFI_EXPECTED_TAG_FLAG | tag,
+                      &na_ofi_op_id->noo_fi_ctx);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -2113,10 +2198,11 @@ out:
 static na_return_t
 na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
 {
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
     na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)source;
+    struct fid_mr *mr_hdl = plugin_data;
     na_ofi_op_id_t *na_ofi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
@@ -2153,9 +2239,9 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 
     /* Post the FI expected recv request */
     do {
-        rc = fi_trecv(ep_hdl, buf, buf_size, NULL /* desc */,
-                       na_ofi_addr->noa_addr, NA_OFI_EXPECTED_TAG_FLAG | tag,
-                       0 /* ignore */, &na_ofi_op_id->noo_fi_ctx);
+        rc = fi_trecv(ep_hdl, buf, buf_size, mr_hdl, na_ofi_addr->noa_addr,
+                      NA_OFI_EXPECTED_TAG_FLAG | tag, 0 /* ignore */,
+                      &na_ofi_op_id->noo_fi_ctx);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -2234,13 +2320,13 @@ na_ofi_mem_register(na_class_t NA_UNUSED *na_class,
 
     switch (na_ofi_mem_handle->nom_attr) {
         case NA_MEM_READ_ONLY:
-            access = FI_REMOTE_READ;
+            access = FI_REMOTE_READ | FI_WRITE;
             break;
         case NA_MEM_WRITE_ONLY:
-            access = FI_REMOTE_WRITE;
+            access = FI_REMOTE_WRITE | FI_READ;
             break;
         case NA_MEM_READWRITE:
-            access = FI_REMOTE_READ | FI_REMOTE_WRITE;
+            access = FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE;
             break;
         default:
             NA_LOG_ERROR("Invalid memory access flag");
@@ -2248,8 +2334,6 @@ na_ofi_mem_register(na_class_t NA_UNUSED *na_class,
             goto out;
     }
 
-    //access = FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE;
-    //access = FI_REMOTE_READ | FI_REMOTE_WRITE;
     rc = fi_mr_reg(domain->nod_domain, (void *)na_ofi_mem_handle->nom_base,
                    na_ofi_mem_handle->nom_size, access, 0ULL /* offset */,
                    na_ofi_mem_handle->nom_base, 0 /* flags */,
@@ -2288,7 +2372,8 @@ na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 
     rc = fi_close(&na_ofi_mem_handle->nom_mr_hdl->fid);
     if (rc != 0) {
-        NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        NA_LOG_ERROR("fi_close mr_hdr failed, rc: %d(%s).",
+                     rc, fi_strerror(-rc));
         return NA_PROTOCOL_ERROR;
     }
 
@@ -2693,7 +2778,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             int rc_wait = fi_wait(wait_hdl, (int) (remaining * 1000.0));
             if (rc_wait != FI_SUCCESS) {
                 NA_LOG_ERROR("fi_wait() failed, rc: %d(%s).",
-                    rc, fi_strerror((int) -rc));
+                    rc_wait, fi_strerror((int) -rc_wait));
                 ret = NA_PROTOCOL_ERROR;
                 break;
             }

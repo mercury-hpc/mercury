@@ -1516,8 +1516,9 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     if (!hg_handle->hg_rpc_info->no_response) {
         na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_context->na_context,
             hg_core_recv_output_cb, hg_handle, hg_handle->out_buf,
-            hg_handle->out_buf_size, hg_handle->hg_info.addr->na_addr,
-            hg_handle->tag, &hg_handle->na_recv_op_id);
+            hg_handle->out_buf_size, hg_handle->out_buf_plugin_data,
+            hg_handle->hg_info.addr->na_addr, hg_handle->tag,
+            &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post recv for output buffer");
             ret = HG_NA_ERROR;
@@ -1529,8 +1530,8 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_send_unexpected(hg_class->na_class,
             hg_context->na_context, hg_core_send_input_cb, hg_handle,
             hg_handle->in_buf, hg_handle->in_buf_used,
-            hg_handle->hg_info.addr->na_addr, hg_handle->tag,
-            &hg_handle->na_send_op_id);
+            hg_handle->in_buf_plugin_data, hg_handle->hg_info.addr->na_addr,
+            hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for input buffer");
         ret = HG_NA_ERROR;
@@ -1600,8 +1601,9 @@ hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     /* Respond back */
     na_ret = NA_Msg_send_expected(hg_class->na_class, hg_context->na_context,
             hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
-            hg_handle->out_buf_used, hg_handle->hg_info.addr->na_addr,
-            hg_handle->tag, &hg_handle->na_send_op_id);
+            hg_handle->out_buf_used, hg_handle->out_buf_plugin_data,
+            hg_handle->hg_info.addr->na_addr, hg_handle->tag,
+            &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for output buffer");
         ret = HG_NA_ERROR;
@@ -2110,8 +2112,8 @@ hg_core_post(struct hg_handle *hg_handle)
     /* Post a new unexpected receive */
     na_ret = NA_Msg_recv_unexpected(hg_class->na_class, context->na_context,
             hg_core_recv_input_cb, hg_handle, hg_handle->in_buf,
-            hg_handle->in_buf_size, context->request_mask,
-            &hg_handle->na_recv_op_id);
+            hg_handle->in_buf_size, hg_handle->in_buf_plugin_data,
+            context->request_mask, &hg_handle->na_recv_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post unexpected recv for input buffer");
         ret = HG_NA_ERROR;
