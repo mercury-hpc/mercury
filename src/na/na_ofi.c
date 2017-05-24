@@ -72,43 +72,7 @@
 /* Global Variables */
 /********************/
 
-enum na_ofi_prov_type {
-    NA_OFI_PROV_SOCKETS,
-    NA_OFI_PROV_PSM2,
-    NA_OFI_PROV_VERBS,
-    NA_OFI_PROV_GNI
-};
-
-enum na_ofi_mr_mode {
-    NA_OFI_MR_SCALABLE,
-    NA_OFI_MR_BASIC,
-};
-
-struct na_ofi_domain {
-    enum na_ofi_prov_type nod_prov_type; /* OFI provider type */
-    enum na_ofi_mr_mode nod_mr_mode; /* OFI memory region mode */
-    char *nod_prov_name; /* OFI provider name */
-    struct fi_info *nod_prov; /* OFI provider handle */
-    struct fid_fabric *nod_fabric; /* Fabric domain handle */
-    struct fid_domain *nod_domain; /* Access domain handle */
-    /* Memory region handle, only valid for MR_SCALABLE */
-    struct fid_mr *nod_mr;
-    struct fid_av *nod_av; /* Address vector handle */
-    /*
-     * Address hash-table, to map the source-side address to fi_addr_t.
-     * The key is 64bits value serialized from source-side IP+Port (see
-     * na_ofi_reqhdr_2_key), the value is fi_addr_t.
-     */
-    hg_hash_table_t *nod_addr_ht;
-    /* the rwlock to protect nod_addr_ht */
-    hg_thread_rwlock_t nod_rwlock;
-    uint32_t nod_refcount; /* Refcount of this domain */
-    size_t nod_src_addrlen;
-    size_t nod_dest_addrlen;
-    HG_LIST_ENTRY(na_ofi_domain) nod_entry; /* Entry in nog_domain_list */
-};
-
-struct na_ofi_global_data {
+static struct na_ofi_global_data {
     struct fi_info *nog_providers; /* All available providers */
     HG_LIST_HEAD(na_ofi_domain) nog_domain_list; /* OFI access domain list */
     uint32_t nog_refcount; /* Refcount to free nog_providers */
@@ -157,9 +121,41 @@ struct na_ofi_global_data {
 /* Local Type and Struct Definition */
 /************************************/
 
-typedef struct na_ofi_op_id na_ofi_op_id_t;
-typedef struct na_ofi_addr na_ofi_addr_t;
-typedef struct na_ofi_mem_handle na_ofi_mem_handle_t;
+enum na_ofi_prov_type {
+    NA_OFI_PROV_SOCKETS,
+    NA_OFI_PROV_PSM2,
+    NA_OFI_PROV_VERBS,
+    NA_OFI_PROV_GNI
+};
+
+enum na_ofi_mr_mode {
+    NA_OFI_MR_SCALABLE,
+    NA_OFI_MR_BASIC,
+};
+
+struct na_ofi_domain {
+    enum na_ofi_prov_type nod_prov_type; /* OFI provider type */
+    enum na_ofi_mr_mode nod_mr_mode; /* OFI memory region mode */
+    char *nod_prov_name; /* OFI provider name */
+    struct fi_info *nod_prov; /* OFI provider handle */
+    struct fid_fabric *nod_fabric; /* Fabric domain handle */
+    struct fid_domain *nod_domain; /* Access domain handle */
+    /* Memory region handle, only valid for MR_SCALABLE */
+    struct fid_mr *nod_mr;
+    struct fid_av *nod_av; /* Address vector handle */
+    /*
+     * Address hash-table, to map the source-side address to fi_addr_t.
+     * The key is 64bits value serialized from source-side IP+Port (see
+     * na_ofi_reqhdr_2_key), the value is fi_addr_t.
+     */
+    hg_hash_table_t *nod_addr_ht;
+    /* the rwlock to protect nod_addr_ht */
+    hg_thread_rwlock_t nod_rwlock;
+    uint32_t nod_refcount; /* Refcount of this domain */
+    size_t nod_src_addrlen;
+    size_t nod_dest_addrlen;
+    HG_LIST_ENTRY(na_ofi_domain) nod_entry; /* Entry in nog_domain_list */
+};
 
 /**
  * Inline header for NA_OFI (16 bytes).
@@ -167,12 +163,12 @@ typedef struct na_ofi_mem_handle na_ofi_mem_handle_t;
  * It is mainly to piggyback the source-side IP/port address for the unexpected
  * message. For those providers that does not support FI_SOURCE/FI_SOURCE_ERR.
  */
-typedef struct {
+struct na_ofi_reqhdr {
     na_uint32_t fih_feats; /* feature bits */
     na_uint32_t fih_magic; /* magic number for byte-order checking */
     na_uint32_t fih_ip; /* IP addr in integer */
     na_uint32_t fih_port; /* Port number */
-} na_ofi_reqhdr_t;
+};
 
 struct na_ofi_private_data {
     struct na_ofi_domain *nop_domain; /* Point back to access domain */
@@ -184,7 +180,7 @@ struct na_ofi_private_data {
     HG_QUEUE_HEAD(na_ofi_op_id) nop_unexpected_op_queue;
     hg_thread_mutex_t nop_unexpected_op_mutex;
     char *nop_uri; /* URI address string */
-    na_ofi_reqhdr_t nop_req_hdr; /* request header */
+    struct na_ofi_reqhdr nop_req_hdr; /* request header */
     /* nop_mutex only used for verbs provider as it is not thread safe now */
     hg_thread_mutex_t nop_mutex;
 };
@@ -307,7 +303,7 @@ na_ofi_with_reqhdr(na_class_t *na_class)
  * Converts the inline header to a 64 bits key to search corresponding FI addr.
  */
 static inline na_uint64_t
-na_ofi_reqhdr_2_key(na_ofi_reqhdr_t *hdr)
+na_ofi_reqhdr_2_key(struct na_ofi_reqhdr *hdr)
 {
     return (((na_uint64_t)hdr->fih_ip) << 32 | hdr->fih_port);
 }
@@ -416,7 +412,7 @@ out:
 
 /* lookup the address hash-table */
 static na_return_t
-na_ofi_addr_ht_lookup(na_class_t *na_class, na_ofi_reqhdr_t *reqhdr,
+na_ofi_addr_ht_lookup(na_class_t *na_class, struct na_ofi_reqhdr *reqhdr,
                       fi_addr_t *src_addr)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
@@ -642,7 +638,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
     unsigned int timeout);
 
 static na_return_t
-na_ofi_complete(na_ofi_addr_t *na_ofi_addr, na_ofi_op_id_t *na_ofi_op_id,
+na_ofi_complete(struct na_ofi_addr *na_ofi_addr, struct na_ofi_op_id *na_ofi_op_id,
     na_return_t ret);
 
 static void
@@ -708,7 +704,7 @@ const na_class_t na_ofi_class_g = {
 static int
 na_ofi_getinfo(const char *protocol_name)
 {
-    struct fi_info *hints;
+    struct fi_info *hints = NULL;
     struct fi_info *providers = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
@@ -759,7 +755,7 @@ na_ofi_getinfo(const char *protocol_name)
     }
     hints->domain_attr->av_type       = FI_AV_MAP;
     hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
-    hints->domain_attr->mr_mode       = ~(FI_MR_BASIC | FI_MR_SCALABLE);
+    hints->domain_attr->mr_mode       = FI_MR_UNSPEC;
 
     /**
      * fi_getinfo:  returns information about fabric services.
@@ -774,7 +770,6 @@ na_ofi_getinfo(const char *protocol_name)
                     &providers); /* Out: List of matching providers */
     if (rc != 0) {
         NA_LOG_ERROR("fi_getinfo failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        fi_freeinfo(hints);
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
@@ -785,9 +780,9 @@ na_ofi_getinfo(const char *protocol_name)
     nofi_gdata.nog_providers = providers;
     HG_LIST_INIT(&nofi_gdata.nog_domain_list);
 
-    fi_freeinfo(hints);
-
 out:
+    if (hints)
+        fi_freeinfo(hints);
     return ret;
 }
 
@@ -1522,7 +1517,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ofi_op_id_addref(na_ofi_op_id_t *na_ofi_op_id)
+na_ofi_op_id_addref(struct na_ofi_op_id *na_ofi_op_id)
 {
     /* init as 1 when op_create */
     assert(hg_atomic_get32(&na_ofi_op_id->noo_refcount));
@@ -1533,7 +1528,7 @@ na_ofi_op_id_addref(na_ofi_op_id_t *na_ofi_op_id)
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ofi_op_id_decref(na_ofi_op_id_t *na_ofi_op_id)
+na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id)
 {
     assert(hg_atomic_get32(&na_ofi_op_id->noo_refcount) > 0);
 
@@ -1551,9 +1546,9 @@ na_ofi_op_id_decref(na_ofi_op_id_t *na_ofi_op_id)
 static na_op_id_t
 na_ofi_op_create(na_class_t NA_UNUSED *na_class)
 {
-    na_ofi_op_id_t *na_ofi_op_id = NULL;
+    struct na_ofi_op_id *na_ofi_op_id = NULL;
 
-    na_ofi_op_id = (na_ofi_op_id_t *)calloc(1, sizeof(na_ofi_op_id_t));
+    na_ofi_op_id = (struct na_ofi_op_id *)calloc(1, sizeof(struct na_ofi_op_id));
     if (!na_ofi_op_id) {
         NA_LOG_ERROR("Could not allocate NA OFI operation ID");
         goto done;
@@ -1570,7 +1565,7 @@ done:
 static na_return_t
 na_ofi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
 {
-    na_ofi_op_id_t *na_ofi_op_id = (na_ofi_op_id_t *) op_id;
+    struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
 
     na_ofi_op_id_decref(na_ofi_op_id);
 
@@ -1657,7 +1652,7 @@ na_ofi_addr_alloc(const char *name)
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ofi_addr_addref(na_ofi_addr_t *na_ofi_addr)
+na_ofi_addr_addref(struct na_ofi_addr *na_ofi_addr)
 {
     assert(hg_atomic_get32(&na_ofi_addr->noa_refcount));
     hg_atomic_incr32(&na_ofi_addr->noa_refcount);
@@ -1666,7 +1661,7 @@ na_ofi_addr_addref(na_ofi_addr_t *na_ofi_addr)
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ofi_addr_decref(na_ofi_addr_t *na_ofi_addr)
+na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr)
 {
     assert(hg_atomic_get32(&na_ofi_addr->noa_refcount) > 0);
 
@@ -1760,11 +1755,11 @@ out:
 static na_return_t
 na_ofi_addr_self(na_class_t *na_class, na_addr_t *addr)
 {
-    na_ofi_addr_t *na_ofi_addr = NULL;
+    struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate addr */
-    na_ofi_addr = (na_ofi_addr_t *)calloc(1, sizeof(*na_ofi_addr));
+    na_ofi_addr = (struct na_ofi_addr *)calloc(1, sizeof(*na_ofi_addr));
     if (!na_ofi_addr) {
         NA_LOG_ERROR("Could not allocate OFI addr");
         ret = NA_NOMEM_ERROR;
@@ -1791,7 +1786,7 @@ static na_return_t
 na_ofi_addr_dup(na_class_t NA_UNUSED *na_class, na_addr_t addr,
     na_addr_t *new_addr)
 {
-    na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)addr;
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *)addr;
 
     na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_addr_free() */
     *new_addr = addr;
@@ -1803,7 +1798,7 @@ na_ofi_addr_dup(na_class_t NA_UNUSED *na_class, na_addr_t addr,
 static na_return_t
 na_ofi_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
-    na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)addr;
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *)addr;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_ofi_addr) {
@@ -1821,7 +1816,7 @@ na_ofi_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 static na_bool_t
 na_ofi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
-    na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *) addr;
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) addr;
 
     return na_ofi_addr->noa_self;
 }
@@ -1831,7 +1826,7 @@ static na_return_t
 na_ofi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
     na_size_t *buf_size, na_addr_t addr)
 {
-    na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *) addr;
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) addr;
     na_size_t str_len;
     na_return_t ret = NA_SUCCESS;
 
@@ -1882,7 +1877,7 @@ static na_size_t
 na_ofi_msg_get_reserved_unexpected_size(na_class_t *na_class)
 {
     if (na_ofi_with_reqhdr(na_class) == NA_TRUE)
-        return sizeof(na_ofi_reqhdr_t);
+        return sizeof(struct na_ofi_reqhdr);
     else
         return 0;
 }
@@ -1968,7 +1963,7 @@ na_ofi_msg_get_max_tag(na_class_t NA_UNUSED *na_class)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_msg_unexpected_op_push(na_class_t *na_class,
-    na_ofi_op_id_t *na_ofi_op_id)
+    struct na_ofi_op_id *na_ofi_op_id)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     na_return_t ret = NA_SUCCESS;
@@ -1990,7 +1985,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_msg_unexpected_op_remove(na_class_t *na_class,
-    na_ofi_op_id_t *na_ofi_op_id)
+    struct na_ofi_op_id *na_ofi_op_id)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     na_return_t ret = NA_SUCCESS;
@@ -2011,11 +2006,11 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_ofi_op_id_t *
+static struct na_ofi_op_id *
 na_ofi_msg_unexpected_op_pop(na_class_t * na_class)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
-    na_ofi_op_id_t *na_ofi_op_id;
+    struct na_ofi_op_id *na_ofi_op_id;
 
     hg_thread_mutex_lock(&priv->nop_unexpected_op_mutex);
     na_ofi_op_id = HG_QUEUE_FIRST(&priv->nop_unexpected_op_queue);
@@ -2033,8 +2028,8 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid_ep *ep_hdl = priv->nop_ep;
-    na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)dest;
-    na_ofi_op_id_t *na_ofi_op_id = NULL;
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *)dest;
+    struct na_ofi_op_id *na_ofi_op_id = NULL;
     struct fid_mr *mr_hdl = plugin_data;
     void *reqhdr = (void *) buf; /* TODO would be nice to keep the const */
     na_return_t ret = NA_SUCCESS;
@@ -2044,10 +2039,10 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (na_ofi_op_id_t *) *op_id;
+        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
         na_ofi_op_id_addref(na_ofi_op_id);
     } else {
-        na_ofi_op_id = (na_ofi_op_id_t *)na_ofi_op_create(na_class);
+        na_ofi_op_id = (struct na_ofi_op_id *)na_ofi_op_create(na_class);
         if (!na_ofi_op_id) {
             NA_LOG_ERROR("Could not create NA OFI operation ID");
             ret = NA_NOMEM_ERROR;
@@ -2110,17 +2105,17 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid_ep *ep_hdl = priv->nop_ep;
-    na_ofi_op_id_t *na_ofi_op_id = NULL;
+    struct na_ofi_op_id *na_ofi_op_id = NULL;
     struct fid_mr *mr_hdl = plugin_data;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (na_ofi_op_id_t *) *op_id;
+        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
         na_ofi_op_id_addref(na_ofi_op_id);
     } else {
-        na_ofi_op_id = (na_ofi_op_id_t *)na_ofi_op_create(na_class);
+        na_ofi_op_id = (struct na_ofi_op_id *)na_ofi_op_create(na_class);
         if (!na_ofi_op_id) {
             NA_LOG_ERROR("Could not create NA OFI operation ID");
             ret = NA_NOMEM_ERROR;
@@ -2177,9 +2172,9 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid_ep *ep_hdl = priv->nop_ep;
-    na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)dest;
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *)dest;
     struct fid_mr *mr_hdl = plugin_data;
-    na_ofi_op_id_t *na_ofi_op_id = NULL;
+    struct na_ofi_op_id *na_ofi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
@@ -2187,10 +2182,10 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (na_ofi_op_id_t *) *op_id;
+        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
         na_ofi_op_id_addref(na_ofi_op_id);
     } else {
-        na_ofi_op_id = (na_ofi_op_id_t *)na_ofi_op_create(na_class);
+        na_ofi_op_id = (struct na_ofi_op_id *)na_ofi_op_create(na_class);
         if (!na_ofi_op_id) {
             NA_LOG_ERROR("Could not create NA OFI operation ID");
             ret = NA_NOMEM_ERROR;
@@ -2246,9 +2241,9 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid_ep *ep_hdl = priv->nop_ep;
-    na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *)source;
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *)source;
     struct fid_mr *mr_hdl = plugin_data;
-    na_ofi_op_id_t *na_ofi_op_id = NULL;
+    struct na_ofi_op_id *na_ofi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
@@ -2256,10 +2251,10 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (na_ofi_op_id_t *) *op_id;
+        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
         na_ofi_op_id_addref(na_ofi_op_id);
     } else {
-        na_ofi_op_id = (na_ofi_op_id_t *)na_ofi_op_create(na_class);
+        na_ofi_op_id = (struct na_ofi_op_id *)na_ofi_op_create(na_class);
         if (!na_ofi_op_id) {
             NA_LOG_ERROR("Could not create NA OFI operation ID");
             ret = NA_NOMEM_ERROR;
@@ -2315,12 +2310,12 @@ static na_return_t
 na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     na_size_t buf_size, unsigned long flags, na_mem_handle_t *mem_handle)
 {
-    na_ofi_mem_handle_t *na_ofi_mem_handle = NULL;
+    struct na_ofi_mem_handle *na_ofi_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate memory handle */
-    na_ofi_mem_handle = (na_ofi_mem_handle_t *) calloc(1,
-        sizeof(na_ofi_mem_handle_t));
+    na_ofi_mem_handle = (struct na_ofi_mem_handle *) calloc(1,
+        sizeof(struct na_ofi_mem_handle));
     if (!na_ofi_mem_handle) {
         NA_LOG_ERROR("Could not allocate NA OFI memory handle");
         ret = NA_NOMEM_ERROR;
@@ -2343,7 +2338,7 @@ static na_return_t
 na_ofi_mem_handle_free(na_class_t NA_UNUSED *na_class,
     na_mem_handle_t mem_handle)
 {
-    na_ofi_mem_handle_t *ofi_mem_handle = (na_ofi_mem_handle_t *) mem_handle;
+    struct na_ofi_mem_handle *ofi_mem_handle = (struct na_ofi_mem_handle *) mem_handle;
 
     free(ofi_mem_handle);
 
@@ -2355,7 +2350,7 @@ static na_return_t
 na_ofi_mem_register(na_class_t NA_UNUSED *na_class,
     na_mem_handle_t NA_UNUSED mem_handle)
 {
-    na_ofi_mem_handle_t *na_ofi_mem_handle = mem_handle;
+    struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     na_uint64_t access;
     int rc = 0;
@@ -2401,7 +2396,7 @@ out:
 static na_return_t
 na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
-    na_ofi_mem_handle_t *na_ofi_mem_handle = mem_handle;
+    struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     int rc;
 
@@ -2498,13 +2493,13 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 {
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-    na_ofi_mem_handle_t *ofi_local_mem_handle =
-        (na_ofi_mem_handle_t *) local_mem_handle;
-    na_ofi_mem_handle_t *ofi_remote_mem_handle =
-        (na_ofi_mem_handle_t *) remote_mem_handle;
+    struct na_ofi_mem_handle *ofi_local_mem_handle =
+        (struct na_ofi_mem_handle *) local_mem_handle;
+    struct na_ofi_mem_handle *ofi_remote_mem_handle =
+        (struct na_ofi_mem_handle *) remote_mem_handle;
     struct iovec iov;
-    na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *) remote_addr;
-    na_ofi_op_id_t *na_ofi_op_id = NULL;
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) remote_addr;
+    struct na_ofi_op_id *na_ofi_op_id = NULL;
     void *local_desc;
     na_uint64_t rma_key;
     na_return_t ret = NA_SUCCESS;
@@ -2514,10 +2509,10 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (na_ofi_op_id_t *) *op_id;
+        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
         na_ofi_op_id_addref(na_ofi_op_id);
     } else {
-        na_ofi_op_id = (na_ofi_op_id_t *) na_ofi_op_create(na_class);
+        na_ofi_op_id = (struct na_ofi_op_id *) na_ofi_op_create(na_class);
         if (!na_ofi_op_id) {
             NA_LOG_ERROR("Could not create NA OFI operation ID");
             ret = NA_NOMEM_ERROR;
@@ -2581,13 +2576,13 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
-    na_ofi_mem_handle_t *ofi_local_mem_handle =
-        (na_ofi_mem_handle_t *) local_mem_handle;
-    na_ofi_mem_handle_t *ofi_remote_mem_handle =
-        (na_ofi_mem_handle_t *) remote_mem_handle;
+    struct na_ofi_mem_handle *ofi_local_mem_handle =
+        (struct na_ofi_mem_handle *) local_mem_handle;
+    struct na_ofi_mem_handle *ofi_remote_mem_handle =
+        (struct na_ofi_mem_handle *) remote_mem_handle;
     struct iovec iov;
-    na_ofi_addr_t *na_ofi_addr = (na_ofi_addr_t *) remote_addr;
-    na_ofi_op_id_t *na_ofi_op_id = NULL;
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) remote_addr;
+    struct na_ofi_op_id *na_ofi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     void *local_desc;
     na_uint64_t rma_key;
@@ -2597,10 +2592,10 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (na_ofi_op_id_t *) *op_id;
+        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
         na_ofi_op_id_addref(na_ofi_op_id);
     } else {
-        na_ofi_op_id = (na_ofi_op_id_t *) na_ofi_op_create(na_class);
+        na_ofi_op_id = (struct na_ofi_op_id *) na_ofi_op_create(na_class);
         if (!na_ofi_op_id) {
             NA_LOG_ERROR("Could not create NA OFI operation ID");
             ret = NA_NOMEM_ERROR;
@@ -2661,13 +2656,13 @@ static void
 na_ofi_handle_send_event(na_class_t NA_UNUSED *class,
     na_context_t NA_UNUSED *context, struct fi_cq_tagged_entry *cq_event)
 {
-    na_ofi_op_id_t *na_ofi_op_id;
-    na_ofi_addr_t *na_ofi_addr;
+    struct na_ofi_op_id *na_ofi_op_id;
+    struct na_ofi_addr *na_ofi_addr;
     na_return_t ret = NA_SUCCESS;
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
                                 noo_fi_ctx);
-    na_ofi_addr = (na_ofi_addr_t *)na_ofi_op_id->noo_addr;
+    na_ofi_addr = (struct na_ofi_addr *)na_ofi_op_id->noo_addr;
 
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
         return;
@@ -2686,8 +2681,8 @@ na_ofi_handle_recv_event(na_class_t *na_class,
     struct fi_cq_tagged_entry *cq_event)
 {
     struct na_ofi_addr *peer_addr = NULL;
-    na_ofi_reqhdr_t *reqhdr;
-    na_ofi_op_id_t *na_ofi_op_id;
+    struct na_ofi_reqhdr *reqhdr;
+    struct na_ofi_op_id *na_ofi_op_id;
     na_return_t ret = NA_SUCCESS;
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
@@ -2755,13 +2750,13 @@ static void
 na_ofi_handle_rma_event(na_class_t NA_UNUSED *class,
     na_context_t NA_UNUSED *context, struct fi_cq_tagged_entry *cq_event)
 {
-    na_ofi_op_id_t *na_ofi_op_id;
-    na_ofi_addr_t *na_ofi_addr;
+    struct na_ofi_op_id *na_ofi_op_id;
+    struct na_ofi_addr *na_ofi_addr;
     na_return_t ret = NA_SUCCESS;
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
                                 noo_fi_ctx);
-    na_ofi_addr = (na_ofi_addr_t *)na_ofi_op_id->noo_addr;
+    na_ofi_addr = (struct na_ofi_addr *)na_ofi_op_id->noo_addr;
 
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
         return;
@@ -2939,7 +2934,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_complete(na_ofi_addr_t *na_ofi_addr, na_ofi_op_id_t *na_ofi_op_id,
+na_ofi_complete(struct na_ofi_addr *na_ofi_addr, struct na_ofi_op_id *na_ofi_op_id,
     na_return_t op_ret)
 {
     struct na_cb_info *callback_info = NULL;
@@ -3024,9 +3019,9 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
     na_op_id_t op_id)
 {
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
-    na_ofi_op_id_t *na_ofi_op_id = (na_ofi_op_id_t *) op_id;
-    na_ofi_op_id_t *tmp = NULL, *first = NULL;
-    na_ofi_addr_t *na_ofi_addr = NULL;
+    struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
+    struct na_ofi_op_id *tmp = NULL, *first = NULL;
+    struct na_ofi_addr *na_ofi_addr = NULL;
     ssize_t rc;
     na_return_t ret = NA_SUCCESS;
 
@@ -3076,7 +3071,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
             NA_LOG_DEBUG("fi_cancel expected recv failed, rc: %d(%s).",
                          rc, fi_strerror((int) -rc));
 
-        na_ofi_addr = (na_ofi_addr_t *)na_ofi_op_id->noo_addr;
+        na_ofi_addr = (struct na_ofi_addr *)na_ofi_op_id->noo_addr;
         ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, NA_CANCELED);
         break;
     case NA_CB_SEND_UNEXPECTED:
@@ -3090,7 +3085,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
             NA_LOG_DEBUG("fi_cancel (op type %d) failed, rc: %d(%s).",
                          na_ofi_op_id->noo_type, rc, fi_strerror((int) -rc));
 
-        na_ofi_addr = (na_ofi_addr_t *)na_ofi_op_id->noo_addr;
+        na_ofi_addr = (struct na_ofi_addr *)na_ofi_op_id->noo_addr;
         ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, NA_CANCELED);
         break;
     default:
