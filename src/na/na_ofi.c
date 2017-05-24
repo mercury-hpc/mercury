@@ -45,6 +45,7 @@
 #include "mercury_hash_table.h"
 #include "mercury_time.h"
 #include "mercury_atomic.h"
+#include "mercury_mem.h"
 
 #include <rdma/fabric.h>
 #include <rdma/fi_domain.h>
@@ -1887,43 +1888,30 @@ static void *
 na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-    na_size_t alignment;
+    na_size_t page_size = (na_size_t) hg_mem_get_page_size();
     void *mem_ptr = NULL;
     struct fid_mr *mr_hdl = NULL;
     int rc;
 
-#ifdef _WIN32
-    SYSTEM_INFO system_info;
-    GetSystemInfo (&system_info);
-    alignment = system_info.dwPageSize;
-    mem_ptr = _aligned_malloc(size, alignment);
-#else
-    alignment = (na_size_t) sysconf(_SC_PAGE_SIZE);
-
-    if (posix_memalign(&mem_ptr, alignment, size) != 0) {
-        NA_LOG_ERROR("posix_memalign failed");
-        return NULL;
+    mem_ptr = hg_mem_aligned_alloc(page_size, size);
+    if (!mem_ptr) {
+        NA_LOG_ERROR("Could not allocate %d bytes", (int) size);
+        goto out;
     }
-#endif
-    if (mem_ptr)
-        memset(mem_ptr, 0, size);
+    memset(mem_ptr, 0, size);
 
     rc = fi_mr_reg(domain->nod_domain, mem_ptr, size, FI_SEND | FI_RECV,
                    0ULL /* offset */, (na_uint64_t)mem_ptr /* request_key */,
                    0 /* flags */, &mr_hdl, NULL /* context */);
     if (rc != 0) {
         NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
-#ifdef _WIN32
-        _aligned_free(mem_ptr);
-#else
-        free(mem_ptr);
-#endif
-        return NULL;
+        hg_mem_aligned_free(mem_ptr);
+        goto out;
     }
 
-    if (plugin_data != NULL)
-        *plugin_data = mr_hdl;
+    *plugin_data = mr_hdl;
 
+out:
     return mem_ptr;
 }
 
@@ -1935,20 +1923,14 @@ na_ofi_msg_buf_free(na_class_t NA_UNUSED *na_class, void *buf,
     struct fid_mr *mr_hdl = plugin_data;
     int rc;
 
-    if (mr_hdl != NULL) {
-        rc = fi_close(&mr_hdl->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close mr_hdl failed, rc: %d(%s).",
-                         rc, fi_strerror(-rc));
-            return NA_PROTOCOL_ERROR;
-        }
+    rc = fi_close(&mr_hdl->fid);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_close mr_hdl failed, rc: %d(%s).",
+            rc, fi_strerror(-rc));
+        return NA_PROTOCOL_ERROR;
     }
 
-#ifdef _WIN32
-    _aligned_free(buf);
-#else
-    free(buf);
-#endif
+    hg_mem_aligned_free(buf);
 
     return NA_SUCCESS;
 }
