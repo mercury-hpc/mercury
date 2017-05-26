@@ -756,7 +756,11 @@ na_ofi_getinfo(const char *protocol_name)
     }
     hints->domain_attr->av_type       = FI_AV_MAP;
     hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
+#if FI_MINOR_VERSION >= 5
+    hints->domain_attr->mr_mode       = ~(FI_MR_BASIC | FI_MR_SCALABLE);
+#else
     hints->domain_attr->mr_mode       = FI_MR_UNSPEC;
+#endif
 
     /**
      * fi_getinfo:  returns information about fabric services.
@@ -1041,7 +1045,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
-    na_bool_t listen)
+    na_bool_t NA_UNUSED listen)
 {
     struct na_ofi_private_data *priv;
     struct na_ofi_domain *domain;
@@ -1428,10 +1432,26 @@ retry_getname:
     }
     addrlen -= (size_t) rc;
     if (domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
-        domain->nod_prov_type == NA_OFI_PROV_GNI)
+        domain->nod_prov_type == NA_OFI_PROV_GNI) {
         snprintf(ep_addr_str + rc, addrlen, "%s:%s", node, service);
-    else
+    } else {
         fi_av_straddr(domain->nod_av, ep_addr, ep_addr_str + rc, &addrlen);
+        /* verbs provider returns "verbs://inet://192.168.1.64:22222" style */
+        if (domain->nod_prov_type == NA_OFI_PROV_VERBS &&
+            !strncmp(ep_addr_str, "verbs://inet", 12)) {
+            char *tmp_dst, *tmp_src;
+
+            tmp_dst = ep_addr_str + 8;
+            tmp_src = ep_addr_str + 15;
+            while (*tmp_src != 0) {
+                *tmp_dst = *tmp_src;
+                tmp_dst++;
+                tmp_src++;
+            }
+            *tmp_dst = 0;
+        }
+    }
+
     priv->nop_uri = strdup(ep_addr_str);
     free(ep_addr);
     if (priv->nop_uri == NULL) {
