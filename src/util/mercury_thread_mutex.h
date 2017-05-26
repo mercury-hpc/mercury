@@ -14,10 +14,12 @@
 #include "mercury_util_config.h"
 #ifdef _WIN32
   #include <windows.h>
+  #define HG_THREAD_MUTEX_INITIALIZER NULL
   typedef CRITICAL_SECTION hg_thread_mutex_t;
 #else
   #include <pthread.h>
   #include <errno.h>
+  #define HG_THREAD_MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
   typedef pthread_mutex_t hg_thread_mutex_t;
 #endif
 
