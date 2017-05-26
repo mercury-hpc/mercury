@@ -968,6 +968,7 @@ na_ofi_domain_open(const char *protocol_name, const char *domain_name,
     na_ofi_domain = (struct na_ofi_domain *) malloc(
         sizeof(struct na_ofi_domain));
     if (na_ofi_domain == NULL) {
+        NA_LOG_ERROR("Could not allocate na_ofi_domain");
         ret = NA_NOMEM_ERROR;
         goto out;
     }
@@ -1105,13 +1106,15 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
     na_return_t ret = NA_SUCCESS;
     int rc;
 
+    if (!na_ofi_domain) goto out;
+
+    /* Remove from global domain list if not used anymore */
+    hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
     if (hg_atomic_decr32(&na_ofi_domain->nod_refcount)) {
         /* Cannot free yet */
+        hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
         goto out;
     }
-
-    /* Remove from global domain list */
-    hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
     HG_LIST_REMOVE(na_ofi_domain, nod_entry);
     hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
 
@@ -1194,6 +1197,7 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     na_ofi_endpoint = (struct na_ofi_endpoint *) malloc(
         sizeof(struct na_ofi_endpoint));
     if (na_ofi_endpoint == NULL) {
+        NA_LOG_ERROR("Could not allocate na_ofi_endpoint");
         ret = NA_NOMEM_ERROR;
         goto out;
     }
@@ -1313,6 +1317,8 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
 {
     na_return_t ret = NA_SUCCESS;
     int rc;
+
+    if (!na_ofi_endpoint) goto out;
 
     /* Close endpoint */
     if (na_ofi_endpoint->noe_ep) {
