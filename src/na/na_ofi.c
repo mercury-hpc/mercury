@@ -126,8 +126,6 @@ struct na_ofi_domain {
     enum na_ofi_prov_type nod_prov_type;    /* OFI provider type */
     enum na_ofi_mr_mode nod_mr_mode;        /* OFI memory region mode */
     char *nod_prov_name;                    /* OFI provider name */
-    char *nod_node;                         /* Fabric address */
-    char *nod_service;                      /* Service name */
     struct fi_info *nod_prov;               /* OFI provider info */
     struct fid_fabric *nod_fabric;          /* Fabric domain handle */
     struct fid_domain *nod_domain;          /* Access domain handle */
@@ -140,11 +138,15 @@ struct na_ofi_domain {
      * na_ofi_reqhdr_2_key), the value is fi_addr_t.
      */
     hg_hash_table_t *nod_addr_ht;
-    /* the rwlock to protect nod_addr_ht */
-    hg_thread_rwlock_t nod_rwlock;
+    hg_thread_rwlock_t nod_rwlock;          /* RW lock to protect nod_addr_ht */
+    hg_atomic_int32_t nod_refcount;         /* Refcount of this domain */
+    HG_LIST_ENTRY(na_ofi_domain) nod_entry; /* Entry in nog_domain_list */
 };
 
 struct na_ofi_endpoint {
+    char *noe_node;             /* Fabric address */
+    char *noe_service;          /* Service name */
+    struct fi_info *noe_prov;   /* OFI provider info */
     struct fid_ep *noe_ep;      /* Endpoint to communicate on */
     struct fid_cq *noe_cq;      /* Completion queue handle */
     struct fid_wait *noe_wait;  /* Wait set handle */
@@ -490,14 +492,15 @@ na_ofi_verify_provider(const char *protocol_name, const char *domain_name,
     const struct fi_info *fi_info);
 
 static na_return_t
-na_ofi_domain_open(const char *node, const char *service,
-    const struct fi_info *prov, struct na_ofi_domain **na_ofi_domain_p);
+na_ofi_domain_open(const char *protocol_name, const char *domain_name,
+    struct na_ofi_domain **na_ofi_domain_p);
 
 static na_return_t
 na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
 
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
+    const char *node, const char *service,
     struct na_ofi_endpoint **na_ofi_endpoint_p);
 
 static na_return_t
@@ -719,6 +722,14 @@ const na_class_t na_ofi_class_g = {
     na_ofi_cancel                           /* cancel */
 };
 
+/* OFI access domain list */
+static HG_LIST_HEAD(na_ofi_domain)
+na_ofi_domain_list_g = HG_LIST_HEAD_INITIALIZER(na_ofi_domain);
+
+/* Protects domain list */
+static hg_thread_mutex_t na_ofi_domain_list_mutex_g =
+    HG_THREAD_MUTEX_INITIALIZER;
+
 /*****************/
 /* Local Helpers */
 /*****************/
@@ -891,14 +902,68 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_domain_open(const char *node, const char *service,
-    const struct fi_info *prov, struct na_ofi_domain **na_ofi_domain_p)
+na_ofi_domain_open(const char *protocol_name, const char *domain_name,
+    struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain;
     struct fi_av_attr av_attr = {0};
-    struct fi_info *hints = NULL;
+    struct fi_info *prov, *providers = NULL;
+    na_bool_t domain_found = NA_FALSE, prov_found = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
     int rc;
+
+    /**
+     * Look for existing domain. It allows to create endpoints with different
+     * providers. The endpoints with same provider name can reuse the same
+     * na_ofi_domain.
+     */
+    hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
+    HG_LIST_FOREACH(na_ofi_domain, &na_ofi_domain_list_g, nod_entry) {
+        if (na_ofi_verify_provider(protocol_name, domain_name,
+            na_ofi_domain->nod_prov)) {
+            hg_atomic_incr32(&na_ofi_domain->nod_refcount);
+            domain_found = NA_TRUE;
+            break;
+        }
+    }
+    hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
+    if (domain_found) {
+        /*
+        NA_LOG_DEBUG("Found existing domain (%s)",
+            na_ofi_domain->nod_prov_name);
+        */
+        *na_ofi_domain_p = na_ofi_domain;
+        goto out;
+    }
+
+    /* If no pre-existing domain, get OFI providers info */
+    ret = na_ofi_getinfo(protocol_name, &providers);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
+        goto out;
+    }
+
+    /* Try to find provider that matches protocol and domain/host name */
+    prov = providers;
+    while (prov != NULL) {
+        if (na_ofi_verify_provider(protocol_name, domain_name, prov)) {
+            /*
+            NA_LOG_DEBUG("mode 0x%llx, fabric_attr - prov_name %s, name - %s, "
+                         "domain_attr - name %s.", prov->mode,
+                         prov->fabric_attr->prov_name, prov->fabric_attr->name,
+                         prov->domain_attr->name);
+            */
+            prov_found = NA_TRUE;
+            break;
+        }
+        prov = prov->next;
+    }
+    if (!prov_found) {
+        NA_LOG_ERROR("No provider found for \"%s\" protocol on domain \"%s\"",
+                     protocol_name, domain_name);
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
 
     na_ofi_domain = (struct na_ofi_domain *) malloc(
         sizeof(struct na_ofi_domain));
@@ -907,6 +972,7 @@ na_ofi_domain_open(const char *node, const char *service,
         goto out;
     }
     memset(na_ofi_domain, 0, sizeof(struct na_ofi_domain));
+    hg_atomic_set32(&na_ofi_domain->nod_refcount, 1);
 
     /* Create rw lock */
     rc = hg_thread_rwlock_init(&na_ofi_domain->nod_rwlock);
@@ -917,31 +983,17 @@ na_ofi_domain_open(const char *node, const char *service,
     }
 
     /* Keep fi_info */
-    hints = fi_dupinfo(prov);
-    if (!hints) {
+    na_ofi_domain->nod_prov = fi_dupinfo(prov);
+    if (!na_ofi_domain->nod_prov) {
         NA_LOG_ERROR("Could not duplicate fi_info");
         ret = NA_NOMEM_ERROR;
         goto out;
     }
 
     /* Dup provider name */
-    na_ofi_domain->nod_prov_name = strdup(hints->fabric_attr->prov_name);
+    na_ofi_domain->nod_prov_name = strdup(prov->fabric_attr->prov_name);
     if (!na_ofi_domain->nod_prov_name) {
         NA_LOG_ERROR("Could not duplicate name");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
-
-    /* Dup node */
-    if (node && !(na_ofi_domain->nod_node = strdup(node))) {
-        NA_LOG_ERROR("Could not duplicate node name");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
-
-    /* Dup service */
-    if (service && !(na_ofi_domain->nod_service = strdup(service))) {
-        NA_LOG_ERROR("Could not duplicate service name");
         ret = NA_NOMEM_ERROR;
         goto out;
     }
@@ -950,38 +1002,27 @@ na_ofi_domain_open(const char *node, const char *service,
     if (!strcmp(na_ofi_domain->nod_prov_name, "sockets")) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_SOCKETS;
         /* sockets provider without MR_BASIC supporting */
-        hints->domain_attr->mr_mode |= FI_MR_SCALABLE;
+        na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_SCALABLE;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_SCALABLE;
 #if defined(FI_SOURCE_ERR)
     } else if (!strcmp(na_ofi_domain->nod_prov_name, "psm2")) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_PSM2;
-        hints->caps |= (FI_SOURCE | FI_SOURCE_ERR);
-        hints->domain_attr->mr_mode |= FI_MR_BASIC;
+        na_ofi_domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
+        na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
 #endif
     } else if (!strcmp(na_ofi_domain->nod_prov_name, "verbs")) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS;
-        hints->domain_attr->mr_mode |= FI_MR_BASIC;
-        hints->rx_attr->mode |= FI_CONTEXT;
+        na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
+        na_ofi_domain->nod_prov->rx_attr->mode |= FI_CONTEXT;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
     } else if (!strcmp(na_ofi_domain->nod_prov_name, "gni")) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
-        hints->domain_attr->mr_mode |= FI_MR_BASIC;
+        na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
     } else {
         NA_LOG_ERROR("bad domain->nod_prov_name %s.",
             na_ofi_domain->nod_prov_name);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-
-    /* Resolve node / service (always pass a numeric host) */
-    rc = fi_getinfo(NA_OFI_VERSION, na_ofi_domain->nod_node,
-        na_ofi_domain->nod_service, FI_SOURCE | FI_NUMERICHOST, hints,
-        &na_ofi_domain->nod_prov);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_getinfo(%s, %s) failed, rc: %d(%s).", node, service,
-            rc, fi_strerror(-rc));
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
@@ -1042,13 +1083,18 @@ na_ofi_domain_open(const char *node, const char *service,
                                           av_addr_ht_key_free,
                                           av_addr_ht_value_free);
 
+    /* Insert to global domain list */
+    hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
+    HG_LIST_INSERT_HEAD(&na_ofi_domain_list_g, na_ofi_domain, nod_entry);
+    hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
+
     *na_ofi_domain_p = na_ofi_domain;
 
 out:
     if (ret != NA_SUCCESS)
        na_ofi_domain_close(na_ofi_domain);
-    if (hints)
-        fi_freeinfo(hints);
+    if (providers)
+        fi_freeinfo(providers);
     return ret;
 }
 
@@ -1058,6 +1104,16 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
 {
     na_return_t ret = NA_SUCCESS;
     int rc;
+
+    if (hg_atomic_decr32(&na_ofi_domain->nod_refcount)) {
+        /* Cannot free yet */
+        goto out;
+    }
+
+    /* Remove from global domain list */
+    hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
+    HG_LIST_REMOVE(na_ofi_domain, nod_entry);
+    hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
 
     /* Close MR */
     if (na_ofi_domain->nod_mr) {
@@ -1107,6 +1163,7 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
         na_ofi_domain->nod_fabric = NULL;
     }
 
+    /* Free OFI info */
     if (na_ofi_domain->nod_prov)
         fi_freeinfo(na_ofi_domain->nod_prov);
 
@@ -1116,8 +1173,6 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
     hg_thread_rwlock_destroy(&na_ofi_domain->nod_rwlock);
 
     free(na_ofi_domain->nod_prov_name);
-    free(na_ofi_domain->nod_node);
-    free(na_ofi_domain->nod_service);
     free(na_ofi_domain);
 
 out:
@@ -1127,6 +1182,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
+    const char *node, const char *service,
     struct na_ofi_endpoint **na_ofi_endpoint_p)
 {
     struct na_ofi_endpoint *na_ofi_endpoint;
@@ -1143,11 +1199,36 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     }
     memset(na_ofi_endpoint, 0, sizeof(struct na_ofi_endpoint));
 
+    /* Dup node */
+    if (node && !(na_ofi_endpoint->noe_node = strdup(node))) {
+        NA_LOG_ERROR("Could not duplicate node name");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    /* Dup service */
+    if (service && !(na_ofi_endpoint->noe_service = strdup(service))) {
+        NA_LOG_ERROR("Could not duplicate service name");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    /* Resolve node / service (always pass a numeric host) */
+    rc = fi_getinfo(NA_OFI_VERSION, na_ofi_endpoint->noe_node,
+        na_ofi_endpoint->noe_service, FI_SOURCE | FI_NUMERICHOST,
+        na_ofi_domain->nod_prov, &na_ofi_endpoint->noe_prov);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_getinfo(%s, %s) failed, rc: %d(%s).", node, service,
+            rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
     //priv->nop_fi_info->addr_format = FI_SOCKADDR_IN;
 
     /* Create a transport level communication endpoint */
     rc = fi_endpoint(na_ofi_domain->nod_domain, /* In:  Domain object */
-                     na_ofi_domain->nod_prov,   /* In:  Provider */
+                     na_ofi_endpoint->noe_prov, /* In:  Provider */
                      &na_ofi_endpoint->noe_ep,  /* Out: Endpoint object */
                      NULL);                     /* Optional context */
     if (rc != 0) {
@@ -1267,6 +1348,12 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
         na_ofi_endpoint->noe_cq = NULL;
     }
 
+    /* Free OFI info */
+    if (na_ofi_endpoint->noe_prov)
+        fi_freeinfo(na_ofi_endpoint->noe_prov);
+
+    free(na_ofi_endpoint->noe_node);
+    free(na_ofi_endpoint->noe_service);
     free(na_ofi_endpoint);
 
 out:
@@ -1317,8 +1404,8 @@ retry_getname:
 
     if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
         na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
-        snprintf(ep_addr_str + rc, addrlen, "%s:%s", na_ofi_domain->nod_node,
-            na_ofi_domain->nod_service);
+        snprintf(ep_addr_str + rc, addrlen, "%s:%s", na_ofi_endpoint->noe_node,
+            na_ofi_endpoint->noe_service);
     } else {
         fi_av_straddr(na_ofi_domain->nod_av, ep_addr, ep_addr_str + rc,
             &addrlen);
@@ -1448,8 +1535,6 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     char node[NA_OFI_MAX_URI_LEN] = {'\0'};
     char domain_name[NA_OFI_MAX_URI_LEN] = {'\0'};
     char *service = NULL;
-    struct fi_info *prov, *providers = NULL;
-    na_bool_t prov_found = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
 
     /*
@@ -1457,13 +1542,6 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
                  "host_name %s.\n", na_info->class_name, na_info->protocol_name,
                  na_info->host_name);
     */
-
-    /* Get OFI providers info */
-    ret = na_ofi_getinfo(na_info->protocol_name, &providers);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
-        goto out;
-    }
 
     /* Get hostname/port info if available */
     if (na_info->host_name) {
@@ -1478,28 +1556,6 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
             NA_LOG_ERROR("Could not check interfaces");
             goto out;
         }
-    }
-
-    /* Try to find provider that matches protocol and domain/host name */
-    prov = providers;
-    while (prov != NULL) {
-        if (na_ofi_verify_provider(na_info->protocol_name, domain_name, prov)) {
-            /*
-            NA_LOG_DEBUG("mode 0x%llx, fabric_attr - prov_name %s, name - %s, "
-                         "domain_attr - name %s.", prov->mode,
-                         prov->fabric_attr->prov_name, prov->fabric_attr->name,
-                         prov->domain_attr->name);
-            */
-            prov_found = NA_TRUE;
-            break;
-        }
-        prov = prov->next;
-    }
-    if (!prov_found) {
-        NA_LOG_ERROR("No provider found for \"%s\" protocol on domain \"%s\"",
-                     na_info->protocol_name, domain_name);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
     }
 
     /* Create private data */
@@ -1518,18 +1574,19 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     hg_thread_mutex_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_mutex);
 
     /* Create domain */
-    ret = na_ofi_domain_open(node, service, prov,
+    ret = na_ofi_domain_open(na_info->protocol_name, domain_name,
         &NA_OFI_PRIVATE_DATA(na_class)->nop_domain);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not open domain for %s, %s", node, service);
+        NA_LOG_ERROR("Could not open domain for %s, %s", na_info->protocol_name,
+            domain_name);
         goto out;
     }
 
     /* Create endpoint */
     ret = na_ofi_endpoint_open(NA_OFI_PRIVATE_DATA(na_class)->nop_domain,
-        &NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint);
+        node, service, &NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not create endpoint");
+        NA_LOG_ERROR("Could not create endpoint for %s, %s", node, service);
         goto out;
     }
 
@@ -1558,8 +1615,6 @@ out:
         na_ofi_finalize(na_class);
         na_class->private_data = NULL;
     }
-    if (providers)
-        fi_freeinfo(providers);
     return ret;
 }
 
