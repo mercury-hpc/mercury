@@ -69,18 +69,6 @@
 #include <inttypes.h>
 #include <sys/uio.h> /* for struct iovec */
 
-/********************/
-/* Global Variables */
-/********************/
-
-static struct na_ofi_global_data {
-    struct fi_info *nog_providers; /* All available providers */
-    HG_LIST_HEAD(na_ofi_domain) nog_domain_list; /* OFI access domain list */
-    uint32_t nog_refcount; /* Refcount to free nog_providers */
-    hg_thread_mutex_t nog_mutex; /* Protects all fields above */
-    hg_atomic_int32_t nog_init_flag; /* Initialization flag */
-} nofi_gdata;
-
 /****************/
 /* Local Macros */
 /****************/
@@ -135,15 +123,17 @@ enum na_ofi_mr_mode {
 };
 
 struct na_ofi_domain {
-    enum na_ofi_prov_type nod_prov_type; /* OFI provider type */
-    enum na_ofi_mr_mode nod_mr_mode; /* OFI memory region mode */
-    char *nod_prov_name; /* OFI provider name */
-    struct fi_info *nod_prov; /* OFI provider handle */
-    struct fid_fabric *nod_fabric; /* Fabric domain handle */
-    struct fid_domain *nod_domain; /* Access domain handle */
+    enum na_ofi_prov_type nod_prov_type;    /* OFI provider type */
+    enum na_ofi_mr_mode nod_mr_mode;        /* OFI memory region mode */
+    char *nod_prov_name;                    /* OFI provider name */
+    char *nod_node;                         /* Fabric address */
+    char *nod_service;                      /* Service name */
+    struct fi_info *nod_prov;               /* OFI provider info */
+    struct fid_fabric *nod_fabric;          /* Fabric domain handle */
+    struct fid_domain *nod_domain;          /* Access domain handle */
     /* Memory region handle, only valid for MR_SCALABLE */
     struct fid_mr *nod_mr;
-    struct fid_av *nod_av; /* Address vector handle */
+    struct fid_av *nod_av;                  /* Address vector handle */
     /*
      * Address hash-table, to map the source-side address to fi_addr_t.
      * The key is 64bits value serialized from source-side IP+Port (see
@@ -152,10 +142,12 @@ struct na_ofi_domain {
     hg_hash_table_t *nod_addr_ht;
     /* the rwlock to protect nod_addr_ht */
     hg_thread_rwlock_t nod_rwlock;
-    uint32_t nod_refcount; /* Refcount of this domain */
-    size_t nod_src_addrlen;
-    size_t nod_dest_addrlen;
-    HG_LIST_ENTRY(na_ofi_domain) nod_entry; /* Entry in nog_domain_list */
+};
+
+struct na_ofi_endpoint {
+    struct fid_ep *noe_ep;      /* Endpoint to communicate on */
+    struct fid_cq *noe_cq;      /* Completion queue handle */
+    struct fid_wait *noe_wait;  /* Wait set handle */
 };
 
 /**
@@ -173,10 +165,7 @@ struct na_ofi_reqhdr {
 
 struct na_ofi_private_data {
     struct na_ofi_domain *nop_domain; /* Point back to access domain */
-    struct fi_info *nop_fi_info; /* fi info for the endpoint */
-    struct fid_wait *nop_wait; /* Wait set handle */
-    struct fid_cq *nop_cq; /* Completion queue handle */
-    struct fid_ep *nop_ep; /* Endpoint to communicate on */
+    struct na_ofi_endpoint *nop_endpoint;
     /* Unexpected op queue */
     HG_QUEUE_HEAD(na_ofi_op_id) nop_unexpected_op_queue;
     hg_thread_mutex_t nop_unexpected_op_mutex;
@@ -263,16 +252,16 @@ struct na_ofi_op_id {
     struct na_cb_completion_data noo_completion_data;
 };
 
-/********************/
+/*****************/
 /* Local Helpers */
-/********************/
+/*****************/
 
 #define na_ofi_bswap16(x) ((x) >> 8 | ((x) & 0xFFU) << 8)
 #define na_ofi_bswap32(x) ((na_ofi_bswap16((x) >> 16) & 0xFFFFU) |\
                            (na_ofi_bswap16((x) & 0xFFFFU) << 16))
 #define na_ofi_bswap32s(x) do { *(x) = na_ofi_bswap32(*(x)); } while (0)
 
-static inline void
+static NA_INLINE void
 na_ofi_class_lock(na_class_t *na_class)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
@@ -282,7 +271,7 @@ na_ofi_class_lock(na_class_t *na_class)
         hg_thread_mutex_lock(&priv->nop_mutex);
 }
 
-static inline void
+static NA_INLINE void
 na_ofi_class_unlock(na_class_t *na_class)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
@@ -292,7 +281,7 @@ na_ofi_class_unlock(na_class_t *na_class)
         hg_thread_mutex_unlock(&priv->nop_mutex);
 }
 
-static inline na_bool_t
+static NA_INLINE na_bool_t
 na_ofi_with_reqhdr(na_class_t *na_class)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
@@ -303,7 +292,7 @@ na_ofi_with_reqhdr(na_class_t *na_class)
 /**
  * Converts the inline header to a 64 bits key to search corresponding FI addr.
  */
-static inline na_uint64_t
+static NA_INLINE na_uint64_t
 na_ofi_reqhdr_2_key(struct na_ofi_reqhdr *hdr)
 {
     return (((na_uint64_t)hdr->fih_ip) << 32 | hdr->fih_port);
@@ -488,6 +477,38 @@ out:
 /********************/
 /* Local Prototypes */
 /********************/
+
+static int
+na_ofi_getinfo(const char *protocol_name, struct fi_info **providers);
+
+static na_return_t
+na_ofi_check_interface(const char *hostname, char *node, size_t node_len,
+    char *domain, size_t domain_len);
+
+static NA_INLINE na_bool_t
+na_ofi_verify_provider(const char *protocol_name, const char *domain_name,
+    const struct fi_info *fi_info);
+
+static na_return_t
+na_ofi_domain_open(const char *node, const char *service,
+    const struct fi_info *prov, struct na_ofi_domain **na_ofi_domain_p);
+
+static na_return_t
+na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
+
+static na_return_t
+na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
+    struct na_ofi_endpoint **na_ofi_endpoint_p);
+
+static na_return_t
+na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint);
+
+static na_return_t
+na_ofi_get_ep_addr(const struct na_ofi_domain *na_ofi_domain,
+    const struct na_ofi_endpoint *na_ofi_endpoint, char **uri_p);
+
+static na_return_t
+na_ofi_gen_req_hdr(const char *uri, struct na_ofi_reqhdr *na_ofi_reqhdr);
 
 /* check_protocol */
 static na_bool_t
@@ -703,19 +724,11 @@ const na_class_t na_ofi_class_g = {
 /*****************/
 
 static int
-na_ofi_getinfo(const char *protocol_name)
+na_ofi_getinfo(const char *protocol_name, struct fi_info **providers)
 {
     struct fi_info *hints = NULL;
-    struct fi_info *providers = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
-
-    /* Only the first initiator queries OFI providers */
-    if (HG_UTIL_TRUE != hg_atomic_cas32(&nofi_gdata.nog_init_flag, 0, 1)) {
-        while(nofi_gdata.nog_providers == NULL)
-            usleep(1);
-        goto out;
-    }
 
     /**
      * Hints to query && filter providers.
@@ -772,157 +785,17 @@ na_ofi_getinfo(const char *protocol_name)
                     NULL,  /* Optional service name or port to request */
                     0ULL,  /* Optional flag */
                     hints, /* In: Hints to filter providers */
-                    &providers); /* Out: List of matching providers */
+                    providers); /* Out: List of matching providers */
     if (rc != 0) {
         NA_LOG_ERROR("fi_getinfo failed, rc: %d(%s).", rc, fi_strerror(-rc));
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
 
-    assert(providers != NULL);
-    nofi_gdata.nog_refcount = 0;
-    hg_thread_mutex_init(&nofi_gdata.nog_mutex);
-    nofi_gdata.nog_providers = providers;
-    HG_LIST_INIT(&nofi_gdata.nog_domain_list);
-
 out:
     if (hints)
         fi_freeinfo(hints);
     return ret;
-}
-
-static inline void
-nofi_gdata_addref_locked()
-{
-    assert(hg_atomic_get32(&nofi_gdata.nog_init_flag));
-    nofi_gdata.nog_refcount++;
-    //NA_LOG_DEBUG("nog_refcount increased to %d.", nofi_gdata.nog_refcount);
-}
-
-static inline void
-nofi_gdata_addref()
-{
-    hg_thread_mutex_lock(&nofi_gdata.nog_mutex);
-    nofi_gdata_addref_locked();
-    hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-}
-
-static void
-nofi_gdata_decref_locked()
-{
-    assert(hg_atomic_get32(&nofi_gdata.nog_init_flag));
-    assert(nofi_gdata.nog_refcount >= 1);
-
-    nofi_gdata.nog_refcount--;
-    //NA_LOG_DEBUG("nog_refcount decreased to %d.", nofi_gdata.nog_refcount);
-
-    if (nofi_gdata.nog_refcount == 0) {
-        assert(HG_LIST_IS_EMPTY(&nofi_gdata.nog_domain_list));
-        fi_freeinfo(nofi_gdata.nog_providers);
-        nofi_gdata.nog_providers = NULL;
-        HG_LIST_INIT(&nofi_gdata.nog_domain_list);
-        hg_atomic_set32(&nofi_gdata.nog_init_flag, 0);
-    }
-}
-
-void
-nofi_gdata_decref()
-{
-    hg_thread_mutex_lock(&nofi_gdata.nog_mutex);
-    nofi_gdata_decref_locked();
-    hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-}
-
-static inline void
-na_ofi_domain_addref_locked(struct na_ofi_domain *domain)
-{
-    domain->nod_refcount++;
-    /*
-    NA_LOG_DEBUG("ofi domain (provider %s), nod_refcount increased to %d.",
-                 domain->nod_prov_name, domain->nod_refcount);
-    */
-}
-
-static inline void
-na_ofi_domain_addref(struct na_ofi_domain *domain)
-{
-    hg_thread_mutex_lock(&nofi_gdata.nog_mutex);
-    na_ofi_domain_addref_locked(domain);
-    hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-}
-
-static inline void
-na_ofi_domain_decref_locked(struct na_ofi_domain *domain)
-{
-    assert(domain->nod_refcount >= 1);
-    domain->nod_refcount--;
-    /*
-    NA_LOG_DEBUG("ofi domain (provider %s), nod_refcount decreased to %d.",
-                 domain->nod_prov_name, domain->nod_refcount);
-    */
-    if (domain->nod_refcount == 0) {
-        hg_hash_table_free(domain->nod_addr_ht);
-        domain->nod_addr_ht = NULL;
-        hg_thread_rwlock_destroy(&domain->nod_rwlock);
-        if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE && domain->nod_mr != NULL)
-            fi_close(&domain->nod_mr->fid);
-        fi_close(&domain->nod_av->fid);
-        fi_close(&domain->nod_domain->fid);
-        fi_close(&domain->nod_fabric->fid);
-        free(domain->nod_prov_name);
-        domain->nod_prov = NULL;
-        HG_LIST_REMOVE(domain, nod_entry);
-        free(domain);
-        nofi_gdata_decref_locked();
-    }
-}
-
-static inline void
-na_ofi_domain_decref(struct na_ofi_domain *domain)
-{
-    hg_thread_mutex_lock(&nofi_gdata.nog_mutex);
-    na_ofi_domain_decref_locked(domain);
-    hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-}
-
-/********************/
-/* Plugin callbacks */
-/********************/
-
-/*---------------------------------------------------------------------------*/
-static na_bool_t
-na_ofi_check_protocol(const char *protocol_name)
-{
-    struct fi_info *prov;
-    na_bool_t accept = NA_FALSE;
-    na_return_t ret = NA_SUCCESS;
-
-    ret = na_ofi_getinfo(protocol_name);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
-        goto out;
-    }
-
-    hg_thread_mutex_lock(&nofi_gdata.nog_mutex);
-
-    prov = nofi_gdata.nog_providers;
-    while (prov != NULL) {
-        /*
-        NA_LOG_DEBUG("fabric_attr - prov_name %s, name - %s, "
-                     "domain_attr - name %s, mode: 0x%llx, domain_attr->mode 0x%llx, caps: 0x%llx.", prov->fabric_attr->prov_name,
-                     prov->fabric_attr->name, prov->domain_attr->name, prov->mode, prov->domain_attr->mode, prov->caps);
-        */
-        if (!strcmp(protocol_name, prov->fabric_attr->prov_name)) {
-            accept = NA_TRUE;
-            break;
-        }
-        prov = prov->next;
-    };
-
-    hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-
-out:
-    return accept;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -992,33 +865,521 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
+static NA_INLINE na_bool_t
+na_ofi_verify_provider(const char *protocol_name, const char *domain_name,
+    const struct fi_info *fi_info)
+{
+    na_bool_t ret = NA_FALSE;
+
+    /* Does not match protocol name */
+    if (strcmp(protocol_name, fi_info->fabric_attr->prov_name))
+        goto out;
+
+    /* Only for sockets providers is the protocol_name ambiguous and requires
+     * checking the domain name as well */
+    if (!strcmp(protocol_name, "sockets")) {
+        /* Does not match domain name */
+        if (domain_name && strcmp(domain_name, fi_info->domain_attr->name))
+            goto out;
+    }
+
+    ret = NA_TRUE;
+
+out:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_domain_open(const char *node, const char *service,
+    const struct fi_info *prov, struct na_ofi_domain **na_ofi_domain_p)
+{
+    struct na_ofi_domain *na_ofi_domain;
+    struct fi_av_attr av_attr = {0};
+    struct fi_info *hints = NULL;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    na_ofi_domain = (struct na_ofi_domain *) malloc(
+        sizeof(struct na_ofi_domain));
+    if (na_ofi_domain == NULL) {
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+    memset(na_ofi_domain, 0, sizeof(struct na_ofi_domain));
+
+    /* Create rw lock */
+    rc = hg_thread_rwlock_init(&na_ofi_domain->nod_rwlock);
+    if (rc != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("hg_thread_rwlock_init failed");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    /* Keep fi_info */
+    hints = fi_dupinfo(prov);
+    if (!hints) {
+        NA_LOG_ERROR("Could not duplicate fi_info");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    /* Dup provider name */
+    na_ofi_domain->nod_prov_name = strdup(hints->fabric_attr->prov_name);
+    if (!na_ofi_domain->nod_prov_name) {
+        NA_LOG_ERROR("Could not duplicate name");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    /* Dup node */
+    if (node && !(na_ofi_domain->nod_node = strdup(node))) {
+        NA_LOG_ERROR("Could not duplicate node name");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    /* Dup service */
+    if (service && !(na_ofi_domain->nod_service = strdup(service))) {
+        NA_LOG_ERROR("Could not duplicate service name");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    /* Provider specific configuration (MR mode / caps) */
+    if (!strcmp(na_ofi_domain->nod_prov_name, "sockets")) {
+        na_ofi_domain->nod_prov_type = NA_OFI_PROV_SOCKETS;
+        /* sockets provider without MR_BASIC supporting */
+        hints->domain_attr->mr_mode |= FI_MR_SCALABLE;
+        na_ofi_domain->nod_mr_mode = NA_OFI_MR_SCALABLE;
+#if defined(FI_SOURCE_ERR)
+    } else if (!strcmp(na_ofi_domain->nod_prov_name, "psm2")) {
+        na_ofi_domain->nod_prov_type = NA_OFI_PROV_PSM2;
+        hints->caps |= (FI_SOURCE | FI_SOURCE_ERR);
+        hints->domain_attr->mr_mode |= FI_MR_BASIC;
+        na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
+#endif
+    } else if (!strcmp(na_ofi_domain->nod_prov_name, "verbs")) {
+        na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS;
+        hints->domain_attr->mr_mode |= FI_MR_BASIC;
+        hints->rx_attr->mode |= FI_CONTEXT;
+        na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
+    } else if (!strcmp(na_ofi_domain->nod_prov_name, "gni")) {
+        na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
+        hints->domain_attr->mr_mode |= FI_MR_BASIC;
+        na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
+    } else {
+        NA_LOG_ERROR("bad domain->nod_prov_name %s.",
+            na_ofi_domain->nod_prov_name);
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* Resolve node / service (always pass a numeric host) */
+    rc = fi_getinfo(NA_OFI_VERSION, na_ofi_domain->nod_node,
+        na_ofi_domain->nod_service, FI_SOURCE | FI_NUMERICHOST, hints,
+        &na_ofi_domain->nod_prov);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_getinfo(%s, %s) failed, rc: %d(%s).", node, service,
+            rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* Open fi fabric */
+    rc = fi_fabric(na_ofi_domain->nod_prov->fabric_attr,/* In:  Fabric attributes */
+                   &na_ofi_domain->nod_fabric,          /* Out: Fabric handle */
+                   NULL);                               /* Optional context for fabric events */
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_fabric failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* Create the fi access domain */
+    rc = fi_domain(na_ofi_domain->nod_fabric,   /* In:  Fabric object */
+                   na_ofi_domain->nod_prov,     /* In:  Provider */
+                   &na_ofi_domain->nod_domain,  /* Out: Domain oject */
+                   NULL);                       /* Optional context for domain events */
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_domain failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* For MR_SCALABLE, create MR, now exports all memory range for RMA */
+    if (na_ofi_domain->nod_mr_mode == NA_OFI_MR_SCALABLE) {
+        rc = fi_mr_reg(na_ofi_domain->nod_domain, (void *)0, UINT64_MAX,
+                       FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE,
+                       0ULL /* offset */, NA_OFI_RMA_KEY, 0 /* flags */,
+                       &na_ofi_domain->nod_mr, NULL /* context */);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+    }
+
+    /* Open fi address vector */
+    av_attr.type = FI_AV_MAP;
+    rc = fi_av_open(na_ofi_domain->nod_domain, &av_attr, &na_ofi_domain->nod_av,
+        NULL);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_av_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* Create addr hash-table */
+    na_ofi_domain->nod_addr_ht = hg_hash_table_new(av_addr_ht_key_hash,
+        av_addr_ht_key_equal);
+    if (na_ofi_domain->nod_addr_ht == NULL) {
+        NA_LOG_ERROR("hg_hash_table_new failed");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+    hg_hash_table_register_free_functions(na_ofi_domain->nod_addr_ht,
+                                          av_addr_ht_key_free,
+                                          av_addr_ht_value_free);
+
+    *na_ofi_domain_p = na_ofi_domain;
+
+out:
+    if (ret != NA_SUCCESS)
+       na_ofi_domain_close(na_ofi_domain);
+    if (hints)
+        fi_freeinfo(hints);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
+{
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    /* Close MR */
+    if (na_ofi_domain->nod_mr) {
+        rc = fi_close(&na_ofi_domain->nod_mr->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close MR failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        na_ofi_domain->nod_mr = NULL;
+    }
+
+    /* Close AV */
+    if (na_ofi_domain->nod_av) {
+        rc = fi_close(&na_ofi_domain->nod_av->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close AV failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        na_ofi_domain->nod_av = NULL;
+    }
+
+    /* Close domain */
+    if (na_ofi_domain->nod_domain) {
+        rc = fi_close(&na_ofi_domain->nod_domain->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close domain failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        na_ofi_domain->nod_domain = NULL;
+    }
+
+    /* Close fabric */
+    if (na_ofi_domain->nod_fabric) {
+        rc = fi_close(&na_ofi_domain->nod_fabric->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close fabric failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        na_ofi_domain->nod_fabric = NULL;
+    }
+
+    if (na_ofi_domain->nod_prov)
+        fi_freeinfo(na_ofi_domain->nod_prov);
+
+    if (na_ofi_domain->nod_addr_ht)
+        hg_hash_table_free(na_ofi_domain->nod_addr_ht);
+
+    hg_thread_rwlock_destroy(&na_ofi_domain->nod_rwlock);
+
+    free(na_ofi_domain->nod_prov_name);
+    free(na_ofi_domain->nod_node);
+    free(na_ofi_domain->nod_service);
+    free(na_ofi_domain);
+
+out:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
+    struct na_ofi_endpoint **na_ofi_endpoint_p)
+{
+    struct na_ofi_endpoint *na_ofi_endpoint;
+    struct fi_cq_attr cq_attr = {0};
+    struct fi_wait_attr wait_attr = {0};
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    na_ofi_endpoint = (struct na_ofi_endpoint *) malloc(
+        sizeof(struct na_ofi_endpoint));
+    if (na_ofi_endpoint == NULL) {
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+    memset(na_ofi_endpoint, 0, sizeof(struct na_ofi_endpoint));
+
+    //priv->nop_fi_info->addr_format = FI_SOCKADDR_IN;
+
+    /* Create a transport level communication endpoint */
+    rc = fi_endpoint(na_ofi_domain->nod_domain, /* In:  Domain object */
+                     na_ofi_domain->nod_prov,   /* In:  Provider */
+                     &na_ofi_endpoint->noe_ep,  /* Out: Endpoint object */
+                     NULL);                     /* Optional context */
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_endpoint failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* verbs provider does not support FI_WAIT_FD/FI_WAIT_SET now */
+    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS)
+        goto no_wait_obj;
+
+    /**
+     * TODO: for now only sockets provider supports wait on fd.
+     * Open wait set for other providers.
+     */
+    if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_SOCKETS) {
+        wait_attr.wait_obj = FI_WAIT_UNSPEC;
+        rc = fi_wait_open(na_ofi_domain->nod_fabric, &wait_attr,
+            &na_ofi_endpoint->noe_wait);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_wait_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+    }
+
+    /* Create fi completion queue for events */
+    cq_attr.format = FI_CQ_FORMAT_TAGGED;
+    if (na_ofi_endpoint->noe_wait) {
+        cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
+        cq_attr.wait_set = na_ofi_endpoint->noe_wait;
+    } else {
+        cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
+    }
+    cq_attr.wait_cond = FI_CQ_COND_NONE;
+
+no_wait_obj:
+    rc = fi_cq_open(na_ofi_domain->nod_domain, &cq_attr,
+        &na_ofi_endpoint->noe_cq, NULL);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_cq_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* Bind the CQ and AV to the endpoint */
+    rc = fi_ep_bind(na_ofi_endpoint->noe_ep, &na_ofi_endpoint->noe_cq->fid,
+        FI_TRANSMIT | FI_RECV);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_ep_bind failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    rc = fi_ep_bind(na_ofi_endpoint->noe_ep, &na_ofi_domain->nod_av->fid, 0);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_ep_bind failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* Enable the endpoint for communication, and commits the bind operations */
+    ret = fi_enable(na_ofi_endpoint->noe_ep);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_enable failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    *na_ofi_endpoint_p = na_ofi_endpoint;
+
+out:
+    if (ret != NA_SUCCESS)
+        na_ofi_endpoint_close(na_ofi_endpoint);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
+{
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    /* Close endpoint */
+    if (na_ofi_endpoint->noe_ep) {
+        rc = fi_close(&na_ofi_endpoint->noe_ep->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close endpoint failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        na_ofi_endpoint->noe_ep = NULL;
+    }
+
+    /* Close wait set */
+    if (na_ofi_endpoint->noe_wait) {
+        rc = fi_close(&na_ofi_endpoint->noe_wait->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close wait failed, rc: %d(%s).", rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        na_ofi_endpoint->noe_wait = NULL;
+    }
+
+    /* Close completion queue */
+    if (na_ofi_endpoint->noe_cq) {
+        rc = fi_close(&na_ofi_endpoint->noe_cq->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close CQ failed, rc: %d(%s).", rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        na_ofi_endpoint->noe_cq = NULL;
+    }
+
+    free(na_ofi_endpoint);
+
+out:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_get_ep_addr(const struct na_ofi_domain *na_ofi_domain,
+    const struct na_ofi_endpoint *na_ofi_endpoint, char **uri_p)
+{
+    void *ep_addr = NULL;
+    char ep_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'};
+    size_t addrlen = na_ofi_domain->nod_prov->src_addrlen;
+    na_bool_t retried = NA_FALSE;
+    na_return_t ret = NA_SUCCESS;
+    char *uri;
+    int rc;
+
+retry_getname:
+    ep_addr = malloc(addrlen);
+    if (ep_addr == NULL) {
+        NA_LOG_ERROR("Could not allocate ep_addr.");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    rc = fi_getname(&na_ofi_endpoint->noe_ep->fid, ep_addr, &addrlen);
+    if (rc != 0) {
+        if (rc == -FI_ETOOSMALL && retried == NA_FALSE) {
+            retried = NA_TRUE;
+            free(ep_addr);
+            goto retry_getname;
+        }
+        NA_LOG_ERROR("fi_getname failed, rc: %d(%s), addrlen: %zu.",
+                     rc, fi_strerror(-rc), addrlen);
+        goto out;
+    }
+
+    addrlen = NA_OFI_MAX_URI_LEN;
+    rc = snprintf(ep_addr_str, addrlen, "%s://",
+        na_ofi_domain->nod_prov->fabric_attr->prov_name);
+    if (rc < 0) {
+        NA_LOG_ERROR("snprintf failed, rc: %d.", rc);
+        goto out;
+    }
+    addrlen -= (size_t) rc;
+
+    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
+        na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
+        snprintf(ep_addr_str + rc, addrlen, "%s:%s", na_ofi_domain->nod_node,
+            na_ofi_domain->nod_service);
+    } else {
+        fi_av_straddr(na_ofi_domain->nod_av, ep_addr, ep_addr_str + rc,
+            &addrlen);
+        /* verbs provider returns "verbs://inet://192.168.1.64:22222" style */
+        if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS &&
+            !strncmp(ep_addr_str, "verbs://inet", 12)) {
+            char *tmp_dst, *tmp_src;
+
+            tmp_dst = ep_addr_str + 8;
+            tmp_src = ep_addr_str + 15;
+            while (*tmp_src != 0) {
+                *tmp_dst = *tmp_src;
+                tmp_dst++;
+                tmp_src++;
+            }
+            *tmp_dst = 0;
+        }
+    }
+
+    uri = strdup(ep_addr_str);
+    if (uri == NULL) {
+        NA_LOG_ERROR("Could not strdup nop_uri.");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    *uri_p = uri;
+
+out:
+    free(ep_addr);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 /**
  * Generate the request header for NA class. Can be called after nop_uri being
  * initialized (for example "sockets://192.168.42.170:7779").
  */
-static inline na_return_t
-na_ofi_gen_req_hdr(struct na_ofi_private_data *priv)
+static na_return_t
+na_ofi_gen_req_hdr(const char *uri, struct na_ofi_reqhdr *na_ofi_reqhdr)
 {
-    char *uri = NULL, *locator, *ip_str;
+    char *dup_uri = NULL, *locator, *ip_str;
     na_uint32_t port;
     struct in_addr in;
     int rc;
     na_return_t ret = NA_SUCCESS;
 
-    uri = strdup(priv->nop_uri);
-    if (uri == NULL) {
-        NA_LOG_ERROR("strdup nop_uri failed.");
+    dup_uri = strdup(uri);
+    if (dup_uri == NULL) {
+        NA_LOG_ERROR("strdup uri failed.");
         ret = NA_NOMEM_ERROR;
         goto out;
     }
-    locator = strrchr(uri, ':');
+    locator = strrchr(dup_uri, ':');
     if (locator == NULL) {
         ret = NA_INVALID_PARAM;
         goto out;
     }
     *locator++ = '\0';
     port = (na_uint32_t) atoi(locator);
-    locator = strrchr(uri, '/');
+    locator = strrchr(dup_uri, '/');
     if (locator == NULL) {
         ret = NA_INVALID_PARAM;
         goto out;
@@ -1031,15 +1392,52 @@ na_ofi_gen_req_hdr(struct na_ofi_private_data *priv)
         ret = NA_INVALID_PARAM;
         goto out;
     }
-    priv->nop_req_hdr.fih_feats = 0;
-    priv->nop_req_hdr.fih_magic = NA_OFI_HDR_MAGIC;
-    priv->nop_req_hdr.fih_ip = in.s_addr;
-    priv->nop_req_hdr.fih_port = port;
+    na_ofi_reqhdr->fih_feats = 0;
+    na_ofi_reqhdr->fih_magic = NA_OFI_HDR_MAGIC;
+    na_ofi_reqhdr->fih_ip = in.s_addr;
+    na_ofi_reqhdr->fih_port = port;
 
 out:
-    if (uri != NULL)
-        free(uri);
+    free(dup_uri);
     return ret;
+}
+
+/********************/
+/* Plugin callbacks */
+/********************/
+
+/*---------------------------------------------------------------------------*/
+static na_bool_t
+na_ofi_check_protocol(const char *protocol_name)
+{
+    struct fi_info *providers = NULL, *prov;
+    na_bool_t accept = NA_FALSE;
+    na_return_t ret = NA_SUCCESS;
+
+    ret = na_ofi_getinfo(protocol_name, &providers);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
+        goto out;
+    }
+
+    prov = providers;
+    while (prov != NULL) {
+        /*
+        NA_LOG_DEBUG("fabric_attr - prov_name %s, name - %s, "
+                     "domain_attr - name %s, mode: 0x%llx, domain_attr->mode 0x%llx, caps: 0x%llx.", prov->fabric_attr->prov_name,
+                     prov->fabric_attr->name, prov->domain_attr->name, prov->mode, prov->domain_attr->mode, prov->caps);
+        */
+        if (!strcmp(protocol_name, prov->fabric_attr->prov_name)) {
+            accept = NA_TRUE;
+            break;
+        }
+        prov = prov->next;
+    }
+
+out:
+    if (providers)
+        fi_freeinfo(providers);
+    return accept;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1047,40 +1445,26 @@ static na_return_t
 na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     na_bool_t NA_UNUSED listen)
 {
-    struct na_ofi_private_data *priv;
-    struct na_ofi_domain *domain;
-    struct fid_fabric *fabric_hdl;
-    struct fid_domain *domain_hdl;
-    struct fid_mr *mr_hdl = NULL;
-    struct fid_av *av_hdl;
-    struct fid_wait *wait_hdl = NULL;
-    struct fid_cq *cq_hdl;
-    struct fid_ep *ep_hdl;
-    struct fi_av_attr av_attr = {0};
-    struct fi_cq_attr cq_attr = {0};
-    struct fi_wait_attr wait_attr = {0};
-    struct fi_info *prov;
-    void *ep_addr;
-    char ep_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'};
     char node[NA_OFI_MAX_URI_LEN] = {'\0'};
     char domain_name[NA_OFI_MAX_URI_LEN] = {'\0'};
     char *service = NULL;
-    size_t addrlen;
-    na_bool_t found = NA_FALSE;
-    na_bool_t retried = NA_FALSE;
+    struct fi_info *prov, *providers = NULL;
+    na_bool_t prov_found = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
-    int rc;
 
-    ret = na_ofi_getinfo(na_info->protocol_name);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
-        goto out;
-    }
     /*
     NA_LOG_DEBUG("Entering na_ofi_initialize class_name %s, protocol_name %s, "
                  "host_name %s.\n", na_info->class_name, na_info->protocol_name,
                  na_info->host_name);
     */
+
+    /* Get OFI providers info */
+    ret = na_ofi_getinfo(na_info->protocol_name, &providers);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
+        goto out;
+    }
+
     /* Get hostname/port info if available */
     if (na_info->host_name) {
         /* Extract hostname */
@@ -1096,391 +1480,86 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         }
     }
 
-    hg_thread_mutex_lock(&nofi_gdata.nog_mutex);
-
-    /**
-     * Search nog_domain_list. It allows to create endpoints with different
-     * providers. The endpoints with same provider name can reuse the same
-     * na_ofi_domain.
-     */
-    HG_LIST_FOREACH(domain, &nofi_gdata.nog_domain_list, nod_entry) {
-        if (strcmp(domain->nod_prov_name, na_info->protocol_name) != 0)
-            continue;
-
-        if (domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
-            domain->nod_prov_type == NA_OFI_PROV_GNI ||
-            domain->nod_prov_type == NA_OFI_PROV_VERBS ||
-            !strcmp(domain_name, domain->nod_prov->domain_attr->name)) {
-            na_ofi_domain_addref_locked(domain);
-            hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-            goto create_ep;
-        }
-    }
-
-    /**
-     * No fi domain reusable, search the provider and open fi fabric/domain/av
-     * object.
-     */
-    domain = (struct na_ofi_domain *)malloc(sizeof(struct na_ofi_domain));
-    if (domain == NULL) {
-        ret = NA_NOMEM_ERROR;
-        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-        goto out;
-    }
-
-    prov = nofi_gdata.nog_providers;
+    /* Try to find provider that matches protocol and domain/host name */
+    prov = providers;
     while (prov != NULL) {
-        if (!strcmp(na_info->protocol_name, prov->fabric_attr->prov_name) &&
-            (!strcmp(na_info->protocol_name, "psm2") ||
-             !strcmp(na_info->protocol_name, "gni") ||
-             !strcmp(na_info->protocol_name, "verbs") ||
-             !na_info->host_name ||
-             !strcmp(domain_name, prov->domain_attr->name))) {
+        if (na_ofi_verify_provider(na_info->protocol_name, domain_name, prov)) {
             /*
             NA_LOG_DEBUG("mode 0x%llx, fabric_attr - prov_name %s, name - %s, "
                          "domain_attr - name %s.", prov->mode,
                          prov->fabric_attr->prov_name, prov->fabric_attr->name,
                          prov->domain_attr->name);
             */
-            found = NA_TRUE;
-            nofi_gdata_addref_locked();
+            prov_found = NA_TRUE;
             break;
         }
         prov = prov->next;
     }
-
-    if (found == NA_FALSE) {
+    if (!prov_found) {
         NA_LOG_ERROR("No provider found for \"%s\" protocol on domain \"%s\"",
                      na_info->protocol_name, domain_name);
-        free(domain);
-        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
 
-    domain->nod_prov = prov;
-    /* create addr hash-table */
-    domain->nod_addr_ht = hg_hash_table_new(av_addr_ht_key_hash,
-                                            av_addr_ht_key_equal);
-    if (domain->nod_addr_ht == NULL) {
-        NA_LOG_ERROR("hg_hash_table_new failed.");
-        free(domain);
-        nofi_gdata_decref_locked(); /* rollback refcount taken above */
-        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
-    hg_hash_table_register_free_functions(domain->nod_addr_ht,
-                                          av_addr_ht_key_free,
-                                          av_addr_ht_value_free);
-    rc = hg_thread_rwlock_init(&domain->nod_rwlock);
-    if (rc != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("hg_hash_table_new failed.");
-        free(domain);
-        nofi_gdata_decref_locked(); /* rollback refcount taken above */
-        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
-
-    /* Open fi fabric */
-    rc = fi_fabric(prov->fabric_attr, /* In:  Fabric attributes */
-                   &fabric_hdl,       /* Out: Fabric handle */
-                   NULL);             /* Optional context for fabric events */
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_fabric failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        hg_hash_table_free(domain->nod_addr_ht);
-        hg_thread_rwlock_destroy(&domain->nod_rwlock);
-        free(domain);
-        ret = NA_PROTOCOL_ERROR;
-        nofi_gdata_decref_locked(); /* rollback refcount taken above */
-        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-        goto out;
-    }
-
-    domain->nod_prov_name = strdup(na_info->protocol_name);
-    if (!strcmp(domain->nod_prov_name, "sockets")) {
-        domain->nod_prov_type = NA_OFI_PROV_SOCKETS;
-        /* sockets provider without MR_BASIC supporting */
-        domain->nod_prov->domain_attr->mr_mode |= FI_MR_SCALABLE;
-        domain->nod_mr_mode = NA_OFI_MR_SCALABLE;
-#if defined(FI_SOURCE_ERR)
-    } else if (!strcmp(domain->nod_prov_name, "psm2")) {
-        domain->nod_prov_type = NA_OFI_PROV_PSM2;
-        domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
-        domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
-        domain->nod_mr_mode = NA_OFI_MR_BASIC;
-#endif
-    } else if (!strcmp(domain->nod_prov_name, "verbs")) {
-        domain->nod_prov_type = NA_OFI_PROV_VERBS;
-        domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
-        domain->nod_prov->rx_attr->mode |= FI_CONTEXT;
-        domain->nod_mr_mode = NA_OFI_MR_BASIC;
-    } else if (!strcmp(domain->nod_prov_name, "gni")) {
-        domain->nod_prov_type = NA_OFI_PROV_GNI;
-        domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
-        domain->nod_mr_mode = NA_OFI_MR_BASIC;
-    } else {
-        NA_LOG_ERROR("bad domain->nod_prov_name %s.", domain->nod_prov_name);
-        hg_hash_table_free(domain->nod_addr_ht);
-        hg_thread_rwlock_destroy(&domain->nod_rwlock);
-        fi_close(&fabric_hdl->fid);
-        free(domain);
-        nofi_gdata_decref_locked(); /* rollback refcount taken above */
-        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-
-    /* Create the fi access domain */
-    rc = fi_domain(fabric_hdl,   /* In:  Fabric object */
-                   prov,         /* In:  Provider */
-                   &domain_hdl,  /* Out: Domain oject */
-                   NULL);        /* Optional context for domain events */
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_domain failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        hg_hash_table_free(domain->nod_addr_ht);
-        hg_thread_rwlock_destroy(&domain->nod_rwlock);
-        fi_close(&fabric_hdl->fid);
-        free(domain);
-        nofi_gdata_decref_locked(); /* rollback refcount taken above */
-        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-
-    /* For MR_SCALABLE, create MR, now exports all memory range for RMA */
-    if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) {
-        rc = fi_mr_reg(domain_hdl, (void *)0, UINT64_MAX,
-                       FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE,
-                       0ULL /* offset */, NA_OFI_RMA_KEY, 0 /* flags */,
-                       &mr_hdl, NULL /* context */);
-        if (rc != 0) {
-            hg_hash_table_free(domain->nod_addr_ht);
-            hg_thread_rwlock_destroy(&domain->nod_rwlock);
-            NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            fi_close(&domain_hdl->fid);
-            fi_close(&fabric_hdl->fid);
-            free(domain);
-            nofi_gdata_decref_locked(); /* rollback refcount taken above */
-            hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
-    }
-
-    /* Open fi address vector */
-    av_attr.type = FI_AV_MAP;
-    rc = fi_av_open(domain_hdl, &av_attr, &av_hdl, NULL);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_av_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        hg_hash_table_free(domain->nod_addr_ht);
-        hg_thread_rwlock_destroy(&domain->nod_rwlock);
-        if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE)
-            fi_close(&mr_hdl->fid);
-        fi_close(&domain_hdl->fid);
-        fi_close(&fabric_hdl->fid);
-        free(domain);
-        nofi_gdata_decref_locked(); /* rollback refcount taken above */
-        hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-
-    domain->nod_fabric = fabric_hdl;
-    domain->nod_domain = domain_hdl;
-    if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE)
-        domain->nod_mr = mr_hdl;
-    domain->nod_av = av_hdl;
-    domain->nod_refcount = 0;
-    domain->nod_src_addrlen = prov->src_addrlen;
-    domain->nod_dest_addrlen = prov->dest_addrlen;
-    na_ofi_domain_addref_locked(domain);
-
-    /* insert to domain list */
-    HG_LIST_INSERT_HEAD(&nofi_gdata.nog_domain_list, domain, nod_entry);
-    hg_thread_mutex_unlock(&nofi_gdata.nog_mutex);
-
-create_ep:
-    assert(domain != NULL);
-
-    priv = (struct na_ofi_private_data *)calloc(1,
-                sizeof(struct na_ofi_private_data));
-    if (priv == NULL) {
+    /* Create private data */
+    na_class->private_data = (struct na_ofi_private_data *) malloc(
+        sizeof(struct na_ofi_private_data));
+    if (!na_class->private_data) {
         NA_LOG_ERROR("Could not allocate NA private data class");
-        na_ofi_domain_decref(domain);
         ret = NA_NOMEM_ERROR;
         goto out;
     }
+    memset(na_class->private_data, 0, sizeof(struct na_ofi_private_data));
 
-    rc = fi_getinfo(NA_OFI_VERSION, node, service, FI_SOURCE | FI_NUMERICHOST,
-                    domain->nod_prov, &priv->nop_fi_info);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_getinfo(%s, %s) failed, rc: %d(%s).", node, service,
-            rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto getinfo_err;
-    }
-    assert(priv->nop_fi_info != NULL);
+    /* Initialize queue / mutex */
+    HG_QUEUE_INIT(&NA_OFI_PRIVATE_DATA(na_class)->nop_unexpected_op_queue);
+    hg_thread_mutex_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_unexpected_op_mutex);
+    hg_thread_mutex_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_mutex);
 
-    //priv->nop_fi_info->addr_format = FI_SOCKADDR_IN;
-    /* Create a transport level communication endpoint */
-    rc = fi_endpoint(domain->nod_domain,   /* In:  Domain object */
-                     priv->nop_fi_info,    /* In:  Provider */
-                     &ep_hdl,              /* Out: Endpoint object */
-                     NULL);                /* Optional context */
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_endpoint failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto ep_create_err;
-    }
-
-    /* verbs provider does not support FI_WAIT_FD/FI_WAIT_SET now */
-    if (domain->nod_prov_type == NA_OFI_PROV_VERBS)
-        goto no_wait_obj;
-
-    /**
-     * TODO: for now only sockets provider supports wait on fd.
-     * Open wait set for other providers.
-     */
-    if (domain->nod_prov_type != NA_OFI_PROV_SOCKETS) {
-        wait_attr.wait_obj = FI_WAIT_UNSPEC;
-        rc = fi_wait_open(domain->nod_fabric, &wait_attr, &wait_hdl);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_wait_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto wait_open_err;
-        }
-    }
-
-    /* Create fi completion queue for events */
-    cq_attr.format = FI_CQ_FORMAT_TAGGED;
-    if (wait_hdl) {
-        cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
-        cq_attr.wait_set = wait_hdl;
-    } else {
-        cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
-    }
-    cq_attr.wait_cond = FI_CQ_COND_NONE;
-no_wait_obj:
-    rc = fi_cq_open(domain->nod_domain, &cq_attr, &cq_hdl, NULL);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_cq_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto cq_open_err;
-    }
-
-    /* Bind the CQ and AV to the endpoint */
-    rc = fi_ep_bind(ep_hdl, &cq_hdl->fid, FI_TRANSMIT | FI_RECV);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_ep_bind failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto ep_bind_err;
-    }
-
-    rc = fi_ep_bind(ep_hdl, &domain->nod_av->fid, 0);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_ep_bind failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto ep_bind_err;
-    }
-
-    /* Enable the endpoint for communication, and commits the bind operations */
-    ret = fi_enable(ep_hdl);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_enable failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto ep_bind_err;
-    }
-
-    priv->nop_domain = domain;
-    priv->nop_wait = wait_hdl;
-    priv->nop_cq = cq_hdl;
-    priv->nop_ep = ep_hdl;
-    HG_QUEUE_INIT(&priv->nop_unexpected_op_queue);
-    hg_thread_mutex_init(&priv->nop_unexpected_op_mutex);
-    hg_thread_mutex_init(&priv->nop_mutex);
-    na_class->private_data = priv;
-
-    addrlen = domain->nod_src_addrlen;
-retry_getname:
-    ep_addr = malloc(addrlen);
-    if (ep_addr == NULL) {
-        NA_LOG_ERROR("Could not allocate ep_addr.");
-        ret = NA_NOMEM_ERROR;
-        goto ep_bind_err;
-    }
-    rc = fi_getname(&ep_hdl->fid, ep_addr, &addrlen);
-    if (rc != 0) {
-        if (rc == -FI_ETOOSMALL && retried == NA_FALSE) {
-            retried = NA_TRUE;
-            free(ep_addr);
-            goto retry_getname;
-        }
-        NA_LOG_ERROR("fi_getname failed, rc: %d(%s), addrlen: %zu.",
-                     rc, fi_strerror(-rc), addrlen);
-        free(ep_addr);
-        goto ep_bind_err;
-    }
-
-    addrlen = NA_OFI_MAX_URI_LEN;
-    rc = snprintf(ep_addr_str, addrlen, "%s://", na_info->protocol_name);
-    if (rc < 0) {
-        NA_LOG_ERROR("snprintf failed, rc: %d.", rc);
-        free(ep_addr);
-        goto ep_bind_err;
-    }
-    addrlen -= (size_t) rc;
-    if (domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
-        domain->nod_prov_type == NA_OFI_PROV_GNI) {
-        snprintf(ep_addr_str + rc, addrlen, "%s:%s", node, service);
-    } else {
-        fi_av_straddr(domain->nod_av, ep_addr, ep_addr_str + rc, &addrlen);
-        /* verbs provider returns "verbs://inet://192.168.1.64:22222" style */
-        if (domain->nod_prov_type == NA_OFI_PROV_VERBS &&
-            !strncmp(ep_addr_str, "verbs://inet", 12)) {
-            char *tmp_dst, *tmp_src;
-
-            tmp_dst = ep_addr_str + 8;
-            tmp_src = ep_addr_str + 15;
-            while (*tmp_src != 0) {
-                *tmp_dst = *tmp_src;
-                tmp_dst++;
-                tmp_src++;
-            }
-            *tmp_dst = 0;
-        }
-    }
-
-    priv->nop_uri = strdup(ep_addr_str);
-    free(ep_addr);
-    if (priv->nop_uri == NULL) {
-        NA_LOG_ERROR("Could not strdup nop_uri.");
-        ret = NA_NOMEM_ERROR;
-        goto ep_bind_err;
-    }
-    ret = na_ofi_gen_req_hdr(priv);
+    /* Create domain */
+    ret = na_ofi_domain_open(node, service, prov,
+        &NA_OFI_PRIVATE_DATA(na_class)->nop_domain);
     if (ret != NA_SUCCESS) {
-        free(priv->nop_uri);
-        NA_LOG_ERROR("na_ofi_gen_req_hdr failed, ret: %d.", ret);
-        goto ep_bind_err;
+        NA_LOG_ERROR("Could not open domain for %s, %s", node, service);
+        goto out;
     }
-    NA_LOG_DEBUG("created endpoint addr %s.\n", priv->nop_uri);
+
+    /* Create endpoint */
+    ret = na_ofi_endpoint_open(NA_OFI_PRIVATE_DATA(na_class)->nop_domain,
+        &NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not create endpoint");
+        goto out;
+    }
+
+    /* Get address from endpoint */
+    ret = na_ofi_get_ep_addr(NA_OFI_PRIVATE_DATA(na_class)->nop_domain,
+        NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint,
+        &NA_OFI_PRIVATE_DATA(na_class)->nop_uri);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not get address from endpoint");
+        goto out;
+    }
+
+    /* Generate request header from endpoint address */
+    ret = na_ofi_gen_req_hdr(NA_OFI_PRIVATE_DATA(na_class)->nop_uri,
+        &NA_OFI_PRIVATE_DATA(na_class)->nop_req_hdr);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("na_ofi_gen_req_hdr failed, ret: %d.", ret);
+        goto out;
+    }
+
+    NA_LOG_DEBUG("created endpoint addr %s.\n",
+        NA_OFI_PRIVATE_DATA(na_class)->nop_uri);
 
 out:
-    return ret;
-
-ep_bind_err:
-    fi_close(&cq_hdl->fid);
-cq_open_err:
-    fi_close(&ep_hdl->fid);
-wait_open_err:
-    if (wait_hdl) fi_close(&wait_hdl->fid);
-ep_create_err:
-    fi_freeinfo(priv->nop_fi_info);
-getinfo_err:
-    free(priv);
-    na_ofi_domain_decref(domain);
+    if (ret != NA_SUCCESS && na_class->private_data) {
+        na_ofi_finalize(na_class);
+        na_class->private_data = NULL;
+    }
+    if (providers)
+        fi_freeinfo(providers);
     return ret;
 }
 
@@ -1490,7 +1569,6 @@ na_ofi_finalize(na_class_t *na_class)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     na_return_t ret = NA_SUCCESS;
-    int rc;
 
     /* Check that unexpected op queue is empty */
     if (!HG_QUEUE_IS_EMPTY(&priv->nop_unexpected_op_queue)) {
@@ -1499,35 +1577,23 @@ na_ofi_finalize(na_class_t *na_class)
         goto out;
     }
 
-    rc = fi_close(&priv->nop_ep->fid);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_close endpoint failed, rc: %d(%s).",
-                     rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
+    /* Close endpoint */
+    ret = na_ofi_endpoint_close(priv->nop_endpoint);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not close endpoint");
         goto out;
     }
 
-    if (priv->nop_wait) {
-        rc = fi_close(&priv->nop_wait->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close wait failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
-    }
-
-    rc = fi_close(&priv->nop_cq->fid);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_close CQ failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
+    /* Close domain */
+    ret = na_ofi_domain_close(priv->nop_domain);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not close domain");
         goto out;
     }
 
-    na_ofi_domain_decref(priv->nop_domain);
-
+    /* Close mutex / free private data */
     hg_thread_mutex_destroy(&priv->nop_unexpected_op_mutex);
     hg_thread_mutex_destroy(&priv->nop_mutex);
-    fi_freeinfo(priv->nop_fi_info);
     free(priv->nop_uri);
     free(priv);
     na_class->private_data = NULL;
@@ -2029,7 +2095,7 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
-    struct fid_ep *ep_hdl = priv->nop_ep;
+    struct fid_ep *ep_hdl = priv->nop_endpoint->noe_ep;
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *)dest;
     struct na_ofi_op_id *na_ofi_op_id = NULL;
     struct fid_mr *mr_hdl = plugin_data;
@@ -2106,7 +2172,7 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     void *plugin_data, na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
-    struct fid_ep *ep_hdl = priv->nop_ep;
+    struct fid_ep *ep_hdl = priv->nop_endpoint->noe_ep;
     struct na_ofi_op_id *na_ofi_op_id = NULL;
     struct fid_mr *mr_hdl = plugin_data;
     na_return_t ret = NA_SUCCESS;
@@ -2173,7 +2239,7 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
-    struct fid_ep *ep_hdl = priv->nop_ep;
+    struct fid_ep *ep_hdl = priv->nop_endpoint->noe_ep;
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *)dest;
     struct fid_mr *mr_hdl = plugin_data;
     struct na_ofi_op_id *na_ofi_op_id = NULL;
@@ -2242,7 +2308,7 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     void *plugin_data, na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
-    struct fid_ep *ep_hdl = priv->nop_ep;
+    struct fid_ep *ep_hdl = priv->nop_endpoint->noe_ep;
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *)source;
     struct fid_mr *mr_hdl = plugin_data;
     struct na_ofi_op_id *na_ofi_op_id = NULL;
@@ -2493,7 +2559,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id)
 {
-    struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
+    struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint->noe_ep;
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     struct na_ofi_mem_handle *ofi_local_mem_handle =
         (struct na_ofi_mem_handle *) local_mem_handle;
@@ -2577,7 +2643,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-    struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
+    struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint->noe_ep;
     struct na_ofi_mem_handle *ofi_local_mem_handle =
         (struct na_ofi_mem_handle *) local_mem_handle;
     struct na_ofi_mem_handle *ofi_remote_mem_handle =
@@ -2777,10 +2843,11 @@ na_ofi_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     int fd = 0, rc;
 
-    if (priv->nop_wait == NULL)
-        return 0;
+    /* Only sockets provider supports wait on fd for now */
+    if (priv->nop_domain->nod_prov_type != NA_OFI_PROV_SOCKETS)
+        goto out;
 
-    rc = fi_control(&priv->nop_cq->fid, FI_GETWAIT, &fd);
+    rc = fi_control(&priv->nop_endpoint->noe_cq->fid, FI_GETWAIT, &fd);
     if (rc == -FI_ENOSYS) {
         NA_LOG_WARNING("%s provider does not support wait objects",
             priv->nop_domain->nod_prov_name);
@@ -2788,6 +2855,7 @@ na_ofi_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
         NA_LOG_ERROR("fi_control() failed, rc: %d(%s).",
             rc, fi_strerror((int) -rc));
 
+out:
     return fd;
 }
 
@@ -2798,7 +2866,7 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid *fids[1];
 
-    fids[0] = &priv->nop_cq->fid;
+    fids[0] = &priv->nop_endpoint->noe_cq->fid;
     return (fi_trywait(priv->nop_domain->nod_fabric, fids, 1) == FI_SUCCESS);
 }
 
@@ -2810,9 +2878,9 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
     /* Convert timeout in ms into seconds */
     double remaining = timeout / 1000.0;
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
-    struct fid_cq *cq_hdl = priv->nop_cq;
+    struct fid_cq *cq_hdl = priv->nop_endpoint->noe_cq;
     struct fid_av *av_hdl = priv->nop_domain->nod_av;
-    struct fid_wait *wait_hdl = priv->nop_wait;
+    struct fid_wait *wait_hdl = priv->nop_endpoint->noe_wait;
     na_return_t ret = NA_TIMEOUT;
 
     do {
@@ -3020,7 +3088,7 @@ static na_return_t
 na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
     na_op_id_t op_id)
 {
-    struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_ep;
+    struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint->noe_ep;
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
     struct na_ofi_op_id *tmp = NULL, *first = NULL;
     struct na_ofi_addr *na_ofi_addr = NULL;
