@@ -1242,7 +1242,8 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     }
 
     /* verbs provider does not support FI_WAIT_FD/FI_WAIT_SET now */
-    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS)
+    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS ||
+        na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI)
         goto no_wait_obj;
 
     /**
@@ -1261,7 +1262,6 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     }
 
     /* Create fi completion queue for events */
-    cq_attr.format = FI_CQ_FORMAT_TAGGED;
     if (na_ofi_endpoint->noe_wait) {
         cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
         cq_attr.wait_set = na_ofi_endpoint->noe_wait;
@@ -1271,6 +1271,7 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     cq_attr.wait_cond = FI_CQ_COND_NONE;
 
 no_wait_obj:
+    cq_attr.format = FI_CQ_FORMAT_TAGGED;
     rc = fi_cq_open(na_ofi_domain->nod_domain, &cq_attr,
         &na_ofi_endpoint->noe_cq, NULL);
     if (rc != 0) {
@@ -2956,7 +2957,9 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
 
         if (timeout && wait_hdl) {
             int rc_wait = fi_wait(wait_hdl, (int) (remaining * 1000.0));
-            if (rc_wait != FI_SUCCESS) {
+            if (rc_wait == -FI_ETIMEDOUT)
+                break;
+            else if (rc_wait != FI_SUCCESS) {
                 NA_LOG_ERROR("fi_wait() failed, rc: %d(%s).",
                     rc_wait, fi_strerror((int) -rc_wait));
                 ret = NA_PROTOCOL_ERROR;
