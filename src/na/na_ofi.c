@@ -760,6 +760,13 @@ na_ofi_getinfo(const char *protocol_name, struct fi_info **providers)
         goto out;
     }
 
+    /* Protocol name is provider name, filter out providers within libfabric */
+    hints->fabric_attr->prov_name = strdup(protocol_name);
+    if (!hints->fabric_attr->prov_name) {
+        NA_LOG_ERROR("Could not duplicate name");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
     hints->mode          = FI_CONTEXT | FI_LOCAL_MR;
     hints->ep_attr->type = FI_EP_RDM;
     hints->caps          = FI_TAGGED | FI_RMA;
@@ -804,8 +811,11 @@ na_ofi_getinfo(const char *protocol_name, struct fi_info **providers)
     }
 
 out:
-    if (hints)
+    if (hints) {
+        free(hints->fabric_attr->prov_name);
+        hints->fabric_attr->prov_name = NULL;
         fi_freeinfo(hints);
+    }
     return ret;
 }
 
