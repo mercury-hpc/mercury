@@ -350,8 +350,9 @@ na_ofi_av_insert(na_class_t *na_class, char *node_str, char *service_str,
     domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     assert(domain != NULL);
 
-    rc = fi_getinfo(NA_OFI_VERSION, node_str, service_str, 0 /* flags */,
-                    NULL /* hints */, &tmp_info);
+    /* Resolve node / service (always pass a numeric host) */
+    rc = fi_getinfo(NA_OFI_VERSION, node_str, service_str, FI_NUMERICHOST,
+        domain->nod_prov, &tmp_info);
     if (rc != 0) {
         NA_LOG_ERROR("fi_getinfo (%s:%s) failed, rc: %d(%s).",
                      node_str, service_str, rc, fi_strerror(-rc));
@@ -1874,12 +1875,17 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     char service_str[NA_OFI_MAX_PORT_LEN] = {'\0'};
     na_return_t ret = NA_SUCCESS;
 
-    /* Allocate op_id */
-    na_ofi_op_id = (struct na_ofi_op_id *)calloc(1, sizeof(*na_ofi_op_id));
-    if (!na_ofi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA MPI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto out;
+    /* Allocate op_id if not provided */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
+        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+        na_ofi_op_id_addref(na_ofi_op_id);
+    } else {
+        na_ofi_op_id = (struct na_ofi_op_id *)na_ofi_op_create(na_class);
+        if (!na_ofi_op_id) {
+            NA_LOG_ERROR("Could not create NA OFI operation ID");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
     }
     na_ofi_op_id->noo_context = context;
     na_ofi_op_id->noo_type = NA_CB_LOOKUP;
