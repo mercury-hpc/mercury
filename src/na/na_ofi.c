@@ -295,12 +295,9 @@ na_ofi_class_unlock(na_class_t *na_class)
 static NA_INLINE na_bool_t
 na_ofi_with_reqhdr(na_class_t *na_class)
 {
-    /*
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
 
     return domain->nod_prov_type != NA_OFI_PROV_PSM2;
-    */
-    return NA_TRUE;
 }
 
 /**
@@ -1034,7 +1031,7 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
 #if defined(FI_SOURCE_ERR)
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_PSM2_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_PSM2;
-        //na_ofi_domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
+        na_ofi_domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
         na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
 #endif
@@ -2997,7 +2994,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
     do {
         ssize_t rc;
         hg_time_t t1, t2;
-        fi_addr_t src_addr;
+        fi_addr_t src_addr[NA_OFI_CQ_EVENT_NUM];
         struct fi_cq_tagged_entry cq_event[NA_OFI_CQ_EVENT_NUM];
         struct fi_cq_err_entry cq_err;
         int i;
@@ -3020,7 +3017,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
         na_ofi_class_lock(na_class);
         if (na_ofi_with_reqhdr(na_class) == NA_FALSE)
             rc = fi_cq_readfrom(cq_hdl, cq_event, NA_OFI_CQ_EVENT_NUM,
-                                &src_addr);
+                                src_addr);
         else
             rc = fi_cq_read(cq_hdl, cq_event, NA_OFI_CQ_EVENT_NUM);
         na_ofi_class_unlock(na_class);
@@ -3072,7 +3069,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 cq_event[0].buf = cq_err.buf;
                 cq_event[0].len = cq_err.len;
                 cq_event[0].tag = cq_err.tag;
-                src_addr = tmp_addr;
+                src_addr[0] = tmp_addr;
             } else {
                 NA_LOG_ERROR("fi_cq_readerr got err: %d(%s), "
                              "prov_errno: %d(%s).",
@@ -3095,7 +3092,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
         for (i = 0; i < rc; i++) {
             /*
             NA_LOG_DEBUG("got cq event[%d/%d] flags: 0x%x, src_addr %d.",
-                         i + 1, rc, cq_event[i].flags, src_addr);
+                         i + 1, rc, cq_event[i].flags, src_addr[i]);
             */
             switch (cq_event[i].flags) {
             case FI_SEND | FI_TAGGED:
@@ -3106,7 +3103,8 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             case FI_RECV | FI_TAGGED:
             case FI_RECV | FI_MSG:
             case FI_RECV | FI_TAGGED | FI_MSG:
-                na_ofi_handle_recv_event(na_class, context, src_addr, &cq_event[i]);
+                na_ofi_handle_recv_event(na_class, context, src_addr[i],
+                                         &cq_event[i]);
                 break;
             case FI_READ | FI_RMA:
             case FI_WRITE | FI_RMA:
