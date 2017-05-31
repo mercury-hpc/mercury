@@ -102,6 +102,9 @@
 #define NA_OFI_EXPECTED_TAG_FLAG (0x100000000ULL)
 #define NA_OFI_UNEXPECTED_TAG_IGNORE (0xFFFFFFFFULL)
 
+/* number of CQ event provided for fi_cq_read() */
+#define NA_OFI_CQ_EVENT_NUM (64)
+
 /* the predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
 
@@ -352,7 +355,7 @@ na_ofi_av_insert(na_class_t *na_class, char *node_str, char *service_str,
 
     /* Resolve node / service (always pass a numeric host) */
     rc = fi_getinfo(NA_OFI_VERSION, node_str, service_str, FI_NUMERICHOST,
-        domain->nod_prov, &tmp_info);
+                    NULL /* hints */, &tmp_info);
     if (rc != 0) {
         NA_LOG_ERROR("fi_getinfo (%s:%s) failed, rc: %d(%s).",
                      node_str, service_str, rc, fi_strerror(-rc));
@@ -2991,8 +2994,9 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
         ssize_t rc;
         hg_time_t t1, t2;
         fi_addr_t src_addr;
-        struct fi_cq_tagged_entry cq_event;
+        struct fi_cq_tagged_entry cq_event[NA_OFI_CQ_EVENT_NUM];
         struct fi_cq_err_entry cq_err;
+        int i;
         fi_addr_t tmp_addr;
 
         hg_time_get_current(&t1);
@@ -3011,9 +3015,10 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
 
         na_ofi_class_lock(na_class);
         if (na_ofi_with_reqhdr(na_class) == NA_FALSE)
-            rc = fi_cq_readfrom(cq_hdl, &cq_event, 1, &src_addr);
+            rc = fi_cq_readfrom(cq_hdl, cq_event, NA_OFI_CQ_EVENT_NUM,
+                                &src_addr);
         else
-            rc = fi_cq_read(cq_hdl, &cq_event, 1);
+            rc = fi_cq_read(cq_hdl, cq_event, NA_OFI_CQ_EVENT_NUM);
         na_ofi_class_unlock(na_class);
         if (rc == -FI_EAGAIN) {
             hg_time_get_current(&t2);
@@ -3034,12 +3039,14 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 break;
             }
             if (cq_err.err == FI_ECANCELED) {
-                cq_event.op_context = cq_err.op_context;
-                cq_event.flags = cq_err.flags;
-                cq_event.buf = NULL;
-                cq_event.len = 0;
-//                NA_LOG_DEBUG("got a FI_ECANCELED event, cq_event.flags 0x%x.",
-//                             cq_err.flags);
+                /*
+                cq_event[0].op_context = cq_err.op_context;
+                cq_event[0].flags = cq_err.flags;
+                cq_event[0].buf = NULL;
+                cq_event[0].len = 0;
+                NA_LOG_DEBUG("got a FI_ECANCELED event, cq_event.flags 0x%x.",
+                             cq_err.flags);
+                */
                 continue;
             } else if (cq_err.err == FI_EADDRNOTAVAIL) {
                 na_ofi_class_lock(na_class);
@@ -3056,11 +3063,11 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                     ret = NA_PROTOCOL_ERROR;
                     break;
                 }
-                cq_event.op_context = cq_err.op_context;
-                cq_event.flags = cq_err.flags;
-                cq_event.buf = cq_err.buf;
-                cq_event.len = cq_err.len;
-                cq_event.tag = cq_err.tag;
+                cq_event[0].op_context = cq_err.op_context;
+                cq_event[0].flags = cq_err.flags;
+                cq_event[0].buf = cq_err.buf;
+                cq_event[0].len = cq_err.len;
+                cq_event[0].tag = cq_err.tag;
                 src_addr = tmp_addr;
             } else {
                 NA_LOG_ERROR("fi_cq_readerr got err: %d(%s), "
@@ -3079,31 +3086,32 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
         }
 
         /* got one completion event */
-        assert(rc == 1);
+        assert(rc >= 1);
         ret = NA_SUCCESS;
-        /*
-        NA_LOG_DEBUG("got completion event flags: 0x%x, rc: %d, src_addr %d.\n",
-                     cq_event.flags, rc, src_addr);
-        */
-        switch (cq_event.flags) {
-        case FI_SEND | FI_TAGGED:
-        case FI_SEND | FI_MSG:
-        case FI_SEND | FI_TAGGED | FI_MSG:
-            na_ofi_handle_send_event(na_class, context, &cq_event);
-            break;
-        case FI_RECV | FI_TAGGED:
-        case FI_RECV | FI_MSG:
-        case FI_RECV | FI_TAGGED | FI_MSG:
-            na_ofi_handle_recv_event(na_class, context, src_addr, &cq_event);
-            break;
-        case FI_READ | FI_RMA:
-        case FI_WRITE | FI_RMA:
-            na_ofi_handle_rma_event(na_class, context, &cq_event);
-            break;
-        };
+        for (i = 0; i < rc; i++) {
+            /*
+            NA_LOG_DEBUG("got cq event[%d/%d] flags: 0x%x, src_addr %d.",
+                         i + 1, rc, cq_event[i].flags, src_addr);
+            */
+            switch (cq_event[i].flags) {
+            case FI_SEND | FI_TAGGED:
+            case FI_SEND | FI_MSG:
+            case FI_SEND | FI_TAGGED | FI_MSG:
+                na_ofi_handle_send_event(na_class, context, &cq_event[i]);
+                break;
+            case FI_RECV | FI_TAGGED:
+            case FI_RECV | FI_MSG:
+            case FI_RECV | FI_TAGGED | FI_MSG:
+                na_ofi_handle_recv_event(na_class, context, src_addr, &cq_event[i]);
+                break;
+            case FI_READ | FI_RMA:
+            case FI_WRITE | FI_RMA:
+                na_ofi_handle_rma_event(na_class, context, &cq_event[i]);
+                break;
+            };
+        }
 
     } while (remaining > 0 && ret != NA_SUCCESS);
-
 
     return ret;
 }
