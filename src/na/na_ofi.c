@@ -84,6 +84,12 @@
 #define NA_OFI_VERSION FI_VERSION(1, 4)
 #endif
 
+/* Name of providers */
+#define NA_OFI_PROV_SOCKETS_NAME    "sockets"
+#define NA_OFI_PROV_PSM2_NAME       "psm2"
+#define NA_OFI_PROV_GNI_NAME        "gni"
+#define NA_OFI_PROV_VERBS_NAME      "verbs"
+
 #define NA_OFI_MAX_URI_LEN (128)
 #define NA_OFI_MAX_NODE_LEN (64)
 #define NA_OFI_MAX_PORT_LEN (16)
@@ -481,18 +487,18 @@ out:
 /********************/
 
 static int
-na_ofi_getinfo(const char *protocol_name, struct fi_info **providers);
+na_ofi_getinfo(const char *prov_name, struct fi_info **providers);
 
 static na_return_t
 na_ofi_check_interface(const char *hostname, char *node, size_t node_len,
     char *domain, size_t domain_len);
 
 static NA_INLINE na_bool_t
-na_ofi_verify_provider(const char *protocol_name, const char *domain_name,
+na_ofi_verify_provider(const char *prov_name, const char *domain_name,
     const struct fi_info *fi_info);
 
 static na_return_t
-na_ofi_domain_open(const char *protocol_name, const char *domain_name,
+na_ofi_domain_open(const char *prov_name, const char *domain_name,
     struct na_ofi_domain **na_ofi_domain_p);
 
 static na_return_t
@@ -735,7 +741,7 @@ static hg_thread_mutex_t na_ofi_domain_list_mutex_g =
 /*****************/
 
 static int
-na_ofi_getinfo(const char *protocol_name, struct fi_info **providers)
+na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
 {
     struct fi_info *hints = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -761,7 +767,7 @@ na_ofi_getinfo(const char *protocol_name, struct fi_info **providers)
     }
 
     /* Protocol name is provider name, filter out providers within libfabric */
-    hints->fabric_attr->prov_name = strdup(protocol_name);
+    hints->fabric_attr->prov_name = strdup(prov_name);
     if (!hints->fabric_attr->prov_name) {
         NA_LOG_ERROR("Could not duplicate name");
         ret = NA_NOMEM_ERROR;
@@ -774,7 +780,10 @@ na_ofi_getinfo(const char *protocol_name, struct fi_info **providers)
     //hints->rx_attr->msg_order = FI_ORDER_SAS;
 
     hints->domain_attr->threading = FI_THREAD_UNSPEC;
-    if (!strcmp(protocol_name, "sockets")) {
+    if (!strcmp(prov_name, NA_OFI_PROV_SOCKETS_NAME)) {
+        /* Limit ourselves to TCP for now */
+        hints->ep_attr->protocol = FI_PROTO_SOCK_TCP;
+
         /* As "sockets" provider does not support manual progress and wait
          * objects, set progress to auto for now. Note that the provider
          * effectively creates a thread for internal progress in that case.
@@ -887,18 +896,18 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_bool_t
-na_ofi_verify_provider(const char *protocol_name, const char *domain_name,
+na_ofi_verify_provider(const char *prov_name, const char *domain_name,
     const struct fi_info *fi_info)
 {
     na_bool_t ret = NA_FALSE;
 
-    /* Does not match protocol name */
-    if (strcmp(protocol_name, fi_info->fabric_attr->prov_name))
+    /* Does not match provider name */
+    if (strcmp(prov_name, fi_info->fabric_attr->prov_name))
         goto out;
 
-    /* Only for sockets providers is the protocol_name ambiguous and requires
+    /* Only for sockets providers is the provider name ambiguous and requires
      * checking the domain name as well */
-    if (!strcmp(protocol_name, "sockets")) {
+    if (!strcmp(prov_name, NA_OFI_PROV_SOCKETS_NAME)) {
         /* Does not match domain name */
         if (domain_name && strcmp(domain_name, fi_info->domain_attr->name))
             goto out;
@@ -912,7 +921,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_domain_open(const char *protocol_name, const char *domain_name,
+na_ofi_domain_open(const char *prov_name, const char *domain_name,
     struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain;
@@ -929,7 +938,7 @@ na_ofi_domain_open(const char *protocol_name, const char *domain_name,
      */
     hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
     HG_LIST_FOREACH(na_ofi_domain, &na_ofi_domain_list_g, nod_entry) {
-        if (na_ofi_verify_provider(protocol_name, domain_name,
+        if (na_ofi_verify_provider(prov_name, domain_name,
             na_ofi_domain->nod_prov)) {
             hg_atomic_incr32(&na_ofi_domain->nod_refcount);
             domain_found = NA_TRUE;
@@ -947,7 +956,7 @@ na_ofi_domain_open(const char *protocol_name, const char *domain_name,
     }
 
     /* If no pre-existing domain, get OFI providers info */
-    ret = na_ofi_getinfo(protocol_name, &providers);
+    ret = na_ofi_getinfo(prov_name, &providers);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
         goto out;
@@ -956,7 +965,7 @@ na_ofi_domain_open(const char *protocol_name, const char *domain_name,
     /* Try to find provider that matches protocol and domain/host name */
     prov = providers;
     while (prov != NULL) {
-        if (na_ofi_verify_provider(protocol_name, domain_name, prov)) {
+        if (na_ofi_verify_provider(prov_name, domain_name, prov)) {
             /*
             NA_LOG_DEBUG("mode 0x%llx, fabric_attr - prov_name %s, name - %s, "
                          "domain_attr - name %s.", prov->mode,
@@ -969,8 +978,8 @@ na_ofi_domain_open(const char *protocol_name, const char *domain_name,
         prov = prov->next;
     }
     if (!prov_found) {
-        NA_LOG_ERROR("No provider found for \"%s\" protocol on domain \"%s\"",
-                     protocol_name, domain_name);
+        NA_LOG_ERROR("No provider found for \"%s\" provider on domain \"%s\"",
+                     prov_name, domain_name);
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
@@ -1010,24 +1019,24 @@ na_ofi_domain_open(const char *protocol_name, const char *domain_name,
     }
 
     /* Provider specific configuration (MR mode / caps) */
-    if (!strcmp(na_ofi_domain->nod_prov_name, "sockets")) {
+    if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_SOCKETS_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_SOCKETS;
         /* sockets provider without MR_BASIC supporting */
         na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_SCALABLE;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_SCALABLE;
 #if defined(FI_SOURCE_ERR)
-    } else if (!strcmp(na_ofi_domain->nod_prov_name, "psm2")) {
+    } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_PSM2_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_PSM2;
         na_ofi_domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
         na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
 #endif
-    } else if (!strcmp(na_ofi_domain->nod_prov_name, "verbs")) {
+    } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_VERBS_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS;
         na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
         na_ofi_domain->nod_prov->rx_attr->mode |= FI_CONTEXT;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
-    } else if (!strcmp(na_ofi_domain->nod_prov_name, "gni")) {
+    } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_GNI_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
         na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
@@ -1515,10 +1524,19 @@ static na_bool_t
 na_ofi_check_protocol(const char *protocol_name)
 {
     struct fi_info *providers = NULL, *prov;
+    const char *prov_name;
     na_bool_t accept = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
 
-    ret = na_ofi_getinfo(protocol_name, &providers);
+    /* In case of sockets, protocol used is TCP but allow for passing provider
+     * name directly, will use TCP by default */
+    if (!strcmp(protocol_name, "tcp"))
+        prov_name = NA_OFI_PROV_SOCKETS_NAME;
+    else
+        prov_name = protocol_name;
+
+    /* Get info from provider */
+    ret = na_ofi_getinfo(prov_name, &providers);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
         goto out;
@@ -1531,7 +1549,7 @@ na_ofi_check_protocol(const char *protocol_name)
                      "domain_attr - name %s, mode: 0x%llx, domain_attr->mode 0x%llx, caps: 0x%llx.", prov->fabric_attr->prov_name,
                      prov->fabric_attr->name, prov->domain_attr->name, prov->mode, prov->domain_attr->mode, prov->caps);
         */
-        if (!strcmp(protocol_name, prov->fabric_attr->prov_name)) {
+        if (!strcmp(prov_name, prov->fabric_attr->prov_name)) {
             accept = NA_TRUE;
             break;
         }
@@ -1551,6 +1569,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 {
     char node[NA_OFI_MAX_URI_LEN] = {'\0'};
     char domain_name[NA_OFI_MAX_URI_LEN] = {'\0'};
+    const char *prov_name;
     char *service = NULL;
     na_return_t ret = NA_SUCCESS;
 
@@ -1559,6 +1578,13 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
                  "host_name %s.\n", na_info->class_name, na_info->protocol_name,
                  na_info->host_name);
     */
+
+    /* In case of sockets, protocol used is TCP but allow for passing provider
+     * name directly, will use TCP by default */
+    if (!strcmp(na_info->protocol_name, "tcp"))
+        prov_name = NA_OFI_PROV_SOCKETS_NAME;
+    else
+        prov_name = na_info->protocol_name;
 
     /* Get hostname/port info if available */
     if (na_info->host_name) {
@@ -1591,10 +1617,10 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     hg_thread_mutex_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_mutex);
 
     /* Create domain */
-    ret = na_ofi_domain_open(na_info->protocol_name, domain_name,
+    ret = na_ofi_domain_open(prov_name, domain_name,
         &NA_OFI_PRIVATE_DATA(na_class)->nop_domain);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not open domain for %s, %s", na_info->protocol_name,
+        NA_LOG_ERROR("Could not open domain for %s, %s", prov_name,
             domain_name);
         goto out;
     }
