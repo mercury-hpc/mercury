@@ -1266,7 +1266,8 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
 
     /* verbs provider does not support FI_WAIT_FD/FI_WAIT_SET now */
     if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS ||
-        na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI)
+        na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI ||
+        na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2)
         goto no_wait_obj;
 
     /**
