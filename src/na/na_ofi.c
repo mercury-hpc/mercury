@@ -1138,7 +1138,9 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
         hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
         goto out;
     }
-    HG_LIST_REMOVE(na_ofi_domain, nod_entry);
+    /* inserted to na_ofi_domain_list_g after nod_addr_ht created */
+    if (na_ofi_domain->nod_addr_ht != NULL)
+        HG_LIST_REMOVE(na_ofi_domain, nod_entry);
     hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
 
     /* Close MR */
