@@ -344,39 +344,47 @@ static na_return_t
 na_ofi_av_insert(na_class_t *na_class, char *node_str, char *service_str,
                  fi_addr_t *fi_addr)
 {
-    struct na_ofi_domain *domain;
-    struct fi_info *tmp_info = NULL;
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
     /* address resolution by fi AV */
-    domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     assert(domain != NULL);
 
-    /* Resolve node / service (always pass a numeric host) */
-    rc = fi_getinfo(NA_OFI_VERSION, node_str, service_str, FI_NUMERICHOST,
-                    NULL /* hints */, &tmp_info);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_getinfo (%s:%s) failed, rc: %d(%s).",
+    /* Use fi_av_insertsvc if possible */
+    na_ofi_class_lock(na_class);
+    rc = fi_av_insertsvc(domain->nod_av, node_str, service_str,
+                         fi_addr, 0 /* flags */, NULL /* context */);
+    na_ofi_class_unlock(na_class);
+    if (rc == -FI_ENOSYS) { /* Not supported by PSM2/GNI providers */
+        struct fi_info *tmp_info = NULL;
+
+        /* Resolve node / service (always pass a numeric host) */
+        rc = fi_getinfo(NA_OFI_VERSION, node_str, service_str, 0,
+                        NULL /* hints */, &tmp_info);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_getinfo (%s:%s) failed, rc: %d(%s).",
+                         node_str, service_str, rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        na_ofi_class_lock(na_class);
+        rc = fi_av_insert(domain->nod_av, tmp_info->dest_addr, 1, fi_addr,
+                          0 /* flags */, NULL /* context */);
+        na_ofi_class_unlock(na_class);
+
+        fi_freeinfo(tmp_info);
+    }
+
+    if (rc < 0) {
+        NA_LOG_ERROR("fi_av_insert/svc failed(node %s, service %s), rc: %d(%s).",
                      node_str, service_str, rc, fi_strerror(-rc));
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
-    na_ofi_class_lock(na_class);
-    rc = fi_av_insert(domain->nod_av, tmp_info->dest_addr, 1, fi_addr,
-                      0 /* flags */, NULL /* context */);
-    na_ofi_class_unlock(na_class);
-    /* fi_av_insertsvc not supported by PSM2 provider */
-    //rc = fi_av_insertsvc(domain->nod_av, node_str, service_str,
-    //                     fi_addr, 0 /* flags */, NULL /* context */)
-    fi_freeinfo(tmp_info);
-    if (rc < 0) {
-        NA_LOG_ERROR("fi_av_insertsvc failed(node %s, service %s), rc: %d(%s).",
-                     node_str, service_str, rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    } else if (rc != 1) {
-        NA_LOG_ERROR("fi_av_insert failed(node %s, service %s), rc: %d.",
+
+    if (rc != 1) {
+        NA_LOG_ERROR("fi_av_insert/svc failed(node %s, service %s), rc: %d.",
                      node_str, service_str, rc);
         ret = NA_PROTOCOL_ERROR;
         goto out;
