@@ -448,6 +448,15 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, struct na_ofi_reqhdr *reqhdr,
     }
     hg_thread_rwlock_release_rdlock(&domain->nod_rwlock);
 
+    hg_thread_rwlock_wrlock(&domain->nod_rwlock);
+
+    fi_addr = hg_hash_table_lookup(domain->nod_addr_ht, &addr_key);
+    if (fi_addr != HG_HASH_TABLE_NULL) {
+        *src_addr = *fi_addr;
+        hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
+        return ret;
+    }
+
     in.s_addr = reqhdr->fih_ip;
     node = inet_ntoa(in);
     memset(service, 0, 16);
@@ -457,11 +466,10 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, struct na_ofi_reqhdr *reqhdr,
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("na_ofi_av_insert(%s:%s) failed, ret: %d.",
                      node, service, ret);
-        goto out;
+        goto unlock;
     }
     *src_addr = tmp_addr;
 
-    hg_thread_rwlock_wrlock(&domain->nod_rwlock);
     fi_addr = hg_hash_table_lookup(domain->nod_addr_ht, &addr_key);
     if (fi_addr != HG_HASH_TABLE_NULL) {
         /* in race condition, use addr in HT and remove the new addr from AV */
@@ -490,7 +498,6 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, struct na_ofi_reqhdr *reqhdr,
     }
 unlock:
     hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
-out:
     return ret;
 }
 
