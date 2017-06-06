@@ -3222,6 +3222,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
     na_op_id_t op_id)
 {
     struct fid_ep *ep_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint->noe_ep;
+    struct fid_cq *cq_hdl = NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint->noe_cq;
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
     struct na_ofi_op_id *tmp = NULL, *first = NULL;
     struct na_ofi_addr *na_ofi_addr = NULL;
@@ -3295,6 +3296,11 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
         break;
     }
 
+    /* signal the cq to make the wait FD can work */
+    rc = fi_cq_signal(cq_hdl);
+    if (rc != 0)
+            NA_LOG_DEBUG("fi_cq_signal (op type %d) failed, rc: %d(%s).",
+                         na_ofi_op_id->noo_type, rc, fi_strerror((int) -rc));
 out:
     return ret;
 }
