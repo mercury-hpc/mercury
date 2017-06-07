@@ -1890,6 +1890,7 @@ static na_return_t
 na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const char *name, na_op_id_t *op_id)
 {
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     struct na_ofi_op_id *na_ofi_op_id = NULL;
     struct na_ofi_addr *na_ofi_addr = NULL;
     char node_str[NA_OFI_MAX_NODE_LEN] = {'\0'};
@@ -1939,8 +1940,14 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* address resolution by fi AV */
+    /*
+     * TODO: later if concurrent calling of fi_av_insert does not cause probelm
+     * then can remove this lock. Now libfabric internal memory corruption found
+     */
+    hg_thread_rwlock_wrlock(&domain->nod_rwlock);
     ret = na_ofi_av_insert(na_class, node_str, service_str,
                            &na_ofi_addr->noa_addr);
+    hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("na_ofi_av_insert(%s:%s) failed, ret: %d.",
                      node_str, service_str, ret);
