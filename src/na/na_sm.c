@@ -2047,14 +2047,23 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
 
             hg_thread_mutex_lock(
                 &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
-            na_sm_op_id = HG_QUEUE_FIRST(
-                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue);
-            HG_QUEUE_POP_HEAD(&NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue,
-                entry);
+            HG_QUEUE_FOREACH(na_sm_op_id,
+                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue, entry) {
+                if (na_sm_op_id->info.lookup.na_sm_addr == poll_addr) {
+                    HG_QUEUE_REMOVE(
+                        &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue,
+                        na_sm_op_id, na_sm_op_id, entry);
+                    break;
+                }
+            }
             hg_thread_mutex_unlock(
                 &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
 
-            na_sm_op_id->info.lookup.na_sm_addr = poll_addr;
+            if (!na_sm_op_id) {
+                NA_LOG_ERROR("Could not find lookup op ID");
+                ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
 
             /* Completion */
             ret = na_sm_complete(na_sm_op_id);
@@ -2683,6 +2692,7 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
         NA_LOG_ERROR("Could not add conn_sock to poll set");
         goto done;
     }
+    na_sm_op_id->info.lookup.na_sm_addr = na_sm_addr;
 
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
