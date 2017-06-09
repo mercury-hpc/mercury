@@ -125,9 +125,13 @@ else()
   set(CMAKE_FIND_ROOT_PATH $ENV{HOME}/install ${CMAKE_FIND_ROOT_PATH})
 endif()
 
+if($ENV{CC} MATCHES "^gcc.*")
+  set(MERCURY_C_FLAGS "-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -Wconversion -Wmissing-prototypes -pedantic -Wpointer-arith -Wformat=2 -std=gnu99" ${MERCURY_MEMCHECK_FLAGS})
+endif()
+
 # Initial cache used to build mercury, options can be modified here
 set(dashboard_cache "
-CMAKE_C_FLAGS:STRING=-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -Wconversion -Wmissing-prototypes -pedantic -Wpointer-arith -Wformat=2 ${MERCURY_MEMCHECK_FLAGS}
+CMAKE_C_FLAGS:STRING=${MERCURY_C_FLAGS}
 CMAKE_CXX_FLAGS:STRING=${MERCURY_MEMCHECK_FLAGS}
 
 BUILD_SHARED_LIBS:BOOL=${mercury_build_shared}
