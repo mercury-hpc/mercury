@@ -126,7 +126,7 @@ else()
 endif()
 
 if($ENV{CC} MATCHES "^gcc.*")
-  set(MERCURY_C_FLAGS "-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -Wconversion -Wmissing-prototypes -pedantic -Wpointer-arith -Wformat=2 -std=gnu99" ${MERCURY_MEMCHECK_FLAGS})
+  set(MERCURY_C_FLAGS "-Wall -Wextra -Wshadow -Winline -Wundef -Wcast-qual -Wconversion -Wmissing-prototypes -pedantic -Wpointer-arith -Wformat=2 -std=gnu99 ${MERCURY_MEMCHECK_FLAGS}")
 endif()
 
 # Initial cache used to build mercury, options can be modified here
