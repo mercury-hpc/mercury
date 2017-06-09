@@ -86,13 +86,13 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
   endif()
   # Tsan
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
-    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer -fPIC")
+    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=thread -fno-omit-frame-pointer -fPIC -fuse-ld=gold -pthread")
     # Must add verbosity / Error in build if no memory output file is produced
     set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
   endif()
   # Asan
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "AddressSanitizer")
-    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=address -fno-omit-frame-pointer -fPIC")
+    set(MERCURY_MEMCHECK_FLAGS "-O1 -fsanitize=address -fno-omit-frame-pointer -fPIC -fuse-ld=gold -pthread")
     # Must add verbosity / Error in build if no memory output file is produced
     set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
   endif()
@@ -113,13 +113,16 @@ endif()
 if(APPLE)
   set(SOEXT dylib)
   set(PROC_NAME_OPT -c)
+  set(USE_BMI OFF)
   set(USE_CCI OFF)
   set(USE_SM OFF)
 else()
   set(SOEXT so)
   set(PROC_NAME_OPT -r)
+  set(USE_BMI ON)
   set(USE_CCI ON)
   set(USE_SM ON)
+  set(CMAKE_FIND_ROOT_PATH $ENV{HOME}/install ${CMAKE_FIND_ROOT_PATH})
 endif()
 
 # Initial cache used to build mercury, options can be modified here
@@ -139,16 +142,10 @@ MERCURY_ENABLE_PARALLEL_TESTING:BOOL=ON
 MERCURY_USE_BOOST_PP:BOOL=OFF
 MERCURY_USE_SELF_FORWARD:BOOL=ON
 MERCURY_USE_XDR:BOOL=OFF
-NA_USE_BMI:BOOL=ON
-BMI_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
-BMI_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libbmi.${SOEXT}
+NA_USE_BMI:BOOL=${USE_BMI}
 NA_BMI_TESTING_PROTOCOL:STRING=tcp
 NA_USE_MPI:BOOL=ON
-OPA_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
-OPA_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libopa.${SOEXT}
 NA_USE_CCI:BOOL=${USE_CCI}
-CCI_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
-CCI_LIBRARY:FILEPATH=$ENV{HOME}/install/lib/libcci.${SOEXT}
 NA_CCI_TESTING_PROTOCOL:STRING=tcp
 NA_USE_SM:BOOL=${USE_SM}
 MPIEXEC_MAX_NUMPROCS:STRING=4

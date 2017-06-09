@@ -25,43 +25,61 @@ env:
     - MERCURY_BUILD_CONFIGURATION="Debug"
     - MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
     - MERCURY_BUILD_CONFIGURATION="Release"
-    - MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
-    - MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
 
 matrix:
-  exclude:
-   - os: osx
-     env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
+  include:
    - os: linux
-     env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
-     compiler: clang
-   - os: osx
-     env: MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
+     compiler: gcc
+     addons:
+       apt:
+         sources:
+         - ubuntu-toolchain-r-test
+         packages:
+         - gcc-7
+         - g++-7
+         - libtsan0
+         - libasan4
+         - liblsan0
+     env:
+       - MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
    - os: linux
-     env: MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
-     compiler: clang
+     compiler: gcc
+     addons:
+       apt:
+         sources:
+         - ubuntu-toolchain-r-test
+         packages:
+         - gcc-7
+         - g++-7
+         - libtsan0
+         - libasan4
+         - liblsan0
+     env:
+         - MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
 
 branches:
   only:
     - master
-    - topic_travis
-    - travis_cron
 
 before_install:
     - echo "Existing directories in $HOME" && ls $HOME
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
+    - if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc" ]]; then brew install gcc; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install mpich; fi
 
 install:
     - ./Testing/script/travis_build.sh
 
 before_script:
-    - ls $HOME/install/bin
+    - if [ -d "$HOME/install/bin" ]; then ls $HOME/install/bin; fi
     - export PATH=$HOME/install/bin:$PATH
     - export LD_LIBRARY_PATH=$HOME/install/lib:$HOME/install/lib64:$LD_LIBRARY_PATH
+    - export PKG_CONFIG_PATH=$HOME/install/lib/pkgconfig:$PKG_CONFIG_PATH
+    - if [[ "$CC" == "gcc" && `command -v gcc-7` ]]; then export CC=gcc-7; export CXX=g++-7; export AR=gcc-ar-7; export NM=gcc-nm-7; export RANLIB=gcc-ranlib-7; fi
     - $CC --version
     - ctest --version
     - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then cat /proc/sys/kernel/yama/ptrace_scope; fi
+    - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ulimit -a; fi
 
 script:
     - ctest -VV --output-on-failure -S ./Testing/script/travis_script.cmake
