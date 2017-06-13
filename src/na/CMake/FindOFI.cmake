@@ -5,7 +5,7 @@
 #  OFI_LIBRARIES - The libraries needed to use OFI
 
 find_package(PkgConfig)
-pkg_check_modules(PC_OFI QUIET libfabric)
+pkg_check_modules(PC_OFI libfabric)
 
 find_path(OFI_INCLUDE_DIR rdma/fabric.h
   HINTS ${PC_OFI_INCLUDEDIR} ${PC_OFI_INCLUDE_DIRS})
