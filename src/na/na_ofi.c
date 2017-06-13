@@ -3427,9 +3427,9 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
 
     /* signal the cq to make the wait FD can work */
     rc = fi_cq_signal(cq_hdl);
-    if (rc != 0)
-            NA_LOG_DEBUG("fi_cq_signal (op type %d) failed, rc: %d(%s).",
-                         na_ofi_op_id->noo_type, rc, fi_strerror((int) -rc));
+    if (rc != 0 && rc != -ENOSYS)
+        NA_LOG_DEBUG("fi_cq_signal (op type %d) failed, rc: %d(%s).",
+            na_ofi_op_id->noo_type, rc, fi_strerror((int) -rc));
 out:
     return ret;
 }
