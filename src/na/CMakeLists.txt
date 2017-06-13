@@ -55,6 +55,8 @@ mark_as_advanced(NA_ALLOW_MULTI_PROGRESS)
 #------------------------------------------------------------------------------
 # External dependencies / NA plugins
 #------------------------------------------------------------------------------
+include(CheckIncludeFiles)
+
 # BMI
 option(NA_USE_BMI "Use BMI." OFF)
 if(NA_USE_BMI)
@@ -140,13 +142,12 @@ if(NA_USE_OFI)
     set(NA_PLUGINS ${NA_PLUGINS} ofi)
     set(NA_HAS_OFI 1)
     include_directories(${OFI_INCLUDE_DIR})
+    # Detect <rdma/fi_ext_gni.h>
+    set(CMAKE_REQUIRED_INCLUDES ${OFI_INCLUDE_DIR})
+    check_include_files("rdma/fi_ext_gni.h" NA_OFI_HAS_EXT_GNI_H)
     set(NA_EXT_LIB_DEPENDENCIES
       ${NA_EXT_LIB_DEPENDENCIES}
       ${OFI_LIBRARIES}
-    )
-    set(NA_EXT_INCLUDE_DEPENDENCIES
-      ${NA_EXT_INCLUDE_DEPENDENCIES}
-      ${OFI_INCLUDE_DIRS}
     )
   else()
     message(FATAL_ERROR "Could not find OFI.")

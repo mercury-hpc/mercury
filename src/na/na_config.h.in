@@ -39,6 +39,7 @@
 
 /* OFI */
 #cmakedefine NA_HAS_OFI
+#cmakedefine NA_OFI_HAS_EXT_GNI_H
 
 /* NA SM */
 #cmakedefine NA_HAS_SM
