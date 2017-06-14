@@ -103,7 +103,7 @@
 #define NA_OFI_UNEXPECTED_TAG_IGNORE (0xFFFFFFFFULL)
 
 /* number of CQ event provided for fi_cq_read() */
-#define NA_OFI_CQ_EVENT_NUM (64)
+#define NA_OFI_CQ_EVENT_NUM (16)
 
 /* the predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
@@ -987,9 +987,10 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
         if (na_ofi_verify_provider(prov_name, domain_name, prov)) {
             /*
             NA_LOG_DEBUG("mode 0x%llx, fabric_attr - prov_name %s, name - %s, "
-                         "domain_attr - name %s.", prov->mode,
-                         prov->fabric_attr->prov_name, prov->fabric_attr->name,
-                         prov->domain_attr->name);
+                         "domain_attr - name %s, domain_attr->threading: %d.",
+                         prov->mode, prov->fabric_attr->prov_name,
+                         prov->fabric_attr->name, prov->domain_attr->name,
+                         prov->domain_attr->threading);
             */
             prov_found = NA_TRUE;
             break;
@@ -3110,7 +3111,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             break;
         }
 
-        /* got one completion event */
+        /* got at least one completion event */
         assert(rc >= 1);
         ret = NA_SUCCESS;
         for (i = 0; i < rc; i++) {
