@@ -70,6 +70,7 @@ struct hg_class {
     hg_thread_pool_t *self_processing_pool; /* Thread pool for self processing */
 #endif
     hg_atomic_int32_t n_contexts;       /* Atomic used for number of contexts */
+    hg_atomic_int32_t n_addrs;          /* Atomic used for number of addrs */
 };
 
 /* HG context */
@@ -87,6 +88,7 @@ struct hg_context {
     HG_LIST_HEAD(hg_handle) processing_list;      /* List of handles being processed */
     hg_thread_mutex_t processing_list_mutex;      /* Processing list mutex */
     hg_bool_t finalizing;                         /* Prevent reposts */
+    hg_atomic_int32_t n_handles;                  /* Atomic used for number of handles */
     struct hg_poll_set *poll_set;                 /* Context poll set */
 #ifdef HG_HAS_SELF_FORWARD
     int completion_queue_notify;
@@ -273,7 +275,7 @@ hg_core_get_na_context(
  */
 static struct hg_addr *
 hg_core_addr_create(
-        void
+        struct hg_class *hg_class
         );
 
 /**
@@ -936,6 +938,9 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     /* No context created yet */
     hg_atomic_set32(&hg_class->n_contexts, 0);
 
+    /* No addr created yet */
+    hg_atomic_set32(&hg_class->n_addrs, 0);
+
     /* Create new function map */
     hg_class->func_map = hg_hash_table_new(hg_core_int_hash, hg_core_int_equal);
     if (!hg_class->func_map) {
@@ -962,12 +967,23 @@ done:
 static hg_return_t
 hg_core_finalize(struct hg_class *hg_class)
 {
+    hg_util_int32_t n_addrs, n_contexts;
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_class) goto done;
 
-    if (hg_atomic_get32(&hg_class->n_contexts) != 0) {
-        HG_LOG_ERROR("HG contexts must be destroyed before finalizing HG");
+    n_contexts = hg_atomic_get32(&hg_class->n_contexts);
+    if (n_contexts != 0) {
+        HG_LOG_ERROR("HG contexts must be destroyed before finalizing HG"
+            " (%d remaining)", n_contexts);
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    n_addrs = hg_atomic_get32(&hg_class->n_addrs);
+    if (n_addrs != 0) {
+        HG_LOG_ERROR("HG addrs must be freed before finalizing HG"
+            " (%d remaining)", n_addrs);
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
@@ -1019,7 +1035,7 @@ hg_core_get_na_context(struct hg_context *context)
 
 /*---------------------------------------------------------------------------*/
 static struct hg_addr *
-hg_core_addr_create(void)
+hg_core_addr_create(struct hg_class *hg_class)
 {
     struct hg_addr *hg_addr = NULL;
 
@@ -1031,6 +1047,9 @@ hg_core_addr_create(void)
     memset(hg_addr, 0, sizeof(struct hg_addr));
     hg_addr->na_addr = NA_ADDR_NULL;
     hg_atomic_set32(&hg_addr->ref_count, 1);
+
+    /* Increment N addrs from HG class */
+    hg_atomic_incr32(&hg_class->n_addrs);
 
 done:
     return hg_addr;
@@ -1064,7 +1083,7 @@ hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
     hg_op_id->info.lookup.na_lookup_op_id = NA_OP_ID_NULL;
 
     /* Allocate addr */
-    hg_addr = hg_core_addr_create();
+    hg_addr = hg_core_addr_create(context->hg_class);
     if (!hg_addr) {
         HG_LOG_ERROR("Could not create HG addr");
         ret = NA_NOMEM_ERROR;
@@ -1167,6 +1186,9 @@ hg_core_addr_free(struct hg_class *hg_class, struct hg_addr *hg_addr)
         goto done;
     }
 
+    /* Decrement N addrs from HG class */
+    hg_atomic_decr32(&hg_class->n_addrs);
+
     na_ret = NA_Addr_free(hg_class->na_class, hg_addr->na_addr);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not free address");
@@ -1187,7 +1209,7 @@ hg_core_addr_self(struct hg_class *hg_class, struct hg_addr **self_addr)
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    hg_addr = hg_core_addr_create();
+    hg_addr = hg_core_addr_create(hg_class);
     if (!hg_addr) {
         HG_LOG_ERROR("Could not create HG addr");
         ret = NA_NOMEM_ERROR;
@@ -1223,7 +1245,7 @@ hg_core_addr_dup(struct hg_class *hg_class, struct hg_addr *hg_addr,
     if (hg_addr->is_mine) {
         struct hg_addr *dup = NULL;
 
-        dup = hg_core_addr_create();
+        dup = hg_core_addr_create(hg_class);
         if (!dup) {
             HG_LOG_ERROR("Could not create HG addr");
             ret = NA_NOMEM_ERROR;
@@ -1329,6 +1351,9 @@ hg_core_create(struct hg_context *context)
     /* Set refcount to 1 */
     hg_atomic_set32(&hg_handle->ref_count, 1);
 
+    /* Increment N handles from HG context */
+    hg_atomic_incr32(&context->n_handles);
+
     /* Execute context callback on handle, this allows upper layers to allocate
      * private data on handle creation */
     if (context->hg_class->handle_create_callback) {
@@ -1360,6 +1385,9 @@ hg_core_destroy(struct hg_handle *hg_handle)
         /* Cannot free yet */
         goto done;
     }
+
+    /* Decrement N handles from HG context */
+    hg_atomic_decr32(&hg_handle->hg_info.context->n_handles);
 
     /* Remove reference to HG addr */
     hg_core_addr_free(hg_handle->hg_info.hg_class, hg_handle->hg_info.addr);
@@ -2025,7 +2053,7 @@ hg_core_context_post(struct hg_context *context, unsigned int request_count,
         }
 
         /* Create internal addresses */
-        hg_addr = hg_core_addr_create();
+        hg_addr = hg_core_addr_create(context->hg_class);
         if (!hg_addr) {
             HG_LOG_ERROR("Could not create HG addr");
             ret = NA_NOMEM_ERROR;
@@ -2710,6 +2738,9 @@ HG_Core_context_create(hg_class_t *hg_class)
     HG_LIST_INIT(&context->self_processing_list);
 #endif
 
+    /* No handle created yet */
+    hg_atomic_set32(&context->n_handles, 0);
+
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&context->completion_queue_mutex);
     hg_thread_cond_init(&context->completion_queue_cond);
@@ -2766,6 +2797,7 @@ HG_Core_context_destroy(hg_context_t *context)
     hg_return_t ret = HG_SUCCESS;
     unsigned int actual_count;
     int na_poll_fd;
+    hg_util_int32_t n_handles;
 
     if (!context) goto done;
 
@@ -2791,6 +2823,15 @@ HG_Core_context_destroy(hg_context_t *context)
     ret = hg_core_processing_list_wait(context);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not wait on processing list");
+        goto done;
+    }
+
+    /* Number of handles for that context should be 0 */
+    n_handles = hg_atomic_get32(&context->n_handles);
+    if (n_handles != 0) {
+        HG_LOG_ERROR("HG handles must be freed before destroying context "
+            "(%d remaining)", n_handles);
+        ret = HG_PROTOCOL_ERROR;
         goto done;
     }
 
