@@ -103,7 +103,7 @@
 #define NA_OFI_UNEXPECTED_TAG_IGNORE (0xFFFFFFFFULL)
 
 /* number of CQ event provided for fi_cq_read() */
-#define NA_OFI_CQ_EVENT_NUM (16)
+#define NA_OFI_CQ_EVENT_NUM (1)
 
 /* the predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
@@ -3039,6 +3039,9 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             }
         }
 
+        memset(src_addr, 0, sizeof(fi_addr_t) * NA_OFI_CQ_EVENT_NUM);
+        memset(cq_event, 0, sizeof(struct fi_cq_tagged_entry) *
+                                   NA_OFI_CQ_EVENT_NUM);
         na_ofi_class_lock(na_class);
         if (na_ofi_with_reqhdr(na_class) == NA_FALSE)
             rc = fi_cq_readfrom(cq_hdl, cq_event, NA_OFI_CQ_EVENT_NUM,
