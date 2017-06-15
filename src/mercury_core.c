@@ -1534,6 +1534,12 @@ hg_core_forward_na(struct hg_handle *hg_handle)
             hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for input buffer");
+        /* cancel the above posted recv op */
+        na_ret = NA_Cancel(hg_class->na_class, hg_context->na_context,
+                           hg_handle->na_recv_op_id);
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not cancel recv op id");
+        }
         ret = HG_NA_ERROR;
         goto done;
     }
