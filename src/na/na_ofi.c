@@ -103,7 +103,9 @@
 #define NA_OFI_UNEXPECTED_TAG_IGNORE (0xFFFFFFFFULL)
 
 /* number of CQ event provided for fi_cq_read() */
-#define NA_OFI_CQ_EVENT_NUM (1)
+#define NA_OFI_CQ_EVENT_NUM (16)
+/* CQ depth (the socket provider's default value is 256 */
+#define NA_OFI_CQ_DEPTH (2048)
 
 /* the predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
@@ -1314,6 +1316,7 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
 
 no_wait_obj:
     cq_attr.format = FI_CQ_FORMAT_TAGGED;
+    cq_attr.size = NA_OFI_CQ_DEPTH;
     rc = fi_cq_open(na_ofi_domain->nod_domain, &cq_attr,
         &na_ofi_endpoint->noe_cq, NULL);
     if (rc != 0) {
@@ -3017,12 +3020,11 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_TIMEOUT;
 
     do {
-        ssize_t rc;
+        ssize_t rc, i, event_num = 0;
         hg_time_t t1, t2;
         fi_addr_t src_addr[NA_OFI_CQ_EVENT_NUM];
         struct fi_cq_tagged_entry cq_event[NA_OFI_CQ_EVENT_NUM];
         struct fi_cq_err_entry cq_err;
-        int i;
         fi_addr_t tmp_addr;
 
         hg_time_get_current(&t1);
@@ -3098,6 +3100,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 cq_event[0].len = cq_err.len;
                 cq_event[0].tag = cq_err.tag;
                 src_addr[0] = tmp_addr;
+                event_num = 1;
             } else {
                 NA_LOG_ERROR("fi_cq_readerr got err: %d(%s), "
                              "prov_errno: %d(%s).",
@@ -3112,15 +3115,18 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                          rc, fi_strerror((int) -rc));
             rc = NA_PROTOCOL_ERROR;
             break;
+        } else {
+            assert(rc > 0);
+            event_num = rc;
         }
 
         /* got at least one completion event */
-        assert(rc >= 1);
+        assert(event_num >= 1);
         ret = NA_SUCCESS;
-        for (i = 0; i < rc; i++) {
+        for (i = 0; i < event_num; i++) {
             /*
             NA_LOG_DEBUG("got cq event[%d/%d] flags: 0x%x, src_addr %d.",
-                         i + 1, rc, cq_event[i].flags, src_addr[i]);
+                         i + 1, event_num, cq_event[i].flags, src_addr[i]);
             */
             switch (cq_event[i].flags) {
             case FI_SEND | FI_TAGGED:
@@ -3137,6 +3143,10 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             case FI_READ | FI_RMA:
             case FI_WRITE | FI_RMA:
                 na_ofi_handle_rma_event(na_class, context, &cq_event[i]);
+                break;
+            default:
+                NA_LOG_DEBUG("bad cq event[%d/%d] flags: 0x%x, src_addr %d.",
+                         i + 1, event_num, cq_event[i].flags, src_addr[i]);
                 break;
             };
         }
