@@ -3252,6 +3252,10 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
 
     if (hg_atomic_get32(&na_ofi_op_id->noo_completed))
         goto out;
+    if (!hg_atomic_cas32(&na_ofi_op_id->noo_canceled, 0, 1)) {
+        NA_LOG_WARNING("ignore canceling for a canceled op.");
+        goto out;
+    }
 
     hg_atomic_incr32(&na_ofi_op_id->noo_canceled);
 
