@@ -103,9 +103,9 @@
 #define NA_OFI_UNEXPECTED_TAG_IGNORE (0xFFFFFFFFULL)
 
 /* number of CQ event provided for fi_cq_read() */
-#define NA_OFI_CQ_EVENT_NUM (16)
+#define NA_OFI_CQ_EVENT_NUM (1)
 /* CQ depth (the socket provider's default value is 256 */
-#define NA_OFI_CQ_DEPTH (2048)
+#define NA_OFI_CQ_DEPTH (8192)
 
 /* the predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
