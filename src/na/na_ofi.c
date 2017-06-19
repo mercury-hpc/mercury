@@ -2904,6 +2904,13 @@ na_ofi_handle_send_event(na_class_t NA_UNUSED *class,
         NA_LOG_ERROR("ignore the send_event as the op is completed.");
         return;
     }
+    if (na_ofi_op_id->noo_type != NA_CB_SEND_EXPECTED &&
+        na_ofi_op_id->noo_type != NA_CB_SEND_UNEXPECTED) {
+        NA_LOG_ERROR("ignore the send_event as na_ofi_op_id->noo_type %d "
+                     "mismatch with NA_CB_SEND_EXPECTED/_UNEXPECTED.",
+                     na_ofi_op_id->noo_type);
+        return;
+    }
 
     na_ofi_addr = (struct na_ofi_addr *)na_ofi_op_id->noo_addr;
 
@@ -2939,14 +2946,30 @@ na_ofi_handle_recv_event(na_class_t *na_class,
     }
 
     if (cq_event->tag & ~NA_OFI_UNEXPECTED_TAG_IGNORE) {
-        assert(na_ofi_op_id->noo_type == NA_CB_RECV_EXPECTED);
+        if (na_ofi_op_id->noo_type != NA_CB_RECV_EXPECTED) {
+            NA_LOG_ERROR("ignore the recv_event as na_ofi_op_id->noo_type %d "
+                         "mismatch with NA_CB_RECV_EXPECTED.",
+                         na_ofi_op_id->noo_type);
+            return;
+        }
+        if (na_ofi_op_id->noo_info.noo_recv_expected.noi_tag !=
+               (cq_event->tag & ~NA_OFI_EXPECTED_TAG_FLAG)) {
+            NA_LOG_ERROR("ignore the recv_event as noi_tag 0x%x mismatch with "
+                         "cq_event->tag: 0x%x.",
+                         na_ofi_op_id->noo_info.noo_recv_expected.noi_tag,
+                         cq_event->tag & ~NA_OFI_EXPECTED_TAG_FLAG);
+            return;
+        }
         peer_addr = na_ofi_op_id->noo_addr;
         assert(peer_addr != NULL);
-        assert(na_ofi_op_id->noo_info.noo_recv_expected.noi_tag ==
-               (cq_event->tag & ~NA_OFI_EXPECTED_TAG_FLAG));
         na_ofi_op_id->noo_info.noo_recv_expected.noi_msg_size = cq_event->len;
     } else {
-        assert(na_ofi_op_id->noo_type == NA_CB_RECV_UNEXPECTED);
+        if (na_ofi_op_id->noo_type != NA_CB_RECV_UNEXPECTED) {
+            NA_LOG_ERROR("ignore the recv_event as na_ofi_op_id->noo_type %d "
+                         "mismatch with NA_CB_RECV_UNEXPECTED.",
+                         na_ofi_op_id->noo_type);
+            return;
+        }
 
         peer_addr = na_ofi_addr_alloc(NULL);
         if (peer_addr == NULL) {
@@ -3006,6 +3029,13 @@ na_ofi_handle_rma_event(na_class_t NA_UNUSED *class,
                                 noo_fi_ctx);
     if (!na_ofi_op_id_valid(na_ofi_op_id)) {
         NA_LOG_ERROR("bad na_ofi_op_id, ignore the RMA event.");
+        return;
+    }
+    if (na_ofi_op_id->noo_type != NA_CB_PUT &&
+        na_ofi_op_id->noo_type != NA_CB_GET) {
+        NA_LOG_ERROR("ignore the send_event as na_ofi_op_id->noo_type %d "
+                     "mismatch with NA_CB_PUT/_GET.",
+                     na_ofi_op_id->noo_type);
         return;
     }
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
