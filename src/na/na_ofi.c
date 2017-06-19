@@ -107,6 +107,10 @@
 /* CQ depth (the socket provider's default value is 256 */
 #define NA_OFI_CQ_DEPTH (8192)
 
+/* The magic number for na_ofi_op_id verification */
+#define NA_OFI_OP_ID_MAGIC_1 (0x1928374655627384ULL)
+#define NA_OFI_OP_ID_MAGIC_2 (0x8171615141312111ULL)
+
 /* the predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
 
@@ -243,6 +247,8 @@ struct na_ofi_info_get {
 };
 
 struct na_ofi_op_id {
+    /* noo_magic_1 and noo_magic_2 are for data verification */
+    na_uint64_t noo_magic_1;
     HG_QUEUE_ENTRY(na_ofi_op_id) noo_entry;
     na_context_t *noo_context;
     struct fi_context noo_fi_ctx;
@@ -263,6 +269,7 @@ struct na_ofi_op_id {
         struct na_ofi_info_get noo_get;
     } noo_info;
     struct na_cb_completion_data noo_completion_data;
+    na_uint64_t noo_magic_2;
 };
 
 /*****************/
@@ -1748,9 +1755,27 @@ na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id)
         return;
 
     /* No more references, cleanup */
+    na_ofi_op_id->noo_magic_1 = 0;
+    na_ofi_op_id->noo_magic_2 = 0;
     free(na_ofi_op_id);
 
     return;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_bool_t
+na_ofi_op_id_valid(struct na_ofi_op_id *na_ofi_op_id)
+{
+    if (na_ofi_op_id == NULL)
+        return NA_FALSE;
+
+    if (na_ofi_op_id->noo_magic_1 != NA_OFI_OP_ID_MAGIC_1 ||
+        na_ofi_op_id->noo_magic_2 != NA_OFI_OP_ID_MAGIC_2) {
+        NA_LOG_ERROR("invalid magic number for na_ofi_op_id.");
+        return NA_FALSE;
+    }
+
+    return NA_TRUE;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1767,6 +1792,9 @@ na_ofi_op_create(na_class_t NA_UNUSED *na_class)
     hg_atomic_set32(&na_ofi_op_id->noo_refcount, 1);
     /* Completed by default */
     hg_atomic_set32(&na_ofi_op_id->noo_completed, 1);
+
+    na_ofi_op_id->noo_magic_1 = NA_OFI_OP_ID_MAGIC_1;
+    na_ofi_op_id->noo_magic_2 = NA_OFI_OP_ID_MAGIC_2;
 
 done:
     return (na_op_id_t) na_ofi_op_id;
@@ -2866,10 +2894,14 @@ na_ofi_handle_send_event(na_class_t NA_UNUSED *class,
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
                                 noo_fi_ctx);
+    if (!na_ofi_op_id_valid(na_ofi_op_id)) {
+        NA_LOG_ERROR("bad na_ofi_op_id, ignore the send event.");
+        return;
+    }
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
         return;
     if (hg_atomic_get32(&na_ofi_op_id->noo_completed)) {
-        NA_LOG_ERROR("got a send_event but the op is completed.");
+        NA_LOG_ERROR("ignore the send_event as the op is completed.");
         return;
     }
 
@@ -2895,10 +2927,14 @@ na_ofi_handle_recv_event(na_class_t *na_class,
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
                                 noo_fi_ctx);
+    if (!na_ofi_op_id_valid(na_ofi_op_id)) {
+        NA_LOG_ERROR("bad na_ofi_op_id, ignore the recv event.");
+        return;
+    }
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
         return;
     if (hg_atomic_get32(&na_ofi_op_id->noo_completed)) {
-        NA_LOG_ERROR("got a recv_event but the op is completed.");
+        NA_LOG_ERROR("ignore the recv_event as the op is completed.");
         return;
     }
 
@@ -2968,10 +3004,14 @@ na_ofi_handle_rma_event(na_class_t NA_UNUSED *class,
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
                                 noo_fi_ctx);
+    if (!na_ofi_op_id_valid(na_ofi_op_id)) {
+        NA_LOG_ERROR("bad na_ofi_op_id, ignore the RMA event.");
+        return;
+    }
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
         return;
     if (hg_atomic_get32(&na_ofi_op_id->noo_completed)) {
-        NA_LOG_ERROR("got a send_event but the op is completed.");
+        NA_LOG_ERROR("ignore the rma_event as the op is completed.");
         return;
     }
 
@@ -3265,6 +3305,10 @@ na_ofi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
     ssize_t rc;
     na_return_t ret = NA_SUCCESS;
 
+    if (!na_ofi_op_id_valid(na_ofi_op_id)) {
+        NA_LOG_ERROR("bad na_ofi_op_id, ignore the cancel request.");
+        goto out;
+    }
     if (hg_atomic_get32(&na_ofi_op_id->noo_completed))
         goto out;
     if (!hg_atomic_cas32(&na_ofi_op_id->noo_canceled, 0, 1)) {
