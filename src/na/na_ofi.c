@@ -3162,10 +3162,13 @@ na_ofi_complete(struct na_ofi_addr *na_ofi_addr, struct na_ofi_op_id *na_ofi_op_
     na_return_t op_ret)
 {
     struct na_cb_info *callback_info = NULL;
-    na_return_t ret;
+    na_return_t ret = NA_SUCCESS;
 
     /* Mark op id as completed */
-    hg_atomic_incr32(&na_ofi_op_id->noo_completed);
+    if (!hg_atomic_cas32(&na_ofi_op_id->noo_completed, 0, 1)) {
+        NA_LOG_ERROR("ignore completing for a completed op.");
+        return ret;
+    }
 
     /* Init callback info */
     callback_info = &na_ofi_op_id->noo_completion_data.callback_info;
