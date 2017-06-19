@@ -2866,10 +2866,14 @@ na_ofi_handle_send_event(na_class_t NA_UNUSED *class,
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
                                 noo_fi_ctx);
-    na_ofi_addr = (struct na_ofi_addr *)na_ofi_op_id->noo_addr;
-
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
         return;
+    if (hg_atomic_get32(&na_ofi_op_id->noo_completed)) {
+        NA_LOG_ERROR("got a send_event but the op is completed.");
+        return;
+    }
+
+    na_ofi_addr = (struct na_ofi_addr *)na_ofi_op_id->noo_addr;
 
     ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, ret);
     if (ret != NA_SUCCESS)
@@ -2893,6 +2897,10 @@ na_ofi_handle_recv_event(na_class_t *na_class,
                                 noo_fi_ctx);
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
         return;
+    if (hg_atomic_get32(&na_ofi_op_id->noo_completed)) {
+        NA_LOG_ERROR("got a recv_event but the op is completed.");
+        return;
+    }
 
     if (cq_event->tag & ~NA_OFI_UNEXPECTED_TAG_IGNORE) {
         assert(na_ofi_op_id->noo_type == NA_CB_RECV_EXPECTED);
@@ -2960,10 +2968,14 @@ na_ofi_handle_rma_event(na_class_t NA_UNUSED *class,
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
                                 noo_fi_ctx);
-    na_ofi_addr = (struct na_ofi_addr *)na_ofi_op_id->noo_addr;
-
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
         return;
+    if (hg_atomic_get32(&na_ofi_op_id->noo_completed)) {
+        NA_LOG_ERROR("got a send_event but the op is completed.");
+        return;
+    }
+
+    na_ofi_addr = (struct na_ofi_addr *)na_ofi_op_id->noo_addr;
 
     ret = na_ofi_complete(na_ofi_addr, na_ofi_op_id, ret);
     if (ret != NA_SUCCESS)
