@@ -43,6 +43,62 @@ extern "C" {
 #endif
 
 /**
+ * Inline prototypes (do not remove)
+ */
+
+/* hg_atomic_int32_t */
+static HG_UTIL_INLINE void
+hg_atomic_init32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
+static HG_UTIL_INLINE void
+hg_atomic_set32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_get32(hg_atomic_int32_t *ptr);
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_incr32(hg_atomic_int32_t *ptr);
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_decr32(hg_atomic_int32_t *ptr);
+#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_or32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_xor32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_and32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
+#endif
+static HG_UTIL_INLINE hg_util_bool_t
+hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
+    hg_util_int32_t swap_value);
+
+/* hg_atomic_int64_t */
+static HG_UTIL_INLINE void
+hg_atomic_init64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
+static HG_UTIL_INLINE void
+hg_atomic_set64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_get64(hg_atomic_int64_t *ptr);
+#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_incr64(hg_atomic_int64_t *ptr);
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_decr64(hg_atomic_int64_t *ptr);
+#if defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H)
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_or64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_xor64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_and64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
+#endif /* defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H) */
+#endif /* !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H) */
+static HG_UTIL_INLINE hg_util_bool_t
+hg_atomic_cas64(hg_atomic_int64_t *ptr, hg_util_int64_t compare_value,
+    hg_util_int64_t swap_value);
+
+/* fence */
+static HG_UTIL_INLINE void
+hg_atomic_fence();
+
+/**
  * Init atomic value (32-bit integer).
  *
  * \param ptr [OUT]             pointer to an atomic32 integer
@@ -51,7 +107,7 @@ extern "C" {
 static HG_UTIL_INLINE void
 hg_atomic_init32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 {
-#if defined(HG_UTIL_HAS_STDATOMIC_H)
+#if defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     atomic_init(ptr, value);
 #else
     hg_atomic_set32(ptr, value);
@@ -283,7 +339,7 @@ hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
 static HG_UTIL_INLINE void
 hg_atomic_init64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 {
-#if defined(HG_UTIL_HAS_STDATOMIC_H)
+#if defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     atomic_init(ptr, value);
 #else
     hg_atomic_set64(ptr, value);
