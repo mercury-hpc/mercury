@@ -16,6 +16,7 @@ include_directories(
 # External dependencies
 #------------------------------------------------------------------------------
 include(CheckIncludeFiles)
+include(CheckTypeSize)
 
 # Threads
 include(FindThreads)
@@ -23,6 +24,14 @@ set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES
   ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
   ${CMAKE_THREAD_LIBS_INIT}
 )
+if(CMAKE_USE_PTHREADS_INIT)
+  set(CMAKE_EXTRA_INCLUDE_FILES pthread.h)
+  # Detect pthread_spinlock_t
+  check_type_size(pthread_spinlock_t HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
+
+  # Use type size to check enum value
+  check_type_size(PTHREAD_MUTEX_ADAPTIVE_NP HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP)
+endif()
 
 # Rt
 if(NOT WIN32 AND NOT APPLE)
@@ -105,6 +114,7 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.c
 )
@@ -151,6 +161,7 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
 )

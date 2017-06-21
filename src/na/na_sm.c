@@ -16,6 +16,7 @@
 
 #include "mercury_queue.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_thread_spin.h"
 #include "mercury_time.h"
 #include "mercury_atomic.h"
 #include "mercury_thread.h"
@@ -285,12 +286,12 @@ struct na_sm_private_data {
     HG_QUEUE_HEAD(na_sm_op_id) lookup_op_queue;
     HG_QUEUE_HEAD(na_sm_op_id) unexpected_op_queue;
     HG_QUEUE_HEAD(na_sm_op_id) expected_op_queue;
-    hg_thread_mutex_t accepted_addr_queue_mutex;
-    hg_thread_mutex_t unexpected_msg_queue_mutex;
-    hg_thread_mutex_t lookup_op_queue_mutex;
-    hg_thread_mutex_t unexpected_op_queue_mutex;
-    hg_thread_mutex_t expected_op_queue_mutex;
-    hg_thread_mutex_t copy_buf_mutex;
+    hg_thread_spin_t accepted_addr_queue_lock;
+    hg_thread_spin_t unexpected_msg_queue_lock;
+    hg_thread_spin_t lookup_op_queue_lock;
+    hg_thread_spin_t unexpected_op_queue_lock;
+    hg_thread_spin_t expected_op_queue_lock;
+    hg_thread_spin_t copy_buf_lock;
 };
 
 /********************/
@@ -1589,7 +1590,7 @@ na_sm_reserve_and_copy_buf(na_class_t *na_class,
     na_return_t ret = NA_SIZE_ERROR;
     unsigned int i = 0;
 
-    hg_thread_mutex_lock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
+    hg_thread_spin_lock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_lock);
 
     do {
         hg_util_int64_t available = hg_atomic_get64(
@@ -1619,7 +1620,7 @@ na_sm_reserve_and_copy_buf(na_class_t *na_class,
          * fails, we should be able to pick the next one available */
     } while (i < (NA_SM_NUM_BUFS - 1));
 
-    hg_thread_mutex_unlock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
+    hg_thread_spin_unlock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_lock);
     return ret;
 }
 
@@ -1634,7 +1635,7 @@ na_sm_copy_and_free_buf(na_class_t *na_class,
     hg_util_int64_t available;
 #endif
 
-    hg_thread_mutex_lock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
+    hg_thread_spin_lock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_lock);
 
     memcpy(buf, na_sm_copy_buf->buf[idx_reserved], buf_size);
 
@@ -1647,7 +1648,7 @@ na_sm_copy_and_free_buf(na_class_t *na_class,
         (available | bits)));
 #endif
 
-    hg_thread_mutex_unlock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
+    hg_thread_spin_unlock(&NA_SM_PRIVATE_DATA(na_class)->copy_buf_lock);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1950,12 +1951,12 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
     NA_SM_PRIVATE_DATA(na_class)->self_addr->conn_id++;
 
     /* Push the addr to accepted addr queue so that we can free it later */
-    hg_thread_mutex_lock(
-        &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_mutex);
+    hg_thread_spin_lock(
+        &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_lock);
     HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue,
         na_sm_addr, entry);
-    hg_thread_mutex_unlock(
-        &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_mutex);
+    hg_thread_spin_unlock(
+        &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_lock);
 
     *progressed = NA_TRUE;
 
@@ -2045,8 +2046,8 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
                 goto done;
             }
 
-            hg_thread_mutex_lock(
-                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
+            hg_thread_spin_lock(
+                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
             HG_QUEUE_FOREACH(na_sm_op_id,
                 &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue, entry) {
                 if (na_sm_op_id->info.lookup.na_sm_addr == poll_addr) {
@@ -2056,8 +2057,8 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
                     break;
                 }
             }
-            hg_thread_mutex_unlock(
-                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
+            hg_thread_spin_unlock(
+                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
 
             if (!na_sm_op_id) {
                 NA_LOG_ERROR("Could not find lookup op ID");
@@ -2171,14 +2172,14 @@ na_sm_progress_unexpected(na_class_t *na_class, struct na_sm_addr *poll_addr,
     na_return_t ret = NA_SUCCESS;
 
     /* Pop op ID from queue */
-    hg_thread_mutex_lock(
-        &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_spin_lock(
+        &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_lock);
     na_sm_op_id = HG_QUEUE_FIRST(
         &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue);
     HG_QUEUE_POP_HEAD(&NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue,
         entry);
-    hg_thread_mutex_unlock(
-        &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_spin_unlock(
+        &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_lock);
 
     if (na_sm_op_id) {
         /* If an op id was pushed, associate unexpected info to this
@@ -2206,12 +2207,12 @@ na_sm_progress_unexpected(na_class_t *na_class, struct na_sm_addr *poll_addr,
 
         /* Otherwise push the unexpected message into our unexpected queue so
          * that we can treat it later when a recv_unexpected is posted */
-        hg_thread_mutex_lock(
-            &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+        hg_thread_spin_lock(
+            &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_lock);
         HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue,
             na_sm_unexpected_info, entry);
-        hg_thread_mutex_unlock(
-            &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+        hg_thread_spin_unlock(
+            &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_lock);
     }
 
 done:
@@ -2226,8 +2227,8 @@ na_sm_progress_expected(na_class_t *na_class, struct na_sm_addr *poll_addr,
     struct na_sm_op_id *na_sm_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    hg_thread_mutex_lock(
-        &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
+    hg_thread_spin_lock(
+        &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_lock);
     HG_QUEUE_FOREACH(na_sm_op_id,
         &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue, entry) {
         if (na_sm_op_id->info.recv_expected.na_sm_addr == poll_addr &&
@@ -2237,8 +2238,8 @@ na_sm_progress_expected(na_class_t *na_class, struct na_sm_addr *poll_addr,
             break;
         }
     }
-    hg_thread_mutex_unlock(
-        &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
+    hg_thread_spin_unlock(
+        &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_lock);
 
     if (!na_sm_op_id) {
         /* No match if either the message was not pre-posted or it was canceled */
@@ -2448,18 +2449,18 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->expected_op_queue);
 
     /* Initialize mutexes */
-    hg_thread_mutex_init(
-            &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_mutex);
-    hg_thread_mutex_init(
-            &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
-    hg_thread_mutex_init(
-            &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
-    hg_thread_mutex_init(
-            &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
-    hg_thread_mutex_init(
-            &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
-    hg_thread_mutex_init(
-             &NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
+    hg_thread_spin_init(
+            &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_lock);
+    hg_thread_spin_init(
+            &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_lock);
+    hg_thread_spin_init(
+            &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
+    hg_thread_spin_init(
+            &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_lock);
+    hg_thread_spin_init(
+            &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_lock);
+    hg_thread_spin_init(
+             &NA_SM_PRIVATE_DATA(na_class)->copy_buf_lock);
 
 done:
     return ret;
@@ -2525,18 +2526,18 @@ na_sm_finalize(na_class_t *na_class)
     }
 
     /* Destroy mutexes */
-    hg_thread_mutex_destroy(
-            &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_mutex);
-    hg_thread_mutex_destroy(
-            &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
-    hg_thread_mutex_destroy(
-            &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
-    hg_thread_mutex_destroy(
-            &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
-    hg_thread_mutex_destroy(
-            &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
-    hg_thread_mutex_destroy(
-             &NA_SM_PRIVATE_DATA(na_class)->copy_buf_mutex);
+    hg_thread_spin_destroy(
+            &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_lock);
+    hg_thread_spin_destroy(
+            &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_lock);
+    hg_thread_spin_destroy(
+            &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
+    hg_thread_spin_destroy(
+            &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_lock);
+    hg_thread_spin_destroy(
+            &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_lock);
+    hg_thread_spin_destroy(
+             &NA_SM_PRIVATE_DATA(na_class)->copy_buf_lock);
 
     free(na_class->private_data);
 
@@ -2699,12 +2700,12 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
         *op_id = na_sm_op_id;
 
     /* Push op ID to lookup op queue */
-    hg_thread_mutex_lock(
-        &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
+    hg_thread_spin_lock(
+        &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
     HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue,
         na_sm_op_id, entry);
-    hg_thread_mutex_unlock(
-        &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_mutex);
+    hg_thread_spin_unlock(
+        &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
 
     /* Send addr info (PID / ID) */
     ret = na_sm_send_addr_info(na_class, na_sm_addr);
@@ -3091,14 +3092,14 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         *op_id = na_sm_op_id;
 
     /* Look for an unexpected message already received */
-    hg_thread_mutex_lock(
-        &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_spin_lock(
+        &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_lock);
     na_sm_unexpected_info = HG_QUEUE_FIRST(
         &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue);
     HG_QUEUE_POP_HEAD(&NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue,
         entry);
-    hg_thread_mutex_unlock(
-        &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_spin_unlock(
+        &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_lock);
     if (na_sm_unexpected_info) {
         na_sm_op_id->info.recv_unexpected.unexpected_info =
             *na_sm_unexpected_info;
@@ -3111,12 +3112,12 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         }
     } else {
         /* Nothing has been received yet so add op_id to progress queue */
-        hg_thread_mutex_lock(
-            &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+        hg_thread_spin_lock(
+            &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_lock);
         HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue,
             na_sm_op_id, entry);
-        hg_thread_mutex_unlock(
-            &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+        hg_thread_spin_unlock(
+            &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_lock);
     }
 
 done:
@@ -3243,12 +3244,12 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     /* Expected messages must always be pre-posted, therefore a message should
      * never arrive before that call returns (not completes), simply add
      * op_id to queue */
-    hg_thread_mutex_lock(
-        &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
+    hg_thread_spin_lock(
+        &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_lock);
     HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->expected_op_queue,
         na_sm_op_id, entry);
-    hg_thread_mutex_unlock(
-        &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
+    hg_thread_spin_unlock(
+        &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_lock);
 
 done:
     if (ret != NA_SUCCESS) {
@@ -3821,8 +3822,8 @@ na_sm_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
             struct na_sm_op_id *na_sm_var_op_id = NULL;
 
             /* Must remove op_id from unexpected op_id queue */
-            hg_thread_mutex_lock(
-                &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+            hg_thread_spin_lock(
+                &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_lock);
             HG_QUEUE_FOREACH(na_sm_var_op_id,
                 &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue, entry) {
                 if (na_sm_var_op_id == na_sm_op_id) {
@@ -3831,8 +3832,8 @@ na_sm_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
                     break;
                 }
             }
-            hg_thread_mutex_unlock(
-                &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+            hg_thread_spin_unlock(
+                &NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue_lock);
 
             /* Cancel op id */
             if (na_sm_var_op_id == na_sm_op_id) {
@@ -3852,8 +3853,8 @@ na_sm_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
             struct na_sm_op_id *na_sm_var_op_id = NULL;
 
             /* Must remove op_id from unexpected op_id queue */
-            hg_thread_mutex_lock(
-                &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
+            hg_thread_spin_lock(
+                &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_lock);
             HG_QUEUE_FOREACH(na_sm_var_op_id,
                 &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue, entry) {
                 if (na_sm_var_op_id == na_sm_op_id) {
@@ -3862,8 +3863,8 @@ na_sm_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
                     break;
                 }
             }
-            hg_thread_mutex_unlock(
-                &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_mutex);
+            hg_thread_spin_unlock(
+                &NA_SM_PRIVATE_DATA(na_class)->expected_op_queue_lock);
 
             /* Cancel op id */
             if (na_sm_var_op_id == na_sm_op_id) {

@@ -23,8 +23,9 @@ set(MERCURY_util_tests
   queue
   request
   thread
-  thread_mutex
   thread_condition
+  thread_mutex
+  thread_spin
   threadpool
   time
 )

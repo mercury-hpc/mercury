@@ -28,6 +28,12 @@
     #define HG_UTIL_ABI_HIDDEN
 #endif
 
+/* Define if has pthread_spinlock_t type */
+#cmakedefine HG_UTIL_HAS_PTHREAD_SPINLOCK_T
+
+/* Define if has PTHREAD_MUTEX_ADAPTIVE_NP */
+#cmakedefine HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP
+
 /* Define if has <opa_primitives.h> */
 #cmakedefine HG_UTIL_HAS_OPA_PRIMITIVES_H
 

@@ -21,6 +21,7 @@
 #include "mercury_queue.h"
 #include "mercury_list.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_thread_spin.h"
 #include "mercury_thread_condition.h"
 #include "mercury_time.h"
 #include "mercury_atomic.h"
@@ -59,7 +60,7 @@ typedef hg_return_t (*handle_create_cb_t)(hg_class_t *, hg_handle_t);
 struct hg_class {
     na_class_t *na_class;               /* NA class */
     hg_hash_table_t *func_map;          /* Function map */
-    hg_thread_mutex_t func_map_mutex;   /* Function map mutex */
+    hg_thread_spin_t func_map_lock;     /* Function map mutex */
     hg_atomic_int32_t request_tag;      /* Atomic used for tag generation */
     na_tag_t request_max_tag;           /* Max value for tag */
     unsigned int na_max_tag_msb;        /* MSB of NA max tag */
@@ -84,9 +85,9 @@ struct hg_context {
     hg_thread_cond_t completion_queue_cond;       /* Completion queue cond */
     hg_atomic_int32_t completion_queue_updated;   /* Completion queue updated */
     HG_LIST_HEAD(hg_handle) pending_list;         /* List of pending handles */
-    hg_thread_mutex_t pending_list_mutex;         /* Pending list mutex */
+    hg_thread_spin_t pending_list_lock;           /* Pending list lock */
     HG_LIST_HEAD(hg_handle) processing_list;      /* List of handles being processed */
-    hg_thread_mutex_t processing_list_mutex;      /* Processing list mutex */
+    hg_thread_spin_t processing_list_lock;        /* Processing list lock */
     hg_bool_t finalizing;                         /* Prevent reposts */
     hg_atomic_int32_t n_handles;                  /* Atomic used for number of handles */
     struct hg_poll_set *poll_set;                 /* Context poll set */
@@ -829,7 +830,7 @@ hg_core_pending_list_cancel(struct hg_context *context)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    hg_thread_mutex_lock(&context->pending_list_mutex);
+    hg_thread_spin_lock(&context->pending_list_lock);
 
     while (!HG_LIST_IS_EMPTY(&context->pending_list)) {
         struct hg_handle *hg_handle = HG_LIST_FIRST(&context->pending_list);
@@ -846,7 +847,7 @@ hg_core_pending_list_cancel(struct hg_context *context)
         }
     }
 
-    hg_thread_mutex_unlock(&context->pending_list_mutex);
+    hg_thread_spin_unlock(&context->pending_list_lock);
 
     return ret;
 }
@@ -867,11 +868,11 @@ hg_core_processing_list_wait(struct hg_context *context)
             trigger_ret = hg_core_trigger(context, 0, 1, &actual_count);
         } while ((trigger_ret == HG_SUCCESS) && actual_count);
 
-        hg_thread_mutex_lock(&context->processing_list_mutex);
+        hg_thread_spin_lock(&context->processing_list_lock);
 
         processing_list_empty = HG_LIST_IS_EMPTY(&context->processing_list);
 
-        hg_thread_mutex_unlock(&context->processing_list_mutex);
+        hg_thread_spin_unlock(&context->processing_list_lock);
 
         if (processing_list_empty) break;
 
@@ -953,7 +954,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             hg_core_func_map_value_free);
 
     /* Initialize mutex */
-    hg_thread_mutex_init(&hg_class->func_map_mutex);
+    hg_thread_spin_init(&hg_class->func_map_lock);
 
 done:
     if (ret != HG_SUCCESS) {
@@ -999,7 +1000,7 @@ hg_core_finalize(struct hg_class *hg_class)
     hg_class->func_map = NULL;
 
     /* Destroy mutex */
-    hg_thread_mutex_destroy(&hg_class->func_map_mutex);
+    hg_thread_spin_destroy(&hg_class->func_map_lock);
 
     if (!hg_class->na_ext_init) {
         /* Finalize interface */
@@ -1698,14 +1699,14 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
             callback_info->info.recv_unexpected.actual_buf_size;
 
         /* Move handle from pending list to processing list */
-        hg_thread_mutex_lock(&hg_handle->hg_info.context->pending_list_mutex);
+        hg_thread_spin_lock(&hg_handle->hg_info.context->pending_list_lock);
         HG_LIST_REMOVE(hg_handle, entry);
-        hg_thread_mutex_unlock(&hg_handle->hg_info.context->pending_list_mutex);
+        hg_thread_spin_unlock(&hg_handle->hg_info.context->pending_list_lock);
 
-        hg_thread_mutex_lock(&hg_handle->hg_info.context->processing_list_mutex);
+        hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
         HG_LIST_INSERT_HEAD(&hg_handle->hg_info.context->processing_list,
             hg_handle, entry);
-        hg_thread_mutex_unlock(&hg_handle->hg_info.context->processing_list_mutex);
+        hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
 
         /* Get and verify header */
         if (hg_core_get_header_request(hg_handle, &hg_handle->in_header)
@@ -1771,9 +1772,9 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
     /* Remove handle from processing list
      * NB. Whichever state we're in, reaching that stage means that the
      * handle was processed. */
-    hg_thread_mutex_lock(&hg_handle->hg_info.context->processing_list_mutex);
+    hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
     HG_LIST_REMOVE(hg_handle, entry);
-    hg_thread_mutex_unlock(&hg_handle->hg_info.context->processing_list_mutex);
+    hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
 
     /* Mark as completed (sanity check: NA completed count should be 2 here) */
     if (hg_atomic_incr32(&hg_handle->na_completed_count) == 2) {
@@ -1934,10 +1935,10 @@ hg_core_process(struct hg_handle *hg_handle)
     hg_return_t ret = HG_SUCCESS;
 
     /* Retrieve exe function from function map */
-    hg_thread_mutex_lock(&hg_class->func_map_mutex);
+    hg_thread_spin_lock(&hg_class->func_map_lock);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
             hg_class->func_map, (hg_hash_table_key_t) &hg_handle->hg_info.id);
-    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
+    hg_thread_spin_unlock(&hg_class->func_map_lock);
     if (!hg_rpc_info) {
         HG_LOG_WARNING("Could not find RPC ID in function map");
         ret = HG_NO_MATCH;
@@ -2031,9 +2032,9 @@ hg_core_context_post(struct hg_context *context, unsigned int request_count,
     unsigned int nentry = 0;
     hg_return_t ret = HG_SUCCESS;
 
-    hg_thread_mutex_lock(&context->pending_list_mutex);
+    hg_thread_spin_lock(&context->pending_list_lock);
     pending_list_empty = HG_LIST_IS_EMPTY(&context->pending_list);
-    hg_thread_mutex_unlock(&context->pending_list_mutex);
+    hg_thread_spin_unlock(&context->pending_list_lock);
     if (!pending_list_empty) {
         /* Just leave */
         goto done;
@@ -2086,9 +2087,9 @@ hg_core_post(struct hg_handle *hg_handle)
     na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
 
-    hg_thread_mutex_lock(&context->pending_list_mutex);
+    hg_thread_spin_lock(&context->pending_list_lock);
     HG_LIST_INSERT_HEAD(&context->pending_list, hg_handle, entry);
-    hg_thread_mutex_unlock(&context->pending_list_mutex);
+    hg_thread_spin_unlock(&context->pending_list_lock);
 
     /* Post a new unexpected receive */
     na_ret = NA_Msg_recv_unexpected(hg_class->na_class, context->na_context,
@@ -2473,9 +2474,9 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
             /* Remove handle from processing list
              * NB. Whichever state we're in, reaching that stage means that the
              * handle was processed. */
-            hg_thread_mutex_lock(&hg_handle->hg_info.context->processing_list_mutex);
+            hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
             HG_LIST_REMOVE(hg_handle, entry);
-            hg_thread_mutex_unlock(&hg_handle->hg_info.context->processing_list_mutex);
+            hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
 
             if (hg_core_complete(hg_handle) != HG_SUCCESS) {
                 HG_LOG_ERROR("Could not complete operation");
@@ -2750,8 +2751,8 @@ HG_Core_context_create(hg_class_t *hg_class)
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&context->completion_queue_mutex);
     hg_thread_cond_init(&context->completion_queue_cond);
-    hg_thread_mutex_init(&context->pending_list_mutex);
-    hg_thread_mutex_init(&context->processing_list_mutex);
+    hg_thread_spin_init(&context->pending_list_lock);
+    hg_thread_spin_init(&context->processing_list_lock);
 #ifdef HG_HAS_SELF_FORWARD
     hg_thread_mutex_init(&context->self_processing_list_mutex);
 #endif
@@ -2895,8 +2896,8 @@ HG_Core_context_destroy(hg_context_t *context)
     /* Destroy completion queue mutex/cond */
     hg_thread_mutex_destroy(&context->completion_queue_mutex);
     hg_thread_cond_destroy(&context->completion_queue_cond);
-    hg_thread_mutex_destroy(&context->pending_list_mutex);
-    hg_thread_mutex_destroy(&context->processing_list_mutex);
+    hg_thread_spin_destroy(&context->pending_list_lock);
+    hg_thread_spin_destroy(&context->processing_list_lock);
 #ifdef HG_HAS_SELF_FORWARD
     hg_thread_mutex_destroy(&context->self_processing_list_mutex);
 #endif
@@ -3010,12 +3011,12 @@ HG_Core_register(hg_class_t *hg_class, hg_id_t id, hg_rpc_cb_t rpc_cb)
     }
 
     /* Check if registered and set RPC CB */
-    hg_thread_mutex_lock(&hg_class->func_map_mutex);
+    hg_thread_spin_lock(&hg_class->func_map_lock);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
             hg_class->func_map, (hg_hash_table_key_t) &id);
     if (hg_rpc_info && rpc_cb)
         hg_rpc_info->rpc_cb = rpc_cb;
-    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
+    hg_thread_spin_unlock(&hg_class->func_map_lock);
 
     if (!hg_rpc_info) {
         /* Allocate the key */
@@ -3040,10 +3041,10 @@ HG_Core_register(hg_class_t *hg_class, hg_id_t id, hg_rpc_cb_t rpc_cb)
         hg_rpc_info->data = NULL;
         hg_rpc_info->free_callback = NULL;
 
-        hg_thread_mutex_lock(&hg_class->func_map_mutex);
+        hg_thread_spin_lock(&hg_class->func_map_lock);
         hash_ret = hg_hash_table_insert(hg_class->func_map,
             (hg_hash_table_key_t) func_key, hg_rpc_info);
-        hg_thread_mutex_unlock(&hg_class->func_map_mutex);
+        hg_thread_spin_unlock(&hg_class->func_map_lock);
         if (!hash_ret) {
             HG_LOG_ERROR("Could not insert RPC ID into function map (already registered?)");
             ret = HG_INVALID_PARAM;
@@ -3076,10 +3077,10 @@ HG_Core_registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
         goto done;
     }
 
-    hg_thread_mutex_lock(&hg_class->func_map_mutex);
+    hg_thread_spin_lock(&hg_class->func_map_lock);
     *flag = (hg_bool_t) (hg_hash_table_lookup(hg_class->func_map,
             (hg_hash_table_key_t) &id) != HG_HASH_TABLE_NULL);
-    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
+    hg_thread_spin_unlock(&hg_class->func_map_lock);
 
 done:
     return ret;
@@ -3099,10 +3100,10 @@ HG_Core_register_data(hg_class_t *hg_class, hg_id_t id, void *data,
         goto done;
     }
 
-    hg_thread_mutex_lock(&hg_class->func_map_mutex);
+    hg_thread_spin_lock(&hg_class->func_map_lock);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(hg_class->func_map,
             (hg_hash_table_key_t) &id);
-    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
+    hg_thread_spin_unlock(&hg_class->func_map_lock);
     if (!hg_rpc_info) {
         HG_LOG_ERROR("Could not find RPC ID in function map");
         ret = HG_NO_MATCH;
@@ -3130,10 +3131,10 @@ HG_Core_registered_data(hg_class_t *hg_class, hg_id_t id)
         goto done;
     }
 
-    hg_thread_mutex_lock(&hg_class->func_map_mutex);
+    hg_thread_spin_lock(&hg_class->func_map_lock);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(hg_class->func_map,
             (hg_hash_table_key_t) &id);
-    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
+    hg_thread_spin_unlock(&hg_class->func_map_lock);
     if (!hg_rpc_info) {
         HG_LOG_ERROR("Could not find RPC ID in function map");
         goto done;
@@ -3159,10 +3160,10 @@ HG_Core_registered_disable_response(hg_class_t *hg_class, hg_id_t id,
         goto done;
     }
 
-    hg_thread_mutex_lock(&hg_class->func_map_mutex);
+    hg_thread_spin_lock(&hg_class->func_map_lock);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
         hg_class->func_map, (hg_hash_table_key_t) &id);
-    hg_thread_mutex_unlock(&hg_class->func_map_mutex);
+    hg_thread_spin_unlock(&hg_class->func_map_lock);
     if (!hg_rpc_info) {
         HG_LOG_ERROR("Could not find RPC ID in function map");
         goto done;
@@ -3364,10 +3365,10 @@ HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle->hg_info.id = id;
 
     /* Retrieve ID function from function map */
-    hg_thread_mutex_lock(&context->hg_class->func_map_mutex);
+    hg_thread_spin_lock(&context->hg_class->func_map_lock);
     hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
         context->hg_class->func_map, (hg_hash_table_key_t) &id);
-    hg_thread_mutex_unlock(&context->hg_class->func_map_mutex);
+    hg_thread_spin_unlock(&context->hg_class->func_map_lock);
     if (!hg_rpc_info) {
         HG_LOG_ERROR("Could not find RPC ID in function map");
         ret = HG_NO_MATCH;
