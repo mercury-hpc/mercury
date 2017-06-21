@@ -43,6 +43,22 @@ extern "C" {
 #endif
 
 /**
+ * Init atomic value (32-bit integer).
+ *
+ * \param ptr [OUT]             pointer to an atomic32 integer
+ * \param value [IN]            value
+ */
+static HG_UTIL_INLINE void
+hg_atomic_init32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
+{
+#if defined(HG_UTIL_HAS_STDATOMIC_H)
+    atomic_init(ptr, value);
+#else
+    hg_atomic_set32(ptr, value);
+#endif
+}
+
+/**
  * Set atomic value (32-bit integer).
  *
  * \param ptr [OUT]             pointer to an atomic32 integer
@@ -256,6 +272,22 @@ hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
 #endif
 
     return ret;
+}
+
+/**
+ * Init atomic value (64-bit integer).
+ *
+ * \param ptr [OUT]             pointer to an atomic32 integer
+ * \param value [IN]            value
+ */
+static HG_UTIL_INLINE void
+hg_atomic_init64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
+{
+#if defined(HG_UTIL_HAS_STDATOMIC_H)
+    atomic_init(ptr, value);
+#else
+    hg_atomic_set64(ptr, value);
+#endif
 }
 
 /**
@@ -475,7 +507,7 @@ static HG_UTIL_INLINE void
 hg_atomic_fence()
 {
 #if defined(_WIN32)
-
+    MemoryBarrier();
 #elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     OPA_read_write_barrier();
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
