@@ -188,28 +188,28 @@ set(NA_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/na.c
 )
 
-if(NA_USE_BMI)
+if(NA_HAS_BMI)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_bmi.c
   )
 endif()
 
-if(NA_USE_MPI)
+if(NA_HAS_MPI)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.c
   )
 endif()
 
-if(NA_USE_CCI)
+if(NA_HAS_CCI)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_cci.c
   )
 endif()
 
-if(NA_USE_SM)
+if(NA_HAS_SM)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_sm.c
@@ -249,7 +249,7 @@ set(NA_HEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/na_config.h
 )
 
-if(NA_USE_MPI)
+if(NA_HAS_MPI)
   set(NA_HEADERS
     ${NA_HEADERS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.h

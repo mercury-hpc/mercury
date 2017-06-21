@@ -3485,6 +3485,13 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     mach_port_name_t remote_task;
 #endif
 
+#if !defined(NA_SM_HAS_CMA) && !defined(__APPLE__)
+    (void) na_sm_addr;
+    NA_LOG_ERROR("Not implemented for this platform");
+    ret = NA_PROTOCOL_ERROR;
+    goto done;
+#endif
+
     switch (na_sm_mem_handle_remote->flags) {
         case NA_MEM_READ_ONLY:
             NA_LOG_ERROR("Registered memory requires write permission");
@@ -3628,6 +3635,13 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     mach_port_name_t remote_task;
 #endif
 
+#if !defined(NA_SM_HAS_CMA) && !defined(__APPLE__)
+    (void) na_sm_addr;
+    NA_LOG_ERROR("Not implemented for this platform");
+    ret = NA_PROTOCOL_ERROR;
+    goto done;
+#endif
+
     switch (na_sm_mem_handle_remote->flags) {
         case NA_MEM_WRITE_ONLY:
             NA_LOG_ERROR("Registered memory requires read permission");
@@ -3720,11 +3734,13 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         goto done;
     }
 #endif
+#if defined(NA_SM_HAS_CMA) || defined(__APPLE__)
     if ((na_size_t)nread != length) {
         NA_LOG_ERROR("Read %ld bytes, was expecting %lu bytes", nread, length);
         ret = NA_SIZE_ERROR;
         goto done;
     }
+#endif
 
     /* Immediate completion */
     ret = na_sm_complete(na_sm_op_id);
