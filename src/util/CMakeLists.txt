@@ -46,6 +46,10 @@ check_include_files("sys/epoll.h" HG_UTIL_HAS_SYSEPOLL_H)
 
 # Detect <sys/eventfd.h>
 check_include_files("sys/eventfd.h" HG_UTIL_HAS_SYSEVENTFD_H)
+if(HG_UTIL_HAS_SYSEVENTFD_H)
+  set(CMAKE_EXTRA_INCLUDE_FILES "sys/eventfd.h")
+  check_type_size(eventfd_t HG_UTIL_HAS_EVENTFD_T)
+endif()
 
 # Detect <sys/event.h>
 check_include_files("sys/event.h" HG_UTIL_HAS_SYSEVENT_H)

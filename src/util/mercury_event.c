@@ -19,6 +19,9 @@
 #include <unistd.h>
 #if defined(HG_UTIL_HAS_SYSEVENTFD_H)
 #include <sys/eventfd.h>
+#ifndef HG_UTIL_HAS_EVENTFD_T
+typedef uint64_t eventfd_t;
+#endif
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
 #include <sys/event.h>
 /* User-defined ident */
@@ -95,11 +98,18 @@ hg_event_set(int fd)
 #if defined(_WIN32)
 
 #elif defined(HG_UTIL_HAS_SYSEVENTFD_H)
-    uint64_t count = 1;
+    eventfd_t count = 1;
+
+#ifdef HG_UTIL_HAS_EVENTFD_T
+    if (eventfd_write(fd, count) == -1) {
+#else
     ssize_t s;
 
-    s = write(fd, &count, sizeof(uint64_t));
-    if (s != sizeof(uint64_t)) {
+    s = write(fd, &count, sizeof(eventfd_t));
+    if (s != sizeof(eventfd_t)) {
+#endif
+        if (errno == EAGAIN)
+            goto done;
         HG_UTIL_LOG_ERROR("write() failed (%s)", strerror(errno));
         ret = HG_UTIL_FAIL;
         goto done;
@@ -133,11 +143,16 @@ hg_event_get(int fd, hg_util_bool_t *signaled)
 #if defined(_WIN32)
 
 #elif defined(HG_UTIL_HAS_SYSEVENTFD_H)
-    uint64_t count = 0;
+    eventfd_t count = 0;
+
+#ifdef HG_UTIL_HAS_EVENTFD_T
+    if (eventfd_read(fd, &count) == -1) {
+#else
     ssize_t s;
 
-    s = read(fd, &count, sizeof(uint64_t));
-    if (s != sizeof(uint64_t)) {
+    s = read(fd, &count, sizeof(eventfd_t));
+    if (s != sizeof(eventfd_t)) {
+#endif
         if (errno == EAGAIN)
             goto done;
         HG_UTIL_LOG_ERROR("read() failed (%s)", strerror(errno));

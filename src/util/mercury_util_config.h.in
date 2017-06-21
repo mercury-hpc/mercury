@@ -46,6 +46,9 @@
 /* Define if has <sys/eventfd.h> */
 #cmakedefine HG_UTIL_HAS_SYSEVENTFD_H
 
+/* Define if has eventfd_t type */
+#cmakedefine HG_UTIL_HAS_EVENTFD_T
+
 /* Define if has <sys/event.h> */
 #cmakedefine HG_UTIL_HAS_SYSEVENT_H
 
