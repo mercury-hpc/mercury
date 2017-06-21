@@ -3773,7 +3773,8 @@ na_sm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
         hg_time_t t1, t2;
         hg_util_bool_t progressed;
 
-        hg_time_get_current(&t1);
+        if (timeout)
+            hg_time_get_current(&t1);
 
         if (hg_poll_wait(NA_SM_PRIVATE_DATA(na_class)->poll_set,
             (unsigned int) (remaining * 1000.0), &progressed) != HG_UTIL_SUCCESS) {
@@ -3788,8 +3789,10 @@ na_sm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
             break;
         }
 
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        if (timeout) {
+            hg_time_get_current(&t2);
+            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        }
     } while ((int)(remaining * 1000.0) > 0);
 
 done:

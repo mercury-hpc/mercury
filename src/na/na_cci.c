@@ -2022,7 +2022,8 @@ na_cci_progress(na_class_t * na_class, na_context_t * context,
         hg_time_t t1, t2;
         cci_event_t *event = NULL;
 
-        hg_time_get_current(&t1);
+        if (timeout)
+            hg_time_get_current(&t1);
 
         rc = cci_get_event(e, &event);
         if (rc) {
@@ -2030,9 +2031,11 @@ na_cci_progress(na_class_t * na_class, na_context_t * context,
                 NA_LOG_ERROR("cci_return_event() failed %s",
                     cci_strerror(e, rc));
 
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-            if (remaining < 0)
+            if (timeout) {
+                hg_time_get_current(&t2);
+                remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            }
+            if (remaining <= 0)
                 break; /* Return NA_TIMEOUT */
             continue;
         }

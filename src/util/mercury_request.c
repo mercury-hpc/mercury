@@ -215,14 +215,17 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
 
         hg_thread_mutex_unlock(&request->request_class->progress_mutex);
 
-        hg_time_get_current(&t3);
+        if (timeout)
+            hg_time_get_current(&t3);
 
         request->request_class->progress_func(
                 (unsigned int) (remaining * 1000.0),
                 request->request_class->arg);
 
-        hg_time_get_current(&t4);
-        remaining -= hg_time_to_double(hg_time_subtract(t4, t3));
+        if (timeout) {
+            hg_time_get_current(&t4);
+            remaining -= hg_time_to_double(hg_time_subtract(t4, t3));
+        }
 
         hg_thread_mutex_lock(&request->request_class->progress_mutex);
         request->request_class->progressing = HG_UTIL_FALSE;

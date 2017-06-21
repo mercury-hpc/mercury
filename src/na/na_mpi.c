@@ -2026,7 +2026,8 @@ na_mpi_progress(na_class_t *na_class, na_context_t *context,
     do {
         hg_time_t t1, t2;
 
-        hg_time_get_current(&t1);
+        if (timeout)
+            hg_time_get_current(&t1);
 
         /* Try to make unexpected progress */
         ret = na_mpi_progress_unexpected(na_class, context, 0);
@@ -2049,8 +2050,10 @@ na_mpi_progress(na_class_t *na_class, na_context_t *context,
         } else
             break; /* Progressed */
 
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        if (timeout) {
+            hg_time_get_current(&t2);
+            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        }
     } while (remaining > 0);
 
 done:

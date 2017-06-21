@@ -2266,14 +2266,17 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
         if (remaining < 0)
             break;
 
-        hg_time_get_current(&t1);
+        if (timeout)
+            hg_time_get_current(&t1);
 
         /* Otherwise try to make progress on NA */
         na_ret = NA_Progress(hg_class->na_class, context->na_context,
             (unsigned int) (remaining * 1000.0));
 
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        if (timeout) {
+            hg_time_get_current(&t2);
+            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        }
 
         if (na_ret == NA_SUCCESS) {
             /* Trigger NA callbacks and check whether we completed something */
@@ -2310,7 +2313,8 @@ hg_core_progress_poll(struct hg_context *context, unsigned int timeout)
         hg_time_t t1, t2;
         hg_util_bool_t progressed;
 
-        hg_time_get_current(&t1);
+        if (timeout)
+            hg_time_get_current(&t1);
 
         if (hg_poll_wait(context->poll_set, (unsigned int)(remaining * 1000.0),
             &progressed) != HG_UTIL_SUCCESS) {
@@ -2325,8 +2329,10 @@ hg_core_progress_poll(struct hg_context *context, unsigned int timeout)
             break;
         }
 
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        if (timeout) {
+            hg_time_get_current(&t2);
+            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        }
     } while ((int)(remaining * 1000.0) > 0);
 
 done:
