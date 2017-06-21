@@ -11,7 +11,7 @@
 #ifndef MERCURY_THREAD_H
 #define MERCURY_THREAD_H
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(_GNU_SOURCE)
   #define _GNU_SOURCE
 #endif
 #include "mercury_util_config.h"
