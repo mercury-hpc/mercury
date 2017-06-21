@@ -8,7 +8,7 @@
  * found at the root of the source code distribution tree.
  */
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE
 #endif
 #include "na_private.h"
