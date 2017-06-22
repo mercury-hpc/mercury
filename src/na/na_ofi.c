@@ -2927,9 +2927,11 @@ na_ofi_handle_recv_event(na_class_t *na_class,
     na_context_t NA_UNUSED *context, fi_addr_t src_addr,
     struct fi_cq_tagged_entry *cq_event)
 {
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     struct na_ofi_addr *peer_addr = NULL;
     struct na_ofi_reqhdr *reqhdr;
     struct na_ofi_op_id *na_ofi_op_id;
+    char peer_uri[NA_OFI_MAX_URI_LEN] = {'\0'};
     na_return_t ret = NA_SUCCESS;
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
@@ -2978,6 +2980,8 @@ na_ofi_handle_recv_event(na_class_t *na_class,
         }
 
         if (na_ofi_with_reqhdr(na_class) == NA_TRUE) {
+            struct in_addr in;
+
             reqhdr = na_ofi_op_id->noo_info.noo_recv_unexpected.noi_buf;
             /* check magic number and swap byte order when needed */
             if (reqhdr->fih_magic == na_ofi_bswap32(NA_OFI_HDR_MAGIC)) {
@@ -2994,6 +2998,12 @@ na_ofi_handle_recv_event(na_class_t *na_class,
                 NA_LOG_ERROR("na_ofi_addr_ht_lookup failed, ret: %d.", ret);
                 goto out;
             }
+
+            in.s_addr = reqhdr->fih_ip;
+            snprintf(peer_uri, NA_OFI_MAX_URI_LEN, "%s://%s:%d",
+                     domain->nod_prov->fabric_attr->prov_name,
+                     inet_ntoa(in), reqhdr->fih_port);
+            peer_addr->noa_uri = strdup(peer_uri);
         }
 
         peer_addr->noa_addr = src_addr;
