@@ -3120,17 +3120,19 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
         struct fi_cq_err_entry cq_err;
         fi_addr_t tmp_addr;
 
-        hg_time_get_current(&t1);
+        if (timeout) {
+            hg_time_get_current(&t1);
 
-        if (timeout && wait_hdl) {
-            int rc_wait = fi_wait(wait_hdl, (int) (remaining * 1000.0));
-            if (rc_wait == -FI_ETIMEDOUT)
-                break;
-            else if (rc_wait != FI_SUCCESS) {
-                NA_LOG_ERROR("fi_wait() failed, rc: %d(%s).",
-                    rc_wait, fi_strerror((int) -rc_wait));
-                ret = NA_PROTOCOL_ERROR;
-                break;
+            if (wait_hdl) {
+                int rc_wait = fi_wait(wait_hdl, (int) (remaining * 1000.0));
+                if (rc_wait == -FI_ETIMEDOUT)
+                    break;
+                else if (rc_wait != FI_SUCCESS) {
+                    NA_LOG_ERROR("fi_wait() failed, rc: %d(%s).",
+                        rc_wait, fi_strerror((int) -rc_wait));
+                    ret = NA_PROTOCOL_ERROR;
+                    break;
+                }
             }
         }
 
@@ -3145,9 +3147,11 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             rc = fi_cq_read(cq_hdl, cq_event, NA_OFI_CQ_EVENT_NUM);
         na_ofi_class_unlock(na_class);
         if (rc == -FI_EAGAIN) {
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-            if (remaining < 0)
+            if (timeout) {
+                hg_time_get_current(&t2);
+                remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            }
+            if (remaining <= 0)
                 break; /* Return NA_TIMEOUT */
             continue;
         } else if (rc == -FI_EAVAIL) {
