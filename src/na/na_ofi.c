@@ -41,6 +41,7 @@
 
 #include "mercury_list.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_thread_spin.h"
 #include "mercury_thread_rwlock.h"
 #include "mercury_hash_table.h"
 #include "mercury_time.h"
@@ -185,7 +186,7 @@ struct na_ofi_private_data {
     struct na_ofi_endpoint *nop_endpoint;
     /* Unexpected op queue */
     HG_QUEUE_HEAD(na_ofi_op_id) nop_unexpected_op_queue;
-    hg_thread_mutex_t nop_unexpected_op_mutex;
+    hg_thread_spin_t nop_unexpected_op_lock;
     char *nop_uri; /* URI address string */
     struct na_ofi_reqhdr nop_req_hdr; /* request header */
     /* nop_mutex only used for verbs provider as it is not thread safe now */
@@ -1646,7 +1647,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     /* Initialize queue / mutex */
     HG_QUEUE_INIT(&NA_OFI_PRIVATE_DATA(na_class)->nop_unexpected_op_queue);
-    hg_thread_mutex_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_unexpected_op_mutex);
+    hg_thread_spin_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_unexpected_op_lock);
     hg_thread_mutex_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_mutex);
 
     /* Create domain */
@@ -1723,7 +1724,7 @@ na_ofi_finalize(na_class_t *na_class)
     }
 
     /* Close mutex / free private data */
-    hg_thread_mutex_destroy(&priv->nop_unexpected_op_mutex);
+    hg_thread_spin_destroy(&priv->nop_unexpected_op_lock);
     hg_thread_mutex_destroy(&priv->nop_mutex);
     free(priv->nop_uri);
     free(priv);
@@ -2206,9 +2207,9 @@ na_ofi_msg_unexpected_op_push(na_class_t *na_class,
         goto out;
     }
 
-    hg_thread_mutex_lock(&priv->nop_unexpected_op_mutex);
+    hg_thread_spin_lock(&priv->nop_unexpected_op_lock);
     HG_QUEUE_PUSH_TAIL(&priv->nop_unexpected_op_queue, na_ofi_op_id, noo_entry);
-    hg_thread_mutex_unlock(&priv->nop_unexpected_op_mutex);
+    hg_thread_spin_unlock(&priv->nop_unexpected_op_lock);
 
 out:
     return ret;
@@ -2228,10 +2229,10 @@ na_ofi_msg_unexpected_op_remove(na_class_t *na_class,
         goto out;
     }
 
-    hg_thread_mutex_lock(&priv->nop_unexpected_op_mutex);
+    hg_thread_spin_lock(&priv->nop_unexpected_op_lock);
     HG_QUEUE_REMOVE(&priv->nop_unexpected_op_queue, na_ofi_op_id, na_ofi_op_id,
                     noo_entry);
-    hg_thread_mutex_unlock(&priv->nop_unexpected_op_mutex);
+    hg_thread_spin_unlock(&priv->nop_unexpected_op_lock);
 
 out:
     return ret;
@@ -2244,10 +2245,10 @@ na_ofi_msg_unexpected_op_pop(na_class_t * na_class)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct na_ofi_op_id *na_ofi_op_id;
 
-    hg_thread_mutex_lock(&priv->nop_unexpected_op_mutex);
+    hg_thread_spin_lock(&priv->nop_unexpected_op_lock);
     na_ofi_op_id = HG_QUEUE_FIRST(&priv->nop_unexpected_op_queue);
     HG_QUEUE_POP_HEAD(&priv->nop_unexpected_op_queue, noo_entry);
-    hg_thread_mutex_unlock(&priv->nop_unexpected_op_mutex);
+    hg_thread_spin_unlock(&priv->nop_unexpected_op_lock);
 
     return na_ofi_op_id;
 }
