@@ -9,6 +9,7 @@
  */
 
 #include "mercury_thread_condition.h"
+#include "mercury_time.h"
 #include "mercury_util_error.h"
 
 #ifndef _WIN32
@@ -99,13 +100,13 @@ hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsig
     if (!SleepConditionVariableCS(cond, mutex, timeout)) ret = HG_UTIL_FAIL;
 #else
     int pret;
-    struct timeval now;
+    hg_time_t now;
     struct timespec abs_timeout;
     long int abs_timeout_us;
     ldiv_t ld;
 
     /* Need to convert timeout (ms) to absolute time */
-    gettimeofday(&now, NULL);
+    hg_time_get_current(&now);
     abs_timeout_us = now.tv_usec + timeout * 1000L;
     /* Get sec / nsec */
     ld = ldiv(abs_timeout_us, 1000000L);

@@ -63,11 +63,8 @@ hg_time_get_current(hg_time_t *tv)
     uint64_t monotonic_nsec;
 #else
     struct timespec tp;
-#ifdef CLOCK_MONOTONIC_RAW
-    clockid_t clock_id = CLOCK_MONOTONIC_RAW;
-#else
+    /* NB. CLOCK_MONOTONIC_RAW is not explicitly supported in the vdso */
     clockid_t clock_id = CLOCK_MONOTONIC;
-#endif
 #endif
 
     if (!tv) {
