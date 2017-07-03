@@ -43,67 +43,210 @@ extern "C" {
 #endif
 
 /**
- * Inline prototypes (do not remove)
- */
-
-/* hg_atomic_int32_t */
-static HG_UTIL_INLINE void
-hg_atomic_init32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
-static HG_UTIL_INLINE void
-hg_atomic_set32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
-static HG_UTIL_INLINE hg_util_int32_t
-hg_atomic_get32(hg_atomic_int32_t *ptr);
-static HG_UTIL_INLINE hg_util_int32_t
-hg_atomic_incr32(hg_atomic_int32_t *ptr);
-static HG_UTIL_INLINE hg_util_int32_t
-hg_atomic_decr32(hg_atomic_int32_t *ptr);
-#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-static HG_UTIL_INLINE hg_util_int32_t
-hg_atomic_or32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
-static HG_UTIL_INLINE hg_util_int32_t
-hg_atomic_xor32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
-static HG_UTIL_INLINE hg_util_int32_t
-hg_atomic_and32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
-#endif
-static HG_UTIL_INLINE hg_util_bool_t
-hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
-    hg_util_int32_t swap_value);
-
-/* hg_atomic_int64_t */
-static HG_UTIL_INLINE void
-hg_atomic_init64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
-static HG_UTIL_INLINE void
-hg_atomic_set64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
-static HG_UTIL_INLINE hg_util_int64_t
-hg_atomic_get64(hg_atomic_int64_t *ptr);
-#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-static HG_UTIL_INLINE hg_util_int64_t
-hg_atomic_incr64(hg_atomic_int64_t *ptr);
-static HG_UTIL_INLINE hg_util_int64_t
-hg_atomic_decr64(hg_atomic_int64_t *ptr);
-#if defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H)
-static HG_UTIL_INLINE hg_util_int64_t
-hg_atomic_or64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
-static HG_UTIL_INLINE hg_util_int64_t
-hg_atomic_xor64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
-static HG_UTIL_INLINE hg_util_int64_t
-hg_atomic_and64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
-#endif /* defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H) */
-#endif /* !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H) */
-static HG_UTIL_INLINE hg_util_bool_t
-hg_atomic_cas64(hg_atomic_int64_t *ptr, hg_util_int64_t compare_value,
-    hg_util_int64_t swap_value);
-
-/* fence */
-static HG_UTIL_INLINE void
-hg_atomic_fence();
-
-/**
  * Init atomic value (32-bit integer).
  *
  * \param ptr [OUT]             pointer to an atomic32 integer
  * \param value [IN]            value
  */
+static HG_UTIL_INLINE void
+hg_atomic_init32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
+
+/**
+ * Set atomic value (32-bit integer).
+ *
+ * \param ptr [OUT]             pointer to an atomic32 integer
+ * \param value [IN]            value
+ */
+static HG_UTIL_INLINE void
+hg_atomic_set32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
+
+/**
+ * Get atomic value (32-bit integer).
+ *
+ * \param ptr [OUT]             pointer to an atomic32 integer
+ *
+ * \return Value of the atomic integer
+ */
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_get32(hg_atomic_int32_t *ptr);
+
+/**
+ * Increment atomic value (32-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic32 integer
+ *
+ * \return Incremented value
+ */
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_incr32(hg_atomic_int32_t *ptr);
+
+/**
+ * Decrement atomic value (32-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic32 integer
+ *
+ * \return Decremented value
+ */
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_decr32(hg_atomic_int32_t *ptr);
+
+#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
+/**
+ * OR atomic value (32-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic32 integer
+ * \param value [IN]            value to OR with
+ *
+ * \return Original value
+ */
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_or32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
+
+/**
+ * XOR atomic value (32-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic32 integer
+ * \param value [IN]            value to XOR with
+ *
+ * \return Original value
+ */
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_xor32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
+
+/**
+ * AND atomic value (32-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic32 integer
+ * \param value [IN]            value to AND with
+ *
+ * \return Original value
+ */
+static HG_UTIL_INLINE hg_util_int32_t
+hg_atomic_and32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
+#endif
+
+/**
+ * Compare and swap values (32-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic32 integer
+ * \param compare_value [IN]    value to compare to
+ * \param swap_value [IN]       value to swap with if ptr value is equal to
+ *                              compare value
+ *
+ * \return HG_UTIL_TRUE if swapped or HG_UTIL_FALSE
+ */
+static HG_UTIL_INLINE hg_util_bool_t
+hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
+    hg_util_int32_t swap_value);
+
+/**
+ * Init atomic value (64-bit integer).
+ *
+ * \param ptr [OUT]             pointer to an atomic32 integer
+ * \param value [IN]            value
+ */
+static HG_UTIL_INLINE void
+hg_atomic_init64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
+
+/**
+ * Set atomic value (64-bit integer).
+ *
+ * \param ptr [OUT]             pointer to an atomic64 integer
+ * \param value [IN]            value
+ */
+static HG_UTIL_INLINE void
+hg_atomic_set64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
+
+/**
+ * Get atomic value (64-bit integer).
+ *
+ * \param ptr [OUT]             pointer to an atomic64 integer
+ *
+ * \return Value of the atomic integer
+ */
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_get64(hg_atomic_int64_t *ptr);
+
+#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
+/**
+ * Increment atomic value (64-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic64 integer
+ *
+ * \return Incremented value
+ */
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_incr64(hg_atomic_int64_t *ptr);
+
+/**
+ * Decrement atomic value (64-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic64 integer
+ *
+ * \return Decremented value
+ */
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_decr64(hg_atomic_int64_t *ptr);
+
+#if defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H)
+/**
+ * OR atomic value (64-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic64 integer
+ * \param value [IN]            value to OR with
+ *
+ * \return Original value
+ */
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_or64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
+
+/**
+ * XOR atomic value (64-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic64 integer
+ * \param value [IN]            value to XOR with
+ *
+ * \return Original value
+ */
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_xor64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
+
+/**
+ * AND atomic value (64-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic64 integer
+ * \param value [IN]            value to AND with
+ *
+ * \return Original value
+ */
+static HG_UTIL_INLINE hg_util_int64_t
+hg_atomic_and64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
+
+#endif /* defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H) */
+#endif /* !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H) */
+
+/**
+ * Compare and swap values (64-bit integer).
+ *
+ * \param ptr [IN/OUT]          pointer to an atomic64 integer
+ * \param compare_value [IN]    value to compare to
+ * \param swap_value [IN]       value to swap with if ptr value is equal to
+ *                              compare value
+ *
+ * \return HG_UTIL_TRUE if swapped or HG_UTIL_FALSE
+ */
+static HG_UTIL_INLINE hg_util_bool_t
+hg_atomic_cas64(hg_atomic_int64_t *ptr, hg_util_int64_t compare_value,
+    hg_util_int64_t swap_value);
+
+/**
+ * Memory barrier.
+ *
+ */
+static HG_UTIL_INLINE void
+hg_atomic_fence(void);
+
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE void
 hg_atomic_init32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 {
@@ -114,12 +257,7 @@ hg_atomic_init32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 #endif
 }
 
-/**
- * Set atomic value (32-bit integer).
- *
- * \param ptr [OUT]             pointer to an atomic32 integer
- * \param value [IN]            value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE void
 hg_atomic_set32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 {
@@ -136,13 +274,7 @@ hg_atomic_set32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 #endif
 }
 
-/**
- * Get atomic value (32-bit integer).
- *
- * \param ptr [OUT]             pointer to an atomic32 integer
- *
- * \return Value of the atomic integer
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int32_t
 hg_atomic_get32(hg_atomic_int32_t *ptr)
 {
@@ -163,13 +295,7 @@ hg_atomic_get32(hg_atomic_int32_t *ptr)
     return ret;
 }
 
-/**
- * Increment atomic value (32-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic32 integer
- *
- * \return Incremented value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int32_t
 hg_atomic_incr32(hg_atomic_int32_t *ptr)
 {
@@ -190,13 +316,7 @@ hg_atomic_incr32(hg_atomic_int32_t *ptr)
     return ret;
 }
 
-/**
- * Decrement atomic value (32-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic32 integer
- *
- * \return Decremented value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int32_t
 hg_atomic_decr32(hg_atomic_int32_t *ptr)
 {
@@ -218,14 +338,7 @@ hg_atomic_decr32(hg_atomic_int32_t *ptr)
 }
 
 #if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-/**
- * OR atomic value (32-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic32 integer
- * \param value [IN]            value to OR with
- *
- * \return Original value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int32_t
 hg_atomic_or32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 {
@@ -244,14 +357,7 @@ hg_atomic_or32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
     return ret;
 }
 
-/**
- * XOR atomic value (32-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic32 integer
- * \param value [IN]            value to XOR with
- *
- * \return Original value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int32_t
 hg_atomic_xor32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 {
@@ -270,14 +376,7 @@ hg_atomic_xor32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
     return ret;
 }
 
-/**
- * AND atomic value (32-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic32 integer
- * \param value [IN]            value to AND with
- *
- * \return Original value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int32_t
 hg_atomic_and32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 {
@@ -297,16 +396,7 @@ hg_atomic_and32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 }
 #endif /* !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H) */
 
-/**
- * Compare and swap values (32-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic32 integer
- * \param compare_value [IN]    value to compare to
- * \param swap_value [IN]       value to swap with if ptr value is equal to
- *                              compare value
- *
- * \return HG_UTIL_TRUE if swapped or HG_UTIL_FALSE
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_bool_t
 hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
     hg_util_int32_t swap_value)
@@ -330,12 +420,7 @@ hg_atomic_cas32(hg_atomic_int32_t *ptr, hg_util_int32_t compare_value,
     return ret;
 }
 
-/**
- * Init atomic value (64-bit integer).
- *
- * \param ptr [OUT]             pointer to an atomic32 integer
- * \param value [IN]            value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE void
 hg_atomic_init64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 {
@@ -346,12 +431,7 @@ hg_atomic_init64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 #endif
 }
 
-/**
- * Set atomic value (64-bit integer).
- *
- * \param ptr [OUT]             pointer to an atomic64 integer
- * \param value [IN]            value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE void
 hg_atomic_set64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 {
@@ -368,13 +448,7 @@ hg_atomic_set64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 #endif
 }
 
-/**
- * Get atomic value (64-bit integer).
- *
- * \param ptr [OUT]             pointer to an atomic64 integer
- *
- * \return Value of the atomic integer
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_get64(hg_atomic_int64_t *ptr)
 {
@@ -396,13 +470,7 @@ hg_atomic_get64(hg_atomic_int64_t *ptr)
 }
 
 #if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
-/**
- * Increment atomic value (64-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic64 integer
- *
- * \return Incremented value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_incr64(hg_atomic_int64_t *ptr)
 {
@@ -421,13 +489,7 @@ hg_atomic_incr64(hg_atomic_int64_t *ptr)
     return ret;
 }
 
-/**
- * Decrement atomic value (64-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic64 integer
- *
- * \return Decremented value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_decr64(hg_atomic_int64_t *ptr)
 {
@@ -447,14 +509,7 @@ hg_atomic_decr64(hg_atomic_int64_t *ptr)
 }
 
 #if defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H)
-/**
- * OR atomic value (64-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic64 integer
- * \param value [IN]            value to OR with
- *
- * \return Original value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_or64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 {
@@ -471,14 +526,7 @@ hg_atomic_or64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
     return ret;
 }
 
-/**
- * XOR atomic value (64-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic64 integer
- * \param value [IN]            value to XOR with
- *
- * \return Original value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_xor64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 {
@@ -495,14 +543,7 @@ hg_atomic_xor64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
     return ret;
 }
 
-/**
- * AND atomic value (64-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic64 integer
- * \param value [IN]            value to AND with
- *
- * \return Original value
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_and64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 {
@@ -521,16 +562,7 @@ hg_atomic_and64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 #endif /* defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H) */
 #endif /* !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H) */
 
-/**
- * Compare and swap values (64-bit integer).
- *
- * \param ptr [IN/OUT]          pointer to an atomic64 integer
- * \param compare_value [IN]    value to compare to
- * \param swap_value [IN]       value to swap with if ptr value is equal to
- *                              compare value
- *
- * \return HG_UTIL_TRUE if swapped or HG_UTIL_FALSE
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_bool_t
 hg_atomic_cas64(hg_atomic_int64_t *ptr, hg_util_int64_t compare_value,
     hg_util_int64_t swap_value)
@@ -555,10 +587,7 @@ hg_atomic_cas64(hg_atomic_int64_t *ptr, hg_util_int64_t compare_value,
     return ret;
 }
 
-/**
- * Memory barrier.
- *
- */
+/*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE void
 hg_atomic_fence()
 {
