@@ -17,6 +17,7 @@ endfunction()
 # Set list of tests
 set(MERCURY_util_tests
   atomic
+  atomic_queue
   hash_table
   list
   poll
