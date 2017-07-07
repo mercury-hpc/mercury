@@ -104,7 +104,7 @@
 #define NA_OFI_UNEXPECTED_TAG_IGNORE (0xFFFFFFFFULL)
 
 /* number of CQ event provided for fi_cq_read() */
-#define NA_OFI_CQ_EVENT_NUM (1)
+#define NA_OFI_CQ_EVENT_NUM (16)
 /* CQ depth (the socket provider's default value is 256 */
 #define NA_OFI_CQ_DEPTH (8192)
 
@@ -3136,9 +3136,6 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             }
         }
 
-        memset(src_addr, 0, sizeof(fi_addr_t) * NA_OFI_CQ_EVENT_NUM);
-        memset(cq_event, 0, sizeof(struct fi_cq_tagged_entry) *
-                                   NA_OFI_CQ_EVENT_NUM);
         na_ofi_class_lock(na_class);
         if (na_ofi_with_reqhdr(na_class) == NA_FALSE)
             rc = fi_cq_readfrom(cq_hdl, cq_event, NA_OFI_CQ_EVENT_NUM,
