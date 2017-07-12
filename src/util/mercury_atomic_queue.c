@@ -62,7 +62,7 @@ hg_atomic_queue_alloc(unsigned int count)
     }
 
     hg_atomic_queue = malloc(sizeof(struct hg_atomic_queue) +
-        count * sizeof(caddr_t));
+        count * HG_ATOMIC_QUEUE_ELT_SIZE);
     if (!hg_atomic_queue) {
         HG_UTIL_LOG_ERROR("Could not allocate atomic queue");
         goto done;

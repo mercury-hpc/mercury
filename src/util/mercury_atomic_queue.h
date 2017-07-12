@@ -44,8 +44,11 @@
 #include "mercury_atomic.h"
 #include "mercury_thread.h"
 
-#define HG_UTIL_CACHE_ALIGNMENT 64
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
 
+#define HG_UTIL_CACHE_ALIGNMENT 64
 struct hg_atomic_queue {
     hg_atomic_int32_t prod_head;
     hg_atomic_int32_t prod_tail;
@@ -59,7 +62,19 @@ struct hg_atomic_queue {
     hg_atomic_int64_t *ring[0] __attribute__((aligned(HG_UTIL_CACHE_ALIGNMENT)));
 };
 
+/*****************/
+/* Public Macros */
+/*****************/
+
+#define HG_ATOMIC_QUEUE_ELT_SIZE sizeof(hg_atomic_int64_t)
+
+#ifndef cpu_spinwait
 #define cpu_spinwait() asm volatile("pause\n": : :"memory");
+#endif
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {
@@ -113,6 +128,26 @@ hg_atomic_queue_pop_mc(struct hg_atomic_queue *hg_atomic_queue);
  */
 static HG_UTIL_INLINE void *
 hg_atomic_queue_pop_sc(struct hg_atomic_queue *hg_atomic_queue);
+
+/**
+ * Determine whether queue is empty.
+ *
+ * \param hg_atomic_queue [IN/OUT]  pointer to queue
+ *
+ * \return HG_UTIL_TRUE if empty, HG_UTIL_FALSE if not
+ */
+static HG_UTIL_INLINE hg_util_bool_t
+hg_atomic_queue_is_empty(struct hg_atomic_queue *hg_atomic_queue);
+
+/**
+ * Determine number of entries in a queue.
+ *
+ * \param hg_atomic_queue [IN/OUT]  pointer to queue
+ *
+ * \return Number of entries queued or 0 if none
+ */
+static HG_UTIL_INLINE unsigned int
+hg_atomic_queue_count(struct hg_atomic_queue *hg_atomic_queue);
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
@@ -223,6 +258,16 @@ hg_atomic_queue_is_empty(struct hg_atomic_queue *hg_atomic_queue)
 {
     return (hg_atomic_get32(&hg_atomic_queue->cons_head) ==
         hg_atomic_get32(&hg_atomic_queue->prod_tail));
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE unsigned int
+hg_atomic_queue_count(struct hg_atomic_queue *hg_atomic_queue)
+{
+    return ((hg_atomic_queue->prod_size
+        + (unsigned int) hg_atomic_get32(&hg_atomic_queue->prod_tail)
+        - (unsigned int) hg_atomic_get32(&hg_atomic_queue->cons_tail))
+        & hg_atomic_queue->prod_mask);
 }
 
 #ifdef __cplusplus

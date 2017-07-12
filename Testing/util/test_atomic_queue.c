@@ -48,5 +48,6 @@ main(void)
     }
 
 done:
+    hg_atomic_queue_free(hg_atomic_queue);
     return ret;
 }
