@@ -40,6 +40,15 @@
 /* Define if has <stdatomic.h> */
 #cmakedefine HG_UTIL_HAS_STDATOMIC_H
 
+/* Define is has <time.h> */
+#cmakedefine HG_UTIL_HAS_TIME_H
+
+/* Define is has 'clock_gettime()' */
+#cmakedefine HG_UTIL_HAS_CLOCK_GETTIME
+
+/* Define is has <sys/time.h> */
+#cmakedefine HG_UTIL_HAS_SYSTIME_H
+
 /* Define if has <sys/epoll.h> */
 #cmakedefine HG_UTIL_HAS_SYSEPOLL_H
 

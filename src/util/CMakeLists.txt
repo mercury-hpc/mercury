@@ -41,6 +41,16 @@ if(NOT WIN32 AND NOT APPLE)
   )
 endif()
 
+# Detect <time.h>
+check_include_files("time.h" HG_UTIL_HAS_TIME_H)
+if(HG_UTIL_HAS_TIME_H)
+  # Detect clock_gettime
+  CHECK_SYMBOL_EXISTS(clock_gettime time.h HG_UTIL_HAS_CLOCK_GETTIME)
+endif()
+
+# Detect <sys/time.h>
+check_include_files("sys/time.h" HG_UTIL_HAS_SYSTIME_H)
+
 # Detect <sys/epoll.h>
 check_include_files("sys/epoll.h" HG_UTIL_HAS_SYSEPOLL_H)
 

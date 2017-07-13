@@ -13,7 +13,6 @@
 #include "mercury_util_error.h"
 
 #ifndef _WIN32
-#include <sys/time.h>
 #include <stdlib.h>
 #endif
 

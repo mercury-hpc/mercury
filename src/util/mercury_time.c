@@ -12,12 +12,15 @@
 #include "mercury_util_error.h"
 
 #if defined(_WIN32)
-#    include <windows.h>
-#elif defined(__APPLE__)
-#    include <sys/time.h>
-#    include <mach/mach_time.h>
+#  include <windows.h>
 #else
-#    include <time.h>
+#if defined(HG_UTIL_HAS_TIME_H)
+#  include <time.h>
+#endif
+#if defined(__APPLE__) && !defined(HG_UTIL_HAS_CLOCK_GETTIME)
+#  include <sys/time.h>
+#  include <mach/mach_time.h>
+#endif
 #endif
 
 #ifdef _WIN32
@@ -58,13 +61,13 @@ hg_time_get_current(hg_time_t *tv)
     static double freq_to_usec;
     static int initialized = 0;
     static BOOL use_perf_counter = 0;
-#elif defined(__APPLE__)
-    static uint64_t monotonic_timebase_factor = 0;
-    uint64_t monotonic_nsec;
-#else
+#elif defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
     struct timespec tp;
     /* NB. CLOCK_MONOTONIC_RAW is not explicitly supported in the vdso */
     clockid_t clock_id = CLOCK_MONOTONIC;
+#elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
+    static uint64_t monotonic_timebase_factor = 0;
+    uint64_t monotonic_nsec;
 #endif
 
     if (!tv) {
@@ -100,7 +103,15 @@ hg_time_get_current(hg_time_t *tv)
     t.QuadPart = t_usec;
     tv->tv_sec = t.QuadPart / 1000000;
     tv->tv_usec = t.QuadPart % 1000000;
-#elif defined(__APPLE__)
+#elif defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
+    if (clock_gettime(clock_id, &tp)) {
+        HG_UTIL_LOG_ERROR("clock_gettime failed");
+        ret = HG_UTIL_FAIL;
+        return ret;
+    }
+    tv->tv_sec = tp.tv_sec;
+    tv->tv_usec = tp.tv_nsec / 1000;
+#elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
     if (monotonic_timebase_factor == 0) {
         mach_timebase_info_data_t timebase_info;
 
@@ -110,14 +121,6 @@ hg_time_get_current(hg_time_t *tv)
     monotonic_nsec = (mach_absolute_time() * monotonic_timebase_factor);
     tv->tv_sec  = monotonic_nsec / 1000000000;
     tv->tv_usec = (monotonic_nsec - tv->tv_sec) / 1000;
-#else
-    if (clock_gettime(clock_id, &tp)) {
-        HG_UTIL_LOG_ERROR("clock_gettime failed");
-        ret = HG_UTIL_FAIL;
-        return ret;
-    }
-    tv->tv_sec = tp.tv_sec;
-    tv->tv_usec = tp.tv_nsec / 1000;
 #endif
 
     return ret;
@@ -222,9 +225,9 @@ hg_time_stamp(void)
     char *ret = NULL;
     static char buf[HG_UTIL_STAMP_MAX];
 
-#ifdef _WIN32
+#if defined(_WIN32)
     /* TODO not implemented */
-#else
+#elif defined(HG_UTIL_HAS_TIME_H)
     struct tm *local_time;
     time_t t;
 
