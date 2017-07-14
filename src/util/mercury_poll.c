@@ -507,7 +507,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
                 int poll_ret = HG_UTIL_SUCCESS;
 
                 poll_ret = hg_poll_data->poll_cb(
-                    hg_poll_data->poll_arg, timeout, &poll_cb_progressed);
+                    hg_poll_data->poll_arg, 0, &poll_cb_progressed);
                 if (poll_ret != HG_UTIL_SUCCESS) {
                     HG_UTIL_LOG_ERROR("poll cb failed");
                     ret = HG_UTIL_FAIL;
