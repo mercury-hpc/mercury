@@ -3676,6 +3676,8 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
             &extra_header_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not encode header");
+        /* rollback ref_count taken above */
+        hg_atomic_decr32(&hg_handle->ref_count);
         goto done;
     }
 
@@ -3695,6 +3697,8 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
 #endif
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not forward buffer");
+        /* rollback ref_count taken above */
+        hg_atomic_decr32(&hg_handle->ref_count);
         goto done;
     }
 
