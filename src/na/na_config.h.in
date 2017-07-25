@@ -44,6 +44,7 @@
 #cmakedefine NA_SM_TMP_DIRECTORY "@NA_SM_TMP_DIRECTORY@"
 
 /* Build Options */
+#cmakedefine NA_HAS_MULTI_PROGRESS
 #cmakedefine NA_HAS_VERBOSE_ERROR
 
 #cmakedefine NA_BUILD_SHARED_LIBS

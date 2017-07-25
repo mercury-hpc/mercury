@@ -42,7 +42,7 @@ static int test_msg_recv(struct na_test_params *params);
 static int test_msg_respond(struct na_test_params *params, na_tag_t send_tag);
 static int test_bulk(struct na_test_params *params);
 
-static na_return_t
+static int
 msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
@@ -63,7 +63,7 @@ msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
     return ret;
 }
 
-static na_return_t
+static int
 msg_expected_send_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
@@ -81,7 +81,7 @@ msg_expected_send_cb(const struct na_cb_info *callback_info)
     return ret;
 }
 
-static na_return_t
+static int
 msg_expected_send_final_cb(const struct na_cb_info *callback_info)
 {
     na_return_t ret = NA_SUCCESS;
@@ -95,7 +95,7 @@ msg_expected_send_final_cb(const struct na_cb_info *callback_info)
     return ret;
 }
 
-static na_return_t
+static int
 bulk_put_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
@@ -137,7 +137,7 @@ done:
     return ret;
 }
 
-static na_return_t
+static int
 bulk_get_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
@@ -182,7 +182,7 @@ done:
     return ret;
 }
 
-static na_return_t
+static int
 mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
@@ -334,16 +334,19 @@ main(int argc, char *argv[])
         while (1) {
             na_return_t trigger_ret;
             unsigned int actual_count = 0;
+            unsigned int timeout = 0;
 
             do {
-                trigger_ret = NA_Trigger(params.context, 0, 1, &actual_count);
+                trigger_ret = NA_Trigger(params.context, 0, 1, NULL,
+                    &actual_count);
             } while ((trigger_ret == NA_SUCCESS) && actual_count);
 
             if (test_msg_done_g && test_bulk_done_g)
                 break;
 
-            na_ret = NA_Progress(params.na_class, params.context,
-                NA_MAX_IDLE_TIME);
+            if (NA_Poll_try_wait(params.na_class, params.context))
+                timeout = NA_MAX_IDLE_TIME;
+            na_ret = NA_Progress(params.na_class, params.context, timeout);
             if (na_ret != NA_SUCCESS) {
                 ret = EXIT_FAILURE;
                 goto done;

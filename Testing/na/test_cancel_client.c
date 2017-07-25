@@ -42,7 +42,7 @@ static int test_bulk(struct na_test_params *params);
 #endif
 
 /* NA test user-defined callbacks */
-static na_return_t
+static int
 lookup_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
@@ -59,7 +59,7 @@ lookup_cb(const struct na_cb_info *callback_info)
     return NA_SUCCESS;
 }
 
-static na_return_t
+static int
 msg_expected_recv_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
@@ -88,7 +88,7 @@ msg_expected_recv_cb(const struct na_cb_info *callback_info)
     return ret;
 }
 
-static na_return_t
+static int
 msg_unexpected_send_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
@@ -117,7 +117,7 @@ msg_unexpected_send_cb(const struct na_cb_info *callback_info)
 }
 
 #ifdef NA_HAS_CCI
-static na_return_t
+static int
 ack_expected_recv_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
@@ -168,7 +168,7 @@ ack_expected_recv_cb(const struct na_cb_info *callback_info)
     return ret;
 }
 
-static na_return_t
+static int
 msg_expected_send_cb(const struct na_cb_info *callback_info)
 {
     struct na_test_params *params = (struct na_test_params *) callback_info->arg;
@@ -356,7 +356,7 @@ main(int argc, char **argv)
         unsigned int actual_count = 0;
 
         do {
-            trigger_ret = NA_Trigger(params.context, 0, 1, &actual_count);
+            trigger_ret = NA_Trigger(params.context, 0, 1, NULL, &actual_count);
         } while ((trigger_ret == NA_SUCCESS) && actual_count);
 
         if (test_done_g)

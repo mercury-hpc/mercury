@@ -45,6 +45,13 @@ include_directories(
 # UTIL
 include_directories(${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES})
 
+# Multi progress
+option(NA_ALLOW_MULTI_PROGRESS "Allow concurrent progress on single context." ON)
+if(NA_ALLOW_MULTI_PROGRESS)
+  set(NA_HAS_MULTI_PROGRESS 1)
+endif()
+mark_as_advanced(NA_ALLOW_MULTI_PROGRESS)
+
 #------------------------------------------------------------------------------
 # External dependencies / NA plugins
 #------------------------------------------------------------------------------

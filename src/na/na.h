@@ -83,7 +83,7 @@ struct na_cb_info {
 };
 
 /* Callback type */
-typedef na_return_t (*na_cb_t)(const struct na_cb_info *callback_info);
+typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 
 /*****************/
 /* Public Macros */
@@ -139,7 +139,7 @@ NA_Initialize(
 /**
  * Finalize the network abstraction layer.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
@@ -157,7 +157,7 @@ NA_Finalize(
  */
 NA_EXPORT const char *
 NA_Get_class_name(
-        na_class_t *na_class
+        const na_class_t *na_class
         ) NA_WARN_UNUSED_RESULT;
 
 /**
@@ -169,7 +169,7 @@ NA_Get_class_name(
  */
 NA_EXPORT const char *
 NA_Get_class_protocol(
-        na_class_t *na_class
+        const na_class_t *na_class
         ) NA_WARN_UNUSED_RESULT;
 
 /**
@@ -181,7 +181,7 @@ NA_Get_class_protocol(
  */
 NA_EXPORT na_bool_t
 NA_Is_listening(
-        na_class_t *na_class
+        const na_class_t *na_class
         ) NA_WARN_UNUSED_RESULT;
 
 /**
@@ -189,7 +189,7 @@ NA_Is_listening(
  * List of queryable features are:
  *      - NA_HAS_TAG_MASK
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param feature  [IN]         ID of requested feature
  *
  * \return NA_TRUE if supported or NA_FALSE if not
@@ -203,7 +203,7 @@ NA_Check_feature(
 /**
  * Create a new context.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  *
  * \return Pointer to NA context or NULL in case of failure
  */
@@ -215,8 +215,8 @@ NA_Context_create(
 /**
  * Destroy a context created by using NA_Context_create().
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
@@ -234,7 +234,7 @@ NA_Context_destroy(
  * layer, hence it must be explicitly released with NA_Op_destroy() when it
  * is no longer needed.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  *
  * \return valid operation ID or NA_OP_ID_NULL
  */
@@ -247,8 +247,7 @@ NA_Op_create(
  * Destroy operation ID created with NA_Op_create().
  * Reference counting prevents involuntary free.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param op_id [IN]            operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -269,8 +268,8 @@ NA_Op_destroy(
  * manually create an operation ID through NA_Op_create() and pass it through
  * op_id for future use and prevent multiple ID creation.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param name [IN]             lookup name
@@ -291,7 +290,7 @@ NA_Addr_lookup(
 /**
  * Free the addr from the list of peers.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param addr [IN]             abstract address
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -305,7 +304,7 @@ NA_Addr_free(
 /**
  * Access self address.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param addr [OUT]            pointer to abstract address
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -321,7 +320,7 @@ NA_Addr_self(
  * stored for later use and the origin address be freed safely. The duplicated
  * address must be freed with NA_Addr_free().
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param addr [IN]             abstract address
  * \param new_addr [OUT]        pointer to abstract address
  *
@@ -337,7 +336,7 @@ NA_Addr_dup(
 /**
  * Test whether address is self or not.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param addr [IN]             abstract address
  *
  * \return NA_TRUE if self or NA_FALSE if not
@@ -355,7 +354,7 @@ NA_Addr_is_self(
  * through buf_size is too small, NA_SIZE_ERROR is returned and the buf_size
  * output is set to the minimum size required.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param buf [IN/OUT]          pointer to destination buffer
  * \param buf_size [IN/OUT]     pointer to buffer size
  * \param addr [IN]             abstract address
@@ -402,7 +401,7 @@ NA_Msg_get_max_unexpected_size(
  * NULL. The plugin_data output parameter can be used by the underlying plugin
  * implementation to store internal memory information.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param buf_size [IN]         buffer size
  * \param plugin_data [OUT]     pointer to internal plugin data
  *
@@ -420,7 +419,7 @@ NA_Msg_buf_alloc(
  * which must have been returned by a previous call to NA_Msg_buf_alloc().
  * If buf is NULL, no operation is performed.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param buf [IN]              pointer to buffer
  * \param plugin_data [IN]      pointer to internal plugin data
  *
@@ -460,8 +459,8 @@ NA_Msg_get_max_tag(
  * manually create an operation ID through NA_Op_create() and pass it through
  * op_id for future use and prevent multiple ID creation.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
@@ -497,8 +496,8 @@ NA_Msg_send_unexpected(
  * manually create an operation ID through NA_Op_create() and pass it through
  * op_id for future use and prevent multiple ID creation.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
@@ -533,8 +532,8 @@ NA_Msg_recv_unexpected(
  * manually create an operation ID through NA_Op_create() and pass it through
  * op_id for future use and prevent multiple ID creation.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
@@ -567,8 +566,8 @@ NA_Msg_send_expected(
  * manually create an operation ID through NA_Op_create() and pass it through
  * op_id for future use and prevent multiple ID creation.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to receive buffer
@@ -599,7 +598,7 @@ NA_Msg_recv_expected(
  * \remark Note to plugin developers: NA_Mem_handle_create() may be called
  * multiple times on the same memory region.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param buf [IN]              pointer to buffer that needs to be registered
  * \param buf_size [IN]         buffer size
  * \param flags [IN]            permission flag:
@@ -624,7 +623,7 @@ NA_Mem_handle_create(
  * memory handle.
  * \remark Implemented only if the network transport or hardware supports it.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param segments [IN]         pointer to array of segments composed of:
  *                                - address of the segment that needs to be
  *                                  registered
@@ -649,7 +648,7 @@ NA_Mem_handle_create_segments(
 /**
  * Free memory handle.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param mem_handle [IN]       abstract memory handle
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -665,7 +664,7 @@ NA_Mem_handle_free(
  * Memory pieces must be registered before one-sided transfers can be
  * initiated.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param mem_handle [IN]       pointer to abstract memory handle
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -679,7 +678,7 @@ NA_Mem_register(
 /**
  * Unregister memory.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param mem_handle [IN]       abstract memory handle
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -695,7 +694,7 @@ NA_Mem_deregister(
  * Memory pieces must be registered before one-sided transfers can be
  * initiated.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param mem_handle [IN]       pointer to abstract memory handle
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -709,7 +708,7 @@ NA_Mem_publish(
 /**
  * Unpublish memory.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param mem_handle [IN]       abstract memory handle
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -723,7 +722,7 @@ NA_Mem_unpublish(
 /**
  * Get size required to serialize handle.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param mem_handle [IN]       abstract memory handle
  *
  * \return Non-negative value
@@ -743,7 +742,7 @@ NA_Mem_handle_get_serialize_size(
  * to serialize a handle into a buffer can be obtained using
  * NA_Mem_handle_get_serialize_size().
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param buf [IN/OUT]          pointer to buffer used for serialization
  * \param buf_size [IN]         buffer size
  * \param mem_handle [IN]       abstract memory handle
@@ -761,7 +760,7 @@ NA_Mem_handle_serialize(
 /**
  * Deserialize memory handle from buffer.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param mem_handle [OUT]      pointer to abstract memory handle
  * \param buf [IN]              pointer to buffer used for deserialization
  * \param buf_size [IN]         buffer size
@@ -788,8 +787,8 @@ NA_Mem_handle_deserialize(
  * manually create an operation ID through NA_Op_create() and pass it through
  * op_id for future use and prevent multiple ID creation.
  *
- * \param na_class [IN]          pointer to NA class
- * \param context [IN]           pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  * \param callback [IN]          pointer to function callback
  * \param arg [IN]               pointer to data passed to callback
  * \param local_mem_handle [IN]  abstract local memory handle
@@ -826,8 +825,8 @@ NA_Put(
  * manually create an operation ID through NA_Op_create() and pass it through
  * op_id for future use and prevent multiple ID creation.
  *
- * \param na_class [IN]          pointer to NA class
- * \param context [IN]           pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  * \param callback [IN]          pointer to function callback
  * \param arg [IN]               pointer to data passed to callback
  * \param local_mem_handle [IN]  abstract local memory handle
@@ -860,8 +859,8 @@ NA_Get(
  * can be used by upper layers for manual polling through the usual
  * OS select/poll/epoll calls.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  *
  * \return Non-negative integer if supported, 0 if not implemented and negative
  * in case of error.
@@ -876,8 +875,8 @@ NA_Poll_get_fd(
  * Used to signal when it is safe to block on the class/context poll descriptor
  * or if blocking could hang the application.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  *
  * \return NA_TRUE if it is safe to block or NA_FALSE otherwise
  */
@@ -894,8 +893,8 @@ NA_Poll_try_wait(
  * assumed that completion of a specific operation will occur only when
  * progress is called.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  * \param timeout [IN]          timeout (in milliseconds)
  *
  * \return NA_SUCCESS if any completion has occurred / NA error code otherwise
@@ -912,10 +911,11 @@ NA_Progress(
  * timeout before returning. Function can return when at least one or more
  * callbacks are triggered (at most max_count).
  *
- * \param context [IN]          pointer to context of execution
+ * \param context [IN/OUT]      pointer to context of execution
  * \param timeout [IN]          timeout (in milliseconds)
  * \param max_count [IN]        maximum number of callbacks triggered
- * \param actual_count [IN]     actual number of callbacks triggered
+ * \param callback_ret [IN/OUT] array of callback return values
+ * \param actual_count [OUT]    actual number of callbacks triggered
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
@@ -924,14 +924,15 @@ NA_Trigger(
         na_context_t *context,
         unsigned int  timeout,
         unsigned int  max_count,
+        int callback_ret[],
         unsigned int *actual_count
         );
 
 /**
  * Cancel an ongoing operation.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param context [IN/OUT]      pointer to context of execution
  * \param op_id [IN]            operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code

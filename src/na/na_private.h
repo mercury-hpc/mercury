@@ -334,7 +334,7 @@ extern "C" {
 /**
  * Add callback to context completion queue.
  *
- * \param context [IN]                  pointer to context of execution
+ * \param context [IN/OUT]              pointer to context of execution
  * \param na_cb_completion_data [IN]    pointer to completion data
  *
  * \return NA_SUCCESS or corresponding NA error code (failure is not an option)

@@ -17,6 +17,7 @@
 #include "mercury_time.h"
 #include "mercury_atomic.h"
 #include "mercury_mem.h"
+#include "mercury_atomic_queue.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -34,27 +35,33 @@
 #  define strdup _strdup
 #endif
 
+#define NA_ATOMIC_QUEUE_SIZE 1024   /* TODO make it configurable */
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
 
 struct na_private_class {
-    struct na_class na_class; /* Must remain as first field */
-    char * protocol_name;
-    na_bool_t listen;
+    struct na_class na_class;   /* Must remain as first field */
+    char * protocol_name;       /* Name of protocol */
+    na_bool_t listen;           /* Listen for connections */
 };
 
 /* Private context / do not expose private members to plugins */
 struct na_private_context {
-    struct na_context context;  /* Must remain as first field */
-    na_class_t *na_class;       /* Pointer to NA class */
-    HG_QUEUE_HEAD(na_cb_completion_data) completion_queue;
-    hg_thread_mutex_t completion_queue_mutex;
-    hg_thread_cond_t completion_queue_cond;
-    hg_atomic_int32_t completion_queue_updated; /* Completion queue updated */
-    hg_thread_mutex_t progress_mutex;
-    hg_thread_cond_t progress_cond;
-    na_bool_t progressing;
+    struct na_context context;                  /* Must remain as first field */
+    na_class_t *na_class;                       /* Pointer to NA class */
+    struct hg_atomic_queue *completion_queue;   /* Default completion queue */
+    HG_QUEUE_HEAD(na_cb_completion_data) backfill_queue; /* Backfill completion queue */
+    hg_atomic_int32_t backfill_queue_count;     /* Number of entries in backfill queue */
+    hg_thread_mutex_t completion_queue_mutex;   /* Completion queue mutex */
+    hg_thread_cond_t  completion_queue_cond;    /* Completion queue cond */
+    hg_atomic_int32_t trigger_waiting;          /* Polling/waiting in trigger */
+#ifdef NA_HAS_MULTI_PROGRESS
+    hg_thread_mutex_t progress_mutex;           /* Progress mutex */
+    hg_thread_cond_t  progress_cond;            /* Progress cond */
+    hg_atomic_int32_t progressing;              /* Progressing count */
+#endif
 };
 
 /********************/
@@ -397,7 +404,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 const char *
-NA_Get_class_name(na_class_t *na_class)
+NA_Get_class_name(const na_class_t *na_class)
 {
     const char *ret = NULL;
 
@@ -414,11 +421,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 const char *
-NA_Get_class_protocol(na_class_t *na_class)
+NA_Get_class_protocol(const na_class_t *na_class)
 {
     const char *ret = NULL;
-    struct na_private_class *na_private_class =
-        (struct na_private_class *) na_class;
+    const struct na_private_class *na_private_class =
+        (const struct na_private_class *) na_class;
 
     if (!na_private_class) {
         NA_LOG_ERROR("NULL NA class");
@@ -433,10 +440,10 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_bool_t
-NA_Is_listening(na_class_t *na_class)
+NA_Is_listening(const na_class_t *na_class)
 {
-    struct na_private_class *na_private_class =
-        (struct na_private_class *) na_class;
+    const struct na_private_class *na_private_class =
+        (const struct na_private_class *) na_class;
     na_bool_t ret = NA_FALSE;
 
     if (!na_private_class) {
@@ -498,17 +505,27 @@ NA_Context_create(na_class_t *na_class)
     }
 
     /* Initialize completion queue */
-    HG_QUEUE_INIT(&na_private_context->completion_queue);
-    hg_atomic_set32(&na_private_context->completion_queue_updated, NA_FALSE);
+    na_private_context->completion_queue =
+        hg_atomic_queue_alloc(NA_ATOMIC_QUEUE_SIZE);
+    if (!na_private_context->completion_queue) {
+        NA_LOG_ERROR("Could not allocate queue");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
+    HG_QUEUE_INIT(&na_private_context->backfill_queue);
+    hg_atomic_init32(&na_private_context->backfill_queue_count, 0);
 
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&na_private_context->completion_queue_mutex);
     hg_thread_cond_init(&na_private_context->completion_queue_cond);
+    hg_atomic_init32(&na_private_context->trigger_waiting, 0);
 
+#ifdef NA_HAS_MULTI_PROGRESS
     /* Initialize progress mutex/cond */
     hg_thread_mutex_init(&na_private_context->progress_mutex);
     hg_thread_cond_init(&na_private_context->progress_cond);
-    na_private_context->progressing = NA_FALSE;
+    hg_atomic_init32(&na_private_context->progressing, 0);
+#endif
 
 done:
     if (ret != NA_SUCCESS) {
@@ -534,15 +551,28 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
     if (!context) goto done;
 
     /* Check that completion queue is empty now */
-    hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
+    if (!hg_atomic_queue_is_empty(na_private_context->completion_queue)) {
+        NA_LOG_ERROR("Completion queue should be empty");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+    hg_atomic_queue_free(na_private_context->completion_queue);
 
-    if (!HG_QUEUE_IS_EMPTY(&na_private_context->completion_queue)) {
+    /* Check that backfill completion queue is empty now */
+    hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
+    if (!HG_QUEUE_IS_EMPTY(&na_private_context->backfill_queue)) {
         NA_LOG_ERROR("Completion queue should be empty");
         ret = NA_PROTOCOL_ERROR;
         hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
         goto done;
     }
+    hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
 
+    /* Destroy completion queue mutex/cond */
+    hg_thread_mutex_destroy(&na_private_context->completion_queue_mutex);
+    hg_thread_cond_destroy(&na_private_context->completion_queue_cond);
+
+    /* Destroy NA plugin context */
     if (na_class->context_destroy) {
         ret = na_class->context_destroy(na_class,
             na_private_context->context.plugin_context);
@@ -551,15 +581,11 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
         }
     }
 
-    hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
-
-    /* Destroy completion queue mutex/cond */
-    hg_thread_mutex_destroy(&na_private_context->completion_queue_mutex);
-    hg_thread_cond_destroy(&na_private_context->completion_queue_cond);
-
+#ifdef NA_HAS_MULTI_PROGRESS
     /* Destroy progress mutex/cond */
     hg_thread_mutex_destroy(&na_private_context->progress_mutex);
     hg_thread_cond_destroy(&na_private_context->progress_cond);
+#endif
 
     free(na_private_context);
 
@@ -1574,6 +1600,9 @@ done:
 na_bool_t
 NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
 {
+    struct na_private_context *na_private_context =
+        (struct na_private_context *) context;
+
     if (!na_class) {
         NA_LOG_ERROR("NULL NA class");
         return NA_FALSE;
@@ -1583,10 +1612,17 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
         return NA_FALSE;
     }
 
-    /* Optional */
-    return (!na_class->na_poll_try_wait
-        || (na_class->na_poll_try_wait
-            && na_class->na_poll_try_wait(na_class, context)));
+    /* Something is in one of the completion queues */
+    if (!hg_atomic_queue_is_empty(na_private_context->completion_queue) ||
+        hg_atomic_get32(&na_private_context->backfill_queue_count)) {
+        return NA_FALSE;
+    }
+
+    /* Check plugin try wait */
+    if (na_class->na_poll_try_wait)
+        return na_class->na_poll_try_wait(na_class, context);
+
+    return NA_TRUE;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1597,14 +1633,13 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
         (struct na_private_context *) context;
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     na_return_t ret = NA_TIMEOUT;
-    na_bool_t completion_queue_updated = NA_FALSE;
 
     if (!na_class) {
         NA_LOG_ERROR("NULL NA class");
         ret = NA_INVALID_PARAM;
         goto done;
     }
-    if (!context) {
+    if (!na_private_context) {
         NA_LOG_ERROR("NULL context");
         ret = NA_INVALID_PARAM;
         goto done;
@@ -1615,67 +1650,63 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
         goto done;
     }
 
-    /* TODO option for concurrent progress */
-
-    /* Prevent multiple threads from concurrently calling progress on the same
-     * context */
-    hg_thread_mutex_lock(&na_private_context->progress_mutex);
-
-    while (na_private_context->progressing) {
+#ifdef NA_HAS_MULTI_PROGRESS
+    hg_atomic_incr32(&na_private_context->progressing);
+    while (hg_atomic_get32(&na_private_context->progressing) > 1) {
         hg_time_t t1, t2;
 
-        if (remaining <= 0) {
-            /* Timeout is 0 so leave */
-            hg_thread_mutex_unlock(&na_private_context->progress_mutex);
-            goto done;
-        }
+        /* Timeout is 0 so leave */
+        if (remaining <= 0)
+            goto unlock;
 
         hg_time_get_current(&t1);
+
+        /* Prevent multiple threads from concurrently calling progress on
+         * the same context */
+        hg_thread_mutex_lock(&na_private_context->progress_mutex);
+
+        /* Prevent potential race */
+        if (hg_atomic_get32(&na_private_context->progressing) <= 1) {
+            hg_thread_mutex_unlock(&na_private_context->progress_mutex);
+            /* Condition is already fulfilled */
+            break;
+        }
 
         if (hg_thread_cond_timedwait(&na_private_context->progress_cond,
             &na_private_context->progress_mutex,
             (unsigned int) (remaining * 1000.0)) != HG_UTIL_SUCCESS) {
             /* Timeout occurred so leave */
-            hg_thread_mutex_unlock(&na_private_context->progress_mutex);
-            goto done;
+            goto unlock;
         }
 
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-        if (remaining < 0) {
-            /* Give a chance to call progress with timeout of 0 if
-             * progressing is NA_FALSE */
+        /* Give a chance to call progress with timeout of 0 */
+        if (remaining < 0)
             remaining = 0;
-        }
-    }
-    na_private_context->progressing = NA_TRUE;
-
-    hg_thread_mutex_unlock(&na_private_context->progress_mutex);
-
-    if (hg_atomic_cas32(&na_private_context->completion_queue_updated, NA_TRUE,
-        NA_FALSE)) {
-        completion_queue_updated = NA_TRUE;
     }
 
-    /* If something was in context completion queue just return */
-    if (completion_queue_updated) {
+    /* Something is in one of the completion queues */
+    if (!hg_atomic_queue_is_empty(na_private_context->completion_queue) ||
+        hg_atomic_get32(&na_private_context->backfill_queue_count)) {
         ret = NA_SUCCESS; /* Progressed */
         goto unlock;
     }
+#endif
 
     /* Try to make progress for remaining time */
     ret = na_class->progress(na_class, context,
         (unsigned int) (remaining * 1000.0));
 
+#ifdef NA_HAS_MULTI_PROGRESS
 unlock:
-    hg_thread_mutex_lock(&na_private_context->progress_mutex);
-
-    /* At this point, either progress succeeded or failed with NA_TIMEOUT,
-     * meaning remaining time is now 0, so wake up other threads waiting */
-    na_private_context->progressing = NA_FALSE;
-    hg_thread_cond_signal(&na_private_context->progress_cond);
-
-    hg_thread_mutex_unlock(&na_private_context->progress_mutex);
+    if (hg_atomic_decr32(&na_private_context->progressing)) {
+        /* If there is another processes entered in progress, signal it */
+        hg_thread_mutex_lock(&na_private_context->progress_mutex);
+        hg_thread_cond_signal(&na_private_context->progress_cond);
+        hg_thread_mutex_unlock(&na_private_context->progress_mutex);
+    }
+#endif
 
 done:
     return ret;
@@ -1684,8 +1715,9 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
-    unsigned int *actual_count)
+    int callback_ret[], unsigned int *actual_count)
 {
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     na_return_t ret = NA_SUCCESS;
     unsigned int count = 0;
 
@@ -1700,55 +1732,72 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         struct na_private_context *na_private_context =
             (struct na_private_context *) context;
 
-        hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
-
-        /* Is completion queue empty */
-        while (HG_QUEUE_IS_EMPTY(&na_private_context->completion_queue)) {
-            /* If queue is empty and already triggered something, just leave */
-            if (count) {
+        completion_data =
+            hg_atomic_queue_pop_mc(na_private_context->completion_queue);
+        if (!completion_data) {
+            /* Check backfill queue */
+            if (hg_atomic_get32(&na_private_context->backfill_queue_count)) {
+                hg_thread_mutex_lock(
+                    &na_private_context->completion_queue_mutex);
+                completion_data =
+                    HG_QUEUE_FIRST(&na_private_context->backfill_queue);
+                HG_QUEUE_POP_HEAD(&na_private_context->backfill_queue, entry);
+                hg_atomic_decr32(&na_private_context->backfill_queue_count);
                 hg_thread_mutex_unlock(
                     &na_private_context->completion_queue_mutex);
-                goto done;
-            }
+                if (!completion_data)
+                    continue; /* Give another change to grab it */
+            } else {
+                hg_time_t t1, t2;
 
-            if (!timeout) {
+                /* If something was already processed leave */
+                if (count)
+                    break;
+
                 /* Timeout is 0 so leave */
-                ret = NA_TIMEOUT;
+                if ((int)(remaining * 1000.0) <= 0) {
+                    ret = NA_TIMEOUT;
+                    break;
+                }
+
+                hg_time_get_current(&t1);
+
+                hg_thread_mutex_lock(
+                    &na_private_context->completion_queue_mutex);
+                hg_atomic_incr32(&na_private_context->trigger_waiting);
+                /* Otherwise wait timeout ms */
+                if (hg_thread_cond_timedwait(
+                    &na_private_context->completion_queue_cond,
+                    &na_private_context->completion_queue_mutex, timeout)
+                    != HG_UTIL_SUCCESS) {
+                    /* Timeout occurred so leave */
+                    ret = NA_TIMEOUT;
+                }
+                hg_atomic_decr32(&na_private_context->trigger_waiting);
                 hg_thread_mutex_unlock(
                     &na_private_context->completion_queue_mutex);
-                goto done;
-            }
-            /* Otherwise wait timeout ms */
-            if (hg_thread_cond_timedwait(
-                &na_private_context->completion_queue_cond,
-                &na_private_context->completion_queue_mutex, timeout)
-                != HG_UTIL_SUCCESS) {
-                /* Timeout occurred so leave */
-                ret = NA_TIMEOUT;
-                hg_thread_mutex_unlock(
-                    &na_private_context->completion_queue_mutex);
-                goto done;
+                if (ret == NA_TIMEOUT)
+                    break;
+
+                hg_time_get_current(&t2);
+                remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+                continue; /* Give another change to grab it */
             }
         }
 
         /* Completion queue should not be empty now */
-        completion_data = HG_QUEUE_FIRST(&na_private_context->completion_queue);
         if (!completion_data) {
             NA_LOG_ERROR("NULL completion data");
-            ret = NA_INVALID_PARAM;
-            hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
+            ret = NA_PROTOCOL_ERROR;
             goto done;
         }
-        HG_QUEUE_POP_HEAD(&na_private_context->completion_queue, entry);
-
-        /* Unlock now so that other threads can eventually add callbacks
-         * to the queue while callback gets executed */
-        hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
 
         /* Execute callback */
         if (completion_data->callback) {
-            /* TODO should return error from callback ? */
-            completion_data->callback(&completion_data->callback_info);
+            int cb_ret =
+                completion_data->callback(&completion_data->callback_info);
+            if (callback_ret)
+                callback_ret[count] = cb_ret;
         }
 
         /* Execute plugin callback (free resources etc) */
@@ -1826,18 +1875,23 @@ na_cb_completion_add(na_context_t *context,
         (struct na_private_context *) context;
     na_return_t ret = NA_SUCCESS;
 
-    hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
+    if (hg_atomic_queue_push(na_private_context->completion_queue,
+        na_cb_completion_data) != HG_UTIL_SUCCESS) {
+        /* Queue is full */
+        hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
+        HG_QUEUE_PUSH_TAIL(&na_private_context->backfill_queue,
+            na_cb_completion_data, entry);
+        hg_atomic_incr32(&na_private_context->backfill_queue_count);
+        hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
+    }
 
-    HG_QUEUE_PUSH_TAIL(&na_private_context->completion_queue,
-        na_cb_completion_data, entry);
-
-    hg_atomic_set32(&na_private_context->completion_queue_updated, NA_TRUE);
-
-    /* Callback is pushed to the completion queue when something completes
-     * so wake up anyone waiting in the trigger */
-    hg_thread_cond_signal(&na_private_context->completion_queue_cond);
-
-    hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
+    if (hg_atomic_get32(&na_private_context->trigger_waiting)) {
+        hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
+        /* Callback is pushed to the completion queue when something completes
+         * so wake up anyone waiting in the trigger */
+        hg_thread_cond_signal(&na_private_context->completion_queue_cond);
+        hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
+    }
 
     return ret;
 }
