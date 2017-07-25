@@ -21,6 +21,7 @@
 #define BULK_SKIP 20
 #define NDIGITS 9
 #define NWIDTH 13
+#define LOW_PERF_THRESHOLD 5000
 
 extern int na_test_comm_rank_g;
 extern int na_test_comm_size_g;
@@ -42,7 +43,6 @@ hg_test_perf_forward_cb1(const struct hg_cb_info *callback_info)
     return HG_SUCCESS;
 }
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static hg_return_t
 hg_test_perf_forward_cb2(const struct hg_cb_info *callback_info)
 {
@@ -56,7 +56,6 @@ hg_test_perf_forward_cb2(const struct hg_cb_info *callback_info)
 
     return HG_SUCCESS;
 }
-#endif
 
 /**
  *
@@ -163,7 +162,6 @@ done:
     return ret;
 }
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static hg_return_t
 measure_rpc2(hg_context_t *context, hg_addr_t addr,
     hg_request_class_t *request_class)
@@ -176,6 +174,7 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
     hg_return_t ret = HG_SUCCESS;
     size_t i;
     unsigned int op_count = 0;
+    unsigned int low_perf_count = 0;
 
     if (na_test_comm_rank_g == 0) {
         printf("# Executing RPC with %d client(s) -- loop %d time(s) (%u handles)\n",
@@ -264,8 +263,11 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
                 max_time_read, NWIDTH, NDIGITS, calls_per_sec, NWIDTH, NDIGITS,
                 min_calls_per_sec, NWIDTH, NDIGITS, max_calls_per_sec);
         }
+        if (min_calls_per_sec < LOW_PERF_THRESHOLD)
+            low_perf_count++;
     }
-    if (na_test_comm_rank_g == 0) printf("\n");
+    if (na_test_comm_rank_g == 0)
+        printf("\nLow perf count: %u\n", low_perf_count);
 
     hg_request_destroy(request);
 
@@ -284,7 +286,6 @@ done:
     free(handles);
     return ret;
 }
-#endif
 
 /**
  *
@@ -483,10 +484,8 @@ main(int argc, char *argv[])
     /* Run RPC test */
     measure_rpc1(context, addr, request_class);
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
     /* Run RPC test */
     measure_rpc2(context, addr, request_class);
-#endif
 
     NA_Test_barrier();
 
