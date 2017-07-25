@@ -53,6 +53,7 @@ struct hg_bulk_op_id {
     struct hg_bulk *hg_bulk_origin;       /* Origin handle */
     struct hg_bulk *hg_bulk_local;        /* Local handle */
     na_op_id_t *na_op_ids ;               /* NA operations IDs */
+    hg_bool_t is_self;                    /* Is self operation */
     struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
 };
 
@@ -156,7 +157,7 @@ hg_bulk_access(
 /**
  * Transfer callback.
  */
-static na_return_t
+static int
 hg_bulk_transfer_cb(
         const struct na_cb_info *callback_info
         );
@@ -212,7 +213,8 @@ hg_bulk_complete(
 extern hg_return_t
 hg_core_completion_add(
         struct hg_context *context,
-        struct hg_completion_entry *hg_completion_entry
+        struct hg_completion_entry *hg_completion_entry,
+        hg_bool_t self_notify
         );
 
 /**
@@ -272,7 +274,8 @@ hg_bulk_memcpy_put(na_class_t HG_BULK_UNUSED *na_class,
     na_cb_info.ret = NA_SUCCESS;
     memcpy((void *) (remote_address + remote_offset),
             (const void *) (local_address + local_offset), data_size);
-    return callback(&na_cb_info);
+    callback(&na_cb_info);
+    return NA_SUCCESS;
 }
 
 /**
@@ -292,7 +295,8 @@ hg_bulk_memcpy_get(na_class_t HG_BULK_UNUSED *na_class,
     na_cb_info.ret = NA_SUCCESS;
     memcpy((void *) (local_address + local_offset),
             (const void *) (remote_address + remote_offset), data_size);
-    return callback(&na_cb_info);
+    callback(&na_cb_info);
+    return NA_SUCCESS;
 }
 
 /**
@@ -598,12 +602,13 @@ hg_bulk_access(struct hg_bulk *hg_bulk, hg_size_t offset, hg_size_t size,
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static int
 hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
 {
     struct hg_bulk_op_id *hg_bulk_op_id =
         (struct hg_bulk_op_id *) callback_info->arg;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t na_ret = NA_SUCCESS;
+    int ret = 0;
 
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
@@ -611,7 +616,7 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
     } else if (callback_info->ret != NA_SUCCESS) {
         HG_LOG_ERROR("Error in NA callback: %s",
             NA_Error_to_string(callback_info->ret));
-        ret = NA_PROTOCOL_ERROR;
+        na_ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -621,9 +626,11 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
     if ((unsigned int) hg_atomic_incr32(&hg_bulk_op_id->op_completed_count)
         == hg_bulk_op_id->op_count) {
         hg_bulk_complete(hg_bulk_op_id);
+        ret++;
     }
 
 done:
+    (void) na_ret;
     return ret;
 }
 
@@ -772,6 +779,7 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_bulk_op_id->hg_bulk_local = hg_bulk_local;
     hg_atomic_incr32(&hg_bulk_local->ref_count); /* Increment ref count */
     hg_bulk_op_id->na_op_ids = NULL;
+    hg_bulk_op_id->is_self = is_self;
 
     /* Translate bulk_offset */
     if (origin_offset && !scatter_gather)
@@ -853,7 +861,8 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
         hg_completion_entry->op_type = HG_BULK;
         hg_completion_entry->op_id.hg_bulk_op_id = hg_bulk_op_id;
 
-        ret = hg_core_completion_add(context, hg_completion_entry);
+        ret = hg_core_completion_add(context, hg_completion_entry,
+            hg_bulk_op_id->is_self);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not add HG completion entry to completion queue");
             goto done;

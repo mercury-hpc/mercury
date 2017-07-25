@@ -30,6 +30,7 @@
 #ifdef HG_HAS_SELF_FORWARD
 #include "mercury_event.h"
 #endif
+#include "mercury_atomic_queue.h"
 
 #include <stdlib.h>
 
@@ -39,6 +40,7 @@
 
 #define HG_CORE_MAX_SELF_THREADS    4
 #define HG_CORE_MASK_NBITS          8
+#define HG_CORE_ATOMIC_QUEUE_SIZE 1024
 
 /* Remove warnings when routine does not use arguments */
 #if defined(__cplusplus)
@@ -80,24 +82,26 @@ struct hg_context {
     na_context_t *na_context;                     /* NA context */
     hg_uint8_t id;                                /* Context ID */
     na_tag_t request_mask;                        /* Request tag mask */
-    HG_QUEUE_HEAD(hg_completion_entry) completion_queue; /* Completion queue */
+    struct hg_poll_set *poll_set;                 /* Context poll set */
+    /* Pointer to function used for making progress */
+    hg_return_t (*progress)(struct hg_context *context, unsigned int timeout);
+    struct hg_atomic_queue *completion_queue;     /* Default completion queue */
+    HG_QUEUE_HEAD(hg_completion_entry) backfill_queue; /* Backfill completion queue */
+    hg_atomic_int32_t backfill_queue_count;       /* Backfill queue count */
     hg_thread_mutex_t completion_queue_mutex;     /* Completion queue mutex */
-    hg_thread_cond_t completion_queue_cond;       /* Completion queue cond */
-    hg_atomic_int32_t completion_queue_updated;   /* Completion queue updated */
+    hg_thread_cond_t  completion_queue_cond;      /* Completion queue cond */
+    hg_atomic_int32_t trigger_waiting;            /* Waiting in trigger */
     HG_LIST_HEAD(hg_handle) pending_list;         /* List of pending handles */
     hg_thread_spin_t pending_list_lock;           /* Pending list lock */
     HG_LIST_HEAD(hg_handle) processing_list;      /* List of handles being processed */
     hg_thread_spin_t processing_list_lock;        /* Processing list lock */
+#ifdef HG_HAS_SELF_FORWARD
+    int completion_queue_notify;                  /* Self notification */
+    HG_LIST_HEAD(hg_handle) self_processing_list; /* List of handles being processed */
+    hg_thread_spin_t self_processing_list_lock;   /* Processing list lock */
+#endif
     hg_bool_t finalizing;                         /* Prevent reposts */
     hg_atomic_int32_t n_handles;                  /* Atomic used for number of handles */
-    struct hg_poll_set *poll_set;                 /* Context poll set */
-#ifdef HG_HAS_SELF_FORWARD
-    int completion_queue_notify;
-    HG_LIST_HEAD(hg_handle) self_processing_list; /* List of handles being processed */
-    hg_thread_mutex_t self_processing_list_mutex; /* Processing list mutex */
-#endif
-    hg_return_t (*progress)(struct hg_context *context, unsigned int timeout);
-    /* Pointer to progress function */
 };
 
 /* Info for function map */
@@ -139,6 +143,7 @@ struct hg_handle {
     struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
     hg_bool_t repost;                   /* Repost handle on completion (listen) */
     hg_bool_t process_rpc_cb;           /* RPC callback must be processed */
+    hg_bool_t is_self;                  /* Handle self processed */
 
     void *in_buf;                       /* Input buffer */
     void *in_buf_plugin_data;           /* Input buffer NA plugin data */
@@ -294,7 +299,7 @@ hg_core_addr_lookup(
 /**
  * Lookup callback.
  */
-static na_return_t
+static int
 hg_core_addr_lookup_cb(
         const struct na_cb_info *callback_info
         );
@@ -440,7 +445,7 @@ hg_core_respond_na(
 /**
  * Send input callback.
  */
-static na_return_t
+static int
 hg_core_send_input_cb(
         const struct na_cb_info *callback_info
         );
@@ -448,7 +453,7 @@ hg_core_send_input_cb(
 /**
  * Recv input callback.
  */
-static na_return_t
+static int
 hg_core_recv_input_cb(
         const struct na_cb_info *callback_info
         );
@@ -456,7 +461,7 @@ hg_core_recv_input_cb(
 /**
  * Send output callback.
  */
-static na_return_t
+static int
 hg_core_send_output_cb(
         const struct na_cb_info *callback_info
         );
@@ -464,7 +469,7 @@ hg_core_send_output_cb(
 /**
  * Recv output callback.
  */
-static na_return_t
+static int
 hg_core_recv_output_cb(
         const struct na_cb_info *callback_info
         );
@@ -509,7 +514,8 @@ hg_core_complete(
 hg_return_t
 hg_core_completion_add(
         struct hg_context *context,
-        struct hg_completion_entry *hg_completion_entry
+        struct hg_completion_entry *hg_completion_entry,
+        hg_bool_t self_notify
         );
 
 /**
@@ -549,10 +555,10 @@ hg_core_progress_na(
 
 #ifdef HG_HAS_SELF_FORWARD
 /**
- * Make progress on local requests.
+ * Completion queue notification callback.
  */
 static int
-hg_core_progress_self_cb(
+hg_core_completion_queue_notify_cb(
         void *arg,
         unsigned int timeout,
         hg_util_bool_t *progressed
@@ -934,13 +940,13 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     hg_class->na_max_tag_msb = hg_core_tag_msb(na_max_tag);
 
     /* Initialize atomic for tags */
-    hg_atomic_set32(&hg_class->request_tag, 0);
+    hg_atomic_init32(&hg_class->request_tag, 0);
 
     /* No context created yet */
-    hg_atomic_set32(&hg_class->n_contexts, 0);
+    hg_atomic_init32(&hg_class->n_contexts, 0);
 
     /* No addr created yet */
-    hg_atomic_set32(&hg_class->n_addrs, 0);
+    hg_atomic_init32(&hg_class->n_addrs, 0);
 
     /* Create new function map */
     hg_class->func_map = hg_hash_table_new(hg_core_int_hash, hg_core_int_equal);
@@ -1047,7 +1053,7 @@ hg_core_addr_create(struct hg_class *hg_class)
     }
     memset(hg_addr, 0, sizeof(struct hg_addr));
     hg_addr->na_addr = NA_ADDR_NULL;
-    hg_atomic_set32(&hg_addr->ref_count, 1);
+    hg_atomic_init32(&hg_addr->ref_count, 1);
 
     /* Increment N addrs from HG class */
     hg_atomic_incr32(&hg_class->n_addrs);
@@ -1079,7 +1085,7 @@ hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
     hg_op_id->type = HG_CB_LOOKUP;
     hg_op_id->callback = callback;
     hg_op_id->arg = arg;
-    hg_atomic_set32(&hg_op_id->completed, 0);
+    hg_atomic_init32(&hg_op_id->completed, 0);
     hg_op_id->info.lookup.hg_addr = NULL;
     hg_op_id->info.lookup.na_lookup_op_id = NA_OP_ID_NULL;
 
@@ -1122,11 +1128,12 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static int
 hg_core_addr_lookup_cb(const struct na_cb_info *callback_info)
 {
     struct hg_op_id *hg_op_id = (struct hg_op_id *) callback_info->arg;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t na_ret = NA_SUCCESS;
+    int ret = 0;
 
     if (callback_info->ret != NA_SUCCESS) {
         return ret;
@@ -1143,8 +1150,10 @@ hg_core_addr_lookup_cb(const struct na_cb_info *callback_info)
         HG_LOG_ERROR("Could not complete operation");
         goto done;
     }
+    ret++;
 
 done:
+    (void) na_ret;
     return ret;
 }
 
@@ -1163,7 +1172,7 @@ hg_core_addr_lookup_complete(struct hg_op_id *hg_op_id)
     hg_completion_entry->op_type = HG_ADDR;
     hg_completion_entry->op_id.hg_op_id = hg_op_id;
 
-    ret = hg_core_completion_add(context, hg_completion_entry);
+    ret = hg_core_completion_add(context, hg_completion_entry, HG_FALSE);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not add HG completion entry to completion queue");
         goto done;
@@ -1347,10 +1356,10 @@ hg_core_create(struct hg_context *context)
         }
         hg_handle->na_op_id_mine = HG_TRUE;
     }
-    hg_atomic_set32(&hg_handle->na_completed_count, 0);
+    hg_atomic_init32(&hg_handle->na_completed_count, 0);
 
     /* Set refcount to 1 */
-    hg_atomic_set32(&hg_handle->ref_count, 1);
+    hg_atomic_init32(&hg_handle->ref_count, 1);
 
     /* Increment N handles from HG context */
     hg_atomic_incr32(&context->n_handles);
@@ -1473,28 +1482,12 @@ hg_core_forward_self(struct hg_handle *hg_handle)
             &hg_handle->hg_info.hg_class->self_processing_pool);
     }
 
-    /* Create event for completion queue notification */
-    if (!hg_handle->hg_info.context->completion_queue_notify) {
-        int fd;
-
-        fd = hg_event_create();
-        if (fd < 0) {
-            HG_LOG_ERROR("Could not create event");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
-        hg_handle->hg_info.context->completion_queue_notify = fd;
-
-        /* Add event to context poll set */
-        hg_poll_add(hg_handle->hg_info.context->poll_set, fd, HG_POLLIN,
-            hg_core_progress_self_cb, hg_handle->hg_info.context);
-    }
-
     /* Add handle to self processing list */
-    hg_thread_mutex_lock(&hg_handle->hg_info.context->self_processing_list_mutex);
+    hg_thread_spin_lock(&hg_handle->hg_info.context->self_processing_list_lock);
     HG_LIST_INSERT_HEAD(&hg_handle->hg_info.context->self_processing_list,
         hg_handle, entry);
-    hg_thread_mutex_unlock(&hg_handle->hg_info.context->self_processing_list_mutex);
+    hg_thread_spin_unlock(
+        &hg_handle->hg_info.context->self_processing_list_lock);
 
     /* Post operation to self processing pool */
     hg_handle->thread_work.func = hg_core_process_thread;
@@ -1502,7 +1495,6 @@ hg_core_forward_self(struct hg_handle *hg_handle)
     hg_thread_pool_post(hg_handle->hg_info.hg_class->self_processing_pool,
         &hg_handle->thread_work);
 
-done:
     return ret;
 }
 #endif
@@ -1574,9 +1566,9 @@ hg_core_respond_self(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     hg_handle->cb_type = HG_CB_RESPOND;
 
     /* Remove handle from processing list */
-    hg_thread_mutex_lock(&hg_handle->hg_info.context->self_processing_list_mutex);
+    hg_thread_spin_lock(&hg_handle->hg_info.context->self_processing_list_lock);
     HG_LIST_REMOVE(hg_handle, entry);
-    hg_thread_mutex_unlock(&hg_handle->hg_info.context->self_processing_list_mutex);
+    hg_thread_spin_unlock(&hg_handle->hg_info.context->self_processing_list_lock);
 
     /* Complete and add to completion queue */
     ret = hg_core_complete(hg_handle);
@@ -1622,13 +1614,14 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static int
 hg_core_send_input_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     /* If we expect a response, there needs to be 2 NA operations in total */
     int completed_count = hg_handle->no_response ? 1 : 2;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t na_ret = NA_SUCCESS;
+    int ret = 0;
 
     /* Reset op ID value */
     if (!hg_handle->na_op_id_mine)
@@ -1639,7 +1632,7 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
         hg_handle->ret = HG_CANCELED;
     } else if (callback_info->ret != NA_SUCCESS) {
         HG_LOG_ERROR("Error in NA callback");
-        ret = NA_PROTOCOL_ERROR;
+        na_ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -1654,18 +1647,22 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
             HG_LOG_ERROR("Could not complete operation");
             goto done;
         }
+        /* Increment number of entries added to completion queue */
+        ret++;
     }
 
 done:
+    (void) na_ret;
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static int
 hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t na_ret = NA_SUCCESS;
+    int ret = 0;
 
     /* Reset op ID value */
     if (!hg_handle->na_op_id_mine)
@@ -1738,23 +1735,27 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
                 HG_LOG_ERROR("Could not complete rpc handle");
                 goto done;
             }
+            /* Increment number of entries added to completion queue */
+            ret++;
         }
     } else {
         HG_LOG_ERROR("Error in NA callback");
-        ret = NA_PROTOCOL_ERROR;
+        na_ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
 done:
+    (void) na_ret;
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static int
 hg_core_send_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t na_ret = NA_SUCCESS;
+    int ret = 0;
 
     /* Reset op ID value */
     if (!hg_handle->na_op_id_mine)
@@ -1765,7 +1766,7 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
         hg_handle->ret = HG_CANCELED;
     } else if (callback_info->ret != NA_SUCCESS) {
         HG_LOG_ERROR("Error in NA callback");
-        ret = NA_PROTOCOL_ERROR;
+        na_ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -1785,18 +1786,22 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
             HG_LOG_ERROR("Could not complete operation");
             goto done;
         }
+        /* Increment number of entries added to completion queue */
+        ret++;
     }
 
 done:
+    (void) na_ret;
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static int
 hg_core_recv_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
-    na_return_t ret = NA_SUCCESS;
+    na_return_t na_ret = NA_SUCCESS;
+    int ret = 0;
 
     /* Reset op ID value */
     if (!hg_handle->na_op_id_mine)
@@ -1821,7 +1826,7 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
         hg_handle->ret = (hg_return_t) hg_handle->out_header.ret_code;
     } else {
         HG_LOG_ERROR("Error in NA callback");
-        ret = NA_PROTOCOL_ERROR;
+        na_ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -1836,9 +1841,12 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
             HG_LOG_ERROR("Could not complete operation");
             goto done;
         }
+        /* Increment number of entries added to completion queue */
+        ret++;
     }
 
 done:
+    (void) na_ret;
     return ret;
 }
 
@@ -1847,7 +1855,8 @@ done:
 static hg_return_t
 hg_core_self_cb(const struct hg_cb_info *callback_info)
 {
-    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->info.respond.handle;
+    struct hg_handle *hg_handle =
+        (struct hg_handle *) callback_info->info.respond.handle;
     struct hg_self_cb_info *hg_self_cb_info =
             (struct hg_self_cb_info *) callback_info->arg;
     hg_return_t ret;
@@ -1884,10 +1893,8 @@ done:
     free(hg_self_cb_info);
     return ret;
 }
-#endif
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SELF_FORWARD
 static HG_THREAD_RETURN_TYPE
 hg_core_process_thread(void *arg)
 {
@@ -1981,7 +1988,8 @@ hg_core_complete(struct hg_handle *hg_handle)
     hg_completion_entry->op_type = HG_RPC;
     hg_completion_entry->op_id.hg_handle = hg_handle;
 
-    ret = hg_core_completion_add(context, hg_completion_entry);
+    ret = hg_core_completion_add(context, hg_completion_entry,
+        hg_handle->is_self);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not add HG completion entry to completion queue");
         goto done;
@@ -1994,30 +2002,38 @@ done:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 hg_core_completion_add(struct hg_context *context,
-    struct hg_completion_entry *hg_completion_entry)
+    struct hg_completion_entry *hg_completion_entry, hg_bool_t self_notify)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    hg_thread_mutex_lock(&context->completion_queue_mutex);
+    if (hg_atomic_queue_push(context->completion_queue, hg_completion_entry)
+        != HG_UTIL_SUCCESS) {
+        /* Queue is full */
+        hg_thread_mutex_lock(&context->completion_queue_mutex);
+        HG_QUEUE_PUSH_TAIL(&context->backfill_queue, hg_completion_entry,
+            entry);
+        hg_atomic_incr32(&context->backfill_queue_count);
+        hg_thread_mutex_unlock(&context->completion_queue_mutex);
+    }
 
-    /* Add handle to completion queue */
-    HG_QUEUE_PUSH_TAIL(&context->completion_queue, hg_completion_entry, entry);
-
-    hg_atomic_set32(&context->completion_queue_updated, HG_TRUE);
-
-    /* Callback is pushed to the completion queue when something completes
-     * so wake up anyone waiting in the trigger */
-    hg_thread_cond_signal(&context->completion_queue_cond);
-
-    hg_thread_mutex_unlock(&context->completion_queue_mutex);
+    /* Notify completion */
+    if (hg_atomic_get32(&context->trigger_waiting)) {
+        hg_thread_mutex_lock(&context->completion_queue_mutex);
+        /* Callback is pushed to the completion queue when something completes
+         * so wake up anyone waiting in the trigger */
+        hg_thread_cond_signal(&context->completion_queue_cond);
+        hg_thread_mutex_unlock(&context->completion_queue_mutex);
+    }
 
 #ifdef HG_HAS_SELF_FORWARD
-    /* Notify completion */
-    if (context->completion_queue_notify
+    /* TODO could prevent from self notifying if hg_poll_wait() not entered */
+    if (self_notify && context->completion_queue_notify
         && hg_event_set(context->completion_queue_notify) != HG_UTIL_SUCCESS) {
         HG_LOG_ERROR("Could not signal completion queue");
         ret = HG_PROTOCOL_ERROR;
     }
+#else
+    (void) self_notify;
 #endif
 
     return ret;
@@ -2156,33 +2172,26 @@ done:
 /*---------------------------------------------------------------------------*/
 #ifdef HG_HAS_SELF_FORWARD
 static int
-hg_core_progress_self_cb(void *arg, unsigned int HG_UNUSED timeout,
+hg_core_completion_queue_notify_cb(void *arg, unsigned int timeout,
     hg_util_bool_t *progressed)
 {
     struct hg_context *context = (struct hg_context *) arg;
     hg_util_bool_t notified = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
 
-    if (hg_event_get(context->completion_queue_notify,
+    if (timeout && hg_event_get(context->completion_queue_notify,
         &notified) != HG_UTIL_SUCCESS) {
         HG_LOG_ERROR("Could not get completion notification");
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
-    if (!notified) {
-        *progressed = HG_UTIL_FALSE;
+    if (notified || !hg_atomic_queue_is_empty(context->completion_queue)
+        || hg_atomic_get32(&context->backfill_queue_count)) {
+        *progressed = HG_UTIL_TRUE; /* Progressed */
         goto done;
     }
 
-    /* TODO not really needed */
-    /* We can't only verify that the completion queue is empty, we need
-     * to check whether it was updated or not, as the completion queue
-     * may have been emptied in the meantime */
-    if (hg_atomic_cas32(&context->completion_queue_updated, HG_TRUE,
-        HG_FALSE)) {
-        /* If something was in context completion queue just return */
-        *progressed = HG_UTIL_TRUE; /* Progressed */
-    }
+    *progressed = HG_UTIL_FALSE;
 
 done:
     return ret;
@@ -2198,38 +2207,43 @@ hg_core_progress_na_cb(void *arg, unsigned int timeout,
     struct hg_class *hg_class = context->hg_class;
     unsigned int actual_count = 0;
     na_return_t na_ret;
+    unsigned int completed_count = 0;
+    int cb_ret[1] = {0};
     int ret = HG_UTIL_SUCCESS;
 
-trigger:
-    /* Trigger everything we can from NA, if something completed it will
-     * be moved to the HG context completion queue */
-    do {
-        na_ret = NA_Trigger(context->na_context, 0, 1, &actual_count);
-    } while ((na_ret == NA_SUCCESS) && actual_count);
-
-    /* We can't only verify that the completion queue is not empty, we need
-     * to check whether it was updated or not, as the completion queue
-     * may have been emptied in the meantime */
-    if (hg_atomic_cas32(&context->completion_queue_updated, HG_TRUE,
-        HG_FALSE)) {
-        /* If something was in context completion queue just return */
-        *progressed = HG_UTIL_TRUE; /* Progressed */
-        goto done;
-    }
-
-    /* Check progress on NA */
+    /* Check progress on NA (no need to call try_wait here) */
     na_ret = NA_Progress(hg_class->na_class, context->na_context, timeout);
     if (na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT) {
         HG_LOG_ERROR("Could not make progress on NA");
         ret = HG_UTIL_FAIL;
         goto done;
     }
-    if (na_ret == NA_SUCCESS) {
-        /* Progressed */
-        goto trigger;
+    if (na_ret != NA_SUCCESS) {
+        /* Nothing progressed */
+        *progressed = HG_UTIL_FALSE;
+        goto done;
     }
 
-    *progressed = HG_UTIL_FALSE;
+    /* Trigger everything we can from NA, if something completed it will
+     * be moved to the HG context completion queue */
+    do {
+        na_ret = NA_Trigger(context->na_context, 0, 1, cb_ret, &actual_count);
+
+        /* Return value of callback is completion count */
+        completed_count += (unsigned int) cb_ret[0];
+    } while ((na_ret == NA_SUCCESS) && actual_count);
+
+    /* We can't only verify that the completion queue is not empty, we need
+     * to check what was added to the completion queue, as the completion queue
+     * may have been concurrently emptied */
+    if (!completed_count && hg_atomic_queue_is_empty(context->completion_queue)
+        && !hg_atomic_get32(&context->backfill_queue_count)) {
+        /* Nothing progressed */
+        *progressed = HG_UTIL_FALSE;
+        goto done;
+    }
+
+    *progressed = HG_UTIL_TRUE;
 
 done:
     return ret;
@@ -2245,21 +2259,28 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
     for (;;) {
         struct hg_class *hg_class = context->hg_class;
         unsigned int actual_count = 0;
+        int cb_ret[1] = {0};
+        unsigned int completed_count = 0;
+        unsigned int progress_timeout;
         na_return_t na_ret;
         hg_time_t t1, t2;
 
         /* Trigger everything we can from NA, if something completed it will
          * be moved to the HG context completion queue */
         do {
-            na_ret = NA_Trigger(context->na_context, 0, 1, &actual_count);
+            na_ret = NA_Trigger(context->na_context, 0, 1, cb_ret,
+                &actual_count);
+
+            /* Return value of callback is completion count */
+            completed_count += (unsigned int)cb_ret[0];
         } while ((na_ret == NA_SUCCESS) && actual_count);
 
-        /* We can't only verify that the completion queue is empty, we need
-         * to check whether it was updated or not, as the completion queue
-         * may have been emptied in the meantime */
-        if (hg_atomic_cas32(&context->completion_queue_updated, HG_TRUE,
-            HG_FALSE)) {
-            /* If something was in context completion queue just return */
+        /* We can't only verify that the completion queue is not empty, we need
+         * to check what was added to the completion queue, as the completion
+         * queue may have been concurrently emptied */
+        if (completed_count
+            || !hg_atomic_queue_is_empty(context->completion_queue)
+            || hg_atomic_get32(&context->backfill_queue_count)) {
             ret = HG_SUCCESS; /* Progressed */
             break;
         }
@@ -2270,9 +2291,16 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
         if (timeout)
             hg_time_get_current(&t1);
 
+        /* Make sure that it is safe to block */
+        if (timeout &&
+            NA_Poll_try_wait(hg_class->na_class, context->na_context))
+            progress_timeout = (unsigned int) (remaining * 1000.0);
+        else
+            progress_timeout = 0;
+
         /* Otherwise try to make progress on NA */
         na_ret = NA_Progress(hg_class->na_class, context->na_context,
-            (unsigned int) (remaining * 1000.0));
+            progress_timeout);
 
         if (timeout) {
             hg_time_get_current(&t2);
@@ -2299,8 +2327,16 @@ done:
 static HG_INLINE hg_util_bool_t
 hg_core_poll_try_wait_cb(void *arg)
 {
-    return NA_Poll_try_wait(((struct hg_context *) arg)->hg_class->na_class,
-        ((struct hg_context *) arg)->na_context);
+    struct hg_context *hg_context = (struct hg_context *) arg;
+
+    /* Something is in one of the completion queues */
+    if (!hg_atomic_queue_is_empty(hg_context->completion_queue) ||
+        hg_atomic_get32(&hg_context->backfill_queue_count)) {
+        return NA_FALSE;
+    }
+
+    return NA_Poll_try_wait(hg_context->hg_class->na_class,
+        hg_context->na_context);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2317,6 +2353,7 @@ hg_core_progress_poll(struct hg_context *context, unsigned int timeout)
         if (timeout)
             hg_time_get_current(&t1);
 
+        /* Will call hg_core_poll_try_wait_cb if timeout is not 0 */
         if (hg_poll_wait(context->poll_set, (unsigned int)(remaining * 1000.0),
             &progressed) != HG_UTIL_SUCCESS) {
             HG_LOG_ERROR("hg_poll_wait() failed");
@@ -2345,47 +2382,68 @@ static hg_return_t
 hg_core_trigger(struct hg_context *context, unsigned int timeout,
     unsigned int max_count, unsigned int *actual_count)
 {
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
 
     while (count < max_count) {
         struct hg_completion_entry *hg_completion_entry = NULL;
 
-        hg_thread_mutex_lock(&context->completion_queue_mutex);
+        hg_completion_entry =
+            hg_atomic_queue_pop_mc(context->completion_queue);
+        if (!hg_completion_entry) {
+            /* Check backfill queue */
+            if (hg_atomic_get32(&context->backfill_queue_count)) {
+                hg_thread_mutex_lock(&context->completion_queue_mutex);
+                hg_completion_entry = HG_QUEUE_FIRST(&context->backfill_queue);
+                HG_QUEUE_POP_HEAD(&context->backfill_queue, entry);
+                hg_atomic_decr32(&context->backfill_queue_count);
+                hg_thread_mutex_unlock(&context->completion_queue_mutex);
+                if (!hg_completion_entry)
+                    continue; /* Give another change to grab it */
+            } else {
+                hg_time_t t1, t2;
 
-        /* Is completion queue empty */
-        while (HG_QUEUE_IS_EMPTY(&context->completion_queue)) {
-            if (!timeout) {
+                /* If something was already processed leave */
+                if (count)
+                    break;
+
                 /* Timeout is 0 so leave */
-                ret = HG_TIMEOUT;
+                if ((int)(remaining * 1000.0) <= 0) {
+                    ret = HG_TIMEOUT;
+                    break;
+                }
+
+                hg_time_get_current(&t1);
+
+                hg_thread_mutex_lock(&context->completion_queue_mutex);
+                hg_atomic_incr32(&context->trigger_waiting);
+                /* Otherwise wait timeout ms */
+                if (hg_thread_cond_timedwait(&context->completion_queue_cond,
+                    &context->completion_queue_mutex, timeout)
+                    != HG_UTIL_SUCCESS) {
+                    /* Timeout occurred so leave */
+                    ret = HG_TIMEOUT;
+                }
+                hg_atomic_decr32(&context->trigger_waiting);
                 hg_thread_mutex_unlock(&context->completion_queue_mutex);
-                goto done;
-            }
-            /* Otherwise wait timeout ms */
-            if (hg_thread_cond_timedwait(&context->completion_queue_cond,
-                    &context->completion_queue_mutex,
-                    timeout) != HG_UTIL_SUCCESS) {
-                /* Timeout occurred so leave */
-                ret = HG_TIMEOUT;
-                hg_thread_mutex_unlock(&context->completion_queue_mutex);
-                goto done;
+                if (ret == HG_TIMEOUT)
+                    break;
+
+                hg_time_get_current(&t2);
+                remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+                continue; /* Give another change to grab it */
             }
         }
 
         /* Completion queue should not be empty now */
-        hg_completion_entry = HG_QUEUE_FIRST(&context->completion_queue);
         if (!hg_completion_entry) {
             HG_LOG_ERROR("NULL completion entry");
-            ret = HG_INVALID_PARAM;
-            hg_thread_mutex_unlock(&context->completion_queue_mutex);
+            ret = HG_PROTOCOL_ERROR;
             goto done;
         }
-        HG_QUEUE_POP_HEAD(&context->completion_queue, entry);
 
-        /* Unlock now so that other threads can eventually add callbacks
-         * to the queue while callback gets executed */
-        hg_thread_mutex_unlock(&context->completion_queue_mutex);
-
+        /* Trigger entry */
         switch(hg_completion_entry->op_type) {
             case HG_ADDR:
                 ret = hg_core_trigger_lookup_entry(hg_completion_entry->op_id.hg_op_id);
@@ -2722,6 +2780,9 @@ HG_Core_context_create(hg_class_t *hg_class)
     hg_return_t ret = HG_SUCCESS;
     struct hg_context *context = NULL;
     int na_poll_fd;
+#ifdef HG_HAS_SELF_FORWARD
+    int fd;
+#endif
 
     if (!hg_class) {
         HG_LOG_ERROR("NULL HG class");
@@ -2737,8 +2798,15 @@ HG_Core_context_create(hg_class_t *hg_class)
     }
     memset(context, 0, sizeof(struct hg_context));
     context->hg_class = hg_class;
-    HG_QUEUE_INIT(&context->completion_queue);
-    hg_atomic_set32(&context->completion_queue_updated, HG_FALSE);
+    context->completion_queue =
+        hg_atomic_queue_alloc(HG_CORE_ATOMIC_QUEUE_SIZE);
+    if (!context->completion_queue) {
+        HG_LOG_ERROR("Could not allocate queue");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+    HG_QUEUE_INIT(&context->backfill_queue);
+    hg_atomic_init32(&context->backfill_queue_count, 0);
     HG_LIST_INIT(&context->pending_list);
     HG_LIST_INIT(&context->processing_list);
 #ifdef HG_HAS_SELF_FORWARD
@@ -2746,15 +2814,17 @@ HG_Core_context_create(hg_class_t *hg_class)
 #endif
 
     /* No handle created yet */
-    hg_atomic_set32(&context->n_handles, 0);
+    hg_atomic_init32(&context->n_handles, 0);
 
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&context->completion_queue_mutex);
     hg_thread_cond_init(&context->completion_queue_cond);
+    hg_atomic_init32(&context->trigger_waiting, 0);
+
     hg_thread_spin_init(&context->pending_list_lock);
     hg_thread_spin_init(&context->processing_list_lock);
 #ifdef HG_HAS_SELF_FORWARD
-    hg_thread_mutex_init(&context->self_processing_list_mutex);
+    hg_thread_spin_init(&context->self_processing_list_lock);
 #endif
 
     context->na_context = NA_Context_create(hg_class->na_class);
@@ -2771,6 +2841,21 @@ HG_Core_context_create(hg_class_t *hg_class)
         ret = HG_NOMEM_ERROR;
         goto done;
     }
+
+#ifdef HG_HAS_SELF_FORWARD
+    /* Create event for completion queue notification */
+    fd = hg_event_create();
+    if (fd < 0) {
+        HG_LOG_ERROR("Could not create event");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+    context->completion_queue_notify = fd;
+
+    /* Add event to context poll set */
+    hg_poll_add(context->poll_set, fd, HG_POLLIN,
+        hg_core_completion_queue_notify_cb, context);
+#endif
 
     /* If NA plugin exposes fd, add it to poll set and use appropriate
      * progress function */
@@ -2823,7 +2908,7 @@ HG_Core_context_destroy(hg_context_t *context)
     /* Trigger everything we can from NA, if something completed it will
      * be moved to the HG context completion queue */
     do {
-        na_ret = NA_Trigger(context->na_context, 0, 1, &actual_count);
+        na_ret = NA_Trigger(context->na_context, 0, 1, NULL, &actual_count);
     } while ((na_ret == NA_SUCCESS) && actual_count);
 
     /* Check that operations have completed */
@@ -2843,8 +2928,16 @@ HG_Core_context_destroy(hg_context_t *context)
     }
 
     /* Check that completion queue is empty now */
+    if (!hg_atomic_queue_is_empty(context->completion_queue)) {
+        HG_LOG_ERROR("Completion queue should be empty");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+    hg_atomic_queue_free(context->completion_queue);
+
+    /* Check that completion queue is empty now */
     hg_thread_mutex_lock(&context->completion_queue_mutex);
-    if (!HG_QUEUE_IS_EMPTY(&context->completion_queue)) {
+    if (!HG_QUEUE_IS_EMPTY(&context->backfill_queue)) {
         HG_LOG_ERROR("Completion queue should be empty");
         ret = HG_PROTOCOL_ERROR;
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
@@ -2899,7 +2992,7 @@ HG_Core_context_destroy(hg_context_t *context)
     hg_thread_spin_destroy(&context->pending_list_lock);
     hg_thread_spin_destroy(&context->processing_list_lock);
 #ifdef HG_HAS_SELF_FORWARD
-    hg_thread_mutex_destroy(&context->self_processing_list_mutex);
+    hg_thread_spin_destroy(&context->self_processing_list_lock);
 #endif
 
     /* Decrement context count of parent class */
@@ -3592,9 +3685,10 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
 #ifdef HG_HAS_SELF_FORWARD
-    hg_forward = NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
-            hg_handle->hg_info.addr->na_addr) ? hg_core_forward_self :
-            hg_core_forward_na;
+    hg_handle->is_self = NA_Addr_is_self(hg_handle->hg_info.hg_class->na_class,
+        hg_handle->hg_info.addr->na_addr);
+    hg_forward =  hg_handle->is_self ? hg_core_forward_self :
+        hg_core_forward_na;
     ret = hg_forward(hg_handle);
 #else
     ret = hg_core_forward_na(hg_handle);
