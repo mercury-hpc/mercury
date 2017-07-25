@@ -242,10 +242,6 @@ hg_get_input(hg_handle_t handle, void *in_struct)
 
     if (!in_struct) goto done;
 
-    /* Increment ref count on handle so that it remains valid until free_input
-     * is called */
-    HG_Core_ref_incr(handle);
-
     /* Get input buffer */
     ret = HG_Core_get_input(handle, &in_buf, &in_buf_size);
     if (ret != HG_SUCCESS) {
@@ -291,6 +287,10 @@ hg_get_input(hg_handle_t handle, void *in_struct)
         HG_LOG_ERROR("Error in proc flush");
         goto done;
     }
+
+    /* Increment ref count on handle so that it remains valid until free_input
+     * is called */
+    HG_Core_ref_incr(handle);
 
 done:
     return ret;
@@ -455,10 +455,6 @@ hg_get_output(hg_handle_t handle, void *out_struct)
 
     if (!out_struct) goto done;
 
-    /* Increment ref count on handle so that it remains valid until free_output
-     * is called */
-    HG_Core_ref_incr(handle);
-
     /* Get output buffer */
     ret = HG_Core_get_output(handle, &out_buf, &out_buf_size);
     if (ret != HG_SUCCESS) {
@@ -504,6 +500,10 @@ hg_get_output(hg_handle_t handle, void *out_struct)
         HG_LOG_ERROR("Error in proc flush");
         goto done;
     }
+
+    /* Increment ref count on handle so that it remains valid until free_output
+     * is called */
+    HG_Core_ref_incr(handle);
 
 done:
     return ret;
