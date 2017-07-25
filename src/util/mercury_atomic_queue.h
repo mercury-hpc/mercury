@@ -59,7 +59,7 @@ struct hg_atomic_queue {
     hg_atomic_int32_t cons_tail;
     unsigned int      cons_size;
     unsigned int      cons_mask;
-    hg_atomic_int64_t *ring[0] __attribute__((aligned(HG_UTIL_CACHE_ALIGNMENT)));
+    hg_atomic_int64_t *ring[1] __attribute__((aligned(HG_UTIL_CACHE_ALIGNMENT)));
 };
 
 /*****************/

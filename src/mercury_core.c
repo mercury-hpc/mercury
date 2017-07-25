@@ -1093,7 +1093,7 @@ hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
     hg_addr = hg_core_addr_create(context->hg_class);
     if (!hg_addr) {
         HG_LOG_ERROR("Could not create HG addr");
-        ret = NA_NOMEM_ERROR;
+        ret = HG_NOMEM_ERROR;
         goto done;
     }
     hg_op_id->info.lookup.hg_addr = hg_addr;
@@ -1222,7 +1222,7 @@ hg_core_addr_self(struct hg_class *hg_class, struct hg_addr **self_addr)
     hg_addr = hg_core_addr_create(hg_class);
     if (!hg_addr) {
         HG_LOG_ERROR("Could not create HG addr");
-        ret = NA_NOMEM_ERROR;
+        ret = HG_NOMEM_ERROR;
         goto done;
     }
 
@@ -1258,7 +1258,7 @@ hg_core_addr_dup(struct hg_class *hg_class, struct hg_addr *hg_addr,
         dup = hg_core_addr_create(hg_class);
         if (!dup) {
             HG_LOG_ERROR("Could not create HG addr");
-            ret = NA_NOMEM_ERROR;
+            ret = HG_NOMEM_ERROR;
             goto done;
         }
         na_ret = NA_Addr_dup(hg_class->na_class, hg_addr->na_addr,
@@ -2073,7 +2073,7 @@ hg_core_context_post(struct hg_context *context, unsigned int request_count,
         hg_addr = hg_core_addr_create(context->hg_class);
         if (!hg_addr) {
             HG_LOG_ERROR("Could not create HG addr");
-            ret = NA_NOMEM_ERROR;
+            ret = HG_NOMEM_ERROR;
             goto done;
         }
         /* To safely repost handle and prevent externally referenced address */
