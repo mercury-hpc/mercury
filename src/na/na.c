@@ -1762,20 +1762,25 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
 
                 hg_time_get_current(&t1);
 
+                hg_atomic_incr32(&na_private_context->trigger_waiting);
                 hg_thread_mutex_lock(
                     &na_private_context->completion_queue_mutex);
-                hg_atomic_incr32(&na_private_context->trigger_waiting);
                 /* Otherwise wait timeout ms */
-                if (hg_thread_cond_timedwait(
-                    &na_private_context->completion_queue_cond,
-                    &na_private_context->completion_queue_mutex, timeout)
-                    != HG_UTIL_SUCCESS) {
-                    /* Timeout occurred so leave */
-                    ret = NA_TIMEOUT;
+                while (hg_atomic_queue_is_empty(
+                    na_private_context->completion_queue)
+                    && !hg_atomic_get32(
+                        &na_private_context->backfill_queue_count)) {
+                    if (hg_thread_cond_timedwait(
+                        &na_private_context->completion_queue_cond,
+                        &na_private_context->completion_queue_mutex, timeout)
+                        != HG_UTIL_SUCCESS) {
+                        /* Timeout occurred so leave */
+                        ret = NA_TIMEOUT;
+                    }
                 }
-                hg_atomic_decr32(&na_private_context->trigger_waiting);
                 hg_thread_mutex_unlock(
                     &na_private_context->completion_queue_mutex);
+                hg_atomic_decr32(&na_private_context->trigger_waiting);
                 if (ret == NA_TIMEOUT)
                     break;
 

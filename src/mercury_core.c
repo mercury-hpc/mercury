@@ -2016,7 +2016,6 @@ hg_core_completion_add(struct hg_context *context,
         hg_thread_mutex_unlock(&context->completion_queue_mutex);
     }
 
-    /* Notify completion */
     if (hg_atomic_get32(&context->trigger_waiting)) {
         hg_thread_mutex_lock(&context->completion_queue_mutex);
         /* Callback is pushed to the completion queue when something completes
@@ -2416,17 +2415,20 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
 
                 hg_time_get_current(&t1);
 
-                hg_thread_mutex_lock(&context->completion_queue_mutex);
                 hg_atomic_incr32(&context->trigger_waiting);
+                hg_thread_mutex_lock(&context->completion_queue_mutex);
                 /* Otherwise wait timeout ms */
-                if (hg_thread_cond_timedwait(&context->completion_queue_cond,
-                    &context->completion_queue_mutex, timeout)
-                    != HG_UTIL_SUCCESS) {
-                    /* Timeout occurred so leave */
-                    ret = HG_TIMEOUT;
+                while (hg_atomic_queue_is_empty(context->completion_queue) &&
+                    !hg_atomic_get32(&context->backfill_queue_count)) {
+                    if (hg_thread_cond_timedwait(&context->completion_queue_cond,
+                        &context->completion_queue_mutex, timeout)
+                        != HG_UTIL_SUCCESS) {
+                        /* Timeout occurred so leave */
+                        ret = HG_TIMEOUT;
+                    }
                 }
-                hg_atomic_decr32(&context->trigger_waiting);
                 hg_thread_mutex_unlock(&context->completion_queue_mutex);
+                hg_atomic_decr32(&context->trigger_waiting);
                 if (ret == HG_TIMEOUT)
                     break;
 
