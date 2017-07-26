@@ -2425,6 +2425,7 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
                         != HG_UTIL_SUCCESS) {
                         /* Timeout occurred so leave */
                         ret = HG_TIMEOUT;
+                        break;
                     }
                 }
                 hg_thread_mutex_unlock(&context->completion_queue_mutex);

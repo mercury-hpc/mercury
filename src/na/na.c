@@ -1776,6 +1776,7 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
                         != HG_UTIL_SUCCESS) {
                         /* Timeout occurred so leave */
                         ret = NA_TIMEOUT;
+                        break;
                     }
                 }
                 hg_thread_mutex_unlock(
