@@ -1685,14 +1685,18 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
         if (remaining < 0)
             remaining = 0;
     }
+#endif
 
     /* Something is in one of the completion queues */
     if (!hg_atomic_queue_is_empty(na_private_context->completion_queue) ||
         hg_atomic_get32(&na_private_context->backfill_queue_count)) {
         ret = NA_SUCCESS; /* Progressed */
+#ifdef NA_HAS_MULTI_PROGRESS
         goto unlock;
-    }
+#else
+        goto done;
 #endif
+    }
 
     /* Try to make progress for remaining time */
     ret = na_class->progress(na_class, context,
