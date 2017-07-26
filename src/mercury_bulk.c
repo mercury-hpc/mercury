@@ -385,6 +385,8 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
         ret = HG_NOMEM_ERROR;
         goto done;
     }
+    memset(hg_bulk->segments, 0,
+           hg_bulk->segment_count * sizeof(struct hg_bulk_segment));
 
     /* Loop over the list of segments */
     for (i = 0; i < hg_bulk->segment_count; i++) {
@@ -1215,7 +1217,7 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("Could not serialize memory handle");
                 ret = HG_NA_ERROR;
-                break;
+                goto done;
             }
             buf_ptr += serialize_size;
             buf_size_left -= (ssize_t) serialize_size;

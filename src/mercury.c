@@ -1088,7 +1088,7 @@ HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     *handle = (hg_handle_t) hg_handle;
 
 done:
-    return HG_SUCCESS;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
