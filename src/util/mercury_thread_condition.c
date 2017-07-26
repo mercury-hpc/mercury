@@ -9,10 +9,14 @@
  */
 
 #include "mercury_thread_condition.h"
-#include "mercury_time.h"
 #include "mercury_util_error.h"
 
 #ifndef _WIN32
+#if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
+#include "mercury_time.h"
+#elif defined(HG_UTIL_HAS_SYSTIME_H)
+#include <sys/time.h>
+#endif
 #include <stdlib.h>
 #endif
 
@@ -25,7 +29,15 @@ hg_thread_cond_init(hg_thread_cond_t *cond)
 #ifdef _WIN32
     InitializeConditionVariable(cond);
 #else
-    if (pthread_cond_init(cond, NULL)) ret = HG_UTIL_FAIL;
+    pthread_condattr_t attr;
+
+    pthread_condattr_init(&attr);
+#ifdef HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK
+    /* Must set clock ID if using different clock */
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+#endif
+    if (pthread_cond_init(cond, &attr)) ret = HG_UTIL_FAIL;
+    pthread_condattr_destroy(&attr);
 #endif
 
     return ret;
@@ -99,13 +111,21 @@ hg_thread_cond_timedwait(hg_thread_cond_t *cond, hg_thread_mutex_t *mutex, unsig
     if (!SleepConditionVariableCS(cond, mutex, timeout)) ret = HG_UTIL_FAIL;
 #else
     int pret;
+#if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
     hg_time_t now;
+#elif defined(HG_UTIL_HAS_SYSTIME_H)
+    struct timeval now;
+#endif
     struct timespec abs_timeout;
     long int abs_timeout_us;
     ldiv_t ld;
 
     /* Need to convert timeout (ms) to absolute time */
+#if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
     hg_time_get_current(&now);
+#elif defined(HG_UTIL_HAS_SYSTIME_H)
+    gettimeofday(&now, NULL);
+#endif
     abs_timeout_us = now.tv_usec + timeout * 1000L;
     /* Get sec / nsec */
     ld = ldiv(abs_timeout_us, 1000000L);

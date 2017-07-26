@@ -31,6 +31,9 @@ if(CMAKE_USE_PTHREADS_INIT)
 
   # Use type size to check enum value
   check_type_size(PTHREAD_MUTEX_ADAPTIVE_NP HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP)
+
+  # Detect pthread_condattr_setclock
+  CHECK_SYMBOL_EXISTS(pthread_condattr_setclock pthread.h HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
 endif()
 
 # Rt

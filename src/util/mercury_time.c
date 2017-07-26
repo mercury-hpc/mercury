@@ -119,8 +119,8 @@ hg_time_get_current(hg_time_t *tv)
         monotonic_timebase_factor = timebase_info.numer / timebase_info.denom;
     }
     monotonic_nsec = (mach_absolute_time() * monotonic_timebase_factor);
-    tv->tv_sec  = monotonic_nsec / 1000000000;
-    tv->tv_usec = (monotonic_nsec - tv->tv_sec) / 1000;
+    tv->tv_sec  = (long) (monotonic_nsec / 1000000000);
+    tv->tv_usec = (long) ((monotonic_nsec - (uint64_t) tv->tv_sec) / 1000);
 #endif
 
     return ret;
