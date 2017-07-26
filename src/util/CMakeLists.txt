@@ -26,6 +26,8 @@ set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES
 )
 if(CMAKE_USE_PTHREADS_INIT)
   set(CMAKE_EXTRA_INCLUDE_FILES pthread.h)
+  set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
+
   # Detect pthread_spinlock_t
   check_type_size(pthread_spinlock_t HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
 
