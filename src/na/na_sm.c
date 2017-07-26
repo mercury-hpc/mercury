@@ -1004,6 +1004,7 @@ na_sm_create_sock(const char *pathname, na_bool_t na_listen, int *sock)
                     NA_LOG_ERROR("Could not create directory: %s (%s)",
                         stat_path, strerror(errno));
                     ret = NA_PROTOCOL_ERROR;
+                    free(dup_path);
                     goto done;
                 }
             }
@@ -2482,24 +2483,28 @@ na_sm_finalize(na_class_t *na_class)
     if (!HG_QUEUE_IS_EMPTY(&NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue)) {
         NA_LOG_ERROR("Lookup op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
     /* Check that unexpected op queue is empty */
     if (!HG_QUEUE_IS_EMPTY(&NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue)) {
         NA_LOG_ERROR("Unexpected op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
     /* Check that unexpected message queue is empty */
     if (!HG_QUEUE_IS_EMPTY(&NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue)) {
         NA_LOG_ERROR("Unexpected msg queue should be empty");
         ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
     /* Check that expected op queue is empty */
     if (!HG_QUEUE_IS_EMPTY(&NA_SM_PRIVATE_DATA(na_class)->expected_op_queue)) {
         NA_LOG_ERROR("Expected op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
     /* Check that accepted addr queue is empty */
@@ -3282,6 +3287,7 @@ na_sm_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     if (!na_sm_mem_handle->iov) {
         NA_LOG_ERROR("Could not allocate iovec");
         ret = NA_NOMEM_ERROR;
+        free(na_sm_mem_handle);
         goto done;
     }
     na_sm_mem_handle->iov->iov_base = buf;
@@ -3435,6 +3441,7 @@ na_sm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     if (!na_sm_mem_handle->iovcnt) {
         NA_LOG_ERROR("NULL segment count");
         ret = NA_SIZE_ERROR;
+        free(na_sm_mem_handle);
         goto done;
     }
 
@@ -3452,6 +3459,7 @@ na_sm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     if (!na_sm_mem_handle->iov) {
         NA_LOG_ERROR("Could not allocate iovec");
         ret = NA_NOMEM_ERROR;
+        free(na_sm_mem_handle);
         goto done;
     }
     for (i = 0; i < na_sm_mem_handle->iovcnt; i++) {
