@@ -83,6 +83,7 @@ hg_poll_create(void)
     if (ret == -1) {
         HG_UTIL_LOG_ERROR("epoll_create1() failed (%s)", strerror(errno));
         free(hg_poll_set);
+        hg_poll_set = NULL;
         goto done;
     }
     hg_poll_set->fd = ret;
@@ -91,6 +92,7 @@ hg_poll_create(void)
     if (ret == -1) {
         HG_UTIL_LOG_ERROR("kqueue() failed (%s)", strerror(errno));
         free(hg_poll_set);
+        hg_poll_set = NULL;
         goto done;
     }
     hg_poll_set->fd = ret;
@@ -99,6 +101,7 @@ hg_poll_create(void)
     if (!hg_poll_set->poll_fds) {
         HG_UTIL_LOG_ERROR("malloc() failed (%s)");
         free(hg_poll_set);
+        hg_poll_set = NULL;
         goto done;
     }
 #endif
@@ -193,10 +196,13 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
     struct hg_poll_data *hg_poll_data = NULL;
 #if defined(HG_UTIL_HAS_SYSEPOLL_H)
     struct epoll_event ev;
+    uint32_t poll_flags;
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
     struct timespec timeout = {0, 0};
+    int16_t poll_flags;
+#else
+    short int poll_flags;
 #endif
-    unsigned int poll_flags;
     int ret = HG_UTIL_SUCCESS;
 
     if (!poll_set) {
@@ -256,7 +262,7 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
         goto done;
     }
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
-    EV_SET(&hg_poll_data->kev, fd, poll_flags, EV_ADD, 0, 0, hg_poll_data);
+    EV_SET(&hg_poll_data->kev, (uintptr_t) fd, poll_flags, EV_ADD, 0, 0, hg_poll_data);
 
     if (kevent(poll_set->fd, &hg_poll_data->kev, 1, NULL, 0, &timeout) == -1) {
         HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
@@ -265,7 +271,7 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
     }
 #else
     hg_poll_data->pollfd.fd = fd;
-    hg_poll_data->pollfd.events = (short int) poll_flags;
+    hg_poll_data->pollfd.events = poll_flags;
     hg_poll_data->pollfd.revents = 0;
 
     /* TODO limit on number of fds for now but could malloc/reallocate */
@@ -324,7 +330,7 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
 
             HG_LIST_REMOVE(hg_poll_data, entry);
 
-            EV_SET(&hg_poll_data->kev, fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+            EV_SET(&hg_poll_data->kev, (uintptr_t) fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
             if (kevent(poll_set->fd, &hg_poll_data->kev, 1, NULL, 0,
                 &timeout) == -1) {
                 HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
