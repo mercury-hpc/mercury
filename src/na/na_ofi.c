@@ -3095,6 +3095,10 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid *fids[1];
 
+    /* Only sockets provider supports wait on fd for now */
+    if (priv->nop_domain->nod_prov_type != NA_OFI_PROV_SOCKETS)
+        return NA_FALSE;
+
     fids[0] = &priv->nop_endpoint->noe_cq->fid;
     return (fi_trywait(priv->nop_domain->nod_fabric, fids, 1) == FI_SUCCESS);
 }
