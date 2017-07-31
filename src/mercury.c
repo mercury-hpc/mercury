@@ -1094,6 +1094,13 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Reset(hg_handle_t handle)
+{
+    return HG_Core_reset(handle);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Destroy(hg_handle_t handle)
 {
     return HG_Core_destroy(handle);

@@ -361,6 +361,14 @@ hg_core_create(
         );
 
 /**
+ * Reset handle.
+ */
+static hg_return_t
+hg_core_reset(
+        struct hg_handle *hg_handle
+        );
+
+/**
  * Free handle.
  */
 static void
@@ -1382,6 +1390,32 @@ done:
         hg_handle = NULL;
     }
     return hg_handle;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_reset(struct hg_handle *hg_handle)
+{
+    hg_proc_header_request_init(&hg_handle->in_header);
+    hg_proc_header_response_init(&hg_handle->out_header);
+
+    hg_handle->callback = NULL;
+    hg_handle->arg = NULL;
+    hg_handle->cb_type = 0;
+    hg_handle->tag = 0;
+    hg_handle->cookie = 0;
+    hg_handle->ret = HG_SUCCESS;
+    hg_handle->in_buf_used = 0;
+    hg_handle->out_buf_used = 0;
+    hg_atomic_set32(&hg_handle->na_completed_count, 0);
+    if (hg_handle->extra_in_buf) {
+        free(hg_handle->extra_in_buf);
+        hg_handle->extra_in_buf = NULL;
+    }
+    hg_handle->extra_in_buf_size = 0;
+    hg_handle->extra_in_op_id = HG_OP_ID_NULL;
+
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3493,6 +3527,18 @@ done:
         hg_core_destroy(hg_handle);
     }
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_reset(hg_handle_t handle)
+{
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        return HG_INVALID_PARAM;
+    }
+
+    return hg_core_reset((struct hg_handle *)handle);
 }
 
 /*---------------------------------------------------------------------------*/

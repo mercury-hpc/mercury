@@ -471,6 +471,20 @@ HG_Create(
         );
 
 /**
+ * Reset a HG handle to make it reusable for RPC forwarding. After successfully
+ * reset it is with same context, RPC ID and targeting addr as the value when
+ * creating the handle, the HG handle also keep unchanged.
+ *
+ * \param handle [IN]          HG handle
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Reset(
+        hg_handle_t handle
+        );
+
+/**
  * Destroy HG handle. Decrement reference count, resources associated to the
  * handle are freed when the reference count is null.
  *
