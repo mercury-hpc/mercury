@@ -885,7 +885,7 @@ hg_core_processing_list_wait(struct hg_context *context)
 
         ret = context->progress(context, HG_MAX_IDLE_TIME);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not make progress");
+            HG_LOG_ERROR("Could not make progress, ret: %d.", ret);
             goto done;
         }
     }
