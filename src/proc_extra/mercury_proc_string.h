@@ -19,14 +19,6 @@
 typedef const char * hg_const_string_t;
 typedef char * hg_string_t;
 
-#ifndef HG_PROC_STRING_INLINE
-  #if defined(__GNUC__) && !defined(__GNUC_STDC_INLINE__)
-    #define HG_PROC_STRING_INLINE extern HG_INLINE
-  #else
-    #define HG_PROC_STRING_INLINE HG_INLINE
-  #endif
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -34,11 +26,11 @@ extern "C" {
 /**
  * Inline prototypes (do not remove)
  */
-HG_EXPORT HG_PROC_STRING_INLINE hg_return_t hg_proc_hg_const_string_t(
+static HG_INLINE hg_return_t hg_proc_hg_const_string_t(
         hg_proc_t proc, void *data);
-HG_EXPORT HG_PROC_STRING_INLINE hg_return_t hg_proc_hg_string_t(
+static HG_INLINE hg_return_t hg_proc_hg_string_t(
         hg_proc_t proc, void *data);
-HG_EXPORT HG_PROC_STRING_INLINE hg_return_t hg_proc_hg_string_object_t(
+static HG_INLINE hg_return_t hg_proc_hg_string_object_t(
         hg_proc_t proc, void *data);
 
 /**
@@ -49,7 +41,7 @@ HG_EXPORT HG_PROC_STRING_INLINE hg_return_t hg_proc_hg_string_object_t(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_STRING_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_const_string_t(hg_proc_t proc, void *data)
 {
     hg_string_object_t string;
@@ -99,7 +91,7 @@ done:
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_STRING_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_string_t(hg_proc_t proc, void *data)
 {
     hg_string_object_t string;
@@ -149,7 +141,7 @@ done:
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_STRING_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_string_object_t(hg_proc_t proc, void *string)
 {
     hg_uint64_t string_len = 0;

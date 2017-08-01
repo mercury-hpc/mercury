@@ -8,9 +8,6 @@
  * found at the root of the source code distribution tree.
  */
 
-#ifndef _WIN32
-  #define HG_PROC_INLINE
-#endif
 #include "mercury_proc.h"
 
 #ifdef HG_HAS_CHECKSUMS
@@ -65,7 +62,7 @@ struct hg_proc {
  * Update checksum.
  */
 #ifdef HG_HAS_CHECKSUMS
-static HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_mchecksum_update(
         hg_proc_t proc,
         void *data,
@@ -698,7 +695,7 @@ done:
 
 #ifdef HG_HAS_CHECKSUMS
 /*---------------------------------------------------------------------------*/
-static HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_mchecksum_update(hg_proc_t proc, void *data, hg_size_t data_size)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;

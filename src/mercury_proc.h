@@ -41,14 +41,6 @@
 #    define HG_CHECKSUM_MAX_SIZE 0
 #endif
 
-#ifndef HG_PROC_INLINE
-  #if defined(__GNUC__) && !defined(__GNUC_STDC_INLINE__)
-    #define HG_PROC_INLINE extern HG_INLINE
-  #else
-    #define HG_PROC_INLINE HG_INLINE
-  #endif
-#endif
-
 /*********************/
 /* Public Prototypes */
 /*********************/
@@ -322,25 +314,25 @@ hg_proc_memcpy(
 /**
  * Inline prototypes (do not remove)
  */
-HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int8_t(hg_proc_t proc,
+static HG_INLINE hg_return_t hg_proc_hg_int8_t(hg_proc_t proc,
         void *data);
-HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint8_t(hg_proc_t proc,
+static HG_INLINE hg_return_t hg_proc_hg_uint8_t(hg_proc_t proc,
         void *data);
-HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int16_t(hg_proc_t proc,
+static HG_INLINE hg_return_t hg_proc_hg_int16_t(hg_proc_t proc,
         void *data);
-HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint16_t(hg_proc_t proc,
+static HG_INLINE hg_return_t hg_proc_hg_uint16_t(hg_proc_t proc,
         void *data);
-HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int32_t(hg_proc_t proc,
+static HG_INLINE hg_return_t hg_proc_hg_int32_t(hg_proc_t proc,
         void *data);
-HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint32_t(hg_proc_t proc,
+static HG_INLINE hg_return_t hg_proc_hg_uint32_t(hg_proc_t proc,
         void *data);
-HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_int64_t(hg_proc_t proc,
+static HG_INLINE hg_return_t hg_proc_hg_int64_t(hg_proc_t proc,
         void *data);
-HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_uint64_t(hg_proc_t proc,
+static HG_INLINE hg_return_t hg_proc_hg_uint64_t(hg_proc_t proc,
         void *data);
-HG_EXPORT HG_PROC_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
+static HG_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
         void *handle);
-HG_EXPORT HG_PROC_INLINE void *hg_proc_buf_memcpy(void *buf, void *data,
+static HG_INLINE void *hg_proc_buf_memcpy(void *buf, void *data,
     hg_size_t data_size, hg_proc_op_t op);
 
 
@@ -377,7 +369,7 @@ HG_EXPORT HG_PROC_INLINE void *hg_proc_buf_memcpy(void *buf, void *data,
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_int8_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
@@ -397,7 +389,7 @@ hg_proc_hg_int8_t(hg_proc_t proc, void *data)
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_uint8_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
@@ -417,7 +409,7 @@ hg_proc_hg_uint8_t(hg_proc_t proc, void *data)
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_int16_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
@@ -437,7 +429,7 @@ hg_proc_hg_int16_t(hg_proc_t proc, void *data)
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_uint16_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
@@ -457,7 +449,7 @@ hg_proc_hg_uint16_t(hg_proc_t proc, void *data)
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_int32_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
@@ -477,7 +469,7 @@ hg_proc_hg_int32_t(hg_proc_t proc, void *data)
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_uint32_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
@@ -497,7 +489,7 @@ hg_proc_hg_uint32_t(hg_proc_t proc, void *data)
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_int64_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
@@ -517,7 +509,7 @@ hg_proc_hg_int64_t(hg_proc_t proc, void *data)
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_uint64_t(hg_proc_t proc, void *data)
 {
     hg_return_t ret;
@@ -537,7 +529,7 @@ hg_proc_hg_uint64_t(hg_proc_t proc, void *data)
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_PROC_INLINE hg_return_t
+static HG_INLINE hg_return_t
 hg_proc_hg_bulk_t(hg_proc_t proc, void *handle)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -629,7 +621,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *handle)
  *
  * \return incremented pointer to buf
  */
-HG_PROC_INLINE void *
+static HG_INLINE void *
 hg_proc_buf_memcpy(void *buf, void *data, hg_size_t data_size, hg_proc_op_t op)
 {
     const void *src = NULL;
