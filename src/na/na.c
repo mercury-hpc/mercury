@@ -102,6 +102,9 @@ extern na_class_t na_mpi_class_g;
 #ifdef NA_HAS_CCI
 extern na_class_t na_cci_class_g;
 #endif
+#ifdef NA_HAS_OFI
+extern na_class_t na_ofi_class_g;
+#endif
 
 static const na_class_t *na_class_table[] = {
 #ifdef NA_HAS_SM
@@ -115,6 +118,9 @@ static const na_class_t *na_class_table[] = {
 #endif
 #ifdef NA_HAS_CCI
     &na_cci_class_g,
+#endif
+#ifdef NA_HAS_OFI
+    &na_ofi_class_g,
 #endif
     NULL
 };
@@ -956,6 +962,24 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+na_size_t
+NA_Msg_get_reserved_unexpected_size(na_class_t *na_class)
+{
+    na_size_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
+    if (na_class->msg_get_reserved_unexpected_size != NULL)
+        ret = na_class->msg_get_reserved_unexpected_size(na_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 na_tag_t
 NA_Msg_get_max_tag(na_class_t *na_class)
 {
@@ -980,7 +1004,7 @@ done:
 na_return_t
 NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1016,7 +1040,7 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_unexpected(na_class, context, callback, arg, buf,
-        buf_size, dest, tag, op_id);
+        buf_size, plugin_data, dest, tag, op_id);
 
 done:
     return ret;
@@ -1025,8 +1049,8 @@ done:
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
-    na_cb_t callback, void *arg, void *buf, na_size_t buf_size, na_tag_t mask,
-    na_op_id_t *op_id)
+    na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
+    void *plugin_data, na_tag_t mask, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1057,7 +1081,7 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_unexpected(na_class, context, callback, arg, buf,
-        buf_size, mask, op_id);
+        buf_size, plugin_data, mask, op_id);
 
 done:
     return ret;
@@ -1067,7 +1091,7 @@ done:
 na_return_t
 NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1103,7 +1127,7 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_expected(na_class, context, callback, arg, buf,
-        buf_size, dest, tag, op_id);
+        buf_size, plugin_data, dest, tag, op_id);
 
 done:
     return ret;
@@ -1113,7 +1137,7 @@ done:
 na_return_t
 NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1149,7 +1173,7 @@ NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_expected(na_class, context, callback, arg, buf,
-        buf_size, source, tag, op_id);
+        buf_size, plugin_data, source, tag, op_id);
 
 done:
     return ret;
@@ -1578,12 +1602,10 @@ NA_Poll_get_fd(na_class_t *na_class, na_context_t *context)
 
     if (!na_class) {
         NA_LOG_ERROR("NULL NA class");
-        ret = NA_INVALID_PARAM;
         goto done;
     }
     if (!context) {
         NA_LOG_ERROR("NULL context");
-        ret = NA_INVALID_PARAM;
         goto done;
     }
     if (!na_class->na_poll_get_fd) {

@@ -33,14 +33,17 @@ hg_progress_thread(void *arg)
 {
     hg_context_t *context = (hg_context_t *) arg;
     HG_THREAD_RETURN_TYPE tret = (HG_THREAD_RETURN_TYPE) 0;
+    hg_bool_t continue_progress = HG_TRUE;
     hg_return_t ret = HG_SUCCESS;
 
     do {
-        if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
-            break;
-
-        ret = HG_Progress(context, HG_TEST_PROGRESS_TIMEOUT);
-    } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
+        if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1)) {
+            continue_progress = HG_FALSE;
+            ret = HG_Progress(context, 100);
+        } else {
+            ret = HG_Progress(context, HG_TEST_PROGRESS_TIMEOUT);
+        }
+    } while (ret == HG_SUCCESS || (continue_progress && ret == HG_TIMEOUT));
 
     printf("Exiting\n");
     hg_thread_exit(tret);
@@ -57,6 +60,7 @@ main(int argc, char *argv[])
     hg_class_t *hg_class = NULL;
     hg_context_t *context = NULL;
     unsigned int number_of_peers;
+    hg_bool_t continue_progress = HG_TRUE;
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     hg_thread_t progress_thread;
 #endif
@@ -69,10 +73,10 @@ main(int argc, char *argv[])
 
     do {
         if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
-            break;
+            continue_progress = HG_FALSE;
 
         ret = HG_Trigger(context, HG_TEST_TRIGGER_TIMEOUT, 1, NULL);
-    } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
+    } while (ret == HG_SUCCESS || (continue_progress && ret == HG_TIMEOUT));
 #else
     do {
         unsigned int actual_count = 0;
@@ -81,15 +85,17 @@ main(int argc, char *argv[])
             ret = HG_Trigger(context, 0, 1, &actual_count);
         } while ((ret == HG_SUCCESS) && actual_count);
 
-        if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
-            break;
-
-        /* Use same value as HG_TEST_TRIGGER_TIMEOUT for convenience */
-        ret = HG_Progress(context, HG_TEST_TRIGGER_TIMEOUT);
-    } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
+        if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1)) {
+            continue_progress = HG_FALSE;
+            ret = HG_Progress(context, 100);
+        } else {
+            /* Use same value as HG_TEST_TRIGGER_TIMEOUT for convenience */
+            ret = HG_Progress(context, HG_TEST_TRIGGER_TIMEOUT);
+        }
+    } while (ret == HG_SUCCESS || (continue_progress && ret == HG_TIMEOUT));
 #endif
 
-    printf("# Finalizing...\n");
+    fprintf(stderr, "# Finalizing...\n");
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     hg_thread_join(progress_thread);
 #endif

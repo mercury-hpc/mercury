@@ -133,6 +133,10 @@ struct na_class {
     (*msg_get_max_unexpected_size)(
             na_class_t *na_class
             );
+    na_size_t
+    (*msg_get_reserved_unexpected_size)(
+            na_class_t *na_class
+            );
     void *
     (*msg_buf_alloc)(
             na_class_t *na_class,
@@ -157,6 +161,7 @@ struct na_class {
             void         *arg,
             const void   *buf,
             na_size_t     buf_size,
+            void         *plugin_data,
             na_addr_t     dest,
             na_tag_t      tag,
             na_op_id_t   *op_id
@@ -169,6 +174,7 @@ struct na_class {
             void         *arg,
             void         *buf,
             na_size_t     buf_size,
+            void         *plugin_data,
             na_tag_t      mask,
             na_op_id_t   *op_id
             );
@@ -180,6 +186,7 @@ struct na_class {
             void         *arg,
             const void   *buf,
             na_size_t     buf_size,
+            void         *plugin_data,
             na_addr_t     dest,
             na_tag_t      tag,
             na_op_id_t   *op_id
@@ -192,6 +199,7 @@ struct na_class {
             void         *arg,
             void         *buf,
             na_size_t     buf_size,
+            void         *plugin_data,
             na_addr_t     source,
             na_tag_t      tag,
             na_op_id_t   *op_id

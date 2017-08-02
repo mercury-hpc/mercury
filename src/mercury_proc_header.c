@@ -13,6 +13,8 @@
 #endif
 #include "mercury_proc_header.h"
 #include "mercury_proc.h"
+#include "mercury_core.h"
+#include "na.h"
 
 #ifdef _WIN32
   #include <winsock2.h>
@@ -40,6 +42,21 @@ HG_Error_to_string(
 /*******************/
 /* Local Variables */
 /*******************/
+
+/*---------------------------------------------------------------------------*/
+size_t
+hg_proc_header_request_get_size(hg_class_t *hg_class)
+{
+    hg_size_t reserved_size = 0;
+
+    if (hg_class != NULL)
+        reserved_size = NA_Msg_get_reserved_unexpected_size(
+                                    HG_Core_class_get_na(hg_class));
+
+    /* hg_bulk_t is optional and is not really part of the header */
+    return (sizeof(struct hg_header_request) - sizeof(hg_bulk_t) +
+            reserved_size);
+}
 
 /*---------------------------------------------------------------------------*/
 void
@@ -102,7 +119,7 @@ hg_proc_header_request(void *buf, size_t buf_size,
 {
     hg_uint32_t n_protocol, n_id, n_cookie;
     hg_uint16_t n_crc16;
-    void *buf_ptr = buf;
+    void *buf_ptr;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
     *extra_header_size = 0;
@@ -120,6 +137,8 @@ hg_proc_header_request(void *buf, size_t buf_size,
         n_cookie = htonl(header->cookie);
     }
 
+    buf_ptr = (char *)buf + NA_Msg_get_reserved_unexpected_size(
+                                    HG_Core_class_get_na(hg_class));
     /* hg */
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &header->hg, sizeof(hg_uint8_t), op);
 #ifdef HG_HAS_CHECKSUMS

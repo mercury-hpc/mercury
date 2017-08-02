@@ -308,7 +308,8 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    *size_to_send = hg_proc_header_request_get_size();
+    *size_to_send = hg_proc_header_request_get_size(
+                            HG_Core_get_info(handle)->hg_class);
 
     if (!in_struct)
         goto done;
@@ -1089,6 +1090,13 @@ HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Reset(hg_handle_t handle)
+{
+    return HG_Core_reset(handle);
 }
 
 /*---------------------------------------------------------------------------*/

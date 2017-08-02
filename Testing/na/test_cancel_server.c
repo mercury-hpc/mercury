@@ -27,6 +27,8 @@ struct na_test_params {
     na_addr_t source_addr;
     char *send_buf;
     char *recv_buf;
+    void *send_buf_plugin_data;
+    void *recv_buf_plugin_data;
     int *bulk_buf;
     na_size_t send_buf_len;
     na_size_t recv_buf_len;
@@ -53,7 +55,8 @@ msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
         printf("NA_Msg_recv_unexpected() was successfully canceled\n");
         ret = NA_Msg_recv_unexpected(params->na_class, params->context,
             msg_unexpected_recv_cb, params, params->recv_buf,
-            params->recv_buf_len, 0, NA_OP_ID_IGNORE);
+            params->recv_buf_len, params->recv_buf_plugin_data, 0,
+            NA_OP_ID_IGNORE);
         if (ret != NA_SUCCESS) {
             fprintf(stderr, "Could not post recv of unexpected message\n");
         }
@@ -126,8 +129,8 @@ bulk_put_cb(const struct na_cb_info *callback_info)
     printf("Sending end of transfer ack...\n");
     ret = NA_Msg_send_expected(params->na_class, params->context,
         msg_expected_send_final_cb, NULL, params->send_buf,
-        params->send_buf_len, params->source_addr, ack_tag,
-        NA_OP_ID_IGNORE);
+        params->send_buf_len, params->send_buf_plugin_data, params->source_addr,
+        ack_tag, NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of acknowledgment\n");
         return ret;
@@ -266,7 +269,8 @@ test_send_respond(struct na_test_params *params, na_tag_t send_tag)
     sprintf(params->send_buf, "Hello Client!");
 
     na_ret = NA_Msg_send_expected(params->na_class, params->context,
-        NULL, NULL, params->send_buf, params->send_buf_len, params->source_addr,
+        NULL, NULL, params->send_buf, params->send_buf_len,
+        params->send_buf_plugin_data, params->source_addr,
         send_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of message\n");
@@ -303,7 +307,8 @@ test_bulk_prepare(struct na_test_params *params)
     printf("Receiving remote memory handle...\n");
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
         mem_handle_expected_recv_cb, params, params->recv_buf,
-        params->recv_buf_len, params->source_addr, bulk_tag, NA_OP_ID_IGNORE);
+        params->recv_buf_len, params->recv_buf_plugin_data, params->source_addr,
+        bulk_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start recv of memory handle\n");
         return EXIT_FAILURE;
@@ -330,8 +335,10 @@ main(int argc, char *argv[])
     /* Allocate send/recv/bulk bufs */
     params.send_buf_len = NA_Msg_get_max_unexpected_size(params.na_class);
     params.recv_buf_len = params.send_buf_len;
-    params.send_buf = (char*) calloc(params.send_buf_len, sizeof(char));
-    params.recv_buf = (char*) calloc(params.recv_buf_len, sizeof(char));
+    params.send_buf = (char*)NA_Msg_buf_alloc(params.na_class,
+        params.send_buf_len, &params.send_buf_plugin_data);
+    params.recv_buf = (char*)NA_Msg_buf_alloc(params.na_class,
+        params.recv_buf_len, &params.recv_buf_plugin_data);
 
     /* Prepare bulk_buf */
     params.bulk_size = NA_TEST_BULK_SIZE;
@@ -339,7 +346,7 @@ main(int argc, char *argv[])
 
     for (peer = 0; peer < number_of_peers; peer++) {
         unsigned int i;
-        na_op_id_t op_id;
+        na_op_id_t op_id = NA_OP_ID_NULL;
 
         /* Reset to 0 */
         for (i = 0; i < params.bulk_size; i++) {
@@ -349,7 +356,7 @@ main(int argc, char *argv[])
         /* Recv a message from a client */
         na_ret = NA_Msg_recv_unexpected(params.na_class, params.context,
             msg_unexpected_recv_cb, &params, params.recv_buf,
-            params.recv_buf_len, 0, &op_id);
+            params.recv_buf_len, params.recv_buf_plugin_data, 0, &op_id);
         if (na_ret != NA_SUCCESS) {
             fprintf(stderr, "Could not post recv of unexpected message\n");
             return EXIT_FAILURE;
@@ -391,8 +398,8 @@ main(int argc, char *argv[])
     printf("Finalizing...\n");
 
     free(params.bulk_buf);
-    free(params.recv_buf);
-    free(params.send_buf);
+    NA_Msg_buf_free(params.na_class, params.recv_buf, params.recv_buf_plugin_data);
+    NA_Msg_buf_free(params.na_class, params.send_buf, params.send_buf_plugin_data);
 
     NA_Context_destroy(params.na_class, params.context);
 

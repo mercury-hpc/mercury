@@ -433,6 +433,20 @@ NA_Msg_buf_free(
         );
 
 /**
+ * Get the reserved size of unexpected send/recv message. The reserved space
+ * starts from the beginning of the unexpected message. NA layer can piggyback
+ * some information by using the reserved space.
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_size_t
+NA_Msg_get_reserved_unexpected_size(
+        na_class_t *na_class
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
  * Get the maximum tag value that can be used by send/recv (both expected and
  * unexpected).
  *
@@ -465,6 +479,7 @@ NA_Msg_get_max_tag(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
+ * \param plugin_data [IN]      pointer to internal plugin data
  * \param dest [IN]             abstract address of destination
  * \param tag [IN]              tag attached to message
  * \param op_id [IN/OUT]        pointer to operation ID
@@ -479,6 +494,7 @@ NA_Msg_send_unexpected(
         void         *arg,
         const void   *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     dest,
         na_tag_t      tag,
         na_op_id_t   *op_id
@@ -502,6 +518,7 @@ NA_Msg_send_unexpected(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
+ * \param plugin_data [IN]      pointer to internal plugin data
  * \param mask [IN]             tag mask
  * \param op_id [IN/OUT]        pointer to operation ID
  *
@@ -515,6 +532,7 @@ NA_Msg_recv_unexpected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_tag_t      mask,
         na_op_id_t   *op_id
         );
@@ -538,6 +556,7 @@ NA_Msg_recv_unexpected(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
+ * \param plugin_data [IN]      pointer to internal plugin data
  * \param dest [IN]             abstract address of destination
  * \param tag [IN]              tag attached to message
  * \param op_id [IN/OUT]        pointer to operation ID
@@ -552,6 +571,7 @@ NA_Msg_send_expected(
         void         *arg,
         const void   *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     dest,
         na_tag_t      tag,
         na_op_id_t   *op_id
@@ -572,6 +592,7 @@ NA_Msg_send_expected(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to receive buffer
  * \param buf_size [IN]         buffer size
+ * \param plugin_data [IN]      pointer to internal plugin data
  * \param source [IN]           abstract address of source
  * \param tag [IN]              matching tag used to receive message
  * \param op_id [IN/OUT]        pointer to operation ID
@@ -586,6 +607,7 @@ NA_Msg_recv_expected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     source,
         na_tag_t      tag,
         na_op_id_t   *op_id

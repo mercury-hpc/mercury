@@ -102,7 +102,7 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
 endif()
 
 # Build name referenced in cdash
-set(CTEST_BUILD_NAME "travis-ci-$ENV{TRAVIS_OS_NAME}-x64-$ENV{CC}-${lower_mercury_build_configuration}${lower_mercury_memorycheck_type}-$ENV{TRAVIS_BUILD_NUMBER}")
+set(CTEST_BUILD_NAME "topic_ofi-$ENV{TRAVIS_OS_NAME}-x64-$ENV{CC}-${lower_mercury_build_configuration}${lower_mercury_memorycheck_type}-$ENV{TRAVIS_BUILD_NUMBER}")
 
 set(dashboard_binary_name mercury-${lower_mercury_build_configuration})
 if(NOT mercury_build_shared)
@@ -119,8 +119,8 @@ if(APPLE)
 else()
   set(SOEXT so)
   set(PROC_NAME_OPT -r)
-  set(USE_BMI ON)
-  set(USE_CCI ON)
+  set(USE_BMI OFF)
+  set(USE_CCI OFF)
   set(USE_SM ON)
   set(CMAKE_FIND_ROOT_PATH $ENV{HOME}/install ${CMAKE_FIND_ROOT_PATH})
 endif()
@@ -154,6 +154,8 @@ NA_USE_MPI:BOOL=ON
 NA_USE_CCI:BOOL=${USE_CCI}
 NA_CCI_TESTING_PROTOCOL:STRING=tcp
 NA_USE_SM:BOOL=${USE_SM}
+NA_USE_OFI:BOOL=ON
+NA_OFI_TESTING_PROTOCOL:STRING=sockets
 MPIEXEC_MAX_NUMPROCS:STRING=4
 
 MERCURY_TEST_INIT_COMMAND:STRING=killall -9 ${PROC_NAME_OPT} hg_test_client;killall -9 ${PROC_NAME_OPT} hg_test_server;

@@ -107,20 +107,19 @@ struct hg_header_response {
 extern "C" {
 #endif
 
-HG_EXPORT HG_PROC_HEADER_INLINE size_t hg_proc_header_request_get_size(void);
 HG_EXPORT HG_PROC_HEADER_INLINE size_t hg_proc_header_response_get_size(void);
 
 /**
  * Get size reserved for request header (separate user data stored in payload).
  *
+ * \param hg_class [IN]         HG class
+ *
  * \return Non-negative size value
  */
-HG_PROC_HEADER_INLINE size_t
-hg_proc_header_request_get_size(void)
-{
-    /* hg_bulk_t is optional and is not really part of the header */
-    return (sizeof(struct hg_header_request) - sizeof(hg_bulk_t));
-}
+HG_EXPORT size_t
+hg_proc_header_request_get_size(
+        hg_class_t *hg_class
+        );
 
 /**
  * Get size reserved for response header (separate user data stored in payload).

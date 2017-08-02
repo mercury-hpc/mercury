@@ -361,6 +361,14 @@ hg_core_create(
         );
 
 /**
+ * Reset handle.
+ */
+static hg_return_t
+hg_core_reset(
+        struct hg_handle *hg_handle
+        );
+
+/**
  * Free handle.
  */
 static void
@@ -722,7 +730,8 @@ hg_core_get_input(struct hg_handle *hg_handle, void **in_buf,
 {
     /* No offset if extra buffer since only the user payload is copied */
     hg_size_t header_offset = (hg_handle->extra_in_buf) ? 0 :
-            hg_proc_header_request_get_size();
+            hg_proc_header_request_get_size(
+                    HG_Core_get_info(hg_handle)->hg_class);
 
     /* Space must be left for request header */
     *in_buf = (char *) ((hg_handle->extra_in_buf) ?
@@ -884,7 +893,7 @@ hg_core_processing_list_wait(struct hg_context *context)
 
         ret = context->progress(context, HG_MAX_IDLE_TIME);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not make progress");
+            HG_LOG_ERROR("Could not make progress, ret: %d.", ret);
             goto done;
         }
     }
@@ -1384,6 +1393,32 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_reset(struct hg_handle *hg_handle)
+{
+    hg_proc_header_request_init(&hg_handle->in_header);
+    hg_proc_header_response_init(&hg_handle->out_header);
+
+    hg_handle->callback = NULL;
+    hg_handle->arg = NULL;
+    hg_handle->cb_type = 0;
+    hg_handle->tag = 0;
+    hg_handle->cookie = 0;
+    hg_handle->ret = HG_SUCCESS;
+    hg_handle->in_buf_used = 0;
+    hg_handle->out_buf_used = 0;
+    hg_atomic_set32(&hg_handle->na_completed_count, 0);
+    if (hg_handle->extra_in_buf) {
+        free(hg_handle->extra_in_buf);
+        hg_handle->extra_in_buf = NULL;
+    }
+    hg_handle->extra_in_buf_size = 0;
+    hg_handle->extra_in_op_id = HG_OP_ID_NULL;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
 static void
 hg_core_destroy(struct hg_handle *hg_handle)
 {
@@ -1515,8 +1550,9 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     if (!hg_handle->hg_rpc_info->no_response) {
         na_ret = NA_Msg_recv_expected(hg_class->na_class, hg_context->na_context,
             hg_core_recv_output_cb, hg_handle, hg_handle->out_buf,
-            hg_handle->out_buf_size, hg_handle->hg_info.addr->na_addr,
-            hg_handle->tag, &hg_handle->na_recv_op_id);
+            hg_handle->out_buf_size, hg_handle->out_buf_plugin_data,
+            hg_handle->hg_info.addr->na_addr, hg_handle->tag,
+            &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post recv for output buffer");
             ret = HG_NA_ERROR;
@@ -1528,10 +1564,16 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_send_unexpected(hg_class->na_class,
             hg_context->na_context, hg_core_send_input_cb, hg_handle,
             hg_handle->in_buf, hg_handle->in_buf_used,
-            hg_handle->hg_info.addr->na_addr, hg_handle->tag,
-            &hg_handle->na_send_op_id);
+            hg_handle->in_buf_plugin_data, hg_handle->hg_info.addr->na_addr,
+            hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for input buffer");
+        /* cancel the above posted recv op */
+        na_ret = NA_Cancel(hg_class->na_class, hg_context->na_context,
+                           hg_handle->na_recv_op_id);
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not cancel recv op id");
+        }
         ret = HG_NA_ERROR;
         goto done;
     }
@@ -1599,8 +1641,9 @@ hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     /* Respond back */
     na_ret = NA_Msg_send_expected(hg_class->na_class, hg_context->na_context,
             hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
-            hg_handle->out_buf_used, hg_handle->hg_info.addr->na_addr,
-            hg_handle->tag, &hg_handle->na_send_op_id);
+            hg_handle->out_buf_used, hg_handle->out_buf_plugin_data,
+            hg_handle->hg_info.addr->na_addr, hg_handle->tag,
+            &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for output buffer");
         ret = HG_NA_ERROR;
@@ -2109,8 +2152,8 @@ hg_core_post(struct hg_handle *hg_handle)
     /* Post a new unexpected receive */
     na_ret = NA_Msg_recv_unexpected(hg_class->na_class, context->na_context,
             hg_core_recv_input_cb, hg_handle, hg_handle->in_buf,
-            hg_handle->in_buf_size, context->request_mask,
-            &hg_handle->na_recv_op_id);
+            hg_handle->in_buf_size, hg_handle->in_buf_plugin_data,
+            context->request_mask, &hg_handle->na_recv_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post unexpected recv for input buffer");
         ret = HG_NA_ERROR;
@@ -2745,7 +2788,7 @@ HG_Core_class_get_input_eager_size(const hg_class_t *hg_class)
 
 #ifndef HG_HAS_XDR
     unexp  = NA_Msg_get_max_unexpected_size(hg_class->na_class);
-    header = hg_proc_header_request_get_size();
+    header = hg_proc_header_request_get_size(hg_class);
     if (unexp > header)
         ret = unexp - header;
 #endif
@@ -3484,6 +3527,18 @@ done:
         hg_core_destroy(hg_handle);
     }
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_reset(hg_handle_t handle)
+{
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        return HG_INVALID_PARAM;
+    }
+
+    return hg_core_reset((struct hg_handle *)handle);
 }
 
 /*---------------------------------------------------------------------------*/

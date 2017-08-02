@@ -308,6 +308,7 @@ na_bmi_msg_send_unexpected(
         void         *arg,
         const void   *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     dest,
         na_tag_t      tag,
         na_op_id_t   *op_id
@@ -322,6 +323,7 @@ na_bmi_msg_recv_unexpected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_tag_t      mask,
         na_op_id_t   *op_id
         );
@@ -335,6 +337,7 @@ na_bmi_msg_send_expected(
         void         *arg,
         const void   *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     dest,
         na_tag_t      tag,
         na_op_id_t   *op_id
@@ -349,6 +352,7 @@ na_bmi_msg_recv_expected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     source,
         na_tag_t      tag,
         na_op_id_t   *op_id
@@ -532,7 +536,8 @@ const na_class_t na_bmi_class_g = {
         na_bmi_addr_is_self,                  /* addr_is_self */
         na_bmi_addr_to_string,                /* addr_to_string */
         na_bmi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
-        na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
+        na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_unexpected_size */
+        NULL,                                 /* msg_get_reserved_unexpected_size */
         NULL,                                 /* msg_buf_alloc */
         NULL,                                 /* msg_buf_free */
         na_bmi_msg_get_max_tag,               /* msg_get_max_tag */
@@ -1061,7 +1066,8 @@ na_bmi_msg_get_max_tag(na_class_t NA_UNUSED *na_class)
 static na_return_t
 na_bmi_msg_send_unexpected(na_class_t *na_class,
         na_context_t *context, na_cb_t callback, void *arg, const void *buf,
-        na_size_t buf_size, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+        na_size_t buf_size, void NA_UNUSED *plugin_data, na_addr_t dest,
+        na_tag_t tag, na_op_id_t *op_id)
 {
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
@@ -1126,7 +1132,7 @@ done:
 static na_return_t
 na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
 {
     struct na_bmi_unexpected_info *unexpected_info = NULL;
     struct na_bmi_op_id *na_bmi_op_id = NULL;
@@ -1287,7 +1293,8 @@ na_bmi_msg_unexpected_op_pop(na_class_t *na_class)
 static na_return_t
 na_bmi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_addr_t dest, na_tag_t tag,
+        na_op_id_t *op_id)
 {
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
@@ -1351,7 +1358,8 @@ done:
 static na_return_t
 na_bmi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_addr_t source, na_tag_t tag,
+        na_op_id_t *op_id)
 {
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;

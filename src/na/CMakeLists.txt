@@ -131,6 +131,28 @@ if(NA_USE_CCI)
   endif()
 endif()
 
+# OFI
+option(NA_USE_OFI "Use libfabric plugin." OFF)
+if(NA_USE_OFI)
+  find_package(OFI REQUIRED)
+  if(OFI_FOUND)
+    message(STATUS "OFI include directory: ${OFI_INCLUDE_DIR}")
+    set(NA_PLUGINS ${NA_PLUGINS} ofi)
+    set(NA_HAS_OFI 1)
+    include_directories(${OFI_INCLUDE_DIR})
+    set(NA_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
+      ${OFI_LIBRARIES}
+    )
+    set(NA_EXT_INCLUDE_DEPENDENCIES
+      ${NA_EXT_INCLUDE_DEPENDENCIES}
+      ${OFI_INCLUDE_DIRS}
+    )
+  else()
+    message(FATAL_ERROR "Could not find OFI.")
+  endif()
+endif()
+
 # SM
 option(NA_USE_SM "Use shared-memory plugin." ON)
 if(NA_USE_SM)
@@ -213,6 +235,13 @@ if(NA_HAS_CCI)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_cci.c
+  )
+endif()
+
+if(NA_USE_OFI)
+  set(NA_SRCS
+    ${NA_SRCS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_ofi.c
   )
 endif()
 
