@@ -248,13 +248,13 @@ na_cci_addr_to_string(na_class_t * na_class, char *buf, na_size_t *buf_size,
 
 /* msg_get_max */
 static na_size_t
-na_cci_msg_get_max_expected_size(na_class_t * na_class);
+na_cci_msg_get_max_unexpected_size(const na_class_t * na_class);
 
 static na_size_t
-na_cci_msg_get_max_unexpected_size(na_class_t * na_class);
+na_cci_msg_get_max_expected_size(const na_class_t * na_class);
 
 static na_tag_t
-na_cci_msg_get_max_tag(na_class_t * na_class);
+na_cci_msg_get_max_tag(const na_class_t * na_class);
 
 /* msg_send_unexpected */
 static na_return_t
@@ -376,13 +376,17 @@ const na_class_t na_cci_class_g = {
     na_cci_addr_dup,                        /* addr_dup */
     na_cci_addr_is_self,                    /* addr_is_self */
     na_cci_addr_to_string,                  /* addr_to_string */
+    na_cci_msg_get_max_unexpected_size,     /* msg_get_max_unexpected_size */
     na_cci_msg_get_max_expected_size,       /* msg_get_max_expected_size */
-    na_cci_msg_get_max_unexpected_size,     /* msg_get_max_expected_size */
+    NULL,                                   /* msg_get_unexpected_header_size */
+    NULL,                                   /* msg_get_expected_header_size */
+    na_cci_msg_get_max_tag,                 /* msg_get_max_tag */
     NULL,                                   /* msg_buf_alloc */
     NULL,                                   /* msg_buf_free */
-    na_cci_msg_get_max_tag,                 /* msg_get_max_tag */
+    NULL,                                   /* msg_init_unexpected */
     na_cci_msg_send_unexpected,             /* msg_send_unexpected */
     na_cci_msg_recv_unexpected,             /* msg_recv_unexpected */
+    NULL,                                   /* msg_init_expected */
     na_cci_msg_send_expected,               /* msg_send_expected */
     na_cci_msg_recv_expected,               /* msg_recv_expected */
     na_cci_mem_handle_create,               /* mem_handle_create */
@@ -983,18 +987,7 @@ na_cci_addr_to_string(na_class_t NA_UNUSED * na_class, char *buf,
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_cci_msg_get_max_expected_size(na_class_t *na_class)
-{
-    cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
-    cci_msg_t msg;
-    na_size_t max_expected_size = e->device->max_send_size - sizeof(msg.size);
-
-    return max_expected_size;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_size_t
-na_cci_msg_get_max_unexpected_size(na_class_t *na_class)
+na_cci_msg_get_max_unexpected_size(const na_class_t *na_class)
 {
     cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
     cci_msg_t msg;
@@ -1004,8 +997,19 @@ na_cci_msg_get_max_unexpected_size(na_class_t *na_class)
 }
 
 /*---------------------------------------------------------------------------*/
+static na_size_t
+na_cci_msg_get_max_expected_size(const na_class_t *na_class)
+{
+    cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+    cci_msg_t msg;
+    na_size_t max_expected_size = e->device->max_send_size - sizeof(msg.size);
+
+    return max_expected_size;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_tag_t
-na_cci_msg_get_max_tag(na_class_t NA_UNUSED * na_class)
+na_cci_msg_get_max_tag(const na_class_t NA_UNUSED * na_class)
 {
     na_tag_t max_tag = NA_CCI_MAX_TAG;
 

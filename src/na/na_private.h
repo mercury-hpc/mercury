@@ -126,12 +126,24 @@ struct na_class {
             na_addr_t   addr
             );
     na_size_t
-    (*msg_get_max_expected_size)(
-            na_class_t *na_class
+    (*msg_get_max_unexpected_size)(
+            const na_class_t *na_class
             );
     na_size_t
-    (*msg_get_max_unexpected_size)(
-            na_class_t *na_class
+    (*msg_get_max_expected_size)(
+            const na_class_t *na_class
+            );
+    na_size_t
+    (*msg_get_unexpected_header_size)(
+            const na_class_t *na_class
+            );
+    na_size_t
+    (*msg_get_expected_header_size)(
+            const na_class_t *na_class
+            );
+    na_tag_t
+    (*msg_get_max_tag)(
+            const na_class_t *na_class
             );
     void *
     (*msg_buf_alloc)(
@@ -145,9 +157,11 @@ struct na_class {
             void *buf,
             void *plugin_data
             );
-    na_tag_t
-    (*msg_get_max_tag)(
-            na_class_t *na_class
+    na_return_t
+    (*msg_init_unexpected)(
+            na_class_t *na_class,
+            void *buf,
+            na_size_t buf_size
             );
     na_return_t
     (*msg_send_unexpected)(
@@ -171,6 +185,12 @@ struct na_class {
             na_size_t     buf_size,
             na_tag_t      mask,
             na_op_id_t   *op_id
+            );
+    na_return_t
+    (*msg_init_expected)(
+            na_class_t *na_class,
+            void *buf,
+            na_size_t buf_size
             );
     na_return_t
     (*msg_send_expected)(

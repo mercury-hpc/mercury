@@ -370,19 +370,6 @@ NA_Addr_to_string(
         );
 
 /**
- * Get the maximum size of messages supported by expected send/recv.
- * Small message size that may differ from the unexpected message size.
- *
- * \param na_class [IN]         pointer to NA class
- *
- * \return Non-negative value
- */
-NA_EXPORT na_size_t
-NA_Msg_get_max_expected_size(
-        na_class_t *na_class
-        ) NA_WARN_UNUSED_RESULT;
-
-/**
  * Get the maximum size of messages supported by unexpected send/recv.
  * Small message size.
  *
@@ -392,14 +379,66 @@ NA_Msg_get_max_expected_size(
  */
 NA_EXPORT na_size_t
 NA_Msg_get_max_unexpected_size(
-        na_class_t *na_class
+        const na_class_t *na_class
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Get the maximum size of messages supported by expected send/recv.
+ * Small message size that may differ from the unexpected message size.
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_size_t
+NA_Msg_get_max_expected_size(
+        const na_class_t *na_class
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Get the header size for unexpected messages. Plugins may use that header
+ * to encode specific information (such as source addr, etc).
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_size_t
+NA_Msg_get_unexpected_header_size(
+        const na_class_t *na_class
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Get the header size for expected messages. Plugins may use that header
+ * to encode specific information.
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_size_t
+NA_Msg_get_expected_header_size(
+        const na_class_t *na_class
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Get the maximum tag value that can be used by send/recv (both expected and
+ * unexpected).
+ *
+ * \param na_class [IN]         pointer to NA class
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_tag_t
+NA_Msg_get_max_tag(
+        const na_class_t *na_class
         ) NA_WARN_UNUSED_RESULT;
 
 /**
  * Allocate buf_size bytes and return a pointer to the allocated memory.
- * The memory is initialized. If size is 0, NA_Msg_buf_alloc() returns
- * NULL. The plugin_data output parameter can be used by the underlying plugin
- * implementation to store internal memory information.
+ * If size is 0, NA_Msg_buf_alloc() returns NULL. The plugin_data output
+ * parameter can be used by the underlying plugin implementation to store
+ * internal memory information.
  *
  * \param na_class [IN/OUT]     pointer to NA class
  * \param buf_size [IN]         buffer size
@@ -433,17 +472,23 @@ NA_Msg_buf_free(
         );
 
 /**
- * Get the maximum tag value that can be used by send/recv (both expected and
- * unexpected).
+ * Initialize a buffer so that it can be safely passed to the
+ * NA_Msg_send_unexpected() call. In the case the underlying plugin adds its
+ * own header to that buffer, the header will be written at this time and the
+ * usable buffer payload will be buf + NA_Msg_get_unexpected_header_size().
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param buf [IN]              pointer to buffer
+ * \param buf_size [IN]         buffer size
  *
- * \return Non-negative value
+ * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_tag_t
-NA_Msg_get_max_tag(
-        na_class_t *na_class
-        ) NA_WARN_UNUSED_RESULT;
+NA_EXPORT na_return_t
+NA_Msg_init_unexpected(
+        na_class_t *na_class,
+        void *buf,
+        na_size_t buf_size
+        );
 
 /**
  * Send an unexpected message to dest.
@@ -517,6 +562,25 @@ NA_Msg_recv_unexpected(
         na_size_t     buf_size,
         na_tag_t      mask,
         na_op_id_t   *op_id
+        );
+
+/**
+ * Initialize a buffer so that it can be safely passed to the
+ * NA_Msg_send_expected() call. In the case the underlying plugin adds its
+ * own header to that buffer, the header will be written at this time and the
+ * usable buffer payload will be buf + NA_Msg_get_expected_header_size().
+ *
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param buf [IN]              pointer to buffer
+ * \param buf_size [IN]         buffer size
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Msg_init_expected(
+        na_class_t *na_class,
+        void *buf,
+        na_size_t buf_size
         );
 
 /**

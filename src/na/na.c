@@ -841,7 +841,28 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_size_t
-NA_Msg_get_max_expected_size(na_class_t *na_class)
+NA_Msg_get_max_unexpected_size(const na_class_t *na_class)
+{
+    na_size_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+    if (!na_class->msg_get_max_unexpected_size) {
+        NA_LOG_ERROR("msg_get_max_unexpected_size plugin callback is not defined");
+        goto done;
+    }
+
+    ret = na_class->msg_get_max_unexpected_size(na_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_size_t
+NA_Msg_get_max_expected_size(const na_class_t *na_class)
 {
     na_size_t ret = 0;
 
@@ -855,6 +876,63 @@ NA_Msg_get_max_expected_size(na_class_t *na_class)
     }
 
     ret = na_class->msg_get_max_expected_size(na_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_size_t
+NA_Msg_get_unexpected_header_size(const na_class_t *na_class)
+{
+    na_size_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
+    if (na_class->msg_get_unexpected_header_size)
+        ret = na_class->msg_get_unexpected_header_size(na_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_size_t
+NA_Msg_get_expected_header_size(const na_class_t *na_class)
+{
+    na_size_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+
+    if (na_class->msg_get_expected_header_size)
+        ret = na_class->msg_get_expected_header_size(na_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_tag_t
+NA_Msg_get_max_tag(const na_class_t *na_class)
+{
+    na_tag_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+    if (!na_class->msg_get_max_tag) {
+        NA_LOG_ERROR("msg_get_max_tag plugin callback is not defined");
+        goto done;
+    }
+
+    ret = na_class->msg_get_max_tag(na_class);
 
 done:
     return ret;
@@ -935,42 +1013,29 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-na_size_t
-NA_Msg_get_max_unexpected_size(na_class_t *na_class)
+na_return_t
+NA_Msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
 {
-    na_size_t ret = 0;
+    na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
         NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
         goto done;
     }
-    if (!na_class->msg_get_max_unexpected_size) {
-        NA_LOG_ERROR("msg_get_max_unexpected_size plugin callback is not defined");
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
         goto done;
     }
-
-    ret = na_class->msg_get_max_unexpected_size(na_class);
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-na_tag_t
-NA_Msg_get_max_tag(na_class_t *na_class)
-{
-    na_tag_t ret = 0;
-
-    if (!na_class) {
-        NA_LOG_ERROR("NULL NA class");
-        goto done;
-    }
-    if (!na_class->msg_get_max_tag) {
-        NA_LOG_ERROR("msg_get_max_tag plugin callback is not defined");
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
         goto done;
     }
 
-    ret = na_class->msg_get_max_tag(na_class);
+    if (na_class->msg_init_unexpected)
+        ret = na_class->msg_init_unexpected(na_class, buf, buf_size);
 
 done:
     return ret;
@@ -1058,6 +1123,35 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     ret = na_class->msg_recv_unexpected(na_class, context, callback, arg, buf,
         buf_size, mask, op_id);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Msg_init_expected(na_class_t *na_class, void *buf, na_size_t buf_size)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    if (na_class->msg_init_expected)
+        ret = na_class->msg_init_expected(na_class, buf, buf_size);
 
 done:
     return ret;

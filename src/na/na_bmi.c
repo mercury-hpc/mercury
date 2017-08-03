@@ -285,18 +285,18 @@ na_bmi_addr_to_string(
 
 /* msg_get_max */
 static na_size_t
-na_bmi_msg_get_max_expected_size(
-        na_class_t *na_class
+na_bmi_msg_get_max_unexpected_size(
+        const na_class_t *na_class
         );
 
 static na_size_t
-na_bmi_msg_get_max_unexpected_size(
-        na_class_t *na_class
+na_bmi_msg_get_max_expected_size(
+        const na_class_t *na_class
         );
 
 static na_tag_t
 na_bmi_msg_get_max_tag(
-        na_class_t *na_class
+        const na_class_t *na_class
         );
 
 /* msg_send_unexpected */
@@ -531,13 +531,17 @@ const na_class_t na_bmi_class_g = {
         na_bmi_addr_dup,                      /* addr_dup */
         na_bmi_addr_is_self,                  /* addr_is_self */
         na_bmi_addr_to_string,                /* addr_to_string */
+        na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_unexpected_size */
         na_bmi_msg_get_max_expected_size,     /* msg_get_max_expected_size */
-        na_bmi_msg_get_max_unexpected_size,   /* msg_get_max_expected_size */
+        NULL,                                 /* msg_get_unexpected_header_size */
+        NULL,                                 /* msg_get_expected_header_size */
+        na_bmi_msg_get_max_tag,               /* msg_get_max_tag */
         NULL,                                 /* msg_buf_alloc */
         NULL,                                 /* msg_buf_free */
-        na_bmi_msg_get_max_tag,               /* msg_get_max_tag */
+        NULL,                                 /* msg_init_unexpected */
         na_bmi_msg_send_unexpected,           /* msg_send_unexpected */
         na_bmi_msg_recv_unexpected,           /* msg_recv_unexpected */
+        NULL,                                 /* msg_init_expected */
         na_bmi_msg_send_expected,             /* msg_send_expected */
         na_bmi_msg_recv_expected,             /* msg_recv_expected */
         na_bmi_mem_handle_create,             /* mem_handle_create */
@@ -1032,16 +1036,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_bmi_msg_get_max_expected_size(na_class_t NA_UNUSED *na_class)
-{
-    na_size_t max_expected_size = NA_BMI_EXPECTED_SIZE;
-
-    return max_expected_size;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_size_t
-na_bmi_msg_get_max_unexpected_size(na_class_t NA_UNUSED *na_class)
+na_bmi_msg_get_max_unexpected_size(const na_class_t NA_UNUSED *na_class)
 {
     na_size_t max_unexpected_size = NA_BMI_UNEXPECTED_SIZE;
 
@@ -1049,8 +1044,17 @@ na_bmi_msg_get_max_unexpected_size(na_class_t NA_UNUSED *na_class)
 }
 
 /*---------------------------------------------------------------------------*/
+static na_size_t
+na_bmi_msg_get_max_expected_size(const na_class_t NA_UNUSED *na_class)
+{
+    na_size_t max_expected_size = NA_BMI_EXPECTED_SIZE;
+
+    return max_expected_size;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_tag_t
-na_bmi_msg_get_max_tag(na_class_t NA_UNUSED *na_class)
+na_bmi_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 {
     na_tag_t max_tag = NA_BMI_MAX_TAG;
 
