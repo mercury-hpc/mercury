@@ -673,6 +673,7 @@ na_sm_msg_send_unexpected(
     void *arg,
     const void *buf,
     na_size_t buf_size,
+    void *plugin_data,
     na_addr_t dest,
     na_tag_t tag,
     na_op_id_t *op_id
@@ -687,6 +688,7 @@ na_sm_msg_recv_unexpected(
     void *arg,
     void *buf,
     na_size_t buf_size,
+    void *plugin_data,
     na_tag_t mask,
     na_op_id_t *op_id
     );
@@ -700,6 +702,7 @@ na_sm_msg_send_expected(
     void *arg,
     const void *buf,
     na_size_t buf_size,
+    void *plugin_data,
     na_addr_t dest,
     na_tag_t tag,
     na_op_id_t *op_id
@@ -714,6 +717,7 @@ na_sm_msg_recv_expected(
     void *arg,
     void *buf,
     na_size_t buf_size,
+    void *plugin_data,
     na_addr_t source,
     na_tag_t tag,
     na_op_id_t *op_id
@@ -2995,7 +2999,8 @@ na_sm_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 static na_return_t
 na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t dest, na_tag_t tag,
+    na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest;
@@ -3067,7 +3072,7 @@ done:
 static na_return_t
 na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
 {
     struct na_sm_unexpected_info *na_sm_unexpected_info;
     struct na_sm_op_id *na_sm_op_id = NULL;
@@ -3145,7 +3150,8 @@ done:
 static na_return_t
 na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t dest, na_tag_t tag,
+    na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest;
@@ -3217,7 +3223,8 @@ done:
 static na_return_t
 na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t source, na_tag_t tag,
+    na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     na_return_t ret = NA_SUCCESS;

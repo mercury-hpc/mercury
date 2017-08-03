@@ -31,6 +31,8 @@ struct na_test_params {
     na_addr_t server_addr;
     char *send_buf;
     char *recv_buf;
+    void *send_buf_plugin_data;
+    void *recv_buf_plugin_data;
     unsigned int *bulk_buf;
     na_size_t send_buf_len;
     na_size_t recv_buf_len;
@@ -160,7 +162,8 @@ test_msg_forward(struct na_test_params *params)
     /* Preposting response */
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
         msg_expected_recv_cb, params, params->recv_buf, params->recv_buf_len,
-        params->server_addr, NA_TEST_SEND_TAG + 1, NA_OP_ID_IGNORE);
+        params->recv_buf_plugin_data, params->server_addr, NA_TEST_SEND_TAG + 1,
+        NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not prepost recv of expected message");
         ret = EXIT_FAILURE;
@@ -169,7 +172,8 @@ test_msg_forward(struct na_test_params *params)
 
     na_ret = NA_Msg_send_unexpected(params->na_class, params->context,
         msg_unexpected_send_cb, params, params->send_buf, params->send_buf_len,
-        params->server_addr, NA_TEST_SEND_TAG, NA_OP_ID_IGNORE);
+        params->send_buf_plugin_data, params->server_addr, NA_TEST_SEND_TAG,
+        NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start send of unexpected message");
         ret = EXIT_FAILURE;
@@ -218,7 +222,8 @@ test_bulk(struct na_test_params *params)
     printf("Preposting recv of transfer ack...\n");
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
         &ack_expected_recv_cb, params, params->recv_buf, params->recv_buf_len,
-        params->server_addr, NA_TEST_BULK_ACK_TAG, NA_OP_ID_IGNORE);
+        params->recv_buf_plugin_data, params->server_addr, NA_TEST_BULK_ACK_TAG,
+        NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start receive of ack");
         ret = EXIT_FAILURE;
@@ -228,7 +233,8 @@ test_bulk(struct na_test_params *params)
     /* Send mem handle */
     printf("Sending local memory handle...\n");
     na_ret = NA_Msg_send_expected(params->na_class, params->context, NULL,
-        NULL, params->send_buf, params->send_buf_len, params->server_addr,
+        NULL, params->send_buf, params->send_buf_len,
+        params->send_buf_plugin_data, params->server_addr,
         NA_TEST_BULK_TAG, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start send of memory handle");
@@ -258,8 +264,10 @@ main(int argc, char *argv[])
     /* Allocate send and recv bufs */
     params.send_buf_len = NA_Msg_get_max_unexpected_size(params.na_class);
     params.recv_buf_len = params.send_buf_len;
-    params.send_buf = (char *) calloc(params.send_buf_len, sizeof(char));
-    params.recv_buf = (char *) calloc(params.recv_buf_len, sizeof(char));
+    params.send_buf = (char*)NA_Msg_buf_alloc(params.na_class,
+        params.send_buf_len, &params.send_buf_plugin_data);
+    params.recv_buf = (char*)NA_Msg_buf_alloc(params.na_class,
+        params.recv_buf_len, &params.recv_buf_plugin_data);
 
     /* Prepare bulk_buf */
     params.bulk_size = NA_TEST_BULK_SIZE;
@@ -310,8 +318,8 @@ main(int argc, char *argv[])
         goto done;
     }
 
-    free(params.recv_buf);
-    free(params.send_buf);
+    NA_Msg_buf_free(params.na_class, params.recv_buf, params.recv_buf_plugin_data);
+    NA_Msg_buf_free(params.na_class, params.send_buf, params.send_buf_plugin_data);
     free(params.bulk_buf);
 
     NA_Context_destroy(params.na_class, params.context);

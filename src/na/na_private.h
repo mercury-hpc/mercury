@@ -171,6 +171,7 @@ struct na_class {
             void         *arg,
             const void   *buf,
             na_size_t     buf_size,
+            void         *plugin_data,
             na_addr_t     dest,
             na_tag_t      tag,
             na_op_id_t   *op_id
@@ -183,6 +184,7 @@ struct na_class {
             void         *arg,
             void         *buf,
             na_size_t     buf_size,
+            void         *plugin_data,
             na_tag_t      mask,
             na_op_id_t   *op_id
             );
@@ -200,6 +202,7 @@ struct na_class {
             void         *arg,
             const void   *buf,
             na_size_t     buf_size,
+            void         *plugin_data,
             na_addr_t     dest,
             na_tag_t      tag,
             na_op_id_t   *op_id
@@ -212,6 +215,7 @@ struct na_class {
             void         *arg,
             void         *buf,
             na_size_t     buf_size,
+            void         *plugin_data,
             na_addr_t     source,
             na_tag_t      tag,
             na_op_id_t   *op_id

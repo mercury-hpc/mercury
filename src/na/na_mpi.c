@@ -334,6 +334,7 @@ na_mpi_msg_send_unexpected(
         void         *arg,
         const void   *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     dest,
         na_tag_t      tag,
         na_op_id_t   *op_id
@@ -348,6 +349,7 @@ na_mpi_msg_recv_unexpected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_tag_t      mask,
         na_op_id_t   *op_id
         );
@@ -361,6 +363,7 @@ na_mpi_msg_send_expected(
         void         *arg,
         const void   *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     dest,
         na_tag_t      tag,
         na_op_id_t   *op_id
@@ -375,6 +378,7 @@ na_mpi_msg_recv_expected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     source,
         na_tag_t      tag,
         na_op_id_t   *op_id
@@ -1478,7 +1482,8 @@ na_mpi_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 static na_return_t
 na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_addr_t dest, na_tag_t tag,
+        na_op_id_t *op_id)
 {
     int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;
@@ -1531,7 +1536,7 @@ done:
 static na_return_t
 na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
 {
     struct na_mpi_op_id *na_mpi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1587,7 +1592,8 @@ done:
 static na_return_t
 na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_addr_t dest, na_tag_t tag,
+        na_op_id_t *op_id)
 {
     int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;
@@ -1640,7 +1646,8 @@ done:
 static na_return_t
 na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_addr_t source, na_tag_t tag,
+        na_op_id_t *op_id)
 {
     int mpi_buf_size = (int) buf_size;
     int mpi_tag = (int) tag;

@@ -491,10 +491,13 @@ NA_Msg_init_unexpected(
         );
 
 /**
- * Send an unexpected message to dest.
- * Unexpected sends do not require a matching receive to complete. After
- * completion, user callback is placed into a completion queue and can be
- * triggered using NA_Trigger().
+ * Send an unexpected message to dest. Unexpected sends do not require a
+ * matching receive to complete. After completion, the user callback is
+ * placed into the context completion queue and can be triggered using
+ * NA_Trigger().
+ * The plugin_data parameter returned from the NA_Msg_buf_alloc() call must
+ * be passed along with the buffer, it allows plugins to store and retrieve
+ * additional buffer information such as memory descriptors.
  * \remark Note also that unexpected messages do not require an unexpected
  * receive to be posted at the destination before sending the message and the
  * destination is allowed to drop the message without notification.
@@ -510,6 +513,7 @@ NA_Msg_init_unexpected(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
+ * \param plugin_data [IN]      pointer to internal plugin data
  * \param dest [IN]             abstract address of destination
  * \param tag [IN]              tag attached to message
  * \param op_id [IN/OUT]        pointer to operation ID
@@ -524,6 +528,7 @@ NA_Msg_send_unexpected(
         void         *arg,
         const void   *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     dest,
         na_tag_t      tag,
         na_op_id_t   *op_id
@@ -533,8 +538,12 @@ NA_Msg_send_unexpected(
  * Receive an unexpected message. Unexpected receives may wait on any tag and
  * any source depending on the implementation, a tag mask allows for messages
  * to be ignored if the plugin has defined the NA_HAS_TAG_MASK feature
- * (see NA_Check_feature() for more details). After completion, user callback
- * is placed into a completion queue and can be triggered using NA_Trigger().
+ * (see NA_Check_feature() for more details). After completion, the user
+ * callback parameter is placed into the context completion queue and can be
+ * triggered using NA_Trigger().
+ * The plugin_data parameter returned from the NA_Msg_buf_alloc() call must
+ * be passed along with the buffer, it allows plugins to store and retrieve
+ * additional buffer information such as memory descriptors.
  *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
  * a new operation ID will be internally created and returned. Users may also
@@ -547,6 +556,7 @@ NA_Msg_send_unexpected(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
+ * \param plugin_data [IN]      pointer to internal plugin data
  * \param mask [IN]             tag mask
  * \param op_id [IN/OUT]        pointer to operation ID
  *
@@ -560,6 +570,7 @@ NA_Msg_recv_unexpected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_tag_t      mask,
         na_op_id_t   *op_id
         );
@@ -584,12 +595,15 @@ NA_Msg_init_expected(
         );
 
 /**
- * Send an expected message to dest. After completion, user callback is placed
- * into a completion queue and can be triggered using NA_Trigger().
- * \remark Note that expected messages require
- * an expected receive to be posted at the destination before sending the
- * message, otherwise the destination is allowed to drop the message without
- * notification.
+ * Send an expected message to dest. After completion, the user callback is
+ * placed into the context completion queue and can be triggered using
+ * NA_Trigger().
+ * The plugin_data parameter returned from the NA_Msg_buf_alloc() call must
+ * be passed along with the buffer, it allows plugins to store and retrieve
+ * additional buffer information such as memory descriptors.
+ * \remark Note that expected messages require an expected receive to be posted
+ * at the destination before sending the message, otherwise the destination is
+ * allowed to drop the message without notification.
  *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
  * a new operation ID will be internally created and returned. Users may also
@@ -602,6 +616,7 @@ NA_Msg_init_expected(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
+ * \param plugin_data [IN]      pointer to internal plugin data
  * \param dest [IN]             abstract address of destination
  * \param tag [IN]              tag attached to message
  * \param op_id [IN/OUT]        pointer to operation ID
@@ -616,14 +631,19 @@ NA_Msg_send_expected(
         void         *arg,
         const void   *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     dest,
         na_tag_t      tag,
         na_op_id_t   *op_id
         );
 
 /**
- * Receive an expected message from source. After completion, user callback is
- * placed into a completion queue and can be triggered using NA_Trigger().
+ * Receive an expected message from source. After completion, the user
+ * callback is placed into the context completion queue and can be triggered
+ * using NA_Trigger().
+ * The plugin_data parameter returned from the NA_Msg_buf_alloc() call must
+ * be passed along with the buffer, it allows plugins to store and retrieve
+ * additional buffer information such as memory descriptors.
  *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
  * a new operation ID will be internally created and returned. Users may also
@@ -636,6 +656,7 @@ NA_Msg_send_expected(
  * \param arg [IN]              pointer to data passed to callback
  * \param buf [IN]              pointer to receive buffer
  * \param buf_size [IN]         buffer size
+ * \param plugin_data [IN]      pointer to internal plugin data
  * \param source [IN]           abstract address of source
  * \param tag [IN]              matching tag used to receive message
  * \param op_id [IN/OUT]        pointer to operation ID
@@ -650,6 +671,7 @@ NA_Msg_recv_expected(
         void         *arg,
         void         *buf,
         na_size_t     buf_size,
+        void         *plugin_data,
         na_addr_t     source,
         na_tag_t      tag,
         na_op_id_t   *op_id
