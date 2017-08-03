@@ -12,7 +12,6 @@
 
 #include "mercury_hash_string.h"
 #include "mercury_proc.h"
-#include "mercury_proc_header.h"
 #include "mercury_error.h"
 
 #include <stdlib.h>
@@ -308,8 +307,6 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    *size_to_send = hg_proc_header_request_get_size();
-
     if (!in_struct)
         goto done;
 
@@ -381,7 +378,7 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
         /* if the request fit in the initial buffer, then we have to add that
          * size to msg send
          */
-        *size_to_send += hg_proc_get_size_used(proc);
+        *size_to_send = hg_proc_get_size_used(proc);
     }
 
 done:
@@ -519,7 +516,6 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
     struct hg_private_data *hg_private_data = NULL;
     hg_proc_t proc = HG_PROC_NULL;
     hg_return_t ret = HG_SUCCESS;
-    *size_to_send = hg_proc_header_response_get_size();
 
     if (!out_struct) 
         goto done;
@@ -579,7 +575,7 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
     }
 
     /* add any encoded response size to the size to transmit */
-    *size_to_send += hg_proc_get_size_used(proc);
+    *size_to_send = hg_proc_get_size_used(proc);
 
 done:
     return ret;
@@ -1235,8 +1231,8 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     hg_bulk_t extra_in_handle = HG_BULK_NULL;
     void *extra_in_buf = NULL;
     hg_size_t extra_in_buf_size;
+    hg_size_t size_to_send = 0;
     hg_return_t ret = HG_SUCCESS;
-    hg_size_t size_to_send;
 
     if (handle == HG_HANDLE_NULL) {
         HG_LOG_ERROR("NULL HG handle");
@@ -1293,9 +1289,9 @@ done:
 hg_return_t
 HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
 {
+    hg_size_t size_to_send = 0;
     hg_return_t ret = HG_SUCCESS;
     hg_return_t ret_code = HG_SUCCESS;
-    hg_size_t size_to_send;
 
     if (handle == HG_HANDLE_NULL) {
         HG_LOG_ERROR("NULL HG handle");

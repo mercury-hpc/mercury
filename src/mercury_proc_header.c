@@ -101,8 +101,8 @@ hg_proc_header_request(void *buf, size_t buf_size,
     hg_uint16_t n_crc16;
     void *buf_ptr = buf;
     hg_proc_t proc = HG_PROC_NULL;
+    size_t extra_proc_size_used = 0;
     hg_return_t ret = HG_SUCCESS;
-    *extra_header_size = 0;
 
     if (buf_size < sizeof(struct hg_header_request)) {
         HG_LOG_ERROR("Invalid buffer size");
@@ -194,8 +194,12 @@ hg_proc_header_request(void *buf, size_t buf_size,
             HG_LOG_ERROR("Error in proc flush");
             goto done;
         }
-        *extra_header_size = hg_proc_get_size_used(proc);
+
+        extra_proc_size_used = hg_proc_get_size_used(proc);
     }
+
+    if (extra_header_size)
+        *extra_header_size = extra_proc_size_used;
 
 done:
 #ifdef HG_HAS_CHECKSUMS

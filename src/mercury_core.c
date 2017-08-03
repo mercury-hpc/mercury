@@ -148,10 +148,12 @@ struct hg_handle {
     void *in_buf;                       /* Input buffer */
     void *in_buf_plugin_data;           /* Input buffer NA plugin data */
     na_size_t in_buf_size;              /* Input buffer size */
+    na_size_t na_in_header_offset;      /* Input NA header offset */
     na_size_t in_buf_used;              /* Amount of input buffer used */
     void *out_buf;                      /* Output buffer */
     void *out_buf_plugin_data;          /* Output buffer NA plugin data */
     na_size_t out_buf_size;             /* Output buffer size */
+    na_size_t na_out_header_offset;     /* Output NA header offset */
     na_size_t out_buf_used;             /* Amount of output buffer used */
 
     na_op_id_t na_send_op_id;           /* Operation ID for send */
@@ -217,12 +219,24 @@ hg_core_get_extra_input_cb(
         );
 
 /**
- * Get request header and verify it.
+ * Proc request header and verify it if decoded.
  */
-static hg_return_t
-hg_core_get_header_request(
+static HG_INLINE hg_return_t
+hg_core_proc_header_request(
         struct hg_handle *hg_handle,
-        struct hg_header_request *request_header
+        struct hg_header_request *request_header,
+        hg_proc_op_t op,
+        hg_size_t *extra_header_size
+        );
+
+/**
+ * Proc response header and verify it if decoded.
+ */
+static HG_INLINE hg_return_t
+hg_core_proc_header_response(
+        struct hg_handle *hg_handle,
+        struct hg_header_response *response_header,
+        hg_proc_op_t op
         );
 
 /**
@@ -720,16 +734,17 @@ static HG_INLINE void
 hg_core_get_input(struct hg_handle *hg_handle, void **in_buf,
     hg_size_t *in_buf_size)
 {
-    /* No offset if extra buffer since only the user payload is copied */
-    hg_size_t header_offset = (hg_handle->extra_in_buf) ? 0 :
-            hg_proc_header_request_get_size();
+    hg_size_t header_offset = hg_proc_header_request_get_size() +
+        hg_handle->na_in_header_offset;
 
-    /* Space must be left for request header */
-    *in_buf = (char *) ((hg_handle->extra_in_buf) ?
-            hg_handle->extra_in_buf : hg_handle->in_buf) + header_offset;
-    *in_buf_size = (hg_handle->extra_in_buf_size) ?
-            hg_handle->extra_in_buf_size :
-            hg_handle->in_buf_size - header_offset;
+    /* Space must be left for request header, no offset if extra buffer since
+     * only the user payload is copied */
+    *in_buf =
+        (hg_handle->extra_in_buf) ? hg_handle->extra_in_buf :
+            ((char *) hg_handle->in_buf + header_offset);
+    *in_buf_size =
+        (hg_handle->extra_in_buf_size) ? hg_handle->extra_in_buf_size :
+            (hg_handle->in_buf_size - header_offset);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -737,7 +752,8 @@ static HG_INLINE void
 hg_core_get_output(struct hg_handle *hg_handle, void **out_buf,
     hg_size_t *out_buf_size)
 {
-    hg_size_t header_offset = hg_proc_header_response_get_size();
+    hg_size_t header_offset = hg_proc_header_response_get_size() +
+        hg_handle->na_out_header_offset;
 
     /* Space must be left for response header */
     *out_buf = (char *) hg_handle->out_buf + header_offset;
@@ -805,25 +821,63 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_core_get_header_request(struct hg_handle *hg_handle,
-    struct hg_header_request *request_header)
+static HG_INLINE hg_return_t
+hg_core_proc_header_request(struct hg_handle *hg_handle,
+    struct hg_header_request *request_header, hg_proc_op_t op,
+    hg_size_t *extra_header_size)
 {
+    char *header_buf = (char *) hg_handle->in_buf +
+        hg_handle->na_in_header_offset;
+    size_t header_buf_size = hg_handle->in_buf_size -
+        hg_handle->na_in_header_offset;
     hg_return_t ret = HG_SUCCESS;
-    hg_size_t extra_header_size;
 
-    /* Decode request header */
-    ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
-            request_header, HG_DECODE, hg_handle->hg_info.hg_class, &extra_header_size);
+    /* Proc request header */
+    ret = hg_proc_header_request(header_buf, header_buf_size,
+        request_header, op, hg_handle->hg_info.hg_class, extra_header_size);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not decode header");
+        HG_LOG_ERROR("Could not process request header");
         goto done;
     }
 
-    ret = hg_proc_header_request_verify(request_header);
+    if (op == HG_DECODE) {
+        ret = hg_proc_header_request_verify(request_header);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not verify request header");
+            goto done;
+        }
+    }
+
+done:
+    return ret;
+}
+
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+hg_core_proc_header_response(struct hg_handle *hg_handle,
+    struct hg_header_response *response_header, hg_proc_op_t op)
+{
+    char *header_buf = (char *) hg_handle->out_buf +
+        hg_handle->na_out_header_offset;
+    size_t header_buf_size = hg_handle->out_buf_size -
+        hg_handle->na_out_header_offset;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Proc response header */
+    ret = hg_proc_header_response(header_buf, header_buf_size,
+        response_header, op);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not verify header");
+        HG_LOG_ERROR("Could not process response header");
         goto done;
+    }
+
+    if (op == HG_DECODE) {
+        ret = hg_proc_header_response_verify(response_header);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not verify response header");
+            goto done;
+        }
     }
 
 done:
@@ -1324,6 +1378,8 @@ hg_core_create(struct hg_context *context)
     /* Initialize processing buffers and use unexpected message size */
     hg_handle->in_buf_size = NA_Msg_get_max_unexpected_size(na_class);
     hg_handle->out_buf_size = NA_Msg_get_max_expected_size(na_class);
+    hg_handle->na_in_header_offset = NA_Msg_get_unexpected_header_size(na_class);
+    hg_handle->na_out_header_offset = NA_Msg_get_expected_header_size(na_class);
 
     hg_handle->in_buf = NA_Msg_buf_alloc(na_class, hg_handle->in_buf_size,
         &hg_handle->in_buf_plugin_data);
@@ -1332,6 +1388,8 @@ hg_core_create(struct hg_context *context)
         ret = HG_NOMEM_ERROR;
         goto done;
     }
+    NA_Msg_init_unexpected(na_class, hg_handle->in_buf, hg_handle->in_buf_size);
+
     hg_handle->out_buf = NA_Msg_buf_alloc(na_class, hg_handle->out_buf_size,
         &hg_handle->out_buf_plugin_data);
     if (!hg_handle->out_buf) {
@@ -1339,6 +1397,7 @@ hg_core_create(struct hg_context *context)
         ret = HG_NOMEM_ERROR;
         goto done;
     }
+    NA_Msg_init_expected(na_class, hg_handle->out_buf, hg_handle->out_buf_size);
 
     /* Init in/out header */
     hg_proc_header_request_init(&hg_handle->in_header);
@@ -1714,8 +1773,8 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
 
         /* Get and verify header */
-        if (hg_core_get_header_request(hg_handle, &hg_handle->in_header)
-            != HG_SUCCESS) {
+        if (hg_core_proc_header_request(hg_handle, &hg_handle->in_header,
+            HG_DECODE, NULL) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not get request header");
             goto done;
         }
@@ -1820,15 +1879,9 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
         hg_handle->ret = HG_CANCELED;
     } else if (callback_info->ret == NA_SUCCESS) {
         /* Decode response header */
-        if (hg_proc_header_response(hg_handle->out_buf, hg_handle->out_buf_size,
-                &hg_handle->out_header, HG_DECODE) != HG_SUCCESS) {
+        if (hg_core_proc_header_response(hg_handle, &hg_handle->out_header,
+            HG_DECODE) != HG_SUCCESS) {
             HG_LOG_ERROR("Could not decode header");
-            goto done;
-        }
-
-        /* Verify header and set return code */
-        if (hg_proc_header_response_verify(&hg_handle->out_header) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not verify header");
             goto done;
         }
         hg_handle->ret = (hg_return_t) hg_handle->out_header.ret_code;
@@ -1910,7 +1963,8 @@ hg_core_process_thread(void *arg)
     struct hg_handle *hg_handle = (struct hg_handle *) arg;
 
     /* Get and verify header */
-    if (hg_core_get_header_request(hg_handle, &hg_handle->in_header) != HG_SUCCESS) {
+    if (hg_core_proc_header_request(hg_handle, &hg_handle->in_header,
+        HG_DECODE, NULL) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get request header");
         goto done;
     }
@@ -2529,9 +2583,11 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
         /* Run RPC callback */
         ret = hg_core_process(hg_handle);
         if (ret != HG_SUCCESS && !hg_handle->no_response) {
+            hg_size_t header_size = hg_proc_header_response_get_size() +
+                hg_handle->na_out_header_offset;
+
             /* Respond in case of error */
-            ret = HG_Core_respond(hg_handle, NULL, NULL, ret,
-                hg_proc_header_response_get_size());
+            ret = HG_Core_respond(hg_handle, NULL, NULL, ret, header_size);
             if (ret != HG_SUCCESS) {
                 HG_LOG_ERROR("Could not respond");
                 goto done;
@@ -2751,12 +2807,11 @@ HG_Core_class_get_input_eager_size(const hg_class_t *hg_class)
         goto done;
     }
 
-#ifndef HG_HAS_XDR
     unexp  = NA_Msg_get_max_unexpected_size(hg_class->na_class);
-    header = hg_proc_header_request_get_size();
+    header = hg_proc_header_request_get_size() +
+        NA_Msg_get_unexpected_header_size(hg_class->na_class);
     if (unexp > header)
         ret = unexp - header;
-#endif
 
 done:
     return ret;
@@ -2773,12 +2828,11 @@ HG_Core_class_get_output_eager_size(const hg_class_t *hg_class)
         goto done;
     }
 
-#ifndef HG_HAS_XDR
     exp    = NA_Msg_get_max_expected_size(hg_class->na_class);
-    header = hg_proc_header_response_get_size();
+    header = hg_proc_header_response_get_size() +
+        NA_Msg_get_expected_header_size(hg_class->na_class);
     if (exp > header)
         ret = exp - header;
-#endif
 
 done:
     return ret;
@@ -3645,6 +3699,7 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     hg_return_t (*hg_forward)(struct hg_handle *hg_handle);
 #endif
     hg_return_t ret = HG_SUCCESS;
+    hg_size_t header_size;
     hg_size_t extra_header_size = 0;
     hg_uint8_t flags = 0;
 
@@ -3673,6 +3728,8 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     hg_atomic_incr32(&hg_handle->ref_count);
 
     /* Set header */
+    header_size = hg_proc_header_request_get_size() +
+        hg_handle->na_in_header_offset;
     hg_handle->in_header.id = hg_handle->hg_info.id;
     hg_handle->in_header.cookie = hg_handle->hg_info.target_id;
     hg_handle->in_header.extra_in_handle = extra_in_handle;
@@ -3682,18 +3739,18 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     hg_handle->in_header.flags |= flags;
 
     /* Encode request header */
-    ret = hg_proc_header_request(hg_handle->in_buf, hg_handle->in_buf_size,
-            &hg_handle->in_header, HG_ENCODE, hg_handle->hg_info.hg_class,
-            &extra_header_size);
+    ret = hg_core_proc_header_request(hg_handle, &hg_handle->in_header,
+        HG_ENCODE, &extra_header_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not encode header");
         /* rollback ref_count taken above */
         hg_atomic_decr32(&hg_handle->ref_count);
         goto done;
     }
+    header_size += extra_header_size;
 
-    /* set the actual size of the msg that needs to be transmitted */
-    hg_handle->in_buf_used = size_to_send + extra_header_size;
+    /* Set the actual size of the msg that needs to be transmitted */
+    hg_handle->in_buf_used = header_size + size_to_send;
 
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
@@ -3727,6 +3784,7 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
     hg_return_t (*hg_respond)(struct hg_handle *hg_handle, hg_cb_t callback,
             void *arg);
 #endif
+    hg_size_t header_size;
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_handle) {
@@ -3752,20 +3810,24 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
     /* Set error code if any */
     hg_handle->ret = ret_code;
 
+    /* Set header size */
+    header_size = hg_proc_header_response_get_size() +
+        hg_handle->na_out_header_offset;
+
     /* Fill the header */
     hg_handle->out_header.cookie = hg_handle->cookie;
     hg_handle->out_header.ret_code = hg_handle->ret;
 
     /* Encode response header */
-    ret = hg_proc_header_response(hg_handle->out_buf, hg_handle->out_buf_size,
-            &hg_handle->out_header, HG_ENCODE);
+    ret = hg_core_proc_header_response(hg_handle, &hg_handle->out_header,
+        HG_ENCODE);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not encode header");
         goto done;
     }
 
-    /* set the actual size of the msg that needs to be transmitted */
-    hg_handle->out_buf_used = size_to_send;
+    /* Set the actual size of the msg that needs to be transmitted */
+    hg_handle->out_buf_used = header_size + size_to_send;
 
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
