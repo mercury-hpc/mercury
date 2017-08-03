@@ -1672,12 +1672,10 @@ NA_Poll_get_fd(na_class_t *na_class, na_context_t *context)
 
     if (!na_class) {
         NA_LOG_ERROR("NULL NA class");
-        ret = NA_INVALID_PARAM;
         goto done;
     }
     if (!context) {
         NA_LOG_ERROR("NULL context");
-        ret = NA_INVALID_PARAM;
         goto done;
     }
     if (!na_class->na_poll_get_fd) {
