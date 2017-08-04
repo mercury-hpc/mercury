@@ -92,6 +92,37 @@ hg_proc_header_response_finalize(struct hg_header_response *header)
 }
 
 /*---------------------------------------------------------------------------*/
+void
+hg_proc_header_request_reset(struct hg_header_request *header)
+{
+    header->hg = HG_IDENTIFIER;
+    header->protocol = HG_PROTOCOL_VERSION;
+    header->id = 0;
+    header->flags = 0;
+    header->cookie = 0; /* TODO not used for now */
+    header->crc16 = 0;
+    header->extra_in_handle = HG_BULK_NULL;
+#ifdef HG_HAS_CHECKSUMS
+    /* Create a new CRC16 checksum */
+    mchecksum_reset(header->checksum);
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_proc_header_response_reset(struct hg_header_response *header)
+{
+    header->flags = 0;
+    header->ret_code = 0;
+    header->cookie = 0;
+    header->crc16 = 0;
+#ifdef HG_HAS_CHECKSUMS
+    /* Create a new CRC16 checksum */
+    mchecksum_reset(header->checksum);
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 hg_proc_header_request(void *buf, size_t buf_size,
     struct hg_header_request *header, hg_proc_op_t op, hg_class_t *hg_class,

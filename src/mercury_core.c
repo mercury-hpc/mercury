@@ -1540,8 +1540,8 @@ hg_core_reset(struct hg_handle *hg_handle)
     hg_handle->extra_in_buf_size = 0;
     hg_handle->extra_in_op_id = HG_OP_ID_NULL;
 
-    hg_proc_header_request_init(&hg_handle->in_header);
-    hg_proc_header_response_init(&hg_handle->out_header);
+    hg_proc_header_request_reset(&hg_handle->in_header);
+    hg_proc_header_response_reset(&hg_handle->out_header);
 
     return HG_SUCCESS;
 }
