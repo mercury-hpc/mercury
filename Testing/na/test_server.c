@@ -55,7 +55,8 @@ msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
-    printf("Received msg (%s)\n", params->recv_buf);
+    printf("Received msg (%s)\n", params->recv_buf +
+        NA_Msg_get_unexpected_header_size(params->na_class));
 
     params->source_addr = callback_info->info.recv_unexpected.source;
     recv_tag = callback_info->info.recv_unexpected.tag;

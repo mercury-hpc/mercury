@@ -207,7 +207,7 @@ static int
 test_send(struct na_test_params *params)
 {
     na_tag_t send_tag = NA_TEST_SEND_TAG;
-    na_op_id_t op_id;
+    na_op_id_t op_id = NA_OP_ID_NULL;
     na_return_t na_ret;
 
     /* Send a message to addr */
@@ -240,6 +240,7 @@ test_send(struct na_test_params *params)
     }
 
     /* Try to cancel unexpected send */
+    op_id = NA_OP_ID_NULL;
     na_ret = NA_Msg_send_unexpected(params->na_class, params->context,
         msg_unexpected_send_cb, params, params->send_buf, params->send_buf_len,
         params->send_buf_plugin_data, params->server_addr, send_tag, &op_id);

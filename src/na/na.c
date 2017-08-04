@@ -102,6 +102,9 @@ extern na_class_t na_mpi_class_g;
 #ifdef NA_HAS_CCI
 extern na_class_t na_cci_class_g;
 #endif
+#ifdef NA_HAS_OFI
+extern na_class_t na_ofi_class_g;
+#endif
 
 static const na_class_t *na_class_table[] = {
 #ifdef NA_HAS_SM
@@ -115,6 +118,9 @@ static const na_class_t *na_class_table[] = {
 #endif
 #ifdef NA_HAS_CCI
     &na_cci_class_g,
+#endif
+#ifdef NA_HAS_OFI
+    &na_ofi_class_g,
 #endif
     NULL
 };

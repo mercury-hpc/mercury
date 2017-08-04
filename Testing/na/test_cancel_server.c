@@ -346,7 +346,7 @@ main(int argc, char *argv[])
 
     for (peer = 0; peer < number_of_peers; peer++) {
         unsigned int i;
-        na_op_id_t op_id;
+        na_op_id_t op_id = NA_OP_ID_NULL;
 
         /* Reset to 0 */
         for (i = 0; i < params.bulk_size; i++) {

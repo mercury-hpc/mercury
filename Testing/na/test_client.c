@@ -94,7 +94,8 @@ msg_unexpected_send_cb(const struct na_cb_info *callback_info)
         return ret;
     }
 
-    printf("Sent msg (%s)\n", params->send_buf);
+    printf("Sent msg (%s)\n", params->send_buf +
+        NA_Msg_get_unexpected_header_size(params->na_class));
 
     test_msg_send_done_g = 1;
     if (test_msg_recv_done_g && test_msg_send_done_g) {
@@ -157,7 +158,10 @@ test_msg_forward(struct na_test_params *params)
     int ret = EXIT_SUCCESS;
 
     /* Send a message to addr */
-    sprintf(params->send_buf, "Hello Server!");
+    NA_Msg_init_unexpected(params->na_class, params->send_buf,
+        params->send_buf_len);
+    sprintf(params->send_buf +
+        NA_Msg_get_unexpected_header_size(params->na_class), "Hello Server!");
 
     /* Preposting response */
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
