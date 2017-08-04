@@ -383,6 +383,24 @@ hg_core_destroy(
         );
 
 /**
+ * Reset handle.
+ */
+static hg_return_t
+hg_core_reset(
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Set target addr / RPC ID
+ */
+static hg_return_t
+hg_core_set_rpc(
+        struct hg_handle *hg_handle,
+        hg_addr_t addr,
+        hg_id_t id
+        );
+
+/**
  * Set private data.
  */
 void
@@ -1494,6 +1512,83 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_reset(struct hg_handle *hg_handle)
+{
+    /* Reset source address */
+    if (hg_handle->hg_info.addr != HG_ADDR_NULL
+        && hg_handle->hg_info.addr->na_addr != NA_ADDR_NULL) {
+        NA_Addr_free(hg_handle->hg_info.hg_class->na_class,
+            hg_handle->hg_info.addr->na_addr);
+        hg_handle->hg_info.addr->na_addr = NA_ADDR_NULL;
+    }
+    hg_handle->hg_info.id = 0;
+    hg_handle->hg_info.target_id = 0;
+    hg_handle->callback = NULL;
+    hg_handle->arg = NULL;
+    hg_handle->cb_type = 0;
+    hg_handle->tag = 0;
+    hg_handle->cookie = 0;
+    hg_handle->ret = HG_SUCCESS;
+    hg_handle->in_buf_used = 0;
+    hg_handle->out_buf_used = 0;
+    hg_atomic_set32(&hg_handle->na_completed_count, 0);
+    if (hg_handle->extra_in_buf) {
+        free(hg_handle->extra_in_buf);
+        hg_handle->extra_in_buf = NULL;
+    }
+    hg_handle->extra_in_buf_size = 0;
+    hg_handle->extra_in_op_id = HG_OP_ID_NULL;
+
+    hg_proc_header_request_init(&hg_handle->in_header);
+    hg_proc_header_response_init(&hg_handle->out_header);
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_set_rpc(struct hg_handle *hg_handle, hg_addr_t addr, hg_id_t id)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    /* We allow for NULL addr to be passed at creation time, this allows
+     * for pool of handles to be created and later re-used after a call to
+     * HG_Core_reset() */
+    if (addr != HG_ADDR_NULL) {
+        hg_handle->hg_info.addr = addr;
+        hg_atomic_incr32(&addr->ref_count); /* Increase ref to addr */
+    }
+
+    /* We also allow for NULL RPC id to be passed (same reason as above) */
+    if (id) {
+        struct hg_rpc_info *hg_rpc_info;
+        hg_context_t *context = hg_handle->hg_info.context;
+        hg_handle->hg_info.id = id;
+
+        /* Retrieve ID function from function map */
+        hg_thread_spin_lock(&context->hg_class->func_map_lock);
+        hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
+            context->hg_class->func_map, (hg_hash_table_key_t) &id);
+        hg_thread_spin_unlock(&context->hg_class->func_map_lock);
+        if (!hg_rpc_info) {
+            HG_LOG_ERROR("Could not find RPC ID in function map");
+            ret = HG_NO_MATCH;
+            goto done;
+        }
+
+        /* Cache RPC info */
+        hg_handle->hg_rpc_info = hg_rpc_info;
+
+        /* Copy no response flag */
+        hg_handle->no_response = hg_rpc_info->no_response;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 void
 hg_core_set_private_data(struct hg_handle *hg_handle, void *private_data,
     void (*private_free_callback)(void *))
@@ -2192,32 +2287,16 @@ hg_core_reset_post(struct hg_handle *hg_handle)
     if (hg_atomic_decr32(&hg_handle->ref_count))
         goto done;
 
-    /* Reset source address */
-    if (hg_handle->hg_info.addr->na_addr != NA_ADDR_NULL) {
-        NA_Addr_free(hg_handle->hg_info.hg_class->na_class,
-            hg_handle->hg_info.addr->na_addr);
-        hg_handle->hg_info.addr->na_addr = NA_ADDR_NULL;
+    ret = hg_core_reset(hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Cannot reset handle");
+        goto done;
     }
-    hg_handle->hg_info.id = 0;
-    hg_handle->hg_info.target_id = 0;
-    hg_handle->callback = NULL;
-    hg_handle->arg = NULL;
-    hg_handle->cb_type = 0;
-    hg_handle->tag = 0;
-    hg_handle->cookie = 0;
-    hg_handle->ret = HG_SUCCESS;
-    hg_handle->in_buf_used = 0;
-    hg_handle->out_buf_used = 0;
-    hg_atomic_set32(&hg_handle->na_completed_count, 0);
+    /* Also reset additional handle parameters */
     hg_atomic_set32(&hg_handle->ref_count, 1);
-    if (hg_handle->extra_in_buf) {
-        free(hg_handle->extra_in_buf);
-        hg_handle->extra_in_buf = NULL;
-    }
-    hg_handle->extra_in_buf_size = 0;
-    hg_handle->extra_in_op_id = HG_OP_ID_NULL;
     hg_handle->hg_rpc_info = NULL;
     hg_handle->no_response = HG_FALSE;
+
 
     /* Safe to repost */
     ret = hg_core_post(hg_handle);
@@ -3492,16 +3571,10 @@ HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle_t *handle)
 {
     struct hg_handle *hg_handle = NULL;
-    struct hg_rpc_info *hg_rpc_info;
     hg_return_t ret = HG_SUCCESS;
 
     if (!context) {
         HG_LOG_ERROR("NULL HG context");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (addr == HG_ADDR_NULL) {
-        HG_LOG_ERROR("NULL addr");
         ret = HG_INVALID_PARAM;
         goto done;
     }
@@ -3518,26 +3591,13 @@ HG_Core_create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-    hg_handle->hg_info.addr = addr;
-    hg_atomic_incr32(&addr->ref_count); /* Increase ref to addr */
-    hg_handle->hg_info.id = id;
 
-    /* Retrieve ID function from function map */
-    hg_thread_spin_lock(&context->hg_class->func_map_lock);
-    hg_rpc_info = (struct hg_rpc_info *) hg_hash_table_lookup(
-        context->hg_class->func_map, (hg_hash_table_key_t) &id);
-    hg_thread_spin_unlock(&context->hg_class->func_map_lock);
-    if (!hg_rpc_info) {
-        HG_LOG_ERROR("Could not find RPC ID in function map");
-        ret = HG_NO_MATCH;
+    /* Set addr / RPC ID */
+    ret = hg_core_set_rpc(hg_handle, addr, id);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not set rpc to handle");
         goto done;
     }
-
-    /* Cache RPC info */
-    hg_handle->hg_rpc_info = hg_rpc_info;
-
-    /* Copy no response flag */
-    hg_handle->no_response = hg_rpc_info->no_response;
 
     *handle = (hg_handle_t) hg_handle;
 
@@ -3571,6 +3631,43 @@ HG_Core_destroy(hg_handle_t handle)
         }
     } else
         hg_core_destroy(hg_handle);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_reset(hg_handle_t handle, hg_addr_t addr, hg_id_t id)
+{
+    struct hg_handle *hg_handle = (struct hg_handle *) handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    if (hg_atomic_get32(&hg_handle->ref_count) > 1) {
+        /* Not safe to reset
+         * TODO could add the ability to defer the reset operation */
+        HG_LOG_ERROR("Cannot reset HG handle, handle is still in use");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    ret = hg_core_reset(hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not reset HG handle");
+        goto done;
+    }
+
+    /* Set addr / RPC ID */
+    ret = hg_core_set_rpc(hg_handle, addr, id);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not set rpc to handle");
+        goto done;
+    }
 
 done:
     return ret;
@@ -3705,6 +3802,16 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
 
     if (!hg_handle) {
         HG_LOG_ERROR("NULL handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    if (hg_handle->hg_info.addr == HG_ADDR_NULL) {
+        HG_LOG_ERROR("NULL target addr");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    if (!hg_handle->hg_info.id) {
+        HG_LOG_ERROR("NULL RPC ID");
         ret = HG_INVALID_PARAM;
         goto done;
     }

@@ -1096,6 +1096,13 @@ HG_Destroy(hg_handle_t handle)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Reset(hg_handle_t handle, hg_addr_t addr, hg_id_t id)
+{
+    return HG_Core_reset(handle, addr, id);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Ref_incr(hg_handle_t handle)
 {
     return HG_Core_ref_incr(handle);

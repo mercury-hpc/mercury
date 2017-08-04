@@ -484,6 +484,25 @@ HG_Destroy(
         );
 
 /**
+ * Reset an existing HG handle to make it reusable for RPC forwarding.
+ * Both target address and RPC ID can be modified at this time.
+ * Operations on that handle must be completed in order to reset that handle
+ * safely.
+ *
+ * \param handle [IN]           HG handle
+ * \param addr [IN]             abstract network address of destination
+ * \param id [IN]               registered function ID
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Reset(
+        hg_handle_t handle,
+        hg_addr_t addr,
+        hg_id_t id
+        );
+
+/**
  * Increment ref count on handle.
  *
  * \param handle [IN]           HG handle

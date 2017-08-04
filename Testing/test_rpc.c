@@ -117,9 +117,14 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
     request = hg_request_create(request_class);
 
     /* Create request with invalid RPC id */
-    hg_ret = HG_Create(context, addr, rpc_id, &handle);
+    hg_ret = HG_Create(context, HG_ADDR_NULL, 0, &handle);
     if (hg_ret != HG_SUCCESS) {
         HG_TEST_LOG_ERROR("Could not create handle");
+        goto done;
+    }
+    hg_ret = HG_Reset(handle, addr, rpc_id);
+    if (hg_ret != HG_SUCCESS) {
+        HG_TEST_LOG_ERROR("Could not reset handle");
         goto done;
     }
 
