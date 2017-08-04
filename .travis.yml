@@ -66,6 +66,7 @@ before_install:
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc" ]]; then brew install gcc; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install mpich; fi
+    - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install libfabric; fi
 
 install:
     - ./Testing/script/travis_build.sh
@@ -80,6 +81,7 @@ before_script:
     - ctest --version
     - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then cat /proc/sys/kernel/yama/ptrace_scope; fi
     - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ulimit -a; fi
+    - fi_info
 
 script:
     - ctest -VV --output-on-failure -S ./Testing/script/travis_script.cmake
