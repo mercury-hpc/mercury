@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 /****************/
 /* Local Macros */
@@ -29,9 +30,9 @@
 /* Max addr name */
 #define NA_BMI_MAX_ADDR_NAME 256
 
-/* Default host/port */
-#define NA_BMI_DEFAULT_HOST "localhost"
+/* Default port */
 #define NA_BMI_DEFAULT_PORT 22222
+#define NA_BMI_DEFAULT_PORT_TRIES 128
 
 /* Msg sizes */
 #define NA_BMI_UNEXPECTED_SIZE 4096
@@ -644,8 +645,10 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
 {
     char method_list[NA_BMI_MAX_ADDR_NAME];
     char listen_addr[NA_BMI_MAX_ADDR_NAME];
+    char my_hostname[NA_BMI_MAX_ADDR_NAME] = {0};
     int flag;
     na_return_t ret = NA_SUCCESS;
+    int i;
 
     flag = (listen) ? BMI_INIT_SERVER : 0;
 
@@ -659,19 +662,33 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
         if (na_info->host_name) {
             desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s",
                 na_info->protocol_name, na_info->host_name);
+            if (desc_len > NA_BMI_MAX_ADDR_NAME) {
+                NA_LOG_ERROR("Exceeding max addr name");
+                ret = NA_SIZE_ERROR;
+                goto done;
+            }
+            ret = na_bmi_init(na_class, method_list, listen_addr, flag);
         } else {
-            desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s:%d",
-                na_info->protocol_name, NA_BMI_DEFAULT_HOST, NA_BMI_DEFAULT_PORT);
-        }
-        if (desc_len > NA_BMI_MAX_ADDR_NAME) {
-            NA_LOG_ERROR("Exceeding max addr name");
-            ret = NA_SIZE_ERROR;
-            goto done;
+            /* Addr unspecified but we are in server mode; get local
+             * hostname and then cycle through range of ports until we find
+             * one that works.
+             */
+            ret = gethostname(my_hostname, NA_BMI_MAX_ADDR_NAME);
+            if(ret < 0)
+                sprintf(my_hostname, "localhost");
+
+            ret = NA_ADDRINUSE_ERROR;
+            for(i=0; (i<NA_BMI_DEFAULT_PORT_TRIES && ret == NA_ADDRINUSE_ERROR); i++) {
+                desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s:%d",
+                    na_info->protocol_name, my_hostname, i+NA_BMI_DEFAULT_PORT);
+                ret = na_bmi_init(na_class, method_list, listen_addr, flag);
+            }
         }
     }
+    else {
+        ret = na_bmi_init(na_class, NULL, NULL, flag);
+    }
 
-    ret = na_bmi_init(na_class, (listen) ? method_list : NULL,
-            (listen) ? listen_addr : NULL, flag);
 
 done:
     return ret;
@@ -700,23 +717,29 @@ na_bmi_init(na_class_t *na_class, const char *method_list,
     bmi_ret = BMI_initialize(method_list, listen_addr, flags);
     if (bmi_ret < 0) {
         NA_LOG_ERROR("BMI_initialize() failed");
-        ret = NA_PROTOCOL_ERROR;
+        if(bmi_ret == -BMI_EADDRINUSE)
+            ret = NA_ADDRINUSE_ERROR;
+        else
+            ret = NA_PROTOCOL_ERROR;
         goto done;
     }
 
-    /* Initialize mutex/cond */
-    hg_thread_mutex_init(&NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
-    hg_thread_mutex_init(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
-    hg_thread_mutex_init(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
-
-    /* Initialize atomic op */
-    hg_atomic_set32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag, NA_BMI_RMA_TAG);
-
 done:
     if (ret != NA_SUCCESS) {
-        na_bmi_finalize(na_class);
+        free(NA_BMI_PRIVATE_DATA(na_class)->listen_addr);
+        free(na_class->private_data);
+    }
+    else
+    {
+        /* Initialize mutex/cond */
+        hg_thread_mutex_init(&NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
+        hg_thread_mutex_init(
+                &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+        hg_thread_mutex_init(
+                &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+
+        /* Initialize atomic op */
+        hg_atomic_set32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag, NA_BMI_RMA_TAG);
     }
 
     return ret;

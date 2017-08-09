@@ -1970,6 +1970,7 @@ NA_Error_to_string(na_return_t errnum)
     NA_ERROR_STRING_MACRO(NA_PERMISSION_ERROR, errnum, na_error_string);
     NA_ERROR_STRING_MACRO(NA_NOMEM_ERROR, errnum, na_error_string);
     NA_ERROR_STRING_MACRO(NA_PROTOCOL_ERROR, errnum, na_error_string);
+    NA_ERROR_STRING_MACRO(NA_ADDRINUSE_ERROR, errnum, na_error_string);
 
     return na_error_string;
 }
