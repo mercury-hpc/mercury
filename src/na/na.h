@@ -46,7 +46,8 @@ typedef enum na_return {
     NA_PERMISSION_ERROR,    /*!< read/write permission error */
     NA_NOMEM_ERROR,         /*!< no memory error */
     NA_PROTOCOL_ERROR,      /*!< unknown error reported from the protocol layer */
-    NA_CANCELED             /*!< operation was canceled */
+    NA_CANCELED,            /*!< operation was canceled */
+    NA_ADDRINUSE_ERROR      /*!< address already in use */
 } na_return_t;
 
 /* Callback operation type */
