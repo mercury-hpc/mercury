@@ -292,7 +292,8 @@ na_ofi_with_reqhdr(const na_class_t *na_class)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
 
-    return domain->nod_prov_type != NA_OFI_PROV_PSM2;
+    return (domain->nod_prov_type != NA_OFI_PROV_PSM2)
+        && (domain->nod_prov_type != NA_OFI_PROV_GNI);
 }
 
 /**
@@ -1047,7 +1048,7 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
         /* sockets provider without MR_BASIC supporting */
         na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_SCALABLE;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_SCALABLE;
-#if defined(FI_SOURCE_ERR)
+#if FI_MINOR_VERSION >= 5
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_PSM2_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_PSM2;
         na_ofi_domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
@@ -1062,6 +1063,7 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_GNI_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
 #if FI_MINOR_VERSION >= 5
+        na_ofi_domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
         na_ofi_domain->nod_prov->domain_attr->mr_mode =
             FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY;
 #else
