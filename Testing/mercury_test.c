@@ -368,6 +368,9 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
     size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
     hg_return_t ret;
 
+    /* Call cleanup before doing anything */
+    HG_Cleanup();
+
     hg_test_na_class_g = NA_Test_server_init(argc, argv, NA_FALSE,
             &hg_test_addr_name_table_g, &hg_test_addr_table_size_g, max_number_of_peers);
 

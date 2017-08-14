@@ -150,6 +150,18 @@ NA_Finalize(
         );
 
 /**
+ * Clean up all temporary files that were created in previous NA instances.
+ * While temporary resources (e.g., tmp files) are cleaned up on a call
+ * to NA_Finalize(), this routine gives a chance to programs that terminate
+ * abnormally to easily clean up those resources. This includes instances
+ * from all plugins.
+ */
+NA_EXPORT void
+NA_Cleanup(
+        void
+        );
+
+/**
  * Return the name of the NA class.
  *
  * \param na_class [IN]         pointer to NA class

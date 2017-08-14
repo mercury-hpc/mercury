@@ -409,6 +409,22 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+void
+NA_Cleanup(void)
+{
+    unsigned int plugin_count =
+        sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
+    unsigned int i;
+
+    for (i = 0; i < plugin_count; i++) {
+        if (!na_class_table[i]->cleanup)
+            continue;
+
+        na_class_table[i]->cleanup();
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 const char *
 NA_Get_class_name(const na_class_t *na_class)
 {

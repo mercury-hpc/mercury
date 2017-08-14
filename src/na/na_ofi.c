@@ -702,6 +702,7 @@ const na_class_t na_ofi_class_g = {
     na_ofi_check_protocol,                  /* check_protocol */
     na_ofi_initialize,                      /* initialize */
     na_ofi_finalize,                        /* finalize */
+    NULL,                                   /* cleanup */
     NULL,                                   /* check_feature */
     NULL,                                   /* context_create */
     NULL,                                   /* context_destroy */

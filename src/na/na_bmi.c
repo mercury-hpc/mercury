@@ -525,6 +525,7 @@ const na_class_t na_bmi_class_g = {
         na_bmi_check_protocol,                /* check_protocol */
         na_bmi_initialize,                    /* initialize */
         na_bmi_finalize,                      /* finalize */
+        NULL,                                 /* cleanup */
         NULL,                                 /* check_feature */
         na_bmi_context_create,                /* context_create */
         na_bmi_context_destroy,               /* context_destroy */

@@ -739,6 +739,13 @@ HG_Finalize(hg_class_t *hg_class)
 }
 
 /*---------------------------------------------------------------------------*/
+void
+HG_Cleanup(void)
+{
+    HG_Core_cleanup();
+}
+
+/*---------------------------------------------------------------------------*/
 const char *
 HG_Class_get_name(const hg_class_t *hg_class)
 {

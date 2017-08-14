@@ -539,6 +539,7 @@ const na_class_t na_mpi_class_g = {
         na_mpi_check_protocol,                /* check_protocol */
         na_mpi_initialize,                    /* initialize */
         na_mpi_finalize,                      /* finalize */
+        NULL,                                 /* cleanup */
         NULL,                                 /* check_feature */
         NULL,                                 /* context_create */
         NULL,                                 /* context_destroy */

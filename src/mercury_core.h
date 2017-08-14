@@ -66,6 +66,17 @@ HG_Core_finalize(
         );
 
 /**
+ * Clean up all temporary files that were created in previous HG instances.
+ * While temporary resources (e.g., tmp files) are cleaned up on a call
+ * to HG_Finalize(), this routine gives a chance to programs that terminate
+ * abnormally to easily clean up those resources.
+ */
+HG_EXPORT void
+HG_Core_cleanup(
+        void
+        );
+
+/**
  * Obtain the name of the given class.
  *
  * \param hg_class [IN]         pointer to HG class

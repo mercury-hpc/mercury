@@ -64,6 +64,10 @@ struct na_class {
     (*finalize)(
             na_class_t *na_class
             );
+    void
+    (*cleanup)(
+            void
+            );
     na_bool_t
     (*check_feature)(
             na_class_t *na_class,

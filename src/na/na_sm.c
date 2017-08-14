@@ -32,6 +32,7 @@
 #ifdef _WIN32
 #include <process.h>
 #else
+#include <ftw.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/mman.h>
@@ -58,6 +59,7 @@
 #define NA_SM_RING_BUF_SIZE \
     (sizeof(struct na_sm_ring_buf) + NA_SM_NUM_BUFS * HG_ATOMIC_QUEUE_ELT_SIZE)
 #define NA_SM_COPY_BUF_SIZE     4096
+#define NA_SM_CLEANUP_NFDS      16
 
 #define NA_SM_LISTEN_BACKLOG    64
 #define NA_SM_ACCEPT_INTERVAL   100 /* 100 ms */
@@ -81,6 +83,9 @@
 #define NA_SM_MSGHDR_INITIALIZER {NULL, 0, NULL, 0, NULL, 0, 0}
 
 /* Default filenames/paths */
+#define NA_SM_SOCK_PATH NA_SM_TMP_DIRECTORY "/" NA_SM_SHM_PREFIX
+#define NA_SM_SHM_PATH "/dev/shm"
+
 #define NA_SM_GEN_SHM_NAME(filename, na_sm_addr)        \
     do {                                                \
         sprintf(filename, "%s-%d-%u", NA_SM_SHM_PREFIX, \
@@ -316,6 +321,28 @@ static na_return_t
 na_sm_close_sock(
     int sock,
     const char *pathname
+    );
+
+/**
+ * Clean up file.
+ */
+static int
+na_sm_cleanup_file(
+    const char *fpath,
+    const struct stat *sb,
+    int typeflag,
+    struct FTW *ftwbuf
+    );
+
+/**
+ * Clean up shm segment.
+ */
+static int
+na_sm_cleanup_shm(
+    const char *fpath,
+    const struct stat *sb,
+    int typeflag,
+    struct FTW *ftwbuf
     );
 
 #ifndef HG_UTIL_HAS_SYSEVENTFD_H
@@ -575,6 +602,12 @@ na_sm_initialize(
 static na_return_t
 na_sm_finalize(
     na_class_t *na_class
+    );
+
+/* cleanup */
+static void
+na_sm_cleanup(
+    void
     );
 
 /* check_feature */
@@ -849,6 +882,7 @@ const na_class_t na_sm_class_g = {
     na_sm_check_protocol,                   /* check_protocol */
     na_sm_initialize,                       /* initialize */
     na_sm_finalize,                         /* finalize */
+    na_sm_cleanup,                          /* cleanup */
     na_sm_check_feature,                    /* check_feature */
     NULL,                                   /* context_create */
     NULL,                                   /* context_destroy */
@@ -1085,6 +1119,30 @@ na_sm_close_sock(int sock, const char *pathname)
     }
 
 done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_sm_cleanup_file(const char *fpath, const struct stat NA_UNUSED *sb,
+    int NA_UNUSED typeflag, struct FTW NA_UNUSED *ftwbuf)
+{
+    return remove(fpath);
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_sm_cleanup_shm(const char *fpath, const struct stat NA_UNUSED *sb,
+    int NA_UNUSED typeflag, struct FTW NA_UNUSED *ftwbuf)
+{
+    const char *prefix = NA_SM_SHM_PATH "/" NA_SM_SHM_PREFIX;
+    int ret = 0;
+
+    if (strncmp(fpath, prefix, strlen(prefix)) == 0) {
+        const char *file = fpath + strlen(NA_SM_SHM_PATH "/");
+        ret = hg_mem_shm_unmap(file, NULL, 0);
+    }
+
     return ret;
 }
 
@@ -2561,6 +2619,27 @@ na_sm_finalize(na_class_t *na_class)
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_sm_cleanup(void)
+{
+    int ret;
+
+    /* We need to remove all files first before being able to remove the
+     * directories */
+    ret = nftw(NA_SM_SOCK_PATH, na_sm_cleanup_file, NA_SM_CLEANUP_NFDS,
+        FTW_PHYS | FTW_DEPTH);
+    if (ret != 0 && errno != ENOENT) {
+        NA_LOG_WARNING("nftw() failed (%s)", strerror(errno));
+    }
+
+    ret = nftw(NA_SM_SHM_PATH, na_sm_cleanup_shm, NA_SM_CLEANUP_NFDS,
+        FTW_PHYS);
+    if (ret != 0 && errno != ENOENT) {
+        NA_LOG_WARNING("nftw() failed (%s)", strerror(errno));
+    }
 }
 
 /*---------------------------------------------------------------------------*/

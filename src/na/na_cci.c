@@ -365,6 +365,7 @@ const na_class_t na_cci_class_g = {
     na_cci_check_protocol,                  /* check_protocol */
     na_cci_initialize,                      /* initialize */
     na_cci_finalize,                        /* finalize */
+    NULL,                                   /* cleanup */
     NULL,                                   /* check_feature */
     NULL,                                   /* context_create */
     NULL,                                   /* context_destroy */
