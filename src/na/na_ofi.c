@@ -2198,8 +2198,10 @@ static void *
 na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+#if FI_MINOR_VERSION >= 5
     struct na_ofi_endpoint *endpoint =
         NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint;
+#endif
     na_size_t page_size = (na_size_t) hg_mem_get_page_size();
     void *mem_ptr = NULL;
     struct fid_mr *mr_hdl = NULL;
@@ -2212,8 +2214,10 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
         .offset = 0,
         .requested_key = 0,
         .context = NULL,
+#if FI_MINOR_VERSION >= 5
         .auth_key = NULL,
         .auth_key_size = 0,
+#endif
        };
     int rc;
 
@@ -2230,10 +2234,12 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
     attr.requested_key = (uint64_t) mem_ptr;
 
     /* If auth key, register memory with new authorization key */
+#if FI_MINOR_VERSION >= 5
     if (endpoint->noe_auth_key) {
         attr.auth_key = (uint8_t *) endpoint->noe_auth_key;
         attr.auth_key_size = endpoint->noe_auth_key_size;
     }
+#endif
 
     rc = fi_mr_regattr(domain->nod_domain, &attr, 0, &mr_hdl);
     if (rc != 0) {
@@ -2670,8 +2676,10 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+#if FI_MINOR_VERSION >= 5
     struct na_ofi_endpoint *endpoint =
         NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint;
+#endif
     na_uint64_t access;
     struct iovec mr_iov = {0};
     struct fi_mr_attr attr = {
@@ -2681,8 +2689,10 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         .offset = 0,
         .requested_key = 0,
         .context = NULL,
+#if FI_MINOR_VERSION >= 5
         .auth_key = NULL,
         .auth_key_size = 0,
+#endif
        };
     int rc = 0;
     na_return_t ret = NA_SUCCESS;
@@ -2714,10 +2724,12 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     mr_iov.iov_len = (size_t) na_ofi_mem_handle->nom_size;
 
     /* If auth key, register memory with new authorization key */
+#if FI_MINOR_VERSION >= 5
     if (endpoint->noe_auth_key) {
         attr.auth_key = (uint8_t *) endpoint->noe_auth_key;
         attr.auth_key_size = endpoint->noe_auth_key_size;
     }
+#endif
 
     rc = fi_mr_regattr(domain->nod_domain, &attr, 0,
         &na_ofi_mem_handle->nom_mr_hdl);
