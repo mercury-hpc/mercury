@@ -37,6 +37,7 @@
 #define HG_NA_PLUGIN "MERCURY_NA_PLUGIN"
 #define HG_PORT_NAME "MERCURY_PORT_NAME"
 
+/* Build Options */
 #cmakedefine HG_HAS_BOOST
 #cmakedefine HG_HAS_CHECKSUMS
 #ifdef HG_HAS_CHECKSUMS
@@ -47,6 +48,8 @@
 #cmakedefine HG_HAS_SELF_FORWARD
 #cmakedefine HG_HAS_EAGER_BULK
 #cmakedefine HG_HAS_XDR
+#cmakedefine HG_HAS_POST_LIMIT
+#define HG_POST_LIMIT @MERCURY_POST_LIMIT@
 
 #cmakedefine HG_HAS_VERBOSE_ERROR
 

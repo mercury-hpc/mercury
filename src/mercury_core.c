@@ -40,7 +40,8 @@
 
 #define HG_CORE_MAX_SELF_THREADS    4
 #define HG_CORE_MASK_NBITS          8
-#define HG_CORE_ATOMIC_QUEUE_SIZE 1024
+#define HG_CORE_ATOMIC_QUEUE_SIZE   1024
+#define HG_CORE_PENDING_INCR        256
 
 /* Remove warnings when routine does not use arguments */
 #if defined(__cplusplus)
@@ -1823,6 +1824,10 @@ static int
 hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
+    struct hg_context *hg_context = hg_handle->hg_info.context;
+#ifndef HG_HAS_POST_LIMIT
+    hg_bool_t pending_empty = NA_FALSE;
+#endif
     na_return_t na_ret = NA_SUCCESS;
     int ret = 0;
 
@@ -1858,14 +1863,26 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
             callback_info->info.recv_unexpected.actual_buf_size;
 
         /* Move handle from pending list to processing list */
-        hg_thread_spin_lock(&hg_handle->hg_info.context->pending_list_lock);
+        hg_thread_spin_lock(&hg_context->pending_list_lock);
         HG_LIST_REMOVE(hg_handle, entry);
-        hg_thread_spin_unlock(&hg_handle->hg_info.context->pending_list_lock);
+#ifndef HG_HAS_POST_LIMIT
+        pending_empty = HG_LIST_IS_EMPTY(&hg_context->pending_list);
+#endif
+        hg_thread_spin_unlock(&hg_context->pending_list_lock);
 
-        hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
-        HG_LIST_INSERT_HEAD(&hg_handle->hg_info.context->processing_list,
-            hg_handle, entry);
-        hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
+        hg_thread_spin_lock(&hg_context->processing_list_lock);
+        HG_LIST_INSERT_HEAD(&hg_context->processing_list, hg_handle, entry);
+        hg_thread_spin_unlock(&hg_context->processing_list_lock);
+
+#ifndef HG_HAS_POST_LIMIT
+        /* If pending list is empty, post more handles */
+        if (pending_empty
+            && hg_core_context_post(hg_context, HG_CORE_PENDING_INCR,
+                hg_handle->repost) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not post additional handles");
+            goto done;
+        }
+#endif
 
         /* Get and verify header */
         if (hg_core_proc_header_request(hg_handle, &hg_handle->in_header,
@@ -2200,17 +2217,8 @@ static hg_return_t
 hg_core_context_post(struct hg_context *context, unsigned int request_count,
     hg_bool_t repost)
 {
-    hg_bool_t pending_list_empty = HG_FALSE;
     unsigned int nentry = 0;
     hg_return_t ret = HG_SUCCESS;
-
-    hg_thread_spin_lock(&context->pending_list_lock);
-    pending_list_empty = HG_LIST_IS_EMPTY(&context->pending_list);
-    hg_thread_spin_unlock(&context->pending_list_lock);
-    if (!pending_list_empty) {
-        /* Just leave */
-        goto done;
-    }
 
     /* Create a bunch of handles and post unexpected receives */
     for (nentry = 0; nentry < request_count; nentry++) {

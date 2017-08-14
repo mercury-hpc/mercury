@@ -21,7 +21,7 @@
 /* Local Macros */
 /****************/
 
-#define HG_MAX_UNEXPECTED_RECV 256 /* TODO Variable */
+#define HG_POST_LIMIT_DEFAULT 256
 
 /* Convert value to string */
 #define HG_ERROR_STRING_MACRO(def, value, string) \
@@ -793,6 +793,12 @@ hg_context_t *
 HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t target_id)
 {
     hg_context_t *context = NULL;
+#ifdef HG_POST_LIMIT
+    unsigned int request_count =
+        (HG_POST_LIMIT > 0) ? HG_POST_LIMIT : HG_POST_LIMIT_DEFAULT;
+#else
+    unsigned int request_count = HG_POST_LIMIT_DEFAULT;
+#endif
     hg_return_t ret;
 
     context = HG_Core_context_create(hg_class);
@@ -810,7 +816,7 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t target_id)
 
     /* If we are listening, start posting requests */
     if (NA_Is_listening(HG_Core_class_get_na(hg_class))) {
-        ret = HG_Core_context_post(context, HG_MAX_UNEXPECTED_RECV, HG_TRUE);
+        ret = HG_Core_context_post(context, request_count, HG_TRUE);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not post context requests");
             goto done;
