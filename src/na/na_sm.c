@@ -2043,7 +2043,7 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
         case NA_SM_CONN_ID: {
             char filename[NA_SM_MAX_FILENAME];
             struct na_sm_ring_buf *na_sm_ring_buf;
-            struct na_sm_op_id *na_sm_op_id;
+            struct na_sm_op_id *na_sm_op_id = NULL;
             na_bool_t received = NA_FALSE;
 
             /* Receive connection ID / event IDs */
@@ -2058,6 +2058,28 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
                 goto done;
             }
             poll_addr->sock_progress = NA_SM_SOCK_DONE;
+
+            /* Find op ID that corresponds to addr */
+            hg_thread_spin_lock(
+                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
+            HG_QUEUE_FOREACH(na_sm_op_id,
+                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue, entry) {
+                if (na_sm_op_id->info.lookup.na_sm_addr == poll_addr) {
+                    HG_QUEUE_REMOVE(
+                        &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue,
+                        na_sm_op_id, na_sm_op_id, entry);
+                    break;
+                }
+            }
+            hg_thread_spin_unlock(
+                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
+
+            if (!na_sm_op_id) {
+                NA_LOG_ERROR("Could not find lookup op ID, conn ID=%u, PID=%u",
+                    poll_addr->conn_id, (unsigned int) poll_addr->pid);
+                ret = NA_PROTOCOL_ERROR;
+                goto done;
+            }
 
             /* Open remote ring buf pair (send and recv names correspond to
              * remote ring buffer pair) */
@@ -2095,27 +2117,6 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
                 poll_addr, poll_entry);
             hg_thread_spin_unlock(
                 &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-
-            /* Find op ID that corresponds to addr */
-            hg_thread_spin_lock(
-                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
-            HG_QUEUE_FOREACH(na_sm_op_id,
-                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue, entry) {
-                if (na_sm_op_id->info.lookup.na_sm_addr == poll_addr) {
-                    HG_QUEUE_REMOVE(
-                        &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue,
-                        na_sm_op_id, na_sm_op_id, entry);
-                    break;
-                }
-            }
-            hg_thread_spin_unlock(
-                &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
-
-            if (!na_sm_op_id) {
-                NA_LOG_ERROR("Could not find lookup op ID");
-                ret = NA_PROTOCOL_ERROR;
-                goto done;
-            }
 
             /* Completion */
             ret = na_sm_complete(na_sm_op_id);
@@ -2730,8 +2731,8 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_sm_op_id->completion_data.callback_info.type = NA_CB_LOOKUP;
     na_sm_op_id->completion_data.callback = callback;
     na_sm_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_init32(&na_sm_op_id->completed, NA_FALSE);
-    hg_atomic_init32(&na_sm_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
     /* Allocate addr */
     na_sm_addr = (struct na_sm_addr *) malloc(sizeof(struct na_sm_addr));
@@ -2742,6 +2743,7 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
     }
     memset(na_sm_addr, 0, sizeof(struct na_sm_addr));
     hg_atomic_init32(&na_sm_addr->ref_count, 1);
+    na_sm_op_id->info.lookup.na_sm_addr = na_sm_addr;
 
     /**
      * Clean up name, strings can be of the format:
@@ -2784,18 +2786,6 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
     /* We only need to receive conn ID in sock progress */
     na_sm_addr->sock_progress = NA_SM_CONN_ID;
 
-    /* Add conn_sock to poll set */
-    ret = na_sm_poll_register(na_class, NA_SM_SOCK, na_sm_addr);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add conn_sock to poll set");
-        goto done;
-    }
-    na_sm_op_id->info.lookup.na_sm_addr = na_sm_addr;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = na_sm_op_id;
-
     /* Push op ID to lookup op queue */
     hg_thread_spin_lock(
         &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
@@ -2803,6 +2793,17 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
         na_sm_op_id, entry);
     hg_thread_spin_unlock(
         &NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue_lock);
+
+    /* Assign op_id */
+    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+        *op_id = na_sm_op_id;
+
+    /* Add conn_sock to poll set */
+    ret = na_sm_poll_register(na_class, NA_SM_SOCK, na_sm_addr);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("Could not add conn_sock to poll set");
+        goto done;
+    }
 
     /* Send addr info (PID / ID) */
     ret = na_sm_send_addr_info(na_class, na_sm_addr);
@@ -3108,8 +3109,8 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_sm_op_id->completion_data.callback_info.type = NA_CB_SEND_UNEXPECTED;
     na_sm_op_id->completion_data.callback = callback;
     na_sm_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_init32(&na_sm_op_id->completed, NA_FALSE);
-    hg_atomic_init32(&na_sm_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
@@ -3179,8 +3180,8 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_sm_op_id->completion_data.callback_info.type = NA_CB_RECV_UNEXPECTED;
     na_sm_op_id->completion_data.callback = callback;
     na_sm_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_init32(&na_sm_op_id->completed, NA_FALSE);
-    hg_atomic_init32(&na_sm_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
     na_sm_op_id->info.recv_unexpected.buf = buf;
     na_sm_op_id->info.recv_unexpected.buf_size = buf_size;
     na_sm_op_id->info.recv_unexpected.unexpected_info.na_sm_addr = NULL;
@@ -3259,8 +3260,8 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_sm_op_id->completion_data.callback_info.type = NA_CB_SEND_EXPECTED;
     na_sm_op_id->completion_data.callback = callback;
     na_sm_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_init32(&na_sm_op_id->completed, NA_FALSE);
-    hg_atomic_init32(&na_sm_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
@@ -3330,8 +3331,8 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_sm_op_id->completion_data.callback_info.type = NA_CB_RECV_EXPECTED;
     na_sm_op_id->completion_data.callback = callback;
     na_sm_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_init32(&na_sm_op_id->completed, NA_FALSE);
-    hg_atomic_init32(&na_sm_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
     na_sm_op_id->info.recv_expected.buf = buf;
     na_sm_op_id->info.recv_expected.buf_size = buf_size;
     na_sm_op_id->info.recv_expected.na_sm_addr = (struct na_sm_addr *) source;
@@ -3625,8 +3626,8 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_sm_op_id->completion_data.callback_info.type = NA_CB_PUT;
     na_sm_op_id->completion_data.callback = callback;
     na_sm_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_init32(&na_sm_op_id->completed, NA_FALSE);
-    hg_atomic_init32(&na_sm_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
@@ -3777,8 +3778,8 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_sm_op_id->completion_data.callback_info.type = NA_CB_GET;
     na_sm_op_id->completion_data.callback = callback;
     na_sm_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_init32(&na_sm_op_id->completed, NA_FALSE);
-    hg_atomic_init32(&na_sm_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->completed, NA_FALSE);
+    hg_atomic_set32(&na_sm_op_id->canceled, NA_FALSE);
 
     /* Assign op_id */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
