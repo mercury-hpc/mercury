@@ -292,8 +292,7 @@ na_ofi_with_reqhdr(const na_class_t *na_class)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
 
-    return (domain->nod_prov_type != NA_OFI_PROV_PSM2)
-        && (domain->nod_prov_type != NA_OFI_PROV_GNI);
+    return domain->nod_prov_type != NA_OFI_PROV_PSM2;
 }
 
 /**
@@ -1063,7 +1062,6 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_GNI_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
 #if FI_MINOR_VERSION >= 5
-        na_ofi_domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
         na_ofi_domain->nod_prov->domain_attr->mr_mode =
             FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY;
 #else
