@@ -818,7 +818,7 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
     }
     hints->domain_attr->av_type       = FI_AV_MAP;
     hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
-#if FI_MINOR_VERSION >= 5
+#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
     hints->domain_attr->mr_mode       = ~(FI_MR_BASIC | FI_MR_SCALABLE);
 #else
     hints->domain_attr->mr_mode       = FI_MR_UNSPEC;
@@ -1047,7 +1047,7 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
         /* sockets provider without MR_BASIC supporting */
         na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_SCALABLE;
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_SCALABLE;
-#if FI_MINOR_VERSION >= 5
+#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_PSM2_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_PSM2;
         na_ofi_domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
@@ -1061,7 +1061,7 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
         na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_GNI_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
-#if FI_MINOR_VERSION >= 5
+#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
         na_ofi_domain->nod_prov->domain_attr->mr_mode =
             FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY;
 #else
@@ -1234,7 +1234,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
-    const char *node, const char *service, const char *auth_key,
+    const char *node, const char *service, const char NA_UNUSED *auth_key,
     struct na_ofi_endpoint **na_ofi_endpoint_p)
 {
     struct na_ofi_endpoint *na_ofi_endpoint;
@@ -1266,7 +1266,8 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
         goto out;
     }
 
-#ifdef NA_OFI_HAS_EXT_GNI_H
+#if defined(NA_OFI_HAS_EXT_GNI_H)
+    && FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
     if (auth_key) {
         if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
             struct fi_gni_auth_key fi_gni_auth_key;
@@ -2196,10 +2197,8 @@ static void *
 na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-#if FI_MINOR_VERSION >= 5
     struct na_ofi_endpoint *endpoint =
         NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint;
-#endif
     na_size_t page_size = (na_size_t) hg_mem_get_page_size();
     void *mem_ptr = NULL;
     struct fid_mr *mr_hdl = NULL;
@@ -2212,7 +2211,7 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
         .offset = 0,
         .requested_key = 0,
         .context = NULL,
-#if FI_MINOR_VERSION >= 5
+#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
         .auth_key = NULL,
         .auth_key_size = 0,
 #endif
@@ -2232,11 +2231,13 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
     attr.requested_key = (uint64_t) mem_ptr;
 
     /* If auth key, register memory with new authorization key */
-#if FI_MINOR_VERSION >= 5
+#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
     if (endpoint->noe_auth_key) {
         attr.auth_key = (uint8_t *) endpoint->noe_auth_key;
         attr.auth_key_size = endpoint->noe_auth_key_size;
     }
+#else
+    (void) endpoint;
 #endif
 
     rc = fi_mr_regattr(domain->nod_domain, &attr, 0, &mr_hdl);
@@ -2674,10 +2675,8 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-#if FI_MINOR_VERSION >= 5
     struct na_ofi_endpoint *endpoint =
         NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint;
-#endif
     na_uint64_t access;
     struct iovec mr_iov = {0};
     struct fi_mr_attr attr = {
@@ -2687,7 +2686,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         .offset = 0,
         .requested_key = 0,
         .context = NULL,
-#if FI_MINOR_VERSION >= 5
+#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
         .auth_key = NULL,
         .auth_key_size = 0,
 #endif
@@ -2722,11 +2721,13 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     mr_iov.iov_len = (size_t) na_ofi_mem_handle->nom_size;
 
     /* If auth key, register memory with new authorization key */
-#if FI_MINOR_VERSION >= 5
+#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
     if (endpoint->noe_auth_key) {
         attr.auth_key = (uint8_t *) endpoint->noe_auth_key;
         attr.auth_key_size = endpoint->noe_auth_key_size;
     }
+#else
+    (void) endpoint;
 #endif
 
     rc = fi_mr_regattr(domain->nod_domain, &attr, 0,
@@ -3226,23 +3227,21 @@ static na_return_t
 na_ofi_progress(na_class_t *na_class, na_context_t *context,
     unsigned int timeout)
 {
-    /* Convert timeout in ms into seconds */
-    double remaining = timeout / 1000.0;
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid_cq *cq_hdl = priv->nop_endpoint->noe_cq;
-    struct fid_av *av_hdl = priv->nop_domain->nod_av;
-    struct fid_wait *wait_hdl = priv->nop_endpoint->noe_wait;
+    /* Convert timeout in ms into seconds */
+    double remaining = timeout / 1000.0;
     na_return_t ret = NA_TIMEOUT;
 
     do {
+        struct fi_cq_tagged_entry cq_event[NA_OFI_CQ_EVENT_NUM];
+        fi_addr_t src_addr[NA_OFI_CQ_EVENT_NUM];
         ssize_t rc, i, event_num = 0;
         hg_time_t t1, t2;
-        fi_addr_t src_addr[NA_OFI_CQ_EVENT_NUM];
-        struct fi_cq_tagged_entry cq_event[NA_OFI_CQ_EVENT_NUM];
-        struct fi_cq_err_entry cq_err;
-        fi_addr_t tmp_addr;
 
         if (timeout) {
+            struct fid_wait *wait_hdl = priv->nop_endpoint->noe_wait;
+
             hg_time_get_current(&t1);
 
             if (wait_hdl) {
@@ -3259,10 +3258,10 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
         }
 
         na_ofi_class_lock(na_class);
-        if (na_ofi_with_reqhdr(na_class) == NA_FALSE)
+        if (na_ofi_with_reqhdr(na_class) == NA_FALSE) {
             rc = fi_cq_readfrom(cq_hdl, cq_event, NA_OFI_CQ_EVENT_NUM,
                                 src_addr);
-        else
+        } else
             rc = fi_cq_read(cq_hdl, cq_event, NA_OFI_CQ_EVENT_NUM);
         na_ofi_class_unlock(na_class);
         if (rc == -FI_EAGAIN) {
@@ -3274,9 +3273,12 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 break; /* Return NA_TIMEOUT */
             continue;
         } else if (rc == -FI_EAVAIL) {
-            /* error available */
+            struct fi_cq_err_entry cq_err;
+
             memset(&cq_err, 0, sizeof(cq_err));
+
             na_ofi_class_lock(na_class);
+            /* error available */
             rc = fi_cq_readerr(cq_hdl, &cq_err, 0 /* flags */);
             na_ofi_class_unlock(na_class);
             if (rc != 1) {
@@ -3296,12 +3298,15 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 */
                 continue;
             } else if (cq_err.err == FI_EADDRNOTAVAIL) {
+                struct fid_av *av_hdl = priv->nop_domain->nod_av;
+                fi_addr_t tmp_addr;
+
                 na_ofi_class_lock(na_class);
                 rc = fi_av_insert(av_hdl, cq_err.err_data, 1, &tmp_addr,
                                   0 /* flags */, NULL /* context */);
                 na_ofi_class_unlock(na_class);
                 if (rc < 0) {
-                    NA_LOG_ERROR("fi_av_insertsvc failed, rc: %d(%s).",
+                    NA_LOG_ERROR("fi_av_insert failed, rc: %d(%s).",
                                  rc, fi_strerror((int) -rc));
                     ret = NA_PROTOCOL_ERROR;
                     break;
@@ -3323,13 +3328,13 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                              cq_err.err, fi_strerror(cq_err.err),
                              cq_err.prov_errno,
                              fi_strerror(-cq_err.prov_errno));
-                rc = NA_PROTOCOL_ERROR;
+                ret = NA_PROTOCOL_ERROR;
                 break;
             }
         } else if (rc <= 0) {
             NA_LOG_ERROR("fi_cq_read(/_readfrom() failed, rc: %d(%s).",
                          rc, fi_strerror((int) -rc));
-            rc = NA_PROTOCOL_ERROR;
+            ret = NA_PROTOCOL_ERROR;
             break;
         } else {
             assert(rc > 0);
