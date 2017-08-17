@@ -1266,7 +1266,7 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
         goto out;
     }
 
-#if defined(NA_OFI_HAS_EXT_GNI_H)
+#if defined(NA_OFI_HAS_EXT_GNI_H) \
     && FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
     if (auth_key) {
         if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
