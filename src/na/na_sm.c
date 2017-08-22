@@ -2875,6 +2875,14 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
             goto done;
         }
 
+        /* Remove addr from poll addr queue */
+        hg_thread_spin_lock(
+            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
+        HG_QUEUE_REMOVE(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue,
+            na_sm_addr, na_sm_addr, poll_entry);
+        hg_thread_spin_unlock(
+            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
+
         if (na_sm_addr->accepted) { /* Create by accept */
             /* Get file names from ring bufs / events to delete files */
             sprintf(na_sm_send_ring_buf_name, "%s-%d-%d-%d-%s",
