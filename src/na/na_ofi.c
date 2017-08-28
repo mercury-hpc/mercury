@@ -421,8 +421,8 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, struct na_ofi_reqhdr *reqhdr,
                       fi_addr_t *src_addr)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-    na_uint64_t addr_key, *new_key;
-    fi_addr_t *fi_addr, tmp_addr, *new_value;
+    na_uint64_t addr_key, *new_key = NULL;
+    fi_addr_t *fi_addr, tmp_addr, *new_value = NULL;
     char *node, service[16];
     struct in_addr in;
     na_return_t ret = NA_SUCCESS;
@@ -477,6 +477,8 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, struct na_ofi_reqhdr *reqhdr,
     new_value = (fi_addr_t *)malloc(sizeof(*new_value));
     if (new_key == NULL || new_value == NULL) {
         NA_LOG_ERROR("cannot allocate memory for new_key/new_value.");
+        free(new_key);
+        free(new_value);
         ret = NA_NOMEM_ERROR;
         goto unlock;
     }
@@ -1775,6 +1777,9 @@ na_ofi_op_id_addref(struct na_ofi_op_id *na_ofi_op_id)
 static void
 na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id)
 {
+    if (na_ofi_op_id == NULL)
+        return;
+
     assert(hg_atomic_get32(&na_ofi_op_id->noo_refcount) > 0);
 
     /* If there are more references, return */
@@ -3235,7 +3240,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
 
     do {
         struct fi_cq_tagged_entry cq_event[NA_OFI_CQ_EVENT_NUM];
-        fi_addr_t src_addr[NA_OFI_CQ_EVENT_NUM];
+        fi_addr_t src_addr[NA_OFI_CQ_EVENT_NUM] = {FI_ADDR_UNSPEC};
         ssize_t rc, i, event_num = 0;
         hg_time_t t1, t2;
 
@@ -3284,7 +3289,7 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
             if (rc != 1) {
                 NA_LOG_ERROR("fi_cq_readerr() failed, rc: %d(%s).",
                              rc, fi_strerror((int) -rc));
-                rc = NA_PROTOCOL_ERROR;
+                ret = NA_PROTOCOL_ERROR;
                 break;
             }
             if (cq_err.err == FI_ECANCELED) {
