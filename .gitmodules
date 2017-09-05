@@ -1,6 +1,6 @@
 [submodule "Testing/driver/kwsys"]
 	path = Testing/driver/kwsys
-	url = http://public.kitware.com/KWSys.git
+	url = https://gitlab.kitware.com/utils/kwsys.git
 [submodule "src/mchecksum"]
 	path = src/mchecksum
 	url = https://github.com/mercury-hpc/mchecksum.git
