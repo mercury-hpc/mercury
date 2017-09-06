@@ -894,7 +894,6 @@ na_ofi_check_interface(const char *hostname, char *node, size_t node_len,
         goto out;
     }
     for (ifaddr = ifaddrs; ifaddr != NULL; ifaddr = ifaddr->ifa_next) {
-        char host[NI_MAXHOST] = {'\0'};
         char ip[INET_ADDRSTRLEN] = {'\0'}; /* This restricts to ipv4 addresses */
 
         if (ifaddr->ifa_addr == NULL)
@@ -902,14 +901,6 @@ na_ofi_check_interface(const char *hostname, char *node, size_t node_len,
 
         if (ifaddr->ifa_addr->sa_family != AF_INET)
             continue;
-
-        /* Get hostname */
-        if (getnameinfo(ifaddr->ifa_addr, sizeof(struct sockaddr_in), host,
-            NI_MAXHOST, NULL, 0, 0) != 0) {
-            NA_LOG_ERROR("Name could not be resolved for: %s", ifaddr->ifa_name);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
 
         /* Get IP */
         if (!inet_ntop(ifaddr->ifa_addr->sa_family,
@@ -921,8 +912,7 @@ na_ofi_check_interface(const char *hostname, char *node, size_t node_len,
         }
 
         /* Compare hostnames / device names */
-        if (!strcmp(host, hostname) || !strcmp(ip, hostname)
-            || !strcmp(ip, ip_res) || !strcmp(ifaddr->ifa_name, hostname)) {
+        if (!strcmp(ip, ip_res) || !strcmp(ifaddr->ifa_name, hostname)) {
             if (node_len)
                strncpy(node, ip, node_len);
             if (domain_len)
