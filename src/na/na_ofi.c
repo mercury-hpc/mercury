@@ -858,19 +858,44 @@ na_ofi_check_interface(const char *hostname, char *node, size_t node_len,
     char *domain, size_t domain_len)
 {
     struct ifaddrs *ifaddrs = NULL, *ifaddr;
+    struct addrinfo hints, *hostname_res = NULL;
+    char ip_res[INET_ADDRSTRLEN] = {'\0'}; /* This restricts to ipv4 addresses */
     na_return_t ret = NA_SUCCESS;
     na_bool_t found = NA_FALSE;
+    int s;
 
+    /* Try to resolve hostname first so that we can later compare the IP */
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = 0;
+    hints.ai_protocol = 0;
+    s = getaddrinfo(hostname, NULL, &hints, &hostname_res);
+    if (s == 0) {
+        struct addrinfo *rp;
+
+        for (rp = hostname_res; rp != NULL; rp = rp->ai_next) {
+            /* Get IP */
+            if (!inet_ntop(rp->ai_addr->sa_family,
+                &((struct sockaddr_in *) rp->ai_addr)->sin_addr, ip_res,
+                INET_ADDRSTRLEN)) {
+                NA_LOG_ERROR("IP could not be resolved");
+                ret = NA_PROTOCOL_ERROR;
+                goto out;
+            }
+            break;
+        }
+    }
+
+    /* Check and compare interfaces */
     if (getifaddrs(&ifaddrs) == -1) {
         NA_LOG_ERROR("getifaddrs() failed");
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
-
-    /* Check and compare interfaces */
     for (ifaddr = ifaddrs; ifaddr != NULL; ifaddr = ifaddr->ifa_next) {
-        char host[NI_MAXHOST];
-        char ip[INET_ADDRSTRLEN]; /* This restricts to ipv4 addresses */
+        char host[NI_MAXHOST] = {'\0'};
+        char ip[INET_ADDRSTRLEN] = {'\0'}; /* This restricts to ipv4 addresses */
 
         if (ifaddr->ifa_addr == NULL)
             continue;
@@ -896,8 +921,8 @@ na_ofi_check_interface(const char *hostname, char *node, size_t node_len,
         }
 
         /* Compare hostnames / device names */
-        if (!strcmp(host, hostname) || !strcmp(ip, hostname) ||
-            !strcmp(ifaddr->ifa_name, hostname)) {
+        if (!strcmp(host, hostname) || !strcmp(ip, hostname)
+            || !strcmp(ip, ip_res) || !strcmp(ifaddr->ifa_name, hostname)) {
             if (node_len)
                strncpy(node, ip, node_len);
             if (domain_len)
@@ -915,6 +940,8 @@ na_ofi_check_interface(const char *hostname, char *node, size_t node_len,
 
 out:
     freeifaddrs(ifaddrs);
+    if (hostname_res)
+        freeaddrinfo(hostname_res);
     return ret;
 }
 
