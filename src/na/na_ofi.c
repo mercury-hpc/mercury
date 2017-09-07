@@ -2250,7 +2250,9 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
     /* Set IOV */
     mr_iov.iov_base = mem_ptr;
     mr_iov.iov_len = (size_t) size;
-    attr.requested_key = (uint64_t) mem_ptr;
+    /* GNI provider does not support user requested key */
+    if (domain->nod_prov_type != NA_OFI_PROV_GNI)
+        attr.requested_key = (uint64_t) mem_ptr;
 
     /* If auth key, register memory with new authorization key */
     if (endpoint->noe_auth_key) {
