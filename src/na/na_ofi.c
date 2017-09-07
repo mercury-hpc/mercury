@@ -82,11 +82,7 @@
  * Specify the version of OFI is coded to, the provider will select struct
  * layouts that are compatible with this version.
  */
-#if FI_MINOR_VERSION >= 5
 #define NA_OFI_VERSION FI_VERSION(1, 5)
-#else
-#define NA_OFI_VERSION FI_VERSION(1, 4)
-#endif
 
 /* Name of providers */
 #define NA_OFI_PROV_SOCKETS_NAME    "sockets"
@@ -114,6 +110,10 @@
 /* The magic number for na_ofi_op_id verification */
 #define NA_OFI_OP_ID_MAGIC_1 (0x1928374655627384ULL)
 #define NA_OFI_OP_ID_MAGIC_2 (0x8171615141312111ULL)
+
+/* Default basic bits */
+#define NA_OFI_MR_BASIC_REQ \
+    (FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY)
 
 /* the predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
@@ -771,18 +771,9 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    /**
-     * Hints to query && filter providers.
-     *
-     * mode: operational mode, NA_OFI passes in context for communication calls.
-     * ep_type: reliable datagram (connection-less).
-     * caps: capabilities required.
-     * msg_order: guarantee that messages with same tag are ordered.
-     * (FI_ORDER_SAS - Send after send. If set, message send operations,
-     *  including tagged sends, are transmitted in the order submitted relative
-     *  to other message send. If not set, message sends may be transmitted out
-     *  of order from their submission).
-     */
+     /**
+      * Hints to query && filter providers.
+      */
     hints = fi_allocinfo();
     if (!hints) {
         NA_LOG_ERROR("fi_allocinfo failed.\n");
@@ -797,16 +788,38 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
         ret = NA_NOMEM_ERROR;
         goto out;
     }
-    hints->mode          = FI_CONTEXT | FI_LOCAL_MR;
+
+    /* mode: operational mode, NA_OFI passes in context for communication calls. */
+    hints->mode          = FI_CONTEXT;
+
+    /* ep_type: reliable datagram (connection-less). */
     hints->ep_attr->type = FI_EP_RDM;
+
+    /* caps: capabilities required. */
     hints->caps          = FI_TAGGED | FI_RMA;
+
+    /**
+     * msg_order: guarantee that messages with same tag are ordered.
+     * (FI_ORDER_SAS - Send after send. If set, message send operations,
+     *  including tagged sends, are transmitted in the order submitted relative
+     *  to other message send. If not set, message sends may be transmitted out
+     *  of order from their submission).
+     */
     //hints->tx_attr->msg_order = FI_ORDER_SAS;
     //hints->rx_attr->msg_order = FI_ORDER_SAS;
 
-    hints->domain_attr->threading = FI_THREAD_UNSPEC;
+    hints->domain_attr->threading       = FI_THREAD_UNSPEC;
+    hints->domain_attr->av_type         = FI_AV_MAP;
+    hints->domain_attr->resource_mgmt   = FI_RM_ENABLED;
+
+    /* Provider specific configuration (MR mode / caps) */
     if (!strcmp(prov_name, NA_OFI_PROV_SOCKETS_NAME)) {
         /* Limit ourselves to TCP for now */
-        hints->ep_attr->protocol = FI_PROTO_SOCK_TCP;
+        hints->ep_attr->protocol    = FI_PROTO_SOCK_TCP;
+
+        /* For versions 1.5 and later, scalable is implied by the lack of any
+         * mr_mode bits being set. */
+        hints->domain_attr->mr_mode = FI_MR_UNSPEC;
 
         /* As "sockets" provider does not support manual progress and wait
          * objects, set progress to auto for now. Note that the provider
@@ -815,16 +828,21 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
         hints->domain_attr->control_progress = FI_PROGRESS_AUTO;
         hints->domain_attr->data_progress    = FI_PROGRESS_AUTO;
     } else {
+        /* FI_MR_BASIC */
+        hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL;
+
+        /* Manual progress (no internal progress thread) */
         hints->domain_attr->control_progress = FI_PROGRESS_MANUAL;
         hints->domain_attr->data_progress    = FI_PROGRESS_MANUAL;
+
+        /* Can retrieve source address from processes not inserted in AV */
+        if (!strcmp(prov_name, NA_OFI_PROV_PSM2_NAME)) {
+            hints->caps |= (FI_SOURCE | FI_SOURCE_ERR);
+        }
+        else if (!strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)) {
+            hints->rx_attr->mode |= FI_CONTEXT;
+        }
     }
-    hints->domain_attr->av_type       = FI_AV_MAP;
-    hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
-#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
-    hints->domain_attr->mr_mode       = ~(FI_MR_BASIC | FI_MR_SCALABLE);
-#else
-    hints->domain_attr->mr_mode       = FI_MR_UNSPEC;
-#endif
 
     /**
      * fi_getinfo:  returns information about fabric services.
@@ -1060,39 +1078,24 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
         goto out;
     }
 
-    /* Provider specific configuration (MR mode / caps) */
+    /* Set domain configuration (MR mode / caps) */
     if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_SOCKETS_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_SOCKETS;
-        /* sockets provider without MR_BASIC supporting */
-        na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_SCALABLE;
-        na_ofi_domain->nod_mr_mode = NA_OFI_MR_SCALABLE;
-#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_PSM2_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_PSM2;
-        na_ofi_domain->nod_prov->caps |= (FI_SOURCE | FI_SOURCE_ERR);
-        na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
-        na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
-#endif
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_VERBS_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS;
-        na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
-        na_ofi_domain->nod_prov->rx_attr->mode |= FI_CONTEXT;
-        na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_GNI_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
-#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
-        na_ofi_domain->nod_prov->domain_attr->mr_mode =
-            FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY;
-#else
-        na_ofi_domain->nod_prov->domain_attr->mr_mode |= FI_MR_BASIC;
-#endif
-        na_ofi_domain->nod_mr_mode = NA_OFI_MR_BASIC;
     } else {
         NA_LOG_ERROR("bad domain->nod_prov_name %s.",
             na_ofi_domain->nod_prov_name);
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
+    na_ofi_domain->nod_mr_mode =
+        (na_ofi_domain->nod_prov_type == NA_OFI_PROV_SOCKETS) ?
+            NA_OFI_MR_SCALABLE : NA_OFI_MR_BASIC;
 
     /* Open fi fabric */
     rc = fi_fabric(na_ofi_domain->nod_prov->fabric_attr,/* In:  Fabric attributes */
@@ -1285,8 +1288,7 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
         goto out;
     }
 
-#if defined(NA_OFI_HAS_EXT_GNI_H) \
-    && FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
+#if defined(NA_OFI_HAS_EXT_GNI_H)
     if (auth_key) {
         if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
             struct fi_gni_auth_key fi_gni_auth_key;
@@ -2233,10 +2235,8 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
         .offset = 0,
         .requested_key = 0,
         .context = NULL,
-#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
         .auth_key = NULL,
-        .auth_key_size = 0,
-#endif
+        .auth_key_size = 0
        };
     int rc;
 
@@ -2253,18 +2253,14 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
     attr.requested_key = (uint64_t) mem_ptr;
 
     /* If auth key, register memory with new authorization key */
-#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
     if (endpoint->noe_auth_key) {
         attr.auth_key = (uint8_t *) endpoint->noe_auth_key;
         attr.auth_key_size = endpoint->noe_auth_key_size;
     }
-#else
-    (void) endpoint;
-#endif
 
     rc = fi_mr_regattr(domain->nod_domain, &attr, 0, &mr_hdl);
     if (rc != 0) {
-        NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        NA_LOG_ERROR("fi_mr_reg failed, rc: %d (%s).", rc, fi_strerror(-rc));
         hg_mem_aligned_free(mem_ptr);
         goto out;
     }
@@ -2708,10 +2704,8 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         .offset = 0,
         .requested_key = 0,
         .context = NULL,
-#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
         .auth_key = NULL,
-        .auth_key_size = 0,
-#endif
+        .auth_key_size = 0
        };
     int rc = 0;
     na_return_t ret = NA_SUCCESS;
@@ -2743,14 +2737,10 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     mr_iov.iov_len = (size_t) na_ofi_mem_handle->nom_size;
 
     /* If auth key, register memory with new authorization key */
-#if FI_VERSION_GE(NA_OFI_VERSION, FI_VERSION(1,5))
     if (endpoint->noe_auth_key) {
         attr.auth_key = (uint8_t *) endpoint->noe_auth_key;
         attr.auth_key_size = endpoint->noe_auth_key_size;
     }
-#else
-    (void) endpoint;
-#endif
 
     rc = fi_mr_regattr(domain->nod_domain, &attr, 0,
         &na_ofi_mem_handle->nom_mr_hdl);
