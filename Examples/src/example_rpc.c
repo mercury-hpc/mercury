@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2016 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2017 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
