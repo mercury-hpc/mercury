@@ -145,6 +145,7 @@ struct hg_handle {
     hg_bool_t repost;                   /* Repost handle on completion (listen) */
     hg_bool_t process_rpc_cb;           /* RPC callback must be processed */
     hg_bool_t is_self;                  /* Handle self processed */
+    hg_atomic_int32_t in_use;           /* Handle is in use */
 
     void *in_buf;                       /* Input buffer */
     void *in_buf_plugin_data;           /* Input buffer NA plugin data */
@@ -1395,6 +1396,9 @@ hg_core_create(struct hg_context *context)
     hg_handle->hg_info.target_id = 0;
     hg_handle->ret = HG_SUCCESS;
 
+    /* Handle is not in use */
+    hg_atomic_init32(&hg_handle->in_use, HG_FALSE);
+
     /* Initialize processing buffers and use unexpected message size */
     hg_handle->in_buf_size = NA_Msg_get_max_unexpected_size(na_class);
     hg_handle->out_buf_size = NA_Msg_get_max_expected_size(na_class);
@@ -1517,6 +1521,17 @@ done:
 static hg_return_t
 hg_core_reset(struct hg_handle *hg_handle, hg_bool_t reset_info)
 {
+    hg_return_t ret = HG_SUCCESS;
+
+    if (hg_atomic_get32(&hg_handle->in_use)) {
+        /* Not safe to reset
+         * TODO could add the ability to defer the reset operation */
+        HG_LOG_ERROR("Cannot reset HG handle, handle is still in use, "
+            "refcount: %d", hg_atomic_get32(&hg_handle->ref_count));
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
     /* Reset source address */
     if (reset_info) {
         if (hg_handle->hg_info.addr != HG_ADDR_NULL
@@ -1547,7 +1562,8 @@ hg_core_reset(struct hg_handle *hg_handle, hg_bool_t reset_info)
     hg_proc_header_request_reset(&hg_handle->in_header);
     hg_proc_header_response_reset(&hg_handle->out_header);
 
-    return HG_SUCCESS;
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2273,6 +2289,9 @@ hg_core_post(struct hg_handle *hg_handle)
     na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
 
+    /* Handle is now in use */
+    hg_atomic_set32(&hg_handle->in_use, HG_TRUE);
+
     hg_thread_spin_lock(&context->pending_list_lock);
     HG_LIST_INSERT_HEAD(&context->pending_list, hg_handle, entry);
     hg_thread_spin_unlock(&context->pending_list_lock);
@@ -2310,7 +2329,6 @@ hg_core_reset_post(struct hg_handle *hg_handle)
     hg_atomic_set32(&hg_handle->ref_count, 1);
     hg_handle->hg_rpc_info = NULL;
     hg_handle->no_response = HG_FALSE;
-
 
     /* Safe to repost */
     ret = hg_core_post(hg_handle);
@@ -2702,6 +2720,9 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
             }
         }
     } else {
+        /* Handle is no longer in use (safe to reset) */
+        hg_atomic_set32(&hg_handle->in_use, HG_FALSE);
+
         /* Execute user callback */
         if (hg_handle->callback) {
             struct hg_cb_info hg_cb_info;
@@ -3669,14 +3690,6 @@ HG_Core_reset(hg_handle_t handle, hg_addr_t addr, hg_id_t id)
         ret = HG_INVALID_PARAM;
         goto done;
     }
-    if (hg_atomic_get32(&hg_handle->ref_count) > 1) {
-        /* Not safe to reset
-         * TODO could add the ability to defer the reset operation */
-        HG_LOG_ERROR("Cannot reset HG handle, handle is still in use, "
-            "refcount: %d", hg_atomic_get32(&hg_handle->ref_count));
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
 
     ret = hg_core_reset(hg_handle, HG_FALSE);
     if (ret != HG_SUCCESS) {
@@ -3845,16 +3858,10 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
         goto done;
     }
 #endif
-
     /* Set callback */
     hg_handle->callback = callback;
     hg_handle->arg = arg;
     hg_handle->cb_type = HG_CB_FORWARD;
-
-    /* Increase ref count here so that a call to HG_Destroy does not free the
-     * handle but only schedules its completion
-     */
-    hg_atomic_incr32(&hg_handle->ref_count);
 
     /* Set header */
     header_size = hg_proc_header_request_get_size() +
@@ -3872,14 +3879,20 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
         HG_ENCODE, &extra_header_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not encode header");
-        /* rollback ref_count taken above */
-        hg_atomic_decr32(&hg_handle->ref_count);
         goto done;
     }
     header_size += extra_header_size;
 
     /* Set the actual size of the msg that needs to be transmitted */
     hg_handle->in_buf_used = header_size + size_to_send;
+
+    /* Increase ref count here so that a call to HG_Destroy does not free the
+     * handle but only schedules its completion
+     */
+    hg_atomic_incr32(&hg_handle->ref_count);
+
+    /* Handle is now in use */
+    hg_atomic_set32(&hg_handle->in_use, HG_TRUE);
 
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
@@ -3894,7 +3907,9 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
 #endif
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not forward buffer");
-        /* rollback ref_count taken above */
+        /* Handle is no longer in use */
+        hg_atomic_set32(&hg_handle->in_use, HG_FALSE);
+        /* Rollback ref_count taken above */
         hg_atomic_decr32(&hg_handle->ref_count);
         goto done;
     }

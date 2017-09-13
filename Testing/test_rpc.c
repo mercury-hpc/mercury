@@ -103,6 +103,29 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
+hg_test_rpc_forward_reset_cb(const struct hg_cb_info *callback_info)
+{
+    struct forward_cb_args *args = (struct forward_cb_args *) callback_info->arg;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (callback_info->ret != HG_SUCCESS) {
+        HG_TEST_LOG_WARNING("Return from callback info is not HG_SUCCESS");
+        goto done;
+    }
+
+    ret = HG_Reset(callback_info->info.forward.handle, HG_ADDR_NULL, 0);
+    if (ret != HG_SUCCESS) {
+        HG_TEST_LOG_ERROR("Could not reset handle");
+        goto done;
+    }
+
+done:
+    hg_request_complete(args->request);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
 hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
     hg_addr_t addr, hg_id_t rpc_id, hg_cb_t callback)
 {
@@ -396,6 +419,16 @@ main(int argc, char *argv[])
     inv_id = MERCURY_REGISTER(hg_class, "inv_id", void, void, NULL);
     hg_ret = hg_test_rpc(context, request_class, addr, inv_id,
         hg_test_rpc_forward_cb);
+    if (hg_ret != HG_SUCCESS) {
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    HG_PASSED();
+
+    /* RPC test with reset */
+    HG_TEST("reset RPC");
+    hg_ret = hg_test_rpc(context, request_class, addr, hg_test_rpc_open_id_g,
+        hg_test_rpc_forward_reset_cb);
     if (hg_ret != HG_SUCCESS) {
         ret = EXIT_FAILURE;
         goto done;
