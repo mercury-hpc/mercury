@@ -69,7 +69,11 @@ struct hg_atomic_queue {
 #define HG_ATOMIC_QUEUE_ELT_SIZE sizeof(hg_atomic_int64_t)
 
 #ifndef cpu_spinwait
+#if defined(__x86_64__) || defined(__amd64__)
 #define cpu_spinwait() asm volatile("pause\n": : :"memory");
+#else
+#define cpu_spinwait();
+#endif
 #endif
 
 /*********************/
