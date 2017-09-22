@@ -17,10 +17,12 @@
   #include <windows.h>
   typedef struct { volatile LONG value; } hg_atomic_int32_t;
   typedef struct { volatile LONGLONG value; } hg_atomic_int64_t;
+  #define HG_ATOMIC_VAR_INIT(x) { (x) }
 #elif defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
   #include <opa_primitives.h>
   typedef OPA_int_t hg_atomic_int32_t;
   typedef OPA_ptr_t hg_atomic_int64_t; /* OPA has only limited 64-bit support */
+  #define HG_ATOMIC_VAR_INIT(x) OPA_PTR_T_INITIALIZER(x)
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
   #include <stdatomic.h>
 #ifdef __INTEL_COMPILER
@@ -30,10 +32,12 @@
   typedef _Atomic hg_util_int32_t hg_atomic_int32_t;
   typedef _Atomic hg_util_int64_t hg_atomic_int64_t;
 #endif
+  #define HG_ATOMIC_VAR_INIT(x) ATOMIC_VAR_INIT(x)
 #elif defined(__APPLE__)
   #include <libkern/OSAtomic.h>
   typedef struct { volatile hg_util_int32_t value; } hg_atomic_int32_t;
   typedef struct { volatile hg_util_int64_t value; } hg_atomic_int64_t;
+  #define HG_ATOMIC_VAR_INIT(x) { (x) }
 #else
   #error "Not supported on this platform."
 #endif
