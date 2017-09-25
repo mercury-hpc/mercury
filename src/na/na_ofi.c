@@ -800,13 +800,17 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
     }
 
     /* mode: operational mode, NA_OFI passes in context for communication calls. */
-    hints->mode          = FI_CONTEXT;
+    /* FI_ASYNC_IOV mode indicates  that  the  application  must  provide  the
+       buffering needed for the IO vectors. When set, an application must not
+       modify an IO vector  of  length  >  1, including  any  related  memory
+       descriptor array, until the associated operation has completed. */
+    hints->mode          = FI_CONTEXT | FI_ASYNC_IOV;
 
     /* ep_type: reliable datagram (connection-less). */
     hints->ep_attr->type = FI_EP_RDM;
 
     /* caps: capabilities required. */
-    hints->caps          = FI_TAGGED | FI_RMA;
+    hints->caps          = FI_TAGGED | FI_RMA | FI_DIRECTED_RECV;
 
     /**
      * msg_order: guarantee that messages with same tag are ordered.
@@ -815,8 +819,11 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
      *  to other message send. If not set, message sends may be transmitted out
      *  of order from their submission).
      */
-    //hints->tx_attr->msg_order = FI_ORDER_SAS;
-    //hints->rx_attr->msg_order = FI_ORDER_SAS;
+    hints->tx_attr->msg_order = FI_ORDER_SAS;
+    hints->tx_attr->comp_order = FI_ORDER_NONE; /* No send completion order */
+    /* Generate completion event when it is safe to re-use buffer */
+    hints->tx_attr->op_flags = FI_INJECT_COMPLETE | FI_COMPLETION;
+    hints->rx_attr->op_flags = FI_COMPLETION;
 
     hints->domain_attr->threading       = FI_THREAD_UNSPEC;
     hints->domain_attr->av_type         = FI_AV_MAP;
