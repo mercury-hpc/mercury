@@ -113,7 +113,7 @@ bulk_put_cb(const struct na_cb_info *callback_info)
     ret = NA_Msg_send_expected(params->na_class, params->context,
         msg_expected_send_final_cb, NULL, params->send_buf,
         params->send_buf_len, params->send_buf_plugin_data, params->source_addr,
-        NA_TEST_BULK_ACK_TAG, NA_OP_ID_IGNORE);
+        0, NA_TEST_BULK_ACK_TAG, NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start send of acknowledgment");
         goto done;
@@ -175,7 +175,7 @@ bulk_get_cb(const struct na_cb_info *callback_info)
 
     ret = NA_Put(params->na_class, params->context, bulk_put_cb, params,
         params->local_mem_handle, 0, params->remote_mem_handle, 0,
-        params->bulk_size * sizeof(int), params->source_addr, NA_OP_ID_IGNORE);
+        params->bulk_size * sizeof(int), params->source_addr, 0, NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start put");
         goto done;
@@ -210,7 +210,7 @@ mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
 
     ret = NA_Get(params->na_class, params->context, bulk_get_cb, params,
         params->local_mem_handle, 0, params->remote_mem_handle, 0,
-        params->bulk_size * sizeof(int), params->source_addr, NA_OP_ID_IGNORE);
+        params->bulk_size * sizeof(int), params->source_addr, 0, NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start get");
         goto done;
@@ -251,7 +251,7 @@ test_msg_respond(struct na_test_params *params, na_tag_t send_tag)
 
     na_ret = NA_Msg_send_expected(params->na_class, params->context,
         msg_expected_send_cb, params, params->send_buf, params->send_buf_len,
-        params->send_buf_plugin_data, params->source_addr, send_tag,
+        params->send_buf_plugin_data, params->source_addr, 0, send_tag,
         NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start send of expected message");
@@ -292,7 +292,7 @@ test_bulk(struct na_test_params *params)
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
         mem_handle_expected_recv_cb, params, params->recv_buf,
         params->recv_buf_len, params->recv_buf_plugin_data, params->source_addr,
-        NA_TEST_BULK_TAG, NA_OP_ID_IGNORE);
+        0, NA_TEST_BULK_TAG, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start recv of memory handle");
         ret = EXIT_FAILURE;

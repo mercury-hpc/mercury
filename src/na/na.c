@@ -558,6 +558,25 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
+NA_Context_set_id(na_class_t *na_class, na_context_t *context, na_uint8_t id)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class || !context) {
+        NA_LOG_ERROR("NULL NA class or context");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+
+    if (na_class->context_set_id)
+        ret = na_class->context_set_id(na_class, context, id);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
 NA_Context_destroy(na_class_t *na_class, na_context_t *context)
 {
     struct na_private_context *na_private_context =
@@ -1094,7 +1113,8 @@ done:
 na_return_t
 NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t dest, na_uint8_t target_id, na_tag_t tag,
+    na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1130,7 +1150,7 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_unexpected(na_class, context, callback, arg, buf,
-        buf_size, plugin_data, dest, tag, op_id);
+        buf_size, plugin_data, dest, target_id, tag, op_id);
 
 done:
     return ret;
@@ -1210,7 +1230,8 @@ done:
 na_return_t
 NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t dest, na_uint8_t target_id, na_tag_t tag,
+    na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1246,7 +1267,7 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_expected(na_class, context, callback, arg, buf,
-        buf_size, plugin_data, dest, tag, op_id);
+        buf_size, plugin_data, dest, target_id, tag, op_id);
 
 done:
     return ret;
@@ -1256,7 +1277,8 @@ done:
 na_return_t
 NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t source, na_uint8_t target_id, na_tag_t tag,
+    na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1292,7 +1314,7 @@ NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_expected(na_class, context, callback, arg, buf,
-        buf_size, plugin_data, source, tag, op_id);
+        buf_size, plugin_data, source, target_id, tag, op_id);
 
 done:
     return ret;
@@ -1612,7 +1634,8 @@ na_return_t
 NA_Put(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
     na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
+    na_size_t data_size, na_addr_t remote_addr, na_uint8_t remote_id,
+    na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1654,7 +1677,7 @@ NA_Put(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
 
     ret = na_class->put(na_class, context, callback, arg, local_mem_handle,
         local_offset, remote_mem_handle, remote_offset, data_size,
-        remote_addr, op_id);
+        remote_addr, remote_id, op_id);
 
 done:
     return ret;
@@ -1665,7 +1688,8 @@ na_return_t
 NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
     na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t data_size, na_addr_t remote_addr, na_op_id_t *op_id)
+    na_size_t data_size, na_addr_t remote_addr, na_uint8_t remote_id,
+    na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1707,7 +1731,7 @@ NA_Get(na_class_t *na_class, na_context_t *context, na_cb_t callback, void *arg,
 
     ret = na_class->get(na_class, context, callback, arg, local_mem_handle,
         local_offset, remote_mem_handle, remote_offset, data_size,
-        remote_addr, op_id);
+        remote_addr, remote_id, op_id);
 
 done:
     return ret;

@@ -374,7 +374,7 @@ done:
 hg_return_t
 HG_Hl_bulk_transfer_wait(hg_context_t *context,
     hg_request_class_t *request_class, hg_bulk_op_t op,
-    hg_addr_t origin_addr, hg_bulk_t origin_handle, hg_size_t origin_offset,
+    hg_addr_t origin_addr, hg_uint8_t origin_id, hg_bulk_t origin_handle, hg_size_t origin_offset,
     hg_bulk_t local_handle, hg_size_t local_offset, hg_size_t size,
     unsigned int timeout)
 {
@@ -392,7 +392,7 @@ HG_Hl_bulk_transfer_wait(hg_context_t *context,
 
     /* Transfer bulk data */
     ret = HG_Bulk_transfer(context, hg_hl_bulk_transfer_cb, request, op,
-            origin_addr, origin_handle, origin_offset, local_handle,
+            origin_addr, origin_id, origin_handle, origin_offset, local_handle,
             local_offset, size, HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not transfer data");

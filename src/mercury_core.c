@@ -2011,6 +2011,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
             hg_handle->na_context, hg_core_recv_output_cb, hg_handle,
             hg_handle->out_buf, hg_handle->out_buf_size,
             hg_handle->out_buf_plugin_data, hg_handle->hg_info.addr->na_addr,
+            hg_handle->hg_info.target_id,
             hg_handle->tag, &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post recv for output buffer");
@@ -2023,8 +2024,8 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_send_unexpected(hg_handle->na_class, hg_handle->na_context,
         hg_core_send_input_cb, hg_handle, hg_handle->in_buf,
         hg_handle->in_buf_used, hg_handle->in_buf_plugin_data,
-        hg_handle->hg_info.addr->na_addr, hg_handle->tag,
-        &hg_handle->na_send_op_id);
+        hg_handle->hg_info.addr->na_addr, hg_handle->hg_info.target_id,
+        hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for input buffer");
         /* Cancel the above posted recv op */
@@ -2109,8 +2110,8 @@ hg_core_respond_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_send_expected(hg_handle->na_class, hg_handle->na_context,
             hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_used, hg_handle->out_buf_plugin_data,
-            hg_handle->hg_info.addr->na_addr, hg_handle->tag,
-            &hg_handle->na_send_op_id);
+            hg_handle->hg_info.addr->na_addr, hg_handle->hg_info.target_id,
+            hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for output buffer");
         ret = HG_NA_ERROR;
@@ -3985,6 +3986,13 @@ HG_Core_context_set_id(hg_context_t *context, hg_uint8_t id)
     if (!context) {
         HG_LOG_ERROR("NULL HG context");
         ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = NA_Context_set_id(context->hg_class->na_class, context->na_context, id);
+    if (ret != NA_SUCCESS) {
+        HG_LOG_ERROR("NA_Context_set_id(id %d) failed, ret %d.", id, ret);
+        ret = HG_NA_ERROR;
         goto done;
     }
 

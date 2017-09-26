@@ -79,6 +79,7 @@ typedef na_return_t (*na_bulk_op_t)(
         na_offset_t      remote_offset,
         na_size_t        data_size,
         na_addr_t        remote_addr,
+        na_uint8_t       remote_id,
         na_op_id_t      *op_id
         );
 
@@ -166,6 +167,7 @@ static hg_return_t
 hg_bulk_transfer_pieces(
         na_bulk_op_t na_bulk_op,
         na_addr_t origin_addr,
+        na_uint8_t origin_id,
         hg_bool_t use_sm,
         struct hg_bulk *hg_bulk_origin,
         hg_size_t origin_segment_start_index,
@@ -189,6 +191,7 @@ hg_bulk_transfer(
         void *arg,
         hg_bulk_op_t op,
         struct hg_addr *origin_addr,
+        hg_uint8_t origin_id,
         struct hg_bulk *hg_bulk_origin,
         hg_size_t origin_offset,
         struct hg_bulk *hg_bulk_local,
@@ -232,11 +235,11 @@ hg_bulk_na_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_ptr_t HG_BULK_UNUSED local_address, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_ptr_t HG_BULK_UNUSED remote_address,
     na_offset_t remote_offset, na_size_t data_size, na_addr_t remote_addr,
-    na_op_id_t *op_id)
+    na_uint8_t remote_id, na_op_id_t *op_id)
 {
     return NA_Put(na_class, context, callback, arg, local_mem_handle,
             local_offset, remote_mem_handle, remote_offset, data_size,
-            remote_addr, op_id);
+            remote_addr, remote_id, op_id);
 }
 
 /**
@@ -248,11 +251,11 @@ hg_bulk_na_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_ptr_t HG_BULK_UNUSED local_address, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_ptr_t HG_BULK_UNUSED remote_address,
     na_offset_t remote_offset, na_size_t data_size, na_addr_t remote_addr,
-    na_op_id_t *op_id)
+    na_uint8_t remote_id, na_op_id_t *op_id)
 {
     return NA_Get(na_class, context, callback, arg, local_mem_handle,
             local_offset, remote_mem_handle, remote_offset, data_size,
-            remote_addr, op_id);
+            remote_addr, remote_id, op_id);
 }
 
 /**
@@ -264,7 +267,8 @@ hg_bulk_memcpy_put(na_class_t HG_BULK_UNUSED *na_class,
     na_mem_handle_t HG_BULK_UNUSED local_mem_handle, na_ptr_t local_address,
     na_offset_t local_offset, na_mem_handle_t HG_BULK_UNUSED remote_mem_handle,
     na_ptr_t remote_address, na_offset_t remote_offset, na_size_t data_size,
-    na_addr_t HG_BULK_UNUSED remote_addr, na_op_id_t HG_BULK_UNUSED *op_id)
+    na_addr_t HG_BULK_UNUSED remote_addr, na_uint8_t HG_BULK_UNUSED remote_id,
+    na_op_id_t HG_BULK_UNUSED *op_id)
 {
     struct na_cb_info na_cb_info;
 
@@ -285,7 +289,8 @@ hg_bulk_memcpy_get(na_class_t HG_BULK_UNUSED *na_class,
     na_mem_handle_t HG_BULK_UNUSED local_mem_handle, na_ptr_t local_address,
     na_offset_t local_offset, na_mem_handle_t HG_BULK_UNUSED remote_mem_handle,
     na_ptr_t remote_address, na_offset_t remote_offset, na_size_t data_size,
-    na_addr_t HG_BULK_UNUSED remote_addr, na_op_id_t HG_BULK_UNUSED *op_id)
+    na_addr_t HG_BULK_UNUSED remote_addr, na_uint8_t HG_BULK_UNUSED remote_id,
+    na_op_id_t HG_BULK_UNUSED *op_id)
 {
     struct na_cb_info na_cb_info;
 
@@ -710,7 +715,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
+hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr, na_uint8_t origin_id,
     hg_bool_t HG_BULK_UNUSED use_sm, struct hg_bulk *hg_bulk_origin,
     hg_size_t origin_segment_start_index, hg_size_t origin_segment_start_offset,
     struct hg_bulk *hg_bulk_local, hg_size_t local_segment_start_index,
@@ -768,7 +773,7 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
                 local_segment_offset,
                 na_origin_mem_handles[na_origin_segment_index],
                 hg_bulk_origin->segments[origin_segment_index].address,
-                origin_segment_offset, transfer_size, origin_addr,
+                origin_segment_offset, transfer_size, origin_addr, origin_id,
                 &hg_bulk_op_id->na_op_ids[count]);
             if (na_ret != NA_SUCCESS) {
                 HG_LOG_ERROR("Could not transfer data");
@@ -815,7 +820,7 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
-    hg_bulk_op_t op, struct hg_addr *origin_addr,
+    hg_bulk_op_t op, struct hg_addr *origin_addr, hg_uint8_t origin_id,
     struct hg_bulk *hg_bulk_origin, hg_size_t origin_offset,
     struct hg_bulk *hg_bulk_local, hg_size_t local_offset, hg_size_t size,
     hg_op_id_t *op_id)
@@ -904,7 +909,7 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
 
     /* Figure out number of NA operations required */
     if (!scatter_gather) {
-        hg_bulk_transfer_pieces(NULL, NA_ADDR_NULL, use_sm, hg_bulk_origin,
+        hg_bulk_transfer_pieces(NULL, NA_ADDR_NULL, origin_id, use_sm, hg_bulk_origin,
             origin_segment_start_index, origin_segment_start_offset,
             hg_bulk_local, local_segment_start_index,
             local_segment_start_offset, size, HG_FALSE, NULL,
@@ -930,7 +935,7 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     if (op_id && op_id != HG_OP_ID_IGNORE) *op_id = (hg_op_id_t) hg_bulk_op_id;
 
     /* Do actual transfer */
-    ret = hg_bulk_transfer_pieces(na_bulk_op, na_origin_addr, use_sm,
+    ret = hg_bulk_transfer_pieces(na_bulk_op, na_origin_addr, origin_id, use_sm,
         hg_bulk_origin, origin_segment_start_index, origin_segment_start_offset,
         hg_bulk_local, local_segment_start_index, local_segment_start_offset,
         size, scatter_gather, hg_bulk_op_id, NULL);
@@ -1621,9 +1626,9 @@ done:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
-    hg_bulk_op_t op, hg_addr_t origin_addr, hg_bulk_t origin_handle,
-    hg_size_t origin_offset, hg_bulk_t local_handle, hg_size_t local_offset,
-    hg_size_t size, hg_op_id_t *op_id)
+    hg_bulk_op_t op, hg_addr_t origin_addr, hg_uint8_t origin_id,
+    hg_bulk_t origin_handle, hg_size_t origin_offset, hg_bulk_t local_handle,
+    hg_size_t local_offset, hg_size_t size, hg_op_id_t *op_id)
 {
     struct hg_bulk *hg_bulk_origin = (struct hg_bulk *) origin_handle;
     struct hg_bulk *hg_bulk_local = (struct hg_bulk *) local_handle;
@@ -1688,7 +1693,7 @@ HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
             goto done;
     }
 
-    ret = hg_bulk_transfer(context, callback, arg, op, origin_addr,
+    ret = hg_bulk_transfer(context, callback, arg, op, origin_addr, origin_id,
         hg_bulk_origin, origin_offset, hg_bulk_local, local_offset, size,
         op_id);
     if (ret != HG_SUCCESS) {

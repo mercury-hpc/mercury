@@ -705,6 +705,7 @@ na_sm_msg_send_unexpected(
     na_size_t buf_size,
     void *plugin_data,
     na_addr_t dest,
+    na_uint8_t target_id,
     na_tag_t tag,
     na_op_id_t *op_id
     );
@@ -733,6 +734,7 @@ na_sm_msg_send_expected(
     na_size_t buf_size,
     void *plugin_data,
     na_addr_t dest,
+    na_uint8_t target_id,
     na_tag_t tag,
     na_op_id_t *op_id
     );
@@ -748,6 +750,7 @@ na_sm_msg_recv_expected(
     na_size_t buf_size,
     void *plugin_data,
     na_addr_t source,
+    na_uint8_t target_id,
     na_tag_t tag,
     na_op_id_t *op_id
     );
@@ -819,6 +822,7 @@ na_sm_put(
     na_offset_t remote_offset,
     na_size_t length,
     na_addr_t remote_addr,
+    na_uint8_t target_id,
     na_op_id_t *op_id
     );
 
@@ -835,6 +839,7 @@ na_sm_get(
     na_offset_t remote_offset,
     na_size_t length,
     na_addr_t remote_addr,
+    na_uint8_t target_id,
     na_op_id_t *op_id
     );
 
@@ -880,6 +885,7 @@ const na_class_t na_sm_class_g = {
     na_sm_finalize,                         /* finalize */
     na_sm_cleanup,                          /* cleanup */
     NULL,                                   /* context_create */
+    NULL,                                   /* context_set_id */
     NULL,                                   /* context_destroy */
     na_sm_op_create,                        /* op_create */
     na_sm_op_destroy,                       /* op_destroy */
@@ -3070,8 +3076,8 @@ na_sm_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 static na_return_t
 na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest, na_tag_t tag,
-    na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t dest, na_uint8_t NA_UNUSED target_id,
+    na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest;
@@ -3226,8 +3232,8 @@ done:
 static na_return_t
 na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest, na_tag_t tag,
-    na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t dest, na_uint8_t NA_UNUSED target_id,
+    na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest;
@@ -3301,8 +3307,8 @@ done:
 static na_return_t
 na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t source, na_tag_t tag,
-    na_op_id_t *op_id)
+    void NA_UNUSED *plugin_data, na_addr_t source, na_uint8_t NA_UNUSED target_id,
+    na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -3571,7 +3577,8 @@ static na_return_t
 na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id)
+    na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED target_id,
+    na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     struct na_sm_mem_handle *na_sm_mem_handle_local =
@@ -3723,7 +3730,8 @@ static na_return_t
 na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id)
+    na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED target_id,
+    na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
     struct na_sm_mem_handle *na_sm_mem_handle_local =

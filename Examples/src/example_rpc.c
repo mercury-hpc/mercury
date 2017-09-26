@@ -103,8 +103,9 @@ static hg_return_t my_rpc_handler(hg_handle_t handle)
 
     /* initiate bulk transfer from client to server */
     ret = HG_Bulk_transfer(hgi->context, my_rpc_handler_bulk_cb,
-        my_rpc_state_p, HG_BULK_PULL, hgi->addr, my_rpc_state_p->in.bulk_handle, 0,
-        my_rpc_state_p->bulk_handle, 0, my_rpc_state_p->size, HG_OP_ID_IGNORE);
+        my_rpc_state_p, HG_BULK_PULL, hgi->addr, hgi->target_id,
+        my_rpc_state_p->in.bulk_handle, 0, my_rpc_state_p->bulk_handle, 0,
+        my_rpc_state_p->size, HG_OP_ID_IGNORE);
     assert(ret == 0);
     (void)ret;
 

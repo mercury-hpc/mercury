@@ -136,6 +136,7 @@ HG_Hl_forward_wait(
  *                                  - HG_BULK_PUSH
  *                                  - HG_BULK_PULL
  * \param origin_addr [IN]      abstract address of origin
+ * \param origin_id [IN]        target ID of origin
  * \param origin_handle [IN]    abstract bulk handle
  * \param origin_offset [IN]    offset
  * \param local_handle [IN]     abstract bulk handle
@@ -150,6 +151,7 @@ HG_Hl_bulk_transfer_wait(
         hg_request_class_t *request_class,
         hg_bulk_op_t op,
         hg_addr_t origin_addr,
+        hg_uint8_t origin_id,
         hg_bulk_t origin_handle,
         hg_size_t origin_offset,
         hg_bulk_t local_handle,

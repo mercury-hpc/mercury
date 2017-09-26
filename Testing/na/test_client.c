@@ -166,8 +166,8 @@ test_msg_forward(struct na_test_params *params)
     /* Preposting response */
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
         msg_expected_recv_cb, params, params->recv_buf, params->recv_buf_len,
-        params->recv_buf_plugin_data, params->server_addr, NA_TEST_SEND_TAG + 1,
-        NA_OP_ID_IGNORE);
+        params->recv_buf_plugin_data, params->server_addr, 0,
+        NA_TEST_SEND_TAG + 1, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not prepost recv of expected message");
         ret = EXIT_FAILURE;
@@ -176,7 +176,7 @@ test_msg_forward(struct na_test_params *params)
 
     na_ret = NA_Msg_send_unexpected(params->na_class, params->context,
         msg_unexpected_send_cb, params, params->send_buf, params->send_buf_len,
-        params->send_buf_plugin_data, params->server_addr, NA_TEST_SEND_TAG,
+        params->send_buf_plugin_data, params->server_addr, 0, NA_TEST_SEND_TAG,
         NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start send of unexpected message");
@@ -226,8 +226,8 @@ test_bulk(struct na_test_params *params)
     printf("Preposting recv of transfer ack...\n");
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
         &ack_expected_recv_cb, params, params->recv_buf, params->recv_buf_len,
-        params->recv_buf_plugin_data, params->server_addr, NA_TEST_BULK_ACK_TAG,
-        NA_OP_ID_IGNORE);
+        params->recv_buf_plugin_data, params->server_addr, 0,
+        NA_TEST_BULK_ACK_TAG, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start receive of ack");
         ret = EXIT_FAILURE;
@@ -238,7 +238,7 @@ test_bulk(struct na_test_params *params)
     printf("Sending local memory handle...\n");
     na_ret = NA_Msg_send_expected(params->na_class, params->context, NULL,
         NULL, params->send_buf, params->send_buf_len,
-        params->send_buf_plugin_data, params->server_addr,
+        params->send_buf_plugin_data, params->server_addr, 0,
         NA_TEST_BULK_TAG, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not start send of memory handle");

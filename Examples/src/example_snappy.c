@@ -98,6 +98,7 @@ snappy_pull_cb(const struct hg_cb_info *hg_cb_info)
     HG_Bulk_transfer(HG_Get_info(snappy_transfer_args->handle)->context,
             snappy_push_cb, snappy_transfer_args,
             HG_BULK_PUSH, HG_Get_info(snappy_transfer_args->handle)->addr,
+            HG_Get_info(snappy_transfer_args->handle)->target_id,
             snappy_transfer_args->snappy_compress_input.compressed_bulk_handle, 0, /* origin */
             snappy_transfer_args->local_compressed_bulk_handle, 0, /* local */
             snappy_transfer_args->compressed_length, HG_OP_ID_IGNORE);
@@ -183,7 +184,7 @@ snappy_compress_cb(hg_handle_t handle)
      * if "co-resident" to avoid a copy of data */
     HG_Bulk_transfer(HG_Get_info(handle)->context,
             snappy_pull_cb, snappy_transfer_args,
-            HG_BULK_PULL, HG_Get_info(handle)->addr,
+            HG_BULK_PULL, HG_Get_info(handle)->addr, HG_Get_info(handle)->target_id,
             snappy_transfer_args->snappy_compress_input.input_bulk_handle, 0, /* origin */
             snappy_transfer_args->local_input_bulk_handle, 0, /* local */
             input_length, HG_OP_ID_IGNORE);

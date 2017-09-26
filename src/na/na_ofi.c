@@ -221,7 +221,7 @@ struct na_ofi_private_data {
 };
 
 struct na_ofi_context {
-    na_int32_t noc_idx; /* context index, [0, nop_max_contexts - 1] */
+    na_uint8_t      noc_idx; /* context index, [0, nop_max_contexts - 1] */
     struct fid_ep   *noc_tx; /* Transmit context */
     struct fid_ep   *noc_rx; /* Receive context */
     struct fid_cq   *noc_cq; /* CQ for basic ep or tx/rx context for sep */
@@ -615,6 +615,11 @@ na_ofi_finalize(na_class_t *na_class);
 static na_return_t
 na_ofi_context_create(na_class_t *na_class, void **context);
 
+/* context_set_id */
+static na_return_t
+na_ofi_context_set_id(na_class_t *na_class, na_context_t *context,
+    na_uint8_t target_id);
+
 /* context_destroy */
 static na_return_t
 na_ofi_context_destroy(na_class_t *na_class, void *context);
@@ -685,7 +690,8 @@ na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size);
 static na_return_t
 na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id);
+    void *plugin_data, na_addr_t dest, na_uint8_t target_id, na_tag_t tag,
+    na_op_id_t *op_id);
 
 /* msg_recv_unexpected */
 static na_return_t
@@ -697,13 +703,15 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 static na_return_t
 na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id);
+    void *plugin_data, na_addr_t dest, na_uint8_t target_id, na_tag_t tag,
+    na_op_id_t *op_id);
 
 /* msg_recv_expected */
 static na_return_t
 na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t source, na_tag_t tag, na_op_id_t *op_id);
+    void *plugin_data, na_addr_t source, na_uint8_t target_id, na_tag_t tag,
+    na_op_id_t *op_id);
 
 /* mem_handle */
 static na_return_t
@@ -737,14 +745,16 @@ static na_return_t
 na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
+    na_size_t length, na_addr_t remote_addr, na_uint8_t target_id,
+    na_op_id_t *op_id);
 
 /* get */
 static na_return_t
 na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id);
+    na_size_t length, na_addr_t remote_addr, na_uint8_t target_id,
+    na_op_id_t *op_id);
 
 /* poll_get_fd */
 static int
@@ -782,6 +792,7 @@ const na_class_t na_ofi_class_g = {
     na_ofi_finalize,                        /* finalize */
     NULL,                                   /* cleanup */
     na_ofi_context_create,                  /* context_create */
+    na_ofi_context_set_id,                  /* context_set_id */
     na_ofi_context_destroy,                 /* context_destroy */
     na_ofi_op_create,                       /* op_create */
     na_ofi_op_destroy,                      /* op_destroy */
@@ -1459,7 +1470,6 @@ na_ofi_sep_open(const struct na_ofi_domain *na_ofi_domain,
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
-    NA_LOG_ERROR("lxz sep created.\n");
 
     rc = fi_ep_bind(na_ofi_endpoint->noe_ep, &na_ofi_domain->nod_av->fid, 0);
     if (rc != 0) {
@@ -2196,17 +2206,16 @@ no_wait_obj:
             goto done;
         }
 
-        ctx->noc_idx = priv->nop_contexts;
         priv->nop_contexts++;
         hg_thread_mutex_unlock(&priv->nop_mutex);
     } else {
-        ctx->noc_idx = 0;
         ctx->noc_tx = ep->noe_ep;
         ctx->noc_rx = ep->noe_ep;
         ctx->noc_cq = ep->noe_cq;
         ctx->noc_wait = ep->noe_wait;
     }
 
+    ctx->noc_idx = 0;
     *context = ctx;
 
 done:
@@ -2215,8 +2224,33 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_context_destroy(na_class_t NA_UNUSED *na_class, void *context)
+na_ofi_context_set_id(na_class_t *na_class, na_context_t *context,
+    na_uint8_t target_id)
 {
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
+    na_return_t ret = NA_SUCCESS;
+
+    if (na_ofi_with_sep(na_class)) {
+        if (target_id >= priv->nop_max_contexts) {
+            NA_LOG_ERROR("could not set target_id %d as nop_max_contexts %d.",
+                         target_id, priv->nop_max_contexts);
+            ret = NA_INVALID_PARAM;
+            goto done;
+        }
+    }
+
+    ctx->noc_idx = target_id;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_context_destroy(na_class_t *na_class, void *context)
+{
+    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct na_ofi_context *ctx = (struct na_ofi_context *) context;
     na_return_t ret = NA_SUCCESS;
     int rc;
@@ -2268,6 +2302,10 @@ na_ofi_context_destroy(na_class_t NA_UNUSED *na_class, void *context)
             ctx->noc_cq = NULL;
         }
     }
+
+    hg_thread_mutex_lock(&priv->nop_mutex);
+    priv->nop_contexts--;
+    hg_thread_mutex_unlock(&priv->nop_mutex);
 
     free(ctx);
 out:
@@ -2853,7 +2891,8 @@ na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
 static na_return_t
 na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t dest, na_uint8_t target_id, na_tag_t tag,
+    na_op_id_t *op_id)
 {
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid_ep *ep_hdl = ctx->noc_tx;
@@ -2893,9 +2932,9 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     /* Post the FI unexpected send request */
     do {
         na_ofi_class_lock(na_class);
-        //rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl, na_ofi_addr->noa_addr, tag,
-        rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl, fi_rx_addr(na_ofi_addr->noa_addr, 0, NA_OFI_SEP_RX_CTX_BITS), tag,
-                      &na_ofi_op_id->noo_fi_ctx);
+        rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl,
+                fi_rx_addr(na_ofi_addr->noa_addr, target_id, NA_OFI_SEP_RX_CTX_BITS),
+                tag, &na_ofi_op_id->noo_fi_ctx);
         na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
@@ -2989,7 +3028,8 @@ out:
 static na_return_t
 na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t dest, na_uint8_t target_id, na_tag_t tag,
+    na_op_id_t *op_id)
 {
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid_ep *ep_hdl = ctx->noc_tx;
@@ -3029,10 +3069,9 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     /* Post the FI expected send request */
     do {
         na_ofi_class_lock(na_class);
-        //rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl, na_ofi_addr->noa_addr,
-        rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl, fi_rx_addr(na_ofi_addr->noa_addr, 0, NA_OFI_SEP_RX_CTX_BITS),
-                      NA_OFI_EXPECTED_TAG_FLAG | tag,
-                      &na_ofi_op_id->noo_fi_ctx);
+        rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl,
+                fi_rx_addr(na_ofi_addr->noa_addr, target_id, NA_OFI_SEP_RX_CTX_BITS),
+                NA_OFI_EXPECTED_TAG_FLAG | tag, &na_ofi_op_id->noo_fi_ctx);
         na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
@@ -3059,7 +3098,8 @@ out:
 static na_return_t
 na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t source, na_tag_t tag, na_op_id_t *op_id)
+    void *plugin_data, na_addr_t source, na_uint8_t target_id, na_tag_t tag,
+    na_op_id_t *op_id)
 {
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid_ep *ep_hdl = ctx->noc_rx;
@@ -3102,9 +3142,10 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     /* Post the FI expected recv request */
     do {
         na_ofi_class_lock(na_class);
-        rc = fi_trecv(ep_hdl, buf, buf_size, mr_hdl, na_ofi_addr->noa_addr,
-                      NA_OFI_EXPECTED_TAG_FLAG | tag, 0 /* ignore */,
-                      &na_ofi_op_id->noo_fi_ctx);
+        rc = fi_trecv(ep_hdl, buf, buf_size, mr_hdl,
+                fi_rx_addr(na_ofi_addr->noa_addr, target_id, NA_OFI_SEP_RX_CTX_BITS),
+                NA_OFI_EXPECTED_TAG_FLAG | tag, 0 /* ignore */,
+                &na_ofi_op_id->noo_fi_ctx);
         na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
@@ -3325,7 +3366,8 @@ static na_return_t
 na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id)
+    na_size_t length, na_addr_t remote_addr, na_uint8_t target_id,
+    na_op_id_t *op_id)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
@@ -3379,9 +3421,9 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     do {
         na_ofi_class_lock(na_class);
         rc = fi_writev(ep_hdl, &iov, &local_desc, 1 /* count */,
-                       na_ofi_addr->noa_addr,
-                       (na_uint64_t)ofi_remote_mem_handle->nom_base +
-                       remote_offset, rma_key, &na_ofi_op_id->noo_fi_ctx);
+                fi_rx_addr(na_ofi_addr->noa_addr, target_id, NA_OFI_SEP_RX_CTX_BITS),
+                (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
+                rma_key, &na_ofi_op_id->noo_fi_ctx);
         na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
@@ -3409,7 +3451,8 @@ static na_return_t
 na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id)
+    na_size_t length, na_addr_t remote_addr, na_uint8_t target_id,
+    na_op_id_t *op_id)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
@@ -3464,11 +3507,10 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     do {
         na_ofi_class_lock(na_class);
         rc = fi_readv(ep_hdl, &iov, &local_desc, 1 /* count */,
-                      na_ofi_addr->noa_addr,
-                      (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
-                      rma_key, &na_ofi_op_id->noo_fi_ctx);
+                fi_rx_addr(na_ofi_addr->noa_addr, target_id, NA_OFI_SEP_RX_CTX_BITS),
+                (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
+                rma_key, &na_ofi_op_id->noo_fi_ctx);
         na_ofi_class_unlock(na_class);
-        //NA_LOG_ERROR("lxz fi_readv, rc: %d,  na_ofi_op_id: %p.", rc, na_ofi_op_id);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -3644,7 +3686,6 @@ na_ofi_handle_rma_event(na_class_t NA_UNUSED *class,
 
     na_ofi_op_id = container_of(cq_event->op_context, struct na_ofi_op_id,
                                 noo_fi_ctx);
-    //NA_LOG_ERROR("lxz na_ofi_handle_rma_event, na_ofi_op_id %p\n", na_ofi_op_id);
     if (!na_ofi_op_id_valid(na_ofi_op_id)) {
         NA_LOG_ERROR("bad na_ofi_op_id, ignore the RMA event.");
         return;

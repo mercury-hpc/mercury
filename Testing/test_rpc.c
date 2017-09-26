@@ -262,7 +262,7 @@ hg_test_rpc_mask(hg_context_t *context, hg_request_class_t *request_class,
         goto done;
     }
 
-    HG_Core_set_target_id(handle, 2);
+    HG_Core_set_target_id(handle, 0);
 
     /* Fill input structure */
     rpc_open_handle.cookie = 100;
