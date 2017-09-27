@@ -385,7 +385,7 @@ na_test_get_config(char *addr_name, na_size_t len)
         fgets(config_addr_name, NA_TEST_MAX_ADDR_NAME, config);
         /* This prevents retaining the newline, if any */
         config_addr_name[strlen(config_addr_name) - 1] = '\0';
-        printf("Port name read: %s\n", config_addr_name);
+        printf("# Port name read: %s\n", config_addr_name);
         fclose(config);
     }
 
@@ -415,7 +415,7 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name,
     na_test_mpi_init(NA_FALSE);
 #endif
 
-    printf("Initializing NA with %s\n", info_string);
+    printf("# Initializing NA with %s\n", info_string);
     na_class = NA_Initialize(info_string, NA_FALSE);
 
     /* Get config from file if self option is not passed */
@@ -459,7 +459,7 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 
     info_string = na_test_gen_config(argc, argv, 1);
 
-    printf("Initializing NA with %s\n", info_string);
+    printf("# Initializing NA with %s\n", info_string);
     na_class = NA_Initialize(info_string, NA_TRUE);
 
     nret = NA_Addr_self(na_class, &self_addr);
@@ -489,7 +489,7 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 
     if (print_ready) {
         /* Used by CTest Test Driver */
-        printf("Waiting for client...\n");
+        printf("# Waiting for client...\n");
         fflush(stdout);
     }
 

@@ -422,7 +422,7 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
     if (addr_table_size) *addr_table_size = hg_test_addr_table_size_g;
 
     /* Used by CTest Test Driver */
-    printf("Waiting for client...\n");
+    printf("# Waiting for client...\n");
     fflush(stdout);
 
     if (context) *context = HG_CONTEXT_DEFAULT;
