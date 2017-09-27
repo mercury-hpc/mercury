@@ -1077,8 +1077,7 @@ HG_TEST_RPC_CB(hg_test_perf_rpc, handle)
 static hg_return_t
 hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
-    struct hg_test_bulk_args *bulk_args = (struct hg_test_bulk_args *)
-            hg_cb_info->arg;
+    hg_handle_t handle = (hg_handle_t) hg_cb_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
 #ifdef MERCURY_TESTING_USE_LOCAL_BULK
@@ -1091,16 +1090,14 @@ hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 #endif
 
     /* Send response back */
-    ret = HG_Respond(bulk_args->handle, NULL, NULL, NULL);
+    ret = HG_Respond(handle, NULL, NULL, NULL);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not respond\n");
         goto done;
     }
 
 done:
-    HG_Destroy(bulk_args->handle);
-    free(bulk_args);
-
+    HG_Destroy(handle);
     return ret;
 }
 
@@ -1111,14 +1108,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
     const struct hg_info *hg_info = NULL;
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
-    struct hg_test_bulk_args *bulk_args = NULL;
     bulk_write_in_t in_struct;
-
-    bulk_args = (struct hg_test_bulk_args *) malloc(
-            sizeof(struct hg_test_bulk_args));
-
-    /* Keep handle to pass to callback */
-    bulk_args->handle = handle;
 
     /* Get info from handle */
     hg_info = HG_Get_info(handle);
@@ -1131,11 +1121,6 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
     }
 
     origin_bulk_handle = in_struct.bulk_handle;
-    hg_atomic_set32(&bulk_args->completed_transfers, 0);
-
-    /* Create a new block handle to read the data */
-    bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
-    bulk_args->fildes = in_struct.fildes;
 
 #ifdef MERCURY_TESTING_USE_LOCAL_BULK
     /* Create a new bulk handle to read the data */
@@ -1150,8 +1135,9 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 
     /* Pull bulk data */
     ret = HG_Bulk_transfer(hg_info->context, hg_test_perf_bulk_transfer_cb,
-            bulk_args, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
-            local_bulk_handle, 0, bulk_args->nbytes, HG_OP_ID_IGNORE);
+            handle, HG_BULK_PULL, hg_info->addr, origin_bulk_handle, 0,
+            local_bulk_handle, 0, HG_Bulk_get_size(origin_bulk_handle),
+            HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
