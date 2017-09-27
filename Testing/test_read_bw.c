@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define BENCHMARK_NAME "Write BW (server bulk pull)"
+#define BENCHMARK_NAME "Read BW (server bulk push)"
 #define STRING(s) #s
 #define XSTRING(s) STRING(s)
 #define VERSION_NAME \
@@ -38,7 +38,7 @@
 extern int na_test_comm_rank_g;
 extern int na_test_comm_size_g;
 
-extern hg_id_t hg_test_perf_bulk_write_id_g;
+extern hg_id_t hg_test_perf_bulk_read_id_g;
 
 static hg_return_t
 hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
@@ -74,7 +74,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     buf_ptrs = (void **) &bulk_buf;
     buf_sizes = &nbytes;
 
-    ret = HG_Create(context, addr, hg_test_perf_bulk_write_id_g, &handle);
+    ret = HG_Create(context, addr, hg_test_perf_bulk_read_id_g, &handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         goto done;
@@ -84,7 +84,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
     /* Register memory */
     ret = HG_Bulk_create(hg_class, 1, buf_ptrs, (hg_size_t *) buf_sizes,
-        HG_BULK_READ_ONLY, &bulk_handle);
+        HG_BULK_READWRITE, &bulk_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         goto done;

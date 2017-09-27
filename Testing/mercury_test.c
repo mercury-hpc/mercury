@@ -72,6 +72,8 @@ hg_id_t hg_test_posix_close_id_g = 0;
 /* test_perf */
 hg_id_t hg_test_perf_rpc_id_g = 0;
 hg_id_t hg_test_perf_bulk_id_g = 0;
+hg_id_t hg_test_perf_bulk_write_id_g = 0;
+hg_id_t hg_test_perf_bulk_read_id_g = 0;
 
 /* test_overflow */
 hg_id_t hg_test_overflow_id_g = 0;
@@ -274,6 +276,10 @@ hg_test_register(hg_class_t *hg_class)
             void, void, hg_test_perf_rpc_cb);
     hg_test_perf_bulk_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_bulk",
             bulk_write_in_t, void, hg_test_perf_bulk_cb);
+    hg_test_perf_bulk_write_id_g = hg_test_perf_bulk_id_g;
+    hg_test_perf_bulk_read_id_g = MERCURY_REGISTER(hg_class,
+            "hg_test_perf_bulk_read", bulk_write_in_t, void,
+            hg_test_perf_bulk_read_cb);
 
     /* test_overflow */
     hg_test_overflow_id_g = MERCURY_REGISTER(hg_class, "hg_test_overflow",
@@ -319,7 +325,9 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
     }
 
     if (na_test_use_self_g) {
+        char *bulk_buf;
         size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
+        size_t i;
 
         /* Self addr */
         HG_Addr_self(HG_CLASS_DEFAULT, &hg_test_addr_g);
@@ -332,8 +340,12 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
 #endif
 
         /* Create bulk buffer that can be used for receiving data */
-        HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, (hg_size_t *) &bulk_size, HG_BULK_READWRITE,
-                &hg_test_local_bulk_handle_g);
+        HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, (hg_size_t *) &bulk_size,
+            HG_BULK_READWRITE, &hg_test_local_bulk_handle_g);
+        HG_Bulk_access(hg_test_local_bulk_handle_g, 0, bulk_size,
+            HG_BULK_READWRITE, 1, (void **) &bulk_buf, NULL, NULL);
+        for (i = 0; i < bulk_size; i++)
+            bulk_buf[i] = (char) i;
     } else {
         /* Look up addr using port name info */
         ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, hg_test_request_class_g,

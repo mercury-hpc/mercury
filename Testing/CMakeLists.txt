@@ -256,6 +256,7 @@ if(NOT WIN32)
 endif()
 build_mercury_test(nested)
 build_mercury_test(write_bw)
+build_mercury_test(read_bw)
 
 # Build tests and add them to ctest
 foreach(MERCURY_test ${MERCURY_tests})

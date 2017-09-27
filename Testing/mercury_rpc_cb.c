@@ -1154,6 +1154,58 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 }
 
 /*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_perf_bulk_read, handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+    const struct hg_info *hg_info = NULL;
+    hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
+    hg_bulk_t local_bulk_handle = HG_BULK_NULL;
+    bulk_write_in_t in_struct;
+
+    /* Get info from handle */
+    hg_info = HG_Get_info(handle);
+
+    /* Get input struct */
+    ret = HG_Get_input(handle, &in_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not get input struct\n");
+        return ret;
+    }
+
+    origin_bulk_handle = in_struct.bulk_handle;
+
+#ifdef MERCURY_TESTING_USE_LOCAL_BULK
+    /* Create a new bulk handle to read the data */
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
+            HG_BULK_READWRITE, &local_bulk_handle);
+#else
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+    hg_thread_mutex_lock(&hg_test_local_bulk_handle_mutex_g);
+#endif
+    local_bulk_handle = hg_test_local_bulk_handle_g;
+#endif
+
+    /* Pull bulk data */
+    ret = HG_Bulk_transfer(hg_info->context, hg_test_perf_bulk_transfer_cb,
+            handle, HG_BULK_PUSH, hg_info->addr, origin_bulk_handle, 0,
+            local_bulk_handle, 0, HG_Bulk_get_size(origin_bulk_handle),
+            HG_OP_ID_IGNORE);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not read bulk data\n");
+        return ret;
+    }
+
+#ifndef MERCURY_TESTING_USE_LOCAL_BULK
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+    hg_thread_mutex_unlock(&hg_test_local_bulk_handle_mutex_g);
+#endif
+#endif
+
+    HG_Free_input(handle, &in_struct);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 HG_TEST_RPC_CB(hg_test_overflow, handle)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -1271,6 +1323,7 @@ HG_TEST_THREAD_CB(hg_test_posix_read)
 #endif
 HG_TEST_THREAD_CB(hg_test_perf_rpc)
 HG_TEST_THREAD_CB(hg_test_perf_bulk)
+HG_TEST_THREAD_CB(hg_test_perf_bulk_read)
 HG_TEST_THREAD_CB(hg_test_overflow)
 HG_TEST_THREAD_CB(hg_test_nested1)
 HG_TEST_THREAD_CB(hg_test_nested2)
