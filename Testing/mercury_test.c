@@ -325,9 +325,7 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
     }
 
     if (na_test_use_self_g) {
-        char *bulk_buf;
         size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
-        size_t i;
 
         /* Self addr */
         HG_Addr_self(HG_CLASS_DEFAULT, &hg_test_addr_g);
@@ -342,10 +340,6 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
         /* Create bulk buffer that can be used for receiving data */
         HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, (hg_size_t *) &bulk_size,
             HG_BULK_READWRITE, &hg_test_local_bulk_handle_g);
-        HG_Bulk_access(hg_test_local_bulk_handle_g, 0, bulk_size,
-            HG_BULK_READWRITE, 1, (void **) &bulk_buf, NULL, NULL);
-        for (i = 0; i < bulk_size; i++)
-            bulk_buf[i] = (char) i;
     } else {
         /* Look up addr using port name info */
         ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, hg_test_request_class_g,
@@ -378,6 +372,8 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
         hg_context_t **context)
 {
     size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
+    char *buf_ptr;
+    size_t i;
     hg_return_t ret;
 
     /* Call cleanup before doing anything */
@@ -414,12 +410,15 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
     hg_test_register(HG_CLASS_DEFAULT);
 
     /* Create bulk buffer that can be used for receiving data */
-    HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, (hg_size_t *) &bulk_size, HG_BULK_READWRITE,
-            &hg_test_local_bulk_handle_g);
+    HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, (hg_size_t *) &bulk_size,
+        HG_BULK_READWRITE, &hg_test_local_bulk_handle_g);
+    HG_Bulk_access(hg_test_local_bulk_handle_g, 0, bulk_size,
+        HG_BULK_READWRITE, 1, (void **) &buf_ptr, NULL, NULL);
+    for (i = 0; i < bulk_size; i++) {
+        buf_ptr[i] = (char) i;
+    }
 
     if (hg_test_addr_table_size_g > 1) {
-        unsigned int i;
-
         hg_test_addr_table_g = (hg_addr_t *) malloc(hg_test_addr_table_size_g * sizeof(hg_addr_t));
         for (i = 0; i < hg_test_addr_table_size_g; i++) {
             ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, hg_test_request_class_g,

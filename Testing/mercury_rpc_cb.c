@@ -1078,6 +1078,10 @@ static hg_return_t
 hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     hg_handle_t handle = (hg_handle_t) hg_cb_info->arg;
+//    size_t size = HG_Bulk_get_size(hg_cb_info->info.bulk.origin_handle);
+//    void *buf;
+//    char *buf_ptr;
+//    size_t i;
     hg_return_t ret = HG_SUCCESS;
 
 #ifdef MERCURY_TESTING_USE_LOCAL_BULK
@@ -1088,6 +1092,18 @@ hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
         goto done;
     }
 #endif
+//    /* Call bulk_write */
+//    HG_Bulk_access(hg_cb_info->info.bulk.local_handle, 0,
+//        size, HG_BULK_READWRITE, 1, &buf, NULL, NULL);
+//
+//    /* Check bulk buf */
+//    buf_ptr = (const char*) buf;
+//    for (i = 0; i < size; i++) {
+//        if (buf_ptr[i] != (char) i) {
+//            printf("Error detected in bulk transfer, buf[%d] = %d, was expecting %d!\n", i, buf_ptr[i], i);
+//            break;
+//        }
+//    }
 
     /* Send response back */
     ret = HG_Respond(handle, NULL, NULL, NULL);

@@ -70,7 +70,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     /* Prepare bulk_buf */
     bulk_buf = malloc(nbytes);
     for (i = 0; i < nbytes; i++)
-        bulk_buf[i] = (char) i;
+        bulk_buf[i] = 1;
     buf_ptrs = (void **) &bulk_buf;
     buf_sizes = &nbytes;
 
@@ -146,6 +146,13 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         if (na_test_comm_rank_g == 0) {
             fprintf(stdout, "%-*d%*.*f\r", 10, (int) nbytes, NWIDTH,
                 NDIGITS, read_bandwidth);
+//            for (i = 0; i < nbytes; i++) {
+//                if (bulk_buf[i] != (char) i) {
+//                    printf("Error detected in bulk transfer, buf[%d] = %d,"
+//                        "was expecting %d!\n", i, bulk_buf[i], i);
+//                    break;
+//                }
+//            }
         }
     }
     if (na_test_comm_rank_g == 0) fprintf(stdout, "\n");
