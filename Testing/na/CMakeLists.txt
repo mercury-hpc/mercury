@@ -30,9 +30,7 @@ macro(add_na_test_comm test_name server client comm protocol)
 
   # Set test arguments
   set(test_args --comm ${comm})
-  if(protocol)
-    set(test_args ${test_args} --protocol ${protocol})
-  endif()
+  set(test_args ${test_args} --protocol ${protocol})
 
   # Static client/server test
   if(${comm} STREQUAL "mpi" AND ${protocol} STREQUAL "static")
@@ -56,13 +54,9 @@ endmacro()
 function(add_na_test test_name server client)
   foreach(comm ${NA_PLUGINS})
     string(TOUPPER ${comm} upper_comm)
-    if(NA_${upper_comm}_TESTING_PROTOCOL)
-      foreach(protocol ${NA_${upper_comm}_TESTING_PROTOCOL})
-        add_na_test_comm(${test_name} ${server} ${client} ${comm} ${protocol})
-      endforeach()
-    else()
-      add_na_test_comm(${test_name} ${server} ${client} ${comm} "")
-    endif()
+    foreach(protocol ${NA_${upper_comm}_TESTING_PROTOCOL})
+      add_na_test_comm(${test_name} ${server} ${client} ${comm} ${protocol})
+    endforeach()
   endforeach()
 endfunction()
 
