@@ -149,6 +149,9 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
     /* Do not allocate extra buffer yet */
 #ifdef HG_HAS_CHECKSUMS
     hg_proc->extra_buf.checksum = hg_proc->proc_buf.checksum;
+    hg_proc->extra_buf.checksum_size = hg_proc->proc_buf.checksum_size;
+    hg_proc->extra_buf.base_checksum = hg_proc->proc_buf.base_checksum;
+    hg_proc->extra_buf.verify_checksum = hg_proc->proc_buf.verify_checksum;
     hg_proc->extra_buf.update_checksum = hg_proc->proc_buf.update_checksum;
 #endif
 
@@ -282,14 +285,18 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
 #endif
 
     /* Reset extra buf */
+    if (hg_proc->extra_buf.buf && hg_proc->extra_buf.is_mine)
+        free (hg_proc->extra_buf.buf);
     hg_proc->extra_buf.buf = NULL;
     hg_proc->extra_buf.size = 0;
     hg_proc->extra_buf.buf_ptr = NULL;
     hg_proc->extra_buf.size_left = 0;
     hg_proc->extra_buf.is_mine = 0;
-    /* Do not allocate extra buffer yet */
 #ifdef HG_HAS_CHECKSUMS
     hg_proc->extra_buf.checksum = hg_proc->proc_buf.checksum;
+    hg_proc->extra_buf.checksum_size = hg_proc->proc_buf.checksum_size;
+    hg_proc->extra_buf.base_checksum = hg_proc->proc_buf.base_checksum;
+    hg_proc->extra_buf.verify_checksum = hg_proc->proc_buf.verify_checksum;
     hg_proc->extra_buf.update_checksum = hg_proc->proc_buf.update_checksum;
 #endif
 
@@ -367,7 +374,8 @@ hg_proc_get_size_used(hg_proc_t proc)
     }
 
     if(hg_proc->extra_buf.size > 0)
-        size = (hg_proc->proc_buf.size + hg_proc->extra_buf.size) - hg_proc->extra_buf.size_left;
+        size = hg_proc->proc_buf.size + hg_proc->extra_buf.size
+            - hg_proc->extra_buf.size_left;
     else
         size = hg_proc->proc_buf.size - hg_proc->proc_buf.size_left;
 
