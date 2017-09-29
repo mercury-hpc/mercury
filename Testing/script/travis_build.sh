@@ -22,7 +22,7 @@ if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
   if [ ! -f "$HOME/install/bin/mpicc" ]; then
     cd $HOME && wget http://www.mpich.org/static/downloads/${MPI_VERSION}/mpich-${MPI_VERSION}.tar.gz;
     tar -xzf mpich-${MPI_VERSION}.tar.gz;
-    cd mpich-${MPI_VERSION} && ./configure --disable-fortran --disable-static --prefix=$HOME/install && make -j2 -s && make install;
+    cd mpich-${MPI_VERSION} && ./configure --disable-fortran --prefix=$HOME/install && make -j2 -s && make install;
   else
     echo "Using cached directory for MPI";
   fi
