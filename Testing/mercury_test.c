@@ -71,6 +71,7 @@ hg_id_t hg_test_posix_close_id_g = 0;
 
 /* test_perf */
 hg_id_t hg_test_perf_rpc_id_g = 0;
+hg_id_t hg_test_perf_rpc_lat_id_g = 0;
 hg_id_t hg_test_perf_bulk_id_g = 0;
 hg_id_t hg_test_perf_bulk_write_id_g = 0;
 hg_id_t hg_test_perf_bulk_read_id_g = 0;
@@ -274,6 +275,9 @@ hg_test_register(hg_class_t *hg_class)
     /* test_perf */
     hg_test_perf_rpc_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_rpc",
             void, void, hg_test_perf_rpc_cb);
+    hg_test_perf_rpc_lat_id_g = MERCURY_REGISTER(hg_class,
+            "hg_test_perf_rpc_lat", perf_rpc_lat_in_t, void,
+            hg_test_perf_rpc_cb);
     hg_test_perf_bulk_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_bulk",
             bulk_write_in_t, void, hg_test_perf_bulk_cb);
     hg_test_perf_bulk_write_id_g = hg_test_perf_bulk_id_g;

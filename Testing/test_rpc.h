@@ -20,6 +20,11 @@ typedef struct {
     hg_uint64_t cookie;
 } rpc_handle_t;
 
+typedef struct {
+    void *buf;
+    size_t buf_size;
+} perf_rpc_lat_in_t;
+
 /* 1. Generate processor and struct for additional struct types
  * MERCURY_GEN_STRUCT_PROC( struct_type_name, fields )
  */
@@ -114,5 +119,21 @@ hg_proc_rpc_open_out_t(hg_proc_t proc, void *data)
     return ret;
 }
 #endif
+
+/* Define hg_proc_perf_rpc_lat_in_t */
+static HG_INLINE hg_return_t
+hg_proc_perf_rpc_lat_in_t(hg_proc_t proc, void *data)
+{
+    perf_rpc_lat_in_t *struct_data = (perf_rpc_lat_in_t *) data;
+    hg_return_t ret = HG_SUCCESS;
+
+    ret = hg_proc_raw(proc, struct_data->buf, struct_data->buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Proc error");
+        return ret;
+    }
+
+    return ret;
+}
 
 #endif /* TEST_RPC_H */
