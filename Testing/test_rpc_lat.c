@@ -34,23 +34,36 @@
 #define NDIGITS 2
 #define NWIDTH 20
 #define MAX_MSG_SIZE (MERCURY_TESTING_BUFFER_SIZE * 1024 * 1024)
+#define MAX_HANDLES 16
 
 extern int na_test_comm_rank_g;
 extern int na_test_comm_size_g;
 
 extern hg_id_t hg_test_perf_rpc_lat_id_g;
 
+struct hg_test_perf_args {
+    hg_request_t *request;
+    unsigned int op_count;
+    hg_atomic_int32_t op_completed_count;
+};
+
 static hg_return_t
 hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
 {
-    hg_request_complete((hg_request_t *) callback_info->arg);
+    struct hg_test_perf_args *args =
+        (struct hg_test_perf_args *) callback_info->arg;
+
+    if ((unsigned int) hg_atomic_incr32(&args->op_completed_count)
+        == args->op_count) {
+        hg_request_complete(args->request);
+    }
 
     return HG_SUCCESS;
 }
 
 static hg_return_t
 measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
-    hg_request_class_t *request_class)
+    unsigned int nhandles, hg_request_class_t *request_class)
 {
     perf_rpc_lat_in_t in_struct;
     char *bulk_buf;
@@ -58,8 +71,9 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
     size_t loop = (total_size > LARGE_SIZE) ? MERCURY_TESTING_MAX_LOOP :
         MERCURY_TESTING_MAX_LOOP * 10;
     size_t skip = (total_size > LARGE_SIZE) ? LARGE_SKIP : SMALL_SKIP;
-    hg_handle_t handle;
+    hg_handle_t *handles = NULL;
     hg_request_t *request;
+    struct hg_test_perf_args args;
     size_t avg_iter;
     double time_read = 0, min_time_read = -1, max_time_read = 0;
     hg_return_t ret = HG_SUCCESS;
@@ -70,13 +84,19 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
     for (i = 0; i < nbytes; i++)
         bulk_buf[i] = (char) i;
 
-    ret = HG_Create(context, addr, hg_test_perf_rpc_lat_id_g, &handle);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not start call\n");
-        goto done;
+    handles = malloc(nhandles * sizeof(hg_handle_t));
+    for (i = 0; i < nhandles; i++) {
+        ret = HG_Create(context, addr, hg_test_perf_rpc_lat_id_g, &handles[i]);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not start call\n");
+            goto done;
+        }
     }
 
     request = hg_request_create(request_class);
+    hg_atomic_init32(&args.op_completed_count, 0);
+    args.op_count = nhandles;
+    args.request = request;
 
     /* Fill input structure */
     in_struct.buf_size = nbytes;
@@ -84,14 +104,19 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
 
     /* Warm up for RPC */
     for (i = 0; i < skip; i++) {
-        ret = HG_Forward(handle, hg_test_perf_forward_cb, request, &in_struct);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not forward call\n");
-            goto done;
+        unsigned int j;
+
+        for (j = 0; j < nhandles; j++) {
+            ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args, &in_struct);
+            if (ret != HG_SUCCESS) {
+                fprintf(stderr, "Could not forward call\n");
+                goto done;
+            }
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
         hg_request_reset(request);
+        hg_atomic_set32(&args.op_completed_count, 0);
     }
 
     NA_Test_barrier();
@@ -101,31 +126,32 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
         hg_time_t t1, t2;
         double td, part_time_read;
         double read_lat;
+        unsigned int j;
 
         hg_time_get_current(&t1);
 
-        ret = HG_Forward(handle, hg_test_perf_forward_cb, request, &in_struct);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not forward call\n");
-            goto done;
+        for (j = 0; j < nhandles; j++) {
+            ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args, &in_struct);
+            if (ret != HG_SUCCESS) {
+                fprintf(stderr, "Could not forward call\n");
+                goto done;
+            }
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
-
-        NA_Test_barrier();
-
         hg_time_get_current(&t2);
-        td = hg_time_to_double(hg_time_subtract(t2, t1));
 
+        hg_request_reset(request);
+        hg_atomic_set32(&args.op_completed_count, 0);
+
+        td = hg_time_to_double(hg_time_subtract(t2, t1));
         time_read += td;
         if (min_time_read < 0) min_time_read = time_read;
         min_time_read = (td < min_time_read) ? td : min_time_read;
         max_time_read = (td > max_time_read) ? td : max_time_read;
 
-        hg_request_reset(request);
-
-        part_time_read = time_read / (double) (avg_iter + 1);
-        read_lat = part_time_read * 1.0e6 / (na_test_comm_size_g);
+        part_time_read = time_read / (double) (nhandles * (avg_iter + 1));
+        read_lat = part_time_read * 1.0e6 / na_test_comm_size_g;
 
         /* At this point we have received everything so work out the bandwidth */
         if (na_test_comm_rank_g == 0) {
@@ -135,19 +161,19 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
     }
     if (na_test_comm_rank_g == 0) fprintf(stdout, "\n");
 
-    /* Free bulk data */
-    free(bulk_buf);
-
-    hg_request_destroy(request);
-
     /* Complete */
-    ret = HG_Destroy(handle);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not complete\n");
-        goto done;
+    hg_request_destroy(request);
+    for (i = 0; i < nhandles; i++) {
+        ret = HG_Destroy(handles[i]);
+        if (ret != HG_SUCCESS) {
+            fprintf(stderr, "Could not complete\n");
+            goto done;
+        }
     }
 
 done:
+    free(bulk_buf);
+    free(handles);
     return ret;
 }
 
@@ -160,21 +186,26 @@ main(int argc, char *argv[])
     hg_request_class_t *request_class = NULL;
     size_t size;
     hg_addr_t addr;
+    unsigned int nhandles;
 
     hg_class = HG_Test_client_init(argc, argv, &addr, &na_test_comm_rank_g,
             &context, &request_class);
 
-    if (na_test_comm_rank_g == 0) {
-        fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
-        fprintf(stdout, "# Loop %d times from size %d to %d\n",
-            MERCURY_TESTING_MAX_LOOP, 1, MAX_MSG_SIZE);
-        fprintf(stdout, "%-*s%*s\n", 10, "# Size", NWIDTH,
+    for (nhandles = 1; nhandles <= MAX_HANDLES; nhandles *= 2) {
+        if (na_test_comm_rank_g == 0) {
+            fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
+            fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with %u handle(s)\n",
+                MERCURY_TESTING_MAX_LOOP, 1, MAX_MSG_SIZE, nhandles);
+            fprintf(stdout, "%-*s%*s\n", 10, "# Size", NWIDTH,
                 "Latency (us)");
-        fflush(stdout);
-    }
+            fflush(stdout);
+        }
 
-    for (size = 1; size <= MAX_MSG_SIZE; size *= 2)
-        measure_rpc_latency(context, addr, size, request_class);
+        for (size = 1; size <= MAX_MSG_SIZE; size *= 2)
+            measure_rpc_latency(context, addr, size, nhandles, request_class);
+
+        fprintf(stdout, "\n");
+    }
 
     HG_Test_finalize(hg_class);
 
