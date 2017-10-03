@@ -14,8 +14,6 @@
 #include "mercury_macros.h"
 #include "mercury_proc_string.h"
 
-#ifdef HG_HAS_BOOST
-
 typedef struct {
     hg_uint64_t cookie;
 } rpc_handle_t;
@@ -24,6 +22,8 @@ typedef struct {
     void *buf;
     size_t buf_size;
 } perf_rpc_lat_in_t;
+
+#ifdef HG_HAS_BOOST
 
 /* 1. Generate processor and struct for additional struct types
  * MERCURY_GEN_STRUCT_PROC( struct_type_name, fields )
@@ -39,11 +39,6 @@ MERCURY_GEN_STRUCT_PROC( rpc_handle_t, ((hg_uint64_t)(cookie)) )
 MERCURY_GEN_PROC( rpc_open_in_t, ((hg_const_string_t)(path)) ((rpc_handle_t)(handle)) )
 MERCURY_GEN_PROC( rpc_open_out_t, ((hg_int32_t)(ret)) ((hg_int32_t)(event_id)) )
 #else
-/* Define rpc_handle_t */
-typedef struct {
-    hg_uint64_t cookie;
-} rpc_handle_t;
-
 /* Dummy function that needs to be shipped (already defined) */
 /* int rpc_open(const char *path, rpc_handle_t handle, int *event_id); */
 
