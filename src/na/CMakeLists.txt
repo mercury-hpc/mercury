@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.5 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.0.0 FATAL_ERROR)
 project(NA C)
 
 #------------------------------------------------------------------------------
@@ -11,7 +11,11 @@ if(NOT NA_INSTALL_LIB_DIR)
   set(NA_INSTALL_LIB_DIR ${CMAKE_INSTALL_PREFIX}/lib)
 endif()
 if(NOT NA_INSTALL_INCLUDE_DIR)
+  # Interface include will default to prefix/include
+  set(NA_INSTALL_INCLUDE_INTERFACE include)
   set(NA_INSTALL_INCLUDE_DIR ${CMAKE_INSTALL_PREFIX}/include)
+else()
+  set(NA_INSTALL_INCLUDE_INTERFACE ${NA_INSTALL_INCLUDE_DIR})
 endif()
 if(NOT NA_INSTALL_DATA_DIR)
   set(NA_INSTALL_DATA_DIR ${CMAKE_INSTALL_PREFIX}/share)
@@ -34,7 +38,7 @@ endif()
 #------------------------------------------------------------------------------
 # Include source and build directories
 #------------------------------------------------------------------------------
-include_directories(
+set(NA_BUILD_INCLUDE_DEPENDENCIES
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
 )
@@ -43,7 +47,7 @@ include_directories(
 # Internal dependencies
 #------------------------------------------------------------------------------
 # UTIL
-include_directories(${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES})
+#include_directories(${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES})
 
 # Multi progress
 option(NA_ALLOW_MULTI_PROGRESS "Allow concurrent progress on single context." ON)
@@ -65,7 +69,10 @@ if(NA_USE_BMI)
     message(STATUS "BMI include directory: ${BMI_INCLUDE_DIR}")
     set(NA_PLUGINS ${NA_PLUGINS} bmi)
     set(NA_HAS_BMI 1)
-    include_directories(${BMI_INCLUDE_DIR})
+    set(NA_INT_INCLUDE_DEPENDENCIES
+      ${NA_INT_INCLUDE_DEPENDENCIES}
+      ${BMI_INCLUDE_DIR}
+    )
     set(NA_EXT_LIB_DEPENDENCIES
       ${NA_EXT_LIB_DEPENDENCIES}
       ${BMI_LIBRARIES}
@@ -84,14 +91,13 @@ if(NA_USE_MPI)
     message(STATUS "MPI include directory: ${MPI_INCLUDE_PATH}")
     set(NA_HAS_MPI 1)
     set(NA_PLUGINS ${NA_PLUGINS} mpi)
-    include_directories(${MPI_INCLUDE_PATH})
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
-      ${MPI_LIBRARIES}
-    )
     set(NA_EXT_INCLUDE_DEPENDENCIES
       ${NA_EXT_INCLUDE_DEPENDENCIES}
       ${MPI_INCLUDE_PATH}
+    )
+    set(NA_EXT_LIB_DEPENDENCIES
+      ${NA_EXT_LIB_DEPENDENCIES}
+      ${MPI_LIBRARIES}
     )
     # Extra job setup for Cray MPI without ALPS support
     option(NA_MPI_USE_GNI_SETUP
@@ -100,7 +106,10 @@ if(NA_USE_MPI)
       find_package(GNI REQUIRED)
       if(GNI_FOUND)
         set(NA_MPI_HAS_GNI_SETUP 1)
-        include_directories(${GNI_INCLUDE_DIRS})
+        set(NA_INT_INCLUDE_DEPENDENCIES
+          ${NA_INT_INCLUDE_DEPENDENCIES}
+          ${GNI_INCLUDE_DIRS}
+        )
         set(NA_EXT_LIB_DEPENDENCIES
           ${NA_EXT_LIB_DEPENDENCIES}
           ${GNI_LIBRARIES}
@@ -123,7 +132,10 @@ if(NA_USE_CCI)
     message(STATUS "CCI include directory: ${CCI_INCLUDE_DIR}")
     set(NA_PLUGINS ${NA_PLUGINS} cci)
     set(NA_HAS_CCI 1)
-    include_directories(${CCI_INCLUDE_DIR})
+    set(NA_INT_INCLUDE_DEPENDENCIES
+      ${NA_INT_INCLUDE_DEPENDENCIES}
+      ${CCI_INCLUDE_DIR}
+    )
     set(NA_EXT_LIB_DEPENDENCIES
       ${NA_EXT_LIB_DEPENDENCIES}
       ${CCI_LIBRARIES}
@@ -141,10 +153,13 @@ if(NA_USE_OFI)
     message(STATUS "OFI include directory: ${OFI_INCLUDE_DIR}")
     set(NA_PLUGINS ${NA_PLUGINS} ofi)
     set(NA_HAS_OFI 1)
-    include_directories(${OFI_INCLUDE_DIR})
     # Detect <rdma/fi_ext_gni.h>
     set(CMAKE_REQUIRED_INCLUDES ${OFI_INCLUDE_DIR})
     check_include_files("rdma/fi_ext_gni.h" NA_OFI_HAS_EXT_GNI_H)
+    set(NA_INT_INCLUDE_DEPENDENCIES
+      ${NA_INT_INCLUDE_DEPENDENCIES}
+      ${OFI_INCLUDE_DIR}
+    )
     set(NA_EXT_LIB_DEPENDENCIES
       ${NA_EXT_LIB_DEPENDENCIES}
       ${OFI_LIBRARIES}
@@ -258,7 +273,13 @@ endif()
 #----------------------------------------------------------------------------
 # NA
 add_library(na ${NA_SRCS})
-target_link_libraries(na ${NA_EXT_LIB_DEPENDENCIES} mercury_util)
+target_include_directories(na
+  PRIVATE ${NA_INT_INCLUDE_DEPENDENCIES}
+  PUBLIC  ${NA_EXT_INCLUDE_DEPENDENCIES}
+         "$<BUILD_INTERFACE:${NA_BUILD_INCLUDE_DEPENDENCIES}>"
+          $<INSTALL_INTERFACE:${NA_INSTALL_INCLUDE_INTERFACE}>
+)
+target_link_libraries(na mercury_util ${NA_EXT_LIB_DEPENDENCIES})
 mercury_set_lib_options(na "na" ${NA_LIBTYPE})
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(na)

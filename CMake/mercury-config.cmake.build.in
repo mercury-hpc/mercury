@@ -9,11 +9,6 @@ get_filename_component(SELF_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 set(MERCURY_USE_BOOST_PP @MERCURY_USE_BOOST_PP@)
 
 #-----------------------------------------------------------------------------
-# Directories
-#-----------------------------------------------------------------------------
-set(MERCURY_INCLUDE_DIR "@MERCURY_INCLUDES_BUILD_TIME@")
-
-#-----------------------------------------------------------------------------
 # Version Strings
 #-----------------------------------------------------------------------------
 set(MERCURY_VERSION_STRING  @MERCURY_PACKAGE_VERSION@)

@@ -1,17 +1,13 @@
 #-----------------------------------------------------------------------------
-# Config file for compiling against the build directory
+# Config file for compiling against the install directory
 #-----------------------------------------------------------------------------
-get_filename_component(SELF_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+get_filename_component(MERCURY_SELF_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 
 #-----------------------------------------------------------------------------
 # User Options
 #-----------------------------------------------------------------------------
 set(MERCURY_USE_BOOST_PP @MERCURY_USE_BOOST_PP@)
-
-#-----------------------------------------------------------------------------
-# Directories
-#-----------------------------------------------------------------------------
-set(MERCURY_INCLUDE_DIR "@MERCURY_INCLUDES_INSTALL_TIME@")
+set(MERCURY_USE_SYSTEM_MCHECKSUM @MERCURY_USE_SYSTEM_MCHECKSUM@)
 
 #-----------------------------------------------------------------------------
 # Version Strings
@@ -26,6 +22,9 @@ set(MERCURY_VERSION_PATCH   @MERCURY_VERSION_PATCH@)
 # project which has already built MERCURY as a subproject
 #-----------------------------------------------------------------------------
 if(NOT TARGET "mercury" AND NOT MERCURY_INSTALL_SKIP_TARGETS)
-  include(${SELF_DIR}/mercury-targets.cmake)
+  if(NOT TARGET "mchecksum" AND MERCURY_USE_SYSTEM_MCHECKSUM)
+    include(@mchecksum_DIR@/mchecksum-config.cmake)
+  endif()
+  include(${MERCURY_SELF_DIR}/mercury-targets.cmake)
 endif()
 

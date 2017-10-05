@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.5 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.0.0 FATAL_ERROR)
 
 # Setup cmake policies.
 foreach(p
@@ -52,8 +52,11 @@ else()
   set(NA_INSTALL_LIB_DIR ${MERCURY_INSTALL_LIB_DIR})
 endif()
 if(NOT MERCURY_INSTALL_INCLUDE_DIR)
+  # Interface include will default to prefix/include
+  set(MERCURY_INSTALL_INTERFACE include)
   set(MERCURY_INSTALL_INCLUDE_DIR ${CMAKE_INSTALL_PREFIX}/include)
 else()
+  set(MERCURY_INSTALL_INTERFACE ${MERCURY_INSTALL_INCLUDE_DIR})
   set(NA_INSTALL_INCLUDE_DIR ${MERCURY_INSTALL_INCLUDE_DIR})
 endif()
 if(NOT MERCURY_INSTALL_DATA_DIR)
@@ -151,11 +154,23 @@ endif()
 # Choose static or shared libraries.
 #------------------------------------------------------------------------------
 option(BUILD_SHARED_LIBS "Build with shared libraries." OFF)
+if(BUILD_SHARED_LIBS)
+  set(HG_BUILD_SHARED_LIBS 1)
+  set(MERCURY_LIBTYPE SHARED)
+else()
+  set(HG_BUILD_SHARED_LIBS 0)
+  set(MERCURY_LIBTYPE STATIC)
+endif()
 
 #------------------------------------------------------------------------------
 # Enable verbose error.
 #------------------------------------------------------------------------------
 option(MERCURY_ENABLE_VERBOSE_ERROR "Print error messages to stderr." ON)
+if(MERCURY_ENABLE_VERBOSE_ERROR)
+  set(HG_HAS_VERBOSE_ERROR 1)
+else()
+  set(HG_HAS_VERBOSE_ERROR 0)
+endif()
 
 #-------------------------------------------------------------------------------
 function(mercury_set_lib_options libtarget libname libtype)
@@ -300,7 +315,7 @@ install(
 )
 
 #-----------------------------------------------------------------------------
-# For automake compatibility, also a provide a pkgconfig file
+# For automake compatibility, also provide a pkgconfig file
 #-----------------------------------------------------------------------------
 if(NOT WIN32)
   configure_file(

@@ -11,7 +11,6 @@
 #ifndef MERCURY_REQUEST_H
 #define MERCURY_REQUEST_H
 
-#include <mercury_types.h>
 #include "mercury_util_config.h"
 
 /**
@@ -157,8 +156,8 @@ hg_request_waitall(int count, hg_request_t *request[],  unsigned int timeout,
  * \return HG_SUCCESS if hg_request_complete returns HG_UTIL_SUCCESS,
  *         HG_OTHER_ERROR otherwise
  */
-HG_UTIL_EXPORT hg_return_t
-hg_request_complete_cb(const struct hg_cb_info *cb_info);
+//HG_UTIL_EXPORT hg_return_t
+//hg_request_complete_cb(const struct hg_cb_info *cb_info);
 
 /**
  * Attach user data to a specified request.

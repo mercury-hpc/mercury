@@ -8,7 +8,7 @@ Name: mercury
 Description: RPC Library for High-Performance Computing
 Version: @MERCURY_PACKAGE_VERSION@
 URL: http://mercury-hpc.github.io/
-Requires:
+Requires: @MERCURY_PKG_DEPENDENCIES@
 Libs: -L${libdir} @MERCURY_LIBRARIES@
 Libs.private: @MERCURY_LIB_DEPENDENCIES@
 Cflags: -I${includedir} @MERCURY_INCLUDE_DEPENDENCIES@
