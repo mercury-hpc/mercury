@@ -1,12 +1,15 @@
+[![Build status][travis-ci-svg]][travis-ci-link]
+[![Release version][mercury-release-svg]][mercury-release-link]
+
 What is Mercury?
 ================
 
    Mercury is an RPC framework specifically designed for use in HPC systems
    that allows asynchronous transfer of parameters and execution requests,
-   and direct support of large data arguments. The interface is generic
-   to allow any function call to be shipped. The network implementation
+   as well as direct support of large data arguments. The network implementation
    is abstracted, allowing easy porting to future systems and efficient use
-   of existing native transport mechanisms.
+   of existing native transport mechanisms. Mercury's interface is generic
+   and allows any function call to be serialized.
 
    Please see the accompanying COPYING file for license details.
 
@@ -17,13 +20,13 @@ What is Mercury?
 Architectures supported
 =======================
 
-   Architectures supported by MPI implementations are supported by the
-   network abstraction layer. MPI, BMI (tcp) and SM plugins fully
-   implement the network abstraction layer and are currently supported.
-   The CCI plugin is still experimental and underlying CCI transport plugins
-   (tcp, sm, verbs, gni) may require additional testing or upcoming fixes.
-   Additional plugins are currently in development and will be added in
-   future releases to support additional network protocols.
+   Architectures supported by MPI implementations are generally supported by the
+   network abstraction layer. MPI, BMI (tcp) and SM (shared-memory) plugins
+   fully implement the network abstraction layer and are currently supported.
+   The CCI plugin is experimental and underlying CCI transport plugins
+   (`tcp`, `sm`, `verbs`, `gni`) may require additional testing or fixes.
+   The libfabric plugin is experimental and underlying libfabric providers
+   (`tcp`, `verbs`, `psm2`, `gni`) may require additional testing or fixes.
 
    See the [plugin requirements](#plugin-requirements) section for
    plugin requirement details.
@@ -68,15 +71,20 @@ memory to be accessed.
 To make use of the CCI plugin, please refer to the CCI build instructions
 available on this [page][cci].
 
+To make use of the libfabric/OFI plugin, please refer to the libfabric build
+instructions available on this [page][libfabric].
+
 Optional requirements
 ---------------------
 
 For optional automatic code generation features (which are used for generating
-encoding and decoding routines), the preprocessor subset of the BOOST
-library must be included (Boost v1.48 or higher is recommended).
+serialization and deserialization routines), the preprocessor subset of the
+BOOST library must be included (Boost v1.48 or higher is recommended).
+The library itself is therefore not necessary since only the header is used.
 
 On Linux OpenPA v1.0.3 or higher is required (the version that is included
-with MPICH can also be used) for systems that do not have `stdatomic.h`.
+with MPICH can also be used) for systems that do not have `stdatomic.h`
+(GCC version less than 4.8).
 
 Building
 ========
@@ -92,9 +100,10 @@ have permissions (e.g., your home directory) and unpack it:
 
 Replace "X" with the version number of the package.
 
-(Optional) If you checked out the sources using git and want to build
-the testing suite (which requires the kwsys submodule), you need to issue
-from the root of the source directory the following command:
+(Optional) If you checked out the sources using git (without the --recursive
+option) and want to build the testing suite (which requires the kwsys
+submodule) or use checksums (which requires the mchecksum submodule), you need
+to issue from the root of the source directory the following command:
 
     git submodule update --init
 
@@ -114,13 +123,16 @@ Type 'c' multiple times and choose suitable options. Recommended options are:
     BUILD_TESTING                    ON
     Boost_INCLUDE_DIR                /path/to/include/directory
     CMAKE_INSTALL_PREFIX             /path/to/install/directory
-    MERCURY_ENABLE_PARALLEL_TESTING  ON
+    MERCURY_ENABLE_PARALLEL_TESTING  ON/OFF
     MERCURY_USE_BOOST_PP             ON
-    MERCURY_USE_SYSTEM_MCHECKSUM     OFF
+    MERCURY_USE_CHECKSUMS            ON
+    MERCURY_USE_EAGER_BULK           ON
+    MERCURY_USE_SYSTEM_MCHECKSUM     ON/OFF
     MERCURY_USE_XDR                  OFF
     NA_USE_BMI                       ON/OFF
     NA_USE_MPI                       ON/OFF
     NA_USE_CCI                       ON/OFF
+    NA_USE_OFI                       ON/OFF
     NA_USE_SM                        ON/OFF
 
 Setting include directory and library paths may require you to toggle to
@@ -173,7 +185,7 @@ to use the new value. Note also that this variable needs to be changed
 if you run the tests manually and use a different number of client
 processes.
 
-(Optional) To run the tests manually with the MPI plugin open up two
+(Optional) To run the tests manually with the MPI plugin, open up two
 terminal windows, one for the server and one for the client. From the same
 directory where you have write permissions (so that the port configuration
 file can be written by the server and read by the client) do:
@@ -186,15 +198,13 @@ and in the other:
 
 The same applies to other plugins, do `./hg_test_server -h` for more options.
 
-Here is the current continuous testing status for the master branch:
-[![Build Status][travis-ci-svg]][travis-ci-link]
-
-
-
 [mailing-lists]: http://mercury-hpc.github.io/help#mailing-lists
 [documentation]: http://mercury-hpc.github.io/documentation/
 [cci]: http://cci-forum.com/?page_id=46
+[libfabric]: https://github.com/ofiwg/libfabric
 [travis-ci-svg]: https://travis-ci.org/mercury-hpc/mercury.svg
 [travis-ci-link]: https://travis-ci.org/mercury-hpc/mercury
+[mercury-release-svg]: https://img.shields.io/github/release/mercury-hpc/mercury.svg
+[mercury-release-link]: https://github.com/mercury-hpc/mercury/releases/latest
 [yama]: https://www.kernel.org/doc/Documentation/security/Yama.txt
 
