@@ -75,7 +75,7 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
     hg_request_t *request;
     struct hg_test_perf_args args;
     size_t avg_iter;
-    double time_read = 0, min_time_read = -1, max_time_read = 0;
+    double time_read = 0, read_lat;
     hg_return_t ret = HG_SUCCESS;
     size_t i;
 
@@ -84,6 +84,7 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
     for (i = 0; i < nbytes; i++)
         bulk_buf[i] = (char) i;
 
+    /* Create handles */
     handles = malloc(nhandles * sizeof(hg_handle_t));
     for (i = 0; i < nhandles; i++) {
         ret = HG_Create(context, addr, hg_test_perf_rpc_lat_id_g, &handles[i]);
@@ -124,8 +125,6 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
     /* Bulk data benchmark */
     for (avg_iter = 0; avg_iter < loop; avg_iter++) {
         hg_time_t t1, t2;
-        double td, part_time_read;
-        double read_lat;
         unsigned int j;
 
         hg_time_get_current(&t1);
@@ -139,26 +138,28 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+        NA_Test_barrier();
         hg_time_get_current(&t2);
+        time_read += hg_time_to_double(hg_time_subtract(t2, t1));
 
         hg_request_reset(request);
         hg_atomic_set32(&args.op_completed_count, 0);
 
-        td = hg_time_to_double(hg_time_subtract(t2, t1));
-        time_read += td;
-        if (min_time_read < 0) min_time_read = time_read;
-        min_time_read = (td < min_time_read) ? td : min_time_read;
-        max_time_read = (td > max_time_read) ? td : max_time_read;
-
-        part_time_read = time_read / (double) (nhandles * (avg_iter + 1));
-        read_lat = part_time_read * 1.0e6 / na_test_comm_size_g;
-
         /* At this point we have received everything so work out the bandwidth */
-        if (na_test_comm_rank_g == 0) {
+#ifdef MERCURY_TESTING_PRINT_PARTIAL
+        read_lat = time_read * 1.0e6
+            / (double) (nhandles * (avg_iter + 1) * (unsigned int) na_test_comm_size_g);
+        if (na_test_comm_rank_g == 0)
             fprintf(stdout, "%-*d%*.*f\r", 10, (int) nbytes, NWIDTH,
                 NDIGITS, read_lat);
-        }
+#endif
     }
+#ifndef MERCURY_TESTING_PRINT_PARTIAL
+    read_lat = time_read * 1.0e6
+        / (double) (nhandles * loop * (unsigned int) na_test_comm_size_g);
+    if (na_test_comm_rank_g == 0)
+        fprintf(stdout, "%-*d%*.*f", 10, (int) nbytes, NWIDTH, NDIGITS, read_lat);
+#endif
     if (na_test_comm_rank_g == 0) fprintf(stdout, "\n");
 
     /* Complete */
@@ -194,7 +195,8 @@ main(int argc, char *argv[])
     for (nhandles = 1; nhandles <= MAX_HANDLES; nhandles *= 2) {
         if (na_test_comm_rank_g == 0) {
             fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
-            fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with %u handle(s)\n",
+            fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with "
+                "%u handle(s)\n",
                 MERCURY_TESTING_MAX_LOOP, 1, MAX_MSG_SIZE, nhandles);
             fprintf(stdout, "%-*s%*s\n", 10, "# Size", NWIDTH,
                 "Latency (us)");

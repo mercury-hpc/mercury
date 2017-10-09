@@ -33,6 +33,10 @@ if(MERCURY_TESTING_VERIFY_DATA)
 endif()
 mark_as_advanced(MERCURY_TESTING_VERIFY_DATA)
 
+option(MERCURY_TESTING_PRINT_PARTIAL
+  "Print partial results between loops (disable when measuring)." OFF)
+mark_as_advanced(MERCURY_TESTING_PRINT_PARTIAL)
+
 option(MERCURY_ENABLE_PARALLEL_TESTING
   "Enable testing in parallel (requires MPI)." OFF)
 if(MERCURY_ENABLE_PARALLEL_TESTING OR NA_USE_MPI)
