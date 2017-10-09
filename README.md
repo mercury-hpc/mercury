@@ -1,8 +1,7 @@
+Mercury
+=======
 [![Build status][travis-ci-svg]][travis-ci-link]
-[![Release version][mercury-release-svg]][mercury-release-link]
-
-What is Mercury?
-================
+[![Latest version][mercury-release-svg]][mercury-release-link]
 
    Mercury is an RPC framework specifically designed for use in HPC systems
    that allows asynchronous transfer of parameters and execution requests,
