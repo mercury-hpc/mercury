@@ -988,7 +988,8 @@ na_ofi_verify_provider(const char *prov_name, const char *domain_name,
      * checking the domain name as well */
     if (!strcmp(prov_name, NA_OFI_PROV_SOCKETS_NAME)) {
         /* Does not match domain name */
-        if (domain_name && strcmp(domain_name, fi_info->domain_attr->name))
+        if (domain_name && strcmp("\0", domain_name)
+            && strcmp(domain_name, fi_info->domain_attr->name))
             goto out;
     }
 
@@ -1295,14 +1296,16 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     memset(na_ofi_endpoint, 0, sizeof(struct na_ofi_endpoint));
 
     /* Dup node */
-    if (node && !(na_ofi_endpoint->noe_node = strdup(node))) {
+    if (node && strcmp("\0", node)
+        && !(na_ofi_endpoint->noe_node = strdup(node))) {
         NA_LOG_ERROR("Could not duplicate node name");
         ret = NA_NOMEM_ERROR;
         goto out;
     }
 
     /* Dup service */
-    if (service && !(na_ofi_endpoint->noe_service = strdup(service))) {
+    if (service && strcmp("\0", service)
+        && !(na_ofi_endpoint->noe_service = strdup(service))) {
         NA_LOG_ERROR("Could not duplicate service name");
         ret = NA_NOMEM_ERROR;
         goto out;
