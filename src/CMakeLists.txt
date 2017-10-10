@@ -76,10 +76,12 @@ if(MERCURY_USE_CHECKSUMS)
     include(${MCHECKSUM_BINARY_DIR}/mchecksum-config.cmake)
     set(MERCURY_EXPORTED_LIBS mchecksum ${MERCURY_EXPORTED_LIBS})
     get_target_property(MCHECKSUM_EXT_LIB_DEPENDENCIES mchecksum INTERFACE_LINK_LIBRARIES)
-    set(MERCURY_EXT_PKG_LIB_DEPENDENCIES
-      ${MERCURY_EXT_PKG_LIB_DEPENDENCIES}
-      ${MCHECKSUM_EXT_LIB_DEPENDENCIES}
-    )
+    if(MCHECKSUM_EXT_LIB_DEPENDENCIES)
+      set(MERCURY_EXT_PKG_LIB_DEPENDENCIES
+        ${MERCURY_EXT_PKG_LIB_DEPENDENCIES}
+        ${MCHECKSUM_EXT_LIB_DEPENDENCIES}
+      )
+    endif()
   endif()
   set(MERCURY_CHECKSUM_DEFAULT CRC32 CACHE STRING "Choose the type of checksum used by default.")
   # Set the possible values of checksum type for cmake-gui
