@@ -75,13 +75,8 @@ struct na_class {
     na_return_t
     (*context_create)(
             na_class_t *na_class,
-            void **plugin_context
-            );
-    na_return_t
-    (*context_set_id)(
-            na_class_t *na_class,
-            na_context_t *context,
-            na_uint8_t target_id
+            void **plugin_context,
+            na_uint8_t id
             );
     na_return_t
     (*context_destroy)(

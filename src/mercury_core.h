@@ -245,6 +245,21 @@ HG_Core_context_create(
         );
 
 /**
+ * Create a new context with id.
+ * Must be destroyed by calling HG_Core_context_destroy().
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param id [IN]               context ID
+ *
+ * \return Pointer to HG context or NULL in case of failure
+ */
+HG_EXPORT hg_context_t *
+HG_Core_context_create_id(
+        hg_class_t *hg_class,
+        hg_uint8_t id
+        );
+
+/**
  * Destroy a context created by HG_Core_context_create().
  *
  * \param context [IN]          pointer to HG context

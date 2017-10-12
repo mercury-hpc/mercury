@@ -238,19 +238,17 @@ NA_Context_create(
         ) NA_WARN_UNUSED_RESULT;
 
 /**
- * Set context ID.
+ * Create a new context with a specific ID.
  *
- * \param na_class [IN]         pointer to NA class
- * \param context [IN]          pointer to context of execution
+ * \param na_class [IN/OUT]     pointer to NA class
  * \param id [IN]               context ID
  *
  * \return Pointer to NA context or NULL in case of failure
  */
-NA_EXPORT na_return_t
-NA_Context_set_id(
-        na_class_t   *na_class,
-        na_context_t *context,
-        na_uint8_t   id
+NA_EXPORT na_context_t *
+NA_Context_create_id(
+        na_class_t *na_class,
+        na_uint8_t id
         ) NA_WARN_UNUSED_RESULT;
 
 /**

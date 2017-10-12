@@ -545,7 +545,6 @@ const na_class_t na_mpi_class_g = {
         na_mpi_finalize,                      /* finalize */
         NULL,                                 /* cleanup */
         NULL,                                 /* context_create */
-        NULL,                                 /* context_set_id */
         NULL,                                 /* context_destroy */
         NULL,                                 /* op_create */
         NULL,                                 /* op_destroy */

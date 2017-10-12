@@ -885,7 +885,6 @@ const na_class_t na_sm_class_g = {
     na_sm_finalize,                         /* finalize */
     na_sm_cleanup,                          /* cleanup */
     NULL,                                   /* context_create */
-    NULL,                                   /* context_set_id */
     NULL,                                   /* context_destroy */
     na_sm_op_create,                        /* op_create */
     na_sm_op_destroy,                       /* op_destroy */

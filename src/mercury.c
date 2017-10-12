@@ -1010,16 +1010,9 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t target_id)
 #endif
     hg_return_t ret;
 
-    context = HG_Core_context_create(hg_class);
+    context = HG_Core_context_create_id(hg_class, target_id);
     if (!context) {
         HG_LOG_ERROR("Could not create context");
-        goto done;
-    }
-
-    /* Set context ID */
-    ret = HG_Core_context_set_id(context, target_id);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not set context ID");
         goto done;
     }
 

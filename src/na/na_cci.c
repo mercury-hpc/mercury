@@ -372,7 +372,6 @@ const na_class_t na_cci_class_g = {
     na_cci_finalize,                        /* finalize */
     NULL,                                   /* cleanup */
     NULL,                                   /* context_create */
-    NULL,                                   /* context_set_id */
     NULL,                                   /* context_destroy */
     na_cci_op_create,                       /* op_create */
     na_cci_op_destroy,                      /* op_destroy */

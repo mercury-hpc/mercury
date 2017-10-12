@@ -499,6 +499,13 @@ done:
 na_context_t *
 NA_Context_create(na_class_t *na_class)
 {
+    return NA_Context_create_id(na_class, 0);
+}
+
+/*---------------------------------------------------------------------------*/
+na_context_t *
+NA_Context_create_id(na_class_t *na_class, na_uint8_t id)
+{
     na_return_t ret = NA_SUCCESS;
     struct na_private_context *na_private_context = NULL;
 
@@ -519,7 +526,7 @@ NA_Context_create(na_class_t *na_class)
 
     if (na_class->context_create) {
         ret = na_class->context_create(na_class,
-            &na_private_context->context.plugin_context);
+            &na_private_context->context.plugin_context, id);
         if (ret != NA_SUCCESS) {
             goto done;
         }
@@ -554,25 +561,6 @@ done:
         na_private_context = NULL;
     }
     return (na_context_t *) na_private_context;
-}
-
-/*---------------------------------------------------------------------------*/
-na_return_t
-NA_Context_set_id(na_class_t *na_class, na_context_t *context, na_uint8_t id)
-{
-    na_return_t ret = NA_SUCCESS;
-
-    if (!na_class || !context) {
-        NA_LOG_ERROR("NULL NA class or context");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
-
-    if (na_class->context_set_id)
-        ret = na_class->context_set_id(na_class, context, id);
-
-done:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/

@@ -613,12 +613,7 @@ na_ofi_finalize(na_class_t *na_class);
 
 /* context_create */
 static na_return_t
-na_ofi_context_create(na_class_t *na_class, void **context);
-
-/* context_set_id */
-static na_return_t
-na_ofi_context_set_id(na_class_t *na_class, na_context_t *context,
-    na_uint8_t target_id);
+na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id);
 
 /* context_destroy */
 static na_return_t
@@ -792,7 +787,6 @@ const na_class_t na_ofi_class_g = {
     na_ofi_finalize,                        /* finalize */
     NULL,                                   /* cleanup */
     na_ofi_context_create,                  /* context_create */
-    na_ofi_context_set_id,                  /* context_set_id */
     na_ofi_context_destroy,                 /* context_destroy */
     na_ofi_op_create,                       /* op_create */
     na_ofi_op_destroy,                      /* op_destroy */
@@ -2062,7 +2056,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_context_create(na_class_t *na_class, void **context)
+na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct na_ofi_domain *domain = priv->nop_domain;
@@ -2082,10 +2076,11 @@ na_ofi_context_create(na_class_t *na_class, void **context)
 
     if (na_ofi_with_sep(na_class)) {
         hg_thread_mutex_lock(&priv->nop_mutex);
-        if (priv->nop_contexts >= priv->nop_max_contexts) {
-            NA_LOG_ERROR("nop_contexts %d nop_max_contexts %d could not create "
-                         "more context.", priv->nop_contexts,
-                         priv->nop_max_contexts);
+        if (priv->nop_contexts >= priv->nop_max_contexts ||
+            id >= priv->nop_max_contexts) {
+            NA_LOG_ERROR("nop_contexts %d, context id %d, nop_max_contexts %d "
+                         "could not create context.", priv->nop_contexts,
+                         id, priv->nop_max_contexts);
             hg_thread_mutex_unlock(&priv->nop_mutex);
             free(ctx);
             ret = NA_PROTOCOL_ERROR;
@@ -2134,7 +2129,7 @@ no_wait_obj:
             goto done;
         }
 
-        rc = fi_tx_context(ep->noe_ep, 0, NULL, &ctx->noc_tx, NULL);
+        rc = fi_tx_context(ep->noe_ep, id, NULL, &ctx->noc_tx, NULL);
         if (rc < 0) {
             NA_LOG_ERROR("fi_tx_context failed, rc: %d(%s).",
                          rc, fi_strerror(-rc));
@@ -2144,7 +2139,7 @@ no_wait_obj:
             goto done;
         }
 
-        rc = fi_rx_context(ep->noe_ep, 0, NULL, &ctx->noc_rx, NULL);
+        rc = fi_rx_context(ep->noe_ep, id, NULL, &ctx->noc_rx, NULL);
         if (rc < 0) {
             NA_LOG_ERROR("fi_rx_context failed, rc: %d(%s).",
                          rc, fi_strerror(-rc));
@@ -2215,32 +2210,8 @@ no_wait_obj:
         ctx->noc_wait = ep->noe_wait;
     }
 
-    ctx->noc_idx = 0;
+    ctx->noc_idx = id;
     *context = ctx;
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_ofi_context_set_id(na_class_t *na_class, na_context_t *context,
-    na_uint8_t target_id)
-{
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
-    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
-    na_return_t ret = NA_SUCCESS;
-
-    if (na_ofi_with_sep(na_class)) {
-        if (target_id >= priv->nop_max_contexts) {
-            NA_LOG_ERROR("could not set target_id %d as nop_max_contexts %d.",
-                         target_id, priv->nop_max_contexts);
-            ret = NA_INVALID_PARAM;
-            goto done;
-        }
-    }
-
-    ctx->noc_idx = target_id;
 
 done:
     return ret;

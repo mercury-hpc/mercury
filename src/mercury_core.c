@@ -3600,6 +3600,13 @@ done:
 hg_context_t *
 HG_Core_context_create(hg_class_t *hg_class)
 {
+    return HG_Core_context_create_id(hg_class, 0);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_context_t *
+HG_Core_context_create_id(hg_class_t *hg_class, hg_uint8_t id)
+{
     hg_return_t ret = HG_SUCCESS;
     struct hg_context *context = NULL;
     int na_poll_fd;
@@ -3650,7 +3657,7 @@ HG_Core_context_create(hg_class_t *hg_class)
 #endif
     hg_thread_spin_init(&context->processing_list_lock);
 
-    context->na_context = NA_Context_create(hg_class->na_class);
+    context->na_context = NA_Context_create_id(hg_class->na_class, id);
     if (!context->na_context) {
         HG_LOG_ERROR("Could not create NA context");
         ret = HG_NA_ERROR;
@@ -3730,6 +3737,9 @@ HG_Core_context_create(hg_class_t *hg_class)
             hg_core_progress_na_sm_cb, context);
     }
 #endif
+
+    /* Assign context ID */
+    context->id = id;
 
     /* Increment context count of parent class */
     hg_atomic_incr32(&hg_class->n_contexts);
