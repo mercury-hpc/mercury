@@ -9,17 +9,13 @@
  */
 
 #include "mercury_proc.h"
+#include "mercury_mem.h"
 
 #ifdef HG_HAS_CHECKSUMS
   #include <mchecksum.h>
   #include <mchecksum_error.h>
 #endif
 
-#ifdef _WIN32
-  #include <windows.h>
-#else
-  #include <unistd.h>
-#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -52,9 +48,9 @@ struct hg_proc_buf {
 struct hg_proc {
     hg_class_t *hg_class;               /* HG class */
     hg_proc_op_t op;
-    struct hg_proc_buf *current_buf;
     struct hg_proc_buf proc_buf;
     struct hg_proc_buf extra_buf;
+    struct hg_proc_buf *current_buf;
 };
 
 /********************/
@@ -218,14 +214,11 @@ hg_proc_free(hg_proc_t proc)
 #endif
 
     /* Free extra proc buffer if needed */
-    if (hg_proc->extra_buf.buf && hg_proc->extra_buf.is_mine) {
-        free (hg_proc->extra_buf.buf);
-        hg_proc->extra_buf.buf = NULL;
-    }
+    if (hg_proc->extra_buf.buf && hg_proc->extra_buf.is_mine)
+        hg_mem_aligned_free(hg_proc->extra_buf.buf);
 
     /* Free proc */
     free(hg_proc);
-    hg_proc = NULL;
 
 done:
     return ret;
@@ -267,9 +260,8 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
     /* Reset proc buf */
     hg_proc->proc_buf.buf = buf;
     hg_proc->proc_buf.size = buf_size;
-    hg_proc->proc_buf.buf_ptr = buf;
-    hg_proc->proc_buf.size_left = buf_size;
-    hg_proc->proc_buf.is_mine = 0;
+    hg_proc->proc_buf.buf_ptr = hg_proc->proc_buf.buf;
+    hg_proc->proc_buf.size_left = hg_proc->proc_buf.size;
 #ifdef HG_HAS_CHECKSUMS
     /* Reset checksum */
     if (hg_proc->proc_buf.checksum != MCHECKSUM_OBJECT_NULL) {
@@ -284,21 +276,13 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
     }
 #endif
 
-    /* Reset extra buf */
+    /* Free extra proc buffer if needed */
     if (hg_proc->extra_buf.buf && hg_proc->extra_buf.is_mine)
-        free (hg_proc->extra_buf.buf);
+        hg_mem_aligned_free(hg_proc->extra_buf.buf);
     hg_proc->extra_buf.buf = NULL;
     hg_proc->extra_buf.size = 0;
-    hg_proc->extra_buf.buf_ptr = NULL;
-    hg_proc->extra_buf.size_left = 0;
-    hg_proc->extra_buf.is_mine = 0;
-#ifdef HG_HAS_CHECKSUMS
-    hg_proc->extra_buf.checksum = hg_proc->proc_buf.checksum;
-    hg_proc->extra_buf.checksum_size = hg_proc->proc_buf.checksum_size;
-    hg_proc->extra_buf.base_checksum = hg_proc->proc_buf.base_checksum;
-    hg_proc->extra_buf.verify_checksum = hg_proc->proc_buf.verify_checksum;
-    hg_proc->extra_buf.update_checksum = hg_proc->proc_buf.update_checksum;
-#endif
+    hg_proc->extra_buf.buf_ptr = hg_proc->extra_buf.buf;
+    hg_proc->extra_buf.size_left = hg_proc->extra_buf.size;
 
     /* Default to proc_buf */
     hg_proc->current_buf = &hg_proc->proc_buf;
@@ -373,7 +357,7 @@ hg_proc_get_size_used(hg_proc_t proc)
         goto done;
     }
 
-    if(hg_proc->extra_buf.size > 0)
+    if (hg_proc->extra_buf.size > 0)
         size = hg_proc->proc_buf.size + hg_proc->extra_buf.size
             - hg_proc->extra_buf.size_left;
     else
@@ -390,19 +374,17 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
     hg_size_t new_buf_size;
-    hg_size_t page_size;
+    hg_size_t page_size = (hg_size_t) hg_mem_get_page_size();
+    void *new_buf = NULL;
     ptrdiff_t current_pos;
     hg_return_t ret = HG_SUCCESS;
 
-#ifdef _WIN32
-    SYSTEM_INFO system_info;
-    GetSystemInfo(&system_info);
-    page_size = system_info.dwPageSize;
-#else
-    page_size = (hg_size_t) sysconf(_SC_PAGE_SIZE);
-#endif
-    new_buf_size = ((hg_size_t)(req_buf_size / page_size) + 1) * page_size;
+    /* Save current position */
+    current_pos = (char *) hg_proc->current_buf->buf_ptr -
+        (char *) hg_proc->current_buf->buf;
 
+    /* Get one more page size buf */
+    new_buf_size = ((hg_size_t)(req_buf_size / page_size) + 1) * page_size;
     if (new_buf_size <= hg_proc_get_size(proc)) {
         HG_LOG_ERROR("Buffer is already of the size requested");
         ret = HG_SIZE_ERROR;
@@ -410,46 +392,30 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t req_buf_size)
     }
 
     /* If was not using extra buffer init extra buffer */
-    if (!hg_proc->extra_buf.buf) {
-        /* Save current position */
-        current_pos = (char *) hg_proc->proc_buf.buf_ptr -
-                (char *) hg_proc->proc_buf.buf;
-
+    if (!hg_proc->extra_buf.buf)
         /* Allocate buffer */
-        hg_proc->extra_buf.buf = malloc(new_buf_size);
-        if (!hg_proc->extra_buf.buf) {
-            HG_LOG_ERROR("Could not allocate buffer");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
+        new_buf = hg_mem_aligned_alloc(page_size, new_buf_size);
+    else
+        new_buf = realloc(hg_proc->extra_buf.buf, new_buf_size);
+    if (!new_buf) {
+        HG_LOG_ERROR("Could not allocate buffer of size %zu", new_buf_size);
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
 
+    if (!hg_proc->extra_buf.buf) {
         /* Copy proc_buf (should be small) */
-        memcpy(hg_proc->extra_buf.buf, hg_proc->proc_buf.buf, (size_t) current_pos);
-        hg_proc->extra_buf.size = new_buf_size;
-        hg_proc->extra_buf.buf_ptr = (char *) hg_proc->extra_buf.buf + current_pos;
-        hg_proc->extra_buf.size_left = hg_proc->extra_buf.size - (size_t) current_pos;
-        hg_proc->extra_buf.is_mine = 1;
+        memcpy(new_buf, hg_proc->proc_buf.buf, (size_t) current_pos);
 
         /* Switch buffer */
         hg_proc->current_buf = &hg_proc->extra_buf;
-    } else {
-        void *new_buf = NULL;
-
-        /* Save current position */
-        current_pos = (char *) hg_proc->extra_buf.buf_ptr - (char *) hg_proc->extra_buf.buf;
-
-        /* Reallocate buffer */
-        new_buf = realloc(hg_proc->extra_buf.buf, new_buf_size);
-        if (!new_buf) {
-            HG_LOG_ERROR("Could not reallocate buffer");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
-        hg_proc->extra_buf.buf = new_buf;
-        hg_proc->extra_buf.size = new_buf_size;
-        hg_proc->extra_buf.buf_ptr = (char *) hg_proc->extra_buf.buf + current_pos;
-        hg_proc->extra_buf.size_left = hg_proc->extra_buf.size - (size_t) current_pos;
     }
+
+    hg_proc->extra_buf.buf = new_buf;
+    hg_proc->extra_buf.size = new_buf_size;
+    hg_proc->extra_buf.buf_ptr = (char *) hg_proc->extra_buf.buf + current_pos;
+    hg_proc->extra_buf.size_left = hg_proc->extra_buf.size - (hg_size_t) current_pos;
+    hg_proc->extra_buf.is_mine = HG_TRUE;
 
 done:
     return ret;
@@ -490,10 +456,9 @@ hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
 
     /* If not enough space allocate extra space if encoding or
      * just get extra buffer if decoding */
-    if (data_size && hg_proc->current_buf->size_left < data_size) {
+    if (data_size && hg_proc->current_buf->size_left < data_size)
         hg_proc_set_size(proc, hg_proc->proc_buf.size +
                 hg_proc->extra_buf.size + data_size);
-    }
 
     ptr = hg_proc->current_buf->buf_ptr;
     hg_proc->current_buf->buf_ptr = (char *) hg_proc->current_buf->buf_ptr + data_size;
@@ -552,13 +517,8 @@ void *
 hg_proc_get_extra_buf(hg_proc_t proc)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    void *extra_buf = NULL;
 
-    if (hg_proc->extra_buf.buf) {
-        extra_buf = hg_proc->extra_buf.buf;
-    }
-
-    return extra_buf;
+    return hg_proc->extra_buf.buf;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -566,13 +526,8 @@ hg_size_t
 hg_proc_get_extra_size(hg_proc_t proc)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    hg_size_t extra_size = 0;
 
-    if (hg_proc->extra_buf.buf) {
-        extra_size = hg_proc->extra_buf.size;
-    }
-
-    return extra_size;
+    return hg_proc->extra_buf.size;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -680,10 +635,9 @@ hg_proc_memcpy(hg_proc_t proc, void *data, hg_size_t data_size)
 
     /* If not enough space allocate extra space if encoding or
      * just get extra buffer if decoding */
-    if (hg_proc->current_buf->size_left < data_size) {
+    if (hg_proc->current_buf->size_left < data_size)
         hg_proc_set_size(proc, hg_proc->proc_buf.size +
                 hg_proc->extra_buf.size + data_size);
-    }
 
     /* Process data */
     hg_proc->current_buf->buf_ptr =
