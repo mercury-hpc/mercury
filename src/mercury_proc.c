@@ -36,13 +36,6 @@ struct hg_proc_buf {
 #ifdef HG_HAS_XDR
     XDR      xdr;
 #endif
-#ifdef HG_HAS_CHECKSUMS
-    mchecksum_object_t checksum;    /* Checksum */
-    void *base_checksum;            /* Base checksum buf */
-    void *verify_checksum;          /* Verify checksum buf */
-    size_t checksum_size;           /* Checksum size */
-    hg_bool_t update_checksum;      /* Update checksum on proc operation */
-#endif
 };
 
 struct hg_proc {
@@ -51,6 +44,13 @@ struct hg_proc {
     struct hg_proc_buf proc_buf;
     struct hg_proc_buf extra_buf;
     struct hg_proc_buf *current_buf;
+#ifdef HG_HAS_CHECKSUMS
+    mchecksum_object_t checksum;    /* Checksum */
+    void *base_checksum;            /* Base checksum buf */
+    void *verify_checksum;          /* Verify checksum buf */
+    size_t checksum_size;           /* Checksum size */
+    hg_bool_t update_checksum;      /* Update checksum on proc operation */
+#endif
 };
 
 /********************/
@@ -114,42 +114,32 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
 
     if (hash_method) {
 #ifdef HG_HAS_CHECKSUMS
-        struct hg_proc_buf *hg_proc_buf = &hg_proc->proc_buf;
         int checksum_ret;
 
-        checksum_ret = mchecksum_init(hash_method, &hg_proc_buf->checksum);
+        checksum_ret = mchecksum_init(hash_method, &hg_proc->checksum);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_LOG_ERROR("Could not initialize checksum");
             ret = HG_CHECKSUM_ERROR;
             goto done;
         }
 
-        hg_proc_buf->checksum_size = mchecksum_get_size(hg_proc_buf->checksum);
-        hg_proc_buf->base_checksum = (char *) malloc(hg_proc_buf->checksum_size);
-        if (!hg_proc_buf->base_checksum) {
+        hg_proc->checksum_size = mchecksum_get_size(hg_proc->checksum);
+        hg_proc->base_checksum = (char *) malloc(hg_proc->checksum_size);
+        if (!hg_proc->base_checksum) {
             HG_LOG_ERROR("Could not allocate space for base checksum");
             ret = HG_NOMEM_ERROR;
             goto done;
         }
-        hg_proc_buf->verify_checksum = (char *) malloc(hg_proc_buf->checksum_size);
-        if (!hg_proc_buf->verify_checksum) {
+        hg_proc->verify_checksum = (char *) malloc(hg_proc->checksum_size);
+        if (!hg_proc->verify_checksum) {
             HG_LOG_ERROR("Could not allocate space for verify checksum");
             ret = HG_NOMEM_ERROR;
             goto done;
         }
 
-        hg_proc_buf->update_checksum = HG_TRUE;
+        hg_proc->update_checksum = HG_TRUE;
 #endif
     }
-
-    /* Do not allocate extra buffer yet */
-#ifdef HG_HAS_CHECKSUMS
-    hg_proc->extra_buf.checksum = hg_proc->proc_buf.checksum;
-    hg_proc->extra_buf.checksum_size = hg_proc->proc_buf.checksum_size;
-    hg_proc->extra_buf.base_checksum = hg_proc->proc_buf.base_checksum;
-    hg_proc->extra_buf.verify_checksum = hg_proc->proc_buf.verify_checksum;
-    hg_proc->extra_buf.update_checksum = hg_proc->proc_buf.update_checksum;
-#endif
 
     /* Default to proc_buf */
     hg_proc->current_buf = &hg_proc->proc_buf;
@@ -199,18 +189,18 @@ hg_proc_free(hg_proc_t proc)
     if (!hg_proc) goto done;
 
 #ifdef HG_HAS_CHECKSUMS
-    if (hg_proc->proc_buf.checksum != MCHECKSUM_OBJECT_NULL) {
+    if (hg_proc->checksum != MCHECKSUM_OBJECT_NULL) {
         int checksum_ret;
 
-        checksum_ret = mchecksum_destroy(hg_proc->proc_buf.checksum);
+        checksum_ret = mchecksum_destroy(hg_proc->checksum);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_LOG_ERROR("Could not destroy checksum");
             ret = HG_CHECKSUM_ERROR;
         }
     }
 
-    free(hg_proc->proc_buf.base_checksum);
-    free(hg_proc->proc_buf.verify_checksum);
+    free(hg_proc->base_checksum);
+    free(hg_proc->verify_checksum);
 #endif
 
     /* Free extra proc buffer if needed */
@@ -262,19 +252,6 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
     hg_proc->proc_buf.size = buf_size;
     hg_proc->proc_buf.buf_ptr = hg_proc->proc_buf.buf;
     hg_proc->proc_buf.size_left = hg_proc->proc_buf.size;
-#ifdef HG_HAS_CHECKSUMS
-    /* Reset checksum */
-    if (hg_proc->proc_buf.checksum != MCHECKSUM_OBJECT_NULL) {
-        int checksum_ret;
-
-        checksum_ret = mchecksum_reset(hg_proc->proc_buf.checksum);
-        if (checksum_ret != MCHECKSUM_SUCCESS) {
-            HG_LOG_ERROR("Could not reset checksum");
-            ret = HG_CHECKSUM_ERROR;
-        }
-        hg_proc->proc_buf.update_checksum = HG_TRUE;
-    }
-#endif
 
     /* Free extra proc buffer if needed */
     if (hg_proc->extra_buf.buf && hg_proc->extra_buf.is_mine)
@@ -286,6 +263,22 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
 
     /* Default to proc_buf */
     hg_proc->current_buf = &hg_proc->proc_buf;
+
+#ifdef HG_HAS_CHECKSUMS
+    /* Reset checksum */
+    if (hg_proc->checksum != MCHECKSUM_OBJECT_NULL) {
+        int checksum_ret;
+
+        checksum_ret = mchecksum_reset(hg_proc->checksum);
+        if (checksum_ret != MCHECKSUM_SUCCESS) {
+            HG_LOG_ERROR("Could not reset checksum");
+            ret = HG_CHECKSUM_ERROR;
+        }
+        memset(hg_proc->base_checksum, 0, hg_proc->checksum_size);
+        memset(hg_proc->verify_checksum, 0, hg_proc->checksum_size);
+        hg_proc->update_checksum = HG_TRUE;
+    }
+#endif
 
 done:
     return ret;
@@ -553,7 +546,7 @@ hg_return_t
 hg_proc_flush(hg_proc_t proc)
 {
     struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    struct hg_proc_buf *hg_proc_buf;
+
 #ifdef HG_HAS_CHECKSUMS
     int checksum_ret;
 #endif
@@ -564,21 +557,19 @@ hg_proc_flush(hg_proc_t proc)
         ret = HG_INVALID_PARAM;
         goto done;
     }
-    hg_proc_buf = hg_proc->current_buf;
 
 #ifdef HG_HAS_CHECKSUMS
-    if (!hg_proc_buf->update_checksum) {
+    if (!hg_proc->update_checksum) {
         /* Checksum was not enabled so do nothing here */
         goto done;
     }
 
     /* Disable checksum update now */
-    hg_proc_buf->update_checksum = HG_FALSE;
+    hg_proc->update_checksum = HG_FALSE;
 
     if (hg_proc_get_op(proc) == HG_ENCODE) {
-        checksum_ret = mchecksum_get(hg_proc_buf->checksum,
-            hg_proc_buf->base_checksum, hg_proc_buf->checksum_size,
-            MCHECKSUM_FINALIZE);
+        checksum_ret = mchecksum_get(hg_proc->checksum, hg_proc->base_checksum,
+            hg_proc->checksum_size, MCHECKSUM_FINALIZE);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_LOG_ERROR("Could not get checksum");
             ret = HG_CHECKSUM_ERROR;
@@ -587,16 +578,15 @@ hg_proc_flush(hg_proc_t proc)
     }
 
     /* Process checksum (TODO should that depend on the encoding method) */
-    ret = hg_proc_memcpy(proc, hg_proc_buf->base_checksum,
-        hg_proc_buf->checksum_size);
+    ret = hg_proc_memcpy(proc, hg_proc->base_checksum, hg_proc->checksum_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Proc error");
         goto done;
     }
 
     if (hg_proc_get_op(proc) == HG_DECODE) {
-        checksum_ret = mchecksum_get(hg_proc->current_buf->checksum,
-            hg_proc_buf->verify_checksum, hg_proc_buf->checksum_size,
+        checksum_ret = mchecksum_get(hg_proc->checksum,
+            hg_proc->verify_checksum, hg_proc->checksum_size,
             MCHECKSUM_FINALIZE);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_LOG_ERROR("Could not get checksum");
@@ -605,9 +595,22 @@ hg_proc_flush(hg_proc_t proc)
         }
 
         /* Verify checksums */
-        if (strncmp(hg_proc_buf->base_checksum,
-            hg_proc_buf->verify_checksum, hg_proc_buf->checksum_size) != 0) {
-            HG_LOG_ERROR("Checksums do not match");
+        if (memcmp(hg_proc->base_checksum, hg_proc->verify_checksum,
+            hg_proc->checksum_size) != 0) {
+            if (hg_proc->checksum_size == sizeof(hg_uint16_t))
+                HG_LOG_DEBUG("checksum 0x%04X does not match (expected 0x%04X!)",
+                    *(hg_uint16_t *) hg_proc->verify_checksum,
+                    *(hg_uint16_t *) hg_proc->base_checksum);
+            else if (hg_proc->checksum_size == sizeof(hg_uint32_t))
+                HG_LOG_DEBUG("checksum 0x%08X does not match (expected 0x%08X!)",
+                    *(hg_uint32_t *) hg_proc->verify_checksum,
+                    *(hg_uint32_t *) hg_proc->base_checksum);
+            else if (hg_proc->checksum_size == sizeof(hg_uint64_t))
+                HG_LOG_DEBUG("checksum 0x%016X does not match (expected 0x%016X!)",
+                    *(hg_uint64_t *) hg_proc->verify_checksum,
+                    *(hg_uint64_t *) hg_proc->base_checksum);
+            else
+                HG_LOG_ERROR("Checksums do not match (unknown size?)");
             ret = HG_CHECKSUM_ERROR;
             goto done;
         }
@@ -672,11 +675,10 @@ hg_proc_mchecksum_update(hg_proc_t proc, void *data, hg_size_t data_size)
     }
 
     /* Update checksum */
-    if (hg_proc->current_buf->update_checksum) {
+    if (hg_proc->update_checksum) {
         int checksum_ret;
 
-        checksum_ret = mchecksum_update(hg_proc->current_buf->checksum, data,
-                data_size);
+        checksum_ret = mchecksum_update(hg_proc->checksum, data, data_size);
         if (checksum_ret != MCHECKSUM_SUCCESS) {
             HG_LOG_ERROR("Could not update checksum");
             ret = HG_CHECKSUM_ERROR;
