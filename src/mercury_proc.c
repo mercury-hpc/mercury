@@ -350,11 +350,7 @@ hg_proc_get_size_used(hg_proc_t proc)
         goto done;
     }
 
-    if (hg_proc->extra_buf.size > 0)
-        size = hg_proc->proc_buf.size + hg_proc->extra_buf.size
-            - hg_proc->extra_buf.size_left;
-    else
-        size = hg_proc->proc_buf.size - hg_proc->proc_buf.size_left;
+    size = hg_proc->current_buf->size - hg_proc->current_buf->size_left;
 
 done:
     return size;

@@ -48,8 +48,9 @@ struct hg_private_data {
     hg_proc_t out_proc;
     hg_cb_t callback;                   /* Callback */
     void *arg;                          /* Callback args */
-    hg_bulk_t extra_in_handle;          /* Extra bulk handle */
-    void *extra_in_buf;                 /* Extra bulk buf */
+    void *extra_bulk_buf;               /* Extra bulk buf */
+    size_t extra_bulk_buf_size;         /* Extra bulk buf size */
+    hg_bulk_t extra_bulk_handle;        /* Extra bulk handle */
 };
 
 /********************/
@@ -220,8 +221,9 @@ hg_private_data_alloc(hg_class_t *hg_class, hg_handle_t handle)
     }
     hg_private_data->callback = NULL;
     hg_private_data->arg = NULL;
-    hg_private_data->extra_in_buf = NULL;
-    hg_private_data->extra_in_handle = HG_BULK_NULL;
+    hg_private_data->extra_bulk_buf = NULL;
+    hg_private_data->extra_bulk_buf_size = 0;
+    hg_private_data->extra_bulk_handle = HG_BULK_NULL;
     hg_core_set_private_data(handle, hg_private_data, hg_private_data_free);
 
 done:
@@ -369,17 +371,16 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
 #else
         *extra_in_buf = hg_proc_get_extra_buf(proc);
         *extra_in_buf_size = hg_proc_get_extra_size(proc);
+
         /* Prevent buffer from being freed when proc_free is called */
         hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
 #endif
     } else {
         *extra_in_buf = NULL;
         *extra_in_buf_size = 0;
-        /* if the request fit in the initial buffer, then we have to add that
-         * size to msg send
-         */
-        *size_to_send = hg_proc_get_size_used(proc);
     }
+    /* Only send the actual size of the data, not the entire proc buffer */
+    *size_to_send = hg_proc_get_size_used(proc);
 
 done:
     return ret;
@@ -644,8 +645,9 @@ hg_forward_cb(const struct hg_cb_info *callback_info)
     hg_return_t ret = HG_SUCCESS;
 
     /* Free eventual extra input buffer and handle */
-    HG_Bulk_free(hg_private_data->extra_in_handle);
-    free(hg_private_data->extra_in_buf);
+    HG_Bulk_free(hg_private_data->extra_bulk_handle);
+    free(hg_private_data->extra_bulk_buf);
+    hg_private_data->extra_bulk_buf_size = 0;
 
     /* Execute callback */
     if (hg_private_data->callback) {
@@ -1269,8 +1271,9 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     }
     hg_private_data->callback = callback;
     hg_private_data->arg = arg;
-    hg_private_data->extra_in_handle = HG_BULK_NULL;
-    hg_private_data->extra_in_buf = NULL;
+    hg_private_data->extra_bulk_buf = NULL;
+    hg_private_data->extra_bulk_buf_size = 0;
+    hg_private_data->extra_bulk_handle = HG_BULK_NULL;
 
     /* Serialize input */
     ret = hg_set_input(handle, in_struct, &extra_in_buf, &extra_in_buf_size,
@@ -1284,13 +1287,17 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
         const struct hg_info *hg_info = HG_Core_get_info(handle);
 
         ret = HG_Bulk_create(hg_info->hg_class, 1, &extra_in_buf,
-                &extra_in_buf_size, HG_BULK_READ_ONLY, &extra_in_handle);
+                &size_to_send, HG_BULK_READ_ONLY, &extra_in_handle);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not create bulk data handle");
             goto done;
         }
-        hg_private_data->extra_in_handle = extra_in_handle;
-        hg_private_data->extra_in_buf = extra_in_buf;
+        hg_private_data->extra_bulk_buf = extra_in_buf;
+        hg_private_data->extra_bulk_buf_size = extra_in_buf_size;
+        hg_private_data->extra_bulk_handle = extra_in_handle;
+        /* Reset size to send to 0 here as nothing else needs to be added to
+         * eager message */
+        size_to_send = 0;
     }
 
     /* Send request */
