@@ -594,15 +594,15 @@ hg_proc_flush(hg_proc_t proc)
         if (memcmp(hg_proc->base_checksum, hg_proc->verify_checksum,
             hg_proc->checksum_size) != 0) {
             if (hg_proc->checksum_size == sizeof(hg_uint16_t))
-                HG_LOG_DEBUG("checksum 0x%04X does not match (expected 0x%04X!)",
+                HG_LOG_ERROR("checksum 0x%04X does not match (expected 0x%04X!)",
                     *(hg_uint16_t *) hg_proc->verify_checksum,
                     *(hg_uint16_t *) hg_proc->base_checksum);
             else if (hg_proc->checksum_size == sizeof(hg_uint32_t))
-                HG_LOG_DEBUG("checksum 0x%08X does not match (expected 0x%08X!)",
+                HG_LOG_ERROR("checksum 0x%08X does not match (expected 0x%08X!)",
                     *(hg_uint32_t *) hg_proc->verify_checksum,
                     *(hg_uint32_t *) hg_proc->base_checksum);
             else if (hg_proc->checksum_size == sizeof(hg_uint64_t))
-                HG_LOG_DEBUG("checksum 0x%016X does not match (expected 0x%016X!)",
+                HG_LOG_ERROR("checksum 0x%016X does not match (expected 0x%016X!)",
                     *(hg_uint64_t *) hg_proc->verify_checksum,
                     *(hg_uint64_t *) hg_proc->base_checksum);
             else
