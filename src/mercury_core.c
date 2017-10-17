@@ -31,6 +31,7 @@
 #include "mercury_event.h"
 #endif
 #include "mercury_atomic_queue.h"
+#include "mercury_mem.h"
 
 #include <stdlib.h>
 
@@ -787,12 +788,14 @@ hg_core_get_extra_input(struct hg_handle *hg_handle, hg_bulk_t extra_in_handle)
 {
     hg_class_t *hg_class = hg_handle->hg_info.hg_class;
     hg_context_t *hg_context = hg_handle->hg_info.context;
+    hg_size_t page_size = (hg_size_t) hg_mem_get_page_size();
     hg_bulk_t local_in_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS;
 
     /* Create a new local handle to read the data */
     hg_handle->extra_in_buf_size = HG_Bulk_get_size(extra_in_handle);
-    hg_handle->extra_in_buf = calloc(hg_handle->extra_in_buf_size, sizeof(char));
+    hg_handle->extra_in_buf = hg_mem_aligned_alloc(page_size,
+        hg_handle->extra_in_buf_size);
     if (!hg_handle->extra_in_buf) {
         HG_LOG_ERROR("Could not allocate extra input buffer");
         ret = HG_NOMEM_ERROR;
@@ -1506,7 +1509,7 @@ hg_core_destroy(struct hg_handle *hg_handle)
     if (na_ret != NA_SUCCESS)
         HG_LOG_ERROR("Could not destroy NA output msg buffer");
 
-    free(hg_handle->extra_in_buf);
+    hg_mem_aligned_free(hg_handle->extra_in_buf);
 
     if (hg_handle->private_free_callback)
         hg_handle->private_free_callback(hg_handle->private_data);
@@ -1553,7 +1556,7 @@ hg_core_reset(struct hg_handle *hg_handle, hg_bool_t reset_info)
     hg_handle->out_buf_used = 0;
     hg_atomic_set32(&hg_handle->na_completed_count, 0);
     if (hg_handle->extra_in_buf) {
-        free(hg_handle->extra_in_buf);
+        hg_mem_aligned_free(hg_handle->extra_in_buf);
         hg_handle->extra_in_buf = NULL;
     }
     hg_handle->extra_in_buf_size = 0;
