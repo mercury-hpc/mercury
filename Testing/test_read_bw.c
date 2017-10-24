@@ -170,13 +170,16 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
             fprintf(stdout, "%-*d%*.*f\r", 10, (int) nbytes, NWIDTH,
                 NDIGITS, read_bandwidth);
 #endif
-//        for (i = 0; i < nbytes; i++) {
-//            if (bulk_buf[i] != (char) i) {
-//                printf("Error detected in bulk transfer, buf[%d] = %d,"
-//                    "was expecting %d!\n", i, bulk_buf[i], i);
-//                break;
-//            }
-//        }
+#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+        for (i = 0; i < nbytes; i++) {
+            if (bulk_buf[i] != (char) i) {
+                printf("Error detected in bulk transfer, buf[%d] = %d, "
+                    "was expecting %d!\n", (int) i, (char) bulk_buf[i],
+                    (char) i);
+                break;
+            }
+        }
+#endif
     }
 #ifndef MERCURY_TESTING_PRINT_PARTIAL
     read_bandwidth = nmbytes
@@ -233,6 +236,9 @@ main(int argc, char *argv[])
             fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with "
                 "%u handle(s)\n",
                 MERCURY_TESTING_MAX_LOOP, 1, MAX_MSG_SIZE, nhandles);
+#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+            fprintf(stdout, "# WARNING verifying data, output will be slower\n");
+#endif
             fprintf(stdout, "%-*s%*s\n", 10, "# Size", NWIDTH,
                 "Bandwidth (MB/s)");
             fflush(stdout);

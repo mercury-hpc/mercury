@@ -67,7 +67,7 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
 {
     perf_rpc_lat_in_t in_struct;
     char *bulk_buf;
-    size_t nbytes = total_size;
+    size_t nbytes = total_size - sizeof(hg_size_t);
     size_t loop = (total_size > LARGE_SIZE) ? MERCURY_TESTING_MAX_LOOP :
         MERCURY_TESTING_MAX_LOOP * 10;
     size_t skip = (total_size > LARGE_SIZE) ? LARGE_SKIP : SMALL_SKIP;
@@ -150,7 +150,7 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
         read_lat = time_read * 1.0e6
             / (double) (nhandles * (avg_iter + 1) * (unsigned int) na_test_comm_size_g);
         if (na_test_comm_rank_g == 0)
-            fprintf(stdout, "%-*d%*.*f\r", 10, (int) nbytes, NWIDTH,
+            fprintf(stdout, "%-*d%*.*f\r", 10, (int) total_size, NWIDTH,
                 NDIGITS, read_lat);
 #endif
     }
@@ -158,7 +158,8 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
     read_lat = time_read * 1.0e6
         / (double) (nhandles * loop * (unsigned int) na_test_comm_size_g);
     if (na_test_comm_rank_g == 0)
-        fprintf(stdout, "%-*d%*.*f", 10, (int) nbytes, NWIDTH, NDIGITS, read_lat);
+        fprintf(stdout, "%-*d%*.*f", 10, (int) total_size, NWIDTH, NDIGITS,
+            read_lat);
 #endif
     if (na_test_comm_rank_g == 0) fprintf(stdout, "\n");
 
@@ -198,12 +199,15 @@ main(int argc, char *argv[])
             fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with "
                 "%u handle(s)\n",
                 MERCURY_TESTING_MAX_LOOP, 1, MAX_MSG_SIZE, nhandles);
+#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+            fprintf(stdout, "# WARNING verifying data, output will be slower\n");
+#endif
             fprintf(stdout, "%-*s%*s\n", 10, "# Size", NWIDTH,
                 "Latency (us)");
             fflush(stdout);
         }
 
-        for (size = 1; size <= MAX_MSG_SIZE; size *= 2)
+        for (size = 8; size <= MAX_MSG_SIZE; size *= 2)
             measure_rpc_latency(context, addr, size, nhandles, request_class);
 
         fprintf(stdout, "\n");

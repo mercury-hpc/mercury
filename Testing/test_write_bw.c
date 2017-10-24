@@ -226,6 +226,9 @@ main(int argc, char *argv[])
             fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with "
                 "%u handle(s)\n",
                 MERCURY_TESTING_MAX_LOOP, 1, MAX_MSG_SIZE, nhandles);
+#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+            fprintf(stdout, "# WARNING verifying data, output will be slower\n");
+#endif
             fprintf(stdout, "%-*s%*s\n", 10, "# Size", NWIDTH,
                 "Bandwidth (MB/s)");
             fflush(stdout);

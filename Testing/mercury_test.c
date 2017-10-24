@@ -277,7 +277,7 @@ hg_test_register(hg_class_t *hg_class)
             void, void, hg_test_perf_rpc_cb);
     hg_test_perf_rpc_lat_id_g = MERCURY_REGISTER(hg_class,
             "hg_test_perf_rpc_lat", perf_rpc_lat_in_t, void,
-            hg_test_perf_rpc_cb);
+            hg_test_perf_rpc_lat_cb);
     hg_test_perf_bulk_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_bulk",
             bulk_write_in_t, void, hg_test_perf_bulk_cb);
     hg_test_perf_bulk_write_id_g = hg_test_perf_bulk_id_g;
