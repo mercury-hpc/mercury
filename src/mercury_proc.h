@@ -282,8 +282,8 @@ hg_proc_set_extra_buf_is_mine(
         );
 
 /**
- * Flush the proc after data has been encoded or decoded and verify data using
- * base checksum if available.
+ * Flush the proc after data has been encoded or decoded and finalize internal
+ * checksum if checksum of data processed was initially requested.
  *
  * \param proc [IN]             abstract processor object
  *
@@ -310,6 +310,44 @@ hg_proc_memcpy(
         void *data,
         hg_size_t data_size
         );
+
+#ifdef HG_HAS_CHECKSUMS
+/**
+ * Retrieve internal proc checksum hash.
+ * \remark Must be used after hg_proc_flush() has been called so that the
+ * internally computed checksum is in a finalized state.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param hash [IN/OUT]         pointer to hash
+ * \param hash_size [IN]        hash size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+hg_proc_checksum_get(
+        hg_proc_t proc,
+        void *hash,
+        hg_size_t hash_size
+        );
+
+/**
+ * Verify that the hash passed matches the internal proc checksum.
+ * \remark Must be used after hg_proc_flush() has been called so that the
+ * internally computed checksum is in a finalized state.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param hash [IN]             pointer to hash
+ * \param hash_size [IN]        hash size
+ *
+ * \return HG_SUCCESS if matches or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+hg_proc_checksum_verify(
+        hg_proc_t proc,
+        const void *hash,
+        hg_size_t hash_size
+        );
+#endif
 
 /**
  * Inline prototypes (do not remove)
