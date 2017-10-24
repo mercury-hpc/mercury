@@ -9,15 +9,13 @@
  */
 
 #include "mercury_proc.h"
+#include "mercury_proc_buf.h"
 #include "mercury_mem.h"
 
 #ifdef HG_HAS_CHECKSUMS
-  #include <mchecksum.h>
-  #include <mchecksum_error.h>
+# include <mchecksum.h>
+# include <mchecksum_error.h>
 #endif
-
-#include <stdlib.h>
-#include <string.h>
 
 /****************/
 /* Local Macros */
