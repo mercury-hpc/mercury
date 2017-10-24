@@ -131,11 +131,12 @@ configure_file(
 # Set sources
 #------------------------------------------------------------------------------
 set(MERCURY_SRCS
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc_header.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_header.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_header.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.c
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.c
 )
 set(MERCURY_HL_SRCS
