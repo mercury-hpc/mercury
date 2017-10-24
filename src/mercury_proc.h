@@ -18,28 +18,27 @@
 #include <stdlib.h>
 #include <string.h>
 #ifdef HG_HAS_XDR
-#include <rpc/types.h>
-#include <rpc/xdr.h>
-#    ifdef __APPLE__
-#        define xdr_int8_t   xdr_char
-#        define xdr_uint8_t  xdr_u_char
-#        define xdr_uint16_t xdr_u_int16_t
-#        define xdr_uint32_t xdr_u_int32_t
-#        define xdr_uint64_t xdr_u_int64_t
-#    endif
+# include <rpc/types.h>
+# include <rpc/xdr.h>
+# ifdef __APPLE__
+#  define xdr_int8_t   xdr_char
+#  define xdr_uint8_t  xdr_u_char
+#  define xdr_uint16_t xdr_u_int16_t
+#  define xdr_uint32_t xdr_u_int32_t
+#  define xdr_uint64_t xdr_u_int64_t
+# endif
 #endif
 
 /*****************/
 /* Public Macros */
 /*****************/
 
-/* FIXME: this is based on mchecksum's currently supported hash methods, which
- * aren't exposed. The largest is crc64. There must be a better way... */
-#ifdef HG_HAS_CHECKSUMS
-#    define HG_CHECKSUM_MAX_SIZE 8
-#else
-#    define HG_CHECKSUM_MAX_SIZE 0
-#endif
+/* Encode/decode version number into uint32 */
+#define HG_GET_MAJOR(value) ((value >> 24) & 0xFF)
+#define HG_GET_MINOR(value) ((value >> 16) & 0xFF)
+#define HG_GET_PATCH(value) (value & 0xFFFF)
+#define HG_VERSION ((HG_VERSION_MAJOR << 24) | (HG_VERSION_MINOR << 16) \
+        | HG_VERSION_PATCH)
 
 /*********************/
 /* Public Prototypes */
@@ -377,23 +376,23 @@ static HG_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
 /**
  * For convenience map stdint types to hg types
  */
-#define hg_proc_int8_t   hg_proc_hg_int8_t
-#define hg_proc_uint8_t  hg_proc_hg_uint8_t
-#define hg_proc_int16_t  hg_proc_hg_int16_t
-#define hg_proc_uint16_t hg_proc_hg_uint16_t
-#define hg_proc_int32_t  hg_proc_hg_int32_t
-#define hg_proc_uint32_t hg_proc_hg_uint32_t
-#define hg_proc_int64_t  hg_proc_hg_int64_t
-#define hg_proc_uint64_t hg_proc_hg_uint64_t
+#define hg_proc_int8_t      hg_proc_hg_int8_t
+#define hg_proc_uint8_t     hg_proc_hg_uint8_t
+#define hg_proc_int16_t     hg_proc_hg_int16_t
+#define hg_proc_uint16_t    hg_proc_hg_uint16_t
+#define hg_proc_int32_t     hg_proc_hg_int32_t
+#define hg_proc_uint32_t    hg_proc_hg_uint32_t
+#define hg_proc_int64_t     hg_proc_hg_int64_t
+#define hg_proc_uint64_t    hg_proc_hg_uint64_t
 
 /* Map mercury common types */
-#define hg_proc_hg_bool_t     hg_proc_hg_uint8_t
-#define hg_proc_hg_ptr_t      hg_proc_hg_uint64_t
-#define hg_proc_hg_size_t     hg_proc_hg_uint64_t
-#define hg_proc_hg_id_t       hg_proc_hg_uint32_t
+#define hg_proc_hg_bool_t   hg_proc_hg_uint8_t
+#define hg_proc_hg_ptr_t    hg_proc_hg_uint64_t
+#define hg_proc_hg_size_t   hg_proc_hg_uint64_t
+#define hg_proc_hg_id_t     hg_proc_hg_uint32_t
 
 /* For now, map hg_proc_raw to hg_proc_memcpy */
-#define hg_proc_raw     hg_proc_memcpy
+#define hg_proc_raw         hg_proc_memcpy
 
 
 /**
