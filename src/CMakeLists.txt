@@ -83,9 +83,6 @@ if(MERCURY_USE_CHECKSUMS)
       )
     endif()
   endif()
-  set(MERCURY_CHECKSUM_DEFAULT CRC32 CACHE STRING "Choose the type of checksum used by default.")
-  # Set the possible values of checksum type for cmake-gui
-  set_property(CACHE MERCURY_CHECKSUM_DEFAULT PROPERTY STRINGS "CRC16" "CRC32" "CRC64")
 endif()
 
 # Coresident RPC
