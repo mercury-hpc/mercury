@@ -12,7 +12,6 @@
 #define MERCURY_CORE_H
 
 #include "mercury_types.h"
-
 #include "na.h"
 
 /*********************/
@@ -77,6 +76,44 @@ HG_Core_cleanup(
         );
 
 /**
+ * Set callback that will be triggered on HG handle creation. This allows upper
+ * layers to instantiate data that needs to be attached to a handle.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param create_callback [IN]  pointer to create function callback
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_set_create_callback(
+        struct hg_class *hg_class,
+        hg_return_t (*create_callback)(hg_class_t *hg_class, hg_handle_t handle)
+        );
+
+/**
+ * Set callback that will be triggered when additional data needs to be
+ * transferred and HG_Core_set_more_data() has been called, usually when the
+ * eager message size is exceeded. This allows upper layers to manually transfer
+ * data using bulk transfers for example. The done_callback argument allows the
+ * upper layer to notify back once the data has been successfully acquired.
+ * The release callback allows the upper layer to release resources that were
+ * allocated when acquiring the data.
+ *
+ * \param hg_class [IN]                     pointer to HG class
+ * \param more_data_acquire_callback [IN]   pointer to acquire function callback
+ * \param more_data_release_callback [IN]   pointer to release function callback
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_set_more_data_callback(
+        struct hg_class *hg_class,
+        hg_return_t (*more_data_acquire_callback)(hg_handle_t,
+            hg_return_t (*done_callback)(hg_handle_t)),
+        void (*more_data_release_callback)(hg_handle_t)
+        );
+
+/**
  * Obtain the name of the given class.
  *
  * \param hg_class [IN]         pointer to HG class
@@ -113,8 +150,7 @@ HG_Core_class_get_na(
         );
 
 /**
- * Obtain the maximum eager size for sending RPC inputs, for a given class.
- * NOTE: This doesn't currently work when using XDR encoding.
+ * Obtain the maximum eager size for sending RPC inputs.
  *
  * \param hg_class [IN]         pointer to HG class
  *
@@ -127,8 +163,7 @@ HG_Core_class_get_input_eager_size(
         );
 
 /**
- * Obtain the maximum eager size for sending RPC outputs, for a given class.
- * NOTE: This doesn't currently work when using XDR encoding.
+ * Obtain the maximum eager size for sending RPC outputs.
  *
  * \param hg_class [IN]         pointer to HG class
  *
@@ -173,6 +208,18 @@ HG_Core_context_destroy(
  */
 HG_EXPORT hg_class_t *
 HG_Core_context_get_class(
+        const hg_context_t *context
+        );
+
+/**
+ * Retrieve the underlying NA context.
+ *
+ * \param context [IN]          pointer to HG context
+ *
+ * \return the associated context
+ */
+HG_EXPORT na_context_t *
+HG_Core_context_get_na(
         const hg_context_t *context
         );
 
@@ -479,6 +526,37 @@ HG_Core_ref_incr(
         );
 
 /**
+ * Allows upper layers to attach private data to an existing HG handle.
+ * The free_callback argument allows allocated resources to be released when
+ * the handle gets freed.
+ *
+ * \param handle [IN]           HG handle
+ * \param data [IN]             pointer to user data
+ * \param free_callback         pointer to free function callback
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+hg_return_t
+HG_Core_set_private_data(
+        hg_handle_t hg_handle,
+        void *data,
+        void (*free_callback)(void *)
+        );
+
+/**
+ * Allows upper layers to retrieve data from an existing HG handle.
+ * Only valid if HG_Core_set_private_data() has been previously called.
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return Pointer to data or NULL in case of error
+ */
+void *
+HG_Core_get_private_data(
+        hg_handle_t hg_handle
+        );
+
+/**
  * Get info from handle.
  *
  * \remark Users must call HG_Core_addr_dup() to safely re-use the addr field.
@@ -508,13 +586,28 @@ HG_Core_set_target_id(
         );
 
 /**
+ * Set more data flag to handle, indicating that more data will be transmitted
+ * before the RPC can be successfully processed. The user is then responsible
+ * for transmitting that data.
+ *
+ * \param handle [IN]           HG handle
+ * \param more_data [IN]        boolean
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_set_more_data(
+        hg_handle_t handle,
+        hg_bool_t more_data
+        );
+
+/**
  * Get input buffer from handle that can be used for serializing/deserializing
  * parameters.
  *
  * \param handle [IN]           HG handle
  * \param in_buf [OUT]          pointer to input buffer
  * \param in_buf_size [OUT]     pointer to input buffer size
- * \cond TODO Use bulk_t instead and add requested_size argument ? \endcond
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -547,14 +640,14 @@ HG_Core_get_output(
  * queried from the handle to serialize/deserialize parameters.
  * Additionally, a bulk handle can be passed if the size of the input is larger
  * than the queried input buffer size.
- * After completion, the handle must be freed using HG_Core_destroy(), user callback
- * is placed into a completion queue and can be triggered using HG_Core_trigger().
+ * After completion, the handle must be freed using HG_Core_destroy(), the user
+ * callback is placed into a completion queue and can be triggered using
+ * HG_Core_trigger().
  *
  * \param handle [IN]           HG handle
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
- * \param extra_in_handle [IN]  bulk handle to extra input buffer
- * \param size_to_send [IN]     size of request to transmit
+ * \param payload_size [IN]     size of payload to send
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -563,22 +656,19 @@ HG_Core_forward(
         hg_handle_t handle,
         hg_cb_t callback,
         void *arg,
-        hg_bulk_t extra_in_handle,
-        hg_size_t size_to_send
+        hg_size_t payload_size
         );
 
 /**
  * Respond back to the origin. The output buffer, which can be used to encode
  * the response, must first be queried using HG_Core_get_output().
- * After completion, user callback is placed into a completion queue and can be
- * triggered using HG_Core_trigger().
- * \cond TODO Might add extra_out_handle here as well \endcond
+ * After completion, the user callback is placed into a completion queue and
+ * can be triggered using HG_Core_trigger().
  *
  * \param handle [IN]           HG handle
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
- * \param ret_code [IN]         return code included in response
- * \param size_to_send [IN]     amount of data to send in response
+ * \param payload_size [IN]     size of payload to send
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -587,8 +677,7 @@ HG_Core_respond(
         hg_handle_t handle,
         hg_cb_t callback,
         void *arg,
-        hg_return_t ret_code,
-        hg_size_t size_to_send
+        hg_size_t payload_size
         );
 
 /**

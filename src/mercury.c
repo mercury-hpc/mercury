@@ -9,10 +9,14 @@
  */
 
 #include "mercury.h"
-
-#include "mercury_hash_string.h"
+#include "mercury_bulk.h"
+#include "mercury_core.h"
+#include "mercury_header.h"
 #include "mercury_proc.h"
 #include "mercury_error.h"
+
+#include "mercury_hash_string.h"
+#include "mercury_mem.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -31,65 +35,86 @@
 /* Local Type and Struct Definition */
 /************************************/
 
-/* Private callback type for HG layer */
-typedef hg_return_t (*handle_create_cb_t)(hg_class_t *, hg_handle_t);
-
 /* Info for function map */
 struct hg_proc_info {
-    hg_proc_cb_t in_proc_cb;        /* Input Proc callback */
-    hg_proc_cb_t out_proc_cb;       /* Output Proc callback */
+    hg_proc_cb_t in_proc_cb;        /* Input proc callback */
+    hg_proc_cb_t out_proc_cb;       /* Output proc callback */
     void *data;                     /* User data */
     void (*free_callback)(void *);  /* User data free callback */
 };
 
 /* Private handle data */
 struct hg_private_data {
-    hg_proc_t in_proc;
-    hg_proc_t out_proc;
-    hg_cb_t callback;                   /* Callback */
-    void *arg;                          /* Callback args */
-    void *extra_bulk_buf;               /* Extra bulk buf */
-    size_t extra_bulk_buf_size;         /* Extra bulk buf size */
-    hg_bulk_t extra_bulk_handle;        /* Extra bulk handle */
+    hg_cb_t callback;               /* Callback */
+    void *arg;                      /* Callback args */
+    struct hg_header in_header;     /* Input header */
+    struct hg_header out_header;    /* Output header */
+    hg_proc_t in_proc;              /* Input proc */
+    hg_proc_t out_proc;             /* Output proc */
+    void *extra_bulk_buf;           /* Extra bulk buf */
+    size_t extra_bulk_buf_size;     /* Extra bulk buf size */
+    hg_bulk_t extra_bulk_handle;    /* Extra bulk handle */
+    hg_return_t (*extra_bulk_transfer_cb)(hg_handle_t); /* Bulk transfer callback */
+    hg_op_id_t extra_bulk_op_id;    /* Extra bulk operation ID */
 };
+
+/***********************/
+/* External Prototypes */
+/***********************/
+
+/**
+ * Get RPC registered data.
+ * TODO can be improved / same as calling HG_Registered_data()?
+ */
+extern void *
+hg_core_get_rpc_data(
+        struct hg_handle *hg_handle
+        );
 
 /********************/
 /* Local Prototypes */
 /********************/
 
 /**
- * Set handle create callback on context.
+ * Free function for value in function map.
  */
-extern void
-hg_core_set_handle_create_callback(
+static void
+hg_proc_info_free(
+        void *arg
+        );
+
+/**
+ * Alloc function for private data.
+ */
+static hg_return_t
+hg_private_data_alloc(
         hg_class_t *hg_class,
-        handle_create_cb_t handle_create_callback
+        hg_handle_t handle
         );
 
 /**
- * Set private data.
+ * Free function for private data.
  */
-extern void
-hg_core_set_private_data(
-        struct hg_handle *hg_handle,
-        void *private_data,
-        void (*private_free_callback)(void *)
+static void
+hg_private_data_free(
+        void *arg
         );
 
 /**
- * Get private data.
+ * More data callback.
  */
-extern void *
-hg_core_get_private_data(
-        struct hg_handle *hg_handle
+static hg_return_t
+hg_more_data_cb(
+        hg_handle_t handle,
+        hg_return_t (*done_cb)(hg_handle_t)
         );
 
 /**
- * Get RPC registered data.
+ * More data free callback.
  */
-extern void *
-hg_core_get_rpc_data(
-        struct hg_handle *hg_handle
+static void
+hg_more_data_free_cb(
+        hg_handle_t handle
         );
 
 /**
@@ -98,6 +123,7 @@ hg_core_get_rpc_data(
 static hg_return_t
 hg_get_input(
         hg_handle_t handle,
+        struct hg_private_data *hg_private_data,
         void *in_struct
         );
 
@@ -107,10 +133,9 @@ hg_get_input(
 static hg_return_t
 hg_set_input(
         hg_handle_t handle,
+        struct hg_private_data *hg_private_data,
         void *in_struct,
-        void **extra_in_buf,
-        hg_size_t *extra_in_buf_size,
-        hg_size_t *size_to_send
+        hg_size_t *payload_size
         );
 
 /**
@@ -119,6 +144,7 @@ hg_set_input(
 static hg_return_t
 hg_free_input(
         hg_handle_t handle,
+        struct hg_private_data *hg_private_data,
         void *in_struct
         );
 
@@ -128,6 +154,7 @@ hg_free_input(
 static hg_return_t
 hg_get_output(
         hg_handle_t handle,
+        struct hg_private_data *hg_private_data,
         void *out_struct
         );
 
@@ -137,8 +164,9 @@ hg_get_output(
 static hg_return_t
 hg_set_output(
         hg_handle_t handle,
+        struct hg_private_data *hg_private_data,
         void *out_struct,
-        hg_size_t *size_to_send
+        hg_size_t *payload_size
         );
 
 /**
@@ -147,7 +175,34 @@ hg_set_output(
 static hg_return_t
 hg_free_output(
         hg_handle_t handle,
+        struct hg_private_data *hg_private_data,
         void *out_struct
+        );
+
+/**
+ * Get extra user payload using bulk transfer.
+ */
+static hg_return_t
+hg_get_extra_input(
+        hg_handle_t handle,
+        struct hg_private_data *hg_private_data,
+        hg_return_t (*done_cb)(hg_handle_t)
+        );
+
+/**
+ * Get extra input bulk transfer callback.
+ */
+static hg_return_t
+hg_get_extra_input_cb(
+        const struct hg_cb_info *callback_info
+        );
+
+/**
+ * Free allocated extra input.
+ */
+static void
+hg_free_extra_input(
+        struct hg_private_data *hg_private_data
         );
 
 /**
@@ -155,6 +210,14 @@ hg_free_output(
  */
 static hg_return_t
 hg_forward_cb(
+        const struct hg_cb_info *callback_info
+        );
+
+/**
+ * Respond callback.
+ */
+static hg_return_t
+hg_respond_cb(
         const struct hg_cb_info *callback_info
         );
 
@@ -166,7 +229,7 @@ hg_forward_cb(
 /**
  * Free function for value in function map.
  */
-static HG_INLINE void
+static void
 hg_proc_info_free(void *arg)
 {
     struct hg_proc_info *hg_proc_info = (struct hg_proc_info *) arg;
@@ -177,26 +240,10 @@ hg_proc_info_free(void *arg)
 }
 
 /*---------------------------------------------------------------------------*/
-/**
- * Free function for private data.
- */
-static HG_INLINE void
-hg_private_data_free(void *arg)
-{
-    struct hg_private_data *hg_private_data = (struct hg_private_data *) arg;
-
-    if (hg_private_data->in_proc != HG_PROC_NULL)
-        hg_proc_free(hg_private_data->in_proc);
-    if (hg_private_data->out_proc != HG_PROC_NULL)
-        hg_proc_free(hg_private_data->out_proc);
-    free(hg_private_data);
-}
-
-/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_private_data_alloc(hg_class_t *hg_class, hg_handle_t handle)
 {
-    struct hg_private_data *hg_private_data = NULL;
+    struct hg_private_data *hg_private_data;
     hg_return_t ret;
 
     /* Create private data to wrap callbacks etc */
@@ -207,66 +254,140 @@ hg_private_data_alloc(hg_class_t *hg_class, hg_handle_t handle)
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-    ret = hg_proc_create(hg_class, HG_CHECKSUM_DEFAULT,
-        &hg_private_data->in_proc);
+    memset(hg_private_data, 0, sizeof(struct hg_private_data));
+    hg_header_input_init(&hg_private_data->in_header);
+    hg_header_output_init(&hg_private_data->out_header);
+
+    /* CRC32 is enough for small size buffers */
+    ret = hg_proc_create(hg_class, HG_CRC32, &hg_private_data->in_proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Cannot create HG proc");
         goto done;
     }
-    ret = hg_proc_create(hg_class, HG_CHECKSUM_DEFAULT,
-        &hg_private_data->out_proc);
+    ret = hg_proc_create(hg_class, HG_CRC32, &hg_private_data->out_proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Cannot create HG proc");
         goto done;
     }
-    hg_private_data->callback = NULL;
-    hg_private_data->arg = NULL;
-    hg_private_data->extra_bulk_buf = NULL;
-    hg_private_data->extra_bulk_buf_size = 0;
-    hg_private_data->extra_bulk_handle = HG_BULK_NULL;
-    hg_core_set_private_data(handle, hg_private_data, hg_private_data_free);
+    HG_Core_set_private_data(handle, hg_private_data, hg_private_data_free);
 
 done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_get_input(hg_handle_t handle, void *in_struct)
+static void
+hg_private_data_free(void *arg)
 {
-    void *in_buf;
-    hg_size_t in_buf_size;
-    struct hg_proc_info *hg_proc_info = NULL;
-    struct hg_private_data *hg_private_data = NULL;
-    hg_proc_t proc = HG_PROC_NULL;
+    struct hg_private_data *hg_private_data = (struct hg_private_data *) arg;
+
+    if (hg_private_data->in_proc != HG_PROC_NULL)
+        hg_proc_free(hg_private_data->in_proc);
+    if (hg_private_data->out_proc != HG_PROC_NULL)
+        hg_proc_free(hg_private_data->out_proc);
+    hg_mem_aligned_free(hg_private_data->extra_bulk_buf);
+    hg_header_input_finalize(&hg_private_data->in_header);
+    hg_header_output_finalize(&hg_private_data->out_header);
+    free(hg_private_data);
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_more_data_cb(hg_handle_t handle, hg_return_t (*done_cb)(hg_handle_t))
+{
+    struct hg_private_data *hg_private_data;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!in_struct) goto done;
+    /* Retrieve private data */
+    hg_private_data =
+        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
 
-    /* Get input buffer */
+    ret = hg_get_extra_input(handle, hg_private_data, done_cb);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not get extra input");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_more_data_free_cb(hg_handle_t handle)
+{
+    struct hg_private_data *hg_private_data;
+
+    /* Retrieve private data */
+    hg_private_data =
+        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        goto done;
+    }
+
+    hg_free_extra_input(hg_private_data);
+
+done:
+    return;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_get_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
+    void *in_struct)
+{
+    struct hg_proc_info *hg_proc_info;
+    hg_proc_t proc = hg_private_data->in_proc;
+    void *in_buf;
+    hg_size_t in_buf_size;
+    hg_size_t header_offset = hg_header_input_get_size();
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Retrieve proc function from function map */
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get proc info");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+    if (!hg_proc_info->in_proc_cb) {
+        HG_LOG_ERROR("No input proc set, proc must be set in HG_Register()");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    /* Get core input buffer */
     ret = HG_Core_get_input(handle, &in_buf, &in_buf_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get input buffer");
         goto done;
     }
 
-    /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
-    if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get proc info");
-        ret = HG_NO_MATCH;
+    /* Get header */
+    hg_header_input_reset(&hg_private_data->in_header);
+    ret = hg_header_input_proc(HG_DECODE, in_buf, in_buf_size,
+        &hg_private_data->in_header);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not process input header");
         goto done;
     }
-    if (!hg_proc_info->in_proc_cb) goto done;
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_NO_MATCH;
-        goto done;
+    /* If the input did not fit into the core input buffer and we have an extra
+     * input buffer set, use that buffer directly */
+    if (hg_private_data->extra_bulk_buf) {
+        in_buf = hg_private_data->extra_bulk_buf;
+        in_buf_size = hg_private_data->extra_bulk_buf_size;
+    } else {
+        /* Include our own header offset */
+        in_buf = (char *) in_buf + header_offset;
+        in_buf_size -= header_offset;
     }
-    proc = hg_private_data->in_proc;
 
     /* Reset proc */
     ret = hg_proc_reset(proc, in_buf, in_buf_size, HG_DECODE);
@@ -289,6 +410,17 @@ hg_get_input(hg_handle_t handle, void *in_struct)
         goto done;
     }
 
+#ifdef HG_HAS_CHECKSUMS
+    /* Compare checksum with header hash */
+    ret = hg_proc_checksum_verify(proc,
+        &hg_private_data->in_header.msg.input.hash.payload,
+        sizeof(hg_private_data->in_header.msg.input.hash.payload));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Error in proc checksum verify");
+        goto done;
+    }
+#endif
+
     /* Increment ref count on handle so that it remains valid until free_input
      * is called */
     HG_Core_ref_incr(handle);
@@ -299,18 +431,31 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
-        hg_size_t *extra_in_buf_size, hg_size_t *size_to_send)
+hg_set_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
+    void *in_struct, hg_size_t *payload_size)
 {
+    struct hg_proc_info *hg_proc_info;
+    hg_proc_t proc = hg_private_data->in_proc;
     void *in_buf;
     hg_size_t in_buf_size;
-    struct hg_proc_info *hg_proc_info = NULL;
-    struct hg_private_data *hg_private_data = NULL;
-    hg_proc_t proc = HG_PROC_NULL;
+    hg_size_t header_offset = hg_header_input_get_size();
     hg_return_t ret = HG_SUCCESS;
 
-    if (!in_struct)
+    /* Retrieve proc function from function map */
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get proc info");
+        ret = HG_PROTOCOL_ERROR;
         goto done;
+    }
+    if (!hg_proc_info->in_proc_cb || !in_struct) {
+        /* Silently skip */
+        *payload_size = 0;
+        goto done;
+    }
+
+    /* Reset header */
+    hg_header_input_reset(&hg_private_data->in_header);
 
     /* Get input buffer */
     ret = HG_Core_get_input(handle, &in_buf, &in_buf_size);
@@ -319,23 +464,9 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
         goto done;
     }
 
-    /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
-    if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get proc info");
-        ret = HG_NO_MATCH;
-        goto done;
-    }
-    if (!hg_proc_info->in_proc_cb) goto done;
-
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_NO_MATCH;
-        goto done;
-    }
-    proc = hg_private_data->in_proc;
+    /* Include our own header offset */
+    in_buf = (char *) in_buf + header_offset;
+    in_buf_size -= header_offset;
 
     /* Reset proc */
     ret = hg_proc_reset(proc, in_buf, in_buf_size, HG_ENCODE);
@@ -358,29 +489,92 @@ hg_set_input(hg_handle_t handle, void *in_struct, void **extra_in_buf,
         goto done;
     }
 
-    /* The size of the encoding buffer may have changed at this point
-     * --> if the buffer is too large, we need to do:
-     *  - 1: send an unexpected message with info + eventual bulk data descriptor
-     *  - 2: send the remaining data in extra buf using bulk data transfer
+#ifdef HG_HAS_CHECKSUMS
+    /* Set checksum in header */
+    ret = hg_proc_checksum_get(proc,
+        &hg_private_data->in_header.msg.input.hash.payload,
+        sizeof(hg_private_data->in_header.msg.input.hash.payload));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Error in getting proc checksum");
+        goto done;
+    }
+#endif
+
+    /* The proc object may have allocated an extra buffer at this point.
+     * If the input did not fit into the original buffer, we need to send an
+     * unexpected message with "more data" flag set along with the bulk data
+     * descriptor for the input so that the target can pull that buffer and use
+     * it to retrieve the data.
      */
-    if (hg_proc_get_size(proc) > in_buf_size) {
+    if (hg_proc_get_extra_buf(proc)) {
+        const struct hg_info *hg_info = HG_Core_get_info(handle);
+
 #ifdef HG_HAS_XDR
         HG_LOG_ERROR("Extra encoding using XDR is not yet supported");
         ret = HG_SIZE_ERROR;
         goto done;
-#else
-        *extra_in_buf = hg_proc_get_extra_buf(proc);
-        *extra_in_buf_size = hg_proc_get_extra_size(proc);
-
-        /* Prevent buffer from being freed when proc_free is called */
-        hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
 #endif
-    } else {
-        *extra_in_buf = NULL;
-        *extra_in_buf_size = 0;
+        /* Create a bulk descriptor only of the size that is used */
+        hg_private_data->extra_bulk_buf = hg_proc_get_extra_buf(proc);
+        hg_private_data->extra_bulk_buf_size = hg_proc_get_size_used(proc);
+
+        /* Prevent buffer from being freed when proc_reset is called */
+        hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
+
+        /* Set more data flag on handle so that handle_more_callback is
+         * triggered */
+        HG_Core_set_more_data(handle, HG_TRUE);
+
+        ret = HG_Bulk_create(hg_info->hg_class, 1,
+            &hg_private_data->extra_bulk_buf,
+            &hg_private_data->extra_bulk_buf_size, HG_BULK_READ_ONLY,
+            &hg_private_data->extra_bulk_handle);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not create bulk data handle");
+            goto done;
+        }
+
+        /* Reset proc */
+        ret = hg_proc_reset(proc, in_buf, in_buf_size, HG_ENCODE);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not reset proc");
+            goto done;
+        }
+
+        /* Encode extra_bulk_handle, we can do that safely here because
+         * the user payload is copied in this case so we don't have to worry
+         * about overwriting the user's data */
+        ret = hg_proc_hg_bulk_t(proc, &hg_private_data->extra_bulk_handle);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not process extra bulk handle");
+            goto done;
+        }
+
+        ret = hg_proc_flush(proc);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Error in proc flush");
+            goto done;
+        }
+
+        if (hg_proc_get_extra_buf(proc)) {
+            HG_LOG_ERROR("Extra bulk handle could not fit into buffer");
+            ret = HG_PROTOCOL_ERROR;
+            goto done;
+        }
     }
-    /* Only send the actual size of the data, not the entire proc buffer */
-    *size_to_send = hg_proc_get_size_used(proc);
+
+    /* Encode input header */
+    in_buf = (char *) in_buf - header_offset;
+    in_buf_size += header_offset;
+    ret = hg_header_input_proc(HG_ENCODE, in_buf, in_buf_size,
+        &hg_private_data->in_header);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not process input header");
+        goto done;
+    }
+
+    /* Only send the actual size of the data, not the entire buffer */
+    *payload_size = hg_proc_get_size_used(proc) + header_offset;
 
 done:
     return ret;
@@ -388,32 +582,25 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_free_input(hg_handle_t handle, void *in_struct)
+hg_free_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
+    void *in_struct)
 {
-    struct hg_proc_info *hg_proc_info = NULL;
-    struct hg_private_data *hg_private_data = NULL;
-    hg_proc_t proc = HG_PROC_NULL;
+    struct hg_proc_info *hg_proc_info;
+    hg_proc_t proc = hg_private_data->in_proc;
     hg_return_t ret = HG_SUCCESS;
-
-    if (!in_struct) goto done;
 
     /* Retrieve proc function from function map */
     hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
-        ret = HG_NO_MATCH;
+        ret = HG_PROTOCOL_ERROR;
         goto done;
     }
-    if (!hg_proc_info->in_proc_cb) goto done;
-
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_NO_MATCH;
+    if (!hg_proc_info->in_proc_cb) {
+        HG_LOG_ERROR("No input proc set, proc must be set in HG_Register()");
+        ret = HG_PROTOCOL_ERROR;
         goto done;
     }
-    proc = hg_private_data->in_proc;
 
     /* Reset proc */
     ret = hg_proc_reset(proc, NULL, 0, HG_FREE);
@@ -442,16 +629,28 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_get_output(hg_handle_t handle, void *out_struct)
+hg_get_output(hg_handle_t handle, struct hg_private_data *hg_private_data,
+    void *out_struct)
 {
+    struct hg_proc_info *hg_proc_info;
+    hg_proc_t proc = hg_private_data->out_proc;
     void *out_buf;
     hg_size_t out_buf_size;
-    struct hg_proc_info *hg_proc_info = NULL;
-    struct hg_private_data *hg_private_data = NULL;
-    hg_proc_t proc = HG_PROC_NULL;
+    hg_size_t header_offset = hg_header_output_get_size();
     hg_return_t ret = HG_SUCCESS;
 
-    if (!out_struct) goto done;
+    /* Retrieve proc function from function map */
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get proc info");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+    if (!hg_proc_info->out_proc_cb) {
+        HG_LOG_ERROR("No output proc set, proc must be set in HG_Register()");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
 
     /* Get output buffer */
     ret = HG_Core_get_output(handle, &out_buf, &out_buf_size);
@@ -460,23 +659,25 @@ hg_get_output(hg_handle_t handle, void *out_struct)
         goto done;
     }
 
-    /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
-    if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get proc info");
-        ret = HG_NO_MATCH;
+    /* Get header */
+    hg_header_output_reset(&hg_private_data->out_header);
+    ret = hg_header_output_proc(HG_DECODE, out_buf, out_buf_size,
+        &hg_private_data->out_header);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not process output header");
         goto done;
     }
-    if (!hg_proc_info->out_proc_cb) goto done;
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_NO_MATCH;
-        goto done;
+    /* If the output did not fit into the core output buffer and there is an
+     * extra output buffer, use that buffer directly */
+    if (hg_private_data->extra_bulk_buf) {
+        out_buf = hg_private_data->extra_bulk_buf;
+        out_buf_size = hg_private_data->extra_bulk_buf_size;
+    } else {
+        /* Include our own header offset */
+        out_buf = (char *) out_buf + header_offset;
+        out_buf_size -= header_offset;
     }
-    proc = hg_private_data->out_proc;
 
     /* Reset proc */
     ret = hg_proc_reset(proc, out_buf, out_buf_size, HG_DECODE);
@@ -499,6 +700,17 @@ hg_get_output(hg_handle_t handle, void *out_struct)
         goto done;
     }
 
+#ifdef HG_HAS_CHECKSUMS
+    /* Compare checksum with header hash */
+    ret = hg_proc_checksum_verify(proc,
+        &hg_private_data->out_header.msg.output.hash.payload,
+        sizeof(hg_private_data->out_header.msg.output.hash.payload));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Error in proc checksum verify");
+        goto done;
+    }
+#endif
+
     /* Increment ref count on handle so that it remains valid until free_output
      * is called */
     HG_Core_ref_incr(handle);
@@ -509,17 +721,31 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
+hg_set_output(hg_handle_t handle, struct hg_private_data *hg_private_data,
+    void *out_struct, hg_size_t *payload_size)
 {
+    struct hg_proc_info *hg_proc_info;
+    hg_proc_t proc = hg_private_data->out_proc;
     void *out_buf;
     hg_size_t out_buf_size;
-    struct hg_proc_info *hg_proc_info = NULL;
-    struct hg_private_data *hg_private_data = NULL;
-    hg_proc_t proc = HG_PROC_NULL;
+    hg_size_t header_offset = hg_header_output_get_size();
     hg_return_t ret = HG_SUCCESS;
 
-    if (!out_struct) 
+    /* Retrieve proc function from function map */
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get proc info");
+        ret = HG_PROTOCOL_ERROR;
         goto done;
+    }
+    if (!hg_proc_info->out_proc_cb || !out_struct) {
+        /* Silently skip */
+        *payload_size = 0;
+        goto done;
+    }
+
+    /* Reset header */
+    hg_header_output_reset(&hg_private_data->out_header);
 
     /* Get output buffer */
     ret = HG_Core_get_output(handle, &out_buf, &out_buf_size);
@@ -528,23 +754,9 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
         goto done;
     }
 
-    /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
-    if (!hg_proc_info) {
-        HG_LOG_ERROR("Could not get proc info");
-        ret = HG_NO_MATCH;
-        goto done;
-    }
-    if (!hg_proc_info->out_proc_cb) goto done;
-
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_NO_MATCH;
-        goto done;
-    }
-    proc = hg_private_data->out_proc;
+    /* Include our own header offset */
+    out_buf = (char *) out_buf + header_offset;
+    out_buf_size -= header_offset;
 
     /* Reset proc */
     ret = hg_proc_reset(proc, out_buf, out_buf_size, HG_ENCODE);
@@ -567,16 +779,29 @@ hg_set_output(hg_handle_t handle, void *out_struct, hg_size_t *size_to_send)
         goto done;
     }
 
-    /* Get eventual extra buffer
-     * TODO need to do something here  */
-    if (hg_proc_get_size(proc) > out_buf_size) {
-        HG_LOG_WARNING("Output size exceeds NA expected message size");
-        ret = HG_SIZE_ERROR;
+#ifdef HG_HAS_CHECKSUMS
+    /* Set checksum in header */
+    ret = hg_proc_checksum_get(proc,
+        &hg_private_data->out_header.msg.output.hash.payload,
+        sizeof(hg_private_data->out_header.msg.output.hash.payload));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Error in getting proc checksum");
+        goto done;
+    }
+#endif
+
+    /* Encode output header */
+    out_buf = (char *) out_buf - header_offset;
+    out_buf_size += header_offset;
+    ret = hg_header_output_proc(HG_ENCODE, out_buf, out_buf_size,
+        &hg_private_data->out_header);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not process output header");
         goto done;
     }
 
-    /* add any encoded response size to the size to transmit */
-    *size_to_send = hg_proc_get_size_used(proc);
+    /* Only send the actual size of the data, not the entire buffer */
+    *payload_size = hg_proc_get_size_used(proc) + header_offset;
 
 done:
     return ret;
@@ -584,32 +809,25 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_free_output(hg_handle_t handle, void *out_struct)
+hg_free_output(hg_handle_t handle, struct hg_private_data *hg_private_data,
+    void *out_struct)
 {
-    struct hg_proc_info *hg_proc_info = NULL;
-    struct hg_private_data *hg_private_data = NULL;
-    hg_proc_t proc = HG_PROC_NULL;
+    struct hg_proc_info *hg_proc_info;
+    hg_proc_t proc = hg_private_data->out_proc;
     hg_return_t ret = HG_SUCCESS;
-
-    if (!out_struct) goto done;
 
     /* Retrieve proc function from function map */
     hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
-        ret = HG_NO_MATCH;
+        ret = HG_PROTOCOL_ERROR;
         goto done;
     }
-    if (!hg_proc_info->out_proc_cb) goto done;
-
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_NO_MATCH;
+    if (!hg_proc_info->out_proc_cb) {
+        HG_LOG_ERROR("No output proc set, proc must be set in HG_Register()");
+        ret = HG_PROTOCOL_ERROR;
         goto done;
     }
-    proc = hg_private_data->out_proc;
 
     /* Reset proc */
     ret = hg_proc_reset(proc, NULL, 0, HG_FREE);
@@ -638,6 +856,127 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
+hg_get_extra_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
+    hg_return_t (*done_cb)(hg_handle_t handle))
+{
+    hg_proc_t proc = hg_private_data->in_proc;
+    void *in_buf;
+    hg_size_t in_buf_size;
+    hg_size_t header_offset = hg_header_input_get_size();
+    const struct hg_info *hg_info = HG_Core_get_info(handle);
+    hg_size_t page_size = (hg_size_t) hg_mem_get_page_size();
+    hg_bulk_t local_in_handle = HG_BULK_NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Get core input buffer */
+    ret = HG_Core_get_input(handle, &in_buf, &in_buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not get input buffer");
+        goto done;
+    }
+
+    /* Include our own header offset */
+    in_buf = (char *) in_buf + header_offset;
+    in_buf_size -= header_offset;
+
+    ret = hg_proc_reset(proc, in_buf, in_buf_size, HG_DECODE);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not reset proc");
+        goto done;
+    }
+
+    /* Decode extra bulk handle */
+    ret = hg_proc_hg_bulk_t(proc, &hg_private_data->extra_bulk_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not process extra bulk handle");
+        goto done;
+    }
+
+    ret = hg_proc_flush(proc);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Error in proc flush");
+        goto done;
+    }
+
+    /* Create a new local handle to read the data */
+    hg_private_data->extra_bulk_buf_size = HG_Bulk_get_size(
+        hg_private_data->extra_bulk_handle);
+    hg_private_data->extra_bulk_buf = hg_mem_aligned_alloc(page_size,
+        hg_private_data->extra_bulk_buf_size);
+    if (!hg_private_data->extra_bulk_buf) {
+        HG_LOG_ERROR("Could not allocate extra input buffer");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+
+    ret = HG_Bulk_create(hg_info->hg_class, 1, &hg_private_data->extra_bulk_buf,
+        &hg_private_data->extra_bulk_buf_size, HG_BULK_READWRITE,
+        &local_in_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not create HG bulk handle");
+        goto done;
+    }
+
+    /* Read bulk data here and wait for the data to be here  */
+    hg_private_data->extra_bulk_transfer_cb = done_cb;
+    ret = HG_Bulk_transfer(hg_info->context, hg_get_extra_input_cb, handle,
+        HG_BULK_PULL, hg_info->addr,
+        hg_private_data->extra_bulk_handle, 0, local_in_handle, 0,
+        hg_private_data->extra_bulk_buf_size,
+        &hg_private_data->extra_bulk_op_id);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not transfer bulk data");
+        goto done;
+    }
+
+done:
+    HG_Bulk_free(local_in_handle);
+    HG_Bulk_free(hg_private_data->extra_bulk_handle);
+    hg_private_data->extra_bulk_handle = HG_BULK_NULL;
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_get_extra_input_cb(const struct hg_cb_info *callback_info)
+{
+    struct hg_private_data *hg_private_data;
+    hg_handle_t handle = (hg_handle_t) callback_info->arg;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Retrieve private data */
+    hg_private_data =
+        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    ret = hg_private_data->extra_bulk_transfer_cb(handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not execute bulk transfer callback");
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_free_extra_input(struct hg_private_data *hg_private_data)
+{
+    /* Free extra bulk buf if there was any */
+    if (hg_private_data->extra_bulk_buf) {
+        hg_mem_aligned_free(hg_private_data->extra_bulk_buf);
+        hg_private_data->extra_bulk_buf = NULL;
+        hg_private_data->extra_bulk_buf_size = 0;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
 hg_forward_cb(const struct hg_cb_info *callback_info)
 {
     struct hg_private_data *hg_private_data =
@@ -645,9 +984,36 @@ hg_forward_cb(const struct hg_cb_info *callback_info)
     hg_return_t ret = HG_SUCCESS;
 
     /* Free eventual extra input buffer and handle */
-    HG_Bulk_free(hg_private_data->extra_bulk_handle);
-    free(hg_private_data->extra_bulk_buf);
-    hg_private_data->extra_bulk_buf_size = 0;
+    if (hg_private_data->extra_bulk_buf) {
+        HG_Bulk_free(hg_private_data->extra_bulk_handle);
+        hg_private_data->extra_bulk_handle = HG_BULK_NULL;
+        hg_mem_aligned_free(hg_private_data->extra_bulk_buf);
+        hg_private_data->extra_bulk_buf = NULL,
+        hg_private_data->extra_bulk_buf_size = 0;
+    }
+
+    /* Execute callback */
+    if (hg_private_data->callback) {
+        struct hg_cb_info hg_cb_info;
+
+        hg_cb_info.arg = hg_private_data->arg;
+        hg_cb_info.ret = callback_info->ret;
+        hg_cb_info.type = callback_info->type;
+        hg_cb_info.info = callback_info->info;
+
+        hg_private_data->callback(&hg_cb_info);
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_respond_cb(const struct hg_cb_info *callback_info)
+{
+    struct hg_private_data *hg_private_data =
+            (struct hg_private_data *) callback_info->arg;
+    hg_return_t ret = HG_SUCCESS;
 
     /* Execute callback */
     if (hg_private_data->callback) {
@@ -708,7 +1074,11 @@ HG_Init(const char *na_info_string, hg_bool_t na_listen)
     }
 
     /* Set private data allocation on HG handle create */
-    hg_core_set_handle_create_callback(hg_class, hg_private_data_alloc);
+    HG_Core_set_create_callback(hg_class, hg_private_data_alloc);
+
+    /* Set more data callback */
+    HG_Core_set_more_data_callback(hg_class, hg_more_data_cb,
+        hg_more_data_free_cb);
 
 done:
     return hg_class;
@@ -727,7 +1097,11 @@ HG_Init_na(na_class_t *na_class)
     }
 
     /* Set private data allocation on HG handle create */
-    hg_core_set_handle_create_callback(hg_class, hg_private_data_alloc);
+    HG_Core_set_create_callback(hg_class, hg_private_data_alloc);
+
+    /* Set more data callback */
+    HG_Core_set_more_data_callback(hg_class, hg_more_data_cb,
+        hg_more_data_free_cb);
 
 done:
     return hg_class;
@@ -766,10 +1140,14 @@ hg_size_t
 HG_Class_get_input_eager_size(const hg_class_t *hg_class)
 {
     hg_size_t ret = HG_Core_class_get_input_eager_size(hg_class);
-    if (ret > HG_CHECKSUM_MAX_SIZE)
-        return ret - HG_CHECKSUM_MAX_SIZE;
+    hg_size_t header = hg_header_input_get_size();
+
+    if (ret > header)
+        ret -= header;
     else
-        return 0;
+        ret = 0;
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -777,10 +1155,14 @@ hg_size_t
 HG_Class_get_output_eager_size(const hg_class_t *hg_class)
 {
     hg_size_t ret = HG_Core_class_get_output_eager_size(hg_class);
-    if (ret > HG_CHECKSUM_MAX_SIZE)
-        return ret - HG_CHECKSUM_MAX_SIZE;
+    hg_size_t header = hg_header_output_get_size();
+
+    if (ret > header)
+        ret -= header;
     else
-        return 0;
+        ret = 0;
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -946,7 +1328,8 @@ HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
     }
 
     if (!registered) {
-        hg_proc_info = (struct hg_proc_info *) malloc(sizeof(struct hg_proc_info));
+        hg_proc_info =
+            (struct hg_proc_info *) malloc(sizeof(struct hg_proc_info));
         if (!hg_proc_info) {
             HG_LOG_ERROR("Could not allocate proc info");
             ret = HG_NOMEM_ERROR;
@@ -958,14 +1341,16 @@ HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
         hg_proc_info->free_callback = NULL;
 
         /* Attach proc info to RPC ID */
-        ret = HG_Core_register_data(hg_class, id, hg_proc_info, hg_proc_info_free);
+        ret = HG_Core_register_data(hg_class, id, hg_proc_info,
+            hg_proc_info_free);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not set proc info");
             goto done;
         }
     } else {
         /* Retrieve proc function from function map */
-        hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
+        hg_proc_info =
+            (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
         if (!hg_proc_info) {
             HG_LOG_ERROR("Could not get registered data");
             goto done;
@@ -997,7 +1382,8 @@ HG_Register_data(hg_class_t *hg_class, hg_id_t id, void *data,
     hg_return_t ret = HG_SUCCESS;
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
+    hg_proc_info =
+        (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
@@ -1019,7 +1405,8 @@ HG_Registered_data(hg_class_t *hg_class, hg_id_t id)
     void *data = NULL;
 
     /* Retrieve proc function from function map */
-    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
+    hg_proc_info =
+        (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
         goto done;
@@ -1134,20 +1521,25 @@ HG_Get_info(hg_handle_t handle)
 hg_return_t
 HG_Get_input(hg_handle_t handle, void *in_struct)
 {
+    struct hg_private_data *hg_private_data;
     hg_return_t ret = HG_SUCCESS;
 
-    if (handle == HG_HANDLE_NULL) {
-        HG_LOG_ERROR("NULL HG handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
     if (!in_struct) {
         HG_LOG_ERROR("NULL pointer to input struct");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    ret = hg_get_input(handle, in_struct);
+    /* Retrieve private data */
+    hg_private_data =
+        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    ret = hg_get_input(handle, hg_private_data, in_struct);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get input");
         goto done;
@@ -1161,20 +1553,25 @@ done:
 hg_return_t
 HG_Free_input(hg_handle_t handle, void *in_struct)
 {
+    struct hg_private_data *hg_private_data;
     hg_return_t ret = HG_SUCCESS;
 
-    if (handle == HG_HANDLE_NULL) {
-        HG_LOG_ERROR("NULL HG handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
     if (!in_struct) {
         HG_LOG_ERROR("NULL pointer to input struct");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    ret = hg_free_input(handle, in_struct);
+    /* Retrieve private data */
+    hg_private_data =
+        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    ret = hg_free_input(handle, hg_private_data, in_struct);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not free input");
         goto done;
@@ -1188,20 +1585,25 @@ done:
 hg_return_t
 HG_Get_output(hg_handle_t handle, void *out_struct)
 {
+    struct hg_private_data *hg_private_data;
     hg_return_t ret = HG_SUCCESS;
 
-    if (handle == HG_HANDLE_NULL) {
-        HG_LOG_ERROR("NULL HG handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
     if (!out_struct) {
         HG_LOG_ERROR("NULL pointer to output struct");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    ret = hg_get_output(handle, out_struct);
+    /* Retrieve private data */
+    hg_private_data =
+        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    ret = hg_get_output(handle, hg_private_data, out_struct);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get output");
         goto done;
@@ -1215,20 +1617,25 @@ done:
 hg_return_t
 HG_Free_output(hg_handle_t handle, void *out_struct)
 {
+    struct hg_private_data *hg_private_data;
     hg_return_t ret = HG_SUCCESS;
 
-    if (handle == HG_HANDLE_NULL) {
-        HG_LOG_ERROR("NULL HG handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
     if (!out_struct) {
         HG_LOG_ERROR("NULL pointer to output struct");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    ret = hg_free_output(handle, out_struct);
+    /* Retrieve private data */
+    hg_private_data =
+        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    ret = hg_free_output(handle, hg_private_data, out_struct);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not free output");
         goto done;
@@ -1249,60 +1656,30 @@ HG_Set_target_id(hg_handle_t handle, hg_uint8_t target_id)
 hg_return_t
 HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
 {
-    struct hg_private_data *hg_private_data = NULL;
-    hg_bulk_t extra_in_handle = HG_BULK_NULL;
-    void *extra_in_buf = NULL;
-    hg_size_t extra_in_buf_size;
-    hg_size_t size_to_send = 0;
+    struct hg_private_data *hg_private_data;
+    hg_size_t payload_size;
     hg_return_t ret = HG_SUCCESS;
 
-    if (handle == HG_HANDLE_NULL) {
-        HG_LOG_ERROR("NULL HG handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-
     /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) hg_core_get_private_data(handle);
+    hg_private_data =
+        (struct hg_private_data *) HG_Core_get_private_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
-        ret = HG_NO_MATCH;
+        ret = HG_PROTOCOL_ERROR;
         goto done;
     }
     hg_private_data->callback = callback;
     hg_private_data->arg = arg;
-    hg_private_data->extra_bulk_buf = NULL;
-    hg_private_data->extra_bulk_buf_size = 0;
-    hg_private_data->extra_bulk_handle = HG_BULK_NULL;
 
     /* Serialize input */
-    ret = hg_set_input(handle, in_struct, &extra_in_buf, &extra_in_buf_size,
-        &size_to_send);
+    ret = hg_set_input(handle, hg_private_data, in_struct, &payload_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not set input");
         goto done;
     }
 
-    if (extra_in_buf) {
-        const struct hg_info *hg_info = HG_Core_get_info(handle);
-
-        ret = HG_Bulk_create(hg_info->hg_class, 1, &extra_in_buf,
-                &size_to_send, HG_BULK_READ_ONLY, &extra_in_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not create bulk data handle");
-            goto done;
-        }
-        hg_private_data->extra_bulk_buf = extra_in_buf;
-        hg_private_data->extra_bulk_buf_size = extra_in_buf_size;
-        hg_private_data->extra_bulk_handle = extra_in_handle;
-        /* Reset size to send to 0 here as nothing else needs to be added to
-         * eager message */
-        size_to_send = 0;
-    }
-
     /* Send request */
-    ret = HG_Core_forward(handle, hg_forward_cb, hg_private_data,
-        extra_in_handle, size_to_send);
+    ret = HG_Core_forward(handle, hg_forward_cb, hg_private_data, payload_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not forward call");
         goto done;
@@ -1316,29 +1693,30 @@ done:
 hg_return_t
 HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
 {
-    hg_size_t size_to_send = 0;
+    struct hg_private_data *hg_private_data;
+    hg_size_t payload_size;
     hg_return_t ret = HG_SUCCESS;
-    hg_return_t ret_code = HG_SUCCESS;
 
-    if (handle == HG_HANDLE_NULL) {
-        HG_LOG_ERROR("NULL HG handle");
-        ret = HG_INVALID_PARAM;
+    /* Retrieve private data */
+    hg_private_data =
+        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    if (!hg_private_data) {
+        HG_LOG_ERROR("Could not get private data");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+    hg_private_data->callback = callback;
+    hg_private_data->arg = arg;
+
+    /* Serialize output */
+    ret = hg_set_output(handle, hg_private_data, out_struct, &payload_size);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not set output");
         goto done;
     }
 
-    /* Serialize output */
-    ret = hg_set_output(handle, out_struct, &size_to_send);
-    if (ret != HG_SUCCESS) {
-        if (ret == HG_SIZE_ERROR)
-            ret_code = HG_SIZE_ERROR;
-        else {
-            HG_LOG_ERROR("Could not set output");
-            goto done;
-        }
-    }
-
     /* Send response back */
-    ret = HG_Core_respond(handle, callback, arg, ret_code, size_to_send);
+    ret = HG_Core_respond(handle, hg_respond_cb, hg_private_data, payload_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not respond");
         goto done;

@@ -11,7 +11,8 @@
 #ifndef MERCURY_H
 #define MERCURY_H
 
-#include "mercury_core.h"
+#include "mercury_types.h"
+#include "na.h"
 
 /*********************/
 /* Public Prototypes */
