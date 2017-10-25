@@ -39,6 +39,7 @@
 extern int na_test_comm_rank_g;
 extern int na_test_comm_size_g;
 
+extern hg_id_t hg_test_perf_rpc_id_g;
 extern hg_id_t hg_test_perf_rpc_lat_id_g;
 
 struct hg_test_perf_args {
@@ -66,10 +67,11 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
     unsigned int nhandles, hg_request_class_t *request_class)
 {
     perf_rpc_lat_in_t in_struct;
-    char *bulk_buf;
-    size_t nbytes = total_size - sizeof(hg_size_t);
+    char *bulk_buf = NULL;
+    size_t nbytes = (total_size > sizeof(in_struct.buf_size)) ?
+        total_size - sizeof(in_struct.buf_size) : 0;
     size_t loop = (total_size > LARGE_SIZE) ? MERCURY_TESTING_MAX_LOOP :
-        MERCURY_TESTING_MAX_LOOP * 10;
+        MERCURY_TESTING_MAX_LOOP * 100;
     size_t skip = (total_size > LARGE_SIZE) ? LARGE_SKIP : SMALL_SKIP;
     hg_handle_t *handles = NULL;
     hg_request_t *request;
@@ -80,14 +82,20 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
     size_t i;
 
     /* Prepare bulk_buf */
-    bulk_buf = malloc(nbytes);
-    for (i = 0; i < nbytes; i++)
-        bulk_buf[i] = (char) i;
+    if (nbytes) {
+        bulk_buf = malloc(nbytes);
+        for (i = 0; i < nbytes; i++)
+            bulk_buf[i] = (char) i;
+    }
 
     /* Create handles */
     handles = malloc(nhandles * sizeof(hg_handle_t));
     for (i = 0; i < nhandles; i++) {
-        ret = HG_Create(context, addr, hg_test_perf_rpc_lat_id_g, &handles[i]);
+        /* Use NULL RPC ID to skip proc encoding if total_size = 0 */
+        hg_id_t rpc_id = total_size ? hg_test_perf_rpc_lat_id_g :
+            hg_test_perf_rpc_id_g;
+
+        ret = HG_Create(context, addr, rpc_id, &handles[i]);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not start call\n");
             goto done;
@@ -100,7 +108,7 @@ measure_rpc_latency(hg_context_t *context, hg_addr_t addr, size_t total_size,
     args.request = request;
 
     /* Fill input structure */
-    in_struct.buf_size = nbytes;
+    in_struct.buf_size = (hg_uint32_t) nbytes;
     in_struct.buf = bulk_buf;
 
     /* Warm up for RPC */
@@ -207,7 +215,11 @@ main(int argc, char *argv[])
             fflush(stdout);
         }
 
-        for (size = 8; size <= MAX_MSG_SIZE; size *= 2)
+        /* NULL RPC */
+        measure_rpc_latency(context, addr, 0, nhandles, request_class);
+
+        /* RPC with different sizes */
+        for (size = sizeof(hg_uint32_t); size <= MAX_MSG_SIZE; size *= 2)
             measure_rpc_latency(context, addr, size, nhandles, request_class);
 
         fprintf(stdout, "\n");

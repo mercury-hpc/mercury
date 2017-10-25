@@ -20,7 +20,7 @@ typedef struct {
 
 typedef struct {
     void *buf;
-    size_t buf_size;
+    hg_uint32_t buf_size;
 } perf_rpc_lat_in_t;
 
 #ifdef HG_HAS_BOOST
@@ -122,47 +122,48 @@ hg_proc_perf_rpc_lat_in_t(hg_proc_t proc, void *data)
     perf_rpc_lat_in_t *struct_data = (perf_rpc_lat_in_t *) data;
     hg_return_t ret = HG_SUCCESS;
 
-    ret = hg_proc_hg_size_t(proc, &struct_data->buf_size);
+    ret = hg_proc_hg_uint32_t(proc, &struct_data->buf_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Proc error");
         return ret;
     }
 
-    switch (hg_proc_get_op(proc)) {
-        case HG_DECODE:
-            struct_data->buf = malloc(struct_data->buf_size);
-        case HG_ENCODE:
-            ret = hg_proc_raw(proc, struct_data->buf, struct_data->buf_size);
-            if (ret != HG_SUCCESS) {
+    if (struct_data->buf_size) {
+        switch (hg_proc_get_op(proc)) {
+            case HG_DECODE:
+                struct_data->buf = malloc(struct_data->buf_size);
+            case HG_ENCODE:
+                ret = hg_proc_raw(proc, struct_data->buf, struct_data->buf_size);
+                if (ret != HG_SUCCESS) {
+                    HG_LOG_ERROR("Proc error");
+                    return ret;
+                }
+                break;
+            case HG_FREE:
+                free(struct_data->buf);
+                break;
+            default:
                 HG_LOG_ERROR("Proc error");
+                ret = HG_PROTOCOL_ERROR;
                 return ret;
-            }
-            break;
-        case HG_FREE:
-            free(struct_data->buf);
-            break;
-        default:
-            HG_LOG_ERROR("Proc error");
-            ret = HG_PROTOCOL_ERROR;
-            return ret;
-    }
+        }
 
 #ifdef MERCURY_TESTING_HAS_VERIFY_DATA
-    if (hg_proc_get_op(proc) == HG_DECODE) {
-        hg_size_t i;
-        char *buf_ptr = struct_data->buf;
+        if (hg_proc_get_op(proc) == HG_DECODE) {
+            hg_size_t i;
+            char *buf_ptr = struct_data->buf;
 
-        for (i = 0; i < struct_data->buf_size; i++) {
-            if (buf_ptr[i] != (char) i) {
-                printf("Error detected in bulk transfer, buf[%d] = %d, "
-                    "was expecting %d!\n", (int) i, (char) buf_ptr[i],
-                    (char) i);
-                break;
+            for (i = 0; i < struct_data->buf_size; i++) {
+                if (buf_ptr[i] != (char) i) {
+                    printf("Error detected in bulk transfer, buf[%d] = %d, "
+                        "was expecting %d!\n", (int) i, (char) buf_ptr[i],
+                        (char) i);
+                    break;
+                }
             }
         }
-//        HG_LOG_DEBUG("Checked %d bytes... OK", struct_data->buf_size);
-    }
 #endif
+    }
 
     return ret;
 }
