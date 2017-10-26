@@ -810,7 +810,15 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
     hints->ep_attr->type = FI_EP_RDM;
 
     /* caps: capabilities required. */
-    hints->caps          = FI_TAGGED | FI_RMA | FI_DIRECTED_RECV;
+    hints->caps          = FI_TAGGED | FI_RMA;
+
+    /* NB. verbs does not support FI_DIRECTED_RECV, this is okay for now as the
+     * tag passed to the NA expected recv is already unique per RPC. Note though
+     * that nothing at the NA level guarantees that the tag passed will be
+     * unique, this is an assumption based on the current upper HG core layer.
+     */
+    if (strcmp(prov_name, NA_OFI_PROV_VERBS_NAME))
+        hints->caps     |= FI_DIRECTED_RECV;
 
     /**
      * msg_order: guarantee that messages with same tag are ordered.
