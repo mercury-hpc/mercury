@@ -276,8 +276,10 @@ add_library(na ${NA_SRCS})
 target_include_directories(na
   PUBLIC  "$<BUILD_INTERFACE:${NA_BUILD_INCLUDE_DEPENDENCIES}>"
           $<INSTALL_INTERFACE:${NA_INSTALL_INCLUDE_INTERFACE}>
-          ${NA_EXT_INCLUDE_DEPENDENCIES}
-  PRIVATE ${NA_INT_INCLUDE_DEPENDENCIES}
+)
+target_include_directories(na
+  SYSTEM PUBLIC  ${NA_EXT_INCLUDE_DEPENDENCIES}
+         PRIVATE ${NA_INT_INCLUDE_DEPENDENCIES}
 )
 target_link_libraries(na mercury_util ${NA_EXT_LIB_DEPENDENCIES})
 mercury_set_lib_options(na "na" ${NA_LIBTYPE})

@@ -144,9 +144,11 @@ set(MERCURY_UTIL_SRCS
 # UTIL
 add_library(mercury_util ${MERCURY_UTIL_SRCS})
 target_include_directories(mercury_util
-  PUBLIC  "$<BUILD_INTERFACE:${MERCURY_UTIL_BUILD_INCLUDE_DEPENDENCIES}>"
+  PUBLIC "$<BUILD_INTERFACE:${MERCURY_UTIL_BUILD_INCLUDE_DEPENDENCIES}>"
           $<INSTALL_INTERFACE:${MERCURY_INSTALL_INCLUDE_INTERFACE}>
-          ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
+)
+target_include_directories(mercury_util
+  SYSTEM PUBLIC ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
 )
 target_link_libraries(mercury_util ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES})
 mercury_set_lib_options(mercury_util "mercury_util" ${MERCURY_UTIL_LIBTYPE})
