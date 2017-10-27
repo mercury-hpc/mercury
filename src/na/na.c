@@ -29,6 +29,8 @@
 #define NA_ERROR_STRING_MACRO(def, value, string) \
   if (value == def) string = #def
 
+#define NA_CLASS_DELIMITER "+" /* e.g. "class+protocol" */
+
 #ifdef _WIN32
 #  define strtok_r strtok_s
 #  undef strdup
@@ -166,10 +168,10 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
     token = strtok_r(input_string, ":", &locator);
 
     /* Is class name specified */
-    if (strstr(token, "+") != NULL) {
+    if (strstr(token, NA_CLASS_DELIMITER) != NULL) {
         char *_locator = NULL;
 
-        token = strtok_r(token, "+", &_locator);
+        token = strtok_r(token, NA_CLASS_DELIMITER, &_locator);
 
         /* Get NA class name */
         na_info->class_name = strdup(token);
@@ -211,7 +213,7 @@ na_info_parse(const char *info_string, struct na_info **na_info_ptr)
         goto done;
     }
     else {
-        na_info->host_name = strdup(locator+2);
+        na_info->host_name = strdup(locator + 2);
         if (!na_info->host_name) {
             NA_LOG_ERROR("Could not duplicate NA info host name");
             ret = NA_NOMEM_ERROR;
@@ -704,8 +706,8 @@ NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* If NA class name was specified, we can remove the name here:
      * ie. bmi+tcp://hostname:port -> tcp://hostname:port */
-    if (strstr(name_string, "+") != NULL)
-        strtok_r(name_string, "+", &short_name);
+    if (strstr(name_string, NA_CLASS_DELIMITER) != NULL)
+        strtok_r(name_string, NA_CLASS_DELIMITER, &short_name);
     else
         short_name = name_string;
 
@@ -833,6 +835,8 @@ na_return_t
 NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
     na_addr_t addr)
 {
+    char *buf_ptr = buf;
+    na_size_t buf_size_used, plugin_buf_size;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -846,6 +850,7 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
         ret = NA_INVALID_PARAM;
         goto done;
     }
+
     if (addr == NA_ADDR_NULL) {
         NA_LOG_ERROR("NULL addr");
         ret = NA_INVALID_PARAM;
@@ -857,7 +862,26 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
         goto done;
     }
 
-    ret = na_class->addr_to_string(na_class, buf, buf_size, addr);
+    /* Automatically prepend string by plugin name with class delimiter */
+    buf_size_used = strlen(na_class->class_name) + 1;
+    if (buf_ptr) {
+        if (*buf_size > buf_size_used) {
+            strcpy(buf_ptr, na_class->class_name);
+            strcat(buf_ptr, NA_CLASS_DELIMITER);
+            buf_ptr += buf_size_used;
+            plugin_buf_size = *buf_size - buf_size_used;
+        } else {
+            NA_LOG_ERROR("Buffer size too small to copy addr");
+            ret = NA_SIZE_ERROR;
+            goto done;
+        }
+    } else {
+        plugin_buf_size = 0;
+    }
+
+    ret = na_class->addr_to_string(na_class, buf_ptr, &plugin_buf_size, addr);
+
+    *buf_size = buf_size_used + plugin_buf_size;
 
 done:
     return ret;
