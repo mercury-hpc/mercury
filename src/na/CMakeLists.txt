@@ -271,6 +271,19 @@ endif()
 #----------------------------------------------------------------------------
 # Libraries
 #----------------------------------------------------------------------------
+
+# Clean up system include path first
+foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
+  if(NA_EXT_INCLUDE_DEPENDENCIES)
+    list(REMOVE_ITEM NA_EXT_INCLUDE_DEPENDENCIES ${item})
+  endif()
+endforeach()
+foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
+  if(NA_INT_INCLUDE_DEPENDENCIES)
+    list(REMOVE_ITEM NA_INT_INCLUDE_DEPENDENCIES ${item})
+  endif()
+endforeach()
+
 # NA
 add_library(na ${NA_SRCS})
 target_include_directories(na

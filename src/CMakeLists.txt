@@ -146,6 +146,14 @@ set(MERCURY_HL_SRCS
 #------------------------------------------------------------------------------
 # Libraries
 #------------------------------------------------------------------------------
+
+# Clean up system include path first
+foreach(item ${MERCURY_SYSTEM_INCLUDE_PATH})
+  if(MERCURY_EXT_INCLUDE_DEPENDENCIES)
+    list(REMOVE_ITEM MERCURY_EXT_INCLUDE_DEPENDENCIES ${item})
+  endif()
+endforeach()
+
 # MERCURY
 add_library(mercury ${MERCURY_SRCS})
 target_include_directories(mercury

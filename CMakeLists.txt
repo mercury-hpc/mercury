@@ -221,6 +221,10 @@ function(mercury_set_lib_options libtarget libname libtype)
   endif()
 endfunction()
 
+# Avoid explicitly including system include paths
+set(MERCURY_SYSTEM_INCLUDE_PATH ${CMAKE_SYSTEM_INCLUDE_PATH}
+  ${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES})
+
 #-----------------------------------------------------------------------------
 # Coverage
 #-----------------------------------------------------------------------------
