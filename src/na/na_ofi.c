@@ -206,6 +206,7 @@ struct na_ofi_private_data {
     struct na_ofi_reqhdr nop_req_hdr; /* request header */
     /* nop_mutex only used for verbs provider as it is not thread safe now */
     hg_thread_mutex_t nop_mutex;
+    int never_block_flag;
 };
 
 #define NA_OFI_PRIVATE_DATA(na_class) \
@@ -533,7 +534,7 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     const char *node, const char *service, const char *auth_key,
-    struct na_ofi_endpoint **na_ofi_endpoint_p);
+    struct na_ofi_endpoint **na_ofi_endpoint_p, int never_block_flag);
 
 static na_return_t
 na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint);
@@ -1286,7 +1287,7 @@ out:
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     const char *node, const char *service, const char NA_UNUSED *auth_key,
-    struct na_ofi_endpoint **na_ofi_endpoint_p)
+    struct na_ofi_endpoint **na_ofi_endpoint_p, int never_block_flag)
 {
     struct na_ofi_endpoint *na_ofi_endpoint;
     struct fi_cq_attr cq_attr = {0};
@@ -1371,6 +1372,10 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
         na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI ||
         na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2)
         goto no_wait_obj;
+
+    /* also disable this mechanism if HG_NEVER_BLOCK setting is set */
+    if(never_block_flag)
+	goto no_wait_obj;
 
     /**
      * TODO: for now only sockets provider supports wait on fd.
@@ -1721,6 +1726,17 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     }
     memset(na_class->private_data, 0, sizeof(struct na_ofi_private_data));
 
+    if(getenv("HG_NEVER_BLOCK")) {
+        NA_OFI_PRIVATE_DATA(na_class)->never_block_flag = 1;
+        /* NOTE: if HG_NEVER_BLOCK option is set, then do not request a file
+         * file descriptor from OFI, as this may add extra overhead */
+        fd_p = NULL;
+    }
+    else {
+        NA_OFI_PRIVATE_DATA(na_class)->never_block_flag = 0;
+	fd_p = &fd;
+    }
+
     /* Initialize queue / mutex */
     HG_QUEUE_INIT(&NA_OFI_PRIVATE_DATA(na_class)->nop_unexpected_op_queue);
     hg_thread_spin_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_unexpected_op_lock);
@@ -1737,7 +1753,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     /* Create endpoint */
     ret = na_ofi_endpoint_open(NA_OFI_PRIVATE_DATA(na_class)->nop_domain,
-        node, service, auth_key, &NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint);
+        node, service, auth_key, &NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint, NA_OFI_PRIVATE_DATA(na_class)->never_block_flag);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not create endpoint for %s, %s", node, service);
         goto out;
@@ -3235,6 +3251,10 @@ na_ofi_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     int fd = 0, rc;
+
+    /* do not provide fd if HG_NEVER_BLOCK option is set */
+    if(prev->never_block_flag)
+	goto out;
 
     /* Only sockets provider supports wait on fd for now */
     if (priv->nop_domain->nod_prov_type != NA_OFI_PROV_SOCKETS)

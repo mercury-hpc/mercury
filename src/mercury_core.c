@@ -111,6 +111,7 @@ struct hg_context {
 #endif
     hg_bool_t finalizing;                         /* Prevent reposts */
     hg_atomic_int32_t n_handles;                  /* Atomic used for number of handles */
+    int never_block_flag;                         /* Disable all sleeping/timeout mechanisms */
 };
 
 /* Info for function map */
@@ -2315,6 +2316,11 @@ hg_core_progress_na(struct hg_context *context, unsigned int timeout)
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_return_t ret = HG_TIMEOUT;
 
+    if(context->never_block_flag) {
+	remaining = 0;
+        timeout = 0;
+    }
+
     for (;;) {
         struct hg_class *hg_class = context->hg_class;
         unsigned int actual_count = 0;
@@ -2405,6 +2411,11 @@ hg_core_progress_poll(struct hg_context *context, unsigned int timeout)
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_return_t ret = HG_TIMEOUT;
 
+    if(context->never_block_flag) {
+	remaining = 0;
+        timeout = 0;
+    }
+
     do {
         hg_time_t t1, t2;
         hg_util_bool_t progressed;
@@ -2444,6 +2455,11 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
+
+    if(context->never_block_flag) {
+	remaining = 0;
+        timeout = 0;
+    }
 
     while (count < max_count) {
         struct hg_completion_entry *hg_completion_entry = NULL;
@@ -2928,6 +2944,13 @@ HG_Core_context_create(hg_class_t *hg_class)
     HG_LIST_INIT(&context->self_processing_list);
 #endif
 
+    if(getenv("HG_NEVER_BLOCK")) {
+	context->never_block_flag = 1;
+    }
+    else {
+        context->never_block_flag = 0;
+    }
+
     /* No handle created yet */
     hg_atomic_init32(&context->n_handles, 0);
 
@@ -2974,7 +2997,10 @@ HG_Core_context_create(hg_class_t *hg_class)
 
     /* If NA plugin exposes fd, add it to poll set and use appropriate
      * progress function */
-    na_poll_fd = NA_Poll_get_fd(hg_class->na_class, context->na_context);
+    if(context->never_block_flag)
+        na_poll_fd = -1;
+    else
+        na_poll_fd = NA_Poll_get_fd(hg_class->na_class, context->na_context);
     if (na_poll_fd > 0) {
         hg_poll_add(context->poll_set, na_poll_fd, HG_POLLIN,
             hg_core_progress_na_cb, context);

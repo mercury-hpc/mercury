@@ -160,6 +160,7 @@ struct na_cci_private_data {
     hg_thread_mutex_t accept_conn_list_mutex; /* Mutex */
     char *uri;
     int fd;
+    int never_block_flag;
 };
 
 typedef union cci_msg {
@@ -537,6 +538,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     char *uri = NULL;
     na_return_t ret = NA_SUCCESS;
     int fd = 0;
+    int* fd_p = NULL;
     char *device_name = NULL;
     char *hostname = NULL;
     char *service = na_info->host_name;
@@ -623,11 +625,22 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
         goto out;
     }
 
+    if(getenv("HG_NEVER_BLOCK")) {
+        NA_CCI_PRIVATE_DATA(na_class)->never_block_flag = 1;
+        /* NOTE: if HG_NEVER_BLOCK option is set, then do not request a file
+         * file descriptor from CCI, as this will add extra overhead */
+        fd_p = NULL;
+    }
+    else {
+        NA_CCI_PRIVATE_DATA(na_class)->never_block_flag = 0;
+	fd_p = &fd;
+    }
+
     /* Create unspecified endpoint if service is set */
     if (service)
-        rc = cci_create_endpoint_at(device, service, 0, &endpoint, &fd);
+        rc = cci_create_endpoint_at(device, service, 0, &endpoint, fd_p);
     else
-        rc = cci_create_endpoint(device, 0, &endpoint, &fd);
+        rc = cci_create_endpoint(device, 0, &endpoint, fd_p);
     if (rc) {
         NA_LOG_ERROR("cci_create_endpoint() failed with %s",
             cci_strerror(NULL, rc));
@@ -635,7 +648,10 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
         goto out;
     }
     NA_CCI_PRIVATE_DATA(na_class)->endpoint = endpoint;
-    NA_CCI_PRIVATE_DATA(na_class)->fd = fd;
+    if(NA_CCI_PRIVATE_DATA(na_class)->never_block_flag)
+    	NA_CCI_PRIVATE_DATA(na_class)->fd = -1;
+    else
+    	NA_CCI_PRIVATE_DATA(na_class)->fd = fd;
 
     rc = cci_get_opt(endpoint, CCI_OPT_ENDPT_URI, &uri);
     if (rc) {
