@@ -224,6 +224,9 @@ endfunction()
 # Avoid explicitly including system include paths
 set(MERCURY_SYSTEM_INCLUDE_PATH ${CMAKE_SYSTEM_INCLUDE_PATH}
   ${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES})
+if(NOT WIN32)
+  set(MERCURY_SYSTEM_INCLUDE_PATH /usr/include ${MERCURY_SYSTEM_INCLUDE_PATH})
+endif()
 
 #-----------------------------------------------------------------------------
 # Coverage
