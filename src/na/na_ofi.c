@@ -3367,6 +3367,13 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 cq_event[0].tag = cq_err.tag;
                 src_addr[0] = tmp_addr;
                 event_num = 1;
+            } else if (cq_err.err == FI_EIO) {
+                NA_LOG_DEBUG("fi_cq_readerr got err: %d(%s), "
+                             "prov_errno: %d(%s).",
+                             cq_err.err, fi_strerror(cq_err.err),
+                             cq_err.prov_errno,
+                             fi_strerror(-cq_err.prov_errno));
+                continue;
             } else {
                 NA_LOG_ERROR("fi_cq_readerr got err: %d(%s), "
                              "prov_errno: %d(%s).",
