@@ -14,6 +14,14 @@
 #include "mercury_types.h"
 #include "na.h"
 
+/*****************/
+/* Public Macros */
+/*****************/
+
+/* Flags */
+#define HG_CORE_MORE_DATA    0x01   /* More data required */
+#define HG_CORE_NO_RESPONSE  0x02   /* No response required */
+
 /*********************/
 /* Public Prototypes */
 /*********************/
@@ -338,27 +346,6 @@ HG_Core_registered_data(
         );
 
 /**
- * Disable response for a given RPC ID. This allows an origin process to send an
- * RPC to a target without waiting for a response. The RPC completes locally and
- * the callback on the origin is therefore pushed to the completion queue once
- * the RPC send is completed. By default, all RPCs expect a response to
- * be sent back.
- *
- * \param hg_class [IN]         pointer to HG class
- * \param id [IN]               registered function ID
- * \param disable [IN]          boolean (HG_TRUE to disable
- *                                       HG_FALSE to re-enable)
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Core_registered_disable_response(
-        hg_class_t *hg_class,
-        hg_id_t id,
-        hg_bool_t disable
-        );
-
-/**
  * Lookup an addr from a peer address/name. Addresses need to be
  * freed by calling HG_Core_addr_free(). After completion, user callback is
  * placed into a completion queue and can be triggered using HG_Core_trigger().
@@ -586,22 +573,6 @@ HG_Core_set_target_id(
         );
 
 /**
- * Set more data flag to handle, indicating that more data will be transmitted
- * before the RPC can be successfully processed. The user is then responsible
- * for transmitting that data.
- *
- * \param handle [IN]           HG handle
- * \param more_data [IN]        boolean
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Core_set_more_data(
-        hg_handle_t handle,
-        hg_bool_t more_data
-        );
-
-/**
  * Get input buffer from handle that can be used for serializing/deserializing
  * parameters.
  *
@@ -656,6 +627,7 @@ HG_Core_forward(
         hg_handle_t handle,
         hg_cb_t callback,
         void *arg,
+        hg_uint8_t flags,
         hg_size_t payload_size
         );
 
@@ -677,6 +649,7 @@ HG_Core_respond(
         hg_handle_t handle,
         hg_cb_t callback,
         void *arg,
+        hg_uint8_t flags,
         hg_size_t payload_size
         );
 

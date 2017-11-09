@@ -47,8 +47,8 @@ struct hg_core_header_request {
 };
 
 struct hg_core_header_response {
-    hg_uint8_t  flags;          /* Flags */
     hg_int8_t   ret_code;       /* Return code */
+    hg_uint8_t  flags;          /* Flags */
     hg_uint16_t cookie;         /* Cookie */
 #ifdef HG_HAS_CHECKSUMS
     union hg_core_header_hash hash; /* Hash */
@@ -95,8 +95,7 @@ struct hg_core_header {
 #define HG_CORE_PROTOCOL_VERSION 0x03
 
 /* Flags */
-#define HG_CORE_HEADER_MORE_DATA    0x01    /* More data required */
-#define HG_CORE_HEADER_NO_RESPONSE  0x02    /* No response required */
+#define HG_CORE_SELF_FORWARD 0x80   /* Forward to self */
 
 /*********************/
 /* Public Prototypes */

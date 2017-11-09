@@ -224,11 +224,11 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     mchecksum_reset(hg_core_header->checksum);
 #endif
 
-    /* Flags */
-    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->flags, op);
-
     /* Return code */
     HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->ret_code, op);
+
+    /* Flags */
+    HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->flags, op);
 
     /* Convert cookie to network byte order */
     HG_CORE_HEADER_PROC16(hg_core_header, buf_ptr, header->cookie, op, tmp);

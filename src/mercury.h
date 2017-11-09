@@ -612,6 +612,48 @@ HG_Free_output(
         );
 
 /**
+ * Get input buffer from handle that can be used for serializing/deserializing
+ * parameters.
+ *
+ * \remark Can be used for manual serialization/deserialization when
+ * HG proc routines cannot be automatically used or there is need for special
+ * handling before HG_Get_input() can be called.
+ *
+ * \param handle [IN]           HG handle
+ * \param in_buf [OUT]          pointer to input buffer
+ * \param in_buf_size [OUT]     pointer to input buffer size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Get_input_buf(
+        hg_handle_t handle,
+        void **in_buf,
+        hg_size_t *in_buf_size
+        );
+
+/**
+ * Get output buffer from handle that can be used for serializing/deserializing
+ * parameters.
+ *
+ * \remark Can be used for manual serialization/deserialization when
+ * HG proc routines cannot be automatically used or there is need for special
+ * handling before HG_Get_output() can be called.
+ *
+ * \param handle [IN]           HG handle
+ * \param out_buf [OUT]         pointer to output buffer
+ * \param out_buf_size [OUT]    pointer to output buffer size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Get_output_buf(
+        hg_handle_t handle,
+        void **out_buf,
+        hg_size_t *out_buf_size
+        );
+
+/**
  * Set target ID that will receive and process RPC request
  * (target ID is defined on target context, see HG_Context_create_id()).
  *

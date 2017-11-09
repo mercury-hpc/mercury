@@ -17,6 +17,13 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
+/* Input / output operation type */
+typedef enum {
+    HG_UNDEF,
+    HG_INPUT,
+    HG_OUTPUT
+} hg_op_t;
+
 #if defined(__GNUC__) || defined(_WIN32)
 # pragma pack(push,1)
 #else
@@ -53,7 +60,8 @@ struct hg_header {
     union {
         struct hg_header_input input;
         struct hg_header_output output;
-    } msg;
+    } msg;      /* Header message */
+    hg_op_t op; /* Header operation type */
 };
 
 /*****************/
@@ -69,99 +77,68 @@ struct hg_header {
 extern "C" {
 #endif
 
-static HG_INLINE size_t hg_header_input_get_size(void);
-static HG_INLINE size_t hg_header_output_get_size(void);
+static HG_INLINE size_t hg_header_get_size(hg_op_t op);
 
 /**
- * Get size reserved for input header (separate user data stored in payload).
+ * Get size reserved for header (separate user data stored in payload).
  *
  * \return Non-negative size value
  */
 static HG_INLINE size_t
-hg_header_input_get_size(void)
+hg_header_get_size(hg_op_t op)
 {
-    return sizeof(struct hg_header_input);
+    hg_size_t ret = 0;
+
+    switch (op) {
+        case HG_INPUT:
+            ret = sizeof(struct hg_header_input);
+            break;
+        case HG_OUTPUT:
+            ret = sizeof(struct hg_header_output);
+            break;
+        default:
+            break;
+    }
+
+    return ret;
 }
 
 /**
- * Get size reserved for output header (separate user data stored in payload).
+ * Initialize RPC header.
  *
- * \return Non-negative size value
- */
-static HG_INLINE size_t
-hg_header_output_get_size(void)
-{
-    return sizeof(struct hg_header_output);
-}
-
-/**
- * Initialize RPC input header.
- *
- * \param hg_header [IN/OUT]    pointer to input header structure
- *
+ * \param hg_header [IN/OUT]    pointer to header structure
+ * \param op [IN]               HG operation type: HG_INPUT / HG_OUTPUT
  */
 HG_EXPORT void
-hg_header_input_init(
+hg_header_init(
+        struct hg_header *hg_header,
+        hg_op_t op
+        );
+
+/**
+ * Finalize RPC header.
+ *
+ * \param hg_header [IN/OUT]    pointer to header structure
+ */
+HG_EXPORT void
+hg_header_finalize(
         struct hg_header *hg_header
         );
 
 /**
- * Initialize RPC output header.
+ * Reset RPC header.
  *
- * \param hg_header [IN/OUT]    pointer to output header structure
- *
+ * \param hg_header [IN/OUT]    pointer to header structure
+ * \param op [IN]               HG operation type: HG_INPUT / HG_OUTPUT
  */
 HG_EXPORT void
-hg_header_output_init(
-        struct hg_header *hg_header
+hg_header_reset(
+        struct hg_header *hg_header,
+        hg_op_t op
         );
 
 /**
- * Finalize RPC input header.
- *
- * \param hg_header [IN/OUT]    pointer to input header structure
- *
- */
-HG_EXPORT void
-hg_header_input_finalize(
-        struct hg_header *hg_header
-        );
-
-/**
- * Finalize RPC output header.
- *
- * \param hg_header [IN/OUT]    pointer to output header structure
- *
- */
-HG_EXPORT void
-hg_header_output_finalize(
-        struct hg_header *hg_header
-        );
-
-/**
- * Reset RPC input header.
- *
- * \param hg_header [IN/OUT]    pointer to input header structure
- *
- */
-HG_EXPORT void
-hg_header_input_reset(
-        struct hg_header *hg_header
-        );
-
-/**
- * Reset RPC output header.
- *
- * \param hg_header [IN/OUT]    pointer to output header structure
- *
- */
-HG_EXPORT void
-hg_header_output_reset(
-        struct hg_header *hg_header
-        );
-
-/**
- * Process private information for sending/receiving RPC input.
+ * Process private information for sending/receiving RPC.
  *
  * \param op [IN]               operation type: HG_ENCODE / HG_DECODE
  * \param buf [IN/OUT]          buffer
@@ -171,25 +148,7 @@ hg_header_output_reset(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_header_input_proc(
-        hg_proc_op_t op,
-        void *buf,
-        size_t buf_size,
-        struct hg_header *hg_header
-        );
-
-/**
- * Process private information for sending/receiving output.
- *
- * \param op [IN]               operation type: HG_ENCODE / HG_DECODE
- * \param buf [IN/OUT]          buffer
- * \param buf_size [IN]         buffer size
- * \param hg_header [IN/OUT]    pointer to header structure
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-hg_header_output_proc(
+hg_header_proc(
         hg_proc_op_t op,
         void *buf,
         size_t buf_size,

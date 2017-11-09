@@ -50,94 +50,76 @@
 
 /*---------------------------------------------------------------------------*/
 void
-hg_header_input_init(struct hg_header *hg_header)
+hg_header_init(struct hg_header *hg_header, hg_op_t op)
 {
-    hg_header_input_reset(hg_header);
+    hg_header_reset(hg_header, op);
 }
 
 /*---------------------------------------------------------------------------*/
 void
-hg_header_output_init(struct hg_header *hg_header)
-{
-    hg_header_output_reset(hg_header);
-}
-
-/*---------------------------------------------------------------------------*/
-void
-hg_header_input_finalize(struct hg_header *hg_header)
+hg_header_finalize(struct hg_header *hg_header)
 {
     (void) hg_header;
 }
 
 /*---------------------------------------------------------------------------*/
 void
-hg_header_output_finalize(struct hg_header *hg_header)
+hg_header_reset(struct hg_header *hg_header, hg_op_t op)
 {
-    (void) hg_header;
-}
-
-/*---------------------------------------------------------------------------*/
-void
-hg_header_input_reset(struct hg_header *hg_header)
-{
-    memset(&hg_header->msg.input, 0, sizeof(struct hg_header_input));
-}
-
-/*---------------------------------------------------------------------------*/
-void
-hg_header_output_reset(struct hg_header *hg_header)
-{
-    memset(&hg_header->msg.output, 0, sizeof(struct hg_header_output));
+    switch (op) {
+        case HG_INPUT:
+            memset(&hg_header->msg.input, 0, sizeof(struct hg_header_input));
+            break;
+        case HG_OUTPUT:
+            memset(&hg_header->msg.output, 0, sizeof(struct hg_header_output));
+            break;
+        default:
+            break;
+    }
+    hg_header->op = op;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_header_input_proc(hg_proc_op_t op, void *buf, size_t buf_size,
+hg_header_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     struct hg_header *hg_header)
 {
     void *buf_ptr = buf;
-    struct hg_header_input *header = &hg_header->msg.input;
-    hg_return_t ret = HG_SUCCESS;
-
-    if (buf_size < sizeof(struct hg_header_input)) {
-        HG_LOG_ERROR("Invalid buffer size");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-
 #ifdef HG_HAS_CHECKSUMS
-    /* Checksum of user payload */
-    HG_HEADER_PROC32(hg_header, buf_ptr, header->hash.payload, op, tmp);
-#else
-    (void) header;
-    (void) buf_ptr;
-    (void) op;
+    struct hg_header_hash *header_hash = NULL;
 #endif
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_return_t
-hg_header_output_proc(hg_proc_op_t op, void *buf, size_t buf_size,
-    struct hg_header *hg_header)
-{
-    void *buf_ptr = buf;
-    struct hg_header_output *header = &hg_header->msg.output;
     hg_return_t ret = HG_SUCCESS;
 
-    if (buf_size < sizeof(struct hg_header_output)) {
-        HG_LOG_ERROR("Invalid buffer size");
-        ret = HG_SIZE_ERROR;
-        goto done;
+    switch (hg_header->op) {
+        case HG_INPUT:
+            if (buf_size < sizeof(struct hg_header_input)) {
+                HG_LOG_ERROR("Invalid buffer size");
+                ret = HG_INVALID_PARAM;
+                goto done;
+            }
+#ifdef HG_HAS_CHECKSUMS
+            header_hash = &hg_header->msg.input.hash;
+#endif
+            break;
+        case HG_OUTPUT:
+            if (buf_size < sizeof(struct hg_header_output)) {
+                HG_LOG_ERROR("Invalid buffer size");
+                ret = HG_SIZE_ERROR;
+                goto done;
+            }
+#ifdef HG_HAS_CHECKSUMS
+            header_hash = &hg_header->msg.output.hash;
+#endif
+            break;
+        default:
+            break;
     }
 
 #ifdef HG_HAS_CHECKSUMS
     /* Checksum of user payload */
-    HG_HEADER_PROC32(hg_header, buf_ptr, header->hash.payload, op, tmp);
+    HG_HEADER_PROC32(hg_header, buf_ptr, header_hash->payload, op, tmp);
 #else
-    (void) header;
+    (void) hg_header;
     (void) buf_ptr;
     (void) op;
 #endif
