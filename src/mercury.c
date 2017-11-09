@@ -49,7 +49,8 @@ struct hg_private_data {
     hg_cb_t callback;               /* Callback */
     void *arg;                      /* Callback args */
     struct hg_header hg_header;     /* Header for input/output */
-    hg_proc_t proc;                 /* Proc for input/output */
+    hg_proc_t in_proc;              /* Proc for input */
+    hg_proc_t out_proc;             /* Proc for output */
     void *extra_bulk_buf;           /* Extra bulk buffer */
     size_t extra_bulk_buf_size;     /* Extra bulk buffer size */
     hg_bulk_t extra_bulk_handle;    /* Extra bulk handle */
@@ -232,7 +233,12 @@ hg_private_data_alloc(hg_class_t *hg_class, hg_handle_t handle)
     hg_header_init(&hg_private_data->hg_header, HG_UNDEF);
 
     /* CRC32 is enough for small size buffers */
-    ret = hg_proc_create(hg_class, HG_CRC32, &hg_private_data->proc);
+    ret = hg_proc_create(hg_class, HG_CRC32, &hg_private_data->in_proc);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Cannot create HG proc");
+        goto done;
+    }
+    ret = hg_proc_create(hg_class, HG_CRC32, &hg_private_data->out_proc);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Cannot create HG proc");
         goto done;
@@ -249,8 +255,10 @@ hg_private_data_free(void *arg)
 {
     struct hg_private_data *hg_private_data = (struct hg_private_data *) arg;
 
-    if (hg_private_data->proc != HG_PROC_NULL)
-        hg_proc_free(hg_private_data->proc);
+    if (hg_private_data->in_proc != HG_PROC_NULL)
+        hg_proc_free(hg_private_data->in_proc);
+    if (hg_private_data->out_proc != HG_PROC_NULL)
+        hg_proc_free(hg_private_data->out_proc);
     hg_mem_aligned_free(hg_private_data->extra_bulk_buf);
     hg_header_finalize(&hg_private_data->hg_header);
     free(hg_private_data);
@@ -307,7 +315,7 @@ static hg_return_t
 hg_get_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
     struct hg_proc_info *hg_proc_info, hg_op_t op, void *struct_ptr)
 {
-    hg_proc_t proc = hg_private_data->proc;
+    hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
     void *buf;
     hg_size_t buf_size;
@@ -321,6 +329,7 @@ hg_get_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
     switch (op) {
         case HG_INPUT:
             /* Set input proc */
+            proc = hg_private_data->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
 #ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.input.hash;
@@ -340,6 +349,7 @@ hg_get_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
                 goto done;
             }
             /* Set output proc */
+            proc = hg_private_data->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
 #ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.output.hash;
@@ -428,7 +438,7 @@ hg_set_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
     struct hg_proc_info *hg_proc_info, hg_op_t op, void *struct_ptr,
     hg_size_t *payload_size, hg_bool_t *more_data)
 {
-    hg_proc_t proc = hg_private_data->proc;
+    hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
     void *buf;
     hg_size_t buf_size;
@@ -442,6 +452,7 @@ hg_set_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
     switch (op) {
         case HG_INPUT:
             /* Set input proc */
+            proc = hg_private_data->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
 #ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.input.hash;
@@ -461,6 +472,7 @@ hg_set_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
                 goto done;
             }
             /* Set output proc */
+            proc = hg_private_data->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
 #ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.output.hash;
@@ -604,17 +616,19 @@ static hg_return_t
 hg_free_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
     struct hg_proc_info *hg_proc_info, hg_op_t op, void *struct_ptr)
 {
-    hg_proc_t proc = hg_private_data->proc;
+    hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
     hg_return_t ret = HG_SUCCESS;
 
     switch (op) {
         case HG_INPUT:
             /* Set input proc */
+            proc = hg_private_data->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
             break;
         case HG_OUTPUT:
             /* Set output proc */
+            proc = hg_private_data->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
             break;
         default:
@@ -658,7 +672,7 @@ static hg_return_t
 hg_get_extra_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
     hg_return_t (*done_cb)(hg_handle_t handle))
 {
-    hg_proc_t proc = hg_private_data->proc;
+    hg_proc_t proc = hg_private_data->in_proc;
     void *in_buf;
     hg_size_t in_buf_size;
     hg_size_t header_offset = hg_header_get_size(HG_INPUT);
