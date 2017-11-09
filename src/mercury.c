@@ -1681,8 +1681,8 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
-    hg_private_data->callback = callback;
-    hg_private_data->arg = arg;
+//    hg_private_data->callback = callback;
+//    hg_private_data->arg = arg;
 
     /* Retrieve RPC data */
     hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
@@ -1705,7 +1705,7 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
         flags |= HG_CORE_MORE_DATA;
 
     /* Send response back */
-    ret = HG_Core_respond(handle, hg_respond_cb, hg_private_data, flags,
+    ret = HG_Core_respond(handle, callback, arg, flags,
         payload_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not respond");
