@@ -866,7 +866,7 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
             hints->caps |= (FI_SOURCE | FI_SOURCE_ERR);
 
             /* PSM2 provider requires FI_MR_BASIC bit to be set for now */
-            hints->domain_attr->mr_mode |= FI_MR_BASIC;
+            hints->domain_attr->mr_mode = FI_MR_BASIC;
         }
         else if (!strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)) {
             hints->rx_attr->mode |= FI_CONTEXT;
