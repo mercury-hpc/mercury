@@ -101,11 +101,11 @@ endif()
 # Post limit
 option(MERCURY_ENABLE_POST_LIMIT "Limit number of handles posted by listeners." ON)
 if(MERCURY_ENABLE_POST_LIMIT)
-  set(MERCURY_POST_LIMIT "256" CACHE STRING "Number of handles posted.")
   set(HG_HAS_POST_LIMIT 1)
-  mark_as_advanced(MERCURY_POST_LIMIT)
 endif()
 mark_as_advanced(MERCURY_ENABLE_POST_LIMIT)
+set(MERCURY_POST_LIMIT "256" CACHE STRING "Number of handles posted.")
+mark_as_advanced(MERCURY_POST_LIMIT)
 
 # XDR
 option(MERCURY_USE_XDR "Use XDR for generic encoding." OFF)
