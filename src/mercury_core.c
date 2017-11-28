@@ -138,19 +138,32 @@ struct hg_addr {
     hg_atomic_int32_t ref_count;        /* Reference count */
 };
 
+/* HG core op type */
+typedef enum {
+    HG_CORE_FORWARD,             /*!< Forward completion */
+    HG_CORE_RESPOND,             /*!< Respond completion */
+    HG_CORE_NO_RESPOND,          /*!< No response completion */
+#ifdef HG_HAS_SELF_FORWARD
+    HG_CORE_FORWARD_SELF,        /*!< Self forward completion */
+    HG_CORE_RESPOND_SELF,        /*!< Self respond completion */
+#endif
+    HG_CORE_PROCESS              /*!< Process completion */
+} hg_core_op_type_t;
+
 /* HG handle */
 struct hg_handle {
     struct hg_info hg_info;             /* HG info */
-    hg_cb_t callback;                   /* Callback */
-    void *arg;                          /* Callback arguments */
-    hg_cb_type_t cb_type;               /* Callback type */
+    hg_cb_t request_callback;           /* Request callback */
+    void *request_arg;                  /* Request callback arguments */
+    hg_cb_t response_callback;          /* Response callback */
+    void *response_arg;                 /* Response callback arguments */
+    hg_core_op_type_t op_type;          /* Core operation type */
     na_tag_t tag;                       /* Tag used for request and response */
     hg_uint8_t cookie;                  /* Cookie */
     hg_return_t ret;                    /* Return code associated to handle */
     HG_LIST_ENTRY(hg_handle) entry;     /* Entry in pending / processing lists */
     struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
     hg_bool_t repost;                   /* Repost handle on completion (listen) */
-    hg_bool_t process_rpc_cb;           /* RPC callback must be processed */
     hg_bool_t is_self;                  /* Self processed */
     hg_atomic_int32_t in_use;           /* Is in use */
     hg_bool_t no_response;              /* Require response or not */
@@ -188,10 +201,11 @@ struct hg_handle {
         struct hg_handle *hg_handle
         ); /* forward */
     hg_return_t (*respond)(
-        struct hg_handle *hg_handle,
-        hg_cb_t callback,
-        void *arg
+        struct hg_handle *hg_handle
         ); /* respond */
+    hg_return_t (*no_respond)(
+        struct hg_handle *hg_handle
+        ); /* no_respond */
 };
 
 /* HG op id */
@@ -476,9 +490,15 @@ hg_core_forward_na(
  */
 static hg_return_t
 hg_core_respond_self(
-        struct hg_handle *hg_handle,
-        hg_cb_t callback,
-        void *arg
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Do not send response locally.
+ */
+static hg_return_t
+hg_core_no_respond_self(
+        struct hg_handle *hg_handle
         );
 #endif
 
@@ -487,9 +507,15 @@ hg_core_respond_self(
  */
 static hg_return_t
 hg_core_respond_na(
-        struct hg_handle *hg_handle,
-        hg_cb_t callback,
-        void *arg
+        struct hg_handle *hg_handle
+        );
+
+/**
+ * Do not send response through NA.
+ */
+static hg_return_t
+hg_core_no_respond_na(
+        struct hg_handle *hg_handle
         );
 
 /**
@@ -1322,6 +1348,7 @@ hg_core_create(struct hg_context *context)
     }
     memset(hg_handle, 0, sizeof(struct hg_handle));
 
+    hg_handle->op_type = HG_CORE_PROCESS; /* Default */
     hg_handle->hg_info.hg_class = context->hg_class;
     hg_handle->hg_info.context = context;
     hg_handle->hg_info.addr = HG_ADDR_NULL;
@@ -1480,9 +1507,11 @@ hg_core_reset(struct hg_handle *hg_handle, hg_bool_t reset_info)
         hg_handle->hg_info.id = 0;
         hg_handle->hg_info.target_id = 0;
     }
-    hg_handle->callback = NULL;
-    hg_handle->arg = NULL;
-    hg_handle->cb_type = 0;
+    hg_handle->request_callback = NULL;
+    hg_handle->request_arg = NULL;
+    hg_handle->response_callback = NULL;
+    hg_handle->response_arg = NULL;
+    hg_handle->op_type = HG_CORE_PROCESS; /* Default */
     hg_handle->tag = 0;
     hg_handle->cookie = 0;
     hg_handle->ret = HG_SUCCESS;
@@ -1582,6 +1611,9 @@ hg_core_forward_self(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
+    /* Set operation type for trigger */
+    hg_handle->op_type = HG_CORE_FORWARD_SELF;
+
     /* Initialize thread pool if not initialized yet */
     if (!hg_handle->hg_info.hg_class->self_processing_pool) {
         hg_thread_pool_init(HG_CORE_MAX_SELF_THREADS,
@@ -1613,6 +1645,9 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     struct hg_context *hg_context = hg_handle->hg_info.context;
     na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
+
+    /* Set operation type for trigger */
+    hg_handle->op_type = HG_CORE_FORWARD;
 
     /* Generate tag */
     hg_handle->tag = hg_core_gen_request_tag(hg_class, hg_handle);
@@ -1659,27 +1694,37 @@ done:
 /*---------------------------------------------------------------------------*/
 #ifdef HG_HAS_SELF_FORWARD
 static hg_return_t
-hg_core_respond_self(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
+hg_core_respond_self(struct hg_handle *hg_handle)
 {
-    struct hg_self_cb_info *hg_self_cb_info = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    hg_self_cb_info = (struct hg_self_cb_info *) malloc(
-            sizeof(struct hg_self_cb_info));
-    if (!hg_self_cb_info) {
-        HG_LOG_ERROR("Could not allocate HG self cb info");
-        ret = HG_NOMEM_ERROR;
+    /* Set operation type for trigger */
+    hg_handle->op_type = HG_CORE_RESPOND_SELF;
+
+    /* Remove handle from processing list */
+    hg_thread_spin_lock(&hg_handle->hg_info.context->self_processing_list_lock);
+    HG_LIST_REMOVE(hg_handle, entry);
+    hg_thread_spin_unlock(&hg_handle->hg_info.context->self_processing_list_lock);
+
+    /* Complete and add to completion queue */
+    ret = hg_core_complete(hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete handle");
         goto done;
     }
 
-    /* Wrap callbacks */
-    hg_self_cb_info->forward_cb = hg_handle->callback;
-    hg_self_cb_info->forward_arg = hg_handle->arg;
-    hg_self_cb_info->respond_cb = callback;
-    hg_self_cb_info->respond_arg = arg;
-    hg_handle->callback = hg_core_self_cb;
-    hg_handle->arg = hg_self_cb_info;
-    hg_handle->cb_type = HG_CB_RESPOND;
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_no_respond_self(struct hg_handle *hg_handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Set operation type for trigger */
+    hg_handle->op_type = HG_CORE_FORWARD_SELF;
 
     /* Remove handle from processing list */
     hg_thread_spin_lock(&hg_handle->hg_info.context->self_processing_list_lock);
@@ -1700,19 +1745,17 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
+hg_core_respond_na(struct hg_handle *hg_handle)
 {
     struct hg_class *hg_class = hg_handle->hg_info.hg_class;
     struct hg_context *hg_context = hg_handle->hg_info.context;
     na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
 
-    /* Set callback */
-    hg_handle->callback = callback;
-    hg_handle->arg = arg;
-    hg_handle->cb_type = HG_CB_RESPOND;
+    /* Set operation type for trigger */
+    hg_handle->op_type = HG_CORE_RESPOND;
 
-    /* Post extra buffer expected recv */
+    /* TODO Post extra buffer expected recv */
 
     /* Respond back */
     na_ret = NA_Msg_send_expected(hg_class->na_class, hg_context->na_context,
@@ -1723,6 +1766,32 @@ hg_core_respond_na(struct hg_handle *hg_handle, hg_cb_t callback, void *arg)
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for output buffer");
         ret = HG_NA_ERROR;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_core_no_respond_na(struct hg_handle *hg_handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Set operation type for trigger */
+    hg_handle->op_type = HG_CORE_NO_RESPOND;
+
+    /* Remove handle from processing list
+     * NB. Whichever state we're in, reaching that stage means that the
+     * handle was processed. */
+    hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
+    HG_LIST_REMOVE(hg_handle, entry);
+    hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
+
+    ret = hg_core_complete(hg_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete operation");
         goto done;
     }
 
@@ -1834,6 +1903,9 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     }
 #endif
 
+    /* Set operation type for trigger */
+    hg_handle->op_type = HG_CORE_PROCESS;
+
     /* Process input information */
     if (hg_core_process_input(hg_handle, &completed) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not process input");
@@ -1879,12 +1951,12 @@ hg_core_process_input(struct hg_handle *hg_handle, hg_bool_t *completed)
 #ifdef HG_HAS_SELF_FORWARD
     hg_handle->respond = hg_handle->in_header.msg.request.flags
         & HG_CORE_SELF_FORWARD ? hg_core_respond_self : hg_core_respond_na;
+    hg_handle->no_respond = hg_handle->in_header.msg.request.flags
+        & HG_CORE_SELF_FORWARD ? hg_core_no_respond_self : hg_core_no_respond_na;
 #else
     hg_handle->respond = hg_core_respond_na;
+    hg_handle->no_respond = hg_core_no_respond_na;
 #endif
-
-    /* Now mark handle as ready to be processed */
-    hg_handle->process_rpc_cb = HG_TRUE;
 
     /* Must let upper layer get extra payload if HG_CORE_MORE_DATA is set */
     if (hg_handle->in_header.msg.request.flags & HG_CORE_MORE_DATA) {
@@ -1935,6 +2007,8 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
         na_ret = NA_PROTOCOL_ERROR;
         goto done;
     }
+
+    /* TODO common code with hg_core_no_respond_na */
 
     /* Remove handle from processing list
      * NB. Whichever state we're in, reaching that stage means that the
@@ -2027,7 +2101,7 @@ hg_core_process_output(struct hg_handle *hg_handle, hg_bool_t *completed)
 
     /* Parse flags */
 
-    /* Must let upper layer get extra payload if HG_CORE_MORE_DATA is set */
+    /* TODO Must let upper layer get extra payload if HG_CORE_MORE_DATA is set */
     if (hg_handle->out_header.msg.response.flags & HG_CORE_MORE_DATA) {
 //        if (!hg_context->hg_class->more_data_acquire) {
 //            HG_LOG_ERROR("No callback defined for acquiring more data");
@@ -2066,28 +2140,24 @@ hg_core_self_cb(const struct hg_cb_info *callback_info)
 {
     struct hg_handle *hg_handle =
         (struct hg_handle *) callback_info->info.respond.handle;
-    struct hg_self_cb_info *hg_self_cb_info =
-            (struct hg_self_cb_info *) callback_info->arg;
     hg_return_t ret;
 
     /* First execute response callback */
-    if (hg_self_cb_info->respond_cb) {
+    if (hg_handle->response_callback) {
         struct hg_cb_info hg_cb_info;
 
-        hg_cb_info.arg = hg_self_cb_info->respond_arg;
+        hg_cb_info.arg = hg_handle->response_arg;
         hg_cb_info.ret = HG_SUCCESS; /* TODO report failure */
         hg_cb_info.type = HG_CB_RESPOND;
         hg_cb_info.info.respond.handle = (hg_handle_t) hg_handle;
 
-        hg_self_cb_info->respond_cb(&hg_cb_info);
+        hg_handle->response_callback(&hg_cb_info);
     }
 
     /* TODO response check header */
 
     /* Assign forward callback back to handle */
-    hg_handle->callback = hg_self_cb_info->forward_cb;
-    hg_handle->arg = hg_self_cb_info->forward_arg;
-    hg_handle->cb_type = HG_CB_FORWARD;
+    hg_handle->op_type = HG_CORE_FORWARD_SELF;
 
     /* Increment refcount and push handle back to completion queue */
     hg_atomic_incr32(&hg_handle->ref_count);
@@ -2099,7 +2169,6 @@ hg_core_self_cb(const struct hg_cb_info *callback_info)
     }
 
 done:
-    free(hg_self_cb_info);
     return ret;
 }
 
@@ -2109,6 +2178,9 @@ hg_core_process_thread(void *arg)
 {
     hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
     struct hg_handle *hg_handle = (struct hg_handle *) arg;
+
+    /* Set operation type for trigger */
+    hg_handle->op_type = HG_CORE_PROCESS;
 
     /* Process input */
    if (hg_core_process_input(hg_handle, NULL) != HG_SUCCESS) {
@@ -2635,7 +2707,6 @@ hg_core_trigger(struct hg_context *context, unsigned int timeout,
                 HG_LOG_ERROR("Invalid type of completion entry");
                 ret = HG_PROTOCOL_ERROR;
                 goto done;
-
         }
 
         count++;
@@ -2676,10 +2747,7 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (hg_handle->process_rpc_cb) {
-        /* Handle will now be processed */
-        hg_handle->process_rpc_cb = HG_FALSE;
-
+    if (hg_handle->op_type == HG_CORE_PROCESS) {
         /* Run RPC callback */
         ret = hg_core_process(hg_handle);
         if (ret != HG_SUCCESS && !hg_handle->no_response) {
@@ -2695,37 +2763,55 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
             }
         }
 
-        /* Complete handle if no response required */
+        /* No response callback */
         if (hg_handle->no_response) {
-            /* Remove handle from processing list
-             * NB. Whichever state we're in, reaching that stage means that the
-             * handle was processed. */
-            hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
-            HG_LIST_REMOVE(hg_handle, entry);
-            hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
-
-            if (hg_core_complete(hg_handle) != HG_SUCCESS) {
-                HG_LOG_ERROR("Could not complete operation");
+            ret = hg_handle->no_respond(hg_handle);
+            if (ret != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not complete handle");
                 goto done;
             }
         }
     } else {
+        hg_cb_t hg_cb = NULL;
+        struct hg_cb_info hg_cb_info;
+
         /* Handle is no longer in use (safe to reset) */
         hg_atomic_set32(&hg_handle->in_use, HG_FALSE);
 
-        /* Execute user callback */
-        if (hg_handle->callback) {
-            struct hg_cb_info hg_cb_info;
-
-            hg_cb_info.arg = hg_handle->arg;
-            hg_cb_info.ret = hg_handle->ret;
-            hg_cb_info.type = hg_handle->cb_type;
-            if (hg_handle->cb_type == HG_CB_FORWARD)
+        hg_cb_info.ret = hg_handle->ret;
+        switch (hg_handle->op_type) {
+            case HG_CORE_FORWARD_SELF:
+            case HG_CORE_FORWARD:
+                hg_cb = hg_handle->request_callback;
+                hg_cb_info.arg = hg_handle->request_arg;
+                hg_cb_info.type = HG_CB_FORWARD;
                 hg_cb_info.info.forward.handle = (hg_handle_t) hg_handle;
-            else if (hg_handle->cb_type == HG_CB_RESPOND)
+                break;
+            case HG_CORE_RESPOND:
+                hg_cb = hg_handle->response_callback;
+                hg_cb_info.arg = hg_handle->response_arg;
+                hg_cb_info.type = HG_CB_RESPOND;
                 hg_cb_info.info.respond.handle = (hg_handle_t) hg_handle;
-            hg_handle->callback(&hg_cb_info);
+                break;
+            case HG_CORE_RESPOND_SELF:
+                hg_cb = hg_core_self_cb;
+                hg_cb_info.arg = hg_handle->response_arg;
+                hg_cb_info.type = HG_CB_RESPOND;
+                hg_cb_info.info.respond.handle = (hg_handle_t) hg_handle;
+                break;
+            case HG_CORE_NO_RESPOND:
+                /* Nothing */
+                break;
+            case HG_CORE_PROCESS:
+            default:
+                HG_LOG_ERROR("Invalid core operation type");
+                ret = HG_PROTOCOL_ERROR;
+                goto done;
         }
+
+        /* Execute user callback */
+        if (hg_cb)
+            hg_cb(&hg_cb_info);
 
         /* Repost handle if we were listening, otherwise destroy it */
         if (hg_handle->repost && !hg_handle->hg_info.context->finalizing) {
@@ -3926,10 +4012,10 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     if (hg_handle->is_self)
         flags |= HG_CORE_SELF_FORWARD;
 
-    /* Set callback */
-    hg_handle->callback = callback;
-    hg_handle->arg = arg;
-    hg_handle->cb_type = HG_CB_FORWARD;
+    /* Set callback, keep request and response callbacks separate so that
+     * they do not get overwritten when forwarding to ourself */
+    hg_handle->request_callback = callback;
+    hg_handle->request_arg = arg;
 
     /* Set header */
     hg_handle->in_header.msg.request.id = hg_handle->hg_info.id;
@@ -4009,6 +4095,11 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
         goto done;
     }
 
+    /* Set callback, keep request and response callbacks separate so that
+     * they do not get overwritten when forwarding to ourself */
+    hg_handle->response_callback = callback;
+    hg_handle->response_arg = arg;
+
     /* Set header */
     hg_handle->out_header.msg.response.ret_code = hg_handle->ret;
     hg_handle->out_header.msg.response.flags = flags;
@@ -4024,7 +4115,7 @@ HG_Core_respond(hg_handle_t handle, hg_cb_t callback, void *arg,
 
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
-    ret = hg_handle->respond(hg_handle, callback, arg);
+    ret = hg_handle->respond(hg_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not respond");
         goto done;

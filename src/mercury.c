@@ -46,8 +46,10 @@ struct hg_proc_info {
 
 /* Private handle data */
 struct hg_private_data {
-    hg_cb_t callback;               /* Callback */
-    void *arg;                      /* Callback args */
+    hg_cb_t forward_cb;             /* Forward callback */
+    void *forward_arg;              /* Forward callback args */
+    hg_cb_t respond_cb;             /* Respond callback */
+    void *respond_arg;              /* Respond callback args */
     struct hg_header hg_header;     /* Header for input/output */
     hg_proc_t in_proc;              /* Proc for input */
     hg_proc_t out_proc;             /* Proc for output */
@@ -806,15 +808,15 @@ hg_forward_cb(const struct hg_cb_info *callback_info)
     }
 
     /* Execute callback */
-    if (hg_private_data->callback) {
+    if (hg_private_data->forward_cb) {
         struct hg_cb_info hg_cb_info;
 
-        hg_cb_info.arg = hg_private_data->arg;
+        hg_cb_info.arg = hg_private_data->forward_arg;
         hg_cb_info.ret = callback_info->ret;
         hg_cb_info.type = callback_info->type;
         hg_cb_info.info = callback_info->info;
 
-        hg_private_data->callback(&hg_cb_info);
+        hg_private_data->forward_cb(&hg_cb_info);
     }
 
     return ret;
@@ -829,15 +831,15 @@ hg_respond_cb(const struct hg_cb_info *callback_info)
     hg_return_t ret = HG_SUCCESS;
 
     /* Execute callback */
-    if (hg_private_data->callback) {
+    if (hg_private_data->respond_cb) {
         struct hg_cb_info hg_cb_info;
 
-        hg_cb_info.arg = hg_private_data->arg;
+        hg_cb_info.arg = hg_private_data->respond_arg;
         hg_cb_info.ret = callback_info->ret;
         hg_cb_info.type = callback_info->type;
         hg_cb_info.info = callback_info->info;
 
-        hg_private_data->callback(&hg_cb_info);
+        hg_private_data->respond_cb(&hg_cb_info);
     }
 
     return ret;
@@ -1637,8 +1639,8 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
-    hg_private_data->callback = callback;
-    hg_private_data->arg = arg;
+    hg_private_data->forward_cb = callback;
+    hg_private_data->forward_arg = arg;
 
     /* Retrieve RPC data */
     hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
@@ -1695,8 +1697,8 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
-//    hg_private_data->callback = callback;
-//    hg_private_data->arg = arg;
+    hg_private_data->respond_cb = callback;
+    hg_private_data->respond_arg = arg;
 
     /* Retrieve RPC data */
     hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
@@ -1719,7 +1721,7 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
         flags |= HG_CORE_MORE_DATA;
 
     /* Send response back */
-    ret = HG_Core_respond(handle, callback, arg, flags,
+    ret = HG_Core_respond(handle, hg_respond_cb, hg_private_data, flags,
         payload_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not respond");
