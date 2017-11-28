@@ -2030,8 +2030,11 @@ na_ofi_finalize(na_class_t *na_class)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     na_return_t ret = NA_SUCCESS;
 
+    if (priv == NULL)
+        goto out;
+
     /* Check that unexpected op queue is empty */
-    if (!na_ofi_with_sep(na_class) &&
+    if (priv->nop_endpoint != NULL && !na_ofi_with_sep(na_class) &&
         !HG_QUEUE_IS_EMPTY(&priv->nop_unexpected_op_queue)) {
         NA_LOG_ERROR("Unexpected op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
