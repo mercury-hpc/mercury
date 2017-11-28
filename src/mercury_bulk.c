@@ -123,7 +123,7 @@ hg_bulk_free(
 /**
  * Get info for bulk transfer.
  */
-static void
+static HG_INLINE void
 hg_bulk_offset_translate(
         struct hg_bulk *hg_bulk,
         hg_size_t offset,
@@ -524,7 +524,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static void
+static HG_INLINE void
 hg_bulk_offset_translate(struct hg_bulk *hg_bulk, hg_size_t offset,
     hg_uint32_t *segment_start_index, hg_size_t *segment_start_offset)
 {
