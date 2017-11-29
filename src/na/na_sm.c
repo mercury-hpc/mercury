@@ -2310,6 +2310,8 @@ na_sm_progress_expected(na_class_t *na_class, struct na_sm_addr *poll_addr,
     if (!na_sm_op_id) {
         /* No match if either the message was not pre-posted or it was canceled */
         NA_LOG_WARNING("Ignored expected message received (canceled?)");
+//        NA_LOG_DEBUG("Expected: pid=%d, tag=%d", poll_addr->pid,
+//            na_sm_hdr.hdr.tag);
         goto done;
     }
 
@@ -2414,7 +2416,7 @@ na_sm_release(void *arg)
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) arg;
 
     if (na_sm_op_id && !hg_atomic_get32(&na_sm_op_id->completed)) {
-        NA_LOG_WARNING("Releasing resources from an uncompleted operation");
+        NA_LOG_ERROR("Releasing resources from an uncompleted operation");
     }
     na_sm_op_destroy(NULL, na_sm_op_id);
 }
@@ -2718,7 +2720,9 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
         na_sm_op_id = (struct na_sm_op_id *) *op_id;
-        hg_atomic_incr32(&na_sm_op_id->ref_count);
+        /* Make sure op ID can be safely re-used */
+        while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+            cpu_spinwait();
     } else {
         na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
         if (!na_sm_op_id) {
@@ -3104,7 +3108,9 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
         na_sm_op_id = (struct na_sm_op_id *) *op_id;
-        hg_atomic_incr32(&na_sm_op_id->ref_count);
+        /* Make sure op ID can be safely re-used */
+        while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+            cpu_spinwait();
     } else {
         na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
         if (!na_sm_op_id) {
@@ -3175,7 +3181,10 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
         na_sm_op_id = (struct na_sm_op_id *) *op_id;
-        hg_atomic_incr32(&na_sm_op_id->ref_count);
+
+        /* Make sure op ID can be safely re-used */
+        while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+            cpu_spinwait();
     } else {
         na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
         if (!na_sm_op_id) {
@@ -3255,7 +3264,9 @@ na_sm_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
         na_sm_op_id = (struct na_sm_op_id *) *op_id;
-        hg_atomic_incr32(&na_sm_op_id->ref_count);
+        /* Make sure op ID can be safely re-used */
+        while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+            cpu_spinwait();
     } else {
         na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
         if (!na_sm_op_id) {
@@ -3326,7 +3337,9 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
         na_sm_op_id = (struct na_sm_op_id *) *op_id;
-        hg_atomic_incr32(&na_sm_op_id->ref_count);
+        /* Make sure op ID can be safely re-used */
+        while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+            cpu_spinwait();
     } else {
         na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
         if (!na_sm_op_id) {
@@ -3621,7 +3634,9 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
         na_sm_op_id = (struct na_sm_op_id *) *op_id;
-        hg_atomic_incr32(&na_sm_op_id->ref_count);
+        /* Make sure op ID can be safely re-used */
+        while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+            cpu_spinwait();
     } else {
         na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
         if (!na_sm_op_id) {
@@ -3773,7 +3788,9 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
         na_sm_op_id = (struct na_sm_op_id *) *op_id;
-        hg_atomic_incr32(&na_sm_op_id->ref_count);
+        /* Make sure op ID can be safely re-used */
+        while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+            cpu_spinwait();
     } else {
         na_sm_op_id = (struct na_sm_op_id *) na_sm_op_create(na_class);
         if (!na_sm_op_id) {

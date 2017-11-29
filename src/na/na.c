@@ -1966,7 +1966,12 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
                 callback_ret[count] = cb_ret;
         }
 
-        /* Execute plugin callback (free resources etc) */
+        /* Execute plugin callback (free resources etc)
+         * NB. If the NA operation ID is reused by the plugin for another
+         * operation we must be careful that resources are released BEFORE
+         * that operation ID gets re-used. This is currently not protected
+         * and left upon the plugin implementation.
+         */
         if (completion_data->plugin_callback)
             completion_data->plugin_callback(
                 completion_data->plugin_callback_args);
