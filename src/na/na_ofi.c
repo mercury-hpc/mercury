@@ -128,13 +128,6 @@
 /* the predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
 
-#if !defined(container_of)
-/* given a pointer @ptr to the field @member embedded into type (usually
- *  * struct) @type, return pointer to the embedding instance of @type. */
-# define container_of(ptr, type, member)		\
-	        ((type *)((char *)(ptr)-(char *)(&((type *)0)->member)))
-#endif
-
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/

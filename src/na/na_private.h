@@ -14,6 +14,8 @@
 #include "na.h"
 #include "mercury_queue.h"
 
+#include <stddef.h>
+
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
@@ -342,11 +344,23 @@ struct na_class {
 
 /* Remove warnings when plugin does not use callback arguments */
 #if defined(__cplusplus)
-    #define NA_UNUSED
+# define NA_UNUSED
 #elif defined(__GNUC__) && (__GNUC__ >= 4)
-    #define NA_UNUSED __attribute__((unused))
+# define NA_UNUSED __attribute__((unused))
 #else
-    #define NA_UNUSED
+# define NA_UNUSED
+#endif
+
+/**
+ * container_of - cast a member of a structure out to the containing structure
+ * \ptr:        the pointer to the member.
+ * \type:       the type of the container struct this is embedded in.
+ * \member:     the name of the member within the struct.
+ *
+ */
+#if !defined(container_of)
+# define container_of(ptr, type, member) \
+    ((type *) ((char *) ptr - offsetof(type, member)))
 #endif
 
 /*********************/
