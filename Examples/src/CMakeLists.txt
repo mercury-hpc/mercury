@@ -11,7 +11,6 @@ include_directories(
 #------------------------------------------------------------------------------
 # mercury
 find_package(MERCURY REQUIRED)
-include_directories(${MERCURY_INCLUDE_DIR})
 
 # Snappy
 find_package(SNAPPY)

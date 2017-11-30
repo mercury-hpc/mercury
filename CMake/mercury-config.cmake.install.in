@@ -27,4 +27,3 @@ if(NOT TARGET "mercury" AND NOT MERCURY_INSTALL_SKIP_TARGETS)
   endif()
   include(${MERCURY_SELF_DIR}/mercury-targets.cmake)
 endif()
-
