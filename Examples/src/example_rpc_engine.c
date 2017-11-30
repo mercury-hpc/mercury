@@ -19,7 +19,6 @@
  * dedicated thread that will drive all HG progress
  */
 
-static na_class_t *network_class = NULL;
 static hg_context_t *hg_context = NULL;
 static hg_class_t *hg_class = NULL;
 
@@ -32,10 +31,7 @@ void hg_engine_init(na_bool_t listen, const char* local_addr)
     int ret;
 
     /* boilerplate HG initialization steps */
-    network_class = NA_Initialize(local_addr, listen);
-    assert(network_class);
-
-    hg_class = HG_Init_na(network_class);
+    hg_class = HG_Init(local_addr, listen);
     assert(hg_class);
 
     hg_context = HG_Context_create(hg_class);

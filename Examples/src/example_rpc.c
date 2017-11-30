@@ -77,7 +77,7 @@ static hg_return_t my_rpc_handler(hg_handle_t handle)
 {
     int ret;
     struct my_rpc_state *my_rpc_state_p;
-    struct hg_info *hgi;
+    const struct hg_info *hgi;
 
     /* set up state structure */
     my_rpc_state_p = malloc(sizeof(*my_rpc_state_p));

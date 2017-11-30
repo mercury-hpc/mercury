@@ -96,7 +96,7 @@ static hg_return_t lookup_cb(const struct hg_cb_info *callback_info)
 {
     na_addr_t svr_addr = callback_info->info.lookup.addr;
     my_rpc_in_t in;
-    struct hg_info *hgi;
+    const struct hg_info *hgi;
     int ret;
     struct my_rpc_state *my_rpc_state_p;
 
