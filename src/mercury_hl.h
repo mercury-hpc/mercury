@@ -67,20 +67,26 @@ HG_Hl_init(
         );
 
 /**
- * Initialize Mercury high-level layer and create default class
- * from an existing NA class.
+ * Initialize Mercury high-level layer with options provided by init_info.
+ * Must be finalized with HG_Hl_finalize().
  * \remark HG_Hl_finalize() is registered with atexit() so that default
  * classes/contexts are freed at process termination.
+ * \remark HG_Hl_init_opt() may become HG_Hl_init() in the future.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_info_string [IN]   host address with port number (e.g.,
+ *                              "tcp://localhost:3344" or
+ *                              "bmi+tcp://localhost:3344")
+ * \param na_listen [IN]        listen for incoming connections
+ * \param hg_init_info [IN]     (Optional) HG init info, NULL if no info
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-HG_Hl_init_na(
-        na_class_t *na_class
+HG_Hl_init_opt(
+        const char *na_info_string,
+        hg_bool_t na_listen,
+        const struct hg_init_info *hg_init_info
         );
-
 
 /**
  * Finalize Mercury high-level layer.

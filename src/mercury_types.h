@@ -12,6 +12,7 @@
 #define MERCURY_TYPES_H
 
 #include "mercury_config.h"
+#include "na.h"
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -27,6 +28,12 @@ typedef struct hg_handle *hg_handle_t;  /* Abstract RPC handle */
 typedef struct hg_bulk *hg_bulk_t;      /* Abstract bulk data handle */
 typedef struct hg_proc *hg_proc_t;      /* Abstract serialization processor */
 typedef struct hg_op_id *hg_op_id_t;    /* Abstract operation id */
+
+/* HG init info struct */
+struct hg_init_info {
+    struct na_init_info na_init_info;   /* NA Init Info */
+    na_class_t *na_class;               /* NA class */
+};
 
 /* HG info struct */
 struct hg_info {

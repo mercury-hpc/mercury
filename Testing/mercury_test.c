@@ -308,12 +308,15 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
         hg_context_t **context, hg_request_class_t **request_class)
 {
     char test_addr_name[NA_TEST_MAX_ADDR_NAME];
+    struct hg_init_info hg_init_info;
     hg_return_t ret;
 
     hg_test_na_class_g = NA_Test_client_init(argc, argv, test_addr_name,
             NA_TEST_MAX_ADDR_NAME, &hg_test_rank_g);
 
-    ret = HG_Hl_init_na(hg_test_na_class_g);
+    memset(&hg_init_info, 0, sizeof(struct hg_init_info));
+    hg_init_info.na_class = hg_test_na_class_g;
+    ret = HG_Hl_init_opt(NULL, 0, &hg_init_info);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not initialize Mercury\n");
         goto done;
@@ -379,6 +382,7 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
     char *buf_ptr;
     size_t i;
     hg_return_t ret;
+    struct hg_init_info hg_init_info;
 
     /* Call cleanup before doing anything */
     HG_Cleanup();
@@ -395,7 +399,9 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
     printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
 #endif
 
-    ret = HG_Hl_init_na(hg_test_na_class_g);
+    memset(&hg_init_info, 0, sizeof(struct hg_init_info));
+    hg_init_info.na_class = hg_test_na_class_g;
+    ret = HG_Hl_init_opt(NULL, 0, &hg_init_info);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not initialize Mercury\n");
         goto done;

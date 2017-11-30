@@ -642,7 +642,7 @@ na_bmi_check_protocol(const char *protocol_name)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
-        na_bool_t listen)
+    na_bool_t listen)
 {
     char method_list[NA_BMI_MAX_ADDR_NAME];
     char listen_addr[NA_BMI_MAX_ADDR_NAME];

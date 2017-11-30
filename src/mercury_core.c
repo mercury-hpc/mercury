@@ -329,7 +329,7 @@ static struct hg_class *
 hg_core_init(
         const char *na_info_string,
         hg_bool_t na_listen,
-        na_class_t *na_init_class
+        const struct hg_init_info *hg_init_info
         );
 
 /**
@@ -945,7 +945,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static struct hg_class *
 hg_core_init(const char *na_info_string, hg_bool_t na_listen,
-    na_class_t *na_init_class)
+    const struct hg_init_info *hg_init_info)
 {
     struct hg_class *hg_class = NULL;
     na_tag_t na_max_tag;
@@ -959,12 +959,19 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
         goto done;
     }
     memset(hg_class, 0, sizeof(struct hg_class));
-    hg_class->na_class = na_init_class;
-    hg_class->na_ext_init = (na_init_class) ? HG_TRUE : HG_FALSE;
 
-    /* Initialize NA */
+    /* Parse options */
+    if (hg_init_info) {
+        /* External NA class */
+        if (hg_init_info->na_class) {
+            hg_class->na_class = hg_init_info->na_class;
+            hg_class->na_ext_init = HG_TRUE;
+        }
+    }
+
+    /* Initialize NA if not provided externally */
     if (!hg_class->na_ext_init) {
-        hg_class->na_class = NA_Initialize(na_info_string, na_listen);
+        hg_class->na_class = NA_Initialize_opt(na_info_string, na_listen, NULL);
         if (!hg_class->na_class) {
             HG_LOG_ERROR("Could not initialize NA class");
             ret = HG_NA_ERROR;
@@ -2870,42 +2877,18 @@ done:
 hg_class_t *
 HG_Core_init(const char *na_info_string, hg_bool_t na_listen)
 {
-    struct hg_class *hg_class = NULL;
-    hg_return_t ret = HG_SUCCESS;
-
-    if (!na_info_string) {
-        HG_LOG_ERROR("Invalid specified na_info_string");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-
-    hg_class = hg_core_init(na_info_string, na_listen, NULL);
-    if (!hg_class) {
-        HG_LOG_ERROR("Cannot initialize HG core layer");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
-done:
-    if (ret != HG_SUCCESS) {
-        /* Nothing */
-    }
-    return hg_class;
+    return HG_Core_init_opt(na_info_string, na_listen, NULL);
 }
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Core_init_na(na_class_t *na_class)
+HG_Core_init_opt(const char *na_info_string, hg_bool_t na_listen,
+    const struct hg_init_info *hg_init_info)
 {
     struct hg_class *hg_class = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!na_class) {
-        HG_LOG_ERROR("NULL NA class");
-        goto done;
-    }
-
-    hg_class = hg_core_init(NULL, HG_FALSE, na_class);
+    hg_class = hg_core_init(na_info_string, na_listen, hg_init_info);
     if (!hg_class) {
         HG_LOG_ERROR("Cannot initialize HG core layer");
         ret = HG_PROTOCOL_ERROR;

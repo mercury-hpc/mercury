@@ -883,32 +883,17 @@ HG_Error_to_string(hg_return_t errnum)
 hg_class_t *
 HG_Init(const char *na_info_string, hg_bool_t na_listen)
 {
-    hg_class_t *hg_class = NULL;
-
-    hg_class = HG_Core_init(na_info_string, na_listen);
-    if (!hg_class) {
-        HG_LOG_ERROR("Could not create HG class");
-        goto done;
-    }
-
-    /* Set private data allocation on HG handle create */
-    HG_Core_set_create_callback(hg_class, hg_private_data_alloc);
-
-    /* Set more data callback */
-    HG_Core_set_more_data_callback(hg_class, hg_more_data_cb,
-        hg_more_data_free_cb);
-
-done:
-    return hg_class;
+    return HG_Init_opt(na_info_string, na_listen, NULL);
 }
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
-HG_Init_na(na_class_t *na_class)
+HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
+    const struct hg_init_info *hg_init_info)
 {
     hg_class_t *hg_class = NULL;
 
-    hg_class = HG_Core_init_na(na_class);
+    hg_class = HG_Core_init_opt(na_info_string, na_listen, hg_init_info);
     if (!hg_class) {
         HG_LOG_ERROR("Could not create HG class");
         goto done;

@@ -12,7 +12,6 @@
 #define MERCURY_CORE_H
 
 #include "mercury_types.h"
-#include "na.h"
 
 /*****************/
 /* Public Macros */
@@ -48,16 +47,23 @@ HG_Core_init(
         );
 
 /**
- * Initialize the Mercury layer from an existing NA class/context.
+ * Initialize the Mercury layer with options provided by init_info.
  * Must be finalized with HG_Core_finalize().
+ * \remark HG_Core_init_opt() may become HG_Core_init() in the future.
  *
- * \param na_class [IN]         pointer to NA class
+ * \param na_info_string [IN]   host address with port number (e.g.,
+ *                              "tcp://localhost:3344" or
+ *                              "bmi+tcp://localhost:3344")
+ * \param na_listen [IN]        listen for incoming connections
+ * \param hg_init_info [IN]     (Optional) HG init info, NULL if no info
  *
  * \return Pointer to HG class or NULL in case of failure
  */
 HG_EXPORT hg_class_t *
-HG_Core_init_na(
-        na_class_t *na_class
+HG_Core_init_opt(
+        const char *na_info_string,
+        hg_bool_t na_listen,
+        const struct hg_init_info *hg_init_info
         );
 
 /**

@@ -29,6 +29,11 @@ typedef void *na_op_id_t;               /* Abstract operation id */
 typedef void *na_mem_handle_t;          /* Abstract memory handle */
 typedef na_uint64_t na_offset_t;        /* Offset */
 
+/* Init info */
+struct na_init_info {
+    const char *nothing;    /* Nothing for now */
+};
+
 /* Segment */
 struct na_segment {
     na_ptr_t address;   /* Address of the segment */
@@ -135,6 +140,25 @@ NA_EXPORT na_class_t *
 NA_Initialize(
         const char *info_string,
         na_bool_t   listen
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Initialize the network abstraction layer with options provided by init_info.
+ * Must be finalized with NA_Finalize().
+ *
+ * \param info_string [IN]      host address with port number (e.g.,
+ *                              "tcp://localhost:3344" or
+ *                              "bmi+tcp://localhost:3344")
+ * \param listen [IN]           listen for incoming connections
+ * \param na_init_info [IN]     (Optional) NA init info, NULL if no info
+ *
+ * \return Pointer to NA class or NULL in case of failure
+ */
+NA_EXPORT na_class_t *
+NA_Initialize_opt(
+        const char                *info_string,
+        na_bool_t                  listen,
+        const struct na_init_info *na_init_info
         ) NA_WARN_UNUSED_RESULT;
 
 /**

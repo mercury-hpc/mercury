@@ -996,7 +996,7 @@ na_mpi_check_protocol(const char NA_UNUSED *protocol_name)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_mpi_initialize(na_class_t *na_class, const struct na_info *na_info,
-        na_bool_t listen)
+    na_bool_t listen)
 {
     int mpi_ext_initialized = 0;
     na_bool_t listening, use_static_inter_comm;

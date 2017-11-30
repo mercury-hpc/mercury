@@ -261,6 +261,14 @@ na_info_print(struct na_info *na_info)
 na_class_t *
 NA_Initialize(const char *info_string, na_bool_t listen)
 {
+    return NA_Initialize_opt(info_string, listen, NULL);
+}
+
+/*---------------------------------------------------------------------------*/
+na_class_t *
+NA_Initialize_opt(const char *info_string, na_bool_t listen,
+    const struct na_init_info *na_init_info)
+{
     struct na_private_class *na_private_class = NULL;
     struct na_info *na_info = NULL;
     unsigned int plugin_index = 0;
@@ -290,6 +298,7 @@ NA_Initialize(const char *info_string, na_bool_t listen)
         NA_LOG_ERROR("Could not parse host string");
         goto done;
     }
+    na_info->na_init_info = na_init_info;
 
 #ifdef NA_DEBUG
     na_info_print(na_info);

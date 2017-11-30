@@ -25,6 +25,8 @@ struct na_info {
     char *class_name;    /* Class name (e.g., bmi) */
     char *protocol_name; /* Protocol (e.g., tcp, ib) */
     char *host_name;     /* Host (may be NULL in anonymous mode) */
+    /* Additional init info (NULL if no info) */
+    const struct na_init_info *na_init_info;
 };
 
 /* Private callback type for NA plugins */

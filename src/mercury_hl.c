@@ -207,7 +207,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Hl_init_na(na_class_t *na_class)
+HG_Hl_init_opt(const char *na_info_string, hg_bool_t na_listen,
+    const struct hg_init_info *hg_init_info)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -223,7 +224,7 @@ HG_Hl_init_na(na_class_t *na_class)
 
     /* Initialize HG */
     if (!HG_CLASS_DEFAULT) {
-        HG_CLASS_DEFAULT = HG_Init_na(na_class);
+        HG_CLASS_DEFAULT = HG_Init_opt(na_info_string, na_listen, hg_init_info);
         if (!HG_CLASS_DEFAULT) {
             HG_LOG_ERROR("Could not initialize HG class");
             ret = HG_PROTOCOL_ERROR;
