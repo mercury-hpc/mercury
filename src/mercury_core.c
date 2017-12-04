@@ -65,6 +65,7 @@ struct hg_class {
     unsigned int na_max_tag_msb;        /* MSB of NA max tag */
     hg_bool_t use_tag_mask;             /* Can use tag masking or not */
     hg_bool_t na_ext_init;              /* NA externally initialized */
+    na_progress_mode_t progress_mode;   /* NA progress mode */
 #ifdef HG_HAS_SELF_FORWARD
     hg_thread_pool_t *self_processing_pool; /* Thread pool for self processing */
 #endif
@@ -967,11 +968,13 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             hg_class->na_class = hg_init_info->na_class;
             hg_class->na_ext_init = HG_TRUE;
         }
+        hg_class->progress_mode = hg_init_info->na_init_info.progress_mode;
     }
 
     /* Initialize NA if not provided externally */
     if (!hg_class->na_ext_init) {
-        hg_class->na_class = NA_Initialize_opt(na_info_string, na_listen, NULL);
+        hg_class->na_class = NA_Initialize_opt(na_info_string, na_listen,
+            &hg_init_info->na_init_info);
         if (!hg_class->na_class) {
             HG_LOG_ERROR("Could not initialize NA class");
             ret = HG_NA_ERROR;
@@ -2493,8 +2496,16 @@ done:
 static hg_return_t
 hg_core_progress_na(struct hg_context *context, unsigned int timeout)
 {
-    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    double remaining;
     hg_return_t ret = HG_TIMEOUT;
+
+    /* Do not block if NA_NO_BLOCK option is passed */
+    if (context->hg_class->progress_mode == NA_NO_BLOCK) {
+        timeout = 0;
+        remaining = 0;
+    } else {
+        remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    }
 
     for (;;) {
         struct hg_class *hg_class = context->hg_class;
@@ -2583,8 +2594,16 @@ hg_core_poll_try_wait_cb(void *arg)
 static hg_return_t
 hg_core_progress_poll(struct hg_context *context, unsigned int timeout)
 {
-    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    double remaining;
     hg_return_t ret = HG_TIMEOUT;
+
+    /* Do not block if NA_NO_BLOCK option is passed */
+    if (context->hg_class->progress_mode == NA_NO_BLOCK) {
+        timeout = 0;
+        remaining = 0;
+    } else {
+        remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    }
 
     do {
         hg_time_t t1, t2;
@@ -2622,9 +2641,17 @@ static hg_return_t
 hg_core_trigger(struct hg_context *context, unsigned int timeout,
     unsigned int max_count, unsigned int *actual_count)
 {
-    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    double remaining;
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
+
+    /* Do not block if NA_NO_BLOCK option is passed */
+    if (context->hg_class->progress_mode == NA_NO_BLOCK) {
+        timeout = 0;
+        remaining = 0;
+    } else {
+        remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    }
 
     while (count < max_count) {
         struct hg_completion_entry *hg_completion_entry = NULL;
@@ -3146,7 +3173,7 @@ HG_Core_context_create(hg_class_t *hg_class)
     /* If NA plugin exposes fd, add it to poll set and use appropriate
      * progress function */
     na_poll_fd = NA_Poll_get_fd(hg_class->na_class, context->na_context);
-    if (na_poll_fd > 0) {
+    if (na_poll_fd > 0 || hg_class->progress_mode == NA_NO_BLOCK) {
         hg_poll_add(context->poll_set, na_poll_fd, HG_POLLIN,
             hg_core_progress_na_cb, context);
         hg_poll_set_try_wait(context->poll_set, hg_core_poll_try_wait_cb,

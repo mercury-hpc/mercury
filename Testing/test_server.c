@@ -19,13 +19,8 @@
 extern hg_atomic_int32_t hg_test_finalizing_count_g;
 extern hg_addr_t *hg_addr_table;
 
-#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
-#define HG_TEST_PROGRESS_TIMEOUT    0
-#define HG_TEST_TRIGGER_TIMEOUT     0
-#else
 #define HG_TEST_PROGRESS_TIMEOUT    100
 #define HG_TEST_TRIGGER_TIMEOUT     HG_MAX_IDLE_TIME
-#endif
 
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static HG_THREAD_RETURN_TYPE

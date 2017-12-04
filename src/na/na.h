@@ -29,9 +29,15 @@ typedef void *na_op_id_t;               /* Abstract operation id */
 typedef void *na_mem_handle_t;          /* Abstract memory handle */
 typedef na_uint64_t na_offset_t;        /* Offset */
 
+/* Progress mode */
+typedef enum na_progress_mode {
+    NA_DEFAULT,     /*!< blocking progress, depending on timeout value */
+    NA_NO_BLOCK     /*!< no blocking progress, independent of timeout value */
+} na_progress_mode_t;
+
 /* Init info */
 struct na_init_info {
-    const char *nothing;    /* Nothing for now */
+    na_progress_mode_t progress_mode;   /* Progress mode */
 };
 
 /* Segment */

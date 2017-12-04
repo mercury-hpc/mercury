@@ -194,51 +194,12 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
     hg_poll_cb_t poll_cb, void *poll_arg)
 {
     struct hg_poll_data *hg_poll_data = NULL;
-#if defined(HG_UTIL_HAS_SYSEPOLL_H)
-    struct epoll_event ev;
-    uint32_t poll_flags;
-#elif defined(HG_UTIL_HAS_SYSEVENT_H)
-    struct timespec timeout = {0, 0};
-    int16_t poll_flags;
-#else
-    short int poll_flags;
-#endif
     int ret = HG_UTIL_SUCCESS;
 
     if (!poll_set) {
         HG_UTIL_LOG_ERROR("NULL poll set");
         ret = HG_UTIL_FAIL;
         goto done;
-    }
-
-    /* Translate flags */
-    switch (flags) {
-        case HG_POLLIN:
-#if defined(_WIN32)
-            /* TODO */
-#elif defined(HG_UTIL_HAS_SYSEPOLL_H)
-            poll_flags = EPOLLIN;
-#elif defined(HG_UTIL_HAS_SYSEVENT_H)
-            poll_flags = EVFILT_READ;
-#else
-            poll_flags = POLLIN;
-#endif /* defined(_WIN32) */
-            break;
-        case HG_POLLOUT:
-#if defined(_WIN32)
-            /* TODO */
-#elif defined(HG_UTIL_HAS_SYSEPOLL_H)
-            poll_flags = EPOLLOUT;
-#elif defined(HG_UTIL_HAS_SYSEVENT_H)
-            poll_flags = EVFILT_WRITE;
-#else
-            poll_flags = POLLOUT;
-#endif /* defined(_WIN32) */
-            break;
-        default:
-            HG_UTIL_LOG_ERROR("Invalid flag");
-            ret = HG_UTIL_FAIL;
-            goto done;
     }
 
     /* Allocate poll data that can hold user data and callback */
@@ -249,45 +210,100 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
     }
     hg_poll_data->poll_cb = poll_cb;
     hg_poll_data->poll_arg = poll_arg;
+
+    if (fd > 0) {
 #if defined(_WIN32)
-    /* TODO */
+        /* TODO */
 #elif defined(HG_UTIL_HAS_SYSEPOLL_H)
-    hg_poll_data->fd = fd;
-    ev.events = poll_flags;
-    ev.data.ptr = hg_poll_data;
+        struct epoll_event ev;
+        uint32_t poll_flags;
 
-    if (epoll_ctl(poll_set->fd, EPOLL_CTL_ADD, fd, &ev) == -1) {
-        HG_UTIL_LOG_ERROR("epoll_ctl() failed (%s)", strerror(errno));
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+        /* Translate flags */
+        switch (flags) {
+            case HG_POLLIN:
+                poll_flags = EPOLLIN;
+                break;
+            case HG_POLLOUT:
+                poll_flags = EPOLLOUT;
+                break;
+            default:
+                HG_UTIL_LOG_ERROR("Invalid flag");
+                ret = HG_UTIL_FAIL;
+                goto done;
+        }
+
+        hg_poll_data->fd = fd;
+        ev.events = poll_flags;
+        ev.data.ptr = hg_poll_data;
+
+        if (epoll_ctl(poll_set->fd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+            HG_UTIL_LOG_ERROR("epoll_ctl() failed (%s)", strerror(errno));
+            ret = HG_UTIL_FAIL;
+            goto done;
+        }
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
-    EV_SET(&hg_poll_data->kev, (uintptr_t) fd, poll_flags, EV_ADD, 0, 0, hg_poll_data);
+        struct timespec timeout = {0, 0};
+        int16_t poll_flags;
 
-    if (kevent(poll_set->fd, &hg_poll_data->kev, 1, NULL, 0, &timeout) == -1) {
-        HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+        /* Translate flags */
+        switch (flags) {
+            case HG_POLLIN:
+                poll_flags = EVFILT_READ;
+                break;
+            case HG_POLLOUT:
+                poll_flags = EVFILT_WRITE;
+                break;
+            default:
+                HG_UTIL_LOG_ERROR("Invalid flag");
+                ret = HG_UTIL_FAIL;
+                goto done;
+        }
+
+        EV_SET(&hg_poll_data->kev, (uintptr_t) fd, poll_flags, EV_ADD, 0, 0, hg_poll_data);
+
+        if (kevent(poll_set->fd, &hg_poll_data->kev, 1, NULL, 0, &timeout) == -1) {
+            HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
+            ret = HG_UTIL_FAIL;
+            goto done;
+        }
 #else
-    hg_poll_data->pollfd.fd = fd;
-    hg_poll_data->pollfd.events = poll_flags;
-    hg_poll_data->pollfd.revents = 0;
+        short int poll_flags;
 
-    /* TODO limit on number of fds for now but could malloc/reallocate */
-    if (poll_set->nfds + 1 > HG_POLL_MAX_EVENTS) {
-        HG_UTIL_LOG_ERROR("Exceeding number of pollable file descriptors");
-        ret = HG_UTIL_FAIL;
-        free(hg_poll_data);
-        goto done;
-    }
+        /* Translate flags */
+        switch (flags) {
+            case HG_POLLIN:
+                poll_flags = POLLIN;
+                break;
+            case HG_POLLOUT:
+                poll_flags = POLLOUT;
+                break;
+            default:
+                HG_UTIL_LOG_ERROR("Invalid flag");
+                ret = HG_UTIL_FAIL;
+                goto done;
+        }
 
-    poll_set->poll_fds[poll_set->nfds] = hg_poll_data->pollfd;
+        hg_poll_data->pollfd.fd = fd;
+        hg_poll_data->pollfd.events = poll_flags;
+        hg_poll_data->pollfd.revents = 0;
+
+        /* TODO limit on number of fds for now but could malloc/reallocate */
+        if (poll_set->nfds + 1 > HG_POLL_MAX_EVENTS) {
+            HG_UTIL_LOG_ERROR("Exceeding number of pollable file descriptors");
+            ret = HG_UTIL_FAIL;
+            free(hg_poll_data);
+            goto done;
+        }
+
+        poll_set->poll_fds[poll_set->nfds] = hg_poll_data->pollfd;
 #endif /* defined(_WIN32) */
+    }
     HG_LIST_INSERT_HEAD(&poll_set->poll_data_list, hg_poll_data, entry);
     poll_set->nfds++;
 
 done:
+    if (ret != HG_UTIL_SUCCESS)
+        free(hg_poll_data);
     return ret;
 }
 
@@ -311,7 +327,8 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
         if (hg_poll_data->fd == fd) {
             HG_LIST_REMOVE(hg_poll_data, entry);
 
-            if (epoll_ctl(poll_set->fd, EPOLL_CTL_DEL, fd, NULL) == -1) {
+            if ((fd > 0)
+                && epoll_ctl(poll_set->fd, EPOLL_CTL_DEL, fd, NULL) == -1) {
                 HG_UTIL_LOG_ERROR("epoll_ctl() failed (%s)", strerror(errno));
                 ret = HG_UTIL_FAIL;
                 goto done;
@@ -326,16 +343,18 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
      * on the last close of the descriptor. */
     HG_LIST_FOREACH(hg_poll_data, &poll_set->poll_data_list, entry) {
         if ((int) hg_poll_data->kev.ident == fd) {
-            struct timespec timeout = {0, 0};
-
             HG_LIST_REMOVE(hg_poll_data, entry);
 
-            EV_SET(&hg_poll_data->kev, (uintptr_t) fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
-            if (kevent(poll_set->fd, &hg_poll_data->kev, 1, NULL, 0,
-                &timeout) == -1) {
-                HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
-                ret = HG_UTIL_FAIL;
-                goto done;
+            if (fd > 0) {
+                struct timespec timeout = {0, 0};
+
+                EV_SET(&hg_poll_data->kev, (uintptr_t) fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+                if (kevent(poll_set->fd, &hg_poll_data->kev, 1, NULL, 0,
+                    &timeout) == -1) {
+                    HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
+                    ret = HG_UTIL_FAIL;
+                    goto done;
+                }
             }
             free(hg_poll_data);
             found = HG_UTIL_TRUE;
@@ -351,10 +370,12 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
             free(hg_poll_data);
             found = HG_UTIL_TRUE;
 
-            /* Re-order poll_events */
-            HG_LIST_FOREACH(hg_poll_data, &poll_set->poll_data_list, entry) {
-                poll_set->poll_fds[i] = hg_poll_data->pollfd;
-                i++;
+            if (fd > 0) {
+                /* Re-order poll_events */
+                HG_LIST_FOREACH(hg_poll_data, &poll_set->poll_data_list, entry) {
+                    poll_set->poll_fds[i] = hg_poll_data->pollfd;
+                    i++;
+                }
             }
             break;
         }

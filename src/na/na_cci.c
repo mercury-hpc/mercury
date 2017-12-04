@@ -536,7 +536,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     cci_endpoint_t *endpoint = NULL;
     char *uri = NULL;
     na_return_t ret = NA_SUCCESS;
-    int fd = 0;
+    int fd = -1, *fd_p = NULL;
     char *device_name = NULL;
     char *hostname = NULL;
     char *service = na_info->host_name;
@@ -622,12 +622,16 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
         ret = NA_NOMEM_ERROR;
         goto out;
     }
+    memset(na_class->private_data, 0, sizeof(struct na_cci_private_data));
+    if (na_info->na_init_info
+        && na_info->na_init_info->progress_mode != NA_NO_BLOCK)
+        fd_p = &fd;
 
     /* Create unspecified endpoint if service is set */
     if (service)
-        rc = cci_create_endpoint_at(device, service, 0, &endpoint, &fd);
+        rc = cci_create_endpoint_at(device, service, 0, &endpoint, fd_p);
     else
-        rc = cci_create_endpoint(device, 0, &endpoint, &fd);
+        rc = cci_create_endpoint(device, 0, &endpoint, fd_p);
     if (rc) {
         NA_LOG_ERROR("cci_create_endpoint() failed with %s",
             cci_strerror(NULL, rc));

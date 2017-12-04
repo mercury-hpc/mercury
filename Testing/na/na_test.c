@@ -406,6 +406,7 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name,
 {
     const char *info_string = NULL;
     na_class_t *na_class = NULL;
+    struct na_init_info na_init_info;
 
     info_string = na_test_gen_config(argc, argv, 0);
 
@@ -415,8 +416,15 @@ NA_Test_client_init(int argc, char *argv[], char *addr_name,
     na_test_mpi_init(NA_FALSE);
 #endif
 
+    memset(&na_init_info, 0, sizeof(struct na_init_info));
+#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
+    na_init_info.progress_mode = NA_NO_BLOCK;
+#else
+    na_init_info.progress_mode = NA_DEFAULT;
+#endif
+
     printf("# Initializing NA with %s\n", info_string);
-    na_class = NA_Initialize(info_string, NA_FALSE);
+    na_class = NA_Initialize_opt(info_string, NA_FALSE, &na_init_info);
 
     /* Get config from file if self option is not passed */
     if (!na_test_use_self_g) {
@@ -445,6 +453,7 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
     char addr_string[NA_TEST_MAX_ADDR_NAME];
     na_addr_t self_addr = NA_ADDR_NULL;
     na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
+    struct na_init_info na_init_info;
     na_return_t nret;
 
     /* TODO call it once first for now to set static MPI */
@@ -459,8 +468,15 @@ NA_Test_server_init(int argc, char *argv[], na_bool_t print_ready,
 
     info_string = na_test_gen_config(argc, argv, 1);
 
+    memset(&na_init_info, 0, sizeof(struct na_init_info));
+#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
+    na_init_info.progress_mode = NA_NO_BLOCK;
+#else
+    na_init_info.progress_mode = NA_DEFAULT;
+#endif
+
     printf("# Initializing NA with %s\n", info_string);
-    na_class = NA_Initialize(info_string, NA_TRUE);
+    na_class = NA_Initialize_opt(info_string, NA_TRUE, &na_init_info);
 
     nret = NA_Addr_self(na_class, &self_addr);
     if (nret != NA_SUCCESS) {

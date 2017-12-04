@@ -199,6 +199,7 @@ struct na_ofi_private_data {
     struct na_ofi_reqhdr nop_req_hdr; /* request header */
     /* nop_mutex only used for verbs provider as it is not thread safe now */
     hg_thread_mutex_t nop_mutex;
+    na_bool_t no_wait; /* Ignore wait object */
 };
 
 #define NA_OFI_PRIVATE_DATA(na_class) \
@@ -526,7 +527,7 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     const char *node, const char *service, const char *auth_key,
-    struct na_ofi_endpoint **na_ofi_endpoint_p);
+    na_bool_t no_block, struct na_ofi_endpoint **na_ofi_endpoint_p);
 
 static na_return_t
 na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint);
@@ -1279,7 +1280,7 @@ out:
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     const char *node, const char *service, const char NA_UNUSED *auth_key,
-    struct na_ofi_endpoint **na_ofi_endpoint_p)
+    na_bool_t no_wait, struct na_ofi_endpoint **na_ofi_endpoint_p)
 {
     struct na_ofi_endpoint *na_ofi_endpoint;
     struct fi_cq_attr cq_attr = {0};
@@ -1362,7 +1363,8 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     /* verbs provider does not support FI_WAIT_FD/FI_WAIT_SET now */
     if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS ||
         na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI ||
-        na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2)
+        na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
+        no_wait)
         goto no_wait_obj;
 
     /**
@@ -1673,6 +1675,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     char domain_name[NA_OFI_MAX_URI_LEN] = {'\0'};
     const char *prov_name;
     char *service = NULL;
+    na_bool_t no_wait = NA_FALSE;
     char *auth_key = NULL;
     na_return_t ret = NA_SUCCESS;
 
@@ -1704,6 +1707,12 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         }
     }
 
+    /* Get init info */
+    if (na_info->na_init_info) {
+        if (na_info->na_init_info->progress_mode == NA_NO_BLOCK)
+            no_wait = NA_TRUE;
+    }
+
     /* Create private data */
     na_class->private_data = (struct na_ofi_private_data *) malloc(
         sizeof(struct na_ofi_private_data));
@@ -1713,6 +1722,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         goto out;
     }
     memset(na_class->private_data, 0, sizeof(struct na_ofi_private_data));
+    NA_OFI_PRIVATE_DATA(na_class)->no_wait = no_wait;
 
     /* Initialize queue / mutex */
     HG_QUEUE_INIT(&NA_OFI_PRIVATE_DATA(na_class)->nop_unexpected_op_queue);
@@ -1730,7 +1740,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     /* Create endpoint */
     ret = na_ofi_endpoint_open(NA_OFI_PRIVATE_DATA(na_class)->nop_domain,
-        node, service, auth_key, &NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint);
+        node, service, auth_key, NA_OFI_PRIVATE_DATA(na_class)->no_wait,
+        &NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not create endpoint for %s, %s", node, service);
         goto out;
@@ -3227,10 +3238,11 @@ static int
 na_ofi_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
-    int fd = 0, rc;
+    int fd = -1, rc;
 
     /* Only sockets provider supports wait on fd for now */
-    if (priv->nop_domain->nod_prov_type != NA_OFI_PROV_SOCKETS)
+    if (priv->nop_domain->nod_prov_type != NA_OFI_PROV_SOCKETS
+        || priv->no_wait)
         goto out;
 
     rc = fi_control(&priv->nop_endpoint->noe_cq->fid, FI_GETWAIT, &fd);
@@ -3253,7 +3265,8 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
     struct fid *fids[1];
 
     /* Only sockets provider supports wait on fd for now */
-    if (priv->nop_domain->nod_prov_type != NA_OFI_PROV_SOCKETS)
+    if (priv->nop_domain->nod_prov_type != NA_OFI_PROV_SOCKETS
+        || priv->no_wait)
         return NA_TRUE;
 
     fids[0] = &priv->nop_endpoint->noe_cq->fid;

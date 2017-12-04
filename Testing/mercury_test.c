@@ -95,12 +95,7 @@ hg_test_request_progress(unsigned int timeout, void *arg)
     hg_context_t *context = (hg_context_t *) arg;
     int ret = HG_UTIL_SUCCESS;
 
-#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
-    (void) timeout;
-    if (HG_Progress(context, 0) != HG_SUCCESS)
-#else
     if (HG_Progress(context, timeout) != HG_SUCCESS)
-#endif
         ret = HG_UTIL_FAIL;
 
     return ret;
@@ -316,6 +311,11 @@ HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
 
     memset(&hg_init_info, 0, sizeof(struct hg_init_info));
     hg_init_info.na_class = hg_test_na_class_g;
+#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
+    hg_init_info.na_init_info.progress_mode = NA_NO_BLOCK;
+#else
+    hg_init_info.na_init_info.progress_mode = NA_DEFAULT;
+#endif
     ret = HG_Hl_init_opt(NULL, 0, &hg_init_info);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not initialize Mercury\n");
@@ -401,6 +401,11 @@ HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
 
     memset(&hg_init_info, 0, sizeof(struct hg_init_info));
     hg_init_info.na_class = hg_test_na_class_g;
+#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
+    hg_init_info.na_init_info.progress_mode = NA_NO_BLOCK;
+#else
+    hg_init_info.na_init_info.progress_mode = NA_DEFAULT;
+#endif
     ret = HG_Hl_init_opt(NULL, 0, &hg_init_info);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not initialize Mercury\n");

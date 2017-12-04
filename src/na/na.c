@@ -1725,7 +1725,7 @@ done:
 int
 NA_Poll_get_fd(na_class_t *na_class, na_context_t *context)
 {
-    int ret = 0;
+    int ret = -1;
 
     if (!na_class) {
         NA_LOG_ERROR("NULL NA class");
