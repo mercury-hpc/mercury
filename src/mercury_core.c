@@ -2814,7 +2814,9 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
 
         hg_cb_info.ret = hg_handle->ret;
         switch (hg_handle->op_type) {
+#ifdef HG_HAS_SELF_FORWARD
             case HG_CORE_FORWARD_SELF:
+#endif
             case HG_CORE_FORWARD:
                 hg_cb = hg_handle->request_callback;
                 hg_cb_info.arg = hg_handle->request_arg;
@@ -2827,12 +2829,14 @@ hg_core_trigger_entry(struct hg_handle *hg_handle)
                 hg_cb_info.type = HG_CB_RESPOND;
                 hg_cb_info.info.respond.handle = (hg_handle_t) hg_handle;
                 break;
+#ifdef HG_HAS_SELF_FORWARD
             case HG_CORE_RESPOND_SELF:
                 hg_cb = hg_core_self_cb;
                 hg_cb_info.arg = hg_handle->response_arg;
                 hg_cb_info.type = HG_CB_RESPOND;
                 hg_cb_info.info.respond.handle = (hg_handle_t) hg_handle;
                 break;
+#endif
             case HG_CORE_NO_RESPOND:
                 /* Nothing */
                 break;
