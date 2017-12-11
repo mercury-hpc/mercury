@@ -845,7 +845,7 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
     na_addr_t addr)
 {
     char *buf_ptr = buf;
-    na_size_t buf_size_used, plugin_buf_size;
+    na_size_t buf_size_used = 0, plugin_buf_size = 0;
     na_return_t ret = NA_SUCCESS;
 
     if (!na_class) {
@@ -871,21 +871,27 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
         goto done;
     }
 
-    /* Automatically prepend string by plugin name with class delimiter */
-    buf_size_used = strlen(na_class->class_name) + 1;
-    if (buf_ptr) {
-        if (*buf_size > buf_size_used) {
-            strcpy(buf_ptr, na_class->class_name);
-            strcat(buf_ptr, NA_CLASS_DELIMITER);
-            buf_ptr += buf_size_used;
-            plugin_buf_size = *buf_size - buf_size_used;
-        } else {
-            NA_LOG_ERROR("Buffer size too small to copy addr");
-            ret = NA_SIZE_ERROR;
-            goto done;
-        }
+    /* Automatically prepend string by plugin name with class delimiter,
+     * except for MPI plugin (special case, because of generated string) */
+    if (strcmp(na_class->class_name, "mpi") == 0) {
+        buf_size_used = 0;
+        plugin_buf_size = *buf_size;
     } else {
-        plugin_buf_size = 0;
+        buf_size_used = strlen(na_class->class_name) + 1;
+        if (buf_ptr) {
+            if (*buf_size > buf_size_used) {
+                strcpy(buf_ptr, na_class->class_name);
+                strcat(buf_ptr, NA_CLASS_DELIMITER);
+                buf_ptr += buf_size_used;
+                plugin_buf_size = *buf_size - buf_size_used;
+            } else {
+                NA_LOG_ERROR("Buffer size too small to copy addr");
+                ret = NA_SIZE_ERROR;
+                goto done;
+            }
+        } else {
+            plugin_buf_size = 0;
+        }
     }
 
     ret = na_class->addr_to_string(na_class, buf_ptr, &plugin_buf_size, addr);

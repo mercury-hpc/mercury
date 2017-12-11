@@ -886,7 +886,7 @@ const char *
 NA_MPI_Get_port_name(na_class_t *na_class)
 {
     int my_rank;
-    static char port_name[MPI_MAX_PORT_NAME];
+    static char port_name[MPI_MAX_PORT_NAME + 16];
 
     MPI_Comm_rank(NA_MPI_PRIVATE_DATA(na_class)->intra_comm, &my_rank);
 
@@ -1427,7 +1427,7 @@ na_mpi_addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
 {
     struct na_mpi_addr *mpi_addr = NULL;
     na_size_t string_len;
-    char port_name[MPI_MAX_PORT_NAME];
+    char port_name[MPI_MAX_PORT_NAME + 16];
     na_return_t ret = NA_SUCCESS;
 
     mpi_addr = (struct na_mpi_addr *) addr;
