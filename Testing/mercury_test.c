@@ -11,6 +11,10 @@
 #include "mercury_test.h"
 #include "na_test_getopt.h"
 #include "mercury_rpc_cb.h"
+#ifdef HG_TESTING_HAS_CRAY_DRC
+# include <mercury_test_drc.h>
+#endif
+
 #include "mercury_hl.h"
 
 #include <stdlib.h>
@@ -291,7 +295,17 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_parse_options(argc, argv, hg_test_info);
 
     if (hg_test_info->auth) {
-        /* Nothing for now */
+#ifdef HG_TESTING_HAS_CRAY_DRC
+        char hg_test_drc_key[NA_TEST_MAX_ADDR_NAME] = { '\0' };
+
+        ret = hg_test_drc_acquire(argc, argv, hg_test_info);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not acquire DRC auth key");
+            goto done;
+        }
+        sprintf(hg_test_drc_key, "%u", hg_test_info->cookie);
+        hg_test_info->na_test_info.key = strdup(hg_test_drc_key);
+#endif
     }
 
     /* Initialize NA test layer */
@@ -432,6 +446,12 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
         HG_LOG_ERROR("Could not finalize NA test interface");
         ret = HG_NA_ERROR;
         goto done;
+    }
+
+    if (hg_test_info->auth) {
+#ifdef HG_TESTING_HAS_CRAY_DRC
+        hg_test_drc_release(hg_test_info);
+#endif
     }
 
 done:

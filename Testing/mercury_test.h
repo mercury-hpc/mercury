@@ -39,6 +39,10 @@ struct hg_test_info {
     hg_bool_t listen;
     hg_bool_t self_forward;
     hg_bool_t auth;
+#ifdef HG_TESTING_HAS_CRAY_DRC
+    uint32_t credential;
+    uint32_t cookie;
+#endif
     struct na_test_info na_test_info;
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     hg_thread_pool_t *thread_pool;

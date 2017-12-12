@@ -89,6 +89,22 @@ endif()
 if(NA_USE_OFI)
   set(NA_OFI_TESTING_PROTOCOL "tcp" CACHE STRING "Protocol(s) used for testing (e.g., sockets;psm2;verbs).")
   mark_as_advanced(NA_OFI_TESTING_PROTOCOL)
+
+  option(NA_OFI_TESTING_USE_CRAY_DRC
+    "Use Cray DRC to allow multi-job communication." OFF)
+  if(NA_OFI_TESTING_USE_CRAY_DRC)
+    find_package(DRC REQUIRED)
+    if(DRC_FOUND)
+      set(HG_TESTING_HAS_CRAY_DRC 1)
+      include_directories(${DRC_INCLUDE_DIRS})
+      set(MERCURY_TEST_EXT_LIB_DEPENDENCIES
+        ${MERCURY_TEST_EXT_LIB_DEPENDENCIES}
+        ${DRC_LIBRARIES}
+      )
+    else()
+      message(FATAL_ERROR "Could not find Cray DRC.")
+    endif()
+  endif()
 endif()
 
 if(NA_USE_SM)
@@ -213,16 +229,34 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/na)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
 
 #------------------------------------------------------------------------------
-# mercury_test : Lib used by tests contains main test initialization etc
+# Set sources for mercury_test library
 #------------------------------------------------------------------------------
-add_library(mercury_test STATIC mercury_test.c mercury_rpc_cb.c)
-target_link_libraries(mercury_test mercury_hl na_test ${MERCURY_TEST_EXT_LIB_DEPENDENCIES})
+set(MERCURY_TEST_SRCS
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_test.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_rpc_cb.c
+)
+
+if(NA_OFI_TESTING_USE_CRAY_DRC)
+  set(MERCURY_TEST_SRCS
+    ${MERCURY_TEST_SRCS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/mercury_test_drc.c
+  )
+endif()
+
+#----------------------------------------------------------------------------
+# Libraries
+#----------------------------------------------------------------------------
+
+add_library(mercury_test STATIC ${MERCURY_TEST_SRCS})
+target_link_libraries(mercury_test mercury_hl na_test
+  ${MERCURY_TEST_EXT_LIB_DEPENDENCIES}
+)
 if(MERCURY_ENABLE_COVERAGE)
   set_coverage_flags(mercury_test)
 endif()
 
 #------------------------------------------------------------------------------
-# Set up test
+# Tests and executables
 #------------------------------------------------------------------------------
 
 # Server used for testing

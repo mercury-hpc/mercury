@@ -38,6 +38,7 @@ struct na_test_info {
     int max_number_of_peers;    /* Max number of peers */
 #ifdef MERCURY_HAS_PARALLEL_TESTING
     MPI_Comm mpi_comm;          /* MPI comm */
+    na_bool_t mpi_no_finalize;  /* Prevent from finalizing MPI */
 #endif
     int mpi_comm_rank;          /* MPI comm rank */
     int mpi_comm_size;          /* MPI comm size */

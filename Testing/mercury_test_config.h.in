@@ -50,4 +50,7 @@
 /* Define if has <sys/prctl.h> */
 #cmakedefine HG_TESTING_HAS_SYSPRCTL_H
 
+/* Define if has <rdmacred.h> */
+#cmakedefine HG_TESTING_HAS_CRAY_DRC
+
 #endif /* MERCURY_TEST_CONFIG_H */

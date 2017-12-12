@@ -167,12 +167,20 @@ static void
 na_test_mpi_init(struct na_test_info *na_test_info)
 {
     int mpi_initialized = 0;
+    int mpi_finalized = 0;
 
     na_test_info->mpi_comm = MPI_COMM_WORLD; /* default */
 
     MPI_Initialized(&mpi_initialized);
-    if (mpi_initialized)
+    if (mpi_initialized) {
+        NA_LOG_WARNING("MPI was already initialized");
         goto done;
+    }
+    MPI_Finalized(&mpi_finalized);
+    if (mpi_finalized) {
+        NA_LOG_ERROR("MPI was already finalized");
+        goto done;
+    }
 
 #ifdef NA_MPI_HAS_GNI_SETUP
     /* Setup GNI job before initializing MPI */
@@ -226,7 +234,7 @@ na_test_mpi_finalize(struct na_test_info *na_test_info)
     int mpi_finalized = 0;
 
     MPI_Finalized(&mpi_finalized);
-    if (!mpi_finalized) {
+    if (!mpi_finalized && !na_test_info->mpi_no_finalize) {
         if (na_test_info->mpi_static)
             MPI_Comm_free(&na_test_info->mpi_comm);
         MPI_Finalize();
@@ -388,6 +396,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 #else
     na_init_info.progress_mode = NA_DEFAULT;
 #endif
+    na_init_info.auth_key = na_test_info->key;
 
     printf("# Initializing NA with %s\n", info_string);
     na_test_info->na_class = NA_Initialize_opt(info_string,
