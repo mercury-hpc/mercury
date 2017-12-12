@@ -9,8 +9,6 @@
  */
 
 #include "mercury_test.h"
-#include "na_test.h"
-
 #include "mercury_time.h"
 #include "mercury_atomic.h"
 
@@ -36,9 +34,6 @@
 #define MAX_MSG_SIZE (MERCURY_TESTING_BUFFER_SIZE * 1024 * 1024)
 #define MAX_HANDLES 16
 
-extern int na_test_comm_rank_g;
-extern int na_test_comm_size_g;
-
 extern hg_id_t hg_test_perf_bulk_read_id_g;
 
 struct hg_test_perf_args {
@@ -62,9 +57,8 @@ hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
 }
 
 static hg_return_t
-measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
-    hg_addr_t addr, size_t total_size, unsigned int nhandles,
-    hg_request_class_t *request_class)
+measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
+    unsigned int nhandles)
 {
     bulk_write_in_t in_struct;
     char *bulk_buf;
@@ -94,21 +88,22 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     /* Create handles */
     handles = malloc(nhandles * sizeof(hg_handle_t));
     for (i = 0; i < nhandles; i++) {
-        ret = HG_Create(context, addr, hg_test_perf_bulk_read_id_g, &handles[i]);
+        ret = HG_Create(hg_test_info->context, hg_test_info->target_addr,
+            hg_test_perf_bulk_read_id_g, &handles[i]);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not start call\n");
             goto done;
         }
     }
 
-    request = hg_request_create(request_class);
+    request = hg_request_create(hg_test_info->request_class);
     hg_atomic_init32(&args.op_completed_count, 0);
     args.op_count = nhandles;
     args.request = request;
 
     /* Register memory */
-    ret = HG_Bulk_create(hg_class, 1, buf_ptrs, (hg_size_t *) buf_sizes,
-        HG_BULK_READWRITE, &bulk_handle);
+    ret = HG_Bulk_create(hg_test_info->hg_class, 1, buf_ptrs,
+        (hg_size_t *) buf_sizes, HG_BULK_READWRITE, &bulk_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         goto done;
@@ -135,7 +130,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         hg_atomic_set32(&args.op_completed_count, 0);
     }
 
-    NA_Test_barrier();
+    NA_Test_barrier(&hg_test_info->na_test_info);
 
     /* Bulk data benchmark */
     for (avg_iter = 0; avg_iter < loop; avg_iter++) {
@@ -153,7 +148,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
-        NA_Test_barrier();
+        NA_Test_barrier(&hg_test_info->na_test_info);
         hg_time_get_current(&t2);
         time_read += hg_time_to_double(hg_time_subtract(t2, t1));
 
@@ -162,11 +157,12 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
 #ifdef MERCURY_TESTING_PRINT_PARTIAL
         read_bandwidth = nmbytes
-            * (double) (nhandles * (avg_iter + 1) * (unsigned int) na_test_comm_size_g)
+            * (double) (nhandles * (avg_iter + 1) *
+                (unsigned int) hg_test_info->na_test_info.mpi_comm_size)
             / time_read;
 
         /* At this point we have received everything so work out the bandwidth */
-        if (na_test_comm_rank_g == 0)
+        if (hg_test_info->na_test_info.mpi_comm_rank == 0)
             fprintf(stdout, "%-*d%*.*f\r", 10, (int) nbytes, NWIDTH,
                 NDIGITS, read_bandwidth);
 #endif
@@ -183,15 +179,16 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     }
 #ifndef MERCURY_TESTING_PRINT_PARTIAL
     read_bandwidth = nmbytes
-        * (double) (nhandles * loop * (unsigned int) na_test_comm_size_g)
+        * (double) (nhandles * loop *
+            (unsigned int) hg_test_info->na_test_info.mpi_comm_size)
         / time_read;
 
     /* At this point we have received everything so work out the bandwidth */
-    if (na_test_comm_rank_g == 0)
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
         fprintf(stdout, "%-*d%*.*f", 10, (int) nbytes, NWIDTH, NDIGITS,
             read_bandwidth);
 #endif
-    if (na_test_comm_rank_g == 0) fprintf(stdout, "\n");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0) fprintf(stdout, "\n");
 
     /* Free memory handle */
     ret = HG_Bulk_free(bulk_handle);
@@ -220,18 +217,14 @@ done:
 int
 main(int argc, char *argv[])
 {
-    hg_class_t *hg_class = NULL;
-    hg_context_t *context = NULL;
-    hg_request_class_t *request_class = NULL;
-    size_t size;
-    hg_addr_t addr;
+    struct hg_test_info hg_test_info = { 0 };
     unsigned int nhandles;
+    size_t size;
 
-    hg_class = HG_Test_client_init(argc, argv, &addr, &na_test_comm_rank_g,
-            &context, &request_class);
+    HG_Test_init(argc, argv, &hg_test_info);
 
     for (nhandles = 1; nhandles <= MAX_HANDLES; nhandles *= 2) {
-        if (na_test_comm_rank_g == 0) {
+        if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
             fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
             fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with "
                 "%u handle(s)\n",
@@ -245,13 +238,12 @@ main(int argc, char *argv[])
         }
 
         for (size = 1; size <= MAX_MSG_SIZE; size *= 2)
-            measure_bulk_transfer(hg_class, context, addr, size, nhandles,
-                request_class);
+            measure_bulk_transfer(&hg_test_info, size, nhandles);
 
         fprintf(stdout, "\n");
     }
 
-    HG_Test_finalize(hg_class);
+    HG_Test_finalize(&hg_test_info);
 
     return EXIT_SUCCESS;
 }

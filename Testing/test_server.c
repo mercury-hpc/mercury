@@ -10,14 +10,8 @@
 
 #include "mercury_test.h"
 
-#include "mercury_atomic.h"
-#include "mercury_thread.h"
-
 #include <stdio.h>
 #include <stdlib.h>
-
-extern hg_atomic_int32_t hg_test_finalizing_count_g;
-extern hg_addr_t *hg_addr_table;
 
 #define HG_TEST_PROGRESS_TIMEOUT    100
 #define HG_TEST_TRIGGER_TIMEOUT     HG_MAX_IDLE_TIME
@@ -27,11 +21,14 @@ static HG_THREAD_RETURN_TYPE
 hg_progress_thread(void *arg)
 {
     hg_context_t *context = (hg_context_t *) arg;
+    hg_class_t *hg_class = HG_Context_get_class(context);
+    struct hg_test_info *hg_test_info =
+        (struct hg_test_info *) HG_Class_get_data(hg_class);
     HG_THREAD_RETURN_TYPE tret = (HG_THREAD_RETURN_TYPE) 0;
     hg_return_t ret = HG_SUCCESS;
 
     do {
-        if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
+        if (hg_atomic_cas32(&hg_test_info->finalizing_count, 1, 1))
             break;
 
         ret = HG_Progress(context, HG_TEST_PROGRESS_TIMEOUT);
@@ -49,38 +46,39 @@ hg_progress_thread(void *arg)
 int
 main(int argc, char *argv[])
 {
-    hg_class_t *hg_class = NULL;
-    hg_context_t *context = NULL;
-    unsigned int number_of_peers;
+    struct hg_test_info hg_test_info = { 0 };
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     hg_thread_t progress_thread;
 #endif
     hg_return_t ret = HG_SUCCESS;
 
-    hg_class = HG_Test_server_init(argc, argv, &hg_addr_table,
-            NULL, &number_of_peers, &context);
+    /* Force to listen */
+    hg_test_info.listen = HG_TRUE;
+    hg_test_info.na_test_info.listen = NA_TRUE;
+
+    HG_Test_init(argc, argv, &hg_test_info);
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
-    hg_thread_create(&progress_thread, hg_progress_thread, context);
+    hg_thread_create(&progress_thread, hg_progress_thread, hg_test_info.context);
 
     do {
-        if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
+        if (hg_atomic_cas32(&hg_test_info.finalizing_count, 1, 1))
             break;
 
-        ret = HG_Trigger(context, HG_TEST_TRIGGER_TIMEOUT, 1, NULL);
+        ret = HG_Trigger(hg_test_info.context, HG_TEST_TRIGGER_TIMEOUT, 1, NULL);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
 #else
     do {
         unsigned int actual_count = 0;
 
         do {
-            ret = HG_Trigger(context, 0, 1, &actual_count);
+            ret = HG_Trigger(hg_test_info.context, 0, 1, &actual_count);
         } while ((ret == HG_SUCCESS) && actual_count);
 
-        if (hg_atomic_cas32(&hg_test_finalizing_count_g, 1, 1))
+        if (hg_atomic_cas32(&hg_test_info.finalizing_count, 1, 1))
             break;
 
         /* Use same value as HG_TEST_TRIGGER_TIMEOUT for convenience */
-        ret = HG_Progress(context, HG_TEST_TRIGGER_TIMEOUT);
+        ret = HG_Progress(hg_test_info.context, HG_TEST_TRIGGER_TIMEOUT);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
 #endif
 
@@ -88,7 +86,7 @@ main(int argc, char *argv[])
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     hg_thread_join(progress_thread);
 #endif
-    HG_Test_finalize(hg_class);
+    HG_Test_finalize(&hg_test_info);
 
     return EXIT_SUCCESS;
 }

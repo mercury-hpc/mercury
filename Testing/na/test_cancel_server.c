@@ -321,15 +321,16 @@ test_bulk_prepare(struct na_test_params *params)
 int
 main(int argc, char *argv[])
 {
-    unsigned int number_of_peers;
-    unsigned int peer;
+    struct na_test_info na_test_info = { 0 };
+    int peer;
     struct na_test_params params;
     na_return_t na_ret;
 
     /* Initialize the interface */
-    params.na_class = NA_Test_server_init(argc, argv, NA_TRUE, NULL, NULL,
-        &number_of_peers);
+    na_test_info.listen = NA_TRUE;
+    NA_Test_init(argc, argv, &na_test_info);
 
+    params.na_class = na_test_info.na_class;
     params.context = NA_Context_create(params.na_class);
 
     /* Allocate send/recv/bulk bufs */
@@ -344,7 +345,7 @@ main(int argc, char *argv[])
     params.bulk_size = NA_TEST_BULK_SIZE;
     params.bulk_buf = (int*) malloc(params.bulk_size * sizeof(int));
 
-    for (peer = 0; peer < number_of_peers; peer++) {
+    for (peer = 0; peer < na_test_info.max_number_of_peers; peer++) {
         unsigned int i;
         na_op_id_t op_id = NA_OP_ID_NULL;
 
@@ -403,7 +404,7 @@ main(int argc, char *argv[])
 
     NA_Context_destroy(params.na_class, params.context);
 
-    NA_Test_finalize(params.na_class);
+    NA_Test_finalize(&na_test_info);
 
     return EXIT_SUCCESS;
 }

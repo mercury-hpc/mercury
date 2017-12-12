@@ -339,16 +339,16 @@ main(int argc, char *argv[])
     ssize_t nbyte;
 
 #ifndef MERCURY_HAS_ADVANCED_MACROS
+    struct hg_test_info hg_test_info = { 0 };
+
     printf("Initializing...\n");
-    /* Initialize the interface (for convenience, shipper_test_client_init
-     * initializes the network interface with the selected plugin)
-     */
-    hg_class = HG_Test_client_init(argc, argv, &addr, &rank, &context,
-            &request_class);
-    if (!hg_class) {
-        fprintf(stderr, "Error in client_posix_init\n");
-        return EXIT_FAILURE;
-    }
+    /* Initialize the interface */
+    HG_Test_init(argc, argv, &hg_test_info);
+    hg_class = hg_test_info.hg_class;
+    context = hg_test_info.context;
+    request_class = hg_test_info.request_class;
+    addr = hg_test_info.target_addr;
+    rank = hg_test_info.na_test_info.mpi_comm_rank;
 #endif
     sprintf(filename, MERCURY_TESTING_TEMP_DIRECTORY "/posix_test%d", rank);
 
@@ -428,7 +428,7 @@ main(int argc, char *argv[])
 #ifndef MERCURY_HAS_ADVANCED_MACROS
     printf("(%d) Finalizing...\n", rank);
 
-    HG_Test_finalize(hg_class);
+    HG_Test_finalize(&hg_test_info);
 #endif
 
     return EXIT_SUCCESS;

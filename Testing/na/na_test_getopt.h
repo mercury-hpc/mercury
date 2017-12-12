@@ -58,9 +58,6 @@ enum {
 extern "C" {
 #endif
 
-extern int na_test_opt_ind_g; /* token pointer */
-extern const char *na_test_opt_arg_g; /* flag argument (or value) */
-
 int
 na_test_getopt(int argc, char *argv[], const char *opts,
         const struct na_test_opt *l_opts);

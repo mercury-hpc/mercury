@@ -20,11 +20,11 @@ using std::cerr;
 // The main function as this class should only be used by this program
 int main(int argc, char* argv[])
 {
-  ShipperTestDriver d;
+  HGTestDriver d;
   return d.Main(argc, argv);
 }
 //----------------------------------------------------------------------------
-ShipperTestDriver::ShipperTestDriver()
+HGTestDriver::HGTestDriver()
 {
   this->AllowErrorInOutput = 0;
   this->TimeOut = 300;
@@ -32,11 +32,11 @@ ShipperTestDriver::ShipperTestDriver()
   this->TestServer = 0;
 }
 //----------------------------------------------------------------------------
-ShipperTestDriver::~ShipperTestDriver()
+HGTestDriver::~HGTestDriver()
 {
 }
 //----------------------------------------------------------------------------
-void ShipperTestDriver::SeparateArguments(const char* str,
+void HGTestDriver::SeparateArguments(const char* str,
                                      vector<string>& flags)
 {
   string arg = str;
@@ -56,7 +56,7 @@ void ShipperTestDriver::SeparateArguments(const char* str,
   flags.push_back(arg.substr(pos1, pos2-pos1));
 }
 //----------------------------------------------------------------------------
-void ShipperTestDriver::CollectConfiguredOptions()
+void HGTestDriver::CollectConfiguredOptions()
 {
   // try to make sure that this timesout before dart so it can kill all the processes
   this->TimeOut = DART_TESTING_TIMEOUT - 10.0;
@@ -66,8 +66,8 @@ void ShipperTestDriver::CollectConfiguredOptions()
     }
 
   // now find all the mpi information if mpi run is set
-#ifdef MPIEXEC
-  this->MPIRun = MPIEXEC;
+#ifdef MPIEXEC_EXECUTABLE
+  this->MPIRun = MPIEXEC_EXECUTABLE;
 #else
   return;
 #endif
@@ -110,7 +110,7 @@ static string FixExecutablePath(const string& path)
   return path;
 }
 //----------------------------------------------------------------------------
-int ShipperTestDriver::ProcessCommandLine(int argc, char* argv[])
+int HGTestDriver::ProcessCommandLine(int argc, char* argv[])
 {
   this->ArgStart = 1;
   int i;
@@ -147,7 +147,7 @@ int ShipperTestDriver::ProcessCommandLine(int argc, char* argv[])
 }
 //----------------------------------------------------------------------------
 void
-ShipperTestDriver::CreateCommandLine(vector<const char*>& commandLine,
+HGTestDriver::CreateCommandLine(vector<const char*>& commandLine,
                                 const char* cmd,
                                 const char* numProc,
                                 int argStart,
@@ -182,7 +182,7 @@ ShipperTestDriver::CreateCommandLine(vector<const char*>& commandLine,
   commandLine.push_back(0);
 }
 //----------------------------------------------------------------------------
-int ShipperTestDriver::StartServer(mercury_sysProcess* server, const char* name,
+int HGTestDriver::StartServer(mercury_sysProcess* server, const char* name,
                               vector<char>& out,
                               vector<char>& err)
 {
@@ -190,7 +190,7 @@ int ShipperTestDriver::StartServer(mercury_sysProcess* server, const char* name,
     {
     return 1;
     }
-  cerr << "ShipperTestDriver: starting process " << name << "\n";
+  cerr << "HGTestDriver: starting process " << name << "\n";
   mercury_sysProcess_SetTimeout(server, this->TimeOut);
   mercury_sysProcess_Execute(server);
   int foundWaiting = 0;
@@ -207,29 +207,29 @@ int ShipperTestDriver::StartServer(mercury_sysProcess* server, const char* name,
     }
   if(foundWaiting)
     {
-    cerr << "ShipperTestDriver: " << name << " sucessfully started.\n";
+    cerr << "HGTestDriver: " << name << " sucessfully started.\n";
     return 1;
     }
   else
     {
-    cerr << "ShipperTestDriver: " << name << " never started.\n";
+    cerr << "HGTestDriver: " << name << " never started.\n";
     mercury_sysProcess_Kill(server);
     return 0;
     }
 }
 //----------------------------------------------------------------------------
-int ShipperTestDriver::StartClient(mercury_sysProcess* client, const char* name)
+int HGTestDriver::StartClient(mercury_sysProcess* client, const char* name)
 {
   if(!client)
     {
     return 1;
     }
-  cerr << "ShipperTestDriver: starting process " << name << "\n";
+  cerr << "HGTestDriver: starting process " << name << "\n";
   mercury_sysProcess_SetTimeout(client, this->TimeOut);
   mercury_sysProcess_Execute(client);
   if(mercury_sysProcess_GetState(client) == mercury_sysProcess_State_Executing)
     {
-    cerr << "ShipperTestDriver: " << name << " sucessfully started.\n";
+    cerr << "HGTestDriver: " << name << " sucessfully started.\n";
     return 1;
     }
   else
@@ -240,17 +240,17 @@ int ShipperTestDriver::StartClient(mercury_sysProcess* client, const char* name)
     }
 }
 //----------------------------------------------------------------------------
-void ShipperTestDriver::Stop(mercury_sysProcess* p, const char* name)
+void HGTestDriver::Stop(mercury_sysProcess* p, const char* name)
 {
   if(p)
     {
-    cerr << "ShipperTestDriver: killing process " << name << "\n";
+    cerr << "HGTestDriver: killing process " << name << "\n";
     mercury_sysProcess_Kill(p);
     mercury_sysProcess_WaitForExit(p, 0);
     }
 }
 //----------------------------------------------------------------------------
-int ShipperTestDriver::OutputStringHasError(const char* pname, string& output)
+int HGTestDriver::OutputStringHasError(const char* pname, string& output)
 {
   const char* possibleMPIErrors[] = {
     "error",
@@ -311,9 +311,9 @@ int ShipperTestDriver::OutputStringHasError(const char* pname, string& output)
           }
         if ( found )
           {
-          cerr << "ShipperTestDriver: ***** Test will fail, because the string: \""
+          cerr << "HGTestDriver: ***** Test will fail, because the string: \""
             << possibleMPIErrors[i]
-            << "\"\nShipperTestDriver: ***** was found in the following output from the "
+            << "\"\nHGTestDriver: ***** was found in the following output from the "
             << pname << ":\n\""
             << it->c_str() << "\"\n";
           return 1;
@@ -328,7 +328,7 @@ int ShipperTestDriver::OutputStringHasError(const char* pname, string& output)
   mercury_sysProcess_Delete(client); \
   mercury_sysProcess_Delete(server);
 //----------------------------------------------------------------------------
-int ShipperTestDriver::Main(int argc, char* argv[])
+int HGTestDriver::Main(int argc, char* argv[])
 {
 #ifdef MERCURY_TEST_INIT_COMMAND
   // run user-specified commands before initialization.
@@ -364,7 +364,7 @@ int ShipperTestDriver::Main(int argc, char* argv[])
     if(!server)
       {
       HG_CLEAN_PROCESSES;
-      cerr << "ShipperTestDriver: Cannot allocate mercury_sysProcess to run the server.\n";
+      cerr << "HGTestDriver: Cannot allocate mercury_sysProcess to run the server.\n";
       return 1;
       }
     }
@@ -372,7 +372,7 @@ int ShipperTestDriver::Main(int argc, char* argv[])
   if(!client)
     {
     HG_CLEAN_PROCESSES;
-    cerr << "ShipperTestDriver: Cannot allocate mercury_sysProcess to run the client.\n";
+    cerr << "HGTestDriver: Cannot allocate mercury_sysProcess to run the client.\n";
     return 1;
     }
 
@@ -411,7 +411,7 @@ int ShipperTestDriver::Main(int argc, char* argv[])
   if(!this->StartServer(server, "server",
       ServerStdOut, ServerStdErr))
     {
-    cerr << "ShipperTestDriver: Server never started.\n";
+    cerr << "HGTestDriver: Server never started.\n";
     HG_CLEAN_PROCESSES;
     return -1;
     }
@@ -482,7 +482,7 @@ int ShipperTestDriver::Main(int argc, char* argv[])
 
   if(mpiError)
     {
-    cerr << "ShipperTestDriver: Error string found in ouput, ShipperTestDriver returning "
+    cerr << "HGTestDriver: Error string found in ouput, HGTestDriver returning "
          << mpiError << "\n";
     return mpiError;
     }
@@ -491,9 +491,9 @@ int ShipperTestDriver::Main(int argc, char* argv[])
 }
 
 //----------------------------------------------------------------------------
-void ShipperTestDriver::ReportCommand(const char* const* command, const char* name)
+void HGTestDriver::ReportCommand(const char* const* command, const char* name)
 {
-  cerr << "ShipperTestDriver: " << name << " command is:\n";
+  cerr << "HGTestDriver: " << name << " command is:\n";
   for(const char* const * c = command; *c; ++c)
     {
     cerr << " \"" << *c << "\"";
@@ -502,24 +502,24 @@ void ShipperTestDriver::ReportCommand(const char* const* command, const char* na
 }
 
 //----------------------------------------------------------------------------
-int ShipperTestDriver::ReportStatus(mercury_sysProcess* process, const char* name)
+int HGTestDriver::ReportStatus(mercury_sysProcess* process, const char* name)
 {
   int result = 1;
   switch(mercury_sysProcess_GetState(process))
     {
     case mercury_sysProcess_State_Starting:
       {
-      cerr << "ShipperTestDriver: Never started " << name << " process.\n";
+      cerr << "HGTestDriver: Never started " << name << " process.\n";
       } break;
     case mercury_sysProcess_State_Error:
       {
-      cerr << "ShipperTestDriver: Error executing " << name << " process: "
+      cerr << "HGTestDriver: Error executing " << name << " process: "
            << mercury_sysProcess_GetErrorString(process)
            << "\n";
       } break;
     case mercury_sysProcess_State_Exception:
       {
-      cerr << "ShipperTestDriver: " << name
+      cerr << "HGTestDriver: " << name
                       << " process exited with an exception: ";
       switch(mercury_sysProcess_GetExitException(process))
         {
@@ -552,28 +552,28 @@ int ShipperTestDriver::ReportStatus(mercury_sysProcess* process, const char* nam
       } break;
     case mercury_sysProcess_State_Executing:
       {
-      cerr << "ShipperTestDriver: Never terminated " << name << " process.\n";
+      cerr << "HGTestDriver: Never terminated " << name << " process.\n";
       } break;
     case mercury_sysProcess_State_Exited:
       {
       result = mercury_sysProcess_GetExitValue(process);
-      cerr << "ShipperTestDriver: " << name << " process exited with code "
+      cerr << "HGTestDriver: " << name << " process exited with code "
                       << result << "\n";
       } break;
     case mercury_sysProcess_State_Expired:
       {
-      cerr << "ShipperTestDriver: killed " << name << " process due to timeout.\n";
+      cerr << "HGTestDriver: killed " << name << " process due to timeout.\n";
       } break;
     case mercury_sysProcess_State_Killed:
       {
-      cerr << "ShipperTestDriver: killed " << name << " process.\n";
+      cerr << "HGTestDriver: killed " << name << " process.\n";
       } break;
     }
   return result;
 }
 //----------------------------------------------------------------------------
 
-int ShipperTestDriver::WaitForLine(mercury_sysProcess* process, string& line,
+int HGTestDriver::WaitForLine(mercury_sysProcess* process, string& line,
                               double timeout,
                               vector<char>& out,
                               vector<char>& err)
@@ -675,7 +675,7 @@ int ShipperTestDriver::WaitForLine(mercury_sysProcess* process, string& line,
     }
 }
 //----------------------------------------------------------------------------
-void ShipperTestDriver::PrintLine(const char* pname, const char* line)
+void HGTestDriver::PrintLine(const char* pname, const char* line)
 {
   // if the name changed then the line is output from a different process
   if(this->CurrentPrintLineName != pname)
@@ -689,7 +689,7 @@ void ShipperTestDriver::PrintLine(const char* pname, const char* line)
   cerr.flush();
 }
 //----------------------------------------------------------------------------
-int ShipperTestDriver::WaitForAndPrintLine(const char* pname, mercury_sysProcess* process,
+int HGTestDriver::WaitForAndPrintLine(const char* pname, mercury_sysProcess* process,
                                       string& line, double timeout,
                                       vector<char>& out,
                                       vector<char>& err,
@@ -707,7 +707,7 @@ int ShipperTestDriver::WaitForAndPrintLine(const char* pname, mercury_sysProcess
   return pipe;
 }
 //----------------------------------------------------------------------------
-string ShipperTestDriver::GetDirectory(string location)
+string HGTestDriver::GetDirectory(string location)
 {
   return mercury_sys::SystemTools::GetParentDirectory(location.c_str());
 }

@@ -9,16 +9,9 @@
  */
 
 #include "mercury_test.h"
-#include "na_test.h"
+#include "na_test_getopt.h"
 #include "mercury_rpc_cb.h"
-
 #include "mercury_hl.h"
-
-#include "mercury_atomic.h"
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
-#include "mercury_thread_pool.h"
-#endif
-#include "mercury_thread_mutex.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -28,27 +21,41 @@
 /* Local Macros */
 /****************/
 
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
+
+/********************/
+/* Local Prototypes */
+/********************/
+
+static void
+hg_test_usage(const char *execname);
+
+static void
+hg_test_parse_options(int argc, char *argv[],
+    struct hg_test_info *hg_test_info);
+
+static hg_return_t
+hg_test_finalize_rpc(struct hg_test_info *hg_test_info);
+
+static hg_return_t
+hg_test_finalize_rpc_cb(const struct hg_cb_info *callback_info);
+
+static hg_return_t
+hg_test_finalize_cb(hg_handle_t handle);
+
+static void
+hg_test_register(hg_class_t *hg_class);
+
 /*******************/
 /* Local Variables */
 /*******************/
-static na_class_t *hg_test_na_class_g = NULL;
-static hg_bool_t hg_test_is_client_g = HG_FALSE;
-static hg_addr_t hg_test_addr_g = HG_ADDR_NULL;
-static int hg_test_rank_g = 0;
-static hg_request_class_t *hg_test_request_class_g = NULL;
 
-hg_bulk_t hg_test_local_bulk_handle_g = HG_BULK_NULL;
-hg_thread_mutex_t hg_test_local_bulk_handle_mutex_g;
-
-static char **hg_test_addr_name_table_g = NULL;
-static hg_addr_t *hg_test_addr_table_g = NULL;
-static unsigned int hg_test_addr_table_size_g = 0;
-
-extern na_bool_t na_test_use_self_g;
-
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
-hg_thread_pool_t *hg_test_thread_pool_g = NULL;
-#endif
+extern int na_test_opt_ind_g; /* token pointer */
+extern const char *na_test_opt_arg_g; /* flag argument (or value) */
+extern const char *na_test_short_opt_g;
+extern const struct na_test_opt na_test_opt_g[];
 
 /* test_rpc */
 hg_id_t hg_test_rpc_open_id_g = 0;
@@ -85,33 +92,86 @@ hg_id_t hg_test_nested2_id_g = 0;
 
 /* test_finalize */
 static hg_id_t hg_test_finalize_id_g = 0;
-static hg_id_t hg_test_finalize2_id_g = 0;
-hg_atomic_int32_t hg_test_finalizing_count_g;
 
 /*---------------------------------------------------------------------------*/
-static int
-hg_test_request_progress(unsigned int timeout, void *arg)
+static void
+hg_test_usage(const char *execname)
 {
-    hg_context_t *context = (hg_context_t *) arg;
-    int ret = HG_UTIL_SUCCESS;
-
-    if (HG_Progress(context, timeout) != HG_SUCCESS)
-        ret = HG_UTIL_FAIL;
-
-    return ret;
+    na_test_usage(execname);
 }
 
 /*---------------------------------------------------------------------------*/
-static int
-hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
+static void
+hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
 {
-    hg_context_t *context = (hg_context_t *) arg;
-    unsigned int actual_count = 0;
-    int ret = HG_UTIL_SUCCESS;
+    int opt;
 
-    if (HG_Trigger(context, timeout, 1, &actual_count)
-            != HG_SUCCESS) ret = HG_UTIL_FAIL;
-    *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
+    /* Parse pre-init info */
+    if (argc < 2) {
+        hg_test_usage(argv[0]);
+        exit(1);
+    }
+
+    while ((opt = na_test_getopt(argc, argv, na_test_short_opt_g,
+        na_test_opt_g)) != EOF) {
+        switch (opt) {
+            case 'h':
+                hg_test_usage(argv[0]);
+                exit(1);
+            case 'l':
+                /* listen */
+                hg_test_info->listen = NA_TRUE;
+                break;
+            case 'S':
+                /* self */
+                hg_test_info->self_forward = HG_TRUE;
+                break;
+            case 'a':
+                /* auth service */
+                hg_test_info->auth = HG_TRUE;
+                break;
+            default:
+                break;
+        }
+    }
+    na_test_opt_ind_g = 1;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_finalize_rpc(struct hg_test_info *hg_test_info)
+{
+    hg_request_t *request_object = NULL;
+    hg_handle_t handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    request_object = hg_request_create(hg_test_info->request_class);
+
+    ret = HG_Create(hg_test_info->context, hg_test_info->target_addr,
+        hg_test_finalize_id_g, &handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not create HG handle");
+        goto done;
+    }
+
+    /* Forward call to target addr */
+    ret = HG_Forward(handle, hg_test_finalize_rpc_cb, request_object, NULL);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not forward finalize call");
+        goto done;
+    }
+
+    hg_request_wait(request_object, HG_MAX_IDLE_TIME, NULL);
+
+    /* Complete */
+    ret = HG_Destroy(handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not destroy handle");
+        goto done;
+    }
+
+done:
+    hg_request_destroy(request_object);
 
     return ret;
 }
@@ -129,100 +189,30 @@ hg_test_finalize_rpc_cb(const struct hg_cb_info *callback_info)
 }
 
 /*---------------------------------------------------------------------------*/
-static void
-hg_test_finalize_rpc(void)
-{
-    hg_return_t hg_ret;
-    hg_handle_t handle;
-    hg_request_t *request_object = NULL;
-
-    request_object = hg_request_create(hg_test_request_class_g);
-
-    hg_ret = HG_Create(HG_CONTEXT_DEFAULT, hg_test_addr_g, hg_test_finalize_id_g,
-            &handle);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not forward call\n");
-    }
-
-    /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(handle, hg_test_finalize_rpc_cb, request_object, NULL);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not forward call\n");
-    }
-
-    hg_request_wait(request_object, HG_MAX_IDLE_TIME, NULL);
-
-    /* Complete */
-    hg_ret = HG_Destroy(handle);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not complete\n");
-    }
-
-    hg_request_destroy(request_object);
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-hg_test_finalize_rpc2(hg_addr_t addr)
-{
-    hg_return_t hg_ret;
-    hg_handle_t handle;
-
-    hg_ret = HG_Create(HG_CONTEXT_DEFAULT, addr, hg_test_finalize2_id_g, &handle);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not forward call\n");
-    }
-
-    /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(handle, NULL, NULL, NULL);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not forward call\n");
-    }
-
-    /* Complete */
-    hg_ret = HG_Destroy(handle);
-    if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not complete\n");
-    }
-}
-
-/*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_finalize2_cb(hg_handle_t handle)
+hg_test_finalize_cb(hg_handle_t handle)
 {
+    struct hg_test_info *hg_test_info =
+        (struct hg_test_info *) HG_Class_get_data(HG_Get_info(handle)->hg_class);
     hg_return_t ret = HG_SUCCESS;
 
-    hg_atomic_incr32(&hg_test_finalizing_count_g);
+    /* Increment finalize count */
+    hg_atomic_incr32(&hg_test_info->finalizing_count);
 
     /* Free handle and send response back */
     ret = HG_Respond(handle, NULL, NULL, NULL);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not respond\n");
-        return ret;
+        HG_LOG_ERROR("Could not respond");
+        goto done;
     }
 
-    HG_Destroy(handle);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_test_finalize_cb(hg_handle_t handle)
-{
-    hg_return_t ret = HG_SUCCESS;
-
-    /* Shut down other servers */
-    if (hg_test_addr_table_size_g > 1) {
-        unsigned int i;
-
-        for (i = 1; i < hg_test_addr_table_size_g; i++) {
-            hg_test_finalize_rpc2(hg_test_addr_table_g[i]);
-        }
+    ret = HG_Destroy(handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not destroy handle");
+        goto done;
     }
 
-    hg_test_finalize2_cb(handle);
-
+done:
     return ret;
 }
 
@@ -250,11 +240,6 @@ hg_test_register(hg_class_t *hg_class)
             "hg_test_bulk_seg_write", bulk_write_in_t, bulk_write_out_t,
             hg_test_bulk_seg_write_cb);
 
-//    /* test_pipeline */
-//    hg_test_pipeline_write_id_g = MERCURY_REGISTER(hg_class,
-//            "hg_test_pipeline_write", bulk_write_in_t, bulk_write_out_t,
-//            hg_test_pipeline_write_cb);
-//
 #ifndef _WIN32
     /* test_posix */
     hg_test_posix_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_open",
@@ -285,231 +270,167 @@ hg_test_register(hg_class_t *hg_class)
             void, overflow_out_t, hg_test_overflow_cb);
 
     /* test_nested */
-    hg_test_nested1_id_g = MERCURY_REGISTER(hg_class, "hg_test_nested",
-            void, void, hg_test_nested1_cb);
-    hg_test_nested2_id_g = MERCURY_REGISTER(hg_class, "hg_test_nested_forward",
-            void, void, hg_test_nested2_cb);
+//    hg_test_nested1_id_g = MERCURY_REGISTER(hg_class, "hg_test_nested",
+//            void, void, hg_test_nested1_cb);
+//    hg_test_nested2_id_g = MERCURY_REGISTER(hg_class, "hg_test_nested_forward",
+//            void, void, hg_test_nested2_cb);
 
     /* test_finalize */
     hg_test_finalize_id_g = MERCURY_REGISTER(hg_class, "hg_test_finalize",
             void, void, hg_test_finalize_cb);
-    hg_test_finalize2_id_g = MERCURY_REGISTER(hg_class, "hg_test_finalize2",
-            void, void, hg_test_finalize2_cb);
-}
-
-/*---------------------------------------------------------------------------*/
-hg_class_t *
-HG_Test_client_init(int argc, char *argv[], hg_addr_t *addr, int *rank,
-        hg_context_t **context, hg_request_class_t **request_class)
-{
-    char test_addr_name[NA_TEST_MAX_ADDR_NAME];
-    struct hg_init_info hg_init_info;
-    hg_return_t ret;
-
-    hg_test_na_class_g = NA_Test_client_init(argc, argv, test_addr_name,
-            NA_TEST_MAX_ADDR_NAME, &hg_test_rank_g);
-
-    memset(&hg_init_info, 0, sizeof(struct hg_init_info));
-    hg_init_info.na_class = hg_test_na_class_g;
-#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
-    hg_init_info.na_init_info.progress_mode = NA_NO_BLOCK;
-#else
-    hg_init_info.na_init_info.progress_mode = NA_DEFAULT;
-#endif
-    ret = HG_Hl_init_opt(NULL, 0, &hg_init_info);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize Mercury\n");
-        goto done;
-    }
-
-    /* Create request class */
-    hg_test_request_class_g = hg_request_init(hg_test_request_progress,
-        hg_test_request_trigger, HG_CONTEXT_DEFAULT);
-    if (!hg_test_request_class_g) {
-        HG_LOG_ERROR("Could not create HG request class");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    if (na_test_use_self_g) {
-        size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
-
-        /* Self addr */
-        HG_Addr_self(HG_CLASS_DEFAULT, &hg_test_addr_g);
-
-        /* In case of self we need the local thread pool */
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
-        hg_thread_mutex_init(&hg_test_local_bulk_handle_mutex_g);
-        hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &hg_test_thread_pool_g);
-        printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
-#endif
-
-        /* Create bulk buffer that can be used for receiving data */
-        HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, (hg_size_t *) &bulk_size,
-            HG_BULK_READWRITE, &hg_test_local_bulk_handle_g);
-    } else {
-        /* Look up addr using port name info */
-        ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, hg_test_request_class_g,
-                test_addr_name, &hg_test_addr_g, HG_MAX_IDLE_TIME);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not find addr %s\n", test_addr_name);
-            goto done;
-        }
-    }
-
-    /* Register routines */
-    hg_test_register(HG_CLASS_DEFAULT);
-
-    /* When finalize is called we need to free the addr etc */
-    hg_test_is_client_g = HG_TRUE;
-
-    if (addr) *addr = hg_test_addr_g;
-    if (rank) *rank = hg_test_rank_g;
-    if (context) *context = HG_CONTEXT_DEFAULT;
-    if (request_class) *request_class = hg_test_request_class_g;
-
-done:
-    return HG_CLASS_DEFAULT;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_class_t *
-HG_Test_server_init(int argc, char *argv[], hg_addr_t **addr_table,
-        unsigned int *addr_table_size, unsigned int *max_number_of_peers,
-        hg_context_t **context)
-{
-    size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
-    char *buf_ptr;
-    size_t i;
-    hg_return_t ret;
-    struct hg_init_info hg_init_info;
-
-    /* Call cleanup before doing anything */
-    HG_Cleanup();
-
-    hg_test_na_class_g = NA_Test_server_init(argc, argv, NA_FALSE,
-            &hg_test_addr_name_table_g, &hg_test_addr_table_size_g, max_number_of_peers);
-
-    /* Initalize atomic variable to finalize server */
-    hg_atomic_set32(&hg_test_finalizing_count_g, 0);
-
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
-    hg_thread_mutex_init(&hg_test_local_bulk_handle_mutex_g);
-    hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &hg_test_thread_pool_g);
-    printf("# Starting server with %d threads...\n", MERCURY_TESTING_NUM_THREADS);
-#endif
-
-    memset(&hg_init_info, 0, sizeof(struct hg_init_info));
-    hg_init_info.na_class = hg_test_na_class_g;
-#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
-    hg_init_info.na_init_info.progress_mode = NA_NO_BLOCK;
-#else
-    hg_init_info.na_init_info.progress_mode = NA_DEFAULT;
-#endif
-    ret = HG_Hl_init_opt(NULL, 0, &hg_init_info);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not initialize Mercury\n");
-        goto done;
-    }
-
-    /* Create request class */
-    hg_test_request_class_g = hg_request_init(hg_test_request_progress,
-        hg_test_request_trigger, HG_CONTEXT_DEFAULT);
-    if (!hg_test_request_class_g) {
-        HG_LOG_ERROR("Could not create HG request class");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    /* Register test routines */
-    hg_test_register(HG_CLASS_DEFAULT);
-
-    /* Create bulk buffer that can be used for receiving data */
-    HG_Bulk_create(HG_CLASS_DEFAULT, 1, NULL, (hg_size_t *) &bulk_size,
-        HG_BULK_READWRITE, &hg_test_local_bulk_handle_g);
-    HG_Bulk_access(hg_test_local_bulk_handle_g, 0, bulk_size,
-        HG_BULK_READWRITE, 1, (void **) &buf_ptr, NULL, NULL);
-    for (i = 0; i < bulk_size; i++) {
-        buf_ptr[i] = (char) i;
-    }
-
-    if (hg_test_addr_table_size_g > 1) {
-        hg_test_addr_table_g = (hg_addr_t *) malloc(hg_test_addr_table_size_g * sizeof(hg_addr_t));
-        for (i = 0; i < hg_test_addr_table_size_g; i++) {
-            ret = HG_Hl_addr_lookup_wait(HG_CONTEXT_DEFAULT, hg_test_request_class_g,
-                    hg_test_addr_name_table_g[i], &hg_test_addr_table_g[i], HG_MAX_IDLE_TIME);
-            if (ret != HG_SUCCESS) {
-                fprintf(stderr, "Could not find addr %s\n", hg_test_addr_name_table_g[i]);
-                goto done;
-            }
-        }
-    }
-    if (addr_table) *addr_table = hg_test_addr_table_g;
-    if (addr_table_size) *addr_table_size = hg_test_addr_table_size_g;
-
-    /* Used by CTest Test Driver */
-    printf("# Waiting for client...\n");
-    fflush(stdout);
-
-    if (context) *context = HG_CONTEXT_DEFAULT;
-
-done:
-    return HG_CLASS_DEFAULT;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Test_finalize(hg_class_t *hg_class)
+HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
+{
+    struct hg_init_info hg_init_info;
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Get HG test options */
+    hg_test_parse_options(argc, argv, hg_test_info);
+
+    if (hg_test_info->auth) {
+        /* Nothing for now */
+    }
+
+    /* Initialize NA test layer */
+    hg_test_info->na_test_info.extern_init = NA_TRUE;
+    if (NA_Test_init(argc, argv, &hg_test_info->na_test_info) != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not initialize NA test layer");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+
+    memset(&hg_init_info, 0, sizeof(struct hg_init_info));
+
+    /* Assign NA class */
+    hg_init_info.na_class = hg_test_info->na_test_info.na_class;
+
+    /* Set progress mode */
+#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
+    hg_init_info.na_init_info.progress_mode = NA_NO_BLOCK;
+#else
+    hg_init_info.na_init_info.progress_mode = NA_DEFAULT;
+#endif
+
+    /* Init HG HL with init options */
+    ret = HG_Hl_init_opt(NULL, 0, &hg_init_info);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not initialize HG HL");
+        goto done;
+    }
+    hg_test_info->hg_class = HG_CLASS_DEFAULT;
+    hg_test_info->context = HG_CONTEXT_DEFAULT;
+    hg_test_info->request_class = HG_REQUEST_CLASS_DEFAULT;
+
+    /* Attach test info to class */
+    HG_Class_set_data(hg_test_info->hg_class, hg_test_info, NULL);
+
+    /* Register routines */
+    hg_test_register(hg_test_info->hg_class);
+
+    if (hg_test_info->listen || hg_test_info->self_forward) {
+        size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
+        char *buf_ptr;
+        size_t i;
+
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+        /* Create thread pool */
+        hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS,
+            &hg_test_info->thread_pool);
+        printf("# Starting server with %d threads...\n",
+            MERCURY_TESTING_NUM_THREADS);
+
+        /* Create bulk handle mutex */
+        hg_thread_mutex_init(&hg_test_info->bulk_handle_mutex);
+#endif
+
+        /* Create bulk buffer that can be used for receiving data */
+        HG_Bulk_create(hg_test_info->hg_class, 1, NULL,
+            (hg_size_t *) &bulk_size, HG_BULK_READWRITE,
+            &hg_test_info->bulk_handle);
+        HG_Bulk_access(hg_test_info->bulk_handle, 0, bulk_size,
+            HG_BULK_READWRITE, 1, (void **) &buf_ptr, NULL, NULL);
+        for (i = 0; i < bulk_size; i++)
+            buf_ptr[i] = (char) i;
+    }
+
+    if (hg_test_info->listen) {
+        /* Initalize atomic variable to finalize server */
+        hg_atomic_set32(&hg_test_info->finalizing_count, 0);
+
+        /* Used by CTest Test Driver to know when to launch clients */
+        MERCURY_TESTING_READY_MSG();
+    } else if (hg_test_info->self_forward) {
+        /* Self addr is target */
+        ret = HG_Addr_self(hg_test_info->hg_class, &hg_test_info->target_addr);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not get HG addr self");
+            goto done;
+        }
+    } else {
+        /* Look up target addr using target name info */
+        ret = HG_Hl_addr_lookup_wait(hg_test_info->context,
+            hg_test_info->request_class, hg_test_info->na_test_info.target_name,
+            &hg_test_info->target_addr, HG_MAX_IDLE_TIME);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not find addr for target %s",
+                hg_test_info->na_test_info.target_name);
+            goto done;
+        }
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Test_finalize(struct hg_test_info *hg_test_info)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    NA_Test_barrier();
+    NA_Test_barrier(&hg_test_info->na_test_info);
 
-    (void)hg_class;
-    if (hg_test_is_client_g) {
-        /* Terminate server */
-        if (hg_test_rank_g == 0) hg_test_finalize_rpc();
+    if (!hg_test_info->listen) {
+        /* Send request to terminate server */
+        if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+            hg_test_finalize_rpc(hg_test_info);
 
         /* Free addr id */
-        ret = HG_Addr_free(HG_CLASS_DEFAULT, hg_test_addr_g);
+        ret = HG_Addr_free(hg_test_info->hg_class, hg_test_info->target_addr);
         if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not free addr\n");
+            HG_LOG_ERROR("Could not free addr");
             goto done;
         }
-        hg_test_addr_g = HG_ADDR_NULL;
-    } else if (hg_test_addr_table_g) {
-        unsigned int i;
-
-        for (i = 0; i < hg_test_addr_table_size_g; i++)
-            HG_Addr_free(HG_CLASS_DEFAULT, hg_test_addr_table_g[i]);
-        free(hg_test_addr_table_g);
-        hg_test_addr_table_g = NULL;
     }
 
-    /* Destroy bulk handle */
-    HG_Bulk_free(hg_test_local_bulk_handle_g);
-    hg_test_local_bulk_handle_g = HG_BULK_NULL;
+    NA_Test_barrier(&hg_test_info->na_test_info);
+
+    if (hg_test_info->listen || hg_test_info->self_forward) {
+        /* Destroy bulk handle */
+        HG_Bulk_free(hg_test_info->bulk_handle);
 
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
-    hg_thread_pool_destroy(hg_test_thread_pool_g);
-    hg_thread_mutex_destroy(&hg_test_local_bulk_handle_mutex_g);
+        hg_thread_pool_destroy(hg_test_info->thread_pool);
+        hg_thread_mutex_destroy(&hg_test_info->bulk_handle_mutex);
 #endif
-
-    /* Finalize request class */
-    hg_request_finalize(hg_test_request_class_g, NULL);
-    hg_test_request_class_g = NULL;
+    }
 
     /* Finalize interface */
     ret = HG_Hl_finalize();
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not finalize HG\n");
+        HG_LOG_ERROR("Could not finalize HG Hl");
         goto done;
     }
 
-    na_ret = NA_Test_finalize(hg_test_na_class_g);
+    /* Finalize NA test interface */
+    na_ret = NA_Test_finalize(&hg_test_info->na_test_info);
     if (na_ret != NA_SUCCESS) {
-        fprintf(stderr, "Could not finalize NA interface\n");
+        HG_LOG_ERROR("Could not finalize NA test interface");
+        ret = HG_NA_ERROR;
         goto done;
     }
 

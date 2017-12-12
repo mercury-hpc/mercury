@@ -141,10 +141,10 @@ function(build_mercury_test test_name)
   endif()
 endfunction()
 
-macro(add_mercury_test_comm test_name comm protocol opt)
+macro(add_mercury_test_comm test_name comm protocol)
   # Set full test name
   set(full_test_name ${test_name})
-  set(opt_names ${comm} ${protocol} ${opt})
+  set(opt_names ${comm} ${protocol})
   foreach(opt_name ${opt_names})
     set(full_test_name ${full_test_name}_${opt_name})
   endforeach()
@@ -154,13 +154,10 @@ macro(add_mercury_test_comm test_name comm protocol opt)
   if(protocol)
     set(test_args ${test_args} --protocol ${protocol})
   endif()
-  if(opt)
-    set(test_args ${test_args} --${opt})
-  endif()
 
   # Static client/server test
   if(${comm} STREQUAL "mpi" AND ${protocol} STREQUAL "static")
-    set(static_test_args ${test_args} --static)
+    set(static_test_args ${test_args} --mpi_static)
     add_test(NAME "mercury_${full_test_name}"
       COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
       ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_server> ${MPIEXEC_POSTFLAGS}
@@ -176,10 +173,11 @@ macro(add_mercury_test_comm test_name comm protocol opt)
     )
   endif()
 
-  # Coresident test
-  if(MERCURY_TESTING_CORESIDENT)
+  # Coresident test (disable for BMI and MPI)
+  if(MERCURY_TESTING_CORESIDENT AND
+    (NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi"))))
     set(cores_test_name ${full_test_name}_self)
-    set(cores_test_args ${test_args} --self)
+    set(cores_test_args ${test_args} --self_send)
     if (MERCURY_ENABLE_PARALLEL_TESTING)
       add_test(NAME "mercury_${cores_test_name}"
         COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
@@ -198,16 +196,7 @@ function(add_mercury_test test_name)
   foreach(comm ${NA_PLUGINS})
     string(TOUPPER ${comm} upper_comm)
     foreach(protocol ${NA_${upper_comm}_TESTING_PROTOCOL})
-      add_mercury_test_comm(${test_name} ${comm} ${protocol} "")
-    endforeach()
-  endforeach()
-endfunction()
-
-function(add_mercury_opt_test test_name opt)
-  foreach(comm ${NA_PLUGINS})
-    string(TOUPPER ${comm} upper_comm)
-    foreach(protocol ${NA_${upper_comm}_TESTING_PROTOCOL})
-      add_mercury_test_comm(${test_name} ${comm} ${protocol} ${opt})
+      add_mercury_test_comm(${test_name} ${comm} ${protocol})
     endforeach()
   endforeach()
 endfunction()
@@ -251,12 +240,13 @@ set(MERCURY_tests
 if(NOT WIN32)
   set(MERCURY_tests ${MERCURY_tests} posix)
 endif()
-build_mercury_test(nested)
-build_mercury_test(overflow)
-build_mercury_test(perf)
+#build_mercury_test(nested)
+#build_mercury_test(overflow)
+#build_mercury_test(perf)
 build_mercury_test(rpc_lat)
 build_mercury_test(write_bw)
 build_mercury_test(read_bw)
+#build_mercury_test(init)
 
 # Build tests and add them to ctest
 foreach(MERCURY_test ${MERCURY_tests})
@@ -264,5 +254,5 @@ foreach(MERCURY_test ${MERCURY_tests})
   add_mercury_test(${MERCURY_test})
 endforeach()
 
-add_mercury_opt_test(bulk_seg "extra")
-add_mercury_opt_test(bulk_seg "variable")
+#add_mercury_opt_test(bulk_seg "extra")
+#add_mercury_opt_test(bulk_seg "variable")

@@ -51,12 +51,9 @@ done:
 /******************************************************************************/
 int main(int argc, char *argv[])
 {
-    hg_class_t *hg_class = NULL;
-    hg_context_t *context = NULL;
-    hg_request_class_t *request_class = NULL;
+    struct hg_test_info hg_test_info = { 0 };
     hg_request_t *request = NULL;
     hg_handle_t handle;
-    hg_addr_t addr;
 
     bulk_write_in_t bulk_write_in_struct;
 
@@ -81,23 +78,21 @@ int main(int argc, char *argv[])
     buf_ptrs[1] = NULL;
     buf_sizes[1] = 0;
 
-    /* Initialize the interface (for convenience, shipper_test_client_init
-     * initializes the network interface with the selected plugin)
-     */
-    hg_class = HG_Test_client_init(argc, argv, &addr, NULL, &context,
-            &request_class);
+    /* Initialize the interface */
+    HG_Test_init(argc, argv, &hg_test_info);
 
-    request = hg_request_create(request_class);
+    request = hg_request_create(hg_test_info.request_class);
 
-    hg_ret = HG_Create(context, addr, hg_test_bulk_write_id_g, &handle);
+    hg_ret = HG_Create(hg_test_info.context, hg_test_info.target_addr,
+        hg_test_bulk_write_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         return EXIT_FAILURE;
     }
 
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_class, 2, buf_ptrs, (hg_size_t *) buf_sizes,
-            HG_BULK_READ_ONLY, &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_test_info.hg_class, 2, buf_ptrs,
+        (hg_size_t *) buf_sizes, HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         return EXIT_FAILURE;
@@ -134,7 +129,7 @@ int main(int argc, char *argv[])
 
     hg_request_destroy(request);
 
-    HG_Test_finalize(hg_class);
+    HG_Test_finalize(&hg_test_info);
 
     /* Free bulk data */
     free(bulk_buf);

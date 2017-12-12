@@ -6,12 +6,12 @@
 
 #include <mercury_sys/Process.h>
 
-class ShipperTestDriver
+class HGTestDriver
 {
 public:
   int Main(int argc, char* argv[]);
-  ShipperTestDriver();
-  ~ShipperTestDriver();
+  HGTestDriver();
+  ~HGTestDriver();
 
 protected:
   void SeparateArguments(const char* str, 

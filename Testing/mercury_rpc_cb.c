@@ -59,12 +59,15 @@ hg_core_get_thread_work(
         hg_return_t \
         func_name ## _cb(hg_handle_t handle) \
         { \
+            struct hg_test_info *hg_test_info = \
+                (struct hg_test_info *) HG_Class_get_data( \
+                    HG_Get_info(handle)->hg_class); \
             struct hg_thread_work *work = hg_core_get_thread_work(handle); \
             hg_return_t ret = HG_SUCCESS; \
             \
             work->func = func_name ## _thread; \
             work->args = handle; \
-            hg_thread_pool_post(hg_test_thread_pool_g, work); \
+            hg_thread_pool_post(hg_test_info->thread_pool, work); \
             \
             return ret; \
         }
@@ -96,14 +99,9 @@ struct hg_test_bulk_args {
 /*******************/
 /* Local Variables */
 /*******************/
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
-extern hg_thread_pool_t *hg_test_thread_pool_g;
-#endif
-extern hg_bulk_t hg_test_local_bulk_handle_g;
-extern hg_thread_mutex_t hg_test_local_bulk_handle_mutex_g;
 
-extern hg_id_t hg_test_nested2_id_g;
-hg_addr_t *hg_addr_table;
+//extern hg_id_t hg_test_nested2_id_g;
+//hg_addr_t *hg_addr_table;
 
 /*---------------------------------------------------------------------------*/
 /* Actual definition of the functions that need to be executed */
@@ -1116,14 +1114,6 @@ hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 #endif
     hg_return_t ret = HG_SUCCESS;
 
-#ifdef MERCURY_TESTING_USE_LOCAL_BULK
-    /* Free block handle */
-    ret = HG_Bulk_free(hg_cb_info->info.bulk.local_handle);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free HG bulk handle\n");
-        goto done;
-    }
-#endif
 #ifdef MERCURY_TESTING_HAS_VERIFY_DATA
     HG_Bulk_access(hg_cb_info->info.bulk.local_handle, 0,
         size, HG_BULK_READWRITE, 1, &buf, NULL, NULL);
@@ -1156,12 +1146,16 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 {
     hg_return_t ret = HG_SUCCESS;
     const struct hg_info *hg_info = NULL;
+    struct hg_test_info *hg_test_info = NULL;
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     bulk_write_in_t in_struct;
 
     /* Get info from handle */
     hg_info = HG_Get_info(handle);
+
+    /* Get test info */
+    hg_test_info = (struct hg_test_info *) HG_Class_get_data(hg_info->hg_class);
 
     /* Get input struct */
     ret = HG_Get_input(handle, &in_struct);
@@ -1172,16 +1166,10 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 
     origin_bulk_handle = in_struct.bulk_handle;
 
-#ifdef MERCURY_TESTING_USE_LOCAL_BULK
-    /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
-            HG_BULK_READWRITE, &local_bulk_handle);
-#else
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
-    hg_thread_mutex_lock(&hg_test_local_bulk_handle_mutex_g);
+    hg_thread_mutex_lock(&hg_test_info->bulk_handle_mutex);
 #endif
-    local_bulk_handle = hg_test_local_bulk_handle_g;
-#endif
+    local_bulk_handle = hg_test_info->bulk_handle;
 
     /* Pull bulk data */
     ret = HG_Bulk_transfer(hg_info->context, hg_test_perf_bulk_transfer_cb,
@@ -1193,10 +1181,8 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
         return ret;
     }
 
-#ifndef MERCURY_TESTING_USE_LOCAL_BULK
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
-    hg_thread_mutex_unlock(&hg_test_local_bulk_handle_mutex_g);
-#endif
+    hg_thread_mutex_unlock(&hg_test_info->bulk_handle_mutex);
 #endif
 
     HG_Free_input(handle, &in_struct);
@@ -1208,12 +1194,16 @@ HG_TEST_RPC_CB(hg_test_perf_bulk_read, handle)
 {
     hg_return_t ret = HG_SUCCESS;
     const struct hg_info *hg_info = NULL;
+    struct hg_test_info *hg_test_info = NULL;
     hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
     hg_bulk_t local_bulk_handle = HG_BULK_NULL;
     bulk_write_in_t in_struct;
 
     /* Get info from handle */
     hg_info = HG_Get_info(handle);
+
+    /* Get test info */
+    hg_test_info = (struct hg_test_info *) HG_Class_get_data(hg_info->hg_class);
 
     /* Get input struct */
     ret = HG_Get_input(handle, &in_struct);
@@ -1224,16 +1214,10 @@ HG_TEST_RPC_CB(hg_test_perf_bulk_read, handle)
 
     origin_bulk_handle = in_struct.bulk_handle;
 
-#ifdef MERCURY_TESTING_USE_LOCAL_BULK
-    /* Create a new bulk handle to read the data */
-    HG_Bulk_create(hg_info->hg_class, 1, NULL, &bulk_args->nbytes,
-            HG_BULK_READWRITE, &local_bulk_handle);
-#else
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
-    hg_thread_mutex_lock(&hg_test_local_bulk_handle_mutex_g);
+    hg_thread_mutex_lock(&hg_test_info->bulk_handle_mutex);
 #endif
-    local_bulk_handle = hg_test_local_bulk_handle_g;
-#endif
+    local_bulk_handle = hg_test_info->bulk_handle;
 
     /* Pull bulk data */
     ret = HG_Bulk_transfer(hg_info->context, hg_test_perf_bulk_transfer_cb,
@@ -1245,10 +1229,8 @@ HG_TEST_RPC_CB(hg_test_perf_bulk_read, handle)
         return ret;
     }
 
-#ifndef MERCURY_TESTING_USE_LOCAL_BULK
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
-    hg_thread_mutex_unlock(&hg_test_local_bulk_handle_mutex_g);
-#endif
+    hg_thread_mutex_unlock(&hg_test_info->bulk_handle_mutex);
 #endif
 
     HG_Free_input(handle, &in_struct);
@@ -1289,77 +1271,77 @@ HG_TEST_RPC_CB(hg_test_overflow, handle)
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_test_nested1_forward_cb(const struct hg_cb_info *callback_info)
-{
-    hg_handle_t handle = (hg_handle_t) callback_info->arg;
-    hg_return_t ret = HG_SUCCESS;
-
-    printf("In hg_test_nested1_forward_cb\n");
-
-    /* Send response back */
-    ret = HG_Respond(handle, NULL, NULL, NULL);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not respond\n");
-        return ret;
-    }
-
-    HG_Destroy(handle);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-HG_TEST_RPC_CB(hg_test_nested1, handle)
-{
-    hg_handle_t forward_handle;
-    const struct hg_info *hg_info = NULL;
-    hg_return_t ret = HG_SUCCESS;
-
-    printf("In hg_test_nested1\n");
-
-    /* Get info from handle */
-    hg_info = HG_Get_info(handle);
-
-    ret = HG_Create(hg_info->context, hg_addr_table[1], hg_test_nested2_id_g,
-            &forward_handle);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not start call\n");
-        goto done;
-    }
-
-    /* Forward call to remote addr and get a new request */
-    printf("Forwarding call, op id: %u...\n", hg_test_nested2_id_g);
-    ret = HG_Forward(forward_handle, hg_test_nested1_forward_cb, handle, NULL);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not forward call\n");
-        goto done;
-    }
-
-    HG_Destroy(forward_handle);
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-HG_TEST_RPC_CB(hg_test_nested2, handle)
-{
-    hg_return_t ret = HG_SUCCESS;
-
-    printf("In hg_test_nested2\n");
-
-    /* Send response back */
-    ret = HG_Respond(handle, NULL, NULL, NULL);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not respond\n");
-        return ret;
-    }
-
-    HG_Destroy(handle);
-
-    return ret;
-}
+//static hg_return_t
+//hg_test_nested1_forward_cb(const struct hg_cb_info *callback_info)
+//{
+//    hg_handle_t handle = (hg_handle_t) callback_info->arg;
+//    hg_return_t ret = HG_SUCCESS;
+//
+//    printf("In hg_test_nested1_forward_cb\n");
+//
+//    /* Send response back */
+//    ret = HG_Respond(handle, NULL, NULL, NULL);
+//    if (ret != HG_SUCCESS) {
+//        fprintf(stderr, "Could not respond\n");
+//        return ret;
+//    }
+//
+//    HG_Destroy(handle);
+//
+//    return ret;
+//}
+//
+///*---------------------------------------------------------------------------*/
+//HG_TEST_RPC_CB(hg_test_nested1, handle)
+//{
+//    hg_handle_t forward_handle;
+//    const struct hg_info *hg_info = NULL;
+//    hg_return_t ret = HG_SUCCESS;
+//
+//    printf("In hg_test_nested1\n");
+//
+//    /* Get info from handle */
+//    hg_info = HG_Get_info(handle);
+//
+//    ret = HG_Create(hg_info->context, hg_addr_table[1], hg_test_nested2_id_g,
+//            &forward_handle);
+//    if (ret != HG_SUCCESS) {
+//        fprintf(stderr, "Could not start call\n");
+//        goto done;
+//    }
+//
+//    /* Forward call to remote addr and get a new request */
+//    printf("Forwarding call, op id: %u...\n", hg_test_nested2_id_g);
+//    ret = HG_Forward(forward_handle, hg_test_nested1_forward_cb, handle, NULL);
+//    if (ret != HG_SUCCESS) {
+//        fprintf(stderr, "Could not forward call\n");
+//        goto done;
+//    }
+//
+//    HG_Destroy(forward_handle);
+//
+//done:
+//    return ret;
+//}
+//
+///*---------------------------------------------------------------------------*/
+//HG_TEST_RPC_CB(hg_test_nested2, handle)
+//{
+//    hg_return_t ret = HG_SUCCESS;
+//
+//    printf("In hg_test_nested2\n");
+//
+//    /* Send response back */
+//    ret = HG_Respond(handle, NULL, NULL, NULL);
+//    if (ret != HG_SUCCESS) {
+//        fprintf(stderr, "Could not respond\n");
+//        return ret;
+//    }
+//
+//    HG_Destroy(handle);
+//
+//    return ret;
+//}
 
 /*---------------------------------------------------------------------------*/
 HG_TEST_THREAD_CB(hg_test_rpc_open)
@@ -1378,7 +1360,7 @@ HG_TEST_THREAD_CB(hg_test_perf_rpc_lat)
 HG_TEST_THREAD_CB(hg_test_perf_bulk)
 HG_TEST_THREAD_CB(hg_test_perf_bulk_read)
 HG_TEST_THREAD_CB(hg_test_overflow)
-HG_TEST_THREAD_CB(hg_test_nested1)
-HG_TEST_THREAD_CB(hg_test_nested2)
+//HG_TEST_THREAD_CB(hg_test_nested1)
+//HG_TEST_THREAD_CB(hg_test_nested2)
 
 /*---------------------------------------------------------------------------*/

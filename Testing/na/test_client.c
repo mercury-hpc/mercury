@@ -253,16 +253,16 @@ done:
 int
 main(int argc, char *argv[])
 {
-    char server_name[NA_TEST_MAX_ADDR_NAME];
+    struct na_test_info na_test_info = { 0 };
     struct na_test_params params;
     na_return_t na_ret;
     unsigned int i;
     int ret = EXIT_SUCCESS;
 
     /* Initialize the interface */
-    params.na_class = NA_Test_client_init(argc, argv, server_name,
-    NA_TEST_MAX_ADDR_NAME, NULL);
+    NA_Test_init(argc, argv, &na_test_info);
 
+    params.na_class = na_test_info.na_class;
     params.context = NA_Context_create(params.na_class);
 
     /* Allocate send and recv bufs */
@@ -283,9 +283,10 @@ main(int argc, char *argv[])
 
     /* Perform an address lookup on the target */
     na_ret = NA_Addr_lookup(params.na_class, params.context, lookup_cb, &params,
-        server_name, NA_OP_ID_IGNORE);
+        na_test_info.target_name, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not start lookup of addr %s", server_name);
+        NA_LOG_ERROR("Could not start lookup of addr %s",
+            na_test_info.target_name);
         ret = EXIT_FAILURE;
         goto done;
     }
@@ -328,7 +329,7 @@ main(int argc, char *argv[])
 
     NA_Context_destroy(params.na_class, params.context);
 
-    NA_Test_finalize(params.na_class);
+    NA_Test_finalize(&na_test_info);
 
 done:
     return ret;

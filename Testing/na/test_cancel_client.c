@@ -325,15 +325,16 @@ test_bulk(struct na_test_params *params)
 int
 main(int argc, char **argv)
 {
+    struct na_test_info na_test_info = { 0 };
     char server_name[NA_TEST_MAX_ADDR_NAME];
     struct na_test_params params;
     na_return_t na_ret;
     unsigned int i;
 
     /* Initialize the interface */
-    params.na_class = NA_Test_client_init(argc, argv, server_name,
-        NA_TEST_MAX_ADDR_NAME, NULL);
+    NA_Test_init(argc, argv, &na_test_info);
 
+    params.na_class = na_test_info.na_class;
     params.context = NA_Context_create(params.na_class);
 
     /* Allocate send and recv bufs */
@@ -389,7 +390,7 @@ main(int argc, char **argv)
 
     NA_Context_destroy(params.na_class, params.context);
 
-    NA_Test_finalize(params.na_class);
+    NA_Test_finalize(&na_test_info);
 
     return EXIT_SUCCESS;
 }

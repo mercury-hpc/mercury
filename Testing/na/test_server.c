@@ -306,17 +306,18 @@ done:
 int
 main(int argc, char *argv[])
 {
-    unsigned int number_of_peers;
-    unsigned int peer;
     struct na_test_params params;
+    struct na_test_info na_test_info = { 0 };
+    int peer;
     na_return_t na_ret;
     unsigned int i;
     int ret = EXIT_SUCCESS;
 
     /* Initialize the interface */
-    params.na_class = NA_Test_server_init(argc, argv, NA_TRUE, NULL, NULL,
-        &number_of_peers);
+    na_test_info.listen = NA_TRUE;
+    NA_Test_init(argc, argv, &na_test_info);
 
+    params.na_class = na_test_info.na_class;
     params.context = NA_Context_create(params.na_class);
 
     /* Allocate send/recv/bulk bufs */
@@ -334,7 +335,7 @@ main(int argc, char *argv[])
         params.bulk_buf[i] = 0;
     }
 
-    for (peer = 0; peer < number_of_peers; peer++) {
+    for (peer = 0; peer < na_test_info.max_number_of_peers; peer++) {
         test_msg_recv(&params);
 
         while (1) {
@@ -379,7 +380,7 @@ main(int argc, char *argv[])
 
     NA_Context_destroy(params.na_class, params.context);
 
-    NA_Test_finalize(params.na_class);
+    NA_Test_finalize(&na_test_info);
 
 done:
     return ret;

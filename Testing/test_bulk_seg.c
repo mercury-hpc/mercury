@@ -15,8 +15,6 @@
 #include <string.h>
 
 extern hg_id_t hg_test_bulk_seg_write_id_g;
-extern na_bool_t na_test_use_variable_g;
-extern na_bool_t na_test_use_extra_g;
 
 static hg_return_t
 hg_test_bulk_seg_forward_cb(const struct hg_cb_info *callback_info)
@@ -54,12 +52,9 @@ done:
 /*****************************************************************************/
 int main(int argc, char *argv[])
 {
-    hg_class_t *hg_class = NULL;
-    hg_context_t *context = NULL;
-    hg_request_class_t *request_class = NULL;
+    struct hg_test_info hg_test_info = { 0 };
     hg_request_t *request = NULL;
     hg_handle_t handle;
-    hg_addr_t addr;
 
     bulk_write_in_t bulk_write_in_struct;
 
@@ -75,43 +70,41 @@ int main(int argc, char *argv[])
     hg_return_t hg_ret;
     size_t i, j;
 
-    /* Initialize the interface (for convenience, shipper_test_client_init
-     * initializes the network interface with the selected plugin)
-     */
-    hg_class = HG_Test_client_init(argc, argv, &addr, NULL, &context,
-            &request_class);
+    /* Initialize the interface */
+    HG_Test_init(argc, argv, &hg_test_info);
 
-    request = hg_request_create(request_class);
+    request = hg_request_create(hg_test_info.request_class);
 
-    hg_ret = HG_Create(context, addr, hg_test_bulk_seg_write_id_g, &handle);
+    hg_ret = HG_Create(hg_test_info.context, hg_test_info.target_addr,
+        hg_test_bulk_seg_write_id_g, &handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         return EXIT_FAILURE;
     }
 
     /* This will create a list of variable size segments */
-    if (na_test_use_variable_g) {
-        printf("Using variable size segments!\n");
-        /* bulk_size_x >= 2 */
-        /* 524288 + 262144 + 131072 + 65536 + 32768 + 16384 + 8192 + 8192 */
-        bulk_size_x = 8;
-        bulk_size_y_var = (size_t*) malloc(bulk_size_x * sizeof(size_t));
-        bulk_size_y_var[0] = bulk_size / 2;
-        for (i = 1; i < bulk_size_x - 1; i++) {
-            bulk_size_y_var[i] = bulk_size_y_var[i-1] / 2;
-        }
-        bulk_size_y_var[bulk_size_x - 1] = bulk_size_y_var[bulk_size_x - 2];
-    }
-    /* This will use an extra encoding buffer */
-    else if (na_test_use_extra_g) {
-        printf("Using large number of segments!\n");
-        bulk_size_x = 1024;
-        bulk_size_y = bulk_size / bulk_size_x;
-    }
-    else {
+//    if (hg_test_info.variable) {
+//        printf("Using variable size segments!\n");
+//        /* bulk_size_x >= 2 */
+//        /* 524288 + 262144 + 131072 + 65536 + 32768 + 16384 + 8192 + 8192 */
+//        bulk_size_x = 8;
+//        bulk_size_y_var = (size_t*) malloc(bulk_size_x * sizeof(size_t));
+//        bulk_size_y_var[0] = bulk_size / 2;
+//        for (i = 1; i < bulk_size_x - 1; i++) {
+//            bulk_size_y_var[i] = bulk_size_y_var[i-1] / 2;
+//        }
+//        bulk_size_y_var[bulk_size_x - 1] = bulk_size_y_var[bulk_size_x - 2];
+//    }
+//    /* This will use an extra encoding buffer */
+//    else if (hg_test_info.extra) {
+//        printf("Using large number of segments!\n");
+//        bulk_size_x = 1024;
+//        bulk_size_y = bulk_size / bulk_size_x;
+//    }
+//    else {
         /* This will create a list of fixed size segments */
         bulk_size_y = bulk_size / bulk_size_x;
-    }
+//    }
 
     /* Prepare bulk_buf */
     bulk_buf = (void **) malloc(bulk_size_x * sizeof(void *));
@@ -137,8 +130,8 @@ int main(int argc, char *argv[])
     }
 
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_class, (hg_uint32_t) bulk_size_x, bulk_buf,
-        (hg_size_t *) bulk_sizes, HG_BULK_READ_ONLY, &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_test_info.hg_class, (hg_uint32_t) bulk_size_x,
+        bulk_buf, (hg_size_t *) bulk_sizes, HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         return EXIT_FAILURE;
@@ -180,7 +173,7 @@ int main(int argc, char *argv[])
 
     hg_request_destroy(request);
 
-    HG_Test_finalize(hg_class);
+    HG_Test_finalize(&hg_test_info);
 
     /* Free bulk_buf */
     for (i = 0; i < bulk_size_x; i++) {

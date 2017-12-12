@@ -11,9 +11,19 @@
 #ifndef MERCURY_TEST_CONFIG_H
 #define MERCURY_TEST_CONFIG_H
 
+#include <stdio.h>
+#define MERCURY_TESTING_READY_MSG() do {    \
+    /* Used by CTest Test Driver */         \
+    printf("# Waiting for client...\n");    \
+    fflush(stdout);                         \
+} while (0)
+
 #cmakedefine MERCURY_HAS_PARALLEL_TESTING
 #ifdef MERCURY_HAS_PARALLEL_TESTING
-#cmakedefine MPIEXEC "@MPIEXEC@"
+#cmakedefine MPIEXEC_EXECUTABLE "@MPIEXEC_EXECUTABLE@"
+#ifndef MPIEXEC_EXECUTABLE
+# cmakedefine MPIEXEC_EXECUTABLE "@MPIEXEC@" /* For compatibility */
+#endif
 #cmakedefine MPIEXEC_NUMPROC_FLAG "@MPIEXEC_NUMPROC_FLAG@"
 #cmakedefine MPIEXEC_PREFLAGS "@MPIEXEC_PREFLAGS@"
 #cmakedefine MPIEXEC_POSTFLAGS "@MPIEXEC_POSTFLAGS@"

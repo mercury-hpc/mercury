@@ -34,7 +34,7 @@ macro(add_na_test_comm test_name server client comm protocol)
 
   # Static client/server test
   if(${comm} STREQUAL "mpi" AND ${protocol} STREQUAL "static")
-    set(static_test_args ${test_args} --static)
+    set(static_test_args ${test_args} --mpi_static)
     add_test(NAME "na_${full_test_name}"
       COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
       ${MPIEXEC_PREFLAGS} $<TARGET_FILE:na_test_${server}> ${MPIEXEC_POSTFLAGS}

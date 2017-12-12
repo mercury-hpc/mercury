@@ -23,6 +23,9 @@ struct forward_cb_args {
     rpc_handle_t *rpc_handle;
 };
 
+extern hg_return_t
+HG_Core_set_target_id(hg_handle_t handle, hg_uint8_t target_id);
+
 //#define HG_TEST_DEBUG
 #ifdef HG_TEST_DEBUG
 #define HG_TEST_LOG_DEBUG(...)                                \
@@ -370,23 +373,18 @@ done:
 int
 main(int argc, char *argv[])
 {
-    hg_class_t *hg_class = NULL;
-    hg_context_t *context = NULL;
-    hg_request_class_t *request_class = NULL;
-    hg_addr_t addr;
+    struct hg_test_info hg_test_info = { 0 };
     hg_return_t hg_ret;
     hg_id_t inv_id;
     int ret = EXIT_SUCCESS;
 
-    /* Initialize the interface (for convenience, HG_Test_client_init
-     * initializes the network interface with the selected plugin)
-     */
-    hg_class = HG_Test_client_init(argc, argv, &addr, NULL, &context,
-            &request_class);
+    /* Initialize the interface */
+    HG_Test_init(argc, argv, &hg_test_info);
 
     /* Simple RPC test */
     HG_TEST("simple RPC");
-    hg_ret = hg_test_rpc(context, request_class, addr, hg_test_rpc_open_id_g,
+    hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
+        hg_test_info.target_addr, hg_test_rpc_open_id_g,
         hg_test_rpc_forward_cb);
     if (hg_ret != HG_SUCCESS) {
         ret = EXIT_FAILURE;
@@ -396,7 +394,8 @@ main(int argc, char *argv[])
 
     /* RPC test with tag mask */
     HG_TEST("tagged RPC");
-    hg_ret = hg_test_rpc_mask(context, request_class, addr, hg_test_rpc_open_id_g,
+    hg_ret = hg_test_rpc_mask(hg_test_info.context, hg_test_info.request_class,
+        hg_test_info.target_addr, hg_test_rpc_open_id_g,
         hg_test_rpc_forward_cb);
     if (hg_ret != HG_SUCCESS) {
         ret = EXIT_FAILURE;
@@ -406,8 +405,9 @@ main(int argc, char *argv[])
 
     /* RPC test with no response */
     HG_TEST("no response RPC");
-    hg_ret = hg_test_rpc(context, request_class, addr,
-        hg_test_rpc_open_id_no_resp_g, hg_test_rpc_forward_no_resp_cb);
+    hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
+        hg_test_info.target_addr, hg_test_rpc_open_id_no_resp_g,
+        hg_test_rpc_forward_no_resp_cb);
     if (hg_ret != HG_SUCCESS) {
         ret = EXIT_FAILURE;
         goto done;
@@ -416,9 +416,9 @@ main(int argc, char *argv[])
 
     /* RPC test with invalid ID (not registered on server) */
     HG_TEST("invalid RPC");
-    inv_id = MERCURY_REGISTER(hg_class, "inv_id", void, void, NULL);
-    hg_ret = hg_test_rpc(context, request_class, addr, inv_id,
-        hg_test_rpc_forward_cb);
+    inv_id = MERCURY_REGISTER(hg_test_info.hg_class, "inv_id", void, void, NULL);
+    hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
+        hg_test_info.target_addr, inv_id, hg_test_rpc_forward_cb);
     if (hg_ret != HG_SUCCESS) {
         ret = EXIT_FAILURE;
         goto done;
@@ -427,7 +427,8 @@ main(int argc, char *argv[])
 
     /* RPC test with reset */
     HG_TEST("reset RPC");
-    hg_ret = hg_test_rpc(context, request_class, addr, hg_test_rpc_open_id_g,
+    hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
+        hg_test_info.target_addr, hg_test_rpc_open_id_g,
         hg_test_rpc_forward_reset_cb);
     if (hg_ret != HG_SUCCESS) {
         ret = EXIT_FAILURE;
@@ -437,7 +438,8 @@ main(int argc, char *argv[])
 
     /* RPC test with multiple handle in flight */
     HG_TEST("concurrent RPCs");
-    hg_ret = hg_test_rpc_multiple(context, request_class, addr,
+    hg_ret = hg_test_rpc_multiple(hg_test_info.context,
+        hg_test_info.request_class, hg_test_info.target_addr,
         hg_test_rpc_open_id_g, hg_test_rpc_forward_cb);
     if (hg_ret != HG_SUCCESS) {
         ret = EXIT_FAILURE;
@@ -448,6 +450,6 @@ main(int argc, char *argv[])
 done:
     if (ret != EXIT_SUCCESS)
         HG_FAILED();
-    HG_Test_finalize(hg_class);
+    HG_Test_finalize(&hg_test_info);
     return ret;
 }
