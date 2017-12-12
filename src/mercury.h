@@ -163,6 +163,35 @@ HG_Class_get_output_eager_size(
         );
 
 /**
+ * Associate user data to class. When HG_Finalize() is called,
+ * free_callback (if defined) is called to free the associated data.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param data [IN]             pointer to user data
+ * \param free_callback [IN]    pointer to function
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Class_set_data(
+        hg_class_t *hg_class,
+        void *data,
+        void (*free_callback)(void *)
+        );
+
+/**
+ * Retrieve previously associated data from a given class.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ *
+ * \return Pointer to user data or NULL if not set or any error has occurred
+ */
+HG_EXPORT void *
+HG_Class_get_data(
+        const hg_class_t *hg_class
+        );
+
+/**
  * Create a new context. Must be destroyed by calling HG_Context_destroy().
  *
  * \remark This routine is internally equivalent to:
@@ -238,6 +267,35 @@ HG_Context_get_class(
  */
 HG_EXPORT hg_uint8_t
 HG_Context_get_id(
+        const hg_context_t *context
+        );
+
+/**
+ * Associate user data to context. When HG_Context_destroy() is called,
+ * free_callback (if defined) is called to free the associated data.
+ *
+ * \param context [IN]          pointer to HG context
+ * \param data [IN]             pointer to user data
+ * \param free_callback [IN]    pointer to function
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Context_set_data(
+        hg_context_t *context,
+        void *data,
+        void (*free_callback)(void *)
+        );
+
+/**
+ * Retrieve previously associated data from a given context.
+ *
+ * \param context [IN]          pointer to HG context
+ *
+ * \return Pointer to user data or NULL if not set or any error has occurred
+ */
+HG_EXPORT void *
+HG_Context_get_data(
         const hg_context_t *context
         );
 

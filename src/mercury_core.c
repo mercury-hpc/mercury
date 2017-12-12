@@ -69,6 +69,8 @@ struct hg_class {
 #ifdef HG_HAS_SELF_FORWARD
     hg_thread_pool_t *self_processing_pool; /* Thread pool for self processing */
 #endif
+    void *data;                         /* User data */
+    void (*data_free_callback)(void *); /* User data free callback */
     hg_atomic_int32_t n_contexts;       /* Atomic used for number of contexts */
     hg_atomic_int32_t n_addrs;          /* Atomic used for number of addrs */
 
@@ -110,6 +112,8 @@ struct hg_context {
     HG_LIST_HEAD(hg_handle) self_processing_list; /* List of handles being processed */
     hg_thread_spin_t self_processing_list_lock;   /* Processing list lock */
 #endif
+    void *data;                                   /* User data */
+    void (*data_free_callback)(void *);           /* User data free callback */
     hg_bool_t finalizing;                         /* Prevent reposts */
     hg_atomic_int32_t n_handles;                  /* Atomic used for number of handles */
 };
@@ -192,8 +196,8 @@ struct hg_handle {
     struct hg_core_header out_header;   /* Output header */
 
     struct hg_rpc_info *hg_rpc_info;    /* Associated RPC info */
-    void *private_data;                 /* Private data */
-    void (*private_free_callback)(void *); /* Private data free callback */
+    void *data;                         /* User data */
+    void (*data_free_callback)(void *); /* User data free callback */
 
     struct hg_thread_work thread_work;  /* Used for self processing and testing */
 
@@ -1064,6 +1068,10 @@ hg_core_finalize(struct hg_class *hg_class)
         hg_hash_table_free(hg_class->func_map);
     hg_class->func_map = NULL;
 
+    /* Free user data */
+    if (hg_class->data_free_callback)
+        hg_class->data_free_callback(hg_class->data);
+
     /* Destroy mutex */
     hg_thread_spin_destroy(&hg_class->func_map_lock);
 
@@ -1482,8 +1490,9 @@ hg_core_destroy(struct hg_handle *hg_handle)
         hg_handle->hg_info.hg_class->more_data_release(
             (hg_handle_t) hg_handle);
 
-    if (hg_handle->private_free_callback)
-        hg_handle->private_free_callback(hg_handle->private_data);
+    /* Free user data */
+    if (hg_handle->data_free_callback)
+        hg_handle->data_free_callback(hg_handle->data);
 
     free(hg_handle);
 
@@ -3091,6 +3100,43 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_class_set_data(hg_class_t *hg_class, void *data,
+    void (*free_callback)(void *))
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_class->data = data;
+    hg_class->data_free_callback = free_callback;
+
+ done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+void *
+HG_Core_class_get_data(const hg_class_t *hg_class)
+{
+    void *ret = NULL;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
+    ret = hg_class->data;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_context_t *
 HG_Core_context_create(hg_class_t *hg_class)
 {
@@ -3303,6 +3349,10 @@ HG_Core_context_destroy(hg_context_t *context)
         goto done;
     }
 
+    /* Free user data */
+    if (context->data_free_callback)
+        context->data_free_callback(context->data);
+
     /* Destroy completion queue mutex/cond */
     hg_thread_mutex_destroy(&context->completion_queue_mutex);
     hg_thread_cond_destroy(&context->completion_queue_cond);
@@ -3391,6 +3441,43 @@ HG_Core_context_get_id(const hg_context_t *context)
     ret = context->id;
 
  done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_context_set_data(hg_context_t *context, void *data,
+    void (*free_callback)(void *))
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    context->data = data;
+    context->data_free_callback = free_callback;
+
+ done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+void *
+HG_Core_context_get_data(const hg_context_t *context)
+{
+    void *ret = NULL;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        goto done;
+    }
+
+    ret = context->data;
+
+done:
     return ret;
 }
 
@@ -3848,7 +3935,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Core_set_private_data(hg_handle_t handle, void *data,
+HG_Core_set_data(hg_handle_t handle, void *data,
     void (*free_callback)(void *))
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
@@ -3860,8 +3947,8 @@ HG_Core_set_private_data(hg_handle_t handle, void *data,
         goto done;
     }
 
-    hg_handle->private_data = data;
-    hg_handle->private_free_callback = free_callback;
+    hg_handle->data = data;
+    hg_handle->data_free_callback = free_callback;
 
 done:
     return ret;
@@ -3869,7 +3956,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 void *
-HG_Core_get_private_data(hg_handle_t handle)
+HG_Core_get_data(hg_handle_t handle)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     void *ret = NULL;
@@ -3879,7 +3966,7 @@ HG_Core_get_private_data(hg_handle_t handle)
         goto done;
     }
 
-    ret = hg_handle->private_data;
+    ret = hg_handle->data;
 
 done:
     return ret;

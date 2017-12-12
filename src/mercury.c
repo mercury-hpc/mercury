@@ -245,7 +245,7 @@ hg_private_data_alloc(hg_class_t *hg_class, hg_handle_t handle)
         HG_LOG_ERROR("Cannot create HG proc");
         goto done;
     }
-    HG_Core_set_private_data(handle, hg_private_data, hg_private_data_free);
+    HG_Core_set_data(handle, hg_private_data, hg_private_data_free);
 
 done:
     return ret;
@@ -274,8 +274,7 @@ hg_more_data_cb(hg_handle_t handle, hg_return_t (*done_cb)(hg_handle_t))
     hg_return_t ret = HG_SUCCESS;
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
@@ -299,8 +298,7 @@ hg_more_data_free_cb(hg_handle_t handle)
     struct hg_private_data *hg_private_data;
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         goto done;
@@ -760,8 +758,7 @@ hg_get_extra_input_cb(const struct hg_cb_info *callback_info)
     hg_return_t ret = HG_SUCCESS;
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
@@ -969,6 +966,21 @@ HG_Class_get_output_eager_size(const hg_class_t *hg_class)
 }
 
 /*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Class_set_data(hg_class_t *hg_class, void *data,
+    void (*free_callback)(void *))
+{
+    return HG_Core_class_set_data(hg_class, data, free_callback);
+}
+
+/*---------------------------------------------------------------------------*/
+void *
+HG_Class_get_data(const hg_class_t *hg_class)
+{
+    return HG_Core_class_get_data(hg_class);
+}
+
+/*---------------------------------------------------------------------------*/
 hg_context_t *
 HG_Context_create(hg_class_t *hg_class)
 {
@@ -1033,6 +1045,21 @@ hg_uint8_t
 HG_Context_get_id(const hg_context_t *context)
 {
     return HG_Core_context_get_id(context);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Context_set_data(hg_context_t *context, void *data,
+    void (*free_callback)(void *))
+{
+    return HG_Core_context_set_data(context, data, free_callback);
+}
+
+/*---------------------------------------------------------------------------*/
+void *
+HG_Context_get_data(const hg_context_t *context)
+{
+    return HG_Core_context_get_data(context);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1349,8 +1376,7 @@ HG_Get_input(hg_handle_t handle, void *in_struct)
     }
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
@@ -1392,8 +1418,7 @@ HG_Free_input(hg_handle_t handle, void *in_struct)
     }
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
@@ -1435,8 +1460,7 @@ HG_Get_output(hg_handle_t handle, void *out_struct)
     }
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
@@ -1478,8 +1502,7 @@ HG_Free_output(hg_handle_t handle, void *out_struct)
     }
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
@@ -1520,8 +1543,7 @@ HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
     }
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
@@ -1566,8 +1588,7 @@ HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
     }
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
@@ -1617,8 +1638,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     hg_return_t ret = HG_SUCCESS;
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
@@ -1675,8 +1695,7 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
     hg_return_t ret = HG_SUCCESS;
 
     /* Retrieve private data */
-    hg_private_data =
-        (struct hg_private_data *) HG_Core_get_private_data(handle);
+    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
     if (!hg_private_data) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
