@@ -148,6 +148,9 @@ struct na_ofi_domain {
     enum na_ofi_prov_type nod_prov_type;    /* OFI provider type */
     enum na_ofi_mr_mode nod_mr_mode;        /* OFI memory region mode */
     char *nod_prov_name;                    /* OFI provider name */
+#if defined(NA_OFI_HAS_EXT_GNI_H)
+    struct fi_gni_auth_key fi_gni_auth_key; /* GNI auth key */
+#endif
     struct fi_info *nod_prov;               /* OFI provider info */
     struct fid_fabric *nod_fabric;          /* Fabric domain handle */
     struct fid_domain *nod_domain;          /* Access domain handle */
@@ -168,8 +171,6 @@ struct na_ofi_domain {
 struct na_ofi_endpoint {
     char *noe_node;             /* Fabric address */
     char *noe_service;          /* Service name */
-    void *noe_auth_key;         /* Auth key */
-    na_size_t noe_auth_key_size;/* Auth key size */
     struct fi_info *noe_prov;   /* OFI provider info */
     struct fid_ep *noe_ep;      /* Endpoint to communicate on */
     struct fid_cq *noe_cq;      /* Completion queue handle */
@@ -519,15 +520,15 @@ na_ofi_verify_provider(const char *prov_name, const char *domain_name,
 
 static na_return_t
 na_ofi_domain_open(const char *prov_name, const char *domain_name,
-    struct na_ofi_domain **na_ofi_domain_p);
+    const char *auth_key, struct na_ofi_domain **na_ofi_domain_p);
 
 static na_return_t
 na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
 
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
-    const char *node, const char *service, const char *auth_key,
-    na_bool_t no_block, struct na_ofi_endpoint **na_ofi_endpoint_p);
+    const char *node, const char *service, na_bool_t no_wait,
+    struct na_ofi_endpoint **na_ofi_endpoint_p);
 
 static na_return_t
 na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint);
@@ -1004,7 +1005,7 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_domain_open(const char *prov_name, const char *domain_name,
-    struct na_ofi_domain **na_ofi_domain_p)
+    const char *auth_key, struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain;
     struct fi_av_attr av_attr = {0};
@@ -1110,6 +1111,20 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS;
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_GNI_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
+#if defined(NA_OFI_HAS_EXT_GNI_H)
+        if (auth_key) {
+            na_ofi_domain->fi_gni_auth_key.type = GNIX_AKT_RAW;
+            na_ofi_domain->fi_gni_auth_key.raw.protection_key =
+                (uint32_t) strtoul(auth_key, NULL, 10);
+
+            na_ofi_domain->nod_prov->domain_attr->auth_key =
+                (void *) &na_ofi_domain->fi_gni_auth_key;
+            na_ofi_domain->nod_prov->domain_attr->auth_key_size =
+                sizeof(na_ofi_domain->fi_gni_auth_key);
+        }
+#else
+        (void) auth_key;
+#endif
     } else {
         NA_LOG_ERROR("bad domain->nod_prov_name %s.",
             na_ofi_domain->nod_prov_name);
@@ -1279,8 +1294,8 @@ out:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
-    const char *node, const char *service, const char NA_UNUSED *auth_key,
-    na_bool_t no_wait, struct na_ofi_endpoint **na_ofi_endpoint_p)
+    const char *node, const char *service, na_bool_t no_wait,
+    struct na_ofi_endpoint **na_ofi_endpoint_p)
 {
     struct na_ofi_endpoint *na_ofi_endpoint;
     struct fi_cq_attr cq_attr = {0};
@@ -1312,29 +1327,6 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
         ret = NA_NOMEM_ERROR;
         goto out;
     }
-
-#if defined(NA_OFI_HAS_EXT_GNI_H)
-    if (auth_key) {
-        if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
-            struct fi_gni_auth_key fi_gni_auth_key;
-
-            fi_gni_auth_key.type = GNIX_AKT_RAW;
-            fi_gni_auth_key.raw.protection_key = (uint32_t) strtoul(auth_key,
-                NULL, 10);
-
-            na_ofi_endpoint->noe_auth_key = malloc(
-                sizeof(struct fi_gni_auth_key));
-            if (!na_ofi_endpoint->noe_auth_key) {
-                NA_LOG_ERROR("Could not allocate na_ofi_endpoint auth key");
-                ret = NA_NOMEM_ERROR;
-                goto out;
-            }
-            memcpy(na_ofi_endpoint->noe_auth_key, &fi_gni_auth_key,
-                sizeof(struct fi_gni_auth_key));
-            na_ofi_endpoint->noe_auth_key_size = sizeof(struct fi_gni_auth_key);
-        }
-    }
-#endif
 
     /* Resolve node / service (always pass a numeric host) */
     rc = fi_getinfo(NA_OFI_VERSION, na_ofi_endpoint->noe_node,
@@ -1481,7 +1473,6 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
     if (na_ofi_endpoint->noe_prov)
         fi_freeinfo(na_ofi_endpoint->noe_prov);
 
-    free(na_ofi_endpoint->noe_auth_key);
     free(na_ofi_endpoint->noe_node);
     free(na_ofi_endpoint->noe_service);
     free(na_ofi_endpoint);
@@ -1676,7 +1667,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     const char *prov_name;
     char *service = NULL;
     na_bool_t no_wait = NA_FALSE;
-    char *auth_key = NULL;
+    const char *auth_key = NULL;
     na_return_t ret = NA_SUCCESS;
 
     /*
@@ -1709,8 +1700,11 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     /* Get init info */
     if (na_info->na_init_info) {
+        /* Progress mode */
         if (na_info->na_init_info->progress_mode == NA_NO_BLOCK)
             no_wait = NA_TRUE;
+        /* Auth key */
+        auth_key = na_info->na_init_info->auth_key;
     }
 
     /* Create private data */
@@ -1730,7 +1724,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     hg_thread_mutex_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_mutex);
 
     /* Create domain */
-    ret = na_ofi_domain_open(prov_name, domain_name,
+    ret = na_ofi_domain_open(prov_name, domain_name, auth_key,
         &NA_OFI_PRIVATE_DATA(na_class)->nop_domain);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not open domain for %s, %s", prov_name,
@@ -1740,7 +1734,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     /* Create endpoint */
     ret = na_ofi_endpoint_open(NA_OFI_PRIVATE_DATA(na_class)->nop_domain,
-        node, service, auth_key, NA_OFI_PRIVATE_DATA(na_class)->no_wait,
+        node, service, NA_OFI_PRIVATE_DATA(na_class)->no_wait,
         &NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not create endpoint for %s, %s", node, service);
@@ -2256,8 +2250,6 @@ static void *
 na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-    struct na_ofi_endpoint *endpoint =
-        NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint;
     na_size_t page_size = (na_size_t) hg_mem_get_page_size();
     void *mem_ptr = NULL;
     struct fid_mr *mr_hdl = NULL;
@@ -2288,12 +2280,6 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
     /* GNI provider does not support user requested key */
     if (domain->nod_prov_type != NA_OFI_PROV_GNI)
         attr.requested_key = (uint64_t) mem_ptr;
-
-    /* If auth key, register memory with new authorization key */
-    if (endpoint->noe_auth_key) {
-        attr.auth_key = (uint8_t *) endpoint->noe_auth_key;
-        attr.auth_key_size = endpoint->noe_auth_key_size;
-    }
 
     rc = fi_mr_regattr(domain->nod_domain, &attr, 0, &mr_hdl);
     if (rc != 0) {
@@ -2730,8 +2716,6 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-    struct na_ofi_endpoint *endpoint =
-        NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint;
     na_uint64_t access;
     struct iovec mr_iov = {0};
     struct fi_mr_attr attr = {
@@ -2772,12 +2756,6 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     /* Set IOV */
     mr_iov.iov_base = (void *)na_ofi_mem_handle->nom_base;
     mr_iov.iov_len = (size_t) na_ofi_mem_handle->nom_size;
-
-    /* If auth key, register memory with new authorization key */
-    if (endpoint->noe_auth_key) {
-        attr.auth_key = (uint8_t *) endpoint->noe_auth_key;
-        attr.auth_key_size = endpoint->noe_auth_key_size;
-    }
 
     rc = fi_mr_regattr(domain->nod_domain, &attr, 0,
         &na_ofi_mem_handle->nom_mr_hdl);
