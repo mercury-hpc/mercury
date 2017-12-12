@@ -64,6 +64,7 @@ branches:
 before_install:
     - echo "Existing directories in $HOME" && ls $HOME
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
+    - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew cask uninstall --force oclint; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc" ]]; then brew install gcc; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install mpich; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install libfabric; fi
