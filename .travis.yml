@@ -42,20 +42,6 @@ matrix:
          - liblsan0
      env:
        - MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
-   - os: linux
-     compiler: gcc
-     addons:
-       apt:
-         sources:
-         - ubuntu-toolchain-r-test
-         packages:
-         - gcc-7
-         - g++-7
-         - libtsan0
-         - libasan4
-         - liblsan0
-     env:
-         - MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
 
 branches:
   only:
