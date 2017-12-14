@@ -342,19 +342,19 @@ na_ofi_class_unlock(na_class_t *na_class)
 }
 
 static NA_INLINE na_bool_t
-na_ofi_with_reqhdr(const na_class_t *na_class)
-{
-    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-
-    return NA_TRUE || domain->nod_prov_type != NA_OFI_PROV_PSM2;
-}
-
-static NA_INLINE na_bool_t
 na_ofi_with_sep(const na_class_t *na_class)
 {
     struct na_ofi_endpoint *ep = NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint;
 
     return ep->noe_sep;
+}
+
+static NA_INLINE na_bool_t
+na_ofi_with_reqhdr(const na_class_t *na_class)
+{
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+
+    return na_ofi_with_sep(na_class) || domain->nod_prov_type != NA_OFI_PROV_PSM2;
 }
 
 /**
