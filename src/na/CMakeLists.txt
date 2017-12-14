@@ -156,6 +156,12 @@ if(NA_USE_OFI)
     # Detect <rdma/fi_ext_gni.h>
     set(CMAKE_REQUIRED_INCLUDES ${OFI_INCLUDE_DIR})
     check_include_files("rdma/fi_ext_gni.h" NA_OFI_HAS_EXT_GNI_H)
+    if(NA_OFI_HAS_EXT_GNI_H)
+      option(NA_OFI_GNI_USE_UDREG "Use udreg instead of internal MR cache." OFF)
+      if(NA_OFI_GNI_USE_UDREG)
+        set(NA_OFI_GNI_HAS_UDREG 1)
+      endif()
+    endif()
     set(NA_INT_INCLUDE_DEPENDENCIES
       ${NA_INT_INCLUDE_DEPENDENCIES}
       ${OFI_INCLUDE_DIR}

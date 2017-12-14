@@ -1156,6 +1156,30 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
         goto out;
     }
 
+#if defined(NA_OFI_HAS_EXT_GNI_H) && defined(NA_OFI_GNI_HAS_UDREG)
+    /* Enable use of udreg instead of internal MR cache */
+    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
+        char *other_reg_type = "udreg";
+        struct fi_gni_ops_domain *gni_domain_ops;
+
+        rc = fi_open_ops(&na_ofi_domain->nod_domain->fid, FI_GNI_DOMAIN_OPS_1,
+            0, (void **) &gni_domain_ops, NULL);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_open_ops failed, rc: %d(%s).", rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+
+        rc = gni_domain_ops->set_val(&na_ofi_domain->nod_domain->fid,
+            GNI_MR_CACHE, &other_reg_type);
+        if (rc != 0) {
+            NA_LOG_ERROR("set_val failed, rc: %d(%s).", rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+    }
+#endif
+
     /* For MR_SCALABLE, create MR, now exports all memory range for RMA */
     if (na_ofi_domain->nod_mr_mode == NA_OFI_MR_SCALABLE) {
         rc = fi_mr_reg(na_ofi_domain->nod_domain, (void *)0, UINT64_MAX,
