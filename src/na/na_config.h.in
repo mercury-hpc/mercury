@@ -41,6 +41,7 @@
 #cmakedefine NA_HAS_OFI
 #cmakedefine NA_OFI_HAS_EXT_GNI_H
 #cmakedefine NA_OFI_GNI_HAS_UDREG
+#cmakedefine NA_OFI_GNI_HAS_NO_LAZY_DEREG
 
 /* NA SM */
 #cmakedefine NA_HAS_SM

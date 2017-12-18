@@ -161,6 +161,10 @@ if(NA_USE_OFI)
       if(NA_OFI_GNI_USE_UDREG)
         set(NA_OFI_GNI_HAS_UDREG 1)
       endif()
+      option(NA_OFI_GNI_DISABLE_LAZY_DEREG "Disable lazy deregistration inside MR cache." OFF)
+      if(NA_OFI_GNI_DISABLE_LAZY_DEREG)
+        set(NA_OFI_GNI_HAS_NO_LAZY_DEREG 1)
+      endif()
     endif()
     set(NA_INT_INCLUDE_DEPENDENCIES
       ${NA_INT_INCLUDE_DEPENDENCIES}

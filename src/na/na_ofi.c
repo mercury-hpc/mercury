@@ -518,6 +518,12 @@ static NA_INLINE na_bool_t
 na_ofi_verify_provider(const char *prov_name, const char *domain_name,
     const struct fi_info *fi_info);
 
+#ifdef NA_OFI_HAS_EXT_GNI_H
+static NA_INLINE na_return_t
+na_ofi_gni_set_domain_op_value(struct na_ofi_domain *na_ofi_domain, int op,
+    void *value);
+#endif
+
 static na_return_t
 na_ofi_domain_open(const char *prov_name, const char *domain_name,
     const char *auth_key, struct na_ofi_domain **na_ofi_domain_p);
@@ -1003,6 +1009,36 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef NA_OFI_HAS_EXT_GNI_H
+static NA_INLINE na_return_t
+na_ofi_gni_set_domain_op_value(struct na_ofi_domain *na_ofi_domain, int op,
+    void *value)
+{
+    struct fi_gni_ops_domain *gni_domain_ops;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    rc = fi_open_ops(&na_ofi_domain->nod_domain->fid, FI_GNI_DOMAIN_OPS_1,
+        0, (void **) &gni_domain_ops, NULL);
+    if (rc != 0) {
+        NA_LOG_ERROR("fi_open_ops failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    rc = gni_domain_ops->set_val(&na_ofi_domain->nod_domain->fid, op, value);
+    if (rc != 0) {
+        NA_LOG_ERROR("set_val failed, rc: %d(%s).", rc, fi_strerror(-rc));
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+out:
+    return ret;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_domain_open(const char *prov_name, const char *domain_name,
     const char *auth_key, struct na_ofi_domain **na_ofi_domain_p)
@@ -1157,24 +1193,28 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
     }
 
 #if defined(NA_OFI_HAS_EXT_GNI_H) && defined(NA_OFI_GNI_HAS_UDREG)
-    /* Enable use of udreg instead of internal MR cache */
     if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
         char *other_reg_type = "udreg";
-        struct fi_gni_ops_domain *gni_domain_ops;
 
-        rc = fi_open_ops(&na_ofi_domain->nod_domain->fid, FI_GNI_DOMAIN_OPS_1,
-            0, (void **) &gni_domain_ops, NULL);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_open_ops failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
+        /* Enable use of udreg instead of internal MR cache */
+        ret = na_ofi_gni_set_domain_op_value(na_ofi_domain, GNI_MR_CACHE,
+            &other_reg_type);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not set domain op value for GNI_MR_CACHE");
             goto out;
         }
+    }
+#endif
 
-        rc = gni_domain_ops->set_val(&na_ofi_domain->nod_domain->fid,
-            GNI_MR_CACHE, &other_reg_type);
-        if (rc != 0) {
-            NA_LOG_ERROR("set_val failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
+#if defined(NA_OFI_HAS_EXT_GNI_H) && defined(NA_OFI_GNI_HAS_NO_LAZY_DEREG)
+    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
+        int enable = 0;
+
+        /* Disable lazy deregistration in MR cache */
+        ret = na_ofi_gni_set_domain_op_value(na_ofi_domain,
+            GNI_MR_CACHE_LAZY_DEREG, &enable);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not set domain op value for GNI_MR_CACHE_LAZY_DEREG");
             goto out;
         }
     }
