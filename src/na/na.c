@@ -46,9 +46,10 @@
 /************************************/
 
 struct na_private_class {
-    struct na_class na_class;   /* Must remain as first field */
-    char * protocol_name;       /* Name of protocol */
-    na_bool_t listen;           /* Listen for connections */
+    struct na_class na_class;                   /* Must remain as first field */
+    char * protocol_name;                       /* Name of protocol */
+    na_bool_t listen;                           /* Listen for connections */
+    na_progress_mode_t progress_mode;           /* NA progress mode */
 };
 
 /* Private context / do not expose private members to plugins */
@@ -299,6 +300,8 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
         goto done;
     }
     na_info->na_init_info = na_init_info;
+    if (na_init_info)
+        na_private_class->progress_mode = na_init_info->progress_mode;
 
 #ifdef NA_DEBUG
     na_info_print(na_info);
@@ -530,6 +533,7 @@ NA_Context_create(na_class_t *na_class)
         ret = NA_NOMEM_ERROR;
         goto done;
     }
+    na_private_context->na_class = na_class;
 
     if (na_class->context_create) {
         ret = na_class->context_create(na_class,
@@ -1755,6 +1759,8 @@ done:
 na_bool_t
 NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
 {
+    struct na_private_class *na_private_class =
+        (struct na_private_class *) na_class;
     struct na_private_context *na_private_context =
         (struct na_private_context *) context;
 
@@ -1766,6 +1772,10 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
         NA_LOG_ERROR("NULL context");
         return NA_FALSE;
     }
+
+    /* Do not try to wait if NA_NO_BLOCK is set */
+    if (na_private_class->progress_mode == NA_NO_BLOCK)
+        return NA_FALSE;
 
     /* Something is in one of the completion queues */
     if (!hg_atomic_queue_is_empty(na_private_context->completion_queue) ||
@@ -1784,9 +1794,11 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
 na_return_t
 NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
 {
+    struct na_private_class *na_private_class =
+        (struct na_private_class *) na_class;
     struct na_private_context *na_private_context =
         (struct na_private_context *) context;
-    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    double remaining ;
 #ifdef NA_HAS_MULTI_PROGRESS
     hg_util_int32_t old, num;
 #endif
@@ -1806,6 +1818,14 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
         NA_LOG_ERROR("progress plugin callback is not defined");
         ret = NA_PROTOCOL_ERROR;
         goto done;
+    }
+
+    /* Do not block if NA_NO_BLOCK option is passed */
+    if (na_private_class->progress_mode == NA_NO_BLOCK) {
+        timeout = 0;
+        remaining = 0;
+    } else {
+        remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     }
 
 #ifdef NA_HAS_MULTI_PROGRESS
@@ -1892,7 +1912,10 @@ na_return_t
 NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
     int callback_ret[], unsigned int *actual_count)
 {
-    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    struct na_private_class *na_private_class;
+    struct na_private_context *na_private_context =
+        (struct na_private_context *) context;
+    double remaining;
     na_return_t ret = NA_SUCCESS;
     unsigned int count = 0;
 
@@ -1902,10 +1925,17 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         goto done;
     }
 
+    /* Do not block if NA_NO_BLOCK option is passed */
+    na_private_class = (struct na_private_class *) na_private_context->na_class;
+    if (na_private_class->progress_mode == NA_NO_BLOCK) {
+        timeout = 0;
+        remaining = 0;
+    } else {
+        remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    }
+
     while (count < max_count) {
         struct na_cb_completion_data *completion_data = NULL;
-        struct na_private_context *na_private_context =
-            (struct na_private_context *) context;
 
         completion_data =
             hg_atomic_queue_pop_mc(na_private_context->completion_queue);

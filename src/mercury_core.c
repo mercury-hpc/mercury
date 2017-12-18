@@ -2589,6 +2589,10 @@ hg_core_poll_try_wait_cb(void *arg)
 {
     struct hg_context *hg_context = (struct hg_context *) arg;
 
+    /* Do not try to wait if NA_NO_BLOCK is set */
+    if (hg_context->hg_class->progress_mode == NA_NO_BLOCK)
+        return NA_FALSE;
+
     /* Something is in one of the completion queues */
     if (!hg_atomic_queue_is_empty(hg_context->completion_queue) ||
         hg_atomic_get32(&hg_context->backfill_queue_count)) {
