@@ -92,6 +92,7 @@ if(NA_USE_OFI)
 
   option(NA_OFI_TESTING_USE_CRAY_DRC
     "Use Cray DRC to allow multi-job communication." OFF)
+  mark_as_advanced(NA_OFI_TESTING_USE_CRAY_DRC)
   if(NA_OFI_TESTING_USE_CRAY_DRC)
     find_package(DRC REQUIRED)
     if(DRC_FOUND)

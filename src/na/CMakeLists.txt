@@ -102,6 +102,7 @@ if(NA_USE_MPI)
     # Extra job setup for Cray MPI without ALPS support
     option(NA_MPI_USE_GNI_SETUP
       "Define NA_MPI_Gni_job_setup() to setup the Aries NIC resources for the job." OFF)
+    mark_as_advanced(NA_MPI_USE_GNI_SETUP)
     if(NA_MPI_USE_GNI_SETUP)
       find_package(GNI REQUIRED)
       if(GNI_FOUND)
@@ -165,6 +166,7 @@ if(NA_USE_OFI)
       if(NA_OFI_GNI_DISABLE_LAZY_DEREG)
         set(NA_OFI_GNI_HAS_NO_LAZY_DEREG 1)
       endif()
+      mark_as_advanced(NA_OFI_GNI_USE_UDREG NA_OFI_GNI_DISABLE_LAZY_DEREG)
     endif()
     set(NA_INT_INCLUDE_DEPENDENCIES
       ${NA_INT_INCLUDE_DEPENDENCIES}
