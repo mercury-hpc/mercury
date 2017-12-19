@@ -281,6 +281,9 @@ build_mercury_test(rpc_lat)
 build_mercury_test(write_bw)
 build_mercury_test(read_bw)
 #build_mercury_test(init)
+if(HG_TESTING_HAS_CRAY_DRC)
+  build_mercury_test(drc_auth)
+endif()
 
 # Build tests and add them to ctest
 foreach(MERCURY_test ${MERCURY_tests})

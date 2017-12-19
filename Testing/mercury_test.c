@@ -36,7 +36,7 @@
 static void
 hg_test_usage(const char *execname);
 
-static void
+void
 hg_test_parse_options(int argc, char *argv[],
     struct hg_test_info *hg_test_info);
 
@@ -105,7 +105,7 @@ hg_test_usage(const char *execname)
 }
 
 /*---------------------------------------------------------------------------*/
-static void
+void
 hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
 {
     int opt;
