@@ -146,6 +146,7 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
 
     NA_Addr_free(na_test_lat_info->na_class,
         na_cb_info->info.recv_unexpected.source);
+
     return NA_SUCCESS;
 }
 
@@ -164,6 +165,7 @@ na_test_send_expected_cb(const struct na_cb_info *na_cb_info)
 static na_return_t
 na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
 {
+    struct na_test_source_recv_arg na_test_source_recv_arg = { 0 };
     char *send_buf = NULL, *recv_buf = NULL;
     void *send_buf_data, *recv_buf_data;
     na_op_id_t send_op_id;
@@ -193,7 +195,6 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
 
     send_request = hg_request_create(na_test_lat_info->request_class);
 
-    struct na_test_source_recv_arg na_test_source_recv_arg = { 0 };
     na_test_source_recv_arg.request = send_request;
     na_test_source_recv_arg.recv_buf = recv_buf;
     na_test_source_recv_arg.send_buf = send_buf;
