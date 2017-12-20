@@ -11,8 +11,6 @@
 #include "mercury_test_drc.h"
 #include "mercury_hl.h"
 
-#include <rdmacred.h>
-
 /****************/
 /* Local Macros */
 /****************/
@@ -248,7 +246,6 @@ hg_test_drc_token_acquire(struct hg_test_info *hg_test_info)
 {
     hg_return_t ret = HG_SUCCESS;
 #ifndef HG_TEST_DRC_IGNORE
-    drc_info_handle_t credential_info;
     int rc;
 #endif
 
@@ -268,7 +265,7 @@ hg_test_drc_token_acquire(struct hg_test_info *hg_test_info)
 
     /* Access credential */
 #ifndef HG_TEST_DRC_IGNORE
-    rc = drc_access(hg_test_info->credential, 0, &credential_info);
+    rc = drc_access(hg_test_info->credential, 0, &hg_test_info->credential_info);
     if (rc != DRC_SUCCESS) { /* failed to access credential */
         HG_LOG_ERROR("drc_access() failed (%d, drc_strerror(-rc))", rc,
             drc_strerror(-rc));
@@ -279,14 +276,16 @@ hg_test_drc_token_acquire(struct hg_test_info *hg_test_info)
 
     /* Set cookie for further use */
 #ifndef HG_TEST_DRC_IGNORE
-    hg_test_info->cookie = drc_get_first_cookie(credential_info);
+    hg_test_info->cookie = drc_get_first_cookie(hg_test_info->credential_info);
 #else
     hg_test_info->cookie = 123456789;
 #endif
     printf("# Cookie is %u\n", hg_test_info->cookie);
     fflush(stdout);
 
+#ifndef HG_TEST_DRC_IGNORE
 done:
+#endif
     return ret;
 }
 
@@ -305,7 +304,6 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
     hg_test_drc_grant_out_t out_struct;
     hg_return_t ret = HG_SUCCESS;
 #ifndef HG_TEST_DRC_IGNORE
-    drc_info_handle_t credential_info;
     int rc;
 #endif
 
@@ -365,7 +363,7 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
 
     /* Translate token */
 #ifndef HG_TEST_DRC_IGNORE
-    rc = drc_access_with_token(token, 0, &credential_info);
+    rc = drc_access_with_token(token, 0, &hg_test_info->credential_info);
     if (rc != DRC_SUCCESS) {/* failed to grant access to the credential */
         HG_LOG_ERROR("drc_access_with_token() failed (%d, %s)", rc,
             drc_strerror(-rc));
@@ -381,7 +379,7 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
 
     /* Access credential */
 #ifndef HG_TEST_DRC_IGNORE
-    rc = drc_access(credential, 0, &credential_info);
+    rc = drc_access(credential, 0, &hg_test_info->credential_info);
     if (rc != DRC_SUCCESS) { /* failed to access credential */
         HG_LOG_ERROR("drc_access() failed (%d, drc_strerror(-rc))", rc,
             drc_strerror(-rc));
@@ -393,7 +391,7 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
 
     /* Set cookie for further use */
 #ifndef HG_TEST_DRC_IGNORE
-    hg_test_info->cookie = drc_get_first_cookie(credential_info);
+    hg_test_info->cookie = drc_get_first_cookie(hg_test_info->credential_info);
 #else
     hg_test_info->cookie = 123456789;
 #endif
@@ -539,6 +537,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
     /* Copy cookie and credential */
     hg_test_info->credential = hg_test_drc_info.credential;
+    hg_test_info->credential_info = hg_test_drc_info.credential_info;
     hg_test_info->cookie = hg_test_drc_info.cookie;
 
     /* Sleep a few seconds to make sure listener is initialized */
@@ -563,20 +562,34 @@ hg_test_drc_release(struct hg_test_info *hg_test_info)
     int rc;
 #endif
 
-    if (!hg_test_info->credential)
-        goto done;
-
     /* Release the reference to the credential */
 #ifndef HG_TEST_DRC_IGNORE
-    rc = drc_release(hg_test_info->credential, 0);
-    if (rc != DRC_SUCCESS) { /* failed to release credential */
-        HG_LOG_ERROR("Could not release credential (%d, %s)", rc,
-            drc_strerror(-rc));
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
+    if (hg_test_info->credential_info) {
+        rc = drc_release_local(&hg_test_info->credential_info);
+        if (rc != DRC_SUCCESS) { /* failed to release credential info */
+            HG_LOG_ERROR("Could not release credential info (%d, %s)", rc,
+                drc_strerror(-rc));
+            ret = HG_PROTOCOL_ERROR;
+            goto done;
+        }
+        free((void *) hg_test_info->credential_info);
     }
-#endif
+
+    if (hg_test_info->credential) {
+        printf("# Releasing credential %u\n", hg_test_info->credential);
+        rc = drc_release(hg_test_info->credential, 0);
+        if (rc != DRC_SUCCESS) { /* failed to release credential */
+            HG_LOG_ERROR("Could not release credential (%d, %s)", rc,
+                drc_strerror(-rc));
+            ret = HG_PROTOCOL_ERROR;
+            goto done;
+        }
+    }
 
 done:
+#else
+    (void) hg_test_info;
+#endif
+
     return ret;
 }

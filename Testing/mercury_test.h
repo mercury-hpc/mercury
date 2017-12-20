@@ -27,6 +27,10 @@
 #endif
 #include "test_overflow.h"
 
+#ifdef HG_TESTING_HAS_CRAY_DRC
+# include <rdmacred.h>
+#endif
+
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
@@ -41,6 +45,7 @@ struct hg_test_info {
     hg_bool_t auth;
 #ifdef HG_TESTING_HAS_CRAY_DRC
     uint32_t credential;
+    drc_info_handle_t credential_info;
     uint32_t cookie;
 #endif
     struct na_test_info na_test_info;

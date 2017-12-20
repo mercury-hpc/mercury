@@ -28,5 +28,7 @@ main(int argc, char *argv[])
 
     hg_test_drc_acquire(argc, argv, &hg_test_info);
 
+    hg_test_drc_release(&hg_test_info);
+
     return EXIT_SUCCESS;
 }
