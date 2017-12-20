@@ -1340,8 +1340,14 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
     }
 
     /* Free OFI info */
-    if (na_ofi_domain->nod_prov)
+    if (na_ofi_domain->nod_prov) {
+        /* Prevent fi_freeinfo from attempting to free the key */
+        if (na_ofi_domain->nod_prov->domain_attr->auth_key)
+            na_ofi_domain->nod_prov->domain_attr->auth_key = NULL;
+        if (na_ofi_domain->nod_prov->domain_attr->auth_key_size)
+            na_ofi_domain->nod_prov->domain_attr->auth_key_size = 0;
         fi_freeinfo(na_ofi_domain->nod_prov);
+    }
 
     if (na_ofi_domain->nod_addr_ht)
         hg_hash_table_free(na_ofi_domain->nod_addr_ht);
