@@ -3224,18 +3224,21 @@ HG_Core_context_create(hg_class_t *hg_class)
         hg_core_completion_queue_notify_cb, context);
 #endif
 
-    /* If NA plugin exposes fd, add it to poll set and use appropriate
-     * progress function */
-    na_poll_fd = NA_Poll_get_fd(hg_class->na_class, context->na_context);
-    if (na_poll_fd > 0 || hg_class->progress_mode == NA_NO_BLOCK) {
+    if (context->hg_class->progress_mode == NA_NO_BLOCK)
+        /* Force to use progress poll */
+        na_poll_fd = 0;
+    else
+        /* If NA plugin exposes fd, add it to poll set and use appropriate
+         * progress function */
+        na_poll_fd = NA_Poll_get_fd(hg_class->na_class, context->na_context);
+    if (na_poll_fd >= 0) {
         hg_poll_add(context->poll_set, na_poll_fd, HG_POLLIN,
             hg_core_progress_na_cb, context);
         hg_poll_set_try_wait(context->poll_set, hg_core_poll_try_wait_cb,
             context);
         context->progress = hg_core_progress_poll;
-    } else {
+    } else
         context->progress = hg_core_progress_na;
-    }
 
     /* Increment context count of parent class */
     hg_atomic_incr32(&hg_class->n_contexts);
@@ -3328,11 +3331,15 @@ HG_Core_context_destroy(hg_context_t *context)
     }
 #endif
 
-    /* If NA plugin exposes fd, remove it from poll set */
-    na_poll_fd = NA_Poll_get_fd(context->hg_class->na_class,
-        context->na_context);
-    if ((na_poll_fd > 0)
-        && (hg_poll_remove(context->poll_set, na_poll_fd) != HG_UTIL_SUCCESS)) {
+    if (context->hg_class->progress_mode == NA_NO_BLOCK)
+        /* Was forced to use progress poll */
+        na_poll_fd = 0;
+    else
+        /* If NA plugin exposes fd, remove it from poll set */
+        na_poll_fd = NA_Poll_get_fd(context->hg_class->na_class,
+            context->na_context);
+    if ((na_poll_fd >= 0)
+        && hg_poll_remove(context->poll_set, na_poll_fd) != HG_UTIL_SUCCESS) {
         HG_LOG_ERROR("Could not remove NA poll descriptor from poll set");
         ret = HG_PROTOCOL_ERROR;
         goto done;

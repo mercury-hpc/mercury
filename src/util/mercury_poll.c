@@ -208,6 +208,7 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
         HG_UTIL_LOG_ERROR("malloc() failed (%s)");
         goto done;
     }
+    memset(hg_poll_data, 0, sizeof(struct hg_poll_data));
     hg_poll_data->poll_cb = poll_cb;
     hg_poll_data->poll_arg = poll_arg;
 
