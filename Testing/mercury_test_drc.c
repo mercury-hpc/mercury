@@ -170,7 +170,6 @@ hg_test_drc_grant_cb(hg_handle_t handle)
 #ifdef HG_TEST_DRC_USE_TOKEN
     hg_string_t token;
 #endif
-    uint32_t wlm_id;
 #ifndef HG_TEST_DRC_IGNORE
     int rc;
 #endif
@@ -189,16 +188,17 @@ hg_test_drc_grant_cb(hg_handle_t handle)
     }
 
     /* Get parameters */
-    wlm_id = in_struct.wlm_id;
+    hg_test_info->wlm_id = in_struct.wlm_id;
 
     /* Grant access to another job */
-    printf("# Granting access to wlm_id %u...\n", wlm_id);
+    printf("# Granting access to wlm_id %u...\n", hg_test_info->wlm_id);
     fflush(stdout);
 #ifndef HG_TEST_DRC_IGNORE
-    rc = drc_grant(hg_test_info->credential, wlm_id, DRC_FLAGS_TARGET_WLM);
+    rc = drc_grant(hg_test_info->credential, hg_test_info->wlm_id,
+        DRC_FLAGS_TARGET_WLM);
     if (rc != DRC_SUCCESS && rc != -DRC_ALREADY_GRANTED) {
-        HG_LOG_ERROR("drc_grant() to %d failed (%d, %s)", wlm_id, rc,
-            drc_strerror(-rc));
+        HG_LOG_ERROR("drc_grant() to %d failed (%d, %s)", hg_test_info->wlm_id,
+            rc, drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
@@ -535,8 +535,9 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
         goto done;
     }
 
-    /* Copy cookie and credential */
+    /* Copy cookie/credential info */
     hg_test_info->credential = hg_test_drc_info.credential;
+    hg_test_info->wlm_id = hg_test_drc_info.wlm_id;
     hg_test_info->credential_info = hg_test_drc_info.credential_info;
     hg_test_info->cookie = hg_test_drc_info.cookie;
 
@@ -573,6 +574,17 @@ hg_test_drc_release(struct hg_test_info *hg_test_info)
             goto done;
         }
         free((void *) hg_test_info->credential_info);
+    }
+
+    if (hg_test_info->wlm_id && hg_test_info->credential) {
+        rc = drc_revoke(hg_test_info->credential, hg_test_info->wlm_id,
+            DRC_FLAGS_TARGET_WLM);
+        if (rc != DRC_SUCCESS) { /* failed to release credential info */
+            HG_LOG_ERROR("Could not revoke access for %d (%d, %s)",
+                hg_test_info->wlm_id, rc, drc_strerror(-rc));
+            ret = HG_PROTOCOL_ERROR;
+            goto done;
+        }
     }
 
     if (hg_test_info->credential) {

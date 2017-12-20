@@ -45,6 +45,7 @@ struct hg_test_info {
     hg_bool_t auth;
 #ifdef HG_TESTING_HAS_CRAY_DRC
     uint32_t credential;
+    uint32_t wlm_id;
     drc_info_handle_t credential_info;
     uint32_t cookie;
 #endif
