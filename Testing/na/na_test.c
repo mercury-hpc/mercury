@@ -220,10 +220,10 @@ na_test_mpi_init(struct na_test_info *na_test_info)
         MPI_Init(NULL, NULL);
     }
 
+done:
     MPI_Comm_rank(na_test_info->mpi_comm, &na_test_info->mpi_comm_rank);
     MPI_Comm_size(na_test_info->mpi_comm, &na_test_info->mpi_comm_size);
 
-done:
     return;
 }
 
