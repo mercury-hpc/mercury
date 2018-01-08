@@ -23,9 +23,6 @@
 #define NWIDTH 13
 #define LOW_PERF_THRESHOLD 5000
 
-extern int na_test_comm_rank_g;
-extern int na_test_comm_size_g;
-
 extern hg_id_t hg_test_perf_rpc_id_g;
 extern hg_id_t hg_test_perf_bulk_id_g;
 
@@ -61,8 +58,7 @@ hg_test_perf_forward_cb2(const struct hg_cb_info *callback_info)
  *
  */
 static hg_return_t
-measure_rpc1(hg_context_t *context, hg_addr_t addr,
-    hg_request_class_t *request_class)
+measure_rpc1(struct hg_test_info *hg_test_info)
 {
     int avg_iter;
     double time_read = 0, min_time_read = -1, max_time_read = 0;
@@ -72,20 +68,22 @@ measure_rpc1(hg_context_t *context, hg_addr_t addr,
 
     size_t i;
 
-    if (na_test_comm_rank_g == 0) {
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
         printf("# Executing RPC with %d client(s) -- loop %d time(s)\n",
-                na_test_comm_size_g, MERCURY_TESTING_MAX_LOOP);
+            hg_test_info->na_test_info.mpi_comm_size, MERCURY_TESTING_MAX_LOOP);
     }
 
-    if (na_test_comm_rank_g == 0) printf("# Warming up...\n");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        printf("# Warming up...\n");
 
-    ret = HG_Create(context, addr, hg_test_perf_rpc_id_g, &handle);
+    ret = HG_Create(hg_test_info->context, hg_test_info->target_addr,
+        hg_test_perf_rpc_id_g, &handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         goto done;
     }
 
-    request = hg_request_create(request_class);
+    request = hg_request_create(hg_test_info->request_class);
 
     /* Warm up for RPC */
     for (i = 0; i < RPC_SKIP; i++) {
@@ -99,12 +97,14 @@ measure_rpc1(hg_context_t *context, hg_addr_t addr,
         hg_request_reset(request);
     }
 
-    NA_Test_barrier();
+    NA_Test_barrier(&hg_test_info->na_test_info);
 
-    if (na_test_comm_rank_g == 0) printf("%*s%*s%*s%*s%*s%*s",
-        NWIDTH, "#    Time (s)", NWIDTH, "Min (s)", NWIDTH, "Max (s)",
-        NWIDTH, "Calls (c/s)", NWIDTH, "Min (c/s)", NWIDTH, "Max (c/s)");
-    if (na_test_comm_rank_g == 0) printf("\n");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        printf("%*s%*s%*s%*s%*s%*s", NWIDTH, "#    Time (s)", NWIDTH, "Min (s)",
+            NWIDTH, "Max (s)", NWIDTH, "Calls (c/s)", NWIDTH, "Min (c/s)",
+            NWIDTH, "Max (c/s)");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        printf("\n");
 
     /* RPC benchmark */
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
@@ -122,7 +122,7 @@ measure_rpc1(hg_context_t *context, hg_addr_t addr,
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
-        NA_Test_barrier();
+        NA_Test_barrier(&hg_test_info->na_test_info);
 
         hg_time_get_current(&t2);
         td = hg_time_to_double(hg_time_subtract(t2, t1));
@@ -135,19 +135,20 @@ measure_rpc1(hg_context_t *context, hg_addr_t addr,
         hg_request_reset(request);
 
         part_time_read = time_read / (avg_iter + 1);
-        calls_per_sec = na_test_comm_size_g / part_time_read;
-        min_calls_per_sec = na_test_comm_size_g / max_time_read;
-        max_calls_per_sec = na_test_comm_size_g / min_time_read;
+        calls_per_sec = hg_test_info->na_test_info.mpi_comm_size / part_time_read;
+        min_calls_per_sec = hg_test_info->na_test_info.mpi_comm_size / max_time_read;
+        max_calls_per_sec = hg_test_info->na_test_info.mpi_comm_size / min_time_read;
 
         /* At this point we have received everything so work out the bandwidth */
-        if (na_test_comm_rank_g == 0) {
+        if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
             printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\r", NWIDTH, NDIGITS,
                 part_time_read, NWIDTH, NDIGITS, min_time_read, NWIDTH, NDIGITS,
                 max_time_read, NWIDTH, NDIGITS, calls_per_sec, NWIDTH, NDIGITS,
                 min_calls_per_sec, NWIDTH, NDIGITS, max_calls_per_sec);
         }
     }
-    if (na_test_comm_rank_g == 0) printf("\n");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        printf("\n");
 
     hg_request_destroy(request);
 
@@ -163,8 +164,7 @@ done:
 }
 
 static hg_return_t
-measure_rpc2(hg_context_t *context, hg_addr_t addr,
-    hg_request_class_t *request_class)
+measure_rpc2(struct hg_test_info *hg_test_info)
 {
     hg_handle_t *handles = NULL;
     hg_request_t *request;
@@ -176,24 +176,26 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
     unsigned int op_count = 0;
     unsigned int low_perf_count = 0;
 
-    if (na_test_comm_rank_g == 0) {
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
         printf("# Executing RPC with %d client(s) -- loop %d time(s) (%u handles)\n",
-                na_test_comm_size_g, MERCURY_TESTING_MAX_LOOP, nhandles);
-    }
+            hg_test_info->na_test_info.mpi_comm_size, MERCURY_TESTING_MAX_LOOP,
+            nhandles);
 
-    if (na_test_comm_rank_g == 0) printf("# Warming up...\n");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        printf("# Warming up...\n");
 
     handles = malloc(nhandles * sizeof(hg_handle_t));
 
     for (i = 0; i < nhandles; i++) {
-        ret = HG_Create(context, addr, hg_test_perf_rpc_id_g, &handles[i]);
+        ret = HG_Create(hg_test_info->context, hg_test_info->target_addr,
+            hg_test_perf_rpc_id_g, &handles[i]);
         if (ret != HG_SUCCESS) {
             fprintf(stderr, "Could not start call\n");
             goto done;
         }
     }
 
-    request = hg_request_create(request_class);
+    request = hg_request_create(hg_test_info->request_class);
     hg_atomic_set32(&args.op_completed_count, 0);
     args.op_count = nhandles;
     args.request = request;
@@ -210,13 +212,15 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
     hg_request_reset(request);
 
-    NA_Test_barrier();
+    NA_Test_barrier(&hg_test_info->na_test_info);
 
     /* RPC benchmark */
-    if (na_test_comm_rank_g == 0) printf("%*s%*s%*s%*s%*s%*s",
-        NWIDTH, "#    Time (s)", NWIDTH, "Min (s)", NWIDTH, "Max (s)",
-        NWIDTH, "Calls (c/s)", NWIDTH, "Min (c/s)", NWIDTH, "Max (c/s)");
-    if (na_test_comm_rank_g == 0) printf("\n");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        printf("%*s%*s%*s%*s%*s%*s", NWIDTH, "#    Time (s)", NWIDTH, "Min (s)",
+            NWIDTH, "Max (s)", NWIDTH, "Calls (c/s)", NWIDTH, "Min (c/s)",
+            NWIDTH, "Max (c/s)");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        printf("\n");
 
     /* RPC benchmark */
     while (op_count < MERCURY_TESTING_MAX_LOOP) {
@@ -252,12 +256,12 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
         max_time_read = (tb > max_time_read) ? tb : max_time_read;
 
         part_time_read = time_read / (double) op_count;
-        calls_per_sec = na_test_comm_size_g / part_time_read;
-        min_calls_per_sec = na_test_comm_size_g / max_time_read;
-        max_calls_per_sec = na_test_comm_size_g / min_time_read;
+        calls_per_sec = hg_test_info->na_test_info.mpi_comm_size / part_time_read;
+        min_calls_per_sec = hg_test_info->na_test_info.mpi_comm_size / max_time_read;
+        max_calls_per_sec = hg_test_info->na_test_info.mpi_comm_size / min_time_read;
 
         /* At this point we have received everything so work out the bandwidth */
-        if (na_test_comm_rank_g == 0) {
+        if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
             printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\r", NWIDTH, NDIGITS,
                 part_time_read, NWIDTH, NDIGITS, min_time_read, NWIDTH, NDIGITS,
                 max_time_read, NWIDTH, NDIGITS, calls_per_sec, NWIDTH, NDIGITS,
@@ -266,12 +270,12 @@ measure_rpc2(hg_context_t *context, hg_addr_t addr,
         if (min_calls_per_sec < LOW_PERF_THRESHOLD)
             low_perf_count++;
     }
-    if (na_test_comm_rank_g == 0)
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
         printf("\nLow perf count: %u\n", low_perf_count);
 
     hg_request_destroy(request);
 
-    NA_Test_barrier();
+    NA_Test_barrier(&hg_test_info->na_test_info);
 
     /* Complete */
     for (i = 0; i < nhandles; i++) {
@@ -291,9 +295,8 @@ done:
  *
  */
 static hg_return_t
-measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
-    hg_addr_t addr, size_t total_size, size_t segment_size,
-    hg_request_class_t *request_class)
+measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
+    size_t segment_size)
 {
     bulk_write_in_t in_struct;
 
@@ -316,13 +319,15 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     nbytes = (total_size / sizeof(int)) * sizeof(int);
     nmbytes = (double) nbytes / (1024 * 1024);
     nsegments = (unsigned int)(nbytes / segment_size);
-    if (na_test_comm_rank_g == 0) {
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
         if (segment_size == total_size)
             printf("# Reading Bulk Data (%f MB) with %d client(s) -- loop %d time(s)\n",
-                nmbytes, na_test_comm_size_g, MERCURY_TESTING_MAX_LOOP);
+                nmbytes, hg_test_info->na_test_info.mpi_comm_size,
+                MERCURY_TESTING_MAX_LOOP);
         else
             printf("# Reading Bulk Data (%f MB, %d segments) with %d client(s) -- loop %d time(s)\n",
-                nmbytes, nsegments, na_test_comm_size_g, MERCURY_TESTING_MAX_LOOP);
+                nmbytes, nsegments, hg_test_info->na_test_info.mpi_comm_size,
+                MERCURY_TESTING_MAX_LOOP);
     }
 
     if (segment_size == total_size) {
@@ -347,17 +352,18 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         buf_ptrs = (void **) bulk_buf;
     }
 
-    ret = HG_Create(context, addr, hg_test_perf_bulk_id_g, &handle);
+    ret = HG_Create(hg_test_info->context, hg_test_info->target_addr,
+        hg_test_perf_bulk_id_g, &handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not start call\n");
         goto done;
     }
 
-    request = hg_request_create(request_class);
+    request = hg_request_create(hg_test_info->request_class);
 
     /* Register memory */
-    ret = HG_Bulk_create(hg_class, nsegments, buf_ptrs, (hg_size_t *) buf_sizes,
-        HG_BULK_READ_ONLY, &bulk_handle);
+    ret = HG_Bulk_create(hg_test_info->hg_class, nsegments, buf_ptrs,
+        (hg_size_t *) buf_sizes, HG_BULK_READ_ONLY, &bulk_handle);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         goto done;
@@ -367,7 +373,8 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
     in_struct.fildes = 0;
     in_struct.bulk_handle = bulk_handle;
 
-    if (na_test_comm_rank_g == 0) printf("# Warming up...\n");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        printf("# Warming up...\n");
 
     /* Warm up for bulk data */
     for (i = 0; i < BULK_SKIP; i++) {
@@ -381,12 +388,14 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         hg_request_reset(request);
     }
 
-    NA_Test_barrier();
+    NA_Test_barrier(&hg_test_info->na_test_info);
 
-    if (na_test_comm_rank_g == 0) printf("%*s%*s%*s%*s%*s%*s",
-        NWIDTH, "#    Time (s)", NWIDTH, "Min (s)", NWIDTH, "Max (s)",
-        NWIDTH, "BW (MB/s)", NWIDTH, "Min (MB/s)", NWIDTH, "Max (MB/s)");
-    if (na_test_comm_rank_g == 0) printf("\n");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        printf("%*s%*s%*s%*s%*s%*s", NWIDTH, "#    Time (s)", NWIDTH, "Min (s)",
+            NWIDTH, "Max (s)", NWIDTH, "BW (MB/s)", NWIDTH, "Min (MB/s)",
+            NWIDTH, "Max (MB/s)");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        printf("\n");
 
     /* Bulk data benchmark */
     for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
@@ -404,7 +413,7 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
-        NA_Test_barrier();
+        NA_Test_barrier(&hg_test_info->na_test_info);
 
         hg_time_get_current(&t2);
         td = hg_time_to_double(hg_time_subtract(t2, t1));
@@ -417,19 +426,19 @@ measure_bulk_transfer(hg_class_t *hg_class, hg_context_t *context,
         hg_request_reset(request);
 
         part_time_read = time_read / (avg_iter + 1);
-        read_bandwidth = nmbytes * na_test_comm_size_g / part_time_read;
-        min_read_bandwidth = nmbytes * na_test_comm_size_g / max_time_read;
-        max_read_bandwidth = nmbytes * na_test_comm_size_g / min_time_read;
+        read_bandwidth = nmbytes * hg_test_info->na_test_info.mpi_comm_size / part_time_read;
+        min_read_bandwidth = nmbytes * hg_test_info->na_test_info.mpi_comm_size / max_time_read;
+        max_read_bandwidth = nmbytes * hg_test_info->na_test_info.mpi_comm_size / min_time_read;
 
         /* At this point we have received everything so work out the bandwidth */
-        if (na_test_comm_rank_g == 0) {
+        if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
             printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\r", NWIDTH, NDIGITS,
                 part_time_read, NWIDTH, NDIGITS, min_time_read, NWIDTH, NDIGITS,
                 max_time_read, NWIDTH, NDIGITS, read_bandwidth, NWIDTH, NDIGITS,
                 min_read_bandwidth, NWIDTH, NDIGITS, max_read_bandwidth);
         }
     }
-    if (na_test_comm_rank_g == 0) printf("\n");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0) printf("\n");
 
     /* Free memory handle */
     ret = HG_Bulk_free(bulk_handle);
@@ -465,60 +474,56 @@ done:
 int
 main(int argc, char *argv[])
 {
-    hg_class_t *hg_class = NULL;
-    hg_context_t *context = NULL;
-    hg_request_class_t *request_class = NULL;
+    struct hg_test_info hg_test_info = { 0 };
     size_t size_small = 1024; /* Use small values for eager message */
     size_t size_big = (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE);
-    hg_addr_t addr;
 
-    hg_class = HG_Test_client_init(argc, argv, &addr, &na_test_comm_rank_g,
-            &context, &request_class);
+    HG_Test_init(argc, argv, &hg_test_info);
 
-    if (na_test_comm_rank_g == 0) {
+    if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
         printf("###############################################################################\n");
         printf("# RPC test\n");
         printf("###############################################################################\n");
     }
 
     /* Run RPC test */
-    measure_rpc1(context, addr, request_class);
+    measure_rpc1(&hg_test_info);
 
     /* Run RPC test */
-    measure_rpc2(context, addr, request_class);
+    measure_rpc2(&hg_test_info);
 
-    NA_Test_barrier();
+    NA_Test_barrier(&hg_test_info.na_test_info);
 
-    if (na_test_comm_rank_g == 0) {
+    if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
         printf("###############################################################################\n");
         printf("# Bulk test (eager mode)\n");
         printf("###############################################################################\n");
     }
 
     /* Run Bulk test (eager) */
-    measure_bulk_transfer(hg_class, context, addr, size_small, size_small, request_class);
+    measure_bulk_transfer(&hg_test_info, size_small, size_small);
 
-    if (na_test_comm_rank_g == 0) {
+    if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
         printf("###############################################################################\n");
         printf("# Bulk test (rma)\n");
         printf("###############################################################################\n");
     }
 
     /* Run Bulk test (rma) */
-    measure_bulk_transfer(hg_class, context, addr, size_big, size_big, request_class);
+    measure_bulk_transfer(&hg_test_info, size_big, size_big);
 
-    if (strcmp(HG_Class_get_name(hg_class), "cci")) {
-        if (na_test_comm_rank_g == 0) {
+    if (strcmp(HG_Class_get_name(hg_test_info.hg_class), "cci")) {
+        if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
             printf("###############################################################################\n");
             printf("# Bulk test (rma non-contiguous)\n");
             printf("###############################################################################\n");
         }
 
         /* Run Bulk test (non-contiguous) */
-        measure_bulk_transfer(hg_class, context, addr, size_big, size_big / 1024, request_class);
+        measure_bulk_transfer(&hg_test_info, size_big, size_big / 1024);
     }
 
-    HG_Test_finalize(hg_class);
+    HG_Test_finalize(&hg_test_info);
 
     return EXIT_SUCCESS;
 }
