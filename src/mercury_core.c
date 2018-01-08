@@ -66,9 +66,6 @@ struct hg_class {
     hg_bool_t use_tag_mask;             /* Can use tag masking or not */
     hg_bool_t na_ext_init;              /* NA externally initialized */
     na_progress_mode_t progress_mode;   /* NA progress mode */
-#ifdef HG_HAS_SELF_FORWARD
-    hg_thread_pool_t *self_processing_pool; /* Thread pool for self processing */
-#endif
     void *data;                         /* User data */
     void (*data_free_callback)(void *); /* User data free callback */
     hg_atomic_int32_t n_contexts;       /* Atomic used for number of contexts */
@@ -109,8 +106,7 @@ struct hg_context {
     hg_thread_spin_t processing_list_lock;        /* Processing list lock */
 #ifdef HG_HAS_SELF_FORWARD
     int completion_queue_notify;                  /* Self notification */
-    HG_LIST_HEAD(hg_handle) self_processing_list; /* List of handles being processed */
-    hg_thread_spin_t self_processing_list_lock;   /* Processing list lock */
+    hg_thread_pool_t *self_processing_pool;       /* Thread pool for self processing */
 #endif
     void *data;                                   /* User data */
     void (*data_free_callback)(void *);           /* User data free callback */
@@ -1058,11 +1054,6 @@ hg_core_finalize(struct hg_class *hg_class)
         goto done;
     }
 
-#ifdef HG_HAS_SELF_FORWARD
-    /* Destroy self processing pool if created */
-    hg_thread_pool_destroy(hg_class->self_processing_pool);
-#endif
-
     /* Delete function map */
     if(hg_class->func_map)
         hg_hash_table_free(hg_class->func_map);
@@ -1634,22 +1625,22 @@ hg_core_forward_self(struct hg_handle *hg_handle)
     hg_handle->op_type = HG_CORE_FORWARD_SELF;
 
     /* Initialize thread pool if not initialized yet */
-    if (!hg_handle->hg_info.hg_class->self_processing_pool) {
+    if (!hg_handle->hg_info.context->self_processing_pool) {
         hg_thread_pool_init(HG_CORE_MAX_SELF_THREADS,
-            &hg_handle->hg_info.hg_class->self_processing_pool);
+            &hg_handle->hg_info.context->self_processing_pool);
     }
 
-    /* Add handle to self processing list */
-    hg_thread_spin_lock(&hg_handle->hg_info.context->self_processing_list_lock);
-    HG_LIST_INSERT_HEAD(&hg_handle->hg_info.context->self_processing_list,
+    /* Add handle to processing list */
+    hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
+    HG_LIST_INSERT_HEAD(&hg_handle->hg_info.context->processing_list,
         hg_handle, entry);
     hg_thread_spin_unlock(
-        &hg_handle->hg_info.context->self_processing_list_lock);
+        &hg_handle->hg_info.context->processing_list_lock);
 
     /* Post operation to self processing pool */
     hg_handle->thread_work.func = hg_core_process_thread;
     hg_handle->thread_work.args = hg_handle;
-    hg_thread_pool_post(hg_handle->hg_info.hg_class->self_processing_pool,
+    hg_thread_pool_post(hg_handle->hg_info.context->self_processing_pool,
         &hg_handle->thread_work);
 
     return ret;
@@ -1721,9 +1712,9 @@ hg_core_respond_self(struct hg_handle *hg_handle)
     hg_handle->op_type = HG_CORE_RESPOND_SELF;
 
     /* Remove handle from processing list */
-    hg_thread_spin_lock(&hg_handle->hg_info.context->self_processing_list_lock);
+    hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
     HG_LIST_REMOVE(hg_handle, entry);
-    hg_thread_spin_unlock(&hg_handle->hg_info.context->self_processing_list_lock);
+    hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
 
     /* Complete and add to completion queue */
     ret = hg_core_complete(hg_handle);
@@ -1746,9 +1737,9 @@ hg_core_no_respond_self(struct hg_handle *hg_handle)
     hg_handle->op_type = HG_CORE_FORWARD_SELF;
 
     /* Remove handle from processing list */
-    hg_thread_spin_lock(&hg_handle->hg_info.context->self_processing_list_lock);
+    hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
     HG_LIST_REMOVE(hg_handle, entry);
-    hg_thread_spin_unlock(&hg_handle->hg_info.context->self_processing_list_lock);
+    hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
 
     /* Complete and add to completion queue */
     ret = hg_core_complete(hg_handle);
@@ -3176,9 +3167,6 @@ HG_Core_context_create(hg_class_t *hg_class)
     hg_atomic_init32(&context->backfill_queue_count, 0);
     HG_LIST_INIT(&context->pending_list);
     HG_LIST_INIT(&context->processing_list);
-#ifdef HG_HAS_SELF_FORWARD
-    HG_LIST_INIT(&context->self_processing_list);
-#endif
 
     /* No handle created yet */
     hg_atomic_init32(&context->n_handles, 0);
@@ -3190,9 +3178,6 @@ HG_Core_context_create(hg_class_t *hg_class)
 
     hg_thread_spin_init(&context->pending_list_lock);
     hg_thread_spin_init(&context->processing_list_lock);
-#ifdef HG_HAS_SELF_FORWARD
-    hg_thread_spin_init(&context->self_processing_list_lock);
-#endif
 
     context->na_context = NA_Context_create(hg_class->na_class);
     if (!context->na_context) {
@@ -3288,6 +3273,11 @@ HG_Core_context_destroy(hg_context_t *context)
         goto done;
     }
 
+#ifdef HG_HAS_SELF_FORWARD
+    /* Destroy self processing pool if created */
+    hg_thread_pool_destroy(context->self_processing_pool);
+#endif
+
     /* Number of handles for that context should be 0 */
     n_handles = hg_atomic_get32(&context->n_handles);
     if (n_handles != 0) {
@@ -3369,9 +3359,6 @@ HG_Core_context_destroy(hg_context_t *context)
     hg_thread_cond_destroy(&context->completion_queue_cond);
     hg_thread_spin_destroy(&context->pending_list_lock);
     hg_thread_spin_destroy(&context->processing_list_lock);
-#ifdef HG_HAS_SELF_FORWARD
-    hg_thread_spin_destroy(&context->self_processing_list_lock);
-#endif
 
     /* Decrement context count of parent class */
     hg_atomic_decr32(&context->hg_class->n_contexts);
