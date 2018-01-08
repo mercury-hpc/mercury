@@ -536,7 +536,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     cci_endpoint_t *endpoint = NULL;
     char *uri = NULL;
     na_return_t ret = NA_SUCCESS;
-    int fd = -1, *fd_p = NULL;
+    int fd = -1, *fd_p = &fd;
     char *device_name = NULL;
     char *hostname = NULL;
     char *service = na_info->host_name;
@@ -624,8 +624,8 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     }
     memset(na_class->private_data, 0, sizeof(struct na_cci_private_data));
     if (na_info->na_init_info
-        && na_info->na_init_info->progress_mode != NA_NO_BLOCK)
-        fd_p = &fd;
+        && na_info->na_init_info->progress_mode == NA_NO_BLOCK)
+        fd_p = NULL;
 
     /* Create unspecified endpoint if service is set */
     if (service)
