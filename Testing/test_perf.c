@@ -303,7 +303,7 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
     void **buf_ptrs;
     size_t *buf_sizes;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    size_t nbytes;
+    size_t nbytes = total_size;
     double nmbytes;
     unsigned int nsegments;
     hg_handle_t handle;
@@ -316,7 +316,6 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
     size_t i;
 
     /* Prepare bulk_buf */
-    nbytes = (total_size / sizeof(int)) * sizeof(int);
     nmbytes = (double) nbytes / (1024 * 1024);
     nsegments = (unsigned int)(nbytes / segment_size);
     if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
@@ -331,23 +330,23 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
     }
 
     if (segment_size == total_size) {
-        int *bulk_buf = (int *) malloc(nbytes);
-        for (i = 0; i < nbytes / sizeof(int); i++) {
-            bulk_buf[i] = (int) i;
+        char *bulk_buf = (char *) malloc(nbytes);
+        for (i = 0; i < nbytes; i++) {
+            bulk_buf[i] = (char) i;
         }
         buf_ptrs = (void **) malloc(sizeof(void *));
         *buf_ptrs = bulk_buf;
         buf_sizes = &nbytes;
     } else {
-        int **bulk_buf = (int **) malloc(nsegments * sizeof(int *));
+        char **bulk_buf = (char **) malloc(nsegments * sizeof(char *));
         buf_sizes = (size_t *) malloc(nsegments * sizeof(size_t));
         for (i = 0; i < nsegments; i++) {
             size_t j;
 
-            bulk_buf[i] = (int *) malloc(segment_size);
+            bulk_buf[i] = (char *) malloc(segment_size);
             buf_sizes[i] = segment_size;
-            for (j = 0; j < segment_size / sizeof(int); j++)
-                bulk_buf[i][j] = (int) (j + i * segment_size / sizeof(int));
+            for (j = 0; j < segment_size; j++)
+                bulk_buf[i][j] = (char) (j + i * segment_size);
         }
         buf_ptrs = (void **) bulk_buf;
     }
@@ -512,16 +511,14 @@ main(int argc, char *argv[])
     /* Run Bulk test (rma) */
     measure_bulk_transfer(&hg_test_info, size_big, size_big);
 
-    if (strcmp(HG_Class_get_name(hg_test_info.hg_class), "cci")) {
-        if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
-            printf("###############################################################################\n");
-            printf("# Bulk test (rma non-contiguous)\n");
-            printf("###############################################################################\n");
-        }
-
-        /* Run Bulk test (non-contiguous) */
-        measure_bulk_transfer(&hg_test_info, size_big, size_big / 1024);
+    if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
+        printf("###############################################################################\n");
+        printf("# Bulk test (rma non-contiguous)\n");
+        printf("###############################################################################\n");
     }
+
+    /* Run Bulk test (non-contiguous) */
+    measure_bulk_transfer(&hg_test_info, size_big, size_big / 1024);
 
     HG_Test_finalize(&hg_test_info);
 
