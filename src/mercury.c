@@ -281,10 +281,20 @@ hg_more_data_cb(hg_handle_t handle, hg_return_t (*done_cb)(hg_handle_t))
         goto done;
     }
 
-    ret = hg_get_extra_input(handle, hg_private_data, done_cb);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get extra input");
-        goto done;
+    if (hg_private_data->extra_bulk_buf) {
+        /* We were forwarding to ourself and the extra buf is already set */
+        ret = done_cb(handle);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not execute more data done callback");
+            goto done;
+        }
+    } else {
+        /* We need to do a bulk transfer to get the extra data */
+        ret = hg_get_extra_input(handle, hg_private_data, done_cb);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not get extra input");
+            goto done;
+        }
     }
 
 done:
