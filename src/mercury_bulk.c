@@ -347,7 +347,7 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
     na_class_t *na_class = HG_Core_class_get_na(hg_class);
-    hg_bool_t use_register_segment = (hg_bool_t)
+    hg_bool_t use_register_segments = (hg_bool_t)
         (na_class->mem_handle_create_segments && count > 1);
     unsigned int i;
 
@@ -361,7 +361,7 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
     hg_bulk->total_size = 0;
     hg_bulk->segment_count = count;
     hg_bulk->segments = NULL;
-    hg_bulk->na_mem_handle_count = (use_register_segment) ? 1 : count;
+    hg_bulk->na_mem_handle_count = (use_register_segments) ? 1 : count;
     hg_bulk->na_mem_handles = NULL;
     hg_bulk->segment_published = HG_FALSE;
     hg_bulk->segment_alloc = (!buf_ptrs);
@@ -417,7 +417,7 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
         if (!hg_bulk->segments[i].address)
             continue;
 
-        if (use_register_segment) {
+        if (use_register_segments) {
             struct na_segment *na_segments =
                 (struct na_segment *) hg_bulk->segments;
             na_size_t na_segment_count = (na_size_t) hg_bulk->segment_count;
@@ -638,7 +638,11 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
     struct hg_bulk_op_id *hg_bulk_op_id, unsigned int *na_op_count)
 {
     hg_size_t origin_segment_index = origin_segment_start_index;
+    hg_size_t na_origin_segment_index =
+        hg_bulk_origin->na_mem_handle_count > 1 ? origin_segment_index : 0;
     hg_size_t local_segment_index = local_segment_start_index;
+    hg_size_t na_local_segment_index =
+        hg_bulk_local->na_mem_handle_count > 1 ? local_segment_index : 0;
     hg_size_t origin_segment_offset = origin_segment_start_offset;
     hg_size_t local_segment_offset = local_segment_start_offset;
     hg_size_t remaining_size = size;
@@ -669,10 +673,10 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
             na_ret = na_bulk_op(HG_Core_class_get_na(hg_bulk_op_id->hg_class),
                 HG_Core_context_get_na(hg_bulk_op_id->context),
                 hg_bulk_transfer_cb, hg_bulk_op_id,
-                hg_bulk_local->na_mem_handles[local_segment_index],
+                hg_bulk_local->na_mem_handles[na_local_segment_index],
                 hg_bulk_local->segments[local_segment_index].address,
                 local_segment_offset,
-                hg_bulk_origin->na_mem_handles[origin_segment_index],
+                hg_bulk_origin->na_mem_handles[na_origin_segment_index],
                 hg_bulk_origin->segments[origin_segment_index].address,
                 origin_segment_offset, transfer_size, origin_addr,
                 &hg_bulk_op_id->na_op_ids[count]);
@@ -698,11 +702,15 @@ hg_bulk_transfer_pieces(na_bulk_op_t na_bulk_op, na_addr_t origin_addr,
         if (origin_segment_offset >=
             hg_bulk_origin->segments[origin_segment_index].size) {
             origin_segment_index++;
+            if (hg_bulk_origin->na_mem_handle_count > 1)
+                na_origin_segment_index = origin_segment_index;
             origin_segment_offset = 0;
         }
         if (local_segment_offset >=
             hg_bulk_local->segments[local_segment_index].size) {
             local_segment_index++;
+            if (hg_bulk_local->na_mem_handle_count > 1)
+                na_local_segment_index = local_segment_index;
             local_segment_offset = 0;
         }
     }
