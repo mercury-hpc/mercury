@@ -267,7 +267,7 @@ hg_test_drc_token_acquire(struct hg_test_info *hg_test_info)
 #ifndef HG_TEST_DRC_IGNORE
     rc = drc_access(hg_test_info->credential, 0, &hg_test_info->credential_info);
     if (rc != DRC_SUCCESS) { /* failed to access credential */
-        HG_LOG_ERROR("drc_access() failed (%d, drc_strerror(-rc))", rc,
+        HG_LOG_ERROR("drc_access() failed (%d, %s)", rc,
             drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
         goto done;
@@ -381,7 +381,7 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
 #ifndef HG_TEST_DRC_IGNORE
     rc = drc_access(credential, 0, &hg_test_info->credential_info);
     if (rc != DRC_SUCCESS) { /* failed to access credential */
-        HG_LOG_ERROR("drc_access() failed (%d, drc_strerror(-rc))", rc,
+        HG_LOG_ERROR("drc_access() failed (%d, %s)", rc,
             drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
         goto done;
