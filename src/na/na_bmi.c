@@ -158,6 +158,8 @@ struct na_bmi_op_id {
 
 struct na_bmi_private_data {
     char *listen_addr;                               /* Listen addr */
+    int port;                                        /* Port used */
+    char *protocol_name;                             /* Protocol used for this class */
     hg_thread_mutex_t test_unexpected_mutex;         /* Mutex */
     HG_QUEUE_HEAD(na_bmi_unexpected_info) unexpected_msg_queue; /* Unexpected message queue */
     hg_thread_mutex_t unexpected_msg_queue_mutex;    /* Mutex */
@@ -182,26 +184,6 @@ na_bmi_initialize(
         na_class_t           *na_class,
         const struct na_info *na_info,
         na_bool_t             listen
-        );
-
-/**
- * initialize
- *
- * \param method_list [IN]      (Optional) list of available methods depend on
- *                              BMI configuration, e.g., "bmi_tcp", ...
- * \param listen_addr [IN]      (Optional) e.g., "tcp://127.0.0.1:22222"
- * \param flags [IN]            (Optional) supported flags:
- *                                - BMI_INIT_SERVER
- *                                - BMI_TCP_BIND_SPECIFIC
- *                                - BMI_AUTO_REF_COUNT
- *                                - ... see BMI header file
- */
-static na_return_t
-na_bmi_init(
-        na_class_t *na_class,
-        const char *method_list,
-        const char *listen_addr,
-        int         flags
         );
 
 /* finalize */
@@ -644,105 +626,113 @@ static na_return_t
 na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
     na_bool_t listen)
 {
-    char method_list[NA_BMI_MAX_ADDR_NAME];
-    char listen_addr[NA_BMI_MAX_ADDR_NAME];
-    char my_hostname[NA_BMI_MAX_ADDR_NAME] = {0};
-    int flag;
-    na_return_t ret = NA_SUCCESS;
-    int i;
-
-    flag = (listen) ? BMI_INIT_SERVER : 0;
-
-    memset(method_list, '\0', NA_BMI_MAX_ADDR_NAME);
-    strcpy(method_list, "bmi_");
-    strncat(method_list, na_info->protocol_name,
-        NA_BMI_MAX_ADDR_NAME - strlen(method_list));
-
-    if (listen) {
-        int desc_len = 0;
-        if (na_info->host_name) {
-            desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s",
-                na_info->protocol_name, na_info->host_name);
-            if (desc_len > NA_BMI_MAX_ADDR_NAME) {
-                NA_LOG_ERROR("Exceeding max addr name");
-                ret = NA_SIZE_ERROR;
-                goto done;
-            }
-            ret = na_bmi_init(na_class, method_list, listen_addr, flag);
-        } else {
-            /* Addr unspecified but we are in server mode; get local
-             * hostname and then cycle through range of ports until we find
-             * one that works.
-             */
-            ret = gethostname(my_hostname, NA_BMI_MAX_ADDR_NAME);
-            if(ret < 0)
-                sprintf(my_hostname, "localhost");
-
-            ret = NA_ADDRINUSE_ERROR;
-            for(i=0; (i<NA_BMI_DEFAULT_PORT_TRIES && ret == NA_ADDRINUSE_ERROR); i++) {
-                desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s:%d",
-                    na_info->protocol_name, my_hostname, i+NA_BMI_DEFAULT_PORT);
-                ret = na_bmi_init(na_class, method_list, listen_addr, flag);
-            }
-        }
-    }
-    else {
-        ret = na_bmi_init(na_class, NULL, NULL, flag);
-    }
-
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
-na_bmi_init(na_class_t *na_class, const char *method_list,
-        const char *listen_addr, int flags)
-{
+    char method_list[NA_BMI_MAX_ADDR_NAME] = {'\0'};
+    char *method_list_p = NULL;
+    char listen_addr[NA_BMI_MAX_ADDR_NAME] = {'\0'};
+    char *listen_addr_p = NULL;
+    char my_hostname[NA_BMI_MAX_ADDR_NAME] = {'\0'};
+    int flag = (listen) ? BMI_INIT_SERVER : 0;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
+    int port = 0;
 
+    /* Allocate private data */
     na_class->private_data = malloc(sizeof(struct na_bmi_private_data));
     if (!na_class->private_data) {
         NA_LOG_ERROR("Could not allocate NA private data class");
         ret = NA_NOMEM_ERROR;
         goto done;
     }
-    NA_BMI_PRIVATE_DATA(na_class)->listen_addr = (listen_addr) ?
-            strdup(listen_addr) : NULL;
+    memset(na_class->private_data, 0, sizeof(struct na_bmi_private_data));
+    NA_BMI_PRIVATE_DATA(na_class)->protocol_name =
+        strdup(na_info->protocol_name);
     HG_QUEUE_INIT(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
     HG_QUEUE_INIT(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue);
 
-    /* Initialize BMI */
-    bmi_ret = BMI_initialize(method_list, listen_addr, flags);
-    if (bmi_ret < 0) {
-        NA_LOG_ERROR("BMI_initialize() failed");
-        if(bmi_ret == -BMI_EADDRINUSE)
-            ret = NA_ADDRINUSE_ERROR;
-        else
-            ret = NA_PROTOCOL_ERROR;
-        goto done;
+    if (listen) {
+        int desc_len = 0;
+
+        /* Set pointers to pass to BMI_initialize */
+        method_list_p = method_list;
+        listen_addr_p = listen_addr;
+
+        /* Method list */
+        strcpy(method_list, "bmi_");
+        strncat(method_list, na_info->protocol_name,
+            NA_BMI_MAX_ADDR_NAME - strlen(method_list));
+
+        if (na_info->host_name) {
+            /* Extract hostname */
+            strncpy(my_hostname, na_info->host_name, NA_BMI_MAX_ADDR_NAME);
+            if (strstr(my_hostname, ":")) {
+                char *port_str;
+
+                strtok_r(my_hostname, ":", &port_str);
+                port = atoi(port_str);
+            }
+        } else {
+            /* Addr unspecified but we are in server mode; get local
+             * hostname and then cycle through range of ports until we find
+             * one that works.
+             */
+            ret = gethostname(my_hostname, NA_BMI_MAX_ADDR_NAME);
+            if (ret < 0)
+                sprintf(my_hostname, "localhost");
+        }
+
+        /* Pick a default port */
+        if (!port)
+            port = NA_BMI_DEFAULT_PORT;
+
+again:
+        desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s:%d",
+            na_info->protocol_name, my_hostname, port);
+        if (desc_len > NA_BMI_MAX_ADDR_NAME) {
+            NA_LOG_ERROR("Exceeding max addr name");
+            ret = NA_SIZE_ERROR;
+            goto done;
+        }
     }
+
+    /* Initialize BMI */
+    bmi_ret = BMI_initialize(method_list_p, listen_addr_p, flag);
+    if (bmi_ret < 0) {
+        if (bmi_ret == -BMI_EADDRINUSE) {
+            port++;
+            if (port < (NA_BMI_DEFAULT_PORT + NA_BMI_DEFAULT_PORT_TRIES))
+                /* Try another port */
+                goto again;
+            else {
+                NA_LOG_ERROR("Exceeded number of tries");
+                ret = NA_ADDRINUSE_ERROR;
+            }
+        } else
+            ret = NA_PROTOCOL_ERROR;
+        NA_LOG_ERROR("BMI_initialize() failed");
+        goto done;
+    } else
+        ret = NA_SUCCESS;
+
+    /* Keep listen_addr and port */
+    NA_BMI_PRIVATE_DATA(na_class)->listen_addr = (listen) ?
+            strdup(listen_addr_p) : NULL;
+    NA_BMI_PRIVATE_DATA(na_class)->port = port;
+
+    /* Initialize mutex/cond */
+    hg_thread_mutex_init(&NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
+    hg_thread_mutex_init(
+        &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_mutex_init(
+        &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+
+    /* Initialize atomic op */
+    hg_atomic_set32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag, NA_BMI_RMA_TAG);
 
 done:
     if (ret != NA_SUCCESS) {
         free(NA_BMI_PRIVATE_DATA(na_class)->listen_addr);
         free(na_class->private_data);
     }
-    else
-    {
-        /* Initialize mutex/cond */
-        hg_thread_mutex_init(&NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
-        hg_thread_mutex_init(
-                &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
-        hg_thread_mutex_init(
-                &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
-
-        /* Initialize atomic op */
-        hg_atomic_set32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag, NA_BMI_RMA_TAG);
-    }
-
     return ret;
 }
 
@@ -787,6 +777,7 @@ na_bmi_finalize(na_class_t *na_class)
             &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
 
     free(NA_BMI_PRIVATE_DATA(na_class)->listen_addr);
+    free(NA_BMI_PRIVATE_DATA(na_class)->protocol_name);
     free(na_class->private_data);
 
 done:
@@ -1026,6 +1017,7 @@ na_bmi_addr_to_string(na_class_t *na_class, char *buf,
         na_size_t *buf_size, na_addr_t addr)
 {
     struct na_bmi_addr *na_bmi_addr = NULL;
+    char full_rev_addr[NA_BMI_MAX_ADDR_NAME] = {'\0'};
     const char *bmi_rev_addr;
     na_size_t string_len;
     na_return_t ret = NA_SUCCESS;
@@ -1041,7 +1033,20 @@ na_bmi_addr_to_string(na_class_t *na_class, char *buf,
         }
     } else {
         if (na_bmi_addr->unexpected) {
+            int desc_len = 0;
+
             bmi_rev_addr = BMI_addr_rev_lookup_unexpected(na_bmi_addr->bmi_addr);
+
+            /* Work around address returned in different format */
+            desc_len = snprintf(full_rev_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s:%d",
+                NA_BMI_PRIVATE_DATA(na_class)->protocol_name, bmi_rev_addr,
+                NA_BMI_PRIVATE_DATA(na_class)->port);
+            if (desc_len > NA_BMI_MAX_ADDR_NAME) {
+                NA_LOG_ERROR("Exceeding max addr name");
+                ret = NA_SIZE_ERROR;
+                goto done;
+            }
+            bmi_rev_addr = full_rev_addr;
         } else {
             bmi_rev_addr = BMI_addr_rev_lookup(na_bmi_addr->bmi_addr);
         }
