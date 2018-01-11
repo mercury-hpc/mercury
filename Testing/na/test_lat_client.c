@@ -175,7 +175,7 @@ na_test_measure_latency(struct na_test_lat_info *na_test_lat_info,
 {
     char *send_buf = NULL, *recv_buf = NULL;
     void *send_buf_data, *recv_buf_data;
-    size_t loop = MERCURY_TESTING_MAX_LOOP * 100;
+    size_t loop = na_test_lat_info->na_test_info.loop * 100;
     size_t skip = SMALL_SKIP;
     na_op_id_t send_op_id;
     na_op_id_t recv_op_id;
@@ -394,7 +394,7 @@ main(int argc, char *argv[])
     if (na_test_lat_info.na_test_info.mpi_comm_rank == 0) {
         fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
         fprintf(stdout, "# Loop %d times from size %d to %zu byte(s)\n",
-            MERCURY_TESTING_MAX_LOOP, 1, max_size);
+            na_test_lat_info.na_test_info.loop, 1, max_size);
 #ifdef MERCURY_TESTING_HAS_VERIFY_DATA
         fprintf(stdout, "# WARNING verifying data, output will be slower\n");
 #endif

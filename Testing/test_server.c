@@ -53,10 +53,9 @@ main(int argc, char *argv[])
     hg_return_t ret = HG_SUCCESS;
 
     /* Force to listen */
-    hg_test_info.listen = HG_TRUE;
     hg_test_info.na_test_info.listen = NA_TRUE;
-
     HG_Test_init(argc, argv, &hg_test_info);
+
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     hg_thread_create(&progress_thread, hg_progress_thread, hg_test_info.context);
 
@@ -83,9 +82,11 @@ main(int argc, char *argv[])
 #endif
 
     printf("# Finalizing...\n");
+
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     hg_thread_join(progress_thread);
 #endif
+
     HG_Test_finalize(&hg_test_info);
 
     return EXIT_SUCCESS;

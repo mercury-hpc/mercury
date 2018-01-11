@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define MERCURY_TESTING_NUM_THREADS 8
+
 static hg_thread_cond_t thread_cond;
 static hg_thread_mutex_t thread_mutex;
 static int working = 0;

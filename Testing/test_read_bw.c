@@ -67,8 +67,8 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     size_t nbytes = total_size;
     double nmbytes = (double) total_size / (1024 * 1024);
-    size_t loop = (total_size > LARGE_SIZE) ? MERCURY_TESTING_MAX_LOOP :
-        MERCURY_TESTING_MAX_LOOP * 10;
+    size_t loop = (total_size > LARGE_SIZE) ? hg_test_info->na_test_info.loop :
+        hg_test_info->na_test_info.loop * 10;
     size_t skip = (total_size > LARGE_SIZE) ? LARGE_SKIP : SMALL_SKIP;
     hg_handle_t *handles = NULL;
     hg_request_t *request;
@@ -228,7 +228,7 @@ main(int argc, char *argv[])
             fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
             fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with "
                 "%u handle(s)\n",
-                MERCURY_TESTING_MAX_LOOP, 1, MAX_MSG_SIZE, nhandles);
+                hg_test_info.na_test_info.loop, 1, MAX_MSG_SIZE, nhandles);
 #ifdef MERCURY_TESTING_HAS_VERIFY_DATA
             fprintf(stdout, "# WARNING verifying data, output will be slower\n");
 #endif

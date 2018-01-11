@@ -70,7 +70,8 @@ measure_rpc1(struct hg_test_info *hg_test_info)
 
     if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
         printf("# Executing RPC with %d client(s) -- loop %d time(s)\n",
-            hg_test_info->na_test_info.mpi_comm_size, MERCURY_TESTING_MAX_LOOP);
+            hg_test_info->na_test_info.mpi_comm_size,
+            hg_test_info->na_test_info.loop);
     }
 
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
@@ -107,7 +108,7 @@ measure_rpc1(struct hg_test_info *hg_test_info)
         printf("\n");
 
     /* RPC benchmark */
-    for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
+    for (avg_iter = 0; avg_iter < hg_test_info->na_test_info.loop; avg_iter++) {
         hg_time_t t1, t2;
         double td, part_time_read;
         double calls_per_sec, min_calls_per_sec, max_calls_per_sec;
@@ -170,7 +171,7 @@ measure_rpc2(struct hg_test_info *hg_test_info)
     hg_request_t *request;
     struct hg_test_perf_args args;
     double time_read = 0, min_time_read = -1, max_time_read = 0;
-    unsigned int nhandles = MERCURY_TESTING_NUM_THREADS * 2;
+    unsigned int nhandles = MERCURY_TESTING_NUM_THREADS_DEFAULT * 2;
     hg_return_t ret = HG_SUCCESS;
     size_t i;
     unsigned int op_count = 0;
@@ -178,8 +179,8 @@ measure_rpc2(struct hg_test_info *hg_test_info)
 
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
         printf("# Executing RPC with %d client(s) -- loop %d time(s) (%u handles)\n",
-            hg_test_info->na_test_info.mpi_comm_size, MERCURY_TESTING_MAX_LOOP,
-            nhandles);
+            hg_test_info->na_test_info.mpi_comm_size,
+            hg_test_info->na_test_info.loop, nhandles);
 
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
         printf("# Warming up...\n");
@@ -223,18 +224,20 @@ measure_rpc2(struct hg_test_info *hg_test_info)
         printf("\n");
 
     /* RPC benchmark */
-    while (op_count < MERCURY_TESTING_MAX_LOOP) {
+    while (op_count < (unsigned int) hg_test_info->na_test_info.loop) {
         hg_time_t t1, t2;
         double td, tb, part_time_read;
         double calls_per_sec, min_calls_per_sec, max_calls_per_sec;
 
-        if ((MERCURY_TESTING_MAX_LOOP - op_count) < nhandles) {
-            args.op_count = MERCURY_TESTING_MAX_LOOP - op_count;
+        if ((hg_test_info->na_test_info.loop - op_count) < nhandles) {
+            args.op_count = hg_test_info->na_test_info.loop - op_count;
         }
         hg_atomic_set32(&args.op_completed_count, 0);
 
         hg_time_get_current(&t1);
-        for (i = 0; i < nhandles && op_count < MERCURY_TESTING_MAX_LOOP;
+        for (i = 0;
+            i < nhandles
+            && op_count < (unsigned int) hg_test_info->na_test_info.loop;
             i++, op_count++) {
             ret = HG_Forward(handles[i], hg_test_perf_forward_cb2, &args, NULL);
             if (ret != HG_SUCCESS) {
@@ -322,11 +325,11 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
         if (segment_size == total_size)
             printf("# Reading Bulk Data (%f MB) with %d client(s) -- loop %d time(s)\n",
                 nmbytes, hg_test_info->na_test_info.mpi_comm_size,
-                MERCURY_TESTING_MAX_LOOP);
+                hg_test_info->na_test_info.loop);
         else
             printf("# Reading Bulk Data (%f MB, %d segments) with %d client(s) -- loop %d time(s)\n",
                 nmbytes, nsegments, hg_test_info->na_test_info.mpi_comm_size,
-                MERCURY_TESTING_MAX_LOOP);
+                hg_test_info->na_test_info.loop);
     }
 
     if (segment_size == total_size) {
@@ -397,7 +400,7 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
         printf("\n");
 
     /* Bulk data benchmark */
-    for (avg_iter = 0; avg_iter < MERCURY_TESTING_MAX_LOOP; avg_iter++) {
+    for (avg_iter = 0; avg_iter < hg_test_info->na_test_info.loop; avg_iter++) {
         hg_time_t t1, t2;
         double td, part_time_read;
         double read_bandwidth, min_read_bandwidth, max_read_bandwidth;

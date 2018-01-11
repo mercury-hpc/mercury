@@ -40,8 +40,6 @@ struct hg_test_info {
     hg_context_t *context;
     hg_request_class_t *request_class;
     hg_addr_t target_addr;
-    hg_bool_t listen;
-    hg_bool_t self_forward;
     hg_bool_t auth;
 #ifdef HG_TESTING_HAS_CRAY_DRC
     uint32_t credential;
@@ -50,6 +48,7 @@ struct hg_test_info {
     uint32_t cookie;
 #endif
     struct na_test_info na_test_info;
+    unsigned int thread_count;
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     hg_thread_pool_t *thread_pool;
     hg_thread_mutex_t bulk_handle_mutex;
@@ -89,6 +88,8 @@ struct hg_test_info {
     puts("*FAILED*");           \
     fflush(stdout);             \
 } while (0)
+
+#define MERCURY_TESTING_NUM_THREADS_DEFAULT 8
 
 /*********************/
 /* Public Prototypes */

@@ -453,7 +453,6 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_drc_info.na_test_info.extern_init = NA_TRUE;
     hg_test_drc_info.na_test_info.protocol = strdup("tcp");
     hg_test_drc_info.na_test_info.listen = hg_test_info->na_test_info.listen;
-    hg_test_drc_info.listen = hg_test_info->listen;
     if (NA_Test_init(argc, argv, &hg_test_drc_info.na_test_info) != NA_SUCCESS) {
         HG_LOG_ERROR("Could not initialize NA test layer");
         ret = HG_NA_ERROR;
@@ -464,7 +463,8 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_drc_init_info.na_class = hg_test_drc_info.na_test_info.na_class;
 
     /* Init HG HL with init options */
-    ret = HG_Hl_init_opt(NULL, hg_test_drc_info.listen, &hg_test_drc_init_info);
+    ret = HG_Hl_init_opt(NULL, hg_test_drc_info.na_test_info.listen,
+        &hg_test_drc_init_info);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not initialize HG HL");
         goto done;
@@ -480,7 +480,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_drc_register(hg_test_drc_info.hg_class);
 
     /* Acquire DRC token */
-    if (hg_test_drc_info.listen) {
+    if (hg_test_drc_info.na_test_info.listen) {
         ret = hg_test_drc_token_acquire(&hg_test_drc_info);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not acquire DRC token");
@@ -542,7 +542,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_info->cookie = hg_test_drc_info.cookie;
 
     /* Sleep a few seconds to make sure listener is initialized */
-    if (!hg_test_drc_info.listen) {
+    if (!hg_test_drc_info.na_test_info.listen) {
         unsigned int sleep_sec = 5;
 
         printf("# Sleeping now for %d seconds...\n", sleep_sec);

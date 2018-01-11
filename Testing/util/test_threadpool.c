@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define MERCURY_TESTING_NUM_THREADS 8
 #define POOL_NUM_POSTS 32
 
 /*

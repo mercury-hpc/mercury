@@ -5,21 +5,6 @@ set(MERCURY_TESTING_BUFFER_SIZE "16" CACHE STRING
   "Total buffer size (in MB) used for testing.")
 mark_as_advanced(MERCURY_TESTING_BUFFER_SIZE)
 
-set(MERCURY_TESTING_MAX_LOOP "1" CACHE STRING
-  "Loop n times for average bandwidth/time measures.")
-mark_as_advanced(MERCURY_TESTING_MAX_LOOP)
-
-set(MERCURY_TESTING_NUM_THREADS "8" CACHE STRING
-  "Number of server threads used for testing.")
-mark_as_advanced(MERCURY_TESTING_NUM_THREADS)
-
-option(MERCURY_TESTING_USE_BUSY_WAIT
-  "Run tests using busy waiting instead of polling." OFF)
-if(MERCURY_TESTING_USE_BUSY_WAIT)
-  set(MERCURY_TESTING_HAS_BUSY_WAIT ON)
-endif()
-mark_as_advanced(MERCURY_TESTING_USE_BUSY_WAIT)
-
 option(MERCURY_TESTING_USE_THREAD_POOL "Run tests using thread pool." ON)
 if(MERCURY_TESTING_USE_THREAD_POOL)
   set(MERCURY_TESTING_HAS_THREAD_POOL ON)
@@ -268,7 +253,7 @@ set(MERCURY_tests
   bulk
   bulk_seg
 #  pipeline
-#  perf
+  perf
 #  overflow
 #  cancel
 )
@@ -277,7 +262,6 @@ if(NOT WIN32)
 endif()
 #build_mercury_test(nested)
 #build_mercury_test(overflow)
-build_mercury_test(perf)
 build_mercury_test(rpc_lat)
 build_mercury_test(write_bw)
 build_mercury_test(read_bw)

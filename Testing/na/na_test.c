@@ -90,10 +90,12 @@ na_test_usage(const char *execname)
            "                        Available protocols: tcp, ib, etc\n");
     printf("    -H, --hostname      Select hostname / IP address to use\n"
            "                        Default: localhost\n");
-    printf("    -l, --listen        Listen for incoming messages\n");
+    printf("    -L, --listen        Listen for incoming messages\n");
     printf("    -S, --self_send     Send to self\n");
     printf("    -a, --auth          Run auth key service\n");
     printf("    -k, --key           Pass auth key\n");
+    printf("    -l, --loop          Number of loops (default: 1)\n");
+    printf("    -b, --busy          Busy wait\n");
     printf("    -V, --verbose       Print verbose output\n");
 }
 
@@ -128,7 +130,7 @@ na_test_parse_options(int argc, char *argv[],
             case 'H': /* hostname */
                 na_test_info->hostname = strdup(na_test_opt_arg_g);
                 break;
-            case 'l': /* listen */
+            case 'L': /* listen */
                 na_test_info->listen = NA_TRUE;
                 break;
             case 's': /* static */
@@ -146,6 +148,12 @@ na_test_parse_options(int argc, char *argv[],
             case 'k': /* key */
                 na_test_info->key = strdup(na_test_opt_arg_g);
                 break;
+            case 'l': /* loop */
+                na_test_info->loop = atoi(na_test_opt_arg_g);
+                break;
+            case 'b': /* busy */
+                na_test_info->busy_wait = NA_TRUE;
+                break;
             case 'V': /* verbose */
                 na_test_info->verbose = NA_TRUE;
                 break;
@@ -159,6 +167,8 @@ na_test_parse_options(int argc, char *argv[],
         na_test_usage(argv[0]);
         exit(1);
     }
+    if (!na_test_info->loop)
+        na_test_info->loop = 1; /* Default */
 }
 
 /*---------------------------------------------------------------------------*/
@@ -391,14 +401,14 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
         NA_Cleanup();
 
     memset(&na_init_info, 0, sizeof(struct na_init_info));
-#ifdef MERCURY_TESTING_HAS_BUSY_WAIT
-    na_init_info.progress_mode = NA_NO_BLOCK;
-#else
-    na_init_info.progress_mode = NA_DEFAULT;
-#endif
+    if (na_test_info->busy_wait) {
+        na_init_info.progress_mode = NA_NO_BLOCK;
+        printf("# Initializing NA in busy wait mode\n");
+    } else
+        na_init_info.progress_mode = NA_DEFAULT;
     na_init_info.auth_key = na_test_info->key;
 
-    printf("# Initializing NA with %s\n", info_string);
+    printf("# Using info string: %s\n", info_string);
     na_test_info->na_class = NA_Initialize_opt(info_string,
         na_test_info->listen, &na_init_info);
 
