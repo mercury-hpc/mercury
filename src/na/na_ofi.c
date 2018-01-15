@@ -362,7 +362,7 @@ na_ofi_av_insert(na_class_t *na_class, char *node_str, char *service_str,
 
         /* Resolve node / service (always pass a numeric host) */
         rc = fi_getinfo(NA_OFI_VERSION, node_str, service_str, 0,
-                        NULL /* hints */, &tmp_info);
+                        domain->nod_prov /* hints */, &tmp_info);
         if (rc != 0) {
             NA_LOG_ERROR("fi_getinfo (%s:%s) failed, rc: %d(%s).",
                          node_str, service_str, rc, fi_strerror(-rc));

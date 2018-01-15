@@ -1165,6 +1165,8 @@ hg_core_addr_lookup(struct hg_context *context, hg_cb_t callback, void *arg,
 done:
     if (ret != HG_SUCCESS) {
         free(hg_op_id);
+        if (hg_addr != NULL)
+            hg_core_addr_free(context->hg_class, hg_addr);
     }
 
     return ret;
