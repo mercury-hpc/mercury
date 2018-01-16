@@ -2444,15 +2444,15 @@ na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     na_return_t ret = NA_SUCCESS;
 
-    assert(buf_size > sizeof(priv->nop_req_hdr));
-
     /*
      * For those providers that don't support FI_SOURCE/FI_SOURCE_ERR, insert
      * the request header to piggyback the source address of request for
      * unexpected message.
      */
-    if (na_ofi_with_reqhdr(na_class) == NA_TRUE)
+    if (na_ofi_with_reqhdr(na_class) == NA_TRUE) {
+        assert(buf_size > sizeof(priv->nop_req_hdr));
         memcpy(buf, &priv->nop_req_hdr, sizeof(priv->nop_req_hdr));
+    }
 
     return ret;
 }
