@@ -107,6 +107,12 @@ mark_as_advanced(MERCURY_ENABLE_POST_LIMIT)
 set(MERCURY_POST_LIMIT "256" CACHE STRING "Number of handles posted.")
 mark_as_advanced(MERCURY_POST_LIMIT)
 
+# Collect statistics
+option(MERCURY_ENABLE_STATS "Enable collection of stats that can be printed at exit." OFF)
+if(MERCURY_ENABLE_STATS)
+  set(HG_HAS_COLLECT_STATS 1)
+endif()
+
 # XDR
 option(MERCURY_USE_XDR "Use XDR for generic encoding." OFF)
 if(MERCURY_USE_XDR)

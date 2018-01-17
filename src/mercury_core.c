@@ -51,6 +51,20 @@
 # define HG_UNUSED
 #endif
 
+/* Map stat type to either 32-bit atomic or 64-bit */
+#ifdef HG_HAS_COLLECT_STATS
+#ifndef HG_UTIL_HAS_OPA_PRIMITIVES_H
+typedef hg_atomic_int64_t hg_core_stat_t;
+#define hg_core_stat_incr hg_atomic_incr64
+#define hg_core_stat_get hg_atomic_get64
+#else
+typedef hg_atomic_int32_t hg_core_stat_t;
+#define hg_core_stat_incr hg_atomic_incr32
+#define hg_core_stat_get hg_atomic_get32
+#endif
+#define HG_CORE_STAT_INIT HG_ATOMIC_VAR_INIT
+#endif
+
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
@@ -66,6 +80,9 @@ struct hg_class {
     hg_bool_t use_tag_mask;             /* Can use tag masking or not */
     hg_bool_t na_ext_init;              /* NA externally initialized */
     na_progress_mode_t progress_mode;   /* NA progress mode */
+#ifdef HG_HAS_COLLECT_STATS
+    hg_bool_t stats;                    /* (Debug) Print stats at exit */
+#endif
     void *data;                         /* User data */
     void (*data_free_callback)(void *); /* User data free callback */
     hg_atomic_int32_t n_contexts;       /* Atomic used for number of contexts */
@@ -730,9 +747,41 @@ hg_core_cancel(
         struct hg_handle *hg_handle
         );
 
+#ifdef HG_HAS_COLLECT_STATS
+/**
+ * Print stats.
+ */
+static void
+hg_core_print_stats(void);
+#endif
+
 /*******************/
 /* Local Variables */
 /*******************/
+
+#ifdef HG_HAS_COLLECT_STATS
+static hg_bool_t hg_core_print_stats_registered_g = HG_FALSE;
+static hg_core_stat_t hg_core_rpc_count_g = HG_CORE_STAT_INIT(0);
+static hg_core_stat_t hg_core_rpc_extra_count_g = HG_CORE_STAT_INIT(0);
+static hg_core_stat_t hg_core_bulk_count_g = HG_CORE_STAT_INIT(0);
+#endif
+
+/*---------------------------------------------------------------------------*/
+#ifdef HG_HAS_COLLECT_STATS
+static void
+hg_core_print_stats(void)
+{
+    printf("\n=================================================================\n");
+    printf("Mercury stat report\n");
+    printf("-------------------\n");
+    printf("RPC count:            %lu\n",
+        (unsigned long) hg_core_stat_get(&hg_core_rpc_count_g));
+    printf("RPC count (overflow): %lu\n",
+        (unsigned long) hg_core_stat_get(&hg_core_rpc_extra_count_g));
+    printf("Bulk transfer count:  %lu\n",
+        (unsigned long) hg_core_stat_get(&hg_core_bulk_count_g));
+}
+#endif
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE int
@@ -969,6 +1018,17 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             hg_class->na_ext_init = HG_TRUE;
         }
         hg_class->progress_mode = hg_init_info->na_init_info.progress_mode;
+#ifdef HG_HAS_COLLECT_STATS
+        hg_class->stats = hg_init_info->stats;
+        if (hg_class->stats && !hg_core_print_stats_registered_g) {
+            if (atexit(hg_core_print_stats) != 0) {
+                HG_LOG_ERROR("Could not register hg_core_print_stats");
+                ret = HG_PROTOCOL_ERROR;
+                goto done;
+            }
+            hg_core_print_stats_registered_g = HG_TRUE;
+        }
+#endif
     }
 
     /* Initialize NA if not provided externally */
@@ -1939,6 +1999,11 @@ hg_core_process_input(struct hg_handle *hg_handle, hg_bool_t *completed)
     struct hg_context *hg_context = hg_handle->hg_info.context;
     hg_return_t ret = HG_SUCCESS;
 
+#ifdef HG_HAS_COLLECT_STATS
+    /* Increment counter */
+    hg_core_stat_incr(&hg_core_rpc_count_g);
+#endif
+
     /* Get and verify input header */
     ret = hg_core_proc_header_request(hg_handle, &hg_handle->in_header,
         HG_DECODE);
@@ -1977,6 +2042,10 @@ hg_core_process_input(struct hg_handle *hg_handle, hg_bool_t *completed)
             ret = HG_PROTOCOL_ERROR;
             goto done;
         }
+#ifdef HG_HAS_COLLECT_STATS
+        /* Increment counter */
+        hg_core_stat_incr(&hg_core_rpc_extra_count_g);
+#endif
         ret = hg_context->hg_class->more_data_acquire((hg_handle_t) hg_handle,
             hg_core_complete);
         if (ret != HG_SUCCESS) {
@@ -2275,6 +2344,12 @@ hg_core_completion_add(struct hg_context *context,
     struct hg_completion_entry *hg_completion_entry, hg_bool_t self_notify)
 {
     hg_return_t ret = HG_SUCCESS;
+
+#ifdef HG_HAS_COLLECT_STATS
+    /* Increment counter */
+    if (hg_completion_entry->op_type == HG_BULK)
+        hg_core_stat_incr(&hg_core_bulk_count_g);
+#endif
 
     if (hg_atomic_queue_push(context->completion_queue, hg_completion_entry)
         != HG_UTIL_SUCCESS) {
@@ -4091,6 +4166,12 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
         goto done;
     }
 #endif
+
+#ifdef HG_HAS_COLLECT_STATS
+    /* Increment counter */
+    hg_core_stat_incr(&hg_core_rpc_count_g);
+#endif
+
     /* Reset op counts */
     hg_handle->na_op_count = 1; /* Default (no response) */
     hg_atomic_set32(&hg_handle->na_op_completed_count, 0);

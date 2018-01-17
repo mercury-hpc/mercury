@@ -321,6 +321,9 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         hg_init_info.na_init_info.progress_mode = NA_NO_BLOCK;
     else
         hg_init_info.na_init_info.progress_mode = NA_DEFAULT;
+#ifdef HG_HAS_COLLECT_STATS
+    hg_init_info.stats = HG_TRUE;
+#endif
 
     /* Assign NA class */
     hg_init_info.na_class = hg_test_info->na_test_info.na_class;

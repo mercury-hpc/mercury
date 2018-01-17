@@ -33,6 +33,7 @@ typedef struct hg_op_id *hg_op_id_t;    /* Abstract operation id */
 struct hg_init_info {
     struct na_init_info na_init_info;   /* NA Init Info */
     na_class_t *na_class;               /* NA class */
+    hg_bool_t stats;                    /* (Debug) Print stats at exit */
 };
 
 /* HG info struct */
