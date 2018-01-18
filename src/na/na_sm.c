@@ -142,11 +142,8 @@ typedef union {
 
 /* Ring buffer */
 struct na_sm_ring_buf {
-    na_sm_cacheline_atomic_int32_t notify_count;
-    na_sm_cacheline_atomic_int32_t polling;
     struct hg_atomic_queue queue;
     char pad[NA_SM_COPY_BUF_SIZE - sizeof(struct hg_atomic_queue)
-             - 2 * NA_SM_CACHE_LINE_SIZE
              - NA_SM_NUM_BUFS * HG_ATOMIC_QUEUE_ELT_SIZE];
 };
 
@@ -264,21 +261,18 @@ struct na_sm_private_data {
     struct na_sm_addr *self_addr;
     hg_poll_set_t *poll_set;
     HG_QUEUE_HEAD(na_sm_addr) accepted_addr_queue;
-    HG_QUEUE_HEAD(na_sm_addr) poll_addr_queue;
     HG_QUEUE_HEAD(na_sm_unexpected_info) unexpected_msg_queue;
     HG_QUEUE_HEAD(na_sm_op_id) lookup_op_queue;
     HG_QUEUE_HEAD(na_sm_op_id) unexpected_op_queue;
     HG_QUEUE_HEAD(na_sm_op_id) expected_op_queue;
     hg_thread_spin_t accepted_addr_queue_lock;
-    hg_thread_spin_t poll_addr_queue_lock;
     hg_thread_spin_t unexpected_msg_queue_lock;
     hg_thread_spin_t lookup_op_queue_lock;
     hg_thread_spin_t unexpected_op_queue_lock;
     hg_thread_spin_t expected_op_queue_lock;
     hg_thread_spin_t copy_buf_lock;
     hg_time_t last_accept_time;
-    hg_atomic_int32_t polling;
-    hg_atomic_int32_t notify_count;
+    na_bool_t no_wait;
 };
 
 /********************/
@@ -1559,8 +1553,6 @@ na_sm_ring_buf_init(struct na_sm_ring_buf *na_sm_ring_buf)
     hg_atomic_init32(&hg_atomic_queue->cons_head, 0);
     hg_atomic_init32(&hg_atomic_queue->prod_tail, 0);
     hg_atomic_init32(&hg_atomic_queue->cons_tail, 0);
-    hg_atomic_init32(&na_sm_ring_buf->polling.val, NA_FALSE);
-    hg_atomic_init32(&na_sm_ring_buf->notify_count.val, 0);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1697,8 +1689,7 @@ na_sm_msg_insert(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id,
     }
 
     /* Notify remote */
-    hg_atomic_incr32(&na_sm_addr->na_sm_send_ring_buf->notify_count.val);
-    if (hg_atomic_get32(&na_sm_addr->na_sm_send_ring_buf->polling.val)) {
+    if (!NA_SM_PRIVATE_DATA(na_class)->no_wait) {
 #ifdef HG_UTIL_HAS_SYSEVENTFD_H
         if (hg_event_set(na_sm_addr->remote_notify) != HG_UTIL_SUCCESS) {
             NA_LOG_ERROR("Could not send completion notification");
@@ -1715,8 +1706,7 @@ na_sm_msg_insert(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id,
     }
 
     /* Notify local completion */
-    hg_atomic_incr32(&NA_SM_PRIVATE_DATA(na_class)->notify_count);
-    if (hg_atomic_get32(&NA_SM_PRIVATE_DATA(na_class)->polling)
+    if (!NA_SM_PRIVATE_DATA(na_class)->no_wait
         && (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
         != HG_UTIL_SUCCESS)) {
         NA_LOG_ERROR("Could not signal local completion");
@@ -1976,12 +1966,6 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
         goto done;
     }
 
-    /* Addr addr to poll addr queue */
-    hg_thread_spin_lock(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-    HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue,
-        na_sm_addr, poll_entry);
-    hg_thread_spin_unlock(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-
     /* Send connection ID / event IDs */
     ret = na_sm_send_conn_id(na_sm_addr);
     if (ret != NA_SUCCESS) {
@@ -2110,14 +2094,6 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
                 goto done;
             }
 
-            /* Add addr to poll addr queue */
-            hg_thread_spin_lock(
-                &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-            HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue,
-                poll_addr, poll_entry);
-            hg_thread_spin_unlock(
-                &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-
             /* Completion */
             ret = na_sm_complete(na_sm_op_id);
             if (ret != NA_SUCCESS) {
@@ -2145,17 +2121,12 @@ na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr,
     na_bool_t *progressed)
 {
     na_sm_cacheline_hdr_t na_sm_hdr;
-    na_bool_t notified = NA_FALSE, notify_count = NA_FALSE;
+    na_bool_t notified = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
 
     if (poll_addr == NA_SM_PRIVATE_DATA(na_class)->self_addr) {
-        if (hg_atomic_get32(&NA_SM_PRIVATE_DATA(na_class)->notify_count)) {
-            hg_atomic_decr32(&NA_SM_PRIVATE_DATA(na_class)->notify_count);
-            notify_count = NA_TRUE;
-        }
-
         /* Local notification */
-        if (hg_atomic_get32(&NA_SM_PRIVATE_DATA(na_class)->polling)
+        if (!NA_SM_PRIVATE_DATA(na_class)->no_wait
             && (hg_event_get(poll_addr->local_notify, (hg_util_bool_t *) &notified)
             != HG_UTIL_SUCCESS)) {
             NA_LOG_ERROR("Could not get completion notification");
@@ -2163,7 +2134,7 @@ na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr,
             goto done;
         }
 
-        if (!notified && !notify_count) {
+        if (!notified) {
             *progressed = NA_FALSE;
             goto done;
         }
@@ -2172,12 +2143,7 @@ na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr,
     }
 
     /* Remote notification */
-    if (hg_atomic_get32(&poll_addr->na_sm_recv_ring_buf->notify_count.val)) {
-        hg_atomic_decr32(&poll_addr->na_sm_recv_ring_buf->notify_count.val);
-        notify_count = NA_TRUE;
-    }
-
-    if (hg_atomic_get32(&poll_addr->na_sm_recv_ring_buf->polling.val)) {
+    if (!NA_SM_PRIVATE_DATA(na_class)->no_wait) {
 #ifdef HG_UTIL_HAS_SYSEVENTFD_H
         if (hg_event_get(poll_addr->local_notify, (hg_util_bool_t *) &notified)
             != HG_UTIL_SUCCESS) {
@@ -2192,11 +2158,10 @@ na_sm_progress_notify(na_class_t *na_class, struct na_sm_addr *poll_addr,
             goto done;
         }
 #endif
-    }
-
-    if (!notified && !notify_count) {
-        *progressed = NA_FALSE;
-        goto done;
+        if (!notified) {
+            *progressed = NA_FALSE;
+            goto done;
+        }
     }
 
     if (!na_sm_ring_buf_pop(poll_addr->na_sm_recv_ring_buf, &na_sm_hdr)) {
@@ -2442,10 +2407,18 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     struct na_sm_addr *na_sm_addr = NULL;
     pid_t pid;
     hg_poll_set_t *poll_set;
+    na_bool_t no_wait = NA_FALSE;
     int local_notify;
     na_return_t ret = NA_SUCCESS;
 
     /* TODO parse host name */
+
+    /* Get init info */
+    if (na_info->na_init_info) {
+        /* Progress mode */
+        if (na_info->na_init_info->progress_mode == NA_NO_BLOCK)
+            no_wait = NA_TRUE;
+    }
 
     /* Get PID */
     pid = getpid();
@@ -2461,8 +2434,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
         goto done;
     }
     memset(na_class->private_data, 0, sizeof(struct na_sm_private_data));
-    hg_atomic_init32(&NA_SM_PRIVATE_DATA(na_class)->polling, NA_FALSE);
-    hg_atomic_init32(&NA_SM_PRIVATE_DATA(na_class)->notify_count, 0);
+    NA_SM_PRIVATE_DATA(na_class)->no_wait = no_wait;
 
     /* Create poll set to wait for events */
     poll_set = hg_poll_create();
@@ -2512,7 +2484,6 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
 
     /* Initialize queues */
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue);
-    HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue);
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue);
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue);
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue);
@@ -2521,8 +2492,6 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     /* Initialize mutexes */
     hg_thread_spin_init(
             &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_lock);
-    hg_thread_spin_init(
-            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
     hg_thread_spin_init(
             &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_lock);
     hg_thread_spin_init(
@@ -2605,8 +2574,6 @@ na_sm_finalize(na_class_t *na_class)
     /* Destroy mutexes */
     hg_thread_spin_destroy(
             &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_lock);
-    hg_thread_spin_destroy(
-            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
     hg_thread_spin_destroy(
             &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_lock);
     hg_thread_spin_destroy(
@@ -2878,14 +2845,6 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
             NA_LOG_ERROR("Could not delete sock from poll set");
             goto done;
         }
-
-        /* Remove addr from poll addr queue */
-        hg_thread_spin_lock(
-            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-        HG_QUEUE_REMOVE(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue,
-            na_sm_addr, na_sm_addr, poll_entry);
-        hg_thread_spin_unlock(
-            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
 
         if (na_sm_addr->accepted) { /* Create by accept */
             /* Get file names from ring bufs / events to delete files */
@@ -3724,8 +3683,7 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* Notify local completion */
-    hg_atomic_incr32(&NA_SM_PRIVATE_DATA(na_class)->notify_count);
-    if (hg_atomic_get32(&NA_SM_PRIVATE_DATA(na_class)->polling)
+    if (!NA_SM_PRIVATE_DATA(na_class)->no_wait
         && (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
         != HG_UTIL_SUCCESS)) {
         NA_LOG_ERROR("Could not signal local completion");
@@ -3881,8 +3839,7 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     /* Notify local completion */
-    hg_atomic_incr32(&NA_SM_PRIVATE_DATA(na_class)->notify_count);
-    if (hg_atomic_get32(&NA_SM_PRIVATE_DATA(na_class)->polling)
+    if (!NA_SM_PRIVATE_DATA(na_class)->no_wait
         && (hg_event_set(NA_SM_PRIVATE_DATA(na_class)->self_addr->local_notify)
         != HG_UTIL_SUCCESS)) {
         NA_LOG_ERROR("Could not signal local completion");
@@ -3913,43 +3870,11 @@ na_sm_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
 
 /*---------------------------------------------------------------------------*/
 static na_bool_t
-na_sm_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
+na_sm_poll_try_wait(na_class_t NA_UNUSED *na_class,
+    na_context_t NA_UNUSED *context)
 {
-    struct na_sm_addr *na_sm_addr;
-    na_bool_t ret = NA_TRUE;
-
-    /* We're going to poll so we must receive notifications (we must enable
-     * polling notifications first so that there is no race between the time
-     * we enable polling and then check for notifications) */
-    hg_atomic_cas32(&NA_SM_PRIVATE_DATA(na_class)->polling, NA_FALSE, NA_TRUE);
-
-    hg_thread_spin_lock(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-    HG_QUEUE_FOREACH(na_sm_addr, &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue,
-        poll_entry)
-        hg_atomic_cas32(&na_sm_addr->na_sm_recv_ring_buf->polling.val, NA_FALSE,
-            NA_TRUE);
-    hg_thread_spin_unlock(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-
-    /* Do not block if something is already in and skip polling */
-    if (hg_atomic_get32(&NA_SM_PRIVATE_DATA(na_class)->notify_count)) {
-        ret = NA_FALSE;
-        goto done;
-    }
-    hg_thread_spin_lock(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-    HG_QUEUE_FOREACH(na_sm_addr, &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue,
-        poll_entry) {
-        if (hg_atomic_get32(
-            &na_sm_addr->na_sm_recv_ring_buf->notify_count.val)) {
-            ret = NA_FALSE;
-            hg_thread_spin_unlock(
-                &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-            goto done;
-        }
-    }
-    hg_thread_spin_unlock(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-
-done:
-    return ret;
+    /* TODO rework that part */
+    return NA_TRUE;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3985,23 +3910,6 @@ na_sm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
             remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
         }
     } while ((int)(remaining * 1000.0) > 0);
-
-    /* We were polling/blocking */
-    /* TODO make incr/decr instead? */
-    if (timeout && (hg_atomic_cas32(&NA_SM_PRIVATE_DATA(na_class)->polling,
-        NA_TRUE, NA_FALSE))) {
-        struct na_sm_addr *na_sm_addr;
-
-        hg_thread_spin_lock(
-            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-        HG_QUEUE_FOREACH(na_sm_addr,
-            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue, poll_entry) {
-            hg_atomic_set32(&na_sm_addr->na_sm_recv_ring_buf->polling.val,
-                NA_FALSE);
-        }
-        hg_thread_spin_unlock(
-            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
-    }
 
 done:
     return ret;
