@@ -65,7 +65,7 @@
 #define NA_SM_ACCEPT_INTERVAL   100 /* 100 ms */
 
 /* Msg sizes */
-#define NA_SM_UNEXPECTED_SIZE   4096
+#define NA_SM_UNEXPECTED_SIZE   NA_SM_COPY_BUF_SIZE
 #define NA_SM_EXPECTED_SIZE     NA_SM_UNEXPECTED_SIZE
 
 /* Max tag */
@@ -1585,7 +1585,7 @@ na_sm_ring_buf_pop(struct na_sm_ring_buf *na_sm_ring_buf,
     na_sm_cacheline_hdr_t na_sm_hdr;
     na_bool_t ret = NA_TRUE;
 
-    na_sm_hdr.val = (na_uint64_t) hg_atomic_queue_pop_sc(&na_sm_ring_buf->queue);
+    na_sm_hdr.val = (na_uint64_t) hg_atomic_queue_pop_mc(&na_sm_ring_buf->queue);
     if (!na_sm_hdr.val) {
         /* Empty */
         ret = NA_FALSE;
