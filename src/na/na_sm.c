@@ -261,11 +261,13 @@ struct na_sm_private_data {
     struct na_sm_addr *self_addr;
     hg_poll_set_t *poll_set;
     HG_QUEUE_HEAD(na_sm_addr) accepted_addr_queue;
+    HG_QUEUE_HEAD(na_sm_addr) poll_addr_queue;
     HG_QUEUE_HEAD(na_sm_unexpected_info) unexpected_msg_queue;
     HG_QUEUE_HEAD(na_sm_op_id) lookup_op_queue;
     HG_QUEUE_HEAD(na_sm_op_id) unexpected_op_queue;
     HG_QUEUE_HEAD(na_sm_op_id) expected_op_queue;
     hg_thread_spin_t accepted_addr_queue_lock;
+    hg_thread_spin_t poll_addr_queue_lock;
     hg_thread_spin_t unexpected_msg_queue_lock;
     hg_thread_spin_t lookup_op_queue_lock;
     hg_thread_spin_t unexpected_op_queue_lock;
@@ -458,12 +460,20 @@ na_sm_ring_buf_push(
     );
 
 /**
- * Single-consumer dequeue.
+ * Multi-consumer dequeue.
  */
 static NA_INLINE na_bool_t
 na_sm_ring_buf_pop(
     struct na_sm_ring_buf *na_sm_ring_buf,
     na_sm_cacheline_hdr_t *na_sm_hdr_ptr
+    );
+
+/**
+ * Check whether queue is empty.
+ */
+static NA_INLINE na_bool_t
+na_sm_ring_buf_is_empty(
+    struct na_sm_ring_buf *na_sm_ring_buf
     );
 
 /**
@@ -1591,6 +1601,13 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+static NA_INLINE na_bool_t
+na_sm_ring_buf_is_empty(struct na_sm_ring_buf *na_sm_ring_buf)
+{
+    return hg_atomic_queue_is_empty(&na_sm_ring_buf->queue);
+}
+
+/*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
 na_sm_reserve_and_copy_buf(na_class_t *na_class,
     struct na_sm_copy_buf *na_sm_copy_buf, const void *buf, size_t buf_size,
@@ -2020,6 +2037,14 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
 
             poll_addr->sock_progress = NA_SM_SOCK_DONE;
 
+            /* Add addr to poll addr queue */
+            hg_thread_spin_lock(
+                &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
+            HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue,
+                poll_addr, poll_entry);
+            hg_thread_spin_unlock(
+                &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
+
             /* Progressed */
             *progressed = NA_TRUE;
         }
@@ -2093,6 +2118,14 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
                 NA_LOG_ERROR("Could not add notify to poll set");
                 goto done;
             }
+
+            /* Add addr to poll addr queue */
+            hg_thread_spin_lock(
+                &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
+            HG_QUEUE_PUSH_TAIL(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue,
+                poll_addr, poll_entry);
+            hg_thread_spin_unlock(
+                &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
 
             /* Completion */
             ret = na_sm_complete(na_sm_op_id);
@@ -2484,6 +2517,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
 
     /* Initialize queues */
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue);
+    HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue);
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue);
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->lookup_op_queue);
     HG_QUEUE_INIT(&NA_SM_PRIVATE_DATA(na_class)->unexpected_op_queue);
@@ -2492,6 +2526,8 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     /* Initialize mutexes */
     hg_thread_spin_init(
             &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_lock);
+    hg_thread_spin_init(
+                &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
     hg_thread_spin_init(
             &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_lock);
     hg_thread_spin_init(
@@ -2574,6 +2610,8 @@ na_sm_finalize(na_class_t *na_class)
     /* Destroy mutexes */
     hg_thread_spin_destroy(
             &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_lock);
+    hg_thread_spin_destroy(
+            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
     hg_thread_spin_destroy(
             &NA_SM_PRIVATE_DATA(na_class)->unexpected_msg_queue_lock);
     hg_thread_spin_destroy(
@@ -2845,6 +2883,14 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
             NA_LOG_ERROR("Could not delete sock from poll set");
             goto done;
         }
+
+        /* Remove addr from poll addr queue */
+        hg_thread_spin_lock(
+            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
+        HG_QUEUE_REMOVE(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue,
+            na_sm_addr, na_sm_addr, poll_entry);
+        hg_thread_spin_unlock(
+            &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
 
         if (na_sm_addr->accepted) { /* Create by accept */
             /* Get file names from ring bufs / events to delete files */
@@ -3870,11 +3916,23 @@ na_sm_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
 
 /*---------------------------------------------------------------------------*/
 static na_bool_t
-na_sm_poll_try_wait(na_class_t NA_UNUSED *na_class,
-    na_context_t NA_UNUSED *context)
+na_sm_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
-    /* TODO rework that part */
-    return NA_TRUE;
+    struct na_sm_addr *na_sm_addr;
+    na_bool_t ret = NA_TRUE;
+
+    /* Check whether something is in one of the ring buffers */
+    hg_thread_spin_lock(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
+    HG_QUEUE_FOREACH(na_sm_addr, &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue,
+        poll_entry) {
+        if (!na_sm_ring_buf_is_empty(na_sm_addr->na_sm_recv_ring_buf)) {
+            ret = NA_FALSE;
+            break;
+        }
+    }
+    hg_thread_spin_unlock(&NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
