@@ -8,7 +8,7 @@ compiler:
     - gcc
     - clang
 
-sudo: false
+sudo: true
 dist: trusty
 group: beta
 
