@@ -1193,9 +1193,10 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
         goto out;
     }
 
-#if defined(NA_OFI_HAS_EXT_GNI_H) && defined(NA_OFI_GNI_HAS_UDREG)
+#if defined(NA_OFI_HAS_EXT_GNI_H)
     if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
         char *other_reg_type = "udreg";
+        int enable = 1;
 
         /* Enable use of udreg instead of internal MR cache */
         ret = na_ofi_gni_set_domain_op_value(na_ofi_domain, GNI_MR_CACHE,
@@ -1204,14 +1205,8 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
             NA_LOG_ERROR("Could not set domain op value for GNI_MR_CACHE");
             goto out;
         }
-    }
-#endif
 
-#if defined(NA_OFI_HAS_EXT_GNI_H) && defined(NA_OFI_GNI_HAS_NO_LAZY_DEREG)
-    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
-        int enable = 0;
-
-        /* Disable lazy deregistration in MR cache */
+        /* Enable lazy deregistration in MR cache */
         ret = na_ofi_gni_set_domain_op_value(na_ofi_domain,
             GNI_MR_CACHE_LAZY_DEREG, &enable);
         if (ret != NA_SUCCESS) {
