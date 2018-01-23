@@ -157,7 +157,6 @@ if(NA_USE_OFI)
     # Detect <rdma/fi_ext_gni.h>
     set(CMAKE_REQUIRED_INCLUDES ${OFI_INCLUDE_DIR})
     check_include_files("rdma/fi_ext_gni.h" NA_OFI_HAS_EXT_GNI_H)
-    endif()
     set(NA_INT_INCLUDE_DEPENDENCIES
       ${NA_INT_INCLUDE_DEPENDENCIES}
       ${OFI_INCLUDE_DIR}
