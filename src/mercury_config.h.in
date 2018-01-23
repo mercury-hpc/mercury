@@ -112,6 +112,7 @@ typedef hg_uint8_t   hg_bool_t;
 #cmakedefine HG_HAS_XDR
 #cmakedefine HG_HAS_POST_LIMIT
 #define HG_POST_LIMIT @MERCURY_POST_LIMIT@
+#cmakedefine HG_HAS_SM_ROUTING
 #cmakedefine HG_HAS_COLLECT_STATS
 
 #cmakedefine HG_HAS_VERBOSE_ERROR
