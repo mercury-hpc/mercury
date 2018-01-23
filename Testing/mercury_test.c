@@ -125,6 +125,9 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
             case 'a': /* auth service */
                 hg_test_info->auth = HG_TRUE;
                 break;
+            case 'm': /* memory */
+                hg_test_info->auto_sm = HG_TRUE;
+                break;
             case 't': /* number of threads */
                 hg_test_info->thread_count =
                     (unsigned int) atoi(na_test_opt_arg_g);
@@ -321,15 +324,22 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         hg_init_info.na_init_info.progress_mode = NA_NO_BLOCK;
     else
         hg_init_info.na_init_info.progress_mode = NA_DEFAULT;
+
+    /* Set stats */
 #ifdef HG_HAS_COLLECT_STATS
     hg_init_info.stats = HG_TRUE;
 #endif
+
+    /* Set auto SM mode */
+    if (hg_test_info->auto_sm)
+        hg_init_info.auto_sm = HG_TRUE;
 
     /* Assign NA class */
     hg_init_info.na_class = hg_test_info->na_test_info.na_class;
 
     /* Init HG HL with init options */
-    ret = HG_Hl_init_opt(NULL, 0, &hg_init_info);
+    ret = HG_Hl_init_opt(NULL, hg_test_info->na_test_info.listen,
+        &hg_init_info);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not initialize HG HL");
         goto done;
@@ -372,8 +382,31 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     }
 
     if (hg_test_info->na_test_info.listen) {
+        char addr_string[NA_TEST_MAX_ADDR_NAME];
+        na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
+        hg_addr_t self_addr;
+
         /* Initalize atomic variable to finalize server */
         hg_atomic_set32(&hg_test_info->finalizing_count, 0);
+
+        /* TODO only rank 0 */
+        ret = HG_Addr_self(hg_test_info->hg_class, &self_addr);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not get self addr");
+        }
+
+        ret = HG_Addr_to_string(hg_test_info->hg_class, addr_string,
+            &addr_string_len, self_addr);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not convert addr to string");
+        }
+        HG_Addr_free(hg_test_info->hg_class, self_addr);
+
+        na_test_set_config(addr_string);
+
+        /* If static client, must wait for server to write config file */
+        if (hg_test_info->na_test_info.mpi_static)
+            NA_Test_barrier(&hg_test_info->na_test_info);
 
         /* Used by CTest Test Driver to know when to launch clients */
         MERCURY_TESTING_READY_MSG();
@@ -385,6 +418,24 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
             goto done;
         }
     } else {
+        char test_addr_name[NA_TEST_MAX_ADDR_NAME] = { '\0' };
+
+        /* If static client must wait for server to write config file */
+        if (hg_test_info->na_test_info.mpi_static)
+            NA_Test_barrier(&hg_test_info->na_test_info);
+
+        if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
+            na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
+        }
+
+        /* Broadcast addr name */
+        NA_Test_bcast(test_addr_name, NA_TEST_MAX_ADDR_NAME, 0,
+            &hg_test_info->na_test_info);
+
+        hg_test_info->na_test_info.target_name = strdup(test_addr_name);
+        printf("# Target name read: %s\n",
+            hg_test_info->na_test_info.target_name);
+
         /* Look up target addr using target name info */
         ret = HG_Hl_addr_lookup_wait(hg_test_info->context,
             hg_test_info->request_class, hg_test_info->na_test_info.target_name,

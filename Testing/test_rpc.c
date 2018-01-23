@@ -142,12 +142,67 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
 
     request = hg_request_create(request_class);
 
+    /* Create RPC request */
+    hg_ret = HG_Create(context, addr, rpc_id, &handle);
+    if (hg_ret != HG_SUCCESS) {
+        HG_TEST_LOG_ERROR("Could not create handle");
+        goto done;
+    }
+
+    /* Fill input structure */
+    rpc_open_handle.cookie = 100;
+    rpc_open_in_struct.path = rpc_open_path;
+    rpc_open_in_struct.handle = rpc_open_handle;
+
+    /* Forward call to remote addr and get a new request */
+    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
+    forward_cb_args.request = request;
+    forward_cb_args.rpc_handle = &rpc_open_handle;
+    hg_ret = HG_Forward(handle, callback, &forward_cb_args,
+        &rpc_open_in_struct);
+    if (hg_ret != HG_SUCCESS) {
+        HG_TEST_LOG_ERROR("Could not forward call");
+        goto done;
+    }
+
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+
+    /* Complete */
+    hg_ret = HG_Destroy(handle);
+    if (hg_ret != HG_SUCCESS) {
+        HG_TEST_LOG_ERROR("Could not destroy handle");
+        goto done;
+    }
+
+    hg_request_destroy(request);
+
+done:
+    return hg_ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_rpc_reset(hg_context_t *context, hg_request_class_t *request_class,
+    hg_addr_t addr, hg_id_t rpc_id, hg_cb_t callback)
+{
+    hg_request_t *request = NULL;
+    hg_handle_t handle;
+    hg_return_t hg_ret = HG_SUCCESS;
+    struct forward_cb_args forward_cb_args;
+    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
+    rpc_handle_t rpc_open_handle;
+    rpc_open_in_t  rpc_open_in_struct;
+
+    request = hg_request_create(request_class);
+
     /* Create request with invalid RPC id */
     hg_ret = HG_Create(context, HG_ADDR_NULL, 0, &handle);
     if (hg_ret != HG_SUCCESS) {
         HG_TEST_LOG_ERROR("Could not create handle");
         goto done;
     }
+
+    /* Reset with valid addr and ID */
     hg_ret = HG_Reset(handle, addr, rpc_id);
     if (hg_ret != HG_SUCCESS) {
         HG_TEST_LOG_ERROR("Could not reset handle");
@@ -384,6 +439,17 @@ main(int argc, char *argv[])
     /* Simple RPC test */
     HG_TEST("simple RPC");
     hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
+        hg_test_info.target_addr, hg_test_rpc_open_id_g,
+        hg_test_rpc_forward_cb);
+    if (hg_ret != HG_SUCCESS) {
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    HG_PASSED();
+
+    /* RPC reset test */
+    HG_TEST("RPC reset");
+    hg_ret = hg_test_rpc_reset(hg_test_info.context, hg_test_info.request_class,
         hg_test_info.target_addr, hg_test_rpc_open_id_g,
         hg_test_rpc_forward_cb);
     if (hg_ret != HG_SUCCESS) {

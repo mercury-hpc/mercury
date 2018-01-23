@@ -62,12 +62,6 @@ na_test_mpi_finalize(struct na_test_info *na_test_info);
 static char *
 na_test_gen_config(struct na_test_info *na_test_info);
 
-static void
-na_test_set_config(const char *addr_name);
-
-static void
-na_test_get_config(char *addr_name, na_size_t len);
-
 /*******************/
 /* Local Variables */
 /*******************/
@@ -334,7 +328,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static void
+void
 na_test_set_config(const char *addr_name)
 {
     FILE *config = NULL;
@@ -350,7 +344,7 @@ na_test_set_config(const char *addr_name)
 }
 
 /*---------------------------------------------------------------------------*/
-static void
+void
 na_test_get_config(char *addr_name, na_size_t len)
 {
     FILE *config = NULL;
@@ -412,58 +406,59 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     na_test_info->na_class = NA_Initialize_opt(info_string,
         na_test_info->listen, &na_init_info);
 
-    if (na_test_info->listen) {
-        char addr_string[NA_TEST_MAX_ADDR_NAME];
-        na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
-        na_addr_t self_addr;
-        na_return_t nret;
+    if (!na_test_info->extern_init) {
+        if (na_test_info->listen) {
+            char addr_string[NA_TEST_MAX_ADDR_NAME];
+            na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
+            na_addr_t self_addr;
+            na_return_t nret;
 
-        /* TODO only rank 0 */
-        nret = NA_Addr_self(na_test_info->na_class, &self_addr);
-        if (nret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not get self addr");
-        }
+            /* TODO only rank 0 */
+            nret = NA_Addr_self(na_test_info->na_class, &self_addr);
+            if (nret != NA_SUCCESS) {
+                NA_LOG_ERROR("Could not get self addr");
+            }
 
-        nret = NA_Addr_to_string(na_test_info->na_class, addr_string,
-            &addr_string_len, self_addr);
-        if (nret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not convert addr to string");
-        }
-        NA_Addr_free(na_test_info->na_class, self_addr);
+            nret = NA_Addr_to_string(na_test_info->na_class, addr_string,
+                &addr_string_len, self_addr);
+            if (nret != NA_SUCCESS) {
+                NA_LOG_ERROR("Could not convert addr to string");
+            }
+            NA_Addr_free(na_test_info->na_class, self_addr);
 
-        na_test_set_config(addr_string);
+            na_test_set_config(addr_string);
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
-        /* If static client must wait for server to write config file */
-        if (na_test_info->mpi_static)
-            MPI_Barrier(MPI_COMM_WORLD);
+            /* If static client must wait for server to write config file */
+            if (na_test_info->mpi_static)
+                MPI_Barrier(MPI_COMM_WORLD);
 #endif
 
-        /* Used by CTest Test Driver to know when to launch clients */
-        if (!na_test_info->extern_init)
+            /* Used by CTest Test Driver to know when to launch clients */
             MERCURY_TESTING_READY_MSG();
-    }
-    /* Get config from file if self option is not passed */
-    else if (!na_test_info->self_send) {
-        char test_addr_name[NA_TEST_MAX_ADDR_NAME] = { '\0' };
-
-#ifdef MERCURY_HAS_PARALLEL_TESTING
-        /* If static client must wait for server to write config file */
-        if (na_test_info->mpi_static)
-            MPI_Barrier(MPI_COMM_WORLD);
-#endif
-        if (na_test_info->mpi_comm_rank == 0) {
-            na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
         }
+        /* Get config from file if self option is not passed */
+        else if (!na_test_info->self_send) {
+            char test_addr_name[NA_TEST_MAX_ADDR_NAME] = { '\0' };
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
-        /* Broadcast addr name */
-        MPI_Bcast(test_addr_name, NA_TEST_MAX_ADDR_NAME, MPI_BYTE, 0,
-            na_test_info->mpi_comm);
+            /* If static client must wait for server to write config file */
+            if (na_test_info->mpi_static)
+                MPI_Barrier(MPI_COMM_WORLD);
+#endif
+            if (na_test_info->mpi_comm_rank == 0) {
+                na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
+            }
+
+#ifdef MERCURY_HAS_PARALLEL_TESTING
+            /* Broadcast addr name */
+            MPI_Bcast(test_addr_name, NA_TEST_MAX_ADDR_NAME, MPI_BYTE, 0,
+                na_test_info->mpi_comm);
 #endif
 
-        na_test_info->target_name = strdup(test_addr_name);
-        printf("# Target name read: %s\n", na_test_info->target_name);
+            na_test_info->target_name = strdup(test_addr_name);
+            printf("# Target name read: %s\n", na_test_info->target_name);
+        }
     }
 
 done:
@@ -502,6 +497,17 @@ NA_Test_barrier(struct na_test_info *na_test_info)
 {
 #ifdef MERCURY_HAS_PARALLEL_TESTING
     MPI_Barrier(na_test_info->mpi_comm);
+#else
+    (void) na_test_info;
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+void
+NA_Test_bcast(char *buf, int count, int root, struct na_test_info *na_test_info)
+{
+#ifdef MERCURY_HAS_PARALLEL_TESTING
+    MPI_Bcast(buf, count, MPI_BYTE, root, na_test_info->mpi_comm);
 #else
     (void) na_test_info;
 #endif

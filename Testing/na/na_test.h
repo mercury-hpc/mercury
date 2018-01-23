@@ -68,6 +68,18 @@ void
 na_test_usage(const char *execname);
 
 /**
+ * Set config file
+ */
+void
+na_test_set_config(const char *addr_name);
+
+/**
+ * Get config file
+ */
+void
+na_test_get_config(char *addr_name, na_size_t len);
+
+/**
  * Initialize
  */
 na_return_t
@@ -84,6 +96,12 @@ NA_Test_finalize(struct na_test_info *na_test_info);
  */
 void
 NA_Test_barrier(struct na_test_info *na_test_info);
+
+/**
+ * Call MPI_Bcast if available
+ */
+void
+NA_Test_bcast(char *buf, int count, int root, struct na_test_info *na_test_info);
 
 #ifdef __cplusplus
 }

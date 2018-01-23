@@ -47,6 +47,7 @@ struct hg_test_info {
     drc_info_handle_t credential_info;
     uint32_t cookie;
 #endif
+    hg_bool_t auto_sm;
     struct na_test_info na_test_info;
     unsigned int thread_count;
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL

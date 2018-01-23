@@ -17,7 +17,7 @@
 
 int na_test_opt_ind_g = 1; /* token pointer */
 const char *na_test_opt_arg_g = NULL; /* flag argument (or value) */
-const char *na_test_short_opt_g = "hc:p:H:LsSak:l:t:bV";
+const char *na_test_short_opt_g = "hc:p:H:LsSak:l:t:bmV";
 const struct na_test_opt na_test_opt_g[] = {
     { "help", no_arg, 'h'},
     { "comm", require_arg, 'c' },
@@ -31,6 +31,7 @@ const struct na_test_opt na_test_opt_g[] = {
     { "loop", require_arg, 'l'},
     { "threads", require_arg, 't'},
     { "busy", no_arg, 'b'},
+    { "memory", no_arg, 'm'},
     { "verbose", no_arg, 'V' },
     { NULL, 0, '\0' } /* Must add this at the end */
 };
