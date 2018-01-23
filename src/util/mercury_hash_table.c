@@ -43,7 +43,7 @@ struct hg_hash_table {
 };
 
 /* This is a set of good hash table prime numbers, from:
- *   http://planetmath.org/encyclopedia/Goodhg_hash_table_tPrimes.html
+ *   http://planetmath.org/goodhashtableprimes
  * Each prime is roughly double the previous value, and as far as
  * possible from the nearest powers of two. */
 
