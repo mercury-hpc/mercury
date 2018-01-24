@@ -526,8 +526,9 @@ na_ofi_gni_set_domain_op_value(struct na_ofi_domain *na_ofi_domain, int op,
 #endif
 
 static na_return_t
-na_ofi_domain_open(const char *prov_name, const char *domain_name,
-    const char *auth_key, struct na_ofi_domain **na_ofi_domain_p);
+na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
+    const char *domain_name, const char *auth_key,
+    struct na_ofi_domain **na_ofi_domain_p);
 
 static na_return_t
 na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
@@ -847,20 +848,9 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
         /* For versions 1.5 and later, scalable is implied by the lack of any
          * mr_mode bits being set. */
         hints->domain_attr->mr_mode = FI_MR_UNSPEC;
-
-        /* As "sockets" provider does not support manual progress and wait
-         * objects, set progress to auto for now. Note that the provider
-         * effectively creates a thread for internal progress in that case.
-         */
-        hints->domain_attr->control_progress = FI_PROGRESS_AUTO;
-        hints->domain_attr->data_progress    = FI_PROGRESS_AUTO;
     } else {
         /* FI_MR_BASIC */
         hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL;
-
-        /* Manual progress (no internal progress thread) */
-        hints->domain_attr->control_progress = FI_PROGRESS_MANUAL;
-        hints->domain_attr->data_progress    = FI_PROGRESS_MANUAL;
 
         if (!strcmp(prov_name, NA_OFI_PROV_PSM2_NAME)) {
             /* Can retrieve source address from processes not inserted in AV */
@@ -1041,8 +1031,9 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_domain_open(const char *prov_name, const char *domain_name,
-    const char *auth_key, struct na_ofi_domain **na_ofi_domain_p)
+na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
+    const char *domain_name, const char *auth_key,
+    struct na_ofi_domain **na_ofi_domain_p)
 {
     struct na_ofi_domain *na_ofi_domain;
     struct fi_av_attr av_attr = {0};
@@ -1171,6 +1162,24 @@ na_ofi_domain_open(const char *prov_name, const char *domain_name,
     na_ofi_domain->nod_mr_mode =
         (na_ofi_domain->nod_prov_type == NA_OFI_PROV_SOCKETS) ?
             NA_OFI_MR_SCALABLE : NA_OFI_MR_BASIC;
+
+    /* TODO Force no wait if do not support FI_WAIT_FD/FI_WAIT_SET */
+    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS
+        || na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2)
+        priv->no_wait = NA_TRUE;
+
+    if (priv->no_wait) {
+        /* Manual progress (no internal progress thread) */
+        na_ofi_domain->nod_prov->domain_attr->control_progress = FI_PROGRESS_MANUAL;
+        na_ofi_domain->nod_prov->domain_attr->data_progress    = FI_PROGRESS_MANUAL;
+    } else {
+        /* As providers do not support both manual progress and wait
+         * objects, set progress to auto for now. Note that the provider
+         * effectively creates a thread for internal progress in that case.
+         */
+        na_ofi_domain->nod_prov->domain_attr->control_progress = FI_PROGRESS_AUTO;
+        na_ofi_domain->nod_prov->domain_attr->data_progress    = FI_PROGRESS_AUTO;
+    }
 
     /* Open fi fabric */
     rc = fi_fabric(na_ofi_domain->nod_prov->fabric_attr,/* In:  Fabric attributes */
@@ -1365,7 +1374,6 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
 {
     struct na_ofi_endpoint *na_ofi_endpoint;
     struct fi_cq_attr cq_attr = {0};
-    struct fi_wait_attr wait_attr = {0};
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -1418,38 +1426,28 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
         goto out;
     }
 
-    /* verbs provider does not support FI_WAIT_FD/FI_WAIT_SET now */
-    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS ||
-        na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI ||
-        na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
-        no_wait)
-        goto no_wait_obj;
+    if (!no_wait) {
+        /* TODO: for now only sockets provider supports wait on fd. */
+        if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_SOCKETS)
+            cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
+        else {
+            struct fi_wait_attr wait_attr = {0};
 
-    /**
-     * TODO: for now only sockets provider supports wait on fd.
-     * Open wait set for other providers.
-     */
-    if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_SOCKETS) {
-        wait_attr.wait_obj = FI_WAIT_UNSPEC;
-        rc = fi_wait_open(na_ofi_domain->nod_fabric, &wait_attr,
-            &na_ofi_endpoint->noe_wait);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_wait_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
+            /* Open wait set for other providers. */
+            wait_attr.wait_obj = FI_WAIT_UNSPEC;
+            rc = fi_wait_open(na_ofi_domain->nod_fabric, &wait_attr,
+                &na_ofi_endpoint->noe_wait);
+            if (rc != 0) {
+                NA_LOG_ERROR("fi_wait_open failed, rc: %d(%s).", rc,
+                    fi_strerror(-rc));
+                ret = NA_PROTOCOL_ERROR;
+                goto out;
+            }
+            cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
+            cq_attr.wait_set = na_ofi_endpoint->noe_wait;
         }
     }
-
-    /* Create fi completion queue for events */
-    if (na_ofi_endpoint->noe_wait) {
-        cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
-        cq_attr.wait_set = na_ofi_endpoint->noe_wait;
-    } else {
-        cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
-    }
     cq_attr.wait_cond = FI_CQ_COND_NONE;
-
-no_wait_obj:
     cq_attr.format = FI_CQ_FORMAT_TAGGED;
     cq_attr.size = NA_OFI_CQ_DEPTH;
     rc = fi_cq_open(na_ofi_domain->nod_domain, &cq_attr,
@@ -1791,8 +1789,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     hg_thread_mutex_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_mutex);
 
     /* Create domain */
-    ret = na_ofi_domain_open(prov_name, domain_name, auth_key,
-        &NA_OFI_PRIVATE_DATA(na_class)->nop_domain);
+    ret = na_ofi_domain_open(na_class->private_data, prov_name, domain_name,
+        auth_key, &NA_OFI_PRIVATE_DATA(na_class)->nop_domain);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not open domain for %s, %s", prov_name,
             domain_name);
@@ -3276,14 +3274,12 @@ na_ofi_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     int fd = -1, rc;
 
-    /* Only sockets provider supports wait on fd for now */
-    if (priv->nop_domain->nod_prov_type != NA_OFI_PROV_SOCKETS
-        || priv->no_wait)
+    if (priv->no_wait)
         goto out;
 
     rc = fi_control(&priv->nop_endpoint->noe_cq->fid, FI_GETWAIT, &fd);
     if (rc == -FI_ENOSYS) {
-        NA_LOG_WARNING("%s provider does not support wait objects",
+        NA_LOG_WARNING("%s provider does not support retrieval of wait objects",
             priv->nop_domain->nod_prov_name);
     } else if (rc < 0)
         NA_LOG_ERROR("fi_control() failed, rc: %d(%s).",
@@ -3300,9 +3296,7 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid *fids[1];
 
-    /* Only sockets provider supports wait on fd for now */
-    if (priv->nop_domain->nod_prov_type != NA_OFI_PROV_SOCKETS
-        || priv->no_wait)
+    if (priv->no_wait)
         return NA_TRUE;
 
     fids[0] = &priv->nop_endpoint->noe_cq->fid;
