@@ -2,7 +2,6 @@ language: c
 
 os:
     - linux
-    - osx
 
 compiler:
     - gcc
@@ -28,6 +27,12 @@ env:
 
 matrix:
   include:
+   - os: osx
+     compiler: gcc
+     env: MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
+   - os: osx
+     compiler: clang
+     env: MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
    - os: linux
      compiler: gcc
      addons:
@@ -40,15 +45,20 @@ matrix:
          - libtsan0
          - libasan4
          - liblsan0
-     env:
-       - MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
-  exclude:
-   - os: osx
-     env:
-       - MERCURY_BUILD_CONFIGURATION="Debug"
-   - os: osx
-     env:
-       - MERCURY_BUILD_CONFIGURATION="Release"
+     env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
+   - os: linux
+     compiler: gcc
+     addons:
+       apt:
+         sources:
+         - ubuntu-toolchain-r-test
+         packages:
+         - gcc-7
+         - g++-7
+         - libtsan0
+         - libasan4
+         - liblsan0
+     env: MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
 
 branches:
   only:
