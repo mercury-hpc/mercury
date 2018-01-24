@@ -42,6 +42,13 @@ matrix:
          - liblsan0
      env:
        - MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
+  exclude:
+   - os: osx
+     env:
+       - MERCURY_BUILD_CONFIGURATION="Debug"
+   - os: osx
+     env:
+       - MERCURY_BUILD_CONFIGURATION="Release"
 
 branches:
   only:
