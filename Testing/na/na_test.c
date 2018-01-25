@@ -355,7 +355,11 @@ na_test_get_config(char *addr_name, na_size_t len)
             MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
         exit(1);
     }
-    fgets(addr_name, len, config);
+    if (fgets(addr_name, (int) len, config) == NULL) {
+        NA_LOG_ERROR("Could not retrieve config name");
+        fclose(config);
+        exit(1);
+    }
     /* This prevents retaining the newline, if any */
     addr_name[strlen(addr_name) - 1] = '\0';
     fclose(config);

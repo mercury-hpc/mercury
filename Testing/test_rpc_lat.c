@@ -65,8 +65,8 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
     char *bulk_buf = NULL;
     size_t nbytes = (total_size > sizeof(in_struct.buf_size)) ?
         total_size - sizeof(in_struct.buf_size) : 0;
-    size_t loop = (total_size > LARGE_SIZE) ? hg_test_info->na_test_info.loop :
-        hg_test_info->na_test_info.loop * 100;
+    size_t loop = (total_size > LARGE_SIZE) ? (size_t) hg_test_info->na_test_info.loop :
+        (size_t) hg_test_info->na_test_info.loop * 100;
     size_t skip = (total_size > LARGE_SIZE) ? LARGE_SKIP : SMALL_SKIP;
     hg_handle_t *handles = NULL;
     hg_request_t *request;

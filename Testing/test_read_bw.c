@@ -67,8 +67,8 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
     hg_bulk_t bulk_handle = HG_BULK_NULL;
     size_t nbytes = total_size;
     double nmbytes = (double) total_size / (1024 * 1024);
-    size_t loop = (total_size > LARGE_SIZE) ? hg_test_info->na_test_info.loop :
-        hg_test_info->na_test_info.loop * 10;
+    size_t loop = (total_size > LARGE_SIZE) ? (size_t) hg_test_info->na_test_info.loop :
+        (size_t) hg_test_info->na_test_info.loop * 10;
     size_t skip = (total_size > LARGE_SIZE) ? LARGE_SKIP : SMALL_SKIP;
     hg_handle_t *handles = NULL;
     hg_request_t *request;

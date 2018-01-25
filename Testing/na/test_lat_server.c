@@ -115,7 +115,7 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
 #ifdef MERCURY_TESTING_HAS_VERIFY_DATA
     if (na_test_source_recv_arg->tag != NA_TEST_TAG_DONE) {
         /* Check recv buf */
-        char *recv_buf_ptr = (const char*) na_test_source_recv_arg->recv_buf;
+        const char *recv_buf_ptr = (const char*) na_test_source_recv_arg->recv_buf;
         na_size_t i;
 
         for (i = NA_Msg_get_unexpected_header_size(na_test_lat_info->na_class);

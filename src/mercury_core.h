@@ -458,6 +458,18 @@ HG_Core_addr_get_na(
         );
 
 /**
+ * Obtain the underlying NA class from an HG address.
+ *
+ * \param addr [IN]             abstract address
+ *
+ * \return Pointer to NA class or NULL if not a valid HG address
+ */
+na_class_t *
+HG_Core_addr_get_na_class(
+        hg_addr_t addr
+        );
+
+/**
  * Access self address. Address must be freed with HG_Core_addr_free().
  *
  * \param hg_class [IN]         pointer to HG class

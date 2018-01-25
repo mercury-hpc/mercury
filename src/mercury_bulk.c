@@ -104,12 +104,12 @@ struct hg_bulk {
 /* Local Prototypes */
 /********************/
 
+#ifdef HG_HAS_SM_ROUTING
 extern na_class_t *
 HG_Core_class_get_na_sm(const hg_class_t *hg_class);
 extern na_context_t *
 HG_Core_context_get_na_sm(const hg_context_t *context);
-extern na_class_t *
-HG_Core_addr_get_na_class(hg_addr_t addr);
+#endif
 
 /**
  * Create handle.

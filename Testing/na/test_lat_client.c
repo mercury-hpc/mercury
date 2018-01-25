@@ -175,7 +175,7 @@ na_test_measure_latency(struct na_test_lat_info *na_test_lat_info,
 {
     char *send_buf = NULL, *recv_buf = NULL;
     void *send_buf_data, *recv_buf_data;
-    size_t loop = na_test_lat_info->na_test_info.loop * 100;
+    size_t loop = (size_t) na_test_lat_info->na_test_info.loop * 100;
     size_t skip = SMALL_SKIP;
     na_op_id_t send_op_id;
     na_op_id_t recv_op_id;
@@ -271,7 +271,7 @@ na_test_measure_latency(struct na_test_lat_info *na_test_lat_info,
 
 #ifdef MERCURY_TESTING_HAS_VERIFY_DATA
     /* Check recv buf */
-    char *recv_buf_ptr = (const char*) recv_buf;
+    const char *recv_buf_ptr = (const char*) recv_buf;
 
     for (i = NA_Msg_get_unexpected_header_size(na_test_lat_info->na_class);
         i < buf_size; i++) {

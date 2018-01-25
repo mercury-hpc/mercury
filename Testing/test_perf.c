@@ -229,8 +229,8 @@ measure_rpc2(struct hg_test_info *hg_test_info)
         double td, tb, part_time_read;
         double calls_per_sec, min_calls_per_sec, max_calls_per_sec;
 
-        if ((hg_test_info->na_test_info.loop - op_count) < nhandles) {
-            args.op_count = hg_test_info->na_test_info.loop - op_count;
+        if (((unsigned int) hg_test_info->na_test_info.loop - op_count) < nhandles) {
+            args.op_count = (unsigned int) hg_test_info->na_test_info.loop - op_count;
         }
         hg_atomic_set32(&args.op_completed_count, 0);
 
