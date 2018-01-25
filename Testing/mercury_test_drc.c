@@ -481,11 +481,32 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
     /* Acquire DRC token */
     if (hg_test_drc_info.na_test_info.listen) {
+        char addr_string[NA_TEST_MAX_ADDR_NAME];
+        na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
+        hg_addr_t self_addr;
+
         ret = hg_test_drc_token_acquire(&hg_test_drc_info);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not acquire DRC token");
             goto done;
         }
+
+        /* TODO only rank 0 */
+        ret = HG_Addr_self(hg_test_drc_info.hg_class, &self_addr);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not get self addr");
+            goto done;
+        }
+
+        ret = HG_Addr_to_string(hg_test_drc_info.hg_class, addr_string,
+            &addr_string_len, self_addr);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not convert addr to string");
+            goto done;
+        }
+        HG_Addr_free(hg_test_drc_info.hg_class, self_addr);
+
+        na_test_set_config(addr_string);
 
         /* Used by CTest Test Driver to know when to launch clients */
         MERCURY_TESTING_READY_MSG();
@@ -507,6 +528,19 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
             ret = HG_Progress(hg_test_drc_info.context, HG_MAX_IDLE_TIME);
         } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
     } else {
+        char test_addr_name[NA_TEST_MAX_ADDR_NAME] = { '\0' };
+
+        if (hg_test_drc_info.na_test_info.mpi_comm_rank == 0)
+            na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
+
+        /* Broadcast addr name */
+        NA_Test_bcast(test_addr_name, NA_TEST_MAX_ADDR_NAME, 0,
+            &hg_test_drc_info.na_test_info);
+
+        hg_test_drc_info.na_test_info.target_name = strdup(test_addr_name);
+        printf("# Target name read: %s\n",
+            hg_test_drc_info.na_test_info.target_name);
+
         ret = hg_test_drc_token_request(&hg_test_drc_info);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not request DRC token");
