@@ -675,8 +675,7 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
              * hostname and then cycle through range of ports until we find
              * one that works.
              */
-            ret = gethostname(my_hostname, NA_BMI_MAX_ADDR_NAME);
-            if (ret < 0)
+            if (gethostname(my_hostname, NA_BMI_MAX_ADDR_NAME) < 0)
                 sprintf(my_hostname, "localhost");
         }
 
