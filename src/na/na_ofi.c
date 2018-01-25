@@ -157,6 +157,8 @@ struct na_ofi_domain {
     /* Memory region handle, only valid for MR_SCALABLE */
     struct fid_mr *nod_mr;
     struct fid_av *nod_av;                  /* Address vector handle */
+    /* mutex to protect per domain resource like av */
+    hg_thread_mutex_t nod_mutex;
     /*
      * Address hash-table, to map the source-side address to fi_addr_t.
      * The key is 64bits value serialized from source-side IP+Port (see
@@ -274,6 +276,22 @@ struct na_ofi_op_id {
 #define na_ofi_bswap32s(x) do { *(x) = na_ofi_bswap32(*(x)); } while (0)
 
 static NA_INLINE void
+na_ofi_domain_lock(struct na_ofi_domain *domain)
+{
+    if (domain->nod_prov_type == NA_OFI_PROV_VERBS ||
+        domain->nod_prov_type == NA_OFI_PROV_PSM2)
+        hg_thread_mutex_lock(&domain->nod_mutex);
+}
+
+static NA_INLINE void
+na_ofi_domain_unlock(struct na_ofi_domain *domain)
+{
+    if (domain->nod_prov_type == NA_OFI_PROV_VERBS ||
+        domain->nod_prov_type == NA_OFI_PROV_PSM2)
+        hg_thread_mutex_unlock(&domain->nod_mutex);
+}
+
+static NA_INLINE void
 na_ofi_class_lock(na_class_t *na_class)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
@@ -353,10 +371,10 @@ na_ofi_av_insert(na_class_t *na_class, char *node_str, char *service_str,
     assert(domain != NULL);
 
     /* Use fi_av_insertsvc if possible */
-    na_ofi_class_lock(na_class);
+    na_ofi_domain_lock(domain);
     rc = fi_av_insertsvc(domain->nod_av, node_str, service_str,
                          fi_addr, 0 /* flags */, NULL /* context */);
-    na_ofi_class_unlock(na_class);
+    na_ofi_domain_unlock(domain);
     if (rc == -FI_ENOSYS) { /* Not supported by PSM2/GNI providers */
         struct fi_info *tmp_info = NULL;
 
@@ -369,10 +387,10 @@ na_ofi_av_insert(na_class_t *na_class, char *node_str, char *service_str,
             ret = NA_PROTOCOL_ERROR;
             goto out;
         }
-        na_ofi_class_lock(na_class);
+        na_ofi_domain_lock(domain);
         rc = fi_av_insert(domain->nod_av, tmp_info->dest_addr, 1, fi_addr,
                           0 /* flags */, NULL /* context */);
-        na_ofi_class_unlock(na_class);
+        na_ofi_domain_unlock(domain);
 
         fi_freeinfo(tmp_info);
     }
@@ -1106,7 +1124,15 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
     memset(na_ofi_domain, 0, sizeof(struct na_ofi_domain));
     hg_atomic_set32(&na_ofi_domain->nod_refcount, 1);
 
-    /* Create rw lock */
+    /* Init mutex */
+    rc = hg_thread_mutex_init(&na_ofi_domain->nod_mutex);
+    if (rc != HG_UTIL_SUCCESS) {
+        NA_LOG_ERROR("hg_thread_mutex_init failed");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+
+    /* Init rw lock */
     rc = hg_thread_rwlock_init(&na_ofi_domain->nod_rwlock);
     if (rc != HG_UTIL_SUCCESS) {
         NA_LOG_ERROR("hg_thread_rwlock_init failed");
@@ -1357,6 +1383,7 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
     if (na_ofi_domain->nod_addr_ht)
         hg_hash_table_free(na_ofi_domain->nod_addr_ht);
 
+    hg_thread_mutex_destroy(&na_ofi_domain->nod_mutex);
     hg_thread_rwlock_destroy(&na_ofi_domain->nod_rwlock);
 
     free(na_ofi_domain->nod_prov_name);
@@ -3382,10 +3409,10 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 struct fid_av *av_hdl = priv->nop_domain->nod_av;
                 fi_addr_t tmp_addr;
 
-                na_ofi_class_lock(na_class);
+                na_ofi_domain_lock(priv->nop_domain);
                 rc = fi_av_insert(av_hdl, cq_err.err_data, 1, &tmp_addr,
                                   0 /* flags */, NULL /* context */);
-                na_ofi_class_unlock(na_class);
+                na_ofi_domain_unlock(priv->nop_domain);
                 if (rc < 0) {
                     NA_LOG_ERROR("fi_av_insert failed, rc: %d(%s).",
                                  rc, fi_strerror((int) -rc));
