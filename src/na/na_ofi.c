@@ -538,7 +538,7 @@ na_ofi_verify_provider(const char *prov_name, const char *domain_name,
     const struct fi_info *fi_info);
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
-static NA_INLINE na_return_t
+static na_return_t
 na_ofi_gni_set_domain_op_value(struct na_ofi_domain *na_ofi_domain, int op,
     void *value);
 #endif
@@ -1019,7 +1019,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 #ifdef NA_OFI_HAS_EXT_GNI_H
-static NA_INLINE na_return_t
+static na_return_t
 na_ofi_gni_set_domain_op_value(struct na_ofi_domain *na_ofi_domain, int op,
     void *value)
 {
