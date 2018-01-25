@@ -404,9 +404,11 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
         na_test_set_config(addr_string);
 
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         /* If static client, must wait for server to write config file */
         if (hg_test_info->na_test_info.mpi_static)
-            NA_Test_barrier(&hg_test_info->na_test_info);
+            MPI_Barrier(MPI_COMM_WORLD);
+#endif
 
         /* Used by CTest Test Driver to know when to launch clients */
         MERCURY_TESTING_READY_MSG();
@@ -420,9 +422,11 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     } else {
         char test_addr_name[NA_TEST_MAX_ADDR_NAME] = { '\0' };
 
+#ifdef MERCURY_HAS_PARALLEL_TESTING
         /* If static client must wait for server to write config file */
         if (hg_test_info->na_test_info.mpi_static)
-            NA_Test_barrier(&hg_test_info->na_test_info);
+            MPI_Barrier(MPI_COMM_WORLD);
+#endif
 
         if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
             na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
