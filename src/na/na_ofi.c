@@ -1538,17 +1538,6 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
         na_ofi_endpoint->noe_ep = NULL;
     }
 
-    /* Close wait set */
-    if (na_ofi_endpoint->noe_wait) {
-        rc = fi_close(&na_ofi_endpoint->noe_wait->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close wait failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
-        na_ofi_endpoint->noe_wait = NULL;
-    }
-
     /* Close completion queue */
     if (na_ofi_endpoint->noe_cq) {
         rc = fi_close(&na_ofi_endpoint->noe_cq->fid);
@@ -1558,6 +1547,17 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
             goto out;
         }
         na_ofi_endpoint->noe_cq = NULL;
+    }
+
+    /* Close wait set */
+    if (na_ofi_endpoint->noe_wait) {
+        rc = fi_close(&na_ofi_endpoint->noe_wait->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close wait failed, rc: %d(%s).", rc, fi_strerror(-rc));
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        na_ofi_endpoint->noe_wait = NULL;
     }
 
     /* Free OFI info */
