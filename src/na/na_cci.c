@@ -831,6 +831,10 @@ na_cci_addr_lookup(na_class_t * na_class, na_context_t * context,
     if (rc) {
         NA_LOG_ERROR("cci_connect(%s) failed with %s", name,
             cci_strerror(e, rc));
+        if (rc == CCI_ETIMEDOUT)
+            ret = NA_TIMEOUT;
+        else
+            ret = NA_CANCELED;
         goto out;
     }
 
