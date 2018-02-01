@@ -3988,31 +3988,6 @@ done:
 #endif
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
-HG_Core_context_set_id(hg_context_t *context, hg_uint8_t id)
-{
-    hg_return_t ret = HG_SUCCESS;
-
-    if (!context) {
-        HG_LOG_ERROR("NULL HG context");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-
-    ret = NA_Context_set_id(context->hg_class->na_class, context->na_context, id);
-    if (ret != NA_SUCCESS) {
-        HG_LOG_ERROR("NA_Context_set_id(id %d) failed, ret %d.", id, ret);
-        ret = HG_NA_ERROR;
-        goto done;
-    }
-
-    context->id = id;
-
- done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
 hg_uint8_t
 HG_Core_context_get_id(const hg_context_t *context)
 {

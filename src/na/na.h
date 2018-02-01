@@ -38,6 +38,7 @@ typedef enum na_progress_mode {
 /* Init info */
 struct na_init_info {
     na_progress_mode_t progress_mode;   /* Progress mode */
+    na_int32_t max_contexts;            /* Max contexts */
     const char *auth_key;               /* Authorization key */
 };
 

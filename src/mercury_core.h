@@ -310,22 +310,6 @@ HG_Core_context_get_na_sm(
 #endif
 
 /**
- * Set user-defined context ID, this can be used for multiplexing incoming
- * RPC requests and define an RPC tag identifier. Only RPC requests that match
- * the same context ID will be received (Tags are internally generated).
- *
- * \param context [IN]          pointer to HG context
- * \param id [IN]               user-defined context ID (max value of 255)
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Core_context_set_id(
-        hg_context_t *context,
-        hg_uint8_t id
-        );
-
-/**
  * Retrieve context ID from context.
  *
  * \param context [IN]          pointer to HG context
