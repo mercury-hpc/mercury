@@ -976,9 +976,10 @@ HG_TEST_RPC_CB(hg_test_perf_bulk_read, handle)
 
     /* Pull bulk data */
     ret = HG_Bulk_transfer(hg_info->context, hg_test_perf_bulk_transfer_cb,
-            handle, HG_BULK_PUSH, hg_info->addr, origin_bulk_handle, 0,
-            local_bulk_handle, 0, HG_Bulk_get_size(origin_bulk_handle),
-            HG_OP_ID_IGNORE);
+        handle, HG_BULK_PUSH, hg_info->addr, hg_info->target_id,
+        origin_bulk_handle, 0, local_bulk_handle, 0,
+        HG_Bulk_get_size(origin_bulk_handle),
+        HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
         fprintf(stderr, "Could not read bulk data\n");
         return ret;
