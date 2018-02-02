@@ -1856,8 +1856,8 @@ hg_core_reset(struct hg_handle *hg_handle, hg_bool_t reset_info)
             hg_handle->hg_info.addr->na_addr = NA_ADDR_NULL;
         }
         hg_handle->hg_info.id = 0;
-        hg_handle->hg_info.target_id = 0;
     }
+    hg_handle->hg_info.target_id = 0;
     hg_handle->request_callback = NULL;
     hg_handle->request_arg = NULL;
     hg_handle->response_callback = NULL;
