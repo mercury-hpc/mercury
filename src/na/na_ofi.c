@@ -201,6 +201,8 @@ struct na_ofi_endpoint {
     struct fid_ep *noe_ep;      /* Endpoint to communicate on */
     struct fid_cq *noe_cq;      /* Completion queue handle, invalid for sep */
     struct fid_wait *noe_wait;  /* Wait set handle, invalid for sep */
+    /* Unexpected op queue for regular endpoint */
+    struct na_ofi_queue *noe_unexpected_op_queue;
     na_bool_t noe_sep;          /* True for SEP, false for basic EP */
 };
 
@@ -228,9 +230,6 @@ struct na_ofi_private_data {
     /* nop_mutex only used for verbs provider as it is not thread safe now */
     hg_thread_mutex_t nop_mutex;
     na_bool_t no_wait; /* Ignore wait object */
-    /* Unexpected op queue for regular endpoint */
-    hg_thread_spin_t nop_unexpected_op_lock;
-    HG_QUEUE_HEAD(na_ofi_op_id) nop_unexpected_op_queue;
 };
 
 struct na_ofi_context {
@@ -239,12 +238,14 @@ struct na_ofi_context {
     struct fid_ep   *noc_rx; /* Receive context */
     struct fid_cq   *noc_cq; /* CQ for basic ep or tx/rx context for sep */
     struct fid_wait *noc_wait;  /* Wait set handle */
-    /*
-     * Unexpected op queue per context for scalable endpoint, for regular
-     * endpoint just a reference to per class op queue.
-     */
-    hg_thread_spin_t *noc_unexpected_op_lock;
-    HG_QUEUE_HEAD(na_ofi_op_id) *noc_unexpected_op_queue;
+    /* Unexpected op queue per context for scalable endpoint, for regular
+     * endpoint just a reference to per class op queue. */
+    struct na_ofi_queue *noc_unexpected_op_queue;
+};
+
+struct na_ofi_queue {
+    hg_thread_spin_t noq_lock;
+    HG_QUEUE_HEAD(na_ofi_op_id) noq_queue;
 };
 
 struct na_ofi_addr {
@@ -1563,6 +1564,16 @@ na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
         goto out;
     }
 
+    /* Initialize queue / mutex */
+    na_ofi_endpoint->noe_unexpected_op_queue = malloc(sizeof(struct na_ofi_queue));
+    if (!na_ofi_endpoint->noe_unexpected_op_queue) {
+        NA_LOG_ERROR("Could not allocate noe_unexpected_op_queue");
+        ret = NA_NOMEM_ERROR;
+        goto out;
+    }
+    HG_QUEUE_INIT(&na_ofi_endpoint->noe_unexpected_op_queue->noq_queue);
+    hg_thread_spin_init(&na_ofi_endpoint->noe_unexpected_op_queue->noq_lock);
+
     if (!no_wait) {
         /* TODO: for now only sockets provider supports wait on fd. */
         if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_SOCKETS)
@@ -1645,7 +1656,8 @@ na_ofi_sep_open(const struct na_ofi_domain *na_ofi_domain,
         goto out;
     }
 
-    rc = fi_ep_bind(na_ofi_endpoint->noe_ep, &na_ofi_domain->nod_av->fid, 0);
+    rc = fi_scalable_ep_bind(na_ofi_endpoint->noe_ep,
+        &na_ofi_domain->nod_av->fid, 0);
     if (rc != 0) {
         NA_LOG_ERROR("fi_ep_bind failed, rc: %d(%s).", rc, fi_strerror(-rc));
         ret = NA_PROTOCOL_ERROR;
@@ -1674,6 +1686,20 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
     int rc;
 
     if (!na_ofi_endpoint) goto out;
+
+    /* When not using SEP */
+    if (na_ofi_endpoint->noe_unexpected_op_queue) {
+        /* Check that unexpected op queue is empty */
+        if (!HG_QUEUE_IS_EMPTY(
+            &na_ofi_endpoint->noe_unexpected_op_queue->noq_queue)) {
+            NA_LOG_ERROR("Unexpected op queue should be empty");
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        hg_thread_spin_destroy(
+            &na_ofi_endpoint->noe_unexpected_op_queue->noq_lock);
+        free(na_ofi_endpoint->noe_unexpected_op_queue);
+    }
 
     /* Close endpoint */
     if (na_ofi_endpoint->noe_ep) {
@@ -1965,8 +1991,6 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     NA_OFI_PRIVATE_DATA(na_class)->nop_contexts = 0;
 
     /* Initialize queue / mutex */
-    HG_QUEUE_INIT(&NA_OFI_PRIVATE_DATA(na_class)->nop_unexpected_op_queue);
-    hg_thread_spin_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_unexpected_op_lock);
     hg_thread_mutex_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_mutex);
 
     /* Create domain */
@@ -2028,14 +2052,6 @@ na_ofi_finalize(na_class_t *na_class)
     if (priv == NULL)
         goto out;
 
-    /* Check that unexpected op queue is empty */
-    if (priv->nop_endpoint != NULL && !na_ofi_with_sep(na_class) &&
-        !HG_QUEUE_IS_EMPTY(&priv->nop_unexpected_op_queue)) {
-        NA_LOG_ERROR("Unexpected op queue should be empty");
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-
     /* Close endpoint */
     ret = na_ofi_endpoint_close(priv->nop_endpoint);
     if (ret != NA_SUCCESS) {
@@ -2051,7 +2067,6 @@ na_ofi_finalize(na_class_t *na_class)
     }
 
     /* Close mutex / free private data */
-    hg_thread_spin_destroy(&priv->nop_unexpected_op_lock);
     hg_thread_mutex_destroy(&priv->nop_mutex);
     free(priv->nop_uri);
     free(priv);
@@ -2082,147 +2097,132 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
     ctx->noc_idx = id;
 
     /* If not using SEP, just point to endpoint objects */
+    hg_thread_mutex_lock(&priv->nop_mutex);
     if (!na_ofi_with_sep(na_class)) {
         ctx->noc_tx = ep->noe_ep;
         ctx->noc_rx = ep->noe_ep;
         ctx->noc_cq = ep->noe_cq;
         ctx->noc_wait = ep->noe_wait;
-        ctx->noc_unexpected_op_queue = &priv->nop_unexpected_op_queue;
-        ctx->noc_unexpected_op_lock = &priv->nop_unexpected_op_lock;
-        *context = ctx;
-        goto out;
-    }
-
-    /* Initialize queue / mutex */
-    ctx->noc_unexpected_op_queue = malloc(sizeof(*ctx->noc_unexpected_op_queue));
-    ctx->noc_unexpected_op_lock = malloc(sizeof(*ctx->noc_unexpected_op_lock));
-    if (ctx->noc_unexpected_op_queue == NULL ||
-        ctx->noc_unexpected_op_lock == NULL) {
-        NA_LOG_ERROR("Could not allocate noc_unexpected_op_queue/_lock");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
-    HG_QUEUE_INIT(ctx->noc_unexpected_op_queue);
-    hg_thread_spin_init(ctx->noc_unexpected_op_lock);
-
-    hg_thread_mutex_lock(&priv->nop_mutex);
-    if (priv->nop_contexts >= priv->nop_max_contexts ||
-        id >= priv->nop_max_contexts) {
-        NA_LOG_ERROR("nop_contexts %d, context id %d, nop_max_contexts %d "
-            "could not create context.", priv->nop_contexts,
-            id, priv->nop_max_contexts);
-        hg_thread_mutex_unlock(&priv->nop_mutex);
-        hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-
-    if (!priv->no_wait) {
-        /* TODO: for now only sockets provider supports wait on fd. */
-        if (domain->nod_prov_type == NA_OFI_PROV_SOCKETS)
-            cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
-        else {
-            struct fi_wait_attr wait_attr = {0};
-
-            /* Open wait set for other providers. */
-            wait_attr.wait_obj = FI_WAIT_UNSPEC;
-            rc = fi_wait_open(domain->nod_fabric, &wait_attr,
-                &ctx->noc_wait);
-            if (rc != 0) {
-                NA_LOG_ERROR("fi_wait_open failed, rc: %d(%s).", rc,
-                    fi_strerror(-rc));
-                hg_thread_mutex_unlock(&priv->nop_mutex);
-                hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
-                ret = NA_PROTOCOL_ERROR;
-                goto out;
-            }
-            cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
-            cq_attr.wait_set = ctx->noc_wait;
+        ctx->noc_unexpected_op_queue = ep->noe_unexpected_op_queue;
+    } else {
+        /* Initialize queue / mutex */
+        ctx->noc_unexpected_op_queue = malloc(sizeof(struct na_ofi_queue));
+        if (!ctx->noc_unexpected_op_queue) {
+            NA_LOG_ERROR("Could not allocate noc_unexpected_op_queue/_lock");
+            ret = NA_NOMEM_ERROR;
+            goto out;
         }
-    }
-    cq_attr.wait_cond = FI_CQ_COND_NONE;
-    cq_attr.format = FI_CQ_FORMAT_TAGGED;
-    cq_attr.size = NA_OFI_CQ_DEPTH;
-    rc = fi_cq_open(domain->nod_domain, &cq_attr, &ctx->noc_cq, NULL);
-    if (rc < 0) {
-        NA_LOG_ERROR("fi_cq_open failed, rc: %d(%s).",
-            rc, fi_strerror(-rc));
-        hg_thread_mutex_unlock(&priv->nop_mutex);
-        hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+        HG_QUEUE_INIT(&ctx->noc_unexpected_op_queue->noq_queue);
+        hg_thread_spin_init(&ctx->noc_unexpected_op_queue->noq_lock);
 
-    rc = fi_tx_context(ep->noe_ep, id, NULL, &ctx->noc_tx, NULL);
-    if (rc < 0) {
-        NA_LOG_ERROR("fi_tx_context failed, rc: %d(%s).",
-            rc, fi_strerror(-rc));
-        hg_thread_mutex_unlock(&priv->nop_mutex);
-        hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+        if (priv->nop_contexts >= priv->nop_max_contexts ||
+            id >= priv->nop_max_contexts) {
+            NA_LOG_ERROR("nop_contexts %d, context id %d, nop_max_contexts %d "
+                "could not create context.", priv->nop_contexts,
+                id, priv->nop_max_contexts);
+            hg_thread_mutex_unlock(&priv->nop_mutex);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
 
-    rc = fi_rx_context(ep->noe_ep, id, NULL, &ctx->noc_rx, NULL);
-    if (rc < 0) {
-        NA_LOG_ERROR("fi_rx_context failed, rc: %d(%s).",
-            rc, fi_strerror(-rc));
-        hg_thread_mutex_unlock(&priv->nop_mutex);
-        hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+        if (!priv->no_wait) {
+            /* TODO: for now only sockets provider supports wait on fd. */
+            if (domain->nod_prov_type == NA_OFI_PROV_SOCKETS)
+                cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
+            else {
+                struct fi_wait_attr wait_attr = {0};
 
-    rc = fi_ep_bind(ctx->noc_tx, &ctx->noc_cq->fid, FI_TRANSMIT);
-    if (rc < 0) {
-        NA_LOG_ERROR("fi_ep_bind noc_tx failed, rc: %d(%s).",
-            rc, fi_strerror(-rc));
-        hg_thread_mutex_unlock(&priv->nop_mutex);
-        hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+                /* Open wait set for other providers. */
+                wait_attr.wait_obj = FI_WAIT_UNSPEC;
+                rc = fi_wait_open(domain->nod_fabric, &wait_attr,
+                    &ctx->noc_wait);
+                if (rc != 0) {
+                    NA_LOG_ERROR("fi_wait_open failed, rc: %d(%s).", rc,
+                        fi_strerror(-rc));
+                    hg_thread_mutex_unlock(&priv->nop_mutex);
+                    ret = NA_PROTOCOL_ERROR;
+                    goto out;
+                }
+                cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
+                cq_attr.wait_set = ctx->noc_wait;
+            }
+        }
+        cq_attr.wait_cond = FI_CQ_COND_NONE;
+        cq_attr.format = FI_CQ_FORMAT_TAGGED;
+        cq_attr.size = NA_OFI_CQ_DEPTH;
+        rc = fi_cq_open(domain->nod_domain, &cq_attr, &ctx->noc_cq, NULL);
+        if (rc < 0) {
+            NA_LOG_ERROR("fi_cq_open failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            hg_thread_mutex_unlock(&priv->nop_mutex);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
 
-    rc = fi_ep_bind(ctx->noc_rx, &ctx->noc_cq->fid, FI_RECV);
-    if (rc < 0) {
-        NA_LOG_ERROR("fi_ep_bind noc_rx failed, rc: %d(%s).",
-            rc, fi_strerror(-rc));
-        hg_thread_mutex_unlock(&priv->nop_mutex);
-        hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+        rc = fi_tx_context(ep->noe_ep, id, NULL, &ctx->noc_tx, NULL);
+        if (rc < 0) {
+            NA_LOG_ERROR("fi_tx_context failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            hg_thread_mutex_unlock(&priv->nop_mutex);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
 
-    /*
+        rc = fi_rx_context(ep->noe_ep, id, NULL, &ctx->noc_rx, NULL);
+        if (rc < 0) {
+            NA_LOG_ERROR("fi_rx_context failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            hg_thread_mutex_unlock(&priv->nop_mutex);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+
+        rc = fi_ep_bind(ctx->noc_tx, &ctx->noc_cq->fid, FI_TRANSMIT);
+        if (rc < 0) {
+            NA_LOG_ERROR("fi_ep_bind noc_tx failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            hg_thread_mutex_unlock(&priv->nop_mutex);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+
+        rc = fi_ep_bind(ctx->noc_rx, &ctx->noc_cq->fid, FI_RECV);
+        if (rc < 0) {
+            NA_LOG_ERROR("fi_ep_bind noc_rx failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            hg_thread_mutex_unlock(&priv->nop_mutex);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+
+        /*
         rc = fi_ep_bind(ctx->noc_tx, &domain->nod_av->fid, 0);
         if (rc != 0) {
             NA_LOG_ERROR("fi_ep_bind av to noc_tx failed, rc: %d(%s).",
                          rc, fi_strerror(-rc));
             hg_thread_mutex_unlock(&priv->nop_mutex);
-            hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
             ret = NA_PROTOCOL_ERROR;
             goto failed_exit;
         }
-     */
+         */
 
-    rc = fi_enable(ctx->noc_tx);
-    if (rc < 0) {
-        NA_LOG_ERROR("fi_enable noc_tx failed, rc: %d(%s).",
-            rc, fi_strerror(-rc));
-        hg_thread_mutex_unlock(&priv->nop_mutex);
-        hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+        rc = fi_enable(ctx->noc_tx);
+        if (rc < 0) {
+            NA_LOG_ERROR("fi_enable noc_tx failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            hg_thread_mutex_unlock(&priv->nop_mutex);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
 
-    rc = fi_enable(ctx->noc_rx);
-    if (rc < 0) {
-        NA_LOG_ERROR("fi_enable noc_rx failed, rc: %d(%s).",
-            rc, fi_strerror(-rc));
-        hg_thread_mutex_unlock(&priv->nop_mutex);
-        hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
+        rc = fi_enable(ctx->noc_rx);
+        if (rc < 0) {
+            NA_LOG_ERROR("fi_enable noc_rx failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+            hg_thread_mutex_unlock(&priv->nop_mutex);
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
     }
 
     priv->nop_contexts++;
@@ -2232,10 +2232,10 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
 
 out:
     if (ret != NA_SUCCESS && ctx) {
-        if (ctx->noc_unexpected_op_queue != NULL)
+        if (na_ofi_with_sep(na_class) && ctx->noc_unexpected_op_queue) {
+            hg_thread_spin_destroy(&ctx->noc_unexpected_op_queue->noq_lock);
             free(ctx->noc_unexpected_op_queue);
-        if (ctx->noc_unexpected_op_lock != NULL)
-            free(ctx->noc_unexpected_op_lock);
+        }
         free(ctx);
     }
 
@@ -2253,7 +2253,7 @@ na_ofi_context_destroy(na_class_t *na_class, void *context)
 
     /* Check that unexpected op queue is empty */
     if (na_ofi_with_sep(na_class) &&
-        !HG_QUEUE_IS_EMPTY(ctx->noc_unexpected_op_queue)) {
+        !HG_QUEUE_IS_EMPTY(&ctx->noc_unexpected_op_queue->noq_queue)) {
         NA_LOG_ERROR("Unexpected op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
         goto out;
@@ -2306,9 +2306,8 @@ na_ofi_context_destroy(na_class_t *na_class, void *context)
             ctx->noc_cq = NULL;
         }
 
+        hg_thread_spin_destroy(&ctx->noc_unexpected_op_queue->noq_lock);
         free(ctx->noc_unexpected_op_queue);
-        hg_thread_spin_destroy(ctx->noc_unexpected_op_lock);
-        free(ctx->noc_unexpected_op_lock);
     }
 
     hg_thread_mutex_lock(&priv->nop_mutex);
@@ -2829,9 +2828,10 @@ na_ofi_msg_unexpected_op_push(na_context_t *context,
         goto out;
     }
 
-    hg_thread_spin_lock(ctx->noc_unexpected_op_lock);
-    HG_QUEUE_PUSH_TAIL(ctx->noc_unexpected_op_queue, na_ofi_op_id, noo_entry);
-    hg_thread_spin_unlock(ctx->noc_unexpected_op_lock);
+    hg_thread_spin_lock(&ctx->noc_unexpected_op_queue->noq_lock);
+    HG_QUEUE_PUSH_TAIL(&ctx->noc_unexpected_op_queue->noq_queue, na_ofi_op_id,
+        noo_entry);
+    hg_thread_spin_unlock(&ctx->noc_unexpected_op_queue->noq_lock);
 
 out:
     return ret;
@@ -2851,10 +2851,10 @@ na_ofi_msg_unexpected_op_remove(na_context_t *context,
         goto out;
     }
 
-    hg_thread_spin_lock(ctx->noc_unexpected_op_lock);
-    HG_QUEUE_REMOVE(ctx->noc_unexpected_op_queue, na_ofi_op_id, na_ofi_op_id,
-                    noo_entry);
-    hg_thread_spin_unlock(ctx->noc_unexpected_op_lock);
+    hg_thread_spin_lock(&ctx->noc_unexpected_op_queue->noq_lock);
+    HG_QUEUE_REMOVE(&ctx->noc_unexpected_op_queue->noq_queue, na_ofi_op_id,
+        na_ofi_op_id, noo_entry);
+    hg_thread_spin_unlock(&ctx->noc_unexpected_op_queue->noq_lock);
 
 out:
     return ret;
@@ -2867,10 +2867,10 @@ na_ofi_msg_unexpected_op_pop(na_context_t *context)
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct na_ofi_op_id *na_ofi_op_id;
 
-    hg_thread_spin_lock(ctx->noc_unexpected_op_lock);
-    na_ofi_op_id = HG_QUEUE_FIRST(ctx->noc_unexpected_op_queue);
-    HG_QUEUE_POP_HEAD(ctx->noc_unexpected_op_queue, noo_entry);
-    hg_thread_spin_unlock(ctx->noc_unexpected_op_lock);
+    hg_thread_spin_lock(&ctx->noc_unexpected_op_queue->noq_lock);
+    na_ofi_op_id = HG_QUEUE_FIRST(&ctx->noc_unexpected_op_queue->noq_queue);
+    HG_QUEUE_POP_HEAD(&ctx->noc_unexpected_op_queue->noq_queue, noo_entry);
+    hg_thread_spin_unlock(&ctx->noc_unexpected_op_queue->noq_lock);
 
     return na_ofi_op_id;
 }
