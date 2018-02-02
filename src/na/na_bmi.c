@@ -307,7 +307,6 @@ na_bmi_msg_recv_unexpected(
         void         *buf,
         na_size_t     buf_size,
         void         *plugin_data,
-        na_tag_t      mask,
         na_op_id_t   *op_id
         );
 
@@ -508,7 +507,6 @@ const na_class_t na_bmi_class_g = {
         na_bmi_initialize,                    /* initialize */
         na_bmi_finalize,                      /* finalize */
         NULL,                                 /* cleanup */
-        NULL,                                 /* check_feature */
         na_bmi_context_create,                /* context_create */
         na_bmi_context_destroy,               /* context_destroy */
         na_bmi_op_create,                     /* op_create */
@@ -1163,7 +1161,7 @@ done:
 static na_return_t
 na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        void NA_UNUSED *plugin_data, na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_op_id_t *op_id)
 {
     struct na_bmi_unexpected_info *unexpected_info = NULL;
     struct na_bmi_op_id *na_bmi_op_id = NULL;

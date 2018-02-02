@@ -207,7 +207,7 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
         ret = NA_Msg_recv_unexpected(na_test_lat_info->na_class,
             na_test_lat_info->context, na_test_recv_unexpected_cb,
             &na_test_source_recv_arg, recv_buf, unexpected_size,
-            recv_buf_data, 0, &recv_op_id);
+            recv_buf_data, &recv_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("NA_Msg_recv_unexpected() failed");
             goto done;

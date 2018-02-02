@@ -229,7 +229,7 @@ test_msg_recv(struct na_test_params *params)
     /* Recv a message from a client */
     na_ret = NA_Msg_recv_unexpected(params->na_class, params->context,
         msg_unexpected_recv_cb, params, params->recv_buf,
-        params->recv_buf_len, params->recv_buf_plugin_data, 0, NA_OP_ID_IGNORE);
+        params->recv_buf_len, params->recv_buf_plugin_data, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not post recv of unexpected message");
         ret = EXIT_FAILURE;

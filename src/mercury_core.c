@@ -90,8 +90,6 @@ struct hg_class {
     hg_thread_spin_t func_map_lock;     /* Function map mutex */
     hg_atomic_int32_t request_tag;      /* Atomic used for tag generation */
     na_tag_t request_max_tag;           /* Max value for tag */
-    unsigned int na_max_tag_msb;        /* MSB of NA max tag */
-    hg_bool_t use_tag_mask;             /* Can use tag masking or not */
     hg_bool_t na_ext_init;              /* NA externally initialized */
     na_progress_mode_t progress_mode;   /* NA progress mode */
 #ifdef HG_HAS_COLLECT_STATS
@@ -124,7 +122,6 @@ struct hg_context {
     na_context_t *na_sm_context;                  /* NA SM context */
 #endif
     hg_uint8_t id;                                /* Context ID */
-    na_tag_t request_mask;                        /* Request tag mask */
     struct hg_poll_set *poll_set;                 /* Context poll set */
     /* Pointer to function used for making progress */
     hg_return_t (*progress)(struct hg_context *context, unsigned int timeout);
@@ -307,20 +304,11 @@ hg_core_func_map_value_free(
         );
 
 /**
- * Find tag most significant bit.
- */
-static HG_INLINE unsigned int
-hg_core_tag_msb(
-        na_tag_t tag
-        );
-
-/**
  * Generate a new tag.
  */
 static HG_INLINE na_tag_t
 hg_core_gen_request_tag(
-        struct hg_class *hg_class,
-        struct hg_handle *hg_handle
+        struct hg_class *hg_class
         );
 
 /**
@@ -892,21 +880,8 @@ hg_core_func_map_value_free(hg_hash_table_value_t value)
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE unsigned int
-hg_core_tag_msb(na_tag_t tag)
-{
-    unsigned int ret = 0;
-
-    while (tag >>= 1)
-        ret++;
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
 static HG_INLINE na_tag_t
-hg_core_gen_request_tag(struct hg_class *hg_class,
-    struct hg_handle *hg_handle)
+hg_core_gen_request_tag(struct hg_class *hg_class)
 {
     na_tag_t request_tag = 0;
 
@@ -917,11 +892,7 @@ hg_core_gen_request_tag(struct hg_class *hg_class,
         request_tag = (na_tag_t) hg_atomic_incr32(&hg_class->request_tag);
     }
 
-    /* Use handle target ID if tag mask is enabled */
-    return (hg_handle->hg_info.target_id && hg_class->use_tag_mask) ?
-        (na_tag_t) (hg_handle->hg_info.target_id << (hg_class->na_max_tag_msb
-            + 1 - HG_CORE_MASK_NBITS)) | request_tag
-        : request_tag;
+    return request_tag;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1167,14 +1138,8 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
         ret = HG_NA_ERROR;
         goto done;
     }
-    hg_class->use_tag_mask = NA_Check_feature(hg_class->na_class,
-        NA_HAS_TAG_MASK);
-    hg_class->request_max_tag =
-        (hg_class->use_tag_mask) ? na_max_tag >> HG_CORE_MASK_NBITS :
-            na_max_tag;
+    hg_class->request_max_tag = na_max_tag;
 
-    /* Find MSB of na_max_tag */
-    hg_class->na_max_tag_msb = hg_core_tag_msb(na_max_tag);
 
     /* Initialize atomic for tags */
     hg_atomic_init32(&hg_class->request_tag, 0);
@@ -1977,7 +1942,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     hg_handle->op_type = HG_CORE_FORWARD;
 
     /* Generate tag */
-    hg_handle->tag = hg_core_gen_request_tag(hg_class, hg_handle);
+    hg_handle->tag = hg_core_gen_request_tag(hg_class);
 
     if (!hg_handle->no_response) {
         /* Increment number of expected NA operations */
@@ -2710,7 +2675,7 @@ hg_core_post(struct hg_handle *hg_handle)
     na_ret = NA_Msg_recv_unexpected(hg_handle->na_class, hg_handle->na_context,
         hg_core_recv_input_cb, hg_handle, hg_handle->in_buf,
         hg_handle->in_buf_size, hg_handle->in_buf_plugin_data,
-        context->request_mask, &hg_handle->na_recv_op_id);
+        &hg_handle->na_recv_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post unexpected recv for input buffer");
         ret = HG_NA_ERROR;
@@ -3923,9 +3888,6 @@ HG_Core_context_set_id(hg_context_t *context, hg_uint8_t id)
     }
 
     context->id = id;
-    context->request_mask = (id && context->hg_class->use_tag_mask) ?
-        (na_tag_t) (id << (context->hg_class->na_max_tag_msb
-            + 1 - HG_CORE_MASK_NBITS)) : 0;
 
  done:
     return ret;

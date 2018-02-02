@@ -72,11 +72,6 @@ struct na_class {
     (*cleanup)(
             void
             );
-    na_bool_t
-    (*check_feature)(
-            na_class_t *na_class,
-            na_uint8_t feature
-            );
     na_return_t
     (*context_create)(
             na_class_t *na_class,
@@ -193,7 +188,6 @@ struct na_class {
             void         *buf,
             na_size_t     buf_size,
             void         *plugin_data,
-            na_tag_t      mask,
             na_op_id_t   *op_id
             );
     na_return_t

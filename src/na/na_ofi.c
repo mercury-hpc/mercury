@@ -651,7 +651,7 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 static na_return_t
 na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_tag_t mask, na_op_id_t *op_id);
+    void *plugin_data, na_op_id_t *op_id);
 
 /* msg_send_expected */
 static na_return_t
@@ -741,7 +741,6 @@ const na_class_t na_ofi_class_g = {
     na_ofi_initialize,                      /* initialize */
     na_ofi_finalize,                        /* finalize */
     NULL,                                   /* cleanup */
-    NULL,                                   /* check_feature */
     NULL,                                   /* context_create */
     NULL,                                   /* context_destroy */
     na_ofi_op_create,                       /* op_create */
@@ -2549,7 +2548,7 @@ out:
 static na_return_t
 na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
+    void *plugin_data, na_op_id_t *op_id)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct fid_ep *ep_hdl = priv->nop_endpoint->noe_ep;

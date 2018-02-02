@@ -350,7 +350,6 @@ na_mpi_msg_recv_unexpected(
         void         *buf,
         na_size_t     buf_size,
         void         *plugin_data,
-        na_tag_t      mask,
         na_op_id_t   *op_id
         );
 
@@ -540,7 +539,6 @@ const na_class_t na_mpi_class_g = {
         na_mpi_initialize,                    /* initialize */
         na_mpi_finalize,                      /* finalize */
         NULL,                                 /* cleanup */
-        NULL,                                 /* check_feature */
         NULL,                                 /* context_create */
         NULL,                                 /* context_destroy */
         NULL,                                 /* op_create */
@@ -1537,7 +1535,7 @@ done:
 static na_return_t
 na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        void NA_UNUSED *plugin_data, na_tag_t NA_UNUSED mask, na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_op_id_t *op_id)
 {
     struct na_mpi_op_id *na_mpi_op_id = NULL;
     na_return_t ret = NA_SUCCESS;

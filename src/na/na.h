@@ -121,9 +121,6 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_MEM_WRITE_ONLY  0x02
 #define NA_MEM_READWRITE   0x03
 
-/* Supported features */
-#define NA_HAS_TAG_MASK    0x01
-
 /*********************/
 /* Public Prototypes */
 /*********************/
@@ -226,22 +223,6 @@ NA_Get_class_protocol(
 NA_EXPORT na_bool_t
 NA_Is_listening(
         const na_class_t *na_class
-        ) NA_WARN_UNUSED_RESULT;
-
-/**
- * Test whether NA feature is supported by plugin or not.
- * List of queryable features are:
- *      - NA_HAS_TAG_MASK
- *
- * \param na_class [IN/OUT]     pointer to NA class
- * \param feature  [IN]         ID of requested feature
- *
- * \return NA_TRUE if supported or NA_FALSE if not
- */
-NA_EXPORT na_bool_t
-NA_Check_feature(
-        na_class_t *na_class,
-        na_uint8_t feature
         ) NA_WARN_UNUSED_RESULT;
 
 /**
@@ -580,9 +561,7 @@ NA_Msg_send_unexpected(
 
 /**
  * Receive an unexpected message. Unexpected receives may wait on any tag and
- * any source depending on the implementation, a tag mask allows for messages
- * to be ignored if the plugin has defined the NA_HAS_TAG_MASK feature
- * (see NA_Check_feature() for more details). After completion, the user
+ * any source depending on the implementation. After completion, the user
  * callback parameter is placed into the context completion queue and can be
  * triggered using NA_Trigger().
  * The plugin_data parameter returned from the NA_Msg_buf_alloc() call must
@@ -601,7 +580,6 @@ NA_Msg_send_unexpected(
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
  * \param plugin_data [IN]      pointer to internal plugin data
- * \param mask [IN]             tag mask
  * \param op_id [IN/OUT]        pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -615,7 +593,6 @@ NA_Msg_recv_unexpected(
         void         *buf,
         na_size_t     buf_size,
         void         *plugin_data,
-        na_tag_t      mask,
         na_op_id_t   *op_id
         );
 

@@ -496,24 +496,6 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-na_bool_t
-NA_Check_feature(na_class_t *na_class, na_uint8_t feature)
-{
-    na_bool_t ret = NA_FALSE;
-
-    if (!na_class) {
-        NA_LOG_ERROR("NULL NA class");
-        goto done;
-    }
-
-    if (na_class->check_feature)
-        ret = na_class->check_feature(na_class, feature);
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
 na_context_t *
 NA_Context_create(na_class_t *na_class)
 {
@@ -1158,7 +1140,7 @@ done:
 na_return_t
 NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_tag_t mask, na_op_id_t *op_id)
+    void *plugin_data, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1189,7 +1171,7 @@ NA_Msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_unexpected(na_class, context, callback, arg, buf,
-        buf_size, plugin_data, mask, op_id);
+        buf_size, plugin_data, op_id);
 
 done:
     return ret;
