@@ -294,7 +294,7 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
         HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Pull bulk data */
-    ret = HG_Bulk_transfer(hg_info->context, hg_test_bulk_transfer_cb,
+    ret = HG_Bulk_transfer_id(hg_info->context, hg_test_bulk_transfer_cb,
         bulk_args, HG_BULK_PULL, hg_info->addr, hg_info->target_id,
         origin_bulk_handle, 0, local_bulk_handle, 0, bulk_args->nbytes,
         &hg_bulk_op_id);
@@ -429,7 +429,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
             HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Pull bulk data */
-    ret = HG_Bulk_transfer(hg_info->context, hg_test_bulk_seg_transfer_cb,
+    ret = HG_Bulk_transfer_id(hg_info->context, hg_test_bulk_seg_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, hg_info->target_id,
             origin_bulk_handle, 0, local_bulk_handle, 0, nbytes_read,
             HG_OP_ID_IGNORE);
@@ -443,7 +443,7 @@ HG_TEST_RPC_CB(hg_test_bulk_seg_write, handle)
 
     printf("Start reading second chunk of %lu bytes...\n", nbytes_read);
 
-    ret = HG_Bulk_transfer(hg_info->context, hg_test_bulk_seg_transfer_cb,
+    ret = HG_Bulk_transfer_id(hg_info->context, hg_test_bulk_seg_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, hg_info->target_id,
             origin_bulk_handle, offset, local_bulk_handle, offset, nbytes_read,
             HG_OP_ID_IGNORE);
@@ -642,7 +642,7 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
             HG_BULK_READWRITE, &local_bulk_handle);
 
     /* Pull bulk data */
-    ret = HG_Bulk_transfer(hg_info->context, hg_test_posix_write_transfer_cb,
+    ret = HG_Bulk_transfer_id(hg_info->context, hg_test_posix_write_transfer_cb,
             bulk_args, HG_BULK_PULL, hg_info->addr, hg_info->target_id,
             origin_bulk_handle, 0, local_bulk_handle, 0, bulk_args->nbytes,
             HG_OP_ID_IGNORE);
@@ -787,7 +787,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
     bulk_args->ret = read_ret;
 
     /* Push bulk data */
-    ret = HG_Bulk_transfer(hg_info->context, hg_test_posix_read_transfer_cb,
+    ret = HG_Bulk_transfer_id(hg_info->context, hg_test_posix_read_transfer_cb,
             bulk_args, HG_BULK_PUSH, hg_info->addr, hg_info->target_id,
             origin_bulk_handle, 0, local_bulk_handle, 0, bulk_args->nbytes,
             HG_OP_ID_IGNORE);
@@ -924,7 +924,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
     HG_Free_input(handle, &in_struct);
 
     /* Pull bulk data */
-    ret = HG_Bulk_transfer(hg_info->context, hg_test_perf_bulk_transfer_cb,
+    ret = HG_Bulk_transfer_id(hg_info->context, hg_test_perf_bulk_transfer_cb,
             handle, HG_BULK_PULL, hg_info->addr, hg_info->target_id,
             origin_bulk_handle, 0, local_bulk_handle, 0,
             HG_Bulk_get_size(origin_bulk_handle), HG_OP_ID_IGNORE);
@@ -975,7 +975,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk_read, handle)
     HG_Free_input(handle, &in_struct);
 
     /* Pull bulk data */
-    ret = HG_Bulk_transfer(hg_info->context, hg_test_perf_bulk_transfer_cb,
+    ret = HG_Bulk_transfer_id(hg_info->context, hg_test_perf_bulk_transfer_cb,
         handle, HG_BULK_PUSH, hg_info->addr, hg_info->target_id,
         origin_bulk_handle, 0, local_bulk_handle, 0,
         HG_Bulk_get_size(origin_bulk_handle),

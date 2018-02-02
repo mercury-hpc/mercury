@@ -742,7 +742,7 @@ hg_get_extra_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
 
     /* Read bulk data here and wait for the data to be here  */
     hg_private_data->extra_bulk_transfer_cb = done_cb;
-    ret = HG_Bulk_transfer(hg_info->context, hg_get_extra_input_cb, handle,
+    ret = HG_Bulk_transfer_id(hg_info->context, hg_get_extra_input_cb, handle,
         HG_BULK_PULL, hg_info->addr, hg_info->target_id,
         hg_private_data->extra_bulk_handle, 0, local_in_handle, 0,
         hg_private_data->extra_bulk_buf_size,

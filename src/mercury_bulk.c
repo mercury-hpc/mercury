@@ -1626,6 +1626,17 @@ done:
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
+    hg_bulk_op_t op, hg_addr_t origin_addr, hg_bulk_t origin_handle,
+    hg_size_t origin_offset, hg_bulk_t local_handle, hg_size_t local_offset,
+    hg_size_t size, hg_op_id_t *op_id)
+{
+    return HG_Bulk_transfer_id(context, callback, arg, op, origin_addr, 0,
+        origin_handle, origin_offset, local_handle, local_offset, size, op_id);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_bulk_op_t op, hg_addr_t origin_addr, hg_uint8_t origin_id,
     hg_bulk_t origin_handle, hg_size_t origin_offset, hg_bulk_t local_handle,
     hg_size_t local_offset, hg_size_t size, hg_op_id_t *op_id)
