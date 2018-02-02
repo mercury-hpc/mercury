@@ -54,12 +54,15 @@ set(CTEST_TEST_TIMEOUT 180) # 180s timeout
 set(MERCURY_DO_COVERAGE $ENV{MERCURY_DO_COVERAGE})
 if(MERCURY_DO_COVERAGE)
   message("Enabling Coverage")
-  set(CTEST_COVERAGE_COMMAND "/usr/bin/gcov")
+  # set(CTEST_COVERAGE_COMMAND "/usr/bin/gcov")
   # don't run parallel coverage tests, no matter what.
   set(CTEST_TEST_ARGS PARALLEL_LEVEL 1)
 
   # needed by mercury_common.cmake
   set(dashboard_do_coverage TRUE)
+
+  # build suffix
+  set(coverage_suffix "-coverage")
 
   # add Coverage dir to the root so that we don't mess the non-coverage
   # dashboard.
@@ -102,7 +105,7 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
 endif()
 
 # Build name referenced in cdash
-set(CTEST_BUILD_NAME "travis-ci-$ENV{TRAVIS_OS_NAME}-x64-$ENV{CC}-${lower_mercury_build_configuration}${lower_mercury_memorycheck_type}-$ENV{TRAVIS_BUILD_NUMBER}")
+set(CTEST_BUILD_NAME "travis-ci-$ENV{TRAVIS_OS_NAME}-x64-$ENV{CC}-${lower_mercury_build_configuration}${lower_mercury_memorycheck_type}${coverage_suffix}-$ENV{TRAVIS_BUILD_NUMBER}")
 
 set(dashboard_binary_name mercury-${lower_mercury_build_configuration})
 if(NOT mercury_build_shared)
