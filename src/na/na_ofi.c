@@ -182,7 +182,6 @@ struct na_ofi_domain {
     struct fid_av *nod_av;                  /* Address vector handle */
     /* mutex to protect per domain resource like av */
     hg_thread_mutex_t nod_mutex;
-    na_int32_t nod_max_contexts;            /* Max number of contexts */
     /*
      * Address hash-table, to map the source-side address to fi_addr_t.
      * The key is 64bits value serialized from source-side IP+Port (see
@@ -225,8 +224,8 @@ struct na_ofi_private_data {
     char *nop_uri; /* URI address string */
     struct na_ofi_reqhdr nop_req_hdr; /* request header */
     na_bool_t nop_listen; /* flag of listening, true for server */
-    na_int32_t nop_contexts; /* number of context */
-    na_int32_t nop_max_contexts; /* max number of contexts */
+    na_uint8_t nop_contexts; /* number of context */
+    na_uint8_t nop_max_contexts; /* max number of contexts */
     /* nop_mutex only used for verbs provider as it is not thread safe now */
     hg_thread_mutex_t nop_mutex;
     na_bool_t no_wait; /* Ignore wait object */
@@ -596,7 +595,7 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain);
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     const char *node, const char *service, na_bool_t no_wait,
-    na_int32_t max_contexts, struct na_ofi_endpoint **na_ofi_endpoint_p);
+    na_uint8_t max_contexts, struct na_ofi_endpoint **na_ofi_endpoint_p);
 
 static na_return_t
 na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
@@ -1289,19 +1288,21 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
-    na_ofi_domain->nod_max_contexts =
-        MIN(na_ofi_domain->nod_prov->domain_attr->tx_ctx_cnt,
+    if (priv->nop_max_contexts > 1) {
+        size_t min_ctx_cnt =
+            MIN(na_ofi_domain->nod_prov->domain_attr->tx_ctx_cnt,
+                na_ofi_domain->nod_prov->domain_attr->rx_ctx_cnt);
+        if (priv->nop_max_contexts > min_ctx_cnt) {
+            NA_LOG_ERROR("Maximum number of requested contexts (%d) exceeds "
+                "provider limitation (%d).", priv->nop_max_contexts,
+                min_ctx_cnt);
+            ret = NA_INVALID_PARAM;
+            goto out;
+        }
+        NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d.",
+            na_ofi_domain->nod_prov->domain_attr->tx_ctx_cnt,
             na_ofi_domain->nod_prov->domain_attr->rx_ctx_cnt);
-    if (priv->nop_max_contexts > na_ofi_domain->nod_max_contexts) {
-        NA_LOG_ERROR("Maximum number of requested contexts (%d) exceeds "
-            "provider limitation (%d).", priv->nop_max_contexts,
-            na_ofi_domain->nod_max_contexts);
-        ret = NA_INVALID_PARAM;
-        goto out;
     }
-    NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d.",
-                 na_ofi_domain->nod_prov->domain_attr->tx_ctx_cnt,
-                 na_ofi_domain->nod_prov->domain_attr->rx_ctx_cnt);
 
 #if defined(NA_OFI_HAS_EXT_GNI_H)
     if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
@@ -1473,7 +1474,7 @@ out:
 static na_return_t
 na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     const char *node, const char *service, na_bool_t no_wait,
-    na_int32_t max_contexts, struct na_ofi_endpoint **na_ofi_endpoint_p)
+    na_uint8_t max_contexts, struct na_ofi_endpoint **na_ofi_endpoint_p)
 {
     struct na_ofi_endpoint *na_ofi_endpoint;
     na_return_t ret = NA_SUCCESS;
@@ -1933,7 +1934,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     const char *prov_name;
     char *service = NULL;
     na_bool_t no_wait = NA_FALSE;
-    na_int32_t max_contexts = 1;
+    na_uint8_t max_contexts = 1; /* Default */
     const char *auth_key = NULL;
     na_return_t ret = NA_SUCCESS;
 
