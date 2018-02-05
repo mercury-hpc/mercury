@@ -163,6 +163,20 @@ HG_Core_class_get_na(
         const hg_class_t *hg_class
         );
 
+#ifdef HG_HAS_SM_ROUTING
+/**
+ * Obtain the underlying NA SM class.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ *
+ * \return Pointer to NA SM class or NULL if not a valid class
+ */
+HG_EXPORT na_class_t *
+HG_Core_class_get_na_sm(
+        const hg_class_t *hg_class
+        );
+#endif
+
 /**
  * Obtain the maximum eager size for sending RPC inputs.
  *
@@ -265,6 +279,20 @@ HG_EXPORT na_context_t *
 HG_Core_context_get_na(
         const hg_context_t *context
         );
+
+#ifdef HG_HAS_SM_ROUTING
+/**
+ * Retrieve the underlying NA SM context.
+ *
+ * \param context [IN]          pointer to HG context
+ *
+ * \return the associated context
+ */
+HG_EXPORT na_context_t *
+HG_Core_context_get_na_sm(
+        const hg_context_t *context
+        );
+#endif
 
 /**
  * Set user-defined context ID, this can be used for multiplexing incoming

@@ -50,6 +50,7 @@
 # define HG_CORE_ADDR_MAX_SIZE      256
 # define HG_CORE_PROTO_DELIMITER    ":"
 # define HG_CORE_ADDR_DELIMITER     ";"
+# define HG_CORE_MIN(a, b)          (a < b) ? a : b /* Min macro */
 #endif
 
 /* Remove warnings when routine does not use arguments */
@@ -133,6 +134,10 @@ struct hg_context {
     hg_atomic_int32_t trigger_waiting;            /* Waiting in trigger */
     HG_LIST_HEAD(hg_handle) pending_list;         /* List of pending handles */
     hg_thread_spin_t pending_list_lock;           /* Pending list lock */
+#ifdef HG_HAS_SM_ROUTING
+    HG_LIST_HEAD(hg_handle) sm_pending_list;      /* List of SM pending handles */
+    hg_thread_spin_t sm_pending_list_lock;        /* SM pending list lock */
+#endif
     HG_LIST_HEAD(hg_handle) processing_list;      /* List of handles being processed */
     hg_thread_spin_t processing_list_lock;        /* Processing list lock */
 #ifdef HG_HAS_SELF_FORWARD
@@ -352,6 +357,16 @@ static hg_return_t
 hg_core_pending_list_cancel(
         struct hg_context *context
         );
+
+#ifdef HG_HAS_SM_ROUTING
+/**
+ * Cancel entries from pending list.
+ */
+static hg_return_t
+hg_core_sm_pending_list_cancel(
+        struct hg_context *context
+        );
+#endif
 
 /**
  * Wail until processing list is empty.
@@ -659,7 +674,8 @@ static hg_return_t
 hg_core_context_post(
         struct hg_context *context,
         unsigned int request_count,
-        hg_bool_t repost
+        hg_bool_t repost,
+        hg_bool_t use_sm
         );
 
 /**
@@ -1012,6 +1028,36 @@ hg_core_pending_list_cancel(struct hg_context *context)
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef HG_HAS_SM_ROUTING
+static hg_return_t
+hg_core_sm_pending_list_cancel(struct hg_context *context)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_thread_spin_lock(&context->sm_pending_list_lock);
+
+    while (!HG_LIST_IS_EMPTY(&context->sm_pending_list)) {
+        struct hg_handle *hg_handle = HG_LIST_FIRST(&context->sm_pending_list);
+        HG_LIST_REMOVE(hg_handle, entry);
+
+        /* Prevent reposts */
+        hg_handle->repost = HG_FALSE;
+
+        /* Cancel handle */
+        ret = hg_core_cancel(hg_handle);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not cancel SM handle");
+            break;
+        }
+    }
+
+    hg_thread_spin_unlock(&context->sm_pending_list_lock);
+
+    return ret;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_processing_list_wait(struct hg_context *context)
 {
@@ -1054,6 +1100,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     struct hg_class *hg_class = NULL;
     na_tag_t na_max_tag;
 #ifdef HG_HAS_SM_ROUTING
+    na_tag_t na_sm_max_tag;
     hg_bool_t auto_sm = HG_FALSE;
 #endif
     hg_return_t ret = HG_SUCCESS;
@@ -1130,7 +1177,6 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     }
 #endif
 
-    /* TODO check that */
     /* Compute max request tag */
     na_max_tag = NA_Msg_get_max_tag(hg_class->na_class);
     if (!na_max_tag) {
@@ -1140,6 +1186,18 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     }
     hg_class->request_max_tag = na_max_tag;
 
+#ifdef HG_HAS_SM_ROUTING
+    if (auto_sm) {
+        na_sm_max_tag = NA_Msg_get_max_tag(hg_class->na_sm_class);
+        if (!na_max_tag) {
+            HG_LOG_ERROR("NA Max tag is not defined");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+        hg_class->request_max_tag = HG_CORE_MIN(hg_class->request_max_tag,
+            na_sm_max_tag);
+    }
+#endif
 
     /* Initialize atomic for tags */
     hg_atomic_init32(&hg_class->request_tag, 0);
@@ -1583,9 +1641,9 @@ hg_core_addr_to_string(struct hg_class *hg_class, char *buf, hg_size_t *buf_size
             strcpy(buf_ptr, addr_str);
             buf_ptr += desc_len;
         }
-        buf_size_used += desc_len;
+        buf_size_used += (hg_size_t) desc_len;
         if (*buf_size > (unsigned int) desc_len)
-            new_buf_size = *buf_size - desc_len;
+            new_buf_size = *buf_size - (hg_size_t) desc_len;
 
         /* Get NA SM address string */
         na_ret = NA_Addr_to_string(hg_class->na_sm_class, buf_ptr,
@@ -2137,6 +2195,9 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         &callback_info->info.recv_unexpected;
 #ifndef HG_HAS_POST_LIMIT
     hg_bool_t pending_empty = NA_FALSE;
+# ifdef HG_HAS_SM_ROUTING
+    hg_bool_t sm_pending_empty = NA_FALSE;
+# endif
 #endif
     na_return_t na_ret = NA_SUCCESS;
     hg_bool_t completed = HG_FALSE;
@@ -2171,25 +2232,45 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     hg_handle->in_buf_used = na_cb_info_recv_unexpected->actual_buf_size;
 
     /* Move handle from pending list to processing list */
-    hg_thread_spin_lock(&hg_context->pending_list_lock);
-    HG_LIST_REMOVE(hg_handle, entry);
-#ifndef HG_HAS_POST_LIMIT
-    pending_empty = HG_LIST_IS_EMPTY(&hg_context->pending_list);
+#ifdef HG_HAS_SM_ROUTING
+    if (hg_handle->na_class == hg_handle->hg_info.hg_class->na_sm_class) {
+        hg_thread_spin_lock(&hg_context->sm_pending_list_lock);
+        HG_LIST_REMOVE(hg_handle, entry);
+# ifndef HG_HAS_POST_LIMIT
+        sm_pending_empty = HG_LIST_IS_EMPTY(&hg_context->sm_pending_list);
+# endif
+        hg_thread_spin_unlock(&hg_context->sm_pending_list_lock);
+    } else {
 #endif
-    hg_thread_spin_unlock(&hg_context->pending_list_lock);
+        hg_thread_spin_lock(&hg_context->pending_list_lock);
+        HG_LIST_REMOVE(hg_handle, entry);
+#ifndef HG_HAS_POST_LIMIT
+        pending_empty = HG_LIST_IS_EMPTY(&hg_context->pending_list);
+#endif
+        hg_thread_spin_unlock(&hg_context->pending_list_lock);
+#ifdef HG_HAS_SM_ROUTING
+    }
+#endif
 
     hg_thread_spin_lock(&hg_context->processing_list_lock);
     HG_LIST_INSERT_HEAD(&hg_context->processing_list, hg_handle, entry);
     hg_thread_spin_unlock(&hg_context->processing_list_lock);
 
 #ifndef HG_HAS_POST_LIMIT
-    /* TODO check with HG_HAS_SM_ROUTING */
     /* If pending list is empty, post more handles */
     if (pending_empty && hg_core_context_post(hg_context, HG_CORE_PENDING_INCR,
-        hg_handle->repost) != HG_SUCCESS) {
+        hg_handle->repost, HG_FALSE) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not post additional handles");
         goto done;
     }
+# ifdef HG_HAS_SM_ROUTING
+    /* If pending list is empty, post more handles */
+    if (sm_pending_empty && hg_core_context_post(hg_context,
+        HG_CORE_PENDING_INCR, hg_handle->repost, HG_TRUE) != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not post additional SM handles");
+        goto done;
+    }
+# endif
 #endif
 
     /* Set operation type for trigger */
@@ -2603,16 +2684,12 @@ hg_core_completion_add(struct hg_context *context,
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_context_post(struct hg_context *context, unsigned int request_count,
-    hg_bool_t repost)
+    hg_bool_t repost, hg_bool_t use_sm)
 {
-    hg_bool_t use_sm = HG_FALSE;
     unsigned int nentry = 0;
     hg_return_t ret = HG_SUCCESS;
 
     /* Create a bunch of handles and post unexpected receives */
-#ifdef HG_HAS_SM_ROUTING
-    do {
-#endif
     for (nentry = 0; nentry < request_count; nentry++) {
         struct hg_handle *hg_handle = NULL;
         struct hg_addr *hg_addr = NULL;
@@ -2646,11 +2723,6 @@ hg_core_context_post(struct hg_context *context, unsigned int request_count,
             goto done;
         }
     }
-#ifdef HG_HAS_SM_ROUTING
-    if (context->na_sm_context)
-        use_sm = !use_sm;
-    } while (use_sm);
-#endif
 
 done:
     return ret;
@@ -2667,9 +2739,19 @@ hg_core_post(struct hg_handle *hg_handle)
     /* Handle is now in use */
     hg_atomic_set32(&hg_handle->in_use, HG_TRUE);
 
-    hg_thread_spin_lock(&context->pending_list_lock);
-    HG_LIST_INSERT_HEAD(&context->pending_list, hg_handle, entry);
-    hg_thread_spin_unlock(&context->pending_list_lock);
+#ifdef HG_HAS_SM_ROUTING
+    if (hg_handle->na_class == hg_handle->hg_info.hg_class->na_sm_class) {
+        hg_thread_spin_lock(&context->sm_pending_list_lock);
+        HG_LIST_INSERT_HEAD(&context->sm_pending_list, hg_handle, entry);
+        hg_thread_spin_unlock(&context->sm_pending_list_lock);
+    } else {
+#endif
+        hg_thread_spin_lock(&context->pending_list_lock);
+        HG_LIST_INSERT_HEAD(&context->pending_list, hg_handle, entry);
+        hg_thread_spin_unlock(&context->pending_list_lock);
+#ifdef HG_HAS_SM_ROUTING
+    }
+#endif
 
     /* Post a new unexpected receive */
     na_ret = NA_Msg_recv_unexpected(hg_handle->na_class, hg_handle->na_context,
@@ -3548,6 +3630,9 @@ HG_Core_context_create(hg_class_t *hg_class)
     HG_QUEUE_INIT(&context->backfill_queue);
     hg_atomic_init32(&context->backfill_queue_count, 0);
     HG_LIST_INIT(&context->pending_list);
+#ifdef HG_HAS_SM_ROUTING
+    HG_LIST_INIT(&context->sm_pending_list);
+#endif
     HG_LIST_INIT(&context->processing_list);
 
     /* No handle created yet */
@@ -3559,6 +3644,9 @@ HG_Core_context_create(hg_class_t *hg_class)
     hg_atomic_init32(&context->trigger_waiting, 0);
 
     hg_thread_spin_init(&context->pending_list_lock);
+#ifdef HG_HAS_SM_ROUTING
+    hg_thread_spin_init(&context->sm_pending_list_lock);
+#endif
     hg_thread_spin_init(&context->processing_list_lock);
 
     context->na_context = NA_Context_create(hg_class->na_class);
@@ -3676,6 +3764,16 @@ HG_Core_context_destroy(hg_context_t *context)
             goto done;
         }
     }
+#ifdef HG_HAS_SM_ROUTING
+    /* Check pending list and cancel posted handles */
+    if (!HG_LIST_IS_EMPTY(&context->sm_pending_list)) {
+        ret = hg_core_sm_pending_list_cancel(context);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Cannot cancel list of SM pending entries");
+            goto done;
+        }
+    }
+#endif
 
     /* Trigger everything we can from NA, if something completed it will
      * be moved to the HG context completion queue */
@@ -3811,6 +3909,9 @@ HG_Core_context_destroy(hg_context_t *context)
     hg_thread_mutex_destroy(&context->completion_queue_mutex);
     hg_thread_cond_destroy(&context->completion_queue_cond);
     hg_thread_spin_destroy(&context->pending_list_lock);
+#ifdef HG_HAS_SM_ROUTING
+    hg_thread_spin_destroy(&context->sm_pending_list_lock);
+#endif
     hg_thread_spin_destroy(&context->processing_list_lock);
 
     /* Decrement context count of parent class */
@@ -3953,6 +4054,7 @@ hg_return_t
 HG_Core_context_post(hg_context_t *context, unsigned int request_count,
     hg_bool_t repost)
 {
+    hg_bool_t use_sm = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
     if (!context) {
@@ -3966,11 +4068,19 @@ HG_Core_context_post(hg_context_t *context, unsigned int request_count,
         goto done;
     }
 
-    ret = hg_core_context_post(context, request_count, repost);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not post requests on context");
-        goto done;
-    }
+#ifdef HG_HAS_SM_ROUTING
+    do {
+#endif
+        ret = hg_core_context_post(context, request_count, repost, use_sm);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not post requests on context");
+            goto done;
+        }
+#ifdef HG_HAS_SM_ROUTING
+        if (context->na_sm_context)
+            use_sm = !use_sm;
+    } while (use_sm);
+#endif
 
  done:
     return ret;

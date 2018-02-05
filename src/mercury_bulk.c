@@ -104,13 +104,6 @@ struct hg_bulk {
 /* Local Prototypes */
 /********************/
 
-#ifdef HG_HAS_SM_ROUTING
-extern na_class_t *
-HG_Core_class_get_na_sm(const hg_class_t *hg_class);
-extern na_context_t *
-HG_Core_context_get_na_sm(const hg_context_t *context);
-#endif
-
 /**
  * Create handle.
  */
@@ -1220,10 +1213,12 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t request_eager)
         }
         ret += sizeof(serialize_size) + serialize_size;
 #ifdef HG_HAS_SM_ROUTING
-        if (hg_bulk->na_sm_mem_handles && hg_bulk->na_sm_mem_handles[i]) {
-            serialize_size = NA_Mem_handle_get_serialize_size(
-                HG_Core_class_get_na_sm(hg_bulk->hg_class),
-                hg_bulk->na_sm_mem_handles[i]);
+        if (hg_bulk->na_sm_mem_handles) {
+            if (hg_bulk->na_sm_mem_handles[i]) {
+                serialize_size = NA_Mem_handle_get_serialize_size(
+                    HG_Core_class_get_na_sm(hg_bulk->hg_class),
+                    hg_bulk->na_sm_mem_handles[i]);
+            }
             ret += sizeof(serialize_size) + serialize_size;
         }
 #endif
