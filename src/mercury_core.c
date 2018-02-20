@@ -1856,8 +1856,8 @@ hg_core_reset(struct hg_handle *hg_handle, hg_bool_t reset_info)
             hg_handle->hg_info.addr->na_addr = NA_ADDR_NULL;
         }
         hg_handle->hg_info.id = 0;
-        hg_handle->hg_info.target_id = 0;
     }
+    hg_handle->hg_info.target_id = 0;
     hg_handle->request_callback = NULL;
     hg_handle->request_arg = NULL;
     hg_handle->response_callback = NULL;
@@ -2011,6 +2011,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
             hg_handle->na_context, hg_core_recv_output_cb, hg_handle,
             hg_handle->out_buf, hg_handle->out_buf_size,
             hg_handle->out_buf_plugin_data, hg_handle->hg_info.addr->na_addr,
+            hg_handle->hg_info.target_id,
             hg_handle->tag, &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post recv for output buffer");
@@ -2023,8 +2024,8 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_send_unexpected(hg_handle->na_class, hg_handle->na_context,
         hg_core_send_input_cb, hg_handle, hg_handle->in_buf,
         hg_handle->in_buf_used, hg_handle->in_buf_plugin_data,
-        hg_handle->hg_info.addr->na_addr, hg_handle->tag,
-        &hg_handle->na_send_op_id);
+        hg_handle->hg_info.addr->na_addr, hg_handle->hg_info.target_id,
+        hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for input buffer");
         /* Cancel the above posted recv op */
@@ -2109,8 +2110,8 @@ hg_core_respond_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_send_expected(hg_handle->na_class, hg_handle->na_context,
             hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_used, hg_handle->out_buf_plugin_data,
-            hg_handle->hg_info.addr->na_addr, hg_handle->tag,
-            &hg_handle->na_send_op_id);
+            hg_handle->hg_info.addr->na_addr, hg_handle->hg_info.target_id,
+            hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for output buffer");
         ret = HG_NA_ERROR;
@@ -3599,6 +3600,13 @@ done:
 hg_context_t *
 HG_Core_context_create(hg_class_t *hg_class)
 {
+    return HG_Core_context_create_id(hg_class, 0);
+}
+
+/*---------------------------------------------------------------------------*/
+hg_context_t *
+HG_Core_context_create_id(hg_class_t *hg_class, hg_uint8_t id)
+{
     hg_return_t ret = HG_SUCCESS;
     struct hg_context *context = NULL;
     int na_poll_fd;
@@ -3649,7 +3657,7 @@ HG_Core_context_create(hg_class_t *hg_class)
 #endif
     hg_thread_spin_init(&context->processing_list_lock);
 
-    context->na_context = NA_Context_create(hg_class->na_class);
+    context->na_context = NA_Context_create_id(hg_class->na_class, id);
     if (!context->na_context) {
         HG_LOG_ERROR("Could not create NA context");
         ret = HG_NA_ERROR;
@@ -3729,6 +3737,9 @@ HG_Core_context_create(hg_class_t *hg_class)
             hg_core_progress_na_sm_cb, context);
     }
 #endif
+
+    /* Assign context ID */
+    context->id = id;
 
     /* Increment context count of parent class */
     hg_atomic_incr32(&hg_class->n_contexts);
@@ -3975,24 +3986,6 @@ done:
     return ret;
 }
 #endif
-
-/*---------------------------------------------------------------------------*/
-hg_return_t
-HG_Core_context_set_id(hg_context_t *context, hg_uint8_t id)
-{
-    hg_return_t ret = HG_SUCCESS;
-
-    if (!context) {
-        HG_LOG_ERROR("NULL HG context");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-
-    context->id = id;
-
- done:
-    return ret;
-}
 
 /*---------------------------------------------------------------------------*/
 hg_uint8_t
@@ -4742,6 +4735,13 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     hg_handle->in_header.msg.request.id = hg_handle->hg_info.id;
     hg_handle->in_header.msg.request.flags = flags;
     hg_handle->in_header.msg.request.cookie = hg_handle->hg_info.target_id;
+    /*
+     * Set the in_header.cookie as origin context's target_id, so at target side
+     * the cookie is unpacked and assign to hg_handle->hg_info.target_id, so can
+     * make NA layer can know which target id to send the response.
+     */
+    /* hg_handle->in_header.cookie = hg_handle->hg_info.target_id; */
+    hg_handle->in_header.msg.request.cookie = HG_Core_context_get_id(hg_handle->hg_info.context);
 
     /* Encode request header */
     ret = hg_core_proc_header_request(hg_handle, &hg_handle->in_header,

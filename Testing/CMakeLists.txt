@@ -143,18 +143,21 @@ function(build_mercury_test test_name)
   endif()
 endfunction()
 
-macro(add_mercury_test_comm test_name comm protocol)
+macro(add_mercury_test_comm test_name comm protocol busy)
   # Set full test name
   set(full_test_name ${test_name})
   set(opt_names ${comm} ${protocol})
   foreach(opt_name ${opt_names})
     set(full_test_name ${full_test_name}_${opt_name})
   endforeach()
+  if(${busy})
+    set(full_test_name ${full_test_name}_busy)
+  endif()
 
   # Set test arguments
-  set(test_args --comm ${comm})
-  if(protocol)
-    set(test_args ${test_args} --protocol ${protocol})
+  set(test_args --comm ${comm} --protocol ${protocol})
+  if(${busy})
+    set(test_args ${test_args} --busy)
   endif()
 
   # Static client/server test
@@ -191,6 +194,17 @@ macro(add_mercury_test_comm test_name comm protocol)
         COMMAND $<TARGET_FILE:hg_test_${test_name}> ${cores_test_args}
       )
     endif()
+
+    # Scalable endpoint test
+    if(MERCURY_TESTING_HAS_THREAD_POOL AND ${comm} STREQUAL "ofi")
+      set(cores_test_name ${full_test_name}_scalable)
+      set(cores_test_args ${test_args} -C 2)
+      add_test(NAME "mercury_${cores_test_name}"
+        COMMAND $<TARGET_FILE:mercury_test_driver>
+        --server $<TARGET_FILE:hg_test_server>
+        --client $<TARGET_FILE:hg_test_${test_name}> ${cores_test_args}
+      )
+    endif()
   endif()
 endmacro()
 
@@ -198,7 +212,8 @@ function(add_mercury_test test_name)
   foreach(comm ${NA_PLUGINS})
     string(TOUPPER ${comm} upper_comm)
     foreach(protocol ${NA_${upper_comm}_TESTING_PROTOCOL})
-      add_mercury_test_comm(${test_name} ${comm} ${protocol})
+      add_mercury_test_comm(${test_name} ${comm} ${protocol} false)
+      add_mercury_test_comm(${test_name} ${comm} ${protocol} true)
     endforeach()
   endforeach()
 endfunction()

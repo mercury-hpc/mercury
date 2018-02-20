@@ -138,6 +138,7 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
         na_cb_info->info.recv_unexpected.actual_buf_size,
         na_test_source_recv_arg->send_buf_data,
         na_cb_info->info.recv_unexpected.source,
+        0,
         na_cb_info->info.recv_unexpected.tag,
         &na_test_source_recv_arg->send_op_id);
     if (ret != NA_SUCCESS) {

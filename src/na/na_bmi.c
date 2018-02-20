@@ -195,7 +195,8 @@ na_bmi_finalize(
 static na_return_t
 na_bmi_context_create(
         na_class_t          *na_class,
-        void               **context
+        void               **context,
+        na_uint8_t           id
         );
 
 static na_return_t
@@ -293,6 +294,7 @@ na_bmi_msg_send_unexpected(
         na_size_t     buf_size,
         void         *plugin_data,
         na_addr_t     dest,
+        na_uint8_t    target_id,
         na_tag_t      tag,
         na_op_id_t   *op_id
         );
@@ -321,6 +323,7 @@ na_bmi_msg_send_expected(
         na_size_t     buf_size,
         void         *plugin_data,
         na_addr_t     dest,
+        na_uint8_t    target_id,
         na_tag_t      tag,
         na_op_id_t   *op_id
         );
@@ -336,6 +339,7 @@ na_bmi_msg_recv_expected(
         na_size_t     buf_size,
         void         *plugin_data,
         na_addr_t     source,
+        na_uint8_t    target_id,
         na_tag_t      tag,
         na_op_id_t   *op_id
         );
@@ -425,6 +429,7 @@ na_bmi_put(
         na_offset_t      remote_offset,
         na_size_t        length,
         na_addr_t        remote_addr,
+        na_uint8_t       target_id,
         na_op_id_t      *op_id
         );
 
@@ -441,6 +446,7 @@ na_bmi_get(
         na_offset_t      remote_offset,
         na_size_t        length,
         na_addr_t        remote_addr,
+        na_uint8_t       target_id,
         na_op_id_t      *op_id
         );
 
@@ -783,7 +789,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_context_create(na_class_t NA_UNUSED *na_class, void **context)
+na_bmi_context_create(na_class_t NA_UNUSED *na_class, void **context,
+    na_uint8_t NA_UNUSED id)
 {
     bmi_context_id *bmi_context = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1096,7 +1103,7 @@ static na_return_t
 na_bmi_msg_send_unexpected(na_class_t *na_class,
         na_context_t *context, na_cb_t callback, void *arg, const void *buf,
         na_size_t buf_size, void NA_UNUSED *plugin_data, na_addr_t dest,
-        na_tag_t tag, na_op_id_t *op_id)
+        na_uint8_t NA_UNUSED target_id, na_tag_t tag, na_op_id_t *op_id)
 {
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
@@ -1322,8 +1329,8 @@ na_bmi_msg_unexpected_op_pop(na_class_t *na_class)
 static na_return_t
 na_bmi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-        void NA_UNUSED *plugin_data, na_addr_t dest, na_tag_t tag,
-        na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_addr_t dest, na_uint8_t NA_UNUSED target_id,
+        na_tag_t tag, na_op_id_t *op_id)
 {
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
@@ -1387,8 +1394,8 @@ done:
 static na_return_t
 na_bmi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-        void NA_UNUSED *plugin_data, na_addr_t source, na_tag_t tag,
-        na_op_id_t *op_id)
+        void NA_UNUSED *plugin_data, na_addr_t source, na_uint8_t NA_UNUSED target_id,
+        na_tag_t tag, na_op_id_t *op_id)
 {
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
@@ -1573,7 +1580,8 @@ static na_return_t
 na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id)
+        na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED target_id,
+        na_op_id_t *op_id)
 {
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     struct na_bmi_mem_handle *bmi_local_mem_handle =
@@ -1715,7 +1723,8 @@ static na_return_t
 na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
         na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-        na_size_t length, na_addr_t remote_addr, na_op_id_t *op_id)
+        na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED target_id,
+        na_op_id_t *op_id)
 {
     bmi_context_id *bmi_context = (bmi_context_id *) context->plugin_context;
     struct na_bmi_mem_handle *bmi_local_mem_handle =

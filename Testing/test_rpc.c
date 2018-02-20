@@ -23,9 +23,6 @@ struct forward_cb_args {
     rpc_handle_t *rpc_handle;
 };
 
-extern hg_return_t
-HG_Core_set_target_id(hg_handle_t handle, hg_uint8_t target_id);
-
 //#define HG_TEST_DEBUG
 #ifdef HG_TEST_DEBUG
 #define HG_TEST_LOG_DEBUG(...)                                \
@@ -262,7 +259,7 @@ hg_test_rpc_mask(hg_context_t *context, hg_request_class_t *request_class,
         goto done;
     }
 
-    HG_Core_set_target_id(handle, 2);
+    HG_Set_target_id(handle, 0);
 
     /* Fill input structure */
     rpc_open_handle.cookie = 100;
@@ -298,7 +295,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
-    hg_addr_t addr, hg_id_t rpc_id, hg_cb_t callback)
+    hg_addr_t addr, hg_uint8_t target_id, hg_id_t rpc_id, hg_cb_t callback)
 {
     hg_request_t *request1 = NULL, *request2 = NULL;
     hg_handle_t handle1, handle2;
@@ -320,6 +317,11 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     hg_ret = HG_Create(context, addr, rpc_id, &handle1);
     if (hg_ret != HG_SUCCESS) {
         HG_TEST_LOG_ERROR("Could not create handle");
+        goto done;
+    }
+    hg_ret = HG_Set_target_id(handle1, target_id);
+    if (hg_ret != HG_SUCCESS) {
+        HG_TEST_LOG_ERROR("Could not set target ID to handle");
         goto done;
     }
 
@@ -345,6 +347,11 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     hg_ret = HG_Create(context, addr, rpc_id, &handle2);
     if (hg_ret != HG_SUCCESS) {
         HG_TEST_LOG_ERROR("Could not create handle");
+        goto done;
+    }
+    hg_ret = HG_Set_target_id(handle2, target_id);
+    if (hg_ret != HG_SUCCESS) {
+        HG_TEST_LOG_ERROR("Could not set target ID to handle");
         goto done;
     }
 
@@ -392,6 +399,11 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
 	    if (hg_ret != HG_SUCCESS) {
 	        HG_TEST_LOG_ERROR("Could not create handle");
 		    goto done;
+	    }
+	    hg_ret = HG_Set_target_id(handle_m[i], target_id);
+	    if (hg_ret != HG_SUCCESS) {
+	        HG_TEST_LOG_ERROR("Could not set target ID to handle");
+	        goto done;
 	    }
 	    rpc_open_handle_m[i].cookie = i;
 	    rpc_open_in_struct.path = rpc_open_path;
@@ -505,13 +517,31 @@ main(int argc, char *argv[])
     /* RPC test with multiple handle in flight */
     HG_TEST("concurrent RPCs");
     hg_ret = hg_test_rpc_multiple(hg_test_info.context,
-        hg_test_info.request_class, hg_test_info.target_addr,
+        hg_test_info.request_class, hg_test_info.target_addr, 0,
         hg_test_rpc_open_id_g, hg_test_rpc_forward_cb);
     if (hg_ret != HG_SUCCESS) {
         ret = EXIT_FAILURE;
         goto done;
     }
     HG_PASSED();
+
+    /* RPC test with multiple handle to multiple target contexts */
+    if (hg_test_info.na_test_info.max_contexts) {
+        hg_uint8_t i, context_count =
+            hg_test_info.na_test_info.max_contexts;
+
+        HG_TEST("multi-target RPCs");
+        for (i = 0; i < context_count; i++) {
+            hg_ret = hg_test_rpc_multiple(hg_test_info.context,
+                hg_test_info.request_class, hg_test_info.target_addr, i,
+                hg_test_rpc_open_id_g, hg_test_rpc_forward_cb);
+            if (hg_ret != HG_SUCCESS) {
+                ret = EXIT_FAILURE;
+                goto done;
+            }
+        }
+        HG_PASSED();
+    }
 
 done:
     if (ret != EXIT_SUCCESS)

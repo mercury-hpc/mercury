@@ -205,6 +205,7 @@
                 HG_Get_info(handle)->bulk_context, \
                 BOOST_PP_IF(bulk_read, HG_BULK_PULL, HG_BULK_PUSH), \
                 HG_Get_info(handle)->addr, \
+                HG_Get_info(handle)->target_id, \
                 origin_bulk_handle, \
                 0, \
                 local_bulk_handle, \

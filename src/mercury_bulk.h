@@ -221,6 +221,44 @@ HG_Bulk_transfer(
         );
 
 /**
+ * Transfer data to/from origin using abstract bulk handles. After completion,
+ * user callback is placed into a completion queue and can be triggered using
+ * HG_Trigger(). Allow to initiate
+ *
+ * \param context [IN]          pointer to HG context
+ * \param callback [IN]         pointer to function callback
+ * \param arg [IN]              pointer to data passed to callback
+ * \param op [IN]               transfer operation:
+ *                                  - HG_BULK_PUSH
+ *                                  - HG_BULK_PULL
+ * \param origin_addr [IN]      abstract address of origin
+ * \param origin_id [IN]        context ID of origin
+ * \param origin_handle [IN]    abstract bulk handle
+ * \param origin_offset [IN]    offset
+ * \param local_handle [IN]     abstract bulk handle
+ * \param local_offset [IN]     offset
+ * \param size [IN]             size of data to be transferred
+ * \param op_id [OUT]           pointer to returned operation ID
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_transfer_id(
+        hg_context_t *context,
+        hg_cb_t callback,
+        void *arg,
+        hg_bulk_op_t op,
+        hg_addr_t origin_addr,
+        hg_uint8_t origin_id,
+        hg_bulk_t origin_handle,
+        hg_size_t origin_offset,
+        hg_bulk_t local_handle,
+        hg_size_t local_offset,
+        hg_size_t size,
+        hg_op_id_t *op_id
+        );
+
+/**
  * Cancel an ongoing operation.
  *
  * \param op_id [IN]            operation ID

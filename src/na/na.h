@@ -38,6 +38,7 @@ typedef enum na_progress_mode {
 /* Init info */
 struct na_init_info {
     na_progress_mode_t progress_mode;   /* Progress mode */
+    na_uint8_t max_contexts;            /* Max contexts */
     const char *auth_key;               /* Authorization key */
 };
 
@@ -235,6 +236,20 @@ NA_Is_listening(
 NA_EXPORT na_context_t *
 NA_Context_create(
         na_class_t *na_class
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Create a new context with a specific ID.
+ *
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param id [IN]               context ID
+ *
+ * \return Pointer to NA context or NULL in case of failure
+ */
+NA_EXPORT na_context_t *
+NA_Context_create_id(
+        na_class_t *na_class,
+        na_uint8_t id
         ) NA_WARN_UNUSED_RESULT;
 
 /**
@@ -540,6 +555,7 @@ NA_Msg_init_unexpected(
  * \param buf_size [IN]         buffer size
  * \param plugin_data [IN]      pointer to internal plugin data
  * \param dest [IN]             abstract address of destination
+ * \param target_id [IN]        target context ID
  * \param tag [IN]              tag attached to message
  * \param op_id [IN/OUT]        pointer to operation ID
  *
@@ -555,6 +571,7 @@ NA_Msg_send_unexpected(
         na_size_t     buf_size,
         void         *plugin_data,
         na_addr_t     dest,
+        na_uint8_t    target_id,
         na_tag_t      tag,
         na_op_id_t   *op_id
         );
@@ -639,6 +656,7 @@ NA_Msg_init_expected(
  * \param buf_size [IN]         buffer size
  * \param plugin_data [IN]      pointer to internal plugin data
  * \param dest [IN]             abstract address of destination
+ * \param target_id [IN]        target context ID
  * \param tag [IN]              tag attached to message
  * \param op_id [IN/OUT]        pointer to operation ID
  *
@@ -654,6 +672,7 @@ NA_Msg_send_expected(
         na_size_t     buf_size,
         void         *plugin_data,
         na_addr_t     dest,
+        na_uint8_t    target_id,
         na_tag_t      tag,
         na_op_id_t   *op_id
         );
@@ -679,6 +698,7 @@ NA_Msg_send_expected(
  * \param buf_size [IN]         buffer size
  * \param plugin_data [IN]      pointer to internal plugin data
  * \param source [IN]           abstract address of source
+ * \param target_id [IN]        source context ID
  * \param tag [IN]              matching tag used to receive message
  * \param op_id [IN/OUT]        pointer to operation ID
  *
@@ -694,6 +714,7 @@ NA_Msg_recv_expected(
         na_size_t     buf_size,
         void         *plugin_data,
         na_addr_t     source,
+        na_uint8_t    target_id,
         na_tag_t      tag,
         na_op_id_t   *op_id
         );
@@ -904,6 +925,7 @@ NA_Mem_handle_deserialize(
  * \param remote_offset [IN]     remote offset
  * \param data_size [IN]         size of data that needs to be transferred
  * \param remote_addr [IN]       abstract address of remote destination
+ * \param remote_id [IN]         target ID of remote destination
  * \param op_id [IN/OUT]         pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -920,6 +942,7 @@ NA_Put(
         na_offset_t      remote_offset,
         na_size_t        data_size,
         na_addr_t        remote_addr,
+        na_uint8_t       remote_id,
         na_op_id_t      *op_id
         );
 
@@ -942,6 +965,7 @@ NA_Put(
  * \param remote_offset [IN]     remote offset
  * \param data_size [IN]         size of data that needs to be transferred
  * \param remote_addr [IN]       abstract address of remote source
+ * \param remote_id [IN]         target ID of remote source
  * \param op_id [IN/OUT]         pointer to operation ID
  *
  * \return NA_SUCCESS or corresponding NA error code
@@ -958,6 +982,7 @@ NA_Get(
         na_offset_t      remote_offset,
         na_size_t        data_size,
         na_addr_t        remote_addr,
+        na_uint8_t       remote_id,
         na_op_id_t      *op_id
         );
 

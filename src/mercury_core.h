@@ -245,6 +245,21 @@ HG_Core_context_create(
         );
 
 /**
+ * Create a new context with id.
+ * Must be destroyed by calling HG_Core_context_destroy().
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param id [IN]               context ID
+ *
+ * \return Pointer to HG context or NULL in case of failure
+ */
+HG_EXPORT hg_context_t *
+HG_Core_context_create_id(
+        hg_class_t *hg_class,
+        hg_uint8_t id
+        );
+
+/**
  * Destroy a context created by HG_Core_context_create().
  *
  * \param context [IN]          pointer to HG context
@@ -293,22 +308,6 @@ HG_Core_context_get_na_sm(
         const hg_context_t *context
         );
 #endif
-
-/**
- * Set user-defined context ID, this can be used for multiplexing incoming
- * RPC requests and define an RPC tag identifier. Only RPC requests that match
- * the same context ID will be received (Tags are internally generated).
- *
- * \param context [IN]          pointer to HG context
- * \param id [IN]               user-defined context ID (max value of 255)
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_EXPORT hg_return_t
-HG_Core_context_set_id(
-        hg_context_t *context,
-        hg_uint8_t id
-        );
 
 /**
  * Retrieve context ID from context.

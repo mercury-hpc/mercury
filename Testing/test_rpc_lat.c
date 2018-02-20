@@ -25,7 +25,7 @@
     "." \
     XSTRING(HG_VERSION_PATCH)
 
-#define SMALL_SKIP 1000
+#define SMALL_SKIP 100
 #define LARGE_SKIP 10
 #define LARGE_SIZE 8192
 
@@ -134,6 +134,11 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
         hg_time_get_current(&t1);
 
         for (j = 0; j < nhandles; j++) {
+            /* Assign handles to multiple targets */
+            if (hg_test_info->na_test_info.max_contexts > 1)
+                HG_Set_target_id(handles[j],
+                    (hg_uint8_t) (avg_iter % hg_test_info->na_test_info.max_contexts));
+
             ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args, &in_struct);
             if (ret != HG_SUCCESS) {
                 fprintf(stderr, "Could not forward call\n");

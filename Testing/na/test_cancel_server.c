@@ -112,7 +112,8 @@ bulk_put_cb(const struct na_cb_info *callback_info)
         printf("NA_Put() was successfully canceled\n");
         ret = NA_Put(params->na_class, params->context, bulk_put_cb, params,
             params->local_mem_handle, 0, params->remote_mem_handle, 0,
-            params->bulk_size * sizeof(int), params->source_addr, NA_OP_ID_IGNORE);
+            params->bulk_size * sizeof(int), params->source_addr, 0,
+            NA_OP_ID_IGNORE);
         if (ret != NA_SUCCESS) {
             fprintf(stderr, "Could not start put\n");
         }
@@ -130,7 +131,7 @@ bulk_put_cb(const struct na_cb_info *callback_info)
     ret = NA_Msg_send_expected(params->na_class, params->context,
         msg_expected_send_final_cb, NULL, params->send_buf,
         params->send_buf_len, params->send_buf_plugin_data, params->source_addr,
-        ack_tag, NA_OP_ID_IGNORE);
+        0, ack_tag, NA_OP_ID_IGNORE);
     if (ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of acknowledgment\n");
         return ret;
@@ -170,7 +171,8 @@ bulk_get_cb(const struct na_cb_info *callback_info)
         printf("NA_Get() was successfully canceled\n");
         ret = NA_Get(params->na_class, params->context, bulk_get_cb, params,
             params->local_mem_handle, 0, params->remote_mem_handle, 0,
-            params->bulk_size * sizeof(int), params->source_addr, NA_OP_ID_IGNORE);
+            params->bulk_size * sizeof(int), params->source_addr, 0,
+            NA_OP_ID_IGNORE);
         if (ret != NA_SUCCESS) {
             fprintf(stderr, "Could not start get\n");
         }
@@ -206,7 +208,7 @@ bulk_get_cb(const struct na_cb_info *callback_info)
 
     ret = NA_Put(params->na_class, params->context, bulk_put_cb, params,
         params->local_mem_handle, 0, params->remote_mem_handle, 0,
-        params->bulk_size * sizeof(int), params->source_addr, &op_id);
+        params->bulk_size * sizeof(int), params->source_addr, 0, &op_id);
     if (ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start put\n");
     }
@@ -245,7 +247,7 @@ mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
 
     ret = NA_Get(params->na_class, params->context, bulk_get_cb, params,
         params->local_mem_handle, 0, params->remote_mem_handle, 0,
-        params->bulk_size * sizeof(int), params->source_addr, &op_id);
+        params->bulk_size * sizeof(int), params->source_addr, 0, &op_id);
     if (ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start get\n");
         return ret;
@@ -270,7 +272,7 @@ test_send_respond(struct na_test_params *params, na_tag_t send_tag)
 
     na_ret = NA_Msg_send_expected(params->na_class, params->context,
         NULL, NULL, params->send_buf, params->send_buf_len,
-        params->send_buf_plugin_data, params->source_addr,
+        params->send_buf_plugin_data, params->source_addr, 0,
         send_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of message\n");
@@ -308,7 +310,7 @@ test_bulk_prepare(struct na_test_params *params)
     na_ret = NA_Msg_recv_expected(params->na_class, params->context,
         mem_handle_expected_recv_cb, params, params->recv_buf,
         params->recv_buf_len, params->recv_buf_plugin_data, params->source_addr,
-        bulk_tag, NA_OP_ID_IGNORE);
+        0, bulk_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start recv of memory handle\n");
         return EXIT_FAILURE;

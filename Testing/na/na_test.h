@@ -36,6 +36,7 @@ struct na_test_info {
     char *key;                  /* Auth key */
     int loop;                   /* Number of loops */
     na_bool_t busy_wait;        /* Busy wait */
+    na_uint8_t max_contexts;    /* Max contexts */
     na_bool_t verbose;          /* Verbose mode */
     int max_number_of_peers;    /* Max number of peers */
 #ifdef MERCURY_HAS_PARALLEL_TESTING

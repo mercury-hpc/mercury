@@ -742,8 +742,8 @@ hg_get_extra_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
 
     /* Read bulk data here and wait for the data to be here  */
     hg_private_data->extra_bulk_transfer_cb = done_cb;
-    ret = HG_Bulk_transfer(hg_info->context, hg_get_extra_input_cb, handle,
-        HG_BULK_PULL, hg_info->addr,
+    ret = HG_Bulk_transfer_id(hg_info->context, hg_get_extra_input_cb, handle,
+        HG_BULK_PULL, hg_info->addr, hg_info->target_id,
         hg_private_data->extra_bulk_handle, 0, local_in_handle, 0,
         hg_private_data->extra_bulk_buf_size,
         HG_OP_ID_IGNORE /* TODO not used for now */);
@@ -1010,16 +1010,9 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t target_id)
 #endif
     hg_return_t ret;
 
-    context = HG_Core_context_create(hg_class);
+    context = HG_Core_context_create_id(hg_class, target_id);
     if (!context) {
         HG_LOG_ERROR("Could not create context");
-        goto done;
-    }
-
-    /* Set context ID */
-    ret = HG_Core_context_set_id(context, target_id);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not set context ID");
         goto done;
     }
 

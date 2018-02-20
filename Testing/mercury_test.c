@@ -41,7 +41,7 @@ hg_test_parse_options(int argc, char *argv[],
     struct hg_test_info *hg_test_info);
 
 static hg_return_t
-hg_test_finalize_rpc(struct hg_test_info *hg_test_info);
+hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id);
 
 static hg_return_t
 hg_test_finalize_rpc_cb(const struct hg_cb_info *callback_info);
@@ -144,7 +144,7 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_test_finalize_rpc(struct hg_test_info *hg_test_info)
+hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id)
 {
     hg_request_t *request_object = NULL;
     hg_handle_t handle;
@@ -156,6 +156,13 @@ hg_test_finalize_rpc(struct hg_test_info *hg_test_info)
         hg_test_finalize_id_g, &handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create HG handle");
+        goto done;
+    }
+
+    /* Set target ID */
+    ret = HG_Set_target_id(handle, target_id);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not set HG handle target ID");
         goto done;
     }
 
@@ -197,12 +204,13 @@ hg_test_finalize_rpc_cb(const struct hg_cb_info *callback_info)
 static hg_return_t
 hg_test_finalize_cb(hg_handle_t handle)
 {
-    struct hg_test_info *hg_test_info =
-        (struct hg_test_info *) HG_Class_get_data(HG_Get_info(handle)->hg_class);
+    struct hg_test_context_info *hg_test_context_info =
+        (struct hg_test_context_info *) HG_Context_get_data(
+            HG_Get_info(handle)->context);
     hg_return_t ret = HG_SUCCESS;
 
-    /* Increment finalize count */
-    hg_atomic_incr32(&hg_test_info->finalizing_count);
+    /* Set finalize for context data */
+    hg_atomic_set32(&hg_test_context_info->finalizing, 1);
 
     /* Free handle and send response back */
     ret = HG_Respond(handle, NULL, NULL, NULL);
@@ -290,6 +298,7 @@ hg_return_t
 HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 {
     struct hg_init_info hg_init_info;
+    struct hg_test_context_info *hg_test_context_info;
     hg_return_t ret = HG_SUCCESS;
 
     /* Get HG test options */
@@ -330,6 +339,11 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_init_info.stats = HG_TRUE;
 #endif
 
+    /* Set max contexts */
+    if (hg_test_info->na_test_info.max_contexts)
+        hg_init_info.na_init_info.max_contexts =
+            hg_test_info->na_test_info.max_contexts;
+
     /* Set auto SM mode */
     if (hg_test_info->auto_sm)
         hg_init_info.auto_sm = HG_TRUE;
@@ -351,6 +365,11 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     /* Attach test info to class */
     HG_Class_set_data(hg_test_info->hg_class, hg_test_info, NULL);
 
+    /* Attach context info to context */
+    hg_test_context_info = malloc(sizeof(struct hg_test_context_info));
+    hg_atomic_set32(&hg_test_context_info->finalizing, 0);
+    HG_Context_set_data(hg_test_info->context, hg_test_context_info, free);
+
     /* Register routines */
     hg_test_register(hg_test_info->hg_class);
 
@@ -361,6 +380,12 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         size_t i;
 
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
+        /* Make sure that thread count is at least max_contexts */
+        if (hg_test_info->thread_count <
+            hg_test_info->na_test_info.max_contexts)
+            hg_test_info->thread_count =
+                hg_test_info->na_test_info.max_contexts;
+
         /* Create thread pool */
         hg_thread_pool_init(hg_test_info->thread_count,
             &hg_test_info->thread_pool);
@@ -386,8 +411,30 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
         hg_addr_t self_addr;
 
-        /* Initalize atomic variable to finalize server */
-        hg_atomic_set32(&hg_test_info->finalizing_count, 0);
+        /* Create additional contexts (do not exceed total max contexts) */
+        if (hg_test_info->na_test_info.max_contexts > 1) {
+            hg_uint8_t secondary_contexts_count = (hg_uint8_t)
+                (hg_test_info->na_test_info.max_contexts - 1);
+            hg_uint8_t i;
+
+            hg_test_info->secondary_contexts = malloc(
+                secondary_contexts_count * sizeof(hg_context_t *));
+            for (i = 0; i < secondary_contexts_count; i++) {
+                hg_uint8_t context_id = (hg_uint8_t) (i + 1);
+                hg_test_info->secondary_contexts[i] =
+                    HG_Context_create_id(hg_test_info->hg_class, context_id);
+                if (!hg_test_info->secondary_contexts[i]) {
+                    HG_LOG_ERROR("Could not create HG context for id: %u", i);
+                    goto done;
+                }
+
+                /* Attach context info to context */
+                hg_test_context_info = malloc(sizeof(struct hg_test_context_info));
+                hg_atomic_set32(&hg_test_context_info->finalizing, 0);
+                HG_Context_set_data(hg_test_info->secondary_contexts[i],
+                    hg_test_context_info, free);
+            }
+        }
 
         /* TODO only rank 0 */
         ret = HG_Addr_self(hg_test_info->hg_class, &self_addr);
@@ -466,8 +513,13 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
 
     if (!hg_test_info->na_test_info.listen) {
         /* Send request to terminate server */
-        if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-            hg_test_finalize_rpc(hg_test_info);
+        if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
+            hg_uint8_t i, context_count =
+                hg_test_info->na_test_info.max_contexts ?
+                    hg_test_info->na_test_info.max_contexts : 1;
+            for (i = 0; i < context_count; i++)
+                hg_test_finalize_rpc(hg_test_info, i);
+        }
 
         /* Free addr id */
         ret = HG_Addr_free(hg_test_info->hg_class, hg_test_info->target_addr);
@@ -481,13 +533,28 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
 
     if (hg_test_info->na_test_info.listen
         || hg_test_info->na_test_info.self_send) {
-        /* Destroy bulk handle */
-        HG_Bulk_free(hg_test_info->bulk_handle);
-
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
         hg_thread_pool_destroy(hg_test_info->thread_pool);
         hg_thread_mutex_destroy(&hg_test_info->bulk_handle_mutex);
 #endif
+        /* Destroy bulk handle */
+        HG_Bulk_free(hg_test_info->bulk_handle);
+
+        /* Destroy secondary contexts */
+        if (hg_test_info->secondary_contexts) {
+            hg_uint8_t secondary_contexts_count = (hg_uint8_t)
+                (hg_test_info->na_test_info.max_contexts - 1);
+            hg_uint8_t i;
+
+            for (i = 0; i < secondary_contexts_count; i++) {
+                ret = HG_Context_destroy(hg_test_info->secondary_contexts[i]);
+                if (ret != HG_SUCCESS) {
+                    HG_LOG_ERROR("Could not destroy HG context for id: %u", i);
+                    goto done;
+                }
+            }
+            free(hg_test_info->secondary_contexts);
+        }
     }
 
     /* Finalize interface */
