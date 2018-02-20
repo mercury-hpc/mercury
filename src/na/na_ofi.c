@@ -1299,9 +1299,9 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
             ret = NA_INVALID_PARAM;
             goto out;
         }
-        NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d.",
-            na_ofi_domain->nod_prov->domain_attr->tx_ctx_cnt,
-            na_ofi_domain->nod_prov->domain_attr->rx_ctx_cnt);
+//        NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d.",
+//            na_ofi_domain->nod_prov->domain_attr->tx_ctx_cnt,
+//            na_ofi_domain->nod_prov->domain_attr->rx_ctx_cnt);
     }
 
 #if defined(NA_OFI_HAS_EXT_GNI_H)
