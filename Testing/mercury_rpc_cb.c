@@ -45,7 +45,7 @@ hg_core_get_thread_work(
  * to execute RPC callback from a thread
  */
 #define HG_TEST_THREAD_CB(func_name) \
-        static HG_THREAD_RETURN_TYPE \
+        static HG_INLINE HG_THREAD_RETURN_TYPE \
         func_name ## _thread \
         (void *arg) \
         { \
@@ -62,12 +62,16 @@ hg_core_get_thread_work(
             struct hg_test_info *hg_test_info = \
                 (struct hg_test_info *) HG_Class_get_data( \
                     HG_Get_info(handle)->hg_class); \
-            struct hg_thread_work *work = hg_core_get_thread_work(handle); \
             hg_return_t ret = HG_SUCCESS; \
             \
-            work->func = func_name ## _thread; \
-            work->args = handle; \
-            hg_thread_pool_post(hg_test_info->thread_pool, work); \
+            if (!hg_test_info->secondary_contexts) { \
+                struct hg_thread_work *work = hg_core_get_thread_work(handle); \
+                work->func = func_name ## _thread; \
+                work->args = handle; \
+                hg_thread_pool_post(hg_test_info->thread_pool, work); \
+            } else { \
+                func_name ## _thread(handle); \
+            } \
             \
             return ret; \
         }

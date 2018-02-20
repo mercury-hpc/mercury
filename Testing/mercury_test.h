@@ -38,6 +38,7 @@
 struct hg_test_info {
     hg_class_t *hg_class;
     hg_context_t *context;
+    hg_context_t **secondary_contexts;
     hg_request_class_t *request_class;
     hg_addr_t target_addr;
     hg_bool_t auth;
@@ -55,7 +56,10 @@ struct hg_test_info {
     hg_thread_mutex_t bulk_handle_mutex;
 #endif
     hg_bulk_t bulk_handle;
-    hg_atomic_int32_t finalizing_count;
+};
+
+struct hg_test_context_info {
+    hg_atomic_int32_t finalizing;
 };
 
 /*****************/

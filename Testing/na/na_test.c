@@ -148,6 +148,10 @@ na_test_parse_options(int argc, char *argv[],
             case 'b': /* busy */
                 na_test_info->busy_wait = NA_TRUE;
                 break;
+            case 'C': /* number of contexts */
+                na_test_info->max_contexts =
+                    (na_uint8_t) atoi(na_test_opt_arg_g);
+                break;
             case 'V': /* verbose */
                 na_test_info->verbose = NA_TRUE;
                 break;
@@ -405,6 +409,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     } else
         na_init_info.progress_mode = NA_DEFAULT;
     na_init_info.auth_key = na_test_info->key;
+    na_init_info.max_contexts = na_test_info->max_contexts;
 
     printf("# Using info string: %s\n", info_string);
     na_test_info->na_class = NA_Initialize_opt(info_string,
