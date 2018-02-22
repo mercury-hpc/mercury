@@ -11,6 +11,8 @@
 #include "mercury_poll.h"
 #include "mercury_list.h"
 #include "mercury_util_error.h"
+#include "mercury_thread_spin.h"
+#include "mercury_atomic.h"
 
 #include <stdlib.h>
 
@@ -47,7 +49,7 @@ struct hg_poll_data {
 
 struct hg_poll_set {
     int fd;
-    unsigned int nfds;
+    hg_atomic_int32_t nfds;
     hg_poll_try_wait_cb_t try_wait_cb;
     void *try_wait_arg;
 #if defined(HG_UTIL_HAS_SYSEPOLL_H) || defined(HG_UTIL_HAS_SYSEVENT_H)
@@ -56,6 +58,7 @@ struct hg_poll_set {
     struct pollfd *poll_fds;
 #endif
     HG_LIST_HEAD(hg_poll_data) poll_data_list;
+    hg_thread_spin_t poll_data_list_lock;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -76,7 +79,8 @@ hg_poll_create(void)
     /* TODO */
 #else
     HG_LIST_INIT(&hg_poll_set->poll_data_list);
-    hg_poll_set->nfds = 0;
+    hg_thread_spin_init(&hg_poll_set->poll_data_list_lock);
+    hg_atomic_init32(&hg_poll_set->nfds, 0);
     hg_poll_set->try_wait_cb = NULL;
 #if defined(HG_UTIL_HAS_SYSEPOLL_H)
     ret = epoll_create1(0);
@@ -123,7 +127,7 @@ hg_poll_destroy(hg_poll_set_t *poll_set)
 #if defined(_WIN32)
     /* TODO */
 #else
-    if (poll_set->nfds) {
+    if (hg_atomic_get32(&poll_set->nfds)) {
         HG_UTIL_LOG_ERROR("Poll set non empty");
         ret = HG_UTIL_FAIL;
         goto done;
@@ -138,6 +142,7 @@ hg_poll_destroy(hg_poll_set_t *poll_set)
 #else
     free(poll_set->poll_fds);
 #endif
+    hg_thread_spin_destroy(&poll_set->poll_data_list_lock);
 #endif /* defined(_WIN32) */
     free(poll_set);
 
@@ -299,8 +304,10 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
         poll_set->poll_fds[poll_set->nfds] = hg_poll_data->pollfd;
 #endif /* defined(_WIN32) */
     }
+    hg_thread_spin_lock(&poll_set->poll_data_list_lock);
     HG_LIST_INSERT_HEAD(&poll_set->poll_data_list, hg_poll_data, entry);
-    poll_set->nfds++;
+    hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
+    hg_atomic_incr32(&poll_set->nfds);
 
 done:
     if (ret != HG_UTIL_SUCCESS)
@@ -321,9 +328,11 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
         ret = HG_UTIL_FAIL;
         goto done;
     }
+
 #if defined(_WIN32)
     /* TODO */
 #elif defined(HG_UTIL_HAS_SYSEPOLL_H)
+    hg_thread_spin_lock(&poll_set->poll_data_list_lock);
     HG_LIST_FOREACH(hg_poll_data, &poll_set->poll_data_list, entry) {
         if (hg_poll_data->fd == fd) {
             HG_LIST_REMOVE(hg_poll_data, entry);
@@ -332,6 +341,7 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
                 && epoll_ctl(poll_set->fd, EPOLL_CTL_DEL, fd, NULL) == -1) {
                 HG_UTIL_LOG_ERROR("epoll_ctl() failed (%s)", strerror(errno));
                 ret = HG_UTIL_FAIL;
+                hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
                 goto done;
             }
             free(hg_poll_data);
@@ -339,9 +349,11 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
             break;
         }
     }
+    hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
     /* Events which are attached to file descriptors are automatically deleted
      * on the last close of the descriptor. */
+    hg_thread_spin_lock(&poll_set->poll_data_list_lock);
     HG_LIST_FOREACH(hg_poll_data, &poll_set->poll_data_list, entry) {
         if ((int) hg_poll_data->kev.ident == fd) {
             HG_LIST_REMOVE(hg_poll_data, entry);
@@ -354,6 +366,7 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
                     &timeout) == -1) {
                     HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
                     ret = HG_UTIL_FAIL;
+                    hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
                     goto done;
                 }
             }
@@ -362,7 +375,9 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
             break;
         }
     }
+    hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
 #else
+    hg_thread_spin_lock(&poll_set->poll_data_list_lock);
     HG_LIST_FOREACH(hg_poll_data, &poll_set->poll_data_list, entry) {
         if (hg_poll_data->pollfd.fd == fd) {
             unsigned int i = 0;
@@ -381,13 +396,14 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
             break;
         }
     }
+    hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
 #endif
     if (!found) {
         HG_UTIL_LOG_ERROR("Could not find fd in poll_set");
         ret = HG_UTIL_FAIL;
         goto done;
     }
-    poll_set->nfds--;
+    hg_atomic_decr32(&poll_set->nfds);
 
 done:
     return ret;
@@ -502,9 +518,14 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
             /* An event on one of the fds has occurred. */
             for (i = 0; i < poll_set->nfds; i++) {
                 if (poll_set->poll_fds[i].revents & poll_set->poll_fds[i].events) {
-                    HG_LIST_FOREACH(hg_poll_data, &poll_set->poll_data_list, entry)
-                        if (hg_poll_data->pollfd.fd == poll_set->poll_fds[i].fd)
+                    hg_thread_spin_lock(&poll_set->poll_data_list_lock);
+                    HG_LIST_FOREACH(hg_poll_data, &poll_set->poll_data_list, entry) {
+                        if (hg_poll_data->pollfd.fd == poll_set->poll_fds[i].fd) {
+                            hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
                             break;
+                        }
+                    }
+                    hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
 
                     if (hg_poll_data->poll_cb) {
                         hg_util_bool_t poll_cb_progressed = HG_UTIL_FALSE;
@@ -529,7 +550,9 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
 #else
         struct hg_poll_data *hg_poll_data;
 
+        hg_thread_spin_lock(&poll_set->poll_data_list_lock);
         HG_LIST_FOREACH(hg_poll_data, &poll_set->poll_data_list, entry) {
+            hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
             if (hg_poll_data->poll_cb) {
                 hg_util_bool_t poll_cb_progressed = HG_UTIL_FALSE;
                 int poll_ret = HG_UTIL_SUCCESS;
@@ -539,13 +562,17 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
                 if (poll_ret != HG_UTIL_SUCCESS) {
                     HG_UTIL_LOG_ERROR("poll cb failed");
                     ret = HG_UTIL_FAIL;
+                    hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
                     goto done;
                 }
                 poll_progressed |= poll_cb_progressed;
                 if (poll_progressed)
                     break;
             }
+            hg_thread_spin_lock(&poll_set->poll_data_list_lock);
         }
+        if (!poll_progressed)
+            hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
 #endif
     }
 
