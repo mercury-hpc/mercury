@@ -31,7 +31,6 @@ struct forward_cb_args {
 #define HG_TEST_LOG_DEBUG(...) (void)0
 #endif
 
-
 /*---------------------------------------------------------------------------*/
 /**
  * HG_Forward callback
@@ -92,7 +91,7 @@ hg_test_rpc_forward_no_resp_cb(const struct hg_cb_info *callback_info)
     hg_return_t ret = HG_SUCCESS;
 
     if (callback_info->ret != HG_SUCCESS) {
-        HG_TEST_LOG_WARNING("Return from callback info is not HG_SUCCESS");
+        HG_TEST_LOG_ERROR("Return from callback info is not HG_SUCCESS");
         goto done;
     }
 
@@ -109,7 +108,7 @@ hg_test_rpc_forward_reset_cb(const struct hg_cb_info *callback_info)
     hg_return_t ret = HG_SUCCESS;
 
     if (callback_info->ret != HG_SUCCESS) {
-        HG_TEST_LOG_WARNING("Return from callback info is not HG_SUCCESS");
+        HG_TEST_LOG_ERROR("Return from callback info is not HG_SUCCESS");
         goto done;
     }
 

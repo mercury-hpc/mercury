@@ -266,7 +266,7 @@ build_mercury_test(server)
 set(MERCURY_tests
   rpc
   bulk
-  bulk_seg
+#  bulk_seg
 #  pipeline
 #  perf
 #  overflow
