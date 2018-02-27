@@ -854,6 +854,8 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
             /* Eager mode can only be used when data is pulled from origin */
             na_bulk_op = (is_self || hg_bulk_origin->eager_mode) ?
                 hg_bulk_memcpy_get : hg_bulk_na_get;
+            if (hg_bulk_origin->eager_mode) /* Force scatter gather to false */
+                scatter_gather = HG_FALSE;
             break;
         default:
             HG_LOG_ERROR("Unknown bulk operation");
@@ -1685,7 +1687,9 @@ HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
         case HG_BULK_PUSH:
             if (!(hg_bulk_origin->flags & HG_BULK_WRITE_ONLY)
                 || !(hg_bulk_local->flags & HG_BULK_READ_ONLY)) {
-                HG_LOG_ERROR("Invalid permission flags for PUSH operation");
+                HG_LOG_ERROR("Invalid permission flags for PUSH operation "
+                    "(origin=%d, local=%d)", hg_bulk_origin->flags,
+                    hg_bulk_local->flags);
                 ret = HG_INVALID_PARAM;
                 goto done;
             }
@@ -1693,7 +1697,9 @@ HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
         case HG_BULK_PULL:
             if (!(hg_bulk_origin->flags & HG_BULK_READ_ONLY)
                 || !(hg_bulk_local->flags & HG_BULK_WRITE_ONLY)) {
-                HG_LOG_ERROR("Invalid permission flags for PULL operation");
+                HG_LOG_ERROR("Invalid permission flags for PULL operation "
+                    "(origin=%d, local=%d)", hg_bulk_origin->flags,
+                    hg_bulk_local->flags);
                 ret = HG_INVALID_PARAM;
                 goto done;
             }
