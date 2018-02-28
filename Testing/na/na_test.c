@@ -140,7 +140,7 @@ na_test_parse_options(int argc, char *argv[],
                 na_test_info->auth = NA_TRUE;
                 break;
             case 'k': /* key */
-                na_test_info->key = strdup(na_test_opt_arg_g);
+        //        na_test_info->key = strdup(na_test_opt_arg_g);
                 break;
             case 'l': /* loop */
                 na_test_info->loop = atoi(na_test_opt_arg_g);

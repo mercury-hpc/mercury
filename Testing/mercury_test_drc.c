@@ -251,11 +251,13 @@ hg_test_drc_token_acquire(struct hg_test_info *hg_test_info)
 
     /* Acquire credential */
 #ifndef HG_TEST_DRC_IGNORE
-    rc = drc_acquire(&hg_test_info->credential, 0);
-    if (rc != DRC_SUCCESS) { /* failed to acquire credential */
-        HG_LOG_ERROR("drc_acquire() failed (%d, %s)", rc, drc_strerror(-rc));
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
+    if (!hg_test_info->credential) {
+        rc = drc_acquire(&hg_test_info->credential, 0);
+        if (rc != DRC_SUCCESS) { /* failed to acquire credential */
+            HG_LOG_ERROR("drc_acquire() failed (%d, %s)", rc, drc_strerror(-rc));
+            ret = HG_PROTOCOL_ERROR;
+            goto done;
+        }
     }
 #else
     hg_test_info->credential = 12345;
@@ -449,6 +451,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
     struct hg_init_info hg_test_drc_init_info = { 0 };
     hg_return_t ret = HG_SUCCESS;
 
+    if (!hg_test_info->credential) {
     /* Create an NA class with "tcp" protocol */
     hg_test_drc_info.na_test_info.extern_init = NA_TRUE;
     hg_test_drc_info.na_test_info.protocol = strdup("tcp");
@@ -568,9 +571,17 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
         ret = HG_NA_ERROR;
         goto done;
     }
+    hg_test_info->credential = hg_test_drc_info.credential;
+    } else {
+        hg_test_drc_info.credential = hg_test_info->credential;
+        ret = hg_test_drc_token_acquire(&hg_test_drc_info);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not acquire DRC token");
+            goto done;
+        }
+    }
 
     /* Copy cookie/credential info */
-    hg_test_info->credential = hg_test_drc_info.credential;
     hg_test_info->wlm_id = hg_test_drc_info.wlm_id;
     hg_test_info->credential_info = hg_test_drc_info.credential_info;
     hg_test_info->cookie = hg_test_drc_info.cookie;

@@ -122,6 +122,11 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
             case 'a': /* auth service */
                 hg_test_info->auth = HG_TRUE;
                 break;
+#ifdef HG_TESTING_HAS_CRAY_DRC
+            case 'k': /* auth key */
+                hg_test_info->credential = (uint32_t) atoi(na_test_opt_arg_g);
+#endif
+                break;
             case 'm': /* memory */
                 hg_test_info->auto_sm = HG_TRUE;
                 break;
