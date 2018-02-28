@@ -129,12 +129,7 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.c
 )
 
