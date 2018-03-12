@@ -1047,11 +1047,6 @@ NA_Msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
         ret = NA_INVALID_PARAM;
         goto done;
     }
-    if (!plugin_data) {
-        NA_LOG_ERROR("NULL pointer to plugin data");
-        ret = NA_INVALID_PARAM;
-        goto done;
-    }
 
     if (na_class->msg_buf_free)
         ret = na_class->msg_buf_free(na_class, buf, plugin_data);

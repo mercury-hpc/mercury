@@ -105,6 +105,9 @@
 #define NA_OFI_MAX_PORT_LEN (16)
 #define NA_OFI_HDR_MAGIC (0x0f106688)
 
+#define NA_OFI_HAS_MEM_POOL
+#define NA_OFI_MEM_BLOCK_COUNT (256)
+
 /* Max tag */
 #define NA_OFI_MAX_TAG ((1 << 30) -1)
 
@@ -218,6 +221,27 @@ struct na_ofi_reqhdr {
     na_uint32_t fih_port; /* Port number */
 };
 
+/**
+ * Memory node (points to actual data).
+ */
+struct na_ofi_mem_node {
+    HG_QUEUE_ENTRY(na_ofi_mem_node) entry;  /* Entry in node_list */
+    char *block;                            /* Must be last */
+};
+
+/**
+ * Memory pool. Each pool has a fixed block size, the underlying memory
+ * buffer is registered and its MR handle can be passed to fi_tsend/fi_trecv
+ * functions.
+ */
+struct na_ofi_mem_pool {
+    HG_QUEUE_ENTRY(na_ofi_mem_pool) entry;      /* Entry in pool list */
+    struct fid_mr *mr_hdl;                      /* MR handle */
+    na_size_t block_size;                       /* Node block size */
+    hg_thread_spin_t node_list_lock;            /* Node list lock */
+    HG_QUEUE_HEAD(na_ofi_mem_node) node_list;   /* Node list */
+};
+
 struct na_ofi_private_data {
     struct na_ofi_domain *nop_domain; /* Point back to access domain */
     struct na_ofi_endpoint *nop_endpoint;
@@ -228,6 +252,8 @@ struct na_ofi_private_data {
     na_uint8_t nop_max_contexts; /* max number of contexts */
     /* nop_mutex only used for verbs provider as it is not thread safe now */
     hg_thread_mutex_t nop_mutex;
+    HG_QUEUE_HEAD(na_ofi_mem_pool) nop_buf_pool;    /* Msg buf pool head */
+    hg_thread_spin_t nop_buf_pool_lock;             /* Buf pool lock */
     na_bool_t no_wait; /* Ignore wait object */
 };
 
@@ -615,6 +641,26 @@ na_ofi_get_ep_addr(const struct na_ofi_domain *na_ofi_domain,
 static na_return_t
 na_ofi_gen_req_hdr(const char *uri, struct na_ofi_reqhdr *na_ofi_reqhdr);
 
+static struct na_ofi_mem_pool *
+na_ofi_mem_pool_create(na_class_t *na_class, na_size_t block_size,
+    na_size_t block_count);
+
+static void
+na_ofi_mem_pool_destroy(struct na_ofi_mem_pool *na_ofi_mem_pool);
+
+static void *
+na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl);
+
+static void
+na_ofi_mem_free(void *mem_ptr, struct fid_mr *mr_hdl);
+
+static void *
+na_ofi_mem_pool_alloc(na_class_t *na_class, na_size_t size,
+    struct fid_mr **mr_hdl);
+
+static void
+na_ofi_mem_pool_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl);
+
 /* check_protocol */
 static na_bool_t
 na_ofi_check_protocol(const char *protocol_name);
@@ -927,20 +973,20 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
         /* For versions 1.5 and later, scalable is implied by the lack of any
          * mr_mode bits being set. */
         hints->domain_attr->mr_mode = FI_MR_UNSPEC;
-    } else {
+    } else if (!strcmp(prov_name, NA_OFI_PROV_GNI_NAME)) {
+        /* FI_MR_BASIC, we do not need FI_MR_LOCAL as the unexpected/expected
+         * messages never exceed the eager message size and uGNI registration
+         * is only necessary for large buffers. */
+        hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ;
+    } else if (!strcmp(prov_name, NA_OFI_PROV_PSM2_NAME)) {
+        /* Can retrieve source address from processes not inserted in AV */
+        hints->caps |= (FI_SOURCE | FI_SOURCE_ERR);
+
+        /* PSM2 provider requires FI_MR_BASIC bit to be set for now */
+        hints->domain_attr->mr_mode = FI_MR_BASIC;
+    } else if (!strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)) {
         /* FI_MR_BASIC */
         hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL;
-
-        if (!strcmp(prov_name, NA_OFI_PROV_PSM2_NAME)) {
-            /* Can retrieve source address from processes not inserted in AV */
-            hints->caps |= (FI_SOURCE | FI_SOURCE_ERR);
-
-            /* PSM2 provider requires FI_MR_BASIC bit to be set for now */
-            hints->domain_attr->mr_mode = FI_MR_BASIC;
-        }
-        else if (!strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)) {
-            hints->rx_attr->mode |= FI_CONTEXT;
-        }
     }
 
     /**
@@ -1330,9 +1376,9 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
     /* For MR_SCALABLE, create MR, now exports all memory range for RMA */
     if (na_ofi_domain->nod_mr_mode == NA_OFI_MR_SCALABLE) {
         rc = fi_mr_reg(na_ofi_domain->nod_domain, (void *)0, UINT64_MAX,
-                       FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE,
-                       0ULL /* offset */, NA_OFI_RMA_KEY, 0 /* flags */,
-                       &na_ofi_domain->nod_mr, NULL /* context */);
+            FI_REMOTE_READ | FI_REMOTE_WRITE | FI_SEND | FI_RECV
+            | FI_READ | FI_WRITE, 0 /* offset */, NA_OFI_RMA_KEY, 0 /* flags */,
+            &na_ofi_domain->nod_mr, NULL /* context */);
         if (rc != 0) {
             NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
             ret = NA_PROTOCOL_ERROR;
@@ -1877,6 +1923,183 @@ out:
     return ret;
 }
 
+/*---------------------------------------------------------------------------*/
+static struct na_ofi_mem_pool *
+na_ofi_mem_pool_create(na_class_t *na_class, na_size_t block_size,
+    na_size_t block_count)
+{
+    struct na_ofi_mem_pool *na_ofi_mem_pool = NULL;
+    na_size_t pool_size = block_size * block_count
+        + sizeof(struct na_ofi_mem_pool)
+        + block_count * (offsetof(struct na_ofi_mem_node, block));
+    struct fid_mr *mr_hdl = NULL;
+    char *mem_ptr = NULL;
+    na_size_t i;
+
+    mem_ptr = (char *) na_ofi_mem_alloc(na_class, pool_size, &mr_hdl);
+    if (!mem_ptr) {
+        NA_LOG_ERROR("Could not allocate %d bytes", (int) pool_size);
+        goto out;
+    }
+
+    na_ofi_mem_pool = (struct na_ofi_mem_pool *) mem_ptr;
+    HG_QUEUE_INIT(&na_ofi_mem_pool->node_list);
+    hg_thread_spin_init(&na_ofi_mem_pool->node_list_lock);
+    na_ofi_mem_pool->mr_hdl = mr_hdl;
+    na_ofi_mem_pool->block_size = block_size;
+
+    /* Assign nodes and insert them to free list */
+    for (i = 0; i < block_count; i++) {
+        struct na_ofi_mem_node *na_ofi_mem_node =
+            (struct na_ofi_mem_node *) (mem_ptr + sizeof(struct na_ofi_mem_pool)
+                + i * (offsetof(struct na_ofi_mem_node, block) + block_size));
+        HG_QUEUE_PUSH_TAIL(&na_ofi_mem_pool->node_list, na_ofi_mem_node, entry);
+    }
+
+out:
+    return na_ofi_mem_pool;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_mem_pool_destroy(struct na_ofi_mem_pool *na_ofi_mem_pool)
+{
+    na_ofi_mem_free(na_ofi_mem_pool, na_ofi_mem_pool->mr_hdl);
+    hg_thread_spin_destroy(&na_ofi_mem_pool->node_list_lock);
+}
+
+/*---------------------------------------------------------------------------*/
+static void *
+na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
+{
+    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    na_size_t page_size = (na_size_t) hg_mem_get_page_size();
+    void *mem_ptr = NULL;
+
+    /* Allocate backend buffer */
+    mem_ptr = hg_mem_aligned_alloc(page_size, size);
+    if (!mem_ptr) {
+        NA_LOG_ERROR("Could not allocate %d bytes", (int) size);
+        goto out;
+    }
+    memset(mem_ptr, 0, size);
+
+    /* Register memory if FI_MR_LOCAL is set */
+    if (domain->nod_mr_mode != NA_OFI_MR_SCALABLE) {
+        int rc;
+
+        rc = fi_mr_reg(domain->nod_domain, mem_ptr, size, FI_REMOTE_READ
+            | FI_REMOTE_WRITE | FI_SEND | FI_RECV | FI_READ | FI_WRITE, 0 /* offset */,
+            0 /* requested key */, 0 /* flags */, mr_hdl, NULL /* context */);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_mr_reg failed, rc: %d (%s).", rc, fi_strerror(-rc));
+            hg_mem_aligned_free(mem_ptr);
+            goto out;
+        }
+    }
+
+out:
+    return mem_ptr;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_mem_free(void *mem_ptr, struct fid_mr *mr_hdl)
+{
+    /* Release MR handle is there was any */
+    if (mr_hdl) {
+        int rc;
+
+        rc = fi_close(&mr_hdl->fid);
+        if (rc != 0) {
+            NA_LOG_ERROR("fi_close mr_hdl failed, rc: %d(%s).",
+                rc, fi_strerror(-rc));
+        }
+    }
+
+    hg_mem_aligned_free(mem_ptr);
+}
+
+/*---------------------------------------------------------------------------*/
+static void *
+na_ofi_mem_pool_alloc(na_class_t *na_class, na_size_t size,
+    struct fid_mr **mr_hdl)
+{
+    struct na_ofi_mem_pool *na_ofi_mem_pool;
+    struct na_ofi_mem_node *na_ofi_mem_node;
+    void *mem_ptr = NULL;
+    na_bool_t found = NA_FALSE;
+
+    /* Check whether we can get a block from one of the pools */
+    hg_thread_spin_lock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+    HG_QUEUE_FOREACH(na_ofi_mem_pool,
+        &NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool, entry) {
+        if (!HG_QUEUE_IS_EMPTY(&na_ofi_mem_pool->node_list)) {
+            found = NA_TRUE;
+            break;
+        }
+    }
+    hg_thread_spin_unlock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+
+    /* If not, allocate and register a new pool */
+    if (!found) {
+        na_ofi_mem_pool =
+            na_ofi_mem_pool_create(na_class,
+                na_ofi_msg_get_max_unexpected_size(na_class),
+                NA_OFI_MEM_BLOCK_COUNT);
+        hg_thread_spin_lock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+        HG_QUEUE_PUSH_TAIL(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool,
+            na_ofi_mem_pool, entry);
+        hg_thread_spin_unlock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+    }
+
+    if (size > na_ofi_mem_pool->block_size) {
+        NA_LOG_ERROR("Block size is too small for requested size");
+        goto out;
+    }
+
+    /* Pick a node from one of the available pools */
+    hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
+    na_ofi_mem_node = HG_QUEUE_FIRST(&na_ofi_mem_pool->node_list);
+    if (!na_ofi_mem_node) {
+        NA_LOG_ERROR("Mem pool is empty");
+        hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
+        goto out;
+    }
+    HG_QUEUE_POP_HEAD(&na_ofi_mem_pool->node_list, entry);
+    hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
+    mem_ptr = &na_ofi_mem_node->block;
+    *mr_hdl = na_ofi_mem_pool->mr_hdl;
+
+out:
+    return mem_ptr;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_mem_pool_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
+{
+    struct na_ofi_mem_pool *na_ofi_mem_pool;
+    struct na_ofi_mem_node *na_ofi_mem_node =
+        container_of(mem_ptr, struct na_ofi_mem_node, block);
+
+    /* Put the node back to the pool */
+    hg_thread_spin_lock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+    HG_QUEUE_FOREACH(na_ofi_mem_pool,
+        &NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool, entry) {
+        /* If MR handle is NULL, it does not really matter which pool we push
+         * the node back to.
+         */
+        if (na_ofi_mem_pool->mr_hdl == mr_hdl) {
+            hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
+            HG_QUEUE_PUSH_TAIL(&na_ofi_mem_pool->node_list, na_ofi_mem_node, entry);
+            hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
+            break;
+        }
+    }
+    hg_thread_spin_unlock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+}
+
 /********************/
 /* Plugin callbacks */
 /********************/
@@ -1994,6 +2217,10 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     /* Initialize queue / mutex */
     hg_thread_mutex_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_mutex);
 
+    /* Initialize buf pool */
+    hg_thread_spin_init(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+    HG_QUEUE_INIT(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool);
+
     /* Create domain */
     ret = na_ofi_domain_open(na_class->private_data, prov_name, domain_name,
         auth_key, &NA_OFI_PRIVATE_DATA(na_class)->nop_domain);
@@ -2066,6 +2293,16 @@ na_ofi_finalize(na_class_t *na_class)
         NA_LOG_ERROR("Could not close domain");
         goto out;
     }
+
+    /* Free memory pool */
+    while (!HG_QUEUE_IS_EMPTY(&priv->nop_buf_pool)) {
+        struct na_ofi_mem_pool *na_ofi_mem_pool =
+            HG_QUEUE_FIRST(&priv->nop_buf_pool);
+        HG_QUEUE_POP_HEAD(&priv->nop_buf_pool, entry);
+
+        na_ofi_mem_pool_destroy(na_ofi_mem_pool);
+    }
+    hg_thread_spin_destroy(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
 
     /* Close mutex / free private data */
     hg_thread_mutex_destroy(&priv->nop_mutex);
@@ -2750,45 +2987,22 @@ na_ofi_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 static void *
 na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
 {
-    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-    na_size_t page_size = (na_size_t) hg_mem_get_page_size();
-    void *mem_ptr = NULL;
     struct fid_mr *mr_hdl = NULL;
-    struct iovec mr_iov = {0};
-    struct fi_mr_attr attr = {
-        .mr_iov = &mr_iov,
-        .iov_count = 1,
-        .access = (FI_REMOTE_READ | FI_REMOTE_WRITE | FI_SEND |
-            FI_RECV | FI_READ | FI_WRITE),
-        .offset = 0,
-        .requested_key = 0,
-        .context = NULL,
-        .auth_key = NULL,
-        .auth_key_size = 0
-       };
-    int rc;
+    void *mem_ptr = NULL;
 
-    mem_ptr = hg_mem_aligned_alloc(page_size, size);
+#ifdef NA_OFI_HAS_MEM_POOL
+    mem_ptr = na_ofi_mem_pool_alloc(na_class, size, &mr_hdl);
+    if (!mem_ptr) {
+        NA_LOG_ERROR("Could not allocate buffer from pool");
+        goto out;
+    }
+#else
+    mem_ptr = na_ofi_mem_alloc(na_class, size, &mr_hdl);
     if (!mem_ptr) {
         NA_LOG_ERROR("Could not allocate %d bytes", (int) size);
         goto out;
     }
-    memset(mem_ptr, 0, size);
-
-    /* Set IOV */
-    mr_iov.iov_base = mem_ptr;
-    mr_iov.iov_len = (size_t) size;
-    /* GNI provider does not support user requested key */
-    if (domain->nod_prov_type != NA_OFI_PROV_GNI)
-        attr.requested_key = (uint64_t) mem_ptr;
-
-    rc = fi_mr_regattr(domain->nod_domain, &attr, 0, &mr_hdl);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_mr_reg failed, rc: %d (%s).", rc, fi_strerror(-rc));
-        hg_mem_aligned_free(mem_ptr);
-        goto out;
-    }
-
+#endif
     *plugin_data = mr_hdl;
 
 out:
@@ -2797,20 +3011,16 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_msg_buf_free(na_class_t NA_UNUSED *na_class, void *buf,
-    void *plugin_data)
+na_ofi_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
 {
     struct fid_mr *mr_hdl = plugin_data;
-    int rc;
 
-    rc = fi_close(&mr_hdl->fid);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_close mr_hdl failed, rc: %d(%s).",
-            rc, fi_strerror(-rc));
-        return NA_PROTOCOL_ERROR;
-    }
-
-    hg_mem_aligned_free(buf);
+#ifdef NA_OFI_HAS_MEM_POOL
+    na_ofi_mem_pool_free(na_class, buf, mr_hdl);
+#else
+    (void) na_class;
+    na_ofi_mem_free(buf, mr_hdl);
+#endif
 
     return NA_SUCCESS;
 }
@@ -3233,17 +3443,6 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     na_uint64_t access;
-    struct iovec mr_iov = {0};
-    struct fi_mr_attr attr = {
-        .mr_iov = &mr_iov,
-        .iov_count = 1,
-        .access = 0,
-        .offset = 0,
-        .requested_key = 0,
-        .context = NULL,
-        .auth_key = NULL,
-        .auth_key_size = 0
-       };
     int rc = 0;
     na_return_t ret = NA_SUCCESS;
 
@@ -3267,14 +3466,12 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
             ret = NA_INVALID_PARAM;
             goto out;
     }
-    attr.access = access;
 
-    /* Set IOV */
-    mr_iov.iov_base = (void *)na_ofi_mem_handle->nom_base;
-    mr_iov.iov_len = (size_t) na_ofi_mem_handle->nom_size;
-
-    rc = fi_mr_regattr(domain->nod_domain, &attr, 0,
-        &na_ofi_mem_handle->nom_mr_hdl);
+    /* Register region */
+    rc = fi_mr_reg(domain->nod_domain, (void *)na_ofi_mem_handle->nom_base,
+        (size_t) na_ofi_mem_handle->nom_size, access, 0 /* offset */,
+        0 /* requested key */, 0 /* flags */, &na_ofi_mem_handle->nom_mr_hdl,
+        NULL /* context */);
     if (rc != 0) {
         NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
         ret = NA_PROTOCOL_ERROR;
