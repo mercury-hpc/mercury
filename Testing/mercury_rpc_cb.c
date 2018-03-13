@@ -316,7 +316,7 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
         "target_offset=%zu", bulk_args->transfer_size, bulk_args->origin_offset,
         bulk_args->target_offset);
     ret = HG_Bulk_transfer_id(hg_info->context, hg_test_bulk_transfer_cb,
-        bulk_args, HG_BULK_PULL, hg_info->addr, hg_info->target_id,
+        bulk_args, HG_BULK_PULL, hg_info->addr, hg_info->context_id,
         origin_bulk_handle, bulk_args->origin_offset, local_bulk_handle,
         bulk_args->target_offset, bulk_args->transfer_size, &hg_bulk_op_id);
     if (ret != HG_SUCCESS) {
@@ -531,7 +531,7 @@ HG_TEST_RPC_CB(hg_test_posix_write, handle)
 
     /* Pull bulk data */
     ret = HG_Bulk_transfer_id(hg_info->context, hg_test_posix_write_transfer_cb,
-            bulk_args, HG_BULK_PULL, hg_info->addr, hg_info->target_id,
+            bulk_args, HG_BULK_PULL, hg_info->addr, hg_info->context_id,
             origin_bulk_handle, 0, local_bulk_handle, 0, bulk_args->nbytes,
             HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -676,7 +676,7 @@ HG_TEST_RPC_CB(hg_test_posix_read, handle)
 
     /* Push bulk data */
     ret = HG_Bulk_transfer_id(hg_info->context, hg_test_posix_read_transfer_cb,
-            bulk_args, HG_BULK_PUSH, hg_info->addr, hg_info->target_id,
+            bulk_args, HG_BULK_PUSH, hg_info->addr, hg_info->context_id,
             origin_bulk_handle, 0, local_bulk_handle, 0, bulk_args->nbytes,
             HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -813,7 +813,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 
     /* Pull bulk data */
     ret = HG_Bulk_transfer_id(hg_info->context, hg_test_perf_bulk_transfer_cb,
-            handle, HG_BULK_PULL, hg_info->addr, hg_info->target_id,
+            handle, HG_BULK_PULL, hg_info->addr, hg_info->context_id,
             origin_bulk_handle, 0, local_bulk_handle, 0,
             HG_Bulk_get_size(origin_bulk_handle), HG_OP_ID_IGNORE);
     if (ret != HG_SUCCESS) {
@@ -864,7 +864,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk_read, handle)
 
     /* Pull bulk data */
     ret = HG_Bulk_transfer_id(hg_info->context, hg_test_perf_bulk_transfer_cb,
-        handle, HG_BULK_PUSH, hg_info->addr, hg_info->target_id,
+        handle, HG_BULK_PUSH, hg_info->addr, hg_info->context_id,
         origin_bulk_handle, 0, local_bulk_handle, 0,
         HG_Bulk_get_size(origin_bulk_handle),
         HG_OP_ID_IGNORE);

@@ -41,9 +41,9 @@ struct hg_init_info {
 struct hg_info {
     hg_class_t *hg_class;       /* HG class */
     hg_context_t *context;      /* HG context */
-    hg_addr_t addr;             /* HG address */
+    hg_addr_t addr;             /* HG address at target/origin */
+    hg_uint8_t context_id;      /* Context ID at target/origin */
     hg_id_t id;                 /* RPC ID */
-    hg_uint8_t target_id;       /* Target ID */
 };
 
 /**

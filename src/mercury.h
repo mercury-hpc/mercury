@@ -211,9 +211,7 @@ HG_Context_create(
 /**
  * Create a new context with a user-defined context identifier. The context
  * identifier can be used to route RPC requests to specific contexts by using
- * HG_Set_target_id(). Note that the ID can be used as a mask, meaning that
- * requests sent to two separate contexts with the same ID will be received and
- * processed by either of these two contexts.
+ * HG_Set_target_id().
  * Context must be destroyed by calling HG_Context_destroy().
  *
  * \remark This routine is internally equivalent to:
@@ -222,14 +220,14 @@ HG_Context_create(
  *       - HG_Core_context_post() with repost set to HG_TRUE
  *
  * \param hg_class [IN]         pointer to HG class
- * \param target_id [IN]        user-defined target ID
+ * \param id [IN]               user-defined context ID
  *
  * \return Pointer to HG context or NULL in case of failure
  */
 HG_EXPORT hg_context_t *
 HG_Context_create_id(
         hg_class_t *hg_class,
-        hg_uint8_t target_id
+        hg_uint8_t id
         );
 
 /**
@@ -717,18 +715,18 @@ HG_Get_output_buf(
         );
 
 /**
- * Set target ID that will receive and process RPC request
- * (target ID is defined on target context, see HG_Context_create_id()).
+ * Set target context ID that will receive and process the RPC request
+ * (ID is defined on target context creation, see HG_Context_create_id()).
  *
  * \param handle [IN]           HG handle
- * \param target_id [IN]        user-defined target ID
+ * \param id [IN]               user-defined target context ID
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Set_target_id(
         hg_handle_t handle,
-        hg_uint8_t target_id
+        hg_uint8_t id
         );
 
 /**

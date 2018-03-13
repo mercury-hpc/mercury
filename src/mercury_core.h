@@ -245,8 +245,10 @@ HG_Core_context_create(
         );
 
 /**
- * Create a new context with id.
- * Must be destroyed by calling HG_Core_context_destroy().
+ * Create a new context with a user-defined context identifier. The context
+ * identifier can be used to route RPC requests to specific contexts by using
+ * HG_Core_set_target_id().
+ * Context must be destroyed by calling HG_Core_context_destroy().
  *
  * \param hg_class [IN]         pointer to HG class
  * \param id [IN]               context ID
@@ -661,18 +663,18 @@ HG_Core_get_info(
         );
 
 /**
- * Set target ID that will receive and process RPC request
- * (target ID is defined on target context).
+ * Set target context ID that will receive and process the RPC request
+ * (ID is defined on target context creation, see HG_Core_context_create_id()).
  *
  * \param handle [IN]           HG handle
- * \param target_id [IN]        user-defined target ID
+ * \param id [IN]               user-defined target context ID
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Core_set_target_id(
         hg_handle_t handle,
-        hg_uint8_t target_id
+        hg_uint8_t id
         );
 
 /**

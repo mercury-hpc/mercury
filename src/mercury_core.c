@@ -1706,7 +1706,7 @@ hg_core_create(struct hg_context *context, hg_bool_t HG_UNUSED use_sm)
     hg_handle->hg_info.context = context;
     hg_handle->hg_info.addr = HG_ADDR_NULL;
     hg_handle->hg_info.id = 0;
-    hg_handle->hg_info.target_id = 0;
+    hg_handle->hg_info.context_id = 0;
 #ifdef HG_HAS_SM_ROUTING
     if (use_sm) {
         na_class = context->hg_class->na_sm_class;
@@ -1876,7 +1876,7 @@ hg_core_reset(struct hg_handle *hg_handle, hg_bool_t reset_info)
         }
         hg_handle->hg_info.id = 0;
     }
-    hg_handle->hg_info.target_id = 0;
+    hg_handle->hg_info.context_id = 0;
     hg_handle->request_callback = NULL;
     hg_handle->request_arg = NULL;
     hg_handle->response_callback = NULL;
@@ -2023,8 +2023,8 @@ hg_core_forward_na(struct hg_handle *hg_handle)
             hg_handle->na_context, hg_core_recv_output_cb, hg_handle,
             hg_handle->out_buf, hg_handle->out_buf_size,
             hg_handle->out_buf_plugin_data, hg_handle->hg_info.addr->na_addr,
-            hg_handle->hg_info.target_id,
-            hg_handle->tag, &hg_handle->na_recv_op_id);
+            hg_handle->hg_info.context_id, hg_handle->tag,
+            &hg_handle->na_recv_op_id);
         if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not post recv for output buffer");
             ret = HG_NA_ERROR;
@@ -2036,7 +2036,7 @@ hg_core_forward_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_send_unexpected(hg_handle->na_class, hg_handle->na_context,
         hg_core_send_input_cb, hg_handle, hg_handle->in_buf,
         hg_handle->in_buf_used, hg_handle->in_buf_plugin_data,
-        hg_handle->hg_info.addr->na_addr, hg_handle->hg_info.target_id,
+        hg_handle->hg_info.addr->na_addr, hg_handle->hg_info.context_id,
         hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for input buffer");
@@ -2112,7 +2112,7 @@ hg_core_respond_na(struct hg_handle *hg_handle)
     na_ret = NA_Msg_send_expected(hg_handle->na_class, hg_handle->na_context,
             hg_core_send_output_cb, hg_handle, hg_handle->out_buf,
             hg_handle->out_buf_used, hg_handle->out_buf_plugin_data,
-            hg_handle->hg_info.addr->na_addr, hg_handle->hg_info.target_id,
+            hg_handle->hg_info.addr->na_addr, hg_handle->hg_info.context_id,
             hg_handle->tag, &hg_handle->na_send_op_id);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not post send for output buffer");
@@ -2306,7 +2306,7 @@ hg_core_process_input(struct hg_handle *hg_handle, hg_bool_t *completed)
     hg_handle->hg_info.id = hg_handle->in_header.msg.request.id;
     hg_handle->cookie = hg_handle->in_header.msg.request.cookie;
     /* TODO assign target ID from cookie directly for now */
-    hg_handle->hg_info.target_id = hg_handle->cookie;
+    hg_handle->hg_info.context_id = hg_handle->cookie;
 
     /* Parse flags */
     hg_handle->no_response = hg_handle->in_header.msg.request.flags
@@ -4591,7 +4591,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Core_set_target_id(hg_handle_t handle, hg_uint8_t target_id)
+HG_Core_set_target_id(hg_handle_t handle, hg_uint8_t id)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
@@ -4602,7 +4602,7 @@ HG_Core_set_target_id(hg_handle_t handle, hg_uint8_t target_id)
         goto done;
     }
 
-    hg_handle->hg_info.target_id = target_id;
+    hg_handle->hg_info.context_id = id;
 
 done:
     return ret;
@@ -4726,14 +4726,10 @@ HG_Core_forward(hg_handle_t handle, hg_cb_t callback, void *arg,
     /* Set header */
     hg_handle->in_header.msg.request.id = hg_handle->hg_info.id;
     hg_handle->in_header.msg.request.flags = flags;
-    hg_handle->in_header.msg.request.cookie = hg_handle->hg_info.target_id;
-    /*
-     * Set the in_header.cookie as origin context's target_id, so at target side
-     * the cookie is unpacked and assign to hg_handle->hg_info.target_id, so can
-     * make NA layer can know which target id to send the response.
-     */
-    /* hg_handle->in_header.cookie = hg_handle->hg_info.target_id; */
-    hg_handle->in_header.msg.request.cookie = HG_Core_context_get_id(hg_handle->hg_info.context);
+    /* Set the cookie as origin context ID, so that when the cookie is unpacked
+     * by the target and assigned to HG info context_id, the NA layer knows
+     * which context ID it needs to send the response to. */
+    hg_handle->in_header.msg.request.cookie = hg_handle->hg_info.context->id;
 
     /* Encode request header */
     ret = hg_core_proc_header_request(hg_handle, &hg_handle->in_header,

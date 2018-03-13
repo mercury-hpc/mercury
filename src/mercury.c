@@ -743,7 +743,7 @@ hg_get_extra_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
     /* Read bulk data here and wait for the data to be here  */
     hg_private_data->extra_bulk_transfer_cb = done_cb;
     ret = HG_Bulk_transfer_id(hg_info->context, hg_get_extra_input_cb, handle,
-        HG_BULK_PULL, hg_info->addr, hg_info->target_id,
+        HG_BULK_PULL, hg_info->addr, hg_info->context_id,
         hg_private_data->extra_bulk_handle, 0, local_in_handle, 0,
         hg_private_data->extra_bulk_buf_size,
         HG_OP_ID_IGNORE /* TODO not used for now */);
@@ -999,7 +999,7 @@ HG_Context_create(hg_class_t *hg_class)
 
 /*---------------------------------------------------------------------------*/
 hg_context_t *
-HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t target_id)
+HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 {
     hg_context_t *context = NULL;
 #ifdef HG_POST_LIMIT
@@ -1010,9 +1010,9 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t target_id)
 #endif
     hg_return_t ret;
 
-    context = HG_Core_context_create_id(hg_class, target_id);
+    context = HG_Core_context_create_id(hg_class, id);
     if (!context) {
-        HG_LOG_ERROR("Could not create context");
+        HG_LOG_ERROR("Could not create context for ID %u", id);
         goto done;
     }
 
@@ -1624,9 +1624,9 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Set_target_id(hg_handle_t handle, hg_uint8_t target_id)
+HG_Set_target_id(hg_handle_t handle, hg_uint8_t id)
 {
-    return HG_Core_set_target_id(handle, target_id);
+    return HG_Core_set_target_id(handle, id);
 }
 
 /*---------------------------------------------------------------------------*/
