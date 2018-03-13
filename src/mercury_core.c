@@ -45,6 +45,7 @@
 #define HG_CORE_MASK_NBITS          8
 #define HG_CORE_ATOMIC_QUEUE_SIZE   1024
 #define HG_CORE_PENDING_INCR        256
+#define HG_CORE_PROCESSING_TIMEOUT  1000
 #ifdef HG_HAS_SM_ROUTING
 # define HG_CORE_UUID_MAX_LEN       36
 # define HG_CORE_ADDR_MAX_SIZE      256
@@ -138,8 +139,8 @@ struct hg_context {
     HG_LIST_HEAD(hg_handle) sm_pending_list;      /* List of SM pending handles */
     hg_thread_spin_t sm_pending_list_lock;        /* SM pending list lock */
 #endif
-    HG_LIST_HEAD(hg_handle) processing_list;      /* List of handles being processed */
-    hg_thread_spin_t processing_list_lock;        /* Processing list lock */
+    HG_LIST_HEAD(hg_handle) created_list;         /* List of handles for that context */
+    hg_thread_spin_t created_list_lock;           /* Handle list lock */
 #ifdef HG_HAS_SELF_FORWARD
     int completion_queue_notify;                  /* Self notification */
     hg_thread_pool_t *self_processing_pool;       /* Thread pool for self processing */
@@ -204,7 +205,8 @@ struct hg_handle {
     na_tag_t tag;                       /* Tag used for request and response */
     hg_uint8_t cookie;                  /* Cookie */
     hg_return_t ret;                    /* Return code associated to handle */
-    HG_LIST_ENTRY(hg_handle) entry;     /* Entry in pending / processing lists */
+    HG_LIST_ENTRY(hg_handle) created;   /* Created list entry */
+    HG_LIST_ENTRY(hg_handle) pending;   /* Pending list entry */
     struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
     hg_bool_t repost;                   /* Repost handle on completion (listen) */
     hg_bool_t is_self;                  /* Self processed */
@@ -369,10 +371,10 @@ hg_core_sm_pending_list_cancel(
 #endif
 
 /**
- * Wail until processing list is empty.
+ * Wail until handle list is empty.
  */
 static hg_return_t
-hg_core_processing_list_wait(
+hg_core_created_list_wait(
         struct hg_context *context
         );
 
@@ -1009,7 +1011,7 @@ hg_core_pending_list_cancel(struct hg_context *context)
 
     while (!HG_LIST_IS_EMPTY(&context->pending_list)) {
         struct hg_handle *hg_handle = HG_LIST_FIRST(&context->pending_list);
-        HG_LIST_REMOVE(hg_handle, entry);
+        HG_LIST_REMOVE(hg_handle, pending);
 
         /* Prevent reposts */
         hg_handle->repost = HG_FALSE;
@@ -1038,7 +1040,7 @@ hg_core_sm_pending_list_cancel(struct hg_context *context)
 
     while (!HG_LIST_IS_EMPTY(&context->sm_pending_list)) {
         struct hg_handle *hg_handle = HG_LIST_FIRST(&context->sm_pending_list);
-        HG_LIST_REMOVE(hg_handle, entry);
+        HG_LIST_REMOVE(hg_handle, pending);
 
         /* Prevent reposts */
         hg_handle->repost = HG_FALSE;
@@ -1059,33 +1061,39 @@ hg_core_sm_pending_list_cancel(struct hg_context *context)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_processing_list_wait(struct hg_context *context)
+hg_core_created_list_wait(struct hg_context *context)
 {
+    hg_util_bool_t created_list_empty = HG_UTIL_FALSE;
+    /* Convert timeout in ms into seconds */
+    double remaining = HG_CORE_PROCESSING_TIMEOUT / 1000.0;
     hg_return_t ret = HG_SUCCESS;
 
-    for (;;) {
-        hg_util_bool_t processing_list_empty = HG_UTIL_FALSE;
+    while (remaining > 0) {
         unsigned int actual_count = 0;
+        hg_time_t t1, t2;
         hg_return_t trigger_ret;
+
+        hg_time_get_current(&t1);
 
         /* Trigger everything we can from HG */
         do {
             trigger_ret = hg_core_trigger(context, 0, 1, &actual_count);
         } while ((trigger_ret == HG_SUCCESS) && actual_count);
 
-        hg_thread_spin_lock(&context->processing_list_lock);
+        hg_thread_spin_lock(&context->created_list_lock);
+        created_list_empty = HG_LIST_IS_EMPTY(&context->created_list);
+        hg_thread_spin_unlock(&context->created_list_lock);
 
-        processing_list_empty = HG_LIST_IS_EMPTY(&context->processing_list);
+        if (created_list_empty)
+            break;
 
-        hg_thread_spin_unlock(&context->processing_list_lock);
-
-        if (processing_list_empty) break;
-
-        ret = context->progress(context, HG_MAX_IDLE_TIME);
+        ret = context->progress(context, (unsigned int) (remaining * 1000.0));
         if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
             HG_LOG_ERROR("Could not make progress");
             goto done;
         }
+        hg_time_get_current(&t2);
+        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
     }
 
 done:
@@ -1709,6 +1717,12 @@ hg_core_create(struct hg_context *context, hg_bool_t HG_UNUSED use_sm)
     hg_handle->na_context = na_context;
     hg_handle->ret = HG_SUCCESS;
 
+    /* Add handle to handle list so that we can track it */
+    hg_thread_spin_lock(&hg_handle->hg_info.context->created_list_lock);
+    HG_LIST_INSERT_HEAD(&hg_handle->hg_info.context->created_list,
+        hg_handle, created);
+    hg_thread_spin_unlock(&hg_handle->hg_info.context->created_list_lock);
+
     /* Handle is not in use */
     hg_atomic_init32(&hg_handle->in_use, HG_FALSE);
 
@@ -1792,6 +1806,11 @@ hg_core_destroy(struct hg_handle *hg_handle)
         /* Cannot free yet */
         goto done;
     }
+
+    /* Remove handle from list */
+    hg_thread_spin_lock(&hg_handle->hg_info.context->created_list_lock);
+    HG_LIST_REMOVE(hg_handle, created);
+    hg_thread_spin_unlock(&hg_handle->hg_info.context->created_list_lock);
 
     /* Decrement N handles from HG context */
     hg_atomic_decr32(&hg_handle->hg_info.context->n_handles);
@@ -1971,13 +1990,6 @@ hg_core_forward_self(struct hg_handle *hg_handle)
             &hg_handle->hg_info.context->self_processing_pool);
     }
 
-    /* Add handle to processing list */
-    hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
-    HG_LIST_INSERT_HEAD(&hg_handle->hg_info.context->processing_list,
-        hg_handle, entry);
-    hg_thread_spin_unlock(
-        &hg_handle->hg_info.context->processing_list_lock);
-
     /* Post operation to self processing pool */
     hg_handle->thread_work.func = hg_core_process_thread;
     hg_handle->thread_work.args = hg_handle;
@@ -2052,11 +2064,6 @@ hg_core_respond_self(struct hg_handle *hg_handle)
     /* Set operation type for trigger */
     hg_handle->op_type = HG_CORE_RESPOND_SELF;
 
-    /* Remove handle from processing list */
-    hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
-    HG_LIST_REMOVE(hg_handle, entry);
-    hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
-
     /* Complete and add to completion queue */
     ret = hg_core_complete(hg_handle);
     if (ret != HG_SUCCESS) {
@@ -2076,11 +2083,6 @@ hg_core_no_respond_self(struct hg_handle *hg_handle)
 
     /* Set operation type for trigger */
     hg_handle->op_type = HG_CORE_FORWARD_SELF;
-
-    /* Remove handle from processing list */
-    hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
-    HG_LIST_REMOVE(hg_handle, entry);
-    hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
 
     /* Complete and add to completion queue */
     ret = hg_core_complete(hg_handle);
@@ -2130,13 +2132,6 @@ hg_core_no_respond_na(struct hg_handle *hg_handle)
 
     /* Set operation type for trigger */
     hg_handle->op_type = HG_CORE_NO_RESPOND;
-
-    /* Remove handle from processing list
-     * NB. Whichever state we're in, reaching that stage means that the
-     * handle was processed. */
-    hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
-    HG_LIST_REMOVE(hg_handle, entry);
-    hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
 
     ret = hg_core_complete(hg_handle);
     if (ret != HG_SUCCESS) {
@@ -2232,11 +2227,11 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     }
     hg_handle->in_buf_used = na_cb_info_recv_unexpected->actual_buf_size;
 
-    /* Move handle from pending list to processing list */
+    /* Remove handle from pending list */
 #ifdef HG_HAS_SM_ROUTING
     if (hg_handle->na_class == hg_handle->hg_info.hg_class->na_sm_class) {
         hg_thread_spin_lock(&hg_context->sm_pending_list_lock);
-        HG_LIST_REMOVE(hg_handle, entry);
+        HG_LIST_REMOVE(hg_handle, pending);
 # ifndef HG_HAS_POST_LIMIT
         sm_pending_empty = HG_LIST_IS_EMPTY(&hg_context->sm_pending_list);
 # endif
@@ -2244,7 +2239,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     } else {
 #endif
         hg_thread_spin_lock(&hg_context->pending_list_lock);
-        HG_LIST_REMOVE(hg_handle, entry);
+        HG_LIST_REMOVE(hg_handle, pending);
 #ifndef HG_HAS_POST_LIMIT
         pending_empty = HG_LIST_IS_EMPTY(&hg_context->pending_list);
 #endif
@@ -2252,10 +2247,6 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 #ifdef HG_HAS_SM_ROUTING
     }
 #endif
-
-    hg_thread_spin_lock(&hg_context->processing_list_lock);
-    HG_LIST_INSERT_HEAD(&hg_context->processing_list, hg_handle, entry);
-    hg_thread_spin_unlock(&hg_context->processing_list_lock);
 
 #ifndef HG_HAS_POST_LIMIT
     /* If pending list is empty, post more handles */
@@ -2389,13 +2380,6 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
     }
 
     /* TODO common code with hg_core_no_respond_na */
-
-    /* Remove handle from processing list
-     * NB. Whichever state we're in, reaching that stage means that the
-     * handle was processed. */
-    hg_thread_spin_lock(&hg_handle->hg_info.context->processing_list_lock);
-    HG_LIST_REMOVE(hg_handle, entry);
-    hg_thread_spin_unlock(&hg_handle->hg_info.context->processing_list_lock);
 
     /* Mark as completed (sanity check for NA op completed count) */
     if (hg_atomic_incr32(&hg_handle->na_op_completed_count)
@@ -2743,12 +2727,12 @@ hg_core_post(struct hg_handle *hg_handle)
 #ifdef HG_HAS_SM_ROUTING
     if (hg_handle->na_class == hg_handle->hg_info.hg_class->na_sm_class) {
         hg_thread_spin_lock(&context->sm_pending_list_lock);
-        HG_LIST_INSERT_HEAD(&context->sm_pending_list, hg_handle, entry);
+        HG_LIST_INSERT_HEAD(&context->sm_pending_list, hg_handle, pending);
         hg_thread_spin_unlock(&context->sm_pending_list_lock);
     } else {
 #endif
         hg_thread_spin_lock(&context->pending_list_lock);
-        HG_LIST_INSERT_HEAD(&context->pending_list, hg_handle, entry);
+        HG_LIST_INSERT_HEAD(&context->pending_list, hg_handle, pending);
         hg_thread_spin_unlock(&context->pending_list_lock);
 #ifdef HG_HAS_SM_ROUTING
     }
@@ -2778,6 +2762,7 @@ hg_core_reset_post(struct hg_handle *hg_handle)
     if (hg_atomic_decr32(&hg_handle->ref_count))
         goto done;
 
+    /* Reset the handle */
     ret = hg_core_reset(hg_handle, HG_TRUE);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Cannot reset handle");
@@ -3641,7 +3626,7 @@ HG_Core_context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 #ifdef HG_HAS_SM_ROUTING
     HG_LIST_INIT(&context->sm_pending_list);
 #endif
-    HG_LIST_INIT(&context->processing_list);
+    HG_LIST_INIT(&context->created_list);
 
     /* No handle created yet */
     hg_atomic_init32(&context->n_handles, 0);
@@ -3655,7 +3640,7 @@ HG_Core_context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 #ifdef HG_HAS_SM_ROUTING
     hg_thread_spin_init(&context->sm_pending_list_lock);
 #endif
-    hg_thread_spin_init(&context->processing_list_lock);
+    hg_thread_spin_init(&context->created_list_lock);
 
     context->na_context = NA_Context_create_id(hg_class->na_class, id);
     if (!context->na_context) {
@@ -3801,9 +3786,9 @@ HG_Core_context_destroy(hg_context_t *context)
 #endif
 
     /* Check that operations have completed */
-    ret = hg_core_processing_list_wait(context);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not wait on processing list");
+    ret = hg_core_created_list_wait(context);
+    if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
+        HG_LOG_ERROR("Could not wait on HG handle list");
         goto done;
     }
 
@@ -3815,8 +3800,15 @@ HG_Core_context_destroy(hg_context_t *context)
     /* Number of handles for that context should be 0 */
     n_handles = hg_atomic_get32(&context->n_handles);
     if (n_handles != 0) {
+        struct hg_handle *hg_handle = NULL;
         HG_LOG_ERROR("HG handles must be freed before destroying context "
             "(%d remaining)", n_handles);
+        hg_thread_spin_lock(&context->created_list_lock);
+        HG_LIST_FOREACH(hg_handle, &context->created_list, created) {
+            HG_LOG_ERROR("HG handle at address %p was not destroyed",
+                hg_handle);
+        }
+        hg_thread_spin_unlock(&context->created_list_lock);
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
@@ -3923,7 +3915,7 @@ HG_Core_context_destroy(hg_context_t *context)
 #ifdef HG_HAS_SM_ROUTING
     hg_thread_spin_destroy(&context->sm_pending_list_lock);
 #endif
-    hg_thread_spin_destroy(&context->processing_list_lock);
+    hg_thread_spin_destroy(&context->created_list_lock);
 
     /* Decrement context count of parent class */
     hg_atomic_decr32(&context->hg_class->n_contexts);
