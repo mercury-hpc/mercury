@@ -40,16 +40,25 @@ set(MERCURY_EXPORTED_LIBS ${MERCURY_EXPORTED_LIBS} na)
 # Boost (for preprocessor macros)
 option(MERCURY_USE_BOOST_PP "Use BOOST preprocessor macros." OFF)
 if(MERCURY_USE_BOOST_PP)
-  find_package(Boost 1.41.0 REQUIRED)
-  if(Boost_FOUND)
-    message(STATUS "Boost include directory: ${Boost_INCLUDE_DIRS}")
-    set(HG_HAS_BOOST 1)
-    set(MERCURY_EXT_INCLUDE_DEPENDENCIES
-      ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
-      ${Boost_INCLUDE_DIRS}
-    )
+  option(MERCURY_USE_SYSTEM_BOOST "Use system-installed Boost libraries." OFF)
+  if(MERCURY_USE_SYSTEM_BOOST)
+    find_package(Boost 1.41.0 REQUIRED)
+    if(Boost_FOUND)
+      message(STATUS "Boost include directory: ${Boost_INCLUDE_DIRS}")
+      set(HG_HAS_BOOST 1)
+      set(MERCURY_EXT_INCLUDE_DEPENDENCIES
+        ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+        ${Boost_INCLUDE_DIRS}
+      )
+    else()
+      message(FATAL_ERROR "Could not find Boost, please check Boost_INCLUDE_DIR.")
+    endif()
   else()
-    message(FATAL_ERROR "Could not find Boost, please check Boost_INCLUDE_DIR.")
+    set(HG_HAS_BOOST 1)
+    set(MERCURY_BUILD_INCLUDE_DEPENDENCIES
+      ${MERCURY_BUILD_INCLUDE_DEPENDENCIES}
+      ${CMAKE_CURRENT_SOURCE_DIR}/boost
+    )
   endif()
 endif()
 
@@ -256,6 +265,17 @@ install(
   COMPONENT
     headers
 )
+
+if(MERCURY_USE_BOOST_PP AND NOT MERCURY_USE_SYSTEM_BOOST)
+  install(
+    DIRECTORY
+      boost
+    DESTINATION
+      ${MERCURY_INSTALL_INCLUDE_DIR}
+    COMPONENT
+      headers
+  )
+endif()
 
 #-----------------------------------------------------------------------------
 # Add Target(s) to CMake Install
