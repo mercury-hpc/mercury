@@ -264,24 +264,30 @@ HG_Hl_finalize(void)
     hg_return_t ret = HG_SUCCESS;
 
     /* Finalize request class */
-    hg_request_finalize(HG_REQUEST_CLASS_DEFAULT, NULL);
-    HG_REQUEST_CLASS_DEFAULT = NULL;
+    if (HG_REQUEST_CLASS_DEFAULT) {
+        hg_request_finalize(HG_REQUEST_CLASS_DEFAULT, NULL);
+        HG_REQUEST_CLASS_DEFAULT = NULL;
+    }
 
     /* Destroy context */
-    ret = HG_Context_destroy(HG_CONTEXT_DEFAULT);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not destroy HG context");
-        goto done;
+    if (HG_CONTEXT_DEFAULT) {
+        ret = HG_Context_destroy(HG_CONTEXT_DEFAULT);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not destroy HG context");
+            goto done;
+        }
+        HG_CONTEXT_DEFAULT = NULL;
     }
-    HG_CONTEXT_DEFAULT = NULL;
 
     /* Finalize interface */
-    ret = HG_Finalize(HG_CLASS_DEFAULT);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not finalize HG class");
-        goto done;
+    if (HG_CLASS_DEFAULT) {
+        ret = HG_Finalize(HG_CLASS_DEFAULT);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not finalize HG class");
+            goto done;
+        }
+        HG_CLASS_DEFAULT = NULL;
     }
-    HG_CLASS_DEFAULT = NULL;
 
 done:
     return ret;

@@ -1811,7 +1811,6 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
 
     /* Do not block if NA_NO_BLOCK option is passed */
     if (na_private_class->progress_mode == NA_NO_BLOCK) {
-        timeout = 0;
         remaining = 0;
     } else {
         remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */

@@ -184,8 +184,7 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
         sizeof(header->hash.header), MCHECKSUM_FINALIZE);
     if (op == HG_ENCODE)
         n_hash_header = (hg_uint16_t) htons(header->hash.header);
-    buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_hash_header, sizeof(n_hash_header),
-        op);
+    hg_proc_buf_memcpy(buf_ptr, &n_hash_header, sizeof(n_hash_header), op);
     if (op == HG_DECODE) {
         hg_uint16_t h_hash_header = ntohs(n_hash_header);
         if (header->hash.header != h_hash_header) {
@@ -239,8 +238,7 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
         sizeof(header->hash.header), MCHECKSUM_FINALIZE);
     if (op == HG_ENCODE)
         n_hash_header = (hg_uint16_t) htons(header->hash.header);
-    buf_ptr = hg_proc_buf_memcpy(buf_ptr, &n_hash_header, sizeof(n_hash_header),
-        op);
+    hg_proc_buf_memcpy(buf_ptr, &n_hash_header, sizeof(n_hash_header), op);
     if (op == HG_DECODE) {
         hg_uint16_t h_hash_header = ntohs(n_hash_header);
         if (header->hash.header != h_hash_header) {

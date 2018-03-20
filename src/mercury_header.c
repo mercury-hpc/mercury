@@ -112,7 +112,9 @@ hg_header_proc(hg_proc_op_t op, void *buf, size_t buf_size,
 #endif
             break;
         default:
-            break;
+            HG_LOG_ERROR("Invalid header op");
+            ret = HG_INVALID_PARAM;
+            goto done;
     }
 
 #ifdef HG_HAS_CHECKSUMS

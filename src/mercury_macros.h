@@ -13,6 +13,7 @@
 
 #include "mercury.h"
 #include "mercury_proc.h"
+#include "mercury_proc_bulk.h"
 
 #ifdef HG_HAS_BOOST
 #include <boost/preprocessor.hpp>

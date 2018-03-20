@@ -12,7 +12,14 @@
 #define MERCURY_H
 
 #include "mercury_types.h"
-#include "na.h"
+
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
+/*****************/
+/* Public Macros */
+/*****************/
 
 /*********************/
 /* Public Prototypes */

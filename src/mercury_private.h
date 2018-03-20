@@ -11,7 +11,7 @@
 #ifndef MERCURY_PRIVATE_H
 #define MERCURY_PRIVATE_H
 
-#include "mercury_types.h"
+#include "mercury_core.h"
 
 #include "mercury_queue.h"
 
@@ -30,8 +30,8 @@ typedef enum {
 struct hg_completion_entry {
     hg_op_type_t op_type;
     union {
-        struct hg_op_id *hg_op_id;
-        struct hg_handle *hg_handle;
+        struct hg_core_op_id *hg_core_op_id;
+        struct hg_core_handle *hg_core_handle;
         struct hg_bulk_op_id *hg_bulk_op_id;
     } op_id;
     HG_QUEUE_ENTRY(hg_completion_entry) entry;

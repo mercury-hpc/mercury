@@ -9,10 +9,11 @@
  */
 
 #include "mercury.h"
-#include "mercury_bulk.h"
 #include "mercury_core.h"
 #include "mercury_header.h"
+#include "mercury_bulk.h"
 #include "mercury_proc.h"
+#include "mercury_proc_bulk.h"
 #include "mercury_error.h"
 
 #include "mercury_hash_string.h"
@@ -35,8 +36,20 @@
 /* Local Type and Struct Definition */
 /************************************/
 
+/* HG class */
+struct hg_class {
+    hg_core_class_t *core_class;    /* Core class */
+};
+
+/* HG context */
+struct hg_context {
+    hg_core_context_t *core_context;/* Core context */
+    hg_class_t *hg_class;           /* HG class */
+};
+
 /* Info for function map */
 struct hg_proc_info {
+    hg_rpc_cb_t rpc_cb;             /* RPC callback */
     hg_proc_cb_t in_proc_cb;        /* Input proc callback */
     hg_proc_cb_t out_proc_cb;       /* Output proc callback */
     hg_bool_t no_response;          /* RPC response not expected */
@@ -44,8 +57,10 @@ struct hg_proc_info {
     void (*free_callback)(void *);  /* User data free callback */
 };
 
-/* Private handle data */
-struct hg_private_data {
+/* HG handle */
+struct hg_handle {
+    hg_core_handle_t core_handle;   /* Core handle */
+    struct hg_info hg_info;         /* HG info */
     hg_cb_t forward_cb;             /* Forward callback */
     void *forward_arg;              /* Forward callback args */
     hg_cb_t respond_cb;             /* Respond callback */
@@ -54,9 +69,25 @@ struct hg_private_data {
     hg_proc_t in_proc;              /* Proc for input */
     hg_proc_t out_proc;             /* Proc for output */
     void *extra_bulk_buf;           /* Extra bulk buffer */
-    size_t extra_bulk_buf_size;     /* Extra bulk buffer size */
+    hg_size_t extra_bulk_buf_size;  /* Extra bulk buffer size */
     hg_bulk_t extra_bulk_handle;    /* Extra bulk handle */
-    hg_return_t (*extra_bulk_transfer_cb)(hg_handle_t); /* Bulk transfer callback */
+    hg_return_t (*extra_bulk_transfer_cb)(hg_core_handle_t); /* Bulk transfer callback */
+};
+
+/* HG op id */
+struct hg_op_info_lookup {
+    struct hg_addr *hg_addr;        /* Address */
+    hg_core_op_id_t core_op_id;     /* Operation ID for lookup */
+};
+
+struct hg_op_id {
+    struct hg_context *context;     /* Context */
+    hg_cb_type_t type;              /* Callback type */
+    hg_cb_t callback;               /* Callback */
+    void *arg;                      /* Callback arguments */
+    union {
+        struct hg_op_info_lookup lookup;
+    } info;
 };
 
 /***********************/
@@ -69,7 +100,7 @@ struct hg_private_data {
  */
 extern void *
 hg_core_get_rpc_data(
-        struct hg_handle *hg_handle
+        struct hg_core_handle *hg_core_handle
         );
 
 /********************/
@@ -87,17 +118,25 @@ hg_proc_info_free(
 /**
  * Alloc function for private data.
  */
-static hg_return_t
-hg_private_data_alloc(
-        hg_class_t *hg_class,
-        hg_handle_t handle
+static struct hg_handle *
+hg_handle_create(
+        hg_class_t *hg_class
         );
 
 /**
  * Free function for private data.
  */
 static void
-hg_private_data_free(
+hg_handle_free(
+        void *arg
+        );
+
+/**
+ * Create handle callback.
+ */
+static hg_return_t
+hg_context_post_create_cb(
+        hg_core_handle_t core_handle,
         void *arg
         );
 
@@ -106,8 +145,8 @@ hg_private_data_free(
  */
 static hg_return_t
 hg_more_data_cb(
-        hg_handle_t handle,
-        hg_return_t (*done_cb)(hg_handle_t)
+        hg_core_handle_t core_handle,
+        hg_return_t (*done_cb)(hg_core_handle_t)
         );
 
 /**
@@ -115,7 +154,23 @@ hg_more_data_cb(
  */
 static void
 hg_more_data_free_cb(
-        hg_handle_t handle
+        hg_core_handle_t core_handle
+        );
+
+/**
+ * Core RPC callback.
+ */
+static HG_INLINE hg_return_t
+hg_core_rpc_cb(
+        hg_core_handle_t core_handle
+        );
+
+/**
+ * Core lookup callback.
+ */
+static HG_INLINE hg_return_t
+hg_core_addr_lookup_cb(
+        const struct hg_core_cb_info *callback_info
         );
 
 /**
@@ -123,8 +178,7 @@ hg_more_data_free_cb(
  */
 static hg_return_t
 hg_get_struct(
-        hg_handle_t handle,
-        struct hg_private_data *hg_private_data,
+        struct hg_handle *hg_handle,
         struct hg_proc_info *hg_proc_info,
         hg_op_t op,
         void *struct_ptr
@@ -135,8 +189,7 @@ hg_get_struct(
  */
 static hg_return_t
 hg_set_struct(
-        hg_handle_t handle,
-        struct hg_private_data *hg_private_data,
+        struct hg_handle *hg_handle,
         struct hg_proc_info *hg_proc_info,
         hg_op_t op,
         void *struct_ptr,
@@ -149,8 +202,7 @@ hg_set_struct(
  */
 static hg_return_t
 hg_free_struct(
-        hg_handle_t handle,
-        struct hg_private_data *hg_private_data,
+        struct hg_handle *hg_handle,
         struct hg_proc_info *hg_proc_info,
         hg_op_t op,
         void *struct_ptr
@@ -161,15 +213,14 @@ hg_free_struct(
  */
 static hg_return_t
 hg_get_extra_input(
-        hg_handle_t handle,
-        struct hg_private_data *hg_private_data,
-        hg_return_t (*done_cb)(hg_handle_t)
+        struct hg_handle *hg_handle,
+        hg_return_t (*done_cb)(hg_core_handle_t)
         );
 
 /**
  * Get extra input bulk transfer callback.
  */
-static hg_return_t
+static HG_INLINE hg_return_t
 hg_get_extra_input_cb(
         const struct hg_cb_info *callback_info
         );
@@ -179,23 +230,23 @@ hg_get_extra_input_cb(
  */
 static void
 hg_free_extra_input(
-        struct hg_private_data *hg_private_data
+        struct hg_handle *hg_handle
         );
 
 /**
  * Forward callback.
  */
-static hg_return_t
-hg_forward_cb(
-        const struct hg_cb_info *callback_info
+static HG_INLINE hg_return_t
+hg_core_forward_cb(
+        const struct hg_core_cb_info *callback_info
         );
 
 /**
  * Respond callback.
  */
-static hg_return_t
-hg_respond_cb(
-        const struct hg_cb_info *callback_info
+static HG_INLINE hg_return_t
+hg_core_respond_cb(
+        const struct hg_core_cb_info *callback_info
         );
 
 /*******************/
@@ -217,80 +268,103 @@ hg_proc_info_free(void *arg)
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_private_data_alloc(hg_class_t *hg_class, hg_handle_t handle)
+static struct hg_handle *
+hg_handle_create(hg_class_t *hg_class)
 {
-    struct hg_private_data *hg_private_data;
+    struct hg_handle *hg_handle = NULL;
     hg_return_t ret;
 
     /* Create private data to wrap callbacks etc */
-    hg_private_data = (struct hg_private_data *) malloc(
-        sizeof(struct hg_private_data));
-    if (!hg_private_data) {
+    hg_handle = (struct hg_handle *) malloc(
+        sizeof(struct hg_handle));
+    if (!hg_handle) {
         HG_LOG_ERROR("Could not allocate private data");
+        goto done;
+    }
+    memset(hg_handle, 0, sizeof(struct hg_handle));
+    hg_handle->hg_info.hg_class = hg_class;
+    hg_header_init(&hg_handle->hg_header, HG_UNDEF);
+
+    /* CRC32 is enough for small size buffers */
+    ret = hg_proc_create(hg_class, HG_CRC32, &hg_handle->in_proc);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Cannot create HG proc");
+        goto done;
+    }
+    ret = hg_proc_create(hg_class, HG_CRC32, &hg_handle->out_proc);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Cannot create HG proc");
+        goto done;
+    }
+
+done:
+    return hg_handle;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_handle_free(void *arg)
+{
+    struct hg_handle *hg_handle = (struct hg_handle *) arg;
+
+    if (hg_handle->in_proc != HG_PROC_NULL)
+        hg_proc_free(hg_handle->in_proc);
+    if (hg_handle->out_proc != HG_PROC_NULL)
+        hg_proc_free(hg_handle->out_proc);
+    hg_mem_aligned_free(hg_handle->extra_bulk_buf);
+    hg_header_finalize(&hg_handle->hg_header);
+    free(hg_handle);
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_context_post_create_cb(hg_core_handle_t core_handle, void *arg)
+{
+    struct hg_context *hg_context = (struct hg_context *) arg;
+    struct hg_handle *hg_handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_handle = hg_handle_create(hg_context->hg_class);
+    if (!hg_handle) {
+        HG_LOG_ERROR("Could not create HG handle");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-    memset(hg_private_data, 0, sizeof(struct hg_private_data));
-    hg_header_init(&hg_private_data->hg_header, HG_UNDEF);
+    hg_handle->core_handle = core_handle;
+    hg_handle->hg_info.context = hg_context;
 
-    /* CRC32 is enough for small size buffers */
-    ret = hg_proc_create(hg_class, HG_CRC32, &hg_private_data->in_proc);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Cannot create HG proc");
-        goto done;
-    }
-    ret = hg_proc_create(hg_class, HG_CRC32, &hg_private_data->out_proc);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Cannot create HG proc");
-        goto done;
-    }
-    HG_Core_set_data(handle, hg_private_data, hg_private_data_free);
+    HG_Core_set_data(core_handle, hg_handle, hg_handle_free);
 
 done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static void
-hg_private_data_free(void *arg)
-{
-    struct hg_private_data *hg_private_data = (struct hg_private_data *) arg;
-
-    if (hg_private_data->in_proc != HG_PROC_NULL)
-        hg_proc_free(hg_private_data->in_proc);
-    if (hg_private_data->out_proc != HG_PROC_NULL)
-        hg_proc_free(hg_private_data->out_proc);
-    hg_mem_aligned_free(hg_private_data->extra_bulk_buf);
-    hg_header_finalize(&hg_private_data->hg_header);
-    free(hg_private_data);
-}
-
-/*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_more_data_cb(hg_handle_t handle, hg_return_t (*done_cb)(hg_handle_t))
+hg_more_data_cb(hg_core_handle_t core_handle,
+    hg_return_t (*done_cb)(hg_core_handle_t))
 {
-    struct hg_private_data *hg_private_data;
+    struct hg_handle *hg_handle;
     hg_return_t ret = HG_SUCCESS;
 
     /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
+    hg_handle = (struct hg_handle *) HG_Core_get_data(core_handle);
+    if (!hg_handle) {
         HG_LOG_ERROR("Could not get private data");
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
 
-    if (hg_private_data->extra_bulk_buf) {
+    if (hg_handle->extra_bulk_buf) {
         /* We were forwarding to ourself and the extra buf is already set */
-        ret = done_cb(handle);
+        ret = done_cb(core_handle);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not execute more data done callback");
             goto done;
         }
     } else {
         /* We need to do a bulk transfer to get the extra data */
-        ret = hg_get_extra_input(handle, hg_private_data, done_cb);
+        ret = hg_get_extra_input(hg_handle, done_cb);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not get extra input");
             goto done;
@@ -303,33 +377,80 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_more_data_free_cb(hg_handle_t handle)
+hg_more_data_free_cb(hg_core_handle_t core_handle)
 {
-    struct hg_private_data *hg_private_data;
+    struct hg_handle *hg_handle;
 
     /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
+    hg_handle = (struct hg_handle *) HG_Core_get_data(core_handle);
+    if (!hg_handle) {
         HG_LOG_ERROR("Could not get private data");
         goto done;
     }
 
-    hg_free_extra_input(hg_private_data);
+    hg_free_extra_input(hg_handle);
 
 done:
     return;
 }
 
 /*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+hg_core_rpc_cb(hg_core_handle_t core_handle)
+{
+    const struct hg_core_info *hg_core_info = HG_Core_get_info(core_handle);
+    struct hg_proc_info *hg_proc_info =
+        (struct hg_proc_info *) hg_core_get_rpc_data(core_handle);
+    struct hg_handle *hg_handle =
+        (struct hg_handle *) HG_Core_get_data(core_handle);
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_handle->hg_info.addr = (hg_addr_t) hg_core_info->addr;
+    hg_handle->hg_info.context_id = hg_core_info->context_id;
+    hg_handle->hg_info.id = hg_core_info->id;
+
+    if (!hg_proc_info->rpc_cb) {
+        HG_LOG_ERROR("No RPC callback registered");
+        /* Need to decrement refcount on handle */
+        HG_Core_destroy(core_handle);
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    ret = hg_proc_info->rpc_cb(hg_handle);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+hg_core_addr_lookup_cb(const struct hg_core_cb_info *callback_info)
+{
+    struct hg_op_id *hg_op_id = (struct hg_op_id *) callback_info->arg;
+    struct hg_cb_info hg_cb_info;
+    hg_return_t ret = HG_SUCCESS;
+
+    hg_cb_info.arg = hg_op_id->arg;
+    hg_cb_info.ret = callback_info->ret;
+    hg_cb_info.type = hg_op_id->type;
+    hg_cb_info.info.lookup.addr = (hg_addr_t) callback_info->info.lookup.addr;
+    if (hg_op_id->callback)
+        hg_op_id->callback(&hg_cb_info);
+
+    free(hg_op_id);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_get_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
-    struct hg_proc_info *hg_proc_info, hg_op_t op, void *struct_ptr)
+hg_get_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
+    hg_op_t op, void *struct_ptr)
 {
     hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
     void *buf;
     hg_size_t buf_size;
-    struct hg_header *hg_header = &hg_private_data->hg_header;
+    struct hg_header *hg_header = &hg_handle->hg_header;
 #ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *hg_header_hash = NULL;
 #endif
@@ -339,13 +460,13 @@ hg_get_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
     switch (op) {
         case HG_INPUT:
             /* Set input proc */
-            proc = hg_private_data->in_proc;
+            proc = hg_handle->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
 #ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.input.hash;
 #endif
             /* Get core input buffer */
-            ret = HG_Core_get_input(handle, &buf, &buf_size);
+            ret = HG_Core_get_input(hg_handle->core_handle, &buf, &buf_size);
             if (ret != HG_SUCCESS) {
                 HG_LOG_ERROR("Could not get input buffer");
                 goto done;
@@ -359,13 +480,13 @@ hg_get_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
                 goto done;
             }
             /* Set output proc */
-            proc = hg_private_data->out_proc;
+            proc = hg_handle->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
 #ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.output.hash;
 #endif
             /* Get core output buffer */
-            ret = HG_Core_get_output(handle, &buf, &buf_size);
+            ret = HG_Core_get_output(hg_handle->core_handle, &buf, &buf_size);
             if (ret != HG_SUCCESS) {
                 HG_LOG_ERROR("Could not get output buffer");
                 goto done;
@@ -394,9 +515,9 @@ hg_get_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
 
     /* If the payload did not fit into the core buffer and we have an extra
      * buffer set, use that buffer directly */
-    if (hg_private_data->extra_bulk_buf) {
-        buf = hg_private_data->extra_bulk_buf;
-        buf_size = hg_private_data->extra_bulk_buf_size;
+    if (hg_handle->extra_bulk_buf) {
+        buf = hg_handle->extra_bulk_buf;
+        buf_size = hg_handle->extra_bulk_buf_size;
     } else {
         /* Include our own header offset */
         buf = (char *) buf + header_offset;
@@ -436,7 +557,7 @@ hg_get_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
 
     /* Increment ref count on handle so that it remains valid until free_struct
      * is called */
-    HG_Core_ref_incr(handle);
+    HG_Core_ref_incr(hg_handle->core_handle);
 
 done:
     return ret;
@@ -444,15 +565,14 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_set_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
-    struct hg_proc_info *hg_proc_info, hg_op_t op, void *struct_ptr,
-    hg_size_t *payload_size, hg_bool_t *more_data)
+hg_set_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
+    hg_op_t op, void *struct_ptr, hg_size_t *payload_size, hg_bool_t *more_data)
 {
     hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
     void *buf;
     hg_size_t buf_size;
-    struct hg_header *hg_header = &hg_private_data->hg_header;
+    struct hg_header *hg_header = &hg_handle->hg_header;
 #ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *hg_header_hash = NULL;
 #endif
@@ -462,13 +582,13 @@ hg_set_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
     switch (op) {
         case HG_INPUT:
             /* Set input proc */
-            proc = hg_private_data->in_proc;
+            proc = hg_handle->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
 #ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.input.hash;
 #endif
             /* Get core input buffer */
-            ret = HG_Core_get_input(handle, &buf, &buf_size);
+            ret = HG_Core_get_input(hg_handle->core_handle, &buf, &buf_size);
             if (ret != HG_SUCCESS) {
                 HG_LOG_ERROR("Could not get input buffer");
                 goto done;
@@ -482,13 +602,13 @@ hg_set_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
                 goto done;
             }
             /* Set output proc */
-            proc = hg_private_data->out_proc;
+            proc = hg_handle->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
 #ifdef HG_HAS_CHECKSUMS
             hg_header_hash = &hg_header->msg.output.hash;
 #endif
             /* Get core output buffer */
-            ret = HG_Core_get_output(handle, &buf, &buf_size);
+            ret = HG_Core_get_output(hg_handle->core_handle, &buf, &buf_size);
             if (ret != HG_SUCCESS) {
                 HG_LOG_ERROR("Could not get output buffer");
                 goto done;
@@ -550,25 +670,22 @@ hg_set_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
      * it to retrieve the data.
      */
     if (hg_proc_get_extra_buf(proc)) {
-        const struct hg_info *hg_info = HG_Core_get_info(handle);
-
 #ifdef HG_HAS_XDR
         HG_LOG_ERROR("Extra encoding using XDR is not yet supported");
         ret = HG_SIZE_ERROR;
         goto done;
 #endif
         /* Create a bulk descriptor only of the size that is used */
-        hg_private_data->extra_bulk_buf = hg_proc_get_extra_buf(proc);
-        hg_private_data->extra_bulk_buf_size = hg_proc_get_size_used(proc);
+        hg_handle->extra_bulk_buf = hg_proc_get_extra_buf(proc);
+        hg_handle->extra_bulk_buf_size = hg_proc_get_size_used(proc);
 
         /* Prevent buffer from being freed when proc_reset is called */
         hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
 
         /* Create bulk descriptor */
-        ret = HG_Bulk_create(hg_info->hg_class, 1,
-            &hg_private_data->extra_bulk_buf,
-            &hg_private_data->extra_bulk_buf_size, HG_BULK_READ_ONLY,
-            &hg_private_data->extra_bulk_handle);
+        ret = HG_Bulk_create(hg_handle->hg_info.hg_class, 1,
+            &hg_handle->extra_bulk_buf, &hg_handle->extra_bulk_buf_size,
+            HG_BULK_READ_ONLY, &hg_handle->extra_bulk_handle);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not create bulk data handle");
             goto done;
@@ -584,7 +701,7 @@ hg_set_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
         /* Encode extra_bulk_handle, we can do that safely here because
          * the user payload has been copied so we don't have to worry
          * about overwriting the user's data */
-        ret = hg_proc_hg_bulk_t(proc, &hg_private_data->extra_bulk_handle);
+        ret = hg_proc_hg_bulk_t(proc, &hg_handle->extra_bulk_handle);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not process extra bulk handle");
             goto done;
@@ -623,8 +740,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_free_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
-    struct hg_proc_info *hg_proc_info, hg_op_t op, void *struct_ptr)
+hg_free_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
+    hg_op_t op, void *struct_ptr)
 {
     hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
@@ -633,12 +750,12 @@ hg_free_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
     switch (op) {
         case HG_INPUT:
             /* Set input proc */
-            proc = hg_private_data->in_proc;
+            proc = hg_handle->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
             break;
         case HG_OUTPUT:
             /* Set output proc */
-            proc = hg_private_data->out_proc;
+            proc = hg_handle->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
             break;
         default:
@@ -667,7 +784,7 @@ hg_free_struct(hg_handle_t handle, struct hg_private_data *hg_private_data,
     }
 
     /* Decrement ref count or free */
-    ret = HG_Core_destroy(handle);
+    ret = HG_Core_destroy(hg_handle->core_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not decrement handle ref count");
         goto done;
@@ -679,20 +796,21 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_get_extra_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
-    hg_return_t (*done_cb)(hg_handle_t handle))
+hg_get_extra_input(struct hg_handle *hg_handle,
+    hg_return_t (*done_cb)(hg_core_handle_t core_handle))
 {
-    hg_proc_t proc = hg_private_data->in_proc;
+    const struct hg_core_info *hg_core_info = HG_Core_get_info(
+        hg_handle->core_handle);
+    hg_proc_t proc = hg_handle->in_proc;
     void *in_buf;
     hg_size_t in_buf_size;
     hg_size_t header_offset = hg_header_get_size(HG_INPUT);
-    const struct hg_info *hg_info = HG_Core_get_info(handle);
     hg_size_t page_size = (hg_size_t) hg_mem_get_page_size();
     hg_bulk_t local_in_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS;
 
     /* Get core input buffer */
-    ret = HG_Core_get_input(handle, &in_buf, &in_buf_size);
+    ret = HG_Core_get_input(hg_handle->core_handle, &in_buf, &in_buf_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get input buffer");
         goto done;
@@ -709,7 +827,7 @@ hg_get_extra_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
     }
 
     /* Decode extra bulk handle */
-    ret = hg_proc_hg_bulk_t(proc, &hg_private_data->extra_bulk_handle);
+    ret = hg_proc_hg_bulk_t(proc, &hg_handle->extra_bulk_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not process extra bulk handle");
         goto done;
@@ -722,30 +840,30 @@ hg_get_extra_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
     }
 
     /* Create a new local handle to read the data */
-    hg_private_data->extra_bulk_buf_size = HG_Bulk_get_size(
-        hg_private_data->extra_bulk_handle);
-    hg_private_data->extra_bulk_buf = hg_mem_aligned_alloc(page_size,
-        hg_private_data->extra_bulk_buf_size);
-    if (!hg_private_data->extra_bulk_buf) {
+    hg_handle->extra_bulk_buf_size = HG_Bulk_get_size(
+        hg_handle->extra_bulk_handle);
+    hg_handle->extra_bulk_buf = hg_mem_aligned_alloc(page_size,
+        hg_handle->extra_bulk_buf_size);
+    if (!hg_handle->extra_bulk_buf) {
         HG_LOG_ERROR("Could not allocate extra input buffer");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
 
-    ret = HG_Bulk_create(hg_info->hg_class, 1, &hg_private_data->extra_bulk_buf,
-        &hg_private_data->extra_bulk_buf_size, HG_BULK_READWRITE,
-        &local_in_handle);
+    ret = HG_Bulk_create(hg_handle->hg_info.hg_class, 1,
+        &hg_handle->extra_bulk_buf, &hg_handle->extra_bulk_buf_size,
+        HG_BULK_READWRITE, &local_in_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create HG bulk handle");
         goto done;
     }
 
     /* Read bulk data here and wait for the data to be here  */
-    hg_private_data->extra_bulk_transfer_cb = done_cb;
-    ret = HG_Bulk_transfer_id(hg_info->context, hg_get_extra_input_cb, handle,
-        HG_BULK_PULL, hg_info->addr, hg_info->context_id,
-        hg_private_data->extra_bulk_handle, 0, local_in_handle, 0,
-        hg_private_data->extra_bulk_buf_size,
+    hg_handle->extra_bulk_transfer_cb = done_cb;
+    ret = HG_Bulk_transfer_id(hg_handle->hg_info.context, hg_get_extra_input_cb,
+        hg_handle, HG_BULK_PULL, (hg_addr_t) hg_core_info->addr,
+        hg_core_info->context_id, hg_handle->extra_bulk_handle, 0,
+        local_in_handle, 0, hg_handle->extra_bulk_buf_size,
         HG_OP_ID_IGNORE /* TODO not used for now */);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not transfer bulk data");
@@ -754,28 +872,19 @@ hg_get_extra_input(hg_handle_t handle, struct hg_private_data *hg_private_data,
 
 done:
     HG_Bulk_free(local_in_handle);
-    HG_Bulk_free(hg_private_data->extra_bulk_handle);
-    hg_private_data->extra_bulk_handle = HG_BULK_NULL;
+    HG_Bulk_free(hg_handle->extra_bulk_handle);
+    hg_handle->extra_bulk_handle = HG_BULK_NULL;
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
+static HG_INLINE hg_return_t
 hg_get_extra_input_cb(const struct hg_cb_info *callback_info)
 {
-    struct hg_private_data *hg_private_data;
-    hg_handle_t handle = (hg_handle_t) callback_info->arg;
+    struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
-    ret = hg_private_data->extra_bulk_transfer_cb(handle);
+    ret = hg_handle->extra_bulk_transfer_cb(hg_handle->core_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not execute bulk transfer callback");
         goto done;
@@ -787,66 +896,66 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_free_extra_input(struct hg_private_data *hg_private_data)
+hg_free_extra_input(struct hg_handle *hg_handle)
 {
     /* Free extra bulk buf if there was any */
-    if (hg_private_data->extra_bulk_buf) {
-        hg_mem_aligned_free(hg_private_data->extra_bulk_buf);
-        hg_private_data->extra_bulk_buf = NULL;
-        hg_private_data->extra_bulk_buf_size = 0;
+    if (hg_handle->extra_bulk_buf) {
+        hg_mem_aligned_free(hg_handle->extra_bulk_buf);
+        hg_handle->extra_bulk_buf = NULL;
+        hg_handle->extra_bulk_buf_size = 0;
     }
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_forward_cb(const struct hg_cb_info *callback_info)
+static HG_INLINE hg_return_t
+hg_core_forward_cb(const struct hg_core_cb_info *callback_info)
 {
-    struct hg_private_data *hg_private_data =
-            (struct hg_private_data *) callback_info->arg;
+    struct hg_handle *hg_handle =
+            (struct hg_handle *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
     /* Free eventual extra input buffer and handle */
-    if (hg_private_data->extra_bulk_buf) {
-        HG_Bulk_free(hg_private_data->extra_bulk_handle);
-        hg_private_data->extra_bulk_handle = HG_BULK_NULL;
-        hg_mem_aligned_free(hg_private_data->extra_bulk_buf);
-        hg_private_data->extra_bulk_buf = NULL,
-        hg_private_data->extra_bulk_buf_size = 0;
+    if (hg_handle->extra_bulk_buf) {
+        HG_Bulk_free(hg_handle->extra_bulk_handle);
+        hg_handle->extra_bulk_handle = HG_BULK_NULL;
+        hg_mem_aligned_free(hg_handle->extra_bulk_buf);
+        hg_handle->extra_bulk_buf = NULL,
+        hg_handle->extra_bulk_buf_size = 0;
     }
 
     /* Execute callback */
-    if (hg_private_data->forward_cb) {
+    if (hg_handle->forward_cb) {
         struct hg_cb_info hg_cb_info;
 
-        hg_cb_info.arg = hg_private_data->forward_arg;
+        hg_cb_info.arg = hg_handle->forward_arg;
         hg_cb_info.ret = callback_info->ret;
         hg_cb_info.type = callback_info->type;
-        hg_cb_info.info = callback_info->info;
+        hg_cb_info.info.forward.handle = hg_handle;
 
-        hg_private_data->forward_cb(&hg_cb_info);
+        hg_handle->forward_cb(&hg_cb_info);
     }
 
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_respond_cb(const struct hg_cb_info *callback_info)
+static HG_INLINE hg_return_t
+hg_core_respond_cb(const struct hg_core_cb_info *callback_info)
 {
-    struct hg_private_data *hg_private_data =
-            (struct hg_private_data *) callback_info->arg;
+    struct hg_handle *hg_handle =
+            (struct hg_handle *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
     /* Execute callback */
-    if (hg_private_data->respond_cb) {
+    if (hg_handle->respond_cb) {
         struct hg_cb_info hg_cb_info;
 
-        hg_cb_info.arg = hg_private_data->respond_arg;
+        hg_cb_info.arg = hg_handle->respond_arg;
         hg_cb_info.ret = callback_info->ret;
         hg_cb_info.type = callback_info->type;
-        hg_cb_info.info = callback_info->info;
+        hg_cb_info.info.respond.handle = hg_handle;
 
-        hg_private_data->respond_cb(&hg_cb_info);
+        hg_handle->respond_cb(&hg_cb_info);
     }
 
     return ret;
@@ -898,19 +1007,24 @@ hg_class_t *
 HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
-    hg_class_t *hg_class = NULL;
+    struct hg_class *hg_class = NULL;
 
-    hg_class = HG_Core_init_opt(na_info_string, na_listen, hg_init_info);
+    hg_class = malloc(sizeof(struct hg_class));
     if (!hg_class) {
-        HG_LOG_ERROR("Could not create HG class");
+        HG_LOG_ERROR("Could not allocate HG class");
+        goto done;
+    }
+    memset(hg_class, 0, sizeof(struct hg_class));
+
+    hg_class->core_class = HG_Core_init_opt(na_info_string, na_listen,
+        hg_init_info);
+    if (!hg_class->core_class) {
+        HG_LOG_ERROR("Could not create HG core class");
         goto done;
     }
 
-    /* Set private data allocation on HG handle create */
-    HG_Core_set_create_callback(hg_class, hg_private_data_alloc);
-
     /* Set more data callback */
-    HG_Core_set_more_data_callback(hg_class, hg_more_data_cb,
+    HG_Core_set_more_data_callback(hg_class->core_class, hg_more_data_cb,
         hg_more_data_free_cb);
 
 done:
@@ -921,7 +1035,17 @@ done:
 hg_return_t
 HG_Finalize(hg_class_t *hg_class)
 {
-    return HG_Core_finalize(hg_class);
+    hg_return_t ret = HG_SUCCESS;
+
+    ret = HG_Core_finalize(hg_class->core_class);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not finalize HG core class");
+        goto done;
+    }
+    free(hg_class);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -935,28 +1059,55 @@ HG_Cleanup(void)
 const char *
 HG_Class_get_name(const hg_class_t *hg_class)
 {
-    return HG_Core_class_get_name(hg_class);
+    const char *ret = NULL;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
+    ret = HG_Core_class_get_name(hg_class->core_class);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 const char *
 HG_Class_get_protocol(const hg_class_t *hg_class)
 {
-    return HG_Core_class_get_protocol(hg_class);
+    const char *ret = NULL;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
+    ret = HG_Core_class_get_protocol(hg_class->core_class);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_size_t
 HG_Class_get_input_eager_size(const hg_class_t *hg_class)
 {
-    hg_size_t ret = HG_Core_class_get_input_eager_size(hg_class);
     hg_size_t header = hg_header_get_size(HG_INPUT);
+    hg_size_t ret = 0;
 
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
+    ret = HG_Core_class_get_input_eager_size(hg_class->core_class);
     if (ret > header)
         ret -= header;
     else
         ret = 0;
 
+done:
     return ret;
 }
 
@@ -964,14 +1115,21 @@ HG_Class_get_input_eager_size(const hg_class_t *hg_class)
 hg_size_t
 HG_Class_get_output_eager_size(const hg_class_t *hg_class)
 {
-    hg_size_t ret = HG_Core_class_get_output_eager_size(hg_class);
+    hg_size_t ret = 0;
     hg_size_t header = hg_header_get_size(HG_OUTPUT);
 
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
+    ret = HG_Core_class_get_output_eager_size(hg_class->core_class);
     if (ret > header)
         ret -= header;
     else
         ret = 0;
 
+done:
     return ret;
 }
 
@@ -980,14 +1138,35 @@ hg_return_t
 HG_Class_set_data(hg_class_t *hg_class, void *data,
     void (*free_callback)(void *))
 {
-    return HG_Core_class_set_data(hg_class, data, free_callback);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_class_set_data(hg_class->core_class, data, free_callback);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 void *
 HG_Class_get_data(const hg_class_t *hg_class)
 {
-    return HG_Core_class_get_data(hg_class);
+    void *ret = NULL;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
+    ret = HG_Core_class_get_data(hg_class->core_class);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1001,24 +1180,38 @@ HG_Context_create(hg_class_t *hg_class)
 hg_context_t *
 HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 {
-    hg_context_t *context = NULL;
+    struct hg_context *hg_context = NULL;
 #ifdef HG_POST_LIMIT
     unsigned int request_count =
         (HG_POST_LIMIT > 0) ? HG_POST_LIMIT : HG_POST_LIMIT_DEFAULT;
 #else
     unsigned int request_count = HG_POST_LIMIT_DEFAULT;
 #endif
-    hg_return_t ret;
+    hg_return_t ret = HG_SUCCESS;
 
-    context = HG_Core_context_create_id(hg_class, id);
-    if (!context) {
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
+    hg_context = malloc(sizeof(struct hg_context));
+    if (!hg_context) {
+        HG_LOG_ERROR("Could not allocate HG context");
+        goto done;
+    }
+    memset(hg_context, 0, sizeof(struct hg_context));
+    hg_context->hg_class = hg_class;
+    hg_context->core_context = HG_Core_context_create_id(
+        hg_class->core_class, id);
+    if (!hg_context->core_context) {
         HG_LOG_ERROR("Could not create context for ID %u", id);
         goto done;
     }
 
     /* If we are listening, start posting requests */
-    if (NA_Is_listening(HG_Core_class_get_na(hg_class))) {
-        ret = HG_Core_context_post(context, request_count, HG_TRUE);
+    if (NA_Is_listening(HG_Core_class_get_na(hg_class->core_class))) {
+        ret = HG_Core_context_post(hg_context->core_context, request_count,
+            HG_TRUE, hg_context_post_create_cb, hg_context);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not post context requests");
             goto done;
@@ -1026,28 +1219,64 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
     }
 
 done:
-    return context;
+    return hg_context;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Context_destroy(hg_context_t *context)
 {
-    return HG_Core_context_destroy(context);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_context_destroy(context->core_context);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not destroy HG core context");
+        goto done;
+    }
+    free(context);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_class_t *
 HG_Context_get_class(const hg_context_t *context)
 {
-    return HG_Core_context_get_class(context);
+    hg_class_t *ret = NULL;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        goto done;
+    }
+
+    ret = context->hg_class;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_uint8_t
 HG_Context_get_id(const hg_context_t *context)
 {
-    return HG_Core_context_get_id(context);
+    hg_uint8_t ret = 0;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        goto done;
+    }
+
+    ret = HG_Core_context_get_id(context->core_context);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1055,14 +1284,35 @@ hg_return_t
 HG_Context_set_data(hg_context_t *context, void *data,
     void (*free_callback)(void *))
 {
-    return HG_Core_context_set_data(context, data, free_callback);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_context_set_data(context->core_context, data, free_callback);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 void *
 HG_Context_get_data(const hg_context_t *context)
 {
-    return HG_Core_context_get_data(context);
+    void *ret = NULL;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        goto done;
+    }
+
+    ret = HG_Core_context_get_data(context->core_context);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1119,7 +1369,7 @@ HG_Registered_name(hg_class_t *hg_class, const char *func_name, hg_id_t *id,
     /* Generate an ID from the function name */
     rpc_id = hg_hash_string(func_name);
 
-    ret = HG_Core_registered(hg_class, rpc_id, flag);
+    ret = HG_Core_registered(hg_class->core_class, rpc_id, flag);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not check for registered RPC id");
         goto done;
@@ -1146,6 +1396,8 @@ HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
         goto done;
     }
 
+    /* TODO lock here */
+
     /* Check if already registered */
     ret = HG_Registered(hg_class, id, &registered);
     if (ret != HG_SUCCESS) {
@@ -1154,7 +1406,7 @@ HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
     }
 
     /* Register RPC (register only RPC callback if already registered) */
-    ret = HG_Core_register(hg_class, id, rpc_cb);
+    ret = HG_Core_register(hg_class->core_class, id, hg_core_rpc_cb);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not register RPC id");
         goto done;
@@ -1169,11 +1421,9 @@ HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
             goto done;
         }
         memset(hg_proc_info, 0, sizeof(struct hg_proc_info));
-        hg_proc_info->in_proc_cb = in_proc_cb;
-        hg_proc_info->out_proc_cb = out_proc_cb;
 
         /* Attach proc info to RPC ID */
-        ret = HG_Core_register_data(hg_class, id, hg_proc_info,
+        ret = HG_Core_register_data(hg_class->core_class, id, hg_proc_info,
             hg_proc_info_free);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not set proc info");
@@ -1181,15 +1431,16 @@ HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
         }
     } else {
         /* Retrieve proc function from function map */
-        hg_proc_info =
-            (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
+        hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
+            hg_class->core_class, id);
         if (!hg_proc_info) {
             HG_LOG_ERROR("Could not get registered data");
             goto done;
         }
-        hg_proc_info->in_proc_cb = in_proc_cb;
-        hg_proc_info->out_proc_cb = out_proc_cb;
     }
+    hg_proc_info->rpc_cb = rpc_cb;
+    hg_proc_info->in_proc_cb = in_proc_cb;
+    hg_proc_info->out_proc_cb = out_proc_cb;
 
 done:
     if (ret != HG_SUCCESS) {
@@ -1202,7 +1453,18 @@ done:
 hg_return_t
 HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
 {
-    return HG_Core_registered(hg_class, id, flag);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_registered(hg_class->core_class, id, flag);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1213,9 +1475,15 @@ HG_Register_data(hg_class_t *hg_class, hg_id_t id, void *data,
     struct hg_proc_info *hg_proc_info = NULL;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
     /* Retrieve proc function from function map */
-    hg_proc_info =
-        (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
+        hg_class->core_class, id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
@@ -1236,9 +1504,14 @@ HG_Registered_data(hg_class_t *hg_class, hg_id_t id)
     struct hg_proc_info *hg_proc_info = NULL;
     void *data = NULL;
 
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
     /* Retrieve proc function from function map */
-    hg_proc_info =
-        (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
+        hg_class->core_class, id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
         goto done;
@@ -1258,9 +1531,15 @@ HG_Registered_disable_response(hg_class_t *hg_class, hg_id_t id,
     struct hg_proc_info *hg_proc_info = NULL;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
     /* Retrieve proc function from function map */
-    hg_proc_info =
-        (struct hg_proc_info *) HG_Core_registered_data(hg_class, id);
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
+        hg_class->core_class, id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
@@ -1278,28 +1557,92 @@ hg_return_t
 HG_Addr_lookup(hg_context_t *context, hg_cb_t callback, void *arg,
     const char *name, hg_op_id_t *op_id)
 {
-    return HG_Core_addr_lookup(context, callback, arg, name, op_id);
+    struct hg_op_id *hg_op_id = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    /* Allocate op_id */
+    hg_op_id = (struct hg_op_id *) malloc(sizeof(struct hg_op_id));
+    if (!hg_op_id) {
+        HG_LOG_ERROR("Could not allocate HG operation ID");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+    hg_op_id->context = context;
+    hg_op_id->type = HG_CB_LOOKUP;
+    hg_op_id->callback = callback;
+    hg_op_id->arg = arg;
+    hg_op_id->info.lookup.hg_addr = HG_ADDR_NULL;
+
+    /* Assign op_id */
+    if (op_id && op_id != HG_OP_ID_IGNORE)
+        *op_id = (hg_op_id_t) hg_op_id;
+
+    ret = HG_Core_addr_lookup(context->core_context, hg_core_addr_lookup_cb,
+        hg_op_id, name, &hg_op_id->info.lookup.core_op_id);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Addr_free(hg_class_t *hg_class, hg_addr_t addr)
 {
-    return HG_Core_addr_free(hg_class, addr);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_addr_free(hg_class->core_class, (hg_core_addr_t) addr);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Addr_self(hg_class_t *hg_class, hg_addr_t *addr)
 {
-    return HG_Core_addr_self(hg_class, addr);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_addr_self(hg_class->core_class, (hg_core_addr_t *) addr);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr)
 {
-    return HG_Core_addr_dup(hg_class, addr, new_addr);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_addr_dup(hg_class->core_class, (hg_core_addr_t) addr,
+        (hg_core_addr_t *) new_addr);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1307,7 +1650,19 @@ hg_return_t
 HG_Addr_to_string(hg_class_t *hg_class, char *buf, hg_size_t *buf_size,
     hg_addr_t addr)
 {
-    return HG_Core_addr_to_string(hg_class, buf, buf_size, addr);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_addr_to_string(hg_class->core_class, buf, buf_size,
+        (hg_core_addr_t) addr);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1315,20 +1670,36 @@ hg_return_t
 HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle_t *handle)
 {
-    hg_handle_t hg_handle = HG_HANDLE_NULL;
+    struct hg_handle *hg_handle = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!handle) {
-        HG_LOG_ERROR("NULL pointer to HG handle");
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    ret = HG_Core_create(context, addr, id, &hg_handle);
+    /* Create HG handle */
+    hg_handle = hg_handle_create(context->hg_class);
+    if (!hg_handle) {
+        HG_LOG_ERROR("Could not create HG handle");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+    hg_handle->hg_info.context = context;
+    hg_handle->hg_info.addr = addr;
+    hg_handle->hg_info.id = id;
+
+    /* Create HG core handle */
+    ret = HG_Core_create(context->core_context, (hg_core_addr_t) addr, id,
+        &hg_handle->core_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Cannot create HG handle");
         goto done;
     }
+
+    /* Use data to free handle on HG handle core destroy */
+    HG_Core_set_data(hg_handle->core_handle, hg_handle, hg_handle_free);
 
     *handle = (hg_handle_t) hg_handle;
 
@@ -1340,54 +1711,104 @@ done:
 hg_return_t
 HG_Destroy(hg_handle_t handle)
 {
-    return HG_Core_destroy(handle);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_destroy(handle->core_handle);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Reset(hg_handle_t handle, hg_addr_t addr, hg_id_t id)
 {
-    return HG_Core_reset(handle, addr, id);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    /* Call core reset */
+    ret = HG_Core_reset(handle->core_handle, (hg_core_addr_t) addr, id);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not reset core HG handle");
+        goto done;
+    }
+
+    /* Set info */
+    handle->hg_info.addr = addr;
+    handle->hg_info.id = id;
+    handle->hg_info.context_id = 0;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Ref_incr(hg_handle_t handle)
 {
-    return HG_Core_ref_incr(handle);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_ref_incr(handle->core_handle);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 const struct hg_info *
 HG_Get_info(hg_handle_t handle)
 {
-    return HG_Core_get_info(handle);
+    const struct hg_info *ret = NULL;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        goto done;
+    }
+
+    ret = &handle->hg_info;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Get_input(hg_handle_t handle, void *in_struct)
 {
-    struct hg_private_data *hg_private_data;
     struct hg_proc_info *hg_proc_info;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!in_struct) {
         HG_LOG_ERROR("NULL pointer to input struct");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
     /* Retrieve RPC data */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(
+        handle->core_handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
         ret = HG_PROTOCOL_ERROR;
@@ -1395,8 +1816,7 @@ HG_Get_input(hg_handle_t handle, void *in_struct)
     }
 
     /* Get input struct */
-    ret = hg_get_struct(handle, hg_private_data, hg_proc_info, HG_INPUT,
-        in_struct);
+    ret = hg_get_struct(handle, hg_proc_info, HG_INPUT, in_struct);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get input");
         goto done;
@@ -1410,26 +1830,23 @@ done:
 hg_return_t
 HG_Free_input(hg_handle_t handle, void *in_struct)
 {
-    struct hg_private_data *hg_private_data;
     struct hg_proc_info *hg_proc_info;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!in_struct) {
         HG_LOG_ERROR("NULL pointer to input struct");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
     /* Retrieve RPC data */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(
+        handle->core_handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
         ret = HG_PROTOCOL_ERROR;
@@ -1437,8 +1854,7 @@ HG_Free_input(hg_handle_t handle, void *in_struct)
     }
 
     /* Free input struct */
-    ret = hg_free_struct(handle, hg_private_data, hg_proc_info, HG_INPUT,
-        in_struct);
+    ret = hg_free_struct(handle, hg_proc_info, HG_INPUT, in_struct);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not free input");
         goto done;
@@ -1452,26 +1868,23 @@ done:
 hg_return_t
 HG_Get_output(hg_handle_t handle, void *out_struct)
 {
-    struct hg_private_data *hg_private_data;
     struct hg_proc_info *hg_proc_info;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!out_struct) {
         HG_LOG_ERROR("NULL pointer to output struct");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
     /* Retrieve RPC data */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(
+        handle->core_handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
         ret = HG_PROTOCOL_ERROR;
@@ -1479,8 +1892,7 @@ HG_Get_output(hg_handle_t handle, void *out_struct)
     }
 
     /* Get output struct */
-    ret = hg_get_struct(handle, hg_private_data, hg_proc_info, HG_OUTPUT,
-        out_struct);
+    ret = hg_get_struct(handle, hg_proc_info, HG_OUTPUT, out_struct);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get output");
         goto done;
@@ -1494,26 +1906,23 @@ done:
 hg_return_t
 HG_Free_output(hg_handle_t handle, void *out_struct)
 {
-    struct hg_private_data *hg_private_data;
     struct hg_proc_info *hg_proc_info;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!out_struct) {
         HG_LOG_ERROR("NULL pointer to output struct");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
     /* Retrieve RPC data */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(
+        handle->core_handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
         ret = HG_PROTOCOL_ERROR;
@@ -1521,8 +1930,7 @@ HG_Free_output(hg_handle_t handle, void *out_struct)
     }
 
     /* Free output struct */
-    ret = hg_free_struct(handle, hg_private_data, hg_proc_info, HG_OUTPUT,
-        out_struct);
+    ret = hg_free_struct(handle, hg_proc_info, HG_OUTPUT, out_struct);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not free output");
         goto done;
@@ -1536,34 +1944,30 @@ done:
 hg_return_t
 HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
 {
-    struct hg_private_data *hg_private_data;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!in_buf || !in_buf_size) {
         HG_LOG_ERROR("NULL pointer");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
     /* Space must be left for input header, no offset if extra buffer since
      * only the user payload is copied */
-    if (hg_private_data->extra_bulk_buf) {
-        *in_buf = hg_private_data->extra_bulk_buf;
-        *in_buf_size = hg_private_data->extra_bulk_buf_size;
+    if (handle->extra_bulk_buf) {
+        *in_buf = handle->extra_bulk_buf;
+        *in_buf_size = handle->extra_bulk_buf_size;
     } else {
         void *buf;
         hg_size_t buf_size, header_offset = hg_header_get_size(HG_INPUT);
 
         /* Get core input buffer */
-        ret = HG_Core_get_input(handle, &buf, &buf_size);
+        ret = HG_Core_get_input(handle->core_handle, &buf, &buf_size);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not get input buffer");
             goto done;
@@ -1581,34 +1985,30 @@ done:
 hg_return_t
 HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
 {
-    struct hg_private_data *hg_private_data;
     hg_return_t ret = HG_SUCCESS;
 
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
     if (!out_buf || !out_buf_size) {
         HG_LOG_ERROR("NULL pointer");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
     /* Space must be left for output header, no offset if extra buffer since
      * only the user payload is copied */
-    if (hg_private_data->extra_bulk_buf) {
-        *out_buf = hg_private_data->extra_bulk_buf;
-        *out_buf_size = hg_private_data->extra_bulk_buf_size;
+    if (handle->extra_bulk_buf) {
+        *out_buf = handle->extra_bulk_buf;
+        *out_buf_size = handle->extra_bulk_buf_size;
     } else {
         void *buf;
         hg_size_t buf_size, header_offset = hg_header_get_size(HG_OUTPUT);
 
         /* Get core output buffer */
-        ret = HG_Core_get_output(handle, &buf, &buf_size);
+        ret = HG_Core_get_output(handle->core_handle, &buf, &buf_size);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not get output buffer");
             goto done;
@@ -1626,32 +2026,48 @@ done:
 hg_return_t
 HG_Set_target_id(hg_handle_t handle, hg_uint8_t id)
 {
-    return HG_Core_set_target_id(handle, id);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_set_target_id(handle->core_handle, id);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not set target id");
+        goto done;
+    }
+    handle->hg_info.context_id = id;
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
 {
-    struct hg_private_data *hg_private_data;
     struct hg_proc_info *hg_proc_info;
     hg_size_t payload_size;
     hg_bool_t more_data = HG_FALSE;
     hg_uint8_t flags = 0;
     hg_return_t ret = HG_SUCCESS;
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_PROTOCOL_ERROR;
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
         goto done;
     }
-    hg_private_data->forward_cb = callback;
-    hg_private_data->forward_arg = arg;
+
+    /* Set callback data */
+    handle->forward_cb = callback;
+    handle->forward_arg = arg;
 
     /* Retrieve RPC data */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(
+        handle->core_handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
         ret = HG_PROTOCOL_ERROR;
@@ -1659,8 +2075,8 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     }
 
     /* Set input struct */
-    ret = hg_set_struct(handle, hg_private_data, hg_proc_info, HG_INPUT,
-        in_struct, &payload_size, &more_data);
+    ret = hg_set_struct(handle, hg_proc_info, HG_INPUT, in_struct,
+        &payload_size, &more_data);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not set input");
         goto done;
@@ -1675,8 +2091,8 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
         flags |= HG_CORE_NO_RESPONSE;
 
     /* Send request */
-    ret = HG_Core_forward(handle, hg_forward_cb, hg_private_data, flags,
-        payload_size);
+    ret = HG_Core_forward(handle->core_handle, hg_core_forward_cb, handle,
+        flags, payload_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not forward call");
         goto done;
@@ -1690,25 +2106,25 @@ done:
 hg_return_t
 HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
 {
-    struct hg_private_data *hg_private_data;
     struct hg_proc_info *hg_proc_info;
     hg_size_t payload_size;
     hg_bool_t more_data = HG_FALSE;
     hg_uint8_t flags = 0;
     hg_return_t ret = HG_SUCCESS;
 
-    /* Retrieve private data */
-    hg_private_data = (struct hg_private_data *) HG_Core_get_data(handle);
-    if (!hg_private_data) {
-        HG_LOG_ERROR("Could not get private data");
-        ret = HG_PROTOCOL_ERROR;
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
         goto done;
     }
-    hg_private_data->respond_cb = callback;
-    hg_private_data->respond_arg = arg;
+
+    /* Set callback data */
+    handle->respond_cb = callback;
+    handle->respond_arg = arg;
 
     /* Retrieve RPC data */
-    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(handle);
+    hg_proc_info = (struct hg_proc_info *) hg_core_get_rpc_data(
+        handle->core_handle);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get proc info");
         ret = HG_PROTOCOL_ERROR;
@@ -1716,8 +2132,8 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
     }
 
     /* Set output struct */
-    ret = hg_set_struct(handle, hg_private_data, hg_proc_info, HG_OUTPUT,
-        out_struct, &payload_size, &more_data);
+    ret = hg_set_struct(handle, hg_proc_info, HG_OUTPUT, out_struct,
+        &payload_size, &more_data);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not set output");
         goto done;
@@ -1728,8 +2144,8 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
         flags |= HG_CORE_MORE_DATA;
 
     /* Send response back */
-    ret = HG_Core_respond(handle, hg_respond_cb, hg_private_data, flags,
-        payload_size);
+    ret = HG_Core_respond(handle->core_handle, hg_core_respond_cb, handle,
+        flags, payload_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not respond");
         goto done;
@@ -1743,7 +2159,18 @@ done:
 hg_return_t
 HG_Progress(hg_context_t *context, unsigned int timeout)
 {
-    return HG_Core_progress(context, timeout);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_progress(context->core_context, timeout);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1751,12 +2178,35 @@ hg_return_t
 HG_Trigger(hg_context_t *context, unsigned int timeout, unsigned int max_count,
     unsigned int *actual_count)
 {
-    return HG_Core_trigger(context, timeout, max_count, actual_count);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_trigger(context->core_context, timeout, max_count,
+        actual_count);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Cancel(hg_handle_t handle)
 {
-    return HG_Core_cancel(handle);
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_cancel(handle->core_handle);
+
+done:
+    return ret;
 }

@@ -11,7 +11,7 @@
 #ifndef MERCURY_PROC_BUF_H
 #define MERCURY_PROC_BUF_H
 
-#include "mercury_types.h"
+#include "mercury_core_types.h"
 
 #include <string.h>
 

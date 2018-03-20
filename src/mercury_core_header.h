@@ -11,7 +11,7 @@
 #ifndef MERCURY_CORE_HEADER_H
 #define MERCURY_CORE_HEADER_H
 
-#include "mercury_types.h"
+#include "mercury_core_types.h"
 
 #ifdef HG_HAS_CHECKSUMS
 # include <mchecksum.h>

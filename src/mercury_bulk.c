@@ -39,9 +39,18 @@
 /* Local Type and Struct Definition */
 /************************************/
 
+/* HG class */
+struct hg_class {
+    hg_core_class_t *core_class;          /* Core class */
+};
+
+/* HG context */
+struct hg_context {
+    hg_core_context_t *core_context;      /* Core context */
+};
+
 /* HG Bulk op id */
 struct hg_bulk_op_id {
-    struct hg_class *hg_class;            /* HG class */
     hg_context_t *context;                /* Context */
     na_class_t *na_class;                 /* NA class */
     na_context_t *na_context;             /* NA context */
@@ -85,7 +94,10 @@ typedef na_return_t (*na_bulk_op_t)(
 
 /* Note to self, get_serialize_size may be updated accordingly */
 struct hg_bulk {
-    struct hg_class *hg_class;           /* HG class */
+    na_class_t *na_class;                /* NA class */
+#ifdef HG_HAS_SM_ROUTING
+    na_class_t *na_sm_class;             /* NA SM class */
+#endif
     hg_size_t total_size;                /* Total size of data abstracted */
     hg_uint32_t segment_count;           /* Number of segments */
     struct hg_bulk_segment *segments;    /* Array of segments */
@@ -213,7 +225,7 @@ hg_bulk_complete(
  */
 extern hg_return_t
 hg_core_completion_add(
-        struct hg_context *context,
+        struct hg_core_context *core_context,
         struct hg_completion_entry *hg_completion_entry,
         hg_bool_t self_notify
         );
@@ -357,9 +369,9 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
     struct hg_bulk *hg_bulk = NULL;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
-    na_class_t *na_class = HG_Core_class_get_na(hg_class);
+    na_class_t *na_class = HG_Core_class_get_na(hg_class->core_class);
 #ifdef HG_HAS_SM_ROUTING
-    na_class_t *na_sm_class = HG_Core_class_get_na_sm(hg_class);
+    na_class_t *na_sm_class = HG_Core_class_get_na_sm(hg_class->core_class);
 #endif
     hg_bool_t use_register_segments = (hg_bool_t)
         (na_class->mem_handle_create_segments && count > 1);
@@ -372,7 +384,10 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
         goto done;
     }
     memset(hg_bulk, 0, sizeof(struct hg_bulk));
-    hg_bulk->hg_class = hg_class;
+    hg_bulk->na_class = na_class;
+#ifdef HG_HAS_SM_ROUTING
+    hg_bulk->na_sm_class = na_sm_class;
+#endif
     hg_bulk->segment_count = count;
     hg_bulk->na_mem_handle_count = (use_register_segments) ? 1 : count;
     hg_bulk->segment_alloc = (!buf_ptrs);
@@ -529,9 +544,9 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
     }
 
     if (hg_bulk->na_mem_handles) {
-        na_class_t *na_class = HG_Core_class_get_na(hg_bulk->hg_class);
+        na_class_t *na_class = hg_bulk->na_class;
 #ifdef HG_HAS_SM_ROUTING
-        na_class_t *na_sm_class = HG_Core_class_get_na_sm(hg_bulk->hg_class);
+        na_class_t *na_sm_class = hg_bulk->na_sm_class;
 #endif
 
         /* Unregister/free NA memory handles */
@@ -830,15 +845,16 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         local_segment_start_offset = local_offset;
     struct hg_bulk_op_id *hg_bulk_op_id = NULL;
     na_bulk_op_t na_bulk_op;
-    na_addr_t na_origin_addr = HG_Core_addr_get_na(origin_addr);
-    na_class_t *na_class = HG_Core_class_get_na(hg_bulk_origin->hg_class);
-    na_context_t *na_context = HG_Core_context_get_na(context);
+    na_addr_t na_origin_addr = HG_Core_addr_get_na((hg_core_addr_t) origin_addr);
+    na_class_t *na_class = hg_bulk_origin->na_class;
+    na_context_t *na_context = HG_Core_context_get_na(context->core_context);
     hg_bool_t use_sm = HG_FALSE;
 #ifdef HG_HAS_SM_ROUTING
-    na_class_t *na_sm_class = HG_Core_class_get_na_sm(hg_bulk_origin->hg_class);
-    na_context_t *na_sm_context = HG_Core_context_get_na_sm(context);
+    na_class_t *na_sm_class = hg_bulk_origin->na_sm_class;
+    na_context_t *na_sm_context = HG_Core_context_get_na_sm(context->core_context);
 #endif
-    na_class_t *na_origin_addr_class = HG_Core_addr_get_na_class(origin_addr);
+    na_class_t *na_origin_addr_class = HG_Core_addr_get_na_class(
+        (hg_core_addr_t) origin_addr);
     hg_bool_t is_self = NA_Addr_is_self(na_origin_addr_class, na_origin_addr);
     hg_bool_t scatter_gather =
         (na_class->mem_handle_create_segments && !is_self) ? HG_TRUE : HG_FALSE;
@@ -871,7 +887,6 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-    hg_bulk_op_id->hg_class = hg_bulk_origin->hg_class;
     hg_bulk_op_id->context = context;
 #ifdef HG_HAS_SM_ROUTING
     if (na_sm_class == na_origin_addr_class) {
@@ -979,7 +994,7 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id)
         hg_completion_entry->op_type = HG_BULK;
         hg_completion_entry->op_id.hg_bulk_op_id = hg_bulk_op_id;
 
-        ret = hg_core_completion_add(context, hg_completion_entry,
+        ret = hg_core_completion_add(context->core_context, hg_completion_entry,
             hg_bulk_op_id->is_self);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not add HG completion entry to completion queue");
@@ -1215,16 +1230,14 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t request_eager)
 
         if (hg_bulk->na_mem_handles[i]) {
             serialize_size = NA_Mem_handle_get_serialize_size(
-                HG_Core_class_get_na(hg_bulk->hg_class),
-                hg_bulk->na_mem_handles[i]);
+                hg_bulk->na_class, hg_bulk->na_mem_handles[i]);
         }
         ret += sizeof(serialize_size) + serialize_size;
 #ifdef HG_HAS_SM_ROUTING
         if (hg_bulk->na_sm_mem_handles) {
             if (hg_bulk->na_sm_mem_handles[i]) {
                 serialize_size = NA_Mem_handle_get_serialize_size(
-                    HG_Core_class_get_na_sm(hg_bulk->hg_class),
-                    hg_bulk->na_sm_mem_handles[i]);
+                    hg_bulk->na_sm_class, hg_bulk->na_sm_mem_handles[i]);
             }
             ret += sizeof(serialize_size) + serialize_size;
         }
@@ -1263,9 +1276,9 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
     }
 
     /* Get NA class */
-    na_class = HG_Core_class_get_na(hg_bulk->hg_class);
+    na_class = hg_bulk->na_class;
 #ifdef HG_HAS_SM_ROUTING
-    na_sm_class = HG_Core_class_get_na_sm(hg_bulk->hg_class);
+    na_sm_class = hg_bulk->na_sm_class;
 #endif
 
     /* Publish handle at this point if not published yet */
@@ -1430,9 +1443,6 @@ hg_return_t
 HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
     hg_size_t buf_size)
 {
-#ifdef HG_HAS_SM_ROUTING
-    na_class_t *na_sm_class;
-#endif
     struct hg_bulk *hg_bulk = NULL;
     const char *buf_ptr = (const char *) buf;
     ssize_t buf_size_left = (ssize_t) buf_size;
@@ -1445,10 +1455,6 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
         goto done;
     }
 
-#ifdef HG_HAS_SM_ROUTING
-    na_sm_class = HG_Core_class_get_na_sm(hg_class);
-#endif
-
     hg_bulk = (struct hg_bulk *) malloc(sizeof(struct hg_bulk));
     if (!hg_bulk) {
         HG_LOG_ERROR("Could not allocate handle");
@@ -1456,7 +1462,10 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
         goto done;
     }
     memset(hg_bulk, 0, sizeof(struct hg_bulk));
-    hg_bulk->hg_class = hg_class;
+    hg_bulk->na_class = HG_Core_class_get_na(hg_class->core_class);
+#ifdef HG_HAS_SM_ROUTING
+    hg_bulk->na_sm_class = HG_Core_class_get_na_sm(hg_class->core_class);
+#endif
     hg_atomic_set32(&hg_bulk->ref_count, 1);
 
     /* Get the permission flags */
@@ -1517,7 +1526,7 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
         goto done;
     }
 #ifdef HG_HAS_SM_ROUTING
-    if (na_sm_class) {
+    if (hg_bulk->na_sm_class) {
         hg_bulk->na_sm_mem_handles = (na_mem_handle_t *) malloc(
                 hg_bulk->na_mem_handle_count * sizeof(na_mem_handle_t));
         if (!hg_bulk->na_sm_mem_handles) {
@@ -1539,8 +1548,7 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
             goto done;
         }
         if (serialize_size) {
-            na_ret = NA_Mem_handle_deserialize(
-                HG_Core_class_get_na(hg_bulk->hg_class),
+            na_ret = NA_Mem_handle_deserialize(hg_bulk->na_class,
                 &hg_bulk->na_mem_handles[i], buf_ptr,
                 (na_size_t) buf_size_left);
             if (na_ret != NA_SUCCESS) {
@@ -1563,7 +1571,7 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
                 goto done;
             }
             if (serialize_size) {
-                na_ret = NA_Mem_handle_deserialize(na_sm_class,
+                na_ret = NA_Mem_handle_deserialize(hg_bulk->na_sm_class,
                     &hg_bulk->na_sm_mem_handles[i], buf_ptr,
                     (na_size_t) buf_size_left);
                 if (na_ret != NA_SUCCESS) {

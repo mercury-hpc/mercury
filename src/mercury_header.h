@@ -11,7 +11,7 @@
 #ifndef MERCURY_HEADER_H
 #define MERCURY_HEADER_H
 
-#include "mercury_types.h"
+#include "mercury_core_types.h"
 
 /*************************************/
 /* Public Type and Struct Definition */

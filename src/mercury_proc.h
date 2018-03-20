@@ -13,7 +13,6 @@
 
 #include "mercury_types.h"
 #include "mercury_error.h"
-#include "mercury_bulk.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +27,20 @@
 #  define xdr_uint64_t xdr_u_int64_t
 # endif
 #endif
+
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
+/**
+ * Hash methods available for proc.
+ */
+typedef enum {
+    HG_CRC16,
+    HG_CRC32,
+    HG_CRC64,
+    HG_NOHASH
+} hg_proc_hash_t;
 
 /*****************/
 /* Public Macros */
@@ -367,8 +380,6 @@ static HG_INLINE hg_return_t hg_proc_hg_int64_t(hg_proc_t proc,
         void *data);
 static HG_INLINE hg_return_t hg_proc_hg_uint64_t(hg_proc_t proc,
         void *data);
-static HG_INLINE hg_return_t hg_proc_hg_bulk_t(hg_proc_t proc,
-        void *data);
 
 /* Note: float types are not supported but can be built on top of the existing
  * proc routines; encoding floats using XDR could modify checksum */
@@ -552,95 +563,6 @@ hg_proc_hg_uint64_t(hg_proc_t proc, void *data)
 #else
     ret = hg_proc_memcpy(proc, data, sizeof(hg_uint64_t));
 #endif
-    return ret;
-}
-
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param handle [IN/OUT]       pointer to bulk handle
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-static HG_INLINE hg_return_t
-hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
-{
-    hg_return_t ret = HG_SUCCESS;
-    void *buf = NULL;
-    hg_bulk_t *bulk_ptr = (hg_bulk_t *) data;
-    hg_uint64_t buf_size = 0;
-
-    switch (hg_proc_get_op(proc)) {
-        case HG_ENCODE: {
-            hg_bool_t request_eager = HG_FALSE;
-
-            if (*bulk_ptr == HG_BULK_NULL) {
-                /* If HG_BULK_NULL set 0 to buf_size */
-                buf_size = 0;
-            } else {
-#ifdef HG_HAS_EAGER_BULK
-                request_eager = (hg_proc_get_size_left(proc)
-                    > HG_Bulk_get_serialize_size(*bulk_ptr, HG_TRUE))
-                    ? HG_TRUE : HG_FALSE;
-#endif
-                buf_size = HG_Bulk_get_serialize_size(*bulk_ptr, request_eager);
-            }
-            /* Encode size */
-            ret = hg_proc_uint64_t(proc, &buf_size);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Proc error");
-                return ret;
-            }
-            if (buf_size) {
-                buf = hg_proc_save_ptr(proc, buf_size);
-                ret = HG_Bulk_serialize(buf, buf_size, request_eager, *bulk_ptr);
-                if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Could not serialize bulk handle");
-                    return ret;
-                }
-                hg_proc_restore_ptr(proc, buf, buf_size);
-            }
-        }
-        break;
-        case HG_DECODE:
-            /* Decode size */
-            ret = hg_proc_uint64_t(proc, &buf_size);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Proc error");
-                return ret;
-            }
-            if (buf_size) {
-                hg_class_t *hg_class = hg_proc_get_class(proc);
-
-                buf = hg_proc_save_ptr(proc, buf_size);
-                ret = HG_Bulk_deserialize(hg_class, bulk_ptr, buf, buf_size);
-                if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Could not deserialize bulk handle");
-                    return ret;
-                }
-                hg_proc_restore_ptr(proc, buf, buf_size);
-            } else {
-                /* If buf_size is 0, define handle to HG_BULK_NULL */
-                *bulk_ptr = HG_BULK_NULL;
-            }
-            break;
-        case HG_FREE:
-            if (*bulk_ptr != HG_BULK_NULL) {
-                ret = HG_Bulk_free(*bulk_ptr);
-                if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Could not free bulk handle");
-                    return ret;
-                }
-                *bulk_ptr = HG_BULK_NULL;
-            } else {
-                /* If *bulk is HG_BULK_NULL, just return success */
-                ret = HG_SUCCESS;
-            }
-            break;
-        default:
-            break;
-    }
     return ret;
 }
 

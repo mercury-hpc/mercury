@@ -13,6 +13,20 @@
 
 #include "mercury_types.h"
 
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
+/*****************/
+/* Public Macros */
+/*****************/
+
+/* The memory attributes associated with the bulk handle
+ * can be defined as read only, write only or read/write */
+#define HG_BULK_READ_ONLY   0x01
+#define HG_BULK_WRITE_ONLY  0x02
+#define HG_BULK_READWRITE   0x03
+
 /*********************/
 /* Public Prototypes */
 /*********************/
