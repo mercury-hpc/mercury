@@ -362,6 +362,12 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     /* Attach test info to class */
     HG_Class_set_data(hg_test_info->hg_class, hg_test_info, NULL);
 
+    /* Set header */
+    /*
+    HG_Class_set_input_offset(hg_test_info->hg_class, sizeof(hg_uint64_t));
+    HG_Class_set_output_offset(hg_test_info->hg_class, sizeof(hg_uint64_t));
+    */
+
     /* Attach context info to context */
     hg_test_context_info = malloc(sizeof(struct hg_test_context_info));
     hg_atomic_set32(&hg_test_context_info->finalizing, 0);

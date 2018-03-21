@@ -39,6 +39,8 @@
 /* HG class */
 struct hg_class {
     hg_core_class_t *core_class;    /* Core class */
+    hg_size_t in_offset;            /* Input offset */
+    hg_size_t out_offset;           /* Output offset */
 };
 
 /* HG context */
@@ -459,6 +461,8 @@ hg_get_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
 
     switch (op) {
         case HG_INPUT:
+            /* Use custom header offset */
+            header_offset += hg_handle->hg_info.hg_class->in_offset;
             /* Set input proc */
             proc = hg_handle->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
@@ -479,6 +483,8 @@ hg_get_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
                 ret = HG_PROTOCOL_ERROR;
                 goto done;
             }
+            /* Use custom header offset */
+            header_offset += hg_handle->hg_info.hg_class->out_offset;
             /* Set output proc */
             proc = hg_handle->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
@@ -581,6 +587,8 @@ hg_set_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
 
     switch (op) {
         case HG_INPUT:
+            /* Use custom header offset */
+            header_offset += hg_handle->hg_info.hg_class->in_offset;
             /* Set input proc */
             proc = hg_handle->in_proc;
             proc_cb = hg_proc_info->in_proc_cb;
@@ -601,6 +609,8 @@ hg_set_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
                 ret = HG_PROTOCOL_ERROR;
                 goto done;
             }
+            /* Use custom header offset */
+            header_offset += hg_handle->hg_info.hg_class->out_offset;
             /* Set output proc */
             proc = hg_handle->out_proc;
             proc_cb = hg_proc_info->out_proc_cb;
@@ -804,7 +814,8 @@ hg_get_extra_input(struct hg_handle *hg_handle,
     hg_proc_t proc = hg_handle->in_proc;
     void *in_buf;
     hg_size_t in_buf_size;
-    hg_size_t header_offset = hg_header_get_size(HG_INPUT);
+    hg_size_t header_offset = hg_header_get_size(HG_INPUT)
+        + hg_handle->hg_info.hg_class->in_offset;;
     hg_size_t page_size = (hg_size_t) hg_mem_get_page_size();
     hg_bulk_t local_in_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS;
@@ -1128,6 +1139,42 @@ HG_Class_get_output_eager_size(const hg_class_t *hg_class)
         ret -= header;
     else
         ret = 0;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Class_set_input_offset(hg_class_t *hg_class, hg_size_t offset)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_class->in_offset = offset;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Class_set_output_offset(hg_class_t *hg_class, hg_size_t offset)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_class->out_offset = offset;
 
 done:
     return ret;

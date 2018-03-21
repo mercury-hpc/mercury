@@ -170,6 +170,40 @@ HG_Class_get_output_eager_size(
         );
 
 /**
+ * Set offset used for serializing / deserializing input. This allows upper
+ * layers to manually define a reserved space that can be used for the
+ * definition of custom headers. The actual input is encoded / decoded
+ * using the defined offset. By default, no offset is set.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param offset [IN]           offset size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Class_set_input_offset(
+        hg_class_t *hg_class,
+        hg_size_t offset
+        );
+
+/**
+ * Set offset used for serializing / deserializing output. This allows upper
+ * layers to manually define a reserved space that can be used for the
+ * definition of custom headers. The actual output is encoded / decoded
+ * using the defined offset. By default, no offset is set.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param offset [IN]           offset size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Class_set_output_offset(
+        hg_class_t *hg_class,
+        hg_size_t offset
+        );
+
+/**
  * Associate user data to class. When HG_Finalize() is called,
  * free_callback (if defined) is called to free the associated data.
  *
@@ -680,12 +714,15 @@ HG_Free_output(
         );
 
 /**
- * Get input buffer from handle that can be used for serializing/deserializing
+ * Get raw input buffer from handle that can be used for encoding and decoding
  * parameters.
  *
- * \remark Can be used for manual serialization/deserialization when
- * HG proc routines cannot be automatically used or there is need for special
- * handling before HG_Get_input() can be called.
+ * \remark Can be used for manual encoding / decoding when HG proc routines
+ * cannot be automatically used or there is need for special handling before
+ * HG_Get_input() can be called, for instance when using a custom header.
+ * To use proc routines conjunctively, HG_Class_set_input_offset() can be used
+ * to define the offset at which HG_Forward() / HG_Get_input() will start
+ * encoding / decoding the input parameters.
  *
  * \param handle [IN]           HG handle
  * \param in_buf [OUT]          pointer to input buffer
@@ -701,12 +738,15 @@ HG_Get_input_buf(
         );
 
 /**
- * Get output buffer from handle that can be used for serializing/deserializing
+ * Get raw output buffer from handle that can be used for encoding and decoding
  * parameters.
  *
- * \remark Can be used for manual serialization/deserialization when
- * HG proc routines cannot be automatically used or there is need for special
- * handling before HG_Get_output() can be called.
+ * \remark Can be used for manual encoding / decoding when HG proc routines
+ * cannot be automatically used or there is need for special handling before
+ * HG_Get_output() can be called, for instance when using a custom header.
+ * To use proc routines conjunctively, HG_Class_set_output_offset() can be used
+ * to define the offset at which HG_Respond() / HG_Get_output() will start
+ * encoding / decoding the output parameters.
  *
  * \param handle [IN]           HG handle
  * \param out_buf [OUT]         pointer to output buffer
