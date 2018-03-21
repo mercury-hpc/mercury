@@ -28,30 +28,34 @@
 
 /* Helper macros for encoding header */
 #ifdef HG_HAS_CHECKSUMS
-# define HG_CORE_HEADER_PROC(hg_header, buf_ptr, data, op)          \
+# define HG_CORE_HEADER_PROC(hg_header, buf_ptr, data, op) do {     \
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &data, sizeof(data), op); \
-    mchecksum_update(hg_header->checksum, &data, sizeof(data));
+    mchecksum_update(hg_header->checksum, &data, sizeof(data));     \
+} while (0)
 #else
-# define HG_CORE_HEADER_PROC(hg_header, buf_ptr, data, op)          \
-    buf_ptr = hg_proc_buf_memcpy(buf_ptr, &data, sizeof(data), op);
+# define HG_CORE_HEADER_PROC(hg_header, buf_ptr, data, op) do {     \
+    buf_ptr = hg_proc_buf_memcpy(buf_ptr, &data, sizeof(data), op); \
+} while (0)
 #endif
 
-#define HG_CORE_HEADER_PROC16(hg_header, buf_ptr, data, op, tmp) do {   \
-    hg_uint16_t tmp;                                                    \
-    if (op == HG_ENCODE)                                                \
-        tmp = htons(data);                                              \
-    HG_CORE_HEADER_PROC(hg_header, buf_ptr, tmp, op);                   \
-    if (op == HG_DECODE)                                                \
-        data = ntohs(tmp);                                              \
+#define HG_CORE_HEADER_PROC16(hg_header, buf_ptr, data, op, tmp) do {       \
+    hg_uint16_t tmp;                                                        \
+    if (op == HG_ENCODE)                                                    \
+        tmp = htons(data);                                                  \
+    HG_CORE_HEADER_PROC(hg_header, buf_ptr, tmp, op);                       \
+    if (op == HG_DECODE)                                                    \
+        data = ntohs(tmp);                                                  \
 } while (0)
 
-#define HG_CORE_HEADER_PROC32(hg_header, buf_ptr, data, op, tmp) do {   \
-    hg_uint32_t tmp;                                                    \
-    if (op == HG_ENCODE)                                                \
-        tmp = htonl(data);                                              \
-    HG_CORE_HEADER_PROC(hg_header, buf_ptr, tmp, op);                   \
-    if (op == HG_DECODE)                                                \
-        data = ntohl(tmp);                                              \
+#define HG_CORE_HEADER_PROC64(hg_header, buf_ptr, data, op, tmp) do {       \
+    hg_uint64_t tmp;                                                        \
+    if (op == HG_ENCODE)                                                    \
+        tmp = ((hg_uint64_t) htonl(data & 0xFFFFFFFF) << 32)                \
+              | htonl((hg_uint32_t) (data >> 32));                          \
+    HG_CORE_HEADER_PROC(hg_header, buf_ptr, tmp, op);                       \
+    if (op == HG_DECODE)                                                    \
+        data = ((hg_uint64_t) ntohl(tmp & 0xFFFFFFFF) << 32)                \
+               | ntohl((hg_uint32_t) (tmp >> 32));                          \
 } while (0)
 
 /************************************/
@@ -170,7 +174,7 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->protocol, op);
 
     /* Convert ID to network byte order */
-    HG_CORE_HEADER_PROC32(hg_core_header, buf_ptr, header->id, op, tmp);
+    HG_CORE_HEADER_PROC64(hg_core_header, buf_ptr, header->id, op, tmp);
 
     /* Flags */
     HG_CORE_HEADER_PROC(hg_core_header, buf_ptr, header->flags, op);

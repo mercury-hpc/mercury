@@ -19,7 +19,7 @@
 /*************************************/
 
 typedef hg_uint64_t hg_size_t;          /* Size */
-typedef hg_uint32_t hg_id_t;            /* RPC ID */
+typedef hg_uint64_t hg_id_t;            /* RPC ID */
 
 /* HG init info struct */
 struct hg_init_info {

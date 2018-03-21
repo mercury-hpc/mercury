@@ -36,13 +36,13 @@ union hg_core_header_hash {
 struct hg_core_header_request {
     hg_uint8_t  hg;             /* Mercury identifier */
     hg_uint8_t  protocol;       /* Version number */
-    hg_uint32_t id;             /* RPC request identifier */
+    hg_uint64_t id;             /* RPC request identifier */
     hg_uint8_t  flags;          /* Flags */
     hg_uint8_t  cookie;         /* Cookie */
-    /* 64 bits here */
+    /* 96 bits here */
 #ifdef HG_HAS_CHECKSUMS
     union hg_core_header_hash hash; /* Hash */
-    /* 96 bits here */
+    /* 128 bits here */
 #endif
 };
 
@@ -92,7 +92,7 @@ struct hg_core_header {
 #define HG_CORE_IDENTIFIER (('H' << 1) | ('G')) /* 0xD7 */
 
 /* Mercury protocol version number */
-#define HG_CORE_PROTOCOL_VERSION 0x03
+#define HG_CORE_PROTOCOL_VERSION 0x04
 
 /* Flags */
 #define HG_CORE_SELF_FORWARD 0x80   /* Forward to self */

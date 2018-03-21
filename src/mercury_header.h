@@ -39,9 +39,9 @@ struct hg_header_input {
 #ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash hash; /* Hash */
 #else
-    hg_uint64_t pad;
+    hg_uint32_t pad;
 #endif
-    /* 128 bits here */
+    /* 160 bits here */
 };
 
 struct hg_header_output {
