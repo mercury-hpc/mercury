@@ -4504,7 +4504,6 @@ HG_Core_reset(hg_handle_t handle, hg_addr_t addr, hg_id_t id)
     /* Set addr / RPC ID */
     ret = hg_core_set_rpc(hg_handle, addr, id);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not set rpc to handle");
         goto done;
     }
 
