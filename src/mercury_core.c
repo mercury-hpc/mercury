@@ -1934,7 +1934,6 @@ hg_core_set_rpc(struct hg_handle *hg_handle, hg_addr_t addr, hg_id_t id)
     if (id && hg_handle->hg_info.id != id) {
         struct hg_rpc_info *hg_rpc_info;
         hg_context_t *context = hg_handle->hg_info.context;
-        hg_handle->hg_info.id = id;
 
         /* Retrieve ID function from function map */
         hg_thread_spin_lock(&context->hg_class->func_map_lock);
@@ -1942,10 +1941,10 @@ hg_core_set_rpc(struct hg_handle *hg_handle, hg_addr_t addr, hg_id_t id)
             context->hg_class->func_map, (hg_hash_table_key_t) &id);
         hg_thread_spin_unlock(&context->hg_class->func_map_lock);
         if (!hg_rpc_info) {
-            HG_LOG_ERROR("Could not find RPC ID in function map");
             ret = HG_NO_MATCH;
             goto done;
         }
+        hg_handle->hg_info.id = id;
 
         /* Cache RPC info */
         hg_handle->hg_rpc_info = hg_rpc_info;
@@ -4505,7 +4504,6 @@ HG_Core_reset(hg_handle_t handle, hg_addr_t addr, hg_id_t id)
     /* Set addr / RPC ID */
     ret = hg_core_set_rpc(hg_handle, addr, id);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not set rpc to handle");
         goto done;
     }
 

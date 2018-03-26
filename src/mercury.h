@@ -376,6 +376,27 @@ HG_Registered(
         );
 
 /**
+ * Indicate whether HG_Register() has been called, and if so return pointers
+ * to cb functions for the RPC.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param id [IN]               function ID
+ * \param flag [OUT]            pointer to boolean
+ * \param in_proc_cb [OUT]      pointer to input encoder cb
+ * \param out_proc_cb [OUT]     pointer to output encoder cb
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Registered_proc_cb(
+        hg_class_t *hg_class,
+        hg_id_t id,
+        hg_bool_t *flag,
+        hg_proc_cb_t* in_proc_cb,
+        hg_proc_cb_t* out_proc_cb
+        );
+
+/**
  * Register and associate user data to registered function. When HG_Finalize()
  * is called, free_callback (if defined) is called to free the registered
  * data.
