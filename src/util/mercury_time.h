@@ -14,13 +14,22 @@
 #include "mercury_util_config.h"
 #if defined(_WIN32)
 # include <windows.h>
-#else
-# if defined(HG_UTIL_HAS_TIME_H)
+#elif defined(HG_UTIL_HAS_CLOCK_MONOTONIC)
+# if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
 #  include <time.h>
-# endif
-# if defined(__APPLE__) && !defined(HG_UTIL_HAS_CLOCK_GETTIME)
+# elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
 #  include <sys/time.h>
 #  include <mach/mach_time.h>
+# else
+#  error "Not supported on this platform."
+# endif
+#else
+# include <unistd.h>
+# include <stdio.h>
+# if defined(HG_UTIL_HAS_SYSTIME_H)
+#  include <sys/time.h>
+# else
+#  error "Not supported on this platform."
 # endif
 #endif
 
@@ -102,12 +111,11 @@ hg_time_subtract(hg_time_t in1, hg_time_t in2);
  * Sleep until the time specified in rqt has elapsed.
  *
  * \param reqt [IN]             time structure
- * \param rmt  [OUT]            pointer to time structure
  *
  * \return Non-negative on success or negative on failure
  */
 static HG_UTIL_INLINE int
-hg_time_sleep(const hg_time_t rqt, hg_time_t *rmt);
+hg_time_sleep(const hg_time_t rqt);
 
 /**
  * Get a string containing current time/date stamp.
@@ -143,7 +151,7 @@ get_FILETIME_offset(void)
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
-hg_time_get_current_quad(hg_time_t *tv)
+hg_time_get_current(hg_time_t *tv)
 {
     LARGE_INTEGER t;
     FILETIME f;
@@ -153,6 +161,9 @@ hg_time_get_current_quad(hg_time_t *tv)
     static int initialized = 0;
     static BOOL use_perf_counter = 0;
     int ret = HG_UTIL_SUCCESS;
+
+    if (!tv)
+        return HG_UTIL_FAIL;
 
     if (!initialized) {
         LARGE_INTEGER perf_freq;
@@ -184,14 +195,18 @@ hg_time_get_current_quad(hg_time_t *tv)
     return ret;
 }
 
+#elif defined(HG_UTIL_HAS_CLOCK_MONOTONIC)
 /*---------------------------------------------------------------------------*/
-#elif defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
+# if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
 static HG_UTIL_INLINE int
-hg_time_get_current_clock_gettime(hg_time_t *tv)
+hg_time_get_current(hg_time_t *tv)
 {
     struct timespec tp = {0, 0};
     /* NB. CLOCK_MONOTONIC_RAW is not explicitly supported in the vdso */
     clockid_t clock_id = CLOCK_MONOTONIC;
+
+    if (!tv)
+        return HG_UTIL_FAIL;
 
     clock_gettime(clock_id, &tp);
     tv->tv_sec = tp.tv_sec;
@@ -201,13 +216,16 @@ hg_time_get_current_clock_gettime(hg_time_t *tv)
 }
 
 /*---------------------------------------------------------------------------*/
-#elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
+# elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
 static HG_UTIL_INLINE int
-hg_time_get_current_mach(hg_time_t *tv)
+hg_time_get_current(hg_time_t *tv)
 {
     static uint64_t monotonic_timebase_factor = 0;
     uint64_t monotonic_nsec;
     int ret = HG_UTIL_SUCCESS;
+
+    if (!tv)
+        return HG_UTIL_FAIL;
 
     if (monotonic_timebase_factor == 0) {
         mach_timebase_info_data_t timebase_info;
@@ -221,24 +239,24 @@ hg_time_get_current_mach(hg_time_t *tv)
 
     return ret;
 }
-#endif
 
+# endif
+#else
 /*---------------------------------------------------------------------------*/
+# if defined(HG_UTIL_HAS_SYSTIME_H)
 static HG_UTIL_INLINE int
 hg_time_get_current(hg_time_t *tv)
 {
     if (!tv)
         return HG_UTIL_FAIL;
 
-#if defined(_WIN32)
-    return hg_time_get_current_quad(tv);
-#elif defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
-    return hg_time_get_current_clock_gettime(tv);
-#elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
-    return hg_time_get_current_mach(tv);
-#endif
+    gettimeofday((struct timeval *) tv, NULL);
+
+    return HG_UTIL_SUCCESS;
 }
 
+# endif
+#endif
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE double
 hg_time_to_double(hg_time_t tv)
@@ -300,7 +318,7 @@ hg_time_subtract(hg_time_t in1, hg_time_t in2)
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
-hg_time_sleep(const hg_time_t rqt, hg_time_t *rmt)
+hg_time_sleep(const hg_time_t rqt)
 {
     int ret = HG_UTIL_SUCCESS;
 
@@ -308,21 +326,22 @@ hg_time_sleep(const hg_time_t rqt, hg_time_t *rmt)
     DWORD dwMilliseconds = (DWORD) (hg_time_to_double(rqt) / 1000);
 
     Sleep(dwMilliseconds);
-#else
+#elif defined(HG_UTIL_HAS_CLOCK_MONOTONIC)
     struct timespec rqtp;
-    struct timespec rmtp;
 
     rqtp.tv_sec = rqt.tv_sec;
     rqtp.tv_nsec = rqt.tv_usec * 1000;
 
-    if (nanosleep(&rqtp, &rmtp)) {
+    if (nanosleep(&rqtp, NULL)) {
         ret = HG_UTIL_FAIL;
         return ret;
     }
+#else
+    useconds_t usec = (useconds_t) rqt.tv_sec * 1000000 + (useconds_t) rqt.tv_usec;
 
-    if (rmt) {
-        rmt->tv_sec = rmtp.tv_sec;
-        rmt->tv_usec = rmtp.tv_nsec / 1000;
+    if (usleep(usec)) {
+        ret = HG_UTIL_FAIL;
+        return ret;
     }
 #endif
 
@@ -339,7 +358,7 @@ hg_time_stamp(void)
 
 #if defined(_WIN32)
     /* TODO not implemented */
-#elif defined(HG_UTIL_HAS_TIME_H)
+#elif defined(HG_UTIL_HAS_CLOCK_MONOTONIC)
     struct tm *local_time;
     time_t t;
 
@@ -355,6 +374,22 @@ hg_time_stamp(void)
         ret = NULL;
         return ret;
     }
+
+    ret = buf;
+#else
+    struct timeval tv;
+    struct timezone tz;
+    unsigned long days, hours, minutes, seconds;
+
+    gettimeofday(&tv, &tz);
+    days = (unsigned long) tv.tv_sec / (3600 * 24);
+    hours = ((unsigned long) tv.tv_sec - days * 24 * 3600) / 3600;
+    minutes = ((unsigned long) tv.tv_sec - days * 24 * 3600 - hours * 3600) / 60;
+    seconds = (unsigned long) tv.tv_sec - days * 24 * 3600 - hours * 3600 - minutes * 60;
+    hours -= (unsigned long) tz.tz_minuteswest / 60;
+
+    snprintf(buf, HG_UTIL_STAMP_MAX, "%02lu:%02lu:%02lu (GMT-%d)",
+        hours, minutes, seconds, tz.tz_minuteswest / 60);
 
     ret = buf;
 #endif

@@ -25,7 +25,7 @@ thread_cb_sleep(void *arg)
     hg_time_t sleep_time = {5, 0};
 
     (void) arg;
-    hg_time_sleep(sleep_time, NULL);
+    hg_time_sleep(sleep_time);
     fprintf(stderr, "Error: did not cancel\n");
 
     hg_thread_exit(thread_ret);

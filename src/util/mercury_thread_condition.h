@@ -105,7 +105,7 @@ hg_thread_cond_init(hg_thread_cond_t *cond)
     pthread_condattr_t attr;
 
     pthread_condattr_init(&attr);
-# ifdef HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK
+# if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK) && defined(HG_UTIL_HAS_CLOCK_MONOTONIC)
     /* Must set clock ID if using different clock */
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
 # endif

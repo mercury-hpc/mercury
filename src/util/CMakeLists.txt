@@ -46,6 +46,13 @@ if(NOT WIN32 AND NOT APPLE)
   )
 endif()
 
+# Monotonic time
+option(MERCURY_USE_MONOTONIC_CLOCK "Use monotonic clock for time." OFF)
+if(MERCURY_USE_MONOTONIC_CLOCK)
+  set(HG_UTIL_HAS_CLOCK_MONOTONIC 1)
+endif()
+mark_as_advanced(MERCURY_USE_MONOTONIC_CLOCK)
+
 # Detect <time.h>
 check_include_files("time.h" HG_UTIL_HAS_TIME_H)
 if(HG_UTIL_HAS_TIME_H)
@@ -79,6 +86,7 @@ if(NOT WIN32)
   if(NOT HG_UTIL_HAS_STDATOMIC_H)
     set(MERCURY_USE_OPA "ON" CACHE BOOL "Use OpenPA for atomics." FORCE)
   endif()
+  mark_as_advanced(MERCURY_USE_OPA)
   if(MERCURY_USE_OPA)
     # Use OpenPA if stdatomic is not available
     find_package(OPA REQUIRED)

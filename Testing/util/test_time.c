@@ -22,7 +22,7 @@ main(int argc, char *argv[])
 
     hg_time_get_current(&t1);
 
-    hg_time_sleep(sleep_time, NULL);
+    hg_time_sleep(sleep_time);
 
     hg_time_get_current(&t2);
 

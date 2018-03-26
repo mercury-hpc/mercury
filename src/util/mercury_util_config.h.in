@@ -34,7 +34,7 @@
 /* Define if has PTHREAD_MUTEX_ADAPTIVE_NP */
 #cmakedefine HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP
 
-/* Define is has 'pthread_condattr_setclock()' */
+/* Define if has 'pthread_condattr_setclock()' */
 #cmakedefine HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK
 
 /* Define if has <opa_primitives.h> */
@@ -43,13 +43,16 @@
 /* Define if has <stdatomic.h> */
 #cmakedefine HG_UTIL_HAS_STDATOMIC_H
 
-/* Define is has <time.h> */
+/* Define if has CLOCK_MONOTONIC */
+#cmakedefine HG_UTIL_HAS_CLOCK_MONOTONIC
+
+/* Define if has <time.h> */
 #cmakedefine HG_UTIL_HAS_TIME_H
 
-/* Define is has 'clock_gettime()' */
+/* Define if has 'clock_gettime()' */
 #cmakedefine HG_UTIL_HAS_CLOCK_GETTIME
 
-/* Define is has <sys/time.h> */
+/* Define if has <sys/time.h> */
 #cmakedefine HG_UTIL_HAS_SYSTIME_H
 
 /* Define if has <sys/epoll.h> */
