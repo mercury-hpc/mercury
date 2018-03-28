@@ -17,7 +17,6 @@
 #include "mercury_atomic.h"
 #include "mercury_thread_mutex.h"
 #include "mercury_rpc_cb.h"
-#include "mercury_core.h"
 
 /****************/
 /* Local Macros */
@@ -40,15 +39,6 @@
 #endif
 
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
-struct hg_handle {
-    hg_core_handle_t core_handle;
-};
-
-extern struct hg_thread_work *
-hg_core_get_thread_work(
-        hg_core_handle_t core_handle
-        );
-
 #define HG_TEST_RPC_CB(func_name, handle) \
     static hg_return_t \
     func_name ## _thread_cb(hg_handle_t handle)
@@ -78,7 +68,7 @@ hg_core_get_thread_work(
             hg_return_t ret = HG_SUCCESS; \
             \
             if (!hg_test_info->secondary_contexts) { \
-                struct hg_thread_work *work = hg_core_get_thread_work(handle->core_handle); \
+                struct hg_thread_work *work = HG_Get_data(handle); \
                 work->func = func_name ## _thread; \
                 work->args = handle; \
                 hg_thread_pool_post(hg_test_info->thread_pool, work); \

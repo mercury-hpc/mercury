@@ -41,6 +41,10 @@ struct hg_class {
     hg_core_class_t *core_class;    /* Core class */
     hg_size_t in_offset;            /* Input offset */
     hg_size_t out_offset;           /* Output offset */
+
+    /* Callbacks */
+    hg_return_t (*handle_create)(hg_handle_t, void *);  /* handle_create */
+    void *handle_create_arg;                            /* handle_create arg */
 };
 
 /* HG context */
@@ -74,6 +78,8 @@ struct hg_handle {
     hg_size_t extra_bulk_buf_size;  /* Extra bulk buffer size */
     hg_bulk_t extra_bulk_handle;    /* Extra bulk handle */
     hg_return_t (*extra_bulk_transfer_cb)(hg_core_handle_t); /* Bulk transfer callback */
+    void *data;                         /* User data */
+    void (*data_free_callback)(void *); /* User data free callback */
 };
 
 /* HG op id */
@@ -309,6 +315,8 @@ hg_handle_free(void *arg)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) arg;
 
+    if (hg_handle->data_free_callback)
+        hg_handle->data_free_callback(hg_handle->data);
     if (hg_handle->in_proc != HG_PROC_NULL)
         hg_proc_free(hg_handle->in_proc);
     if (hg_handle->out_proc != HG_PROC_NULL)
@@ -336,6 +344,16 @@ hg_context_post_create_cb(hg_core_handle_t core_handle, void *arg)
     hg_handle->hg_info.context = hg_context;
 
     HG_Core_set_data(core_handle, hg_handle, hg_handle_free);
+
+    /* Call handle create if defined */
+    if (hg_context->hg_class->handle_create) {
+        ret = hg_context->hg_class->handle_create(hg_handle,
+            hg_context->hg_class->handle_create_arg);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Error in handle create callback");
+            goto done;
+        }
+    }
 
 done:
     return ret;
@@ -1217,6 +1235,26 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Class_set_handle_create_callback(hg_class_t *hg_class,
+    hg_return_t (*callback)(hg_handle_t, void *), void *arg)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_class->handle_create = callback;
+    hg_class->handle_create_arg = arg;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_context_t *
 HG_Context_create(hg_class_t *hg_class)
 {
@@ -1748,6 +1786,16 @@ HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     /* Use data to free handle on HG handle core destroy */
     HG_Core_set_data(hg_handle->core_handle, hg_handle, hg_handle_free);
 
+    /* Call handle create if defined */
+    if (context->hg_class->handle_create) {
+        ret = context->hg_class->handle_create(hg_handle,
+            context->hg_class->handle_create_arg);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Error in handle create callback");
+            goto done;
+        }
+    }
+
     *handle = (hg_handle_t) hg_handle;
 
 done:
@@ -1830,6 +1878,42 @@ HG_Get_info(hg_handle_t handle)
     }
 
     ret = &handle->hg_info;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Set_data(hg_handle_t handle, void *data, void (*free_callback)(void *))
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    handle->data = data;
+    handle->data_free_callback = free_callback;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+void *
+HG_Get_data(hg_handle_t handle)
+{
+    void *ret = NULL;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        goto done;
+    }
+
+    ret = handle->data;
 
 done:
     return ret;

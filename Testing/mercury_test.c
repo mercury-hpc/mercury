@@ -41,6 +41,9 @@ hg_test_parse_options(int argc, char *argv[],
     struct hg_test_info *hg_test_info);
 
 static hg_return_t
+hg_test_handle_create_cb(hg_handle_t handle, void *arg);
+
+static hg_return_t
 hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id);
 
 static hg_return_t
@@ -142,6 +145,27 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
     if (!hg_test_info->thread_count)
         hg_test_info->thread_count = MERCURY_TESTING_NUM_THREADS_DEFAULT;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_handle_create_cb(hg_handle_t handle, void *arg)
+{
+    struct hg_thread_work *hg_thread_work =
+        malloc(sizeof(struct hg_thread_work));
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_thread_work) {
+        HG_LOG_ERROR("Could not allocate hg_thread_work");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
+
+    (void) arg;
+    HG_Set_data(handle, hg_thread_work, free);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -348,25 +372,37 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     /* Assign NA class */
     hg_init_info.na_class = hg_test_info->na_test_info.na_class;
 
-    /* Init HG HL with init options */
-    ret = HG_Hl_init_opt(NULL, hg_test_info->na_test_info.listen,
-        &hg_init_info);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not initialize HG HL");
+    /* Init HG with init options */
+    hg_test_info->hg_class = HG_Init_opt(NULL,
+        hg_test_info->na_test_info.listen, &hg_init_info);
+    if (!hg_test_info->hg_class) {
+        HG_LOG_ERROR("Could not initialize HG");
         goto done;
     }
-    hg_test_info->hg_class = HG_CLASS_DEFAULT;
-    hg_test_info->context = HG_CONTEXT_DEFAULT;
-    hg_test_info->request_class = HG_REQUEST_CLASS_DEFAULT;
+    HG_CLASS_DEFAULT = hg_test_info->hg_class;
 
     /* Attach test info to class */
     HG_Class_set_data(hg_test_info->hg_class, hg_test_info, NULL);
+
+    /* Attach handle created */
+    HG_Class_set_handle_create_callback(hg_test_info->hg_class,
+        hg_test_handle_create_cb, hg_test_info->hg_class);
 
     /* Set header */
     /*
     HG_Class_set_input_offset(hg_test_info->hg_class, sizeof(hg_uint64_t));
     HG_Class_set_output_offset(hg_test_info->hg_class, sizeof(hg_uint64_t));
     */
+
+    /* For convenience */
+    ret = HG_Hl_init_opt(NULL,
+        hg_test_info->na_test_info.listen, &hg_init_info);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not initialize HG");
+        goto done;
+    }
+    hg_test_info->context = HG_CONTEXT_DEFAULT;
+    hg_test_info->request_class = HG_REQUEST_CLASS_DEFAULT;
 
     /* Attach context info to context */
     hg_test_context_info = malloc(sizeof(struct hg_test_context_info));

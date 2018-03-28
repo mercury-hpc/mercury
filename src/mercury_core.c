@@ -511,14 +511,6 @@ hg_core_get_rpc_data(
         struct hg_core_handle *hg_core_handle
         );
 
-/**
- * Get thread work (TODO internal use but could provide some hooks).
- */
-struct hg_thread_work *
-hg_core_get_thread_work(
-        hg_core_handle_t handle
-        );
-
 #ifdef HG_HAS_SELF_FORWARD
 /**
  * Forward handle locally.
@@ -1952,13 +1944,6 @@ hg_core_get_rpc_data(struct hg_core_handle *hg_core_handle)
         data = hg_core_handle->hg_core_rpc_info->data;
 
     return data;
-}
-
-/*---------------------------------------------------------------------------*/
-struct hg_thread_work *
-hg_core_get_thread_work(hg_core_handle_t handle)
-{
-    return &handle->thread_work;
 }
 
 /*---------------------------------------------------------------------------*/

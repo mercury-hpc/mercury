@@ -233,6 +233,25 @@ HG_Class_get_data(
         );
 
 /**
+ * Set callback to be called on HG handle creation. Handles are created
+ * both on HG_Create() and HG_Context_create() calls. This allows upper layers
+ * to create and attach data to a handle (using HG_Set_data()) and later
+ * retrieve it using HG_Get_data().
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param callback [IN]         pointer to function callback
+ * \param arg [IN]              pointer to data passed to callback
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Class_set_handle_create_callback(
+        hg_class_t *hg_class,
+        hg_return_t (*callback)(hg_handle_t, void *),
+        void *arg
+        );
+
+/**
  * Create a new context. Must be destroyed by calling HG_Context_destroy().
  *
  * \remark This routine is internally equivalent to:
@@ -639,6 +658,35 @@ HG_Ref_incr(
  */
 HG_EXPORT const struct hg_info *
 HG_Get_info(
+        hg_handle_t handle
+        );
+
+/**
+ * Associate user data to handle. When HG_Destroy() is called,
+ * free_callback (if defined) is called to free the associated data.
+ *
+ * \param handle [IN]           HG handle
+ * \param data [IN]             pointer to user data
+ * \param free_callback [IN]    pointer to function
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Set_data(
+        hg_handle_t handle,
+        void *data,
+        void (*free_callback)(void *)
+        );
+
+/**
+ * Retrieve previously associated data from a given handle.
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return Pointer to user data or NULL if not set or any error has occurred
+ */
+HG_EXPORT void *
+HG_Get_data(
         hg_handle_t handle
         );
 
