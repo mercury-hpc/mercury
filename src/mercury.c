@@ -18,6 +18,7 @@
 
 #include "mercury_hash_string.h"
 #include "mercury_mem.h"
+#include "mercury_thread_spin.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +42,7 @@ struct hg_class {
     hg_core_class_t *core_class;    /* Core class */
     hg_size_t in_offset;            /* Input offset */
     hg_size_t out_offset;           /* Output offset */
+    hg_thread_spin_t register_lock; /* Register lock */
 
     /* Callbacks */
     hg_return_t (*handle_create)(hg_handle_t, void *);  /* handle_create */
@@ -1044,6 +1046,7 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
         goto done;
     }
     memset(hg_class, 0, sizeof(struct hg_class));
+    hg_thread_spin_init(&hg_class->register_lock);
 
     hg_class->core_class = HG_Core_init_opt(na_info_string, na_listen,
         hg_init_info);
@@ -1071,6 +1074,7 @@ HG_Finalize(hg_class_t *hg_class)
         HG_LOG_ERROR("Could not finalize HG core class");
         goto done;
     }
+    hg_thread_spin_destroy(&hg_class->register_lock);
     free(hg_class);
 
 done:
@@ -1412,7 +1416,6 @@ HG_Register_name(hg_class_t *hg_class, const char *func_name,
         HG_LOG_ERROR("NULL HG class");
         goto done;
     }
-
     if (!func_name) {
         HG_LOG_ERROR("NULL string");
         goto done;
@@ -1451,16 +1454,21 @@ HG_Registered_name(hg_class_t *hg_class, const char *func_name, hg_id_t *id,
         goto done;
     }
 
+    hg_thread_spin_lock(&hg_class->register_lock);
+
     /* Generate an ID from the function name */
     rpc_id = hg_hash_string(func_name);
 
     ret = HG_Core_registered(hg_class->core_class, rpc_id, flag);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not check for registered RPC id");
+        hg_thread_spin_unlock(&hg_class->register_lock);
         goto done;
     }
 
     if (id) *id = rpc_id;
+
+    hg_thread_spin_unlock(&hg_class->register_lock);
 
 done:
     return ret;
@@ -1481,10 +1489,10 @@ HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
         goto done;
     }
 
-    /* TODO lock here */
+    hg_thread_spin_lock(&hg_class->register_lock);
 
     /* Check if already registered */
-    ret = HG_Registered(hg_class, id, &registered);
+    ret = HG_Core_registered(hg_class->core_class, id, &registered);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not check for registered RPC id");
         goto done;
@@ -1531,6 +1539,8 @@ done:
     if (ret != HG_SUCCESS) {
         free(hg_proc_info);
     }
+    if (hg_class)
+        hg_thread_spin_unlock(&hg_class->register_lock);
     return ret;
 }
 
@@ -1546,7 +1556,9 @@ HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
         goto done;
     }
 
+    hg_thread_spin_lock(&hg_class->register_lock);
     ret = HG_Core_registered(hg_class->core_class, id, flag);
+    hg_thread_spin_unlock(&hg_class->register_lock);
 
 done:
     return ret;
@@ -1566,17 +1578,22 @@ HG_Register_data(hg_class_t *hg_class, hg_id_t id, void *data,
         goto done;
     }
 
+    hg_thread_spin_lock(&hg_class->register_lock);
+
     /* Retrieve proc function from function map */
     hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
         hg_class->core_class, id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
+        hg_thread_spin_unlock(&hg_class->register_lock);
         goto done;
     }
 
     hg_proc_info->data = data;
     hg_proc_info->free_callback = free_callback;
+
+    hg_thread_spin_unlock(&hg_class->register_lock);
 
 done:
     return ret;
@@ -1594,15 +1611,20 @@ HG_Registered_data(hg_class_t *hg_class, hg_id_t id)
         goto done;
     }
 
+    hg_thread_spin_lock(&hg_class->register_lock);
+
     /* Retrieve proc function from function map */
     hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
         hg_class->core_class, id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
+        hg_thread_spin_unlock(&hg_class->register_lock);
         goto done;
     }
 
     data = hg_proc_info->data;
+
+    hg_thread_spin_unlock(&hg_class->register_lock);
 
 done:
     return data;
@@ -1622,16 +1644,21 @@ HG_Registered_disable_response(hg_class_t *hg_class, hg_id_t id,
         goto done;
     }
 
+    hg_thread_spin_lock(&hg_class->register_lock);
+
     /* Retrieve proc function from function map */
     hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
         hg_class->core_class, id);
     if (!hg_proc_info) {
         HG_LOG_ERROR("Could not get registered data");
         ret = HG_NO_MATCH;
+        hg_thread_spin_unlock(&hg_class->register_lock);
         goto done;
     }
 
     hg_proc_info->no_response = disable;
+
+    hg_thread_spin_unlock(&hg_class->register_lock);
 
 done:
     return ret;
