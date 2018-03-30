@@ -391,6 +391,25 @@ HG_Core_context_get_data(
         );
 
 /**
+ * Set callback to be called on HG core handle creation. Handles are created
+ * both on HG_Core_create() and HG_Core_context_post() calls. This allows
+ * upper layers to create and attach data to a handle (using HG_Core_set_data())
+ * and later retrieve it using HG_Core_get_data().
+ *
+ * \param context [IN]          pointer to HG core context
+ * \param callback [IN]         pointer to function callback
+ * \param arg [IN]              pointer to data passed to callback
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_context_set_handle_create_callback(
+        hg_core_context_t *context,
+        hg_return_t (*callback)(hg_core_handle_t, void *),
+        void *arg
+        );
+
+/**
  * Post requests associated to context in order to receive incoming RPCs.
  * Requests are automatically re-posted after completion depending on the
  * value of \repost. Additionally a callback can be triggered on HG handle
@@ -400,8 +419,6 @@ HG_Core_context_get_data(
  * \param context [IN]          pointer to HG core context
  * \param request_count [IN]    number of requests
  * \param repost [IN]           boolean, when HG_TRUE, requests are re-posted
- * \param create_callback [IN]  pointer to create function callback
- * \param create_callback_arg [IN]  pointer to user data
  *
  * \return the associated class
  */
@@ -409,9 +426,7 @@ HG_EXPORT hg_return_t
 HG_Core_context_post(
         hg_core_context_t *context,
         unsigned int request_count,
-        hg_bool_t repost,
-        hg_return_t (*create_callback)(hg_core_handle_t handle, void *arg),
-        void *create_callback_arg
+        hg_bool_t repost
         );
 
 /**

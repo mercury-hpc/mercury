@@ -145,7 +145,7 @@ hg_handle_free(
  * Create handle callback.
  */
 static hg_return_t
-hg_context_post_create_cb(
+hg_handle_create_cb(
         hg_core_handle_t core_handle,
         void *arg
         );
@@ -330,7 +330,7 @@ hg_handle_free(void *arg)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_context_post_create_cb(hg_core_handle_t core_handle, void *arg)
+hg_handle_create_cb(hg_core_handle_t core_handle, void *arg)
 {
     struct hg_context *hg_context = (struct hg_context *) arg;
     struct hg_handle *hg_handle;
@@ -1297,10 +1297,14 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
         goto done;
     }
 
+    /* Set handle create callback */
+    HG_Core_context_set_handle_create_callback(hg_context->core_context,
+        hg_handle_create_cb, hg_context);
+
     /* If we are listening, start posting requests */
     if (NA_Is_listening(HG_Core_class_get_na(hg_class->core_class))) {
         ret = HG_Core_context_post(hg_context->core_context, request_count,
-            HG_TRUE, hg_context_post_create_cb, hg_context);
+            HG_TRUE);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not post context requests");
             goto done;
@@ -1783,6 +1787,7 @@ HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     hg_handle_t *handle)
 {
     struct hg_handle *hg_handle = NULL;
+    hg_core_handle_t core_handle;
     hg_return_t ret = HG_SUCCESS;
 
     if (!context) {
@@ -1791,37 +1796,18 @@ HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
         goto done;
     }
 
-    /* Create HG handle */
-    hg_handle = hg_handle_create(context->hg_class);
-    if (!hg_handle) {
-        HG_LOG_ERROR("Could not create HG handle");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
-    hg_handle->hg_info.context = context;
-    hg_handle->hg_info.addr = addr;
-    hg_handle->hg_info.id = id;
-
-    /* Create HG core handle */
+    /* Create HG core handle (calls handle_create_cb) */
     ret = HG_Core_create(context->core_context, (hg_core_addr_t) addr, id,
-        &hg_handle->core_handle);
+        &core_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Cannot create HG handle");
         goto done;
     }
 
-    /* Use data to free handle on HG handle core destroy */
-    HG_Core_set_data(hg_handle->core_handle, hg_handle, hg_handle_free);
-
-    /* Call handle create if defined */
-    if (context->hg_class->handle_create) {
-        ret = context->hg_class->handle_create(hg_handle,
-            context->hg_class->handle_create_arg);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Error in handle create callback");
-            goto done;
-        }
-    }
+    /* Get data and HG info */
+    hg_handle = (struct hg_handle *) HG_Core_get_data(core_handle);
+    hg_handle->hg_info.addr = addr;
+    hg_handle->hg_info.id = id;
 
     *handle = (hg_handle_t) hg_handle;
 

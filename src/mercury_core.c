@@ -103,13 +103,9 @@ struct hg_core_class {
     hg_atomic_int32_t n_addrs;          /* Atomic used for number of addrs */
 
     /* Callbacks */
-    hg_return_t (*more_data_acquire)(
-        hg_core_handle_t,
-        hg_return_t (*done_callback)(hg_core_handle_t)
-        ); /* more_data_acquire */
-    void (*more_data_release)(
-        hg_core_handle_t
-        ); /* more_data_release */
+    hg_return_t (*more_data_acquire)(hg_core_handle_t,
+        hg_return_t (*done_callback)(hg_core_handle_t)); /* more_data_acquire */
+    void (*more_data_release)(hg_core_handle_t); /* more_data_release */
 };
 
 /* HG context */
@@ -141,6 +137,8 @@ struct hg_core_context {
     int completion_queue_notify;                  /* Self notification */
     hg_thread_pool_t *self_processing_pool;       /* Thread pool for self processing */
 #endif
+    hg_return_t (*handle_create)(hg_core_handle_t, void *); /* handle_create */
+    void *handle_create_arg;                      /* handle_create arg */
     void *data;                                   /* User data */
     void (*data_free_callback)(void *);           /* User data free callback */
     hg_bool_t finalizing;                         /* Prevent reposts */
@@ -665,8 +663,6 @@ hg_core_context_post(
         struct hg_core_context *context,
         unsigned int request_count,
         hg_bool_t repost,
-        hg_return_t (*create_callback)(hg_core_handle_t, void *),
-        void *create_callback_arg,
         hg_bool_t use_sm
         );
 
@@ -2222,8 +2218,8 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 
 #ifndef HG_HAS_POST_LIMIT
     /* If pending list is empty, post more handles */
-    if (pending_empty && hg_core_context_post(hg_core_context, HG_CORE_PENDING_INCR,
-        hg_core_handle->repost, HG_FALSE) != HG_SUCCESS) {
+    if (pending_empty && hg_core_context_post(hg_core_context,
+        HG_CORE_PENDING_INCR, hg_core_handle->repost, HG_FALSE) != HG_SUCCESS) {
         HG_LOG_ERROR("Could not post additional handles");
         goto done;
     }
@@ -2641,8 +2637,7 @@ hg_core_completion_add(struct hg_core_context *context,
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_context_post(struct hg_core_context *context, unsigned int request_count,
-    hg_bool_t repost, hg_return_t (*create_callback)(hg_core_handle_t, void *),
-    void *create_callback_arg, hg_bool_t use_sm)
+    hg_bool_t repost, hg_bool_t use_sm)
 {
     unsigned int nentry = 0;
     hg_return_t ret = HG_SUCCESS;
@@ -2662,8 +2657,9 @@ hg_core_context_post(struct hg_core_context *context, unsigned int request_count
 
         /* Execute class callback on handle, this allows upper layers to
          * allocate private data on handle creation */
-        if (create_callback) {
-            ret = create_callback(hg_core_handle, create_callback_arg);
+        if (context->handle_create) {
+            ret = context->handle_create(hg_core_handle,
+                context->handle_create_arg);
             if (ret != HG_SUCCESS) {
                 HG_LOG_ERROR("Error in HG core handle create callback");
                 goto done;
@@ -4000,9 +3996,28 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Core_context_set_handle_create_callback(hg_core_context_t *context,
+    hg_return_t (*callback)(hg_core_handle_t, void *), void *arg)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG core context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    context->handle_create = callback;
+    context->handle_create_arg = arg;
+
+ done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Core_context_post(hg_core_context_t *context, unsigned int request_count,
-    hg_bool_t repost, hg_return_t (*create_callback)(hg_core_handle_t, void *),
-    void *create_callback_arg)
+    hg_bool_t repost)
 {
     hg_bool_t use_sm = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
@@ -4021,8 +4036,7 @@ HG_Core_context_post(hg_core_context_t *context, unsigned int request_count,
 #ifdef HG_HAS_SM_ROUTING
     do {
 #endif
-        ret = hg_core_context_post(context, request_count, repost,
-            create_callback, create_callback_arg, use_sm);
+        ret = hg_core_context_post(context, request_count, repost, use_sm);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not post requests on context");
             goto done;
@@ -4400,6 +4414,17 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not set rpc to handle");
         goto done;
+    }
+
+    /* Execute class callback on handle, this allows upper layers to
+     * allocate private data on handle creation */
+    if (context->handle_create) {
+        ret = context->handle_create(hg_core_handle,
+            context->handle_create_arg);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Error in HG core handle create callback");
+            goto done;
+        }
     }
 
     *handle = (hg_core_handle_t) hg_core_handle;
