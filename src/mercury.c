@@ -1570,6 +1570,45 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Registered_proc_cb(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag,
+    hg_proc_cb_t *in_proc_cb, hg_proc_cb_t *out_proc_cb)
+{
+    struct hg_proc_info *hg_proc_info = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_thread_spin_lock(&hg_class->register_lock);
+
+    ret = HG_Core_registered(hg_class->core_class, id, flag);
+    if(ret == HG_SUCCESS && *flag) {
+        /* if RPC is registered, retrieve pointers */
+        hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
+            hg_class->core_class, id);
+        if (!hg_proc_info) {
+            HG_LOG_ERROR("Could not get registered data");
+            ret = HG_NO_MATCH;
+            hg_thread_spin_unlock(&hg_class->register_lock);
+            goto done;
+        }
+        if (in_proc_cb)
+            *in_proc_cb = hg_proc_info->in_proc_cb;
+        if (out_proc_cb)
+            *out_proc_cb = hg_proc_info->out_proc_cb;
+    }
+
+    hg_thread_spin_unlock(&hg_class->register_lock);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Register_data(hg_class_t *hg_class, hg_id_t id, void *data,
     void (*free_callback)(void *))
 {
