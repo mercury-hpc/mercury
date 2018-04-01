@@ -950,7 +950,7 @@ hg_core_forward_cb(const struct hg_core_cb_info *callback_info)
         HG_Bulk_free(hg_handle->extra_bulk_handle);
         hg_handle->extra_bulk_handle = HG_BULK_NULL;
         hg_mem_aligned_free(hg_handle->extra_bulk_buf);
-        hg_handle->extra_bulk_buf = NULL,
+        hg_handle->extra_bulk_buf = NULL;
         hg_handle->extra_bulk_buf_size = 0;
     }
 

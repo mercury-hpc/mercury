@@ -3693,7 +3693,10 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         goto done;
     }
 
-    kret = mach_vm_write(remote_task, remote_iov->iov_base, local_iov->iov_base, length);
+    kret = mach_vm_write(remote_task,
+        (mach_vm_address_t) remote_iov->iov_base,
+        (mach_vm_address_t) local_iov->iov_base,
+        (mach_msg_type_number_t) length);
     if (kret != KERN_SUCCESS) {
         NA_LOG_ERROR("mach_vm_write() failed (%s)", mach_error_string(kret));
         ret = NA_PROTOCOL_ERROR;
@@ -3842,8 +3845,9 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         goto done;
     }
 
-    kret = mach_vm_read_overwrite(remote_task, remote_iov->iov_base, length,
-        local_iov->iov_base, &nread);
+    kret = mach_vm_read_overwrite(remote_task,
+        (mach_vm_address_t) remote_iov->iov_base, length,
+        (mach_vm_address_t) local_iov->iov_base, &nread);
     if (kret != KERN_SUCCESS) {
         NA_LOG_ERROR("mach_vm_read_overwrite() failed (%s)", mach_error_string(kret));
         ret = NA_PROTOCOL_ERROR;
