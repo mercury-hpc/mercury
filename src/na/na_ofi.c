@@ -99,6 +99,7 @@
 #define NA_OFI_PROV_PSM2_NAME       "psm2"
 #define NA_OFI_PROV_GNI_NAME        "gni"
 #define NA_OFI_PROV_VERBS_NAME      "verbs"
+#define NA_OFI_PROV_VERBS_RXM_NAME      "verbs;ofi_rxm"
 
 #define NA_OFI_MAX_URI_LEN (128)
 #define NA_OFI_MAX_NODE_LEN (64)
@@ -162,7 +163,8 @@ enum na_ofi_prov_type {
     NA_OFI_PROV_SOCKETS,
     NA_OFI_PROV_PSM2,
     NA_OFI_PROV_VERBS,
-    NA_OFI_PROV_GNI
+    NA_OFI_PROV_GNI,
+    NA_OFI_PROV_VERBS_RXM,
 };
 
 enum na_ofi_mr_mode {
@@ -945,7 +947,7 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
      * that nothing at the NA level guarantees that the tag passed will be
      * unique, this is an assumption based on the current upper HG core layer.
      */
-    if (strcmp(prov_name, NA_OFI_PROV_VERBS_NAME))
+    if (strcmp(prov_name, NA_OFI_PROV_VERBS_NAME) && strcmp(prov_name, NA_OFI_PROV_VERBS_RXM_NAME))
         hints->caps     |= FI_DIRECTED_RECV;
 
     /**
@@ -985,6 +987,9 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
         /* PSM2 provider requires FI_MR_BASIC bit to be set for now */
         hints->domain_attr->mr_mode = FI_MR_BASIC;
     } else if (!strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)) {
+        /* FI_MR_BASIC */
+        hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL;
+    } else if (!strcmp(prov_name, NA_OFI_PROV_VERBS_RXM_NAME)) {
         /* FI_MR_BASIC */
         hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL;
     }
@@ -1270,6 +1275,8 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_PSM2;
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_VERBS_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS;
+    } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_VERBS_RXM_NAME)) {
+        na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS_RXM;
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_GNI_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
 #if defined(NA_OFI_HAS_EXT_GNI_H)
