@@ -1507,6 +1507,7 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
         if (na_ofi_domain->nod_prov->domain_attr->auth_key_size)
             na_ofi_domain->nod_prov->domain_attr->auth_key_size = 0;
         fi_freeinfo(na_ofi_domain->nod_prov);
+        na_ofi_domain->nod_prov = NULL;
     }
 
     if (na_ofi_domain->nod_addr_ht)
@@ -1592,8 +1593,10 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     *na_ofi_endpoint_p = na_ofi_endpoint;
 
 out:
-    if (ret != NA_SUCCESS)
+    if (ret != NA_SUCCESS) {
         na_ofi_endpoint_close(na_ofi_endpoint);
+        *na_ofi_endpoint_p = NULL;
+    }
     return ret;
 }
 
@@ -1789,8 +1792,10 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
     }
 
     /* Free OFI info */
-    if (na_ofi_endpoint->noe_prov)
+    if (na_ofi_endpoint->noe_prov) {
         fi_freeinfo(na_ofi_endpoint->noe_prov);
+        na_ofi_endpoint->noe_prov = NULL;
+    }
 
     free(na_ofi_endpoint->noe_node);
     free(na_ofi_endpoint->noe_service);
@@ -2287,17 +2292,23 @@ na_ofi_finalize(na_class_t *na_class)
         goto out;
 
     /* Close endpoint */
-    ret = na_ofi_endpoint_close(priv->nop_endpoint);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not close endpoint");
-        goto out;
+    if (priv->nop_endpoint) {
+        ret = na_ofi_endpoint_close(priv->nop_endpoint);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not close endpoint");
+            goto out;
+        }
+        priv->nop_endpoint = NULL;
     }
 
     /* Close domain */
-    ret = na_ofi_domain_close(priv->nop_domain);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not close domain");
-        goto out;
+    if (priv->nop_domain) {
+        ret = na_ofi_domain_close(priv->nop_domain);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not close domain");
+            goto out;
+        }
+        priv->nop_domain = NULL;
     }
 
     /* Free memory pool */
