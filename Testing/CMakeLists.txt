@@ -194,17 +194,17 @@ macro(add_mercury_test_comm test_name comm protocol busy)
         COMMAND $<TARGET_FILE:hg_test_${test_name}> ${cores_test_args}
       )
     endif()
+  endif()
 
-    # Scalable endpoint test
-    if(MERCURY_TESTING_HAS_THREAD_POOL AND ${comm} STREQUAL "ofi")
-      set(cores_test_name ${full_test_name}_scalable)
-      set(cores_test_args ${test_args} -C 2)
-      add_test(NAME "mercury_${cores_test_name}"
-        COMMAND $<TARGET_FILE:mercury_test_driver>
-        --server $<TARGET_FILE:hg_test_server>
-        --client $<TARGET_FILE:hg_test_${test_name}> ${cores_test_args}
-      )
-    endif()
+  # Scalable endpoint test
+  if(MERCURY_TESTING_HAS_THREAD_POOL AND ${comm} STREQUAL "ofi" AND NOT ${busy})
+    set(cores_test_name ${full_test_name}_scalable)
+    set(cores_test_args ${test_args} -C 2)
+    add_test(NAME "mercury_${cores_test_name}"
+      COMMAND $<TARGET_FILE:mercury_test_driver>
+      --server $<TARGET_FILE:hg_test_server>
+      --client $<TARGET_FILE:hg_test_${test_name}> ${cores_test_args}
+    )
   endif()
 endmacro()
 
