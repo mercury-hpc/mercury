@@ -5,6 +5,7 @@ set(MERCURY_BUILD_INCLUDE_DEPENDENCIES
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra
+  ${CMAKE_CURRENT_SOURCE_DIR}/boost
 )
 
 #------------------------------------------------------------------------------
@@ -255,6 +256,15 @@ install(
     ${MERCURY_INSTALL_INCLUDE_DIR}
   COMPONENT
     headers
+)
+
+install(
+    DIRECTORY
+        boost
+    DESTINATION
+        ${MERCURY_INSTALL_INCLUDE_DIR}
+    COMPONENT
+        headers
 )
 
 #-----------------------------------------------------------------------------
