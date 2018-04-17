@@ -4,3 +4,6 @@
 [submodule "src/mchecksum"]
 	path = src/mchecksum
 	url = https://github.com/mercury-hpc/mchecksum.git
+[submodule "src/boost"]
+	path = src/boost
+	url = https://github.com/mercury-hpc/preprocessor.git
