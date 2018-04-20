@@ -508,27 +508,16 @@ out:
     return ret;
 }
 
-static na_uint64_t
-key_mix(na_uint64_t key, na_uint64_t magic)
-{
-    /**
-     * http://www.partow.net/programming/hashfunctions/
-     */
-    return (magic * key) ^ ((magic << 3) + (key >> 2));
-}
-
-/* addr_str is in the format: "fi_addr_psmx2://ffff:ff02" */
+/* addr_str is in the format: "psm2://fi_addr_psmx2://ffff:ff02" */
 static na_uint64_t
 psm2_straddr_2_key(const char *addr_str)
 {
-    na_uint64_t addr_0, addr_1, key;
-    na_uint64_t magic = 0xA5A5A5A5A5A5A5A5;
+    na_uint64_t addr_0, addr_1;
 
     sscanf(addr_str + 7, "%*[^:]://%" SCNx64 ":%" SCNx64, &addr_0, &addr_1);
-    magic = key_mix(addr_0, magic);
-    key = key_mix(addr_1, magic);
 
-    return key;
+    /* only need the epid, i.e. the first 64 bits */
+    return addr_0;
 }
 
 /**
