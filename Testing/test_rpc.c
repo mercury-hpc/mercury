@@ -141,7 +141,8 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
     /* Create RPC request */
     hg_ret = HG_Create(context, addr, rpc_id, &handle);
     if (hg_ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not create handle");
+        if (hg_ret != HG_NO_MATCH)
+            HG_TEST_LOG_ERROR("Could not create handle");
         goto done;
     }
 
@@ -170,9 +171,8 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
         goto done;
     }
 
-    hg_request_destroy(request);
-
 done:
+    hg_request_destroy(request);
     return hg_ret;
 }
 
@@ -486,6 +486,22 @@ main(int argc, char *argv[])
         hg_test_info.target_addr, hg_test_rpc_open_id_no_resp_g,
         hg_test_rpc_forward_no_resp_cb);
     if (hg_ret != HG_SUCCESS) {
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    HG_PASSED();
+
+    /* RPC test with unregistered ID */
+    HG_TEST("unregistered RPC");
+    inv_id = MERCURY_REGISTER(hg_test_info.hg_class, "unreg_id", void, void, NULL);
+    hg_ret = HG_Deregister(hg_test_info.hg_class, inv_id);
+    if (hg_ret != HG_SUCCESS) {
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
+        hg_test_info.target_addr, inv_id, hg_test_rpc_forward_cb);
+    if (hg_ret == HG_SUCCESS) {
         ret = EXIT_FAILURE;
         goto done;
     }

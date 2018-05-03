@@ -406,7 +406,6 @@ hg_more_data_free_cb(hg_core_handle_t core_handle)
     /* Retrieve private data */
     hg_handle = (struct hg_handle *) HG_Core_get_data(core_handle);
     if (!hg_handle) {
-        HG_LOG_ERROR("Could not get private data");
         goto done;
     }
 
@@ -1550,6 +1549,26 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Deregister(hg_class_t *hg_class, hg_id_t id)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_thread_spin_lock(&hg_class->register_lock);
+    ret = HG_Core_deregister(hg_class->core_class, id);
+    hg_thread_spin_unlock(&hg_class->register_lock);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -1839,7 +1858,8 @@ HG_Create(hg_context_t *context, hg_addr_t addr, hg_id_t id,
     ret = HG_Core_create(context->core_context, (hg_core_addr_t) addr, id,
         &core_handle);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Cannot create HG handle");
+        if (ret != HG_NO_MATCH) /* silence error if invalid ID is used */
+            HG_LOG_ERROR("Cannot create HG handle with ID %lu", id);
         goto done;
     }
 

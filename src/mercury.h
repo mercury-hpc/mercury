@@ -420,6 +420,22 @@ HG_Register(
         );
 
 /**
+ * Deregister RPC ID. Further requests with RPC ID will return an error, it
+ * is therefore up to the user to make sure that all requests for that RPC ID
+ * have been treated before it is unregistered.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param id [IN]               registered function ID
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Deregister(
+        hg_class_t *hg_class,
+        hg_id_t id
+        );
+
+/**
  * Indicate whether HG_Register() has been called.
  *
  * \param hg_class [IN]         pointer to HG class

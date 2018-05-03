@@ -447,6 +447,22 @@ HG_Core_register(
         );
 
 /**
+ * Deregister RPC ID. Further requests with RPC ID will return an error, it
+ * is therefore up to the user to make sure that all requests for that RPC ID
+ * have been treated before it is unregistered.
+ *
+ * \param hg_core_class [IN]    pointer to HG core class
+ * \param id [IN]               registered function ID
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_deregister(
+        hg_core_class_t *hg_core_class,
+        hg_id_t id
+        );
+
+/**
  * Indicate whether HG_Core_register() has been called.
  *
  * \param hg_core_class [IN]    pointer to HG core class

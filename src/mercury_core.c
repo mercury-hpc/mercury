@@ -4118,6 +4118,33 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Core_deregister(hg_core_class_t *hg_core_class, hg_id_t id)
+{
+    hg_return_t ret = HG_SUCCESS;
+    int hash_ret;
+
+    if (!hg_core_class) {
+        HG_LOG_ERROR("NULL HG core class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_thread_spin_lock(&hg_core_class->func_map_lock);
+    hash_ret = hg_hash_table_remove(hg_core_class->func_map,
+        (hg_hash_table_key_t) &id);
+    hg_thread_spin_unlock(&hg_core_class->func_map_lock);
+    if (!hash_ret) {
+        HG_LOG_ERROR("Could not deregister RPC ID from function map");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Core_registered(hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t *flag)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -4412,7 +4439,8 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
     /* Set addr / RPC ID */
     ret = hg_core_set_rpc(hg_core_handle, addr, id);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not set rpc to handle");
+        if (ret != HG_NO_MATCH) /* silence error if invalid ID is used */
+            HG_LOG_ERROR("Could not set rpc to handle");
         goto done;
     }
 
