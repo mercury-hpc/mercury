@@ -40,8 +40,10 @@ void
 hg_test_parse_options(int argc, char *argv[],
     struct hg_test_info *hg_test_info);
 
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static hg_return_t
 hg_test_handle_create_cb(hg_handle_t handle, void *arg);
+#endif
 
 static hg_return_t
 hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id);
@@ -148,6 +150,7 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
 }
 
 /*---------------------------------------------------------------------------*/
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static hg_return_t
 hg_test_handle_create_cb(hg_handle_t handle, void *arg)
 {
@@ -167,6 +170,7 @@ hg_test_handle_create_cb(hg_handle_t handle, void *arg)
 done:
     return ret;
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -384,9 +388,11 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     /* Attach test info to class */
     HG_Class_set_data(hg_test_info->hg_class, hg_test_info, NULL);
 
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
     /* Attach handle created */
     HG_Class_set_handle_create_callback(hg_test_info->hg_class,
         hg_test_handle_create_cb, hg_test_info->hg_class);
+#endif
 
     /* Set header */
     /*
