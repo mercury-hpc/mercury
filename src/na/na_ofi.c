@@ -3608,12 +3608,31 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         (struct na_ofi_mem_handle *) local_mem_handle;
     struct na_ofi_mem_handle *ofi_remote_mem_handle =
         (struct na_ofi_mem_handle *) remote_mem_handle;
-    struct iovec iov;
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) remote_addr;
+    struct iovec local_iov = {
+        .iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset,
+        .iov_len = length
+    };
+    struct fi_rma_iov remote_iov = {
+        .addr = (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
+        .len = length,
+        .key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
+            ofi_remote_mem_handle->nom_mr_key
+    };
+    struct fi_msg_rma msg_rma = {
+        .msg_iov = &local_iov,
+        .desc = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NULL :
+            fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl),
+        .iov_count = 1,
+        .addr = na_ofi_with_sep(na_class) ?
+            fi_rx_addr(na_ofi_addr->noa_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS) :
+            na_ofi_addr->noa_addr,
+        .rma_iov = &remote_iov,
+        .rma_iov_count = 1,
+        .context = NULL,
+        .data = 0
+    };
     struct na_ofi_op_id *na_ofi_op_id = NULL;
-    fi_addr_t fi_addr;
-    void *local_desc;
-    na_uint64_t rma_key;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
@@ -3644,21 +3663,15 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_ofi_op_id;
 
+    /* Assign context */
+    msg_rma.context = &na_ofi_op_id->noo_fi_ctx;
+
     /* Post the OFI RMA write */
-    iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
-    iov.iov_len = length;
-    local_desc = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NULL :
-        fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
-    rma_key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
-        ofi_remote_mem_handle->nom_mr_key;
-    fi_addr = na_ofi_with_sep(na_class) ?
-        fi_rx_addr(na_ofi_addr->noa_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS) :
-        na_ofi_addr->noa_addr;
     do {
         na_ofi_class_lock(na_class);
-        rc = fi_writev(ep_hdl, &iov, &local_desc, 1 /* count */, fi_addr,
-            (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
-            rma_key, &na_ofi_op_id->noo_fi_ctx);
+        /* For writes, FI_DELIVERY_COMPLETE guarantees that the result of
+         * the operation is available */
+        rc = fi_writemsg(ep_hdl, &msg_rma, FI_DELIVERY_COMPLETE);
         na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
@@ -3667,7 +3680,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             break;
     } while (1);
     if (rc) {
-        NA_LOG_ERROR("fi_writev() to %s failed, rc: %d(%s)",
+        NA_LOG_ERROR("fi_writemsg() to %s failed, rc: %d(%s)",
                      na_ofi_addr->noa_uri, rc, fi_strerror((int) -rc));
         ret = NA_PROTOCOL_ERROR;
     }
