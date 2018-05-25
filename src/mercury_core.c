@@ -4709,6 +4709,15 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
         goto done;
     }
 #endif
+    if (hg_atomic_cas32(&hg_core_handle->in_use, HG_FALSE, HG_TRUE)
+        != HG_UTIL_TRUE) {
+        /* Not safe to reset
+         * TODO could add the ability to defer the reset operation */
+        HG_LOG_ERROR("Not safe to use HG core handle, handle is still in use, "
+            "refcount: %d", hg_atomic_get32(&hg_core_handle->ref_count));
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
 
 #ifdef HG_HAS_COLLECT_STATS
     /* Increment counter */
@@ -4728,6 +4737,8 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
     if (hg_core_handle->in_buf_used > hg_core_handle->in_buf_size) {
         HG_LOG_ERROR("Exceeding input buffer size");
         ret = HG_SIZE_ERROR;
+        /* Handle is no longer in use */
+        hg_atomic_set32(&hg_core_handle->in_use, HG_FALSE);
         goto done;
     }
 
@@ -4755,6 +4766,8 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
         HG_ENCODE);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not encode header");
+        /* Handle is no longer in use */
+        hg_atomic_set32(&hg_core_handle->in_use, HG_FALSE);
         goto done;
     }
 
@@ -4762,9 +4775,6 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
      * handle but only schedules its completion
      */
     hg_atomic_incr32(&hg_core_handle->ref_count);
-
-    /* Handle is now in use */
-    hg_atomic_set32(&hg_core_handle->in_use, HG_TRUE);
 
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
