@@ -385,7 +385,7 @@ na_ofi_with_reqhdr(const na_class_t *na_class)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
 
-    return na_ofi_with_sep(na_class) || domain->nod_prov_type != NA_OFI_PROV_PSM2;
+    return domain->nod_prov_type != NA_OFI_PROV_PSM2;
 }
 
 /**
@@ -429,8 +429,8 @@ av_addr_ht_value_free(hg_hash_table_value_t value)
 }
 
 static na_return_t
-na_ofi_av_insert(na_class_t *na_class, char *node_str, char *service_str,
-                 fi_addr_t *fi_addr)
+na_ofi_av_insert(na_class_t *na_class, const char *node_str,
+                 const char *service_str, fi_addr_t *fi_addr)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
     na_return_t ret = NA_SUCCESS;
@@ -508,28 +508,42 @@ out:
     return ret;
 }
 
-/* lookup the address hash-table */
+/* addr_str is in the format: "psm2://fi_addr_psmx2://ffff:ff02" */
+static na_uint64_t
+psm2_straddr_2_key(const char *addr_str)
+{
+    na_uint64_t addr_0, addr_1;
+    int ret;
+
+    ret = sscanf(addr_str + 7, "%*[^:]://%" SCNx64 ":%" SCNx64, &addr_0,
+        &addr_1);
+    if (ret != 2) {
+        NA_LOG_ERROR("Could not convert addr string to PSM2 addr format");
+        ret = NA_PROTOCOL_ERROR;
+        return 0;
+    }
+
+    /* only need the epid, i.e. the first 64 bits */
+    return addr_0;
+}
+
+/**
+ * lookup the address hash-table, node should not contain the leading provider
+ * name e.g. "psm2://" or "sockets://"
+ */
 static na_return_t
-na_ofi_addr_ht_lookup(na_class_t *na_class, struct na_ofi_reqhdr *reqhdr,
+na_ofi_addr_ht_lookup(na_class_t *na_class, const char *node,
+                      const char *service, na_uint64_t addr_key,
                       fi_addr_t *src_addr)
 {
     struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
-    na_uint64_t addr_key, *new_key = NULL;
+    na_uint64_t *new_key = NULL;
     fi_addr_t *fi_addr, tmp_addr, *new_value = NULL;
-    char *node, service[16];
-    struct in_addr in;
     na_return_t ret = NA_SUCCESS;
 
-    addr_key = na_ofi_reqhdr_2_key(reqhdr);
     hg_thread_rwlock_rdlock(&domain->nod_rwlock);
     fi_addr = hg_hash_table_lookup(domain->nod_addr_ht, &addr_key);
     if (fi_addr != HG_HASH_TABLE_NULL) {
-        /*
-        in.s_addr = reqhdr->fih_ip;
-        node = inet_ntoa(in);
-        NA_LOG_DEBUG("hg_hash_table_lookup(%s:%d) succeed, fi_addr: %d.\n",
-                     node, reqhdr->fih_port, *fi_addr);
-        */
         *src_addr = *fi_addr;
         hg_thread_rwlock_release_rdlock(&domain->nod_rwlock);
         return ret;
@@ -544,11 +558,6 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, struct na_ofi_reqhdr *reqhdr,
         hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
         return ret;
     }
-
-    in.s_addr = reqhdr->fih_ip;
-    node = inet_ntoa(in);
-    memset(service, 0, 16);
-    sprintf(service, "%d", reqhdr->fih_port);
 
     ret = na_ofi_av_insert(na_class, node, service, &tmp_addr);
     if (ret != NA_SUCCESS) {
@@ -588,6 +597,63 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, struct na_ofi_reqhdr *reqhdr,
     }
 unlock:
     hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
+    return ret;
+}
+
+/* lookup for psm2 */
+static NA_INLINE na_return_t
+na_ofi_addr_ht_lookup_psm2(na_class_t *na_class, const char *name,
+                           fi_addr_t *src_addr)
+{
+    na_uint64_t addr_key;
+    fi_addr_t new_src_addr;
+    na_return_t ret;
+
+    addr_key = psm2_straddr_2_key(name);
+
+    /* for psm2 name is in the "psm2://fi_addr_psmx2://40302:0" style */
+    ret = na_ofi_addr_ht_lookup(na_class, name + 7, NULL, addr_key, &new_src_addr);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("na_ofi_addr_ht_lookup_reqhdr failed, ret: %d.", ret);
+        goto out;
+    }
+    *src_addr = new_src_addr;
+
+out:
+    return ret;
+}
+
+/* lookup for non psm2 */
+static NA_INLINE na_return_t
+na_ofi_addr_ht_lookup_reqhdr(na_class_t *na_class, struct na_ofi_reqhdr *reqhdr,
+                      fi_addr_t *src_addr)
+{
+    fi_addr_t new_src_addr;
+    struct in_addr in;
+    na_uint64_t addr_key;
+    char *node, service[16] = {'\0'};
+    int port_len = 0;
+    na_return_t ret;
+
+    in.s_addr = reqhdr->fih_ip;
+    node = inet_ntoa(in);
+    port_len = snprintf(service, 16, "%d", reqhdr->fih_port);
+    if (port_len > 16) {
+        NA_LOG_ERROR("Exceeding max port name");
+        ret = NA_SIZE_ERROR;
+        goto out;
+    }
+
+    addr_key = na_ofi_reqhdr_2_key(reqhdr);
+
+    ret = na_ofi_addr_ht_lookup(na_class, node, service, addr_key, &new_src_addr);
+    if (ret != NA_SUCCESS) {
+        NA_LOG_ERROR("na_ofi_addr_ht_lookup_reqhdr failed, ret: %d.", ret);
+        goto out;
+    }
+    *src_addr = new_src_addr;
+
+out:
     return ret;
 }
 
@@ -1207,8 +1273,8 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
     while (prov != NULL) {
         if (na_ofi_verify_provider(prov_name, domain_name, prov)) {
             /*
-            NA_LOG_DEBUG("mode 0x%llx, fabric_attr - prov_name %s, name - %s, "
-                         "domain_attr - name %s, domain_attr->threading: %d.",
+            NA_LOG_DEBUG("mode 0x%llx, fabric_attr -> prov_name: %s, name: %s; "
+                         "domain_attr -> name: %s, threading: %d.",
                          prov->mode, prov->fabric_attr->prov_name,
                          prov->fabric_attr->name, prov->domain_attr->name,
                          prov->domain_attr->threading);
@@ -1531,6 +1597,8 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
 {
     struct na_ofi_endpoint *na_ofi_endpoint;
     na_return_t ret = NA_SUCCESS;
+    const char *node_str = NULL, *service_str = NULL;
+    na_uint64_t flags = FI_SOURCE;
     int rc;
 
     na_ofi_endpoint = (struct na_ofi_endpoint *) malloc(
@@ -1564,9 +1632,14 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
         na_ofi_domain->nod_prov->ep_attr->rx_ctx_cnt = max_contexts;
     }
 
-    /* Resolve node / service (always pass a numeric host) */
-    rc = fi_getinfo(NA_OFI_VERSION, na_ofi_endpoint->noe_node,
-        na_ofi_endpoint->noe_service, FI_SOURCE | FI_NUMERICHOST,
+    /* Resolve node / service (always pass a numeric host if non native addr) */
+    if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_PSM2) {
+        flags |= FI_NUMERICHOST;
+        node_str = na_ofi_endpoint->noe_node;
+        service_str = na_ofi_endpoint->noe_service;
+    }
+
+    rc = fi_getinfo(NA_OFI_VERSION, node_str, service_str, flags,
         na_ofi_domain->nod_prov, &na_ofi_endpoint->noe_prov);
     if (rc != 0) {
         NA_LOG_ERROR("fi_getinfo(%s, %s) failed, rc: %d(%s).", node, service,
@@ -1847,11 +1920,11 @@ retry_getname:
     }
     addrlen -= (size_t) rc;
 
-    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2 ||
-        na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
+    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
         snprintf(ep_addr_str + rc, addrlen, "%s:%s", na_ofi_endpoint->noe_node,
             na_ofi_endpoint->noe_service);
     } else {
+        /* psm2 provider returns "fi_addr_psmx2://40302:0" style */
         fi_av_straddr(na_ofi_domain->nod_av, ep_addr, ep_addr_str + rc,
             &addrlen);
         /* verbs provider returns "verbs://inet://192.168.1.64:22222" style */
@@ -2260,12 +2333,14 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         goto out;
     }
 
-    /* Generate request header from endpoint address */
-    ret = na_ofi_gen_req_hdr(NA_OFI_PRIVATE_DATA(na_class)->nop_uri,
-        &NA_OFI_PRIVATE_DATA(na_class)->nop_req_hdr);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("na_ofi_gen_req_hdr failed, ret: %d.", ret);
-        goto out;
+    if (na_ofi_with_reqhdr(na_class) == NA_TRUE) {
+        /* Generate request header from endpoint address */
+        ret = na_ofi_gen_req_hdr(NA_OFI_PRIVATE_DATA(na_class)->nop_uri,
+                &NA_OFI_PRIVATE_DATA(na_class)->nop_req_hdr);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("na_ofi_gen_req_hdr failed, ret: %d.", ret);
+            goto out;
+        }
     }
 
     /*
@@ -2772,13 +2847,6 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     struct na_ofi_reqhdr tmp_reqhdr;
     na_return_t ret = NA_SUCCESS;
 
-    /* Generate a temporary reqhdr to reuse na_ofi_addr_ht_lookup */
-    ret = na_ofi_gen_req_hdr(name, &tmp_reqhdr);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("na_ofi_gen_req_hdr(%s) failed, ret: %d.", name, ret);
-        goto out;
-    }
-
     /* Allocate op_id if not provided */
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
         na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
@@ -2815,7 +2883,23 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Lookup address */
-    ret = na_ofi_addr_ht_lookup(na_class, &tmp_reqhdr, &na_ofi_addr->noa_addr);
+    if (na_ofi_with_reqhdr(na_class) == NA_TRUE) {
+        /* Generate a temporary reqhdr to reuse na_ofi_addr_ht_lookup */
+        ret = na_ofi_gen_req_hdr(name, &tmp_reqhdr);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("na_ofi_gen_req_hdr(%s) failed, ret: %d.", name, ret);
+            goto out;
+        }
+        ret = na_ofi_addr_ht_lookup_reqhdr(na_class, &tmp_reqhdr,
+                &na_ofi_addr->noa_addr);
+    } else if (NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov_type
+        == NA_OFI_PROV_PSM2) {
+        ret = na_ofi_addr_ht_lookup_psm2(na_class, name, &na_ofi_addr->noa_addr);
+    } else {
+        NA_LOG_ERROR("Unsupported address format: %s", name);
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("na_ofi_addr_ht_lookup(%s) failed, ret: %d.", name, ret);
         goto out;
@@ -3891,9 +3975,9 @@ na_ofi_handle_recv_event(na_class_t *na_class, na_context_t *context,
                 ret = NA_PROTOCOL_ERROR;
                 goto out;
             }
-            ret = na_ofi_addr_ht_lookup(na_class, reqhdr, &src_addr);
+            ret = na_ofi_addr_ht_lookup_reqhdr(na_class, reqhdr, &src_addr);
             if (ret != NA_SUCCESS) {
-                NA_LOG_ERROR("na_ofi_addr_ht_lookup failed, ret: %d.", ret);
+                NA_LOG_ERROR("na_ofi_addr_ht_lookup_reqhdr failed, ret: %d.", ret);
                 goto out;
             }
 
