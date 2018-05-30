@@ -25,14 +25,6 @@ env:
 
 matrix:
   include:
-   - os: osx
-     osx_image: xcode9.3
-     compiler: gcc
-     env: MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
-   - os: osx
-     osx_image: xcode9.3
-     compiler: clang
-     env: MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
    - os: linux
      compiler: gcc
      addons:
