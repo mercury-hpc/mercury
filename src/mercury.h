@@ -529,6 +529,24 @@ HG_Registered_disable_response(
         );
 
 /**
+ * Check if response is disabled for a given RPC ID
+ * (i.e. HG_Registered_disable_response has been called for this RPC ID).
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param id [IN]               registered function ID
+ * \param disabled [OUT]        boolean (HG_TRUE if disabled
+ *                                       HG_FALSE if enabled)
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Registered_disabled_response(
+        hg_class_t *hg_class,
+        hg_id_t id,
+        hg_bool_t* disabled
+        );
+
+/**
  * Lookup an addr from a peer address/name. Addresses need to be
  * freed by calling HG_Addr_free(). After completion, user callback is
  * placed into a completion queue and can be triggered using HG_Trigger().
