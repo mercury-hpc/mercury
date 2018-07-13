@@ -397,14 +397,14 @@ na_ofi_reqhdr_2_key(struct na_ofi_reqhdr *hdr)
     return (((na_uint64_t)hdr->fih_ip) << 32 | hdr->fih_port);
 }
 
-static int
+static NA_INLINE int
 av_addr_ht_key_equal(hg_hash_table_key_t vlocation1,
                      hg_hash_table_key_t vlocation2)
 {
     return *((na_uint64_t *) vlocation1) == *((na_uint64_t *) vlocation2);
 }
 
-static unsigned int
+static NA_INLINE unsigned int
 av_addr_ht_key_hash(hg_hash_table_key_t vlocation)
 {
     na_uint64_t key = *((na_uint64_t *) vlocation);
@@ -414,18 +414,6 @@ av_addr_ht_key_hash(hg_hash_table_key_t vlocation)
     lo = (key & 0xFFFFFFFFU);
 
     return ((hi & 0xFFFF0000U) | (lo & 0xFFFFU));
-}
-
-static void
-av_addr_ht_key_free(hg_hash_table_key_t key)
-{
-    free((na_uint64_t *) key);
-}
-
-static void
-av_addr_ht_value_free(hg_hash_table_value_t value)
-{
-    free((fi_addr_t *) value);
 }
 
 static na_return_t
@@ -509,7 +497,7 @@ out:
 }
 
 /* addr_str is in the format: "psm2://fi_addr_psmx2://ffff:ff02" */
-static na_uint64_t
+static NA_INLINE na_uint64_t
 psm2_straddr_2_key(const char *addr_str)
 {
     na_uint64_t addr_0, addr_1;
@@ -1179,9 +1167,11 @@ na_ofi_verify_provider(const char *prov_name, const char *domain_name,
     if (strcmp(prov_name, fi_info->fabric_attr->prov_name))
         goto out;
 
-    /* Only for sockets providers is the provider name ambiguous and requires
-     * checking the domain name as well */
-    if (!strcmp(prov_name, NA_OFI_PROV_SOCKETS_NAME)) {
+    /* Only for sockets/verbs providers is the provider name ambiguous and
+     * requires checking the domain name as well */
+    if (!strcmp(prov_name, NA_OFI_PROV_SOCKETS_NAME) ||
+        !strcmp(prov_name, NA_OFI_PROV_VERBS_NAME) ||
+        !strcmp(prov_name, NA_OFI_PROV_VERBS_RXM_NAME)) {
         /* Does not match domain name */
         if (domain_name && strcmp("\0", domain_name)
             && strcmp(domain_name, fi_info->domain_attr->name))
@@ -1478,8 +1468,7 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
         goto out;
     }
     hg_hash_table_register_free_functions(na_ofi_domain->nod_addr_ht,
-                                          av_addr_ht_key_free,
-                                          av_addr_ht_value_free);
+        free, free);
 
     /* Insert to global domain list */
     hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
@@ -1633,7 +1622,9 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     }
 
     /* Resolve node / service (always pass a numeric host if non native addr) */
-    if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_PSM2) {
+    if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_PSM2
+        && na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS
+        && na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS_RXM) {
         flags |= FI_NUMERICHOST;
         node_str = na_ofi_endpoint->noe_node;
         service_str = na_ofi_endpoint->noe_service;
