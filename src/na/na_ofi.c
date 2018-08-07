@@ -340,6 +340,7 @@ static NA_INLINE void
 na_ofi_domain_lock(struct na_ofi_domain *domain)
 {
     if (domain->nod_prov_type == NA_OFI_PROV_VERBS ||
+        domain->nod_prov_type == NA_OFI_PROV_VERBS_RXM ||
         domain->nod_prov_type == NA_OFI_PROV_PSM2)
         hg_thread_mutex_lock(&domain->nod_mutex);
 }
@@ -348,6 +349,7 @@ static NA_INLINE void
 na_ofi_domain_unlock(struct na_ofi_domain *domain)
 {
     if (domain->nod_prov_type == NA_OFI_PROV_VERBS ||
+        domain->nod_prov_type == NA_OFI_PROV_VERBS_RXM ||
         domain->nod_prov_type == NA_OFI_PROV_PSM2)
         hg_thread_mutex_unlock(&domain->nod_mutex);
 }
@@ -358,7 +360,8 @@ na_ofi_class_lock(na_class_t *na_class)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct na_ofi_domain *domain = priv->nop_domain;
 
-    if (domain->nod_prov_type == NA_OFI_PROV_VERBS)
+    if (domain->nod_prov_type == NA_OFI_PROV_VERBS ||
+        domain->nod_prov_type == NA_OFI_PROV_VERBS_RXM)
         hg_thread_mutex_lock(&priv->nop_mutex);
 }
 
@@ -368,7 +371,8 @@ na_ofi_class_unlock(na_class_t *na_class)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct na_ofi_domain *domain = priv->nop_domain;
 
-    if (domain->nod_prov_type == NA_OFI_PROV_VERBS)
+    if (domain->nod_prov_type == NA_OFI_PROV_VERBS ||
+        domain->nod_prov_type == NA_OFI_PROV_VERBS_RXM)
         hg_thread_mutex_unlock(&priv->nop_mutex);
 }
 
@@ -1360,6 +1364,7 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
 
     /* TODO Force no wait if do not support FI_WAIT_FD/FI_WAIT_SET */
     if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS
+        || na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS_RXM
         || na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2)
         priv->no_wait = NA_TRUE;
 
@@ -1616,7 +1621,8 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     }
 
     /* Set max contexts to EP attrs */
-    if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS) {
+    if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS &&
+        na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS_RXM) {
         na_ofi_domain->nod_prov->ep_attr->tx_ctx_cnt = max_contexts;
         na_ofi_domain->nod_prov->ep_attr->rx_ctx_cnt = max_contexts;
     }
@@ -1640,7 +1646,9 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     }
 
     /* SEP not supported by verbs provider for 1.5.0 */
-    if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS && max_contexts > 1) {
+    if ((na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS &&
+         na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS_RXM)
+        && max_contexts > 1) {
         ret = na_ofi_sep_open(na_ofi_domain, na_ofi_endpoint);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("na_ofi_sep_open failed, ret: %d.", ret);
@@ -1919,7 +1927,8 @@ retry_getname:
         fi_av_straddr(na_ofi_domain->nod_av, ep_addr, ep_addr_str + rc,
             &addrlen);
         /* verbs provider returns "verbs://inet://192.168.1.64:22222" style */
-        if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS &&
+        if ((na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS ||
+             na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS_RXM) &&
             !strncmp(ep_addr_str, "verbs://inet", 12)) {
             char *tmp_dst, *tmp_src;
 
@@ -4417,7 +4426,9 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
 
     /* Work around segfault from verbs provider */
     if (NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov_type
-        != NA_OFI_PROV_VERBS) {
+        != NA_OFI_PROV_VERBS &&
+        NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov_type
+        != NA_OFI_PROV_VERBS_RXM) {
         /* signal the cq to make the wait FD can work */
         rc = fi_cq_signal(cq_hdl);
         if (rc != 0 && rc != -ENOSYS)
