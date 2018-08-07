@@ -3684,6 +3684,8 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     struct na_ofi_mem_handle *ofi_remote_mem_handle =
         (struct na_ofi_mem_handle *) remote_mem_handle;
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) remote_addr;
+    void *local_desc = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NULL :
+        fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
     struct iovec local_iov = {
         .iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset,
         .iov_len = length
@@ -3696,8 +3698,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     };
     struct fi_msg_rma msg_rma = {
         .msg_iov = &local_iov,
-        .desc = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NULL :
-            fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl),
+        .desc = &local_desc,
         .iov_count = 1,
         .addr = na_ofi_with_sep(na_class) ?
             fi_rx_addr(na_ofi_addr->noa_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS) :
@@ -3746,7 +3747,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         na_ofi_class_lock(na_class);
         /* For writes, FI_DELIVERY_COMPLETE guarantees that the result of
          * the operation is available */
-        rc = fi_writemsg(ep_hdl, &msg_rma, FI_DELIVERY_COMPLETE);
+        rc = fi_writemsg(ep_hdl, &msg_rma, FI_COMPLETION|FI_DELIVERY_COMPLETE);
         na_ofi_class_unlock(na_class);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
