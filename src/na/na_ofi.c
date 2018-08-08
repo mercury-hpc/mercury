@@ -97,8 +97,7 @@
 /* Name of providers */
 #define NA_OFI_PROV_SOCKETS_NAME    "sockets"
 #define NA_OFI_PROV_PSM2_NAME       "psm2"
-#define NA_OFI_PROV_VERBS_NAME      "verbs"
-#define NA_OFI_PROV_VERBS_RXM_NAME  "verbs;ofi_rxm"
+#define NA_OFI_PROV_VERBS_NAME      "verbs;ofi_rxm"
 #define NA_OFI_PROV_GNI_NAME        "gni"
 
 #define NA_OFI_MAX_URI_LEN (128)
@@ -163,7 +162,6 @@ enum na_ofi_prov_type {
     NA_OFI_PROV_SOCKETS,
     NA_OFI_PROV_PSM2,
     NA_OFI_PROV_VERBS,
-    NA_OFI_PROV_VERBS_RXM,
     NA_OFI_PROV_GNI
 };
 
@@ -1001,8 +999,7 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
      * that nothing at the NA level guarantees that the tag passed will be
      * unique, this is an assumption based on the current upper HG core layer.
      */
-    if (strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)
-        && strcmp(prov_name, NA_OFI_PROV_VERBS_RXM_NAME))
+    if (strcmp(prov_name, NA_OFI_PROV_VERBS_NAME))
         hints->caps     |= FI_DIRECTED_RECV;
 
     /**
@@ -1041,8 +1038,7 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
 
         /* PSM2 provider requires FI_MR_BASIC bit to be set for now */
         hints->domain_attr->mr_mode = FI_MR_BASIC;
-    } else if (!strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)
-        || !strcmp(prov_name, NA_OFI_PROV_VERBS_RXM_NAME)) {
+    } else if (!strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)) {
         /* FI_MR_BASIC */
         hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL;
     }
@@ -1170,8 +1166,7 @@ na_ofi_verify_provider(const char *prov_name, const char *domain_name,
     /* Only for sockets/verbs providers is the provider name ambiguous and
      * requires checking the domain name as well */
     if (!strcmp(prov_name, NA_OFI_PROV_SOCKETS_NAME) ||
-        !strcmp(prov_name, NA_OFI_PROV_VERBS_NAME) ||
-        !strcmp(prov_name, NA_OFI_PROV_VERBS_RXM_NAME)) {
+        !strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)) {
         /* Does not match domain name */
         if (domain_name && strcmp("\0", domain_name)
             && strcmp(domain_name, fi_info->domain_attr->name))
@@ -1330,8 +1325,6 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_PSM2;
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_VERBS_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS;
-    } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_VERBS_RXM_NAME)) {
-        na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS_RXM;
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_GNI_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
 #if defined(NA_OFI_HAS_EXT_GNI_H)
@@ -1351,6 +1344,9 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
     } else {
         NA_LOG_ERROR("bad domain->nod_prov_name %s.",
             na_ofi_domain->nod_prov_name);
+        if(!strcmp(na_ofi_domain->nod_prov_name, "verbs")) {
+            NA_LOG_ERROR("Mercury only supports the verbs;ofi_rxm provider combination for verbs with libfabric.");
+        }
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
@@ -1623,8 +1619,7 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
 
     /* Resolve node / service (always pass a numeric host if non native addr) */
     if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_PSM2
-        && na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS
-        && na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS_RXM) {
+        && na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS) {
         flags |= FI_NUMERICHOST;
         node_str = na_ofi_endpoint->noe_node;
         service_str = na_ofi_endpoint->noe_service;
