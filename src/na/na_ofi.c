@@ -2367,6 +2367,17 @@ na_ofi_finalize(na_class_t *na_class)
         priv->nop_endpoint = NULL;
     }
 
+    /* Free memory pool (must be done before trying to close the domain as
+     * the pool is holding memory handles) */
+    while (!HG_QUEUE_IS_EMPTY(&priv->nop_buf_pool)) {
+        struct na_ofi_mem_pool *na_ofi_mem_pool =
+            HG_QUEUE_FIRST(&priv->nop_buf_pool);
+        HG_QUEUE_POP_HEAD(&priv->nop_buf_pool, entry);
+
+        na_ofi_mem_pool_destroy(na_ofi_mem_pool);
+    }
+    hg_thread_spin_destroy(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+
     /* Close domain */
     if (priv->nop_domain) {
         ret = na_ofi_domain_close(priv->nop_domain);
@@ -2376,16 +2387,6 @@ na_ofi_finalize(na_class_t *na_class)
         }
         priv->nop_domain = NULL;
     }
-
-    /* Free memory pool */
-    while (!HG_QUEUE_IS_EMPTY(&priv->nop_buf_pool)) {
-        struct na_ofi_mem_pool *na_ofi_mem_pool =
-            HG_QUEUE_FIRST(&priv->nop_buf_pool);
-        HG_QUEUE_POP_HEAD(&priv->nop_buf_pool, entry);
-
-        na_ofi_mem_pool_destroy(na_ofi_mem_pool);
-    }
-    hg_thread_spin_destroy(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
 
     /* Close mutex / free private data */
     hg_thread_mutex_destroy(&priv->nop_mutex);
