@@ -299,6 +299,7 @@ na_test_gen_config(struct na_test_info *na_test_info)
         }
     } else if ((strcmp("tcp", na_test_info->protocol) == 0)
         || (strcmp("verbs;ofi_rxm", na_test_info->protocol) == 0)
+        || (strcmp("verbs", na_test_info->protocol) == 0)
         || (strcmp("psm2", na_test_info->protocol) == 0)
         || (strcmp("sockets", na_test_info->protocol) == 0)) {
         if (na_test_info->listen) {

@@ -2185,8 +2185,11 @@ na_ofi_check_protocol(const char *protocol_name)
 
     /* In case of sockets, protocol used is TCP but allow for passing provider
      * name directly, will use TCP by default */
+    /* We also translate "verbs" to "verbs;ofi_rxm" */
     if (!strcmp(protocol_name, "tcp"))
         prov_name = NA_OFI_PROV_SOCKETS_NAME;
+    else if(!strcmp(protocol_name, "verbs"))
+        prov_name = NA_OFI_PROV_VERBS_NAME;
     else
         prov_name = protocol_name;
 
@@ -2239,8 +2242,11 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     /* In case of sockets, protocol used is TCP but allow for passing provider
      * name directly, will use TCP by default */
+    /* We also translate "verbs" to "verbs;ofi_rxm" */
     if (!strcmp(na_info->protocol_name, "tcp"))
         prov_name = NA_OFI_PROV_SOCKETS_NAME;
+    else if(!strcmp(na_info->protocol_name, "verbs"))
+        prov_name = NA_OFI_PROV_VERBS_NAME;
     else
         prov_name = na_info->protocol_name;
 
