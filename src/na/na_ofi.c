@@ -337,16 +337,14 @@ struct na_ofi_op_id {
 static NA_INLINE void
 na_ofi_domain_lock(struct na_ofi_domain *domain)
 {
-    if (domain->nod_prov_type == NA_OFI_PROV_VERBS ||
-        domain->nod_prov_type == NA_OFI_PROV_PSM2)
+    if (domain->nod_prov_type == NA_OFI_PROV_PSM2)
         hg_thread_mutex_lock(&domain->nod_mutex);
 }
 
 static NA_INLINE void
 na_ofi_domain_unlock(struct na_ofi_domain *domain)
 {
-    if (domain->nod_prov_type == NA_OFI_PROV_VERBS ||
-        domain->nod_prov_type == NA_OFI_PROV_PSM2)
+    if (domain->nod_prov_type == NA_OFI_PROV_PSM2)
         hg_thread_mutex_unlock(&domain->nod_mutex);
 }
 
@@ -356,8 +354,7 @@ na_ofi_class_lock(na_class_t *na_class)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct na_ofi_domain *domain = priv->nop_domain;
 
-    if (domain->nod_prov_type == NA_OFI_PROV_VERBS)
-        hg_thread_mutex_lock(&priv->nop_mutex);
+    /* unused; could have provider-specific locking */
 }
 
 static NA_INLINE void
@@ -366,8 +363,7 @@ na_ofi_class_unlock(na_class_t *na_class)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct na_ofi_domain *domain = priv->nop_domain;
 
-    if (domain->nod_prov_type == NA_OFI_PROV_VERBS)
-        hg_thread_mutex_unlock(&priv->nop_mutex);
+    /* unused; could have provider-specific locking */
 }
 
 static NA_INLINE na_bool_t
@@ -1041,6 +1037,8 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
     } else if (!strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)) {
         /* FI_MR_BASIC */
         hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL;
+        /* also toggle thread mode for verbs */
+        hints->domain_attr->threading = FI_THREAD_SAFE;
     }
 
     /**
