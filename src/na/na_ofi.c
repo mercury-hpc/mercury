@@ -2248,6 +2248,18 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     else
         prov_name = na_info->protocol_name;
 
+    /* In case of GNI, we check to see if MPICH_GNI_NDREG_ENTRIES
+     * environment variable is set or not.  If not, this code is not likely
+     * to work.  Print error msg suggesting workaround.
+     */
+    if (!strcmp(na_info->protocol_name, "gni") && !getenv("MPICH_GNI_NDREG_ENTRIES"))
+    {
+        NA_LOG_ERROR("ofi+gni provider requested, but the MPICH_GNI_NDREG_ENTRIES environment variable is not set.");
+        NA_LOG_ERROR("Please run this executable with \"export MPICH_GNI_NDREG_ENTRIES=2000\" to ensure compatibility.");
+        ret = NA_INVALID_PARAM;
+        goto out;
+    }
+
     /* Get hostname/port info if available */
     if (na_info->host_name) {
         /* Extract hostname */
