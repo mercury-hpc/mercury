@@ -1736,7 +1736,7 @@ na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
     }
 
     /* Enable the endpoint for communication, and commits the bind operations */
-    ret = fi_enable(na_ofi_endpoint->noe_ep);
+    rc = fi_enable(na_ofi_endpoint->noe_ep);
     if (rc != 0) {
         NA_LOG_ERROR("fi_enable failed, rc: %d(%s).", rc, fi_strerror(-rc));
         ret = NA_PROTOCOL_ERROR;
@@ -2247,6 +2247,18 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         prov_name = NA_OFI_PROV_VERBS_NAME;
     else
         prov_name = na_info->protocol_name;
+
+    /* In case of GNI, we check to see if MPICH_GNI_NDREG_ENTRIES
+     * environment variable is set or not.  If not, this code is not likely
+     * to work.  Print error msg suggesting workaround.
+     */
+    if (!strcmp(na_info->protocol_name, "gni") && !getenv("MPICH_GNI_NDREG_ENTRIES"))
+    {
+        NA_LOG_ERROR("ofi+gni provider requested, but the MPICH_GNI_NDREG_ENTRIES environment variable is not set.");
+        NA_LOG_ERROR("Please run this executable with \"export MPICH_GNI_NDREG_ENTRIES=2000\" to ensure compatibility.");
+        ret = NA_INVALID_PARAM;
+        goto out;
+    }
 
     /* Get hostname/port info if available */
     if (na_info->host_name) {
