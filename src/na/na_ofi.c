@@ -1736,7 +1736,7 @@ na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
     }
 
     /* Enable the endpoint for communication, and commits the bind operations */
-    ret = fi_enable(na_ofi_endpoint->noe_ep);
+    rc = fi_enable(na_ofi_endpoint->noe_ep);
     if (rc != 0) {
         NA_LOG_ERROR("fi_enable failed, rc: %d(%s).", rc, fi_strerror(-rc));
         ret = NA_PROTOCOL_ERROR;
