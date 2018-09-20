@@ -4081,7 +4081,16 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid *fids[1];
 
-    if (priv->no_wait)
+    if (priv->no_wait) {
+        /* That point should never be reached since NA_Poll_try_wait()
+         * already returns NA_FALSE if NA_NO_BLOCK is set. */
+        return NA_FALSE;
+    }
+
+    /* Assume it is safe to block if provider is using wait set, only sockets
+     * provider waits on fd for now */
+    if (NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov_type
+        != NA_OFI_PROV_SOCKETS)
         return NA_TRUE;
 
     fids[0] = &ctx->noc_cq->fid;
