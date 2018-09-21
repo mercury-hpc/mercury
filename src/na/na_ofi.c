@@ -174,7 +174,7 @@ struct na_ofi_domain {
     enum na_ofi_prov_type nod_prov_type;    /* OFI provider type */
     enum na_ofi_mr_mode nod_mr_mode;        /* OFI memory region mode */
     char *nod_prov_name;                    /* OFI provider name */
-#if defined(NA_OFI_HAS_EXT_GNI_H)
+#ifdef NA_OFI_HAS_EXT_GNI_H
     struct fi_gni_auth_key fi_gni_auth_key; /* GNI auth key */
 #endif
     struct fi_info *nod_prov;               /* OFI provider info */
@@ -1325,7 +1325,7 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS;
     } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_GNI_NAME)) {
         na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
-#if defined(NA_OFI_HAS_EXT_GNI_H)
+#ifdef NA_OFI_HAS_EXT_GNI_H
         if (auth_key) {
             na_ofi_domain->fi_gni_auth_key.type = GNIX_AKT_RAW;
             na_ofi_domain->fi_gni_auth_key.raw.protection_key =
@@ -1406,10 +1406,11 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
 //            na_ofi_domain->nod_prov->domain_attr->rx_ctx_cnt);
     }
 
-#if defined(NA_OFI_HAS_EXT_GNI_H)
+#ifdef NA_OFI_HAS_EXT_GNI_H
     if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
-        char *other_reg_type = "udreg";
         int enable = 1;
+# ifdef NA_OFI_GNI_HAS_UDREG
+        char *other_reg_type = "udreg";
 
         /* Enable use of udreg instead of internal MR cache */
         ret = na_ofi_gni_set_domain_op_value(na_ofi_domain, GNI_MR_CACHE,
@@ -1418,6 +1419,7 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
             NA_LOG_ERROR("Could not set domain op value for GNI_MR_CACHE");
             goto out;
         }
+# endif
 
         /* Enable lazy deregistration in MR cache */
         ret = na_ofi_gni_set_domain_op_value(na_ofi_domain,
@@ -2248,17 +2250,18 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     else
         prov_name = na_info->protocol_name;
 
-    /* In case of GNI, we check to see if MPICH_GNI_NDREG_ENTRIES
+#if defined(NA_OFI_HAS_EXT_GNI_H) && defined(NA_OFI_GNI_HAS_UDREG)
+    /* In case of GNI using udreg, we check to see whether MPICH_GNI_NDREG_ENTRIES
      * environment variable is set or not.  If not, this code is not likely
-     * to work.  Print error msg suggesting workaround.
+     * to work if Cray MPI is also used. Print error msg suggesting workaround.
      */
-    if (!strcmp(na_info->protocol_name, "gni") && !getenv("MPICH_GNI_NDREG_ENTRIES"))
-    {
+    if (!strcmp(na_info->protocol_name, "gni") && !getenv("MPICH_GNI_NDREG_ENTRIES")) {
         NA_LOG_ERROR("ofi+gni provider requested, but the MPICH_GNI_NDREG_ENTRIES environment variable is not set.");
-        NA_LOG_ERROR("Please run this executable with \"export MPICH_GNI_NDREG_ENTRIES=2000\" to ensure compatibility.");
+        NA_LOG_ERROR("Please run this executable with \"export MPICH_GNI_NDREG_ENTRIES=1024\" to ensure compatibility.");
         ret = NA_INVALID_PARAM;
         goto out;
     }
+#endif
 
     /* Get hostname/port info if available */
     if (na_info->host_name) {
