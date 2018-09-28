@@ -290,7 +290,7 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
         ret = NA_NOMEM_ERROR;
         goto done;
     }
-    na_private_class->protocol_name = NULL;
+    memset(na_private_class, 0, sizeof(struct na_private_class));
 
     plugin_count = sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
 
