@@ -302,6 +302,8 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
     na_info->na_init_info = na_init_info;
     if (na_init_info)
         na_private_class->progress_mode = na_init_info->progress_mode;
+    else
+        na_private_class->progress_mode = 0;
 
 #ifdef NA_DEBUG
     na_info_print(na_info);
