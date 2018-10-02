@@ -87,18 +87,73 @@
 /* Local Macros */
 /****************/
 
+/* Default basic bits */
+#define NA_OFI_MR_BASIC_REQ \
+    (FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY)
+
+/* flags that control na_ofi behavior (in the X macro below for each
+ * provider) 
+ */
+/* requires domain verification in addition to provider match */
+#define NA_OFI_VERIFY_PROV_DOM (1<<0) 
+/* supports FI_WAIT_SET */
+#define NA_OFI_WAIT_SET        (1<<1)
+/* supports FI_WAIT_FD */
+#define NA_OFI_WAIT_FD         (1<<2)
+/* workaround to prevent calling fi_signal() for this provider */
+#define NA_OFI_SKIP_SIGNAL     (1<<4)
+/* workaround to serialize access to ofi domain */
+#define NA_OFI_DOMAIN_LOCK     (1<<5)
+/* disable scalable endpoint support */
+#define NA_OFI_NO_SEP          (1<<6)
+
+/* X-macro to define the following for each supported provider:
+ * - enum type
+ * - name
+ * - alternate (alias) names for convenience 
+ * - progress mode
+ * - memory registration mode flags
+ * - additional capabilities used (beyond the base set required by Mercury)
+ * - misc flags to control na_ofi behavior and workarounds with this provider
+ *
+ * The purpose of this is to aggregate settings for all providers into a
+ * single location so that it is easier to alter them.
+ */
+#define NA_OFI_PROV_TYPES \
+X(NA_OFI_PROV_SOCKETS, "sockets",       "tcp",   FI_PROGRESS_AUTO,   (FI_MR_SCALABLE),      (FI_DIRECTED_RECV),                         (NA_OFI_VERIFY_PROV_DOM|NA_OFI_WAIT_FD)) \
+X(NA_OFI_PROV_PSM2,    "psm2",          "",      FI_PROGRESS_MANUAL, FI_MR_BASIC,         (FI_SOURCE|FI_SOURCE_ERR|FI_DIRECTED_RECV), (NA_OFI_DOMAIN_LOCK)) \
+X(NA_OFI_PROV_VERBS,   "verbs;ofi_rxm", "verbs", FI_PROGRESS_MANUAL, (NA_OFI_MR_BASIC_REQ|FI_MR_LOCAL), 0,                                          (NA_OFI_VERIFY_PROV_DOM|NA_OFI_NO_SEP|NA_OFI_SKIP_SIGNAL)) \
+X(NA_OFI_PROV_GNI,     "gni",           "",      FI_PROGRESS_AUTO,   NA_OFI_MR_BASIC_REQ, (FI_DIRECTED_RECV),                         NA_OFI_WAIT_SET) \
+X(NA_OFI_PROV_NULL, "", "", 0, 0, 0, 0)
+
+#define X(a, b, c, d, e, f, g) a,
+enum na_ofi_prov_type { NA_OFI_PROV_TYPES };
+#undef X
+#define X(a, b, c, d, e, f, g) b,
+static char * const na_ofi_prov_name[] = { NA_OFI_PROV_TYPES };
+#undef X
+#define X(a, b, c, d, e, f, g) c,
+static char * const na_ofi_prov_alt_name[] = { NA_OFI_PROV_TYPES };
+#undef X
+#define X(a, b, c, d, e, f, g) d,
+static unsigned long const na_ofi_prov_progress[] = { NA_OFI_PROV_TYPES };
+#undef X
+#define X(a, b, c, d, e, f, g) e,
+static unsigned long const na_ofi_prov_mr_mode[] = { NA_OFI_PROV_TYPES };
+#undef X
+#define X(a, b, c, d, e, f, g) f,
+static unsigned long const na_ofi_prov_extra_caps[] = { NA_OFI_PROV_TYPES };
+#undef X
+#define X(a, b, c, d, e, f, g) g,
+static unsigned long const na_ofi_prov_flags[] = { NA_OFI_PROV_TYPES };
+#undef X
+
 /**
  * FI VERSION provides binary backward and forward compatibility support.
  * Specify the version of OFI is coded to, the provider will select struct
  * layouts that are compatible with this version.
  */
 #define NA_OFI_VERSION FI_VERSION(1, 5)
-
-/* Name of providers */
-#define NA_OFI_PROV_SOCKETS_NAME    "sockets"
-#define NA_OFI_PROV_PSM2_NAME       "psm2"
-#define NA_OFI_PROV_VERBS_NAME      "verbs;ofi_rxm"
-#define NA_OFI_PROV_GNI_NAME        "gni"
 
 #define NA_OFI_MAX_URI_LEN (128)
 #define NA_OFI_MAX_NODE_LEN (64)
@@ -123,10 +178,6 @@
 /* The magic number for na_ofi_op_id verification */
 #define NA_OFI_OP_ID_MAGIC_1 (0x1928374655627384ULL)
 #define NA_OFI_OP_ID_MAGIC_2 (0x8171615141312111ULL)
-
-/* Default basic bits */
-#define NA_OFI_MR_BASIC_REQ \
-    (FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY)
 
 /* the predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
@@ -158,21 +209,8 @@
 /* Local Type and Struct Definition */
 /************************************/
 
-enum na_ofi_prov_type {
-    NA_OFI_PROV_SOCKETS,
-    NA_OFI_PROV_PSM2,
-    NA_OFI_PROV_VERBS,
-    NA_OFI_PROV_GNI
-};
-
-enum na_ofi_mr_mode {
-    NA_OFI_MR_SCALABLE,
-    NA_OFI_MR_BASIC,
-};
-
 struct na_ofi_domain {
     enum na_ofi_prov_type nod_prov_type;    /* OFI provider type */
-    enum na_ofi_mr_mode nod_mr_mode;        /* OFI memory region mode */
     char *nod_prov_name;                    /* OFI provider name */
 #ifdef NA_OFI_HAS_EXT_GNI_H
     struct fi_gni_auth_key fi_gni_auth_key; /* GNI auth key */
@@ -334,20 +372,33 @@ struct na_ofi_op_id {
 /* Local Helpers */
 /*****************/
 
+static NA_INLINE enum na_ofi_prov_type na_ofi_prov_name_to_type(const char* prov_name) 
+{
+    enum na_ofi_prov_type i=0;
+    while(strcmp(na_ofi_prov_name[i], prov_name) && 
+     strcmp(na_ofi_prov_alt_name[i], prov_name) &&
+     i != NA_OFI_PROV_NULL) {
+        i++;
+    }
+
+    return(i);
+}
+
 static NA_INLINE void
 na_ofi_domain_lock(struct na_ofi_domain *domain)
 {
-    if (domain->nod_prov_type == NA_OFI_PROV_PSM2)
+    if (na_ofi_prov_flags[domain->nod_prov_type] & NA_OFI_DOMAIN_LOCK)
         hg_thread_mutex_lock(&domain->nod_mutex);
 }
 
 static NA_INLINE void
 na_ofi_domain_unlock(struct na_ofi_domain *domain)
 {
-    if (domain->nod_prov_type == NA_OFI_PROV_PSM2)
+    if (na_ofi_prov_flags[domain->nod_prov_type] & NA_OFI_DOMAIN_LOCK)
         hg_thread_mutex_unlock(&domain->nod_mutex);
 }
 
+#if 0
 static NA_INLINE void
 na_ofi_class_lock(na_class_t *na_class)
 {
@@ -365,6 +416,13 @@ na_ofi_class_unlock(na_class_t *na_class)
 
     /* unused; could have provider-specific locking */
 }
+#else
+/* NOTE: no providers currently require this lock; just leaving stubs for
+ * possible future use
+ */
+#define na_ofi_class_lock(x) do {} while(0)
+#define na_ofi_class_unlock(x) do {} while(0)
+#endif
 
 static NA_INLINE na_bool_t
 na_ofi_with_sep(const na_class_t *na_class)
@@ -644,14 +702,14 @@ out:
 /********************/
 
 static int
-na_ofi_getinfo(const char *prov_name, struct fi_info **providers);
+na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers);
 
 static na_return_t
 na_ofi_check_interface(const char *hostname, char *node, size_t node_len,
     char *domain, size_t domain_len);
 
 static NA_INLINE na_bool_t
-na_ofi_verify_provider(const char *prov_name, const char *domain_name,
+na_ofi_verify_provider(enum na_ofi_prov_type prov_type, const char *domain_name,
     const struct fi_info *fi_info);
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
@@ -661,7 +719,8 @@ na_ofi_gni_set_domain_op_value(struct na_ofi_domain *na_ofi_domain, int op,
 #endif
 
 static na_return_t
-na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
+na_ofi_domain_open(struct na_ofi_private_data *priv, 
+    enum na_ofi_prov_type prov_type,
     const char *domain_name, const char *auth_key,
     struct na_ofi_domain **na_ofi_domain_p);
 
@@ -953,7 +1012,7 @@ static hg_thread_mutex_t na_ofi_domain_list_mutex_g =
 /*****************/
 
 static int
-na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
+na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers)
 {
     struct fi_info *hints = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -970,7 +1029,7 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
     }
 
     /* Protocol name is provider name, filter out providers within libfabric */
-    hints->fabric_attr->prov_name = strdup(prov_name);
+    hints->fabric_attr->prov_name = strdup(na_ofi_prov_name[prov_type]);
     if (!hints->fabric_attr->prov_name) {
         NA_LOG_ERROR("Could not duplicate name");
         ret = NA_NOMEM_ERROR;
@@ -990,13 +1049,8 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
     /* caps: capabilities required. */
     hints->caps          = FI_TAGGED | FI_RMA;
 
-    /* NB. verbs does not support FI_DIRECTED_RECV, this is okay for now as the
-     * tag passed to the NA expected recv is already unique per RPC. Note though
-     * that nothing at the NA level guarantees that the tag passed will be
-     * unique, this is an assumption based on the current upper HG core layer.
-     */
-    if (strcmp(prov_name, NA_OFI_PROV_VERBS_NAME))
-        hints->caps     |= FI_DIRECTED_RECV;
+    /* add any additional caps that are particular to this provider */
+    hints->caps |= na_ofi_prov_extra_caps[prov_type];
 
     /**
      * msg_order: guarantee that messages with same tag are ordered.
@@ -1014,31 +1068,13 @@ na_ofi_getinfo(const char *prov_name, struct fi_info **providers)
     hints->domain_attr->threading       = FI_THREAD_UNSPEC;
     hints->domain_attr->av_type         = FI_AV_MAP;
     hints->domain_attr->resource_mgmt   = FI_RM_ENABLED;
+    hints->domain_attr->mr_mode = na_ofi_prov_mr_mode[prov_type];
+    /* all providers should support this */
+    hints->domain_attr->threading = FI_THREAD_SAFE;
 
-    /* Provider specific configuration (MR mode / caps) */
-    if (!strcmp(prov_name, NA_OFI_PROV_SOCKETS_NAME)) {
-        /* Limit ourselves to TCP for now */
+    /* only use sockets provider with tcp for now */
+    if (prov_type == NA_OFI_PROV_SOCKETS) {
         hints->ep_attr->protocol    = FI_PROTO_SOCK_TCP;
-
-        /* For versions 1.5 and later, scalable is implied by the lack of any
-         * mr_mode bits being set. */
-        hints->domain_attr->mr_mode = FI_MR_UNSPEC;
-    } else if (!strcmp(prov_name, NA_OFI_PROV_GNI_NAME)) {
-        /* FI_MR_BASIC, we do not need FI_MR_LOCAL as the unexpected/expected
-         * messages never exceed the eager message size and uGNI registration
-         * is only necessary for large buffers. */
-        hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ;
-    } else if (!strcmp(prov_name, NA_OFI_PROV_PSM2_NAME)) {
-        /* Can retrieve source address from processes not inserted in AV */
-        hints->caps |= (FI_SOURCE | FI_SOURCE_ERR);
-
-        /* PSM2 provider requires FI_MR_BASIC bit to be set for now */
-        hints->domain_attr->mr_mode = FI_MR_BASIC;
-    } else if (!strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)) {
-        /* FI_MR_BASIC */
-        hints->domain_attr->mr_mode = NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL;
-        /* also toggle thread mode for verbs */
-        hints->domain_attr->threading = FI_THREAD_SAFE;
     }
 
     /**
@@ -1152,19 +1188,19 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_bool_t
-na_ofi_verify_provider(const char *prov_name, const char *domain_name,
+na_ofi_verify_provider(enum na_ofi_prov_type prov_type, const char *domain_name,
     const struct fi_info *fi_info)
 {
     na_bool_t ret = NA_FALSE;
 
     /* Does not match provider name */
-    if (strcmp(prov_name, fi_info->fabric_attr->prov_name))
+    if (strcmp(na_ofi_prov_name[prov_type], fi_info->fabric_attr->prov_name))
         goto out;
 
-    /* Only for sockets/verbs providers is the provider name ambiguous and
-     * requires checking the domain name as well */
-    if (!strcmp(prov_name, NA_OFI_PROV_SOCKETS_NAME) ||
-        !strcmp(prov_name, NA_OFI_PROV_VERBS_NAME)) {
+    /* for some providers the provider name is ambiguous and we must check
+     * the domain name as well
+     */
+    if(na_ofi_prov_flags[prov_type] & NA_OFI_VERIFY_PROV_DOM) {
         /* Does not match domain name */
         if (domain_name && strcmp("\0", domain_name)
             && strcmp(domain_name, fi_info->domain_attr->name))
@@ -1209,7 +1245,8 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
+na_ofi_domain_open(struct na_ofi_private_data *priv, 
+    enum na_ofi_prov_type prov_type,
     const char *domain_name, const char *auth_key,
     struct na_ofi_domain **na_ofi_domain_p)
 {
@@ -1227,7 +1264,7 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
      */
     hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
     HG_LIST_FOREACH(na_ofi_domain, &na_ofi_domain_list_g, nod_entry) {
-        if (na_ofi_verify_provider(prov_name, domain_name,
+        if (na_ofi_verify_provider(prov_type, domain_name,
             na_ofi_domain->nod_prov)) {
             hg_atomic_incr32(&na_ofi_domain->nod_refcount);
             domain_found = NA_TRUE;
@@ -1245,7 +1282,7 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
     }
 
     /* If no pre-existing domain, get OFI providers info */
-    ret = na_ofi_getinfo(prov_name, &providers);
+    ret = na_ofi_getinfo(prov_type, &providers);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
         goto out;
@@ -1254,7 +1291,7 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
     /* Try to find provider that matches protocol and domain/host name */
     prov = providers;
     while (prov != NULL) {
-        if (na_ofi_verify_provider(prov_name, domain_name, prov)) {
+        if (na_ofi_verify_provider(prov_type, domain_name, prov)) {
             /*
             NA_LOG_DEBUG("mode 0x%llx, fabric_attr -> prov_name: %s, name: %s; "
                          "domain_attr -> name: %s, threading: %d.",
@@ -1269,7 +1306,7 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
     }
     if (!prov_found) {
         NA_LOG_ERROR("No provider found for \"%s\" provider on domain \"%s\"",
-                     prov_name, domain_name);
+                     na_ofi_prov_name[prov_type], domain_name);
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
@@ -1316,16 +1353,10 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
         goto out;
     }
 
-    /* Set domain configuration (MR mode / caps) */
-    if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_SOCKETS_NAME)) {
-        na_ofi_domain->nod_prov_type = NA_OFI_PROV_SOCKETS;
-    } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_PSM2_NAME)) {
-        na_ofi_domain->nod_prov_type = NA_OFI_PROV_PSM2;
-    } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_VERBS_NAME)) {
-        na_ofi_domain->nod_prov_type = NA_OFI_PROV_VERBS;
-    } else if (!strcmp(na_ofi_domain->nod_prov_name, NA_OFI_PROV_GNI_NAME)) {
-        na_ofi_domain->nod_prov_type = NA_OFI_PROV_GNI;
-#ifdef NA_OFI_HAS_EXT_GNI_H
+    na_ofi_domain->nod_prov_type = prov_type;
+
+    if(prov_type == NA_OFI_PROV_GNI) {
+#if defined(NA_OFI_HAS_EXT_GNI_H)
         if (auth_key) {
             na_ofi_domain->fi_gni_auth_key.type = GNIX_AKT_RAW;
             na_ofi_domain->fi_gni_auth_key.raw.protection_key =
@@ -1339,36 +1370,14 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
 #else
         (void) auth_key;
 #endif
-    } else {
-        NA_LOG_ERROR("bad domain->nod_prov_name %s.",
-            na_ofi_domain->nod_prov_name);
-        if(!strcmp(na_ofi_domain->nod_prov_name, "verbs")) {
-            NA_LOG_ERROR("Mercury only supports the verbs;ofi_rxm provider combination for verbs with libfabric.");
-        }
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
     }
-    na_ofi_domain->nod_mr_mode =
-        (na_ofi_domain->nod_prov_type == NA_OFI_PROV_SOCKETS) ?
-            NA_OFI_MR_SCALABLE : NA_OFI_MR_BASIC;
 
     /* TODO Force no wait if do not support FI_WAIT_FD/FI_WAIT_SET */
-    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_VERBS
-        || na_ofi_domain->nod_prov_type == NA_OFI_PROV_PSM2)
+    if(!(na_ofi_prov_flags[prov_type] & (NA_OFI_WAIT_SET|NA_OFI_WAIT_FD)))
         priv->no_wait = NA_TRUE;
 
-    if (priv->no_wait) {
-        /* Manual progress (no internal progress thread) */
-        na_ofi_domain->nod_prov->domain_attr->control_progress = FI_PROGRESS_MANUAL;
-        na_ofi_domain->nod_prov->domain_attr->data_progress    = FI_PROGRESS_MANUAL;
-    } else {
-        /* As providers do not support both manual progress and wait
-         * objects, set progress to auto for now. Note that the provider
-         * effectively creates a thread for internal progress in that case.
-         */
-        na_ofi_domain->nod_prov->domain_attr->control_progress = FI_PROGRESS_AUTO;
-        na_ofi_domain->nod_prov->domain_attr->data_progress    = FI_PROGRESS_AUTO;
-    }
+    na_ofi_domain->nod_prov->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
+    na_ofi_domain->nod_prov->domain_attr->data_progress    = na_ofi_prov_progress[prov_type];
 
     /* Open fi fabric */
     rc = fi_fabric(na_ofi_domain->nod_prov->fabric_attr,/* In:  Fabric attributes */
@@ -1432,7 +1441,7 @@ na_ofi_domain_open(struct na_ofi_private_data *priv, const char *prov_name,
 #endif
 
     /* For MR_SCALABLE, create MR, now exports all memory range for RMA */
-    if (na_ofi_domain->nod_mr_mode == NA_OFI_MR_SCALABLE) {
+    if (na_ofi_prov_mr_mode[prov_type] & FI_MR_SCALABLE) {
         rc = fi_mr_reg(na_ofi_domain->nod_domain, (void *)0, UINT64_MAX,
             FI_REMOTE_READ | FI_REMOTE_WRITE | FI_SEND | FI_RECV
             | FI_READ | FI_WRITE, 0 /* offset */, NA_OFI_RMA_KEY, 0 /* flags */,
@@ -1634,17 +1643,16 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
         goto out;
     }
 
-    /* SEP not supported by verbs provider for 1.5.0 */
-    if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS && max_contexts > 1) {
-        ret = na_ofi_sep_open(na_ofi_domain, na_ofi_endpoint);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("na_ofi_sep_open failed, ret: %d.", ret);
-            goto out;
-        }
-    } else {
+    if ((na_ofi_prov_flags[na_ofi_domain->nod_prov_type] & NA_OFI_NO_SEP) || max_contexts < 2) {
         ret = na_ofi_basic_ep_open(na_ofi_domain, no_wait, na_ofi_endpoint);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("na_ofi_basic_ep_open failed, ret: %d.", ret);
+            goto out;
+        }
+    } else {
+        ret = na_ofi_sep_open(na_ofi_domain, na_ofi_endpoint);
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("na_ofi_sep_open failed, ret: %d.", ret);
             goto out;
         }
     }
@@ -1690,8 +1698,7 @@ na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
     hg_thread_spin_init(&na_ofi_endpoint->noe_unexpected_op_queue->noq_lock);
 
     if (!no_wait) {
-        /* TODO: for now only sockets provider supports wait on fd. */
-        if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_SOCKETS)
+        if (na_ofi_prov_flags[na_ofi_domain->nod_prov_type] & NA_OFI_WAIT_FD)
             cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
         else {
             struct fi_wait_attr wait_attr = {0};
@@ -2055,7 +2062,7 @@ na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
     memset(mem_ptr, 0, size);
 
     /* Register memory if FI_MR_LOCAL is set */
-    if (domain->nod_mr_mode != NA_OFI_MR_SCALABLE) {
+    if (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_LOCAL) {
         int rc;
 
         rc = fi_mr_reg(domain->nod_domain, mem_ptr, size, FI_REMOTE_READ
@@ -2179,22 +2186,19 @@ static na_bool_t
 na_ofi_check_protocol(const char *protocol_name)
 {
     struct fi_info *providers = NULL, *prov;
-    const char *prov_name;
     na_bool_t accept = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
+    enum na_ofi_prov_type type;
 
-    /* In case of sockets, protocol used is TCP but allow for passing provider
-     * name directly, will use TCP by default */
-    /* We also translate "verbs" to "verbs;ofi_rxm" */
-    if (!strcmp(protocol_name, "tcp"))
-        prov_name = NA_OFI_PROV_SOCKETS_NAME;
-    else if(!strcmp(protocol_name, "verbs"))
-        prov_name = NA_OFI_PROV_VERBS_NAME;
-    else
-        prov_name = protocol_name;
+    type = na_ofi_prov_name_to_type(protocol_name);
+    if(type == NA_OFI_PROV_NULL) {
+        NA_LOG_ERROR("protocol %s not supported", protocol_name);
+        ret = NA_INVALID_PARAM;
+        goto out;
+    }
 
     /* Get info from provider */
-    ret = na_ofi_getinfo(prov_name, &providers);
+    ret = na_ofi_getinfo(type, &providers);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
         goto out;
@@ -2207,7 +2211,7 @@ na_ofi_check_protocol(const char *protocol_name)
                      "domain_attr - name %s, mode: 0x%llx, domain_attr->mode 0x%llx, caps: 0x%llx.", prov->fabric_attr->prov_name,
                      prov->fabric_attr->name, prov->domain_attr->name, prov->mode, prov->domain_attr->mode, prov->caps);
         */
-        if (!strcmp(prov_name, prov->fabric_attr->prov_name)) {
+        if (!strcmp(na_ofi_prov_name[type], prov->fabric_attr->prov_name)) {
             accept = NA_TRUE;
             break;
         }
@@ -2227,12 +2231,12 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 {
     char node[NA_OFI_MAX_URI_LEN] = {'\0'};
     char domain_name[NA_OFI_MAX_URI_LEN] = {'\0'};
-    const char *prov_name;
     char *service = NULL;
     na_bool_t no_wait = NA_FALSE;
     na_uint8_t max_contexts = 1; /* Default */
     const char *auth_key = NULL;
     na_return_t ret = NA_SUCCESS;
+    enum na_ofi_prov_type prov_type;
 
     /*
     NA_LOG_DEBUG("Entering na_ofi_initialize class_name %s, protocol_name %s, "
@@ -2240,22 +2244,20 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
                  na_info->host_name);
     */
 
-    /* In case of sockets, protocol used is TCP but allow for passing provider
-     * name directly, will use TCP by default */
-    /* We also translate "verbs" to "verbs;ofi_rxm" */
-    if (!strcmp(na_info->protocol_name, "tcp"))
-        prov_name = NA_OFI_PROV_SOCKETS_NAME;
-    else if(!strcmp(na_info->protocol_name, "verbs"))
-        prov_name = NA_OFI_PROV_VERBS_NAME;
-    else
-        prov_name = na_info->protocol_name;
+    prov_type = na_ofi_prov_name_to_type(na_info->protocol_name);
+    if(prov_type == NA_OFI_PROV_NULL) {
+        NA_LOG_ERROR("protocol %s not supported", na_info->protocol_name);
+        ret = NA_INVALID_PARAM;
+        goto out;
+    }
 
 #if defined(NA_OFI_HAS_EXT_GNI_H) && defined(NA_OFI_GNI_HAS_UDREG)
     /* In case of GNI using udreg, we check to see whether MPICH_GNI_NDREG_ENTRIES
      * environment variable is set or not.  If not, this code is not likely
      * to work if Cray MPI is also used. Print error msg suggesting workaround.
      */
-    if (!strcmp(na_info->protocol_name, "gni") && !getenv("MPICH_GNI_NDREG_ENTRIES")) {
+    if (prov_type == NA_OFI_PROV_GNI && !getenv("MPICH_GNI_NDREG_ENTRIES"))
+    {
         NA_LOG_ERROR("ofi+gni provider requested, but the MPICH_GNI_NDREG_ENTRIES environment variable is not set.");
         NA_LOG_ERROR("Please run this executable with \"export MPICH_GNI_NDREG_ENTRIES=1024\" to ensure compatibility.");
         ret = NA_INVALID_PARAM;
@@ -2311,10 +2313,10 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     HG_QUEUE_INIT(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool);
 
     /* Create domain */
-    ret = na_ofi_domain_open(na_class->private_data, prov_name, domain_name,
+    ret = na_ofi_domain_open(na_class->private_data, prov_type, domain_name,
         auth_key, &NA_OFI_PRIVATE_DATA(na_class)->nop_domain);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not open domain for %s, %s", prov_name,
+        NA_LOG_ERROR("Could not open domain for %s, %s", na_ofi_prov_name[prov_type],
             domain_name);
         goto out;
     }
@@ -2462,8 +2464,7 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
         }
 
         if (!priv->no_wait) {
-            /* TODO: for now only sockets provider supports wait on fd. */
-            if (domain->nod_prov_type == NA_OFI_PROV_SOCKETS)
+            if (na_ofi_prov_flags[domain->nod_prov_type] & NA_OFI_WAIT_FD)
                 cq_attr.wait_obj = FI_WAIT_FD; /* Wait on fd */
             else {
                 struct fi_wait_attr wait_attr = {0};
@@ -3554,7 +3555,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     na_return_t ret = NA_SUCCESS;
 
     /* nothing to do for scalable memory registration mode */
-    if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE)
+    if (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE)
         return NA_SUCCESS;
 
     /* Set access mode */
@@ -3600,7 +3601,7 @@ na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
     int rc;
 
     /* nothing to do for scalable memory registration mode */
-    if (domain->nod_mr_mode == NA_OFI_MR_SCALABLE)
+    if (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE)
         return NA_SUCCESS;
 
     if (na_ofi_mem_handle->nom_mr_hdl == NULL) {
@@ -3699,7 +3700,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     struct na_ofi_mem_handle *ofi_remote_mem_handle =
         (struct na_ofi_mem_handle *) remote_mem_handle;
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) remote_addr;
-    void *local_desc = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NULL :
+    void *local_desc = (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE) ? NULL :
         fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
     struct iovec local_iov = {
         .iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset,
@@ -3708,7 +3709,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     struct fi_rma_iov remote_iov = {
         .addr = (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
         .len = length,
-        .key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
+        .key = (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
             ofi_remote_mem_handle->nom_mr_key
     };
     struct fi_msg_rma msg_rma = {
@@ -3839,9 +3840,9 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     /* Post the OFI RMA read */
     iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
     iov.iov_len = length;
-    local_desc = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NULL :
+    local_desc = (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE) ? NULL :
         fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
-    rma_key = (domain->nod_mr_mode == NA_OFI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
+    rma_key = (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
         ofi_remote_mem_handle->nom_mr_key;
     fi_addr = na_ofi_with_sep(na_class) ?
         fi_rx_addr(na_ofi_addr->noa_addr, target_id, NA_OFI_SEP_RX_CTX_BITS) :
@@ -4439,9 +4440,8 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
         break;
     }
 
-    /* Work around segfault from verbs provider */
-    if (NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov_type
-        != NA_OFI_PROV_VERBS) {
+    /* Work around segfault on fi_cq_signal() in some providers */
+    if (!na_ofi_prov_flags[NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov_type] & NA_OFI_SKIP_SIGNAL) { 
         /* signal the cq to make the wait FD can work */
         rc = fi_cq_signal(cq_hdl);
         if (rc != 0 && rc != -ENOSYS)
