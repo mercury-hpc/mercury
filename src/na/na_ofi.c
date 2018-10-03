@@ -122,7 +122,7 @@
 #define NA_OFI_PROV_TYPES \
 X(NA_OFI_PROV_SOCKETS, "sockets",       "tcp",   FI_PROGRESS_AUTO,   (FI_MR_SCALABLE),      (FI_DIRECTED_RECV),                         (NA_OFI_VERIFY_PROV_DOM|NA_OFI_WAIT_FD)) \
 X(NA_OFI_PROV_PSM2,    "psm2",          "",      FI_PROGRESS_MANUAL, FI_MR_BASIC,         (FI_SOURCE|FI_SOURCE_ERR|FI_DIRECTED_RECV), (NA_OFI_DOMAIN_LOCK)) \
-X(NA_OFI_PROV_VERBS,   "verbs;ofi_rxm", "verbs", FI_PROGRESS_MANUAL, (NA_OFI_MR_BASIC_REQ|FI_MR_LOCAL), 0,                                          (NA_OFI_VERIFY_PROV_DOM|NA_OFI_NO_SEP|NA_OFI_SKIP_SIGNAL)) \
+X(NA_OFI_PROV_VERBS,   "verbs;ofi_rxm", "verbs", FI_PROGRESS_MANUAL, (NA_OFI_MR_BASIC_REQ|FI_MR_LOCAL), (FI_DIRECTED_RECV),                                          (NA_OFI_VERIFY_PROV_DOM|NA_OFI_NO_SEP|NA_OFI_SKIP_SIGNAL)) \
 X(NA_OFI_PROV_GNI,     "gni",           "",      FI_PROGRESS_AUTO,   NA_OFI_MR_BASIC_REQ, (FI_DIRECTED_RECV),                         NA_OFI_WAIT_SET) \
 X(NA_OFI_PROV_NULL, "", "", 0, 0, 0, 0)
 
