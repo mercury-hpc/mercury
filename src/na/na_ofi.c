@@ -119,12 +119,40 @@
  * The purpose of this is to aggregate settings for all providers into a
  * single location so that it is easier to alter them.
  */
-#define NA_OFI_PROV_TYPES \
-X(NA_OFI_PROV_SOCKETS, "sockets",       "tcp",   FI_PROGRESS_AUTO,   (FI_MR_SCALABLE),      (FI_DIRECTED_RECV),                         (NA_OFI_VERIFY_PROV_DOM|NA_OFI_WAIT_FD)) \
-X(NA_OFI_PROV_PSM2,    "psm2",          "",      FI_PROGRESS_MANUAL, FI_MR_BASIC,         (FI_SOURCE|FI_SOURCE_ERR|FI_DIRECTED_RECV), (NA_OFI_DOMAIN_LOCK)) \
-X(NA_OFI_PROV_VERBS,   "verbs;ofi_rxm", "verbs", FI_PROGRESS_MANUAL, (NA_OFI_MR_BASIC_REQ|FI_MR_LOCAL), (FI_DIRECTED_RECV),                                          (NA_OFI_VERIFY_PROV_DOM|NA_OFI_NO_SEP|NA_OFI_SKIP_SIGNAL)) \
-X(NA_OFI_PROV_GNI,     "gni",           "",      FI_PROGRESS_AUTO,   NA_OFI_MR_BASIC_REQ, (FI_DIRECTED_RECV),                         NA_OFI_WAIT_SET) \
-X(NA_OFI_PROV_NULL, "", "", 0, 0, 0, 0)
+#define NA_OFI_PROV_TYPES                                               \
+    X(NA_OFI_PROV_SOCKETS,                                              \
+        "sockets",                                                      \
+        "tcp",                                                          \
+        FI_PROGRESS_AUTO,                                               \
+        (FI_MR_SCALABLE),                                               \
+        (FI_DIRECTED_RECV),                                             \
+        (NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD)                       \
+    )                                                                   \
+    X(NA_OFI_PROV_PSM2,                                                 \
+        "psm2",                                                         \
+        "",                                                             \
+        FI_PROGRESS_MANUAL,                                             \
+        FI_MR_BASIC,                                                    \
+        (FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV),                 \
+        (NA_OFI_DOMAIN_LOCK)                                            \
+    )                                                                   \
+    X(NA_OFI_PROV_VERBS,                                                \
+        "verbs;ofi_rxm",                                                \
+        "verbs",                                                        \
+        FI_PROGRESS_MANUAL,                                             \
+        (NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL),                            \
+        (FI_DIRECTED_RECV),                                             \
+        (NA_OFI_VERIFY_PROV_DOM | NA_OFI_NO_SEP | NA_OFI_SKIP_SIGNAL)   \
+    )                                                                   \
+    X(NA_OFI_PROV_GNI,                                                  \
+        "gni",                                                          \
+        "",                                                             \
+        FI_PROGRESS_AUTO,                                               \
+        NA_OFI_MR_BASIC_REQ,                                            \
+        (FI_DIRECTED_RECV),                                             \
+        NA_OFI_WAIT_SET                                                 \
+    )                                                                   \
+    X(NA_OFI_PROV_NULL, "", "", 0, 0, 0, 0)
 
 #define X(a, b, c, d, e, f, g) a,
 enum na_ofi_prov_type { NA_OFI_PROV_TYPES };
@@ -372,7 +400,8 @@ struct na_ofi_op_id {
 /* Local Helpers */
 /*****************/
 
-static NA_INLINE enum na_ofi_prov_type na_ofi_prov_name_to_type(const char* prov_name) 
+static NA_INLINE enum na_ofi_prov_type
+na_ofi_prov_name_to_type(const char* prov_name)
 {
     enum na_ofi_prov_type i=0;
     while(strcmp(na_ofi_prov_name[i], prov_name) && 
@@ -4441,7 +4470,8 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     }
 
     /* Work around segfault on fi_cq_signal() in some providers */
-    if (!na_ofi_prov_flags[NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov_type] & NA_OFI_SKIP_SIGNAL) { 
+    if (!(na_ofi_prov_flags[NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov_type]
+        & NA_OFI_SKIP_SIGNAL)) {
         /* signal the cq to make the wait FD can work */
         rc = fi_cq_signal(cq_hdl);
         if (rc != 0 && rc != -ENOSYS)
