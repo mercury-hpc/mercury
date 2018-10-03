@@ -531,7 +531,7 @@ NA_Msg_init_unexpected(
         );
 
 /**
- * Send an unexpected message to dest. Unexpected sends do not require a
+ * Send an unexpected message to dest_addr. Unexpected sends do not require a
  * matching receive to complete. After completion, the user callback is
  * placed into the context completion queue and can be triggered using
  * NA_Trigger().
@@ -554,8 +554,8 @@ NA_Msg_init_unexpected(
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
  * \param plugin_data [IN]      pointer to internal plugin data
- * \param dest [IN]             abstract address of destination
- * \param target_id [IN]        target context ID
+ * \param dest_addr [IN]        abstract address of destination
+ * \param dest_id [IN]          destination context ID
  * \param tag [IN]              tag attached to message
  * \param op_id [IN/OUT]        pointer to operation ID
  *
@@ -570,8 +570,8 @@ NA_Msg_send_unexpected(
         const void   *buf,
         na_size_t     buf_size,
         void         *plugin_data,
-        na_addr_t     dest,
-        na_uint8_t    target_id,
+        na_addr_t     dest_addr,
+        na_uint8_t    dest_id,
         na_tag_t      tag,
         na_op_id_t   *op_id
         );
@@ -633,7 +633,7 @@ NA_Msg_init_expected(
         );
 
 /**
- * Send an expected message to dest. After completion, the user callback is
+ * Send an expected message to dest_addr. After completion, the user callback is
  * placed into the context completion queue and can be triggered using
  * NA_Trigger().
  * The plugin_data parameter returned from the NA_Msg_buf_alloc() call must
@@ -655,8 +655,8 @@ NA_Msg_init_expected(
  * \param buf [IN]              pointer to send buffer
  * \param buf_size [IN]         buffer size
  * \param plugin_data [IN]      pointer to internal plugin data
- * \param dest [IN]             abstract address of destination
- * \param target_id [IN]        target context ID
+ * \param dest_addr [IN]        abstract address of destination
+ * \param dest_id [IN]          destination context ID
  * \param tag [IN]              tag attached to message
  * \param op_id [IN/OUT]        pointer to operation ID
  *
@@ -671,14 +671,14 @@ NA_Msg_send_expected(
         const void   *buf,
         na_size_t     buf_size,
         void         *plugin_data,
-        na_addr_t     dest,
-        na_uint8_t    target_id,
+        na_addr_t     dest_addr,
+        na_uint8_t    dest_id,
         na_tag_t      tag,
         na_op_id_t   *op_id
         );
 
 /**
- * Receive an expected message from source. After completion, the user
+ * Receive an expected message from source_addr. After completion, the user
  * callback is placed into the context completion queue and can be triggered
  * using NA_Trigger().
  * The plugin_data parameter returned from the NA_Msg_buf_alloc() call must
@@ -697,8 +697,8 @@ NA_Msg_send_expected(
  * \param buf [IN]              pointer to receive buffer
  * \param buf_size [IN]         buffer size
  * \param plugin_data [IN]      pointer to internal plugin data
- * \param source [IN]           abstract address of source
- * \param target_id [IN]        source context ID
+ * \param source_addr [IN]      abstract address of source
+ * \param source_id [IN]        source context ID
  * \param tag [IN]              matching tag used to receive message
  * \param op_id [IN/OUT]        pointer to operation ID
  *
@@ -713,8 +713,8 @@ NA_Msg_recv_expected(
         void         *buf,
         na_size_t     buf_size,
         void         *plugin_data,
-        na_addr_t     source,
-        na_uint8_t    target_id,
+        na_addr_t     source_addr,
+        na_uint8_t    source_id,
         na_tag_t      tag,
         na_op_id_t   *op_id
         );
@@ -904,7 +904,7 @@ NA_Mem_handle_deserialize(
         );
 
 /**
- * Put data to remote target.
+ * Put data to remote address.
  * Initiate a put or get to/from the registered memory regions with the
  * given offset/size. After completion, user callback is placed into a
  * completion queue and can be triggered using NA_Trigger().
@@ -947,7 +947,7 @@ NA_Put(
         );
 
 /**
- * Get data from remote target. After completion, user callback is placed into
+ * Get data from remote address. After completion, user callback is placed into
  * a completion queue and can be triggered using NA_Trigger().
  *
  * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,

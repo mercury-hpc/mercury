@@ -852,7 +852,6 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
         ret = NA_INVALID_PARAM;
         goto done;
     }
-
     if (addr == NA_ADDR_NULL) {
         NA_LOG_ERROR("NULL addr");
         ret = NA_INVALID_PARAM;
@@ -1096,7 +1095,7 @@ done:
 na_return_t
 NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest, na_uint8_t target_id, na_tag_t tag,
+    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
@@ -1121,7 +1120,7 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         ret = NA_INVALID_PARAM;
         goto done;
     }
-    if (dest == NA_ADDR_NULL) {
+    if (dest_addr == NA_ADDR_NULL) {
         NA_LOG_ERROR("NULL NA address");
         ret = NA_INVALID_PARAM;
         goto done;
@@ -1133,7 +1132,7 @@ NA_Msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_unexpected(na_class, context, callback, arg, buf,
-        buf_size, plugin_data, dest, target_id, tag, op_id);
+        buf_size, plugin_data, dest_addr, dest_id, tag, op_id);
 
 done:
     return ret;
@@ -1213,7 +1212,7 @@ done:
 na_return_t
 NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest, na_uint8_t target_id, na_tag_t tag,
+    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
     na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
@@ -1238,7 +1237,7 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
         ret = NA_INVALID_PARAM;
         goto done;
     }
-    if (dest == NA_ADDR_NULL) {
+    if (dest_addr == NA_ADDR_NULL) {
         NA_LOG_ERROR("NULL NA address");
         ret = NA_INVALID_PARAM;
         goto done;
@@ -1250,7 +1249,7 @@ NA_Msg_send_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_send_expected(na_class, context, callback, arg, buf,
-        buf_size, plugin_data, dest, target_id, tag, op_id);
+        buf_size, plugin_data, dest_addr, dest_id, tag, op_id);
 
 done:
     return ret;
@@ -1260,8 +1259,8 @@ done:
 na_return_t
 NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t source, na_uint8_t target_id, na_tag_t tag,
-    na_op_id_t *op_id)
+    void *plugin_data, na_addr_t source_addr, na_uint8_t source_id,
+    na_tag_t tag, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1285,7 +1284,7 @@ NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
         ret = NA_INVALID_PARAM;
         goto done;
     }
-    if (source == NA_ADDR_NULL) {
+    if (source_addr == NA_ADDR_NULL) {
         NA_LOG_ERROR("NULL NA address");
         ret = NA_INVALID_PARAM;
         goto done;
@@ -1297,7 +1296,7 @@ NA_Msg_recv_expected(na_class_t *na_class, na_context_t *context,
     }
 
     ret = na_class->msg_recv_expected(na_class, context, callback, arg, buf,
-        buf_size, plugin_data, source, target_id, tag, op_id);
+        buf_size, plugin_data, source_addr, source_id, tag, op_id);
 
 done:
     return ret;

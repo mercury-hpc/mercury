@@ -17,9 +17,13 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
+/* See mercury_types.h */
+
 /*****************/
 /* Public Macros */
 /*****************/
+
+/* See mercury_types.h */
 
 /*********************/
 /* Public Prototypes */

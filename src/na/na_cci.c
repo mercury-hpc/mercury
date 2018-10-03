@@ -260,7 +260,7 @@ na_cci_msg_get_max_tag(const na_class_t * na_class);
 static na_return_t
 na_cci_msg_send_unexpected(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest, na_uint8_t target_id, na_tag_t tag,
+    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
     na_op_id_t * op_id);
 
 /* msg_recv_unexpected */
@@ -273,15 +273,15 @@ na_cci_msg_recv_unexpected(na_class_t * na_class, na_context_t * context,
 static na_return_t
 na_cci_msg_send_expected(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t dest, na_uint8_t target_id, na_tag_t tag,
+    void *plugin_data, na_addr_t dest_addr, na_uint8_t dest_id, na_tag_t tag,
     na_op_id_t * op_id);
 
 /* msg_recv_expected */
 static na_return_t
 na_cci_msg_recv_expected(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
-    void *plugin_data, na_addr_t source, na_uint8_t  target_id, na_tag_t tag,
-    na_op_id_t * op_id);
+    void *plugin_data, na_addr_t source_addr, na_uint8_t  source_id,
+    na_tag_t tag, na_op_id_t * op_id);
 
 static na_return_t
 na_cci_msg_unexpected_push(na_class_t * na_class,
@@ -329,7 +329,7 @@ static na_return_t
 na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t target_id,
+    na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t * op_id);
 
 /* get */
@@ -337,7 +337,7 @@ static na_return_t
 na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t target_id,
+    na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t * op_id);
 
 /* poll_get_fd */
@@ -1029,10 +1029,10 @@ na_cci_msg_get_max_tag(const na_class_t NA_UNUSED * na_class)
 static na_return_t
 na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t * context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest, na_uint8_t NA_UNUSED target_id,
-    na_tag_t tag, na_op_id_t * op_id)
+    void NA_UNUSED *plugin_data, na_addr_t dest_addr,
+    na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t * op_id)
 {
-    na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) dest;
+    na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) dest_addr;
     na_cci_op_id_t *na_cci_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
@@ -1262,10 +1262,10 @@ na_cci_msg_unexpected_op_pop(na_class_t * na_class)
 static na_return_t
 na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    void NA_UNUSED *plugin_data, na_addr_t dest, na_uint8_t NA_UNUSED target_id,
-    na_tag_t tag, na_op_id_t * op_id)
+    void NA_UNUSED *plugin_data, na_addr_t dest_addr,
+    na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t * op_id)
 {
-    na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) dest;
+    na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) dest_addr;
     na_cci_op_id_t *na_cci_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
@@ -1334,11 +1334,11 @@ out:
 static na_return_t
 na_cci_msg_recv_expected(na_class_t * na_class,
     na_context_t * context, na_cb_t callback, void *arg, void *buf,
-    na_size_t buf_size, void NA_UNUSED *plugin_data, na_addr_t source,
-    na_uint8_t NA_UNUSED target_id, na_tag_t tag, na_op_id_t * op_id)
+    na_size_t buf_size, void NA_UNUSED *plugin_data, na_addr_t source_addr,
+    na_uint8_t NA_UNUSED source_id, na_tag_t tag, na_op_id_t * op_id)
 {
     cci_size_t cci_buf_size = (cci_size_t) buf_size;
-    na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) source;
+    na_cci_addr_t *na_cci_addr = (na_cci_addr_t *) source_addr;
     cci_msg_tag_t cci_tag = (cci_msg_tag_t) tag;
     struct na_cci_info_recv_expected *rx = NULL;
     na_cci_op_id_t *na_cci_op_id = NULL;
@@ -1594,7 +1594,7 @@ static na_return_t
 na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED target_id,
+    na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED remote_id,
     na_op_id_t * op_id)
 {
     na_cci_mem_handle_t *cci_local_mem_handle =
@@ -1672,7 +1672,7 @@ static na_return_t
 na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
     void *arg, na_mem_handle_t local_mem_handle, na_offset_t local_offset,
     na_mem_handle_t remote_mem_handle, na_offset_t remote_offset,
-    na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED target_id,
+    na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED remote_id,
     na_op_id_t * op_id)
 {
     na_cci_mem_handle_t *cci_local_mem_handle =
