@@ -561,14 +561,16 @@ int main(int argc, char *argv[])
     }
     HG_PASSED();
 
-    HG_TEST("bind contiguous RPC bulk (size BUFSIZE, offsets 0, 0)");
-    hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, 1, hg_test_info.target_addr, BUFSIZE, 0, 0);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
+    if (strcmp(HG_Class_get_name(hg_test_info.hg_class), "ofi") == 0) {
+        HG_TEST("bind contiguous RPC bulk (size BUFSIZE, offsets 0, 0)");
+        hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
+            hg_test_info.request_class, 1, hg_test_info.target_addr, BUFSIZE, 0, 0);
+        if (hg_ret != HG_SUCCESS) {
+            ret = EXIT_FAILURE;
+            goto done;
+        }
+        HG_PASSED();
     }
-    HG_PASSED();
 
 done:
     if (ret != EXIT_SUCCESS)
