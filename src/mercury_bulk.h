@@ -89,6 +89,62 @@ HG_Bulk_ref_incr(
         );
 
 /**
+ * Bind an existing bulk handle to a local HG context and associate its local
+ * address. This function can be used to forward and share a bulk handle
+ * between targets, which would not have direct access to the origin without
+ * extra RPCs. In that case, the origin address of the bulk handle is embedded
+ * and serialized/deserialized with HG_Bulk_serialize()/HG_Bulk_deserialize().
+ * Users should note that binding a handle adds an extra overhead on
+ * serialization, therefore it is recommended to use it with care.
+ * When binding a handle on origin, HG_Bulk_bind_transfer() can be used since
+ * origin information is embedded in the handle.
+ *
+ * Usage example:
+ * Origin sends an RPC request with a bulk handle attached to target A, target A
+ * forwards the origin's bulk handle to another target B. When target B receives
+ * the deserialized bulk handle, it has the address/info required to initiate a
+ * bulk transfer to/from the origin.
+ * For that usage, the origin will have called this function to bind the bulk
+ * handle to its local context, prior to sending the RPC request to target A.
+ *
+ * \param context [IN]          pointer to HG context
+ * \param handle [IN]           abstract bulk handle
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_bind(
+        hg_bulk_t handle,
+        hg_context_t *context
+        );
+
+/**
+ * Return attached addressing information from a handle that was previously
+ * bound to a context using HG_Bulk_bind().
+ *
+ * \param handle [IN]           abstract bulk handle
+ *
+ * \return abstract HG address or HG_ADDR_NULL in case of error
+*/
+HG_EXPORT hg_addr_t
+HG_Bulk_get_addr(
+       hg_bulk_t handle
+       );
+
+/**
+ * Return attached context ID from a handle that was previously bound to a
+ * context using HG_Bulk_bind().
+ *
+ * \param handle [IN]           abstract bulk handle
+ *
+ * \return valid context ID or 0 by default
+*/
+HG_EXPORT hg_uint8_t
+HG_Bulk_get_context_id(
+       hg_bulk_t handle
+       );
+
+/**
  * Access bulk handle to retrieve memory segments abstracted by handle.
  * \remark When using mercury in co-resident mode (i.e., when addr passed is
  * self addr), this function allows to avoid copy of bulk data by directly
@@ -199,9 +255,49 @@ HG_Bulk_deserialize(
         );
 
 /**
- * Transfer data to/from origin using abstract bulk handles. After completion,
- * user callback is placed into a completion queue and can be triggered using
- * HG_Trigger().
+ * Get pointer to cached serialized buffer if any was priorly set.
+ *
+ * \param handle [IN]           abstract bulk handle
+ *
+ * \return Pointer to buffer or NULL in case of error
+ */
+HG_EXPORT void *
+HG_Bulk_get_serialize_cached_ptr(
+        hg_bulk_t handle
+        );
+
+/**
+ * Get pointer to cached serialized buffer size if any was priorly set.
+ *
+ * \param handle [IN]           abstract bulk handle
+ *
+ * \return Non-negative value or 0 in case of error
+ */
+HG_EXPORT hg_size_t
+HG_Bulk_get_serialize_cached_size(
+        hg_bulk_t handle
+        );
+
+/**
+ * Set cached pointer to serialization buffer.
+ *
+ * \param handle [IN]           abstract bulk handle
+ * \param buf [IN]              pointer to buffer
+ * \param buf_size [IN]         buffer size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_set_serialize_cached_ptr(
+        hg_bulk_t handle,
+        void *buf,
+        na_size_t buf_size
+        );
+
+/**
+ * Transfer data to/from origin using abstract bulk handles and explicit origin
+ * address information. After completion, user callback is placed into a
+ * completion queue and can be triggered using HG_Trigger().
  *
  * \param context [IN]          pointer to HG context
  * \param callback [IN]         pointer to function callback
@@ -235,9 +331,44 @@ HG_Bulk_transfer(
         );
 
 /**
- * Transfer data to/from origin using abstract bulk handles. After completion,
- * user callback is placed into a completion queue and can be triggered using
- * HG_Trigger(). Allow to initiate
+ * Transfer data to/from origin using abstract bulk handles and implicit origin
+ * information (embedded in the origin handle). After completion, user callback
+ * is placed into a completion queue and can be triggered using HG_Trigger().
+ *
+ * \param context [IN]          pointer to HG context
+ * \param callback [IN]         pointer to function callback
+ * \param arg [IN]              pointer to data passed to callback
+ * \param op [IN]               transfer operation:
+ *                                  - HG_BULK_PUSH
+ *                                  - HG_BULK_PULL
+ * \param origin_handle [IN]    abstract bulk handle
+ * \param origin_offset [IN]    offset
+ * \param local_handle [IN]     abstract bulk handle
+ * \param local_offset [IN]     offset
+ * \param size [IN]             size of data to be transferred
+ * \param op_id [OUT]           pointer to returned operation ID
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Bulk_bind_transfer(
+        hg_context_t *context,
+        hg_cb_t callback,
+        void *arg,
+        hg_bulk_op_t op,
+        hg_bulk_t origin_handle,
+        hg_size_t origin_offset,
+        hg_bulk_t local_handle,
+        hg_size_t local_offset,
+        hg_size_t size,
+        hg_op_id_t *op_id
+        );
+
+/**
+ * Transfer data to/from origin using abstract bulk handles, explicit origin
+ * address information and origin context ID (associating the transfer to a
+ * remote context ID). After completion, user callback is placed into a
+ * completion queue and can be triggered using HG_Trigger().
  *
  * \param context [IN]          pointer to HG context
  * \param callback [IN]         pointer to function callback

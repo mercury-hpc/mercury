@@ -381,6 +381,9 @@ const na_class_t na_cci_class_g = {
     na_cci_addr_dup,                        /* addr_dup */
     na_cci_addr_is_self,                    /* addr_is_self */
     na_cci_addr_to_string,                  /* addr_to_string */
+    NULL,                                   /* addr_get_serialize_size */
+    NULL,                                   /* addr_serialize */
+    NULL,                                   /* addr_deserialize */
     na_cci_msg_get_max_unexpected_size,     /* msg_get_max_unexpected_size */
     na_cci_msg_get_max_expected_size,       /* msg_get_max_expected_size */
     NULL,                                   /* msg_get_unexpected_header_size */

@@ -111,6 +111,9 @@ static hg_return_t
 hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info);
 
 static hg_return_t
+hg_test_bulk_bind_transfer_cb(const struct hg_cb_info *hg_cb_info);
+
+static hg_return_t
 hg_test_posix_write_transfer_cb(const struct hg_cb_info *hg_cb_info);
 
 static hg_return_t
@@ -332,6 +335,63 @@ HG_TEST_RPC_CB(hg_test_bulk_write, handle)
 }
 
 /*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_bulk_bind_write, handle)
+{
+    const struct hg_info *hg_info = NULL;
+    hg_bulk_t origin_bulk_handle = HG_BULK_NULL;
+    hg_bulk_t local_bulk_handle = HG_BULK_NULL;
+    struct hg_test_bulk_args *bulk_args = NULL;
+    bulk_write_in_t in_struct;
+    hg_return_t ret = HG_SUCCESS;
+    int fildes;
+
+    bulk_args = (struct hg_test_bulk_args *) malloc(
+            sizeof(struct hg_test_bulk_args));
+
+    /* Keep handle to pass to callback */
+    bulk_args->handle = handle;
+
+    /* Get info from handle */
+    hg_info = HG_Get_info(handle);
+
+    /* Get input parameters and data */
+    ret = HG_Get_input(handle, &in_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not get input\n");
+        return ret;
+    }
+
+    /* Get parameters */
+    fildes = in_struct.fildes;
+    origin_bulk_handle = in_struct.bulk_handle;
+
+    bulk_args->nbytes = HG_Bulk_get_size(origin_bulk_handle);
+    bulk_args->transfer_size = in_struct.transfer_size;
+    bulk_args->origin_offset = in_struct.origin_offset;
+    bulk_args->target_offset = in_struct.target_offset;
+    bulk_args->fildes = fildes;
+
+    /* Create a new block handle to read the data */
+    HG_Bulk_create(hg_info->hg_class, 1, NULL, (hg_size_t *) &bulk_args->nbytes,
+        HG_BULK_READWRITE, &local_bulk_handle);
+
+    /* Pull bulk data */
+    HG_TEST_LOG_DEBUG("Requesting transfer_size=%zu, origin_offset=%zu, "
+        "target_offset=%zu", bulk_args->transfer_size, bulk_args->origin_offset,
+        bulk_args->target_offset);
+    ret = HG_Bulk_bind_transfer(hg_info->context, hg_test_bulk_bind_transfer_cb,
+        bulk_args, HG_BULK_PULL,
+        origin_bulk_handle, bulk_args->origin_offset, local_bulk_handle,
+        bulk_args->target_offset, bulk_args->transfer_size, HG_OP_ID_IGNORE);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not read bulk data\n");
+        return ret;
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
@@ -386,6 +446,77 @@ hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
         fprintf(stderr, "Could not respond\n");
         return ret;
     }
+
+done:
+    HG_Destroy(bulk_args->handle);
+    free(bulk_args);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_bulk_bind_transfer_cb(const struct hg_cb_info *hg_cb_info)
+{
+    struct hg_test_bulk_args *bulk_args =
+        (struct hg_test_bulk_args *) hg_cb_info->arg;
+    hg_bulk_t local_bulk_handle = hg_cb_info->info.bulk.local_handle;
+    hg_bulk_t origin_bulk_handle = hg_cb_info->info.bulk.origin_handle;
+    hg_return_t ret = HG_SUCCESS;
+    bulk_write_in_t in_struct = {
+        .fildes = bulk_args->fildes,
+        .transfer_size = bulk_args->transfer_size,
+        .origin_offset = bulk_args->origin_offset,
+        .target_offset = bulk_args->target_offset,
+        .bulk_handle = origin_bulk_handle
+    };
+    bulk_bind_write_out_t out_struct;
+    void *buf;
+    size_t write_ret;
+
+    if (hg_cb_info->ret == HG_CANCELED) {
+        printf("HG_Bulk_transfer() was successfully canceled\n");
+
+        /* Fill output structure */
+        out_struct.ret = 0;
+    } else if (hg_cb_info->ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Error in callback");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    if (hg_cb_info->ret == HG_SUCCESS) {
+        /* Call bulk_write */
+        HG_Bulk_access(local_bulk_handle, 0, bulk_args->nbytes,
+            HG_BULK_READ_ONLY, 1, &buf, NULL, NULL);
+
+        write_ret = bulk_write(bulk_args->fildes, buf, bulk_args->target_offset,
+            bulk_args->origin_offset - bulk_args->target_offset,
+            bulk_args->transfer_size, 1);
+
+        /* Fill output structure */
+        out_struct.ret = write_ret;
+    }
+
+    /* Try to send the bulk handle back */
+    out_struct.bulk_handle = origin_bulk_handle;
+
+    /* Free block handle */
+    ret = HG_Bulk_free(local_bulk_handle);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not free HG bulk handle\n");
+        return ret;
+    }
+
+    /* Send response back */
+    ret = HG_Respond(bulk_args->handle, NULL, NULL, &out_struct);
+    if (ret != HG_SUCCESS) {
+        fprintf(stderr, "Could not respond\n");
+        return ret;
+    }
+
+    /* Free input */
+    HG_Free_input(bulk_args->handle, &in_struct);
 
 done:
     HG_Destroy(bulk_args->handle);
@@ -1033,6 +1164,7 @@ HG_TEST_RPC_CB(hg_test_overflow, handle)
 HG_TEST_THREAD_CB(hg_test_rpc_open)
 HG_TEST_THREAD_CB(hg_test_rpc_open_no_resp)
 HG_TEST_THREAD_CB(hg_test_bulk_write)
+HG_TEST_THREAD_CB(hg_test_bulk_bind_write)
 //HG_TEST_THREAD_CB(hg_test_pipeline_write)
 #ifndef _WIN32
 HG_TEST_THREAD_CB(hg_test_posix_open)

@@ -94,10 +94,13 @@ typedef na_return_t (*na_bulk_op_t)(
 
 /* Note to self, get_serialize_size may be updated accordingly */
 struct hg_bulk {
+    hg_class_t *hg_class;                /* HG class */
     na_class_t *na_class;                /* NA class */
 #ifdef HG_HAS_SM_ROUTING
     na_class_t *na_sm_class;             /* NA SM class */
 #endif
+    hg_uint8_t context_id;               /* Context ID (valid if bound to handle) */
+    hg_core_addr_t addr;                 /* Addr (valid if bound to handle) */
     hg_size_t total_size;                /* Total size of data abstracted */
     hg_uint32_t segment_count;           /* Number of segments */
     struct hg_bulk_segment *segments;    /* Array of segments */
@@ -110,6 +113,8 @@ struct hg_bulk {
     hg_bool_t segment_alloc;             /* Allocated memory to mirror data */
     hg_uint8_t flags;                    /* Permission flags */
     hg_bool_t eager_mode;                /* Eager transfer */
+    void *serialize_ptr;                 /* Cached serialization buffer */
+    hg_size_t serialize_size;            /* Cached serialization size */
     hg_atomic_int32_t ref_count;         /* Reference count */
 };
 
@@ -384,6 +389,7 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
         goto done;
     }
     memset(hg_bulk, 0, sizeof(struct hg_bulk));
+    hg_bulk->hg_class = hg_class;
     hg_bulk->na_class = na_class;
 #ifdef HG_HAS_SM_ROUTING
     hg_bulk->na_sm_class = na_sm_class;
@@ -618,6 +624,10 @@ hg_bulk_free(struct hg_bulk *hg_bulk)
         }
     }
     free(hg_bulk->segments);
+
+    /* Free addr if any was attached to handle */
+    HG_Core_addr_free(hg_bulk->hg_class->core_class, hg_bulk->addr);
+
     free(hg_bulk);
 
 done:
@@ -1141,6 +1151,82 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Bulk_bind(hg_bulk_t handle, hg_context_t *context)
+{
+    struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
+    struct hg_context *hg_context = context;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_bulk) {
+        HG_LOG_ERROR("NULL memory handle passed");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    if (!context) {
+        HG_LOG_ERROR("NULL HG bulk context");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    if (hg_bulk->addr != HG_CORE_ADDR_NULL) {
+        HG_LOG_ERROR("Handle is already bound to existing address");
+        ret = HG_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    /* Retrieve self address */
+    ret = HG_Core_addr_self(hg_bulk->hg_class->core_class, &hg_bulk->addr);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not get self address");
+        goto done;
+    }
+
+    /* Add context ID */
+    hg_bulk->context_id = HG_Core_context_get_id(hg_context->core_context);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_addr_t
+HG_Bulk_get_addr(hg_bulk_t handle)
+{
+    struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
+    hg_core_addr_t ret = HG_CORE_ADDR_NULL;
+
+    if (!hg_bulk) {
+        HG_LOG_ERROR("NULL memory handle passed");
+        goto done;
+    }
+
+    ret = hg_bulk->addr;
+
+done:
+    return (hg_addr_t) ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_uint8_t
+HG_Bulk_get_context_id(hg_bulk_t handle)
+{
+    struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
+    hg_uint8_t ret = 0;
+
+    if (!hg_bulk) {
+        HG_LOG_ERROR("NULL memory handle passed");
+        goto done;
+    }
+
+    ret = hg_bulk->context_id;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Bulk_access(hg_bulk_t handle, hg_size_t offset, hg_size_t size,
     hg_uint8_t flags, hg_uint32_t max_count, void **buf_ptrs,
     hg_size_t *buf_sizes, hg_uint32_t *actual_count)
@@ -1219,6 +1305,16 @@ HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t request_eager)
     /* Permission flags */
     ret = sizeof(hg_bulk->flags);
 
+    /* Address information is bound */
+    ret += sizeof(hg_bool_t);
+
+    /* Address information */
+    if (hg_bulk->addr != HG_CORE_ADDR_NULL) {
+        ret += sizeof(na_size_t) + NA_Addr_get_serialize_size(hg_bulk->na_class,
+            HG_Core_addr_get_na(hg_bulk->addr));
+        ret += sizeof(hg_bulk->context_id);
+    }
+
     /* Segments */
     ret += sizeof(hg_bulk->total_size) + sizeof(hg_bulk->segment_count)
         + hg_bulk->segment_count * sizeof(*hg_bulk->segments);
@@ -1262,6 +1358,8 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
     char *buf_ptr = (char *) buf;
     ssize_t buf_size_left = (ssize_t) buf_size;
     hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
+    hg_bool_t bind_addr;
     hg_bool_t eager_mode;
     na_class_t *na_class;
 #ifdef HG_HAS_SM_ROUTING
@@ -1284,8 +1382,6 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
     /* Publish handle at this point if not published yet */
     if (!hg_bulk->segment_published) {
         for (i = 0; i < hg_bulk->na_mem_handle_count; i++) {
-            na_return_t na_ret;
-
             if (!hg_bulk->na_mem_handles[i])
                 continue;
 
@@ -1315,6 +1411,45 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not encode permission flags");
         goto done;
+    }
+
+    /* Address information is bound */
+    bind_addr = (hg_bool_t) (hg_bulk->addr != HG_CORE_ADDR_NULL);
+    ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left,
+        &bind_addr, sizeof(bind_addr));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not encode bind address boolean");
+        goto done;
+    }
+
+    /* Add the address information and context ID */
+    if (hg_bulk->addr != HG_CORE_ADDR_NULL) {
+        na_size_t serialize_size = NA_Addr_get_serialize_size(
+            na_class, HG_Core_addr_get_na(hg_bulk->addr));
+
+        ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left,
+            &serialize_size, sizeof(serialize_size));
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not encode serialize size");
+            goto done;
+        }
+
+        na_ret = NA_Addr_serialize(na_class, buf_ptr, (na_size_t) buf_size_left,
+            HG_Core_addr_get_na(hg_bulk->addr));
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not serialize address");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+        buf_ptr += serialize_size;
+        buf_size_left -= (ssize_t) serialize_size;
+
+        ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left,
+            &hg_bulk->context_id, sizeof(hg_bulk->context_id));
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not encode context ID");
+            goto done;
+        }
     }
 
     /* Add the total size of the segments */
@@ -1354,7 +1489,6 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
     /* Add the NA memory handles */
     for (i = 0; i < hg_bulk->na_mem_handle_count; i++) {
         na_size_t serialize_size = 0;
-        na_return_t na_ret;
 
         if (hg_bulk->na_mem_handles[i]) {
             serialize_size = NA_Mem_handle_get_serialize_size(
@@ -1447,6 +1581,8 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
     const char *buf_ptr = (const char *) buf;
     ssize_t buf_size_left = (ssize_t) buf_size;
     hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
+    hg_bool_t bind_addr;
     hg_uint32_t i;
 
     if (!handle) {
@@ -1462,6 +1598,7 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
         goto done;
     }
     memset(hg_bulk, 0, sizeof(struct hg_bulk));
+    hg_bulk->hg_class = hg_class;
     hg_bulk->na_class = HG_Core_class_get_na(hg_class->core_class);
 #ifdef HG_HAS_SM_ROUTING
     hg_bulk->na_sm_class = HG_Core_class_get_na_sm(hg_class->core_class);
@@ -1474,6 +1611,53 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not decode permission flags");
         goto done;
+    }
+
+    /* Address information is bound */
+    ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
+        &bind_addr, sizeof(bind_addr));
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not decode bind address boolean");
+        goto done;
+    }
+
+    /* Get the address information and context ID */
+    if (bind_addr) {
+        na_addr_t na_addr;
+        na_size_t serialize_size;
+
+        ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
+            &serialize_size, sizeof(serialize_size));
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not decode serialize size");
+            goto done;
+        }
+
+        na_ret = NA_Addr_deserialize(hg_bulk->na_class, &na_addr, buf_ptr,
+            (na_size_t) buf_size_left);
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not deserialize address");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+        buf_ptr += serialize_size;
+        buf_size_left -= (ssize_t) serialize_size;
+
+        hg_bulk->addr = HG_Core_addr_create(hg_bulk->hg_class->core_class);
+        if (hg_bulk->addr == HG_CORE_ADDR_NULL) {
+            HG_LOG_ERROR("Could not create core addr");
+            ret = HG_NOMEM_ERROR;
+            goto done;
+        }
+        HG_Core_addr_set_na(hg_bulk->addr, na_addr);
+
+        /* Decode context ID */
+        ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
+            &hg_bulk->context_id, sizeof(hg_bulk->context_id));
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not decode context ID");
+            goto done;
+        }
     }
 
     /* Get the total size of the segments */
@@ -1539,7 +1723,6 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
 
     for (i = 0; i < hg_bulk->na_mem_handle_count; i++) {
         na_size_t serialize_size;
-        na_return_t na_ret;
 
         ret = hg_bulk_deserialize_memcpy(&buf_ptr, &buf_size_left,
             &serialize_size, sizeof(serialize_size));
@@ -1634,14 +1817,110 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+void *
+HG_Bulk_get_serialize_cached_ptr(hg_bulk_t handle)
+{
+    struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
+
+    if (!hg_bulk) {
+        HG_LOG_ERROR("NULL bulk handle");
+        return NULL;
+    }
+
+    return hg_bulk->serialize_ptr;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_size_t
+HG_Bulk_get_serialize_cached_size(hg_bulk_t handle)
+{
+    struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
+
+    if (!hg_bulk) {
+        HG_LOG_ERROR("NULL bulk handle");
+        return 0;
+    }
+
+    return hg_bulk->serialize_size;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Bulk_set_serialize_cached_ptr(hg_bulk_t handle, void *buf,
+    na_size_t buf_size)
+{
+    struct hg_bulk *hg_bulk = (struct hg_bulk *) handle;
+
+    if (!hg_bulk) {
+        HG_LOG_ERROR("NULL bulk handle");
+        return HG_INVALID_PARAM;
+    }
+
+    hg_bulk->serialize_ptr = buf;
+    hg_bulk->serialize_size = buf_size;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_bulk_op_t op, hg_addr_t origin_addr, hg_bulk_t origin_handle,
     hg_size_t origin_offset, hg_bulk_t local_handle, hg_size_t local_offset,
     hg_size_t size, hg_op_id_t *op_id)
 {
-    return HG_Bulk_transfer_id(context, callback, arg, op, origin_addr, 0,
+    struct hg_bulk *hg_bulk_origin = (struct hg_bulk *) origin_handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_bulk_origin) {
+        HG_LOG_ERROR("NULL origin handle passed");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    if (hg_bulk_origin->addr != HG_CORE_ADDR_NULL
+        && hg_bulk_origin->addr != (hg_core_addr_t) origin_addr) {
+        HG_LOG_ERROR("Mismatched address information passed with origin handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Bulk_transfer_id(context, callback, arg, op, origin_addr, 0,
         origin_handle, origin_offset, local_handle, local_offset, size, op_id);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Bulk_bind_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
+    hg_bulk_op_t op, hg_bulk_t origin_handle, hg_size_t origin_offset,
+    hg_bulk_t local_handle, hg_size_t local_offset, hg_size_t size,
+    hg_op_id_t *op_id)
+{
+    struct hg_bulk *hg_bulk_origin = (struct hg_bulk *) origin_handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_bulk_origin) {
+        HG_LOG_ERROR("NULL origin handle passed");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    if (hg_bulk_origin->addr == HG_CORE_ADDR_NULL) {
+        HG_LOG_ERROR("No address information found on bulk handle, "
+            "HG_Bulk_bind() must be called on bulk handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Bulk_transfer_id(context, callback, arg, op,
+        (hg_addr_t) hg_bulk_origin->addr, hg_bulk_origin->context_id,
+        origin_handle, origin_offset, local_handle, local_offset, size, op_id);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1661,14 +1940,22 @@ HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
         goto done;
     }
 
-    if (origin_addr == HG_ADDR_NULL) {
-        HG_LOG_ERROR("NULL addr passed");
+    if (!hg_bulk_origin || !hg_bulk_local) {
+        HG_LOG_ERROR("NULL memory handle passed");
         ret = HG_INVALID_PARAM;
         goto done;
     }
 
-    if (!hg_bulk_origin || !hg_bulk_local) {
-        HG_LOG_ERROR("NULL memory handle passed");
+    if (hg_bulk_origin->addr != HG_CORE_ADDR_NULL
+        && hg_bulk_origin->addr != (hg_core_addr_t) origin_addr) {
+        HG_LOG_ERROR("Mismatched address information passed with origin handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    if (hg_bulk_origin->addr != HG_CORE_ADDR_NULL
+        && hg_bulk_origin->context_id != origin_id) {
+        HG_LOG_ERROR("Mismatched context ID information passed with origin handle");
         ret = HG_INVALID_PARAM;
         goto done;
     }

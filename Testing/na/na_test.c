@@ -415,6 +415,11 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     printf("# Using info string: %s\n", info_string);
     na_test_info->na_class = NA_Initialize_opt(info_string,
         na_test_info->listen, &na_init_info);
+    if (!na_test_info->na_class) {
+        NA_LOG_ERROR("Could not initialize NA");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
 
     if (!na_test_info->extern_init) {
         if (na_test_info->listen) {
@@ -472,6 +477,8 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     }
 
 done:
+    if (ret != NA_SUCCESS)
+        NA_Test_finalize(na_test_info);
     free(info_string);
     return ret;
 }

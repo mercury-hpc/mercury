@@ -410,6 +410,57 @@ NA_Addr_to_string(
         );
 
 /**
+ * Get size required to serialize address.
+ *
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param addr [IN]             abstract address
+ *
+ * \return Non-negative value
+ */
+NA_EXPORT na_size_t
+NA_Addr_get_serialize_size(
+        na_class_t  *na_class,
+        na_addr_t    addr
+        ) NA_WARN_UNUSED_RESULT;
+
+/**
+ * Serialize address into a buffer.
+ *
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param buf [IN/OUT]          pointer to buffer used for serialization
+ * \param buf_size [IN]         buffer size
+ * \param addr [IN]             abstract address
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Addr_serialize(
+        na_class_t  *na_class,
+        void        *buf,
+        na_size_t    buf_size,
+        na_addr_t    addr
+        );
+
+/**
+ * Deserialize address from a buffer. The returned address must be freed with
+ * NA_Addr_free().
+ *
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param addr [OUT]            pointer to abstract address
+ * \param buf [IN]              pointer to buffer used for deserialization
+ * \param buf_size [IN]         buffer size
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Addr_deserialize(
+        na_class_t      *na_class,
+        na_addr_t       *addr,
+        const void      *buf,
+        na_size_t        buf_size
+        );
+
+/**
  * Get the maximum size of messages supported by unexpected send/recv.
  * Small message size.
  *

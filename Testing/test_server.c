@@ -86,7 +86,9 @@ main(int argc, char *argv[])
 
     /* Force to listen */
     hg_test_info.na_test_info.listen = NA_TRUE;
-    HG_Test_init(argc, argv, &hg_test_info);
+    ret = HG_Test_init(argc, argv, &hg_test_info);
+    if (ret != HG_SUCCESS)
+        return EXIT_FAILURE;
 
     hg_test_context_info =
         (struct hg_test_context_info *) HG_Context_get_data(

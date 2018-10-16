@@ -896,6 +896,109 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_size_t
+NA_Addr_get_serialize_size(na_class_t *na_class, na_addr_t addr)
+{
+    na_size_t ret = 0;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        goto done;
+    }
+    if (addr == NA_ADDR_NULL) {
+        NA_LOG_ERROR("NULL addr");
+        goto done;
+    }
+    if (!na_class->addr_get_serialize_size) {
+        NA_LOG_ERROR("addr_get_serialize_size plugin callback is not defined");
+        goto done;
+    }
+
+    ret = na_class->addr_get_serialize_size(na_class, addr);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Addr_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
+    na_addr_t addr)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (addr == NA_ADDR_NULL) {
+        NA_LOG_ERROR("NULL addr");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!na_class->addr_serialize) {
+        NA_LOG_ERROR("addr_serialize plugin callback is not defined");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    ret = na_class->addr_serialize(na_class, buf, buf_size, addr);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
+    na_size_t buf_size)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    if (!na_class) {
+        NA_LOG_ERROR("NULL NA class");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!addr) {
+        NA_LOG_ERROR("NULL pointer to addr");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf) {
+        NA_LOG_ERROR("NULL buffer");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!buf_size) {
+        NA_LOG_ERROR("NULL buffer size");
+        ret = NA_INVALID_PARAM;
+        goto done;
+    }
+    if (!na_class->addr_deserialize) {
+        NA_LOG_ERROR("addr_deserialize plugin callback is not defined");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    ret = na_class->addr_deserialize(na_class, addr, buf, buf_size);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_size_t
 NA_Msg_get_max_unexpected_size(const na_class_t *na_class)
 {
     na_size_t ret = 0;

@@ -536,6 +536,18 @@ HG_Core_addr_lookup(
         );
 
 /**
+ * Create a HG core address.
+ *
+ * \param hg_core_class [IN]    pointer to HG core class
+ *
+ * \return created abstract HG core address or HG_CORE_ADDR_NULL if failed.
+ */
+HG_EXPORT hg_core_addr_t
+HG_Core_addr_create(
+        hg_core_class_t *hg_core_class
+        );
+
+/**
  * Free the addr from the list of peers.
  *
  * \param hg_core_class [IN]    pointer to HG core class
@@ -547,6 +559,18 @@ HG_EXPORT hg_return_t
 HG_Core_addr_free(
         hg_core_class_t *hg_core_class,
         hg_core_addr_t addr
+        );
+
+/**
+ * Set the underlying NA address to a HG address.
+ *
+ * \param core_addr [IN]        abstract address that not set NA address before
+ * \param na_addr [IN]          abstract NA addr
+ */
+HG_EXPORT void
+HG_Core_addr_set_na(
+        hg_core_addr_t core_addr,
+        na_addr_t na_addr
         );
 
 /**
