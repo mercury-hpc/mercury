@@ -194,9 +194,14 @@ hg_test_drc_grant_cb(hg_handle_t handle)
     printf("# Granting access to wlm_id %u...\n", hg_test_info->wlm_id);
     fflush(stdout);
 #ifndef HG_TEST_DRC_IGNORE
+drc_grant_again:
     rc = drc_grant(hg_test_info->credential, hg_test_info->wlm_id,
         DRC_FLAGS_TARGET_WLM);
     if (rc != DRC_SUCCESS && rc != -DRC_ALREADY_GRANTED) {
+        if (rc == -DRC_EINVAL) {
+            sleep(1);
+            goto drc_grant_again;
+        }
         HG_LOG_ERROR("drc_grant() to %d failed (%d, %s)", hg_test_info->wlm_id,
             rc, drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
@@ -252,8 +257,13 @@ hg_test_drc_token_acquire(struct hg_test_info *hg_test_info)
     /* Acquire credential */
 #ifndef HG_TEST_DRC_IGNORE
     if (!hg_test_info->credential) {
+drc_acquire_again:
         rc = drc_acquire(&hg_test_info->credential, 0);
         if (rc != DRC_SUCCESS) { /* failed to acquire credential */
+            if (rc == -DRC_EINVAL) {
+                sleep(1);
+                goto drc_acquire_again;
+            }
             HG_LOG_ERROR("drc_acquire() failed (%d, %s)", rc, drc_strerror(-rc));
             ret = HG_PROTOCOL_ERROR;
             goto done;
@@ -267,8 +277,13 @@ hg_test_drc_token_acquire(struct hg_test_info *hg_test_info)
 
     /* Access credential */
 #ifndef HG_TEST_DRC_IGNORE
+drc_access_again:
     rc = drc_access(hg_test_info->credential, 0, &hg_test_info->credential_info);
     if (rc != DRC_SUCCESS) { /* failed to access credential */
+        if (rc == -DRC_EINVAL) {
+            sleep(1);
+            goto drc_access_again;
+        }
         HG_LOG_ERROR("drc_access() failed (%d, %s)", rc,
             drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
@@ -381,8 +396,13 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
 
     /* Access credential */
 #ifndef HG_TEST_DRC_IGNORE
+drc_access_again:
     rc = drc_access(credential, 0, &hg_test_info->credential_info);
     if (rc != DRC_SUCCESS) { /* failed to access credential */
+        if (rc == -DRC_EINVAL) {
+            sleep(1);
+            goto drc_access_again;
+        }
         HG_LOG_ERROR("drc_access() failed (%d, %s)", rc,
             drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
