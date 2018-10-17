@@ -130,6 +130,25 @@ struct na_class {
             na_addr_t   addr
             );
     na_size_t
+    (*addr_get_serialize_size)(
+            na_class_t      *na_class,
+            na_addr_t        addr
+            );
+    na_return_t
+    (*addr_serialize)(
+            na_class_t      *na_class,
+            void            *buf,
+            na_size_t        buf_size,
+            na_addr_t        addr
+    );
+    na_return_t
+    (*addr_deserialize)(
+            na_class_t      *na_class,
+            na_addr_t       *addr,
+            const void      *buf,
+            na_size_t        buf_size
+    );
+    na_size_t
     (*msg_get_max_unexpected_size)(
             const na_class_t *na_class
             );
@@ -363,6 +382,16 @@ struct na_class {
 #if !defined(container_of)
 # define container_of(ptr, type, member) \
     ((type *) ((char *) ptr - offsetof(type, member)))
+#endif
+
+/**
+ * Min/max macros
+ */
+#ifndef MAX
+# define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+#ifndef MIN
+# define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #endif
 
 /*********************/

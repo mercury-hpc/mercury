@@ -395,7 +395,8 @@ hg_core_finalize(
  */
 static struct hg_core_addr *
 hg_core_addr_create(
-        struct hg_core_class *hg_core_class
+        struct hg_core_class *hg_core_class,
+        na_class_t *na_class
         );
 
 /**
@@ -1289,7 +1290,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static struct hg_core_addr *
-hg_core_addr_create(struct hg_core_class *hg_core_class)
+hg_core_addr_create(struct hg_core_class *hg_core_class, na_class_t *na_class)
 {
     struct hg_core_addr *hg_core_addr = NULL;
 
@@ -1299,6 +1300,7 @@ hg_core_addr_create(struct hg_core_class *hg_core_class)
         goto done;
     }
     memset(hg_core_addr, 0, sizeof(struct hg_core_addr));
+    hg_core_addr->na_class = na_class;
     hg_core_addr->na_addr = NA_ADDR_NULL;
 #ifdef HG_HAS_SM_ROUTING
     hg_core_addr->na_sm_addr = NA_ADDR_NULL;
@@ -1344,7 +1346,7 @@ hg_core_addr_lookup(struct hg_core_context *context, hg_core_cb_t callback, void
     hg_core_op_id->info.lookup.na_lookup_op_id = NA_OP_ID_NULL;
 
     /* Allocate addr */
-    hg_core_addr = hg_core_addr_create(context->hg_core_class);
+    hg_core_addr = hg_core_addr_create(context->hg_core_class, NULL);
     if (!hg_core_addr) {
         HG_LOG_ERROR("Could not create HG addr");
         ret = HG_NOMEM_ERROR;
@@ -1517,19 +1519,19 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_addr_self(struct hg_core_class *hg_core_class, struct hg_core_addr **self_addr)
+hg_core_addr_self(struct hg_core_class *hg_core_class,
+    struct hg_core_addr **self_addr)
 {
     struct hg_core_addr *hg_core_addr = NULL;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    hg_core_addr = hg_core_addr_create(hg_core_class);
+    hg_core_addr = hg_core_addr_create(hg_core_class, hg_core_class->na_class);
     if (!hg_core_addr) {
         HG_LOG_ERROR("Could not create HG addr");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
-    hg_core_addr->na_class = hg_core_class->na_class;
 
     na_ret = NA_Addr_self(hg_core_class->na_class, &hg_core_addr->na_addr);
     if (na_ret != NA_SUCCESS) {
@@ -1561,8 +1563,8 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_addr_dup(struct hg_core_class *hg_core_class, struct hg_core_addr *hg_core_addr,
-    struct hg_core_addr **hg_new_addr)
+hg_core_addr_dup(struct hg_core_class *hg_core_class,
+    struct hg_core_addr *hg_core_addr, struct hg_core_addr **hg_new_addr)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
@@ -1575,7 +1577,7 @@ hg_core_addr_dup(struct hg_core_class *hg_core_class, struct hg_core_addr *hg_co
     if (hg_core_addr->is_mine) {
         struct hg_core_addr *dup = NULL;
 
-        dup = hg_core_addr_create(hg_core_class);
+        dup = hg_core_addr_create(hg_core_class, hg_core_addr->na_class);
         if (!dup) {
             HG_LOG_ERROR("Could not create HG addr");
             ret = HG_NOMEM_ERROR;
@@ -1588,7 +1590,6 @@ hg_core_addr_dup(struct hg_core_class *hg_core_class, struct hg_core_addr *hg_co
             ret = HG_NA_ERROR;
             goto done;
         }
-        dup->na_class = hg_core_addr->na_class;
         *hg_new_addr = dup;
     } else {
         hg_atomic_incr32(&hg_core_addr->ref_count);
@@ -2667,7 +2668,8 @@ hg_core_context_post(struct hg_core_context *context, unsigned int request_count
         }
 
         /* Create internal addresses */
-        hg_core_addr = hg_core_addr_create(context->hg_core_class);
+        hg_core_addr = hg_core_addr_create(context->hg_core_class,
+            hg_core_handle->na_class);
         if (!hg_core_addr) {
             HG_LOG_ERROR("Could not create HG addr");
             ret = HG_NOMEM_ERROR;
@@ -2676,7 +2678,6 @@ hg_core_context_post(struct hg_core_context *context, unsigned int request_count
         /* To safely repost handle and prevent externally referenced address */
         hg_core_addr->is_mine = HG_TRUE;
         hg_core_handle->hg_info.addr = hg_core_addr;
-        hg_core_addr->na_class = hg_core_handle->na_class;
 
         /* Repost handle on completion if told so */
         hg_core_handle->repost = repost;
@@ -4263,6 +4264,19 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_core_addr_t
+HG_Core_addr_create(hg_core_class_t *core_class)
+{
+    if (core_class == NULL) {
+        HG_LOG_ERROR("NULL HG core class");
+        return HG_CORE_ADDR_NULL;
+    }
+
+    return hg_core_addr_create(core_class, core_class->na_class);
+
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_addr_free(hg_core_class_t *hg_core_class, hg_core_addr_t addr)
 {
@@ -4282,6 +4296,16 @@ HG_Core_addr_free(hg_core_class_t *hg_core_class, hg_core_addr_t addr)
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+HG_Core_addr_set_na(hg_core_addr_t core_addr, na_addr_t na_addr)
+{
+    if (core_addr == HG_CORE_ADDR_NULL)
+        return;
+
+    core_addr->na_addr = na_addr;
 }
 
 /*---------------------------------------------------------------------------*/
