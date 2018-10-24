@@ -670,7 +670,7 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
 
         if (na_info->host_name) {
             /* Extract hostname */
-            strncpy(my_hostname, na_info->host_name, NA_BMI_MAX_ADDR_NAME);
+            strncpy(my_hostname, na_info->host_name, NA_BMI_MAX_ADDR_NAME - 1);
             if (strstr(my_hostname, ":")) {
                 char *port_str;
 

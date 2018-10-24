@@ -3206,11 +3206,11 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
                 src_addr = na_ofi_sin_addr;
                 src_addrlen = sizeof(*na_ofi_sin_addr);
                 /* Make sure we are using the right domain */
-                strncpy(domain_name, ifa_name, NA_OFI_MAX_URI_LEN);
+                strncpy(domain_name, ifa_name, NA_OFI_MAX_URI_LEN - 1);
                 free(ifa_name);
             } else {
                 /* Allow for passing domain name directly */
-                strncpy(domain_name, na_info->host_name, NA_OFI_MAX_URI_LEN);
+                strncpy(domain_name, na_info->host_name, NA_OFI_MAX_URI_LEN - 1);
             }
         } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI) {
             struct na_ofi_sin_addr *na_ofi_sin_addr = NULL;
