@@ -193,8 +193,9 @@ static unsigned long const na_ofi_prov_flags[] = { NA_OFI_PROV_TYPES };
 #undef X
 
 /* Address / URI max len */
-#define NA_OFI_MAX_URI_LEN      (128)
+#define NA_OFI_MAX_URI_LEN              (128)
 #define NA_OFI_GNI_AV_STR_ADDR_VERSION  1
+#define NA_OFI_GNI_IFACE_DEFAULT        "ipogif0"
 
 /* Memory pool (enabled by default, comment out to disable) */
 #define NA_OFI_HAS_MEM_POOL
@@ -3143,6 +3144,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     struct na_ofi_private_data *priv;
     void *src_addr = NULL;
     na_size_t src_addrlen = 0;
+    char *resolve_name = NULL;
     char node[NA_OFI_MAX_URI_LEN] = {'\0'};
     char domain_name[NA_OFI_MAX_URI_LEN] = {'\0'};
     na_bool_t no_wait = NA_FALSE;
@@ -3178,23 +3180,40 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     }
 #endif
 
-    /* Get hostname/port info if available */
+    /* Use default interface name if no hostname was passed */
     if (na_info->host_name) {
+        resolve_name = strdup(na_info->host_name);
+        if (!resolve_name) {
+            NA_LOG_ERROR("strdup() of host_name failed");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
+    } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI) {
+        resolve_name = strdup(NA_OFI_GNI_IFACE_DEFAULT);
+        if (!resolve_name) {
+            NA_LOG_ERROR("strdup() of NA_OFI_GNI_IFACE_DEFAULT failed");
+            ret = NA_NOMEM_ERROR;
+            goto out;
+        }
+    }
+
+    /* Get hostname/port info if available */
+    if (resolve_name) {
         if (na_ofi_prov_addr_format[prov_type] == FI_SOCKADDR_IN) {
             char *ifa_name;
             struct na_ofi_sin_addr *na_ofi_sin_addr = NULL;
             unsigned int port = 0;
 
             /* Extract hostname */
-            if (strstr(na_info->host_name, ":")) {
+            if (strstr(resolve_name, ":")) {
                 char *port_str = NULL;
 
-                strtok_r(na_info->host_name, ":", &port_str);
+                strtok_r(resolve_name, ":", &port_str);
                 port = (unsigned int) strtoul(port_str, NULL, 10);
             }
 
             /* Try to get matching IP/device */
-            ret = na_ofi_check_interface(na_info->host_name, port, &ifa_name,
+            ret = na_ofi_check_interface(resolve_name, port, &ifa_name,
                 &na_ofi_sin_addr);
             if (ret != NA_SUCCESS) {
                 NA_LOG_ERROR("Could not check interfaces");
@@ -3210,19 +3229,19 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
                 free(ifa_name);
             } else {
                 /* Allow for passing domain name directly */
-                strncpy(domain_name, na_info->host_name, NA_OFI_MAX_URI_LEN - 1);
+                strncpy(domain_name, resolve_name, NA_OFI_MAX_URI_LEN - 1);
             }
         } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI) {
             struct na_ofi_sin_addr *na_ofi_sin_addr = NULL;
 
             /* If a port was passed, do not use it */
-            if (strstr(na_info->host_name, ":")) {
+            if (strstr(resolve_name, ":")) {
                 char *port_str;
-                strtok_r(na_info->host_name, ":", &port_str);
+                strtok_r(resolve_name, ":", &port_str);
             }
 
             /* Try to get matching IP/device */
-            ret = na_ofi_check_interface(na_info->host_name, 0, NULL,
+            ret = na_ofi_check_interface(resolve_name, 0, NULL,
                 &na_ofi_sin_addr);
             if (ret != NA_SUCCESS) {
                 NA_LOG_ERROR("Could not check interfaces");
@@ -3289,7 +3308,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     ret = na_ofi_endpoint_open(priv->nop_domain, node, src_addr, src_addrlen,
         priv->no_wait, priv->nop_max_contexts, &priv->nop_endpoint);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not create endpoint for %s", na_info->host_name);
+        NA_LOG_ERROR("Could not create endpoint for %s", resolve_name);
         goto out;
     }
 
@@ -3307,6 +3326,7 @@ out:
             na_class->private_data = NULL;
         }
     }
+    free(resolve_name);
     return ret;
 }
 
