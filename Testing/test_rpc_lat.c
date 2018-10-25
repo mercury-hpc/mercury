@@ -112,7 +112,8 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
         unsigned int j;
 
         for (j = 0; j < nhandles; j++) {
-            ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args, &in_struct);
+            ret = HG_Forward(handles[j], hg_test_perf_forward_cb,
+                &args, &in_struct);
             if (ret != HG_SUCCESS) {
                 fprintf(stderr, "Could not forward call\n");
                 goto done;
@@ -126,7 +127,7 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
 
     NA_Test_barrier(&hg_test_info->na_test_info);
 
-    /* Bulk data benchmark */
+    /* RPC latency benchmark */
     for (avg_iter = 0; avg_iter < loop; avg_iter++) {
         hg_time_t t1, t2;
         unsigned int j;
@@ -139,7 +140,8 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
                 HG_Set_target_id(handles[j],
                     (hg_uint8_t) (avg_iter % hg_test_info->na_test_info.max_contexts));
 
-            ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args, &in_struct);
+            ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args,
+			     &in_struct);
             if (ret != HG_SUCCESS) {
                 fprintf(stderr, "Could not forward call\n");
                 goto done;
@@ -154,23 +156,21 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
         hg_request_reset(request);
         hg_atomic_set32(&args.op_completed_count, 0);
 
-        /* At this point we have received everything so work out the bandwidth */
+	/* We have received everything so calculate the bandwidth */
 #ifdef MERCURY_TESTING_PRINT_PARTIAL
-        read_lat = time_read * 1.0e6
-            / (double) (nhandles * (avg_iter + 1) *
-                (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
+        read_lat = time_read * 1.0e6 / (double) (nhandles * (avg_iter + 1) *
+            (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
         if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-            fprintf(stdout, "%-*d%*.*f\r", 10, (int) total_size, NWIDTH,
-                NDIGITS, read_lat);
+            fprintf(stdout, "%-*d%*.*f%*d\r", 10, (int) total_size, NWIDTH,
+                NDIGITS, (read_lat), NWIDTH, (int) (1.0e6 / read_lat));
 #endif
     }
 #ifndef MERCURY_TESTING_PRINT_PARTIAL
-    read_lat = time_read * 1.0e6
-        / (double) (nhandles * loop *
-            (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
+    read_lat = time_read * 1.0e6 / (double) (nhandles * loop *
+        (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-        fprintf(stdout, "%-*d%*.*f", 10, (int) total_size, NWIDTH, NDIGITS,
-            read_lat);
+        fprintf(stdout, "%-*d%*.*f%*d\r", 10, (int) total_size, NWIDTH,
+            NDIGITS, (read_lat), NWIDTH, (int) (1.0e6 / read_lat));
 #endif
     if (hg_test_info->na_test_info.mpi_comm_rank == 0) fprintf(stdout, "\n");
 
@@ -209,8 +209,8 @@ main(int argc, char *argv[])
 #ifdef MERCURY_TESTING_HAS_VERIFY_DATA
             fprintf(stdout, "# WARNING verifying data, output will be slower\n");
 #endif
-            fprintf(stdout, "%-*s%*s\n", 10, "# Size", NWIDTH,
-                "Latency (us)");
+            fprintf(stdout, "%-*s%*s%*s\n", 10, "# Size", NWIDTH,
+                "Latency (us)", NWIDTH, "RPC rate (RPC/s)");
             fflush(stdout);
         }
 
