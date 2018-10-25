@@ -4717,10 +4717,7 @@ na_ofi_poll_get_fd(na_class_t *na_class, na_context_t *context)
         goto out;
 
     rc = fi_control(&ctx->noc_cq->fid, FI_GETWAIT, &fd);
-    if (rc == -FI_ENOSYS) {
-        NA_LOG_WARNING("%s provider does not support retrieval of wait objects",
-            priv->nop_domain->nod_prov_name);
-    } else if (rc < 0)
+    if (rc < 0 && rc != -FI_ENOSYS)
         NA_LOG_ERROR("fi_control() failed, rc: %d(%s).",
             rc, fi_strerror((int) -rc));
 
