@@ -190,6 +190,18 @@ HG_Core_class_get_protocol(
         );
 
 /**
+ * Test whether class is listening or not.
+ *
+ * \param hg_core_class [IN]    pointer to HG core class
+ *
+ * \return HG_TRUE if listening or HG_FALSE if not, or not a valid class
+ */
+HG_EXPORT hg_bool_t
+HG_Core_class_is_listening(
+        const hg_core_class_t *hg_core_class
+        );
+
+/**
  * Obtain the underlying NA class.
  *
  * \param hg_core_class [IN]    pointer to HG core class

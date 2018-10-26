@@ -146,6 +146,18 @@ HG_Class_get_protocol(
         );
 
 /**
+ * Test whether class is listening or not.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ *
+ * \return HG_TRUE if listening or HG_FALSE if not, or not a valid class
+ */
+HG_EXPORT hg_bool_t
+HG_Class_is_listening(
+        const hg_class_t *hg_class
+        );
+
+/**
  * Obtain the maximum eager size for sending RPC inputs, for a given class.
  * NOTE: This doesn't currently work when using XDR encoding.
  *

@@ -1122,6 +1122,23 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_bool_t
+HG_Class_is_listening(const hg_class_t *hg_class)
+{
+    hg_bool_t ret = HG_FALSE;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        goto done;
+    }
+
+    ret = HG_Core_class_is_listening(hg_class->core_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_size_t
 HG_Class_get_input_eager_size(const hg_class_t *hg_class)
 {
@@ -1301,7 +1318,7 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
         hg_handle_create_cb, hg_context);
 
     /* If we are listening, start posting requests */
-    if (NA_Is_listening(HG_Core_class_get_na(hg_class->core_class))) {
+    if (HG_Core_class_is_listening(hg_class->core_class)) {
         ret = HG_Core_context_post(hg_context->core_context, request_count,
             HG_TRUE);
         if (ret != HG_SUCCESS) {

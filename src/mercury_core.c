@@ -3428,6 +3428,23 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_bool_t
+HG_Core_class_is_listening(const hg_core_class_t *hg_core_class)
+{
+    hg_bool_t ret = HG_FALSE;
+
+    if (!hg_core_class) {
+        HG_LOG_ERROR("NULL HG core class");
+        goto done;
+    }
+
+    ret = NA_Is_listening(hg_core_class->na_class);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 na_class_t *
 HG_Core_class_get_na(const hg_core_class_t *hg_core_class)
 {
