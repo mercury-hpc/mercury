@@ -1745,6 +1745,45 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Registered_disabled_response(hg_class_t *hg_class, hg_id_t id,
+    hg_bool_t *disabled)
+{
+    struct hg_proc_info *hg_proc_info = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    if (!disabled) {
+        HG_LOG_ERROR("NULL pointer to disabled flag");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    hg_thread_spin_lock(&hg_class->register_lock);
+
+    /* Retrieve proc function from function map */
+    hg_proc_info = (struct hg_proc_info *) HG_Core_registered_data(
+        hg_class->core_class, id);
+    if (!hg_proc_info) {
+        HG_LOG_ERROR("Could not get registered data");
+        ret = HG_NO_MATCH;
+        hg_thread_spin_unlock(&hg_class->register_lock);
+        goto done;
+    }
+
+    *disabled = hg_proc_info->no_response;
+
+    hg_thread_spin_unlock(&hg_class->register_lock);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Addr_lookup(hg_context_t *context, hg_cb_t callback, void *arg,
     const char *name, hg_op_id_t *op_id)
 {
