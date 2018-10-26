@@ -1122,6 +1122,11 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
         hg_core_class->progress_mode = hg_init_info->na_init_info.progress_mode;
 #ifdef HG_HAS_SM_ROUTING
         auto_sm = hg_init_info->auto_sm;
+#else
+        if (hg_init_info->auto_sm) {
+            HG_LOG_WARNING("Auto SM requested but not enabled, "
+                "please turn ON MERCURY_USE_SM_ROUTING in CMake options");
+        }
 #endif
 #ifdef HG_HAS_COLLECT_STATS
         hg_core_class->stats = hg_init_info->stats;
