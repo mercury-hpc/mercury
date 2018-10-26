@@ -700,6 +700,7 @@ static int
 hg_core_completion_queue_notify_cb(
         void *arg,
         unsigned int timeout,
+        int error,
         hg_util_bool_t *progressed
         );
 #endif
@@ -711,6 +712,7 @@ static int
 hg_core_progress_na_cb(
         void *arg,
         unsigned int timeout,
+        int error,
         hg_util_bool_t *progressed
         );
 
@@ -722,6 +724,7 @@ static int
 hg_core_progress_na_sm_cb(
         void *arg,
         unsigned int timeout,
+        int error,
         hg_util_bool_t *progressed
         );
 #endif
@@ -2767,7 +2770,7 @@ done:
 #ifdef HG_HAS_SELF_FORWARD
 static int
 hg_core_completion_queue_notify_cb(void *arg, unsigned int timeout,
-    hg_util_bool_t *progressed)
+    int HG_UNUSED error, hg_util_bool_t *progressed)
 {
     struct hg_core_context *context = (struct hg_core_context *) arg;
     hg_util_bool_t notified = HG_UTIL_FALSE;
@@ -2794,7 +2797,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static int
-hg_core_progress_na_cb(void *arg, unsigned int timeout,
+hg_core_progress_na_cb(void *arg, unsigned int timeout, int HG_UNUSED error,
     hg_util_bool_t *progressed)
 {
     struct hg_core_context *context = (struct hg_core_context *) arg;
@@ -2846,7 +2849,7 @@ done:
 /*---------------------------------------------------------------------------*/
 #ifdef HG_HAS_SM_ROUTING
 static int
-hg_core_progress_na_sm_cb(void *arg, unsigned int timeout,
+hg_core_progress_na_sm_cb(void *arg, unsigned int timeout, int HG_UNUSED error,
     hg_util_bool_t *progressed)
 {
     struct hg_core_context *context = (struct hg_core_context *) arg;

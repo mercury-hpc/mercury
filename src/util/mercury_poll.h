@@ -36,11 +36,12 @@ typedef hg_util_bool_t (*hg_poll_try_wait_cb_t)(void *arg);
  *
  * \param arg [IN]              pointer to user data
  * \param timeout [IN]          timeout (ms) -- carried from hg_poll_wait()
+ * \param error [IN]            any error event has occurred
  * \param progressed [OUT]      pointer to boolean indicating progress made
  *
  * \return Non-negative on success or negative on failure
  */
-typedef int (*hg_poll_cb_t)(void *arg, unsigned int timeout,
+typedef int (*hg_poll_cb_t)(void *arg, unsigned int timeout, int error,
     hg_util_bool_t *progressed);
 
 /**

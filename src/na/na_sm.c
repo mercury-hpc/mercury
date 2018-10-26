@@ -513,13 +513,24 @@ na_sm_offset_translate(
     );
 
 /**
- * Progress callback
+ * Progress callback.
  */
 static int
 na_sm_progress_cb(
     void *arg,
     unsigned int timeout,
+    int error,
     hg_util_bool_t *progressed
+    );
+
+/**
+ * Progress error.
+ */
+static na_return_t
+na_sm_progress_error(
+    na_class_t *na_class,
+    struct na_sm_addr *poll_addr,
+    int error
     );
 
 /**
@@ -1774,7 +1785,7 @@ na_sm_offset_translate(struct na_sm_mem_handle *mem_handle, na_offset_t offset,
 
 /*---------------------------------------------------------------------------*/
 static int
-na_sm_progress_cb(void *arg, unsigned int NA_UNUSED timeout,
+na_sm_progress_cb(void *arg, unsigned int NA_UNUSED timeout, int error,
     hg_util_bool_t *progressed)
 {
     na_class_t *na_class;
@@ -1788,7 +1799,13 @@ na_sm_progress_cb(void *arg, unsigned int NA_UNUSED timeout,
     }
     na_class = na_sm_poll_data->na_class;
 
-    switch (na_sm_poll_data->type) {
+    if (error) {
+        na_ret = na_sm_progress_error(na_class, na_sm_poll_data->addr, error);
+        if (na_ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not process error");
+            goto done;
+        }
+    } else switch (na_sm_poll_data->type) {
         case NA_SM_ACCEPT:
             na_ret = na_sm_progress_accept(na_class, na_sm_poll_data->addr,
                 (hg_util_bool_t *) progressed);
@@ -1822,6 +1839,28 @@ na_sm_progress_cb(void *arg, unsigned int NA_UNUSED timeout,
 
 done:
     return (na_ret == NA_SUCCESS) ? HG_UTIL_SUCCESS : HG_UTIL_FAIL;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_progress_error(na_class_t *na_class, struct na_sm_addr *poll_addr,
+    int error)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    if (poll_addr == NA_SM_PRIVATE_DATA(na_class)->self_addr) {
+        NA_LOG_ERROR("Unsupported error occurred");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
+    /* Handle case of peer disconnection */
+    if (error) {
+        ret = na_sm_addr_free(na_class, poll_addr);
+    }
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2584,7 +2623,6 @@ na_sm_finalize(na_class_t *na_class)
     while (!HG_QUEUE_IS_EMPTY(&NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue)) {
         struct na_sm_addr *na_sm_addr = HG_QUEUE_FIRST(
             &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue);
-        HG_QUEUE_POP_HEAD(&NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue, entry);
         ret = na_sm_addr_free(na_class, na_sm_addr);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not free accepted addr");
@@ -2836,6 +2874,16 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
         goto done;
     }
 
+    if (na_sm_addr->accepted) { /* Created by accept */
+        hg_thread_spin_lock(
+            &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_lock);
+        /* Remove the addr from accepted addr queue */
+        HG_QUEUE_REMOVE(&NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue,
+            na_sm_addr, na_sm_addr, entry);
+        hg_thread_spin_unlock(
+            &NA_SM_PRIVATE_DATA(na_class)->accepted_addr_queue_lock);
+    }
+
     /* Deregister event file descriptors from poll set */
     ret = na_sm_poll_deregister(na_class, NA_SM_NOTIFY, na_sm_addr);
     if (ret != NA_SUCCESS) {
@@ -2874,7 +2922,7 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
         hg_thread_spin_unlock(
             &NA_SM_PRIVATE_DATA(na_class)->poll_addr_queue_lock);
 
-        if (na_sm_addr->accepted) { /* Create by accept */
+        if (na_sm_addr->accepted) { /* Created by accept */
             /* Get file names from ring bufs / events to delete files */
             sprintf(na_sm_send_ring_buf_name, "%s-%d-%d-%d-%s",
                 NA_SM_SHM_PREFIX, NA_SM_PRIVATE_DATA(na_class)->self_addr->pid,
@@ -2972,11 +3020,13 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
     }
 
     /* Close copy buf */
-    ret = na_sm_close_shared_buf(copy_buf_name, na_sm_addr->na_sm_copy_buf,
-        sizeof(struct na_sm_copy_buf));
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not close copy buffer");
-        goto done;
+    if (!na_sm_addr->accepted) { /* Created by accept */
+        ret = na_sm_close_shared_buf(copy_buf_name, na_sm_addr->na_sm_copy_buf,
+            sizeof(struct na_sm_copy_buf));
+        if (ret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not close copy buffer");
+            goto done;
+        }
     }
 
     free(na_sm_addr);

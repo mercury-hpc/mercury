@@ -440,23 +440,41 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
         for (i = 0; i < nfds; ++i) {
             struct hg_poll_data *hg_poll_data =
                 (struct hg_poll_data *) events[i].data.ptr;
+            int error = 0;
+
             if (!hg_poll_data) {
                 HG_UTIL_LOG_ERROR("NULL poll data");
                 ret = HG_UTIL_FAIL;
                 goto done;
             }
-            if (hg_poll_data->poll_cb) {
+
+            /* Don't change the if/else order */
+            if (events[i].events & EPOLLERR) {
+                error = EPOLLERR;
+            } else if (events[i].events & EPOLLHUP) {
+                error = EPOLLHUP;
+            } else if (events[i].events & EPOLLRDHUP) {
+                error = EPOLLRDHUP;
+            }
+
+            if ((events[i].events & (EPOLLIN | EPOLLOUT))
+                && hg_poll_data->poll_cb) {
                 hg_util_bool_t poll_cb_progressed = HG_UTIL_FALSE;
                 int poll_ret = HG_UTIL_SUCCESS;
 
                 poll_ret = hg_poll_data->poll_cb(
-                    hg_poll_data->poll_arg, timeout, &poll_cb_progressed);
+                    hg_poll_data->poll_arg, timeout, error,
+                    &poll_cb_progressed);
                 if (poll_ret != HG_UTIL_SUCCESS) {
                     HG_UTIL_LOG_ERROR("poll cb failed");
                     ret = HG_UTIL_FAIL;
                     goto done;
                 }
                 poll_progressed |= poll_cb_progressed;
+            } else {
+                HG_UTIL_LOG_ERROR("Unknown error has occurred");
+                ret = HG_UTIL_FAIL;
+                goto done;
             }
         }
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
@@ -490,7 +508,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
                 int poll_ret = HG_UTIL_SUCCESS;
 
                 poll_ret = hg_poll_data->poll_cb(
-                    hg_poll_data->poll_arg, timeout, &poll_cb_progressed);
+                    hg_poll_data->poll_arg, timeout, 0, &poll_cb_progressed);
                 if (poll_ret != HG_UTIL_SUCCESS) {
                     HG_UTIL_LOG_ERROR("poll cb failed");
                     ret = HG_UTIL_FAIL;
@@ -527,12 +545,14 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
                     }
                     hg_thread_spin_unlock(&poll_set->poll_data_list_lock);
 
+                    /* TODO check POLLHUP | POLLERR | POLLNVAL */
                     if (hg_poll_data->poll_cb) {
                         hg_util_bool_t poll_cb_progressed = HG_UTIL_FALSE;
                         int poll_ret = HG_UTIL_SUCCESS;
 
                         poll_ret = hg_poll_data->poll_cb(
-                            hg_poll_data->poll_arg, timeout, &poll_progressed);
+                            hg_poll_data->poll_arg, timeout, 0,
+                            &poll_progressed);
                         if (poll_ret != HG_UTIL_SUCCESS) {
                             HG_UTIL_LOG_ERROR("poll cb failed");
                             ret = HG_UTIL_FAIL;
@@ -558,7 +578,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
                 int poll_ret = HG_UTIL_SUCCESS;
 
                 poll_ret = hg_poll_data->poll_cb(
-                    hg_poll_data->poll_arg, 0, &poll_cb_progressed);
+                    hg_poll_data->poll_arg, 0, 0, &poll_cb_progressed);
                 if (poll_ret != HG_UTIL_SUCCESS) {
                     HG_UTIL_LOG_ERROR("poll cb failed");
                     ret = HG_UTIL_FAIL;
