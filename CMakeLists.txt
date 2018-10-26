@@ -27,9 +27,9 @@ project(MERCURY C)
 #------------------------------------------------------------------------------
 # Version information 
 #------------------------------------------------------------------------------
-set(MERCURY_VERSION_MAJOR "0")
-set(MERCURY_VERSION_MINOR "9")
-set(MERCURY_VERSION_PATCH "1")
+set(MERCURY_VERSION_MAJOR "1")
+set(MERCURY_VERSION_MINOR "0")
+set(MERCURY_VERSION_PATCH "0")
 set(MERCURY_PACKAGE "mercury")
 set(MERCURY_PACKAGE_NAME "MERCURY")
 set(MERCURY_PACKAGE_VERSION "${MERCURY_VERSION_MAJOR}.${MERCURY_VERSION_MINOR}.${MERCURY_VERSION_PATCH}")
