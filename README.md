@@ -22,10 +22,10 @@ Architectures supported
    Architectures supported by MPI implementations are generally supported by the
    network abstraction layer. MPI, BMI (tcp) and SM (shared-memory) plugins
    fully implement the network abstraction layer and are currently supported.
-   The CCI plugin is experimental and underlying CCI transport plugins
-   (`tcp`, `sm`, `verbs`, `gni`) may require additional testing or fixes.
    The libfabric plugin is experimental and underlying libfabric providers
    (`tcp`, `verbs`, `psm2`, `gni`) may require additional testing or fixes.
+   The CCI plugin is deprecated and underlying CCI transport plugins
+   (`tcp`, `sm`, `verbs`, `gni`) are no longer supported.
 
    See the [plugin requirements](#plugin-requirements) section for
    plugin requirement details.
@@ -67,11 +67,11 @@ to be accessed (see this [page][yama]). On MacOS, code signing with inclusion of
 the na_sm.plist file into the binary is currently required to allow process
 memory to be accessed.
 
-To make use of the CCI plugin, please refer to the CCI build instructions
-available on this [page][cci].
-
 To make use of the libfabric/OFI plugin, please refer to the libfabric build
 instructions available on this [page][libfabric].
+
+To make use of the CCI plugin, please refer to the CCI build instructions
+available on this [page][cci].
 
 Optional requirements
 ---------------------
