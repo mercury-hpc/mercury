@@ -260,6 +260,8 @@ endif()
 #-----------------------------------------------------------------------------
 option(BUILD_EXAMPLES "Build examples." OFF)
 if(BUILD_EXAMPLES)
+  # Make sure MERCURY_USE_BOOST_PP is turned ON for examples.
+  set(MERCURY_USE_BOOST_PP "ON" CACHE BOOL "Use BOOST preprocessor macros." FORCE)
   # BuildExamples.cmake builds the examples as a separate project. This ensures
   # that examples can be built by themselves as well as avoiding pollution of
   # the target space with targets (and other things) from examples.

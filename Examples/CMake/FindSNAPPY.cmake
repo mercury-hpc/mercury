@@ -4,11 +4,14 @@
 #  SNAPPY_INCLUDE_DIRS - The Snappy include directories
 #  SNAPPY_LIBRARIES - The libraries needed to use Snappy
 
+find_package(PkgConfig)
+pkg_check_modules(PC_SNAPPY snappy)
+
 find_path(SNAPPY_INCLUDE_DIR snappy-c.h
-  HINTS /usr/local/include /usr/include)
+  HINTS ${PC_SNAPPY_INCLUDEDIR} ${PC_SNAPPY_INCLUDE_DIRS})
 
 find_library(SNAPPY_LIBRARY NAMES snappy
-  PATHS /usr/local/lib /usr/lib)
+  HINTS ${PC_SNAPPY_INCLUDEDIR} ${PC_SNAPPY_INCLUDE_DIRS})
 
 set(SNAPPY_INCLUDE_DIRS ${SNAPPY_INCLUDE_DIR})
 set(SNAPPY_LIBRARIES ${SNAPPY_LIBRARY})
