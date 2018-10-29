@@ -1574,7 +1574,7 @@ na_ofi_check_interface(const char *hostname, unsigned int port,
     }
 
 out:
-    if (!found)
+    if (!found || ret != NA_SUCCESS)
         free(na_ofi_sin_addr);
     freeifaddrs(ifaddrs);
     if (hostname_res)
@@ -3105,7 +3105,6 @@ na_ofi_check_protocol(const char *protocol_name)
     type = na_ofi_prov_name_to_type(protocol_name);
     if(type == NA_OFI_PROV_NULL) {
         NA_LOG_ERROR("protocol %s not supported", protocol_name);
-        ret = NA_INVALID_PARAM;
         goto out;
     }
 
@@ -3243,7 +3242,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
             /* Try to get matching IP/device */
             ret = na_ofi_check_interface(resolve_name, 0, NULL,
                 &na_ofi_sin_addr);
-            if (ret != NA_SUCCESS) {
+            if (ret != NA_SUCCESS || !na_ofi_sin_addr) {
                 NA_LOG_ERROR("Could not check interfaces");
                 goto out;
             }
@@ -3321,6 +3320,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
 out:
     if (ret != NA_SUCCESS) {
+        free(src_addr);
         if (na_class->private_data) {
             na_ofi_finalize(na_class);
             na_class->private_data = NULL;
@@ -3759,9 +3759,9 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
 out:
     if (ret != NA_SUCCESS) {
         if (na_ofi_addr) {
-            /* Decref twice */
-            na_ofi_addr_decref(na_ofi_addr);
-            na_ofi_addr_decref(na_ofi_addr);
+            free(na_ofi_addr->addr);
+            free(na_ofi_addr->uri);
+            free(na_ofi_addr);
         }
         free(na_ofi_op_id);
     }
