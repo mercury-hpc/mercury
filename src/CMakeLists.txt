@@ -140,6 +140,8 @@ if(MERCURY_USE_SM_ROUTING)
       ${MERCURY_EXT_LIB_DEPENDENCIES}
       ${UUID_LIBRARIES}
     )
+  else()
+	  message(FATAL_ERROR "SM_ROUTING cannot be supported because LibUUID couldn't be found")
   endif()
   if(MERCURY_USE_SM_ROUTING AND NOT NA_USE_SM)
     # Always force SM if NA_USE_SM is turned OFF
