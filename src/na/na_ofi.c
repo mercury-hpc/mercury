@@ -154,7 +154,7 @@
         FI_PROGRESS_MANUAL,                                             \
         (NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL),                            \
         (FI_DIRECTED_RECV),                                             \
-        (NA_OFI_VERIFY_PROV_DOM | NA_OFI_NO_SEP | NA_OFI_SKIP_SIGNAL)   \
+        (NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_NO_SEP | NA_OFI_SKIP_SIGNAL)   \
     )                                                                   \
     X(NA_OFI_PROV_GNI,                                                  \
         "gni",                                                          \
@@ -4720,6 +4720,10 @@ na_ofi_poll_get_fd(na_class_t *na_class, na_context_t *context)
     if (rc < 0 && rc != -FI_ENOSYS)
         NA_LOG_ERROR("fi_control() failed, rc: %d(%s).",
             rc, fi_strerror((int) -rc));
+    if (fd < 0) {
+        NA_LOG_ERROR("Returned fd is not valid (%d), will not block", fd);
+        goto out;
+    }
 
 out:
     return fd;
