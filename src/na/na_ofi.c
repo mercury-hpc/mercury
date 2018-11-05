@@ -142,10 +142,10 @@
         "psm2",                                                         \
         "",                                                             \
         FI_ADDR_PSMX2,                                                  \
-        FI_PROGRESS_MANUAL,                                             \
+        FI_PROGRESS_AUTO,                                               \
         FI_MR_BASIC,                                                    \
         (FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV),                 \
-        (NA_OFI_DOMAIN_LOCK)                                            \
+        (NA_OFI_DOMAIN_LOCK | NA_OFI_WAIT_FD)                           \
     )                                                                   \
     X(NA_OFI_PROV_VERBS,                                                \
         "verbs;ofi_rxm",                                                \
@@ -1768,12 +1768,18 @@ na_ofi_domain_open(struct na_ofi_private_data *priv,
 #endif
     }
 
-    /* TODO Force no wait if do not support FI_WAIT_FD/FI_WAIT_SET */
-    if(!(na_ofi_prov_flags[prov_type] & (NA_OFI_WAIT_SET|NA_OFI_WAIT_FD)))
+    /* Force no wait if do not support FI_WAIT_FD/FI_WAIT_SET */
+    if (!(na_ofi_prov_flags[prov_type] & (NA_OFI_WAIT_SET | NA_OFI_WAIT_FD)))
         priv->no_wait = NA_TRUE;
 
-    na_ofi_domain->nod_prov->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
-    na_ofi_domain->nod_prov->domain_attr->data_progress    = na_ofi_prov_progress[prov_type];
+    /* Force manual progress if no wait is set */
+    if (priv->no_wait) {
+        na_ofi_domain->nod_prov->domain_attr->control_progress = FI_PROGRESS_MANUAL;
+        na_ofi_domain->nod_prov->domain_attr->data_progress = FI_PROGRESS_MANUAL;
+    } else {
+        na_ofi_domain->nod_prov->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
+        na_ofi_domain->nod_prov->domain_attr->data_progress    = na_ofi_prov_progress[prov_type];
+    }
 
     /* Open fi fabric */
     rc = fi_fabric(na_ofi_domain->nod_prov->fabric_attr,/* In:  Fabric attributes */
