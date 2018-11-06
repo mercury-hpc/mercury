@@ -4719,7 +4719,8 @@ na_ofi_poll_get_fd(na_class_t *na_class, na_context_t *context)
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     int fd = -1, rc;
 
-    if (priv->no_wait)
+    if (priv->no_wait ||
+        (na_ofi_prov_flags[priv->nop_domain->nod_prov_type] & NA_OFI_WAIT_SET))
         goto out;
 
     rc = fi_control(&ctx->noc_cq->fid, FI_GETWAIT, &fd);
@@ -4749,10 +4750,8 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
         return NA_FALSE;
     }
 
-    /* Assume it is safe to block if provider is using wait set, only sockets
-     * provider waits on fd for now */
-    if (NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov_type
-        != NA_OFI_PROV_SOCKETS)
+    /* Assume it is safe to block if provider is using wait set */
+    if (na_ofi_prov_flags[priv->nop_domain->nod_prov_type] & NA_OFI_WAIT_SET)
         return NA_TRUE;
 
     fids[0] = &ctx->noc_cq->fid;
