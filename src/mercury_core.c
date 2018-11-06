@@ -4601,6 +4601,24 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_int32_t
+HG_Core_ref_get(hg_core_handle_t handle)
+{
+    struct hg_core_handle *hg_core_handle = (struct hg_core_handle *) handle;
+    hg_int32_t ret = -1;
+
+    if (!hg_core_handle) {
+        HG_LOG_ERROR("NULL pointer to HG core handle");
+        goto done;
+    }
+
+    ret = (hg_int32_t) hg_atomic_get32(&hg_core_handle->ref_count);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_set_data(hg_core_handle_t handle, void *data,
     void (*free_callback)(void *))

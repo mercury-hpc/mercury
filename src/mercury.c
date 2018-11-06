@@ -1995,6 +1995,23 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_int32_t
+HG_Ref_get(hg_handle_t handle)
+{
+    hg_int32_t ret = -1;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        goto done;
+    }
+
+    ret = HG_Core_ref_get(handle->core_handle);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 const struct hg_info *
 HG_Get_info(hg_handle_t handle)
 {

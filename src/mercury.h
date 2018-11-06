@@ -719,6 +719,18 @@ HG_Ref_incr(
         );
 
 /**
+ * Retrieve ref count from handle.
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return Non-negative value or negative if the handle is not valid
+ */
+HG_EXPORT hg_int32_t
+HG_Ref_get(
+        hg_handle_t handle
+        );
+
+/**
  * Get info from handle.
  *
  * \remark Users must call HG_Addr_dup() to safely re-use the addr field.

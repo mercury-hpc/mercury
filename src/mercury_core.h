@@ -729,6 +729,18 @@ HG_Core_ref_incr(
         );
 
 /**
+ * Retrieve ref count from handle.
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return Non-negative value or negative if the handle is not valid
+ */
+HG_EXPORT hg_int32_t
+HG_Core_ref_get(
+        hg_core_handle_t handle
+        );
+
+/**
  * Allows upper layers to attach data to an existing HG handle.
  * The free_callback argument allows allocated resources to be released when
  * the handle gets freed.
