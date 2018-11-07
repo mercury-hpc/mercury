@@ -4743,19 +4743,29 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid *fids[1];
+    int rc;
 
-    if (priv->no_wait) {
-        /* That point should never be reached since NA_Poll_try_wait()
-         * already returns NA_FALSE if NA_NO_BLOCK is set. */
+    if (priv->no_wait)
         return NA_FALSE;
-    }
 
     /* Assume it is safe to block if provider is using wait set */
-    if (na_ofi_prov_flags[priv->nop_domain->nod_prov_type] & NA_OFI_WAIT_SET)
-        return NA_TRUE;
+    if ((na_ofi_prov_flags[priv->nop_domain->nod_prov_type] & NA_OFI_WAIT_SET)
+        /* PSM2 shows very slow performance with fi_trywait() */
+        || priv->nop_domain->nod_prov_type == NA_OFI_PROV_PSM2)
+           return NA_TRUE;
 
     fids[0] = &ctx->noc_cq->fid;
-    return (fi_trywait(priv->nop_domain->nod_fabric, fids, 1) == FI_SUCCESS);
+    /* Check whether it is safe to block on that fd */
+    rc = fi_trywait(priv->nop_domain->nod_fabric, fids, 1);
+    if (rc == FI_SUCCESS)
+        return NA_TRUE;
+    else if (rc == -FI_EAGAIN)
+        return NA_FALSE;
+    else {
+        NA_LOG_ERROR("fi_trywait() failed, rc: %d(%s).",
+            rc, fi_strerror((int) -rc));
+        return NA_FALSE;
+    }
 }
 
 /*---------------------------------------------------------------------------*/
