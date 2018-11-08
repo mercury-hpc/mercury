@@ -563,7 +563,7 @@ const na_class_t na_bmi_class_g = {
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE bmi_msg_tag_t
-na_bmi_gen_rma_tag(na_class_t *na_class)
+na_bmi_gen_rma_tag(na_class_t *na_class, uint8_t step)
 {
     bmi_msg_tag_t tag;
 
@@ -575,6 +575,14 @@ na_bmi_gen_rma_tag(na_class_t *na_class)
         /* Increment tag */
         tag = hg_atomic_incr32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag);
     }
+
+    /* NOTE: the "step" argument is used to classify which step of an
+     * emulated RMA operation this tag will be used for.  We partition them
+     * off to prevent collisions between symmetric RMA operations between a
+     * pair of hosts.
+     */
+    tag = tag << 8;
+    tag = tag | step;
 
     return tag;
 }
@@ -1655,8 +1663,8 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_bmi_rma_info->base = bmi_remote_mem_handle->base;
     na_bmi_rma_info->disp = bmi_remote_offset;
     na_bmi_rma_info->count = bmi_length;
-    na_bmi_rma_info->transfer_tag = na_bmi_gen_rma_tag(na_class);
-    na_bmi_rma_info->completion_tag = na_bmi_gen_rma_tag(na_class);
+    na_bmi_rma_info->transfer_tag = na_bmi_gen_rma_tag(na_class, 1);
+    na_bmi_rma_info->completion_tag = na_bmi_gen_rma_tag(na_class, 2);
     na_bmi_op_id->info.put.rma_info = na_bmi_rma_info;
 
     /* Assign op_id */
@@ -1794,7 +1802,7 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_bmi_rma_info->base = bmi_remote_mem_handle->base;
     na_bmi_rma_info->disp = bmi_remote_offset;
     na_bmi_rma_info->count = bmi_length;
-    na_bmi_rma_info->transfer_tag = na_bmi_gen_rma_tag(na_class);
+    na_bmi_rma_info->transfer_tag = na_bmi_gen_rma_tag(na_class, 3);
     na_bmi_rma_info->completion_tag = 0; /* not used */
     na_bmi_op_id->info.get.rma_info = na_bmi_rma_info;
 
