@@ -2242,7 +2242,6 @@ na_bmi_progress_rma_completion(struct na_bmi_op_id *na_bmi_op_id)
     bmi_context_id *bmi_context =
             (bmi_context_id *) na_bmi_op_id->context->plugin_context;
     int bmi_ret;
-    na_bool_t completed = NA_TRUE;
 
     /* Only use this to send an ack when the put completes */
     if (na_bmi_op_id->type != NA_CB_PUT) {
@@ -2252,10 +2251,11 @@ na_bmi_progress_rma_completion(struct na_bmi_op_id *na_bmi_op_id)
     }
 
     na_bmi_rma_info = na_bmi_op_id->info.put.rma_info;
+    na_bmi_op_id->info.put.completion_flag = NA_TRUE;
 
     /* Send an ack to tell the server that the data is here */
     bmi_ret = BMI_post_send(&na_bmi_op_id->info.put.completion_op_id,
-            na_bmi_op_id->info.put.remote_addr, &completed, sizeof(na_bool_t),
+            na_bmi_op_id->info.put.remote_addr, &na_bmi_op_id->info.put.completion_flag, sizeof(na_bool_t),
             BMI_EXT_ALLOC, na_bmi_rma_info->completion_tag, na_bmi_op_id,
             *bmi_context, NULL);
     if (bmi_ret < 0) {
