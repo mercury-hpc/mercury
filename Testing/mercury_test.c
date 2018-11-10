@@ -385,17 +385,26 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         hg_test_info->na_test_info.listen, &hg_init_info);
     if (!hg_test_info->hg_class) {
         HG_LOG_ERROR("Could not initialize HG");
+        ret = HG_PROTOCOL_ERROR;
         goto done;
     }
     HG_CLASS_DEFAULT = hg_test_info->hg_class;
 
     /* Attach test info to class */
-    HG_Class_set_data(hg_test_info->hg_class, hg_test_info, NULL);
+    ret = HG_Class_set_data(hg_test_info->hg_class, hg_test_info, NULL);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not set HG class data");
+        goto done;
+    }
 
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     /* Attach handle created */
-    HG_Class_set_handle_create_callback(hg_test_info->hg_class,
+    ret = HG_Class_set_handle_create_callback(hg_test_info->hg_class,
         hg_test_handle_create_cb, hg_test_info->hg_class);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not set HG handle create callback");
+        goto done;
+    }
 #endif
 
     /* Set header */
@@ -405,10 +414,10 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     */
 
     /* For convenience */
-    ret = HG_Hl_init_opt(NULL,
-        hg_test_info->na_test_info.listen, &hg_init_info);
+    ret = HG_Hl_init_opt(NULL, hg_test_info->na_test_info.listen,
+        &hg_init_info);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not initialize HG");
+        HG_LOG_ERROR("Could not initialize HG HL");
         goto done;
     }
     hg_test_info->context = HG_CONTEXT_DEFAULT;
@@ -416,8 +425,17 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
     /* Attach context info to context */
     hg_test_context_info = malloc(sizeof(struct hg_test_context_info));
+    if (!hg_test_context_info) {
+        HG_LOG_ERROR("Could not allocate HG test context info");
+        ret = HG_NOMEM_ERROR;
+        goto done;
+    }
     hg_atomic_set32(&hg_test_context_info->finalizing, 0);
-    HG_Context_set_data(hg_test_info->context, hg_test_context_info, free);
+    ret = HG_Context_set_data(hg_test_info->context, hg_test_context_info, free);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not set context data");
+        goto done;
+    }
 
     /* Register routines */
     hg_test_register(hg_test_info->hg_class);
@@ -446,11 +464,19 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 #endif
 
         /* Create bulk buffer that can be used for receiving data */
-        HG_Bulk_create(hg_test_info->hg_class, 1, NULL,
+        ret = HG_Bulk_create(hg_test_info->hg_class, 1, NULL,
             (hg_size_t *) &bulk_size, HG_BULK_READWRITE,
             &hg_test_info->bulk_handle);
-        HG_Bulk_access(hg_test_info->bulk_handle, 0, bulk_size,
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not create bulk handle");
+            goto done;
+        }
+        ret = HG_Bulk_access(hg_test_info->bulk_handle, 0, bulk_size,
             HG_BULK_READWRITE, 1, (void **) &buf_ptr, NULL, NULL);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not access bulk handle");
+            goto done;
+        }
         for (i = 0; i < bulk_size; i++)
             buf_ptr[i] = (char) i;
     }
@@ -468,35 +494,57 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
             hg_test_info->secondary_contexts = malloc(
                 secondary_contexts_count * sizeof(hg_context_t *));
+            if (!hg_test_info->secondary_contexts) {
+                HG_LOG_ERROR("Could not allocate secondary contexts");
+                ret = HG_NOMEM_ERROR;
+                goto done;
+            }
             for (i = 0; i < secondary_contexts_count; i++) {
                 hg_uint8_t context_id = (hg_uint8_t) (i + 1);
                 hg_test_info->secondary_contexts[i] =
                     HG_Context_create_id(hg_test_info->hg_class, context_id);
                 if (!hg_test_info->secondary_contexts[i]) {
                     HG_LOG_ERROR("Could not create HG context for id: %u", i);
+                    ret = HG_NOMEM_ERROR;
                     goto done;
                 }
 
                 /* Attach context info to context */
                 hg_test_context_info = malloc(sizeof(struct hg_test_context_info));
+                if (!hg_test_context_info) {
+                    HG_LOG_ERROR("Could not allocate context info");
+                    ret = HG_NOMEM_ERROR;
+                    goto done;
+                }
                 hg_atomic_set32(&hg_test_context_info->finalizing, 0);
-                HG_Context_set_data(hg_test_info->secondary_contexts[i],
+                ret = HG_Context_set_data(hg_test_info->secondary_contexts[i],
                     hg_test_context_info, free);
+                if (ret != HG_SUCCESS) {
+                    HG_LOG_ERROR("Could not set HG context data");
+                    goto done;
+                }
             }
         }
 
         /* TODO only rank 0 */
         ret = HG_Addr_self(hg_test_info->hg_class, &self_addr);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not get self addr");
+            HG_LOG_ERROR("Could not get HG self addr");
+            goto done;
         }
 
         ret = HG_Addr_to_string(hg_test_info->hg_class, addr_string,
             &addr_string_len, self_addr);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not convert addr to string");
+            goto done;
         }
-        HG_Addr_free(hg_test_info->hg_class, self_addr);
+
+        ret = HG_Addr_free(hg_test_info->hg_class, self_addr);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not free addr");
+            goto done;
+        }
 
         na_test_set_config(addr_string);
 
@@ -512,7 +560,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         /* Self addr is target */
         ret = HG_Addr_self(hg_test_info->hg_class, &hg_test_info->target_addr);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not get HG addr self");
+            HG_LOG_ERROR("Could not get HG self addr");
             goto done;
         }
     } else {
@@ -541,7 +589,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
             hg_test_info->request_class, hg_test_info->na_test_info.target_name,
             &hg_test_info->target_addr, HG_MAX_IDLE_TIME);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not find addr for target %s",
+            HG_LOG_ERROR("Could not lookup addr for target %s",
                 hg_test_info->na_test_info.target_name);
             goto done;
         }

@@ -76,9 +76,12 @@ struct hg_handle {
     struct hg_header hg_header;     /* Header for input/output */
     hg_proc_t in_proc;              /* Proc for input */
     hg_proc_t out_proc;             /* Proc for output */
-    void *extra_bulk_buf;           /* Extra bulk buffer */
-    hg_size_t extra_bulk_buf_size;  /* Extra bulk buffer size */
-    hg_bulk_t extra_bulk_handle;    /* Extra bulk handle */
+    void *in_extra_buf;             /* Extra input buffer */
+    hg_size_t in_extra_buf_size;    /* Extra input buffer size */
+    hg_bulk_t in_extra_bulk;        /* Extra input bulk handle */
+    void *out_extra_buf;            /* Extra output buffer */
+    hg_size_t out_extra_buf_size;   /* Extra output buffer size */
+    hg_bulk_t out_extra_bulk;       /* Extra output bulk handle */
     hg_return_t (*extra_bulk_transfer_cb)(hg_core_handle_t); /* Bulk transfer callback */
     void *data;                         /* User data */
     void (*data_free_callback)(void *); /* User data free callback */
@@ -156,6 +159,7 @@ hg_handle_create_cb(
 static hg_return_t
 hg_more_data_cb(
         hg_core_handle_t core_handle,
+        hg_op_t op,
         hg_return_t (*done_cb)(hg_core_handle_t)
         );
 
@@ -222,24 +226,25 @@ hg_free_struct(
  * Get extra user payload using bulk transfer.
  */
 static hg_return_t
-hg_get_extra_input(
+hg_get_extra_payload(
         struct hg_handle *hg_handle,
+        hg_op_t op,
         hg_return_t (*done_cb)(hg_core_handle_t)
         );
 
 /**
- * Get extra input bulk transfer callback.
+ * Get extra payload bulk transfer callback.
  */
 static HG_INLINE hg_return_t
-hg_get_extra_input_cb(
+hg_get_extra_payload_cb(
         const struct hg_cb_info *callback_info
         );
 
 /**
- * Free allocated extra input.
+ * Free allocated extra payload.
  */
 static void
-hg_free_extra_input(
+hg_free_extra_payload(
         struct hg_handle *hg_handle
         );
 
@@ -323,7 +328,6 @@ hg_handle_free(void *arg)
         hg_proc_free(hg_handle->in_proc);
     if (hg_handle->out_proc != HG_PROC_NULL)
         hg_proc_free(hg_handle->out_proc);
-    hg_mem_aligned_free(hg_handle->extra_bulk_buf);
     hg_header_finalize(&hg_handle->hg_header);
     free(hg_handle);
 }
@@ -363,10 +367,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_more_data_cb(hg_core_handle_t core_handle,
+hg_more_data_cb(hg_core_handle_t core_handle, hg_op_t op,
     hg_return_t (*done_cb)(hg_core_handle_t))
 {
     struct hg_handle *hg_handle;
+    void *extra_buf;
     hg_return_t ret = HG_SUCCESS;
 
     /* Retrieve private data */
@@ -377,7 +382,20 @@ hg_more_data_cb(hg_core_handle_t core_handle,
         goto done;
     }
 
-    if (hg_handle->extra_bulk_buf) {
+    switch (op) {
+        case HG_INPUT:
+            extra_buf = hg_handle->in_extra_buf;
+            break;
+        case HG_OUTPUT:
+            extra_buf = hg_handle->out_extra_buf;
+            break;
+        default:
+            HG_LOG_ERROR("Invalid HG op");
+            ret = HG_INVALID_PARAM;
+            goto done;
+    }
+
+    if (extra_buf) {
         /* We were forwarding to ourself and the extra buf is already set */
         ret = done_cb(core_handle);
         if (ret != HG_SUCCESS) {
@@ -386,7 +404,7 @@ hg_more_data_cb(hg_core_handle_t core_handle,
         }
     } else {
         /* We need to do a bulk transfer to get the extra data */
-        ret = hg_get_extra_input(hg_handle, done_cb);
+        ret = hg_get_extra_payload(hg_handle, op, done_cb);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not get extra input");
             goto done;
@@ -409,7 +427,7 @@ hg_more_data_free_cb(hg_core_handle_t core_handle)
         goto done;
     }
 
-    hg_free_extra_input(hg_handle);
+    hg_free_extra_payload(hg_handle);
 
 done:
     return;
@@ -469,8 +487,8 @@ hg_get_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
 {
     hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
-    void *buf;
-    hg_size_t buf_size;
+    void *buf, *extra_buf;
+    hg_size_t buf_size, extra_buf_size;
     struct hg_header *hg_header = &hg_handle->hg_header;
 #ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *hg_header_hash = NULL;
@@ -494,6 +512,8 @@ hg_get_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
                 HG_LOG_ERROR("Could not get input buffer");
                 goto done;
             }
+            extra_buf = hg_handle->in_extra_buf;
+            extra_buf_size = hg_handle->in_extra_buf_size;
             break;
         case HG_OUTPUT:
             /* Cannot respond if no_response flag set */
@@ -516,6 +536,8 @@ hg_get_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
                 HG_LOG_ERROR("Could not get output buffer");
                 goto done;
             }
+            extra_buf = hg_handle->out_extra_buf;
+            extra_buf_size = hg_handle->out_extra_buf_size;
             break;
         default:
             HG_LOG_ERROR("Invalid HG op");
@@ -540,9 +562,9 @@ hg_get_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
 
     /* If the payload did not fit into the core buffer and we have an extra
      * buffer set, use that buffer directly */
-    if (hg_handle->extra_bulk_buf) {
-        buf = hg_handle->extra_bulk_buf;
-        buf_size = hg_handle->extra_bulk_buf_size;
+    if (extra_buf) {
+        buf = extra_buf;
+        buf_size = extra_buf_size;
     } else {
         /* Include our own header offset */
         buf = (char *) buf + header_offset;
@@ -595,8 +617,9 @@ hg_set_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
 {
     hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
-    void *buf;
-    hg_size_t buf_size;
+    void *buf, **extra_buf;
+    hg_size_t buf_size, *extra_buf_size;
+    hg_bulk_t *extra_bulk;
     struct hg_header *hg_header = &hg_handle->hg_header;
 #ifdef HG_HAS_CHECKSUMS
     struct hg_header_hash *hg_header_hash = NULL;
@@ -620,6 +643,9 @@ hg_set_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
                 HG_LOG_ERROR("Could not get input buffer");
                 goto done;
             }
+            extra_buf = &hg_handle->in_extra_buf;
+            extra_buf_size = &hg_handle->in_extra_buf_size;
+            extra_bulk = &hg_handle->in_extra_bulk;
             break;
         case HG_OUTPUT:
             /* Cannot respond if no_response flag set */
@@ -642,6 +668,9 @@ hg_set_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
                 HG_LOG_ERROR("Could not get output buffer");
                 goto done;
             }
+            extra_buf = &hg_handle->out_extra_buf;
+            extra_buf_size = &hg_handle->out_extra_buf_size;
+            extra_bulk = &hg_handle->out_extra_bulk;
             break;
         default:
             HG_LOG_ERROR("Invalid HG op");
@@ -699,22 +728,23 @@ hg_set_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
      * it to retrieve the data.
      */
     if (hg_proc_get_extra_buf(proc)) {
+        /* Potentially free previous payload if handle was not reset */
+        hg_free_extra_payload(hg_handle);
 #ifdef HG_HAS_XDR
         HG_LOG_ERROR("Extra encoding using XDR is not yet supported");
         ret = HG_SIZE_ERROR;
         goto done;
 #endif
         /* Create a bulk descriptor only of the size that is used */
-        hg_handle->extra_bulk_buf = hg_proc_get_extra_buf(proc);
-        hg_handle->extra_bulk_buf_size = hg_proc_get_size_used(proc);
+        *extra_buf = hg_proc_get_extra_buf(proc);
+        *extra_buf_size = hg_proc_get_size_used(proc);
 
         /* Prevent buffer from being freed when proc_reset is called */
         hg_proc_set_extra_buf_is_mine(proc, HG_TRUE);
 
         /* Create bulk descriptor */
-        ret = HG_Bulk_create(hg_handle->hg_info.hg_class, 1,
-            &hg_handle->extra_bulk_buf, &hg_handle->extra_bulk_buf_size,
-            HG_BULK_READ_ONLY, &hg_handle->extra_bulk_handle);
+        ret = HG_Bulk_create(hg_handle->hg_info.hg_class, 1, extra_buf,
+            extra_buf_size, HG_BULK_READ_ONLY, extra_bulk);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not create bulk data handle");
             goto done;
@@ -730,7 +760,7 @@ hg_set_struct(struct hg_handle *hg_handle, struct hg_proc_info *hg_proc_info,
         /* Encode extra_bulk_handle, we can do that safely here because
          * the user payload has been copied so we don't have to worry
          * about overwriting the user's data */
-        ret = hg_proc_hg_bulk_t(proc, &hg_handle->extra_bulk_handle);
+        ret = hg_proc_hg_bulk_t(proc, extra_bulk);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not process extra bulk handle");
             goto done;
@@ -825,39 +855,69 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_get_extra_input(struct hg_handle *hg_handle,
+hg_get_extra_payload(struct hg_handle *hg_handle, hg_op_t op,
     hg_return_t (*done_cb)(hg_core_handle_t core_handle))
 {
     const struct hg_core_info *hg_core_info = HG_Core_get_info(
         hg_handle->core_handle);
-    hg_proc_t proc = hg_handle->in_proc;
-    void *in_buf;
-    hg_size_t in_buf_size;
-    hg_size_t header_offset = hg_header_get_size(HG_INPUT)
-        + hg_handle->hg_info.hg_class->in_offset;;
+    hg_proc_t proc = HG_PROC_NULL;
+    void *buf, **extra_buf;
+    hg_size_t buf_size, *extra_buf_size;
+    hg_bulk_t *extra_bulk;
+    hg_size_t header_offset = hg_header_get_size(op);
     hg_size_t page_size = (hg_size_t) hg_mem_get_page_size();
-    hg_bulk_t local_in_handle = HG_BULK_NULL;
+    hg_bulk_t local_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    /* Get core input buffer */
-    ret = HG_Core_get_input(hg_handle->core_handle, &in_buf, &in_buf_size);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get input buffer");
-        goto done;
+    switch (op) {
+        case HG_INPUT:
+            /* Use custom header offset */
+            header_offset += hg_handle->hg_info.hg_class->in_offset;
+            /* Set input proc */
+            proc = hg_handle->in_proc;
+            /* Get core input buffer */
+            ret = HG_Core_get_input(hg_handle->core_handle, &buf, &buf_size);
+            if (ret != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not get input buffer");
+                goto done;
+            }
+            extra_buf = &hg_handle->in_extra_buf;
+            extra_buf_size = &hg_handle->in_extra_buf_size;
+            extra_bulk = &hg_handle->in_extra_bulk;
+            break;
+        case HG_OUTPUT:
+            /* Use custom header offset */
+            header_offset += hg_handle->hg_info.hg_class->out_offset;
+            /* Set output proc */
+            proc = hg_handle->out_proc;
+            /* Get core output buffer */
+            ret = HG_Core_get_output(hg_handle->core_handle, &buf, &buf_size);
+            if (ret != HG_SUCCESS) {
+                HG_LOG_ERROR("Could not get output buffer");
+                goto done;
+            }
+            extra_buf = &hg_handle->out_extra_buf;
+            extra_buf_size = &hg_handle->out_extra_buf_size;
+            extra_bulk = &hg_handle->out_extra_bulk;
+            break;
+        default:
+            HG_LOG_ERROR("Invalid HG op");
+            ret = HG_INVALID_PARAM;
+            goto done;
     }
 
     /* Include our own header offset */
-    in_buf = (char *) in_buf + header_offset;
-    in_buf_size -= header_offset;
+    buf = (char *) buf + header_offset;
+    buf_size -= header_offset;
 
-    ret = hg_proc_reset(proc, in_buf, in_buf_size, HG_DECODE);
+    ret = hg_proc_reset(proc, buf, buf_size, HG_DECODE);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not reset proc");
         goto done;
     }
 
     /* Decode extra bulk handle */
-    ret = hg_proc_hg_bulk_t(proc, &hg_handle->extra_bulk_handle);
+    ret = hg_proc_hg_bulk_t(proc, extra_bulk);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not process extra bulk handle");
         goto done;
@@ -870,19 +930,16 @@ hg_get_extra_input(struct hg_handle *hg_handle,
     }
 
     /* Create a new local handle to read the data */
-    hg_handle->extra_bulk_buf_size = HG_Bulk_get_size(
-        hg_handle->extra_bulk_handle);
-    hg_handle->extra_bulk_buf = hg_mem_aligned_alloc(page_size,
-        hg_handle->extra_bulk_buf_size);
-    if (!hg_handle->extra_bulk_buf) {
-        HG_LOG_ERROR("Could not allocate extra input buffer");
+    *extra_buf_size = HG_Bulk_get_size(*extra_bulk);
+    *extra_buf = hg_mem_aligned_alloc(page_size, *extra_buf_size);
+    if (!*extra_buf) {
+        HG_LOG_ERROR("Could not allocate extra payload buffer");
         ret = HG_NOMEM_ERROR;
         goto done;
     }
 
-    ret = HG_Bulk_create(hg_handle->hg_info.hg_class, 1,
-        &hg_handle->extra_bulk_buf, &hg_handle->extra_bulk_buf_size,
-        HG_BULK_READWRITE, &local_in_handle);
+    ret = HG_Bulk_create(hg_handle->hg_info.hg_class, 1, extra_buf,
+        extra_buf_size, HG_BULK_READWRITE, &local_handle);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not create HG bulk handle");
         goto done;
@@ -890,10 +947,10 @@ hg_get_extra_input(struct hg_handle *hg_handle,
 
     /* Read bulk data here and wait for the data to be here  */
     hg_handle->extra_bulk_transfer_cb = done_cb;
-    ret = HG_Bulk_transfer_id(hg_handle->hg_info.context, hg_get_extra_input_cb,
-        hg_handle, HG_BULK_PULL, (hg_addr_t) hg_core_info->addr,
-        hg_core_info->context_id, hg_handle->extra_bulk_handle, 0,
-        local_in_handle, 0, hg_handle->extra_bulk_buf_size,
+    ret = HG_Bulk_transfer_id(hg_handle->hg_info.context,
+        hg_get_extra_payload_cb, hg_handle, HG_BULK_PULL,
+        (hg_addr_t) hg_core_info->addr, hg_core_info->context_id,
+        *extra_bulk, 0, local_handle, 0, *extra_buf_size,
         HG_OP_ID_IGNORE /* TODO not used for now */);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not transfer bulk data");
@@ -901,15 +958,15 @@ hg_get_extra_input(struct hg_handle *hg_handle,
     }
 
 done:
-    HG_Bulk_free(local_in_handle);
-    HG_Bulk_free(hg_handle->extra_bulk_handle);
-    hg_handle->extra_bulk_handle = HG_BULK_NULL;
+    HG_Bulk_free(local_handle);
+    HG_Bulk_free(*extra_bulk);
+    *extra_bulk = HG_BULK_NULL;
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-hg_get_extra_input_cb(const struct hg_cb_info *callback_info)
+hg_get_extra_payload_cb(const struct hg_cb_info *callback_info)
 {
     struct hg_handle *hg_handle = (struct hg_handle *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
@@ -926,13 +983,23 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static void
-hg_free_extra_input(struct hg_handle *hg_handle)
+hg_free_extra_payload(struct hg_handle *hg_handle)
 {
     /* Free extra bulk buf if there was any */
-    if (hg_handle->extra_bulk_buf) {
-        hg_mem_aligned_free(hg_handle->extra_bulk_buf);
-        hg_handle->extra_bulk_buf = NULL;
-        hg_handle->extra_bulk_buf_size = 0;
+    if (hg_handle->in_extra_buf) {
+        HG_Bulk_free(hg_handle->in_extra_bulk);
+        hg_handle->in_extra_bulk = HG_BULK_NULL;
+        hg_mem_aligned_free(hg_handle->in_extra_buf);
+        hg_handle->in_extra_buf = NULL;
+        hg_handle->in_extra_buf_size = 0;
+    }
+
+    if (hg_handle->out_extra_buf) {
+        HG_Bulk_free(hg_handle->out_extra_bulk);
+        hg_handle->out_extra_bulk = HG_BULK_NULL;
+        hg_mem_aligned_free(hg_handle->out_extra_buf);
+        hg_handle->out_extra_buf = NULL;
+        hg_handle->out_extra_buf_size = 0;
     }
 }
 
@@ -943,15 +1010,6 @@ hg_core_forward_cb(const struct hg_core_cb_info *callback_info)
     struct hg_handle *hg_handle =
             (struct hg_handle *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
-
-    /* Free eventual extra input buffer and handle */
-    if (hg_handle->extra_bulk_buf) {
-        HG_Bulk_free(hg_handle->extra_bulk_handle);
-        hg_handle->extra_bulk_handle = HG_BULK_NULL;
-        hg_mem_aligned_free(hg_handle->extra_bulk_buf);
-        hg_handle->extra_bulk_buf = NULL;
-        hg_handle->extra_bulk_buf_size = 0;
-    }
 
     /* Execute callback */
     if (hg_handle->forward_cb) {
@@ -2235,9 +2293,9 @@ HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
 
     /* Space must be left for input header, no offset if extra buffer since
      * only the user payload is copied */
-    if (handle->extra_bulk_buf) {
-        *in_buf = handle->extra_bulk_buf;
-        *in_buf_size = handle->extra_bulk_buf_size;
+    if (handle->in_extra_buf) {
+        *in_buf = handle->in_extra_buf;
+        *in_buf_size = handle->in_extra_buf_size;
     } else {
         void *buf;
         hg_size_t buf_size, header_offset = hg_header_get_size(HG_INPUT);
@@ -2276,9 +2334,9 @@ HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
 
     /* Space must be left for output header, no offset if extra buffer since
      * only the user payload is copied */
-    if (handle->extra_bulk_buf) {
-        *out_buf = handle->extra_bulk_buf;
-        *out_buf_size = handle->extra_bulk_buf_size;
+    if (handle->out_extra_buf) {
+        *out_buf = handle->out_extra_buf;
+        *out_buf_size = handle->out_extra_buf_size;
     } else {
         void *buf;
         hg_size_t buf_size, header_offset = hg_header_get_size(HG_OUTPUT);

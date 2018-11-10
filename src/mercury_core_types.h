@@ -53,6 +53,13 @@ typedef enum hg_cb_type {
     HG_CB_BULK          /*!< bulk transfer callback */
 } hg_cb_type_t;
 
+/* Input / output operation type */
+typedef enum {
+    HG_UNDEF,
+    HG_INPUT,
+    HG_OUTPUT
+} hg_op_t;
+
 /**
  * Encode/decode operations.
  */
