@@ -83,12 +83,15 @@ main(int argc, char *argv[])
 #endif
     struct hg_test_context_info *hg_test_context_info;
     hg_return_t ret = HG_SUCCESS;
+    int rc = EXIT_SUCCESS;
 
     /* Force to listen */
     hg_test_info.na_test_info.listen = NA_TRUE;
     ret = HG_Test_init(argc, argv, &hg_test_info);
-    if (ret != HG_SUCCESS)
-        return EXIT_FAILURE;
+    if (ret != HG_SUCCESS) {
+        rc = EXIT_FAILURE;
+        goto done;
+    }
 
     hg_test_context_info =
         (struct hg_test_context_info *) HG_Context_get_data(
@@ -141,10 +144,11 @@ main(int argc, char *argv[])
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
 #endif
 
+done:
     HG_Test_finalize(&hg_test_info);
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
     free(progress_workers);
 #endif
 
-    return EXIT_SUCCESS;
+    return rc;
 }

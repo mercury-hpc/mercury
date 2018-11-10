@@ -15,38 +15,48 @@
 
 extern hg_id_t hg_test_overflow_id_g;
 
+//#define HG_TEST_DEBUG
+#ifdef HG_TEST_DEBUG
+#define HG_TEST_LOG_DEBUG(...)                                \
+    HG_LOG_WRITE_DEBUG(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__)
+#else
+#define HG_TEST_LOG_DEBUG(...) (void)0
+#endif
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
 {
     hg_handle_t handle = callback_info->info.forward.handle;
     hg_request_t *request = (hg_request_t *) callback_info->arg;
     overflow_out_t out_struct;
-    hg_return_t ret = HG_SUCCESS;
-
     hg_string_t string;
     size_t string_len;
+    hg_return_t ret = HG_SUCCESS;
 
     if (callback_info->ret != HG_SUCCESS) {
-        HG_LOG_WARNING("Return from callback info is not HG_SUCCESS");
+        HG_TEST_LOG_WARNING("Return from callback info is not HG_SUCCESS");
         goto done;
     }
 
     /* Get output */
     ret = HG_Get_output(handle, &out_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not get output\n");
+        HG_TEST_LOG_ERROR("Could not get output");
         goto done;
     }
 
     /* Get output parameters */
     string = out_struct.string;
     string_len = out_struct.string_len;
-    printf("Returned string (length %zu): %s\n", string_len, string);
+    HG_TEST_LOG_DEBUG("Returned string (length %zu): %s", string_len, string);
+    (void) string;
+    (void) string_len;
 
     /* Free request */
     ret = HG_Free_output(handle, &out_struct);
     if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free output\n");
+        HG_TEST_LOG_ERROR("Could not free output");
         goto done;
     }
 
@@ -55,38 +65,30 @@ done:
     return ret;
 }
 
-/******************************************************************************/
-int
-main(int argc, char *argv[])
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_overflow(hg_context_t *context, hg_request_class_t *request_class,
+    hg_addr_t addr, hg_id_t rpc_id, hg_cb_t callback)
 {
-    hg_class_t *hg_class = NULL;
-    hg_context_t *context = NULL;
-    hg_request_class_t *request_class = NULL;
     hg_request_t *request = NULL;
     hg_handle_t handle;
-    hg_addr_t addr;
-    hg_return_t hg_ret;
-
-    /* Initialize the interface (for convenience, shipper_test_client_init
-     * initializes the network interface with the selected plugin)
-     */
-    hg_class = HG_Test_client_init(argc, argv, &addr, NULL, &context,
-            &request_class);
+    hg_return_t hg_ret = HG_SUCCESS;
 
     request = hg_request_create(request_class);
 
-    hg_ret = HG_Create(context, addr, hg_test_overflow_id_g, &handle);
+    /* Create RPC request */
+    hg_ret = HG_Create(context, addr, rpc_id, &handle);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not start call\n");
-        return EXIT_FAILURE;
+        HG_TEST_LOG_ERROR("Could not create handle");
+        goto done;
     }
 
     /* Forward call to remote addr and get a new request */
-    printf("Forwarding call, op id: %u...\n", hg_test_overflow_id_g);
-    hg_ret = HG_Forward(handle, hg_test_rpc_forward_cb, request, NULL);
+    HG_TEST_LOG_DEBUG("Forwarding RPC, op id: %u...", rpc_id);
+    hg_ret = HG_Forward(handle, callback, request, NULL);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not forward call\n");
-        return EXIT_FAILURE;
+        HG_TEST_LOG_ERROR("Could not forward call");
+        goto done;
     }
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
@@ -94,13 +96,40 @@ main(int argc, char *argv[])
     /* Complete */
     hg_ret = HG_Destroy(handle);
     if (hg_ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not complete\n");
-        return EXIT_FAILURE;
+        HG_TEST_LOG_ERROR("Could not destroy handle");
+        goto done;
     }
 
+done:
     hg_request_destroy(request);
+    return hg_ret;
+}
 
-    HG_Test_finalize(hg_class);
+/*---------------------------------------------------------------------------*/
+int
+main(int argc, char *argv[])
+{
+    struct hg_test_info hg_test_info = { 0 };
+    hg_return_t hg_ret;
+    int ret = EXIT_SUCCESS;
 
-    return EXIT_SUCCESS;
+    /* Initialize the interface */
+    HG_Test_init(argc, argv, &hg_test_info);
+
+    /* Overflow RPC test */
+    HG_TEST("overflow RPC");
+    hg_ret = hg_test_overflow(hg_test_info.context, hg_test_info.request_class,
+        hg_test_info.target_addr, hg_test_overflow_id_g,
+        hg_test_rpc_forward_cb);
+    if (hg_ret != HG_SUCCESS) {
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    HG_PASSED();
+
+done:
+    if (ret != EXIT_SUCCESS)
+        HG_FAILED();
+    HG_Test_finalize(&hg_test_info);
+    return ret;
 }

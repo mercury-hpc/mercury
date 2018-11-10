@@ -17,13 +17,6 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
-/* Input / output operation type */
-typedef enum {
-    HG_UNDEF,
-    HG_INPUT,
-    HG_OUTPUT
-} hg_op_t;
-
 #if defined(__GNUC__) || defined(_WIN32)
 # pragma pack(push,1)
 #else
