@@ -2253,7 +2253,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
 
             mpi_ret = MPI_Irecv(
                     (char*) na_mpi_rma_info->base + na_mpi_rma_info->disp,
-                    na_mpi_rma_info->count, MPI_BYTE, na_mpi_addr->rank,
+                    na_mpi_rma_info->count, MPI_BYTE, status->MPI_SOURCE,
                     (int) na_mpi_rma_info->tag, na_mpi_addr->rma_comm,
                     &na_mpi_op_id->info.put.data_request);
             if (mpi_ret != MPI_SUCCESS) {
@@ -2273,7 +2273,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
 
             mpi_ret = MPI_Isend(
                     (char*) na_mpi_rma_info->base + na_mpi_rma_info->disp,
-                    na_mpi_rma_info->count, MPI_BYTE, na_mpi_addr->rank,
+                    na_mpi_rma_info->count, MPI_BYTE, status->MPI_SOURCE,
                     (int) na_mpi_rma_info->tag, na_mpi_addr->rma_comm,
                     &na_mpi_op_id->info.get.data_request);
             if (mpi_ret != MPI_SUCCESS) {
