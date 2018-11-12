@@ -863,7 +863,7 @@ hg_get_extra_payload(struct hg_handle *hg_handle, hg_op_t op,
     hg_proc_t proc = HG_PROC_NULL;
     void *buf, **extra_buf;
     hg_size_t buf_size, *extra_buf_size;
-    hg_bulk_t *extra_bulk;
+    hg_bulk_t *extra_bulk = NULL;
     hg_size_t header_offset = hg_header_get_size(op);
     hg_size_t page_size = (hg_size_t) hg_mem_get_page_size();
     hg_bulk_t local_handle = HG_BULK_NULL;
