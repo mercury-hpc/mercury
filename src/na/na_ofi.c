@@ -2550,14 +2550,16 @@ na_ofi_mem_pool_alloc(na_class_t *na_class, na_size_t size,
     void *mem_ptr = NULL;
     na_bool_t found = NA_FALSE;
 
+retry:
     /* Check whether we can get a block from one of the pools */
     hg_thread_spin_lock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
     HG_QUEUE_FOREACH(na_ofi_mem_pool,
         &NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool, entry) {
-        if (!HG_QUEUE_IS_EMPTY(&na_ofi_mem_pool->node_list)) {
-            found = NA_TRUE;
+        hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
+        found = !HG_QUEUE_IS_EMPTY(&na_ofi_mem_pool->node_list);
+        hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
+        if (found)
             break;
-        }
     }
     hg_thread_spin_unlock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
 
@@ -2582,9 +2584,8 @@ na_ofi_mem_pool_alloc(na_class_t *na_class, na_size_t size,
     hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
     na_ofi_mem_node = HG_QUEUE_FIRST(&na_ofi_mem_pool->node_list);
     if (!na_ofi_mem_node) {
-        NA_LOG_ERROR("Mem pool is empty");
         hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
-        goto out;
+        goto retry;
     }
     HG_QUEUE_POP_HEAD(&na_ofi_mem_pool->node_list, entry);
     hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
