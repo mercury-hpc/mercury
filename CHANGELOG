@@ -1,7 +1,32 @@
 ================
-v1.0.0
+v1.0.0rc2
 ================
-Jerome Soumagne (302):
+Jerome Soumagne (13):
+  2018-11-12 HG: fix uninitialized variable warning in hg_get_extra_payload() - part 2
+  2018-11-12 HG: fix uninitialized variable warning in hg_get_extra_payload()
+  2018-11-12 NA OFI: fix missing lock in mem pool alloc
+  2018-11-09 HG: add support for response overflow (fix #35 and #93)
+  2018-11-09 NA MPI: fix potential incorrect rank used when doing RMA
+  2018-11-06 NA OFI: fix prov/psm2 to not call fi_trywait() - performance issue
+  2018-11-06 NA OFI: fix poll_get_fd and poll_try_wait when using NA_OFI_WAIT_SET
+  2018-11-06 HG: Add HG_Ref_get() to retrieve ref count from handle
+  2018-11-05 NA OFI: enable FI_WAIT_FD for prov/psm2
+  2018-11-01 NA OFI: enable FI_WAIT_FD for prov/verbs
+  2018-10-30 CMake: fix ignored SM auto routing option when libUUID was not found        (fix #258 and close #259)
+  2018-10-29 Fix detection of snappy for examples and force use of Boost (fix #257)
+  2018-10-29 NA OFI: fix a few free() in case of error
+
+Phil Carns (2):
+  2018-11-08 NA BMI: bug fix to bmi tags for internal RMA emulation (#265)
+  2018-11-08 NA BMI: bug fix to put ctrl msg (#264)
+
+================
+v1.0.0rc1
+================
+Jerome Soumagne (305):
+  2018-10-26 Update copyright dates
+  2018-10-26 Update README and CHANGELOG
+  2018-10-26 Update CMake version to 1.0.0
   2018-10-26 HG Core: add warning regarding use of auto SM feature (fix #251)
   2018-10-26 NA SM: handle epoll error when disconnection occurs (fix #229)        fix addr_free on accepted addresses
   2018-10-26 Add HG_Registered_disabled_response() (fix #225 and close #226)
