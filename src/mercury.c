@@ -959,8 +959,10 @@ hg_get_extra_payload(struct hg_handle *hg_handle, hg_op_t op,
 
 done:
     HG_Bulk_free(local_handle);
-    HG_Bulk_free(*extra_bulk);
-    *extra_bulk = HG_BULK_NULL;
+    if (extra_bulk) {
+        HG_Bulk_free(*extra_bulk);
+        *extra_bulk = HG_BULK_NULL;
+    }
     return ret;
 }
 
