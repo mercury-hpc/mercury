@@ -455,21 +455,15 @@ static NA_INLINE na_bool_t
 na_ofi_with_msg_hdr(const na_class_t *na_class);
 
 /**
- *
+ * Get provider type encoded in string.
  */
 static NA_INLINE enum na_ofi_prov_type
 na_ofi_addr_prov(const char *str);
 
 /**
- * Get addr format encoded in string.
- */
-static NA_INLINE na_uint32_t
-na_ofi_addr_format(const char *str);
-
-/**
  * Get native address from string.
  */
-static na_return_t
+static NA_INLINE na_return_t
 na_ofi_str_to_addr(const char *str, na_uint32_t addr_format, void **addr,
     na_size_t *len);
 static na_return_t
@@ -1070,37 +1064,10 @@ na_ofi_addr_prov(const char *str)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_uint32_t
-na_ofi_addr_format(const char *str)
-{
-    char fmt[19];
-    int ret;
-
-    ret = sscanf(str, "%16[^:]://", fmt);
-    if (ret != 1)
-        return FI_FORMAT_UNSPEC;
-
-    fmt[sizeof(fmt) - 1] = '\0';
-    if (!strcasecmp(fmt, "fi_sockaddr_in"))
-        return FI_SOCKADDR_IN;
-    else if (!strcasecmp(fmt, "fi_addr_psmx2"))
-        return FI_ADDR_PSMX2;
-    else if (!strcasecmp(fmt, "fi_addr_gni"))
-        return FI_ADDR_GNI;
-
-    return FI_FORMAT_UNSPEC;
-}
-
-/*---------------------------------------------------------------------------*/
-static na_return_t
+static NA_INLINE na_return_t
 na_ofi_str_to_addr(const char *str, na_uint32_t addr_format, void **addr,
     na_size_t *len)
 {
-    if (addr_format != na_ofi_addr_format(str)) {
-        NA_LOG_ERROR("Address format does not match string format");
-        return NA_INVALID_PARAM;
-    }
-
     switch (addr_format) {
         case FI_SOCKADDR_IN:
             return na_ofi_str_to_sin(str, addr, len);
@@ -2345,49 +2312,44 @@ na_ofi_get_uri(na_class_t *na_class, const void *addr, char **uri_ptr)
 {
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct na_ofi_domain *na_ofi_domain = priv->nop_domain;
-    char addr_str[NA_OFI_MAX_URI_LEN] = {'\0'};
-    char *addr_str_ptr = addr_str;
-    size_t addr_strlen = NA_OFI_MAX_URI_LEN, fi_addr_strlen;
-    char *uri = NULL;
+    char addr_str[NA_OFI_MAX_URI_LEN] = {'\0'},
+        fi_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'},
+        *fi_addr_str_ptr, *uri = NULL;
+    size_t fi_addr_strlen = NA_OFI_MAX_URI_LEN;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    /* Generate URI */
-    rc = snprintf(addr_str_ptr, addr_strlen, "%s://",
-        na_ofi_domain->nod_prov->fabric_attr->prov_name);
-    if (rc < 0 || rc > (int) addr_strlen) {
-        NA_LOG_ERROR("snprintf failed or name truncated, rc: %d.", rc);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-    addr_str_ptr += rc;
-    addr_strlen -= (size_t) rc;
-
-    /* Special case for sockets and gni as fi_av_straddr() is not consistent */
-    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_SOCKETS)
-        rc = snprintf(addr_str + rc, addr_strlen, "fi_sockaddr_in://");
-    else if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI)
-        rc = snprintf(addr_str + rc, addr_strlen, "fi_addr_gni://");
-    else
-        rc = 0;
-    if (rc < 0 || rc > (int) addr_strlen) {
-        NA_LOG_ERROR("snprintf failed or name truncated, rc: %d.", rc);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-    addr_str_ptr += rc;
-    addr_strlen -= (size_t) rc;
-
-    /* Create a printable string */
-    fi_addr_strlen = addr_strlen;
-    fi_av_straddr(na_ofi_domain->nod_av, addr, addr_str_ptr, &fi_addr_strlen);
-    if (fi_addr_strlen > addr_strlen) {
+    /* Convert FI address to a printable string */
+    fi_av_straddr(na_ofi_domain->nod_av, addr, fi_addr_str, &fi_addr_strlen);
+    if (fi_addr_strlen > NA_OFI_MAX_URI_LEN) {
         NA_LOG_ERROR("fi_av_straddr() address truncated, addrlen: %zu",
             fi_addr_strlen);
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
 
+    /* Remove unnecessary "://" prefix from string if present */
+    if (strstr(fi_addr_str, "://")) {
+        strtok_r(fi_addr_str, ":", &fi_addr_str_ptr);
+        if (strncmp(fi_addr_str_ptr, "//", 2) != 0) {
+            NA_LOG_ERROR("Bad address string format");
+            ret = NA_PROTOCOL_ERROR;
+            goto out;
+        }
+        fi_addr_str_ptr += 2;
+    } else
+        fi_addr_str_ptr = fi_addr_str;
+
+    /* Generate URI */
+    rc = snprintf(addr_str, NA_OFI_MAX_URI_LEN, "%s://%s",
+        na_ofi_domain->nod_prov->fabric_attr->prov_name, fi_addr_str_ptr);
+    if (rc < 0 || rc > NA_OFI_MAX_URI_LEN) {
+        NA_LOG_ERROR("snprintf failed or name truncated, rc: %d.", rc);
+        ret = NA_PROTOCOL_ERROR;
+        goto out;
+    }
+
+    /* Dup URI */
     uri = strdup(addr_str);
     if (uri == NULL) {
         NA_LOG_ERROR("Could not strdup EP address string.");
@@ -3675,7 +3637,6 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
     struct na_ofi_op_id *na_ofi_op_id = NULL;
     struct na_ofi_addr *na_ofi_addr = NULL;
-    char *dup_name = NULL, *fi_name = NULL;
     na_return_t ret = NA_SUCCESS;
 
     /* Check provider from name */
@@ -3728,18 +3689,8 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_ofi_op_id;
 
-    /* Shorten name */
-    dup_name = strdup(name);
-    if (!dup_name) {
-        NA_LOG_ERROR("strdup() of URI failed");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
-    strtok_r(dup_name, ":", &fi_name);
-    fi_name += 2; /* // delimiter */
-
     /* Convert name to address */
-    ret = na_ofi_str_to_addr(fi_name,
+    ret = na_ofi_str_to_addr(name,
         na_ofi_prov_addr_format[priv->nop_domain->nod_prov_type],
         &na_ofi_addr->addr, &na_ofi_addr->addrlen);
     if (ret != NA_SUCCESS) {
@@ -3772,7 +3723,6 @@ out:
         }
         free(na_ofi_op_id);
     }
-    free(dup_name);
     return ret;
 }
 
