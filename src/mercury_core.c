@@ -3362,6 +3362,9 @@ hg_core_trigger_entry(struct hg_core_handle *hg_core_handle)
     hg_return_t ret = HG_SUCCESS;
 
     if (hg_core_handle->op_type == HG_CORE_PROCESS) {
+        /* Take another reference to make sure the handle does not get freed */
+        hg_atomic_incr32(&hg_core_handle->ref_count);
+
         /* Run RPC callback */
         ret = hg_core_process(hg_core_handle);
         if (ret != HG_SUCCESS && !hg_core_handle->no_response) {
@@ -3431,18 +3434,19 @@ hg_core_trigger_entry(struct hg_core_handle *hg_core_handle)
         /* Execute user callback */
         if (hg_cb)
             hg_cb(&hg_core_cb_info);
-
-        /* Repost handle if we were listening, otherwise destroy it */
-        if (hg_core_handle->repost && !hg_core_handle->hg_info.context->finalizing) {
-            /* Repost handle */
-            ret = hg_core_reset_post(hg_core_handle);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Cannot repost handle");
-                goto done;
-            }
-        } else
-            hg_core_destroy(hg_core_handle);
     }
+
+    /* Repost handle if we were listening, otherwise destroy it */
+    if (hg_core_handle->repost
+        && !hg_core_handle->hg_info.context->finalizing) {
+        /* Repost handle */
+        ret = hg_core_reset_post(hg_core_handle);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Cannot repost handle");
+            goto done;
+        }
+    } else
+        hg_core_destroy(hg_core_handle);
 
 done:
     return ret;
