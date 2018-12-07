@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8.12.2 FATAL_ERROR)
 
 # Setup cmake policies.
-foreach(p
+foreach(policy
     CMP0012
     CMP0013
     CMP0014
@@ -9,9 +9,11 @@ foreach(p
     CMP0025 # CMake 3.0
     CMP0053 # CMake 3.1
     CMP0054 # CMake 3.1
+    CMP0074 # CMake 3.12
+    CMP0075 # CMake 3.12
   )
-  if(POLICY ${p})
-    cmake_policy(SET ${p} NEW)
+  if(POLICY ${policy})
+    cmake_policy(SET ${policy} NEW)
   endif()
 endforeach()
 
