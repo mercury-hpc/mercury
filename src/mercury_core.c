@@ -489,7 +489,7 @@ hg_core_destroy(
 /**
  * Reset handle.
  */
-static hg_return_t
+static void
 hg_core_reset(
         struct hg_core_handle *hg_core_handle,
         hg_bool_t reset_info
@@ -535,7 +535,7 @@ hg_core_forward_na(
 /**
  * Send response locally.
  */
-static hg_return_t
+static HG_INLINE hg_return_t
 hg_core_respond_self(
         struct hg_core_handle *hg_core_handle
         );
@@ -543,7 +543,7 @@ hg_core_respond_self(
 /**
  * Do not send response locally.
  */
-static hg_return_t
+static HG_INLINE hg_return_t
 hg_core_no_respond_self(
         struct hg_core_handle *hg_core_handle
         );
@@ -560,7 +560,7 @@ hg_core_respond_na(
 /**
  * Do not send response through NA.
  */
-static hg_return_t
+static HG_INLINE hg_return_t
 hg_core_no_respond_na(
         struct hg_core_handle *hg_core_handle
         );
@@ -568,7 +568,7 @@ hg_core_no_respond_na(
 /**
  * Send input callback.
  */
-static int
+static HG_INLINE int
 hg_core_send_input_cb(
         const struct na_cb_info *callback_info
         );
@@ -593,7 +593,7 @@ hg_core_process_input(
 /**
  * Send output callback.
  */
-static int
+static HG_INLINE int
 hg_core_send_output_cb(
         const struct na_cb_info *callback_info
         );
@@ -601,7 +601,7 @@ hg_core_send_output_cb(
 /**
  * Recv output callback.
  */
-static int
+static HG_INLINE int
 hg_core_recv_output_cb(
         const struct na_cb_info *callback_info
         );
@@ -612,7 +612,8 @@ hg_core_recv_output_cb(
 static hg_return_t
 hg_core_process_output(
         struct hg_core_handle *hg_core_handle,
-        hg_bool_t *completed
+        hg_bool_t *completed,
+        hg_return_t (*done_callback)(hg_core_handle_t)
         );
 
 /**
@@ -626,7 +627,7 @@ hg_core_send_ack(
 /**
  * Send ack callback. (HG_CORE_MORE_DATA flag on output)
  */
-static int
+static HG_INLINE int
 hg_core_send_ack_cb(
         const struct na_cb_info *callback_info
         );
@@ -634,7 +635,7 @@ hg_core_send_ack_cb(
 /**
  * Recv ack callback. (HG_CORE_MORE_DATA flag on output)
  */
-static int
+static HG_INLINE int
 hg_core_recv_ack_cb(
         const struct na_cb_info *callback_info
         );
@@ -663,6 +664,16 @@ hg_core_process_thread(
 static hg_return_t
 hg_core_process(
         struct hg_core_handle *hg_core_handle
+        );
+
+/**
+ * Complete handle and NA operation.
+ */
+static HG_INLINE hg_return_t
+hg_core_complete_na(
+        struct hg_core_handle *hg_core_handle,
+        na_op_id_t *op_id,
+        hg_bool_t *completed
         );
 
 /**
@@ -1867,20 +1878,9 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
+static void
 hg_core_reset(struct hg_core_handle *hg_core_handle, hg_bool_t reset_info)
 {
-    hg_return_t ret = HG_SUCCESS;
-
-    if (hg_atomic_get32(&hg_core_handle->in_use)) {
-        /* Not safe to reset
-         * TODO could add the ability to defer the reset operation */
-        HG_LOG_ERROR("Cannot reset HG core handle, handle is still in use, "
-            "refcount: %d", hg_atomic_get32(&hg_core_handle->ref_count));
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
-
     /* Reset source address */
     if (reset_info) {
         if (hg_core_handle->hg_info.addr != HG_CORE_ADDR_NULL
@@ -1918,9 +1918,6 @@ hg_core_reset(struct hg_core_handle *hg_core_handle, hg_bool_t reset_info)
 
     hg_core_header_request_reset(&hg_core_handle->in_header);
     hg_core_header_response_reset(&hg_core_handle->out_header);
-
-done:
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2069,7 +2066,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 #ifdef HG_HAS_SELF_FORWARD
-static hg_return_t
+static HG_INLINE hg_return_t
 hg_core_respond_self(struct hg_core_handle *hg_core_handle)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -2089,7 +2086,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
+static HG_INLINE hg_return_t
 hg_core_no_respond_self(struct hg_core_handle *hg_core_handle)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -2115,6 +2112,9 @@ hg_core_respond_na(struct hg_core_handle *hg_core_handle)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
+
+    /* Increment number of expected NA operations */
+    hg_core_handle->na_op_count++;
 
     /* Set operation type for trigger */
     hg_core_handle->op_type = HG_CORE_RESPOND;
@@ -2168,7 +2168,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static hg_return_t
+static HG_INLINE hg_return_t
 hg_core_no_respond_na(struct hg_core_handle *hg_core_handle)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -2187,16 +2187,13 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static int
+static HG_INLINE int
 hg_core_send_input_cb(const struct na_cb_info *callback_info)
 {
-    struct hg_core_handle *hg_core_handle = (struct hg_core_handle *) callback_info->arg;
+    struct hg_core_handle *hg_core_handle =
+        (struct hg_core_handle *) callback_info->arg;
     na_return_t na_ret = NA_SUCCESS;
-    int ret = 0;
-
-    /* Reset op ID value */
-    if (!hg_core_handle->na_op_id_mine)
-        hg_core_handle->na_send_op_id = NA_OP_ID_NULL;
+    hg_bool_t completed = HG_TRUE;
 
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
@@ -2207,28 +2204,24 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
         goto done;
     }
 
-    /* Add handle to completion queue only when all operations have completed */
-    if (hg_atomic_incr32(&hg_core_handle->na_op_completed_count)
-        == (hg_util_int32_t) hg_core_handle->na_op_count) {
-        /* Mark as completed */
-        if (hg_core_complete(hg_core_handle) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
-        /* Increment number of entries added to completion queue */
-        ret++;
+    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_send_op_id,
+        &completed) != HG_SUCCESS) {
+        HG_LOG_ERROR("Error in NA callback");
+        na_ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
 done:
-    (void) na_ret;
-    return ret;
+    (void) na_ret; /* unused */
+    return (int) completed;
 }
 
 /*---------------------------------------------------------------------------*/
 static int
 hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 {
-    struct hg_core_handle *hg_core_handle = (struct hg_core_handle *) callback_info->arg;
+    struct hg_core_handle *hg_core_handle =
+        (struct hg_core_handle *) callback_info->arg;
     struct hg_core_context *hg_core_context = hg_core_handle->hg_info.context;
     const struct na_cb_info_recv_unexpected *na_cb_info_recv_unexpected =
         &callback_info->info.recv_unexpected;
@@ -2239,17 +2232,12 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 # endif
 #endif
     na_return_t na_ret = NA_SUCCESS;
-    hg_bool_t completed = HG_FALSE;
-    int ret = 0;
-
-    /* Reset op ID value */
-    if (!hg_core_handle->na_op_id_mine)
-        hg_core_handle->na_recv_op_id = NA_OP_ID_NULL;
+    hg_bool_t completed = HG_TRUE;
 
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
         hg_core_handle->ret = HG_CANCELED;
-        /* May only decrement refcount */
+        /* Only decrement refcount and exit */
         hg_core_destroy(hg_core_handle);
         goto done;
     } else if (callback_info->ret != NA_SUCCESS) {
@@ -2257,9 +2245,6 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         na_ret = NA_PROTOCOL_ERROR;
         goto done;
     }
-
-    /* Increment NA completed count */
-    hg_atomic_incr32(&hg_core_handle->na_op_completed_count);
 
     /* Fill unexpected info */
     hg_core_handle->hg_info.addr->na_addr = na_cb_info_recv_unexpected->source;
@@ -2317,12 +2302,17 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         goto done;
     }
 
-    /* Increment number of entries added to completion queue */
-    ret = (int) completed;
+    /* Complete operation */
+    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_recv_op_id,
+        &completed) != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete operation");
+        na_ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
 
 done:
-    (void) na_ret;
-    return ret;
+    (void) na_ret; /* unused */
+    return (int) completed;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2355,10 +2345,6 @@ hg_core_process_input(struct hg_core_handle *hg_core_handle,
     /* Parse flags */
     hg_core_handle->no_response = hg_core_handle->in_header.msg.request.flags
         & HG_CORE_NO_RESPONSE;
-    if (!hg_core_handle->no_response) {
-        /* Increment number of expected NA operations */
-        hg_core_handle->na_op_count++;
-    }
 #ifdef HG_HAS_SELF_FORWARD
     hg_core_handle->respond = hg_core_handle->in_header.msg.request.flags
         & HG_CORE_SELF_FORWARD ? hg_core_respond_self : hg_core_respond_na;
@@ -2387,30 +2373,21 @@ hg_core_process_input(struct hg_core_handle *hg_core_handle,
             goto done;
         }
         *completed = HG_FALSE;
-    } else {
-        ret = hg_core_complete(hg_core_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
+    } else
         *completed = HG_TRUE;
-    }
 
 done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static int
+static HG_INLINE int
 hg_core_send_output_cb(const struct na_cb_info *callback_info)
 {
-    struct hg_core_handle *hg_core_handle = (struct hg_core_handle *) callback_info->arg;
+    struct hg_core_handle *hg_core_handle =
+        (struct hg_core_handle *) callback_info->arg;
     na_return_t na_ret = NA_SUCCESS;
-    int ret = 0;
-
-    /* Reset op ID value */
-    if (!hg_core_handle->na_op_id_mine)
-        hg_core_handle->na_send_op_id = NA_OP_ID_NULL;
+    hg_bool_t completed = HG_TRUE;
 
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
@@ -2421,37 +2398,27 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
         goto done;
     }
 
-    /* TODO common code with hg_core_no_respond_na */
-
-    /* Mark as completed (sanity check for NA op completed count) */
-    if (hg_atomic_incr32(&hg_core_handle->na_op_completed_count)
-        == (hg_util_int32_t) hg_core_handle->na_op_count) {
-        if (hg_core_complete(hg_core_handle) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
-        /* Increment number of entries added to completion queue */
-        ret++;
+    /* Complete operation */
+    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_send_op_id,
+        &completed) != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete operation");
+        na_ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
 done:
-    (void) na_ret;
-    return ret;
+    (void) na_ret; /* unused */
+    return (int) completed;
 }
 
 /*---------------------------------------------------------------------------*/
-static int
+static HG_INLINE int
 hg_core_recv_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_core_handle *hg_core_handle =
         (struct hg_core_handle *) callback_info->arg;
     na_return_t na_ret = NA_SUCCESS;
-    hg_bool_t completed = HG_FALSE;
-    int ret = 0;
-
-    /* Reset op ID value */
-    if (!hg_core_handle->na_op_id_mine)
-        hg_core_handle->na_recv_op_id = NA_OP_ID_NULL;
+    hg_bool_t completed = HG_TRUE;
 
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
@@ -2463,23 +2430,30 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
     }
 
     /* Process output information */
-    if (hg_core_process_output(hg_core_handle, &completed) != HG_SUCCESS) {
+    if (hg_core_handle->ret != HG_CANCELED
+        && hg_core_process_output(hg_core_handle, &completed, hg_core_send_ack)
+            != HG_SUCCESS) {
         HG_LOG_ERROR("Could not process output");
         goto done;
     }
 
-    /* Increment number of entries added to completion queue */
-    ret = (int) completed;
+    /* Complete operation */
+    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_recv_op_id,
+        &completed) != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete operation");
+        na_ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
 
 done:
-    (void) na_ret;
-    return ret;
+    (void) na_ret; /* unused */
+    return (int) completed;
 }
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_core_process_output(struct hg_core_handle *hg_core_handle,
-    hg_bool_t *completed)
+    hg_bool_t *completed, hg_return_t (*done_callback)(hg_core_handle_t))
 {
     struct hg_core_context *hg_core_context = hg_core_handle->hg_info.context;
     hg_return_t ret = HG_SUCCESS;
@@ -2505,24 +2479,14 @@ hg_core_process_output(struct hg_core_handle *hg_core_handle,
             goto done;
         }
         ret = hg_core_context->hg_core_class->more_data_acquire(
-            (hg_core_handle_t) hg_core_handle, HG_OUTPUT, hg_core_send_ack);
+            (hg_core_handle_t) hg_core_handle, HG_OUTPUT, done_callback);
         if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Error in HG core handle more data acquire callback");
             goto done;
         }
         *completed = HG_FALSE;
-        goto done;
-    } else if (hg_atomic_incr32(&hg_core_handle->na_op_completed_count)
-        == (hg_util_int32_t) hg_core_handle->na_op_count) {
-        /* Add handle to completion queue when all operations have completed */
-        ret = hg_core_complete(hg_core_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
-        *completed = HG_TRUE;
     } else
-        *completed = HG_FALSE;
+        *completed = HG_TRUE;
 
 done:
     return ret;
@@ -2534,6 +2498,9 @@ hg_core_send_ack(struct hg_core_handle *hg_core_handle)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
+
+    /* Increment number of expected NA operations */
+    hg_core_handle->na_op_count++;
 
     /* Allocate buffer for ack */
     hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
@@ -2565,17 +2532,13 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static int
+static HG_INLINE int
 hg_core_send_ack_cb(const struct na_cb_info *callback_info)
 {
     struct hg_core_handle *hg_core_handle =
         (struct hg_core_handle *) callback_info->arg;
     na_return_t na_ret = NA_SUCCESS;
-    hg_bool_t completed = HG_FALSE;
-    int ret = 0;
-
-    /* Reset op ID value */
-    hg_core_handle->na_ack_op_id = NA_OP_ID_NULL;
+    hg_bool_t completed = HG_TRUE;
 
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
@@ -2586,35 +2549,27 @@ hg_core_send_ack_cb(const struct na_cb_info *callback_info)
         goto done;
     }
 
-    /* Add handle to completion queue when all operations have completed */
-    if (hg_atomic_incr32(&hg_core_handle->na_op_completed_count)
-        == (hg_util_int32_t) hg_core_handle->na_op_count) {
-        if (hg_core_complete(hg_core_handle) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
-        completed = HG_TRUE;
+    /* Complete operation */
+    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_ack_op_id,
+        &completed) != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete operation");
+        na_ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
-    /* Increment number of entries added to completion queue */
-    ret = (int) completed;
-
 done:
-    (void) na_ret;
-    return ret;
+    (void) na_ret; /* unused */
+    return (int) completed;
 }
 
 /*---------------------------------------------------------------------------*/
-static int
+static HG_INLINE int
 hg_core_recv_ack_cb(const struct na_cb_info *callback_info)
 {
     struct hg_core_handle *hg_core_handle =
         (struct hg_core_handle *) callback_info->arg;
     na_return_t na_ret = NA_SUCCESS;
-    int ret = 0;
-
-    /* Reset op ID value */
-    hg_core_handle->na_ack_op_id = NA_OP_ID_NULL;
+    hg_bool_t completed = HG_TRUE;
 
     if (callback_info->ret == NA_CANCELED) {
         /* If canceled, mark handle as canceled */
@@ -2625,22 +2580,17 @@ hg_core_recv_ack_cb(const struct na_cb_info *callback_info)
         goto done;
     }
 
-    /* TODO common code with hg_core_no_respond_na */
-
-    /* Mark as completed (sanity check for NA op completed count) */
-    if (hg_atomic_incr32(&hg_core_handle->na_op_completed_count)
-        == (hg_util_int32_t) hg_core_handle->na_op_count) {
-        if (hg_core_complete(hg_core_handle) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
-        /* Increment number of entries added to completion queue */
-        ret++;
+    /* Complete operation */
+    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_ack_op_id,
+        &completed) != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete operation");
+        na_ret = NA_PROTOCOL_ERROR;
+        goto done;
     }
 
 done:
-    (void) na_ret;
-    return ret;
+    (void) na_ret; /* unused */
+    return (int) completed;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2651,6 +2601,7 @@ hg_core_self_cb(const struct hg_core_cb_info *callback_info)
     struct hg_core_handle *hg_core_handle =
         (struct hg_core_handle *) callback_info->info.respond.handle;
     hg_return_t ret;
+    hg_bool_t completed = HG_TRUE;
 
     /* First execute response callback */
     if (hg_core_handle->response_callback) {
@@ -2664,18 +2615,22 @@ hg_core_self_cb(const struct hg_core_cb_info *callback_info)
         hg_core_handle->response_callback(&hg_core_cb_info);
     }
 
-    /* TODO response check header */
-
     /* Assign forward callback back to handle */
     hg_core_handle->op_type = HG_CORE_FORWARD_SELF;
 
     /* Increment refcount and push handle back to completion queue */
     hg_atomic_incr32(&hg_core_handle->ref_count);
 
-    ret = hg_core_complete(hg_core_handle);
+    /* Process output */
+    ret = hg_core_process_output(hg_core_handle, &completed, hg_core_complete);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete handle");
-        goto done;
+       HG_LOG_ERROR("Could not process output");
+       goto done;
+   }
+
+    /* Mark as completed */
+    if (completed && hg_core_complete(hg_core_handle) != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not complete operation");
     }
 
 done:
@@ -2697,7 +2652,11 @@ hg_core_process_thread(void *arg)
    if (hg_core_process_input(hg_core_handle, &completed) != HG_SUCCESS) {
        HG_LOG_ERROR("Could not process input");
    }
-   (void) completed;
+
+   /* Mark as completed */
+   if (completed && hg_core_complete(hg_core_handle) != HG_SUCCESS) {
+       HG_LOG_ERROR("Could not complete operation");
+   }
 
    return thread_ret;
 }
@@ -2741,6 +2700,34 @@ hg_core_process(struct hg_core_handle *hg_core_handle)
         HG_LOG_ERROR("Error while executing RPC callback");
         goto done;
     }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+hg_core_complete_na(struct hg_core_handle *hg_core_handle, na_op_id_t *op_id,
+    hg_bool_t *completed)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Reset op ID value */
+    if (!hg_core_handle->na_op_id_mine)
+        *op_id = NA_OP_ID_NULL;
+
+    /* Add handle to completion queue when expected operations have completed */
+    if (hg_atomic_incr32(&hg_core_handle->na_op_completed_count)
+        == (hg_util_int32_t) hg_core_handle->na_op_count && *completed) {
+        /* Mark as completed */
+        if (hg_core_complete(hg_core_handle) != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not complete operation");
+            goto done;
+        }
+        /* Increment number of entries added to completion queue */
+        *completed = HG_TRUE;
+    } else
+        *completed = HG_FALSE;
 
 done:
     return ret;
@@ -2922,11 +2909,8 @@ hg_core_reset_post(struct hg_core_handle *hg_core_handle)
         goto done;
 
     /* Reset the handle */
-    ret = hg_core_reset(hg_core_handle, HG_TRUE);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Cannot reset handle");
-        goto done;
-    }
+    hg_core_reset(hg_core_handle, HG_TRUE);
+
     /* Also reset additional handle parameters */
     hg_atomic_set32(&hg_core_handle->ref_count, 1);
     hg_core_handle->hg_core_rpc_info = NULL;
@@ -3412,6 +3396,7 @@ hg_core_trigger_entry(struct hg_core_handle *hg_core_handle)
         switch (hg_core_handle->op_type) {
 #ifdef HG_HAS_SELF_FORWARD
             case HG_CORE_FORWARD_SELF:
+                HG_FALLTHROUGH();
 #endif
             case HG_CORE_FORWARD:
                 hg_cb = hg_core_handle->request_callback;
@@ -3469,6 +3454,12 @@ hg_core_cancel(struct hg_core_handle *hg_core_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
+    if (hg_core_handle->is_self) {
+        HG_LOG_ERROR("Local cancelation is not supported");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
     /* Cancel all NA operations issued */
     if (hg_core_handle->na_recv_op_id != NA_OP_ID_NULL) {
         na_return_t na_ret;
@@ -3493,6 +3484,20 @@ hg_core_cancel(struct hg_core_handle *hg_core_handle)
             goto done;
         }
     }
+
+    /* TODO
+    if (hg_core_handle->na_ack_op_id != NA_OP_ID_NULL) {
+        na_return_t na_ret;
+
+        na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
+            hg_core_handle->na_ack_op_id);
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not cancel ack op id");
+            ret = HG_NA_ERROR;
+            goto done;
+        }
+    }
+    */
 
 done:
     return ret;
@@ -4736,11 +4741,15 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
     }
 #endif
 
-    ret = hg_core_reset(hg_core_handle, HG_FALSE);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not reset HG core handle");
+    /* Not safe to reset
+     * TODO could add the ability to defer the reset operation */
+    if (hg_atomic_get32(&hg_core_handle->in_use)) {
+        HG_LOG_ERROR("Cannot reset HG core handle, handle is still in use, "
+            "refcount: %d", hg_atomic_get32(&hg_core_handle->ref_count));
+        ret = HG_PROTOCOL_ERROR;
         goto done;
     }
+    hg_core_reset(hg_core_handle, HG_FALSE);
 
     /* Set addr / RPC ID */
     ret = hg_core_set_rpc(hg_core_handle, addr, id);
@@ -4940,8 +4949,7 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
         goto done;
     }
 #ifndef HG_HAS_SELF_FORWARD
-    if (NA_Addr_is_self(hg_core_handle->hg_info.addr->na_class,
-        hg_core_handle->hg_info.addr->na_addr)) {
+    if (hg_core_handle->is_self) {
         HG_LOG_ERROR("Not enabled, please enable HG_USE_SELF_FORWARD");
         ret = HG_INVALID_PARAM;
         goto done;

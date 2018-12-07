@@ -68,6 +68,12 @@ hg_return_t
 hg_test_overflow_cb(hg_handle_t handle);
 
 /**
+ * test_cancel
+ */
+hg_return_t
+hg_test_cancel_rpc_cb(hg_handle_t handle);
+
+/**
  * test_nested
  */
 hg_return_t

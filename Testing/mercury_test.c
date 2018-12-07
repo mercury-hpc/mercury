@@ -93,6 +93,9 @@ hg_id_t hg_test_perf_bulk_read_id_g = 0;
 /* test_overflow */
 hg_id_t hg_test_overflow_id_g = 0;
 
+/* test_cancel */
+hg_id_t hg_test_cancel_rpc_id_g = 0;
+
 /* test_nested */
 hg_id_t hg_test_nested1_id_g = 0;
 hg_id_t hg_test_nested2_id_g = 0;
@@ -310,6 +313,10 @@ hg_test_register(hg_class_t *hg_class)
     /* test_overflow */
     hg_test_overflow_id_g = MERCURY_REGISTER(hg_class, "hg_test_overflow",
             void, overflow_out_t, hg_test_overflow_cb);
+
+    /* test_cancel */
+    hg_test_cancel_rpc_id_g = MERCURY_REGISTER(hg_class, "hg_test_cancel_rpc",
+            void, void, hg_test_cancel_rpc_cb);
 
     /* test_nested */
 //    hg_test_nested1_id_g = MERCURY_REGISTER(hg_class, "hg_test_nested",

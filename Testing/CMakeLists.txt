@@ -180,7 +180,7 @@ macro(add_mercury_test_comm test_name comm protocol busy)
 
   # Coresident test (disable for BMI and MPI)
   if(MERCURY_TESTING_CORESIDENT AND
-    (NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi"))))
+    (NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi") OR (${test_name} STREQUAL "cancel"))))
     set(cores_test_name ${full_test_name}_self)
     set(cores_test_args ${test_args} --self_send)
     if (MERCURY_ENABLE_PARALLEL_TESTING)
@@ -267,6 +267,7 @@ set(MERCURY_tests
   rpc
   bulk
   overflow
+  cancel
 )
 if(NOT WIN32)
   set(MERCURY_tests ${MERCURY_tests} posix)
@@ -286,6 +287,3 @@ foreach(MERCURY_test ${MERCURY_tests})
   build_mercury_test(${MERCURY_test})
   add_mercury_test(${MERCURY_test})
 endforeach()
-
-#add_mercury_opt_test(bulk_seg "extra")
-#add_mercury_opt_test(bulk_seg "variable")

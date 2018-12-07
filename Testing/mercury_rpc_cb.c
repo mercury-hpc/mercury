@@ -1088,6 +1088,16 @@ HG_TEST_RPC_CB(hg_test_overflow, handle)
 }
 
 /*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_cancel_rpc, handle)
+{
+    /* Destroy twice and do not send expected response back */
+    HG_Destroy(handle);
+    HG_Destroy(handle);
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
 //static hg_return_t
 //hg_test_nested1_forward_cb(const struct hg_cb_info *callback_info)
 //{
@@ -1177,6 +1187,7 @@ HG_TEST_THREAD_CB(hg_test_perf_rpc_lat)
 HG_TEST_THREAD_CB(hg_test_perf_bulk)
 HG_TEST_THREAD_CB(hg_test_perf_bulk_read)
 HG_TEST_THREAD_CB(hg_test_overflow)
+HG_TEST_THREAD_CB(hg_test_cancel_rpc)
 //HG_TEST_THREAD_CB(hg_test_nested1)
 //HG_TEST_THREAD_CB(hg_test_nested2)
 
