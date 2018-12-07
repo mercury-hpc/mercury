@@ -2798,8 +2798,10 @@ na_ofi_cq_process_event(na_class_t *na_class, na_context_t *context,
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
-    if (hg_atomic_get32(&na_ofi_op_id->noo_canceled))
-        goto out;
+    if (hg_atomic_get32(&na_ofi_op_id->noo_canceled)) {
+        ret = NA_CANCELED;
+        goto complete;
+    }
     if (hg_atomic_get32(&na_ofi_op_id->noo_completed)) {
         NA_LOG_ERROR("Ignoring CQ event as the op is completed.");
         ret = NA_PROTOCOL_ERROR;
@@ -2849,6 +2851,7 @@ na_ofi_cq_process_event(na_class_t *na_class, na_context_t *context,
             goto out;
     };
 
+complete:
     /* Complete operation */
     ret = na_ofi_complete(na_ofi_op_id, ret);
     if (ret != NA_SUCCESS) {
@@ -4859,14 +4862,13 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     case NA_CB_SEND_EXPECTED:
     case NA_CB_PUT:
     case NA_CB_GET:
+        /* May or may not be canceled in that case */
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->noc_tx->fid,
             &na_ofi_op_id->noo_fi_ctx);
-        if (rc != 0)
-            NA_LOG_ERROR("fi_cancel (op type %d) failed, rc: %d(%s).",
-                na_ofi_op_id->noo_completion_data.callback_info.type, rc,
-                fi_strerror((int) -rc));
-
-        ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+        if (rc == 0) {
+            /* Complete only if successfully canceled */
+            ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+        }
         break;
     default:
         break;
