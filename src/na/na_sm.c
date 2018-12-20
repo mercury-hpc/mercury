@@ -976,20 +976,20 @@ na_sm_print_addr(struct na_sm_addr *na_sm_addr)
 static void *
 na_sm_open_shared_buf(const char *name, size_t buf_size, na_bool_t create)
 {
-    na_size_t page_size = (na_size_t) hg_mem_get_page_size();
+//    na_size_t page_size = (na_size_t) hg_mem_get_page_size();
     void *ret = NULL;
 
     /* Check alignment */
-    if (buf_size / page_size * page_size != buf_size) {
-        NA_LOG_ERROR(
-            "Not aligned properly, page size=%zu bytes, buf size=%zu bytes",
-            page_size, buf_size);
-        goto done;
-    }
+//    if (buf_size / page_size * page_size != buf_size) {
+//        NA_LOG_ERROR(
+//            "Not aligned properly, page size=%zu bytes, buf size=%zu bytes",
+//            page_size, buf_size);
+//        goto done;
+//    }
 
     ret = hg_mem_shm_map(name, buf_size, create);
 
-done:
+//done:
     return ret;
 }
 
