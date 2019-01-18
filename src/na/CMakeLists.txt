@@ -325,9 +325,10 @@ install(
 # Specify project header files to be installed
 #-----------------------------------------------------------------------------
 set(NA_HEADERS
+  ${CMAKE_CURRENT_BINARY_DIR}/na_config.h
   ${CMAKE_CURRENT_SOURCE_DIR}/na.h
   ${CMAKE_CURRENT_SOURCE_DIR}/na_error.h
-  ${CMAKE_CURRENT_BINARY_DIR}/na_config.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_types.h
 )
 
 if(NA_HAS_MPI)

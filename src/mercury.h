@@ -12,6 +12,10 @@
 #define MERCURY_H
 
 #include "mercury_types.h"
+#include "mercury_header.h"
+#include "mercury_error.h"
+
+#include "mercury_core.h"
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -128,7 +132,7 @@ HG_Cleanup(
  *
  * \return the name of the class, or NULL if not a valid class
  */
-HG_EXPORT const char *
+static HG_INLINE const char *
 HG_Class_get_name(
         const hg_class_t *hg_class
         );
@@ -140,7 +144,7 @@ HG_Class_get_name(
  *
  * \return the name of the class's transport, or NULL if not a valid class
  */
-HG_EXPORT const char *
+static HG_INLINE const char *
 HG_Class_get_protocol(
         const hg_class_t *hg_class
         );
@@ -152,7 +156,7 @@ HG_Class_get_protocol(
  *
  * \return HG_TRUE if listening or HG_FALSE if not, or not a valid class
  */
-HG_EXPORT hg_bool_t
+static HG_INLINE hg_bool_t
 HG_Class_is_listening(
         const hg_class_t *hg_class
         );
@@ -166,7 +170,7 @@ HG_Class_is_listening(
  * \return the maximum size, or 0 if hg_class is not a valid class or XDR is
  * being used
  */
-HG_EXPORT hg_size_t
+static HG_INLINE hg_size_t
 HG_Class_get_input_eager_size(
         const hg_class_t *hg_class
         );
@@ -180,7 +184,7 @@ HG_Class_get_input_eager_size(
  * \return the maximum size, or 0 if hg_class is not a valid class or XDR is
  * being used
  */
-HG_EXPORT hg_size_t
+static HG_INLINE hg_size_t
 HG_Class_get_output_eager_size(
         const hg_class_t *hg_class
         );
@@ -196,7 +200,7 @@ HG_Class_get_output_eager_size(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Class_set_input_offset(
         hg_class_t *hg_class,
         hg_size_t offset
@@ -213,7 +217,7 @@ HG_Class_set_input_offset(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Class_set_output_offset(
         hg_class_t *hg_class,
         hg_size_t offset
@@ -229,7 +233,7 @@ HG_Class_set_output_offset(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Class_set_data(
         hg_class_t *hg_class,
         void *data,
@@ -243,7 +247,7 @@ HG_Class_set_data(
  *
  * \return Pointer to user data or NULL if not set or any error has occurred
  */
-HG_EXPORT void *
+static HG_INLINE void *
 HG_Class_get_data(
         const hg_class_t *hg_class
         );
@@ -325,7 +329,7 @@ HG_Context_destroy(
  *
  * \return Pointer to associated HG class or NULL if not a valid context
  */
-HG_EXPORT hg_class_t *
+static HG_INLINE hg_class_t *
 HG_Context_get_class(
         const hg_context_t *context
         );
@@ -337,7 +341,7 @@ HG_Context_get_class(
  *
  * \return Non-negative integer (max value of 255) or 0 if no ID has been set
  */
-HG_EXPORT hg_uint8_t
+static HG_INLINE hg_uint8_t
 HG_Context_get_id(
         const hg_context_t *context
         );
@@ -352,7 +356,7 @@ HG_Context_get_id(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Context_set_data(
         hg_context_t *context,
         void *data,
@@ -366,7 +370,7 @@ HG_Context_set_data(
  *
  * \return Pointer to user data or NULL if not set or any error has occurred
  */
-HG_EXPORT void *
+static HG_INLINE void *
 HG_Context_get_data(
         const hg_context_t *context
         );
@@ -652,7 +656,6 @@ HG_Addr_to_string(
         hg_addr_t   addr
         );
 
-
 /**
  * Initiate a new HG RPC using the specified function ID and the local/remote
  * target defined by addr. The HG handle created can be used to query input
@@ -713,7 +716,7 @@ HG_Reset(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Ref_incr(
         hg_handle_t hg_handle
         );
@@ -725,7 +728,7 @@ HG_Ref_incr(
  *
  * \return Non-negative value or negative if the handle is not valid
  */
-HG_EXPORT hg_int32_t
+static HG_INLINE hg_int32_t
 HG_Ref_get(
         hg_handle_t handle
         );
@@ -739,7 +742,7 @@ HG_Ref_get(
  *
  * \return Pointer to info or NULL in case of failure
  */
-HG_EXPORT const struct hg_info *
+static HG_INLINE const struct hg_info *
 HG_Get_info(
         hg_handle_t handle
         );
@@ -754,7 +757,7 @@ HG_Get_info(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Set_data(
         hg_handle_t handle,
         void *data,
@@ -768,7 +771,7 @@ HG_Set_data(
  *
  * \return Pointer to user data or NULL if not set or any error has occurred
  */
-HG_EXPORT void *
+static HG_INLINE void *
 HG_Get_data(
         hg_handle_t handle
         );
@@ -901,7 +904,7 @@ HG_Get_output_buf(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Set_target_id(
         hg_handle_t handle,
         hg_uint8_t id
@@ -1009,6 +1012,297 @@ HG_EXPORT hg_return_t
 HG_Cancel(
         hg_handle_t handle
         );
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
+
+/* HG class */
+struct hg_class {
+    hg_core_class_t *core_class;        /* Core class */
+    hg_size_t in_offset;                /* Input offset */
+    hg_size_t out_offset;               /* Output offset */
+};
+
+/* HG context */
+struct hg_context {
+    hg_core_context_t *core_context;    /* Core context */
+    hg_class_t *hg_class;               /* HG class */
+};
+
+/* HG handle */
+struct hg_handle {
+    hg_core_handle_t core_handle;       /* Core handle */
+    struct hg_info info;                /* HG info */
+    void *data;                         /* User data */
+    void (*data_free_callback)(void *); /* User data free callback */
+};
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE const char *
+HG_Class_get_name(const hg_class_t *hg_class)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return NULL;
+    }
+#endif
+    return HG_Core_class_get_name(hg_class->core_class);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE const char *
+HG_Class_get_protocol(const hg_class_t *hg_class)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return NULL;
+    }
+#endif
+    return HG_Core_class_get_protocol(hg_class->core_class);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_bool_t
+HG_Class_is_listening(const hg_class_t *hg_class)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return HG_FALSE;
+    }
+#endif
+    return HG_Core_class_is_listening(hg_class->core_class);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_size_t
+HG_Class_get_input_eager_size(const hg_class_t *hg_class)
+{
+    hg_size_t core, header;
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return 0;
+    }
+#endif
+    core = HG_Core_class_get_input_eager_size(hg_class->core_class);
+    header = hg_header_get_size(HG_INPUT);
+
+    return (core > header) ? core - header : 0;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_size_t
+HG_Class_get_output_eager_size(const hg_class_t *hg_class)
+{
+    hg_size_t core, header;
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return 0;
+    }
+#endif
+    core = HG_Core_class_get_output_eager_size(hg_class->core_class);
+    header = hg_header_get_size(HG_OUTPUT);
+
+    return (core > header) ? core - header : 0;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Class_set_input_offset(hg_class_t *hg_class, hg_size_t offset)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    hg_class->in_offset = offset;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Class_set_output_offset(hg_class_t *hg_class, hg_size_t offset)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    hg_class->out_offset = offset;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Class_set_data(hg_class_t *hg_class, void *data,
+    void (*free_callback)(void *))
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    return HG_Core_class_set_data(hg_class->core_class, data, free_callback);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void *
+HG_Class_get_data(const hg_class_t *hg_class)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        return NULL;
+    }
+#endif
+    return HG_Core_class_get_data(hg_class->core_class);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_class_t *
+HG_Context_get_class(const hg_context_t *context)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        return NULL;
+    }
+#endif
+    return context->hg_class;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_uint8_t
+HG_Context_get_id(const hg_context_t *context)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        return 0;
+    }
+#endif
+    return HG_Core_context_get_id(context->core_context);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Context_set_data(hg_context_t *context, void *data,
+    void (*free_callback)(void *))
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    return HG_Core_context_set_data(context->core_context, data, free_callback);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void *
+HG_Context_get_data(const hg_context_t *context)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!context) {
+        HG_LOG_ERROR("NULL HG context");
+        return NULL;
+    }
+#endif
+    return HG_Core_context_get_data(context->core_context);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Ref_incr(hg_handle_t handle)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    return HG_Core_ref_incr(handle->core_handle);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_int32_t
+HG_Ref_get(hg_handle_t handle)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        return -1;
+    }
+#endif
+    return HG_Core_ref_get(handle->core_handle);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE const struct hg_info *
+HG_Get_info(hg_handle_t handle)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        return NULL;
+    }
+#endif
+    return &handle->info;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Set_data(hg_handle_t handle, void *data, void (*free_callback)(void *))
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    handle->data = data;
+    handle->data_free_callback = free_callback;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void *
+HG_Get_data(hg_handle_t handle)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        return NULL;
+    }
+#endif
+    return handle->data;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Set_target_id(hg_handle_t handle, hg_uint8_t id)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    handle->info.context_id = id;
+
+    return HG_Core_set_target_id(handle->core_handle, id);
+}
 
 #ifdef __cplusplus
 }

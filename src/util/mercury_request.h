@@ -12,6 +12,7 @@
 #define MERCURY_REQUEST_H
 
 #include "mercury_util_config.h"
+#include "mercury_atomic.h"
 
 /**
  * Purpose: define a request emulation library on top of the callback model
@@ -23,6 +24,12 @@
 
 typedef struct hg_request_class  hg_request_class_t;  /* Opaque request class */
 typedef struct hg_request hg_request_t; /* Opaque request object */
+
+struct hg_request {
+    void *data;
+    hg_atomic_int32_t completed;
+    hg_request_class_t *request_class;
+};
 
 /**
  * Progress callback, arg can be used to pass extra parameters required by
@@ -107,7 +114,7 @@ hg_request_destroy(hg_request_t *request);
  *
  * \return Pointer to request or NULL in case of failure
  */
-HG_UTIL_EXPORT int
+static HG_UTIL_INLINE int
 hg_request_reset(hg_request_t *request);
 
 /**
@@ -118,7 +125,7 @@ hg_request_reset(hg_request_t *request);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+static HG_UTIL_INLINE int
 hg_request_complete(hg_request_t *request);
 
 /**
@@ -144,7 +151,7 @@ hg_request_wait(hg_request_t *request, unsigned int timeout,
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+static HG_UTIL_INLINE int
 hg_request_waitall(int count, hg_request_t *request[],  unsigned int timeout,
         unsigned int *flag);
 
@@ -167,7 +174,7 @@ hg_request_waitall(int count, hg_request_t *request[],  unsigned int timeout,
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+static HG_UTIL_INLINE int
 hg_request_set_data(hg_request_t *request, void *data);
 
 /**
@@ -177,7 +184,7 @@ hg_request_set_data(hg_request_t *request, void *data);
  *
  * \return Pointer to data or NULL if nothing was attached by user
  */
-HG_UTIL_EXPORT void *
+static HG_UTIL_INLINE void *
 hg_request_get_data(hg_request_t *request);
 
 /**
@@ -190,6 +197,70 @@ hg_request_get_data(hg_request_t *request);
 HG_UTIL_EXPORT int
 hg_request_cancel(hg_request_t *request);
  */
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE int
+hg_request_reset(hg_request_t *request)
+{
+    int ret = HG_UTIL_SUCCESS;
+
+    hg_atomic_set32(&request->completed, HG_UTIL_FALSE);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE int
+hg_request_complete(hg_request_t *request)
+{
+    int ret = HG_UTIL_SUCCESS;
+
+    hg_atomic_incr32(&request->completed);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE int
+hg_request_waitall(int count, hg_request_t *request[], unsigned int timeout,
+        unsigned int *flag)
+{
+    /* TODO */
+    int i;
+    for (i = 0; i < count; i++)
+        hg_request_wait(request[i], timeout, flag);
+    return HG_UTIL_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+//hg_return_t
+//hg_request_complete_cb(const struct hg_cb_info *cb_info)
+//{
+//    int ret = hg_request_complete(cb_info->arg);
+//    return ret == HG_UTIL_SUCCESS ? HG_SUCCESS : HG_OTHER_ERROR;
+//}
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE int
+hg_request_set_data(hg_request_t *request, void *data)
+{
+    int ret = HG_UTIL_SUCCESS;
+
+    request->data = data;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE void *
+hg_request_get_data(hg_request_t *request)
+{
+    void *ret = NULL;
+
+    ret = request->data;
+
+    return ret;
+}
 
 #ifdef __cplusplus
 }

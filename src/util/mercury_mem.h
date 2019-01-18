@@ -59,7 +59,7 @@ hg_mem_aligned_free(void *mem_ptr);
  *
  * \return a pointer to the mapped memory region, or NULL in case of failure
  */
-void *
+HG_UTIL_EXPORT void *
 hg_mem_shm_map(const char *name, size_t size, hg_util_bool_t create);
 
 /**
@@ -71,7 +71,7 @@ hg_mem_shm_map(const char *name, size_t size, hg_util_bool_t create);
  *
  * \return non-negative on success, or negative in case of failure
  */
-int
+HG_UTIL_EXPORT int
 hg_mem_shm_unmap(const char *name, void *mem_ptr, size_t size);
 
 #ifdef __cplusplus

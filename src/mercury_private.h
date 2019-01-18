@@ -31,7 +31,7 @@ struct hg_completion_entry {
     hg_op_type_t op_type;
     union {
         struct hg_core_op_id *hg_core_op_id;
-        struct hg_core_handle *hg_core_handle;
+        hg_core_handle_t hg_core_handle;
         struct hg_bulk_op_id *hg_bulk_op_id;
     } op_id;
     HG_QUEUE_ENTRY(hg_completion_entry) entry;

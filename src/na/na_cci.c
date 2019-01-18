@@ -8,14 +8,10 @@
  * root of the source code distribution tree.
  */
 
-#include "na_private.h"
-#include "na_error.h"
+#include "na_plugin.h"
 
-#include "mercury_queue.h"
-#include "mercury_list.h"
-#include "mercury_thread_mutex.h"
 #include "mercury_time.h"
-#include "mercury_atomic.h"
+#include "mercury_list.h"
 
 #include <cci.h>
 
@@ -45,10 +41,10 @@ typedef uintptr_t cci_op_id_t;
 typedef struct na_cci_addr na_cci_addr_t;
 typedef struct na_cci_op_id na_cci_op_id_t;
 typedef struct na_cci_mem_handle na_cci_mem_handle_t;
-typedef struct na_cci_private_data na_cci_private_data_t;
+typedef struct na_cci_class na_cci_class_t;
 
-#define NA_CCI_PRIVATE_DATA(na_class) \
-    ((struct na_cci_private_data *)(na_class->private_data))
+#define NA_CCI_CLASS(na_class) \
+    ((struct na_cci_class *)(na_class->plugin_class))
 
 /* na_cci_addr */
 struct na_cci_addr {
@@ -148,7 +144,7 @@ struct na_cci_op_id {
     struct na_cb_completion_data completion_data;
 };
 
-struct na_cci_private_data {
+struct na_cci_class {
     cci_endpoint_t *endpoint;
     HG_QUEUE_HEAD(na_cci_op_id) early; /* Unexpected rxs not yet posted */
     hg_thread_mutex_t test_unexpected_mutex; /* Mutex */
@@ -364,8 +360,7 @@ na_cci_cancel(na_class_t * na_class, na_context_t * context, na_op_id_t op_id);
 /* Local Variables */
 /*******************/
 
-const na_class_t na_cci_class_g = {
-    NULL,                                   /* private_data */
+NA_PLUGIN_OPS(cci) = {
     "cci",                                  /* name */
     na_cci_check_protocol,                  /* check_protocol */
     na_cci_initialize,                      /* initialize */
@@ -623,13 +618,13 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
         goto out;
     }
 
-    na_class->private_data = malloc(sizeof(struct na_cci_private_data));
-    if (!na_class->private_data) {
+    na_class->plugin_class = malloc(sizeof(struct na_cci_class));
+    if (!na_class->plugin_class) {
         NA_LOG_ERROR("Could not allocate NA private data class");
         ret = NA_NOMEM_ERROR;
         goto out;
     }
-    memset(na_class->private_data, 0, sizeof(struct na_cci_private_data));
+    memset(na_class->plugin_class, 0, sizeof(struct na_cci_class));
     if (na_info->na_init_info
         && na_info->na_init_info->progress_mode == NA_NO_BLOCK)
         fd_p = NULL;
@@ -645,8 +640,8 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
         ret = NA_PROTOCOL_ERROR;
         goto out;
     }
-    NA_CCI_PRIVATE_DATA(na_class)->endpoint = endpoint;
-    NA_CCI_PRIVATE_DATA(na_class)->fd = fd;
+    NA_CCI_CLASS(na_class)->endpoint = endpoint;
+    NA_CCI_CLASS(na_class)->fd = fd;
 
     rc = cci_get_opt(endpoint, CCI_OPT_ENDPT_URI, &uri);
     if (rc) {
@@ -656,7 +651,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
         goto out;
     }
 
-    NA_CCI_PRIVATE_DATA(na_class)->uri = strdup(uri);
+    NA_CCI_CLASS(na_class)->uri = strdup(uri);
     free(uri);
 
     ret = na_cci_init(na_class);
@@ -673,18 +668,18 @@ na_cci_init(na_class_t * na_class)
 {
     na_return_t ret = NA_SUCCESS;
 
-    HG_QUEUE_INIT(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
-    HG_QUEUE_INIT(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue);
-    HG_LIST_INIT(&NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list);
+    HG_QUEUE_INIT(&NA_CCI_CLASS(na_class)->unexpected_msg_queue);
+    HG_QUEUE_INIT(&NA_CCI_CLASS(na_class)->unexpected_op_queue);
+    HG_LIST_INIT(&NA_CCI_CLASS(na_class)->accept_conn_list);
 
     /* Initialize mutex/cond */
-    hg_thread_mutex_init(&NA_CCI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
+    hg_thread_mutex_init(&NA_CCI_CLASS(na_class)->test_unexpected_mutex);
     hg_thread_mutex_init(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+        &NA_CCI_CLASS(na_class)->unexpected_msg_queue_mutex);
     hg_thread_mutex_init(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+        &NA_CCI_CLASS(na_class)->unexpected_op_queue_mutex);
     hg_thread_mutex_init(
-        &NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list_mutex);
+        &NA_CCI_CLASS(na_class)->accept_conn_list_mutex);
 
     if (ret != NA_SUCCESS) {
         na_cci_finalize(na_class);
@@ -696,7 +691,7 @@ na_cci_init(na_class_t * na_class)
 static na_return_t
 na_cci_finalize(na_class_t * na_class)
 {
-    na_cci_private_data_t *priv = na_class->private_data;
+    na_cci_class_t *priv = na_class->plugin_class;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -741,7 +736,7 @@ na_cci_finalize(na_class_t * na_class)
     hg_thread_mutex_destroy(&priv->unexpected_op_queue_mutex);
     hg_thread_mutex_destroy(&priv->accept_conn_list_mutex);
 
-    free(na_class->private_data);
+    free(na_class->plugin_class);
 
     return ret;
 }
@@ -783,8 +778,8 @@ static na_return_t
 na_cci_addr_lookup(na_class_t * na_class, na_context_t * context,
     na_cb_t callback, void *arg, const char *name, na_op_id_t * op_id)
 {
-    cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
-    char *uri = NA_CCI_PRIVATE_DATA(na_class)->uri;
+    cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
+    char *uri = NA_CCI_CLASS(na_class)->uri;
     struct na_cci_op_id *na_cci_op_id = NULL;
     na_cci_addr_t *na_cci_addr = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -868,7 +863,7 @@ na_cci_addr_self(na_class_t * na_class, na_addr_t * addr)
         goto out;
     }
     na_cci_addr->cci_addr = 0;
-    na_cci_addr->uri = strdup(NA_CCI_PRIVATE_DATA(na_class)->uri);
+    na_cci_addr->uri = strdup(NA_CCI_CLASS(na_class)->uri);
     na_cci_addr->unexpected = NA_FALSE;
     na_cci_addr->self = NA_TRUE;
     na_cci_addr->na_cci_op_id = NULL;
@@ -1005,7 +1000,7 @@ na_cci_addr_to_string(na_class_t NA_UNUSED * na_class, char *buf,
 static na_size_t
 na_cci_msg_get_max_unexpected_size(const na_class_t *na_class)
 {
-    cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+    cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
     cci_msg_t msg;
     na_size_t max_unexpected_size = e->device->max_send_size - sizeof(msg.size);
 
@@ -1016,7 +1011,7 @@ na_cci_msg_get_max_unexpected_size(const na_class_t *na_class)
 static na_size_t
 na_cci_msg_get_max_expected_size(const na_class_t *na_class)
 {
-    cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+    cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
     cci_msg_t msg;
     na_size_t max_expected_size = e->device->max_send_size - sizeof(msg.size);
 
@@ -1090,7 +1085,7 @@ na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t * context,
     /* Post the CCI unexpected send request */
     rc = cci_sendv(na_cci_addr->cci_addr, iov, 2, na_cci_op_id, 0);
     if (rc) {
-        cci_endpoint_t *endpoint = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+        cci_endpoint_t *endpoint = NA_CCI_CLASS(na_class)->endpoint;
         NA_LOG_ERROR("cci_sendv() failed with %s", cci_strerror(endpoint, rc));
         ret = NA_PROTOCOL_ERROR;
         goto out;
@@ -1189,13 +1184,13 @@ na_cci_msg_unexpected_push(na_class_t * na_class,
         goto out;
     }
     hg_thread_mutex_lock(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+        &NA_CCI_CLASS(na_class)->unexpected_msg_queue_mutex);
 
-    HG_QUEUE_PUSH_TAIL(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
+    HG_QUEUE_PUSH_TAIL(&NA_CCI_CLASS(na_class)->unexpected_msg_queue,
         rx, entry);
 
     hg_thread_mutex_unlock(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+        &NA_CCI_CLASS(na_class)->unexpected_msg_queue_mutex);
 
 out:
     return ret;
@@ -1207,15 +1202,12 @@ na_cci_msg_unexpected_pop(na_class_t * na_class)
 {
     struct na_cci_info_recv_unexpected *rx;
 
-    hg_thread_mutex_lock(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_mutex_lock(&NA_CCI_CLASS(na_class)->unexpected_msg_queue_mutex);
 
-    rx = HG_QUEUE_FIRST(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
-    HG_QUEUE_POP_HEAD(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
-        entry);
+    rx = HG_QUEUE_FIRST(&NA_CCI_CLASS(na_class)->unexpected_msg_queue);
+    HG_QUEUE_POP_HEAD(&NA_CCI_CLASS(na_class)->unexpected_msg_queue, entry);
 
-    hg_thread_mutex_unlock(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_mutex_unlock(&NA_CCI_CLASS(na_class)->unexpected_msg_queue_mutex);
 
     return rx;
 }
@@ -1232,14 +1224,12 @@ na_cci_msg_unexpected_op_push(na_class_t * na_class,
         ret = NA_INVALID_PARAM;
         goto out;
     }
-    hg_thread_mutex_lock(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_lock(&NA_CCI_CLASS(na_class)->unexpected_op_queue_mutex);
 
-    HG_QUEUE_PUSH_TAIL(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+    HG_QUEUE_PUSH_TAIL(&NA_CCI_CLASS(na_class)->unexpected_op_queue,
         na_cci_op_id, entry);
 
-    hg_thread_mutex_unlock(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_unlock(&NA_CCI_CLASS(na_class)->unexpected_op_queue_mutex);
 
 out:
     return ret;
@@ -1251,16 +1241,12 @@ na_cci_msg_unexpected_op_pop(na_class_t * na_class)
 {
     na_cci_op_id_t *na_cci_op_id;
 
-    hg_thread_mutex_lock(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_lock(&NA_CCI_CLASS(na_class)->unexpected_op_queue_mutex);
 
-    na_cci_op_id = HG_QUEUE_FIRST(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue);
-    HG_QUEUE_POP_HEAD(&NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue,
-        entry);
+    na_cci_op_id = HG_QUEUE_FIRST(&NA_CCI_CLASS(na_class)->unexpected_op_queue);
+    HG_QUEUE_POP_HEAD(&NA_CCI_CLASS(na_class)->unexpected_op_queue, entry);
 
-    hg_thread_mutex_unlock(
-        &NA_CCI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_unlock(&NA_CCI_CLASS(na_class)->unexpected_op_queue_mutex);
 
     return na_cci_op_id;
 }
@@ -1323,7 +1309,7 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t * context,
     /* Post the CCI send request */
     rc = cci_sendv(na_cci_addr->cci_addr, iov, 2, na_cci_op_id, 0);
     if (rc) {
-        cci_endpoint_t *endpoint = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+        cci_endpoint_t *endpoint = NA_CCI_CLASS(na_class)->endpoint;
         NA_LOG_ERROR("cci_sendv() failed with %s", cci_strerror(endpoint, rc));
         ret = NA_PROTOCOL_ERROR;
         goto out;
@@ -1467,7 +1453,7 @@ static na_return_t
 na_cci_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     na_cci_mem_handle_t *na_cci_mem_handle = mem_handle;
-    cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+    cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
     cci_rma_handle_t *h = NULL;
     int rc = 0, flags = 0;
     na_return_t ret = NA_SUCCESS;
@@ -1507,7 +1493,7 @@ static na_return_t
 na_cci_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     na_cci_mem_handle_t *na_cci_mem_handle = mem_handle;
-    cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+    cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
     int rc = 0;
     na_return_t ret = NA_SUCCESS;
 
@@ -1612,7 +1598,7 @@ na_cci_put(na_class_t * na_class, na_context_t * context, na_cb_t callback,
     na_cci_op_id_t *na_cci_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
-    cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+    cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
     cci_connection_t *c = na_cci_addr->cci_addr;
     cci_rma_handle_t *local = &cci_local_mem_handle->h;
     cci_rma_handle_t *remote = &cci_remote_mem_handle->h;
@@ -1690,7 +1676,7 @@ na_cci_get(na_class_t * na_class, na_context_t * context, na_cb_t callback,
     na_cci_op_id_t *na_cci_op_id = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
-    cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+    cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
     cci_connection_t *c = na_cci_addr->cci_addr;
     cci_rma_handle_t *local = &cci_local_mem_handle->h;
     cci_rma_handle_t *remote = &cci_remote_mem_handle->h;
@@ -1752,7 +1738,7 @@ out:
 static int
 na_cci_poll_get_fd(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
-    return NA_CCI_PRIVATE_DATA(na_class)->fd;
+    return NA_CCI_CLASS(na_class)->fd;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2024,11 +2010,11 @@ handle_accept(na_class_t NA_UNUSED *na_class, na_context_t NA_UNUSED *context,
 
     /* Add address to accepted connection list */
     hg_thread_mutex_lock(
-        &NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list_mutex);
-    HG_LIST_INSERT_HEAD(&NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list,
+        &NA_CCI_CLASS(na_class)->accept_conn_list_mutex);
+    HG_LIST_INSERT_HEAD(&NA_CCI_CLASS(na_class)->accept_conn_list,
         na_cci_addr, entry);
     hg_thread_mutex_unlock(
-        &NA_CCI_PRIVATE_DATA(na_class)->accept_conn_list_mutex);
+        &NA_CCI_CLASS(na_class)->accept_conn_list_mutex);
 
     return;
 }
@@ -2040,7 +2026,7 @@ na_cci_progress(na_class_t * na_class, na_context_t * context,
 {
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     na_return_t ret = NA_TIMEOUT;
-    cci_endpoint_t *e = NA_CCI_PRIVATE_DATA(na_class)->endpoint;
+    cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
 
     do {
         int rc;

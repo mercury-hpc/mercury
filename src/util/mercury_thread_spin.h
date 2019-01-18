@@ -36,7 +36,7 @@ extern "C" {
  *
  * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+HG_UTIL_EXPORT int
 hg_thread_spin_init(hg_thread_spin_t *lock);
 
 /**
@@ -46,7 +46,7 @@ hg_thread_spin_init(hg_thread_spin_t *lock);
  *
  * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+HG_UTIL_EXPORT int
 hg_thread_spin_destroy(hg_thread_spin_t *lock);
 
 /**
@@ -78,40 +78,6 @@ hg_thread_spin_try_lock(hg_thread_spin_t *lock);
  */
 static HG_UTIL_INLINE int
 hg_thread_spin_unlock(hg_thread_spin_t *lock);
-
-/*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
-hg_thread_spin_init(hg_thread_spin_t *lock)
-{
-    int ret = HG_UTIL_SUCCESS;
-
-#if defined(_WIN32)
-    *lock = 0;
-#elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
-    if (pthread_spin_init(lock, 0)) ret = HG_UTIL_FAIL;
-#else
-    ret = hg_thread_mutex_init(lock);
-#endif
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
-hg_thread_spin_destroy(hg_thread_spin_t *lock)
-{
-    int ret = HG_UTIL_SUCCESS;
-
-#if defined(_WIN32)
-    (void) lock;
-#elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
-    if (pthread_spin_destroy(lock)) ret = HG_UTIL_FAIL;
-#else
-    ret = hg_thread_mutex_destroy(lock);
-#endif
-
-    return ret;
-}
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int

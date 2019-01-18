@@ -179,11 +179,11 @@ configure_file(
 # Set sources
 #------------------------------------------------------------------------------
 set(MERCURY_SRCS
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_header.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_header.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.c
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.c
 )
@@ -237,18 +237,20 @@ set(MERCURY_EXPORTED_LIBS mercury_hl ${MERCURY_EXPORTED_LIBS})
 # Specify project header files to be installed
 #-----------------------------------------------------------------------------
 set(MERCURY_HEADERS
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_types.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc_bulk.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_types.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_macros.h
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_config.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_header.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_error.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_header.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_macros.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc_bulk.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_proc_string.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.h
 )
 set(MERCURY_HL_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_hl.h

@@ -12,7 +12,7 @@
 #define MERCURY_CORE_TYPES_H
 
 #include "mercury_config.h"
-#include "na.h"
+#include "na_types.h"
 
 /*************************************/
 /* Public Type and Struct Definition */

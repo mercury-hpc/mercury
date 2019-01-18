@@ -9,7 +9,6 @@
  */
 
 #include "mercury_thread.h"
-#include "mercury_util_error.h"
 
 /*---------------------------------------------------------------------------*/
 void
@@ -148,42 +147,6 @@ hg_thread_key_delete(hg_thread_key_t key)
 #else
     if (pthread_key_delete(key)) {
         HG_UTIL_LOG_ERROR("pthread_key_delete() failed");
-        ret = HG_UTIL_FAIL;
-    }
-#endif
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-void *
-hg_thread_getspecific(hg_thread_key_t key)
-{
-    void *ret;
-
-#ifdef _WIN32
-    ret = TlsGetValue(key);
-#else
-    ret = pthread_getspecific(key);
-#endif
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-int
-hg_thread_setspecific(hg_thread_key_t key, const void *value)
-{
-    int ret = HG_UTIL_SUCCESS;
-
-#ifdef _WIN32
-    if (!TlsSetValue(key, (LPVOID) value)) {
-        HG_UTIL_LOG_ERROR("TlsSetValue() failed");
-        ret = HG_UTIL_FAIL;
-    }
-#else
-    if (pthread_setspecific(key, value)) {
-        HG_UTIL_LOG_ERROR("pthread_setspecific() failed");
         ret = HG_UTIL_FAIL;
     }
 #endif

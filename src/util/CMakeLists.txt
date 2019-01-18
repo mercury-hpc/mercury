@@ -136,9 +136,13 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_log.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_mem.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.c
 )
 
 #----------------------------------------------------------------------------
@@ -184,6 +188,7 @@ install(
 # Specify project header files to be installed
 #-----------------------------------------------------------------------------
 set(MERCURY_HEADERS
+  ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_atomic_queue.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_event.h
@@ -195,14 +200,14 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_poll.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_queue.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_request.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_condition.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_mutex.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
-  ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.h
 )
 
 #-----------------------------------------------------------------------------

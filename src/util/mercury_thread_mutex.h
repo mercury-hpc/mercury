@@ -34,7 +34,7 @@ extern "C" {
  *
  * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+HG_UTIL_EXPORT int
 hg_thread_mutex_init(hg_thread_mutex_t *mutex);
 
 /**
@@ -44,7 +44,7 @@ hg_thread_mutex_init(hg_thread_mutex_t *mutex);
  *
  * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+HG_UTIL_EXPORT int
 hg_thread_mutex_destroy(hg_thread_mutex_t *mutex);
 
 /**
@@ -76,47 +76,6 @@ hg_thread_mutex_try_lock(hg_thread_mutex_t *mutex);
  */
 static HG_UTIL_INLINE int
 hg_thread_mutex_unlock(hg_thread_mutex_t *mutex);
-
-/*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
-hg_thread_mutex_init(hg_thread_mutex_t *mutex)
-{
-    int ret = HG_UTIL_SUCCESS;
-
-#ifdef _WIN32
-    InitializeCriticalSection(mutex);
-#else
-    pthread_mutexattr_t mutex_attr;
-
-    pthread_mutexattr_init(&mutex_attr);
-#ifdef HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP
-    /* Set type to PTHREAD_MUTEX_ADAPTIVE_NP to improve performance */
-    pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_ADAPTIVE_NP);
-#else
-    pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_DEFAULT);
-#endif
-    if (pthread_mutex_init(mutex, &mutex_attr)) ret = HG_UTIL_FAIL;
-
-    pthread_mutexattr_destroy(&mutex_attr);
-#endif
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
-hg_thread_mutex_destroy(hg_thread_mutex_t *mutex)
-{
-    int ret = HG_UTIL_SUCCESS;
-
-#ifdef _WIN32
-    DeleteCriticalSection(mutex);
-#else
-    if (pthread_mutex_destroy(mutex)) ret = HG_UTIL_FAIL;
-#endif
-
-    return ret;
-}
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int

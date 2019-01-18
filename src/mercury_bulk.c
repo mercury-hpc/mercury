@@ -13,7 +13,7 @@
 #include "mercury_private.h"
 #include "mercury_error.h"
 
-#include "na_private.h"
+#include "na.h"
 
 #include "mercury_atomic.h"
 
@@ -379,7 +379,7 @@ hg_bulk_create(struct hg_class *hg_class, hg_uint32_t count,
     na_class_t *na_sm_class = HG_Core_class_get_na_sm(hg_class->core_class);
 #endif
     hg_bool_t use_register_segments = (hg_bool_t)
-        (na_class->mem_handle_create_segments && count > 1);
+        (na_class->ops->mem_handle_create_segments && count > 1);
     unsigned int i;
 
     hg_bulk = (struct hg_bulk *) malloc(sizeof(struct hg_bulk));
@@ -867,7 +867,8 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         (hg_core_addr_t) origin_addr);
     hg_bool_t is_self = NA_Addr_is_self(na_origin_addr_class, na_origin_addr);
     hg_bool_t scatter_gather =
-        (na_class->mem_handle_create_segments && !is_self) ? HG_TRUE : HG_FALSE;
+        (na_class->ops->mem_handle_create_segments && !is_self) ? HG_TRUE :
+            HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
     unsigned int i;
 
@@ -1643,8 +1644,8 @@ HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
         buf_ptr += serialize_size;
         buf_size_left -= (ssize_t) serialize_size;
 
-        hg_bulk->addr = HG_Core_addr_create(hg_bulk->hg_class->core_class);
-        if (hg_bulk->addr == HG_CORE_ADDR_NULL) {
+        ret = HG_Core_addr_create(hg_bulk->hg_class->core_class, &hg_bulk->addr);
+        if (ret != HG_SUCCESS) {
             HG_LOG_ERROR("Could not create core addr");
             ret = HG_NOMEM_ERROR;
             goto done;

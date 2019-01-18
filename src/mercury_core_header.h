@@ -13,10 +13,6 @@
 
 #include "mercury_core_types.h"
 
-#ifdef HG_HAS_CHECKSUMS
-# include <mchecksum.h>
-#endif
-
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
@@ -66,7 +62,7 @@ struct hg_core_header {
         struct hg_core_header_response response;
     } msg;
 #ifdef HG_HAS_CHECKSUMS
-    mchecksum_object_t checksum;        /* Checksum of header */
+    void *checksum;        /* Checksum of header */
 #endif
 };
 
@@ -195,7 +191,6 @@ HG_EXPORT void
 hg_core_header_response_reset(
         struct hg_core_header *hg_core_header
         );
-
 
 /**
  * Process private information for sending/receiving RPC request.

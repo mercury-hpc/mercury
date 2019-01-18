@@ -13,6 +13,7 @@
 #ifndef NA_CONFIG_H
 #define NA_CONFIG_H
 
+/* Import/export declarations */
 #if defined(_WIN32)
     #define NA_ABI_IMPORT __declspec(dllimport)
     #define NA_ABI_EXPORT __declspec(dllexport)
@@ -52,8 +53,10 @@
 #cmakedefine NA_HAS_MULTI_PROGRESS
 #cmakedefine NA_HAS_VERBOSE_ERROR
 
+/* Define if build shared libraries */
 #cmakedefine NA_BUILD_SHARED_LIBS
 
+/* Define export declaration */
 #ifdef NA_BUILD_SHARED_LIBS
     #ifdef na_EXPORTS
       #define NA_EXPORT NA_ABI_EXPORT
@@ -64,6 +67,7 @@
     #define NA_EXPORT
 #endif
 
+/* Standard types */
 #ifdef _WIN32
     typedef signed   __int64 na_int64_t;
     typedef signed   __int32 na_int32_t;
@@ -75,6 +79,7 @@
     typedef unsigned __int8  na_uint8_t;
 #else
     #include <stdint.h>
+    #include <stddef.h>
     typedef int64_t  na_int64_t;
     typedef int32_t  na_int32_t;
     typedef int16_t  na_int16_t;
@@ -84,22 +89,26 @@
     typedef uint16_t na_uint16_t;
     typedef uint8_t  na_uint8_t;
 #endif
-typedef na_uint64_t  na_ptr_t;
 typedef na_uint8_t   na_bool_t;
-#define NA_TRUE     1
-#define NA_FALSE    0
+typedef na_uint64_t  na_ptr_t;
 
+/* Inline declarations */
 #ifdef _WIN32
    #define NA_INLINE __inline
 #else
    #define NA_INLINE __inline__
 #endif
 
+/* Unused return values */
 #if defined(__GNUC__)
     #define NA_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
 #else
     #define NA_WARN_UNUSED_RESULT
 #endif
+
+/* Return codes */
+#define NA_TRUE     1
+#define NA_FALSE    0
 
 #endif /* NA_CONFIG_H */
 

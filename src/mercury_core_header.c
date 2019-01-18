@@ -12,6 +12,10 @@
 #include "mercury_proc_buf.h"
 #include "mercury_error.h"
 
+#ifdef HG_HAS_CHECKSUMS
+# include <mchecksum.h>
+#endif
+
 #ifdef _WIN32
 # include <winsock2.h>
 #else
