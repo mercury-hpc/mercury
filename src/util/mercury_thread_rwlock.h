@@ -70,7 +70,7 @@ extern "C" {
  *
  * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+HG_UTIL_EXPORT int
 hg_thread_rwlock_init(hg_thread_rwlock_t *rwlock);
 
 /**
@@ -80,7 +80,7 @@ hg_thread_rwlock_init(hg_thread_rwlock_t *rwlock);
  *
  * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+HG_UTIL_EXPORT int
 hg_thread_rwlock_destroy(hg_thread_rwlock_t *rwlock);
 
 /**
@@ -142,36 +142,6 @@ hg_thread_rwlock_try_wrlock(hg_thread_rwlock_t *rwlock);
  */
 static HG_UTIL_INLINE int
 hg_thread_rwlock_release_wrlock(hg_thread_rwlock_t *rwlock);
-
-/*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
-hg_thread_rwlock_init(hg_thread_rwlock_t *rwlock)
-{
-    int ret = HG_UTIL_SUCCESS;
-
-#ifdef _WIN32
-    InitializeSRWLock(rwlock);
-#else
-    if (pthread_rwlock_init(rwlock, NULL)) ret = HG_UTIL_FAIL;
-#endif
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
-hg_thread_rwlock_destroy(hg_thread_rwlock_t *rwlock)
-{
-    int ret = HG_UTIL_SUCCESS;
-
-#ifdef _WIN32
-    /* nothing to do */
-#else
-    if (pthread_rwlock_destroy(rwlock)) ret = HG_UTIL_FAIL;
-#endif
-
-    return ret;
-}
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int

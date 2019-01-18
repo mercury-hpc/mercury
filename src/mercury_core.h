@@ -12,6 +12,10 @@
 #define MERCURY_CORE_H
 
 #include "mercury_core_types.h"
+#include "mercury_core_header.h"
+#include "mercury_error.h"
+
+#include "na.h"
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -25,7 +29,7 @@ typedef struct hg_core_op_id *hg_core_op_id_t;    /* Abstract operation id */
 
 /* HG info struct */
 struct hg_core_info {
-    hg_core_class_t *hg_core_class; /* HG core class */
+    hg_core_class_t *core_class;    /* HG core class */
     hg_core_context_t *context;     /* HG core context */
     hg_core_addr_t addr;            /* HG address at target/origin */
     hg_uint8_t context_id;          /* Context ID at target/origin */
@@ -172,7 +176,7 @@ HG_Core_set_more_data_callback(
  *
  * \return the name of the class, or NULL if not a valid class
  */
-HG_EXPORT const char *
+static HG_INLINE const char *
 HG_Core_class_get_name(
         const hg_core_class_t *hg_core_class
         );
@@ -184,7 +188,7 @@ HG_Core_class_get_name(
  *
  * \return the protocol of the class, or NULL if not a valid class
  */
-HG_EXPORT const char *
+static HG_INLINE const char *
 HG_Core_class_get_protocol(
         const hg_core_class_t *hg_core_class
         );
@@ -196,7 +200,7 @@ HG_Core_class_get_protocol(
  *
  * \return HG_TRUE if listening or HG_FALSE if not, or not a valid class
  */
-HG_EXPORT hg_bool_t
+static HG_INLINE hg_bool_t
 HG_Core_class_is_listening(
         const hg_core_class_t *hg_core_class
         );
@@ -208,7 +212,7 @@ HG_Core_class_is_listening(
  *
  * \return Pointer to NA class or NULL if not a valid class
  */
-HG_EXPORT na_class_t *
+static HG_INLINE na_class_t *
 HG_Core_class_get_na(
         const hg_core_class_t *hg_core_class
         );
@@ -221,7 +225,7 @@ HG_Core_class_get_na(
  *
  * \return Pointer to NA SM class or NULL if not a valid class
  */
-HG_EXPORT na_class_t *
+static HG_INLINE na_class_t *
 HG_Core_class_get_na_sm(
         const hg_core_class_t *hg_core_class
         );
@@ -235,7 +239,7 @@ HG_Core_class_get_na_sm(
  * \return the maximum size, or 0 if hg_core_class is not a valid class or
  * XDR is being used
  */
-HG_EXPORT hg_size_t
+static HG_INLINE hg_size_t
 HG_Core_class_get_input_eager_size(
         const hg_core_class_t *hg_core_class
         );
@@ -248,7 +252,7 @@ HG_Core_class_get_input_eager_size(
  * \return the maximum size, or 0 if hg_core_class is not a valid class or XDR is
  * being used
  */
-HG_EXPORT hg_size_t
+static HG_INLINE hg_size_t
 HG_Core_class_get_output_eager_size(
         const hg_core_class_t *hg_core_class
         );
@@ -263,7 +267,7 @@ HG_Core_class_get_output_eager_size(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Core_class_set_data(
         hg_core_class_t *hg_core_class,
         void *data,
@@ -277,7 +281,7 @@ HG_Core_class_set_data(
  *
  * \return Pointer to user data or NULL if not set or any error has occurred
  */
-HG_EXPORT void *
+static HG_INLINE void *
 HG_Core_class_get_data(
         const hg_core_class_t *hg_core_class
         );
@@ -330,7 +334,7 @@ HG_Core_context_destroy(
  *
  * \return the associated class
  */
-HG_EXPORT hg_core_class_t *
+static HG_INLINE hg_core_class_t *
 HG_Core_context_get_class(
         const hg_core_context_t *context
         );
@@ -342,7 +346,7 @@ HG_Core_context_get_class(
  *
  * \return the associated context
  */
-HG_EXPORT na_context_t *
+static HG_INLINE na_context_t *
 HG_Core_context_get_na(
         const hg_core_context_t *context
         );
@@ -355,7 +359,7 @@ HG_Core_context_get_na(
  *
  * \return the associated context
  */
-HG_EXPORT na_context_t *
+static HG_INLINE na_context_t *
 HG_Core_context_get_na_sm(
         const hg_core_context_t *context
         );
@@ -368,7 +372,7 @@ HG_Core_context_get_na_sm(
  *
  * \return Non-negative integer (max value of 255) or 0 if no ID has been set
  */
-HG_EXPORT hg_uint8_t
+static HG_INLINE hg_uint8_t
 HG_Core_context_get_id(
         const hg_core_context_t *context
         );
@@ -383,7 +387,7 @@ HG_Core_context_get_id(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Core_context_set_data(
         hg_core_context_t *context,
         void *data,
@@ -397,7 +401,7 @@ HG_Core_context_set_data(
  *
  * \return Pointer to user data or NULL if not set or any error has occurred
  */
-HG_EXPORT void *
+static HG_INLINE void *
 HG_Core_context_get_data(
         const hg_core_context_t *context
         );
@@ -551,12 +555,14 @@ HG_Core_addr_lookup(
  * Create a HG core address.
  *
  * \param hg_core_class [IN]    pointer to HG core class
+ * \param new_addr [OUT]        pointer to abstract address
  *
- * \return created abstract HG core address or HG_CORE_ADDR_NULL if failed.
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_core_addr_t
+HG_EXPORT hg_return_t
 HG_Core_addr_create(
-        hg_core_class_t *hg_core_class
+        hg_core_class_t *hg_core_class,
+        hg_core_addr_t *addr
         );
 
 /**
@@ -578,8 +584,10 @@ HG_Core_addr_free(
  *
  * \param core_addr [IN]        abstract address that not set NA address before
  * \param na_addr [IN]          abstract NA addr
+ *
+ * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT void
+static HG_INLINE hg_return_t
 HG_Core_addr_set_na(
         hg_core_addr_t core_addr,
         na_addr_t na_addr
@@ -592,7 +600,7 @@ HG_Core_addr_set_na(
  *
  * \return abstract NA addr or NA_ADDR_NULL if not a valid HG address
  */
-HG_EXPORT na_addr_t
+static HG_INLINE na_addr_t
 HG_Core_addr_get_na(
         hg_core_addr_t addr
         );
@@ -604,7 +612,7 @@ HG_Core_addr_get_na(
  *
  * \return Pointer to NA class or NULL if not a valid HG address
  */
-na_class_t *
+static HG_INLINE na_class_t *
 HG_Core_addr_get_na_class(
         hg_core_addr_t addr
         );
@@ -751,7 +759,7 @@ HG_Core_ref_get(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-hg_return_t
+static HG_INLINE hg_return_t
 HG_Core_set_data(
         hg_core_handle_t handle,
         void *data,
@@ -766,7 +774,7 @@ HG_Core_set_data(
  *
  * \return Pointer to user data or NULL if not set or any error has occurred
  */
-void *
+static HG_INLINE void *
 HG_Core_get_data(
         hg_core_handle_t handle
         );
@@ -780,8 +788,21 @@ HG_Core_get_data(
  *
  * \return Pointer to info or NULL in case of failure
  */
-HG_EXPORT const struct hg_core_info *
+static HG_INLINE const struct hg_core_info *
 HG_Core_get_info(
+        hg_core_handle_t handle
+        );
+
+/**
+ * Allows upper layers to retrieve cached RPC data from an existing HG handle.
+ * Only valid if HG_Core_register_data() has been previously called.
+ *
+ * \param handle [IN]           HG handle
+ *
+ * \return Pointer to user data or NULL if not set or any error has occurred
+ */
+static HG_INLINE const void *
+HG_Core_get_rpc_data(
         hg_core_handle_t handle
         );
 
@@ -794,7 +815,7 @@ HG_Core_get_info(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Core_set_target_id(
         hg_core_handle_t handle,
         hg_uint8_t id
@@ -810,7 +831,7 @@ HG_Core_set_target_id(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Core_get_input(
         hg_core_handle_t handle,
         void **in_buf,
@@ -827,7 +848,7 @@ HG_Core_get_input(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+static HG_INLINE hg_return_t
 HG_Core_get_output(
         hg_core_handle_t handle,
         void **out_buf,
@@ -930,6 +951,449 @@ HG_EXPORT hg_return_t
 HG_Core_cancel(
         hg_core_handle_t handle
         );
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
+
+/* HG core class */
+struct hg_core_class {
+    na_class_t *na_class;               /* NA class */
+#ifdef HG_HAS_SM_ROUTING
+    na_class_t *na_sm_class;            /* NA SM class */
+#endif
+    void *data;                         /* User data */
+    void (*data_free_callback)(void *); /* User data free callback */
+};
+
+/* HG core context */
+struct hg_core_context {
+    struct hg_core_class *core_class;   /* HG core class */
+    na_context_t *na_context;           /* NA context */
+#ifdef HG_HAS_SM_ROUTING
+    na_context_t *na_sm_context;        /* NA SM context */
+#endif
+    hg_uint8_t id;                      /* Context ID */
+    void *data;                         /* User data */
+    void (*data_free_callback)(void *); /* User data free callback */
+};
+
+/* HG core addr */
+struct hg_core_addr {
+    na_class_t *na_class;               /* NA class from NA address */
+    na_addr_t na_addr;                  /* NA address */
+#ifdef HG_HAS_SM_ROUTING
+    na_addr_t na_sm_addr;               /* NA SM address */
+#endif
+};
+
+/* HG core RPC registration info */
+struct hg_core_rpc_info {
+    hg_core_rpc_cb_t rpc_cb;            /* RPC callback */
+    void *data;                         /* User data */
+    void (*free_callback)(void *);      /* User data free callback */
+};
+
+/* HG core handle */
+struct hg_core_handle {
+    struct hg_core_info info;           /* HG info */
+    struct hg_core_rpc_info *rpc_info;  /* Associated RPC registration info */
+    void *in_buf;                       /* Input buffer */
+    void *out_buf;                      /* Output buffer */
+    na_size_t in_buf_size;              /* Input buffer size */
+    na_size_t out_buf_size;             /* Output buffer size */
+    na_size_t na_in_header_offset;      /* Input NA header offset */
+    na_size_t na_out_header_offset;     /* Output NA header offset */
+    void *data;                         /* User data */
+    void (*data_free_callback)(void *); /* User data free callback */
+};
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE const char *
+HG_Core_class_get_name(const hg_core_class_t *hg_core_class)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_core_class) {
+        HG_LOG_ERROR("NULL HG core class");
+        return NULL;
+    }
+#endif
+    return NA_Get_class_name(hg_core_class->na_class);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE const char *
+HG_Core_class_get_protocol(const hg_core_class_t *hg_core_class)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_core_class) {
+        HG_LOG_ERROR("NULL HG core class");
+        return NULL;
+    }
+#endif
+    return NA_Get_class_protocol(hg_core_class->na_class);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_bool_t
+HG_Core_class_is_listening(const hg_core_class_t *hg_core_class)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_core_class) {
+        HG_LOG_ERROR("NULL HG core class");
+        return HG_FALSE;
+    }
+#endif
+    return NA_Is_listening(hg_core_class->na_class);
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE na_class_t *
+HG_Core_class_get_na(const hg_core_class_t *hg_core_class)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_core_class) {
+        HG_LOG_ERROR("NULL HG core class");
+        return NULL;
+    }
+#endif
+    return hg_core_class->na_class;
+}
+
+/*---------------------------------------------------------------------------*/
+#ifdef HG_HAS_SM_ROUTING
+static HG_INLINE na_class_t *
+HG_Core_class_get_na_sm(const hg_core_class_t *hg_core_class)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_core_class) {
+        HG_LOG_ERROR("NULL HG core class");
+        return NULL;
+    }
+#endif
+    return hg_core_class->na_sm_class;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_size_t
+HG_Core_class_get_input_eager_size(const hg_core_class_t *hg_core_class)
+{
+    hg_size_t unexp, header;
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (hg_core_class == NULL) {
+        HG_LOG_ERROR("NULL HG core class");
+        return 0;
+    }
+#endif
+    unexp  = NA_Msg_get_max_unexpected_size(hg_core_class->na_class);
+    header = hg_core_header_request_get_size() +
+        NA_Msg_get_unexpected_header_size(hg_core_class->na_class);
+
+    return (unexp > header) ? unexp - header : 0;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_size_t
+HG_Core_class_get_output_eager_size(const hg_core_class_t *hg_core_class)
+{
+    hg_size_t exp, header;
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (hg_core_class == NULL) {
+        HG_LOG_ERROR("NULL HG core class");
+        return 0;
+    }
+#endif
+    exp    = NA_Msg_get_max_expected_size(hg_core_class->na_class);
+    header = hg_core_header_response_get_size() +
+        NA_Msg_get_expected_header_size(hg_core_class->na_class);
+
+    return (exp > header) ? exp - header : 0;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Core_class_set_data(hg_core_class_t *hg_core_class, void *data,
+    void (*free_callback)(void *))
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_core_class) {
+        HG_LOG_ERROR("NULL HG core class");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    hg_core_class->data = data;
+    hg_core_class->data_free_callback = free_callback;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void *
+HG_Core_class_get_data(const hg_core_class_t *hg_core_class)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!hg_core_class) {
+        HG_LOG_ERROR("NULL HG core class");
+        return NULL;
+    }
+#endif
+    return hg_core_class->data;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_core_class_t *
+HG_Core_context_get_class(const hg_core_context_t *context)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!context) {
+        HG_LOG_ERROR("NULL HG core context");
+        return NULL;
+    }
+#endif
+    return context->core_class;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE na_context_t *
+HG_Core_context_get_na(const hg_core_context_t *context)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!context) {
+        HG_LOG_ERROR("NULL HG core context");
+        return NULL;
+    }
+#endif
+    return context->na_context;
+}
+
+/*---------------------------------------------------------------------------*/
+#ifdef HG_HAS_SM_ROUTING
+static HG_INLINE na_context_t *
+HG_Core_context_get_na_sm(const hg_core_context_t *context)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!context) {
+        HG_LOG_ERROR("NULL HG core context");
+        return NULL;
+    }
+#endif
+    return context->na_sm_context;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_uint8_t
+HG_Core_context_get_id(const hg_core_context_t *context)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!context) {
+        HG_LOG_ERROR("NULL HG core context");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    return context->id;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Core_context_set_data(hg_core_context_t *context, void *data,
+    void (*free_callback)(void *))
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!context) {
+        HG_LOG_ERROR("NULL HG core context");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    context->data = data;
+    context->data_free_callback = free_callback;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void *
+HG_Core_context_get_data(const hg_core_context_t *context)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!context) {
+        HG_LOG_ERROR("NULL HG core context");
+        return NULL;
+    }
+#endif
+    return context->data;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Core_addr_set_na(hg_core_addr_t core_addr, na_addr_t na_addr)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (core_addr == HG_CORE_ADDR_NULL) {
+        HG_LOG_ERROR("NULL HG core address");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    core_addr->na_addr = na_addr;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE na_addr_t
+HG_Core_addr_get_na(hg_core_addr_t addr)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (addr == HG_CORE_ADDR_NULL) {
+        HG_LOG_ERROR("NULL addr");
+        return NA_ADDR_NULL;
+    }
+#endif
+    return addr->na_addr;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE na_class_t *
+HG_Core_addr_get_na_class(hg_core_addr_t addr)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (addr == HG_CORE_ADDR_NULL) {
+        HG_LOG_ERROR("NULL addr");
+        return NULL;
+    }
+#endif
+    return addr->na_class;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Core_set_data(hg_core_handle_t handle, void *data,
+    void (*free_callback)(void *))
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL pointer to HG core handle");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    handle->data = data;
+    handle->data_free_callback = free_callback;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void *
+HG_Core_get_data(hg_core_handle_t handle)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL pointer to HG core handle");
+        return NULL;
+    }
+#endif
+    return handle->data;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE const struct hg_core_info *
+HG_Core_get_info(hg_core_handle_t handle)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL pointer to HG core handle");
+        return NULL;
+    }
+#endif
+    return &handle->info;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE const void *
+HG_Core_get_rpc_data(hg_core_handle_t handle)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL pointer to HG core handle");
+        return NULL;
+    }
+#endif
+    return (handle->rpc_info) ? handle->rpc_info->data : NULL;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Core_set_target_id(hg_core_handle_t handle, hg_uint8_t id)
+{
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG core handle");
+        return HG_INVALID_PARAM;
+    }
+#endif
+    handle->info.context_id = id;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+HG_Core_get_input(hg_core_handle_t handle, void **in_buf,
+    hg_size_t *in_buf_size)
+{
+    hg_size_t header_offset;
+
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL handle");
+        return HG_INVALID_PARAM;
+    }
+
+    if (!in_buf || !in_buf_size) {
+        HG_LOG_ERROR("NULL pointer");
+        return HG_INVALID_PARAM;
+    }
+#endif
+
+    header_offset = hg_core_header_request_get_size() +
+        handle->na_in_header_offset;
+
+    /* Space must be left for request header */
+    *in_buf = (char *) handle->in_buf + header_offset;
+    *in_buf_size = handle->in_buf_size - header_offset;
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_get_output(hg_core_handle_t handle, void **out_buf,
+    hg_size_t *out_buf_size)
+{
+    hg_size_t header_offset;
+
+#ifdef HG_HAS_VERBOSE_ERROR
+    if (!handle) {
+        HG_LOG_ERROR("NULL handle");
+        return HG_INVALID_PARAM;
+    }
+
+    if (!out_buf || !out_buf_size) {
+        HG_LOG_ERROR("NULL pointer");
+        return HG_INVALID_PARAM;
+    }
+#endif
+
+    header_offset = hg_core_header_response_get_size() +
+        handle->na_out_header_offset;
+
+    /* Space must be left for response header */
+    *out_buf = (char *) handle->out_buf + header_offset;
+    *out_buf_size = handle->out_buf_size - header_offset;
+
+    return HG_SUCCESS;
+}
 
 #ifdef __cplusplus
 }

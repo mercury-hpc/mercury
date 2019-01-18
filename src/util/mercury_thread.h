@@ -12,37 +12,38 @@
 #define MERCURY_THREAD_H
 
 #if !defined(_WIN32) && !defined(_GNU_SOURCE)
-  #define _GNU_SOURCE
+# define _GNU_SOURCE
 #endif
 #include "mercury_util_config.h"
+#include "mercury_util_error.h"
 
 #ifdef _WIN32
-  #include <windows.h>
-  typedef HANDLE hg_thread_t;
-  typedef LPTHREAD_START_ROUTINE hg_thread_func_t;
-  typedef DWORD hg_thread_ret_t;
-  #define HG_THREAD_RETURN_TYPE hg_thread_ret_t WINAPI
-  typedef DWORD hg_thread_key_t;
-  typedef DWORD_PTR hg_cpu_set_t;
+# include <windows.h>
+typedef HANDLE hg_thread_t;
+typedef LPTHREAD_START_ROUTINE hg_thread_func_t;
+typedef DWORD hg_thread_ret_t;
+# define HG_THREAD_RETURN_TYPE hg_thread_ret_t WINAPI
+typedef DWORD hg_thread_key_t;
+typedef DWORD_PTR hg_cpu_set_t;
 #else
-  #include <pthread.h>
-  typedef pthread_t hg_thread_t;
-  typedef void *(*hg_thread_func_t)(void *);
-  typedef void *hg_thread_ret_t;
-  #define HG_THREAD_RETURN_TYPE hg_thread_ret_t
-  typedef pthread_key_t hg_thread_key_t;
-#ifdef __APPLE__
-  /* Size definition for CPU sets.  */
-  # define HG_CPU_SETSIZE  1024
-  # define HG_NCPUBITS     (8 * sizeof (hg_cpu_mask_t))
-  /* Type for array elements in 'cpu_set_t'.  */
-  typedef hg_util_uint64_t hg_cpu_mask_t;
-  typedef struct {
-      hg_cpu_mask_t bits[HG_CPU_SETSIZE / HG_NCPUBITS];
-  } hg_cpu_set_t;
-#else
-  typedef cpu_set_t hg_cpu_set_t;
-#endif
+# include <pthread.h>
+typedef pthread_t hg_thread_t;
+typedef void *(*hg_thread_func_t)(void *);
+typedef void *hg_thread_ret_t;
+# define HG_THREAD_RETURN_TYPE hg_thread_ret_t
+typedef pthread_key_t hg_thread_key_t;
+# ifdef __APPLE__
+/* Size definition for CPU sets.  */
+#  define HG_CPU_SETSIZE  1024
+#  define HG_NCPUBITS     (8 * sizeof (hg_cpu_mask_t))
+/* Type for array elements in 'cpu_set_t'.  */
+typedef hg_util_uint64_t hg_cpu_mask_t;
+typedef struct {
+    hg_cpu_mask_t bits[HG_CPU_SETSIZE / HG_NCPUBITS];
+} hg_cpu_set_t;
+# else
+typedef cpu_set_t hg_cpu_set_t;
+# endif
 #endif
 
 #ifdef __cplusplus
@@ -135,7 +136,7 @@ hg_thread_key_delete(hg_thread_key_t key);
  *
  * \return Pointer to data associated to the key
  */
-HG_UTIL_EXPORT void *
+static HG_UTIL_INLINE void *
 hg_thread_getspecific(hg_thread_key_t key);
 
 /**
@@ -146,7 +147,7 @@ hg_thread_getspecific(hg_thread_key_t key);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+static HG_UTIL_INLINE int
 hg_thread_setspecific(hg_thread_key_t key, const void *value);
 
 /**
@@ -170,6 +171,42 @@ hg_thread_getaffinity(hg_thread_t thread, hg_cpu_set_t *cpu_mask);
  */
 HG_UTIL_EXPORT int
 hg_thread_setaffinity(hg_thread_t thread, const hg_cpu_set_t *cpu_mask);
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE void *
+hg_thread_getspecific(hg_thread_key_t key)
+{
+    void *ret;
+
+#ifdef _WIN32
+    ret = TlsGetValue(key);
+#else
+    ret = pthread_getspecific(key);
+#endif
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE int
+hg_thread_setspecific(hg_thread_key_t key, const void *value)
+{
+    int ret = HG_UTIL_SUCCESS;
+
+#ifdef _WIN32
+    if (!TlsSetValue(key, (LPVOID) value)) {
+        HG_UTIL_LOG_ERROR("TlsSetValue() failed");
+        ret = HG_UTIL_FAIL;
+    }
+#else
+    if (pthread_setspecific(key, value)) {
+        HG_UTIL_LOG_ERROR("pthread_setspecific() failed");
+        ret = HG_UTIL_FAIL;
+    }
+#endif
+
+    return ret;
+}
 
 #ifdef __cplusplus
 }

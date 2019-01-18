@@ -12,15 +12,15 @@
 #include "mercury_util_error.h"
 
 #ifdef _WIN32
-  #include <windows.h>
+# include <windows.h>
 #else
-  #include <sys/mman.h>
-  #include <unistd.h>
-  #include <sys/types.h>
-  #include <sys/stat.h>        /* For mode constants */
-  #include <fcntl.h>           /* For O_* constants */
-  #include <string.h>
-  #include <errno.h>
+# include <sys/mman.h>
+# include <unistd.h>
+# include <sys/types.h>
+# include <sys/stat.h>        /* For mode constants */
+# include <fcntl.h>           /* For O_* constants */
+# include <string.h>
+# include <errno.h>
 #endif
 #include <stdlib.h>
 

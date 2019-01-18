@@ -14,8 +14,6 @@
 #include "mercury_time.h"
 #include "mercury_util_error.h"
 
-#include "mercury_atomic.h"
-
 #include <stdlib.h>
 
 struct hg_request_class {
@@ -25,12 +23,6 @@ struct hg_request_class {
     hg_util_bool_t progressing;
     hg_thread_mutex_t progress_mutex;
     hg_thread_cond_t progress_cond;
-};
-
-struct hg_request {
-    void *data;
-    hg_atomic_int32_t completed;
-    hg_request_class_t *request_class;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -127,28 +119,6 @@ hg_request_destroy(hg_request_t *request)
 }
 
 /*---------------------------------------------------------------------------*/
-int
-hg_request_reset(hg_request_t *request)
-{
-    int ret = HG_UTIL_SUCCESS;
-
-    hg_atomic_set32(&request->completed, HG_UTIL_FALSE);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-int
-hg_request_complete(hg_request_t *request)
-{
-    int ret = HG_UTIL_SUCCESS;
-
-    hg_atomic_incr32(&request->completed);
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
 /*
  * lock(progress_mutex)
  * while (!completed) {
@@ -236,48 +206,6 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
     hg_thread_mutex_unlock(&request->request_class->progress_mutex);
 
     if (flag) *flag = completed;
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-int
-hg_request_waitall(int count, hg_request_t *request[], unsigned int timeout,
-        unsigned int *flag)
-{
-    /* TODO */
-    int i;
-    for (i = 0; i < count; i++)
-        hg_request_wait(request[i], timeout, flag);
-    return HG_UTIL_SUCCESS;
-}
-
-/*---------------------------------------------------------------------------*/
-//hg_return_t
-//hg_request_complete_cb(const struct hg_cb_info *cb_info)
-//{
-//    int ret = hg_request_complete(cb_info->arg);
-//    return ret == HG_UTIL_SUCCESS ? HG_SUCCESS : HG_OTHER_ERROR;
-//}
-
-/*---------------------------------------------------------------------------*/
-int
-hg_request_set_data(hg_request_t *request, void *data)
-{
-    int ret = HG_UTIL_SUCCESS;
-
-    request->data = data;
-
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-void *
-hg_request_get_data(hg_request_t *request)
-{
-    void *ret = NULL;
-
-    ret = request->data;
 
     return ret;
 }

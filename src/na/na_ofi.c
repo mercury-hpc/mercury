@@ -46,16 +46,13 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "na_private.h"
-#include "na_error.h"
+#include "na_plugin.h"
 
 #include "mercury_list.h"
-#include "mercury_thread_mutex.h"
 #include "mercury_thread_spin.h"
 #include "mercury_thread_rwlock.h"
 #include "mercury_hash_table.h"
 #include "mercury_time.h"
-#include "mercury_atomic.h"
 #include "mercury_mem.h"
 
 #include <rdma/fabric.h>
@@ -227,8 +224,8 @@ static unsigned long const na_ofi_prov_flags[] = { NA_OFI_PROV_TYPES };
 #define NA_OFI_SEP_RX_CTX_BITS  (8)
 
 /* Private data access */
-#define NA_OFI_PRIVATE_DATA(na_class) \
-    ((struct na_ofi_private_data *)((na_class)->private_data))
+#define NA_OFI_CLASS(na_class) \
+    ((struct na_ofi_class *)((na_class)->plugin_class))
 #define NA_OFI_CONTEXT(na_context)    \
     ((struct na_ofi_context *)((na_context)->plugin_context))
 
@@ -407,7 +404,7 @@ struct na_ofi_mem_pool {
 };
 
 /* Private data */
-struct na_ofi_private_data {
+struct na_ofi_class {
     struct na_ofi_domain *nop_domain; /* Point back to access domain */
     struct na_ofi_endpoint *nop_endpoint;
     na_bool_t nop_listen; /* flag of listening, true for server */
@@ -539,7 +536,7 @@ na_ofi_gni_set_domain_op_value(struct na_ofi_domain *na_ofi_domain, int op,
  * Open domain.
  */
 static na_return_t
-na_ofi_domain_open(struct na_ofi_private_data *priv,
+na_ofi_domain_open(struct na_ofi_class *priv,
     enum na_ofi_prov_type prov_type,
     const char *domain_name, const char *auth_key,
     struct na_ofi_domain **na_ofi_domain_p);
@@ -939,8 +936,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id);
 /* Local Variables */
 /*******************/
 
-const na_class_t na_ofi_class_g = {
-    NULL,                                   /* private_data */
+NA_PLUGIN_OPS(ofi) = {
     "ofi",                                  /* name */
     na_ofi_check_protocol,                  /* check_protocol */
     na_ofi_initialize,                      /* initialize */
@@ -1033,7 +1029,7 @@ na_ofi_domain_unlock(struct na_ofi_domain *domain)
 static NA_INLINE na_bool_t
 na_ofi_with_sep(const na_class_t *na_class)
 {
-    struct na_ofi_endpoint *ep = NA_OFI_PRIVATE_DATA(na_class)->nop_endpoint;
+    struct na_ofi_endpoint *ep = NA_OFI_CLASS(na_class)->nop_endpoint;
 
     return ep->noe_sep;
 }
@@ -1042,7 +1038,7 @@ na_ofi_with_sep(const na_class_t *na_class)
 static NA_INLINE na_bool_t
 na_ofi_with_msg_hdr(const na_class_t *na_class)
 {
-    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
 
     return (na_ofi_prov_addr_format[domain->nod_prov_type] == FI_SOCKADDR_IN);
 }
@@ -1274,7 +1270,7 @@ static na_return_t
 na_ofi_addr_ht_lookup(na_class_t *na_class, na_uint32_t addr_format,
     const void *addr, na_size_t addrlen, fi_addr_t *fi_addr)
 {
-    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
     na_uint64_t addr_key;
     hg_hash_table_key_t ht_key = NULL;
     hg_hash_table_value_t ht_value = NULL;
@@ -1608,7 +1604,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_domain_open(struct na_ofi_private_data *priv, 
+na_ofi_domain_open(struct na_ofi_class *priv,
     enum na_ofi_prov_type prov_type,
     const char *domain_name, const char *auth_key,
     struct na_ofi_domain **na_ofi_domain_p)
@@ -2245,7 +2241,7 @@ out:
 static na_return_t
 na_ofi_get_ep_addr(na_class_t *na_class, struct na_ofi_addr **na_ofi_addr_ptr)
 {
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_domain *na_ofi_domain = priv->nop_domain;
     struct na_ofi_endpoint *na_ofi_endpoint = priv->nop_endpoint;
     struct na_ofi_addr *na_ofi_addr = NULL;
@@ -2310,7 +2306,7 @@ out:
 static na_return_t
 na_ofi_get_uri(na_class_t *na_class, const void *addr, char **uri_ptr)
 {
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_domain *na_ofi_domain = priv->nop_domain;
     char addr_str[NA_OFI_MAX_URI_LEN] = {'\0'},
         fi_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'},
@@ -2454,7 +2450,7 @@ na_ofi_mem_pool_destroy(struct na_ofi_mem_pool *na_ofi_mem_pool)
 static NA_INLINE void *
 na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
 {
-    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
     na_size_t page_size = (na_size_t) hg_mem_get_page_size();
     void *mem_ptr = NULL;
 
@@ -2514,16 +2510,16 @@ na_ofi_mem_pool_alloc(na_class_t *na_class, na_size_t size,
 
 retry:
     /* Check whether we can get a block from one of the pools */
-    hg_thread_spin_lock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+    hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->nop_buf_pool_lock);
     HG_QUEUE_FOREACH(na_ofi_mem_pool,
-        &NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool, entry) {
+        &NA_OFI_CLASS(na_class)->nop_buf_pool, entry) {
         hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
         found = !HG_QUEUE_IS_EMPTY(&na_ofi_mem_pool->node_list);
         hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
         if (found)
             break;
     }
-    hg_thread_spin_unlock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+    hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->nop_buf_pool_lock);
 
     /* If not, allocate and register a new pool */
     if (!found) {
@@ -2531,10 +2527,10 @@ retry:
             na_ofi_mem_pool_create(na_class,
                 na_ofi_msg_get_max_unexpected_size(na_class),
                 NA_OFI_MEM_BLOCK_COUNT);
-        hg_thread_spin_lock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
-        HG_QUEUE_PUSH_TAIL(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool,
+        hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->nop_buf_pool_lock);
+        HG_QUEUE_PUSH_TAIL(&NA_OFI_CLASS(na_class)->nop_buf_pool,
             na_ofi_mem_pool, entry);
-        hg_thread_spin_unlock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+        hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->nop_buf_pool_lock);
     }
 
     if (size > na_ofi_mem_pool->block_size) {
@@ -2567,9 +2563,9 @@ na_ofi_mem_pool_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
         container_of(mem_ptr, struct na_ofi_mem_node, block);
 
     /* Put the node back to the pool */
-    hg_thread_spin_lock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+    hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->nop_buf_pool_lock);
     HG_QUEUE_FOREACH(na_ofi_mem_pool,
-        &NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool, entry) {
+        &NA_OFI_CLASS(na_class)->nop_buf_pool, entry) {
         /* If MR handle is NULL, it does not really matter which pool we push
          * the node back to.
          */
@@ -2580,7 +2576,7 @@ na_ofi_mem_pool_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
             break;
         }
     }
-    hg_thread_spin_unlock(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+    hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->nop_buf_pool_lock);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2728,7 +2724,7 @@ na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
              */
             goto out;
         case FI_EADDRNOTAVAIL: {
-            struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+            struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
             struct fid_av *av_hdl = priv->nop_domain->nod_av;
             void *err_addr = NULL;
             size_t err_addrlen;
@@ -3112,7 +3108,7 @@ static na_return_t
 na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     na_bool_t listen)
 {
-    struct na_ofi_private_data *priv;
+    struct na_ofi_class *priv;
     void *src_addr = NULL;
     na_size_t src_addrlen = 0;
     char *resolve_name = NULL;
@@ -3245,15 +3241,15 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     }
 
     /* Create private data */
-    na_class->private_data = (struct na_ofi_private_data *) malloc(
-        sizeof(struct na_ofi_private_data));
-    if (!na_class->private_data) {
+    na_class->plugin_class = (struct na_ofi_class *) malloc(
+        sizeof(struct na_ofi_class));
+    if (!na_class->plugin_class) {
         NA_LOG_ERROR("Could not allocate NA private data class");
         ret = NA_NOMEM_ERROR;
         goto out;
     }
-    memset(na_class->private_data, 0, sizeof(struct na_ofi_private_data));
-    priv = NA_OFI_PRIVATE_DATA(na_class);
+    memset(na_class->plugin_class, 0, sizeof(struct na_ofi_class));
+    priv = NA_OFI_CLASS(na_class);
     priv->no_wait = no_wait;
     priv->nop_listen = listen;
     priv->nop_max_contexts = max_contexts;
@@ -3267,7 +3263,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     HG_QUEUE_INIT(&priv->nop_buf_pool);
 
     /* Create domain */
-    ret = na_ofi_domain_open(na_class->private_data, prov_type, domain_name,
+    ret = na_ofi_domain_open(na_class->plugin_class, prov_type, domain_name,
         auth_key, &priv->nop_domain);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not open domain for %s, %s", na_ofi_prov_name[prov_type],
@@ -3293,9 +3289,9 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 out:
     if (ret != NA_SUCCESS) {
         free(src_addr);
-        if (na_class->private_data) {
+        if (na_class->plugin_class) {
             na_ofi_finalize(na_class);
-            na_class->private_data = NULL;
+            na_class->plugin_class = NULL;
         }
     }
     free(resolve_name);
@@ -3306,7 +3302,7 @@ out:
 static na_return_t
 na_ofi_finalize(na_class_t *na_class)
 {
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     na_return_t ret = NA_SUCCESS;
 
     if (priv == NULL)
@@ -3331,7 +3327,7 @@ na_ofi_finalize(na_class_t *na_class)
 
         na_ofi_mem_pool_destroy(na_ofi_mem_pool);
     }
-    hg_thread_spin_destroy(&NA_OFI_PRIVATE_DATA(na_class)->nop_buf_pool_lock);
+    hg_thread_spin_destroy(&NA_OFI_CLASS(na_class)->nop_buf_pool_lock);
 
     /* Close domain */
     if (priv->nop_domain) {
@@ -3346,7 +3342,7 @@ na_ofi_finalize(na_class_t *na_class)
     /* Close mutex / free private data */
     hg_thread_mutex_destroy(&priv->nop_mutex);
     free(priv);
-    na_class->private_data = NULL;
+    na_class->plugin_class = NULL;
 
 out:
     return ret;
@@ -3356,7 +3352,7 @@ out:
 static na_return_t
 na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
 {
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_domain *domain = priv->nop_domain;
     struct na_ofi_endpoint *ep = priv->nop_endpoint;
     struct na_ofi_context *ctx = NULL;
@@ -3521,7 +3517,7 @@ out:
 static na_return_t
 na_ofi_context_destroy(na_class_t *na_class, void *context)
 {
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_context *ctx = (struct na_ofi_context *) context;
     na_return_t ret = NA_SUCCESS;
     int rc;
@@ -3637,7 +3633,7 @@ static na_return_t
 na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_cb_t callback, void *arg, const char *name, na_op_id_t *op_id)
 {
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_op_id *na_ofi_op_id = NULL;
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -3733,7 +3729,7 @@ out:
 static NA_INLINE na_return_t
 na_ofi_addr_self(na_class_t *na_class, na_addr_t *addr)
 {
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_endpoint *ep = priv->nop_endpoint;
 
     na_ofi_addr_addref(ep->noe_addr); /* decref in na_ofi_addr_free() */
@@ -3841,7 +3837,7 @@ static na_return_t
 na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
     na_size_t NA_UNUSED buf_size)
 {
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
 
@@ -3890,7 +3886,7 @@ na_ofi_msg_get_max_unexpected_size(const na_class_t NA_UNUSED *na_class)
 {
     na_size_t max_unexpected_size = NA_OFI_UNEXPECTED_SIZE;
 #ifdef NA_OFI_HAS_EXT_GNI_H
-    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
 
     if (domain->nod_prov_type == NA_OFI_PROV_GNI) {
         struct fi_gni_ops_domain *gni_domain_ops;
@@ -3929,7 +3925,7 @@ na_ofi_msg_get_max_expected_size(const na_class_t NA_UNUSED *na_class)
     struct fi_ep_attr *ep_attr;
     na_size_t max_expected_size;
 
-    ep_attr = NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov->ep_attr;
+    ep_attr = NA_OFI_CLASS(na_class)->nop_domain->nod_prov->ep_attr;
     max_expected_size = ep_attr->max_msg_size - ep_attr->msg_prefix_size;
 
     return max_expected_size;
@@ -4005,7 +4001,7 @@ na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
      * the msg header to piggyback the source address for unexpected message.
      */
     if (na_ofi_with_msg_hdr(na_class)) {
-        struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+        struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
         struct na_ofi_sin_addr *na_ofi_sin_addr =
             (struct na_ofi_sin_addr *) priv->nop_endpoint->noe_addr->addr;
 
@@ -4344,7 +4340,7 @@ static na_return_t
 na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
-    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
     na_uint64_t access;
     int rc = 0;
     na_return_t ret = NA_SUCCESS;
@@ -4392,7 +4388,7 @@ static na_return_t
 na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
-    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
     int rc;
 
     /* nothing to do for scalable memory registration mode */
@@ -4487,7 +4483,7 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t *op_id)
 {
-    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid_ep *ep_hdl = ctx->noc_tx;
     struct na_ofi_mem_handle *ofi_local_mem_handle =
@@ -4587,7 +4583,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t *op_id)
 {
-    struct na_ofi_domain *domain = NA_OFI_PRIVATE_DATA(na_class)->nop_domain;
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid_ep *ep_hdl = ctx->noc_tx;
     struct na_ofi_mem_handle *ofi_local_mem_handle =
@@ -4669,7 +4665,7 @@ out:
 static NA_INLINE int
 na_ofi_poll_get_fd(na_class_t *na_class, na_context_t *context)
 {
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     int fd = -1, rc;
 
@@ -4694,7 +4690,7 @@ out:
 static NA_INLINE na_bool_t
 na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
 {
-    struct na_ofi_private_data *priv = NA_OFI_PRIVATE_DATA(na_class);
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid *fids[1];
     int rc;
@@ -4875,7 +4871,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     }
 
     /* Work around segfault on fi_cq_signal() in some providers */
-    if (!(na_ofi_prov_flags[NA_OFI_PRIVATE_DATA(na_class)->nop_domain->nod_prov_type]
+    if (!(na_ofi_prov_flags[NA_OFI_CLASS(na_class)->nop_domain->nod_prov_type]
         & NA_OFI_SKIP_SIGNAL)) {
         /* signal the cq to make the wait FD can work */
         rc = fi_cq_signal(NA_OFI_CONTEXT(context)->noc_cq);

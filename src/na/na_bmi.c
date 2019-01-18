@@ -8,13 +8,9 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "na_private.h"
-#include "na_error.h"
+#include "na_plugin.h"
 
-#include "mercury_queue.h"
-#include "mercury_thread_mutex.h"
 #include "mercury_time.h"
-#include "mercury_atomic.h"
 
 #include <bmi.h>
 
@@ -46,8 +42,8 @@
 #define NA_BMI_RMA_TAG (NA_BMI_RMA_REQUEST_TAG + 1)
 #define NA_BMI_MAX_RMA_TAG (NA_TAG_UB >> 1)
 
-#define NA_BMI_PRIVATE_DATA(na_class) \
-    ((struct na_bmi_private_data *)(na_class->private_data))
+#define NA_BMI_CLASS(na_class) \
+    ((struct na_bmi_class *)(na_class->plugin_class))
 
 #define NA_BMI_CANCEL_R (1 << 0)
 #define NA_BMI_CANCEL_C (1 << 1)
@@ -156,7 +152,7 @@ struct na_bmi_op_id {
     HG_QUEUE_ENTRY(na_bmi_op_id) entry;
 };
 
-struct na_bmi_private_data {
+struct na_bmi_class {
     char *listen_addr;                               /* Listen addr */
     int port;                                        /* Port used */
     char *protocol_name;                             /* Protocol used for this class */
@@ -506,8 +502,7 @@ na_bmi_cancel(
 /* Local Variables */
 /*******************/
 
-const na_class_t na_bmi_class_g = {
-        NULL,                                 /* private_data */
+NA_PLUGIN_OPS(bmi) = {
         "bmi",                                /* name */
         na_bmi_check_protocol,                /* check_protocol */
         na_bmi_initialize,                    /* initialize */
@@ -568,12 +563,12 @@ na_bmi_gen_rma_tag(na_class_t *na_class, uint8_t step)
     bmi_msg_tag_t tag;
 
     /* Compare and swap tag if reached max tag */
-    if (hg_atomic_cas32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag,
+    if (hg_atomic_cas32(&NA_BMI_CLASS(na_class)->rma_tag,
             NA_BMI_MAX_RMA_TAG, NA_BMI_RMA_TAG)) {
         tag = NA_BMI_RMA_TAG;
     } else {
         /* Increment tag */
-        tag = hg_atomic_incr32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag);
+        tag = hg_atomic_incr32(&NA_BMI_CLASS(na_class)->rma_tag);
     }
 
     /* NOTE: the "step" argument is used to classify which step of an
@@ -652,17 +647,17 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
     int port = 0;
 
     /* Allocate private data */
-    na_class->private_data = malloc(sizeof(struct na_bmi_private_data));
-    if (!na_class->private_data) {
+    na_class->plugin_class = malloc(sizeof(struct na_bmi_class));
+    if (!na_class->plugin_class) {
         NA_LOG_ERROR("Could not allocate NA private data class");
         ret = NA_NOMEM_ERROR;
         goto done;
     }
-    memset(na_class->private_data, 0, sizeof(struct na_bmi_private_data));
-    NA_BMI_PRIVATE_DATA(na_class)->protocol_name =
+    memset(na_class->plugin_class, 0, sizeof(struct na_bmi_class));
+    NA_BMI_CLASS(na_class)->protocol_name =
         strdup(na_info->protocol_name);
-    HG_QUEUE_INIT(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
-    HG_QUEUE_INIT(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue);
+    HG_QUEUE_INIT(&NA_BMI_CLASS(na_class)->unexpected_msg_queue);
+    HG_QUEUE_INIT(&NA_BMI_CLASS(na_class)->unexpected_op_queue);
 
     if (listen) {
         int desc_len = 0;
@@ -728,24 +723,22 @@ again:
         ret = NA_SUCCESS;
 
     /* Keep listen_addr and port */
-    NA_BMI_PRIVATE_DATA(na_class)->listen_addr = (listen) ?
+    NA_BMI_CLASS(na_class)->listen_addr = (listen) ?
             strdup(listen_addr_p) : NULL;
-    NA_BMI_PRIVATE_DATA(na_class)->port = port;
+    NA_BMI_CLASS(na_class)->port = port;
 
     /* Initialize mutex/cond */
-    hg_thread_mutex_init(&NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
-    hg_thread_mutex_init(
-        &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
-    hg_thread_mutex_init(
-        &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_init(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
+    hg_thread_mutex_init(&NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_mutex_init(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
 
     /* Initialize atomic op */
-    hg_atomic_set32(&NA_BMI_PRIVATE_DATA(na_class)->rma_tag, NA_BMI_RMA_TAG);
+    hg_atomic_set32(&NA_BMI_CLASS(na_class)->rma_tag, NA_BMI_RMA_TAG);
 
 done:
     if (ret != NA_SUCCESS) {
-        free(NA_BMI_PRIVATE_DATA(na_class)->listen_addr);
-        free(na_class->private_data);
+        free(NA_BMI_CLASS(na_class)->listen_addr);
+        free(na_class->plugin_class);
     }
     return ret;
 }
@@ -757,20 +750,18 @@ na_bmi_finalize(na_class_t *na_class)
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    if (!na_class->private_data) {
+    if (!na_class->plugin_class) {
         goto done;
     }
 
     /* Check that unexpected op queue is empty */
-    if (!HG_QUEUE_IS_EMPTY(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue)) {
+    if (!HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->unexpected_op_queue)) {
         NA_LOG_ERROR("Unexpected op queue should be empty");
         ret = NA_PROTOCOL_ERROR;
     }
 
     /* Check that unexpected message queue is empty */
-    if (!HG_QUEUE_IS_EMPTY(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue)) {
+    if (!HG_QUEUE_IS_EMPTY(&NA_BMI_CLASS(na_class)->unexpected_msg_queue)) {
         NA_LOG_ERROR("Unexpected msg queue should be empty");
         ret = NA_PROTOCOL_ERROR;
     }
@@ -783,16 +774,14 @@ na_bmi_finalize(na_class_t *na_class)
     }
 
     /* Destroy mutex/cond */
+    hg_thread_mutex_destroy(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
     hg_thread_mutex_destroy(
-            &NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
-    hg_thread_mutex_destroy(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
-    hg_thread_mutex_destroy(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+        &NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_mutex_destroy(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
 
-    free(NA_BMI_PRIVATE_DATA(na_class)->listen_addr);
-    free(NA_BMI_PRIVATE_DATA(na_class)->protocol_name);
-    free(na_class->private_data);
+    free(NA_BMI_CLASS(na_class)->listen_addr);
+    free(NA_BMI_CLASS(na_class)->protocol_name);
+    free(na_class->plugin_class);
 
 done:
     return ret;
@@ -1040,7 +1029,7 @@ na_bmi_addr_to_string(na_class_t *na_class, char *buf,
     na_bmi_addr = (struct na_bmi_addr *) addr;
 
     if (na_bmi_addr->self) {
-        bmi_rev_addr = NA_BMI_PRIVATE_DATA(na_class)->listen_addr;
+        bmi_rev_addr = NA_BMI_CLASS(na_class)->listen_addr;
         if (!bmi_rev_addr) {
             NA_LOG_ERROR("Cannot convert addr to string if not listening");
             ret = NA_PROTOCOL_ERROR;
@@ -1054,8 +1043,8 @@ na_bmi_addr_to_string(na_class_t *na_class, char *buf,
 
             /* Work around address returned in different format */
             desc_len = snprintf(full_rev_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s:%d",
-                NA_BMI_PRIVATE_DATA(na_class)->protocol_name, bmi_rev_addr,
-                NA_BMI_PRIVATE_DATA(na_class)->port);
+                NA_BMI_CLASS(na_class)->protocol_name, bmi_rev_addr,
+                NA_BMI_CLASS(na_class)->port);
             if (desc_len > NA_BMI_MAX_ADDR_NAME) {
                 NA_LOG_ERROR("Exceeding max addr name");
                 ret = NA_SIZE_ERROR;
@@ -1260,14 +1249,12 @@ na_bmi_msg_unexpected_push(na_class_t *na_class,
         goto done;
     }
 
-    hg_thread_mutex_lock(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
 
-    HG_QUEUE_PUSH_TAIL(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue,
+    HG_QUEUE_PUSH_TAIL(&NA_BMI_CLASS(na_class)->unexpected_msg_queue,
         unexpected_info, entry);
 
-    hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
 
 done:
     return ret;
@@ -1279,14 +1266,13 @@ na_bmi_msg_unexpected_pop(na_class_t *na_class)
 {
     struct na_bmi_unexpected_info *unexpected_info;
 
-    hg_thread_mutex_lock(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
 
-    unexpected_info = HG_QUEUE_FIRST(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue);
-    HG_QUEUE_POP_HEAD(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue, entry);
+    unexpected_info = HG_QUEUE_FIRST(
+        &NA_BMI_CLASS(na_class)->unexpected_msg_queue);
+    HG_QUEUE_POP_HEAD(&NA_BMI_CLASS(na_class)->unexpected_msg_queue, entry);
 
-    hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_msg_queue_mutex);
+    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->unexpected_msg_queue_mutex);
 
     return unexpected_info;
 }
@@ -1304,13 +1290,12 @@ na_bmi_msg_unexpected_op_push(na_class_t *na_class,
         goto done;
     }
 
-    hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
 
-    HG_QUEUE_PUSH_TAIL(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue,
+    HG_QUEUE_PUSH_TAIL(&NA_BMI_CLASS(na_class)->unexpected_op_queue,
         na_bmi_op_id, entry);
 
-    hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
 
 done:
     return ret;
@@ -1322,16 +1307,12 @@ na_bmi_msg_unexpected_op_pop(na_class_t *na_class)
 {
     struct na_bmi_op_id *na_bmi_op_id;
 
-    hg_thread_mutex_lock(
-        &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
 
-    na_bmi_op_id = HG_QUEUE_FIRST(
-        &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue);
-    HG_QUEUE_POP_HEAD(&NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue,
-        entry);
+    na_bmi_op_id = HG_QUEUE_FIRST(&NA_BMI_CLASS(na_class)->unexpected_op_queue);
+    HG_QUEUE_POP_HEAD(&NA_BMI_CLASS(na_class)->unexpected_op_queue, entry);
 
-    hg_thread_mutex_unlock(
-        &NA_BMI_PRIVATE_DATA(na_class)->unexpected_op_queue_mutex);
+    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->unexpected_op_queue_mutex);
 
     return na_bmi_op_id;
 }
@@ -1912,14 +1893,13 @@ na_bmi_progress_unexpected(na_class_t *na_class, na_context_t *context,
     int bmi_ret;
 
     /* Prevent multiple threads from calling BMI_testunexpected concurrently */
-    hg_thread_mutex_lock(&NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
+    hg_thread_mutex_lock(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
 
     /* Test unexpected message */
     bmi_ret = BMI_testunexpected(1, &outcount, &test_unexpected_info,
             (int) timeout);
 
-    hg_thread_mutex_unlock(
-            &NA_BMI_PRIVATE_DATA(na_class)->test_unexpected_mutex);
+    hg_thread_mutex_unlock(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
 
     if (bmi_ret < 0) {
         NA_LOG_ERROR("BMI_testunexpected failed");
