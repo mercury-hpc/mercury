@@ -1,7 +1,28 @@
 ================
+v1.0.1
+================
+Jerome Soumagne (12):
+  2019-02-11 HG: Fix HG_Reset() to reset NA resources upon NA class change (fix #272)
+  2019-01-18 HG Util: move inline functions for get/set and export create/destroy
+  2019-01-08 Travis: update build script to OFI 1.7.0
+  2019-01-07 Travis: update build script to OFI 1.7.0rc3
+  2018-12-19 NA SM: remove page size check that would prevent to run on system w pages        larger than 4KB (fix #268)
+  2018-12-07 Update CMake policy for CMake 3.12 and above
+  2018-12-07 HG Core: fix potential race when forcing a handle to be destroyed
+  2018-12-07 Update travis CI to use latest libfabric/CMake/MPICH
+  2018-12-06 NA OFI: fix cancelation of operations that cannot be canceled
+  2018-12-06 HG: fix cancelation of HG operations (fix #267)
+  2018-11-30 NA OFI: remove extra fi_addr_xxx prefix from URI
+  2018-11-30 Bump patch version
+
+================
 v1.0.0rc2
 ================
-Jerome Soumagne (13):
+================
+v1.0.0
+================
+Jerome Soumagne (14):
+  2018-11-12 Update CHANGELOG
   2018-11-12 HG: fix uninitialized variable warning in hg_get_extra_payload() - part 2
   2018-11-12 HG: fix uninitialized variable warning in hg_get_extra_payload()
   2018-11-12 NA OFI: fix missing lock in mem pool alloc
