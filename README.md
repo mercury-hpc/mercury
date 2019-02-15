@@ -83,7 +83,7 @@ The library itself is therefore not necessary since only the header is used.
 
 On Linux OpenPA v1.0.3 or higher is required (the version that is included
 with MPICH can also be used) for systems that do not have `stdatomic.h`
-(GCC version less than 4.8).
+(GCC version less than 4.9).
 
 Building
 ========
