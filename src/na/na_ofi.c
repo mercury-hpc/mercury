@@ -2764,6 +2764,7 @@ na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
                 cq_err.err, fi_strerror(cq_err.err),
                 cq_err.prov_errno,
                 fi_strerror(-cq_err.prov_errno));
+            ret = NA_PROTOCOL_ERROR;
             goto out;
         default:
             NA_LOG_ERROR("fi_cq_readerr got err: %d(%s), "
