@@ -1367,7 +1367,7 @@ HG_Core_get_input(hg_core_handle_t handle, void **in_buf,
 }
 
 /*---------------------------------------------------------------------------*/
-hg_return_t
+static HG_INLINE hg_return_t
 HG_Core_get_output(hg_core_handle_t handle, void **out_buf,
     hg_size_t *out_buf_size)
 {
