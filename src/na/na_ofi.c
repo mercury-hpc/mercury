@@ -4861,10 +4861,11 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
         /* May or may not be canceled in that case */
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->noc_tx->fid,
             &na_ofi_op_id->noo_fi_ctx);
-        if (rc == 0) {
-            /* Complete only if successfully canceled */
-            ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
-        }
+        if (rc != 0)
+            NA_LOG_ERROR("fi_cancel failed, rc: %d(%s).",
+                         rc, fi_strerror((int) -rc));
+
+        ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
         break;
     default:
         break;
