@@ -3540,7 +3540,9 @@ hg_core_cancel(struct hg_core_private_handle *hg_core_handle)
 
         na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
             hg_core_handle->na_recv_op_id);
-        if (na_ret != NA_SUCCESS) {
+        if (na_ret == NA_CANCEL_ERROR)
+            ret = HG_CANCEL_ERROR;
+        else if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not cancel recv op id");
             ret = HG_NA_ERROR;
             goto done;
@@ -3552,7 +3554,9 @@ hg_core_cancel(struct hg_core_private_handle *hg_core_handle)
 
         na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
             hg_core_handle->na_send_op_id);
-        if (na_ret != NA_SUCCESS) {
+        if (na_ret == NA_CANCEL_ERROR)
+            ret = HG_CANCEL_ERROR;
+        else if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not cancel send op id");
             ret = HG_NA_ERROR;
             goto done;
@@ -4868,7 +4872,7 @@ HG_Core_cancel(hg_core_handle_t handle)
     }
 
     ret = hg_core_cancel((struct hg_core_private_handle *) handle);
-    if (ret != HG_SUCCESS) {
+    if (ret != HG_SUCCESS && ret != HG_CANCEL_ERROR) {
         HG_LOG_ERROR("Could not cancel handle");
         goto done;
     }

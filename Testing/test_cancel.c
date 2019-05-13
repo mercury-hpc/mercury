@@ -73,7 +73,7 @@ hg_test_cancel_rpc(hg_context_t *context, hg_request_class_t *request_class,
 
     /* Cancel request */
     ret = HG_Cancel(handle);
-    if (ret != HG_SUCCESS) {
+    if (ret != HG_SUCCESS && ret != HG_CANCEL_ERROR) {
         HG_TEST_LOG_ERROR("Could not cancel call");
         goto done;
     }

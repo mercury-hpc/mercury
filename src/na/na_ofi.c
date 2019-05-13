@@ -4819,9 +4819,12 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     case NA_CB_RECV_UNEXPECTED:
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->noc_rx->fid,
             &na_ofi_op_id->noo_fi_ctx);
-        if (rc != 0)
+        if (rc != 0) {
             NA_LOG_ERROR("fi_cancel unexpected recv failed, rc: %d(%s).",
                          rc, fi_strerror((int) -rc));
+            ret = NA_CANCEL_ERROR;
+            goto out;
+        }
 
         tmp = first = na_ofi_msg_unexpected_op_pop(context);
         do {
@@ -4848,9 +4851,12 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     case NA_CB_RECV_EXPECTED:
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->noc_rx->fid,
             &na_ofi_op_id->noo_fi_ctx);
-        if (rc != 0)
+        if (rc != 0) {
             NA_LOG_ERROR("fi_cancel expected recv failed, rc: %d(%s).",
                          rc, fi_strerror((int) -rc));
+            ret = NA_CANCEL_ERROR;
+            goto out;
+        }
 
         ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
         break;
@@ -4864,7 +4870,8 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
         if (rc == 0) {
             /* Complete only if successfully canceled */
             ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
-        }
+        } else
+            ret = NA_CANCEL_ERROR;
         break;
     default:
         break;
@@ -4873,12 +4880,14 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     /* Work around segfault on fi_cq_signal() in some providers */
     if (!(na_ofi_prov_flags[NA_OFI_CLASS(na_class)->nop_domain->nod_prov_type]
         & NA_OFI_SKIP_SIGNAL)) {
-        /* signal the cq to make the wait FD can work */
+        /* Signal CQ to wake up and no longer wait on FD */
         rc = fi_cq_signal(NA_OFI_CONTEXT(context)->noc_cq);
-        if (rc != 0 && rc != -ENOSYS)
+        if (rc != 0 && rc != -ENOSYS) {
             NA_LOG_ERROR("fi_cq_signal (op type %d) failed, rc: %d(%s).",
                 na_ofi_op_id->noo_completion_data.callback_info.type, rc,
                 fi_strerror((int) -rc));
+            ret = NA_PROTOCOL_ERROR;
+        }
     }
 
 out:
