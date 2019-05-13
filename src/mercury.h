@@ -1010,7 +1010,7 @@ HG_Trigger(
  *
  * \param handle [IN]           HG handle
  *
- * \return HG_SUCCESS or corresponding HG error code
+ * \return HG_SUCCESS or HG_CANCEL_ERROR or corresponding HG error code
  */
 HG_EXPORT hg_return_t
 HG_Cancel(
