@@ -657,7 +657,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     }
     if (!proc_cb || !struct_ptr) {
         /* Silently skip */
-        *payload_size = 0;
+        *payload_size = header_offset;
         goto done;
     }
 
