@@ -858,6 +858,8 @@ HG_Free_output(
  * to define the offset at which HG_Forward() / HG_Get_input() will start
  * encoding / decoding the input parameters.
  *
+ * \remark in_buf_size argument will be ignored if NULL
+ *
  * \param handle [IN]           HG handle
  * \param in_buf [OUT]          pointer to input buffer
  * \param in_buf_size [OUT]     pointer to input buffer size
