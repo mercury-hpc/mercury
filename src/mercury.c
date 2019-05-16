@@ -1981,7 +1981,7 @@ HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
      * only the user payload is copied */
     if (private_handle->in_extra_buf) {
         *in_buf = private_handle->in_extra_buf;
-        if(in_buf_size)
+        if (in_buf_size)
             *in_buf_size = private_handle->in_extra_buf_size;
     } else {
         void *buf;
@@ -1995,7 +1995,7 @@ HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
         }
 
         *in_buf = (char *) buf + header_offset;
-        if(in_buf_size)
+        if (in_buf_size)
             *in_buf_size = buf_size - header_offset;
     }
 
@@ -2016,7 +2016,7 @@ HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
         ret = HG_INVALID_PARAM;
         goto done;
     }
-    if (!out_buf || !out_buf_size) {
+    if (!out_buf) {
         HG_LOG_ERROR("NULL pointer");
         ret = HG_INVALID_PARAM;
         goto done;
@@ -2026,7 +2026,8 @@ HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
      * only the user payload is copied */
     if (private_handle->out_extra_buf) {
         *out_buf = private_handle->out_extra_buf;
-        *out_buf_size = private_handle->out_extra_buf_size;
+        if (out_buf_size)
+            *out_buf_size = private_handle->out_extra_buf_size;
     } else {
         void *buf;
         hg_size_t buf_size, header_offset = hg_header_get_size(HG_OUTPUT);
@@ -2039,7 +2040,8 @@ HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
         }
 
         *out_buf = (char *) buf + header_offset;
-        *out_buf_size = buf_size - header_offset;
+        if (out_buf_size)
+            *out_buf_size = buf_size - header_offset;
     }
 
 done:

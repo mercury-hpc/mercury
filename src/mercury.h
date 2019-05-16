@@ -884,6 +884,8 @@ HG_Get_input_buf(
  * to define the offset at which HG_Respond() / HG_Get_output() will start
  * encoding / decoding the output parameters.
  *
+ * \remark out_buf_size argument will be ignored if NULL
+ *
  * \param handle [IN]           HG handle
  * \param out_buf [OUT]         pointer to output buffer
  * \param out_buf_size [OUT]    pointer to output buffer size
