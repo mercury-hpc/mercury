@@ -3664,7 +3664,7 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     hg_atomic_set32(&na_ofi_op_id->noo_completed, NA_FALSE);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
     /* Take one refcount to be released in na_ofi_complete->na_ofi_release */
-    hg_atomic_set32(&na_ofi_op_id->noo_refcount, 1);
+    na_ofi_op_id_addref(na_ofi_op_id);
 
     /* Allocate addr */
     na_ofi_addr = na_ofi_addr_alloc();
