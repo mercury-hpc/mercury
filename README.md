@@ -207,3 +207,4 @@ The same applies to other plugins, do `./hg_test_server -h` for more options.
 [mercury-release-link]: https://github.com/mercury-hpc/mercury/releases/latest
 [yama]: https://www.kernel.org/doc/Documentation/security/Yama.txt
 
+
