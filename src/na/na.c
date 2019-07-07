@@ -312,7 +312,7 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
             na_info->protocol_name);
         if (!verified) {
             if (na_info->class_name) {
-                NA_LOG_ERROR("Specified class name does not support request protocol");
+                NA_LOG_ERROR("Specified class name does not support requested protocol");
                 ret = NA_PROTOCOL_ERROR;
                 goto done;
             }
