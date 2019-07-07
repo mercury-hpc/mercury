@@ -117,30 +117,35 @@
  * - alternate (alias) names for convenience 
  * - address format
  * - progress mode
- * - memory registration mode flags
- * - additional capabilities used (beyond the base set required by Mercury)
+ * - additional capabilities used (beyond the base set required by NA)
  * - misc flags to control na_ofi behavior and workarounds with this provider
  *
  * The purpose of this is to aggregate settings for all providers into a
  * single location so that it is easier to alter them.
  */
 #define NA_OFI_PROV_TYPES                                               \
-    X(NA_OFI_PROV_NULL, "", "", 0, 0, 0, 0, 0)                          \
+    X(NA_OFI_PROV_NULL, "", "", 0, 0, 0, 0)                             \
     X(NA_OFI_PROV_SOCKETS,                                              \
         "sockets",                                                      \
-        "tcp",                                                          \
+        "",                                                             \
         FI_SOCKADDR_IN,                                                 \
         FI_PROGRESS_AUTO,                                               \
-        (FI_MR_SCALABLE),                                               \
-        (FI_DIRECTED_RECV),                                             \
+        FI_DIRECTED_RECV,                                               \
         (NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD)                       \
+    )                                                                   \
+    X(NA_OFI_PROV_TCP,                                                  \
+        "tcp;ofi_rxm",                                                  \
+        "tcp",                                                          \
+        FI_SOCKADDR_IN,                                                 \
+        FI_PROGRESS_MANUAL,                                             \
+        FI_DIRECTED_RECV,                                               \
+        (NA_OFI_WAIT_FD | NA_OFI_NO_SEP | NA_OFI_SKIP_SIGNAL)           \
     )                                                                   \
     X(NA_OFI_PROV_PSM2,                                                 \
         "psm2",                                                         \
         "",                                                             \
         FI_ADDR_PSMX2,                                                  \
         FI_PROGRESS_AUTO,                                               \
-        FI_MR_BASIC,                                                    \
         (FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV),                 \
         (NA_OFI_DOMAIN_LOCK | NA_OFI_WAIT_FD)                           \
     )                                                                   \
@@ -149,7 +154,6 @@
         "verbs",                                                        \
         FI_SOCKADDR_IN,                                                 \
         FI_PROGRESS_MANUAL,                                             \
-        (NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL),                            \
         (FI_DIRECTED_RECV),                                             \
         (NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_NO_SEP | NA_OFI_SKIP_SIGNAL)   \
     )                                                                   \
@@ -158,34 +162,30 @@
         "",                                                             \
         FI_ADDR_GNI,                                                    \
         FI_PROGRESS_AUTO,                                               \
-        NA_OFI_MR_BASIC_REQ,                                            \
         (FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV),                 \
         NA_OFI_WAIT_SET                                                 \
     )                                                                   \
-    X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0, 0)
+    X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0)
 
-#define X(a, b, c, d, e, f, g, h) a,
+#define X(a, b, c, d, e, f, g) a,
 enum na_ofi_prov_type { NA_OFI_PROV_TYPES };
 #undef X
-#define X(a, b, c, d, e, f, g, h) b,
+#define X(a, b, c, d, e, f, g) b,
 static char * const na_ofi_prov_name[] = { NA_OFI_PROV_TYPES };
 #undef X
-#define X(a, b, c, d, e, f, g, h) c,
+#define X(a, b, c, d, e, f, g) c,
 static char * const na_ofi_prov_alt_name[] = { NA_OFI_PROV_TYPES };
 #undef X
-#define X(a, b, c, d, e, f, g, h) d,
+#define X(a, b, c, d, e, f, g) d,
 static na_uint32_t const na_ofi_prov_addr_format[] = { NA_OFI_PROV_TYPES };
 #undef X
-#define X(a, b, c, d, e, f, g, h) e,
+#define X(a, b, c, d, e, f, g) e,
 static unsigned long const na_ofi_prov_progress[] = { NA_OFI_PROV_TYPES };
 #undef X
-#define X(a, b, c, d, e, f, g, h) f,
-static int const na_ofi_prov_mr_mode[] = { NA_OFI_PROV_TYPES };
-#undef X
-#define X(a, b, c, d, e, f, g, h) g,
+#define X(a, b, c, d, e, f, g) f,
 static unsigned long const na_ofi_prov_extra_caps[] = { NA_OFI_PROV_TYPES };
 #undef X
-#define X(a, b, c, d, e, f, g, h) h,
+#define X(a, b, c, d, e, f, g) g,
 static unsigned long const na_ofi_prov_flags[] = { NA_OFI_PROV_TYPES };
 #undef X
 
@@ -276,13 +276,16 @@ struct na_ofi_gni_addr {
 };
 
 /* Memory handle */
+struct na_ofi_mem_desc {
+    na_uint64_t mr_key;                 /* FI MR key */
+    na_ptr_t    base;                   /* Base address of memory */
+    na_size_t   size;                   /* Size of registered region */
+    na_uint8_t  attr;                   /* Flag of operation access */
+};
+
 struct na_ofi_mem_handle {
-    struct fid_mr *nom_mr_hdl; /* FI MR handle */
-    na_uint64_t nom_mr_key; /* FI MR key */
-    na_ptr_t nom_base; /* Initial address of memory */
-    na_size_t nom_size; /* Size of memory */
-    na_uint8_t nom_attr; /* Flag of operation access */
-    na_uint8_t nom_remote; /* Flag of remote handle */
+    struct na_ofi_mem_desc desc;        /* Memory descriptor */
+    struct fid_mr *mr_hdl;              /* FI MR handle */
 };
 
 /* Lookup info */
@@ -368,6 +371,7 @@ struct na_ofi_domain {
     struct fid_domain *nod_domain;          /* Access domain handle */
     /* Memory region handle, only valid for MR_SCALABLE */
     struct fid_mr *nod_mr;
+    na_uint64_t nod_mr_key;                 /* FI MR key */
     struct fid_av *nod_av;                  /* Address vector handle */
     /* mutex to protect per domain resource like av */
     hg_thread_mutex_t nod_mutex;
@@ -1409,17 +1413,25 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers)
     hints->tx_attr->op_flags = FI_INJECT_COMPLETE | FI_COMPLETION;
     hints->rx_attr->op_flags = FI_COMPLETION;
 
-    hints->domain_attr->threading       = FI_THREAD_UNSPEC;
+    /* all providers should support this */
+    hints->domain_attr->threading       = FI_THREAD_SAFE;
     hints->domain_attr->av_type         = FI_AV_MAP;
     hints->domain_attr->resource_mgmt   = FI_RM_ENABLED;
-    hints->domain_attr->mr_mode = na_ofi_prov_mr_mode[prov_type];
-    /* all providers should support this */
-    hints->domain_attr->threading = FI_THREAD_SAFE;
+
+    /**
+     * this is the requested MR mode (i.e., what we currently support).
+     * Cleared MR mode bits (depending on provider) are later checked at the
+     * appropriate time.
+     */
+    hints->domain_attr->mr_mode = (NA_OFI_MR_BASIC_REQ | FI_MR_LOCAL);
+
+    /* set default progress mode */
+    hints->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
+    hints->domain_attr->data_progress    = na_ofi_prov_progress[prov_type];
 
     /* only use sockets provider with tcp for now */
-    if (prov_type == NA_OFI_PROV_SOCKETS) {
+    if (prov_type == NA_OFI_PROV_SOCKETS)
         hints->ep_attr->protocol    = FI_PROTO_SOCK_TCP;
-    }
 
     /**
      * fi_getinfo:  returns information about fabric services.
@@ -1739,9 +1751,6 @@ na_ofi_domain_open(struct na_ofi_class *priv,
     if (priv->no_wait) {
         na_ofi_domain->nod_prov->domain_attr->control_progress = FI_PROGRESS_MANUAL;
         na_ofi_domain->nod_prov->domain_attr->data_progress = FI_PROGRESS_MANUAL;
-    } else {
-        na_ofi_domain->nod_prov->domain_attr->control_progress = na_ofi_prov_progress[prov_type];
-        na_ofi_domain->nod_prov->domain_attr->data_progress    = na_ofi_prov_progress[prov_type];
     }
 
     /* Open fi fabric */
@@ -1757,7 +1766,7 @@ na_ofi_domain_open(struct na_ofi_class *priv,
     /* Create the fi access domain */
     rc = fi_domain(na_ofi_domain->nod_fabric,   /* In:  Fabric object */
                    na_ofi_domain->nod_prov,     /* In:  Provider */
-                   &na_ofi_domain->nod_domain,  /* Out: Domain oject */
+                   &na_ofi_domain->nod_domain,  /* Out: Domain object */
                    NULL);                       /* Optional context for domain events */
     if (rc != 0) {
         NA_LOG_ERROR("fi_domain failed, rc: %d(%s).", rc, fi_strerror(-rc));
@@ -1805,17 +1814,28 @@ na_ofi_domain_open(struct na_ofi_class *priv,
     }
 #endif
 
-    /* For MR_SCALABLE, create MR, now exports all memory range for RMA */
-    if (na_ofi_prov_mr_mode[prov_type] & FI_MR_SCALABLE) {
-        rc = fi_mr_reg(na_ofi_domain->nod_domain, (void *)0, UINT64_MAX,
+    /* If memory does not need to be backed up by physical pages at the time of
+     * registration, export all memory range for RMA
+     * (this is equivalent to FI_MR_SCALABLE) */
+    if (!(na_ofi_domain->nod_prov->domain_attr->mr_mode & FI_MR_ALLOCATED)) {
+        uint64_t requested_key =
+            (!(na_ofi_domain->nod_prov->domain_attr->mr_mode & FI_MR_PROV_KEY))
+            ? NA_OFI_RMA_KEY : 0;
+
+        rc = fi_mr_reg(na_ofi_domain->nod_domain, NULL, UINT64_MAX,
             FI_REMOTE_READ | FI_REMOTE_WRITE | FI_SEND | FI_RECV
-            | FI_READ | FI_WRITE, 0 /* offset */, NA_OFI_RMA_KEY, 0 /* flags */,
+            | FI_READ | FI_WRITE, 0 /* offset */, requested_key, 0 /* flags */,
             &na_ofi_domain->nod_mr, NULL /* context */);
         if (rc != 0) {
             NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
             ret = NA_PROTOCOL_ERROR;
             goto out;
         }
+        /* Requested key may not be the same, currently RxM provider forces
+         * the underlying provider to provide keys and ignores user-provided
+         * key.
+         */
+        na_ofi_domain->nod_mr_key = fi_mr_key(na_ofi_domain->nod_mr);
     }
 
     /* Open fi address vector */
@@ -1987,10 +2007,8 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
         flags |= FI_SOURCE;
 
     /* Set max contexts to EP attrs */
-    if (na_ofi_domain->nod_prov_type != NA_OFI_PROV_VERBS) {
-        hints->ep_attr->tx_ctx_cnt = max_contexts;
-        hints->ep_attr->rx_ctx_cnt = max_contexts;
-    }
+    hints->ep_attr->tx_ctx_cnt = max_contexts;
+    hints->ep_attr->rx_ctx_cnt = max_contexts;
 
     /* For provider node resolution (always pass a numeric address) */
     if (node && strcmp("\0", node)) {
@@ -2007,7 +2025,8 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
         goto out;
     }
 
-    if ((na_ofi_prov_flags[na_ofi_domain->nod_prov_type] & NA_OFI_NO_SEP) || max_contexts < 2) {
+    if ((na_ofi_prov_flags[na_ofi_domain->nod_prov_type] & NA_OFI_NO_SEP)
+        || max_contexts < 2) {
         ret = na_ofi_basic_ep_open(na_ofi_domain, no_wait, na_ofi_endpoint);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("na_ofi_basic_ep_open failed, ret: %d.", ret);
@@ -2462,8 +2481,8 @@ na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
     }
     memset(mem_ptr, 0, size);
 
-    /* Register memory if FI_MR_LOCAL is set */
-    if (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_LOCAL) {
+    /* Register memory if FI_MR_LOCAL is set and provider uses it */
+    if (domain->nod_prov->domain_attr->mr_mode & FI_MR_LOCAL) {
         int rc;
 
         rc = fi_mr_reg(domain->nod_domain, mem_ptr, size, FI_REMOTE_READ
@@ -2714,15 +2733,10 @@ na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
 
     switch (cq_err.err) {
         case FI_ECANCELED:
-            /*
-            cq_event[0].op_context = cq_err.op_context;
-            cq_event[0].flags = cq_err.flags;
-            cq_event[0].buf = NULL;
-            cq_event[0].len = 0;
-            NA_LOG_DEBUG("got a FI_ECANCELED event, cq_event.flags 0x%x.",
-                         cq_err.flags);
-             */
+//            NA_LOG_DEBUG("got a FI_ECANCELED event, cq_event.flags 0x%x.",
+//                         cq_err.flags);
             goto out;
+
         case FI_EADDRNOTAVAIL: {
             struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
             struct fid_av *av_hdl = priv->nop_domain->nod_av;
@@ -2804,19 +2818,13 @@ na_ofi_cq_process_event(na_class_t *na_class, na_context_t *context,
         goto out;
     }
 
-    switch (cq_event->flags) {
-        case FI_SEND | FI_TAGGED:
-        case FI_SEND | FI_MSG:
-        case FI_SEND | FI_TAGGED | FI_MSG:
+    if (cq_event->flags & FI_SEND) {
         ret = na_ofi_cq_process_send_event(na_ofi_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not process send event");
             goto out;
         }
-        break;
-        case FI_RECV | FI_TAGGED:
-        case FI_RECV | FI_MSG:
-        case FI_RECV | FI_TAGGED | FI_MSG:
+    } else if (cq_event->flags & FI_RECV) {
         if (cq_event->tag & ~NA_OFI_UNEXPECTED_TAG_IGNORE) {
             ret = na_ofi_cq_process_recv_expected_event(na_ofi_op_id,
                 cq_event->tag, cq_event->len);
@@ -2833,19 +2841,16 @@ na_ofi_cq_process_event(na_class_t *na_class, na_context_t *context,
                 goto out;
             }
         }
-        break;
-        case FI_READ | FI_RMA:
-        case FI_WRITE | FI_RMA:
+    } else if (cq_event->flags & FI_RMA) {
         ret = na_ofi_cq_process_rma_event(na_ofi_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("Could not process rma event");
             goto out;
         }
-        break;
-        default:
-            NA_LOG_ERROR("bad cq event flags: 0x%x.", cq_event->flags);
-            goto out;
-    };
+    } else {
+        NA_LOG_ERROR("bad cq event flags: 0x%x.", cq_event->flags);
+        goto out;
+    }
 
 complete:
     /* Complete operation */
@@ -2918,7 +2923,6 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
             goto out;
         }
     }
-
     na_ofi_addr->fi_addr = src_addr;
     /* For unexpected msg, take one extra ref to be released by addr_free() */
     na_ofi_addr_addref(na_ofi_addr);
@@ -3466,17 +3470,6 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
             goto out;
         }
 
-        /*
-        rc = fi_ep_bind(ctx->noc_tx, &domain->nod_av->fid, 0);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_ep_bind av to noc_tx failed, rc: %d(%s).",
-                         rc, fi_strerror(-rc));
-            hg_thread_mutex_unlock(&priv->nop_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto failed_exit;
-        }
-         */
-
         rc = fi_enable(ctx->noc_tx);
         if (rc < 0) {
             NA_LOG_ERROR("fi_enable noc_tx failed, rc: %d(%s).",
@@ -3916,20 +3909,6 @@ out:
 static NA_INLINE na_size_t
 na_ofi_msg_get_max_expected_size(const na_class_t NA_UNUSED *na_class)
 {
-    /*
-     * Use same size as NA_OFI_UNEXPECTED_SIZE to save memory footprint.
-     * The (ep_attr->max_msg_size - ep_attr->msg_prefix_size) will get 8MB as
-     * the size of hg_handle->out_buf_size.
-     */
-    /*
-    struct fi_ep_attr *ep_attr;
-    na_size_t max_expected_size;
-
-    ep_attr = NA_OFI_CLASS(na_class)->nop_domain->nod_prov->ep_attr;
-    max_expected_size = ep_attr->max_msg_size - ep_attr->msg_prefix_size;
-
-    return max_expected_size;
-    */
     return na_ofi_msg_get_max_unexpected_size(na_class);
 }
 
@@ -4056,9 +4035,7 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Post the FI unexpected send request */
-    fi_addr = na_ofi_with_sep(na_class) ?
-              fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS) :
-              na_ofi_addr->fi_addr;
+    fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS);
     do {
         rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl, fi_addr,
                       tag, &na_ofi_op_id->noo_fi_ctx);
@@ -4193,9 +4170,7 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Post the FI expected send request */
-    fi_addr = na_ofi_with_sep(na_class) ?
-              fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS) :
-              na_ofi_addr->fi_addr;
+    fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS);
     do {
         rc = fi_tsend(ep_hdl, buf, buf_size, mr_hdl, fi_addr,
                 NA_OFI_EXPECTED_TAG_FLAG | tag, &na_ofi_op_id->noo_fi_ctx);
@@ -4267,9 +4242,7 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Post the FI expected recv request */
-    fi_addr = na_ofi_with_sep(na_class) ?
-        fi_rx_addr(na_ofi_addr->fi_addr, source_id, NA_OFI_SEP_RX_CTX_BITS) :
-        na_ofi_addr->fi_addr;
+    fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, source_id, NA_OFI_SEP_RX_CTX_BITS);
     do {
         rc = fi_trecv(ep_hdl, buf, buf_size, mr_hdl, fi_addr,
             NA_OFI_EXPECTED_TAG_FLAG | tag, 0 /* ignore */,
@@ -4312,10 +4285,9 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
         goto out;
     }
 
-    na_ofi_mem_handle->nom_base = (na_ptr_t)buf;
-    na_ofi_mem_handle->nom_size = buf_size;
-    na_ofi_mem_handle->nom_attr = (na_uint8_t)flags;
-    na_ofi_mem_handle->nom_remote = 0;
+    na_ofi_mem_handle->desc.base = (na_ptr_t)buf;
+    na_ofi_mem_handle->desc.size = buf_size;
+    na_ofi_mem_handle->desc.attr = (na_uint8_t)flags;
 
     *mem_handle = (na_mem_handle_t) na_ofi_mem_handle;
 
@@ -4328,9 +4300,7 @@ static na_return_t
 na_ofi_mem_handle_free(na_class_t NA_UNUSED *na_class,
     na_mem_handle_t mem_handle)
 {
-    struct na_ofi_mem_handle *ofi_mem_handle = (struct na_ofi_mem_handle *) mem_handle;
-
-    free(ofi_mem_handle);
+    free((struct na_ofi_mem_handle *) mem_handle);
 
     return NA_SUCCESS;
 }
@@ -4341,16 +4311,22 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
+    const void *base;
     na_uint64_t access;
     int rc = 0;
     na_return_t ret = NA_SUCCESS;
 
-    /* nothing to do for scalable memory registration mode */
-    if (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE)
+    /* Nothing to do for providers that do not need physically backed
+     * virtual addresses (FI_MR_SCALABLE) */
+    if (!(domain->nod_prov->domain_attr->mr_mode & FI_MR_ALLOCATED)) {
+        /* Use global handle and key */
+        na_ofi_mem_handle->mr_hdl = domain->nod_mr;
+        na_ofi_mem_handle->desc.mr_key = domain->nod_mr_key;
         return NA_SUCCESS;
+    }
 
     /* Set access mode */
-    switch (na_ofi_mem_handle->nom_attr) {
+    switch (na_ofi_mem_handle->desc.attr) {
         case NA_MEM_READ_ONLY:
             access = FI_REMOTE_READ | FI_WRITE;
             break;
@@ -4367,9 +4343,11 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     }
 
     /* Register region */
-    rc = fi_mr_reg(domain->nod_domain, (void *)na_ofi_mem_handle->nom_base,
-        (size_t) na_ofi_mem_handle->nom_size, access, 0 /* offset */,
-        0 /* requested key */, 0 /* flags */, &na_ofi_mem_handle->nom_mr_hdl,
+    base = (domain->nod_prov->domain_attr->mr_mode & FI_MR_VIRT_ADDR) ?
+        (const void *) na_ofi_mem_handle->desc.base : NULL;
+    rc = fi_mr_reg(domain->nod_domain, base,
+        (size_t) na_ofi_mem_handle->desc.size, access, 0 /* offset */,
+        0 /* requested key */, 0 /* flags */, &na_ofi_mem_handle->mr_hdl,
         NULL /* context */);
     if (rc != 0) {
         NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
@@ -4377,7 +4355,8 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         goto out;
     }
 
-    na_ofi_mem_handle->nom_mr_key = fi_mr_key(na_ofi_mem_handle->nom_mr_hdl);
+    /* Retrieve key */
+    na_ofi_mem_handle->desc.mr_key = fi_mr_key(na_ofi_mem_handle->mr_hdl);
 
 out:
     return ret;
@@ -4387,38 +4366,33 @@ out:
 static na_return_t
 na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
-    struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
+    struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
+    na_return_t ret = NA_SUCCESS;
     int rc;
 
-    /* nothing to do for scalable memory registration mode */
-    if (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE)
-        return NA_SUCCESS;
+    if (!(domain->nod_prov->domain_attr->mr_mode & FI_MR_ALLOCATED)
+        || !na_ofi_mem_handle->mr_hdl)
+        goto out;
 
-    if (na_ofi_mem_handle->nom_mr_hdl == NULL) {
-        NA_LOG_ERROR("invalid parameter - NULL na_ofi_mem_handle->nom_mr_hdl.");
-        return NA_PROTOCOL_ERROR;
-    }
-
-    if (na_ofi_mem_handle->nom_remote != 0)
-        return NA_SUCCESS;
-
-    rc = fi_close(&na_ofi_mem_handle->nom_mr_hdl->fid);
+    /* close MR handle */
+    rc = fi_close(&na_ofi_mem_handle->mr_hdl->fid);
     if (rc != 0) {
-        NA_LOG_ERROR("fi_close mr_hdr failed, rc: %d(%s).",
+        NA_LOG_ERROR("fi_close mr_hdl failed, rc: %d(%s).",
                      rc, fi_strerror(-rc));
         return NA_PROTOCOL_ERROR;
     }
 
-    return NA_SUCCESS;
+out:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_size_t
 na_ofi_mem_handle_get_serialize_size(na_class_t NA_UNUSED *na_class,
-    na_mem_handle_t NA_UNUSED mem_handle)
+    na_mem_handle_t mem_handle)
 {
-    return sizeof(struct na_ofi_mem_handle);
+    return sizeof(((struct na_ofi_mem_handle *)mem_handle)->desc);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4427,17 +4401,17 @@ na_ofi_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
     na_size_t buf_size, na_mem_handle_t mem_handle)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle =
-            (struct na_ofi_mem_handle*) mem_handle;
+            (struct na_ofi_mem_handle *) mem_handle;
     na_return_t ret = NA_SUCCESS;
 
-    if (buf_size < sizeof(struct na_ofi_mem_handle)) {
+    if (buf_size < sizeof(struct na_ofi_mem_desc)) {
         NA_LOG_ERROR("Buffer size too small for serializing handle");
         ret = NA_SIZE_ERROR;
         goto out;
     }
 
     /* Copy struct */
-    memcpy(buf, na_ofi_mem_handle, sizeof(struct na_ofi_mem_handle));
+    memcpy(buf, &na_ofi_mem_handle->desc, sizeof(na_ofi_mem_handle->desc));
 
 out:
     return ret;
@@ -4451,7 +4425,7 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     struct na_ofi_mem_handle *na_ofi_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    if (buf_size < sizeof(struct na_ofi_mem_handle)) {
+    if (buf_size < sizeof(struct na_ofi_mem_desc)) {
         NA_LOG_ERROR("Buffer size too small for deserializing handle");
         ret = NA_SIZE_ERROR;
         goto out;
@@ -4460,14 +4434,14 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     na_ofi_mem_handle = (struct na_ofi_mem_handle *)
             malloc(sizeof(struct na_ofi_mem_handle));
     if (!na_ofi_mem_handle) {
-          NA_LOG_ERROR("Could not allocate NA MPI memory handle");
+          NA_LOG_ERROR("Could not allocate NA OFI memory handle");
           ret = NA_NOMEM_ERROR;
           goto out;
     }
 
     /* Copy struct */
-    memcpy(na_ofi_mem_handle, buf, sizeof(struct na_ofi_mem_handle));
-    na_ofi_mem_handle->nom_remote = 1;
+    memcpy(&na_ofi_mem_handle->desc, buf, sizeof(na_ofi_mem_handle->desc));
+    na_ofi_mem_handle->mr_hdl = NULL;
 
     *mem_handle = (na_mem_handle_t) na_ofi_mem_handle;
 
@@ -4483,7 +4457,6 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t *op_id)
 {
-    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid_ep *ep_hdl = ctx->noc_tx;
     struct na_ofi_mem_handle *ofi_local_mem_handle =
@@ -4491,25 +4464,21 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     struct na_ofi_mem_handle *ofi_remote_mem_handle =
         (struct na_ofi_mem_handle *) remote_mem_handle;
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) remote_addr;
-    void *local_desc = (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE) ? NULL :
-        fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
+    void *local_desc = fi_mr_desc(ofi_local_mem_handle->mr_hdl);
     struct iovec local_iov = {
-        .iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset,
+        .iov_base = (char *)ofi_local_mem_handle->desc.base + local_offset,
         .iov_len = length
     };
     struct fi_rma_iov remote_iov = {
-        .addr = (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
+        .addr = (na_uint64_t)ofi_remote_mem_handle->desc.base + remote_offset,
         .len = length,
-        .key = (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
-            ofi_remote_mem_handle->nom_mr_key
+        .key = ofi_remote_mem_handle->desc.mr_key
     };
     struct fi_msg_rma msg_rma = {
         .msg_iov = &local_iov,
         .desc = &local_desc,
         .iov_count = 1,
-        .addr = na_ofi_with_sep(na_class) ?
-            fi_rx_addr(na_ofi_addr->fi_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS) :
-            na_ofi_addr->fi_addr,
+        .addr = fi_rx_addr(na_ofi_addr->fi_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS),
         .rma_iov = &remote_iov,
         .rma_iov_count = 1,
         .context = NULL,
@@ -4551,9 +4520,9 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* Post the OFI RMA write */
     do {
-        /* For writes, FI_DELIVERY_COMPLETE guarantees that the result of
-         * the operation is available */
-        rc = fi_writemsg(ep_hdl, &msg_rma, FI_COMPLETION|FI_DELIVERY_COMPLETE);
+        /* For writes, FI_DELIVERY_COMPLETE guarantees that the operation
+         * has been processed by the destination */
+        rc = fi_writemsg(ep_hdl, &msg_rma, FI_COMPLETION | FI_DELIVERY_COMPLETE);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -4583,20 +4552,35 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t *op_id)
 {
-    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->nop_domain;
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct fid_ep *ep_hdl = ctx->noc_tx;
     struct na_ofi_mem_handle *ofi_local_mem_handle =
         (struct na_ofi_mem_handle *) local_mem_handle;
     struct na_ofi_mem_handle *ofi_remote_mem_handle =
         (struct na_ofi_mem_handle *) remote_mem_handle;
-    struct iovec iov;
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) remote_addr;
+    void *local_desc = fi_mr_desc(ofi_local_mem_handle->mr_hdl);
+    struct iovec local_iov = {
+        .iov_base = (void *)(ofi_local_mem_handle->desc.base + local_offset),
+        .iov_len = length
+    };
+    struct fi_rma_iov remote_iov = {
+        .addr = (uint64_t)(ofi_remote_mem_handle->desc.base + remote_offset),
+        .len = length,
+        .key = ofi_remote_mem_handle->desc.mr_key
+    };
+    struct fi_msg_rma msg_rma = {
+        .msg_iov = &local_iov,
+        .desc = &local_desc,
+        .iov_count = 1,
+        .addr = fi_rx_addr(na_ofi_addr->fi_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS),
+        .rma_iov = &remote_iov,
+        .rma_iov_count = 1,
+        .context = NULL,
+        .data = 0
+    };
     struct na_ofi_op_id *na_ofi_op_id = NULL;
-    fi_addr_t fi_addr;
     na_return_t ret = NA_SUCCESS;
-    void *local_desc;
-    na_uint64_t rma_key;
     ssize_t rc;
 
     na_ofi_addr_addref(na_ofi_addr); /* for na_ofi_complete() */
@@ -4626,20 +4610,12 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
         *op_id = (na_op_id_t) na_ofi_op_id;
 
+    /* Assign context */
+    msg_rma.context = &na_ofi_op_id->noo_fi_ctx;
+
     /* Post the OFI RMA read */
-    iov.iov_base = (char *)ofi_local_mem_handle->nom_base + local_offset;
-    iov.iov_len = length;
-    local_desc = (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE) ? NULL :
-        fi_mr_desc(ofi_local_mem_handle->nom_mr_hdl);
-    rma_key = (na_ofi_prov_mr_mode[domain->nod_prov_type] & FI_MR_SCALABLE) ? NA_OFI_RMA_KEY :
-        ofi_remote_mem_handle->nom_mr_key;
-    fi_addr = na_ofi_with_sep(na_class) ?
-        fi_rx_addr(na_ofi_addr->fi_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS) :
-        na_ofi_addr->fi_addr;
     do {
-        rc = fi_readv(ep_hdl, &iov, &local_desc, 1 /* count */, fi_addr,
-            (na_uint64_t)ofi_remote_mem_handle->nom_base + remote_offset,
-            rma_key, &na_ofi_op_id->noo_fi_ctx);
+        rc = fi_readmsg(ep_hdl, &msg_rma, FI_COMPLETION);
         /* for EAGAIN, progress and do it again */
         if (rc == -FI_EAGAIN)
             na_ofi_progress(na_class, context, 0);
@@ -4647,7 +4623,7 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             break;
     } while (1);
     if (rc) {
-        NA_LOG_ERROR("fi_readv() failed, rc: %d(%s)", rc,
+        NA_LOG_ERROR("fi_readmsg() failed, rc: %d(%s)", rc,
             fi_strerror((int) -rc));
         ret = NA_PROTOCOL_ERROR;
     }

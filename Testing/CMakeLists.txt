@@ -72,7 +72,7 @@ if(NA_USE_CCI)
 endif()
 
 if(NA_USE_OFI)
-  set(NA_OFI_TESTING_PROTOCOL "tcp" CACHE STRING "Protocol(s) used for testing (e.g., sockets;psm2;verbs).")
+  set(NA_OFI_TESTING_PROTOCOL "sockets;tcp" CACHE STRING "Protocol(s) used for testing (e.g., sockets;psm2;verbs).")
   mark_as_advanced(NA_OFI_TESTING_PROTOCOL)
 
   option(NA_OFI_TESTING_USE_CRAY_DRC
@@ -197,7 +197,8 @@ macro(add_mercury_test_comm test_name comm protocol busy)
   endif()
 
   # Scalable endpoint test
-  if(MERCURY_TESTING_HAS_THREAD_POOL AND ${comm} STREQUAL "ofi")
+  if(MERCURY_TESTING_HAS_THREAD_POOL AND ${comm} STREQUAL "ofi" AND
+    (NOT ((${protocol} STREQUAL "tcp") OR (${protocol} STREQUAL "verbs"))))
     set(cores_test_name ${full_test_name}_scalable)
     set(cores_test_args ${test_args} -C 2)
     add_test(NAME "mercury_${cores_test_name}"
