@@ -103,6 +103,12 @@ main(int argc, char *argv[])
     /* Initialize the interface */
     HG_Test_init(argc, argv, &hg_test_info);
 
+    /* Skip for OFI/tcp for now (cancelation of unexpected send is not
+     * guaranteed by underlying provider) */
+    if (!(strcmp(HG_Class_get_name(hg_test_info.hg_class), "ofi"))
+        && !strcmp(hg_test_info.na_test_info.protocol, "tcp"))
+        goto done;
+
     /* Cancel RPC test */
     HG_TEST("cancel RPC");
     hg_ret = hg_test_cancel_rpc(hg_test_info.context,
