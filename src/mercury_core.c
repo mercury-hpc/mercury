@@ -47,7 +47,7 @@
 # define HG_CORE_UUID_MAX_LEN       36
 # define HG_CORE_ADDR_MAX_SIZE      256
 # define HG_CORE_PROTO_DELIMITER    ":"
-# define HG_CORE_ADDR_DELIMITER     ";"
+# define HG_CORE_ADDR_DELIMITER     "#"
 # define HG_CORE_MIN(a, b)          (a < b) ? a : b /* Min macro */
 #endif
 
