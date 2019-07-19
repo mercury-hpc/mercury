@@ -1077,6 +1077,7 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
     struct hg_private_class *hg_class = NULL;
+    hg_return_t ret = HG_SUCCESS;
 
     hg_class = malloc(sizeof(struct hg_private_class));
     if (!hg_class) {
@@ -1090,6 +1091,7 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
         hg_init_info);
     if (!hg_class->hg_class.core_class) {
         HG_LOG_ERROR("Could not create HG core class");
+        ret = HG_PROTOCOL_ERROR;
         goto done;
     }
 
@@ -1098,6 +1100,10 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
         hg_more_data_cb, hg_more_data_free_cb);
 
 done:
+    if (ret != HG_SUCCESS) {
+        free(hg_class);
+        hg_class = NULL;
+    }
     return (hg_class_t *) hg_class;
 }
 
