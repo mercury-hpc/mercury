@@ -83,7 +83,7 @@ na_test_usage(const char *execname)
     printf("    -p, --protocol      Select plugin protocol\n"
            "                        Available protocols: tcp, ib, etc\n");
     printf("    -H, --hostname      Select hostname / IP address to use\n"
-           "                        Default: localhost\n");
+           "                        Default: any\n");
     printf("    -L, --listen        Listen for incoming messages\n");
     printf("    -S, --self_send     Send to self\n");
     printf("    -a, --auth          Run auth key service\n");
@@ -270,10 +270,6 @@ na_test_gen_config(struct na_test_info *na_test_info)
     info_string_ptr += sprintf(info_string_ptr, "%s+%s", na_test_info->comm,
         na_test_info->protocol);
 
-    /* Default hostname */
-    if (!na_test_info->hostname)
-        na_test_info->hostname = strdup("localhost");
-
     if (strcmp("sm", na_test_info->protocol) == 0) {
 #if defined(PR_SET_PTRACER) && defined(PR_SET_PTRACER_ANY)
         FILE *scope_config;
@@ -302,7 +298,9 @@ na_test_gen_config(struct na_test_info *na_test_info)
         || (strcmp("verbs", na_test_info->protocol) == 0)
         || (strcmp("psm2", na_test_info->protocol) == 0)
         || (strcmp("sockets", na_test_info->protocol) == 0)) {
-        if (na_test_info->listen) {
+        if (!na_test_info->hostname) {
+            /* Nothing */
+        } else if (na_test_info->listen) {
             base_port += (unsigned int) na_test_info->mpi_comm_rank;
             sprintf(info_string_ptr, "://%s:%d", na_test_info->hostname,
                 base_port + port_incr);
