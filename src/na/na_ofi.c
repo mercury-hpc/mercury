@@ -1977,8 +1977,8 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     struct na_ofi_endpoint *na_ofi_endpoint;
     struct fi_info *hints = NULL;
     na_return_t ret = NA_SUCCESS;
-    const char *node_str = NULL;
-    na_uint64_t flags = 0;
+    /* For provider node resolution (always pass a numeric address) */
+    na_uint64_t flags = (node) ? FI_SOURCE | FI_NUMERICHOST : 0;
     int rc;
 
     na_ofi_endpoint = (struct na_ofi_endpoint *) malloc(
@@ -2001,25 +2001,19 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     if (src_addr) {
         /* Set src addr hints (FI_SOURCE must not be set in that case) */
         free(hints->src_addr);
+        hints->addr_format = na_ofi_prov_addr_format[na_ofi_domain->nod_prov_type];
         hints->src_addr = src_addr;
         hints->src_addrlen = src_addrlen;
-    } else
-        flags |= FI_SOURCE;
+    }
 
     /* Set max contexts to EP attrs */
     hints->ep_attr->tx_ctx_cnt = max_contexts;
     hints->ep_attr->rx_ctx_cnt = max_contexts;
 
-    /* For provider node resolution (always pass a numeric address) */
-    if (node && strcmp("\0", node)) {
-        flags |= FI_NUMERICHOST;
-        node_str = node;
-    }
-
-    rc = fi_getinfo(NA_OFI_VERSION, node_str, NULL, flags, hints,
+    rc = fi_getinfo(NA_OFI_VERSION, node, NULL, flags, hints,
         &na_ofi_endpoint->noe_prov);
     if (rc != 0) {
-        NA_LOG_ERROR("fi_getinfo(%s) failed, rc: %d(%s).", node_str,
+        NA_LOG_ERROR("fi_getinfo(%s) failed, rc: %d(%s).", node,
             rc, fi_strerror(-rc));
         ret = NA_PROTOCOL_ERROR;
         goto out;
@@ -2043,8 +2037,12 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     *na_ofi_endpoint_p = na_ofi_endpoint;
 
 out:
-    if (hints)
+    if (hints) {
+        /* Prevent fi_freeinfo() from freeing src_addr */
+        if (src_addr)
+            hints->src_addr = NULL;
         fi_freeinfo(hints);
+    }
     if (ret != NA_SUCCESS) {
         na_ofi_endpoint_close(na_ofi_endpoint);
         *na_ofi_endpoint_p = NULL;
@@ -3116,6 +3114,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     void *src_addr = NULL;
     na_size_t src_addrlen = 0;
     char *resolve_name = NULL;
+    unsigned int port = 0;
+    const char *node_ptr = NULL;
     char node[NA_OFI_MAX_URI_LEN] = {'\0'};
     char domain_name[NA_OFI_MAX_URI_LEN] = {'\0'};
     na_bool_t no_wait = NA_FALSE;
@@ -3159,6 +3159,14 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
             ret = NA_NOMEM_ERROR;
             goto out;
         }
+
+        /* Extract hostname */
+        if (strstr(resolve_name, ":")) {
+            char *port_str = NULL;
+
+            strtok_r(resolve_name, ":", &port_str);
+            port = (unsigned int) strtoul(port_str, NULL, 10);
+        }
     } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI) {
         resolve_name = strdup(NA_OFI_GNI_IFACE_DEFAULT);
         if (!resolve_name) {
@@ -3173,15 +3181,6 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         if (na_ofi_prov_addr_format[prov_type] == FI_SOCKADDR_IN) {
             char *ifa_name;
             struct na_ofi_sin_addr *na_ofi_sin_addr = NULL;
-            unsigned int port = 0;
-
-            /* Extract hostname */
-            if (strstr(resolve_name, ":")) {
-                char *port_str = NULL;
-
-                strtok_r(resolve_name, ":", &port_str);
-                port = (unsigned int) strtoul(port_str, NULL, 10);
-            }
 
             /* Try to get matching IP/device */
             ret = na_ofi_check_interface(resolve_name, port, &ifa_name,
@@ -3205,13 +3204,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI) {
             struct na_ofi_sin_addr *na_ofi_sin_addr = NULL;
 
-            /* If a port was passed, do not use it */
-            if (strstr(resolve_name, ":")) {
-                char *port_str;
-                strtok_r(resolve_name, ":", &port_str);
-            }
-
-            /* Try to get matching IP/device */
+            /* Try to get matching IP/device (do not use port) */
             ret = na_ofi_check_interface(resolve_name, 0, NULL,
                 &na_ofi_sin_addr);
             if (ret != NA_SUCCESS || !na_ofi_sin_addr) {
@@ -3227,6 +3220,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
                 ret = NA_PROTOCOL_ERROR;
                 goto out;
             }
+            node_ptr = node;
             free(na_ofi_sin_addr);
         } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_PSMX2) {
             /* Nothing to do */
@@ -3276,7 +3270,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     }
 
     /* Create endpoint */
-    ret = na_ofi_endpoint_open(priv->nop_domain, node, src_addr, src_addrlen,
+    ret = na_ofi_endpoint_open(priv->nop_domain, node_ptr, src_addr, src_addrlen,
         priv->no_wait, priv->nop_max_contexts, &priv->nop_endpoint);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not create endpoint for %s", resolve_name);
@@ -3292,12 +3286,12 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
 out:
     if (ret != NA_SUCCESS) {
-        free(src_addr);
         if (na_class->plugin_class) {
             na_ofi_finalize(na_class);
             na_class->plugin_class = NULL;
         }
     }
+    free(src_addr);
     free(resolve_name);
     return ret;
 }
