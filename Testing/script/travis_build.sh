@@ -1,7 +1,8 @@
 #!/bin/bash
 
-CMAKE_VERSION_MAJOR=3.14
-CMAKE_VERSION_MINOR=5
+BMI_VERSION=master
+CMAKE_VERSION_MAJOR=3.15
+CMAKE_VERSION_MINOR=1
 MPI_VERSION=3.3.1
 CCI_VERSION=2.1
 OFI_VERSION=1.8.0
@@ -11,12 +12,16 @@ set -e
 
 if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
   # BMI
-  if [ ! -f "$PREFIX/include/bmi.h" ]; then
-    cd $HOME && git clone git://git.mcs.anl.gov/bmi bmi && cd bmi;
+  if [ -f "$PREFIX/bmi_version.txt" ]; then
+    BMI_INSTALLED_VERSION=`cat $PREFIX/bmi_version.txt`;
+  fi
+  if [ ! -f "$PREFIX/include/bmi.h" ] || [ "$BMI_INSTALLED_VERSION" != "${BMI_VERSION}" ]; then
+    cd $HOME && git clone https://xgitlab.cels.anl.gov/sds/bmi bmi && cd bmi;
     # if [[ $TRAVIS_OS_NAME == 'osx' ]]; then
     #    patch -p1 < ${TRAVIS_BUILD_DIR}/Testing/script/bmi_osx.patch
     # fi
     ./prepare && ./configure --enable-shared --disable-static --enable-bmi-only --prefix=$PREFIX && make -j2 -s && make install;
+    echo "${BMI_VERSION}" > $PREFIX/bmi_version.txt
   else
     echo "Using cached directory for BMI";
   fi
