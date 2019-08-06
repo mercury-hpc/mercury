@@ -16,7 +16,7 @@ if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
     BMI_INSTALLED_VERSION=`cat $PREFIX/bmi_version.txt`;
   fi
   if [ ! -f "$PREFIX/include/bmi.h" ] || [ "$BMI_INSTALLED_VERSION" != "${BMI_VERSION}" ]; then
-    cd $HOME && git clone https://xgitlab.cels.anl.gov/sds/bmi bmi && cd bmi;
+    cd $HOME && git clone http://xgitlab.cels.anl.gov/sds/bmi bmi && cd bmi;
     # if [[ $TRAVIS_OS_NAME == 'osx' ]]; then
     #    patch -p1 < ${TRAVIS_BUILD_DIR}/Testing/script/bmi_osx.patch
     # fi
