@@ -1,29 +1,44 @@
 #-----------------------------------------------------------------------------
-# Config file for compiling against the install directory
+# mercury-config.cmake - Mercury CMake configuration file for external projects.
 #-----------------------------------------------------------------------------
-get_filename_component(MERCURY_SELF_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+set(__mercury_install_tree @MERCURY_CONFIG_INSTALLED@)
+if(__mercury_install_tree)
+  get_filename_component(location "${CMAKE_CURRENT_LIST_FILE}" PATH)
+  set(MERCURY_CONFIG_TARGETS_FILE "${location}/@MERCURY_PACKAGE@-targets.cmake")
+else()
+  # This is the build location.
+  set(MERCURY_CONFIG_TARGETS_FILE "@MERCURY_BINARY_DIR@/src/@MERCURY_PACKAGE@-targets.cmake")
+endif()
 
 #-----------------------------------------------------------------------------
 # User Options
 #-----------------------------------------------------------------------------
-set(MERCURY_USE_BOOST_PP @MERCURY_USE_BOOST_PP@)
+set(MERCURY_BUILD_SHARED_LIBS    @BUILD_SHARED_LIBS@)
+set(MERCURY_USE_BOOST_PP         @MERCURY_USE_BOOST_PP@)
+set(MERCURY_USE_CHECKSUMS        @MERCURY_USE_CHECKSUMS@)
 set(MERCURY_USE_SYSTEM_MCHECKSUM @MERCURY_USE_SYSTEM_MCHECKSUM@)
 
 #-----------------------------------------------------------------------------
-# Version Strings
+# Version information for Mercury
 #-----------------------------------------------------------------------------
-set(MERCURY_VERSION_STRING  @MERCURY_PACKAGE_VERSION@)
 set(MERCURY_VERSION_MAJOR   @MERCURY_VERSION_MAJOR@)
 set(MERCURY_VERSION_MINOR   @MERCURY_VERSION_MINOR@)
 set(MERCURY_VERSION_PATCH   @MERCURY_VERSION_PATCH@)
+set(MERCURY_VERSION_FULL    @MERCURY_VERSION_FULL@)
+set(MERCURY_VERSION         @MERCURY_VERSION@)
 
 #-----------------------------------------------------------------------------
 # Don't include targets if this file is being picked up by another
 # project which has already built MERCURY as a subproject
 #-----------------------------------------------------------------------------
-if(NOT TARGET "mercury" AND NOT MERCURY_INSTALL_SKIP_TARGETS)
-  if(NOT TARGET "mchecksum" AND MERCURY_USE_SYSTEM_MCHECKSUM)
+if(NOT MERCURY_INSTALL_SKIP_TARGETS)
+  if(NOT TARGET "mchecksum" AND MERCURY_USE_CHECKSUMS AND MERCURY_USE_SYSTEM_MCHECKSUM)
     include(@mchecksum_DIR@/mchecksum-config.cmake)
   endif()
-  include(${MERCURY_SELF_DIR}/mercury-targets.cmake)
+  if(NOT TARGET "@MERCURY_PACKAGE@")
+    include(${MERCURY_CONFIG_TARGETS_FILE})
+  endif()
 endif()
+
+# cleanup
+unset(__mercury_install_tree)

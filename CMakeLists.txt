@@ -27,20 +27,6 @@ endif()
 project(MERCURY C)
 
 #------------------------------------------------------------------------------
-# Version information 
-#------------------------------------------------------------------------------
-set(MERCURY_VERSION_MAJOR "1")
-set(MERCURY_VERSION_MINOR "1")
-set(MERCURY_VERSION_PATCH "0")
-set(MERCURY_PACKAGE "mercury")
-set(MERCURY_PACKAGE_NAME "MERCURY")
-set(MERCURY_PACKAGE_VERSION "${MERCURY_VERSION_MAJOR}.${MERCURY_VERSION_MINOR}.${MERCURY_VERSION_PATCH}")
-set(MERCURY_PACKAGE_VERSION_MAJOR "${MERCURY_VERSION_MAJOR}.${MERCURY_VERSION_MINOR}")
-set(MERCURY_PACKAGE_VERSION_MINOR "${MERCURY_VERSION_PATCH}")
-set(MERCURY_PACKAGE_STRING "${MERCURY_PACKAGE_NAME} ${MERCURY_PACKAGE_VERSION}")
-set(MERCURY_PACKAGE_TARNAME "${MERCURY_PACKAGE}")
-
-#------------------------------------------------------------------------------
 # Setup install and output Directories
 #------------------------------------------------------------------------------
 if(NOT MERCURY_INSTALL_BIN_DIR)
@@ -68,6 +54,29 @@ endif()
 if(NOT CMAKE_INSTALL_RPATH_USE_LINK_PATH)
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
+
+#------------------------------------------------------------------------------
+# Set module path
+#------------------------------------------------------------------------------
+set(MERCURY_CMAKE_MODULE_PATH "${MERCURY_SOURCE_DIR}/CMake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_CMAKE_MODULE_PATH})
+
+#------------------------------------------------------------------------------
+# Version information 
+#------------------------------------------------------------------------------
+include(${MERCURY_CMAKE_MODULE_PATH}/Git/Git.cmake)
+include(MercuryDetermineVersion)
+# Hard-coded version variables are read-in from a separate file. This makes it
+# easier to have a script to update version numbers automatically.
+file(STRINGS version.txt version_txt)
+extract_version_components("${version_txt}" "${CMAKE_PROJECT_NAME}")
+determine_version(${MERCURY_SOURCE_DIR} ${GIT_EXECUTABLE} "${CMAKE_PROJECT_NAME}")
+set(MERCURY_PACKAGE "mercury")
+set(MERCURY_PACKAGE_NAME "Mercury")
+set(MERCURY_PACKAGE_DESCRIPTION "RPC for High-Performance Computing")
+set(MERCURY_PACKAGE_URL "http://mercury-hpc.github.io/")
+set(MERCURY_PACKAGE_VENDOR "Argonne National Laboratory / The HDF Group")
+message(STATUS "Configuring ${MERCURY_PACKAGE} v${MERCURY_VERSION_FULL}")
 
 #------------------------------------------------------------------------------
 # Setup CMake Environment
@@ -109,8 +118,6 @@ if(NOT MERCURY_EXTERNALLY_CONFIGURED)
       ${PROJECT_BINARY_DIR}/bin CACHE PATH "Single Directory for all static libraries."
   )
 endif()
-set(MERCURY_CMAKE_DIR "${MERCURY_SOURCE_DIR}/CMake")
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MERCURY_CMAKE_DIR})
 
 #------------------------------------------------------------------------------
 # Disallow in-source build
@@ -142,7 +149,7 @@ endif()
 # by other projects.
 #-----------------------------------------------------------------------------
 if(NOT MERCURY_EXPORTED_TARGETS)
-  set(MERCURY_EXPORTED_TARGETS "mercury-targets")
+  set(MERCURY_EXPORTED_TARGETS "${MERCURY_PACKAGE}-targets")
 endif()
 
 #------------------------------------------------------------------------------
@@ -173,12 +180,12 @@ function(mercury_set_lib_options libtarget libname libtype)
     if(WIN32 AND NOT MINGW)
       set(LIB_RELEASE_NAME "${libname}")
       set(LIB_DEBUG_NAME "${libname}_D")
-      set(LIB_VERSION ${MERCURY_PACKAGE_VERSION_MAJOR})
     else()
       set(LIB_RELEASE_NAME "${libname}")
       set(LIB_DEBUG_NAME "${libname}_debug")
-      set(LIB_VERSION ${MERCURY_PACKAGE_VERSION})
     endif()
+    set(LIB_VERSION ${MERCURY_VERSION}.${MERCURY_VERSION_PATCH})
+    set(API_VERSION ${MERCURY_VERSION_MAJOR})
   else()
     if(WIN32 AND NOT MINGW)
       set(LIB_RELEASE_NAME "lib${libname}")
@@ -202,7 +209,7 @@ function(mercury_set_lib_options libtarget libname libtype)
       MINSIZEREL_OUTPUT_NAME     ${LIB_RELEASE_NAME}
       RELWITHDEBINFO_OUTPUT_NAME ${LIB_RELEASE_NAME}
       VERSION                    ${LIB_VERSION}
-      SOVERSION                  ${LIB_VERSION}
+      SOVERSION                  ${API_VERSION}
   )
 
   #----- Use MSVC Naming conventions for Shared Libraries
@@ -283,39 +290,41 @@ endif()
 #-----------------------------------------------------------------------------
 # Configure the config.cmake file for the build directory
 #-----------------------------------------------------------------------------
+set(MERCURY_CONFIG_INSTALLED FALSE)
 configure_file(
-  ${MERCURY_SOURCE_DIR}/CMake/mercury-config.cmake.build.in
-  ${MERCURY_BINARY_DIR}/mercury-config.cmake @ONLY
+  ${MERCURY_SOURCE_DIR}/CMake/${MERCURY_PACKAGE}-config.cmake.in
+  ${MERCURY_BINARY_DIR}/${MERCURY_PACKAGE}-config.cmake @ONLY
 )
 
 #-----------------------------------------------------------------------------
 # Configure the config.cmake file for the install directory
 #-----------------------------------------------------------------------------
+set(MERCURY_CONFIG_INSTALLED TRUE)
 configure_file(
-  ${MERCURY_SOURCE_DIR}/CMake/mercury-config.cmake.install.in
-  ${MERCURY_BINARY_DIR}/CMakeFiles/mercury-config.cmake @ONLY
+  ${MERCURY_SOURCE_DIR}/CMake/${MERCURY_PACKAGE}-config.cmake.in
+  ${MERCURY_BINARY_DIR}/CMakeFiles/${MERCURY_PACKAGE}-config.cmake @ONLY
 )
 
 install(
   FILES
-    ${MERCURY_BINARY_DIR}/CMakeFiles/mercury-config.cmake
+    ${MERCURY_BINARY_DIR}/CMakeFiles/${MERCURY_PACKAGE}-config.cmake
   DESTINATION
-    ${MERCURY_INSTALL_DATA_DIR}/cmake/mercury
+    ${MERCURY_INSTALL_DATA_DIR}/cmake/${MERCURY_PACKAGE}
 )
 
 #-----------------------------------------------------------------------------
-# Configure the mercury-config-version .cmake file for the install directory
+# Configure the config-version .cmake file for the install directory
 #-----------------------------------------------------------------------------
 configure_file(
-  ${MERCURY_SOURCE_DIR}/CMake/mercury-config-version.cmake.in
-  ${MERCURY_BINARY_DIR}/CMakeFiles/mercury-config-version.cmake @ONLY
+  ${MERCURY_SOURCE_DIR}/CMake/${MERCURY_PACKAGE}-config-version.cmake.in
+  ${MERCURY_BINARY_DIR}/CMakeFiles/${MERCURY_PACKAGE}-config-version.cmake @ONLY
 )
 
 install(
   FILES
-    ${MERCURY_BINARY_DIR}/CMakeFiles/mercury-config-version.cmake
+    ${MERCURY_BINARY_DIR}/CMakeFiles/${MERCURY_PACKAGE}-config-version.cmake
   DESTINATION
-    ${MERCURY_INSTALL_DATA_DIR}/cmake/mercury
+    ${MERCURY_INSTALL_DATA_DIR}/cmake/${MERCURY_PACKAGE}
 )
 
 #-----------------------------------------------------------------------------
@@ -323,13 +332,13 @@ install(
 #-----------------------------------------------------------------------------
 if(NOT WIN32)
   configure_file(
-    ${MERCURY_SOURCE_DIR}/CMake/mercury.pc.in
-    ${MERCURY_BINARY_DIR}/CMakeFiles/mercury.pc @ONLY
+    ${MERCURY_SOURCE_DIR}/CMake/${MERCURY_PACKAGE}.pc.in
+    ${MERCURY_BINARY_DIR}/CMakeFiles/${MERCURY_PACKAGE}.pc @ONLY
   )
 
   install(
     FILES
-      ${MERCURY_BINARY_DIR}/CMakeFiles/mercury.pc
+      ${MERCURY_BINARY_DIR}/CMakeFiles/${MERCURY_PACKAGE}.pc
     DESTINATION
       ${MERCURY_INSTALL_LIB_DIR}/pkgconfig
   )
@@ -341,14 +350,14 @@ endif()
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
   set(CPACK_PACKAGE_DESCRIPTION_FILE ${MERCURY_SOURCE_DIR}/README.md)
   set(CPACK_RESOURCE_FILE_LICENSE ${MERCURY_SOURCE_DIR}/COPYING)
-  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "RPC for High-Performance Computing")
-  set(CPACK_PACKAGE_NAME "Mercury")
-  set(CPACK_PACKAGE_VENDOR "Argonne National Laboratory / The HDF Group")
+  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${MERCURY_PACKAGE_DESCRIPTION})
+  set(CPACK_PACKAGE_NAME ${MERCURY_PACKAGE_NAME})
+  set(CPACK_PACKAGE_VENDOR ${MERCURY_PACKAGE_VENDOR})
   set(CPACK_PACKAGE_VERSION_MAJOR ${MERCURY_VERSION_MAJOR})
   set(CPACK_PACKAGE_VERSION_MINOR ${MERCURY_VERSION_MINOR})
   set(CPACK_PACKAGE_VERSION_PATCH ${MERCURY_VERSION_PATCH})
   set(CPACK_GENERATOR "TBZ2")
-  set(CPACK_SOURCE_PACKAGE_FILE_NAME ${MERCURY_PACKAGE_TARNAME}-${MERCURY_PACKAGE_VERSION})
+  set(CPACK_SOURCE_PACKAGE_FILE_NAME ${MERCURY_PACKAGE}-${MERCURY_VERSION_FULL})
   set(CPACK_SOURCE_IGNORE_FILES ".git*;/GitSetup/;/.git/;.swp$;.#;/#;.*~")
   set(CPACK_SOURCE_STRIP_FILES "")
   include(CPack)
