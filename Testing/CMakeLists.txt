@@ -268,12 +268,12 @@ set(MERCURY_tests
   rpc
   bulk
   overflow
-  cancel
 )
 if(NOT WIN32)
   set(MERCURY_tests ${MERCURY_tests} posix)
 endif()
 #build_mercury_test(nested)
+build_mercury_test(cancel)
 build_mercury_test(perf)
 build_mercury_test(rpc_lat)
 build_mercury_test(write_bw)
