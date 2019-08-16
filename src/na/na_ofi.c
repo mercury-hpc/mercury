@@ -3671,10 +3671,6 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->noo_addr = na_ofi_addr;
     na_ofi_op_id->noo_info.noo_lookup.noi_addr = (na_addr_t) na_ofi_addr;
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
-
     /* Convert name to address */
     ret = na_ofi_str_to_addr(name,
         na_ofi_prov_addr_format[priv->nop_domain->nod_prov_type],
@@ -3708,6 +3704,10 @@ out:
             free(na_ofi_addr);
         }
         free(na_ofi_op_id);
+    } else {
+        /* Assign op_id */
+        if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+            *op_id = (na_op_id_t) na_ofi_op_id;
     }
     return ret;
 }
@@ -4024,10 +4024,6 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     hg_atomic_set32(&na_ofi_op_id->noo_completed, NA_FALSE);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
-
     /* Post the FI unexpected send request */
     fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS);
     do {
@@ -4050,6 +4046,10 @@ out:
         na_ofi_addr_decref(na_ofi_addr);
         if (na_ofi_op_id != NULL)
             na_ofi_op_id_decref(na_ofi_op_id);
+    } else {
+        /* Assign op_id */
+        if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+            *op_id = (na_op_id_t) na_ofi_op_id;
     }
     return ret;
 }
@@ -4090,10 +4090,6 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->noo_info.noo_recv_unexpected.noi_buf = buf;
     na_ofi_op_id->noo_info.noo_recv_unexpected.noi_buf_size = buf_size;
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
-
     na_ofi_msg_unexpected_op_push(context, na_ofi_op_id);
 
     /* Post the FI unexpected recv request */
@@ -4117,6 +4113,11 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 out:
     if (ret != NA_SUCCESS && na_ofi_op_id != NULL)
         na_ofi_op_id_decref(na_ofi_op_id);
+    if (ret == NA_SUCCESS) {
+        /* Assign op_id */
+        if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+            *op_id = (na_op_id_t) na_ofi_op_id;
+    }
     return ret;
 }
 
@@ -4159,10 +4160,6 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     hg_atomic_set32(&na_ofi_op_id->noo_completed, NA_FALSE);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
-
     /* Post the FI expected send request */
     fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS);
     do {
@@ -4185,6 +4182,10 @@ out:
         na_ofi_addr_decref(na_ofi_addr);
         if (na_ofi_op_id != NULL)
             na_ofi_op_id_decref(na_ofi_op_id);
+    } else {
+        /* Assign op_id */
+        if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+            *op_id = (na_op_id_t) na_ofi_op_id;
     }
     return ret;
 }
@@ -4231,10 +4232,6 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->noo_info.noo_recv_expected.noi_buf_size = buf_size;
     na_ofi_op_id->noo_info.noo_recv_expected.noi_tag = tag;
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
-
     /* Post the FI expected recv request */
     fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, source_id, NA_OFI_SEP_RX_CTX_BITS);
     do {
@@ -4258,6 +4255,10 @@ out:
         na_ofi_addr_decref(na_ofi_addr);
         if (na_ofi_op_id != NULL)
             na_ofi_op_id_decref(na_ofi_op_id);
+    } else {
+        /* Assign op_id */
+        if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+            *op_id = (na_op_id_t) na_ofi_op_id;
     }
     return ret;
 }
@@ -4505,10 +4506,6 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
     na_ofi_op_id->noo_addr = na_ofi_addr;
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
-
     /* Assign context */
     msg_rma.context = &na_ofi_op_id->noo_fi_ctx;
 
@@ -4534,6 +4531,10 @@ out:
         na_ofi_addr_decref(na_ofi_addr);
         if (na_ofi_op_id != NULL)
             na_ofi_op_id_decref(na_ofi_op_id);
+    } else {
+        /* Assign op_id */
+        if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+            *op_id = (na_op_id_t) na_ofi_op_id;
     }
     return ret;
 }
@@ -4600,10 +4601,6 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
     na_ofi_op_id->noo_addr = na_ofi_addr;
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
-
     /* Assign context */
     msg_rma.context = &na_ofi_op_id->noo_fi_ctx;
 
@@ -4627,6 +4624,10 @@ out:
         na_ofi_addr_decref(na_ofi_addr);
         if (na_ofi_op_id != NULL)
             na_ofi_op_id_decref(na_ofi_op_id);
+    } else {
+        /* Assign op_id */
+        if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
+            *op_id = (na_op_id_t) na_ofi_op_id;
     }
     return ret;
 }
