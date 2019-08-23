@@ -1971,6 +1971,8 @@ HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
     struct hg_private_handle *private_handle =
         (struct hg_private_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
+    void *buf;
+    hg_size_t buf_size, header_offset = hg_header_get_size(HG_INPUT);
 
     if (!handle) {
         HG_LOG_ERROR("NULL HG handle");
@@ -1983,27 +1985,20 @@ HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
         goto done;
     }
 
-    /* Space must be left for input header, no offset if extra buffer since
-     * only the user payload is copied */
-    if (private_handle->in_extra_buf) {
-        *in_buf = private_handle->in_extra_buf;
-        if (in_buf_size)
-            *in_buf_size = private_handle->in_extra_buf_size;
-    } else {
-        void *buf;
-        hg_size_t buf_size, header_offset = hg_header_get_size(HG_INPUT);
-
-        /* Get core input buffer */
-        ret = HG_Core_get_input(handle->core_handle, &buf, &buf_size);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not get input buffer");
-            goto done;
-        }
-
-        *in_buf = (char *) buf + header_offset;
-        if (in_buf_size)
-            *in_buf_size = buf_size - header_offset;
+    /* Get core input buffer */
+    /* Note: any extra header information will be transmitted with the
+     * control message, not the extra_buf, if the RPC exceeds the eager size
+     * limit.
+     */
+    ret = HG_Core_get_input(handle->core_handle, &buf, &buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not get input buffer");
+        goto done;
     }
+
+    *in_buf = (char *) buf + header_offset;
+    if (in_buf_size)
+        *in_buf_size = buf_size - header_offset;
 
 done:
     return ret;

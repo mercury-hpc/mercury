@@ -1125,6 +1125,10 @@ HG_Class_set_input_offset(hg_class_t *hg_class, hg_size_t offset)
         return HG_INVALID_PARAM;
     }
 #endif
+    /* extra input header must not be larger than eager size */
+    if(offset > HG_Class_get_input_eager_size(hg_class))
+        return HG_INVALID_PARAM;
+
     hg_class->in_offset = offset;
 
     return HG_SUCCESS;
