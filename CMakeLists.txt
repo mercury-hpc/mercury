@@ -11,6 +11,8 @@ foreach(policy
     CMP0054 # CMake 3.1
     CMP0074 # CMake 3.12
     CMP0075 # CMake 3.12
+    CMP0083 # CMake 3.14
+    CMP0093 # CMake 3.15
   )
   if(POLICY ${policy})
     cmake_policy(SET ${policy} NEW)
@@ -69,8 +71,8 @@ include(MercuryDetermineVersion)
 # Hard-coded version variables are read-in from a separate file. This makes it
 # easier to have a script to update version numbers automatically.
 file(STRINGS version.txt version_txt)
-extract_version_components("${version_txt}" "${CMAKE_PROJECT_NAME}")
-determine_version(${MERCURY_SOURCE_DIR} ${GIT_EXECUTABLE} "${CMAKE_PROJECT_NAME}")
+extract_version_components("${version_txt}" "${PROJECT_NAME}")
+determine_version(${MERCURY_SOURCE_DIR} ${GIT_EXECUTABLE} "${PROJECT_NAME}")
 set(MERCURY_PACKAGE "mercury")
 set(MERCURY_PACKAGE_NAME "Mercury")
 set(MERCURY_PACKAGE_DESCRIPTION "RPC for High-Performance Computing")
@@ -81,7 +83,7 @@ message(STATUS "Configuring ${MERCURY_PACKAGE} v${MERCURY_VERSION_FULL}")
 #------------------------------------------------------------------------------
 # Setup CMake Environment
 #------------------------------------------------------------------------------
-if(APPLE)
+if(APPLE AND NOT MERCURY_EXTERNALLY_CONFIGURED)
   # We are doing a unix-style install i.e. everything will be installed in
   # CMAKE_INSTALL_PREFIX/bin and CMAKE_INSTALL_PREFIX/lib etc. as on other unix
   # platforms. We still need to setup CMAKE_INSTALL_NAME_DIR correctly so that

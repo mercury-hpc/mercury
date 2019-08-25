@@ -32,7 +32,7 @@ function(determine_version source_dir git_command var_prefix)
     # information. Just return here to avoid the warning message at the end of
     # this function.
     return ()
-  elseif (NOT MERCURY_GIT_DESCRIBE AND
+  elseif (NOT ${var_prefix}_GIT_DESCRIBE AND
           EXISTS ${git_command} AND
           EXISTS ${source_dir}/.git)
     execute_process(
@@ -48,8 +48,8 @@ function(determine_version source_dir git_command var_prefix)
       set(output "")
     endif()
   else ()
-    # note, output may be set to empty if MERCURY_GIT_DESCRIBE is not defined.
-    set(output "${MERCURY_GIT_DESCRIBE}")
+    # note, output may be set to empty if ${var_prefix}_GIT_DESCRIBE is not defined.
+    set(output "${${var_prefix}_GIT_DESCRIBE}")
   endif()
 
   unset(tmp_VERSION)
