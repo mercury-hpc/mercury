@@ -2992,10 +2992,8 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id, na_return_t op_ret)
     na_return_t ret = NA_SUCCESS;
 
     /* Mark op id as completed */
-    if (!hg_atomic_cas32(&na_ofi_op_id->noo_completed, 0, 1)) {
-        NA_LOG_ERROR("Cannot mark op ID as completed, already completed.");
+    if (!hg_atomic_cas32(&na_ofi_op_id->noo_completed, 0, 1))
         return ret;
-    }
 
     /* Init callback info */
     callback_info = &na_ofi_op_id->noo_completion_data.callback_info;
@@ -4837,11 +4835,16 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
         /* May or may not be canceled in that case */
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->noc_tx->fid,
             &na_ofi_op_id->noo_fi_ctx);
-        if (rc == 0) {
+        if (rc != 0) {
+            NA_LOG_WARNING("fi_cancel failed, rc: %d(%s).",
+                         rc, fi_strerror((int) -rc));
+        }
+        /* fi_cancel() is not guaranteed to return proper return code for now */
+//        if (rc == 0) {
             /* Complete only if successfully canceled */
-            ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
-        } else
-            ret = NA_CANCEL_ERROR;
+        ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+//        } else
+//            ret = NA_CANCEL_ERROR;
         break;
     default:
         break;
