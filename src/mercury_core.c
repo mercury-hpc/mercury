@@ -133,7 +133,6 @@ struct hg_core_private_context {
     hg_thread_spin_t created_list_lock;         /* Handle list lock */
 #ifdef HG_HAS_SELF_FORWARD
     int completion_queue_notify;                /* Self notification */
-    hg_thread_pool_t *self_processing_pool;     /* Thread pool for self processing */
 #endif
     hg_return_t (*handle_create)(hg_core_handle_t, void *); /* handle_create */
     void *handle_create_arg;                    /* handle_create arg */
@@ -212,7 +211,6 @@ struct hg_core_private_handle {
     struct hg_core_header out_header;   /* Output header */
 
     hg_atomic_int32_t ref_count;        /* Reference count */
-    struct hg_thread_work thread_work;  /* Used for self processing and testing */
 
     /* Callbacks */
     hg_return_t (*forward)(
@@ -621,11 +619,11 @@ hg_core_self_cb(
         );
 
 /**
- * Process handle thread (used for self execution).
+ * Process handle (used for self execution).
  */
-static HG_INLINE HG_THREAD_RETURN_TYPE
-hg_core_process_thread(
-        void *arg
+static hg_return_t
+hg_core_process_self(
+        struct hg_core_private_handle *hg_core_handle
         );
 #endif
 
@@ -708,7 +706,6 @@ hg_core_progress_na(
 static HG_INLINE int
 hg_core_completion_queue_notify_cb(
         void *arg,
-        unsigned int timeout,
         int error,
         hg_util_bool_t *progressed
         );
@@ -720,7 +717,6 @@ hg_core_completion_queue_notify_cb(
 static int
 hg_core_progress_na_cb(
         void *arg,
-        unsigned int timeout,
         int error,
         hg_util_bool_t *progressed
         );
@@ -732,7 +728,6 @@ hg_core_progress_na_cb(
 static int
 hg_core_progress_na_sm_cb(
         void *arg,
-        unsigned int timeout,
         int error,
         hg_util_bool_t *progressed
         );
@@ -2004,19 +1999,14 @@ hg_core_forward_self(struct hg_core_private_handle *hg_core_handle)
     /* Set operation type for trigger */
     hg_core_handle->op_type = HG_CORE_FORWARD_SELF;
 
-    /* Initialize thread pool if not initialized yet */
-    if (!HG_CORE_HANDLE_CONTEXT(hg_core_handle)->self_processing_pool) {
-        hg_thread_pool_init(HG_CORE_MAX_SELF_THREADS,
-            &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->self_processing_pool);
+    /* Post operation to self processing pool */
+    ret = hg_core_process_self(hg_core_handle);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not self process handle");
+        goto done;
     }
 
-    /* Post operation to self processing pool */
-    hg_core_handle->thread_work.func = hg_core_process_thread;
-    hg_core_handle->thread_work.args = hg_core_handle;
-    hg_thread_pool_post(
-        HG_CORE_HANDLE_CONTEXT(hg_core_handle)->self_processing_pool,
-        &hg_core_handle->thread_work);
-
+done:
     return ret;
 }
 #endif
@@ -2666,29 +2656,33 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE HG_THREAD_RETURN_TYPE
-hg_core_process_thread(void *arg)
+static hg_return_t
+hg_core_process_self(struct hg_core_private_handle *hg_core_handle)
 {
-    hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
-    struct hg_core_private_handle *hg_core_handle =
-        (struct hg_core_private_handle *) arg;
     hg_bool_t completed = HG_FALSE;
+    hg_return_t ret = HG_SUCCESS;
 
     /* Set operation type for trigger */
     hg_core_handle->op_type = HG_CORE_PROCESS;
 
     /* Process input */
-   if (hg_core_process_input(hg_core_handle, &completed) != HG_SUCCESS) {
-       HG_LOG_ERROR("Could not process input");
-   }
+    ret = hg_core_process_input(hg_core_handle, &completed);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not process input");
+        goto done;
+    }
 
-   /* Mark as completed */
-    if (completed
-        && hg_core_complete((hg_core_handle_t) hg_core_handle) != HG_SUCCESS) {
-       HG_LOG_ERROR("Could not complete operation");
-   }
+    /* Mark as completed */
+    if (completed) {
+        ret = hg_core_complete((hg_core_handle_t) hg_core_handle);
+        if (ret != HG_SUCCESS) {
+            HG_LOG_ERROR("Could not complete operation");
+            goto done;
+        }
+    }
 
-   return thread_ret;
+done:
+    return ret;
 }
 #endif
 
@@ -2972,7 +2966,7 @@ done:
 /*---------------------------------------------------------------------------*/
 #ifdef HG_HAS_SELF_FORWARD
 static HG_INLINE int
-hg_core_completion_queue_notify_cb(void *arg, unsigned int timeout,
+hg_core_completion_queue_notify_cb(void *arg,
     int HG_UNUSED error, hg_util_bool_t *progressed)
 {
     struct hg_core_private_context *context =
@@ -2980,7 +2974,8 @@ hg_core_completion_queue_notify_cb(void *arg, unsigned int timeout,
     hg_util_bool_t notified = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
 
-    if (timeout && hg_event_get(context->completion_queue_notify,
+    /* TODO could prevent from self notifying if hg_poll_wait() not entered */
+    if (hg_event_get(context->completion_queue_notify,
         &notified) != HG_UTIL_SUCCESS) {
         HG_LOG_ERROR("Could not get completion notification");
         ret = HG_PROTOCOL_ERROR;
@@ -3001,7 +2996,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static int
-hg_core_progress_na_cb(void *arg, unsigned int timeout, int HG_UNUSED error,
+hg_core_progress_na_cb(void *arg, int HG_UNUSED error,
     hg_util_bool_t *progressed)
 {
     struct hg_core_private_context *context =
@@ -3014,7 +3009,7 @@ hg_core_progress_na_cb(void *arg, unsigned int timeout, int HG_UNUSED error,
 
     /* Check progress on NA (no need to call try_wait here) */
     na_ret = NA_Progress(HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
-        context->core_context.na_context, timeout);
+        context->core_context.na_context, 0);
     if (na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT) {
         HG_LOG_ERROR("Could not make progress on NA");
         ret = HG_UTIL_FAIL;
@@ -3058,7 +3053,7 @@ done:
 /*---------------------------------------------------------------------------*/
 #ifdef HG_HAS_SM_ROUTING
 static int
-hg_core_progress_na_sm_cb(void *arg, unsigned int timeout, int HG_UNUSED error,
+hg_core_progress_na_sm_cb(void *arg, int HG_UNUSED error,
     hg_util_bool_t *progressed)
 {
     struct hg_core_private_context *context =
@@ -3071,7 +3066,7 @@ hg_core_progress_na_sm_cb(void *arg, unsigned int timeout, int HG_UNUSED error,
 
     /* Check progress on NA SM (no need to call try_wait here) */
     na_ret = NA_Progress(HG_CORE_CONTEXT_CLASS(context)->core_class.na_sm_class,
-        context->core_context.na_sm_context, timeout);
+        context->core_context.na_sm_context, 0);
     if (na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT) {
         HG_LOG_ERROR("Could not make progress on NA SM");
         ret = HG_UTIL_FAIL;
@@ -3874,11 +3869,6 @@ HG_Core_context_destroy(hg_core_context_t *context)
         HG_LOG_ERROR("Could not wait on HG core handle list");
         goto done;
     }
-
-#ifdef HG_HAS_SELF_FORWARD
-    /* Destroy self processing pool if created */
-    hg_thread_pool_destroy(private_context->self_processing_pool);
-#endif
 
     /* Number of handles for that context should be 0 */
     n_handles = hg_atomic_get32(&private_context->n_handles);

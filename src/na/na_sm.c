@@ -512,7 +512,6 @@ na_sm_offset_translate(
 static int
 na_sm_progress_cb(
     void *arg,
-    unsigned int timeout,
     int error,
     hg_util_bool_t *progressed
     );
@@ -1778,8 +1777,7 @@ na_sm_offset_translate(struct na_sm_mem_handle *mem_handle, na_offset_t offset,
 
 /*---------------------------------------------------------------------------*/
 static int
-na_sm_progress_cb(void *arg, unsigned int NA_UNUSED timeout, int error,
-    hg_util_bool_t *progressed)
+na_sm_progress_cb(void *arg, int error, hg_util_bool_t *progressed)
 {
     na_class_t *na_class;
     struct na_sm_poll_data *na_sm_poll_data = (struct na_sm_poll_data *) arg;
