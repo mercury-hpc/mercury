@@ -11,11 +11,10 @@ struct hg_test_poll_cb_args {
 };
 
 static int
-poll_cb(void *arg, unsigned int timeout, int error, hg_util_bool_t *progressed)
+poll_cb(void *arg, int error, hg_util_bool_t *progressed)
 {
     struct hg_test_poll_cb_args *poll_cb_args =
         (struct hg_test_poll_cb_args *) arg;
-    (void) timeout;
     (void) error;
 
     hg_event_get(poll_cb_args->event_fd, progressed);
