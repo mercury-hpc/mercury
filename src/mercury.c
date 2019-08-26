@@ -1968,11 +1968,8 @@ done:
 hg_return_t
 HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
 {
-    struct hg_private_handle *private_handle =
-        (struct hg_private_handle *) handle;
-    hg_return_t ret = HG_SUCCESS;
-    void *buf;
     hg_size_t buf_size, header_offset = hg_header_get_size(HG_INPUT);
+    hg_return_t ret = HG_SUCCESS;
 
     if (!handle) {
         HG_LOG_ERROR("NULL HG handle");
@@ -1990,13 +1987,13 @@ HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size)
      * control message, not the extra_buf, if the RPC exceeds the eager size
      * limit.
      */
-    ret = HG_Core_get_input(handle->core_handle, &buf, &buf_size);
+    ret = HG_Core_get_input(handle->core_handle, in_buf, &buf_size);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not get input buffer");
         goto done;
     }
 
-    *in_buf = (char *) buf + header_offset;
+    *in_buf = (char *) *in_buf + header_offset;
     if (in_buf_size)
         *in_buf_size = buf_size - header_offset;
 
@@ -2008,8 +2005,7 @@ done:
 hg_return_t
 HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
 {
-    struct hg_private_handle *private_handle =
-        (struct hg_private_handle *) handle;
+    hg_size_t buf_size, header_offset = hg_header_get_size(HG_OUTPUT);
     hg_return_t ret = HG_SUCCESS;
 
     if (!handle) {
@@ -2023,27 +2019,20 @@ HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size)
         goto done;
     }
 
-    /* Space must be left for output header, no offset if extra buffer since
-     * only the user payload is copied */
-    if (private_handle->out_extra_buf) {
-        *out_buf = private_handle->out_extra_buf;
-        if (out_buf_size)
-            *out_buf_size = private_handle->out_extra_buf_size;
-    } else {
-        void *buf;
-        hg_size_t buf_size, header_offset = hg_header_get_size(HG_OUTPUT);
-
-        /* Get core output buffer */
-        ret = HG_Core_get_output(handle->core_handle, &buf, &buf_size);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not get output buffer");
-            goto done;
-        }
-
-        *out_buf = (char *) buf + header_offset;
-        if (out_buf_size)
-            *out_buf_size = buf_size - header_offset;
+    /* Get core output buffer */
+    /* Note: any extra header information will be transmitted with the
+     * control message, not the extra_buf, if the response exceeds the eager
+     * size limit.
+     */
+    ret = HG_Core_get_output(handle->core_handle, out_buf, &buf_size);
+    if (ret != HG_SUCCESS) {
+        HG_LOG_ERROR("Could not get output buffer");
+        goto done;
     }
+
+    *out_buf = (char *) *out_buf + header_offset;
+    if (out_buf_size)
+        *out_buf_size = buf_size - header_offset;
 
 done:
     return ret;
