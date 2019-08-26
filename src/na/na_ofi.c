@@ -4789,7 +4789,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
             NA_LOG_ERROR("fi_cancel unexpected recv failed, rc: %d(%s).",
                          rc, fi_strerror((int) -rc));
             ret = NA_CANCEL_ERROR;
-            goto out;
+//            goto out;
         }
 
         tmp = first = na_ofi_msg_unexpected_op_pop(context);
@@ -4821,7 +4821,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
             NA_LOG_ERROR("fi_cancel expected recv failed, rc: %d(%s).",
                          rc, fi_strerror((int) -rc));
             ret = NA_CANCEL_ERROR;
-            goto out;
+//            goto out;
         }
 
         ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
