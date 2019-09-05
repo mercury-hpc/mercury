@@ -4684,6 +4684,7 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
     }
 }
 
+#define MAX_EINTR_RETRY 1000
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_progress(na_class_t *na_class, na_context_t *context,
@@ -4708,7 +4709,11 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
 
             if (wait_hdl) {
                 /* Wait in wait set if provider does not support wait on FDs */
-                int rc = fi_wait(wait_hdl, (int) (remaining * 1000.0));
+                int rc=0, retry_cnt=0;
+                do {
+                    rc = fi_wait(wait_hdl, (int) (remaining * 1000.0));
+                } while (rc == -FI_EINTR && retry_cnt++ < MAX_EINTR_RETRY);
+
                 if (rc == -FI_ETIMEDOUT)
                     break;
                 else if (rc != FI_SUCCESS) {
