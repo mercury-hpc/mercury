@@ -2803,16 +2803,13 @@ na_ofi_cq_process_event(na_class_t *na_class, na_context_t *context,
 
     if (!na_ofi_op_id_valid(na_ofi_op_id)) {
         NA_LOG_ERROR("Bad na_ofi_op_id, ignoring event.");
-        ret = NA_PROTOCOL_ERROR;
         goto out;
     }
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled)) {
-        ret = NA_CANCELED;
         goto complete;
     }
     if (hg_atomic_get32(&na_ofi_op_id->noo_completed)) {
         NA_LOG_ERROR("Ignoring CQ event as the op is completed.");
-        ret = NA_PROTOCOL_ERROR;
         goto out;
     }
 
