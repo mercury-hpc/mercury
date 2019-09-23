@@ -77,35 +77,34 @@
 #define NA_SM_MSGHDR_INITIALIZER {NULL, 0, NULL, 0, NULL, 0, 0}
 
 /* Default filenames/paths */
-#define NA_SM_SOCK_PATH NA_SM_TMP_DIRECTORY "/" NA_SM_SHM_PREFIX
 #define NA_SM_SHM_PATH "/dev/shm"
 
-#define NA_SM_GEN_SHM_NAME(filename, na_sm_addr)        \
-    do {                                                \
-        sprintf(filename, "%s-%d-%u", NA_SM_SHM_PREFIX, \
-            na_sm_addr->pid, na_sm_addr->id);           \
+#define NA_SM_GEN_SHM_NAME(filename, username, na_sm_addr)      \
+    do {                                                        \
+        sprintf(filename, "%s_%s-%d-%u", NA_SM_SHM_PREFIX,      \
+            username, na_sm_addr->pid, na_sm_addr->id);         \
     } while (0)
 
-#define NA_SM_GEN_SOCK_PATH(pathname, na_sm_addr)               \
-    do {                                                        \
-        sprintf(pathname, "%s/%s/%d/%u", NA_SM_TMP_DIRECTORY,   \
-            NA_SM_SHM_PREFIX, na_sm_addr->pid, na_sm_addr->id); \
+#define NA_SM_GEN_SOCK_PATH(pathname, username, na_sm_addr)                 \
+    do {                                                                    \
+        sprintf(pathname, "%s/%s_%s/%d/%u", NA_SM_TMP_DIRECTORY,            \
+            NA_SM_SHM_PREFIX, username, na_sm_addr->pid, na_sm_addr->id);   \
     } while (0)
 
 #define NA_SM_SEND_NAME "s" /* used for pair_name */
 #define NA_SM_RECV_NAME "r" /* used for pair_name */
-#define NA_SM_GEN_RING_NAME(filename, pair_name, na_sm_addr)            \
-    do {                                                                \
-        sprintf(filename, "%s-%d-%u-%u-" pair_name, NA_SM_SHM_PREFIX,   \
-            na_sm_addr->pid, na_sm_addr->id, na_sm_addr->conn_id);      \
+#define NA_SM_GEN_RING_NAME(filename, pair_name, username, na_sm_addr)      \
+    do {                                                                    \
+        sprintf(filename, "%s_%s-%d-%u-%u-" pair_name, NA_SM_SHM_PREFIX,    \
+            username, na_sm_addr->pid, na_sm_addr->id, na_sm_addr->conn_id);\
     } while (0)
 
 #ifndef HG_UTIL_HAS_SYSEVENTFD_H
-#define NA_SM_GEN_FIFO_NAME(filename, pair_name, na_sm_addr)            \
+#define NA_SM_GEN_FIFO_NAME(filename, pair_name, username, na_sm_addr)  \
     do {                                                                \
-        sprintf(filename, "%s/%s/%d/%u/fifo-%u-" pair_name,             \
-            NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX, na_sm_addr->pid,     \
-            na_sm_addr->id, na_sm_addr->conn_id);                       \
+        sprintf(filename, "%s/%s_%s/%d/%u/fifo-%u-" pair_name,          \
+            NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX, username,            \
+            na_sm_addr->pid, na_sm_addr->id, na_sm_addr->conn_id);      \
     } while (0)
 #endif
 
@@ -252,6 +251,7 @@ struct na_sm_op_id {
 
 /* Private data */
 struct na_sm_class {
+    char *username;
     struct na_sm_addr *self_addr;
     hg_poll_set_t *poll_set;
     HG_QUEUE_HEAD(na_sm_addr) accepted_addr_queue;
@@ -1141,12 +1141,16 @@ static int
 na_sm_cleanup_shm(const char *fpath, const struct stat NA_UNUSED *sb,
     int NA_UNUSED typeflag, struct FTW NA_UNUSED *ftwbuf)
 {
-    const char *prefix = NA_SM_SHM_PATH "/" NA_SM_SHM_PREFIX;
+    const char *prefix = NA_SM_SHM_PATH "/" NA_SM_SHM_PREFIX "_";
     int ret = 0;
 
     if (strncmp(fpath, prefix, strlen(prefix)) == 0) {
         const char *file = fpath + strlen(NA_SM_SHM_PATH "/");
-        ret = hg_mem_shm_unmap(file, NULL, 0);
+        char *username = getlogin();
+
+        if (strncmp(file + strlen(NA_SM_SHM_PREFIX "_"),
+            username, strlen(username)) == 0)
+            ret = hg_mem_shm_unmap(file, NULL, 0);
     }
 
     return ret;
@@ -1354,7 +1358,7 @@ na_sm_setup_shm(na_class_t *na_class, struct na_sm_addr *na_sm_addr)
     na_return_t ret = NA_SUCCESS;
 
     /* Create SHM buffer */
-    NA_SM_GEN_SHM_NAME(filename, na_sm_addr);
+    NA_SM_GEN_SHM_NAME(filename, NA_SM_CLASS(na_class)->username, na_sm_addr);
     na_sm_copy_buf = (struct na_sm_copy_buf *) na_sm_open_shared_buf(
         filename, sizeof(struct na_sm_copy_buf), NA_TRUE);
     if (!na_sm_copy_buf) {
@@ -1367,7 +1371,7 @@ na_sm_setup_shm(na_class_t *na_class, struct na_sm_addr *na_sm_addr)
     na_sm_addr->na_sm_copy_buf = na_sm_copy_buf;
 
     /* Create SHM sock */
-    NA_SM_GEN_SOCK_PATH(pathname, na_sm_addr);
+    NA_SM_GEN_SOCK_PATH(pathname, NA_SM_CLASS(na_class)->username, na_sm_addr);
     ret = na_sm_create_sock(pathname, NA_TRUE, &listen_sock);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not create sock");
@@ -1930,7 +1934,7 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
     /* Set up ring buffer pair (send/recv) for connection IDs */
     na_sm_addr->conn_id = NA_SM_CLASS(na_class)->self_addr->conn_id;
     NA_SM_GEN_RING_NAME(filename, NA_SM_SEND_NAME,
-        NA_SM_CLASS(na_class)->self_addr);
+        NA_SM_CLASS(na_class)->username, NA_SM_CLASS(na_class)->self_addr);
     na_sm_ring_buf = (struct na_sm_ring_buf *) na_sm_open_shared_buf(filename,
         NA_SM_RING_BUF_SIZE, NA_TRUE);
     if (!na_sm_ring_buf) {
@@ -1943,7 +1947,7 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
     na_sm_addr->na_sm_send_ring_buf = na_sm_ring_buf;
 
     NA_SM_GEN_RING_NAME(filename, NA_SM_RECV_NAME,
-        NA_SM_CLASS(na_class)->self_addr);
+        NA_SM_CLASS(na_class)->username, NA_SM_CLASS(na_class)->self_addr);
     na_sm_ring_buf = (struct na_sm_ring_buf *) na_sm_open_shared_buf(filename,
         NA_SM_RING_BUF_SIZE, NA_TRUE);
     if (!na_sm_ring_buf) {
@@ -1970,7 +1974,7 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
      * ancillary data
      */
     NA_SM_GEN_FIFO_NAME(filename, NA_SM_RECV_NAME,
-        NA_SM_CLASS(na_class)->self_addr);
+        NA_SM_CLASS(na_class)->username, NA_SM_CLASS(na_class)->self_addr);
     local_notify = na_sm_event_create(filename);
     if (local_notify == -1) {
         NA_LOG_ERROR("na_sm_event_create() failed");
@@ -1995,7 +1999,7 @@ na_sm_progress_accept(na_class_t *na_class, struct na_sm_addr *poll_addr,
      * ancillary data
      */
     NA_SM_GEN_FIFO_NAME(filename, NA_SM_SEND_NAME,
-        NA_SM_CLASS(na_class)->self_addr);
+        NA_SM_CLASS(na_class)->username, NA_SM_CLASS(na_class)->self_addr);
     remote_notify = na_sm_event_create(filename);
     if (remote_notify == -1) {
         NA_LOG_ERROR("na_sm_event_create() failed");
@@ -2114,7 +2118,8 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
 
             /* Open remote ring buf pair (send and recv names correspond to
              * remote ring buffer pair) */
-            NA_SM_GEN_RING_NAME(filename, NA_SM_RECV_NAME, poll_addr);
+            NA_SM_GEN_RING_NAME(filename, NA_SM_RECV_NAME,
+                NA_SM_CLASS(na_class)->username, poll_addr);
             na_sm_ring_buf = (struct na_sm_ring_buf *) na_sm_open_shared_buf(
                 filename, NA_SM_RING_BUF_SIZE, NA_FALSE);
             if (!na_sm_ring_buf) {
@@ -2124,7 +2129,8 @@ na_sm_progress_sock(na_class_t *na_class, struct na_sm_addr *poll_addr,
             }
             poll_addr->na_sm_send_ring_buf = na_sm_ring_buf;
 
-            NA_SM_GEN_RING_NAME(filename, NA_SM_SEND_NAME, poll_addr);
+            NA_SM_GEN_RING_NAME(filename, NA_SM_SEND_NAME,
+                NA_SM_CLASS(na_class)->username, poll_addr);
             na_sm_ring_buf = (struct na_sm_ring_buf *) na_sm_open_shared_buf(
                 filename, NA_SM_RING_BUF_SIZE, NA_FALSE);
             if (!na_sm_ring_buf) {
@@ -2454,6 +2460,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     static hg_atomic_int32_t id = HG_ATOMIC_VAR_INIT(0);
     struct na_sm_addr *na_sm_addr = NULL;
     pid_t pid;
+    char *username = NULL;
     hg_poll_set_t *poll_set;
     na_bool_t no_wait = NA_FALSE;
     int local_notify;
@@ -2471,6 +2478,14 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     /* Get PID */
     pid = getpid();
 
+    /* Get username */
+    username = getlogin();
+    if (!username) {
+        NA_LOG_ERROR("Could not query login name");
+        ret = NA_PROTOCOL_ERROR;
+        goto done;
+    }
+
     /* Initialize errno */
     errno = 0;
 
@@ -2483,6 +2498,14 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     }
     memset(na_class->plugin_class, 0, sizeof(struct na_sm_class));
     NA_SM_CLASS(na_class)->no_wait = no_wait;
+
+    /* Copy username */
+    NA_SM_CLASS(na_class)->username = strdup(username);
+    if (!NA_SM_CLASS(na_class)->username) {
+        NA_LOG_ERROR("Could not dup username");
+        ret = NA_NOMEM_ERROR;
+        goto done;
+    }
 
     /* Create poll set to wait for events */
     poll_set = hg_poll_create();
@@ -2623,6 +2646,7 @@ na_sm_finalize(na_class_t *na_class)
     hg_thread_spin_destroy(&NA_SM_CLASS(na_class)->expected_op_queue_lock);
     hg_thread_spin_destroy(&NA_SM_CLASS(na_class)->copy_buf_lock);
 
+    free(NA_SM_CLASS(na_class)->username);
     free(na_class->plugin_class);
 
 done:
@@ -2633,11 +2657,16 @@ done:
 static void
 na_sm_cleanup(void)
 {
+    char pathname[NA_SM_MAX_FILENAME] = {'\0'};
+    char *username = getlogin();
     int ret;
+
+    sprintf(pathname, "%s/%s_%s", NA_SM_TMP_DIRECTORY,
+        NA_SM_SHM_PREFIX, username);
 
     /* We need to remove all files first before being able to remove the
      * directories */
-    ret = nftw(NA_SM_SOCK_PATH, na_sm_cleanup_file, NA_SM_CLEANUP_NFDS,
+    ret = nftw(pathname, na_sm_cleanup_file, NA_SM_CLEANUP_NFDS,
         FTW_PHYS | FTW_DEPTH);
     if (ret != 0 && errno != ENOENT) {
         NA_LOG_WARNING("nftw() failed (%s)", strerror(errno));
@@ -2757,7 +2786,7 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
     sscanf(short_name, "%d/%u", &na_sm_addr->pid, &na_sm_addr->id);
 
     /* Open shared copy buf */
-    NA_SM_GEN_SHM_NAME(filename, na_sm_addr);
+    NA_SM_GEN_SHM_NAME(filename, NA_SM_CLASS(na_class)->username, na_sm_addr);
     na_sm_copy_buf = (struct na_sm_copy_buf *) na_sm_open_shared_buf(
         filename, sizeof(struct na_sm_copy_buf), NA_FALSE);
     if (!na_sm_copy_buf) {
@@ -2768,7 +2797,7 @@ na_sm_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_sm_addr->na_sm_copy_buf = na_sm_copy_buf;
 
     /* Open SHM sock */
-    NA_SM_GEN_SOCK_PATH(pathname, na_sm_addr);
+    NA_SM_GEN_SOCK_PATH(pathname, NA_SM_CLASS(na_class)->username, na_sm_addr);
     ret = na_sm_create_sock(pathname, NA_FALSE, &conn_sock);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not create sock");
@@ -2881,25 +2910,29 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
 
         if (na_sm_addr->accepted) { /* Created by accept */
             /* Get file names from ring bufs / events to delete files */
-            sprintf(na_sm_send_ring_buf_name, "%s-%d-%d-%d-%s",
-                NA_SM_SHM_PREFIX, NA_SM_CLASS(na_class)->self_addr->pid,
+            sprintf(na_sm_send_ring_buf_name, "%s_%s-%d-%d-%d-" NA_SM_SEND_NAME,
+                NA_SM_SHM_PREFIX, NA_SM_CLASS(na_class)->username,
+                NA_SM_CLASS(na_class)->self_addr->pid,
                 NA_SM_CLASS(na_class)->self_addr->id,
-                na_sm_addr->conn_id, NA_SM_SEND_NAME);
-            sprintf(na_sm_recv_ring_buf_name, "%s-%d-%d-%d-%s",
-                NA_SM_SHM_PREFIX, NA_SM_CLASS(na_class)->self_addr->pid,
+                na_sm_addr->conn_id);
+            sprintf(na_sm_recv_ring_buf_name, "%s_%s-%d-%d-%d-" NA_SM_RECV_NAME,
+                NA_SM_SHM_PREFIX, NA_SM_CLASS(na_class)->username,
+                NA_SM_CLASS(na_class)->self_addr->pid,
                 NA_SM_CLASS(na_class)->self_addr->id,
-                na_sm_addr->conn_id, NA_SM_RECV_NAME);
+                na_sm_addr->conn_id);
             send_ring_buf_name = na_sm_send_ring_buf_name;
             recv_ring_buf_name = na_sm_recv_ring_buf_name;
 
 #ifndef HG_UTIL_HAS_SYSEVENTFD_H
-            sprintf(na_sm_local_event_name, "%s/%s/%d/%u/fifo-%u-%s",
+            sprintf(na_sm_local_event_name, "%s/%s_%s/%d/%u/fifo-%u-%s",
                 NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX,
+                NA_SM_CLASS(na_class)->username,
                 NA_SM_CLASS(na_class)->self_addr->pid,
                 NA_SM_CLASS(na_class)->self_addr->id,
                 na_sm_addr->conn_id, NA_SM_RECV_NAME);
-            sprintf(na_sm_remote_event_name, "%s/%s/%d/%u/fifo-%u-%s",
+            sprintf(na_sm_remote_event_name, "%s/%s_%s/%d/%u/fifo-%u-%s",
                 NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX,
+                NA_SM_CLASS(na_class)->username,
                 NA_SM_CLASS(na_class)->self_addr->pid,
                 NA_SM_CLASS(na_class)->self_addr->id,
                 na_sm_addr->conn_id, NA_SM_SEND_NAME);
@@ -2946,9 +2979,11 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
                 goto done;
             }
 
-            NA_SM_GEN_SHM_NAME(na_sm_copy_buf_name, na_sm_addr);
+            NA_SM_GEN_SHM_NAME(na_sm_copy_buf_name,
+                NA_SM_CLASS(na_class)->username, na_sm_addr);
             copy_buf_name = na_sm_copy_buf_name;
-            NA_SM_GEN_SOCK_PATH(na_sock_name, na_sm_addr);
+            NA_SM_GEN_SOCK_PATH(na_sock_name,
+                NA_SM_CLASS(na_class)->username, na_sm_addr);
             pathname = na_sock_name;
         }
     }
