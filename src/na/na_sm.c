@@ -26,6 +26,7 @@
 #ifdef _WIN32
 #include <process.h>
 #else
+#include <pwd.h>
 #include <ftw.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -274,6 +275,13 @@ struct na_sm_class {
 /********************/
 /* Local Prototypes */
 /********************/
+
+/**
+ * utility function: wrapper around getlogin().
+ */
+static char *
+getlogin_safe(void);
+
 
 /**
  * Open shared buf.
@@ -964,6 +972,21 @@ na_sm_print_addr(struct na_sm_addr *na_sm_addr)
 }
 */
 
+/* Wrapper to get login information and return a dummy string if the glibc call
+ * fails for some reason.  Allows graceful handling of directory name
+ * generation.
+ */
+static char *
+getlogin_safe(void)
+{
+    struct passwd *passwd;
+
+    /* statically allocated */
+    passwd = getpwuid(getuid());
+
+    return passwd ? passwd->pw_name : "unknown";
+}
+
 /*---------------------------------------------------------------------------*/
 static void *
 na_sm_open_shared_buf(const char *name, size_t buf_size, na_bool_t create)
@@ -1146,7 +1169,7 @@ na_sm_cleanup_shm(const char *fpath, const struct stat NA_UNUSED *sb,
 
     if (strncmp(fpath, prefix, strlen(prefix)) == 0) {
         const char *file = fpath + strlen(NA_SM_SHM_PATH "/");
-        char *username = getlogin();
+        char *username = getlogin_safe();
 
         if (strncmp(file + strlen(NA_SM_SHM_PREFIX "_"),
             username, strlen(username)) == 0)
@@ -2479,7 +2502,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     pid = getpid();
 
     /* Get username */
-    username = getlogin();
+    username = getlogin_safe();
     if (!username) {
         NA_LOG_ERROR("Could not query login name");
         ret = NA_PROTOCOL_ERROR;
@@ -2658,7 +2681,7 @@ static void
 na_sm_cleanup(void)
 {
     char pathname[NA_SM_MAX_FILENAME] = {'\0'};
-    char *username = getlogin();
+    char *username = getlogin_safe();
     int ret;
 
     sprintf(pathname, "%s/%s_%s", NA_SM_TMP_DIRECTORY,
