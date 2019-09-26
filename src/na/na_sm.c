@@ -877,6 +877,9 @@ na_sm_cancel(
     na_op_id_t op_id
     );
 
+/* utility function: wrapper around getlogin() */
+static char *getlogin_safe(void);
+
 /*******************/
 /* Local Variables */
 /*******************/
@@ -1146,7 +1149,7 @@ na_sm_cleanup_shm(const char *fpath, const struct stat NA_UNUSED *sb,
 
     if (strncmp(fpath, prefix, strlen(prefix)) == 0) {
         const char *file = fpath + strlen(NA_SM_SHM_PATH "/");
-        char *username = getlogin();
+        char *username = getlogin_safe();
 
         if (strncmp(file + strlen(NA_SM_SHM_PREFIX "_"),
             username, strlen(username)) == 0)
@@ -2479,7 +2482,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     pid = getpid();
 
     /* Get username */
-    username = getlogin();
+    username = getlogin_safe();
     if (!username) {
         NA_LOG_ERROR("Could not query login name");
         ret = NA_PROTOCOL_ERROR;
@@ -2658,7 +2661,7 @@ static void
 na_sm_cleanup(void)
 {
     char pathname[NA_SM_MAX_FILENAME] = {'\0'};
-    char *username = getlogin();
+    char *username = getlogin_safe();
     int ret;
 
     sprintf(pathname, "%s/%s_%s", NA_SM_TMP_DIRECTORY,
@@ -4086,4 +4089,17 @@ na_sm_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
 
 done:
     return ret;
+}
+
+/* Wrapper around getlogin() to return a dummy string if the glibc call
+ * fails for some reason.  Allows graceful handling of directory name
+ * generation.
+ */
+static char *getlogin_safe(void)
+{
+    char* user;
+    user = getlogin();
+    if(!user)
+        user = "unknown";
+    return(user);
 }
