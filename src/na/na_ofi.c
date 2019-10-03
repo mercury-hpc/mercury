@@ -2612,20 +2612,20 @@ static NA_INLINE na_bool_t
 na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id)
 {
     if (na_ofi_op_id == NULL)
-        return;
+        return NA_FALSE;
 
     assert(hg_atomic_get32(&na_ofi_op_id->noo_refcount) > 0);
 
     /* If there are more references, return */
     if (hg_atomic_decr32(&na_ofi_op_id->noo_refcount))
-        return;
+        return NA_FALSE;
 
     /* No more references, cleanup */
     na_ofi_op_id->noo_magic_1 = 0;
     na_ofi_op_id->noo_magic_2 = 0;
     free(na_ofi_op_id);
 
-    return;
+    return NA_TRUE;
 }
 
 /*---------------------------------------------------------------------------*/

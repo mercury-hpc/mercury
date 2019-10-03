@@ -1874,9 +1874,6 @@ hg_core_free_na(struct hg_core_private_handle *hg_core_handle)
     na_ret = NA_Op_destroy(hg_core_handle->na_class, hg_core_handle->na_recv_op_id);
     if (na_ret != NA_SUCCESS)
         HG_LOG_ERROR("Could not destroy NA op ID");
-    na_ret = NA_Op_destroy(hg_core_handle->na_class, hg_core_handle->na_ack_op_id);
-    if (na_ret != NA_SUCCESS)
-        HG_LOG_ERROR("Could not destroy NA op ID");
 
     /* Free buffers */
     na_ret = NA_Msg_buf_free(hg_core_handle->na_class,
