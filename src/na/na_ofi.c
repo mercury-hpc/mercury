@@ -662,7 +662,7 @@ na_ofi_op_id_addref(struct na_ofi_op_id *na_ofi_op_id);
 /**
  * Decrement refcount on OP ID.
  */
-static NA_INLINE void
+static NA_INLINE na_bool_t
 na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id);
 
 /**
@@ -2608,7 +2608,7 @@ na_ofi_op_id_addref(struct na_ofi_op_id *na_ofi_op_id)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE void
+static NA_INLINE na_bool_t
 na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id)
 {
     if (na_ofi_op_id == NULL)
@@ -4045,7 +4045,8 @@ out:
     if (ret != NA_SUCCESS) {
         na_ofi_addr_decref(na_ofi_addr);
         if (na_ofi_op_id != NULL)
-            na_ofi_op_id_decref(na_ofi_op_id);
+            if (na_ofi_op_id_decref(na_ofi_op_id))
+                *op_id = NA_OP_ID_NULL;
     }
     return ret;
 }
@@ -4112,7 +4113,8 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
 out:
     if (ret != NA_SUCCESS && na_ofi_op_id != NULL)
-        na_ofi_op_id_decref(na_ofi_op_id);
+        if (na_ofi_op_id_decref(na_ofi_op_id))
+            *op_id = NA_OP_ID_NULL;
     return ret;
 }
 
@@ -4180,7 +4182,8 @@ out:
     if (ret != NA_SUCCESS) {
         na_ofi_addr_decref(na_ofi_addr);
         if (na_ofi_op_id != NULL)
-            na_ofi_op_id_decref(na_ofi_op_id);
+            if (na_ofi_op_id_decref(na_ofi_op_id))
+                *op_id = NA_OP_ID_NULL;
     }
     return ret;
 }
@@ -4253,7 +4256,8 @@ out:
     if (ret != NA_SUCCESS) {
         na_ofi_addr_decref(na_ofi_addr);
         if (na_ofi_op_id != NULL)
-            na_ofi_op_id_decref(na_ofi_op_id);
+            if (na_ofi_op_id_decref(na_ofi_op_id))
+                *op_id = NA_OP_ID_NULL;
     }
     return ret;
 }
@@ -4529,7 +4533,8 @@ out:
     if (ret != NA_SUCCESS) {
         na_ofi_addr_decref(na_ofi_addr);
         if (na_ofi_op_id != NULL)
-            na_ofi_op_id_decref(na_ofi_op_id);
+            if (na_ofi_op_id_decref(na_ofi_op_id))
+                *op_id = NA_OP_ID_NULL;
     }
     return ret;
 }
@@ -4622,7 +4627,8 @@ out:
     if (ret != NA_SUCCESS) {
         na_ofi_addr_decref(na_ofi_addr);
         if (na_ofi_op_id != NULL)
-            na_ofi_op_id_decref(na_ofi_op_id);
+            if (na_ofi_op_id_decref(na_ofi_op_id))
+                *op_id = NA_OP_ID_NULL;
     }
     return ret;
 }
