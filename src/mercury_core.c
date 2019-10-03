@@ -1838,9 +1838,13 @@ hg_core_alloc_na(struct hg_core_private_handle *hg_core_handle,
     /* Create NA operation IDs */
     hg_core_handle->na_send_op_id = NA_Op_create(hg_core_handle->na_class);
     hg_core_handle->na_recv_op_id = NA_Op_create(hg_core_handle->na_class);
-    if (hg_core_handle->na_recv_op_id || hg_core_handle->na_send_op_id) {
-        if ((hg_core_handle->na_recv_op_id == NA_OP_ID_NULL)
-            || (hg_core_handle->na_send_op_id == NA_OP_ID_NULL)) {
+    hg_core_handle->na_ack_op_id = NA_Op_create(hg_core_handle->na_class);
+    if (hg_core_handle->na_recv_op_id ||
+        hg_core_handle->na_send_op_id ||
+        hg_core_handle->na_ack_op_id ) {
+        if ((hg_core_handle->na_recv_op_id == NA_OP_ID_NULL) ||
+            (hg_core_handle->na_send_op_id == NA_OP_ID_NULL) ||
+            (hg_core_handle->na_ack_op_id == NA_OP_ID_NULL)) {
             HG_LOG_ERROR("NULL operation ID");
             ret = HG_NOMEM_ERROR;
             goto done;
@@ -1872,6 +1876,9 @@ hg_core_free_na(struct hg_core_private_handle *hg_core_handle)
     if (na_ret != NA_SUCCESS)
         HG_LOG_ERROR("Could not destroy NA op ID");
     na_ret = NA_Op_destroy(hg_core_handle->na_class, hg_core_handle->na_recv_op_id);
+    if (na_ret != NA_SUCCESS)
+        HG_LOG_ERROR("Could not destroy NA op ID");
+    na_ret = NA_Op_destroy(hg_core_handle->na_class, hg_core_handle->na_ack_op_id);
     if (na_ret != NA_SUCCESS)
         HG_LOG_ERROR("Could not destroy NA op ID");
 
