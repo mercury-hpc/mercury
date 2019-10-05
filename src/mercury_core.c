@@ -3542,6 +3542,9 @@ hg_core_cancel(struct hg_core_private_handle *hg_core_handle)
             ret = HG_NA_ERROR;
             goto done;
         }
+
+        /* mark handle as canceled */
+        hg_core_handle->ret = HG_CANCELED;
     }
 
     if (hg_core_handle->na_send_op_id != NA_OP_ID_NULL) {
