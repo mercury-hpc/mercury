@@ -2040,6 +2040,64 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Get_input_extra_buf(hg_handle_t handle, void **in_buf,
+    hg_size_t *in_buf_size)
+{
+    struct hg_private_handle *private_handle =
+        (struct hg_private_handle *) handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    if (!in_buf) {
+        HG_LOG_ERROR("NULL pointer");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    /* No offset if extra buffer since only the user payload is copied */
+    *in_buf = private_handle->in_extra_buf;
+    if (in_buf_size)
+        *in_buf_size = private_handle->in_extra_buf_size;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Get_output_extra_buf(hg_handle_t handle, void **out_buf,
+    hg_size_t *out_buf_size)
+{
+    struct hg_private_handle *private_handle =
+        (struct hg_private_handle *) handle;
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!handle) {
+        HG_LOG_ERROR("NULL HG handle");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+    if (!out_buf) {
+        HG_LOG_ERROR("NULL pointer");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    /* No offset if extra buffer since only the user payload is copied */
+    *out_buf = private_handle->out_extra_buf;
+    if (out_buf_size)
+        *out_buf_size = private_handle->out_extra_buf_size;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
 {
     struct hg_private_handle *private_handle =

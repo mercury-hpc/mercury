@@ -900,6 +900,50 @@ HG_Get_output_buf(
         );
 
 /**
+ * Get raw extra input buffer from handle that can be used for encoding and
+ * decoding parameters. This buffer is only valid if the input payload is large
+ * enough that it cannot fit into an eager buffer.
+ *
+ * \remark NULL pointer will be returned if there is no associated buffer.
+ *
+ * \remark in_buf_size argument will be ignored if NULL.
+ *
+ * \param handle [IN]           HG handle
+ * \param in_buf [OUT]          pointer to input buffer
+ * \param in_buf_size [OUT]     pointer to input buffer size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Get_input_extra_buf(
+        hg_handle_t handle,
+        void **in_buf,
+        hg_size_t *in_buf_size
+        );
+
+/**
+ * Get raw extra output buffer from handle that can be used for encoding and
+ * decoding parameters. This buffer is only valid if the output payload is large
+ * enough that it cannot fit into an eager buffer.
+ *
+ * \remark NULL pointer will be returned if there is no associated buffer.
+ *
+ * \remark out_buf_size argument will be ignored if NULL.
+ *
+ * \param handle [IN]           HG handle
+ * \param out_buf [OUT]         pointer to output buffer
+ * \param out_buf_size [OUT]    pointer to output buffer size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Get_output_extra_buf(
+        hg_handle_t handle,
+        void **out_buf,
+        hg_size_t *out_buf_size
+        );
+
+/**
  * Set target context ID that will receive and process the RPC request
  * (ID is defined on target context creation, see HG_Context_create_id()).
  *
