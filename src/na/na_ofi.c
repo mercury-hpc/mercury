@@ -3076,13 +3076,13 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
         ctx->noc_wait = ep->noe_wait;
         ctx->noc_unexpected_op_queue = ep->noe_unexpected_op_queue;
     } else {
-        /* Initialize queue / mutex */
-        hg_thread_spin_init(&ctx->noc_unexpected_op_queue->noq_lock);
-
         ctx->noc_unexpected_op_queue = malloc(sizeof(struct na_ofi_queue));
         NA_CHECK_ERROR(ctx->noc_unexpected_op_queue == NULL, error, ret,
             NA_NOMEM_ERROR, "Could not allocate noc_unexpected_op_queue/_lock");
+
+        /* Initialize queue / mutex */
         HG_QUEUE_INIT(&ctx->noc_unexpected_op_queue->noq_queue);
+        hg_thread_spin_init(&ctx->noc_unexpected_op_queue->noq_lock);
 
         NA_CHECK_ERROR(priv->nop_contexts >= priv->nop_max_contexts ||
             id >= priv->nop_max_contexts, error, ret, NA_PROTOCOL_ERROR,
