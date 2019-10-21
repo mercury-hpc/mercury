@@ -224,9 +224,9 @@ static unsigned long const na_ofi_prov_flags[] = { NA_OFI_PROV_TYPES };
 #define NA_OFI_SEP_RX_CTX_BITS  (8)
 
 /* Private data access */
-#define NA_OFI_CLASS(na_class) \
+#define NA_OFI_CLASS(na_class)      \
     ((struct na_ofi_class *)((na_class)->plugin_class))
-#define NA_OFI_CONTEXT(na_context)    \
+#define NA_OFI_CONTEXT(na_context)  \
     ((struct na_ofi_context *)((na_context)->plugin_context))
 
 /************************************/
@@ -510,7 +510,7 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, na_uint32_t addr_format,
 /**
  * Get info caps from providers and return matching providers.
  */
-static int
+static na_return_t
 na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers);
 
 /**
@@ -1087,47 +1087,36 @@ na_ofi_str_to_sin(const char *str, void **addr, na_size_t *len)
 {
     struct na_ofi_sin_addr *sin_addr;
     char ip[16];
-    int ret;
+    na_return_t ret = NA_SUCCESS;
 
     *len = sizeof(*sin_addr);
     sin_addr = calloc(1, *len);
-    if (!sin_addr) {
-        NA_LOG_ERROR("Could not allocate sin address");
-        return NA_NOMEM_ERROR;
-    }
+    NA_CHECK_ERROR(sin_addr == NULL, error, ret, NA_NOMEM_ERROR,
+        "Could not allocate sin address");
 
     sin_addr->sin.sin_family = AF_INET;
-    ret = sscanf(str, "%*[^:]://:%" SCNu16, &sin_addr->sin.sin_port);
-    if (ret == 1)
-        goto match_port;
+    if (sscanf(str, "%*[^:]://:%" SCNu16, &sin_addr->sin.sin_port) == 1) {
+        /* nothing */
+    } else if ((sscanf(str, "%*[^:]://%15[^:]:%" SCNu16, ip, &sin_addr->sin.sin_port) == 2)
+        || (sscanf(str, "%*[^:]://%15[^:/]", ip) == 1)) {
+        int rc;
 
-    ret = sscanf(str, "%*[^:]://%15[^:]:%" SCNu16, ip, &sin_addr->sin.sin_port);
-    if (ret == 2)
-        goto match_ip;
+        ip[sizeof(ip) - 1] = '\0';
+        rc = inet_pton(AF_INET, ip, &sin_addr->sin.sin_addr);
+        NA_CHECK_ERROR(rc != 1, error, ret, NA_PROTOCOL_ERROR,
+            "Unable to convert IPv4 address: %s\n", ip);
+    } else
+        NA_GOTO_ERROR(error, ret, NA_PROTOCOL_ERROR,
+            "Malformed FI_ADDR_STR: %s\n", str);
 
-    ret = sscanf(str, "%*[^:]://%15[^:/]", ip);
-    if (ret == 1)
-        goto match_ip;
-
-    NA_LOG_ERROR("Malformed FI_ADDR_STR: %s\n", str);
-
-err:
-    free(sin_addr);
-    return NA_PROTOCOL_ERROR;
-
-match_ip:
-    ip[sizeof(ip) - 1] = '\0';
-    ret = inet_pton(AF_INET, ip, &sin_addr->sin.sin_addr);
-    if (ret != 1) {
-        NA_LOG_ERROR("Unable to convert IPv4 address: %s\n", ip);
-        goto err;
-    }
-
-match_port:
     sin_addr->sin.sin_port = htons(sin_addr->sin.sin_port);
     *addr = sin_addr;
 
-    return NA_SUCCESS;
+    return ret;
+
+error:
+    free(sin_addr);
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1135,26 +1124,26 @@ static na_return_t
 na_ofi_str_to_psm2(const char *str, void **addr, na_size_t *len)
 {
     struct na_ofi_psm2_addr *psm2_addr;
-    int ret;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
 
     *len = sizeof(*psm2_addr);
     psm2_addr = calloc(1, *len);
-    if (!psm2_addr) {
-        NA_LOG_ERROR("Could not allocate psm2 address");
-        return NA_NOMEM_ERROR;
-    }
+    NA_CHECK_ERROR(psm2_addr == NULL, error, ret, NA_NOMEM_ERROR,
+        "Could not allocate psm2 address");
 
-    ret = sscanf(str, "%*[^:]://%" SCNx64 ":%" SCNx64,
+    rc = sscanf(str, "%*[^:]://%" SCNx64 ":%" SCNx64,
         (uint64_t *) &psm2_addr->addr0, (uint64_t *) &psm2_addr->addr1);
-    if (ret != 2) {
-        NA_LOG_ERROR("Could not convert addr string to PSM2 addr format");
-        free(psm2_addr);
-        return NA_PROTOCOL_ERROR;
-    }
+    NA_CHECK_ERROR(rc != 2, error, ret, NA_PROTOCOL_ERROR,
+        "Could not convert addr string to PSM2 addr format");
 
     *addr = psm2_addr;
 
-    return NA_SUCCESS;
+    return ret;
+
+error:
+    free(psm2_addr);
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1164,28 +1153,21 @@ na_ofi_str_to_gni(const char *str, void **addr, na_size_t *len)
     struct na_ofi_gni_addr *gni_addr;
     unsigned int version, name_type, rx_ctx_cnt;
     na_uint32_t device_addr, cdm_id, cm_nic_cdm_id, cookie;
-    int ret;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
 
     *len = sizeof(*gni_addr);
     gni_addr = calloc(1, *len);
-    if (!gni_addr) {
-        NA_LOG_ERROR("Could not allocate gni address");
-        return NA_NOMEM_ERROR;
-    }
+    NA_CHECK_ERROR(gni_addr == NULL, error, ret, NA_NOMEM_ERROR,
+        "Could not allocate gni address");
 
-    ret = sscanf(str, "%*[^:]://%04u:0x%08" PRIx32 ":0x%08" PRIx32 ":%02u:0x%06"
+    rc = sscanf(str, "%*[^:]://%04u:0x%08" PRIx32 ":0x%08" PRIx32 ":%02u:0x%06"
         PRIx32 ":0x%08" PRIx32 ":%02u", &version, &device_addr, &cdm_id,
         &name_type, &cm_nic_cdm_id, &cookie, &rx_ctx_cnt);
-    if (ret != 7) {
-        NA_LOG_ERROR("Could not convert addr string to GNI addr format");
-        free(gni_addr);
-        return NA_PROTOCOL_ERROR;
-    }
-    if (version != NA_OFI_GNI_AV_STR_ADDR_VERSION) {
-        NA_LOG_ERROR("Unsupported GNI string addr format");
-        free(gni_addr);
-        return NA_PROTOCOL_ERROR;
-    }
+    NA_CHECK_ERROR(rc != 7, error, ret, NA_PROTOCOL_ERROR,
+            "Could not convert addr string to GNI addr format");
+    NA_CHECK_ERROR(version != NA_OFI_GNI_AV_STR_ADDR_VERSION, error, ret,
+        NA_PROTOCOL_ERROR, "Unsupported GNI string addr format");
 
     gni_addr->device_addr = device_addr;
     gni_addr->cdm_id = cdm_id;
@@ -1202,7 +1184,11 @@ na_ofi_str_to_gni(const char *str, void **addr, na_size_t *len)
 
     *addr = gni_addr;
 
-    return NA_SUCCESS;
+    return ret;
+
+error:
+    free(gni_addr);
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1283,83 +1269,70 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, na_uint32_t addr_format,
 
     /* Generate key */
     addr_key = na_ofi_addr_to_key(addr_format, addr, addrlen);
-    if (!addr_key) {
-        NA_LOG_ERROR("Could not generate key from addr");
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(addr_key == 0, out, ret, NA_PROTOCOL_ERROR,
+        "Could not generate key from addr");
 
     /* Lookup key */
     hg_thread_rwlock_rdlock(&domain->nod_rwlock);
     ht_value = hg_hash_table_lookup(domain->nod_addr_ht, &addr_key);
+    hg_thread_rwlock_release_rdlock(&domain->nod_rwlock);
     if (ht_value != HG_HASH_TABLE_NULL) {
         *fi_addr = *(fi_addr_t *) ht_value;
-        hg_thread_rwlock_release_rdlock(&domain->nod_rwlock);
         return ret;
     }
-    hg_thread_rwlock_release_rdlock(&domain->nod_rwlock);
 
     /* Insert addr into AV if key not found */
     na_ofi_domain_lock(domain);
     rc = fi_av_insert(domain->nod_av, addr, 1, fi_addr, 0 /* flags */,
         NULL /* context */);
     na_ofi_domain_unlock(domain);
-    if (rc < 1) {
-        NA_LOG_ERROR("fi_av_insert failed, rc: %d(%s).",
-            rc, fi_strerror((int) -rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc < 1, out, ret, NA_PROTOCOL_ERROR,
+        "fi_av_insert() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
     hg_thread_rwlock_wrlock(&domain->nod_rwlock);
-    /* in race condition, use addr in HT and remove the new addr from AV */
+
     ht_value = hg_hash_table_lookup(domain->nod_addr_ht, &addr_key);
     if (ht_value != HG_HASH_TABLE_NULL) {
+        /* in race condition, use addr in HT and remove the new addr from AV */
         fi_av_remove(domain->nod_av, fi_addr, 1, 0);
-        hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
         *fi_addr = *(fi_addr_t *) ht_value;
+        hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
         return ret;
     }
 
     /* Allocate new key */
     ht_key = malloc(sizeof(na_uint64_t));
-    if (!ht_key) {
-        NA_LOG_ERROR("cannot allocate memory for ht_key");
-        ret = NA_NOMEM_ERROR;
-        goto unlock;
-    }
+    NA_CHECK_ERROR(ht_key == NULL, error, ret, NA_NOMEM_ERROR,
+        "Cannot allocate memory for ht_key");
 
     /* Allocate new value */
     ht_value = malloc(sizeof(*fi_addr));
-    if (!ht_value) {
-        NA_LOG_ERROR("cannot allocate memory for ht_key");
-        ret = NA_NOMEM_ERROR;
-        goto unlock;
-    }
+    NA_CHECK_ERROR(ht_value == NULL, error, ret, NA_NOMEM_ERROR,
+        "cannot allocate memory for ht_key");
 
     *((na_uint64_t *) ht_key) = addr_key;
     *((na_uint64_t *) ht_value) = *fi_addr;
 
     /* Insert new value */
-    if (!hg_hash_table_insert(domain->nod_addr_ht, ht_key, ht_value)) {
-        NA_LOG_ERROR("hg_hash_table_insert() failed.");
-        ret = NA_NOMEM_ERROR;
-        goto unlock;
-    }
+    rc = hg_hash_table_insert(domain->nod_addr_ht, ht_key, ht_value);
+    NA_CHECK_ERROR(rc == 0, error, ret, NA_NOMEM_ERROR,
+        "hg_hash_table_insert() failed");
 
-unlock:
     hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
 
 out:
-    if (ret != NA_SUCCESS) {
-        free(ht_key);
-        free(ht_value);
-    }
+    return ret;
+
+error:
+    hg_thread_rwlock_release_wrlock(&domain->nod_rwlock);
+    free(ht_key);
+    free(ht_value);
+
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static int
+static na_return_t
 na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers)
 {
     struct fi_info *hints = NULL;
@@ -1370,19 +1343,13 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers)
       * Hints to query && filter providers.
       */
     hints = fi_allocinfo();
-    if (!hints) {
-        NA_LOG_ERROR("fi_allocinfo failed.\n");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(hints == NULL, out, ret, NA_NOMEM_ERROR,
+        "fi_allocinfo() failed");
 
     /* Protocol name is provider name, filter out providers within libfabric */
     hints->fabric_attr->prov_name = strdup(na_ofi_prov_name[prov_type]);
-    if (!hints->fabric_attr->prov_name) {
-        NA_LOG_ERROR("Could not duplicate name");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(hints->fabric_attr->prov_name == NULL, cleanup, ret,
+        NA_NOMEM_ERROR, "Could not duplicate name");
 
     /* mode: operational mode, NA_OFI passes in context for communication calls. */
     /* FI_ASYNC_IOV mode indicates  that  the  application  must  provide  the
@@ -1444,18 +1411,15 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers)
                     0ULL,  /* Optional flag */
                     hints, /* In: Hints to filter providers */
                     providers); /* Out: List of matching providers */
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_getinfo failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, cleanup, ret, NA_PROTOCOL_ERROR,
+        "fi_getinfo() failed, rc: %d(%s)", rc, fi_strerror(-rc));
+
+cleanup:
+    free(hints->fabric_attr->prov_name);
+    hints->fabric_attr->prov_name = NULL;
+    fi_freeinfo(hints);
 
 out:
-    if (hints) {
-        free(hints->fabric_attr->prov_name);
-        hints->fabric_attr->prov_name = NULL;
-        fi_freeinfo(hints);
-    }
     return ret;
 }
 
@@ -1474,10 +1438,8 @@ na_ofi_check_interface(const char *hostname, unsigned int port,
 
     /* Allocate new sin addr to store result */
     na_ofi_sin_addr = calloc(1, sizeof(*na_ofi_sin_addr));
-    if (!na_ofi_sin_addr) {
-        NA_LOG_ERROR("Could not allocate sin address");
-        return NA_NOMEM_ERROR;
-    }
+    NA_CHECK_ERROR(na_ofi_sin_addr == NULL, out, ret, NA_NOMEM_ERROR,
+        "Could not allocate sin address");
     na_ofi_sin_addr->sin.sin_family = AF_INET;
     na_ofi_sin_addr->sin.sin_port = htons(port & 0xffff);
 
@@ -1491,27 +1453,25 @@ na_ofi_check_interface(const char *hostname, unsigned int port,
     if (s == 0) {
         struct addrinfo *rp;
 
+        /* Get IP */
         for (rp = hostname_res; rp != NULL; rp = rp->ai_next) {
-            /* Get IP */
-            if (!inet_ntop(rp->ai_addr->sa_family,
+            const char *ptr = inet_ntop(rp->ai_addr->sa_family,
                 &((struct sockaddr_in *) rp->ai_addr)->sin_addr, ip_res,
-                INET_ADDRSTRLEN)) {
-                NA_LOG_ERROR("IP could not be resolved");
-                ret = NA_PROTOCOL_ERROR;
-                goto out;
-            }
+                INET_ADDRSTRLEN);
+            NA_CHECK_ERROR(ptr == NULL, out, ret, NA_PROTOCOL_ERROR,
+                "IP could not be resolved");
             break;
         }
     }
 
     /* Check and compare interfaces */
-    if (getifaddrs(&ifaddrs) == -1) {
-        NA_LOG_ERROR("getifaddrs() failed");
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    s = getifaddrs(&ifaddrs);
+    NA_CHECK_ERROR(s == -1, out, ret, NA_PROTOCOL_ERROR,
+        "getifaddrs() failed");
+
     for (ifaddr = ifaddrs; ifaddr != NULL; ifaddr = ifaddr->ifa_next) {
         char ip[INET_ADDRSTRLEN] = {'\0'}; /* This restricts to ipv4 addresses */
+        const char *ptr;
 
         if (ifaddr->ifa_addr == NULL)
             continue;
@@ -1520,13 +1480,11 @@ na_ofi_check_interface(const char *hostname, unsigned int port,
             continue;
 
         /* Get IP */
-        if (!inet_ntop(ifaddr->ifa_addr->sa_family,
+        ptr = inet_ntop(ifaddr->ifa_addr->sa_family,
             &((struct sockaddr_in *) ifaddr->ifa_addr)->sin_addr, ip,
-            INET_ADDRSTRLEN)) {
-            NA_LOG_ERROR("IP could not be resolved for: %s", ifaddr->ifa_name);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+            INET_ADDRSTRLEN);
+        NA_CHECK_ERROR(ptr == NULL, out, ret, NA_PROTOCOL_ERROR,
+            "IP could not be resolved for: %s", ifaddr->ifa_name);
 
         /* Compare hostnames / device names */
         if (!strcmp(ip, ip_res) || !strcmp(ifaddr->ifa_name, hostname)) {
@@ -1541,10 +1499,8 @@ na_ofi_check_interface(const char *hostname, unsigned int port,
         *na_ofi_sin_addr_ptr = na_ofi_sin_addr;
         if (ifa_name) {
             *ifa_name = strdup(ifaddr->ifa_name);
-            if (!*ifa_name) {
-                NA_LOG_ERROR("Could not dup ifa_name");
-                ret = NA_NOMEM_ERROR;
-            }
+            NA_CHECK_ERROR(*ifa_name == NULL, out, ret, NA_NOMEM_ERROR,
+                "Could not dup ifa_name");
         }
     }
 
@@ -1554,6 +1510,7 @@ out:
     freeifaddrs(ifaddrs);
     if (hostname_res)
         freeaddrinfo(hostname_res);
+
     return ret;
 }
 
@@ -1562,26 +1519,21 @@ static NA_INLINE na_bool_t
 na_ofi_verify_provider(enum na_ofi_prov_type prov_type, const char *domain_name,
     const struct fi_info *fi_info)
 {
-    na_bool_t ret = NA_FALSE;
-
     /* Does not match provider name */
     if (strcmp(na_ofi_prov_name[prov_type], fi_info->fabric_attr->prov_name))
-        goto out;
+        return NA_FALSE;
 
     /* for some providers the provider name is ambiguous and we must check
      * the domain name as well
      */
-    if(na_ofi_prov_flags[prov_type] & NA_OFI_VERIFY_PROV_DOM) {
+    if (na_ofi_prov_flags[prov_type] & NA_OFI_VERIFY_PROV_DOM) {
         /* Does not match domain name */
         if (domain_name && strcmp("\0", domain_name)
             && strcmp(domain_name, fi_info->domain_attr->name))
-            goto out;
+            return NA_FALSE;
     }
 
-    ret = NA_TRUE;
-
-out:
-    return ret;
+    return NA_TRUE;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1596,18 +1548,12 @@ na_ofi_gni_set_domain_op_value(struct na_ofi_domain *na_ofi_domain, int op,
 
     rc = fi_open_ops(&na_ofi_domain->nod_domain->fid, FI_GNI_DOMAIN_OPS_1,
         0, (void **) &gni_domain_ops, NULL);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_open_ops failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_open_ops() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     rc = gni_domain_ops->set_val(&na_ofi_domain->nod_domain->fid, op, value);
-    if (rc != 0) {
-        NA_LOG_ERROR("set_val failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "gni_domain_ops->set_val() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
 out:
     return ret;
@@ -1616,8 +1562,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_domain_open(struct na_ofi_class *priv,
-    enum na_ofi_prov_type prov_type,
+na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
     const char *domain_name, const char *auth_key,
     struct na_ofi_domain **na_ofi_domain_p)
 {
@@ -1644,20 +1589,15 @@ na_ofi_domain_open(struct na_ofi_class *priv,
     }
     hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
     if (domain_found) {
-        /*
-        NA_LOG_DEBUG("Found existing domain (%s)",
-            na_ofi_domain->nod_prov_name);
-        */
+//        NA_LOG_DEBUG("Found existing domain (%s)",
+//            na_ofi_domain->nod_prov_name);
         *na_ofi_domain_p = na_ofi_domain;
-        goto out;
+        return ret;
     }
 
     /* If no pre-existing domain, get OFI providers info */
     ret = na_ofi_getinfo(prov_type, &providers);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(error, ret, "na_ofi_getinfo() failed");
 
     /* Try to find provider that matches protocol and domain/host name */
     prov = providers;
@@ -1675,73 +1615,53 @@ na_ofi_domain_open(struct na_ofi_class *priv,
         }
         prov = prov->next;
     }
-    if (!prov_found) {
-        NA_LOG_ERROR("No provider found for \"%s\" provider on domain \"%s\"",
-                     na_ofi_prov_name[prov_type], domain_name);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(!prov_found, error, ret, NA_PROTOCOL_ERROR,
+        "No provider found for \"%s\" provider on domain \"%s\"",
+        na_ofi_prov_name[prov_type], domain_name);
 
     na_ofi_domain = (struct na_ofi_domain *) malloc(
         sizeof(struct na_ofi_domain));
-    if (na_ofi_domain == NULL) {
-        NA_LOG_ERROR("Could not allocate na_ofi_domain");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_domain == NULL, error, ret, NA_NOMEM_ERROR,
+        "Could not allocate na_ofi_domain");
     memset(na_ofi_domain, 0, sizeof(struct na_ofi_domain));
     hg_atomic_set32(&na_ofi_domain->nod_refcount, 1);
 
     /* Init mutex */
     rc = hg_thread_mutex_init(&na_ofi_domain->nod_mutex);
-    if (rc != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("hg_thread_mutex_init failed");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, NA_NOMEM_ERROR,
+        "hg_thread_mutex_init() failed");
 
     /* Init rw lock */
     rc = hg_thread_rwlock_init(&na_ofi_domain->nod_rwlock);
-    if (rc != HG_UTIL_SUCCESS) {
-        NA_LOG_ERROR("hg_thread_rwlock_init failed");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, NA_NOMEM_ERROR,
+        "hg_thread_rwlock_init() failed");
 
     /* Keep fi_info */
     na_ofi_domain->nod_prov = fi_dupinfo(prov);
-    if (!na_ofi_domain->nod_prov) {
-        NA_LOG_ERROR("Could not duplicate fi_info");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_domain->nod_prov == NULL, error, ret,
+        NA_NOMEM_ERROR, "Could not duplicate fi_info");
 
     /* Dup provider name */
     na_ofi_domain->nod_prov_name = strdup(prov->fabric_attr->prov_name);
-    if (!na_ofi_domain->nod_prov_name) {
-        NA_LOG_ERROR("Could not duplicate name");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_domain->nod_prov_name == NULL, error, ret,
+        NA_NOMEM_ERROR, "Could not duplicate name");
 
     na_ofi_domain->nod_prov_type = prov_type;
 
-    if(prov_type == NA_OFI_PROV_GNI) {
 #if defined(NA_OFI_HAS_EXT_GNI_H)
-        if (auth_key) {
-            na_ofi_domain->fi_gni_auth_key.type = GNIX_AKT_RAW;
-            na_ofi_domain->fi_gni_auth_key.raw.protection_key =
-                (uint32_t) strtoul(auth_key, NULL, 10);
+    if (prov_type == NA_OFI_PROV_GNI && auth_key) {
+        na_ofi_domain->fi_gni_auth_key.type = GNIX_AKT_RAW;
+        na_ofi_domain->fi_gni_auth_key.raw.protection_key =
+            (uint32_t) strtoul(auth_key, NULL, 10);
 
-            na_ofi_domain->nod_prov->domain_attr->auth_key =
-                (void *) &na_ofi_domain->fi_gni_auth_key;
-            na_ofi_domain->nod_prov->domain_attr->auth_key_size =
-                sizeof(na_ofi_domain->fi_gni_auth_key);
-        }
-#else
-        (void) auth_key;
-#endif
+        na_ofi_domain->nod_prov->domain_attr->auth_key =
+            (void *) &na_ofi_domain->fi_gni_auth_key;
+        na_ofi_domain->nod_prov->domain_attr->auth_key_size =
+            sizeof(na_ofi_domain->fi_gni_auth_key);
     }
+#else
+    (void) auth_key;
+#endif
 
     /* Force no wait if do not support FI_WAIT_FD/FI_WAIT_SET */
     if (!(na_ofi_prov_flags[prov_type] & (NA_OFI_WAIT_SET | NA_OFI_WAIT_FD)))
@@ -1757,33 +1677,25 @@ na_ofi_domain_open(struct na_ofi_class *priv,
     rc = fi_fabric(na_ofi_domain->nod_prov->fabric_attr,/* In:  Fabric attributes */
                    &na_ofi_domain->nod_fabric,          /* Out: Fabric handle */
                    NULL);                               /* Optional context for fabric events */
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_fabric failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_fabric() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     /* Create the fi access domain */
     rc = fi_domain(na_ofi_domain->nod_fabric,   /* In:  Fabric object */
                    na_ofi_domain->nod_prov,     /* In:  Provider */
                    &na_ofi_domain->nod_domain,  /* Out: Domain object */
                    NULL);                       /* Optional context for domain events */
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_domain failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_domain() failed, rc: %d(%s)", rc, fi_strerror(-rc));
+
     if (priv->nop_max_contexts > 1) {
         size_t min_ctx_cnt =
             MIN(na_ofi_domain->nod_prov->domain_attr->tx_ctx_cnt,
                 na_ofi_domain->nod_prov->domain_attr->rx_ctx_cnt);
-        if (priv->nop_max_contexts > min_ctx_cnt) {
-            NA_LOG_ERROR("Maximum number of requested contexts (%d) exceeds "
-                "provider limitation (%d).", priv->nop_max_contexts,
-                min_ctx_cnt);
-            ret = NA_INVALID_PARAM;
-            goto out;
-        }
+        NA_CHECK_ERROR(priv->nop_max_contexts > min_ctx_cnt, error, ret,
+            NA_INVALID_PARAM, "Maximum number of requested contexts (%d) "
+            "exceeds provider limitation (%d)", priv->nop_max_contexts,
+            min_ctx_cnt);
 //        NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d.",
 //            na_ofi_domain->nod_prov->domain_attr->tx_ctx_cnt,
 //            na_ofi_domain->nod_prov->domain_attr->rx_ctx_cnt);
@@ -1798,19 +1710,15 @@ na_ofi_domain_open(struct na_ofi_class *priv,
         /* Enable use of udreg instead of internal MR cache */
         ret = na_ofi_gni_set_domain_op_value(na_ofi_domain, GNI_MR_CACHE,
             &other_reg_type);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not set domain op value for GNI_MR_CACHE");
-            goto out;
-        }
+        NA_CHECK_NA_ERROR(error, ret,
+            "Could not set domain op value for GNI_MR_CACHE");
 # endif
 
         /* Enable lazy deregistration in MR cache */
         ret = na_ofi_gni_set_domain_op_value(na_ofi_domain,
             GNI_MR_CACHE_LAZY_DEREG, &enable);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not set domain op value for GNI_MR_CACHE_LAZY_DEREG");
-            goto out;
-        }
+        NA_CHECK_NA_ERROR(error, ret,
+            "Could not set domain op value for GNI_MR_CACHE_LAZY_DEREG");
     }
 #endif
 
@@ -1826,11 +1734,9 @@ na_ofi_domain_open(struct na_ofi_class *priv,
             FI_REMOTE_READ | FI_REMOTE_WRITE | FI_SEND | FI_RECV
             | FI_READ | FI_WRITE, 0 /* offset */, requested_key, 0 /* flags */,
             &na_ofi_domain->nod_mr, NULL /* context */);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+            "fi_mr_reg failed(), rc: %d(%s)", rc, fi_strerror(-rc));
+
         /* Requested key may not be the same, currently RxM provider forces
          * the underlying provider to provide keys and ignores user-provided
          * key.
@@ -1843,20 +1749,14 @@ na_ofi_domain_open(struct na_ofi_class *priv,
     av_attr.rx_ctx_bits = NA_OFI_SEP_RX_CTX_BITS;
     rc = fi_av_open(na_ofi_domain->nod_domain, &av_attr, &na_ofi_domain->nod_av,
         NULL);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_av_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_av_open() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     /* Create addr hash-table */
     na_ofi_domain->nod_addr_ht = hg_hash_table_new(na_ofi_addr_ht_key_hash,
         na_ofi_addr_ht_key_equal);
-    if (na_ofi_domain->nod_addr_ht == NULL) {
-        NA_LOG_ERROR("hg_hash_table_new failed");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+        NA_CHECK_ERROR(na_ofi_domain->nod_addr_ht == NULL, error, ret,
+            NA_NOMEM_ERROR, "hg_hash_table_new() failed");
     hg_hash_table_register_free_functions(na_ofi_domain->nod_addr_ht,
         free, free);
 
@@ -1867,11 +1767,15 @@ na_ofi_domain_open(struct na_ofi_class *priv,
 
     *na_ofi_domain_p = na_ofi_domain;
 
-out:
-    if (ret != NA_SUCCESS)
-       na_ofi_domain_close(na_ofi_domain);
+    fi_freeinfo(providers);
+
+    return ret;
+
+error:
+    na_ofi_domain_close(na_ofi_domain);
     if (providers)
         fi_freeinfo(providers);
+
     return ret;
 }
 
@@ -1882,7 +1786,8 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    if (!na_ofi_domain) goto out;
+    if (!na_ofi_domain)
+        goto out;
 
     /* Remove from global domain list if not used anymore */
     hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
@@ -1899,48 +1804,32 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
     /* Close MR */
     if (na_ofi_domain->nod_mr) {
         rc = fi_close(&na_ofi_domain->nod_mr->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close MR failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+            "fi_close() MR failed, rc: %d(%s)", rc, fi_strerror(-rc));
         na_ofi_domain->nod_mr = NULL;
     }
 
     /* Close AV */
     if (na_ofi_domain->nod_av) {
         rc = fi_close(&na_ofi_domain->nod_av->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close AV failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+            "fi_close() AV failed, rc: %d(%s)", rc, fi_strerror(-rc));
         na_ofi_domain->nod_av = NULL;
     }
 
     /* Close domain */
     if (na_ofi_domain->nod_domain) {
         rc = fi_close(&na_ofi_domain->nod_domain->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close domain failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+            "fi_close() domain failed, rc: %d(%s)", rc, fi_strerror(-rc));
         na_ofi_domain->nod_domain = NULL;
     }
 
     /* Close fabric */
     if (na_ofi_domain->nod_fabric) {
         rc = fi_close(&na_ofi_domain->nod_fabric->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close fabric failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+            "fi_close() fabric failed, rc: %d(%s)", rc, fi_strerror(-rc));
         na_ofi_domain->nod_fabric = NULL;
     }
 
@@ -1983,20 +1872,14 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
 
     na_ofi_endpoint = (struct na_ofi_endpoint *) malloc(
         sizeof(struct na_ofi_endpoint));
-    if (na_ofi_endpoint == NULL) {
-        NA_LOG_ERROR("Could not allocate na_ofi_endpoint");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_endpoint == NULL, out, ret, NA_NOMEM_ERROR,
+        "Could not allocate na_ofi_endpoint");
     memset(na_ofi_endpoint, 0, sizeof(struct na_ofi_endpoint));
 
     /* Dup fi_info */
     hints = fi_dupinfo(na_ofi_domain->nod_prov);
-    if (!hints) {
-        NA_LOG_ERROR("Could not duplicate fi_info");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(hints == NULL, out, ret, NA_NOMEM_ERROR,
+        "Could not duplicate fi_info");
 
     if (src_addr) {
         /* Set src addr hints (FI_SOURCE must not be set in that case) */
@@ -2012,26 +1895,16 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
 
     rc = fi_getinfo(NA_OFI_VERSION, node, NULL, flags, hints,
         &na_ofi_endpoint->noe_prov);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_getinfo(%s) failed, rc: %d(%s).", node,
-            rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_getinfo(%s) failed, rc: %d(%s)", node, rc, fi_strerror(-rc));
 
     if ((na_ofi_prov_flags[na_ofi_domain->nod_prov_type] & NA_OFI_NO_SEP)
         || max_contexts < 2) {
         ret = na_ofi_basic_ep_open(na_ofi_domain, no_wait, na_ofi_endpoint);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("na_ofi_basic_ep_open failed, ret: %d.", ret);
-            goto out;
-        }
+        NA_CHECK_NA_ERROR(out, ret, "na_ofi_basic_ep_open() failed");
     } else {
         ret = na_ofi_sep_open(na_ofi_domain, na_ofi_endpoint);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("na_ofi_sep_open failed, ret: %d.", ret);
-            goto out;
-        }
+        NA_CHECK_NA_ERROR(out, ret, "na_ofi_sep_open() failed");
     }
 
     *na_ofi_endpoint_p = na_ofi_endpoint;
@@ -2064,19 +1937,13 @@ na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
                      na_ofi_endpoint->noe_prov, /* In:  Provider */
                      &na_ofi_endpoint->noe_ep,  /* Out: Endpoint object */
                      NULL);                     /* Optional context */
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_endpoint failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_endpoint() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     /* Initialize queue / mutex */
     na_ofi_endpoint->noe_unexpected_op_queue = malloc(sizeof(struct na_ofi_queue));
-    if (!na_ofi_endpoint->noe_unexpected_op_queue) {
-        NA_LOG_ERROR("Could not allocate noe_unexpected_op_queue");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_endpoint->noe_unexpected_op_queue == NULL, out,
+        ret, NA_NOMEM_ERROR, "Could not allocate noe_unexpected_op_queue");
     HG_QUEUE_INIT(&na_ofi_endpoint->noe_unexpected_op_queue->noq_queue);
     hg_thread_spin_init(&na_ofi_endpoint->noe_unexpected_op_queue->noq_lock);
 
@@ -2090,12 +1957,8 @@ na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
             wait_attr.wait_obj = FI_WAIT_UNSPEC;
             rc = fi_wait_open(na_ofi_domain->nod_fabric, &wait_attr,
                 &na_ofi_endpoint->noe_wait);
-            if (rc != 0) {
-                NA_LOG_ERROR("fi_wait_open failed, rc: %d(%s).", rc,
-                    fi_strerror(-rc));
-                ret = NA_PROTOCOL_ERROR;
-                goto out;
-            }
+            NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+                "fi_wait_open() failed, rc: %d(%s)", rc, fi_strerror(-rc));
             cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
             cq_attr.wait_set = na_ofi_endpoint->noe_wait;
         }
@@ -2105,35 +1968,23 @@ na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
     cq_attr.size = NA_OFI_CQ_DEPTH;
     rc = fi_cq_open(na_ofi_domain->nod_domain, &cq_attr,
         &na_ofi_endpoint->noe_cq, NULL);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_cq_open failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_cq_open failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     /* Bind the CQ and AV to the endpoint */
     rc = fi_ep_bind(na_ofi_endpoint->noe_ep, &na_ofi_endpoint->noe_cq->fid,
         FI_TRANSMIT | FI_RECV);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_ep_bind failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_ep_bind() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     rc = fi_ep_bind(na_ofi_endpoint->noe_ep, &na_ofi_domain->nod_av->fid, 0);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_ep_bind failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_ep_bind() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     /* Enable the endpoint for communication, and commits the bind operations */
     rc = fi_enable(na_ofi_endpoint->noe_ep);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_enable failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_enable() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     na_ofi_endpoint->noe_sep = NA_FALSE;
 
@@ -2154,28 +2005,18 @@ na_ofi_sep_open(const struct na_ofi_domain *na_ofi_domain,
                         na_ofi_endpoint->noe_prov, /* In:  Provider */
                         &na_ofi_endpoint->noe_ep,  /* Out: Endpoint object */
                         NULL);                     /* Optional context */
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_scalable_ep failed, rc: %d(%s).",
-                     rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_scalable_ep() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     rc = fi_scalable_ep_bind(na_ofi_endpoint->noe_ep,
         &na_ofi_domain->nod_av->fid, 0);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_ep_bind failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_ep_bind() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     /* Enable the endpoint for communication, and commits the bind operations */
     ret = fi_enable(na_ofi_endpoint->noe_ep);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_enable failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_enable() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     na_ofi_endpoint->noe_sep = NA_TRUE;
 
@@ -2190,17 +2031,16 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    if (!na_ofi_endpoint) goto out;
+    if (!na_ofi_endpoint)
+        goto out;
 
     /* When not using SEP */
     if (na_ofi_endpoint->noe_unexpected_op_queue) {
         /* Check that unexpected op queue is empty */
-        if (!HG_QUEUE_IS_EMPTY(
-            &na_ofi_endpoint->noe_unexpected_op_queue->noq_queue)) {
-            NA_LOG_ERROR("Unexpected op queue should be empty");
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        na_bool_t empty = HG_QUEUE_IS_EMPTY(
+            &na_ofi_endpoint->noe_unexpected_op_queue->noq_queue);
+        NA_CHECK_ERROR(empty == NA_FALSE, out, ret, NA_PROTOCOL_ERROR,
+            "Unexpected op queue should be empty");
         hg_thread_spin_destroy(
             &na_ofi_endpoint->noe_unexpected_op_queue->noq_lock);
         free(na_ofi_endpoint->noe_unexpected_op_queue);
@@ -2209,34 +2049,24 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint)
     /* Close endpoint */
     if (na_ofi_endpoint->noe_ep) {
         rc = fi_close(&na_ofi_endpoint->noe_ep->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close endpoint failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+            "fi_close() endpoint failed, rc: %d(%s)", rc, fi_strerror(-rc));
         na_ofi_endpoint->noe_ep = NULL;
     }
 
     /* Close completion queue */
     if (na_ofi_endpoint->noe_cq) {
         rc = fi_close(&na_ofi_endpoint->noe_cq->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close CQ failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+            "fi_close() CQ failed, rc: %d(%s)", rc, fi_strerror(-rc));
         na_ofi_endpoint->noe_cq = NULL;
     }
 
     /* Close wait set */
     if (na_ofi_endpoint->noe_wait) {
         rc = fi_close(&na_ofi_endpoint->noe_wait->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close wait failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+            "fi_close() wait failed, rc: %d(%s)", rc, fi_strerror(-rc));
         na_ofi_endpoint->noe_wait = NULL;
     }
 
@@ -2269,32 +2099,25 @@ na_ofi_get_ep_addr(na_class_t *na_class, struct na_ofi_addr **na_ofi_addr_ptr)
     int rc;
 
     na_ofi_addr = na_ofi_addr_alloc();
-    if (!na_ofi_addr) {
-        NA_LOG_ERROR("Could not allocate NA OFI addr");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_addr == NULL, error, ret, NA_NOMEM_ERROR,
+        "Could not allocate NA OFI addr");
 
 retry_getname:
     if (retried)
         free(addr);
     addr = malloc(addrlen);
-    if (addr == NULL) {
-        NA_LOG_ERROR("Could not allocate addr.");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(addr == NULL, error, ret, NA_NOMEM_ERROR,
+        "Could not allocate addr");
 
     rc = fi_getname(&na_ofi_endpoint->noe_ep->fid, addr, &addrlen);
-    if (rc != FI_SUCCESS) {
+    if (rc != 0) {
         if (rc == -FI_ETOOSMALL && retried == NA_FALSE) {
             retried = NA_TRUE;
             goto retry_getname;
         }
-        NA_LOG_ERROR("fi_getname failed, rc: %d(%s), addrlen: %zu.",
-                     rc, fi_strerror(-rc), addrlen);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
+        NA_GOTO_ERROR(error, ret, NA_PROTOCOL_ERROR,
+            "fi_getname() failed, rc: %d(%s), addrlen: %zu", rc,
+            fi_strerror(-rc), addrlen);
     }
 
     na_ofi_addr->addr = addr;
@@ -2303,19 +2126,17 @@ retry_getname:
 
     /* Get URI from address */
     ret = na_ofi_get_uri(na_class, na_ofi_addr->addr, &na_ofi_addr->uri);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not get URI from endpoint address");
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(error, ret, "Could not get URI from endpoint address");
 
     /* TODO check address size */
    *na_ofi_addr_ptr = na_ofi_addr;
 
-out:
-    if (ret != NA_SUCCESS) {
-        free(addr);
-        free(na_ofi_addr);
-    }
+    return ret;
+
+error:
+    free(addr);
+    free(na_ofi_addr);
+
     return ret;
 }
 
@@ -2334,21 +2155,16 @@ na_ofi_get_uri(na_class_t *na_class, const void *addr, char **uri_ptr)
 
     /* Convert FI address to a printable string */
     fi_av_straddr(na_ofi_domain->nod_av, addr, fi_addr_str, &fi_addr_strlen);
-    if (fi_addr_strlen > NA_OFI_MAX_URI_LEN) {
-        NA_LOG_ERROR("fi_av_straddr() address truncated, addrlen: %zu",
-            fi_addr_strlen);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(fi_addr_strlen > NA_OFI_MAX_URI_LEN, out, ret,
+        NA_PROTOCOL_ERROR, "fi_av_straddr() address truncated, addrlen: %zu",
+        fi_addr_strlen);
 
     /* Remove unnecessary "://" prefix from string if present */
     if (strstr(fi_addr_str, "://")) {
         strtok_r(fi_addr_str, ":", &fi_addr_str_ptr);
-        if (strncmp(fi_addr_str_ptr, "//", 2) != 0) {
-            NA_LOG_ERROR("Bad address string format");
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        rc = strncmp(fi_addr_str_ptr, "//", 2);
+        NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+            "Bad address string format");
         fi_addr_str_ptr += 2;
     } else
         fi_addr_str_ptr = fi_addr_str;
@@ -2356,19 +2172,13 @@ na_ofi_get_uri(na_class_t *na_class, const void *addr, char **uri_ptr)
     /* Generate URI */
     rc = snprintf(addr_str, NA_OFI_MAX_URI_LEN, "%s://%s",
         na_ofi_domain->nod_prov->fabric_attr->prov_name, fi_addr_str_ptr);
-    if (rc < 0 || rc > NA_OFI_MAX_URI_LEN) {
-        NA_LOG_ERROR("snprintf failed or name truncated, rc: %d.", rc);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc < 0 || rc > NA_OFI_MAX_URI_LEN, out, ret,
+        NA_PROTOCOL_ERROR, "snprintf() failed or name truncated, rc: %d", rc);
 
     /* Dup URI */
     uri = strdup(addr_str);
-    if (uri == NULL) {
-        NA_LOG_ERROR("Could not strdup EP address string.");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(uri == NULL, out, ret, NA_NOMEM_ERROR,
+        "Could not strdup address string");
 
     *uri_ptr = uri;
 
@@ -2383,14 +2193,13 @@ na_ofi_addr_alloc(void)
     struct na_ofi_addr *na_ofi_addr;
 
     na_ofi_addr = (struct na_ofi_addr *)calloc(1, sizeof(*na_ofi_addr));
-    if (!na_ofi_addr) {
-        NA_LOG_ERROR("Could not allocate addr");
-        return NULL;
-    }
+    NA_CHECK_ERROR_NORET(na_ofi_addr == NULL, out,
+        "Could not allocate addr");
 
     /* One refcount for the caller to hold until addr_free */
     hg_atomic_set32(&na_ofi_addr->refcount, 1);
 
+out:
     return na_ofi_addr;
 }
 
@@ -2428,16 +2237,13 @@ na_ofi_mem_pool_create(na_class_t *na_class, na_size_t block_size,
         + sizeof(struct na_ofi_mem_pool)
         + block_count * (offsetof(struct na_ofi_mem_node, block));
     struct fid_mr *mr_hdl = NULL;
-    char *mem_ptr = NULL;
     na_size_t i;
 
-    mem_ptr = (char *) na_ofi_mem_alloc(na_class, pool_size, &mr_hdl);
-    if (!mem_ptr) {
-        NA_LOG_ERROR("Could not allocate %d bytes", (int) pool_size);
-        goto out;
-    }
+    na_ofi_mem_pool = (struct na_ofi_mem_pool *) na_ofi_mem_alloc(na_class,
+        pool_size, &mr_hdl);
+    NA_CHECK_ERROR_NORET(na_ofi_mem_pool == NULL, out,
+        "Could not allocate %d bytes", (int) pool_size);
 
-    na_ofi_mem_pool = (struct na_ofi_mem_pool *) mem_ptr;
     HG_QUEUE_INIT(&na_ofi_mem_pool->node_list);
     hg_thread_spin_init(&na_ofi_mem_pool->node_list_lock);
     na_ofi_mem_pool->mr_hdl = mr_hdl;
@@ -2446,7 +2252,8 @@ na_ofi_mem_pool_create(na_class_t *na_class, na_size_t block_size,
     /* Assign nodes and insert them to free list */
     for (i = 0; i < block_count; i++) {
         struct na_ofi_mem_node *na_ofi_mem_node =
-            (struct na_ofi_mem_node *) (mem_ptr + sizeof(struct na_ofi_mem_pool)
+            (struct na_ofi_mem_node *) ((char *) na_ofi_mem_pool
+                + sizeof(struct na_ofi_mem_pool)
                 + i * (offsetof(struct na_ofi_mem_node, block) + block_size));
         HG_QUEUE_PUSH_TAIL(&na_ofi_mem_pool->node_list, na_ofi_mem_node, entry);
     }
@@ -2473,10 +2280,8 @@ na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
 
     /* Allocate backend buffer */
     mem_ptr = hg_mem_aligned_alloc(page_size, size);
-    if (!mem_ptr) {
-        NA_LOG_ERROR("Could not allocate %d bytes", (int) size);
-        goto out;
-    }
+    NA_CHECK_ERROR_NORET(mem_ptr == NULL, out,
+        "Could not allocate %d bytes", (int) size);
     memset(mem_ptr, 0, size);
 
     /* Register memory if FI_MR_LOCAL is set and provider uses it */
@@ -2486,10 +2291,10 @@ na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
         rc = fi_mr_reg(domain->nod_domain, mem_ptr, size, FI_REMOTE_READ
             | FI_REMOTE_WRITE | FI_SEND | FI_RECV | FI_READ | FI_WRITE, 0 /* offset */,
             0 /* requested key */, 0 /* flags */, mr_hdl, NULL /* context */);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_mr_reg failed, rc: %d (%s).", rc, fi_strerror(-rc));
+        if (unlikely(rc != 0)) {
             hg_mem_aligned_free(mem_ptr);
-            goto out;
+            NA_GOTO_ERROR(out, mem_ptr, NULL,
+                "fi_mr_reg() failed, rc: %d (%s)", rc, fi_strerror(-rc));
         }
     }
 
@@ -2503,16 +2308,14 @@ na_ofi_mem_free(void *mem_ptr, struct fid_mr *mr_hdl)
 {
     /* Release MR handle is there was any */
     if (mr_hdl) {
-        int rc;
-
-        rc = fi_close(&mr_hdl->fid);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_close mr_hdl failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-        }
+        int rc = fi_close(&mr_hdl->fid);
+        NA_CHECK_ERROR_NORET(rc != 0, out,
+            "fi_close() mr_hdl failed, rc: %d(%s)", rc, fi_strerror(-rc));
     }
 
+out:
     hg_mem_aligned_free(mem_ptr);
+    return;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2550,10 +2353,8 @@ retry:
         hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->nop_buf_pool_lock);
     }
 
-    if (size > na_ofi_mem_pool->block_size) {
-        NA_LOG_ERROR("Block size is too small for requested size");
-        goto out;
-    }
+    NA_CHECK_ERROR(size > na_ofi_mem_pool->block_size, out, mem_ptr, NULL,
+        "Block size is too small for requested size");
 
     /* Pick a node from one of the available pools */
     hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
@@ -2637,7 +2438,7 @@ na_ofi_op_id_valid(struct na_ofi_op_id *na_ofi_op_id)
 
     if (na_ofi_op_id->noo_magic_1 != NA_OFI_OP_ID_MAGIC_1 ||
         na_ofi_op_id->noo_magic_2 != NA_OFI_OP_ID_MAGIC_2) {
-        NA_LOG_ERROR("invalid magic number for na_ofi_op_id.");
+        NA_LOG_ERROR("Invalid magic number for na_ofi_op_id");
         return NA_FALSE;
     }
 
@@ -2707,12 +2508,8 @@ na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
         *actual_count = 0;
         goto out;
     }
-    if (rc != -FI_EAVAIL) { /* no error available */
-        NA_LOG_ERROR("fi_cq_readfrom() failed, rc: %d(%s).",
-            rc, fi_strerror((int) -rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != -FI_EAVAIL, out, ret, NA_PROTOCOL_ERROR,
+        "fi_cq_readfrom() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
     memset(&cq_err, 0, sizeof(cq_err));
     memset(&err_data, 0, sizeof(err_data));
@@ -2722,12 +2519,8 @@ na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
 
     /* Read error entry */
     rc = fi_cq_readerr(cq_hdl, &cq_err, 0 /* flags */);
-    if (rc != 1) {
-        NA_LOG_ERROR("fi_cq_readerr() failed, rc: %d(%s).",
-            rc, fi_strerror((int) -rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 1, out, ret, NA_PROTOCOL_ERROR,
+        "fi_cq_readerr() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
     switch (cq_err.err) {
         case FI_ECANCELED:
@@ -2743,11 +2536,8 @@ na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
 
             /* Copy addr information */
             err_addr = malloc(cq_err.err_data_size);
-            if (!err_addr) {
-                NA_LOG_ERROR("Could not allocate err_addr");
-                ret = NA_NOMEM_ERROR;
-                goto out;
-            }
+            NA_CHECK_ERROR(err_addr == NULL, out, ret, NA_NOMEM_ERROR,
+                "Could not allocate err_addr");
             err_addrlen = cq_err.err_data_size;
             memcpy(err_addr, cq_err.err_data, err_addrlen);
 
@@ -2756,12 +2546,11 @@ na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
             rc = fi_av_insert(av_hdl, err_addr, 1, &src_addrs[0],
                 0 /* flags */, NULL /* context */);
             na_ofi_domain_unlock(priv->nop_domain);
-            if (rc < 1) {
-                NA_LOG_ERROR("fi_av_insert failed, rc: %d(%s).",
-                    rc, fi_strerror((int) -rc));
-                ret = NA_PROTOCOL_ERROR;
+            if (unlikely(rc < 1)) {
                 free(err_addr);
-                goto out;
+                NA_GOTO_ERROR(out, ret, NA_PROTOCOL_ERROR,
+                    "fi_av_insert() failed, rc: %d(%s)",
+                    rc, fi_strerror((int) -rc));
             }
             /* Only one error event processed in that case */
             memcpy(&cq_events[0], &cq_err, sizeof(cq_events[0]));
@@ -2771,20 +2560,17 @@ na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
             break;
         }
         case FI_EIO:
-            NA_LOG_ERROR("fi_cq_readerr got err: %d(%s), "
-                "prov_errno: %d(%s).",
-                cq_err.err, fi_strerror(cq_err.err),
-                cq_err.prov_errno,
+            NA_GOTO_ERROR(out, ret, NA_PROTOCOL_ERROR,
+                "fi_cq_readerr() got err: %d(%s), prov_errno: %d(%s)",
+                cq_err.err, fi_strerror(cq_err.err), cq_err.prov_errno,
                 fi_strerror(-cq_err.prov_errno));
-            goto out;
+            break;
         default:
-            NA_LOG_ERROR("fi_cq_readerr got err: %d(%s), "
-                "prov_errno: %d(%s).",
-                cq_err.err, fi_strerror(cq_err.err),
-                cq_err.prov_errno,
+            NA_GOTO_ERROR(out, ret, NA_PROTOCOL_ERROR,
+                "fi_cq_readerr() got err: %d(%s), prov_errno: %d(%s)",
+                cq_err.err, fi_strerror(cq_err.err), cq_err.prov_errno,
                 fi_strerror(-cq_err.prov_errno));
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
+            break;
     }
 
 out:
@@ -2801,62 +2587,44 @@ na_ofi_cq_process_event(na_class_t *na_class, na_context_t *context,
         cq_event->op_context, struct na_ofi_op_id, noo_fi_ctx);
     na_return_t ret = NA_SUCCESS;
 
-    if (!na_ofi_op_id_valid(na_ofi_op_id)) {
-        NA_LOG_ERROR("Bad na_ofi_op_id, ignoring event.");
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(!na_ofi_op_id_valid(na_ofi_op_id), out, ret,
+        NA_PROTOCOL_ERROR, "Bad na_ofi_op_id, ignoring event");
     if (hg_atomic_get32(&na_ofi_op_id->noo_canceled)) {
         ret = NA_CANCELED;
         goto complete;
     }
-    if (hg_atomic_get32(&na_ofi_op_id->noo_completed)) {
-        NA_LOG_ERROR("Ignoring CQ event as the op is completed.");
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    // TODO check that
+    if (hg_atomic_get32(&na_ofi_op_id->noo_completed))
+        NA_GOTO_ERROR(out, ret, NA_PROTOCOL_ERROR,
+            "Ignoring CQ event as the op is completed");
 
     if (cq_event->flags & FI_SEND) {
         ret = na_ofi_cq_process_send_event(na_ofi_op_id);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not process send event");
-            goto out;
-        }
+        NA_CHECK_NA_ERROR(out, ret, "Could not process send event");
     } else if (cq_event->flags & FI_RECV) {
         if (cq_event->tag & ~NA_OFI_UNEXPECTED_TAG_IGNORE) {
             ret = na_ofi_cq_process_recv_expected_event(na_ofi_op_id,
                 cq_event->tag, cq_event->len);
-            if (ret != NA_SUCCESS) {
-                NA_LOG_ERROR("Could not process expected recv event");
-                goto out;
-            }
+            NA_CHECK_NA_ERROR(out, ret,
+                "Could not process expected recv event");
         } else {
             ret = na_ofi_cq_process_recv_unexpected_event(na_class, context,
                 na_ofi_op_id, src_addr, src_err_addr, src_err_addrlen,
                 cq_event->tag, cq_event->len);
-            if (ret != NA_SUCCESS) {
-                NA_LOG_ERROR("Could not process unexpected recv event");
-                goto out;
-            }
+            NA_CHECK_NA_ERROR(out, ret,
+                "Could not process unexpected recv event");
         }
     } else if (cq_event->flags & FI_RMA) {
         ret = na_ofi_cq_process_rma_event(na_ofi_op_id);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not process rma event");
-            goto out;
-        }
-    } else {
-        NA_LOG_ERROR("bad cq event flags: 0x%x.", cq_event->flags);
-        goto out;
-    }
+        NA_CHECK_NA_ERROR(out, ret, "Could not process rma event");
+    } else
+        NA_GOTO_ERROR(out, ret, NA_PROTOCOL_ERROR,
+            "Unsupported CQ event flags: 0x%x.", cq_event->flags);
 
 complete:
     /* Complete operation */
     ret = na_ofi_complete(na_ofi_op_id, ret);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Unable to complete operation");
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(out, ret, "Unable to complete operation");
 
 out:
     return ret;
@@ -2869,12 +2637,9 @@ na_ofi_cq_process_send_event(struct na_ofi_op_id *na_ofi_op_id)
     na_cb_type_t cb_type = na_ofi_op_id->noo_completion_data.callback_info.type;
     na_return_t ret = NA_SUCCESS;
 
-    if (cb_type != NA_CB_SEND_EXPECTED && cb_type != NA_CB_SEND_UNEXPECTED) {
-        NA_LOG_ERROR("ignore the send_event as cb_type %d mismatched with "
-            "NA_CB_SEND_EXPECTED/_UNEXPECTED.", cb_type);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(cb_type != NA_CB_SEND_EXPECTED
+        && cb_type != NA_CB_SEND_UNEXPECTED, out, ret, NA_PROTOCOL_ERROR,
+        "Invalid cb_type %d, expected NA_CB_SEND_EXPECTED/UNEXPECTED", cb_type);
 
 out:
     return ret;
@@ -2891,20 +2656,14 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    if (cb_type != NA_CB_RECV_UNEXPECTED) {
-        NA_LOG_ERROR("ignore the recv_event as cb_type %d mismatched with "
-            "NA_CB_RECV_UNEXPECTED.", cb_type);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(cb_type != NA_CB_RECV_UNEXPECTED, out, ret,
+        NA_PROTOCOL_ERROR, "Invalid cb_type %d, expected NA_CB_RECV_UNEXPECTED",
+        cb_type);
 
     /* Allocate new address */
     na_ofi_addr = na_ofi_addr_alloc();
-    if (!na_ofi_addr) {
-        NA_LOG_ERROR("na_ofi_addr_alloc failed");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_addr == NULL, out, ret, NA_NOMEM_ERROR,
+        "na_ofi_addr_alloc() failed");
     na_ofi_addr->addr = src_err_addr; /* may be NULL */
     na_ofi_addr->addrlen = src_err_addrlen;
     /* Unexpected address may not have addr/addrlen info */
@@ -2915,11 +2674,7 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
         ret = na_ofi_addr_ht_lookup(na_class, FI_SOCKADDR_IN,
             na_ofi_op_id->noo_info.noo_recv_unexpected.noi_buf,
             sizeof(struct na_ofi_sin_addr), &src_addr);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("na_ofi_addr_ht_lookup_reqhdr failed, ret: %d.", ret);
-            na_ofi_addr_decref(na_ofi_addr);
-            goto out;
-        }
+        NA_CHECK_NA_ERROR(error, ret, "na_ofi_addr_ht_lookup() failed");
     }
     na_ofi_addr->fi_addr = src_addr;
     /* For unexpected msg, take one extra ref to be released by addr_free() */
@@ -2933,6 +2688,10 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
 
 out:
     return ret;
+
+error:
+    na_ofi_addr_decref(na_ofi_addr);
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2943,21 +2702,14 @@ na_ofi_cq_process_recv_expected_event(struct na_ofi_op_id *na_ofi_op_id,
     na_cb_type_t cb_type = na_ofi_op_id->noo_completion_data.callback_info.type;
     na_return_t ret = NA_SUCCESS;
 
-    if (cb_type != NA_CB_RECV_EXPECTED) {
-        NA_LOG_ERROR("ignore the recv_event as cb_type %d mismatched with "
-            "NA_CB_RECV_EXPECTED.", cb_type);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
-    if (na_ofi_op_id->noo_info.noo_recv_expected.noi_tag
-        != (tag & ~NA_OFI_EXPECTED_TAG_FLAG)) {
-        NA_LOG_ERROR("ignore the recv_event as noi_tag 0x%x mismatch with "
-            "cq_event->tag: 0x%x.",
-            na_ofi_op_id->noo_info.noo_recv_expected.noi_tag,
-            tag & ~NA_OFI_EXPECTED_TAG_FLAG);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(cb_type != NA_CB_RECV_EXPECTED, out, ret,
+        NA_PROTOCOL_ERROR, "Invalid cb_type %d, expected NA_CB_RECV_EXPECTED",
+        cb_type);
+    NA_CHECK_ERROR(na_ofi_op_id->noo_info.noo_recv_expected.noi_tag
+        != (tag & ~NA_OFI_EXPECTED_TAG_FLAG), out, ret, NA_PROTOCOL_ERROR,
+        "Invalid tag 0x%x, expected 0x%x",
+        na_ofi_op_id->noo_info.noo_recv_expected.noi_tag,
+        tag & ~NA_OFI_EXPECTED_TAG_FLAG);
 
     na_ofi_op_id->noo_info.noo_recv_expected.noi_msg_size = len;
 
@@ -2972,12 +2724,9 @@ na_ofi_cq_process_rma_event(struct na_ofi_op_id *na_ofi_op_id)
     na_cb_type_t cb_type = na_ofi_op_id->noo_completion_data.callback_info.type;
     na_return_t ret = NA_SUCCESS;
 
-    if (cb_type != NA_CB_PUT && cb_type != NA_CB_GET) {
-        NA_LOG_ERROR("ignore the send_event as cb_type %d mismatched with "
-            "NA_CB_PUT/_GET.", cb_type);
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(cb_type != NA_CB_PUT && cb_type != NA_CB_GET, out, ret,
+        NA_PROTOCOL_ERROR, "Invalid cb_type %d, expected NA_CB_PUT/GET",
+        cb_type);
 
 out:
     return ret;
@@ -3015,12 +2764,10 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id, na_return_t op_ret)
         break;
     case NA_CB_RECV_EXPECTED:
         /* Check buf_size and msg_size */
-        if (na_ofi_op_id->noo_info.noo_recv_expected.noi_msg_size >
-            na_ofi_op_id->noo_info.noo_recv_expected.noi_buf_size) {
-            NA_LOG_ERROR("Expected recv too large for buffer");
-            ret = NA_SIZE_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(
+            na_ofi_op_id->noo_info.noo_recv_expected.noi_msg_size >
+            na_ofi_op_id->noo_info.noo_recv_expected.noi_buf_size, out, ret,
+            NA_SIZE_ERROR, "Expected recv msg size too large for buffer");
         break;
     case NA_CB_SEND_UNEXPECTED:
     case NA_CB_SEND_EXPECTED:
@@ -3028,17 +2775,16 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id, na_return_t op_ret)
     case NA_CB_GET:
         break;
     default:
-        NA_LOG_ERROR("Operation type %d not supported.", callback_info->type);
-        ret = NA_INVALID_PARAM;
+        NA_GOTO_ERROR(out, ret, NA_INVALID_PARAM,
+            "Operation type %d not supported", callback_info->type);
         break;
     }
 
     /* Add OP to NA completion queue */
     ret = na_cb_completion_add(na_ofi_op_id->noo_context,
        &na_ofi_op_id->noo_completion_data);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-    }
+    NA_CHECK_NA_ERROR(out, ret,
+        "Could not add callback to completion queue");
 
 out:
     if (na_ofi_addr)
@@ -3071,17 +2817,12 @@ na_ofi_check_protocol(const char *protocol_name)
     enum na_ofi_prov_type type;
 
     type = na_ofi_prov_name_to_type(protocol_name);
-    if(type == NA_OFI_PROV_NULL) {
-        NA_LOG_ERROR("protocol %s not supported", protocol_name);
-        goto out;
-    }
+    NA_CHECK_ERROR(type == NA_OFI_PROV_NULL, out, ret, NA_PROTOCOL_ERROR,
+        "Protocol %s not supported", protocol_name);
 
     /* Get info from provider */
     ret = na_ofi_getinfo(type, &providers);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("na_ofi_getinfo failed, ret: %d.", ret);
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(out, ret, "na_ofi_getinfo() failed");
 
     prov = providers;
     while (prov != NULL) {
@@ -3097,9 +2838,9 @@ na_ofi_check_protocol(const char *protocol_name)
         prov = prov->next;
     }
 
+    fi_freeinfo(providers);
+
 out:
-    if (providers)
-        fi_freeinfo(providers);
     return accept;
 }
 
@@ -3122,41 +2863,32 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     na_return_t ret = NA_SUCCESS;
     enum na_ofi_prov_type prov_type;
 
-    /*
-    NA_LOG_DEBUG("Entering na_ofi_initialize class_name %s, protocol_name %s, "
-                 "host_name %s.\n", na_info->class_name, na_info->protocol_name,
-                 na_info->host_name);
-    */
+//    NA_LOG_DEBUG("Entering na_ofi_initialize class_name %s, protocol_name %s, "
+//                 "host_name %s.\n", na_info->class_name, na_info->protocol_name,
+//                 na_info->host_name);
 
     prov_type = na_ofi_prov_name_to_type(na_info->protocol_name);
-    if(prov_type == NA_OFI_PROV_NULL) {
-        NA_LOG_ERROR("protocol %s not supported", na_info->protocol_name);
-        ret = NA_INVALID_PARAM;
-        goto out;
-    }
+    NA_CHECK_ERROR(prov_type == NA_OFI_PROV_NULL, out, ret,
+        NA_INVALID_PARAM, "Protocol %s not supported", na_info->protocol_name);
 
 #if defined(NA_OFI_HAS_EXT_GNI_H) && defined(NA_OFI_GNI_HAS_UDREG)
     /* In case of GNI using udreg, we check to see whether MPICH_GNI_NDREG_ENTRIES
      * environment variable is set or not.  If not, this code is not likely
      * to work if Cray MPI is also used. Print error msg suggesting workaround.
      */
-    if (prov_type == NA_OFI_PROV_GNI && !getenv("MPICH_GNI_NDREG_ENTRIES"))
-    {
-        NA_LOG_ERROR("ofi+gni provider requested, but the MPICH_GNI_NDREG_ENTRIES environment variable is not set.");
-        NA_LOG_ERROR("Please run this executable with \"export MPICH_GNI_NDREG_ENTRIES=1024\" to ensure compatibility.");
-        ret = NA_INVALID_PARAM;
-        goto out;
-    }
+    NA_CHECK_ERROR(prov_type == NA_OFI_PROV_GNI
+        && !getenv("MPICH_GNI_NDREG_ENTRIES"), out, ret, NA_INVALID_PARAM,
+        "ofi+gni provider requested, but the MPICH_GNI_NDREG_ENTRIES "
+        "environment variable is not set.\n" "Please run this executable with "
+        "\"export MPICH_GNI_NDREG_ENTRIES=1024\" to ensure compatibility."
+    );
 #endif
 
     /* Use default interface name if no hostname was passed */
     if (na_info->host_name) {
         resolve_name = strdup(na_info->host_name);
-        if (!resolve_name) {
-            NA_LOG_ERROR("strdup() of host_name failed");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(resolve_name == NULL, out, ret, NA_NOMEM_ERROR,
+            "strdup() of host_name failed");
 
         /* Extract hostname */
         if (strstr(resolve_name, ":")) {
@@ -3167,11 +2899,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         }
     } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI) {
         resolve_name = strdup(NA_OFI_GNI_IFACE_DEFAULT);
-        if (!resolve_name) {
-            NA_LOG_ERROR("strdup() of NA_OFI_GNI_IFACE_DEFAULT failed");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(resolve_name == NULL, out, ret, NA_NOMEM_ERROR,
+            "strdup() of NA_OFI_GNI_IFACE_DEFAULT failed");
     }
 
     /* Get hostname/port info if available */
@@ -3183,10 +2912,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
             /* Try to get matching IP/device */
             ret = na_ofi_check_interface(resolve_name, port, &ifa_name,
                 &na_ofi_sin_addr);
-            if (ret != NA_SUCCESS) {
-                NA_LOG_ERROR("Could not check interfaces");
-                goto out;
-            }
+            NA_CHECK_NA_ERROR(out, ret, "Could not check interfaces");
 
             /* Set SIN addr if found */
             if (na_ofi_sin_addr && ifa_name) {
@@ -3201,25 +2927,21 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
             }
         } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI) {
             struct na_ofi_sin_addr *na_ofi_sin_addr = NULL;
+            const char *ptr;
 
             /* Try to get matching IP/device (do not use port) */
             ret = na_ofi_check_interface(resolve_name, 0, NULL,
                 &na_ofi_sin_addr);
-            if (ret != NA_SUCCESS || !na_ofi_sin_addr) {
-                NA_LOG_ERROR("Could not check interfaces");
-                goto out;
-            }
+            NA_CHECK_ERROR(ret != NA_SUCCESS || !na_ofi_sin_addr, out, ret,
+                NA_PROTOCOL_ERROR, "Could not check interfaces");
 
             /* Node must match IP resolution */
-            if (!inet_ntop(na_ofi_sin_addr->sin.sin_family,
-                &na_ofi_sin_addr->sin.sin_addr, node, sizeof(node))) {
-                NA_LOG_ERROR("Could not convert IP to string");
-                free(na_ofi_sin_addr);
-                ret = NA_PROTOCOL_ERROR;
-                goto out;
-            }
-            node_ptr = node;
+            ptr = inet_ntop(na_ofi_sin_addr->sin.sin_family,
+                &na_ofi_sin_addr->sin.sin_addr, node, sizeof(node));
             free(na_ofi_sin_addr);
+            NA_CHECK_ERROR(ptr == NULL, out, ret, NA_PROTOCOL_ERROR,
+                "Could not convert IP to string");
+            node_ptr = node;
         } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_PSMX2) {
             /* Nothing to do */
         }
@@ -3239,11 +2961,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     /* Create private data */
     na_class->plugin_class = (struct na_ofi_class *) malloc(
         sizeof(struct na_ofi_class));
-    if (!na_class->plugin_class) {
-        NA_LOG_ERROR("Could not allocate NA private data class");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_class->plugin_class == NULL, out, ret, NA_NOMEM_ERROR,
+        "Could not allocate NA private data class");
     memset(na_class->plugin_class, 0, sizeof(struct na_ofi_class));
     priv = NA_OFI_CLASS(na_class);
     priv->no_wait = no_wait;
@@ -3261,26 +2980,18 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     /* Create domain */
     ret = na_ofi_domain_open(na_class->plugin_class, prov_type, domain_name,
         auth_key, &priv->nop_domain);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not open domain for %s, %s", na_ofi_prov_name[prov_type],
-            domain_name);
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(out, ret, "Could not open domain for %s, %s",
+        na_ofi_prov_name[prov_type], domain_name);
 
     /* Create endpoint */
     ret = na_ofi_endpoint_open(priv->nop_domain, node_ptr, src_addr, src_addrlen,
         priv->no_wait, priv->nop_max_contexts, &priv->nop_endpoint);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not create endpoint for %s", resolve_name);
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(out, ret, "Could not create endpoint for %s",
+        resolve_name);
 
     /* Get address from endpoint */
     ret = na_ofi_get_ep_addr(na_class, &priv->nop_endpoint->noe_addr);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not get address from endpoint");
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(out, ret, "Could not get address from endpoint");
 
 out:
     if (ret != NA_SUCCESS) {
@@ -3307,10 +3018,7 @@ na_ofi_finalize(na_class_t *na_class)
     /* Close endpoint */
     if (priv->nop_endpoint) {
         ret = na_ofi_endpoint_close(priv->nop_endpoint);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not close endpoint");
-            goto out;
-        }
+        NA_CHECK_NA_ERROR(out, ret, "Could not close endpoint");
         priv->nop_endpoint = NULL;
     }
 
@@ -3328,10 +3036,7 @@ na_ofi_finalize(na_class_t *na_class)
     /* Close domain */
     if (priv->nop_domain) {
         ret = na_ofi_domain_close(priv->nop_domain);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not close domain");
-            goto out;
-        }
+        NA_CHECK_NA_ERROR(out, ret, "Could not close domain");
         priv->nop_domain = NULL;
     }
 
@@ -3357,15 +3062,13 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
     int rc = 0;
 
     ctx = (struct na_ofi_context *)calloc(1, sizeof(struct na_ofi_context));
-    if (!ctx) {
-        NA_LOG_ERROR("Could not allocate na_ofi_context.");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(ctx == NULL, out, ret, NA_NOMEM_ERROR,
+        "Could not allocate na_ofi_context");
     ctx->noc_idx = id;
 
     /* If not using SEP, just point to endpoint objects */
     hg_thread_mutex_lock(&priv->nop_mutex);
+
     if (!na_ofi_with_sep(na_class)) {
         ctx->noc_tx = ep->noe_ep;
         ctx->noc_rx = ep->noe_ep;
@@ -3374,24 +3077,17 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
         ctx->noc_unexpected_op_queue = ep->noe_unexpected_op_queue;
     } else {
         /* Initialize queue / mutex */
-        ctx->noc_unexpected_op_queue = malloc(sizeof(struct na_ofi_queue));
-        if (!ctx->noc_unexpected_op_queue) {
-            NA_LOG_ERROR("Could not allocate noc_unexpected_op_queue/_lock");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
-        HG_QUEUE_INIT(&ctx->noc_unexpected_op_queue->noq_queue);
         hg_thread_spin_init(&ctx->noc_unexpected_op_queue->noq_lock);
 
-        if (priv->nop_contexts >= priv->nop_max_contexts ||
-            id >= priv->nop_max_contexts) {
-            NA_LOG_ERROR("nop_contexts %d, context id %d, nop_max_contexts %d "
-                "could not create context.", priv->nop_contexts,
-                id, priv->nop_max_contexts);
-            hg_thread_mutex_unlock(&priv->nop_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        ctx->noc_unexpected_op_queue = malloc(sizeof(struct na_ofi_queue));
+        NA_CHECK_ERROR(ctx->noc_unexpected_op_queue == NULL, error, ret,
+            NA_NOMEM_ERROR, "Could not allocate noc_unexpected_op_queue/_lock");
+        HG_QUEUE_INIT(&ctx->noc_unexpected_op_queue->noq_queue);
+
+        NA_CHECK_ERROR(priv->nop_contexts >= priv->nop_max_contexts ||
+            id >= priv->nop_max_contexts, error, ret, NA_PROTOCOL_ERROR,
+            "nop_contexts %d, context id %d, nop_max_contexts %d",
+            priv->nop_contexts, id, priv->nop_max_contexts);
 
         if (!priv->no_wait) {
             if (na_ofi_prov_flags[domain->nod_prov_type] & NA_OFI_WAIT_FD)
@@ -3403,13 +3099,8 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
                 wait_attr.wait_obj = FI_WAIT_UNSPEC;
                 rc = fi_wait_open(domain->nod_fabric, &wait_attr,
                     &ctx->noc_wait);
-                if (rc != 0) {
-                    NA_LOG_ERROR("fi_wait_open failed, rc: %d(%s).", rc,
-                        fi_strerror(-rc));
-                    hg_thread_mutex_unlock(&priv->nop_mutex);
-                    ret = NA_PROTOCOL_ERROR;
-                    goto out;
-                }
+                NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+                    "fi_wait_open() failed, rc: %d(%s)", rc, fi_strerror(-rc));
                 cq_attr.wait_obj = FI_WAIT_SET; /* Wait on wait set */
                 cq_attr.wait_set = ctx->noc_wait;
             }
@@ -3418,67 +3109,32 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
         cq_attr.format = FI_CQ_FORMAT_TAGGED;
         cq_attr.size = NA_OFI_CQ_DEPTH;
         rc = fi_cq_open(domain->nod_domain, &cq_attr, &ctx->noc_cq, NULL);
-        if (rc < 0) {
-            NA_LOG_ERROR("fi_cq_open failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            hg_thread_mutex_unlock(&priv->nop_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc < 0, error, ret, NA_PROTOCOL_ERROR,
+            "fi_cq_open() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
         rc = fi_tx_context(ep->noe_ep, id, NULL, &ctx->noc_tx, NULL);
-        if (rc < 0) {
-            NA_LOG_ERROR("fi_tx_context failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            hg_thread_mutex_unlock(&priv->nop_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc < 0, error, ret, NA_PROTOCOL_ERROR,
+            "fi_tx_context() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
         rc = fi_rx_context(ep->noe_ep, id, NULL, &ctx->noc_rx, NULL);
-        if (rc < 0) {
-            NA_LOG_ERROR("fi_rx_context failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            hg_thread_mutex_unlock(&priv->nop_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc < 0, error, ret, NA_PROTOCOL_ERROR,
+            "fi_rx_context() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
         rc = fi_ep_bind(ctx->noc_tx, &ctx->noc_cq->fid, FI_TRANSMIT);
-        if (rc < 0) {
-            NA_LOG_ERROR("fi_ep_bind noc_tx failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            hg_thread_mutex_unlock(&priv->nop_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc < 0, error, ret, NA_PROTOCOL_ERROR,
+            "fi_ep_bind() noc_tx failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
         rc = fi_ep_bind(ctx->noc_rx, &ctx->noc_cq->fid, FI_RECV);
-        if (rc < 0) {
-            NA_LOG_ERROR("fi_ep_bind noc_rx failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            hg_thread_mutex_unlock(&priv->nop_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc < 0, error, ret, NA_PROTOCOL_ERROR,
+            "fi_ep_bind() noc_rx failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
         rc = fi_enable(ctx->noc_tx);
-        if (rc < 0) {
-            NA_LOG_ERROR("fi_enable noc_tx failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            hg_thread_mutex_unlock(&priv->nop_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc < 0, error, ret, NA_PROTOCOL_ERROR,
+            "fi_enable() noc_tx failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
         rc = fi_enable(ctx->noc_rx);
-        if (rc < 0) {
-            NA_LOG_ERROR("fi_enable noc_rx failed, rc: %d(%s).",
-                rc, fi_strerror(-rc));
-            hg_thread_mutex_unlock(&priv->nop_mutex);
-            ret = NA_PROTOCOL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc < 0, error, ret, NA_PROTOCOL_ERROR,
+            "fi_enable() noc_rx failed, rc: %d(%s)", rc, fi_strerror(-rc));
     }
 
     priv->nop_contexts++;
@@ -3487,14 +3143,15 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
     *context = ctx;
 
 out:
-    if (ret != NA_SUCCESS && ctx) {
-        if (na_ofi_with_sep(na_class) && ctx->noc_unexpected_op_queue) {
-            hg_thread_spin_destroy(&ctx->noc_unexpected_op_queue->noq_lock);
-            free(ctx->noc_unexpected_op_queue);
-        }
-        free(ctx);
-    }
+    return ret;
 
+error:
+    hg_thread_mutex_unlock(&priv->nop_mutex);
+    if (na_ofi_with_sep(na_class) && ctx->noc_unexpected_op_queue) {
+        hg_thread_spin_destroy(&ctx->noc_unexpected_op_queue->noq_lock);
+        free(ctx->noc_unexpected_op_queue);
+    }
+    free(ctx);
     return ret;
 }
 
@@ -3508,57 +3165,41 @@ na_ofi_context_destroy(na_class_t *na_class, void *context)
     int rc;
 
     /* Check that unexpected op queue is empty */
-    if (na_ofi_with_sep(na_class) &&
-        !HG_QUEUE_IS_EMPTY(&ctx->noc_unexpected_op_queue->noq_queue)) {
-        NA_LOG_ERROR("Unexpected op queue should be empty");
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
+    if (na_ofi_with_sep(na_class)) {
+        na_bool_t empty =
+            HG_QUEUE_IS_EMPTY(&ctx->noc_unexpected_op_queue->noq_queue);
+        NA_CHECK_ERROR(empty == NA_FALSE, out, ret, NA_PROTOCOL_ERROR,
+            "Unexpected op queue should be empty");
     }
 
     if (na_ofi_with_sep(na_class)) {
         if (ctx->noc_tx) {
             rc = fi_close(&ctx->noc_tx->fid);
-            if (rc != 0) {
-                NA_LOG_ERROR("fi_close noc_tx failed, rc: %d(%s).",
-                             rc, fi_strerror(-rc));
-                ret = NA_PROTOCOL_ERROR;
-                goto out;
-            }
+            NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+                "fi_close() noc_tx failed, rc: %d(%s)", rc, fi_strerror(-rc));
             ctx->noc_tx = NULL;
         }
 
         if (ctx->noc_rx) {
             rc = fi_close(&ctx->noc_rx->fid);
-            if (rc != 0) {
-                NA_LOG_ERROR("fi_close noc_rx failed, rc: %d(%s).",
-                             rc, fi_strerror(-rc));
-                ret = NA_PROTOCOL_ERROR;
-                goto out;
-            }
+            NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+                "fi_close() noc_rx failed, rc: %d(%s)", rc, fi_strerror(-rc));
             ctx->noc_rx = NULL;
         }
 
         /* Close wait set */
         if (ctx->noc_wait) {
             rc = fi_close(&ctx->noc_wait->fid);
-            if (rc != 0) {
-                NA_LOG_ERROR("fi_close wait failed, rc: %d(%s).",
-                             rc, fi_strerror(-rc));
-                ret = NA_PROTOCOL_ERROR;
-                goto out;
-            }
+            NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+                "fi_close() wait failed, rc: %d(%s)", rc, fi_strerror(-rc));
             ctx->noc_wait = NULL;
         }
 
         /* Close completion queue */
         if (ctx->noc_cq) {
             rc = fi_close(&ctx->noc_cq->fid);
-            if (rc != 0) {
-                NA_LOG_ERROR("fi_close CQ failed, rc: %d(%s).",
-                             rc, fi_strerror(-rc));
-                ret = NA_PROTOCOL_ERROR;
-                goto out;
-            }
+            NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+                "fi_close() CQ failed, rc: %d(%s)", rc, fi_strerror(-rc));
             ctx->noc_cq = NULL;
         }
 
@@ -3571,6 +3212,7 @@ na_ofi_context_destroy(na_class_t *na_class, void *context)
     hg_thread_mutex_unlock(&priv->nop_mutex);
 
     free(ctx);
+
 out:
     return ret;
 }
@@ -3582,10 +3224,8 @@ na_ofi_op_create(na_class_t NA_UNUSED *na_class)
     struct na_ofi_op_id *na_ofi_op_id = NULL;
 
     na_ofi_op_id = (struct na_ofi_op_id *)calloc(1, sizeof(struct na_ofi_op_id));
-    if (!na_ofi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA OFI operation ID");
-        goto out;
-    }
+    NA_CHECK_ERROR_NORET(na_ofi_op_id == NULL, out,
+        "Could not allocate NA OFI operation ID");
     hg_atomic_init32(&na_ofi_op_id->noo_refcount, 1);
     /* Completed by default */
     hg_atomic_init32(&na_ofi_op_id->noo_completed, NA_TRUE);
@@ -3624,24 +3264,17 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
 
     /* Check provider from name */
-    if (na_ofi_addr_prov(name) != priv->nop_domain->nod_prov_type) {
-        NA_LOG_ERROR("Unrecognized provider type found from: %s", name);
-        ret = NA_INVALID_PARAM;
-        goto out;
-    }
+    NA_CHECK_ERROR(
+        na_ofi_addr_prov(name) != priv->nop_domain->nod_prov_type, out, ret,
+        NA_INVALID_PARAM, "Unrecognized provider type found from: %s", name);
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
-        na_ofi_op_id_addref(na_ofi_op_id);
-    } else {
-        na_ofi_op_id = (struct na_ofi_op_id *)na_ofi_op_create(na_class);
-        if (!na_ofi_op_id) {
-            NA_LOG_ERROR("Could not create NA OFI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
-    }
+    /* Check op_id */
+    NA_CHECK_ERROR(
+        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
+        out, ret, NA_INVALID_PARAM, "Invalid operation ID");
+
+    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+    na_ofi_op_id_addref(na_ofi_op_id);
     na_ofi_op_id->noo_context = context;
     na_ofi_op_id->noo_completion_data.callback_info.type = NA_CB_LOOKUP;
     na_ofi_op_id->noo_completion_data.callback = callback;
@@ -3651,59 +3284,41 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
 
     /* Allocate addr */
     na_ofi_addr = na_ofi_addr_alloc();
-    if (!na_ofi_addr) {
-        NA_LOG_ERROR("na_ofi_addr_alloc failed");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_addr == NULL, error, ret, NA_NOMEM_ERROR,
+        "na_ofi_addr_alloc() failed");
     na_ofi_addr->uri = strdup(name);
-    if (!na_ofi_addr->uri) {
-        NA_LOG_ERROR("strdup() of URI failed");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_addr->uri == NULL, error, ret, NA_NOMEM_ERROR,
+        "strdup() of URI failed");
     /* One extra refcount to be decref in na_ofi_complete(). */
     na_ofi_addr_addref(na_ofi_addr);
     na_ofi_op_id->noo_addr = na_ofi_addr;
     na_ofi_op_id->noo_info.noo_lookup.noi_addr = (na_addr_t) na_ofi_addr;
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
-
     /* Convert name to address */
     ret = na_ofi_str_to_addr(name,
         na_ofi_prov_addr_format[priv->nop_domain->nod_prov_type],
         &na_ofi_addr->addr, &na_ofi_addr->addrlen);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not convert string to address");
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(error, ret, "Could not convert string to address");
 
     /* Lookup address */
     ret = na_ofi_addr_ht_lookup(na_class,
         na_ofi_prov_addr_format[priv->nop_domain->nod_prov_type],
         na_ofi_addr->addr, na_ofi_addr->addrlen, &na_ofi_addr->fi_addr);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("na_ofi_addr_ht_lookup(%s) failed, ret: %d.", name, ret);
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(error, ret, "na_ofi_addr_ht_lookup(%s) failed", name);
 
     /* As the fi_av_insert is blocking, always complete here */
     ret = na_ofi_complete(na_ofi_op_id, ret);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not complete operation");
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
 
 out:
-    if (ret != NA_SUCCESS) {
-        if (na_ofi_addr) {
-            free(na_ofi_addr->addr);
-            free(na_ofi_addr->uri);
-            free(na_ofi_addr);
-        }
-        free(na_ofi_op_id);
+    return ret;
+
+error:
+    na_ofi_op_id_decref(na_ofi_op_id);
+    if (na_ofi_addr) {
+        free(na_ofi_addr->addr);
+        free(na_ofi_addr->uri);
+        free(na_ofi_addr);
     }
     return ret;
 }
@@ -3759,20 +3374,14 @@ na_ofi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
     na_size_t str_len;
     na_return_t ret = NA_SUCCESS;
 
-    if (na_ofi_addr->unexpected) {
-        NA_LOG_ERROR("Addr to string is not available on unexpected addresses");
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_addr->unexpected, out, ret, NA_PROTOCOL_ERROR,
+        "Addr to string is not available on unexpected addresses");
 
     str_len = strlen(na_ofi_addr->uri);
     if (buf) {
-        if (str_len >= *buf_size) {
-            NA_LOG_ERROR("Buffer size too small to copy addr");
-            ret = NA_SIZE_ERROR;
-        } else {
-            strcpy(buf, na_ofi_addr->uri);
-        }
+        NA_CHECK_ERROR(str_len >= *buf_size, out, ret, NA_SIZE_ERROR,
+            "Buffer size too small to copy addr");
+        strcpy(buf, na_ofi_addr->uri);
     }
     *buf_size = str_len + 1;
 
@@ -3800,11 +3409,8 @@ na_ofi_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
     na_return_t ret = NA_SUCCESS;
 
     len = na_ofi_addr->addrlen + sizeof(na_ofi_addr->addrlen);
-    if (buf_size < len) {
-        NA_LOG_ERROR("Buffer size too small for serializing address");
-        ret = NA_SIZE_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(buf_size < len, out, ret, NA_SIZE_ERROR,
+        "Buffer size too small for serializing address");
 
     /* TODO could skip the addrlen but include it for sanity check */
     memcpy(buf, &na_ofi_addr->addrlen, sizeof(na_ofi_addr->addrlen));
@@ -3826,20 +3432,13 @@ na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
 
     /* Allocate addr */
     na_ofi_addr = na_ofi_addr_alloc();
-    if (!na_ofi_addr) {
-        NA_LOG_ERROR("na_ofi_addr_alloc failed");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_addr == NULL, out, ret, NA_NOMEM_ERROR,
+        "na_ofi_addr_alloc() failed");
     memcpy(&na_ofi_addr->addrlen, buf, sizeof(na_ofi_addr->addrlen));
 
     na_ofi_addr->addr = malloc(na_ofi_addr->addrlen);
-    if (!na_ofi_addr->addr) {
-        NA_LOG_ERROR("Could not allocate %zu bytes for address",
-            na_ofi_addr->addrlen);
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_addr->addr == NULL, error, ret, NA_NOMEM_ERROR,
+        "Could not allocate %zu bytes for address", na_ofi_addr->addrlen);
     memcpy(na_ofi_addr->addr,
         (const na_uint8_t *) buf + sizeof(na_ofi_addr->addrlen),
         na_ofi_addr->addrlen);
@@ -3850,16 +3449,16 @@ na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
     ret = na_ofi_addr_ht_lookup(na_class,
         na_ofi_prov_addr_format[priv->nop_domain->nod_prov_type],
         na_ofi_addr->addr, na_ofi_addr->addrlen, &na_ofi_addr->fi_addr);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("na_ofi_addr_ht_lookup(%s) failed, ret: %d.", "", ret);
-        goto out;
-    }
+    NA_CHECK_NA_ERROR(error, ret, "na_ofi_addr_ht_lookup() failed");
 
     *addr = na_ofi_addr;
 
 out:
-    if (ret != NA_SUCCESS && na_ofi_addr)
-        free(na_ofi_addr);
+    return ret;
+
+error:
+    free(na_ofi_addr->addr);
+    free(na_ofi_addr);
     return ret;
 }
 
@@ -3877,17 +3476,14 @@ na_ofi_msg_get_max_unexpected_size(const na_class_t NA_UNUSED *na_class)
 
         rc = fi_open_ops(&domain->nod_domain->fid, FI_GNI_DOMAIN_OPS_1,
             0, (void **) &gni_domain_ops, NULL);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_open_ops failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, max_unexpected_size, 0,
+            "fi_open_ops() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
         rc = gni_domain_ops->get_val(&domain->nod_domain->fid,
             GNI_MBOX_MSG_MAX_SIZE, &max_unexpected_size);
-        if (rc != 0) {
-            NA_LOG_ERROR("get_val failed, rc: %d(%s).", rc, fi_strerror(-rc));
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, max_unexpected_size, 0,
+            "gni_domain_ops->get_val() failed, rc: %d(%s)", rc,
+            fi_strerror(-rc));
     }
 
 out:
@@ -3928,16 +3524,12 @@ na_ofi_msg_buf_alloc(na_class_t *na_class, na_size_t size, void **plugin_data)
 
 #ifdef NA_OFI_HAS_MEM_POOL
     mem_ptr = na_ofi_mem_pool_alloc(na_class, size, &mr_hdl);
-    if (!mem_ptr) {
-        NA_LOG_ERROR("Could not allocate buffer from pool");
-        goto out;
-    }
+    NA_CHECK_ERROR_NORET(mem_ptr == NULL, out,
+        "Could not allocate buffer from pool");
 #else
     mem_ptr = na_ofi_mem_alloc(na_class, size, &mr_hdl);
-    if (!mem_ptr) {
-        NA_LOG_ERROR("Could not allocate %d bytes", (int) size);
-        goto out;
-    }
+    NA_CHECK_ERROR_NORET(mem_ptr == NULL, out,
+        "Could not allocate %d bytes", (int) size);
 #endif
     *plugin_data = mr_hdl;
 
@@ -3997,32 +3589,21 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
-    na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
+    /* Check op_id */
+    NA_CHECK_ERROR(
+        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
+        out, ret, NA_INVALID_PARAM, "Invalid operation ID");
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
-        na_ofi_op_id_addref(na_ofi_op_id);
-    } else {
-        na_ofi_op_id = (struct na_ofi_op_id *)na_ofi_op_create(na_class);
-        if (!na_ofi_op_id) {
-            NA_LOG_ERROR("Could not create NA OFI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
-    }
-
+    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+    na_ofi_op_id_addref(na_ofi_op_id);
     na_ofi_op_id->noo_context = context;
     na_ofi_op_id->noo_completion_data.callback_info.type = NA_CB_SEND_UNEXPECTED;
     na_ofi_op_id->noo_completion_data.callback = callback;
     na_ofi_op_id->noo_completion_data.callback_info.arg = arg;
+    na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
     na_ofi_op_id->noo_addr = na_ofi_addr;
     hg_atomic_set32(&na_ofi_op_id->noo_completed, NA_FALSE);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Post the FI unexpected send request */
     fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS);
@@ -4035,18 +3616,16 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         else
             break;
     } while (1);
-    if (rc) {
-        NA_LOG_ERROR("fi_tsend(unexpected) failed, rc: %d(%s)",
-            rc, fi_strerror((int) -rc));
-        ret = NA_PROTOCOL_ERROR;
-    }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_tsend() unexpected failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
 out:
-    if (ret != NA_SUCCESS) {
-        na_ofi_addr_decref(na_ofi_addr);
-        if (na_ofi_op_id != NULL)
-            na_ofi_op_id_decref(na_ofi_op_id);
-    }
+    return ret;
+
+error:
+    na_ofi_addr_decref(na_ofi_addr);
+    na_ofi_op_id_decref(na_ofi_op_id);
+
     return ret;
 }
 
@@ -4063,19 +3642,13 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
-        na_ofi_op_id_addref(na_ofi_op_id);
-    } else {
-        na_ofi_op_id = (struct na_ofi_op_id *)na_ofi_op_create(na_class);
-        if (!na_ofi_op_id) {
-            NA_LOG_ERROR("Could not create NA OFI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
-    }
+    /* Check op_id */
+    NA_CHECK_ERROR(
+        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
+        out, ret, NA_INVALID_PARAM, "Invalid operation ID");
 
+    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+    na_ofi_op_id_addref(na_ofi_op_id);
     na_ofi_op_id->noo_context = context;
     na_ofi_op_id->noo_completion_data.callback_info.type = NA_CB_RECV_UNEXPECTED;
     na_ofi_op_id->noo_completion_data.callback = callback;
@@ -4085,10 +3658,6 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
     na_ofi_op_id->noo_info.noo_recv_unexpected.noi_buf = buf;
     na_ofi_op_id->noo_info.noo_recv_unexpected.noi_buf_size = buf_size;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
 
     na_ofi_msg_unexpected_op_push(context, na_ofi_op_id);
 
@@ -4103,16 +3672,16 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         else
             break;
     } while (1);
-    if (rc) {
-        NA_LOG_ERROR("fi_trecv(unexpected) failed, rc: %d(%s)",
-                     rc, fi_strerror((int) -rc));
-        na_ofi_msg_unexpected_op_remove(context, na_ofi_op_id);
-        ret = NA_PROTOCOL_ERROR;
-    }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_trecv() unexpected failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
 out:
-    if (ret != NA_SUCCESS && na_ofi_op_id != NULL)
-        na_ofi_op_id_decref(na_ofi_op_id);
+    return ret;
+
+error:
+    na_ofi_msg_unexpected_op_remove(context, na_ofi_op_id);
+    na_ofi_op_id_decref(na_ofi_op_id);
+
     return ret;
 }
 
@@ -4132,32 +3701,21 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
-    na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
+    /* Check op_id */
+    NA_CHECK_ERROR(
+        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
+        out, ret, NA_INVALID_PARAM, "Invalid operation ID");
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
-        na_ofi_op_id_addref(na_ofi_op_id);
-    } else {
-        na_ofi_op_id = (struct na_ofi_op_id *)na_ofi_op_create(na_class);
-        if (!na_ofi_op_id) {
-            NA_LOG_ERROR("Could not create NA OFI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
-    }
-
+    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+    na_ofi_op_id_addref(na_ofi_op_id);
     na_ofi_op_id->noo_context = context;
     na_ofi_op_id->noo_completion_data.callback_info.type = NA_CB_SEND_EXPECTED;
     na_ofi_op_id->noo_completion_data.callback = callback;
     na_ofi_op_id->noo_completion_data.callback_info.arg = arg;
+    na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
     na_ofi_op_id->noo_addr = na_ofi_addr;
     hg_atomic_set32(&na_ofi_op_id->noo_completed, NA_FALSE);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Post the FI expected send request */
     fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS);
@@ -4170,18 +3728,16 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         else
             break;
     } while (1);
-    if (rc) {
-        NA_LOG_ERROR("fi_tsend(expected) failed, rc: %d(%s)",
-            rc, fi_strerror((int) -rc));
-        ret = NA_PROTOCOL_ERROR;
-    }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_tsend() expected failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
 out:
-    if (ret != NA_SUCCESS) {
-        na_ofi_addr_decref(na_ofi_addr);
-        if (na_ofi_op_id != NULL)
-            na_ofi_op_id_decref(na_ofi_op_id);
-    }
+    return ret;
+
+error:
+    na_ofi_addr_decref(na_ofi_addr);
+    na_ofi_op_id_decref(na_ofi_op_id);
+
     return ret;
 }
 
@@ -4201,35 +3757,24 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
-    na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
+    /* Check op_id */
+    NA_CHECK_ERROR(
+        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
+        out, ret, NA_INVALID_PARAM, "Invalid operation ID");
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
-        na_ofi_op_id_addref(na_ofi_op_id);
-    } else {
-        na_ofi_op_id = (struct na_ofi_op_id *)na_ofi_op_create(na_class);
-        if (!na_ofi_op_id) {
-            NA_LOG_ERROR("Could not create NA OFI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
-    }
-
+    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+    na_ofi_op_id_addref(na_ofi_op_id);
     na_ofi_op_id->noo_context = context;
     na_ofi_op_id->noo_completion_data.callback_info.type = NA_CB_RECV_EXPECTED;
     na_ofi_op_id->noo_completion_data.callback = callback;
     na_ofi_op_id->noo_completion_data.callback_info.arg = arg;
     hg_atomic_set32(&na_ofi_op_id->noo_completed, NA_FALSE);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
+    na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
     na_ofi_op_id->noo_addr = na_ofi_addr;
     na_ofi_op_id->noo_info.noo_recv_expected.noi_buf = buf;
     na_ofi_op_id->noo_info.noo_recv_expected.noi_buf_size = buf_size;
     na_ofi_op_id->noo_info.noo_recv_expected.noi_tag = tag;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Post the FI expected recv request */
     fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, source_id, NA_OFI_SEP_RX_CTX_BITS);
@@ -4243,18 +3788,16 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         else
             break;
     } while (1);
-    if (rc) {
-        NA_LOG_ERROR("fi_trecv(expected) failed, rc: %d(%s)",
-            rc, fi_strerror((int) -rc));
-        ret = NA_PROTOCOL_ERROR;
-    }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_trecv() expected failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
 out:
-    if (ret != NA_SUCCESS) {
-        na_ofi_addr_decref(na_ofi_addr);
-        if (na_ofi_op_id != NULL)
-            na_ofi_op_id_decref(na_ofi_op_id);
-    }
+    return ret;
+
+error:
+    na_ofi_addr_decref(na_ofi_addr);
+    na_ofi_op_id_decref(na_ofi_op_id);
+
     return ret;
 }
 
@@ -4269,11 +3812,8 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     /* Allocate memory handle */
     na_ofi_mem_handle = (struct na_ofi_mem_handle *) calloc(1,
         sizeof(struct na_ofi_mem_handle));
-    if (!na_ofi_mem_handle) {
-        NA_LOG_ERROR("Could not allocate NA OFI memory handle");
-        ret = NA_NOMEM_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_mem_handle == NULL, out, ret, NA_NOMEM_ERROR,
+        "Could not allocate NA OFI memory handle");
 
     na_ofi_mem_handle->desc.base = (na_ptr_t)buf;
     na_ofi_mem_handle->desc.size = buf_size;
@@ -4312,7 +3852,7 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         /* Use global handle and key */
         na_ofi_mem_handle->mr_hdl = domain->nod_mr;
         na_ofi_mem_handle->desc.mr_key = domain->nod_mr_key;
-        return NA_SUCCESS;
+        goto out;
     }
 
     /* Set access mode */
@@ -4327,9 +3867,9 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
             access = FI_READ | FI_WRITE | FI_REMOTE_READ | FI_REMOTE_WRITE;
             break;
         default:
-            NA_LOG_ERROR("Invalid memory access flag");
-            ret = NA_INVALID_PARAM;
-            goto out;
+            NA_GOTO_ERROR(out, ret, NA_INVALID_PARAM,
+                "Invalid memory access flag");
+            break;
     }
 
     /* Register region */
@@ -4339,11 +3879,8 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
         (size_t) na_ofi_mem_handle->desc.size, access, 0 /* offset */,
         0 /* requested key */, 0 /* flags */, &na_ofi_mem_handle->mr_hdl,
         NULL /* context */);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_mr_reg failed, rc: %d(%s).", rc, fi_strerror(-rc));
-        ret = NA_PROTOCOL_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_mr_reg() failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
     /* Retrieve key */
     na_ofi_mem_handle->desc.mr_key = fi_mr_key(na_ofi_mem_handle->mr_hdl);
@@ -4367,11 +3904,8 @@ na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 
     /* close MR handle */
     rc = fi_close(&na_ofi_mem_handle->mr_hdl->fid);
-    if (rc != 0) {
-        NA_LOG_ERROR("fi_close mr_hdl failed, rc: %d(%s).",
-                     rc, fi_strerror(-rc));
-        return NA_PROTOCOL_ERROR;
-    }
+    NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+        "fi_close() mr_hdl failed, rc: %d(%s)", rc, fi_strerror(-rc));
 
 out:
     return ret;
@@ -4394,11 +3928,8 @@ na_ofi_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
             (struct na_ofi_mem_handle *) mem_handle;
     na_return_t ret = NA_SUCCESS;
 
-    if (buf_size < sizeof(struct na_ofi_mem_desc)) {
-        NA_LOG_ERROR("Buffer size too small for serializing handle");
-        ret = NA_SIZE_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(buf_size < sizeof(struct na_ofi_mem_desc), out, ret,
+        NA_SIZE_ERROR, "Buffer size too small for serializing handle");
 
     /* Copy struct */
     memcpy(buf, &na_ofi_mem_handle->desc, sizeof(na_ofi_mem_handle->desc));
@@ -4415,19 +3946,13 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     struct na_ofi_mem_handle *na_ofi_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
 
-    if (buf_size < sizeof(struct na_ofi_mem_desc)) {
-        NA_LOG_ERROR("Buffer size too small for deserializing handle");
-        ret = NA_SIZE_ERROR;
-        goto out;
-    }
+    NA_CHECK_ERROR(buf_size < sizeof(struct na_ofi_mem_desc), out, ret,
+        NA_SIZE_ERROR, "Buffer size too small for deserializing handle");
 
     na_ofi_mem_handle = (struct na_ofi_mem_handle *)
             malloc(sizeof(struct na_ofi_mem_handle));
-    if (!na_ofi_mem_handle) {
-          NA_LOG_ERROR("Could not allocate NA OFI memory handle");
-          ret = NA_NOMEM_ERROR;
-          goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_mem_handle == NULL, out, ret, NA_NOMEM_ERROR,
+        "Could not allocate NA OFI memory handle");
 
     /* Copy struct */
     memcpy(&na_ofi_mem_handle->desc, buf, sizeof(na_ofi_mem_handle->desc));
@@ -4478,32 +4003,21 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
-    na_ofi_addr_addref(na_ofi_addr); /* for na_ofi_complete() */
+    /* Check op_id */
+    NA_CHECK_ERROR(
+        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
+        out, ret, NA_INVALID_PARAM, "Invalid operation ID");
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
-        na_ofi_op_id_addref(na_ofi_op_id);
-    } else {
-        na_ofi_op_id = (struct na_ofi_op_id *) na_ofi_op_create(na_class);
-        if (!na_ofi_op_id) {
-            NA_LOG_ERROR("Could not create NA OFI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
-    }
-
+    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+    na_ofi_op_id_addref(na_ofi_op_id);
     na_ofi_op_id->noo_context = context;
     na_ofi_op_id->noo_completion_data.callback_info.type = NA_CB_PUT;
     na_ofi_op_id->noo_completion_data.callback = callback;
     na_ofi_op_id->noo_completion_data.callback_info.arg = arg;
     hg_atomic_set32(&na_ofi_op_id->noo_completed, NA_FALSE);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
+    na_ofi_addr_addref(na_ofi_addr); /* for na_ofi_complete() */
     na_ofi_op_id->noo_addr = na_ofi_addr;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Assign context */
     msg_rma.context = &na_ofi_op_id->noo_fi_ctx;
@@ -4519,18 +4033,16 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         else
             break;
     } while (1);
-    if (rc) {
-        NA_LOG_ERROR("fi_writemsg() failed, rc: %d(%s)", rc,
-            fi_strerror((int) -rc));
-        ret = NA_PROTOCOL_ERROR;
-    }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_writemsg() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
 out:
-    if (ret != NA_SUCCESS) {
-        na_ofi_addr_decref(na_ofi_addr);
-        if (na_ofi_op_id != NULL)
-            na_ofi_op_id_decref(na_ofi_op_id);
-    }
+    return ret;
+
+error:
+    na_ofi_addr_decref(na_ofi_addr);
+    na_ofi_op_id_decref(na_ofi_op_id);
+
     return ret;
 }
 
@@ -4573,32 +4085,21 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
-    na_ofi_addr_addref(na_ofi_addr); /* for na_ofi_complete() */
+    /* Check op_id */
+    NA_CHECK_ERROR(
+        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
+        out, ret, NA_INVALID_PARAM, "Invalid operation ID");
 
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
-        na_ofi_op_id_addref(na_ofi_op_id);
-    } else {
-        na_ofi_op_id = (struct na_ofi_op_id *) na_ofi_op_create(na_class);
-        if (!na_ofi_op_id) {
-            NA_LOG_ERROR("Could not create NA OFI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
-    }
-
+    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+    na_ofi_op_id_addref(na_ofi_op_id);
     na_ofi_op_id->noo_context = context;
     na_ofi_op_id->noo_completion_data.callback_info.type = NA_CB_GET;
     na_ofi_op_id->noo_completion_data.callback = callback;
     na_ofi_op_id->noo_completion_data.callback_info.arg = arg;
     hg_atomic_set32(&na_ofi_op_id->noo_completed, NA_FALSE);
     hg_atomic_set32(&na_ofi_op_id->noo_canceled, NA_FALSE);
+    na_ofi_addr_addref(na_ofi_addr); /* for na_ofi_complete() */
     na_ofi_op_id->noo_addr = na_ofi_addr;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_ofi_op_id;
 
     /* Assign context */
     msg_rma.context = &na_ofi_op_id->noo_fi_ctx;
@@ -4612,18 +4113,16 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         else
             break;
     } while (1);
-    if (rc) {
-        NA_LOG_ERROR("fi_readmsg() failed, rc: %d(%s)", rc,
-            fi_strerror((int) -rc));
-        ret = NA_PROTOCOL_ERROR;
-    }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_readmsg() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
 out:
-    if (ret != NA_SUCCESS) {
-        na_ofi_addr_decref(na_ofi_addr);
-        if (na_ofi_op_id != NULL)
-            na_ofi_op_id_decref(na_ofi_op_id);
-    }
+    return ret;
+
+error:
+    na_ofi_addr_decref(na_ofi_addr);
+    na_ofi_op_id_decref(na_ofi_op_id);
+
     return ret;
 }
 
@@ -4640,13 +4139,10 @@ na_ofi_poll_get_fd(na_class_t *na_class, na_context_t *context)
         goto out;
 
     rc = fi_control(&ctx->noc_cq->fid, FI_GETWAIT, &fd);
-    if (rc < 0 && rc != -FI_ENOSYS)
-        NA_LOG_ERROR("fi_control() failed, rc: %d(%s).",
-            rc, fi_strerror((int) -rc));
-    if (fd < 0) {
-        NA_LOG_ERROR("Returned fd is not valid (%d), will not block", fd);
-        goto out;
-    }
+    NA_CHECK_ERROR_NORET(rc != 0 && rc != -FI_ENOSYS, out,
+        "fi_control() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
+    NA_CHECK_ERROR_NORET(fd < 0, out,
+        "Returned fd is not valid (%d), will not block", fd);
 
 out:
     return fd;
@@ -4678,7 +4174,7 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
     else if (rc == -FI_EAGAIN)
         return NA_FALSE;
     else {
-        NA_LOG_ERROR("fi_trywait() failed, rc: %d(%s).",
+        NA_LOG_ERROR("fi_trywait() failed, rc: %d(%s)",
             rc, fi_strerror((int) -rc));
         return NA_FALSE;
     }
@@ -4711,44 +4207,35 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
                 int rc = fi_wait(wait_hdl, (int) (remaining * 1000.0));
                 if (rc == -FI_ETIMEDOUT)
                     break;
-                else if (rc != FI_SUCCESS) {
-                    NA_LOG_ERROR("fi_wait() failed, rc: %d(%s).",
-                        rc, fi_strerror((int) -rc));
-                    ret = NA_PROTOCOL_ERROR;
-                    goto out;
-                }
+                NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+                    "fi_wait() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
             }
         }
 
         /* Read from CQ */
         ret = na_ofi_cq_read(na_class, context, NA_OFI_CQ_EVENT_NUM, cq_events,
             src_addrs, &src_err_addr, &src_err_addrlen, &actual_count);
-        if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("Could not read events from context CQ");
-            goto out;
-        } else {
-            if (timeout) {
-                hg_time_get_current(&t2);
-                remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
-            }
-            if (actual_count == 0) {
-                ret = NA_TIMEOUT; /* Return NA_TIMEOUT if no events */
-                if (remaining <= 0)
-                    break;
-                continue;
-            }
+        NA_CHECK_NA_ERROR(out, ret,
+            "Could not read events from context CQ");
+
+        if (timeout) {
+            hg_time_get_current(&t2);
+            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
         }
 
+        if (actual_count == 0) {
+            ret = NA_TIMEOUT; /* Return NA_TIMEOUT if no events */
+            if (remaining <= 0)
+                break;
+            continue;
+        }
         /* Got at least one completion event */
         assert(actual_count > 0);
 
         for (i = 0; i < actual_count; i++) {
            ret = na_ofi_cq_process_event(na_class, context, &cq_events[i],
                src_addrs[i], src_err_addr, src_err_addrlen);
-           if (ret != NA_SUCCESS) {
-               NA_LOG_ERROR("Could not process event");
-               goto out;
-           }
+           NA_CHECK_NA_ERROR(out, ret, "Could not process event");
         }
     } while (remaining > 0 && ret != NA_SUCCESS);
 
@@ -4762,16 +4249,15 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     na_op_id_t op_id)
 {
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
-    struct na_ofi_op_id *tmp = NULL, *first = NULL;
     ssize_t rc;
     na_return_t ret = NA_SUCCESS;
 
-    if (!na_ofi_op_id_valid(na_ofi_op_id)) {
-        NA_LOG_ERROR("bad na_ofi_op_id, ignore the cancel request.");
-        goto out;
-    }
+    NA_CHECK_ERROR(na_ofi_op_id_valid(na_ofi_op_id) == NA_FALSE, out, ret,
+        NA_PROTOCOL_ERROR, "Invalid operation ID");
+
     if (hg_atomic_get32(&na_ofi_op_id->noo_completed))
         goto out;
+
     if (!hg_atomic_cas32(&na_ofi_op_id->noo_canceled, NA_FALSE, NA_TRUE)) {
         NA_LOG_WARNING("ignore canceling for a canceled op.");
         goto out;
@@ -4782,47 +4268,37 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     switch (na_ofi_op_id->noo_completion_data.callback_info.type) {
     case NA_CB_LOOKUP:
         break;
-    case NA_CB_RECV_UNEXPECTED:
+    case NA_CB_RECV_UNEXPECTED: {
+        struct na_ofi_op_id *tmp = NULL, *first = NULL;
+
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->noc_rx->fid,
             &na_ofi_op_id->noo_fi_ctx);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_cancel unexpected recv failed, rc: %d(%s).",
-                         rc, fi_strerror((int) -rc));
-            ret = NA_CANCEL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, ret, NA_CANCEL_ERROR,
+            "fi_cancel() unexpected recv failed, rc: %d(%s)",
+            rc, fi_strerror((int) -rc));
 
         tmp = first = na_ofi_msg_unexpected_op_pop(context);
         do {
-            if (!tmp) {
-                NA_LOG_ERROR("got NULL head of unexpected op queue.");
-                ret = NA_PROTOCOL_ERROR;
-                goto out;
-            }
-            if (tmp == na_ofi_op_id) {
+            NA_CHECK_ERROR(tmp == NULL, out, ret, NA_PROTOCOL_ERROR,
+                "Head of unexpected op queue is NULL");
+            if (tmp == na_ofi_op_id)
                 break;
-            }
-            na_ofi_msg_unexpected_op_push(context, tmp);
 
+            na_ofi_msg_unexpected_op_push(context, tmp);
             tmp = na_ofi_msg_unexpected_op_pop(context);
-            if (tmp == first) {
-                NA_LOG_ERROR("tmp == first");
-                ret = NA_PROTOCOL_ERROR;
-                goto out;
-            }
+            NA_CHECK_ERROR(tmp == first, out, ret, NA_PROTOCOL_ERROR,
+                "Could not find operation ID");
         } while (tmp != na_ofi_op_id);
 
         ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+    }
         break;
     case NA_CB_RECV_EXPECTED:
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->noc_rx->fid,
             &na_ofi_op_id->noo_fi_ctx);
-        if (rc != 0) {
-            NA_LOG_ERROR("fi_cancel expected recv failed, rc: %d(%s).",
-                         rc, fi_strerror((int) -rc));
-            ret = NA_CANCEL_ERROR;
-            goto out;
-        }
+        NA_CHECK_ERROR(rc != 0, out, ret, NA_CANCEL_ERROR,
+            "fi_cancel() expected recv failed, rc: %d(%s)",
+            rc, fi_strerror((int) -rc));
 
         ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
         break;
@@ -4834,7 +4310,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->noc_tx->fid,
             &na_ofi_op_id->noo_fi_ctx);
         if (rc != 0) {
-            NA_LOG_WARNING("fi_cancel failed, rc: %d(%s).",
+            NA_LOG_WARNING("fi_cancel() failed, rc: %d(%s)",
                          rc, fi_strerror((int) -rc));
         }
         /* fi_cancel() is not guaranteed to return proper return code for now */
@@ -4853,12 +4329,10 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
         & NA_OFI_SKIP_SIGNAL)) {
         /* Signal CQ to wake up and no longer wait on FD */
         rc = fi_cq_signal(NA_OFI_CONTEXT(context)->noc_cq);
-        if (rc != 0 && rc != -ENOSYS) {
-            NA_LOG_ERROR("fi_cq_signal (op type %d) failed, rc: %d(%s).",
-                na_ofi_op_id->noo_completion_data.callback_info.type, rc,
-                fi_strerror((int) -rc));
-            ret = NA_PROTOCOL_ERROR;
-        }
+        NA_CHECK_ERROR(rc != 0 && rc != -ENOSYS, out, ret,
+            NA_PROTOCOL_ERROR, "fi_cq_signal (op type %d) failed, rc: %d(%s)",
+            na_ofi_op_id->noo_completion_data.callback_info.type, rc,
+            fi_strerror((int) -rc));
     }
 
 out:

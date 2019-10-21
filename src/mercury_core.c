@@ -1337,7 +1337,6 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
     hg_core_op_id->arg = arg;
     hg_atomic_init32(&hg_core_op_id->completed, 0);
     hg_core_op_id->info.lookup.hg_core_addr = NULL;
-    hg_core_op_id->info.lookup.na_lookup_op_id = NA_OP_ID_NULL;
 
     /* Allocate addr */
     hg_core_addr = hg_core_addr_create(HG_CORE_CONTEXT_CLASS(context), NULL);
@@ -1385,12 +1384,11 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
         }
     }
 #endif
+    /* Create operation ID */
+    hg_core_op_id->info.lookup.na_lookup_op_id = NA_Op_create(na_class);
+
     /* Assign corresponding NA class */
     hg_core_addr->core_addr.na_class = na_class;
-
-    /* Assign op_id */
-    if (op_id && op_id != HG_CORE_OP_ID_IGNORE)
-        *op_id = (hg_core_op_id_t) hg_core_op_id;
 
     na_ret = NA_Addr_lookup(na_class, na_context, hg_core_addr_lookup_cb,
         hg_core_op_id, name_str, &hg_core_op_id->info.lookup.na_lookup_op_id);
@@ -1408,6 +1406,10 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
         ret = progress_ret;
         goto done;
     }
+
+    /* Assign op_id */
+    if (op_id && op_id != HG_CORE_OP_ID_IGNORE)
+        *op_id = (hg_core_op_id_t) hg_core_op_id;
 
 done:
     if (ret != HG_SUCCESS) {
@@ -1726,7 +1728,7 @@ hg_core_create(struct hg_core_private_context *context, hg_bool_t use_sm)
     /* Alloc/init NA resources */
     ret = hg_core_alloc_na(hg_core_handle, use_sm);
     if (ret != HG_SUCCESS) {
-        NA_LOG_ERROR("Could not allocate NA handle ops");
+        HG_LOG_ERROR("Could not allocate NA handle ops");
         ret = NA_NOMEM_ERROR;
         goto done;
     }
@@ -1838,9 +1840,12 @@ hg_core_alloc_na(struct hg_core_private_handle *hg_core_handle,
     /* Create NA operation IDs */
     hg_core_handle->na_send_op_id = NA_Op_create(hg_core_handle->na_class);
     hg_core_handle->na_recv_op_id = NA_Op_create(hg_core_handle->na_class);
-    if (hg_core_handle->na_recv_op_id || hg_core_handle->na_send_op_id) {
+    hg_core_handle->na_ack_op_id = NA_Op_create(hg_core_handle->na_class);
+    if (hg_core_handle->na_recv_op_id || hg_core_handle->na_send_op_id
+        || hg_core_handle->na_ack_op_id) {
         if ((hg_core_handle->na_recv_op_id == NA_OP_ID_NULL)
-            || (hg_core_handle->na_send_op_id == NA_OP_ID_NULL)) {
+            || (hg_core_handle->na_send_op_id == NA_OP_ID_NULL)
+            || (hg_core_handle->na_ack_op_id == NA_OP_ID_NULL)) {
             HG_LOG_ERROR("NULL operation ID");
             ret = HG_NOMEM_ERROR;
             goto done;
@@ -1872,6 +1877,9 @@ hg_core_free_na(struct hg_core_private_handle *hg_core_handle)
     if (na_ret != NA_SUCCESS)
         HG_LOG_ERROR("Could not destroy NA op ID");
     na_ret = NA_Op_destroy(hg_core_handle->na_class, hg_core_handle->na_recv_op_id);
+    if (na_ret != NA_SUCCESS)
+        HG_LOG_ERROR("Could not destroy NA op ID");
+    na_ret = NA_Op_destroy(hg_core_handle->na_class, hg_core_handle->na_ack_op_id);
     if (na_ret != NA_SUCCESS)
         HG_LOG_ERROR("Could not destroy NA op ID");
 
@@ -3412,6 +3420,8 @@ hg_core_trigger_lookup_entry(struct hg_core_op_id *hg_core_op_id)
     }
 
     /* Free op */
+    NA_Op_destroy(hg_core_op_id->info.lookup.hg_core_addr->core_addr.na_class,
+        hg_core_op_id->info.lookup.na_lookup_op_id);
     free(hg_core_op_id);
     return ret;
 }

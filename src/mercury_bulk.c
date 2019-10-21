@@ -957,10 +957,7 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         goto done;
     }
     for (i = 0; i < hg_bulk_op_id->op_count; i++)
-        hg_bulk_op_id->na_op_ids[i] = NA_OP_ID_NULL;
-
-    /* Assign op_id */
-    if (op_id && op_id != HG_OP_ID_IGNORE) *op_id = (hg_op_id_t) hg_bulk_op_id;
+        hg_bulk_op_id->na_op_ids[i] = NA_Op_create(hg_bulk_op_id->na_class);
 
     /* Do actual transfer */
     ret = hg_bulk_transfer_pieces(na_bulk_op, na_origin_addr, origin_id, use_sm,
@@ -971,6 +968,10 @@ hg_bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
         HG_LOG_ERROR("Could not transfer data pieces");
         goto done;
     }
+
+    /* Assign op_id */
+    if (op_id && op_id != HG_OP_ID_IGNORE)
+        *op_id = (hg_op_id_t) hg_bulk_op_id;
 
 done:
     if (ret != HG_SUCCESS && hg_bulk_op_id) {
@@ -1022,6 +1023,7 @@ hg_return_t
 hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
 {
     hg_return_t ret = HG_SUCCESS;
+    unsigned int i;
 
     /* Execute callback */
     if (hg_bulk_op_id->callback) {
@@ -1054,6 +1056,8 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
     }
 
     /* Free op */
+    for (i = 0; i < hg_bulk_op_id->op_count; i++)
+        NA_Op_destroy(hg_bulk_op_id->na_class, hg_bulk_op_id->na_op_ids[i]);
     free(hg_bulk_op_id->na_op_ids);
     free(hg_bulk_op_id);
 

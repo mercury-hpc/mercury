@@ -12,6 +12,7 @@
 #define NA_PLUGIN_H
 
 #include "na.h"
+#include "na_error.h"
 
 #include "mercury_atomic_queue.h"
 #include "mercury_queue.h"

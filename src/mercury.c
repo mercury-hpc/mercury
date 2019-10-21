@@ -383,7 +383,7 @@ hg_more_data_cb(hg_core_handle_t core_handle, hg_op_t op,
         /* We need to do a bulk transfer to get the extra data */
         ret = hg_get_extra_payload(hg_handle, op, done_cb);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not get extra input");
+            HG_LOG_ERROR("Could not get extra payload");
             goto done;
         }
     }
@@ -1639,12 +1639,12 @@ HG_Addr_lookup(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_op_id->arg = arg;
     hg_op_id->info.lookup.hg_addr = HG_ADDR_NULL;
 
+    ret = HG_Core_addr_lookup(context->core_context, hg_core_addr_lookup_cb,
+        hg_op_id, name, &hg_op_id->info.lookup.core_op_id);
+
     /* Assign op_id */
     if (op_id && op_id != HG_OP_ID_IGNORE)
         *op_id = (hg_op_id_t) hg_op_id;
-
-    ret = HG_Core_addr_lookup(context->core_context, hg_core_addr_lookup_cb,
-        hg_op_id, name, &hg_op_id->info.lookup.core_op_id);
 
 done:
     return ret;

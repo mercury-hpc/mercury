@@ -120,16 +120,19 @@ na_test_target_lookup(struct na_test_lat_info *na_test_lat_info)
 {
     struct na_test_target_lookup_arg request_args = { 0 };
     hg_request_t *request = NULL;
+    na_op_id_t op_id = NA_OP_ID_NULL;
     na_return_t ret = NA_SUCCESS;
 
     request = hg_request_create(na_test_lat_info->request_class);
     request_args.addr_ptr = &na_test_lat_info->target_addr;
     request_args.request = request;
 
+    op_id = NA_Op_create(na_test_lat_info->na_class);
+
     /* Forward call to remote addr and get a new request */
     ret = NA_Addr_lookup(na_test_lat_info->na_class, na_test_lat_info->context,
         na_test_target_lookup_cb, &request_args,
-        na_test_lat_info->na_test_info.target_name, NA_OP_ID_IGNORE);
+        na_test_lat_info->na_test_info.target_name, &op_id);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not lookup address");
         goto done;
@@ -139,6 +142,7 @@ na_test_target_lookup(struct na_test_lat_info *na_test_lat_info)
     hg_request_wait(request, NA_MAX_IDLE_TIME, NULL);
 
 done:
+    NA_Op_destroy(na_test_lat_info->na_class, op_id);
     hg_request_destroy(request);
     return ret;
 }
@@ -326,6 +330,8 @@ na_test_send_finalize(struct na_test_lat_info *na_test_lat_info)
         NA_Msg_get_unexpected_header_size(na_test_lat_info->na_class);
     na_size_t buf_size =
         (unexpected_header_size) ? unexpected_header_size + 1 : 1;
+    na_op_id_t send_op_id;
+    na_op_id_t recv_op_id;
     na_return_t ret = NA_SUCCESS;
 
     /* Prepare send_buf */
@@ -338,13 +344,16 @@ na_test_send_finalize(struct na_test_lat_info *na_test_lat_info)
         &recv_buf_data);
     memset(recv_buf, 0, buf_size);
 
+    send_op_id = NA_Op_create(na_test_lat_info->na_class);
+    recv_op_id = NA_Op_create(na_test_lat_info->na_class);
+
     recv_request = hg_request_create(na_test_lat_info->request_class);
 
     /* Post recv */
     ret = NA_Msg_recv_expected(na_test_lat_info->na_class,
         na_test_lat_info->context, na_test_recv_expected_cb, recv_request,
         recv_buf, buf_size, recv_buf_data, na_test_lat_info->target_addr, 0,
-        NA_TEST_TAG_DONE, NA_OP_ID_IGNORE);
+        NA_TEST_TAG_DONE, &recv_op_id);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("NA_Msg_recv_expected() failed");
         goto done;
@@ -354,7 +363,7 @@ na_test_send_finalize(struct na_test_lat_info *na_test_lat_info)
     ret = NA_Msg_send_unexpected(na_test_lat_info->na_class,
         na_test_lat_info->context, NULL, NULL, send_buf, buf_size,
         send_buf_data, na_test_lat_info->target_addr, 0, NA_TEST_TAG_DONE,
-        NA_OP_ID_IGNORE);
+        &send_op_id);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("NA_Msg_send_unexpected() failed");
         goto done;
@@ -365,6 +374,8 @@ na_test_send_finalize(struct na_test_lat_info *na_test_lat_info)
 done:
     /* Clean up resources */
     hg_request_destroy(recv_request);
+    NA_Op_destroy(na_test_lat_info->na_class, send_op_id);
+    NA_Op_destroy(na_test_lat_info->na_class, recv_op_id);
     NA_Msg_buf_free(na_test_lat_info->na_class, send_buf, send_buf_data);
     NA_Msg_buf_free(na_test_lat_info->na_class, recv_buf, recv_buf_data);
     return ret;
