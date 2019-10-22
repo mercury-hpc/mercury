@@ -213,6 +213,9 @@ static unsigned long const na_ofi_prov_flags[] = { NA_OFI_PROV_TYPES };
 /* CQ max err data size (fix to 48 to work around bug in gni provider code) */
 #define NA_OFI_CQ_MAX_ERR_DATA_SIZE (48)
 
+/* Number of retries when receiving FI_EINTR error */
+#define NA_OFI_MAX_EINTR_RETRY  (1000)
+
 /* The magic number for na_ofi_op_id verification */
 #define NA_OFI_OP_ID_MAGIC_1    (0x1928374655627384ULL)
 #define NA_OFI_OP_ID_MAGIC_2    (0x8171615141312111ULL)
@@ -1703,15 +1706,23 @@ na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
     if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
-        int enable = 1;
+        int32_t enable = 1;
 # ifdef NA_OFI_GNI_HAS_UDREG
         char *other_reg_type = "udreg";
+        int32_t udreg_limit = 1024;
 
         /* Enable use of udreg instead of internal MR cache */
         ret = na_ofi_gni_set_domain_op_value(na_ofi_domain, GNI_MR_CACHE,
             &other_reg_type);
         NA_CHECK_NA_ERROR(error, ret,
             "Could not set domain op value for GNI_MR_CACHE");
+
+        /* Experiments on Theta showed default value of 2048 too high if
+         * launching multiple clients on one node */
+        ret = na_ofi_gni_set_domain_op_value(na_ofi_domain,
+            GNI_MR_UDREG_REG_LIMIT, &udreg_limit);
+        NA_CHECK_NA_ERROR(error, ret,
+            "Could not set domain op value for GNI_MR_UDREG_REG_LIMIT");
 # endif
 
         /* Enable lazy deregistration in MR cache */
@@ -4204,9 +4215,14 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
 
             if (wait_hdl) {
                 /* Wait in wait set if provider does not support wait on FDs */
-                int rc = fi_wait(wait_hdl, (int) (remaining * 1000.0));
+                int rc = 0, retry_cnt = 0;
+                do {
+                    rc = fi_wait(wait_hdl, (int) (remaining * 1000.0));
+                } while (rc == -FI_EINTR && retry_cnt++ < NA_OFI_MAX_EINTR_RETRY);
+
                 if (rc == -FI_ETIMEDOUT)
                     break;
+
                 NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
                     "fi_wait() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
             }
