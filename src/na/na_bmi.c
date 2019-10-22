@@ -513,6 +513,7 @@ NA_PLUGIN_OPS(bmi) = {
         na_bmi_op_create,                     /* op_create */
         na_bmi_op_destroy,                    /* op_destroy */
         na_bmi_addr_lookup,                   /* addr_lookup */
+        NULL,                                 /* addr_lookup2 */
         na_bmi_addr_free,                     /* addr_free */
         na_bmi_addr_self,                     /* addr_self */
         na_bmi_addr_dup,                      /* addr_dup */

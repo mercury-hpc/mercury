@@ -1317,6 +1317,7 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
     na_context_t *na_context = context->core_context.na_context;
     struct hg_core_op_id *hg_core_op_id = NULL;
     struct hg_core_private_addr *hg_core_addr = NULL;
+    na_addr_t na_addr = NA_ADDR_NULL;
     na_return_t na_ret;
 #ifdef HG_HAS_SM_ROUTING
     char lookup_name[HG_CORE_ADDR_MAX_SIZE] = {'\0'};
@@ -1384,18 +1385,36 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
         }
     }
 #endif
-    /* Create operation ID */
-    hg_core_op_id->info.lookup.na_lookup_op_id = NA_Op_create(na_class);
-
     /* Assign corresponding NA class */
     hg_core_addr->core_addr.na_class = na_class;
 
-    na_ret = NA_Addr_lookup(na_class, na_context, hg_core_addr_lookup_cb,
-        hg_core_op_id, name_str, &hg_core_op_id->info.lookup.na_lookup_op_id);
+    /* Try to use immediate lookup */
+    na_ret = NA_Addr_lookup2(na_class, name_str, &na_addr);
     if (na_ret != NA_SUCCESS) {
         HG_LOG_ERROR("Could not start lookup for address %s", name_str);
         ret = HG_NA_ERROR;
         goto done;
+    }
+    if (na_addr != NA_ADDR_NULL) {
+        struct na_cb_info callback_info;
+        callback_info.arg = hg_core_op_id;
+        callback_info.ret = NA_SUCCESS;
+        callback_info.type = NA_CB_LOOKUP;
+        callback_info.info.lookup.addr = na_addr;
+        hg_core_op_id->info.lookup.na_lookup_op_id = NA_OP_ID_NULL;
+
+        hg_core_addr_lookup_cb(&callback_info);
+    } else {
+        /* Create operation ID */
+        hg_core_op_id->info.lookup.na_lookup_op_id = NA_Op_create(na_class);
+
+        na_ret = NA_Addr_lookup(na_class, na_context, hg_core_addr_lookup_cb,
+            hg_core_op_id, name_str, &hg_core_op_id->info.lookup.na_lookup_op_id);
+        if (na_ret != NA_SUCCESS) {
+            HG_LOG_ERROR("Could not start lookup for address %s", name_str);
+            ret = HG_NA_ERROR;
+            goto done;
+        }
     }
 
     /* TODO to avoid blocking after lookup make progress on the HG layer with
@@ -3406,6 +3425,12 @@ hg_core_trigger_lookup_entry(struct hg_core_op_id *hg_core_op_id)
 {
     hg_return_t ret = HG_SUCCESS;
 
+    /* Free op */
+    if (hg_core_op_id->info.lookup.na_lookup_op_id != NA_OP_ID_NULL)
+        NA_Op_destroy(
+            hg_core_op_id->info.lookup.hg_core_addr->core_addr.na_class,
+            hg_core_op_id->info.lookup.na_lookup_op_id);
+
     /* Execute callback */
     if (hg_core_op_id->callback) {
         struct hg_core_cb_info hg_core_cb_info;
@@ -3419,9 +3444,6 @@ hg_core_trigger_lookup_entry(struct hg_core_op_id *hg_core_op_id)
         hg_core_op_id->callback(&hg_core_cb_info);
     }
 
-    /* Free op */
-    NA_Op_destroy(hg_core_op_id->info.lookup.hg_core_addr->core_addr.na_class,
-        hg_core_op_id->info.lookup.na_lookup_op_id);
     free(hg_core_op_id);
     return ret;
 }

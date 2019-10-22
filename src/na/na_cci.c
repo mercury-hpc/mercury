@@ -371,6 +371,7 @@ NA_PLUGIN_OPS(cci) = {
     na_cci_op_create,                       /* op_create */
     na_cci_op_destroy,                      /* op_destroy */
     na_cci_addr_lookup,                     /* addr_lookup */
+    NULL,                                   /* addr_lookup2 */
     na_cci_addr_free,                       /* addr_free */
     na_cci_addr_self,                       /* addr_self */
     na_cci_addr_dup,                        /* addr_dup */

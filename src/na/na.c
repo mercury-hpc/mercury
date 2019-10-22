@@ -302,6 +302,8 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
         "No suitable plugin found that matches %s", info_string);
 
     na_private_class->na_class.ops = na_class_table[plugin_index];
+    NA_CHECK_ERROR(na_private_class->na_class.ops == NULL, error, ret,
+        NA_PROTOCOL_ERROR, "NULL NA class ops");
 
     NA_CHECK_ERROR(na_private_class->na_class.ops->initialize == NULL, error,
         ret, NA_PROTOCOL_ERROR, "initialize plugin callback is not defined");
@@ -340,6 +342,8 @@ NA_Finalize(na_class_t *na_class)
     if (!na_private_class)
         goto done;
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->finalize == NULL, done, ret,
         NA_PROTOCOL_ERROR, "finalize plugin callback is not defined");
 
@@ -391,6 +395,8 @@ NA_Context_create_id(na_class_t *na_class, na_uint8_t id)
         "Could not allocate context");
     na_private_context->na_class = na_class;
 
+    NA_CHECK_ERROR(na_class->ops == NULL, error, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     if (na_class->ops->context_create) {
         ret = na_class->ops->context_create(na_class,
             &na_private_context->context.plugin_context, id);
@@ -456,6 +462,8 @@ NA_Context_destroy(na_class_t *na_class, na_context_t *context)
     hg_thread_cond_destroy(&na_private_context->completion_queue_cond);
 
     /* Destroy NA plugin context */
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     if (na_class->ops->context_destroy) {
         ret = na_class->ops->context_destroy(na_class,
             na_private_context->context.plugin_context);
@@ -481,6 +489,7 @@ NA_Op_create(na_class_t *na_class)
     na_op_id_t ret = NA_OP_ID_NULL;
 
     NA_CHECK_ERROR_NORET(na_class == NULL, done, "NULL NA class");
+    NA_CHECK_ERROR_NORET(na_class->ops == NULL, done, "NULL NA class ops");
 
     if (!na_class->ops->op_create)
         /* Not provided */
@@ -504,6 +513,9 @@ NA_Op_destroy(na_class_t *na_class, na_op_id_t op_id)
     if (op_id == NA_OP_ID_NULL)
         /* Nothing to do */
         goto done;
+
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
 
     if (!na_class->ops->op_destroy)
         /* Not provided */
@@ -531,6 +543,8 @@ NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     NA_CHECK_ERROR(name == NULL, done, ret, NA_INVALID_PARAM,
         "Lookup name is NULL");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->addr_lookup == NULL, done, ret,
         NA_PROTOCOL_ERROR, "addr_lookup plugin callback is not defined");
 
@@ -556,6 +570,48 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
+NA_Addr_lookup2(na_class_t *na_class, const char *name, na_addr_t *addr)
+{
+    char *name_string = NULL;
+    char *short_name = NULL;
+    na_return_t ret = NA_SUCCESS;
+
+    NA_CHECK_ERROR(na_class == NULL, done, ret, NA_INVALID_PARAM,
+        "NULL NA class");
+    NA_CHECK_ERROR(name == NULL, done, ret, NA_INVALID_PARAM,
+        "Lookup name is NULL");
+    NA_CHECK_ERROR(addr == NULL, done, ret, NA_INVALID_PARAM,
+        "NULL pointer to na_addr_t");
+
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
+    if (!na_class->ops->addr_lookup2)
+        /* Until we switch to new lookup, exit if no callback */
+        goto done;
+//    NA_CHECK_ERROR(na_class->ops->addr_lookup2 == NULL, done, ret,
+//        NA_PROTOCOL_ERROR, "addr_lookup2 plugin callback is not defined");
+
+    /* Copy name and work from that */
+    name_string = strdup(name);
+    NA_CHECK_ERROR(name_string == NULL, done, ret, NA_NOMEM_ERROR,
+        "Could not duplicate string");
+
+    /* If NA class name was specified, we can remove the name here:
+     * ie. bmi+tcp://hostname:port -> tcp://hostname:port */
+    if (strstr(name_string, NA_CLASS_DELIMITER) != NULL)
+        strtok_r(name_string, NA_CLASS_DELIMITER, &short_name);
+    else
+        short_name = name_string;
+
+    ret = na_class->ops->addr_lookup2(na_class, short_name, addr);
+
+done:
+    free(name_string);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
 NA_Addr_self(na_class_t *na_class, na_addr_t *addr)
 {
     na_return_t ret = NA_SUCCESS;
@@ -565,6 +621,8 @@ NA_Addr_self(na_class_t *na_class, na_addr_t *addr)
     NA_CHECK_ERROR(addr == NULL, done, ret, NA_INVALID_PARAM,
         "NULL pointer to na_addr_t");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->addr_self == NULL, done, ret,
         NA_PROTOCOL_ERROR, "addr_self plugin callback is not defined");
 
@@ -587,6 +645,8 @@ NA_Addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr)
     NA_CHECK_ERROR(new_addr == NULL, done, ret, NA_INVALID_PARAM,
         "NULL pointer to NA addr");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->addr_dup == NULL, done, ret,
         NA_PROTOCOL_ERROR, "addr_dup plugin callback is not defined");
 
@@ -608,6 +668,8 @@ NA_Addr_free(na_class_t *na_class, na_addr_t addr)
         /* Nothing to do */
         goto done;
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->addr_free == NULL, done, ret,
         NA_PROTOCOL_ERROR, "addr_free plugin callback is not defined");
 
@@ -634,6 +696,8 @@ NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
     NA_CHECK_ERROR(addr == NA_ADDR_NULL, done, ret, NA_INVALID_PARAM,
         "NULL addr");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->addr_to_string == NULL, done, ret,
         NA_PROTOCOL_ERROR, "addr_to_string plugin callback is not defined");
 
@@ -681,6 +745,8 @@ NA_Addr_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
     NA_CHECK_ERROR(addr == NA_ADDR_NULL, done, ret, NA_INVALID_PARAM,
         "NULL addr");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->addr_serialize == NULL, done, ret,
         NA_PROTOCOL_ERROR, "addr_serialize plugin callback is not defined");
 
@@ -706,6 +772,8 @@ NA_Addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
     NA_CHECK_ERROR(buf_size == 0, done, ret, NA_INVALID_PARAM,
         "NULL buffer size");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->addr_deserialize == NULL, done, ret,
         NA_PROTOCOL_ERROR, "addr_deserialize plugin callback is not defined");
 
@@ -726,6 +794,7 @@ NA_Msg_buf_alloc(na_class_t *na_class, na_size_t buf_size, void **plugin_data)
     NA_CHECK_ERROR_NORET(plugin_data == NULL, done,
         "NULL pointer to plugin data");
 
+    NA_CHECK_ERROR_NORET(na_class->ops == NULL, done, "NULL NA class ops");
     if (na_class->ops->msg_buf_alloc)
         ret = na_class->ops->msg_buf_alloc(na_class, buf_size, plugin_data);
     else {
@@ -753,6 +822,8 @@ NA_Msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
     NA_CHECK_ERROR(buf == NULL, done, ret, NA_INVALID_PARAM,
         "NULL buffer");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     if (na_class->ops->msg_buf_free)
         ret = na_class->ops->msg_buf_free(na_class, buf, plugin_data);
     else {
@@ -778,6 +849,8 @@ NA_Msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
     NA_CHECK_ERROR(buf_size == 0, done, ret, NA_INVALID_PARAM,
         "NULL buffer size");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     if (na_class->ops->msg_init_unexpected)
         ret = na_class->ops->msg_init_unexpected(na_class, buf, buf_size);
 
@@ -798,6 +871,8 @@ NA_Msg_init_expected(na_class_t *na_class, void *buf, na_size_t buf_size)
     NA_CHECK_ERROR(buf_size == 0, done, ret, NA_INVALID_PARAM,
         "NULL buffer size");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     if (na_class->ops->msg_init_expected)
         ret = na_class->ops->msg_init_expected(na_class, buf, buf_size);
 
@@ -819,6 +894,8 @@ NA_Mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
     NA_CHECK_ERROR(buf_size == 0, done, ret, NA_INVALID_PARAM,
         "NULL buffer size");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->mem_handle_create == NULL, done, ret,
         NA_PROTOCOL_ERROR, "mem_handle_create plugin callback is not defined");
 
@@ -844,6 +921,8 @@ NA_Mem_handle_create_segments(na_class_t *na_class, struct na_segment *segments,
     NA_CHECK_ERROR(segment_count == 0, done, ret, NA_INVALID_PARAM,
         "NULL segment count");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->mem_handle_create_segments == NULL, done, ret,
         NA_PROTOCOL_ERROR,
         "mem_handle_create_segments plugin callback is not defined");
@@ -866,6 +945,8 @@ NA_Mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle)
     NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret,
         NA_INVALID_PARAM, "NULL memory handle");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->mem_handle_free == NULL, done, ret,
         NA_PROTOCOL_ERROR, "mem_handle_free plugin callback is not defined");
 
@@ -886,6 +967,8 @@ NA_Mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret,
         NA_INVALID_PARAM, "NULL memory handle");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     if (na_class->ops->mem_register)
         /* Optional */
         ret = na_class->ops->mem_register(na_class, mem_handle);
@@ -905,6 +988,8 @@ NA_Mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
     NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret,
         NA_INVALID_PARAM, "NULL memory handle");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     if (na_class->ops->mem_deregister)
         /* Optional */
         ret = na_class->ops->mem_deregister(na_class, mem_handle);
@@ -924,6 +1009,8 @@ NA_Mem_publish(na_class_t *na_class, na_mem_handle_t mem_handle)
     NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret,
         NA_INVALID_PARAM, "NULL memory handle");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     if (na_class->ops->mem_publish)
         /* Optional */
         ret = na_class->ops->mem_publish(na_class, mem_handle);
@@ -943,6 +1030,8 @@ NA_Mem_unpublish(na_class_t *na_class, na_mem_handle_t mem_handle)
     NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret,
         NA_INVALID_PARAM, "NULL memory handle");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     if (na_class->ops->mem_unpublish)
         /* Optional */
         ret = na_class->ops->mem_unpublish(na_class, mem_handle);
@@ -967,6 +1056,8 @@ NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
     NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret,
         NA_INVALID_PARAM, "NULL memory handle");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->mem_handle_serialize == NULL, done, ret,
         NA_PROTOCOL_ERROR,
         "mem_handle_serialize plugin callback is not defined");
@@ -994,6 +1085,8 @@ NA_Mem_handle_deserialize(na_class_t *na_class, na_mem_handle_t *mem_handle,
     NA_CHECK_ERROR(buf_size == 0, done, ret, NA_INVALID_PARAM,
         "NULL buffer size");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->mem_handle_deserialize == NULL, done, ret,
         NA_PROTOCOL_ERROR,
         "mem_handle_deserialize plugin callback is not defined");
@@ -1026,6 +1119,7 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
         return NA_FALSE;
 
     /* Check plugin try wait */
+    NA_CHECK_ERROR_NORET(na_class->ops == NULL, error, "NULL NA class ops");
     if (na_class->ops->na_poll_try_wait)
         return na_class->ops->na_poll_try_wait(na_class, context);
 
@@ -1054,6 +1148,8 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
     NA_CHECK_ERROR(na_private_context == NULL, done, ret, NA_INVALID_PARAM,
         "NULL context");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->progress == NULL, done, ret,
         NA_PROTOCOL_ERROR, "progress plugin callback is not defined");
 
@@ -1272,6 +1368,8 @@ NA_Cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
     NA_CHECK_ERROR(op_id == NA_OP_ID_NULL, done, ret, NA_INVALID_PARAM,
         "NULL operation ID");
 
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->cancel == NULL, done, ret, NA_PROTOCOL_ERROR,
         "cancel plugin callback is not defined");
 

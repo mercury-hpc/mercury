@@ -231,6 +231,25 @@ NA_Addr_lookup(
         );
 
 /**
+ * Lookup an addr from a peer address/name. Addresses need to be
+ * freed by calling NA_Addr_free().
+ *
+ * \remark This is the immediate version of NA_Addr_lookup().
+ *
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param name [IN]             lookup name
+ * \param addr [OUT]            pointer to abstract address
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Addr_lookup2(
+        na_class_t *na_class,
+        const char *name,
+        na_addr_t  *addr
+        );
+
+/**
  * Free the addr from the list of peers.
  *
  * \param na_class [IN/OUT]     pointer to NA class
@@ -1118,6 +1137,12 @@ struct na_class_ops {
             void         *arg,
             const char   *name,
             na_op_id_t   *op_id
+            );
+    na_return_t
+    (*addr_lookup2)(
+            na_class_t *na_class,
+            const char *name,
+            na_addr_t  *addr
             );
     na_return_t
     (*addr_free)(

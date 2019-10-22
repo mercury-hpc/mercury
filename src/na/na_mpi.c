@@ -542,6 +542,7 @@ NA_PLUGIN_OPS(mpi) = {
         NULL,                                 /* op_create */
         NULL,                                 /* op_destroy */
         na_mpi_addr_lookup,                   /* addr_lookup */
+        NULL,                                 /* addr_lookup2 */
         na_mpi_addr_free,                     /* addr_free */
         na_mpi_addr_self,                     /* addr_self */
         NULL,                                 /* addr_dup */
