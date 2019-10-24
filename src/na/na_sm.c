@@ -902,6 +902,7 @@ NA_PLUGIN_OPS(sm) = {
     na_sm_addr_lookup,                      /* addr_lookup */
     NULL,                                   /* addr_lookup2 */
     na_sm_addr_free,                        /* addr_free */
+    NULL,                                   /* addr_set_remove */
     na_sm_addr_self,                        /* addr_self */
     na_sm_addr_dup,                         /* addr_dup */
     na_sm_addr_is_self,                     /* addr_is_self */

@@ -239,9 +239,10 @@ struct na_ofi_addr {
     na_size_t addrlen;                      /* Native address len       */
     char *uri;                              /* Generated URI            */
     fi_addr_t fi_addr;                      /* FI address               */
+    na_uint64_t ht_key;                     /* Key in hash-table        */
     hg_atomic_int32_t refcount;             /* Reference counter        */
     na_bool_t self;                         /* Boolean for self         */
-    na_bool_t unexpected;                   /* Boolean for unexpected   */
+    na_bool_t remove;                       /* Remove from AV on free   */
 };
 
 /* SIN address */
@@ -371,7 +372,6 @@ struct na_ofi_domain {
     char *prov_name;                        /* Provider name            */
     enum na_ofi_prov_type prov_type;        /* Provider type            */
     hg_atomic_int32_t refcount;             /* Refcount of this domain  */
-
 };
 
 /**
@@ -491,8 +491,23 @@ na_ofi_addr_ht_key_equal(hg_hash_table_key_t vlocation1,
  * already exist.
  */
 static na_return_t
-na_ofi_addr_ht_lookup(na_class_t *na_class, na_uint32_t addr_format,
-    const void *addr, na_size_t addrlen, fi_addr_t *fi_addr);
+na_ofi_addr_ht_lookup(struct na_ofi_domain *domain, na_uint32_t addr_format,
+    const void *addr, na_size_t addrlen, fi_addr_t *fi_addr,
+    na_uint64_t *addr_key);
+
+/**
+ * Remove an addr from the AV and the hash-table.
+ */
+static na_return_t
+na_ofi_addr_ht_remove(struct na_ofi_domain *domain, fi_addr_t *fi_addr,
+    na_uint64_t *addr_key);
+
+/**
+ * Lookup an FI addr from the AV.
+ */
+static na_return_t
+na_ofi_av_lookup(struct na_ofi_domain *na_ofi_domain, fi_addr_t fi_addr,
+    void **addr_ptr, size_t *addrlen_ptr);
 
 /**
  * Get info caps from providers and return matching providers.
@@ -682,10 +697,9 @@ na_ofi_msg_unexpected_op_pop(na_context_t *context);
  * Read from CQ.
  */
 static na_return_t
-na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
-    size_t max_count, struct fi_cq_tagged_entry cq_events[],
-    fi_addr_t src_addrs[], void **src_err_addr, size_t *src_err_addrlen,
-    size_t *actual_count);
+na_ofi_cq_read(na_context_t *context, size_t max_count,
+    struct fi_cq_tagged_entry cq_events[], fi_addr_t src_addrs[],
+    void **src_err_addr, size_t *src_err_addrlen, size_t *actual_count);
 
 /**
  * Process event from CQ.
@@ -788,6 +802,10 @@ na_ofi_addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr);
 /* addr_free */
 static NA_INLINE na_return_t
 na_ofi_addr_free(na_class_t *na_class, na_addr_t addr);
+
+/* addr_set_remove */
+static NA_INLINE na_return_t
+na_ofi_addr_set_remove(na_class_t *na_class, na_addr_t addr);
 
 /* addr_is_self */
 static NA_INLINE na_bool_t
@@ -944,6 +962,7 @@ NA_PLUGIN_OPS(ofi) = {
     na_ofi_addr_lookup,                     /* addr_lookup */
     na_ofi_addr_lookup2,                    /* addr_lookup2 */
     na_ofi_addr_free,                       /* addr_free */
+    na_ofi_addr_set_remove,                 /* addr_set_remove */
     na_ofi_addr_self,                       /* addr_self */
     na_ofi_addr_dup,                        /* addr_dup */
     na_ofi_addr_is_self,                    /* addr_is_self */
@@ -1249,47 +1268,47 @@ na_ofi_addr_ht_key_equal(hg_hash_table_key_t vlocation1,
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_addr_ht_lookup(na_class_t *na_class, na_uint32_t addr_format,
-    const void *addr, na_size_t addrlen, fi_addr_t *fi_addr)
+na_ofi_addr_ht_lookup(struct na_ofi_domain *domain, na_uint32_t addr_format,
+    const void *addr, na_size_t addrlen, fi_addr_t *fi_addr,
+    na_uint64_t *addr_key)
 {
-    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
-    na_uint64_t addr_key;
-    hg_hash_table_key_t ht_key = NULL;
+    hg_hash_table_key_t ht_key = addr_key;
     hg_hash_table_value_t ht_value = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
     /* Generate key */
-    addr_key = na_ofi_addr_to_key(addr_format, addr, addrlen);
-    NA_CHECK_ERROR(addr_key == 0, out, ret, NA_PROTOCOL_ERROR,
+    *addr_key = na_ofi_addr_to_key(addr_format, addr, addrlen);
+    NA_CHECK_ERROR(*addr_key == 0, out, ret, NA_PROTOCOL_ERROR,
         "Could not generate key from addr");
 
     /* Lookup key */
     hg_thread_rwlock_rdlock(&domain->rwlock);
-    ht_value = hg_hash_table_lookup(domain->addr_ht, &addr_key);
+    ht_value = hg_hash_table_lookup(domain->addr_ht, ht_key);
     hg_thread_rwlock_release_rdlock(&domain->rwlock);
     if (ht_value != HG_HASH_TABLE_NULL) {
+        /* Found */
         *fi_addr = *(fi_addr_t *) ht_value;
-        return ret;
+        goto out;
     }
 
     /* Insert addr into AV if key not found */
     na_ofi_domain_lock(domain);
-    rc = fi_av_insert(domain->fi_av, addr, 1, fi_addr, 0 /* flags */,
-        NULL /* context */);
+    rc = fi_av_insert(domain->fi_av, addr, 1, fi_addr, 0 /* flags */, NULL);
     na_ofi_domain_unlock(domain);
     NA_CHECK_ERROR(rc < 1, out, ret, NA_PROTOCOL_ERROR,
         "fi_av_insert() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
     hg_thread_rwlock_wrlock(&domain->rwlock);
 
-    ht_value = hg_hash_table_lookup(domain->addr_ht, &addr_key);
+    ht_value = hg_hash_table_lookup(domain->addr_ht, ht_key);
     if (ht_value != HG_HASH_TABLE_NULL) {
         /* in race condition, use addr in HT and remove the new addr from AV */
-        fi_av_remove(domain->fi_av, fi_addr, 1, 0);
+        rc = fi_av_remove(domain->fi_av, fi_addr, 1, 0 /* flags */);
+        NA_CHECK_ERROR(rc != 0, unlock, ret, NA_PROTOCOL_ERROR,
+            "fi_av_remove() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
         *fi_addr = *(fi_addr_t *) ht_value;
-        hg_thread_rwlock_release_wrlock(&domain->rwlock);
-        return ret;
+        goto unlock;
     }
 
     /* Allocate new key */
@@ -1302,7 +1321,7 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, na_uint32_t addr_format,
     NA_CHECK_ERROR(ht_value == NULL, error, ret, NA_NOMEM_ERROR,
         "cannot allocate memory for ht_key");
 
-    *((na_uint64_t *) ht_key) = addr_key;
+    *((na_uint64_t *) ht_key) = *addr_key;
     *((na_uint64_t *) ht_value) = *fi_addr;
 
     /* Insert new value */
@@ -1310,6 +1329,7 @@ na_ofi_addr_ht_lookup(na_class_t *na_class, na_uint32_t addr_format,
     NA_CHECK_ERROR(rc == 0, error, ret, NA_NOMEM_ERROR,
         "hg_hash_table_insert() failed");
 
+unlock:
     hg_thread_rwlock_release_wrlock(&domain->rwlock);
 
 out:
@@ -1319,7 +1339,67 @@ error:
     hg_thread_rwlock_release_wrlock(&domain->rwlock);
     free(ht_key);
     free(ht_value);
+    return ret;
+}
 
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_addr_ht_remove(struct na_ofi_domain *domain, fi_addr_t *fi_addr,
+    na_uint64_t *addr_key)
+{
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    hg_thread_rwlock_wrlock(&domain->rwlock);
+    rc = hg_hash_table_remove(domain->addr_ht, (hg_hash_table_key_t) addr_key);
+    NA_CHECK_ERROR(rc != 1, unlock, ret, NA_PROTOCOL_ERROR,
+        "hg_hash_table_remove() failed");
+
+    rc = fi_av_remove(domain->fi_av, fi_addr, 1, 0 /* flags */);
+    NA_CHECK_ERROR(rc != 0, unlock, ret, NA_PROTOCOL_ERROR,
+        "fi_av_remove() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
+
+unlock:
+    hg_thread_rwlock_release_wrlock(&domain->rwlock);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_av_lookup(struct na_ofi_domain *na_ofi_domain, fi_addr_t fi_addr,
+    void **addr_ptr, size_t *addrlen_ptr)
+{
+    void *addr = NULL;
+    size_t addrlen = na_ofi_domain->fi_prov->src_addrlen;
+    na_bool_t retried = NA_FALSE;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+retry:
+    addr = malloc(addrlen);
+    NA_CHECK_ERROR(addr == NULL, error, ret, NA_NOMEM_ERROR,
+        "Could not allocate %zu bytes for address", addrlen);
+
+    /* Lookup address from AV */
+    na_ofi_domain_lock(na_ofi_domain);
+    rc = fi_av_lookup(na_ofi_domain->fi_av, fi_addr, addr, &addrlen);
+    na_ofi_domain_unlock(na_ofi_domain);
+    if (rc == -FI_ETOOSMALL && retried == NA_FALSE) {
+        retried = NA_TRUE;
+        free(addr);
+        goto retry;
+    }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_av_lookup() failed, rc: %d(%s)", rc,
+        fi_strerror((int ) -rc));
+
+    *addr_ptr = addr;
+    *addrlen_ptr = addrlen;
+
+    return ret;
+
+error:
+    free(addr);
     return ret;
 }
 
@@ -1613,7 +1693,7 @@ na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
     NA_CHECK_ERROR(na_ofi_domain == NULL, error, ret, NA_NOMEM_ERROR,
         "Could not allocate na_ofi_domain");
     memset(na_ofi_domain, 0, sizeof(struct na_ofi_domain));
-    hg_atomic_set32(&na_ofi_domain->refcount, 1);
+    hg_atomic_init32(&na_ofi_domain->refcount, 1);
 
     /* Init mutex */
     rc = hg_thread_mutex_init(&na_ofi_domain->mutex);
@@ -1790,10 +1870,9 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
         /* Cannot free yet */
         goto out;
 
-    /* inserted to na_ofi_domain_list_g after nod_addr_ht created */
+    /* Remove from domain list (won't remove if not inserted) */
     hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
-    if (na_ofi_domain->addr_ht != NULL)
-        HG_LIST_REMOVE(na_ofi_domain, entry);
+    HG_LIST_REMOVE(na_ofi_domain, entry);
     hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
 
     /* Close MR */
@@ -2096,23 +2175,20 @@ na_ofi_get_ep_addr(na_class_t *na_class, struct na_ofi_addr **na_ofi_addr_ptr)
     NA_CHECK_ERROR(na_ofi_addr == NULL, error, ret, NA_NOMEM_ERROR,
         "Could not allocate NA OFI addr");
 
-retry_getname:
-    if (retried)
-        free(addr);
+retry:
     addr = malloc(addrlen);
     NA_CHECK_ERROR(addr == NULL, error, ret, NA_NOMEM_ERROR,
         "Could not allocate addr");
 
     rc = fi_getname(&na_ofi_endpoint->fi_ep->fid, addr, &addrlen);
-    if (rc != 0) {
-        if (rc == -FI_ETOOSMALL && retried == NA_FALSE) {
-            retried = NA_TRUE;
-            goto retry_getname;
-        }
-        NA_GOTO_ERROR(error, ret, NA_PROTOCOL_ERROR,
-            "fi_getname() failed, rc: %d(%s), addrlen: %zu", rc,
-            fi_strerror(-rc), addrlen);
+    if (rc == -FI_ETOOSMALL && retried == NA_FALSE) {
+        retried = NA_TRUE;
+        free(addr);
+        goto retry;
     }
+    NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+        "fi_getname() failed, rc: %d(%s), addrlen: %zu", rc, fi_strerror(-rc),
+        addrlen);
 
     na_ofi_addr->addr = addr;
     na_ofi_addr->addrlen = addrlen;
@@ -2138,8 +2214,7 @@ error:
 static na_return_t
 na_ofi_get_uri(na_class_t *na_class, const void *addr, char **uri_ptr)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
-    struct na_ofi_domain *na_ofi_domain = priv->domain;
+    struct na_ofi_domain *na_ofi_domain = NA_OFI_CLASS(na_class)->domain;
     char addr_str[NA_OFI_MAX_URI_LEN] = {'\0'},
         fi_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'},
         *fi_addr_str_ptr, *uri = NULL;
@@ -2195,7 +2270,7 @@ na_ofi_addr_alloc(struct na_ofi_domain *na_ofi_domain)
     hg_atomic_incr32(&na_ofi_domain->refcount);
 
     /* One refcount for the caller to hold until addr_free */
-    hg_atomic_set32(&na_ofi_addr->refcount, 1);
+    hg_atomic_init32(&na_ofi_addr->refcount, 1);
 
 out:
     return na_ofi_addr;
@@ -2219,7 +2294,14 @@ na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr)
     if (hg_atomic_decr32(&na_ofi_addr->refcount))
         return;
 
-    /* TODO need to fi_av_remove? */
+    /* Do not call fi_av_remove() here to prevent multiple insert/remove calls
+     * into AV */
+    if (na_ofi_addr->remove) {
+//        NA_LOG_DEBUG("fi_addr=%" SCNx64 " ht_key=%" SCNx64,
+//            na_ofi_addr->fi_addr, na_ofi_addr->ht_key);
+        na_ofi_addr_ht_remove(na_ofi_addr->domain, &na_ofi_addr->fi_addr,
+            &na_ofi_addr->ht_key);
+    }
     na_ofi_domain_close(na_ofi_addr->domain);
     free(na_ofi_addr->addr);
     free(na_ofi_addr->uri);
@@ -2478,23 +2560,23 @@ na_ofi_msg_unexpected_op_pop(na_context_t *context)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
-    size_t max_count, struct fi_cq_tagged_entry cq_events[],
-    fi_addr_t src_addrs[], void **src_err_addr, size_t *src_err_addrlen,
-    size_t *actual_count)
+na_ofi_cq_read(na_context_t *context, size_t max_count,
+    struct fi_cq_tagged_entry cq_events[], fi_addr_t src_addrs[],
+    void **src_err_addr, size_t *src_err_addrlen, size_t *actual_count)
 {
     struct fid_cq *cq_hdl = NA_OFI_CONTEXT(context)->fi_cq;
-    char err_data[NA_OFI_CQ_MAX_ERR_DATA_SIZE];
     struct fi_cq_err_entry cq_err;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
     rc = fi_cq_readfrom(cq_hdl, cq_events, max_count, src_addrs);
     if (rc > 0) { /* events available */
+        *src_err_addrlen = 0;
         *actual_count = (size_t) rc;
         goto out;
     }
     if (rc == -FI_EAGAIN) { /* no event available */
+        *src_err_addrlen = 0;
         *actual_count = 0;
         goto out;
     }
@@ -2502,10 +2584,10 @@ na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
         "fi_cq_readfrom() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
     memset(&cq_err, 0, sizeof(cq_err));
-    memset(&err_data, 0, sizeof(err_data));
+
     /* Prevent provider from internally allocating resources */
-    cq_err.err_data = err_data;
-    cq_err.err_data_size = NA_OFI_CQ_MAX_ERR_DATA_SIZE;
+    cq_err.err_data = *src_err_addr;
+    cq_err.err_data_size = *src_err_addrlen;
 
     /* Read error entry */
     rc = fi_cq_readerr(cq_hdl, &cq_err, 0 /* flags */);
@@ -2518,37 +2600,13 @@ na_ofi_cq_read(na_class_t *na_class, na_context_t *context,
 //                         cq_err.flags);
             goto out;
 
-        case FI_EADDRNOTAVAIL: {
-            struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
-            struct fid_av *av_hdl = priv->domain->fi_av;
-            void *err_addr = NULL;
-            size_t err_addrlen;
-
-            /* Copy addr information */
-            err_addr = malloc(cq_err.err_data_size);
-            NA_CHECK_ERROR(err_addr == NULL, out, ret, NA_NOMEM_ERROR,
-                "Could not allocate err_addr");
-            err_addrlen = cq_err.err_data_size;
-            memcpy(err_addr, cq_err.err_data, err_addrlen);
-
-            na_ofi_domain_lock(priv->domain);
-            /* Insert new source addr into AV if address was not found */
-            rc = fi_av_insert(av_hdl, err_addr, 1, &src_addrs[0],
-                0 /* flags */, NULL /* context */);
-            na_ofi_domain_unlock(priv->domain);
-            if (unlikely(rc < 1)) {
-                free(err_addr);
-                NA_GOTO_ERROR(out, ret, NA_PROTOCOL_ERROR,
-                    "fi_av_insert() failed, rc: %d(%s)",
-                    rc, fi_strerror((int) -rc));
-            }
+        case FI_EADDRNOTAVAIL:
             /* Only one error event processed in that case */
             memcpy(&cq_events[0], &cq_err, sizeof(cq_events[0]));
+            *src_err_addr = cq_err.err_data;
+            *src_err_addrlen = cq_err.err_data_size;
             *actual_count = 1;
-            *src_err_addr = err_addr;
-            *src_err_addrlen = err_addrlen;
             break;
-        }
         case FI_EIO:
             NA_GOTO_ERROR(out, ret, NA_PROTOCOL_ERROR,
                 "fi_cq_readerr() got err: %d(%s), prov_errno: %d(%s)",
@@ -2642,7 +2700,7 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
     fi_addr_t src_addr, void *src_err_addr, size_t src_err_addrlen,
     uint64_t tag, size_t len)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     na_cb_type_t cb_type = na_ofi_op_id->completion_data.callback_info.type;
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -2650,29 +2708,38 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
     NA_CHECK_ERROR(cb_type != NA_CB_RECV_UNEXPECTED, out, ret,
         NA_PROTOCOL_ERROR, "Invalid cb_type %d, expected NA_CB_RECV_UNEXPECTED",
         cb_type);
+    NA_CHECK_ERROR(tag > NA_OFI_MAX_TAG, out, ret, NA_PROTOCOL_ERROR,
+        "Invalid tag value");
 
     /* Allocate new address */
-    na_ofi_addr = na_ofi_addr_alloc(priv->domain);
+    na_ofi_addr = na_ofi_addr_alloc(domain);
     NA_CHECK_ERROR(na_ofi_addr == NULL, out, ret, NA_NOMEM_ERROR,
         "na_ofi_addr_alloc() failed");
-    na_ofi_addr->addr = src_err_addr; /* may be NULL */
-    na_ofi_addr->addrlen = src_err_addrlen;
-    /* Unexpected address may not have addr/addrlen info */
-    na_ofi_addr->unexpected = NA_TRUE;
+    /* Unexpected addresses do not need to set addr/addrlen info, fi_av_lookup()
+     * can be used when needed. */
 
-    /* Process address info from msg header */
-    if (na_ofi_with_msg_hdr(na_class)) {
-        ret = na_ofi_addr_ht_lookup(na_class, FI_SOCKADDR_IN,
-            na_ofi_op_id->info.recv_unexpected.buf,
-            sizeof(struct na_ofi_sin_addr), &src_addr);
+    /* Use src_addr when available */
+    if (src_addr != FI_ADDR_UNSPEC)
+        na_ofi_addr->fi_addr = src_addr;
+    else if (src_err_addr && src_err_addrlen) { /* addr from error info */
+        /* We do not need to keep a copy of src_err_addr */
+        ret = na_ofi_addr_ht_lookup(domain,
+            na_ofi_prov_addr_format[domain->prov_type], src_err_addr,
+            src_err_addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
         NA_CHECK_NA_ERROR(error, ret, "na_ofi_addr_ht_lookup() failed");
-    }
-    na_ofi_addr->fi_addr = src_addr;
-    /* For unexpected msg, take one extra ref to be released by addr_free() */
-    na_ofi_addr_addref(na_ofi_addr);
+    } else if (na_ofi_with_msg_hdr(na_class)) { /* addr from msg header */
+        /* We do not need to keep a copy of msg header */
+        ret = na_ofi_addr_ht_lookup(domain, FI_SOCKADDR_IN,
+            na_ofi_op_id->info.recv_unexpected.buf,
+            sizeof(struct na_ofi_sin_addr), &na_ofi_addr->fi_addr,
+            &na_ofi_addr->ht_key);
+        NA_CHECK_NA_ERROR(error, ret, "na_ofi_addr_ht_lookup() failed");
+    } else
+        NA_GOTO_ERROR(error, ret, NA_PROTOCOL_ERROR,
+            "Insufficient address information");
 
+    na_ofi_addr_addref(na_ofi_addr); /* decref in addr_free() */
     na_ofi_op_id->addr = na_ofi_addr;
-    /* TODO check max tag */
     na_ofi_op_id->info.recv_unexpected.tag = (na_tag_t) tag;
     na_ofi_op_id->info.recv_unexpected.msg_size = len;
     na_ofi_msg_unexpected_op_remove(context, na_ofi_op_id);
@@ -3291,17 +3358,16 @@ error:
 static na_return_t
 na_ofi_addr_lookup2(na_class_t *na_class, const char *name, na_addr_t *addr)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
 
     /* Check provider from name */
-    NA_CHECK_ERROR(
-        na_ofi_addr_prov(name) != priv->domain->prov_type, out, ret,
+    NA_CHECK_ERROR(na_ofi_addr_prov(name) != domain->prov_type, out, ret,
         NA_INVALID_PARAM, "Unrecognized provider type found from: %s", name);
 
     /* Allocate addr */
-    na_ofi_addr = na_ofi_addr_alloc(priv->domain);
+    na_ofi_addr = na_ofi_addr_alloc(domain);
     NA_CHECK_ERROR(na_ofi_addr == NULL, error, ret, NA_NOMEM_ERROR,
         "na_ofi_addr_alloc() failed");
     na_ofi_addr->uri = strdup(name);
@@ -3309,15 +3375,14 @@ na_ofi_addr_lookup2(na_class_t *na_class, const char *name, na_addr_t *addr)
         "strdup() of URI failed");
 
     /* Convert name to address */
-    ret = na_ofi_str_to_addr(name,
-        na_ofi_prov_addr_format[priv->domain->prov_type],
+    ret = na_ofi_str_to_addr(name, na_ofi_prov_addr_format[domain->prov_type],
         &na_ofi_addr->addr, &na_ofi_addr->addrlen);
     NA_CHECK_NA_ERROR(error, ret, "Could not convert string to address");
 
     /* Lookup address */
-    ret = na_ofi_addr_ht_lookup(na_class,
-        na_ofi_prov_addr_format[priv->domain->prov_type],
-        na_ofi_addr->addr, na_ofi_addr->addrlen, &na_ofi_addr->fi_addr);
+    ret = na_ofi_addr_ht_lookup(domain,
+        na_ofi_prov_addr_format[domain->prov_type], na_ofi_addr->addr,
+        na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
     NA_CHECK_NA_ERROR(error, ret, "na_ofi_addr_ht_lookup(%s) failed", name);
 
     *addr = (na_addr_t) na_ofi_addr;
@@ -3361,10 +3426,19 @@ na_ofi_addr_dup(na_class_t NA_UNUSED *na_class, na_addr_t addr,
 }
 
 /*---------------------------------------------------------------------------*/
-static na_return_t
+static NA_INLINE na_return_t
 na_ofi_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 {
     na_ofi_addr_decref((struct na_ofi_addr *) addr);
+
+    return NA_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_return_t
+na_ofi_addr_set_remove(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+{
+    ((struct na_ofi_addr *) addr)->remove = NA_TRUE;
 
     return NA_SUCCESS;
 }
@@ -3385,8 +3459,21 @@ na_ofi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
     na_size_t str_len;
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(na_ofi_addr->unexpected, out, ret, NA_PROTOCOL_ERROR,
-        "Addr to string is not available on unexpected addresses");
+    /* If there is no URI for address, attempt to reconstruct one */
+    if (!na_ofi_addr->uri) {
+        NA_CHECK_ERROR(na_ofi_addr->fi_addr == FI_ADDR_UNSPEC, out, ret,
+            NA_PROTOCOL_ERROR, "Addr is not initialized");
+
+        /* If we don't have the addr either, look it up from AV */
+        if (!na_ofi_addr->addr) {
+            ret = na_ofi_av_lookup(na_ofi_addr->domain, na_ofi_addr->fi_addr,
+                &na_ofi_addr->addr, &na_ofi_addr->addrlen);
+            NA_CHECK_NA_ERROR(out, ret, "Could not get addr from AV");
+        }
+
+        ret = na_ofi_get_uri(na_class, na_ofi_addr->addr, &na_ofi_addr->uri);
+        NA_CHECK_NA_ERROR(out, ret, "Could not get URI for address");
+    }
 
     str_len = strlen(na_ofi_addr->uri);
     if (buf) {
@@ -3406,8 +3493,25 @@ na_ofi_addr_get_serialize_size(na_class_t NA_UNUSED *na_class,
     na_addr_t addr)
 {
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) addr;
+    na_size_t size = 0;
 
-    return (na_ofi_addr->addrlen + sizeof(na_ofi_addr->addrlen));
+    if (!na_ofi_addr->addr) {
+        na_return_t ret;
+
+        NA_CHECK_ERROR_NORET(na_ofi_addr->fi_addr == FI_ADDR_UNSPEC, out,
+            "Addr is not initialized");
+
+        /* If we don't have the addr, look it up from AV */
+        ret = na_ofi_av_lookup(na_ofi_addr->domain, na_ofi_addr->fi_addr,
+            &na_ofi_addr->addr, &na_ofi_addr->addrlen);
+        NA_CHECK_ERROR_NORET(ret != NA_SUCCESS, out,
+            "Could not get addr from AV");
+    }
+
+    size = na_ofi_addr->addrlen + sizeof(na_ofi_addr->addrlen);
+
+out:
+    return size;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3418,6 +3522,16 @@ na_ofi_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) addr;
     na_size_t len;
     na_return_t ret = NA_SUCCESS;
+
+    if (!na_ofi_addr->addr) {
+        NA_CHECK_ERROR(na_ofi_addr->fi_addr == FI_ADDR_UNSPEC, out, ret,
+            NA_PROTOCOL_ERROR, "Addr is not initialized");
+
+        /* If we don't have the addr, look it up from AV */
+        ret = na_ofi_av_lookup(na_ofi_addr->domain, na_ofi_addr->fi_addr,
+            &na_ofi_addr->addr, &na_ofi_addr->addrlen);
+        NA_CHECK_NA_ERROR(out, ret, "Could not get addr from AV");
+    }
 
     len = na_ofi_addr->addrlen + sizeof(na_ofi_addr->addrlen);
     NA_CHECK_ERROR(buf_size < len, out, ret, NA_SIZE_ERROR,
@@ -3437,12 +3551,12 @@ static na_return_t
 na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
     na_size_t NA_UNUSED buf_size)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
+    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     struct na_ofi_addr *na_ofi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate addr */
-    na_ofi_addr = na_ofi_addr_alloc(priv->domain);
+    na_ofi_addr = na_ofi_addr_alloc(domain);
     NA_CHECK_ERROR(na_ofi_addr == NULL, out, ret, NA_NOMEM_ERROR,
         "na_ofi_addr_alloc() failed");
     memcpy(&na_ofi_addr->addrlen, buf, sizeof(na_ofi_addr->addrlen));
@@ -3454,12 +3568,12 @@ na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
         (const na_uint8_t *) buf + sizeof(na_ofi_addr->addrlen),
         na_ofi_addr->addrlen);
 
-    /* TODO Skip URI generation? */
+    /* Skip URI generation, URI will only be generated when needed */
 
     /* Lookup address */
-    ret = na_ofi_addr_ht_lookup(na_class,
-        na_ofi_prov_addr_format[priv->domain->prov_type],
-        na_ofi_addr->addr, na_ofi_addr->addrlen, &na_ofi_addr->fi_addr);
+    ret = na_ofi_addr_ht_lookup(domain,
+        na_ofi_prov_addr_format[domain->prov_type], na_ofi_addr->addr,
+        na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
     NA_CHECK_NA_ERROR(error, ret, "na_ofi_addr_ht_lookup() failed");
 
     *addr = na_ofi_addr;
@@ -4202,8 +4316,9 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
     do {
         struct fi_cq_tagged_entry cq_events[NA_OFI_CQ_EVENT_NUM];
         fi_addr_t src_addrs[NA_OFI_CQ_EVENT_NUM] = {FI_ADDR_UNSPEC};
-        void *src_err_addr = NULL;
-        size_t src_err_addrlen = 0;
+        char src_err_addr[NA_OFI_CQ_MAX_ERR_DATA_SIZE] = {0};
+        void *src_err_addr_ptr = src_err_addr;
+        size_t src_err_addrlen = NA_OFI_CQ_MAX_ERR_DATA_SIZE;
         size_t i, actual_count = 0;
         hg_time_t t1, t2;
 
@@ -4228,8 +4343,8 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
         }
 
         /* Read from CQ */
-        ret = na_ofi_cq_read(na_class, context, NA_OFI_CQ_EVENT_NUM, cq_events,
-            src_addrs, &src_err_addr, &src_err_addrlen, &actual_count);
+        ret = na_ofi_cq_read(context, NA_OFI_CQ_EVENT_NUM, cq_events, src_addrs,
+            &src_err_addr_ptr, &src_err_addrlen, &actual_count);
         NA_CHECK_NA_ERROR(out, ret,
             "Could not read events from context CQ");
 
@@ -4249,9 +4364,10 @@ na_ofi_progress(na_class_t *na_class, na_context_t *context,
 
         for (i = 0; i < actual_count; i++) {
            ret = na_ofi_cq_process_event(na_class, context, &cq_events[i],
-               src_addrs[i], src_err_addr, src_err_addrlen);
+               src_addrs[i], src_err_addr_ptr, src_err_addrlen);
            NA_CHECK_NA_ERROR(out, ret, "Could not process event");
         }
+
     } while (remaining > 0 && ret != NA_SUCCESS);
 
 out:

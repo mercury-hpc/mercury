@@ -9,6 +9,7 @@
  */
 
 #include "mercury_test.h"
+#include "mercury_hl.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -169,6 +170,75 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
     if (hg_ret != HG_SUCCESS) {
         HG_TEST_LOG_ERROR("Could not destroy handle");
         goto done;
+    }
+
+done:
+    hg_request_destroy(request);
+    return hg_ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_rpc_lookup(hg_context_t *context, hg_request_class_t *request_class,
+    const char *target_name, hg_id_t rpc_id, hg_cb_t callback)
+{
+    hg_request_t *request = NULL;
+    hg_handle_t handle;
+    hg_return_t hg_ret = HG_SUCCESS;
+    struct forward_cb_args forward_cb_args;
+    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
+    rpc_handle_t rpc_open_handle;
+    rpc_open_in_t  rpc_open_in_struct;
+    hg_addr_t target_addr = HG_ADDR_NULL;
+    int i;
+
+    for (i = 0; i < 32; i++) {
+        request = hg_request_create(request_class);
+
+        /* Look up target addr using target name info */
+        hg_ret = HG_Hl_addr_lookup_wait(context, request_class, target_name,
+            &target_addr, HG_MAX_IDLE_TIME);
+        if (hg_ret != HG_SUCCESS)
+            goto done;
+
+        /* Create RPC request */
+        hg_ret = HG_Create(context, target_addr, rpc_id, &handle);
+        if (hg_ret != HG_SUCCESS) {
+            if (hg_ret != HG_NO_MATCH)
+                HG_TEST_LOG_ERROR("Could not create handle");
+            goto done;
+        }
+
+        /* Fill input structure */
+        rpc_open_handle.cookie = 100;
+        rpc_open_in_struct.path = rpc_open_path;
+        rpc_open_in_struct.handle = rpc_open_handle;
+
+        /* Forward call to remote addr and get a new request */
+        HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
+        forward_cb_args.request = request;
+        forward_cb_args.rpc_handle = &rpc_open_handle;
+        hg_ret = HG_Forward(handle, callback, &forward_cb_args,
+            &rpc_open_in_struct);
+        if (hg_ret != HG_SUCCESS) {
+            HG_TEST_LOG_ERROR("Could not forward call");
+            goto done;
+        }
+
+        hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+
+        /* Complete */
+        hg_ret = HG_Destroy(handle);
+        if (hg_ret != HG_SUCCESS) {
+            HG_TEST_LOG_ERROR("Could not destroy handle");
+            goto done;
+        }
+
+        HG_Addr_set_remove(context->hg_class, target_addr);
+        HG_Addr_free(context->hg_class, target_addr);
+        target_addr = HG_ADDR_NULL;
+        hg_request_destroy(request);
+        request = NULL;
     }
 
 done:
@@ -457,6 +527,30 @@ main(int argc, char *argv[])
         goto done;
     }
     HG_PASSED();
+
+    /* RPC test with lookup/free */
+    if (!hg_test_info.na_test_info.self_send &&
+        strcmp(HG_Class_get_name(hg_test_info.hg_class), "mpi")) {
+        HG_TEST("lookup RPC");
+        HG_Addr_free(hg_test_info.hg_class, hg_test_info.target_addr);
+        hg_test_info.target_addr = HG_ADDR_NULL;
+        hg_ret = hg_test_rpc_lookup(hg_test_info.context, hg_test_info.request_class,
+            hg_test_info.na_test_info.target_name, hg_test_rpc_open_id_g,
+            hg_test_rpc_forward_cb);
+        if (hg_ret != HG_SUCCESS) {
+            ret = EXIT_FAILURE;
+            goto done;
+        }
+        /* Look up target addr using target name info */
+        hg_ret = HG_Hl_addr_lookup_wait(hg_test_info.context,
+            hg_test_info.request_class, hg_test_info.na_test_info.target_name,
+            &hg_test_info.target_addr, HG_MAX_IDLE_TIME);
+        if (ret != HG_SUCCESS) {
+            ret = EXIT_FAILURE;
+            goto done;
+        }
+        HG_PASSED();
+    }
 
     /* RPC reset test */
     HG_TEST("RPC reset");

@@ -264,6 +264,23 @@ NA_Addr_free(
         );
 
 /**
+ * Hint that the address is no longer valid. This may happen if the peer is
+ * no longer responding. This can be used to force removal of the
+ * peer address from the list of the peers, before freeing it and reclaim
+ * resources.
+ *
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param addr [IN]             abstract address
+ *
+ * \return NA_SUCCESS or corresponding NA error code
+ */
+NA_EXPORT na_return_t
+NA_Addr_set_remove(
+        na_class_t *na_class,
+        na_addr_t   addr
+        );
+
+/**
  * Access self address.
  *
  * \param na_class [IN/OUT]     pointer to NA class
@@ -1146,6 +1163,11 @@ struct na_class_ops {
             );
     na_return_t
     (*addr_free)(
+            na_class_t *na_class,
+            na_addr_t   addr
+            );
+    na_return_t
+    (*addr_set_remove)(
             na_class_t *na_class,
             na_addr_t   addr
             );

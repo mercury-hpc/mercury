@@ -1670,6 +1670,24 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Addr_set_remove(hg_class_t *hg_class, hg_addr_t addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    if (!hg_class) {
+        HG_LOG_ERROR("NULL HG class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    ret = HG_Core_addr_set_remove(hg_class->core_class, (hg_core_addr_t) addr);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Addr_self(hg_class_t *hg_class, hg_addr_t *addr)
 {
     hg_return_t ret = HG_SUCCESS;

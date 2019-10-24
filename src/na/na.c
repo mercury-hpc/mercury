@@ -681,6 +681,27 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
+NA_Addr_set_remove(na_class_t *na_class, na_addr_t addr)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    NA_CHECK_ERROR(na_class == NULL, done, ret, NA_INVALID_PARAM,
+        "NULL NA class");
+    if (addr == NA_ADDR_NULL)
+        /* Nothing to do */
+        goto done;
+
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_PROTOCOL_ERROR,
+        "NULL NA class ops");
+    if (na_class->ops->addr_set_remove)
+        ret = na_class->ops->addr_set_remove(na_class, addr);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
 NA_Addr_to_string(na_class_t *na_class, char *buf, na_size_t *buf_size,
     na_addr_t addr)
 {

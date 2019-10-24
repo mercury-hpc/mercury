@@ -4372,6 +4372,33 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
+HG_Core_addr_set_remove(hg_core_class_t *hg_core_class, hg_core_addr_t addr)
+{
+    struct hg_core_private_addr *hg_core_addr =
+        (struct hg_core_private_addr *) addr;
+    hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
+
+    if (!hg_core_class) {
+        HG_LOG_ERROR("NULL HG core class");
+        ret = HG_INVALID_PARAM;
+        goto done;
+    }
+
+    na_ret = NA_Addr_set_remove(hg_core_addr->core_addr.na_class,
+        hg_core_addr->core_addr.na_addr);
+    if (na_ret != NA_SUCCESS) {
+        HG_LOG_ERROR("Could not set address to be removed");
+        ret = HG_NA_ERROR;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
 HG_Core_addr_self(hg_core_class_t *hg_core_class, hg_core_addr_t *addr)
 {
     hg_return_t ret = HG_SUCCESS;
