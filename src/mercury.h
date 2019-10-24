@@ -589,7 +589,7 @@ HG_Addr_lookup(
         );
 
 /**
- * Free the addr from the list of peers.
+ * Free the addr.
  *
  * \param hg_class [IN]         pointer to HG class
  * \param addr [IN]             abstract address
@@ -598,6 +598,23 @@ HG_Addr_lookup(
  */
 HG_EXPORT hg_return_t
 HG_Addr_free(
+        hg_class_t *hg_class,
+        hg_addr_t   addr
+        );
+
+/**
+ * Hint that the address is no longer valid. This may happen if the peer is
+ * no longer responding. This can be used to force removal of the
+ * peer address from the list of the peers, before freeing it and reclaim
+ * resources.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param addr [IN]             abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Addr_set_remove(
         hg_class_t *hg_class,
         hg_addr_t   addr
         );

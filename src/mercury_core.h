@@ -580,6 +580,23 @@ HG_Core_addr_free(
         );
 
 /**
+ * Hint that the address is no longer valid. This may happen if the peer is
+ * no longer responding. This can be used to force removal of the
+ * peer address from the list of the peers, before freeing it and reclaim
+ * resources.
+ *
+ * \param hg_core_class [IN]    pointer to HG core class
+ * \param addr [IN]             abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_EXPORT hg_return_t
+HG_Core_addr_set_remove(
+        hg_core_class_t *hg_core_class,
+        hg_core_addr_t addr
+        );
+
+/**
  * Set the underlying NA address to a HG address.
  *
  * \param core_addr [IN]        abstract address that not set NA address before
