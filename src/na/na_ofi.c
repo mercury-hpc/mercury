@@ -130,7 +130,7 @@
         "",                                                             \
         FI_SOCKADDR_IN,                                                 \
         FI_PROGRESS_AUTO,                                               \
-        FI_DIRECTED_RECV,                                               \
+        (FI_SOURCE | FI_DIRECTED_RECV),                                 \
         (NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD)                       \
     )                                                                   \
     X(NA_OFI_PROV_TCP,                                                  \
@@ -138,7 +138,7 @@
         "tcp",                                                          \
         FI_SOCKADDR_IN,                                                 \
         FI_PROGRESS_MANUAL,                                             \
-        FI_DIRECTED_RECV,                                               \
+        (FI_SOURCE | FI_DIRECTED_RECV),                                 \
         (NA_OFI_WAIT_FD | NA_OFI_NO_SEP | NA_OFI_SKIP_SIGNAL)           \
     )                                                                   \
     X(NA_OFI_PROV_PSM2,                                                 \
@@ -154,7 +154,7 @@
         "verbs",                                                        \
         FI_SOCKADDR_IN,                                                 \
         FI_PROGRESS_MANUAL,                                             \
-        (FI_DIRECTED_RECV),                                             \
+        (FI_SOURCE | FI_DIRECTED_RECV),                                 \
         (NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_NO_SEP | NA_OFI_SKIP_SIGNAL)   \
     )                                                                   \
     X(NA_OFI_PROV_GNI,                                                  \
