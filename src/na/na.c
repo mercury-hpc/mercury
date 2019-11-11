@@ -226,8 +226,9 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
 {
     struct na_private_class *na_private_class = NULL;
     struct na_info *na_info = NULL;
-    unsigned int plugin_index = 0;
-    unsigned int plugin_count = 0;
+    unsigned int plugin_index;
+    const unsigned int plugin_count =
+        sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
     na_bool_t plugin_found = NA_FALSE;
     na_return_t ret = NA_SUCCESS;
 
@@ -240,8 +241,6 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
         "Could not allocate class");
     memset(na_private_class, 0, sizeof(struct na_private_class));
 
-    plugin_count = sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
-
     ret = na_info_parse(info_string, &na_info);
     NA_CHECK_NA_ERROR(error, ret, "Could not parse host string");
 
@@ -253,7 +252,7 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
     na_info_print(na_info);
 #endif
 
-    while (plugin_index < plugin_count) {
+    for (plugin_index = 0; plugin_index < plugin_count; plugin_index++) {
         na_bool_t verified = NA_FALSE;
 
         NA_CHECK_ERROR(na_class_table[plugin_index]->class_name == NULL, error,
@@ -266,20 +265,17 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
         /* Skip check protocol if class name does not match */
         if (na_info->class_name) {
             if (strcmp(na_class_table[plugin_index]->class_name,
-                na_info->class_name) != 0) {
-                plugin_index++;
+                na_info->class_name) != 0)
                 continue;
-            }
         }
 
         /* Check that protocol is supported */
         verified = na_class_table[plugin_index]->check_protocol(
             na_info->protocol_name);
         if (!verified) {
-            NA_CHECK_ERROR(na_info->class_name == NULL, error, ret,
+            NA_CHECK_ERROR(na_info->class_name, error, ret,
                 NA_PROTOCOL_ERROR,
                 "Specified class name does not support requested protocol");
-            plugin_index++;
             continue;
         }
 

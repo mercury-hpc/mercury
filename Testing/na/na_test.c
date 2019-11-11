@@ -161,7 +161,7 @@ na_test_parse_options(int argc, char *argv[],
     }
     na_test_opt_ind_g = 1;
 
-    if (!na_test_info->comm || ! na_test_info->protocol) {
+    if (!na_test_info->protocol) {
         na_test_usage(argv[0]);
         exit(1);
     }
@@ -267,8 +267,9 @@ na_test_gen_config(struct na_test_info *na_test_info)
     }
     memset(info_string, '\0', NA_TEST_MAX_ADDR_NAME);
     info_string_ptr = info_string;
-    info_string_ptr += sprintf(info_string_ptr, "%s+%s", na_test_info->comm,
-        na_test_info->protocol);
+    if (na_test_info->comm)
+        info_string_ptr += sprintf(info_string_ptr, "%s+", na_test_info->comm);
+    info_string_ptr += sprintf(info_string_ptr, "%s", na_test_info->protocol);
 
     if (strcmp("sm", na_test_info->protocol) == 0) {
 #if defined(PR_SET_PTRACER) && defined(PR_SET_PTRACER_ANY)
