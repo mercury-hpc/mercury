@@ -80,6 +80,7 @@ na_test_usage(const char *execname)
     printf("    -h, --help          Print a usage message and exit\n");
     printf("    -c, --comm          Select NA plugin\n"
            "                        NA plugins: bmi, mpi, cci, etc\n");
+    printf("    -d, --domain        Select NA OFI domain\n");
     printf("    -p, --protocol      Select plugin protocol\n"
            "                        Available protocols: tcp, ib, etc\n");
     printf("    -H, --hostname      Select hostname / IP address to use\n"
@@ -115,6 +116,9 @@ na_test_parse_options(int argc, char *argv[],
                 /* Prevent from overriding comm */
                 if (!na_test_info->comm)
                     na_test_info->comm = strdup(na_test_opt_arg_g);
+                break;
+            case 'd': /* Domain */
+                na_test_info->domain = strdup(na_test_opt_arg_g);
                 break;
             case 'p': /* Protocol */
                 /* Prevent from overriding protocol */
@@ -269,7 +273,9 @@ na_test_gen_config(struct na_test_info *na_test_info)
     info_string_ptr = info_string;
     if (na_test_info->comm)
         info_string_ptr += sprintf(info_string_ptr, "%s+", na_test_info->comm);
-    info_string_ptr += sprintf(info_string_ptr, "%s", na_test_info->protocol);
+    info_string_ptr += sprintf(info_string_ptr, "%s://", na_test_info->protocol);
+    if (na_test_info->domain)
+        info_string_ptr += sprintf(info_string_ptr, "%s/", na_test_info->domain);
 
     if (strcmp("sm", na_test_info->protocol) == 0) {
 #if defined(PR_SET_PTRACER) && defined(PR_SET_PTRACER_ANY)
@@ -292,7 +298,7 @@ na_test_gen_config(struct na_test_info *na_test_info)
 #endif
         if (na_test_info->listen) {
             /* special-case SM (pid:id) */
-            sprintf(info_string_ptr, "://%d/%d", (int) getpid(), port_incr);
+            sprintf(info_string_ptr, "%d/%d", (int) getpid(), port_incr);
         }
     } else if ((strcmp("tcp", na_test_info->protocol) == 0)
         || (strcmp("verbs;ofi_rxm", na_test_info->protocol) == 0)
@@ -303,17 +309,17 @@ na_test_gen_config(struct na_test_info *na_test_info)
             /* Nothing */
         } else if (na_test_info->listen) {
             base_port += (unsigned int) na_test_info->mpi_comm_rank;
-            sprintf(info_string_ptr, "://%s:%d", na_test_info->hostname,
+            sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
                 base_port + port_incr);
         } else
-            sprintf(info_string_ptr, "://%s", na_test_info->hostname);
+            sprintf(info_string_ptr, "%s", na_test_info->hostname);
     } else if (strcmp("static", na_test_info->protocol) == 0) {
         /* Nothing */
     } else if (strcmp("dynamic", na_test_info->protocol) == 0) {
         /* Nothing */
     } else if (strcmp("gni", na_test_info->protocol) == 0) {
         base_port += (unsigned int) na_test_info->mpi_comm_rank;
-        sprintf(info_string_ptr, "://%s:%d", na_test_info->hostname,
+        sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
             base_port + port_incr);
     } else {
         NA_LOG_ERROR("Unknown protocol: %s", na_test_info->protocol);
