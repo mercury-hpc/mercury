@@ -2911,9 +2911,11 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     void *src_addr = NULL;
     na_size_t src_addrlen = 0;
     char *resolve_name = NULL;
+    char *host_name = NULL;
     unsigned int port = 0;
     const char *node_ptr = NULL;
     char node[NA_OFI_MAX_URI_LEN] = {'\0'};
+    char *domain_name_ptr = NULL;
     char domain_name[NA_OFI_MAX_URI_LEN] = {'\0'};
     na_bool_t no_wait = NA_FALSE;
     na_uint8_t max_contexts = 1; /* Default */
@@ -2922,7 +2924,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     enum na_ofi_prov_type prov_type;
 
 //    NA_LOG_DEBUG("Entering na_ofi_initialize class_name %s, protocol_name %s, "
-//                 "host_name %s.\n", na_info->class_name, na_info->protocol_name,
+//                 "host_name %s\n", na_info->class_name, na_info->protocol_name,
 //                 na_info->host_name);
 
     prov_type = na_ofi_prov_name_to_type(na_info->protocol_name);
@@ -2944,22 +2946,25 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
 
     /* Use default interface name if no hostname was passed */
     if (na_info->host_name) {
-        resolve_name = strdup(na_info->host_name);
-        NA_CHECK_ERROR(resolve_name == NULL, out, ret, NA_NOMEM_ERROR,
+        host_name = strdup(na_info->host_name);
+        NA_CHECK_ERROR(host_name == NULL, out, ret, NA_NOMEM_ERROR,
             "strdup() of host_name failed");
 
         /* Extract hostname */
-        if (strstr(resolve_name, ":")) {
+        if (strstr(host_name, ":")) {
             char *port_str = NULL;
-
-            strtok_r(resolve_name, ":", &port_str);
+            strtok_r(host_name, ":", &port_str);
             port = (unsigned int) strtoul(port_str, NULL, 10);
         }
-    } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI) {
-        resolve_name = strdup(NA_OFI_GNI_IFACE_DEFAULT);
-        NA_CHECK_ERROR(resolve_name == NULL, out, ret, NA_NOMEM_ERROR,
-            "strdup() of NA_OFI_GNI_IFACE_DEFAULT failed");
-    }
+
+        /* Extract domain (if specified) */
+        if (strstr(host_name, "/")) {
+            strtok_r(host_name, "/", &resolve_name);
+            domain_name_ptr = host_name;
+        } else
+            resolve_name = host_name;
+    } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI)
+        resolve_name = NA_OFI_GNI_IFACE_DEFAULT;
 
     /* Get hostname/port info if available */
     if (resolve_name) {
@@ -2976,12 +2981,16 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
             if (na_ofi_sin_addr && ifa_name) {
                 src_addr = na_ofi_sin_addr;
                 src_addrlen = sizeof(*na_ofi_sin_addr);
-                /* Make sure we are using the right domain */
-                strncpy(domain_name, ifa_name, NA_OFI_MAX_URI_LEN - 1);
+                if (!domain_name_ptr) {
+                    /* Attempt to pass domain name as ifa_name if not set */
+                    strncpy(domain_name, ifa_name, NA_OFI_MAX_URI_LEN - 1);
+                    domain_name_ptr = domain_name;
+                }
                 free(ifa_name);
-            } else {
-                /* Allow for passing domain name directly */
+            } else if (!domain_name_ptr) {
+                /* Pass domain name as hostname if not set */
                 strncpy(domain_name, resolve_name, NA_OFI_MAX_URI_LEN - 1);
+                domain_name_ptr = domain_name;
             }
         } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_GNI) {
             struct na_ofi_sin_addr *na_ofi_sin_addr = NULL;
@@ -3036,10 +3045,10 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     HG_QUEUE_INIT(&priv->buf_pool);
 
     /* Create domain */
-    ret = na_ofi_domain_open(na_class->plugin_class, prov_type, domain_name,
+    ret = na_ofi_domain_open(na_class->plugin_class, prov_type, domain_name_ptr,
         auth_key, &priv->domain);
     NA_CHECK_NA_ERROR(out, ret, "Could not open domain for %s, %s",
-        na_ofi_prov_name[prov_type], domain_name);
+        na_ofi_prov_name[prov_type], domain_name_ptr);
 
     /* Create endpoint */
     ret = na_ofi_endpoint_open(priv->domain, node_ptr, src_addr, src_addrlen,
@@ -3059,7 +3068,7 @@ out:
         }
     }
     free(src_addr);
-    free(resolve_name);
+    free(host_name);
     return ret;
 }
 

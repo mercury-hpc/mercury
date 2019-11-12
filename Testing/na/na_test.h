@@ -27,6 +27,7 @@ struct na_test_info {
     na_class_t *na_class;       /* NA class */
     char *target_name;          /* Target name */
     char *comm;                 /* Comm/Plugin name */
+    char *domain;               /* Domain name */
     char *protocol;             /* Protocol name */
     char *hostname;             /* Hostname */
     na_bool_t listen;           /* Listen */
