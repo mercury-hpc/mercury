@@ -56,6 +56,20 @@ done:
     return thread_ret;
 }
 
+static HG_THREAD_RETURN_TYPE
+thread_cb_equal(void *arg)
+{
+    hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
+    hg_thread_t *t1_ptr = (hg_thread_t *) arg;
+    hg_thread_t t2 = hg_thread_self();
+
+    if (hg_thread_equal(*t1_ptr, t2) == 0)
+        fprintf(stderr, "Error: t1 is not equal to t2\n");
+
+    hg_thread_exit(thread_ret);
+    return thread_ret;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -85,6 +99,9 @@ main(int argc, char *argv[])
     hg_thread_create(&thread, thread_cb_key, &thread_key);
     hg_thread_join(thread);
     hg_thread_key_delete(thread_key);
+
+    hg_thread_create(&thread, thread_cb_equal, &thread);
+    hg_thread_join(thread);
 
 done:
     return ret;

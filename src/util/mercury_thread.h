@@ -109,6 +109,22 @@ HG_UTIL_EXPORT int
 hg_thread_yield(void);
 
 /**
+ * Obtain handle of the calling thread.
+ *
+ * \return
+ */
+static HG_UTIL_INLINE hg_thread_t
+hg_thread_self(void);
+
+/**
+ * Compare thread IDs.
+ *
+ * \return Non-zero if equal, zero if not equal
+ */
+static HG_UTIL_INLINE int
+hg_thread_equal(hg_thread_t t1, hg_thread_t t2);
+
+/**
  * Create a thread-specific data key visible to all threads in the process.
  *
  * \param key [OUT]             pointer to thread key object
@@ -171,6 +187,28 @@ hg_thread_getaffinity(hg_thread_t thread, hg_cpu_set_t *cpu_mask);
  */
 HG_UTIL_EXPORT int
 hg_thread_setaffinity(hg_thread_t thread, const hg_cpu_set_t *cpu_mask);
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE hg_thread_t
+hg_thread_self(void)
+{
+#ifdef _WIN32
+    return GetCurrentThread();
+#else
+    return pthread_self();
+#endif
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_UTIL_INLINE int
+hg_thread_equal(hg_thread_t t1, hg_thread_t t2)
+{
+#ifdef _WIN32
+    return GetThreadId(t1) == GetThreadId(t2);
+#else
+    return pthread_equal(t1, t2);
+#endif
+}
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE void *
