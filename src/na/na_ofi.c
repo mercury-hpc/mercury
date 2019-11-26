@@ -4413,9 +4413,9 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
 
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->fi_rx->fid,
             &na_ofi_op_id->fi_ctx);
-        NA_CHECK_ERROR(rc != 0, out, ret, NA_CANCEL_ERROR,
-            "fi_cancel() unexpected recv failed, rc: %d(%s)",
-            rc, fi_strerror((int) -rc));
+        if (rc != 0)
+            NA_LOG_WARNING("fi_cancel() unexpected recv failed, rc: %d(%s)",
+                           rc, fi_strerror((int) -rc));
 
         tmp = first = na_ofi_msg_unexpected_op_pop(context);
         do {
@@ -4436,9 +4436,9 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     case NA_CB_RECV_EXPECTED:
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->fi_rx->fid,
             &na_ofi_op_id->fi_ctx);
-        NA_CHECK_ERROR(rc != 0, out, ret, NA_CANCEL_ERROR,
-            "fi_cancel() expected recv failed, rc: %d(%s)",
-            rc, fi_strerror((int) -rc));
+        if (rc != 0)
+            NA_LOG_WARNING("fi_cancel() expected recv failed, rc: %d(%s)",
+                           rc, fi_strerror((int) -rc));
 
         ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
         break;
@@ -4449,10 +4449,9 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
         /* May or may not be canceled in that case */
         rc = fi_cancel(&NA_OFI_CONTEXT(context)->fi_tx->fid,
             &na_ofi_op_id->fi_ctx);
-        if (rc != 0) {
+        if (rc != 0)
             NA_LOG_WARNING("fi_cancel() failed, rc: %d(%s)",
-                         rc, fi_strerror((int) -rc));
-        }
+                           rc, fi_strerror((int) -rc));
         /* fi_cancel() is not guaranteed to return proper return code for now */
 //        if (rc == 0) {
             /* Complete only if successfully canceled */
