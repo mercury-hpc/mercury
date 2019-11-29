@@ -28,8 +28,8 @@ typedef void (*na_plugin_cb_t)(void *arg);
 
 /* Completion data stored in completion queue */
 struct na_cb_completion_data {
-    na_cb_t callback;                   /* Pointer to function */
     struct na_cb_info callback_info;    /* Callback info struct */
+    na_cb_t callback;                   /* Pointer to function */
     na_plugin_cb_t plugin_callback;     /* Callback which will be called after
                                          * the user callback returns. */
     void *plugin_callback_args;         /* Argument to plugin_callback */

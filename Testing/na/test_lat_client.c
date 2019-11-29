@@ -134,7 +134,7 @@ na_test_target_lookup(struct na_test_lat_info *na_test_lat_info)
         na_test_target_lookup_cb, &request_args,
         na_test_lat_info->na_test_info.target_name, &op_id);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not lookup address");
+        NA_LOG_ERROR("Could not lookup address (%s)", NA_Error_to_string(ret));
         goto done;
     }
 
@@ -221,16 +221,21 @@ na_test_measure_latency(struct na_test_lat_info *na_test_lat_info,
             recv_buf, buf_size, recv_buf_data, na_test_lat_info->target_addr, 0,
             0, &recv_op_id);
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("NA_Msg_recv_expected() failed");
+            NA_LOG_ERROR("NA_Msg_recv_expected() failed (%s)", NA_Error_to_string(ret));
             goto done;
         }
 
+again:
         /* Post send */
         ret = NA_Msg_send_unexpected(na_test_lat_info->na_class,
             na_test_lat_info->context, NULL, NULL, send_buf, buf_size,
             send_buf_data, na_test_lat_info->target_addr, 0, 0, &send_op_id);
+        if (ret == NA_AGAIN) {
+            hg_request_wait(recv_request, 0, NULL);
+            goto again;
+        }
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("NA_Msg_send_unexpected() failed");
+            NA_LOG_ERROR("NA_Msg_send_unexpected() failed (%s)", NA_Error_to_string(ret));
             goto done;
         }
 
@@ -252,7 +257,7 @@ na_test_measure_latency(struct na_test_lat_info *na_test_lat_info,
             recv_buf, buf_size, recv_buf_data, na_test_lat_info->target_addr, 0,
             1, &recv_op_id);
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("NA_Msg_recv_expected() failed");
+            NA_LOG_ERROR("NA_Msg_recv_expected() failed (%s)", NA_Error_to_string(ret));
             goto done;
         }
 
@@ -262,7 +267,7 @@ na_test_measure_latency(struct na_test_lat_info *na_test_lat_info,
             send_buf_data, na_test_lat_info->target_addr, 0, 1,
             &send_op_id);
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("NA_Msg_send_unexpected() failed");
+            NA_LOG_ERROR("NA_Msg_send_unexpected() failed (%s)", NA_Error_to_string(ret));
             goto done;
         }
 
@@ -355,7 +360,7 @@ na_test_send_finalize(struct na_test_lat_info *na_test_lat_info)
         recv_buf, buf_size, recv_buf_data, na_test_lat_info->target_addr, 0,
         NA_TEST_TAG_DONE, &recv_op_id);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("NA_Msg_recv_expected() failed");
+        NA_LOG_ERROR("NA_Msg_recv_expected() failed (%s)", NA_Error_to_string(ret));
         goto done;
     }
 
@@ -365,7 +370,7 @@ na_test_send_finalize(struct na_test_lat_info *na_test_lat_info)
         send_buf_data, na_test_lat_info->target_addr, 0, NA_TEST_TAG_DONE,
         &send_op_id);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("NA_Msg_send_unexpected() failed");
+        NA_LOG_ERROR("NA_Msg_send_unexpected() failed (%s)", NA_Error_to_string(ret));
         goto done;
     }
 
