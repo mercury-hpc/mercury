@@ -25,6 +25,12 @@
 /* Local Macros */
 /****************/
 
+/* Error compat */
+#define NA_INVALID_PARAM    NA_INVALID_ARG
+#define NA_SIZE_ERROR       NA_MSGSIZE
+#define NA_NOMEM_ERROR      NA_NOMEM
+#define NA_PERMISSION_ERROR NA_PERMISSION
+
 /* MPI initialization flags */
 #define MPI_INIT_SERVER 0x01 /* set up to listen for unexpected messages */
 #define MPI_INIT_STATIC 0x10 /* set up static inter-communicator */
@@ -141,7 +147,8 @@ struct na_mpi_op_id {
     na_cb_type_t type;
     na_cb_t callback; /* Callback */
     void *arg;
-    na_bool_t completed; /* Operation completed */
+    hg_atomic_int32_t ref_count;    /* Ref count */
+    hg_atomic_int32_t completed;    /* Operation completed */
     na_bool_t canceled;  /* Operation canceled */
     union {
       struct na_mpi_info_lookup lookup;
@@ -260,6 +267,19 @@ na_mpi_initialize(
 static na_return_t
 na_mpi_finalize(
         na_class_t *na_class
+        );
+
+/* op_create */
+static na_op_id_t
+na_mpi_op_create(
+        na_class_t      *na_class
+        );
+
+/* op_destroy */
+static na_return_t
+na_mpi_op_destroy(
+        na_class_t      *na_class,
+        na_op_id_t       op_id
         );
 
 /* addr_lookup */
@@ -539,8 +559,8 @@ NA_PLUGIN_OPS(mpi) = {
         NULL,                                 /* cleanup */
         NULL,                                 /* context_create */
         NULL,                                 /* context_destroy */
-        NULL,                                 /* op_create */
-        NULL,                                 /* op_destroy */
+        na_mpi_op_create,                     /* op_create */
+        na_mpi_op_destroy,                    /* op_destroy */
         na_mpi_addr_lookup,                   /* addr_lookup */
         NULL,                                 /* addr_lookup2 */
         na_mpi_addr_free,                     /* addr_free */
@@ -1217,6 +1237,43 @@ na_mpi_finalize(na_class_t *na_class)
 }
 
 /*---------------------------------------------------------------------------*/
+static na_op_id_t
+na_mpi_op_create(na_class_t NA_UNUSED *na_class)
+{
+    struct na_mpi_op_id *na_mpi_op_id = NULL;
+
+    na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
+    if (!na_mpi_op_id) {
+        NA_LOG_ERROR("Could not allocate NA MPI operation ID");
+        goto done;
+    }
+    memset(na_mpi_op_id, 0, sizeof(struct na_mpi_op_id));
+    hg_atomic_init32(&na_mpi_op_id->ref_count, 1);
+    /* Completed by default */
+    hg_atomic_init32(&na_mpi_op_id->completed, 1);
+
+done:
+    return (na_op_id_t) na_mpi_op_id;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_mpi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
+{
+    struct na_mpi_op_id *na_mpi_op_id = (struct na_mpi_op_id *) op_id;
+    na_return_t ret = NA_SUCCESS;
+
+    if (hg_atomic_decr32(&na_mpi_op_id->ref_count)) {
+        /* Cannot free yet */
+        goto done;
+    }
+    free(na_mpi_op_id);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
 na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
         na_cb_t callback, void *arg, const char *name, na_op_id_t *op_id)
@@ -1226,18 +1283,13 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     int mpi_ret;
 
-    /* Allocate op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
-    if (!na_mpi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA MPI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_LOOKUP;
     na_mpi_op_id->callback = callback;
     na_mpi_op_id->arg = arg;
-    na_mpi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_mpi_op_id->completed, 0);
     na_mpi_op_id->canceled = NA_FALSE;
 
     /* Allocate addr */
@@ -1257,9 +1309,6 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
     memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
     /* get port_name and remote server rank */
     na_mpi_get_port_info(name, na_mpi_addr->port_name, &na_mpi_addr->rank);
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_mpi_op_id;
 
     /* Try to connect, must prevent concurrent threads to
      * create new communicators */
@@ -1329,7 +1378,7 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_addr);
-        free(na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
     }
 
     return ret;
@@ -1488,23 +1537,15 @@ na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     int mpi_ret;
 
-    /* Allocate op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
-    if (!na_mpi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA MPI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_SEND_UNEXPECTED;
     na_mpi_op_id->callback = callback;
     na_mpi_op_id->arg = arg;
-    na_mpi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_mpi_op_id->completed, 0);
     na_mpi_op_id->canceled = NA_FALSE;
     na_mpi_op_id->info.send_unexpected.data_request = MPI_REQUEST_NULL;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_mpi_op_id;
 
     mpi_ret = MPI_Isend(buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank,
             mpi_tag, mpi_addr->comm,
@@ -1523,7 +1564,7 @@ na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
     }
     return ret;
 }
@@ -1538,24 +1579,17 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate na_op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
-    if (!na_mpi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA MPI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_RECV_UNEXPECTED;
     na_mpi_op_id->callback = callback;
     na_mpi_op_id->arg = arg;
-    na_mpi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_mpi_op_id->completed, 0);
     na_mpi_op_id->canceled = NA_FALSE;
     na_mpi_op_id->info.recv_unexpected.buf = buf;
     na_mpi_op_id->info.recv_unexpected.buf_size = (int) buf_size;
     na_mpi_op_id->info.recv_unexpected.remote_addr = NULL;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_mpi_op_id;
 
     /* Add op_id to queue of pending unexpected recv ops and make some progress
      * in case messages are already arrived */
@@ -1579,7 +1613,7 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
     }
     return ret;
 }
@@ -1599,22 +1633,15 @@ na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     int mpi_ret;
 
     /* Allocate op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
-    if (!na_mpi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA MPI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_SEND_EXPECTED;
     na_mpi_op_id->callback = callback;
     na_mpi_op_id->arg = arg;
-    na_mpi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_mpi_op_id->completed, 0);
     na_mpi_op_id->canceled = NA_FALSE;
     na_mpi_op_id->info.send_expected.data_request = MPI_REQUEST_NULL;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_mpi_op_id;
 
     mpi_ret = MPI_Isend(buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank,
             mpi_tag, mpi_addr->comm,
@@ -1633,7 +1660,7 @@ na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
     }
     return ret;
 }
@@ -1653,24 +1680,17 @@ na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     int mpi_ret;
 
     /* Allocate op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
-    if (!na_mpi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA MPI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_RECV_EXPECTED;
     na_mpi_op_id->callback = callback;
     na_mpi_op_id->arg = arg;
-    na_mpi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_mpi_op_id->completed, 0);
     na_mpi_op_id->canceled = NA_FALSE;
     na_mpi_op_id->info.recv_expected.buf_size = mpi_buf_size;
     na_mpi_op_id->info.recv_expected.actual_size = 0;
     na_mpi_op_id->info.recv_expected.data_request = MPI_REQUEST_NULL;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_mpi_op_id;
 
     mpi_ret = MPI_Irecv(buf, mpi_buf_size, MPI_BYTE, mpi_addr->rank,
             mpi_tag, mpi_addr->comm,
@@ -1689,7 +1709,7 @@ na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
     }
     return ret;
 }
@@ -1848,18 +1868,13 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    /* Allocate op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
-    if (!na_mpi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA MPI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_PUT;
     na_mpi_op_id->callback = callback;
     na_mpi_op_id->arg = arg;
-    na_mpi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_mpi_op_id->completed, 0);
     na_mpi_op_id->canceled = NA_FALSE;
     na_mpi_op_id->info.put.rma_request = MPI_REQUEST_NULL;
     na_mpi_op_id->info.put.data_request = MPI_REQUEST_NULL;
@@ -1880,9 +1895,6 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_mpi_rma_info->count = mpi_length;
     na_mpi_rma_info->tag = na_mpi_gen_rma_tag(na_class);
     na_mpi_op_id->info.put.rma_info = na_mpi_rma_info;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_mpi_op_id;
 
     /* Post the MPI send request */
     mpi_ret = MPI_Isend(na_mpi_rma_info, sizeof(struct na_mpi_rma_info),
@@ -1912,8 +1924,8 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_mpi_op_id);
         free(na_mpi_rma_info);
+        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
     }
     return ret;
 }
@@ -1954,18 +1966,13 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    /* Allocate op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
-    if (!na_mpi_op_id) {
-        NA_LOG_ERROR("Could not allocate NA MPI operation ID");
-        ret = NA_NOMEM_ERROR;
-        goto done;
-    }
+    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_GET;
     na_mpi_op_id->callback = callback;
     na_mpi_op_id->arg = arg;
-    na_mpi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_mpi_op_id->completed, 0);
     na_mpi_op_id->canceled = NA_FALSE;
     na_mpi_op_id->info.get.rma_request = MPI_REQUEST_NULL;
     na_mpi_op_id->info.get.data_request = MPI_REQUEST_NULL;
@@ -1986,9 +1993,6 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_mpi_rma_info->count = mpi_length;
     na_mpi_rma_info->tag = na_mpi_gen_rma_tag(na_class);
     na_mpi_op_id->info.get.rma_info = na_mpi_rma_info;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE) *op_id = (na_op_id_t) na_mpi_op_id;
 
     /* Post the MPI send request */
     mpi_ret = MPI_Isend(na_mpi_rma_info, sizeof(struct na_mpi_rma_info),
@@ -2018,8 +2022,8 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_mpi_op_id);
         free(na_mpi_rma_info);
+        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
     }
     return ret;
 }
@@ -2218,7 +2222,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
     }
 
     /* Allocate na_op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) malloc(sizeof(struct na_mpi_op_id));
+    na_mpi_op_id = (struct na_mpi_op_id *) na_mpi_op_create(na_class);
     if (!na_mpi_op_id) {
         NA_LOG_ERROR("Could not allocate NA MPI operation ID");
         ret = NA_NOMEM_ERROR;
@@ -2228,7 +2232,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
     na_mpi_op_id->context = context;
     na_mpi_op_id->callback = NULL;
     na_mpi_op_id->arg = NULL;
-    na_mpi_op_id->completed = NA_FALSE;
+    hg_atomic_set32(&na_mpi_op_id->completed, 0);
     na_mpi_op_id->canceled = NA_FALSE;
 
     switch (na_mpi_rma_info->op) {
@@ -2285,8 +2289,8 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        free(na_mpi_op_id);
         free(na_mpi_rma_info);
+        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
     }
     return ret;
 }
@@ -2311,7 +2315,7 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
         MPI_Status *status = MPI_STATUS_IGNORE;
 
         /* If the op_id is marked as completed, something is wrong */
-        if (na_mpi_op_id->completed) {
+        if (hg_atomic_get32(&na_mpi_op_id->completed)) {
             NA_LOG_ERROR("Op ID should not have completed yet");
             ret = NA_PROTOCOL_ERROR;
             goto done;
@@ -2391,7 +2395,7 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
         /* If internal operation call release directly otherwise add callback
          * to completion queue */
         if (internal) {
-            na_mpi_op_id->completed = NA_TRUE;
+            hg_atomic_set32(&na_mpi_op_id->completed, 1);
             /* Remove entry from list */
             HG_LIST_REMOVE(na_mpi_op_id, entry);
 
@@ -2430,7 +2434,7 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
     int mpi_ret;
 
     /* Mark op id as completed */
-    na_mpi_op_id->completed = NA_TRUE;
+    hg_atomic_set32(&na_mpi_op_id->completed, 1);
 
     /* Init callback info */
     callback_info = &na_mpi_op_id->completion_data.callback_info;
@@ -2553,10 +2557,10 @@ na_mpi_release(void *arg)
 {
     struct na_mpi_op_id *na_mpi_op_id = (struct na_mpi_op_id *) arg;
 
-    if (na_mpi_op_id && !na_mpi_op_id->completed) {
-        NA_LOG_ERROR("Releasing resources from an uncompleted operation");
+    if (na_mpi_op_id && !hg_atomic_get32(&na_mpi_op_id->completed)) {
+        NA_LOG_WARNING("Releasing resources from an uncompleted operation");
     }
-    free(na_mpi_op_id);
+    na_mpi_op_destroy(NULL, (na_op_id_t) na_mpi_op_id);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2568,8 +2572,8 @@ na_mpi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
     na_return_t ret = NA_SUCCESS;
     int mpi_ret;
 
-    /* TODO make this atomic */
-    if (na_mpi_op_id->completed) goto done;
+    if (hg_atomic_get32(&na_mpi_op_id->completed))
+        goto done;
 
     switch (na_mpi_op_id->type) {
         case NA_CB_LOOKUP:

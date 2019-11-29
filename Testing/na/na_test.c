@@ -266,7 +266,7 @@ na_test_gen_config(struct na_test_info *na_test_info)
     info_string = (char *) malloc(sizeof(char) * NA_TEST_MAX_ADDR_NAME);
     if (!info_string) {
         NA_LOG_ERROR("Could not allocate info string");
-        ret = NA_NOMEM_ERROR;
+        ret = NA_NOMEM;
         goto done;
     }
     memset(info_string, '\0', NA_TEST_MAX_ADDR_NAME);
@@ -323,7 +323,7 @@ na_test_gen_config(struct na_test_info *na_test_info)
             base_port + port_incr);
     } else {
         NA_LOG_ERROR("Unknown protocol: %s", na_test_info->protocol);
-        ret = NA_INVALID_PARAM;
+        ret = NA_INVALID_ARG;
         goto done;
     }
 

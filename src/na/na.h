@@ -1094,10 +1094,10 @@ struct na_info {
 /* NA class definition */
 struct na_class {
     const struct na_class_ops *ops;             /* Class operations */
-    char *protocol_name;                        /* Name of protocol */
-    na_bool_t listen;                           /* Listen for connections */
-    na_progress_mode_t progress_mode;           /* NA progress mode */
     void *plugin_class;                         /* Plugin private class */
+    char *protocol_name;                        /* Name of protocol */
+    na_progress_mode_t progress_mode;           /* NA progress mode */
+    na_bool_t listen;                           /* Listen for connections */
 };
 
 /* NA context definition */

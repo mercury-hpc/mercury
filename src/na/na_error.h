@@ -39,9 +39,14 @@
 #endif
 
 /* Error macros */
-#define NA_GOTO_ERROR(label, ret, error, ...) do {              \
+#define NA_GOTO_DONE(label, ret, ret_val) do {                  \
+    ret = ret_val;                                              \
+    goto label;                                                 \
+} while (0)
+
+#define NA_GOTO_ERROR(label, ret, err_val, ...) do {            \
     NA_LOG_ERROR(__VA_ARGS__);                                  \
-    ret = error;                                                \
+    ret = err_val;                                              \
     goto label;                                                 \
 } while (0)
 

@@ -1748,7 +1748,6 @@ hg_core_create(struct hg_core_private_context *context, hg_bool_t use_sm)
     ret = hg_core_alloc_na(hg_core_handle, use_sm);
     if (ret != HG_SUCCESS) {
         HG_LOG_ERROR("Could not allocate NA handle ops");
-        ret = NA_NOMEM_ERROR;
         goto done;
     }
 
@@ -3567,9 +3566,7 @@ hg_core_cancel(struct hg_core_private_handle *hg_core_handle)
 
         na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
             hg_core_handle->na_recv_op_id);
-        if (na_ret == NA_CANCEL_ERROR)
-            ret = HG_CANCEL_ERROR;
-        else if (na_ret != NA_SUCCESS) {
+        if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not cancel recv op id");
             ret = HG_NA_ERROR;
             goto done;
@@ -3581,9 +3578,7 @@ hg_core_cancel(struct hg_core_private_handle *hg_core_handle)
 
         na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
             hg_core_handle->na_send_op_id);
-        if (na_ret == NA_CANCEL_ERROR)
-            ret = HG_CANCEL_ERROR;
-        else if (na_ret != NA_SUCCESS) {
+        if (na_ret != NA_SUCCESS) {
             HG_LOG_ERROR("Could not cancel send op id");
             ret = HG_NA_ERROR;
             goto done;

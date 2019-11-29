@@ -23,6 +23,13 @@
 /* Local Macros */
 /****************/
 
+/* Error compat */
+#define NA_INVALID_PARAM    NA_INVALID_ARG
+#define NA_SIZE_ERROR       NA_MSGSIZE
+#define NA_NOMEM_ERROR      NA_NOMEM
+#define NA_PERMISSION_ERROR NA_PERMISSION
+#define NA_ADDRINUSE_ERROR  NA_ADDRINUSE
+
 /* Max addr name */
 #define NA_BMI_MAX_ADDR_NAME 256
 

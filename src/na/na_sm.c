@@ -47,6 +47,12 @@
 /* Local Macros */
 /****************/
 
+/* Error compat */
+#define NA_INVALID_PARAM    NA_INVALID_ARG
+#define NA_SIZE_ERROR       NA_MSGSIZE
+#define NA_NOMEM_ERROR      NA_NOMEM
+#define NA_PERMISSION_ERROR NA_PERMISSION
+
 /* Plugin constants */
 #define NA_SM_MAX_FILENAME      64
 #define NA_SM_NUM_BUFS          64

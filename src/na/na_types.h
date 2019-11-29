@@ -37,9 +37,9 @@ typedef enum na_progress_mode {
 
 /* Init info */
 struct na_init_info {
+    const char *auth_key;               /* Authorization key */
     na_progress_mode_t progress_mode;   /* Progress mode */
     na_uint8_t max_contexts;            /* Max contexts */
-    const char *auth_key;               /* Authorization key */
 };
 
 /* Segment */
@@ -48,21 +48,34 @@ struct na_segment {
     na_size_t size;     /* Size of the segment in bytes */
 };
 
-/* Error return codes:
- * Functions return 0 for success or NA_XXX_ERROR for failure */
-typedef enum na_return {
-    NA_SUCCESS,             /*!< operation succeeded */
-    NA_TIMEOUT,             /*!< reached timeout */
-    NA_INVALID_PARAM,       /*!< invalid parameter */
-    NA_SIZE_ERROR,          /*!< message size error */
-    NA_ALIGNMENT_ERROR,     /*!< alignment error */
-    NA_PERMISSION_ERROR,    /*!< read/write permission error */
-    NA_NOMEM_ERROR,         /*!< no memory error */
-    NA_PROTOCOL_ERROR,      /*!< unknown error reported from the protocol layer */
-    NA_CANCELED,            /*!< operation was canceled */
-    NA_CANCEL_ERROR,        /*!< operation could not be canceled */
-    NA_ADDRINUSE_ERROR      /*!< address already in use */
-} na_return_t;
+/* Return codes:
+ * Functions return 0 for success or corresponding return code */
+#define NA_RETURN_VALUES                                                    \
+    X(NA_SUCCESS)           /*!< operation succeeded */                     \
+    X(NA_PERMISSION)        /*!< operation not permitted */                 \
+    X(NA_NOENTRY)           /*!< no such file or directory */               \
+    X(NA_INTERRUPT)         /*!< operation interrupted */                   \
+    X(NA_AGAIN)             /*!< operation must be retried */               \
+    X(NA_NOMEM)             /*!< out of memory */                           \
+    X(NA_ACCESS)            /*!< permission denied */                       \
+    X(NA_FAULT)             /*!< bad address */                             \
+    X(NA_BUSY)              /*!< device or resource busy */                 \
+    X(NA_NODEV)             /*!< no such device */                          \
+    X(NA_INVALID_ARG)       /*!< invalid argument */                        \
+    X(NA_PROTOCOL_ERROR)    /*!< protocol error */                          \
+    X(NA_OVERFLOW)          /*!< value too large */                         \
+    X(NA_MSGSIZE)           /*!< message size too long */                   \
+    X(NA_PROTONOSUPPORT)    /*!< protocol not supported */                  \
+    X(NA_OPNOTSUPPORTED)    /*!< operation not supported on endpoint */     \
+    X(NA_ADDRINUSE)         /*!< address already in use */                  \
+    X(NA_ADDRNOTAVAIL)      /*!< cannot assign requested address */         \
+    X(NA_TIMEOUT)           /*!< operation reached timeout */               \
+    X(NA_CANCELED)          /*!< operation canceled */                      \
+    X(NA_RETURN_MAX)
+
+#define X(a) a,
+typedef enum na_return { NA_RETURN_VALUES } na_return_t;
+#undef X
 
 /* Callback operation type */
 typedef enum na_cb_type {
@@ -88,13 +101,13 @@ struct na_cb_info_recv_unexpected {
 
 /* Callback info struct */
 struct na_cb_info {
-    void *arg;          /* User data */
-    na_return_t ret;    /* Return value */
-    na_cb_type_t type;  /* Callback type */
     union {             /* Union of callback info structures */
         struct na_cb_info_lookup lookup;
         struct na_cb_info_recv_unexpected recv_unexpected;
     } info;
+    void *arg;          /* User data */
+    na_cb_type_t type;  /* Callback type */
+    na_return_t ret;    /* Return value */
 };
 
 /* Callback type */
