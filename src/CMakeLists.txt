@@ -243,7 +243,6 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_header.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_types.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_error.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_header.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_macros.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc_bulk.h

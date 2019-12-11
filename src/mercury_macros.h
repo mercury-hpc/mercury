@@ -53,7 +53,6 @@ typedef struct \
     ret = BOOST_PP_CAT(hg_proc_, HG_GEN_GET_TYPE(field) \
             (proc, &struct_name->HG_GEN_GET_NAME(field))); \
     if (ret != HG_SUCCESS) { \
-      HG_LOG_ERROR("Proc error"); \
       return ret; \
     }
 

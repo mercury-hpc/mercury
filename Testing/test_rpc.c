@@ -142,7 +142,7 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
     /* Create RPC request */
     hg_ret = HG_Create(context, addr, rpc_id, &handle);
     if (hg_ret != HG_SUCCESS) {
-        if (hg_ret != HG_NO_MATCH)
+        if (hg_ret != HG_NOENTRY)
             HG_TEST_LOG_ERROR("Could not create handle");
         goto done;
     }
@@ -156,8 +156,13 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
     HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
     forward_cb_args.request = request;
     forward_cb_args.rpc_handle = &rpc_open_handle;
+again:
     hg_ret = HG_Forward(handle, callback, &forward_cb_args,
         &rpc_open_in_struct);
+    if (hg_ret == HG_AGAIN) {
+        hg_request_wait(request, 0, NULL);
+        goto again;
+    }
     if (hg_ret != HG_SUCCESS) {
         HG_TEST_LOG_ERROR("Could not forward call");
         goto done;
@@ -204,7 +209,7 @@ hg_test_rpc_lookup(hg_context_t *context, hg_request_class_t *request_class,
         /* Create RPC request */
         hg_ret = HG_Create(context, target_addr, rpc_id, &handle);
         if (hg_ret != HG_SUCCESS) {
-            if (hg_ret != HG_NO_MATCH)
+            if (hg_ret != HG_NOENTRY)
                 HG_TEST_LOG_ERROR("Could not create handle");
             goto done;
         }

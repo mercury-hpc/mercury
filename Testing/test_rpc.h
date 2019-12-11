@@ -50,10 +50,8 @@ hg_proc_rpc_handle_t(hg_proc_t proc, void *data)
     rpc_handle_t *struct_data = (rpc_handle_t *) data;
 
     ret = hg_proc_uint64_t(proc, &struct_data->cookie);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -72,16 +70,12 @@ hg_proc_rpc_open_in_t(hg_proc_t proc, void *data)
     rpc_open_in_t *struct_data = (rpc_open_in_t *) data;
 
     ret = hg_proc_hg_const_string_t(proc, &struct_data->path);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_rpc_handle_t(proc, &struct_data->handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -100,16 +94,12 @@ hg_proc_rpc_open_out_t(hg_proc_t proc, void *data)
     rpc_open_out_t *struct_data = (rpc_open_out_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->ret);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_int32_t(proc, &struct_data->event_id);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -123,10 +113,8 @@ hg_proc_perf_rpc_lat_in_t(hg_proc_t proc, void *data)
     hg_return_t ret = HG_SUCCESS;
 
     ret = hg_proc_hg_uint32_t(proc, &struct_data->buf_size);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     if (struct_data->buf_size) {
         switch (hg_proc_get_op(proc)) {
@@ -135,17 +123,14 @@ hg_proc_perf_rpc_lat_in_t(hg_proc_t proc, void *data)
                 HG_FALLTHROUGH();
             case HG_ENCODE:
                 ret = hg_proc_raw(proc, struct_data->buf, struct_data->buf_size);
-                if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Proc error");
+                if (ret != HG_SUCCESS)
                     return ret;
-                }
                 break;
             case HG_FREE:
                 free(struct_data->buf);
                 break;
             default:
-                HG_LOG_ERROR("Proc error");
-                ret = HG_PROTOCOL_ERROR;
+                ret = HG_INVALID_ARG;
                 return ret;
         }
 

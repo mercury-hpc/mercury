@@ -56,21 +56,18 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
             }
             /* Encode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Proc error");
+            if (ret != HG_SUCCESS)
                 return ret;
-            }
             if (!buf_size)
                 break;
             if (cached_ptr)
                 hg_proc_raw(proc, cached_ptr, buf_size);
             else {
                 buf = hg_proc_save_ptr(proc, buf_size);
-                ret = HG_Bulk_serialize(buf, buf_size, request_eager, *bulk_ptr);
-                if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Could not serialize bulk handle");
+                ret = HG_Bulk_serialize(buf, buf_size, request_eager,
+                    *bulk_ptr);
+                if (ret != HG_SUCCESS)
                     return ret;
-                }
                 hg_proc_restore_ptr(proc, buf, buf_size);
             }
             break;
@@ -80,10 +77,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
 
             /* Decode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Proc error");
+            if (ret != HG_SUCCESS)
                 return ret;
-            }
             if (!buf_size) {
                 /* If buf_size is 0, define handle to HG_BULK_NULL */
                 *bulk_ptr = HG_BULK_NULL;
@@ -92,16 +87,12 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
 
             buf = hg_proc_save_ptr(proc, buf_size);
             ret = HG_Bulk_deserialize(hg_class, bulk_ptr, buf, buf_size);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Could not deserialize bulk handle");
+            if (ret != HG_SUCCESS)
                 return ret;
-            }
             /* Cache serialize ptr to buf */
             ret = HG_Bulk_set_serialize_cached_ptr(*bulk_ptr, buf, buf_size);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Could not set serialize cached ptr");
+            if (ret != HG_SUCCESS)
                 return ret;
-            }
             hg_proc_restore_ptr(proc, buf, buf_size);
             break;
         }
@@ -113,16 +104,13 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
             }
             /* Set serialize ptr to NULL */
             ret = HG_Bulk_set_serialize_cached_ptr(*bulk_ptr, NULL, 0);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Could not set serialize cached ptr");
+            if (ret != HG_SUCCESS)
                 return ret;
-            }
+
             /* Decrement refcount on bulk handle */
             ret = HG_Bulk_free(*bulk_ptr);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Could not free bulk handle");
+            if (ret != HG_SUCCESS)
                 return ret;
-            }
             *bulk_ptr = HG_BULK_NULL;
             break;
         default:

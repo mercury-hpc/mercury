@@ -32,16 +32,12 @@ hg_proc_overflow_out_t(hg_proc_t proc, void *data)
     overflow_out_t *struct_data = (overflow_out_t *) data;
 
     ret = hg_proc_hg_string_t(proc, &struct_data->string);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_hg_uint64_t(proc, &struct_data->string_len);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }

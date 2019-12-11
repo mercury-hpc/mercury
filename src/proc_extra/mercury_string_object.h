@@ -43,7 +43,8 @@ hg_string_object_init(hg_string_object_t *string);
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_string_object_init_char(hg_string_object_t *string, char *s, hg_bool_t is_owned);
+hg_string_object_init_char(hg_string_object_t *string, char *s,
+    hg_bool_t is_owned);
 
 /**
  * Initialize a string object from the const string pointed to by s.
@@ -55,7 +56,8 @@ hg_string_object_init_char(hg_string_object_t *string, char *s, hg_bool_t is_own
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_EXPORT hg_return_t
-hg_string_object_init_const_char(hg_string_object_t *string, const char *s, hg_bool_t is_owned);
+hg_string_object_init_const_char(hg_string_object_t *string, const char *s,
+    hg_bool_t is_owned);
 
 /**
  * Free a string object.

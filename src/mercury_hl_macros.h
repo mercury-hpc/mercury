@@ -119,7 +119,6 @@
 #define HG_GET_OUTPUT(with_ret, ret_fail) \
         hg_ret = HG_Get_output(handle, &out_struct); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_LOG_ERROR("Could not get output"); \
             BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
             goto done; \
         }
@@ -128,7 +127,6 @@
 #define HG_FREE_OUTPUT(with_ret, ret_fail) \
         hg_ret = HG_Free_output(handle, &out_struct); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_LOG_ERROR("Could not free output"); \
             BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
             goto done; \
         }
@@ -157,7 +155,6 @@
                 BOOST_PP_IF(bulk_read, HG_BULK_READ_ONLY, HG_BULK_READWRITE), \
                 &bulk_handle); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_LOG_ERROR("Could not create HG bulk handle\n"); \
             BOOST_PP_IF(with_ret, ret = fail_ret;, BOOST_PP_EMPTY()) \
             goto done; \
         }
@@ -166,7 +163,6 @@
 #define HG_BULK_FREE(bulk_handle, with_ret, fail_ret) \
         hg_ret = HG_Bulk_free(bulk_handle); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_LOG_ERROR("Could not free HG bulk handle"); \
             BOOST_PP_IF(with_ret, ret = fail_ret;, BOOST_PP_EMPTY()) \
             goto done; \
         } \
@@ -194,7 +190,6 @@
 #define HG_BULK_LOCAL_FREE(local_bulk_handle) \
         hg_ret = HG_Bulk_free(local_bulk_handle); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_LOG_ERROR("Could not free block call"); \
             goto done; \
         } \
         free(HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_BUF)));
@@ -212,7 +207,6 @@
                 0, \
                 HG_GEN_GET_NAME(BOOST_PP_SEQ_HEAD(HG_BULK_COUNT))); \
         if (hg_ret != HG_SUCCESS) { \
-            HG_LOG_ERROR("Could not transfer bulk data"); \
             goto done; \
         }
 
@@ -280,7 +274,6 @@
             hg_ret = HG_Create(HG_CLASS_DEFAULT, HG_CONTEXT_DEFAULT, \
                     NA_ADDR_DEFAULT, id, &handle); \
             if (hg_ret != HG_SUCCESS) { \
-                HG_LOG_ERROR("Could not create HG handle"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
@@ -302,7 +295,6 @@
             hg_ret = HG_Hl_forward_wait(handle, \
                     BOOST_PP_IF(with_input, &in_struct, NULL)); \
             if (hg_ret != HG_SUCCESS) { \
-                HG_LOG_ERROR("Could not forward call"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
@@ -331,7 +323,6 @@
             /* Destroy handle */ \
             hg_ret = HG_Destroy(handle); \
             if (hg_ret != HG_SUCCESS) { \
-                HG_LOG_ERROR("Could not destroy HG handle"); \
                 BOOST_PP_IF(with_ret, ret = ret_fail;, BOOST_PP_EMPTY()) \
                 goto done; \
             } \
@@ -375,7 +366,6 @@
                 BOOST_PP_IF(with_input, \
                         hg_ret = HG_Get_input(handle, &in_struct); \
                         if (hg_ret != HG_SUCCESS) { \
-                            HG_LOG_ERROR("Could not get input"); \
                             goto done; \
                         } \
                         \
@@ -432,7 +422,6 @@
                                 &out_struct, \
                                 NULL) ); \
                 if (hg_ret != HG_SUCCESS) { \
-                    HG_LOG_ERROR("Could not respond"); \
                     goto done; \
                 } \
                 \
@@ -440,7 +429,6 @@
                 BOOST_PP_IF(with_input, \
                         hg_ret = HG_Free_input(handle, &in_struct); \
                         if (hg_ret != HG_SUCCESS) { \
-                            HG_LOG_ERROR("Could not free input"); \
                             goto done; \
                         } \
                         , BOOST_PP_EMPTY()) \
@@ -448,7 +436,6 @@
                 /* Destroy handle */ \
                 hg_ret = HG_Destroy(handle); \
                 if (hg_ret != HG_SUCCESS) { \
-                    HG_LOG_ERROR("Could not destroy HG handle"); \
                     goto done; \
                 } \
                 \

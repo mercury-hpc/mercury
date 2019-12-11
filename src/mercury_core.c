@@ -25,6 +25,7 @@
 #include "mercury_thread_pool.h"
 #include "mercury_thread_spin.h"
 #include "mercury_time.h"
+#include "mercury_error.h"
 
 #ifdef HG_HAS_SM_ROUTING
 #include <uuid/uuid.h>
@@ -93,51 +94,47 @@ struct hg_core_private_class {
     uuid_t na_sm_uuid;                  /* UUID for local identification */
 #endif
     hg_hash_table_t *func_map;          /* Function map */
-    hg_thread_spin_t func_map_lock;     /* Function map mutex */
-    hg_atomic_int32_t request_tag;      /* Atomic used for tag generation */
+    hg_return_t (*more_data_acquire)(hg_core_handle_t, hg_op_t,
+        hg_return_t (*done_callback)(hg_core_handle_t)); /* more_data_acquire */
+    void (*more_data_release)(hg_core_handle_t);         /* more_data_release */
     na_tag_t request_max_tag;           /* Max value for tag */
-    hg_bool_t na_ext_init;              /* NA externally initialized */
+    hg_atomic_int32_t n_contexts;       /* Atomic used for number of contexts */
+    hg_atomic_int32_t n_addrs;          /* Atomic used for number of addrs */
+    hg_atomic_int32_t request_tag;      /* Atomic used for tag generation */
+    hg_thread_spin_t func_map_lock;     /* Function map lock */
     na_progress_mode_t progress_mode;   /* NA progress mode */
+    hg_bool_t na_ext_init;              /* NA externally initialized */
 #ifdef HG_HAS_COLLECT_STATS
     hg_bool_t stats;                    /* (Debug) Print stats at exit */
 #endif
-    hg_atomic_int32_t n_contexts;       /* Atomic used for number of contexts */
-    hg_atomic_int32_t n_addrs;          /* Atomic used for number of addrs */
-
-    /* Callbacks */
-    hg_return_t (*more_data_acquire)(hg_core_handle_t, hg_op_t,
-        hg_return_t (*done_callback)(hg_core_handle_t)); /* more_data_acquire */
-    void (*more_data_release)(hg_core_handle_t); /* more_data_release */
 };
 
 /* HG context */
 struct hg_core_private_context {
     struct hg_core_context core_context;        /* Must remain as first field */
-    struct hg_poll_set *poll_set;               /* Context poll set */
-    /* Pointer to function used for making progress */
-    hg_return_t (*progress)(struct hg_core_private_context *context,
-        unsigned int timeout);
-    struct hg_atomic_queue *completion_queue;   /* Default completion queue */
-    HG_QUEUE_HEAD(hg_completion_entry) backfill_queue; /* Backfill completion queue */
-    hg_atomic_int32_t backfill_queue_count;     /* Backfill queue count */
-    hg_thread_mutex_t completion_queue_mutex;   /* Completion queue mutex */
     hg_thread_cond_t  completion_queue_cond;    /* Completion queue cond */
-    hg_atomic_int32_t trigger_waiting;          /* Waiting in trigger */
-    HG_LIST_HEAD(hg_core_private_handle) pending_list;  /* List of pending handles */
-    hg_thread_spin_t pending_list_lock;         /* Pending list lock */
-#ifdef HG_HAS_SM_ROUTING
-    HG_LIST_HEAD(hg_core_private_handle) sm_pending_list; /* List of SM pending handles */
-    hg_thread_spin_t sm_pending_list_lock;      /* SM pending list lock */
-#endif
+    hg_thread_mutex_t completion_queue_mutex;   /* Completion queue mutex */
+    HG_QUEUE_HEAD(hg_completion_entry) backfill_queue;  /* Backfill completion queue */
+    struct hg_atomic_queue *completion_queue;           /* Default completion queue */
     HG_LIST_HEAD(hg_core_private_handle) created_list;  /* List of handles for that context */
-    hg_thread_spin_t created_list_lock;         /* Handle list lock */
-#ifdef HG_HAS_SELF_FORWARD
-    int completion_queue_notify;                /* Self notification */
+    HG_LIST_HEAD(hg_core_private_handle) pending_list;  /* List of pending handles */
+#ifdef HG_HAS_SM_ROUTING
+    HG_LIST_HEAD(hg_core_private_handle) sm_pending_list;   /* List of SM pending handles */
 #endif
     hg_return_t (*handle_create)(hg_core_handle_t, void *); /* handle_create */
     void *handle_create_arg;                    /* handle_create arg */
-    hg_bool_t finalizing;                       /* Prevent reposts */
+    struct hg_poll_set *poll_set;               /* Context poll set */
+    hg_return_t (*progress)(struct hg_core_private_context *context,
+        unsigned int timeout);                  /* Progress function */
+    hg_atomic_int32_t backfill_queue_count;     /* Backfill queue count */
+    hg_atomic_int32_t trigger_waiting;          /* Waiting in trigger */
     hg_atomic_int32_t n_handles;                /* Atomic used for number of handles */
+    hg_thread_spin_t created_list_lock;         /* Handle list lock */
+    hg_thread_spin_t pending_list_lock;         /* Pending list lock */
+#ifdef HG_HAS_SELF_FORWARD
+    int completion_queue_notify;                /* Self notification */
+#endif
+    hg_bool_t finalizing;                       /* Prevent reposts */
 };
 
 #ifdef HG_HAS_SELF_FORWARD
@@ -156,8 +153,8 @@ struct hg_core_private_addr {
 #ifdef HG_HAS_SM_ROUTING
     uuid_t na_sm_uuid;                  /* NA SM UUID */
 #endif
-    hg_bool_t is_mine;                  /* Created internally or not */
     hg_atomic_int32_t ref_count;        /* Reference count */
+    hg_bool_t is_mine;                  /* Created internally or not */
 };
 
 /* HG core op type */
@@ -175,71 +172,57 @@ typedef enum {
 /* HG core handle */
 struct hg_core_private_handle {
     struct hg_core_handle core_handle;  /* Must remain as first field */
+    struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
+    HG_LIST_ENTRY(hg_core_private_handle) created;  /* Created list entry */
+    HG_LIST_ENTRY(hg_core_private_handle) pending;  /* Pending list entry */
+    struct hg_core_header in_header;    /* Input header */
+    struct hg_core_header out_header;   /* Output header */
     na_class_t *na_class;               /* NA class */
     na_context_t *na_context;           /* NA context */
     hg_core_cb_t request_callback;      /* Request callback */
     void *request_arg;                  /* Request callback arguments */
     hg_core_cb_t response_callback;     /* Response callback */
     void *response_arg;                 /* Response callback arguments */
-    hg_core_op_type_t op_type;          /* Core operation type */
-    na_tag_t tag;                       /* Tag used for request and response */
-    hg_uint8_t cookie;                  /* Cookie */
-    hg_return_t ret;                    /* Return code associated to handle */
-    HG_LIST_ENTRY(hg_core_private_handle) created;  /* Created list entry */
-    HG_LIST_ENTRY(hg_core_private_handle) pending;  /* Pending list entry */
-    struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
-    hg_bool_t repost;                   /* Repost handle on completion (listen) */
-    hg_bool_t is_self;                  /* Self processed */
-    hg_atomic_int32_t in_use;           /* Is in use */
-    hg_bool_t no_response;              /* Require response or not */
-
-    void *in_buf_plugin_data;           /* Input buffer NA plugin data */
-    na_size_t in_buf_used;              /* Amount of input buffer used */
-    void *out_buf_plugin_data;          /* Output buffer NA plugin data */
-    na_size_t out_buf_used;             /* Amount of output buffer used */
+    hg_return_t (*forward)(struct hg_core_private_handle *hg_core_handle);    /* forward */
+    hg_return_t (*respond)(struct hg_core_private_handle *hg_core_handle);    /* respond */
+    hg_return_t (*no_respond)(struct hg_core_private_handle *hg_core_handle); /* no_respond */
     void *ack_buf;                      /* Ack buf for more data */
+    void *in_buf_plugin_data;           /* Input buffer NA plugin data */
+    void *out_buf_plugin_data;          /* Output buffer NA plugin data */
     void *ack_buf_plugin_data;          /* Ack plugin data */
-
     na_op_id_t na_send_op_id;           /* Operation ID for send */
     na_op_id_t na_recv_op_id;           /* Operation ID for recv */
     na_op_id_t na_ack_op_id;            /* Operation ID for ack */
-    unsigned int na_op_count;           /* Number of ongoing operations */
-    hg_atomic_int32_t na_op_completed_count;    /* Number of NA operations completed */
-    hg_bool_t na_op_id_mine;            /* Operation ID created by HG */
-
-    struct hg_core_header in_header;    /* Input header */
-    struct hg_core_header out_header;   /* Output header */
-
+    na_size_t in_buf_used;              /* Amount of input buffer used */
+    na_size_t out_buf_used;             /* Amount of output buffer used */
+    na_tag_t tag;                       /* Tag used for request and response */
+    hg_atomic_int32_t na_op_completed_count; /* Number of NA operations completed */
+    hg_atomic_int32_t in_use;           /* Is in use */
     hg_atomic_int32_t ref_count;        /* Reference count */
-
-    /* Callbacks */
-    hg_return_t (*forward)(
-        struct hg_core_private_handle *hg_core_handle
-        ); /* forward */
-    hg_return_t (*respond)(
-        struct hg_core_private_handle *hg_core_handle
-        ); /* respond */
-    hg_return_t (*no_respond)(
-        struct hg_core_private_handle *hg_core_handle
-        ); /* no_respond */
+    unsigned int na_op_count;           /* Number of ongoing operations */
+    hg_core_op_type_t op_type;          /* Core operation type */
+    hg_return_t ret;                    /* Return code associated to handle */
+    hg_uint8_t cookie;                  /* Cookie */
+    hg_bool_t repost;                   /* Repost handle on completion (listen) */
+    hg_bool_t is_self;                  /* Self processed */
+    hg_bool_t no_response;              /* Require response or not */
 };
 
 /* HG op id */
 struct hg_core_op_info_lookup {
-    struct hg_core_private_addr *hg_core_addr; /* Address */
-    na_op_id_t na_lookup_op_id;         /* Operation ID for lookup */
+    struct hg_core_private_addr *hg_core_addr;  /* Address */
+    na_op_id_t na_lookup_op_id;                 /* Operation ID for lookup */
 };
 
 struct hg_core_op_id {
-    struct hg_core_private_context *context; /* Context */
-    hg_cb_type_t type;                  /* Callback type */
-    hg_core_cb_t callback;              /* Callback */
-    void *arg;                          /* Callback arguments */
-    hg_atomic_int32_t completed;        /* Operation completed TODO needed ? */
+    struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
     union {
         struct hg_core_op_info_lookup lookup;
     } info;
-    struct hg_completion_entry hg_completion_entry; /* Entry in completion queue */
+    struct hg_core_private_context *context;        /* Context */
+    hg_core_cb_t callback;                          /* Callback */
+    void *arg;                                      /* Callback arguments */
+    hg_cb_type_t type;                              /* Callback type */
 };
 
 /********************/
@@ -641,7 +624,6 @@ hg_core_process(
 static HG_INLINE hg_return_t
 hg_core_complete_na(
         struct hg_core_private_handle *hg_core_handle,
-        na_op_id_t *op_id,
         hg_bool_t *completed
         );
 
@@ -846,11 +828,8 @@ hg_core_get_sm_uuid(uuid_t *sm_uuid)
         uuid_generate(new_uuid);
 
         uuid_config = fopen(sm_path, "w");
-        if (!uuid_config) {
-            HG_LOG_ERROR("Could not open %s for write", sm_path);
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(uuid_config == NULL, done, ret, HG_NOENTRY,
+            "Could not open %s for write", sm_path);
         uuid_unparse(new_uuid, uuid_str);
         fprintf(uuid_config, "%s\n", uuid_str);
     } else {
@@ -884,7 +863,8 @@ hg_core_int_hash(void *vlocation)
 static void
 hg_core_func_map_value_free(hg_hash_table_value_t value)
 {
-    struct hg_core_rpc_info *hg_core_rpc_info = (struct hg_core_rpc_info *) value;
+    struct hg_core_rpc_info *hg_core_rpc_info =
+        (struct hg_core_rpc_info *) value;
 
     if (hg_core_rpc_info->free_callback)
         hg_core_rpc_info->free_callback(hg_core_rpc_info->data);
@@ -921,17 +901,11 @@ hg_core_proc_header_request(struct hg_core_handle *hg_core_handle,
     /* Proc request header */
     ret = hg_core_header_request_proc(op, header_buf, header_buf_size,
         hg_core_header);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not process request header");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not process request header");
 
     if (op == HG_DECODE) {
         ret = hg_core_header_request_verify(hg_core_header);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not verify request header");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Could not verify request header");
     }
 
 done:
@@ -952,17 +926,11 @@ hg_core_proc_header_response(struct hg_core_handle *hg_core_handle,
     /* Proc response header */
     ret = hg_core_header_response_proc(op, header_buf, header_buf_size,
         hg_core_header);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not process response header");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not process response header");
 
     if (op == HG_DECODE) {
         ret = hg_core_header_response_verify(hg_core_header);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not verify response header");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Could not verify response header");
     }
 
 done:
@@ -987,14 +955,11 @@ hg_core_pending_list_cancel(struct hg_core_private_context *context)
 
         /* Cancel handle */
         ret = hg_core_cancel(hg_core_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not cancel handle");
-            break;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Could not cancel handle");
     }
 
+done:
     hg_thread_spin_unlock(&context->pending_list_lock);
-
     return ret;
 }
 
@@ -1005,7 +970,7 @@ hg_core_sm_pending_list_cancel(struct hg_core_private_context *context)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    hg_thread_spin_lock(&context->sm_pending_list_lock);
+    hg_thread_spin_lock(&context->pending_list_lock);
 
     while (!HG_LIST_IS_EMPTY(&context->sm_pending_list)) {
         struct hg_core_private_handle *hg_core_handle =
@@ -1017,14 +982,11 @@ hg_core_sm_pending_list_cancel(struct hg_core_private_context *context)
 
         /* Cancel handle */
         ret = hg_core_cancel(hg_core_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not cancel SM handle");
-            break;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Could not cancel SM handle");
     }
 
-    hg_thread_spin_unlock(&context->sm_pending_list_lock);
-
+done:
+    hg_thread_spin_unlock(&context->pending_list_lock);
     return ret;
 }
 #endif
@@ -1058,10 +1020,8 @@ hg_core_created_list_wait(struct hg_core_private_context *context)
             break;
 
         ret = context->progress(context, (unsigned int) (remaining * 1000.0));
-        if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
-            HG_LOG_ERROR("Could not make progress");
-            goto done;
-        }
+        HG_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done, ret, ret,
+            "Could not make progress");
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
     }
@@ -1086,11 +1046,8 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     /* Create new HG class */
     hg_core_class = (struct hg_core_private_class *) malloc(
         sizeof(struct hg_core_private_class));
-    if (!hg_core_class) {
-        HG_LOG_ERROR("Could not allocate HG class");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, error, ret, HG_NOMEM,
+        "Could not allocate HG class");
     memset(hg_core_class, 0, sizeof(struct hg_core_private_class));
 
     /* Parse options */
@@ -1104,19 +1061,16 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
 #ifdef HG_HAS_SM_ROUTING
         auto_sm = hg_init_info->auto_sm;
 #else
-        if (hg_init_info->auto_sm) {
-            HG_LOG_WARNING("Auto SM requested but not enabled, "
-                "please turn ON MERCURY_USE_SM_ROUTING in CMake options");
-        }
+        HG_CHECK_WARNING(hg_init_info->auto_sm,
+            "Auto SM requested but not enabled, "
+            "please turn ON MERCURY_USE_SM_ROUTING in CMake options");
 #endif
 #ifdef HG_HAS_COLLECT_STATS
         hg_core_class->stats = hg_init_info->stats;
         if (hg_core_class->stats && !hg_core_print_stats_registered_g) {
-            if (atexit(hg_core_print_stats) != 0) {
-                HG_LOG_ERROR("Could not register hg_core_print_stats");
-                ret = HG_PROTOCOL_ERROR;
-                goto done;
-            }
+            int rc = atexit(hg_core_print_stats);
+            HG_CHECK_ERROR(rc != 0, error, ret, HG_PROTOCOL_ERROR,
+                "Could not register hg_core_print_stats");
             hg_core_print_stats_registered_g = HG_TRUE;
         }
 #endif
@@ -1126,62 +1080,44 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     if (!hg_core_class->na_ext_init) {
         hg_core_class->core_class.na_class = NA_Initialize_opt(
             na_info_string, na_listen, &hg_init_info->na_init_info);
-        if (!hg_core_class->core_class.na_class) {
-            HG_LOG_ERROR("Could not initialize NA class");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(hg_core_class->core_class.na_class == NULL, error, ret,
+            HG_NA_ERROR, "Could not initialize NA class");
     }
 
 #ifdef HG_HAS_SM_ROUTING
     /* Initialize SM plugin */
     if (auto_sm) {
-        if (strcmp(NA_Get_class_name(hg_core_class->core_class.na_class),
-            "na") == 0) {
-            HG_LOG_ERROR("Cannot use auto SM mode if initialized NA class is "
-                "already using SM");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(strcmp(NA_Get_class_name(
+            hg_core_class->core_class.na_class), "na") == 0, error, ret,
+            HG_PROTONOSUPPORT, "Cannot use auto SM mode if initialized "
+                "NA class is already using SM");
 
         /* Initialize NA SM first so that tmp directories are created */
         hg_core_class->core_class.na_sm_class = NA_Initialize_opt("na+sm",
             na_listen, &hg_init_info->na_init_info);
-        if (!hg_core_class->core_class.na_sm_class) {
-            HG_LOG_ERROR("Could not initialize NA SM class");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(hg_core_class->core_class.na_sm_class == NULL, error,
+            ret, HG_NA_ERROR, "Could not initialize NA SM class");
 
         /* Get SM UUID */
         ret = hg_core_get_sm_uuid(&hg_core_class->na_sm_uuid);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not get SM UUID");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(error, ret, "Could not get SM UUID");
     }
 #endif
 
     /* Compute max request tag */
     na_max_tag = NA_Msg_get_max_tag(hg_core_class->core_class.na_class);
-    if (!na_max_tag) {
-        HG_LOG_ERROR("NA Max tag is not defined");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(na_max_tag == 0, error, ret, HG_NA_ERROR,
+        "NA Max tag is not defined");
     hg_core_class->request_max_tag = na_max_tag;
 
 #ifdef HG_HAS_SM_ROUTING
     if (auto_sm) {
         na_sm_max_tag = NA_Msg_get_max_tag(
             hg_core_class->core_class.na_sm_class);
-        if (!na_max_tag) {
-            HG_LOG_ERROR("NA Max tag is not defined");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
-        hg_core_class->request_max_tag = HG_CORE_MIN(hg_core_class->request_max_tag,
-            na_sm_max_tag);
+        HG_CHECK_ERROR(na_sm_max_tag == 0, error, ret, HG_NA_ERROR,
+            "NA Max tag is not defined");
+        hg_core_class->request_max_tag = HG_CORE_MIN(
+            hg_core_class->request_max_tag, na_sm_max_tag);
     }
 #endif
 
@@ -1195,12 +1131,11 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     hg_atomic_init32(&hg_core_class->n_addrs, 0);
 
     /* Create new function map */
-    hg_core_class->func_map = hg_hash_table_new(hg_core_int_hash, hg_core_int_equal);
-    if (!hg_core_class->func_map) {
-        HG_LOG_ERROR("Could not create function map");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    hg_core_class->func_map = hg_hash_table_new(hg_core_int_hash,
+        hg_core_int_equal);
+    HG_CHECK_ERROR(hg_core_class->func_map == NULL, error, ret, HG_NOMEM,
+        "Could not create function map");
+
     /* Automatically free all the values with the hash map */
     hg_hash_table_register_free_functions(hg_core_class->func_map, free,
             hg_core_func_map_value_free);
@@ -1208,12 +1143,11 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     /* Initialize mutex */
     hg_thread_spin_init(&hg_core_class->func_map_lock);
 
-done:
-    if (ret != HG_SUCCESS) {
-        hg_core_finalize(hg_core_class);
-        hg_core_class = NULL;
-    }
     return hg_core_class;
+
+error:
+    hg_core_finalize(hg_core_class);
+    return NULL;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1222,24 +1156,19 @@ hg_core_finalize(struct hg_core_private_class *hg_core_class)
 {
     hg_util_int32_t n_addrs, n_contexts;
     hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
 
-    if (!hg_core_class) goto done;
+    if (!hg_core_class)
+        goto done;
 
     n_contexts = hg_atomic_get32(&hg_core_class->n_contexts);
-    if (n_contexts != 0) {
-        HG_LOG_ERROR("HG contexts must be destroyed before finalizing HG"
-            " (%d remaining)", n_contexts);
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(n_contexts != 0, done, ret, HG_BUSY,
+        "HG contexts must be destroyed before finalizing HG (%d remaining)",
+        n_contexts);
 
     n_addrs = hg_atomic_get32(&hg_core_class->n_addrs);
-    if (n_addrs != 0) {
-        HG_LOG_ERROR("HG addrs must be freed before finalizing HG"
-            " (%d remaining)", n_addrs);
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(n_addrs != 0, done, ret, HG_BUSY,
+        "HG addrs must be freed before finalizing HG (%d remaining)", n_addrs);
 
     /* Delete function map */
     if(hg_core_class->func_map)
@@ -1256,27 +1185,23 @@ hg_core_finalize(struct hg_core_private_class *hg_core_class)
 
     if (!hg_core_class->na_ext_init) {
         /* Finalize interface */
-        if (NA_Finalize(hg_core_class->core_class.na_class) != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not finalize NA interface");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        na_ret = NA_Finalize(hg_core_class->core_class.na_class);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not finalize NA interface (%s)", NA_Error_to_string(na_ret));
         hg_core_class->core_class.na_class = NULL;
     }
 
 #ifdef HG_HAS_SM_ROUTING
     /* Finalize SM interface */
-    if (NA_Finalize(hg_core_class->core_class.na_sm_class) != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not finalize NA SM interface");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
+    na_ret = NA_Finalize(hg_core_class->core_class.na_sm_class);
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+        "Could not finalize NA SM interface (%s)", NA_Error_to_string(na_ret));
 #endif
 
-done:
     /* Free HG class */
     free(hg_core_class);
 
+done:
     return ret;
 }
 
@@ -1289,10 +1214,9 @@ hg_core_addr_create(struct hg_core_private_class *hg_core_class,
 
     hg_core_addr = (struct hg_core_private_addr *) malloc(
         sizeof(struct hg_core_private_addr));
-    if (!hg_core_addr) {
-        HG_LOG_ERROR("Could not allocate HG addr");
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(hg_core_addr == NULL, done,
+        "Could not allocate HG addr");
+
     memset(hg_core_addr, 0, sizeof(struct hg_core_private_addr));
     hg_core_addr->core_addr.na_class = na_class;
     hg_core_addr->core_addr.na_addr = NA_ADDR_NULL;
@@ -1326,26 +1250,21 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
     hg_return_t ret = HG_SUCCESS, progress_ret;
 
     /* Allocate op_id */
-    hg_core_op_id = (struct hg_core_op_id *) malloc(sizeof(struct hg_core_op_id));
-    if (!hg_core_op_id) {
-        HG_LOG_ERROR("Could not allocate HG operation ID");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    hg_core_op_id = (struct hg_core_op_id *) malloc(
+        sizeof(struct hg_core_op_id));
+    HG_CHECK_ERROR(hg_core_op_id == NULL, error, ret, HG_NOMEM,
+        "Could not allocate HG operation ID");
+
     hg_core_op_id->context = context;
     hg_core_op_id->type = HG_CB_LOOKUP;
     hg_core_op_id->callback = callback;
     hg_core_op_id->arg = arg;
-    hg_atomic_init32(&hg_core_op_id->completed, 0);
     hg_core_op_id->info.lookup.hg_core_addr = NULL;
 
     /* Allocate addr */
     hg_core_addr = hg_core_addr_create(HG_CORE_CONTEXT_CLASS(context), NULL);
-    if (!hg_core_addr) {
-        HG_LOG_ERROR("Could not create HG addr");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_addr == NULL, error, ret, HG_NOMEM,
+        "Could not create HG addr");
     hg_core_op_id->info.lookup.hg_core_addr = hg_core_addr;
 
 #ifdef HG_HAS_SM_ROUTING
@@ -1359,11 +1278,9 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
         /* Get first part of address string with UUID */
         strtok_r(lookup_name, HG_CORE_ADDR_DELIMITER, &lookup_names);
 
-        if (!strstr(name, HG_CORE_PROTO_DELIMITER)) {
-            HG_LOG_ERROR("Malformed address format");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(strstr(name, HG_CORE_PROTO_DELIMITER) == NULL, error,
+            ret, HG_PROTOCOL_ERROR, "Malformed address format");
+
         /* Get address SM UUID */
         strtok_r(lookup_name, HG_CORE_PROTO_DELIMITER, &local_id_str);
         uuid_parse(local_id_str + 2, hg_core_addr->na_sm_uuid);
@@ -1390,11 +1307,10 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
 
     /* Try to use immediate lookup */
     na_ret = NA_Addr_lookup2(na_class, name_str, &na_addr);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not start lookup for address %s", name_str);
-        ret = HG_NA_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+        "Could not start lookup for address %s (%s)", name_str,
+        NA_Error_to_string(na_ret));
+
     if (na_addr != NA_ADDR_NULL) {
         struct na_cb_info callback_info;
         callback_info.arg = hg_core_op_id;
@@ -1410,32 +1326,26 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
 
         na_ret = NA_Addr_lookup(na_class, na_context, hg_core_addr_lookup_cb,
             hg_core_op_id, name_str, &hg_core_op_id->info.lookup.na_lookup_op_id);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not start lookup for address %s", name_str);
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+            "Could not start lookup for address %s (%s)", name_str,
+            NA_Error_to_string(na_ret));
     }
 
     /* TODO to avoid blocking after lookup make progress on the HG layer with
      * timeout of 0 */
     progress_ret = context->progress(context, 0);
-    if (progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT) {
-        HG_LOG_ERROR("Could not make progress");
-        ret = progress_ret;
-        goto done;
-    }
+    HG_CHECK_ERROR(progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT,
+        error, ret, progress_ret, "Could not make progress");
 
     /* Assign op_id */
     if (op_id && op_id != HG_CORE_OP_ID_IGNORE)
         *op_id = (hg_core_op_id_t) hg_core_op_id;
 
-done:
-    if (ret != HG_SUCCESS) {
-        free(hg_core_op_id);
-        if (hg_core_addr != NULL)
-            hg_core_addr_free(HG_CORE_CONTEXT_CLASS(context), hg_core_addr);
-    }
+    return ret;
+
+error:
+    free(hg_core_op_id);
+    hg_core_addr_free(HG_CORE_CONTEXT_CLASS(context), hg_core_addr);
 
     return ret;
 }
@@ -1446,26 +1356,24 @@ hg_core_addr_lookup_cb(const struct na_cb_info *callback_info)
 {
     struct hg_core_op_id *hg_core_op_id =
         (struct hg_core_op_id *) callback_info->arg;
-    na_return_t na_ret = NA_SUCCESS;
+    na_return_t na_ret = callback_info->ret;
+    hg_return_t hg_ret;
     int ret = 0;
 
-    if (callback_info->ret != NA_SUCCESS) {
-        return ret;
-    }
+    HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done, "(%s)",
+        NA_Error_to_string(na_ret));
 
     /* Assign addr */
     hg_core_op_id->info.lookup.hg_core_addr->core_addr.na_addr =
         callback_info->info.lookup.addr;
 
     /* Mark as completed */
-    if (hg_core_addr_lookup_complete(hg_core_op_id) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete operation");
-        goto done;
-    }
+    hg_ret = hg_core_addr_lookup_complete(hg_core_op_id);
+    HG_CHECK_HG_ERROR(done, hg_ret, "Could not complete operation");
+
     ret++;
 
 done:
-    (void) na_ret;
     return ret;
 }
 
@@ -1478,17 +1386,12 @@ hg_core_addr_lookup_complete(struct hg_core_op_id *hg_core_op_id)
         &hg_core_op_id->hg_completion_entry;
     hg_return_t ret = HG_SUCCESS;
 
-    /* Mark operation as completed */
-    hg_atomic_incr32(&hg_core_op_id->completed);
-
     hg_completion_entry->op_type = HG_ADDR;
     hg_completion_entry->op_id.hg_core_op_id = hg_core_op_id;
 
     ret = hg_core_completion_add(context, hg_completion_entry, HG_FALSE);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not add HG completion entry to completion queue");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret,
+        "Could not add HG completion entry to completion queue");
 
 done:
     return ret;
@@ -1502,12 +1405,12 @@ hg_core_addr_free(struct hg_core_private_class *hg_core_class,
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    if (!hg_core_addr) goto done;
+    if (!hg_core_addr)
+        goto done;
 
-    if (hg_atomic_decr32(&hg_core_addr->ref_count)) {
+    if (hg_atomic_decr32(&hg_core_addr->ref_count))
         /* Cannot free yet */
         goto done;
-    }
 
     /* Decrement N addrs from HG class */
     hg_atomic_decr32(&hg_core_class->n_addrs);
@@ -1517,22 +1420,17 @@ hg_core_addr_free(struct hg_core_private_class *hg_core_class,
     if (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
         na_ret = NA_Addr_free(hg_core_class->core_class.na_sm_class,
             hg_core_addr->core_addr.na_sm_addr);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not free NA SM address");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not free NA SM address (%s)", NA_Error_to_string(na_ret));
     }
 #endif
 
     /* Free NA address */
     na_ret = NA_Addr_free(hg_core_addr->core_addr.na_class,
         hg_core_addr->core_addr.na_addr);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not free address");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+        "Could not free NA address (%s)", NA_Error_to_string(na_ret));
+
     free(hg_core_addr);
 
 done:
@@ -1550,30 +1448,21 @@ hg_core_addr_self(struct hg_core_private_class *hg_core_class,
 
     hg_core_addr = hg_core_addr_create(hg_core_class,
         hg_core_class->core_class.na_class);
-    if (!hg_core_addr) {
-        HG_LOG_ERROR("Could not create HG addr");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_addr == NULL, done, ret, HG_NOMEM,
+        "Could not create HG addr");
 
     na_ret = NA_Addr_self(hg_core_class->core_class.na_class,
         &hg_core_addr->core_addr.na_addr);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not get self address");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+        "Could not get self address (%s)", NA_Error_to_string(na_ret));
 
 #ifdef HG_HAS_SM_ROUTING
     if (hg_core_class->core_class.na_sm_class) {
         /* Get SM address */
         na_ret = NA_Addr_self(hg_core_class->core_class.na_sm_class,
             &hg_core_addr->core_addr.na_sm_addr);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not get self SM address");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not get self SM address (%s)", NA_Error_to_string(na_ret));
 
         /* Copy local UUID */
         uuid_copy(hg_core_addr->na_sm_uuid, hg_core_class->na_sm_uuid);
@@ -1605,18 +1494,14 @@ hg_core_addr_dup(struct hg_core_private_class *hg_core_class,
 
         dup = hg_core_addr_create(hg_core_class,
             hg_core_addr->core_addr.na_class);
-        if (!dup) {
-            HG_LOG_ERROR("Could not create HG addr");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(dup == NULL, done, ret, HG_NOMEM,
+            "Could not create dup HG addr");
+
         na_ret = NA_Addr_dup(hg_core_addr->core_addr.na_class,
             hg_core_addr->core_addr.na_addr, &dup->core_addr.na_addr);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not duplicate address");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not duplicate address (%s)", NA_Error_to_string(na_ret));
+
         *hg_new_addr = dup;
     } else {
         hg_atomic_incr32(&hg_core_addr->ref_count);
@@ -1637,11 +1522,6 @@ hg_core_addr_to_string(struct hg_core_private_class *hg_core_class, char *buf,
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    if (!buf_size) {
-        HG_LOG_ERROR("NULL buffer size");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
     new_buf_size = *buf_size;
 
 #ifdef HG_HAS_SM_ROUTING
@@ -1654,11 +1534,9 @@ hg_core_addr_to_string(struct hg_core_private_class *hg_core_class, char *buf,
         uuid_unparse(hg_core_addr->na_sm_uuid, uuid_str);
         desc_len = snprintf(addr_str, HG_CORE_ADDR_MAX_SIZE,
             "uid://%s" HG_CORE_ADDR_DELIMITER, uuid_str);
-        if (desc_len > HG_CORE_ADDR_MAX_SIZE) {
-            HG_LOG_ERROR("Exceeding max addr name");
-            ret = HG_SIZE_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(desc_len > HG_CORE_ADDR_MAX_SIZE, done, ret,
+            HG_OVERFLOW, "Exceeding max addr name");
+
         if (buf_ptr) {
             strcpy(buf_ptr, addr_str);
             buf_ptr += desc_len;
@@ -1670,11 +1548,10 @@ hg_core_addr_to_string(struct hg_core_private_class *hg_core_class, char *buf,
         /* Get NA SM address string */
         na_ret = NA_Addr_to_string(hg_core_class->core_class.na_sm_class,
             buf_ptr, &new_buf_size, hg_core_addr->core_addr.na_sm_addr);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not convert SM address to string");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not convert SM address to string (%s)",
+            NA_Error_to_string(na_ret));
+
         if (buf_ptr) {
             buf_ptr[new_buf_size - 1] = *HG_CORE_ADDR_DELIMITER;
             buf_ptr += new_buf_size;
@@ -1688,11 +1565,9 @@ hg_core_addr_to_string(struct hg_core_private_class *hg_core_class, char *buf,
     /* Get NA address string */
     na_ret = NA_Addr_to_string(hg_core_class->core_class.na_class, buf_ptr,
         &new_buf_size, hg_core_addr->core_addr.na_addr);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not convert address to string");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+        "Could not convert address to string (%s)", NA_Error_to_string(na_ret));
+
     *buf_size = new_buf_size + buf_size_used;
 
 done:
@@ -1708,10 +1583,9 @@ hg_core_create(struct hg_core_private_context *context, hg_bool_t use_sm)
 
     hg_core_handle = (struct hg_core_private_handle *) malloc(
         sizeof(struct hg_core_private_handle));
-    if (!hg_core_handle) {
-        HG_LOG_ERROR("Could not allocate handle");
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(hg_core_handle == NULL, error,
+        "Could not allocate handle");
+
     memset(hg_core_handle, 0, sizeof(struct hg_core_private_handle));
 
     hg_core_handle->op_type = HG_CORE_PROCESS; /* Default */
@@ -1746,24 +1620,21 @@ hg_core_create(struct hg_core_private_context *context, hg_bool_t use_sm)
 
     /* Alloc/init NA resources */
     ret = hg_core_alloc_na(hg_core_handle, use_sm);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not allocate NA handle ops");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(error, ret, "Could not allocate NA handle ops");
 
-done:
-    if (ret != HG_SUCCESS) {
-        hg_core_destroy(hg_core_handle);
-        hg_core_handle = NULL;
-    }
     return hg_core_handle;
+
+error:
+    hg_core_destroy(hg_core_handle);
+    return NULL;
 }
 
 /*---------------------------------------------------------------------------*/
 static void
 hg_core_destroy(struct hg_core_private_handle *hg_core_handle)
 {
-    if (!hg_core_handle) goto done;
+    if (!hg_core_handle)
+        goto done;
 
     if (hg_atomic_decr32(&hg_core_handle->ref_count))
         goto done; /* Cannot free yet */
@@ -1808,6 +1679,7 @@ hg_core_alloc_na(struct hg_core_private_handle *hg_core_handle,
     hg_bool_t HG_UNUSED use_sm)
 {
     hg_return_t ret = HG_SUCCESS;
+    na_return_t na_ret;
 
     /* Set handle NA class/context */
     hg_core_handle->na_class =
@@ -1834,46 +1706,47 @@ hg_core_alloc_na(struct hg_core_private_handle *hg_core_handle,
     hg_core_handle->core_handle.in_buf = NA_Msg_buf_alloc(
         hg_core_handle->na_class, hg_core_handle->core_handle.in_buf_size,
         &hg_core_handle->in_buf_plugin_data);
-    if (!hg_core_handle->core_handle.in_buf) {
-        HG_LOG_ERROR("Could not allocate buffer for input");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
-    NA_Msg_init_unexpected(hg_core_handle->na_class,
+    HG_CHECK_ERROR(hg_core_handle->core_handle.in_buf == NULL, error, ret,
+        HG_NOMEM, "Could not allocate buffer for input");
+
+    na_ret = NA_Msg_init_unexpected(hg_core_handle->na_class,
         hg_core_handle->core_handle.in_buf,
         hg_core_handle->core_handle.in_buf_size);
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+        "Could not initialize input buffer (%s)",
+        NA_Error_to_string(na_ret));
 
     hg_core_handle->core_handle.out_buf = NA_Msg_buf_alloc(
         hg_core_handle->na_class, hg_core_handle->core_handle.out_buf_size,
         &hg_core_handle->out_buf_plugin_data);
-    if (!hg_core_handle->core_handle.out_buf) {
-        HG_LOG_ERROR("Could not allocate buffer for output");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
-    NA_Msg_init_expected(hg_core_handle->na_class,
+    HG_CHECK_ERROR(hg_core_handle->core_handle.out_buf == NULL, error, ret,
+        HG_NOMEM, "Could not allocate buffer for output");
+
+    na_ret = NA_Msg_init_expected(hg_core_handle->na_class,
         hg_core_handle->core_handle.out_buf,
         hg_core_handle->core_handle.out_buf_size);
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+        "Could not initialize output buffer (%s)",
+        NA_Error_to_string(na_ret));
 
     /* Create NA operation IDs */
     hg_core_handle->na_send_op_id = NA_Op_create(hg_core_handle->na_class);
+    HG_CHECK_ERROR(hg_core_handle->na_send_op_id == NA_OP_ID_NULL, error, ret,
+        HG_NA_ERROR, "Could not create NA op ID");
     hg_core_handle->na_recv_op_id = NA_Op_create(hg_core_handle->na_class);
+    HG_CHECK_ERROR(hg_core_handle->na_recv_op_id == NA_OP_ID_NULL, error, ret,
+        HG_NA_ERROR, "Could not create NA op ID");
     hg_core_handle->na_ack_op_id = NA_Op_create(hg_core_handle->na_class);
-    if (hg_core_handle->na_recv_op_id || hg_core_handle->na_send_op_id
-        || hg_core_handle->na_ack_op_id) {
-        if ((hg_core_handle->na_recv_op_id == NA_OP_ID_NULL)
-            || (hg_core_handle->na_send_op_id == NA_OP_ID_NULL)
-            || (hg_core_handle->na_ack_op_id == NA_OP_ID_NULL)) {
-            HG_LOG_ERROR("NULL operation ID");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
-        hg_core_handle->na_op_id_mine = HG_TRUE;
-    }
+    HG_CHECK_ERROR(hg_core_handle->na_ack_op_id == NA_OP_ID_NULL, error, ret,
+        HG_NA_ERROR, "Could not create NA op ID");
+
     hg_core_handle->na_op_count = 1; /* Default (no response) */
     hg_atomic_init32(&hg_core_handle->na_op_completed_count, 0);
 
-done:
+    return ret;
+
+error:
+    hg_core_free_na(hg_core_handle);
     return ret;
 }
 
@@ -1883,33 +1756,52 @@ hg_core_free_na(struct hg_core_private_handle *hg_core_handle)
 {
     na_return_t na_ret;
 
-    /* Free eventual ack buffer */
-    if (hg_core_handle->ack_buf) {
-        NA_Msg_buf_free(hg_core_handle->na_class, hg_core_handle->ack_buf,
-            hg_core_handle->ack_buf_plugin_data);
-        hg_core_handle->ack_buf = NULL;
-    }
-
     /* Destroy NA op IDs */
-    na_ret = NA_Op_destroy(hg_core_handle->na_class, hg_core_handle->na_send_op_id);
-    if (na_ret != NA_SUCCESS)
-        HG_LOG_ERROR("Could not destroy NA op ID");
-    na_ret = NA_Op_destroy(hg_core_handle->na_class, hg_core_handle->na_recv_op_id);
-    if (na_ret != NA_SUCCESS)
-        HG_LOG_ERROR("Could not destroy NA op ID");
-    na_ret = NA_Op_destroy(hg_core_handle->na_class, hg_core_handle->na_ack_op_id);
-    if (na_ret != NA_SUCCESS)
-        HG_LOG_ERROR("Could not destroy NA op ID");
+    na_ret = NA_Op_destroy(hg_core_handle->na_class,
+        hg_core_handle->na_send_op_id);
+    HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done,
+        "Could not destroy send op ID (%s)", NA_Error_to_string(na_ret));
+    hg_core_handle->na_send_op_id = NA_OP_ID_NULL;
+
+    na_ret = NA_Op_destroy(hg_core_handle->na_class,
+        hg_core_handle->na_recv_op_id);
+    HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done,
+        "Could not destroy recv op ID (%s)", NA_Error_to_string(na_ret));
+    hg_core_handle->na_recv_op_id = NA_OP_ID_NULL;
+
+    na_ret = NA_Op_destroy(hg_core_handle->na_class,
+        hg_core_handle->na_ack_op_id);
+    HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done,
+        "Could not destroy ack op ID (%s)", NA_Error_to_string(na_ret));
+    hg_core_handle->na_ack_op_id = NA_OP_ID_NULL;
 
     /* Free buffers */
     na_ret = NA_Msg_buf_free(hg_core_handle->na_class,
         hg_core_handle->core_handle.in_buf, hg_core_handle->in_buf_plugin_data);
-    if (na_ret != NA_SUCCESS)
-        HG_LOG_ERROR("Could not destroy NA input msg buffer");
+    HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done,
+        "Could not free input buffer (%s)", NA_Error_to_string(na_ret));
+    hg_core_handle->core_handle.in_buf = NULL;
+    hg_core_handle->in_buf_plugin_data = NULL;
+
     na_ret = NA_Msg_buf_free(hg_core_handle->na_class,
-        hg_core_handle->core_handle.out_buf, hg_core_handle->out_buf_plugin_data);
-    if (na_ret != NA_SUCCESS)
-        HG_LOG_ERROR("Could not destroy NA output msg buffer");
+        hg_core_handle->core_handle.out_buf,
+        hg_core_handle->out_buf_plugin_data);
+    HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done,
+        "Could not free output buffer (%s)", NA_Error_to_string(na_ret));
+    hg_core_handle->core_handle.out_buf = NULL;
+    hg_core_handle->out_buf_plugin_data = NULL;
+
+    if (hg_core_handle->ack_buf) {
+        na_ret = NA_Msg_buf_free(hg_core_handle->na_class,
+            hg_core_handle->ack_buf, hg_core_handle->ack_buf_plugin_data);
+        HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done,
+            "Could not free ack buffer (%s)", NA_Error_to_string(na_ret));
+        hg_core_handle->ack_buf = NULL;
+        hg_core_handle->ack_buf_plugin_data = NULL;
+    }
+
+done:
+    return;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1921,8 +1813,11 @@ hg_core_reset(struct hg_core_private_handle *hg_core_handle,
     if (reset_info) {
         if (hg_core_handle->core_handle.info.addr != HG_CORE_ADDR_NULL
             && hg_core_handle->core_handle.info.addr->na_addr != NA_ADDR_NULL) {
-            NA_Addr_free(hg_core_handle->core_handle.info.addr->na_class,
+            na_return_t na_ret = NA_Addr_free(
+                hg_core_handle->core_handle.info.addr->na_class,
                 hg_core_handle->core_handle.info.addr->na_addr);
+            HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done,
+                "Could not free NA address (%s)", NA_Error_to_string(na_ret));
             hg_core_handle->core_handle.info.addr->na_addr = NA_ADDR_NULL;
         }
         hg_core_handle->core_handle.info.id = 0;
@@ -1947,14 +1842,19 @@ hg_core_reset(struct hg_core_private_handle *hg_core_handle,
         HG_CORE_HANDLE_CLASS(hg_core_handle)->more_data_release(
             (hg_core_handle_t) hg_core_handle);
     if (hg_core_handle->ack_buf) {
-        NA_Msg_buf_free(hg_core_handle->na_class, hg_core_handle->ack_buf,
-            hg_core_handle->ack_buf_plugin_data);
+        na_return_t na_ret = NA_Msg_buf_free(hg_core_handle->na_class,
+            hg_core_handle->ack_buf, hg_core_handle->ack_buf_plugin_data);
+        HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done,
+            "Could not free ack buffer (%s)", NA_Error_to_string(na_ret));
         hg_core_handle->ack_buf = NULL;
         hg_core_handle->ack_buf_plugin_data = NULL;
     }
 
     hg_core_header_request_reset(&hg_core_handle->in_header);
     hg_core_header_response_reset(&hg_core_handle->out_header);
+
+done:
+    return;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2000,11 +1900,9 @@ hg_core_set_rpc(struct hg_core_private_handle *hg_core_handle,
             (hg_hash_table_key_t) &id);
         hg_thread_spin_unlock(
             &HG_CORE_HANDLE_CLASS(hg_core_handle)->func_map_lock);
-        if (!hg_core_rpc_info) {
-            /* HG_LOG_ERROR("Could not find RPC ID in function map"); */
-            ret = HG_NO_MATCH;
-            goto done;
-        }
+        if (!hg_core_rpc_info)
+            HG_GOTO_DONE(done, ret, HG_NOENTRY);
+
         hg_core_handle->core_handle.info.id = id;
 
         /* Cache RPC info */
@@ -2027,10 +1925,7 @@ hg_core_forward_self(struct hg_core_private_handle *hg_core_handle)
 
     /* Post operation to self processing pool */
     ret = hg_core_process_self(hg_core_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not self process handle");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not self process handle");
 
 done:
     return ret;
@@ -2064,34 +1959,53 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
             hg_core_handle->core_handle.info.addr->na_addr,
             hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
             &hg_core_handle->na_recv_op_id);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not post recv for output buffer");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not post recv for output buffer (%s)",
+            NA_Error_to_string(na_ret));
     }
 
     /* And post the send message (input) */
-    na_ret = NA_Msg_send_unexpected(hg_core_handle->na_class,
-        hg_core_handle->na_context, hg_core_send_input_cb, hg_core_handle,
-        hg_core_handle->core_handle.in_buf, hg_core_handle->in_buf_used,
-        hg_core_handle->in_buf_plugin_data,
-        hg_core_handle->core_handle.info.addr->na_addr,
-        hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
-        &hg_core_handle->na_send_op_id);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not post send for input buffer");
-        /* Cancel the above posted recv op */
-        na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
-            hg_core_handle->na_recv_op_id);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not cancel recv op id");
-        }
-        ret = HG_NA_ERROR;
-        goto done;
+    do {
+        na_ret = NA_Msg_send_unexpected(hg_core_handle->na_class,
+            hg_core_handle->na_context, hg_core_send_input_cb, hg_core_handle,
+            hg_core_handle->core_handle.in_buf, hg_core_handle->in_buf_used,
+            hg_core_handle->in_buf_plugin_data,
+            hg_core_handle->core_handle.info.addr->na_addr,
+            hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
+            &hg_core_handle->na_send_op_id);
+
+        if (na_ret == NA_AGAIN) {
+            /* TODO to avoid blocking, make progress on the HG layer with
+             * timeout of 0 */
+            na_ret = NA_Progress(hg_core_handle->na_class,
+                hg_core_handle->na_context, 0);
+            HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, error,
+                ret, (hg_return_t) na_ret, "Could not make progress on NA (%s)",
+                NA_Error_to_string(na_ret));
+        } else
+            break;
+    } while (1);
+    /* TODO fix that */
+    if (na_ret == NA_AGAIN) {
+        ret = HG_AGAIN;
+        goto error;
     }
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+        "Could not post send for input buffer (%s)",
+        NA_Error_to_string(na_ret));
 
 done:
+    return ret;
+
+error:
+    if (!hg_core_handle->no_response)
+        hg_core_handle->na_op_count--;
+    /* Cancel the above posted recv op */
+    na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
+        hg_core_handle->na_recv_op_id);
+    HG_CHECK_ERROR_DONE(na_ret != NA_SUCCESS,
+        "Could not cancel recv op id (%s)", NA_Error_to_string(na_ret));
+
     return ret;
 }
 
@@ -2107,10 +2021,7 @@ hg_core_respond_self(struct hg_core_private_handle *hg_core_handle)
 
     /* Complete and add to completion queue */
     ret = hg_core_complete((hg_core_handle_t) hg_core_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete handle");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not complete handle");
 
 done:
     return ret;
@@ -2127,10 +2038,7 @@ hg_core_no_respond_self(struct hg_core_private_handle *hg_core_handle)
 
     /* Complete and add to completion queue */
     ret = hg_core_complete((hg_core_handle_t) hg_core_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete handle");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not complete handle");
 
 done:
     return ret;
@@ -2143,6 +2051,7 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
 {
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
+    hg_bool_t ack_recv_posted = HG_FALSE;
 
     /* Increment number of expected NA operations */
     hg_core_handle->na_op_count++;
@@ -2157,13 +2066,13 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
 
         hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
             sizeof(hg_uint8_t), &hg_core_handle->ack_buf_plugin_data);
-        if (!hg_core_handle->ack_buf) {
-            HG_LOG_ERROR("Could not allocate buffer for ack");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
-        NA_Msg_init_expected(hg_core_handle->na_class, hg_core_handle->ack_buf,
-            sizeof(hg_uint8_t));
+        HG_CHECK_ERROR(hg_core_handle->ack_buf == NULL, error, ret,
+            HG_NA_ERROR, "Could not allocate buffer for ack");
+
+        na_ret = NA_Msg_init_expected(hg_core_handle->na_class,
+            hg_core_handle->ack_buf, sizeof(hg_uint8_t));
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+            "Could not initialize ack buffer (%s)", NA_Error_to_string(na_ret));
 
         /* Pre-post the recv message (output) if response is expected */
         na_ret = NA_Msg_recv_expected(hg_core_handle->na_class,
@@ -2173,11 +2082,10 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
             hg_core_handle->core_handle.info.addr->na_addr,
             hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
             &hg_core_handle->na_ack_op_id);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not post recv for ack buffer");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+            "Could not post recv for ack buffer (%s)",
+            NA_Error_to_string(na_ret));
+        ack_recv_posted = HG_TRUE;
     }
 
     /* Respond back */
@@ -2188,13 +2096,29 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
         hg_core_handle->core_handle.info.addr->na_addr,
         hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
         &hg_core_handle->na_send_op_id);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not post send for output buffer");
-        ret = HG_NA_ERROR;
-        goto done;
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+        "Could not post send for output buffer (%s)",
+        NA_Error_to_string(na_ret));
+
+    return ret;
+
+error:
+    if (ack_recv_posted) {
+        /* Cancel the above posted recv ack op */
+        na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
+            hg_core_handle->na_ack_op_id);
+        HG_CHECK_ERROR_DONE(na_ret != NA_SUCCESS,
+            "Could not cancel ack op id (%s)", NA_Error_to_string(na_ret));
+    }
+    if (hg_core_handle->ack_buf) {
+        na_ret = NA_Msg_buf_free(hg_core_handle->na_class,
+            hg_core_handle->ack_buf, hg_core_handle->ack_buf_plugin_data);
+        HG_CHECK_ERROR_DONE(na_ret != NA_SUCCESS,
+            "Could not free ack buffer (%s)", NA_Error_to_string(na_ret));
+        hg_core_handle->ack_buf = NULL;
+        hg_core_handle->ack_buf_plugin_data = NULL;
     }
 
-done:
     return ret;
 }
 
@@ -2208,10 +2132,7 @@ hg_core_no_respond_na(struct hg_core_private_handle *hg_core_handle)
     hg_core_handle->op_type = HG_CORE_NO_RESPOND;
 
     ret = hg_core_complete((hg_core_handle_t) hg_core_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete operation");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
 
 done:
     return ret;
@@ -2223,27 +2144,20 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) callback_info->arg;
-    na_return_t na_ret = NA_SUCCESS;
     hg_bool_t completed = HG_TRUE;
+    hg_return_t ret;
 
-    if (callback_info->ret == NA_CANCELED) {
-        /* If canceled, mark handle as canceled */
+    /* If canceled, mark handle as canceled */
+    if (callback_info->ret == NA_CANCELED)
         hg_core_handle->ret = HG_CANCELED;
-    } else if (callback_info->ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Error in NA callback");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    else
+        HG_CHECK_ERROR_NORET(callback_info->ret != NA_SUCCESS, done,
+            "Error in NA callback (s)", NA_Error_to_string(callback_info->ret));
 
-    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_send_op_id,
-        &completed) != HG_SUCCESS) {
-        HG_LOG_ERROR("Error in NA callback");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    ret = hg_core_complete_na(hg_core_handle, &completed);
+    HG_CHECK_HG_ERROR(done, ret, "Error in NA callback");
 
 done:
-    (void) na_ret; /* unused */
     return (int) completed;
 }
 
@@ -2261,30 +2175,26 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     hg_bool_t sm_pending_empty = NA_FALSE;
 # endif
 #endif
-    na_return_t na_ret = NA_SUCCESS;
     hg_bool_t completed = HG_TRUE;
+    hg_return_t ret;
 
+    /* If canceled, mark handle as canceled */
     if (callback_info->ret == NA_CANCELED) {
-        /* If canceled, mark handle as canceled */
         hg_core_handle->ret = HG_CANCELED;
         /* Only decrement refcount and exit */
         hg_core_destroy(hg_core_handle);
         goto done;
-    } else if (callback_info->ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Error in NA callback");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    } else
+        HG_CHECK_ERROR_NORET(callback_info->ret != NA_SUCCESS, done,
+            "Error in NA callback (s)", NA_Error_to_string(callback_info->ret));
 
     /* Fill unexpected info */
     hg_core_handle->core_handle.info.addr->na_addr =
         na_cb_info_recv_unexpected->source;
     hg_core_handle->tag = na_cb_info_recv_unexpected->tag;
-    if (na_cb_info_recv_unexpected->actual_buf_size >
-    hg_core_handle->core_handle.in_buf_size) {
-        HG_LOG_ERROR("Actual transfer size is too large for unexpected recv");
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(na_cb_info_recv_unexpected->actual_buf_size >
+        hg_core_handle->core_handle.in_buf_size, done,
+        "Actual transfer size is too large for unexpected recv");
     hg_core_handle->in_buf_used = na_cb_info_recv_unexpected->actual_buf_size;
 
     /* Remove handle from pending list */
@@ -2292,14 +2202,14 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     if (hg_core_handle->na_class ==
         hg_core_handle->core_handle.info.core_class->na_sm_class) {
         hg_thread_spin_lock(
-            &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->sm_pending_list_lock);
+            &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->pending_list_lock);
         HG_LIST_REMOVE(hg_core_handle, pending);
 # ifndef HG_HAS_POST_LIMIT
         sm_pending_empty = HG_LIST_IS_EMPTY(
             &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->sm_pending_list);
 # endif
         hg_thread_spin_unlock(
-            &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->sm_pending_list_lock);
+            &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->pending_list_lock);
     } else {
 #endif
         hg_thread_spin_lock(
@@ -2317,19 +2227,17 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 
 #ifndef HG_HAS_POST_LIMIT
     /* If pending list is empty, post more handles */
-    if (pending_empty
-        && hg_core_context_post(HG_CORE_HANDLE_CONTEXT(hg_core_handle),
-        HG_CORE_PENDING_INCR, hg_core_handle->repost, HG_FALSE) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not post additional handles");
-        goto done;
+    if (pending_empty) {
+        ret = hg_core_context_post(HG_CORE_HANDLE_CONTEXT(hg_core_handle),
+            HG_CORE_PENDING_INCR, hg_core_handle->repost, HG_FALSE);
+        HG_CHECK_HG_ERROR(done, ret, "Could not post additional handles");
     }
 # ifdef HG_HAS_SM_ROUTING
     /* If pending list is empty, post more handles */
-    if (sm_pending_empty
-        && hg_core_context_post(HG_CORE_HANDLE_CONTEXT(hg_core_handle),
-        HG_CORE_PENDING_INCR, hg_core_handle->repost, HG_TRUE) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not post additional SM handles");
-        goto done;
+    if (sm_pending_empty) {
+        ret = hg_core_context_post(HG_CORE_HANDLE_CONTEXT(hg_core_handle),
+            HG_CORE_PENDING_INCR, hg_core_handle->repost, HG_TRUE);
+        HG_CHECK_HG_ERROR(done, ret, "Could not post additional SM handles");
     }
 # endif
 #endif
@@ -2338,21 +2246,14 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     hg_core_handle->op_type = HG_CORE_PROCESS;
 
     /* Process input information */
-    if (hg_core_process_input(hg_core_handle, &completed) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not process input");
-        goto done;
-    }
+    ret = hg_core_process_input(hg_core_handle, &completed);
+    HG_CHECK_HG_ERROR(done, ret, "Could not process input");
 
     /* Complete operation */
-    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_recv_op_id,
-        &completed) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete operation");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    ret = hg_core_complete_na(hg_core_handle, &completed);
+    HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
 
 done:
-    (void) na_ret; /* unused */
     return (int) completed;
 }
 
@@ -2371,10 +2272,7 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle,
     /* Get and verify input header */
     ret = hg_core_proc_header_request(&hg_core_handle->core_handle,
         &hg_core_handle->in_header, HG_DECODE);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get request header");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not get request header");
 
     /* Get operation ID from header */
     hg_core_handle->core_handle.info.id =
@@ -2398,21 +2296,17 @@ hg_core_process_input(struct hg_core_private_handle *hg_core_handle,
 
     /* Must let upper layer get extra payload if HG_CORE_MORE_DATA is set */
     if (hg_core_handle->in_header.msg.request.flags & HG_CORE_MORE_DATA) {
-        if (!HG_CORE_HANDLE_CLASS(hg_core_handle)->more_data_acquire) {
-            HG_LOG_ERROR("No callback defined for acquiring more data");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(!HG_CORE_HANDLE_CLASS(hg_core_handle)->more_data_acquire,
+            done, ret, HG_OPNOTSUPPORTED,
+            "No callback defined for acquiring more data");
 #ifdef HG_HAS_COLLECT_STATS
         /* Increment counter */
         hg_core_stat_incr(&hg_core_rpc_extra_count_g);
 #endif
         ret = HG_CORE_HANDLE_CLASS(hg_core_handle)->more_data_acquire(
             (hg_core_handle_t) hg_core_handle, HG_INPUT, hg_core_complete);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Error in HG core handle more data acquire callback");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret,
+            "Error in HG core handle more data acquire callback");
         *completed = HG_FALSE;
     } else
         *completed = HG_TRUE;
@@ -2427,28 +2321,21 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) callback_info->arg;
-    na_return_t na_ret = NA_SUCCESS;
     hg_bool_t completed = HG_TRUE;
+    hg_return_t ret;
 
-    if (callback_info->ret == NA_CANCELED) {
-        /* If canceled, mark handle as canceled */
+    /* If canceled, mark handle as canceled */
+    if (callback_info->ret == NA_CANCELED)
         hg_core_handle->ret = HG_CANCELED;
-    } else if (callback_info->ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Error in NA callback");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    else
+        HG_CHECK_ERROR_NORET(callback_info->ret != NA_SUCCESS, done,
+            "Error in NA callback (s)", NA_Error_to_string(callback_info->ret));
 
     /* Complete operation */
-    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_send_op_id,
-        &completed) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete operation");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    ret = hg_core_complete_na(hg_core_handle, &completed);
+    HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
 
 done:
-    (void) na_ret; /* unused */
     return (int) completed;
 }
 
@@ -2458,36 +2345,27 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) callback_info->arg;
-    na_return_t na_ret = NA_SUCCESS;
     hg_bool_t completed = HG_TRUE;
+    hg_return_t ret;
 
+    /* If canceled, mark handle as canceled */
     if (callback_info->ret == NA_CANCELED) {
-        /* If canceled, mark handle as canceled */
         hg_core_handle->ret = HG_CANCELED;
-    } else if (callback_info->ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Error in NA callback");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+        goto complete;
+    } else
+        HG_CHECK_ERROR_NORET(callback_info->ret != NA_SUCCESS, done,
+            "Error in NA callback (s)", NA_Error_to_string(callback_info->ret));
 
     /* Process output information */
-    if (hg_core_handle->ret != HG_CANCELED
-        && hg_core_process_output(hg_core_handle, &completed, hg_core_send_ack)
-            != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not process output");
-        goto done;
-    }
+    ret = hg_core_process_output(hg_core_handle, &completed, hg_core_send_ack);
+    HG_CHECK_HG_ERROR(done, ret, "Could not process output");
 
+complete:
     /* Complete operation */
-    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_recv_op_id,
-        &completed) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete operation");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    ret = hg_core_complete_na(hg_core_handle, &completed);
+    HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
 
 done:
-    (void) na_ret; /* unused */
     return (int) completed;
 }
 
@@ -2500,11 +2378,9 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
     hg_return_t ret = HG_SUCCESS;
 
     /* Get and verify output header */
-    if (hg_core_proc_header_response(&hg_core_handle->core_handle,
-        &hg_core_handle->out_header, HG_DECODE) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not decode header");
-        goto done;
-    }
+    ret= hg_core_proc_header_response(&hg_core_handle->core_handle,
+        &hg_core_handle->out_header, HG_DECODE);
+    HG_CHECK_HG_ERROR(done, ret, "Could not decode header");
 
     /* Get return code from header */
     hg_core_handle->ret =
@@ -2514,17 +2390,14 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
 
     /* Must let upper layer get extra payload if HG_CORE_MORE_DATA is set */
     if (hg_core_handle->out_header.msg.response.flags & HG_CORE_MORE_DATA) {
-        if (!HG_CORE_HANDLE_CLASS(hg_core_handle)->more_data_acquire) {
-            HG_LOG_ERROR("No callback defined for acquiring more data");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(!HG_CORE_HANDLE_CLASS(hg_core_handle)->more_data_acquire,
+            done, ret, HG_OPNOTSUPPORTED,
+            "No callback defined for acquiring more data");
+
         ret = HG_CORE_HANDLE_CLASS(hg_core_handle)->more_data_acquire(
             (hg_core_handle_t) hg_core_handle, HG_OUTPUT, done_callback);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Error in HG core handle more data acquire callback");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret,
+            "Error in HG core handle more data acquire callback");
         *completed = HG_FALSE;
     } else
         *completed = HG_TRUE;
@@ -2548,13 +2421,13 @@ hg_core_send_ack(hg_core_handle_t handle)
     /* Allocate buffer for ack */
     hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
         sizeof(hg_uint8_t), &hg_core_handle->ack_buf_plugin_data);
-    if (!hg_core_handle->ack_buf) {
-        HG_LOG_ERROR("Could not allocate buffer for ack");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
-    NA_Msg_init_expected(hg_core_handle->na_class, hg_core_handle->ack_buf,
-        sizeof(hg_uint8_t));
+    HG_CHECK_ERROR(hg_core_handle->ack_buf == NULL, error, ret, HG_NA_ERROR,
+        "Could not allocate buffer for ack");
+
+    na_ret = NA_Msg_init_expected(hg_core_handle->na_class,
+        hg_core_handle->ack_buf, sizeof(hg_uint8_t));
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+        "Could not initialize ack buffer (%s)", NA_Error_to_string(na_ret));
 
     /* Pre-post the recv message (output) if response is expected */
     na_ret = NA_Msg_send_expected(hg_core_handle->na_class,
@@ -2564,13 +2437,20 @@ hg_core_send_ack(hg_core_handle_t handle)
         hg_core_handle->core_handle.info.addr->na_addr,
         hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
         &hg_core_handle->na_ack_op_id);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not post send for ack buffer");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+        "Could not post send for ack buffer (%s)", NA_Error_to_string(na_ret));
 
-done:
+    return ret;
+
+error:
+    if (hg_core_handle->ack_buf) {
+        na_ret = NA_Msg_buf_free(hg_core_handle->na_class,
+            hg_core_handle->ack_buf, hg_core_handle->ack_buf_plugin_data);
+        HG_CHECK_ERROR_DONE(na_ret != NA_SUCCESS,
+            "Could not free ack buffer (%s)", NA_Error_to_string(na_ret));
+        hg_core_handle->ack_buf = NULL;
+        hg_core_handle->ack_buf_plugin_data = NULL;
+    }
     return ret;
 }
 
@@ -2580,28 +2460,21 @@ hg_core_send_ack_cb(const struct na_cb_info *callback_info)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) callback_info->arg;
-    na_return_t na_ret = NA_SUCCESS;
     hg_bool_t completed = HG_TRUE;
+    hg_return_t ret;
 
-    if (callback_info->ret == NA_CANCELED) {
-        /* If canceled, mark handle as canceled */
+    /* If canceled, mark handle as canceled */
+    if (callback_info->ret == NA_CANCELED)
         hg_core_handle->ret = HG_CANCELED;
-    } else if (callback_info->ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Error in NA callback");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    else
+        HG_CHECK_ERROR_NORET(callback_info->ret != NA_SUCCESS, done,
+            "Error in NA callback (s)", NA_Error_to_string(callback_info->ret));
 
     /* Complete operation */
-    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_ack_op_id,
-        &completed) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete operation");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    ret = hg_core_complete_na(hg_core_handle, &completed);
+    HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
 
 done:
-    (void) na_ret; /* unused */
     return (int) completed;
 }
 
@@ -2611,28 +2484,21 @@ hg_core_recv_ack_cb(const struct na_cb_info *callback_info)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) callback_info->arg;
-    na_return_t na_ret = NA_SUCCESS;
     hg_bool_t completed = HG_TRUE;
+    hg_return_t ret;
 
-    if (callback_info->ret == NA_CANCELED) {
-        /* If canceled, mark handle as canceled */
+    /* If canceled, mark handle as canceled */
+    if (callback_info->ret == NA_CANCELED)
         hg_core_handle->ret = HG_CANCELED;
-    } else if (callback_info->ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Error in NA callback");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    else
+        HG_CHECK_ERROR_NORET(callback_info->ret != NA_SUCCESS, done,
+            "Error in NA callback (s)", NA_Error_to_string(callback_info->ret));
 
     /* Complete operation */
-    if (hg_core_complete_na(hg_core_handle, &hg_core_handle->na_ack_op_id,
-        &completed) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete operation");
-        na_ret = NA_PROTOCOL_ERROR;
-        goto done;
-    }
+    ret = hg_core_complete_na(hg_core_handle, &completed);
+    HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
 
 done:
-    (void) na_ret; /* unused */
     return (int) completed;
 }
 
@@ -2666,15 +2532,12 @@ hg_core_self_cb(const struct hg_core_cb_info *callback_info)
 
     /* Process output */
     ret = hg_core_process_output(hg_core_handle, &completed, hg_core_complete);
-    if (ret != HG_SUCCESS) {
-       HG_LOG_ERROR("Could not process output");
-       goto done;
-   }
+    HG_CHECK_HG_ERROR(done, ret, "Could not process output");
 
     /* Mark as completed */
-    if (completed
-        && hg_core_complete((hg_core_handle_t) hg_core_handle) != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not complete operation");
+    if (completed) {
+        ret = hg_core_complete((hg_core_handle_t) hg_core_handle);
+        HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
     }
 
 done:
@@ -2693,18 +2556,12 @@ hg_core_process_self(struct hg_core_private_handle *hg_core_handle)
 
     /* Process input */
     ret = hg_core_process_input(hg_core_handle, &completed);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not process input");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not process input");
 
     /* Mark as completed */
     if (completed) {
         ret = hg_core_complete((hg_core_handle_t) hg_core_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
     }
 
 done:
@@ -2727,15 +2584,12 @@ hg_core_process(struct hg_core_private_handle *hg_core_handle)
     hg_thread_spin_unlock(&HG_CORE_HANDLE_CLASS(hg_core_handle)->func_map_lock);
     if (!hg_core_rpc_info) {
         HG_LOG_WARNING("Could not find RPC ID in function map");
-        ret = HG_NO_MATCH;
+        ret = HG_NOENTRY;
         goto done;
     }
 
-    if (!hg_core_rpc_info->rpc_cb) {
-        HG_LOG_ERROR("No RPC callback registered");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_rpc_info->rpc_cb == NULL, done, ret,
+        HG_INVALID_ARG, "No RPC callback registered");
 
     /* Cache RPC info */
     hg_core_handle->core_handle.rpc_info = hg_core_rpc_info;
@@ -2746,10 +2600,7 @@ hg_core_process(struct hg_core_private_handle *hg_core_handle)
 
     /* Execute RPC callback */
     ret = hg_core_rpc_info->rpc_cb((hg_core_handle_t) hg_core_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Error while executing RPC callback");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Error while executing RPC callback");
 
 done:
     return ret;
@@ -2758,22 +2609,17 @@ done:
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 hg_core_complete_na(struct hg_core_private_handle *hg_core_handle,
-    na_op_id_t *op_id, hg_bool_t *completed)
+    hg_bool_t *completed)
 {
     hg_return_t ret = HG_SUCCESS;
-
-    /* Reset op ID value */
-    if (!hg_core_handle->na_op_id_mine)
-        *op_id = NA_OP_ID_NULL;
 
     /* Add handle to completion queue when expected operations have completed */
     if (hg_atomic_incr32(&hg_core_handle->na_op_completed_count)
         == (hg_util_int32_t) hg_core_handle->na_op_count && *completed) {
         /* Mark as completed */
-        if (hg_core_complete((hg_core_handle_t) hg_core_handle) != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not complete operation");
-            goto done;
-        }
+        ret = hg_core_complete((hg_core_handle_t) hg_core_handle);
+        HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
+
         /* Increment number of entries added to completion queue */
         *completed = HG_TRUE;
     } else
@@ -2799,10 +2645,8 @@ hg_core_complete(hg_core_handle_t handle)
 
     ret = hg_core_completion_add(context, hg_completion_entry,
         hg_core_handle->is_self);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not add HG completion entry to completion queue");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret,
+        "Could not add HG completion entry to completion queue");
 
 done:
     return ret;
@@ -2843,15 +2687,16 @@ hg_core_completion_add(struct hg_core_context *context,
 
 #ifdef HG_HAS_SELF_FORWARD
     /* TODO could prevent from self notifying if hg_poll_wait() not entered */
-    if (self_notify && private_context->completion_queue_notify
-        && hg_event_set(private_context->completion_queue_notify) != HG_UTIL_SUCCESS) {
-        HG_LOG_ERROR("Could not signal completion queue");
-        ret = HG_PROTOCOL_ERROR;
+    if (self_notify && private_context->completion_queue_notify) {
+        int rc = hg_event_set(private_context->completion_queue_notify);
+        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
+            "Could not signal completion queue");
     }
 #else
     (void) self_notify;
 #endif
 
+done:
     return ret;
 }
 
@@ -2869,32 +2714,27 @@ hg_core_context_post(struct hg_core_private_context *context,
         struct hg_core_private_addr *hg_core_addr = NULL;
 
         /* Create a new handle */
+        // TODO
         hg_core_handle = hg_core_create(context, use_sm);
-        if (!hg_core_handle) {
-            HG_LOG_ERROR("Could not create HG core handle");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(hg_core_handle == NULL, error, ret, HG_NOMEM,
+            "Could not create HG core handle");
 
         /* Execute class callback on handle, this allows upper layers to
          * allocate private data on handle creation */
         if (context->handle_create) {
             ret = context->handle_create((hg_core_handle_t) hg_core_handle,
                 context->handle_create_arg);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Error in HG core handle create callback");
-                goto done;
-            }
+            HG_CHECK_HG_ERROR(error, ret,
+                "Error in HG core handle create callback");
         }
 
         /* Create internal addresses */
+        // TODO
         hg_core_addr = hg_core_addr_create(HG_CORE_CONTEXT_CLASS(context),
             hg_core_handle->na_class);
-        if (!hg_core_addr) {
-            HG_LOG_ERROR("Could not create HG addr");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(hg_core_addr == NULL, error, ret, HG_NOMEM,
+            "Could not create HG addr");
+
         /* To safely repost handle and prevent externally referenced address */
         hg_core_addr->is_mine = HG_TRUE;
         hg_core_handle->core_handle.info.addr = (hg_core_addr_t) hg_core_addr;
@@ -2903,13 +2743,13 @@ hg_core_context_post(struct hg_core_private_context *context,
         hg_core_handle->repost = repost;
 
         ret = hg_core_post(hg_core_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Cannot post handle");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(error, ret, "Cannot post handle");
     }
 
-done:
+    return ret;
+
+error:
+    /* TODO */
     return ret;
 }
 
@@ -2927,12 +2767,12 @@ hg_core_post(struct hg_core_private_handle *hg_core_handle)
     if (hg_core_handle->na_class ==
         hg_core_handle->core_handle.info.core_class->na_sm_class) {
         hg_thread_spin_lock(
-            &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->sm_pending_list_lock);
+            &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->pending_list_lock);
         HG_LIST_INSERT_HEAD(
             &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->sm_pending_list,
             hg_core_handle, pending);
         hg_thread_spin_unlock(
-            &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->sm_pending_list_lock);
+            &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->pending_list_lock);
     } else {
 #endif
         hg_thread_spin_lock(
@@ -2952,13 +2792,19 @@ hg_core_post(struct hg_core_private_handle *hg_core_handle)
         hg_core_handle->core_handle.in_buf,
         hg_core_handle->core_handle.in_buf_size,
         hg_core_handle->in_buf_plugin_data, &hg_core_handle->na_recv_op_id);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not post unexpected recv for input buffer");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+        "Could not post unexpected recv for input buffer (%s)",
+        NA_Error_to_string(na_ret));
 
-done:
+    return ret;
+
+error:
+    hg_thread_spin_lock(
+        &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->pending_list_lock);
+    HG_LIST_REMOVE(hg_core_handle, pending);
+    hg_thread_spin_unlock(
+        &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->pending_list_lock);
+    hg_atomic_set32(&hg_core_handle->in_use, HG_FALSE);
     return ret;
 }
 
@@ -2980,10 +2826,7 @@ hg_core_reset_post(struct hg_core_private_handle *hg_core_handle)
 
     /* Safe to repost */
     ret = hg_core_post(hg_core_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Cannot post handle");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Cannot post handle");
 
 done:
     return ret;
@@ -2998,15 +2841,13 @@ hg_core_completion_queue_notify_cb(void *arg,
     struct hg_core_private_context *context =
         (struct hg_core_private_context *) arg;
     hg_util_bool_t notified = HG_UTIL_FALSE;
-    int ret = HG_UTIL_SUCCESS;
+    int rc = HG_UTIL_SUCCESS;
 
     /* TODO could prevent from self notifying if hg_poll_wait() not entered */
-    if (hg_event_get(context->completion_queue_notify,
-        &notified) != HG_UTIL_SUCCESS) {
-        HG_LOG_ERROR("Could not get completion notification");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    rc = hg_event_get(context->completion_queue_notify, &notified);
+    HG_CHECK_ERROR_NORET(rc != HG_UTIL_SUCCESS, done,
+        "Could not get completion notification");
+
     if (notified || !hg_atomic_queue_is_empty(context->completion_queue)
         || hg_atomic_get32(&context->backfill_queue_count)) {
         *progressed = HG_UTIL_TRUE; /* Progressed */
@@ -3016,7 +2857,7 @@ hg_core_completion_queue_notify_cb(void *arg,
     *progressed = HG_UTIL_FALSE;
 
 done:
-    return ret;
+    return rc;
 }
 #endif
 
@@ -3028,24 +2869,21 @@ hg_core_progress_na_cb(void *arg, int HG_UNUSED error,
     struct hg_core_private_context *context =
         (struct hg_core_private_context *) arg;
      unsigned int actual_count = 0;
-    na_return_t na_ret;
     unsigned int completed_count = 0;
     int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
-    int ret = HG_UTIL_SUCCESS;
+    int rc = HG_UTIL_SUCCESS;
+    na_return_t na_ret;
 
     /* Check progress on NA (no need to call try_wait here) */
     na_ret = NA_Progress(HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
         context->core_context.na_context, 0);
-    if (na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT) {
-        HG_LOG_ERROR("Could not make progress on NA");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
-    if (na_ret != NA_SUCCESS) {
+    if (na_ret == NA_TIMEOUT) {
         /* Nothing progressed */
         *progressed = HG_UTIL_FALSE;
         goto done;
-    }
+    } else
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, rc, HG_UTIL_FAIL,
+            "Could not make progress on NA (%s)", NA_Error_to_string(na_ret));
 
     /* Trigger everything we can from NA, if something completed it will
      * be moved to the HG context completion queue */
@@ -3059,6 +2897,9 @@ hg_core_progress_na_cb(void *arg, int HG_UNUSED error,
         for (i = 0; i < actual_count; i++)
             completed_count += (unsigned int) cb_ret[i];
     } while ((na_ret == NA_SUCCESS) && actual_count);
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, rc,
+        HG_UTIL_FAIL, "Could not trigger NA callback (%s)",
+        NA_Error_to_string(na_ret));
 
     /* We can't only verify that the completion queue is not empty, we need
      * to check what was added to the completion queue, as the completion queue
@@ -3073,7 +2914,7 @@ hg_core_progress_na_cb(void *arg, int HG_UNUSED error,
     *progressed = HG_UTIL_TRUE;
 
 done:
-    return ret;
+    return rc;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3085,24 +2926,22 @@ hg_core_progress_na_sm_cb(void *arg, int HG_UNUSED error,
     struct hg_core_private_context *context =
         (struct hg_core_private_context *) arg;
     unsigned int actual_count = 0;
-    na_return_t na_ret;
     unsigned int completed_count = 0;
     int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
-    int ret = HG_UTIL_SUCCESS;
+    int rc = HG_UTIL_SUCCESS;
+    na_return_t na_ret;
 
     /* Check progress on NA SM (no need to call try_wait here) */
     na_ret = NA_Progress(HG_CORE_CONTEXT_CLASS(context)->core_class.na_sm_class,
         context->core_context.na_sm_context, 0);
-    if (na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT) {
-        HG_LOG_ERROR("Could not make progress on NA SM");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
-    if (na_ret != NA_SUCCESS) {
+    if (na_ret == NA_TIMEOUT) {
         /* Nothing progressed */
         *progressed = HG_UTIL_FALSE;
         goto done;
-    }
+    } else
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, rc, HG_UTIL_FAIL,
+            "Could not make progress on NA SM (%s)",
+            NA_Error_to_string(na_ret));
 
     /* Trigger everything we can from NA, if something completed it will
      * be moved to the HG context completion queue */
@@ -3116,6 +2955,9 @@ hg_core_progress_na_sm_cb(void *arg, int HG_UNUSED error,
         for (i = 0; i < actual_count; i++)
             completed_count += (unsigned int)cb_ret[i];
     } while ((na_ret == NA_SUCCESS) && actual_count);
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, rc,
+        HG_UTIL_FAIL, "Could not trigger NA SM callback (%s)",
+        NA_Error_to_string(na_ret));
 
     /* We can't only verify that the completion queue is not empty, we need
      * to check what was added to the completion queue, as the completion queue
@@ -3130,7 +2972,7 @@ hg_core_progress_na_sm_cb(void *arg, int HG_UNUSED error,
     *progressed = HG_UTIL_TRUE;
 
 done:
-    return ret;
+    return rc;
 }
 #endif
 
@@ -3146,9 +2988,8 @@ hg_core_progress_na(struct hg_core_private_context *context,
     if (HG_CORE_CONTEXT_CLASS(context)->progress_mode == NA_NO_BLOCK) {
         timeout = 0;
         remaining = 0;
-    } else {
+    } else
         remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
-    }
 
     for (;;) {
         unsigned int actual_count = 0;
@@ -3170,6 +3011,9 @@ hg_core_progress_na(struct hg_core_private_context *context,
             for (i = 0; i < actual_count; i++)
                 completed_count += (unsigned int)cb_ret[i];
         } while ((na_ret == NA_SUCCESS) && actual_count);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, ret,
+            (hg_return_t) na_ret, "Could not trigger NA callback (%s)",
+            NA_Error_to_string(na_ret));
 
         /* We can't only verify that the completion queue is not empty, we need
          * to check what was added to the completion queue, as the completion
@@ -3205,16 +3049,14 @@ hg_core_progress_na(struct hg_core_private_context *context,
             remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
         }
 
-        if (na_ret == NA_SUCCESS) {
-            /* Trigger NA callbacks and check whether we completed something */
+        /* Trigger NA callbacks and check whether we completed something */
+        if (na_ret == NA_SUCCESS)
             continue;
-        } else if (na_ret == NA_TIMEOUT) {
+        else if (na_ret == NA_TIMEOUT)
             break;
-        } else {
-            HG_LOG_ERROR("Could not make NA Progress");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        else
+            HG_GOTO_ERROR(done, ret, (hg_return_t) na_ret,
+                "Could not make NA Progress (%s)", NA_Error_to_string(na_ret));
     }
 
 done:
@@ -3271,17 +3113,16 @@ hg_core_progress_poll(struct hg_core_private_context *context,
     do {
         hg_time_t t1, t2;
         hg_util_bool_t progressed;
+        int rc;
 
         if (timeout)
             hg_time_get_current(&t1);
 
         /* Will call hg_core_poll_try_wait_cb if timeout is not 0 */
-        if (hg_poll_wait(context->poll_set, (unsigned int)(remaining * 1000.0),
-            &progressed) != HG_UTIL_SUCCESS) {
-            HG_LOG_ERROR("hg_poll_wait() failed");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        rc = hg_poll_wait(context->poll_set, (unsigned int)(remaining * 1000.0),
+            &progressed);
+        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
+            "hg_poll_wait() failed");
 
         /* We progressed, return success */
         if (progressed) {
@@ -3371,50 +3212,42 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
         }
 
         /* Completion queue should not be empty now */
-        if (!hg_completion_entry) {
-            HG_LOG_ERROR("NULL completion entry");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(hg_completion_entry == NULL, done, ret,
+            HG_FAULT, "NULL completion entry");
 
         /* Trigger entry */
         switch(hg_completion_entry->op_type) {
             case HG_ADDR:
                 ret = hg_core_trigger_lookup_entry(
                     hg_completion_entry->op_id.hg_core_op_id);
-                if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Could not trigger completion entry");
-                    goto done;
-                }
+                HG_CHECK_HG_ERROR(done, ret,
+                    "Could not trigger addr completion entry");
                 break;
             case HG_RPC:
                 ret = hg_core_trigger_entry((struct hg_core_private_handle *)
                     hg_completion_entry->op_id.hg_core_handle);
-                if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Could not trigger completion entry");
-                    goto done;
-                }
+                HG_CHECK_HG_ERROR(done, ret,
+                    "Could not trigger RPC completion entry");
                 break;
             case HG_BULK:
                 ret = hg_bulk_trigger_entry(
                     hg_completion_entry->op_id.hg_bulk_op_id);
-                if (ret != HG_SUCCESS) {
-                    HG_LOG_ERROR("Could not trigger completion entry");
-                    goto done;
-                }
+                HG_CHECK_HG_ERROR(done, ret,
+                    "Could not trigger bulk completion entry");
                 break;
             default:
-                HG_LOG_ERROR("Invalid type of completion entry");
-                ret = HG_PROTOCOL_ERROR;
-                goto done;
+                HG_GOTO_ERROR(done, ret, HG_INVALID_ARG,
+                    "Invalid type of completion entry (%d)",
+                    (int) hg_completion_entry->op_type);
         }
 
         count++;
     }
 
-done:
-    if ((ret == HG_SUCCESS || ret == HG_TIMEOUT) && actual_count)
+    if (actual_count)
         *actual_count = count;
+
+done:
     return ret;
 }
 
@@ -3425,10 +3258,13 @@ hg_core_trigger_lookup_entry(struct hg_core_op_id *hg_core_op_id)
     hg_return_t ret = HG_SUCCESS;
 
     /* Free op */
-    if (hg_core_op_id->info.lookup.na_lookup_op_id != NA_OP_ID_NULL)
-        NA_Op_destroy(
+    if (hg_core_op_id->info.lookup.na_lookup_op_id != NA_OP_ID_NULL) {
+        na_return_t na_ret = NA_Op_destroy(
             hg_core_op_id->info.lookup.hg_core_addr->core_addr.na_class,
             hg_core_op_id->info.lookup.na_lookup_op_id);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not destroy addr op ID (%s)", NA_Error_to_string(na_ret));
+    }
 
     /* Execute callback */
     if (hg_core_op_id->callback) {
@@ -3443,6 +3279,7 @@ hg_core_trigger_lookup_entry(struct hg_core_op_id *hg_core_op_id)
         hg_core_op_id->callback(&hg_core_cb_info);
     }
 
+done:
     free(hg_core_op_id);
     return ret;
 }
@@ -3467,19 +3304,13 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
             hg_core_handle->ret = ret;
             ret = HG_Core_respond((hg_core_handle_t) hg_core_handle, NULL, NULL,
                 0, header_size);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Could not respond");
-                goto done;
-            }
+            HG_CHECK_HG_ERROR(done, ret, "Could not respond");
         }
 
         /* No response callback */
         if (hg_core_handle->no_response) {
             ret = hg_core_handle->no_respond(hg_core_handle);
-            if (ret != HG_SUCCESS) {
-                HG_LOG_ERROR("Could not complete handle");
-                goto done;
-            }
+            HG_CHECK_HG_ERROR(done, ret, "Could not complete handle");
         }
     } else {
         hg_core_cb_t hg_cb = NULL;
@@ -3522,9 +3353,8 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
                 break;
             case HG_CORE_PROCESS:
             default:
-                HG_LOG_ERROR("Invalid core operation type");
-                ret = HG_PROTOCOL_ERROR;
-                goto done;
+                HG_GOTO_ERROR(done, ret, HG_OPNOTSUPPORTED,
+                    "Invalid core operation type");
         }
 
         /* Execute user callback */
@@ -3537,10 +3367,7 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
         && !HG_CORE_HANDLE_CONTEXT(hg_core_handle)->finalizing) {
         /* Repost handle */
         ret = hg_core_reset_post(hg_core_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Cannot repost handle");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Cannot repost handle");
     } else
         hg_core_destroy(hg_core_handle);
 
@@ -3554,50 +3381,30 @@ hg_core_cancel(struct hg_core_private_handle *hg_core_handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (hg_core_handle->is_self) {
-        HG_LOG_ERROR("Local cancelation is not supported");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_handle->is_self, done, ret, HG_OPNOTSUPPORTED,
+        "Local cancellation is not supported");
 
     /* Cancel all NA operations issued */
     if (hg_core_handle->na_recv_op_id != NA_OP_ID_NULL) {
-        na_return_t na_ret;
-
-        na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
-            hg_core_handle->na_recv_op_id);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not cancel recv op id");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        na_return_t na_ret = NA_Cancel(hg_core_handle->na_class,
+            hg_core_handle->na_context, hg_core_handle->na_recv_op_id);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not cancel recv op id (%s)", NA_Error_to_string(na_ret));
     }
 
     if (hg_core_handle->na_send_op_id != NA_OP_ID_NULL) {
-        na_return_t na_ret;
-
-        na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
-            hg_core_handle->na_send_op_id);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not cancel send op id");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        na_return_t na_ret = NA_Cancel(hg_core_handle->na_class,
+            hg_core_handle->na_context, hg_core_handle->na_send_op_id);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not cancel send op id (%s)", NA_Error_to_string(na_ret));
     }
 
-    /* TODO
     if (hg_core_handle->na_ack_op_id != NA_OP_ID_NULL) {
-        na_return_t na_ret;
-
-        na_ret = NA_Cancel(hg_core_handle->na_class, hg_core_handle->na_context,
-            hg_core_handle->na_ack_op_id);
-        if (na_ret != NA_SUCCESS) {
-            HG_LOG_ERROR("Could not cancel ack op id");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        na_return_t na_ret = NA_Cancel(hg_core_handle->na_class,
+            hg_core_handle->na_context, hg_core_handle->na_ack_op_id);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not cancel ack op id (%s)", NA_Error_to_string(na_ret));
     }
-    */
 
 done:
     return ret;
@@ -3616,19 +3423,12 @@ HG_Core_init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
     struct hg_core_private_class *hg_core_class = NULL;
-    hg_return_t ret = HG_SUCCESS;
 
     hg_core_class = hg_core_init(na_info_string, na_listen, hg_init_info);
-    if (!hg_core_class) {
-        HG_LOG_ERROR("Cannot initialize HG core layer");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(hg_core_class == NULL, done,
+        "Cannot initialize HG core layer");
 
 done:
-    if (ret != HG_SUCCESS) {
-        /* Nothing */
-    }
     return (hg_core_class_t *) hg_core_class;
 }
 
@@ -3636,13 +3436,10 @@ done:
 hg_return_t
 HG_Core_finalize(hg_core_class_t *hg_core_class)
 {
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret;
 
     ret = hg_core_finalize((struct hg_core_private_class *) hg_core_class);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Cannot finalize HG core layer");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Cannot finalize HG core layer");
 
 done:
     return ret;
@@ -3666,11 +3463,8 @@ HG_Core_set_more_data_callback(struct hg_core_class *hg_core_class,
         (struct hg_core_private_class *) hg_core_class;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
 
     private_class->more_data_acquire = more_data_acquire_callback;
     private_class->more_data_release = more_data_release_callback;
@@ -3690,35 +3484,26 @@ HG_Core_context_create(hg_core_class_t *hg_core_class)
 hg_core_context_t *
 HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
 {
-    hg_return_t ret = HG_SUCCESS;
     struct hg_core_private_context *context = NULL;
     int na_poll_fd;
 #ifdef HG_HAS_SELF_FORWARD
     int fd;
 #endif
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(hg_core_class == NULL, error, "NULL HG core class");
 
     context = (struct hg_core_private_context *) malloc(
         sizeof(struct hg_core_private_context));
-    if (!context) {
-        HG_LOG_ERROR("Could not allocate HG context");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(context == NULL, error,
+        "Could not allocate HG context");
+
     memset(context, 0, sizeof(struct hg_core_private_context));
     context->core_context.core_class = hg_core_class;
     context->completion_queue =
         hg_atomic_queue_alloc(HG_CORE_ATOMIC_QUEUE_SIZE);
-    if (!context->completion_queue) {
-        HG_LOG_ERROR("Could not allocate queue");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(context->completion_queue == NULL, error,
+        "Could not allocate queue");
+
     HG_QUEUE_INIT(&context->backfill_queue);
     hg_atomic_init32(&context->backfill_queue_count, 0);
     HG_LIST_INIT(&context->pending_list);
@@ -3736,46 +3521,31 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
     hg_atomic_init32(&context->trigger_waiting, 0);
 
     hg_thread_spin_init(&context->pending_list_lock);
-#ifdef HG_HAS_SM_ROUTING
-    hg_thread_spin_init(&context->sm_pending_list_lock);
-#endif
     hg_thread_spin_init(&context->created_list_lock);
 
     context->core_context.na_context = NA_Context_create_id(
         hg_core_class->na_class, id);
-    if (!context->core_context.na_context) {
-        HG_LOG_ERROR("Could not create NA context");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(context->core_context.na_context == NULL, error,
+        "Could not create NA context");
+
 #ifdef HG_HAS_SM_ROUTING
     if (hg_core_class->na_sm_class) {
         context->core_context.na_sm_context = NA_Context_create(
             hg_core_class->na_sm_class);
-        if (!context->core_context.na_sm_context) {
-            HG_LOG_ERROR("Could not create NA SM context");
-            ret = HG_NA_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR_NORET(context->core_context.na_sm_context == NULL, error,
+            "Could not create NA SM context");
     }
 #endif
 
     /* Create poll set */
     context->poll_set = hg_poll_create();
-    if (!context->poll_set) {
-        HG_LOG_ERROR("Could not create poll set");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(context->poll_set == NULL, error,
+        "Could not create poll set");
 
 #ifdef HG_HAS_SELF_FORWARD
     /* Create event for completion queue notification */
     fd = hg_event_create();
-    if (fd < 0) {
-        HG_LOG_ERROR("Could not create event");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(fd < 0, error, "Could not create event");
     context->completion_queue_notify = fd;
 
     /* Add event to context poll set */
@@ -3803,22 +3573,17 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
 #ifdef HG_HAS_SM_ROUTING
     /* Auto SM requires hg_core_progress_poll */
     if (context->core_context.na_sm_context) {
-        if (context->progress != hg_core_progress_poll) {
-            HG_LOG_ERROR("Auto SM mode not supported with selected plugin");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR_NORET(context->progress != hg_core_progress_poll, error,
+            "Auto SM mode not supported with selected plugin");
+
         if (HG_CORE_CONTEXT_CLASS(context)->progress_mode == NA_NO_BLOCK)
             /* Force to use progress poll */
             na_poll_fd = 0;
         else {
             na_poll_fd = NA_Poll_get_fd(hg_core_class->na_sm_class,
                 context->core_context.na_sm_context);
-            if (na_poll_fd < 0) {
-                HG_LOG_ERROR("Could not get NA SM poll fd");
-                ret = HG_NA_ERROR;
-                goto done;
-            }
+            HG_CHECK_ERROR_NORET(na_poll_fd < 0, error,
+                "Could not get NA SM poll fd");
         }
         hg_poll_add(context->poll_set, na_poll_fd, HG_POLLIN,
             hg_core_progress_na_sm_cb, context);
@@ -3831,12 +3596,11 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
     /* Increment context count of parent class */
     hg_atomic_incr32(&HG_CORE_CONTEXT_CLASS(context)->n_contexts);
 
-done:
-    if (ret != HG_SUCCESS && context) {
-        HG_Core_context_destroy((hg_core_context_t *) context);
-        context = NULL;
-    }
     return (hg_core_context_t *) context;
+
+error:
+    HG_Core_context_destroy((hg_core_context_t *) context);
+    return NULL;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3845,13 +3609,16 @@ HG_Core_context_destroy(hg_core_context_t *context)
 {
     struct hg_core_private_context *private_context =
         (struct hg_core_private_context *) context;
-    na_return_t na_ret;
-    hg_return_t ret = HG_SUCCESS;
     unsigned int actual_count;
     int na_poll_fd;
     hg_util_int32_t n_handles;
+    hg_bool_t empty;
+    na_return_t na_ret;
+    hg_return_t ret = HG_SUCCESS;
+    int rc;
 
-    if (!context) goto done;
+    if (!context)
+        goto done;
 
     /* Prevent repost of handles */
     private_context->finalizing = HG_TRUE;
@@ -3859,19 +3626,14 @@ HG_Core_context_destroy(hg_core_context_t *context)
     /* Check pending list and cancel posted handles */
     if (!HG_LIST_IS_EMPTY(&private_context->pending_list)) {
         ret = hg_core_pending_list_cancel(private_context);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Cannot cancel list of pending entries");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Cannot cancel list of pending entries");
     }
 #ifdef HG_HAS_SM_ROUTING
     /* Check pending list and cancel posted handles */
     if (!HG_LIST_IS_EMPTY(&private_context->sm_pending_list)) {
         ret = hg_core_sm_pending_list_cancel(private_context);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Cannot cancel list of SM pending entries");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret,
+            "Cannot cancel list of SM pending entries");
     }
 #endif
 
@@ -3892,10 +3654,8 @@ HG_Core_context_destroy(hg_core_context_t *context)
 
     /* Check that operations have completed */
     ret = hg_core_created_list_wait(private_context);
-    if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
-        HG_LOG_ERROR("Could not wait on HG core handle list");
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
+        "Could not wait on HG core handle list");
 
     /* Number of handles for that context should be 0 */
     n_handles = hg_atomic_get32(&private_context->n_handles);
@@ -3909,42 +3669,32 @@ HG_Core_context_destroy(hg_core_context_t *context)
                 hg_core_handle);
         }
         hg_thread_spin_unlock(&private_context->created_list_lock);
-        ret = HG_PROTOCOL_ERROR;
+        ret = HG_BUSY;
         goto done;
     }
 
     /* Check that completion queue is empty now */
-    if (!hg_atomic_queue_is_empty(private_context->completion_queue)) {
-        HG_LOG_ERROR("Completion queue should be empty");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(!hg_atomic_queue_is_empty(private_context->completion_queue),
+        done, ret, HG_BUSY, "Completion queue should be empty");
     hg_atomic_queue_free(private_context->completion_queue);
 
     /* Check that completion queue is empty now */
     hg_thread_mutex_lock(&private_context->completion_queue_mutex);
-    if (!HG_QUEUE_IS_EMPTY(&private_context->backfill_queue)) {
-        HG_LOG_ERROR("Completion queue should be empty");
-        ret = HG_PROTOCOL_ERROR;
-        hg_thread_mutex_unlock(&private_context->completion_queue_mutex);
-        goto done;
-    }
+    empty = HG_QUEUE_IS_EMPTY(&private_context->backfill_queue);
     hg_thread_mutex_unlock(&private_context->completion_queue_mutex);
+    HG_CHECK_ERROR(!empty, done, ret, HG_BUSY,
+        "Completion queue should be empty");
 
 #ifdef HG_HAS_SELF_FORWARD
     if (private_context->completion_queue_notify > 0) {
-        if (hg_poll_remove(private_context->poll_set,
-            private_context->completion_queue_notify) != HG_UTIL_SUCCESS) {
-            HG_LOG_ERROR("Could not remove self processing event from poll set");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
-        if (hg_event_destroy(private_context->completion_queue_notify)
-            != HG_UTIL_SUCCESS) {
-            HG_LOG_ERROR("Could not destroy self processing event");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        rc = hg_poll_remove(private_context->poll_set,
+            private_context->completion_queue_notify);
+        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_NOENTRY,
+            "Could not remove self processing event from poll set");
+
+        rc = hg_event_destroy(private_context->completion_queue_notify);
+        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_NOENTRY,
+            "Could not destroy self processing event");
     }
 #endif
 
@@ -3955,12 +3705,10 @@ HG_Core_context_destroy(hg_core_context_t *context)
         /* If NA plugin exposes fd, remove it from poll set */
         na_poll_fd = NA_Poll_get_fd(context->core_class->na_class,
             context->na_context);
-    if ((na_poll_fd >= 0)
-        && hg_poll_remove(private_context->poll_set, na_poll_fd)
-        != HG_UTIL_SUCCESS) {
-        HG_LOG_ERROR("Could not remove NA poll descriptor from poll set");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
+    if (na_poll_fd >= 0) {
+        rc = hg_poll_remove(private_context->poll_set, na_poll_fd);
+        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_NOENTRY,
+            "Could not remove NA poll descriptor from poll set");
     }
 
 #ifdef HG_HAS_SM_ROUTING
@@ -3972,38 +3720,34 @@ HG_Core_context_destroy(hg_core_context_t *context)
             /* If NA plugin exposes fd, remove it from poll set */
             na_poll_fd = NA_Poll_get_fd(context->core_class->na_sm_class,
                 context->na_sm_context);
-        if ((na_poll_fd >= 0)
-            && hg_poll_remove(private_context->poll_set, na_poll_fd)
-            != HG_UTIL_SUCCESS) {
-            HG_LOG_ERROR("Could not remove NA poll descriptor from poll set");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
+        if (na_poll_fd >= 0) {
+            rc = hg_poll_remove(private_context->poll_set, na_poll_fd);
+            HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_NOENTRY,
+                "Could not remove NA poll descriptor from poll set");
         }
     }
 #endif
 
     /* Destroy poll set */
-    if (hg_poll_destroy(private_context->poll_set) != HG_UTIL_SUCCESS) {
-        HG_LOG_ERROR("Could not destroy poll set");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    rc = hg_poll_destroy(private_context->poll_set);
+    HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
+        "Could not destroy poll set");
 
     /* Destroy NA context */
-    if (context->na_context && NA_Context_destroy(context->core_class->na_class,
-            context->na_context) != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not destroy NA context");
-        ret = HG_NA_ERROR;
-        goto done;
+    if (context->na_context) {
+        na_ret = NA_Context_destroy(context->core_class->na_class,
+            context->na_context);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not destroy NA context (%s)", NA_Error_to_string(na_ret));
     }
 
 #ifdef HG_HAS_SM_ROUTING
     /* Destroy NA SM context */
-    if (context->na_sm_context && NA_Context_destroy(
-        context->core_class->na_sm_class, context->na_sm_context) != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not destroy NA SM context");
-        ret = HG_NA_ERROR;
-        goto done;
+    if (context->na_sm_context) {
+        na_ret = NA_Context_destroy(context->core_class->na_sm_class,
+            context->na_sm_context);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "Could not destroy NA SM context");
     }
 #endif
 
@@ -4015,9 +3759,6 @@ HG_Core_context_destroy(hg_core_context_t *context)
     hg_thread_mutex_destroy(&private_context->completion_queue_mutex);
     hg_thread_cond_destroy(&private_context->completion_queue_cond);
     hg_thread_spin_destroy(&private_context->pending_list_lock);
-#ifdef HG_HAS_SM_ROUTING
-    hg_thread_spin_destroy(&private_context->sm_pending_list_lock);
-#endif
     hg_thread_spin_destroy(&private_context->created_list_lock);
 
     /* Decrement context count of parent class */
@@ -4038,11 +3779,8 @@ HG_Core_context_set_handle_create_callback(hg_core_context_t *context,
         (struct hg_core_private_context *) context;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!context) {
-        HG_LOG_ERROR("NULL HG core context");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(context == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core context");
 
     private_context->handle_create = callback;
     private_context->handle_create_arg = arg;
@@ -4059,26 +3797,18 @@ HG_Core_context_post(hg_core_context_t *context, unsigned int request_count,
     hg_bool_t use_sm = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!context) {
-        HG_LOG_ERROR("NULL HG core context");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (!request_count) {
-        HG_LOG_ERROR("Request count must be greater than 0");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(context == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core context");
+    HG_CHECK_ERROR(request_count == 0, done, ret, HG_INVALID_ARG,
+        "Request count must be greater than 0");
 
 #ifdef HG_HAS_SM_ROUTING
     do {
 #endif
         ret = hg_core_context_post((struct hg_core_private_context *) context,
             request_count, repost, use_sm);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not post requests on context");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Could not post requests on context");
+
 #ifdef HG_HAS_SM_ROUTING
         if (context->na_sm_context)
             use_sm = !use_sm;
@@ -4101,11 +3831,8 @@ HG_Core_register(hg_core_class_t *hg_core_class, hg_id_t id,
     hg_return_t ret = HG_SUCCESS;
     int hash_ret;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, error, ret, HG_INVALID_ARG,
+        "NULL HG core class");
 
     /* Check if registered and set RPC CB */
     hg_thread_spin_lock(&private_class->func_map_lock);
@@ -4118,21 +3845,15 @@ HG_Core_register(hg_core_class_t *hg_core_class, hg_id_t id,
     if (!hg_core_rpc_info) {
         /* Allocate the key */
         func_key = (hg_id_t *) malloc(sizeof(hg_id_t));
-        if (!func_key) {
-            HG_LOG_ERROR("Could not allocate ID");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(func_key == NULL, error, ret, HG_NOMEM,
+            "Could not allocate ID key");
         *func_key = id;
 
         /* Fill info and store it into the function map */
         hg_core_rpc_info = (struct hg_core_rpc_info *) malloc(
             sizeof(struct hg_core_rpc_info));
-        if (!hg_core_rpc_info) {
-            HG_LOG_ERROR("Could not allocate HG info");
-            ret = HG_NOMEM_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(hg_core_rpc_info == NULL, error, ret, HG_NOMEM,
+            "Could not allocate HG info");
 
         hg_core_rpc_info->rpc_cb = rpc_cb;
         hg_core_rpc_info->data = NULL;
@@ -4142,18 +3863,16 @@ HG_Core_register(hg_core_class_t *hg_core_class, hg_id_t id,
         hash_ret = hg_hash_table_insert(private_class->func_map,
             (hg_hash_table_key_t) func_key, hg_core_rpc_info);
         hg_thread_spin_unlock(&private_class->func_map_lock);
-        if (!hash_ret) {
-            HG_LOG_ERROR("Could not insert RPC ID into function map (already registered?)");
-            ret = HG_INVALID_PARAM;
-            goto done;
-        }
+        HG_CHECK_ERROR(hash_ret == 0, error, ret, HG_INVALID_ARG,
+            "Could not insert RPC ID into function map (already registered?)");
     }
 
-done:
-    if (ret != HG_SUCCESS) {
-        free(func_key);
-        free(hg_core_rpc_info);
-    }
+    return ret;
+
+error:
+    free(func_key);
+    free(hg_core_rpc_info);
+
     return ret;
 }
 
@@ -4166,21 +3885,15 @@ HG_Core_deregister(hg_core_class_t *hg_core_class, hg_id_t id)
     hg_return_t ret = HG_SUCCESS;
     int hash_ret;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
 
     hg_thread_spin_lock(&private_class->func_map_lock);
     hash_ret = hg_hash_table_remove(private_class->func_map,
         (hg_hash_table_key_t) &id);
     hg_thread_spin_unlock(&private_class->func_map_lock);
-    if (!hash_ret) {
-        HG_LOG_ERROR("Could not deregister RPC ID from function map");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hash_ret == 0, done, ret, HG_NOENTRY,
+        "Could not deregister RPC ID from function map");
 
 done:
     return ret;
@@ -4194,16 +3907,10 @@ HG_Core_registered(hg_core_class_t *hg_core_class, hg_id_t id, hg_bool_t *flag)
         (struct hg_core_private_class *) hg_core_class;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (!flag) {
-        HG_LOG_ERROR("NULL flag");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
+    HG_CHECK_ERROR(flag == NULL, done, ret, HG_INVALID_ARG,
+        "NULL flag");
 
     hg_thread_spin_lock(&private_class->func_map_lock);
     *flag = (hg_bool_t) (hg_hash_table_lookup(private_class->func_map,
@@ -4224,24 +3931,18 @@ HG_Core_register_data(hg_core_class_t *hg_core_class, hg_id_t id, void *data,
     struct hg_core_rpc_info *hg_core_rpc_info = NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
 
     hg_thread_spin_lock(&private_class->func_map_lock);
     hg_core_rpc_info = (struct hg_core_rpc_info *) hg_hash_table_lookup(
         private_class->func_map, (hg_hash_table_key_t) &id);
     hg_thread_spin_unlock(&private_class->func_map_lock);
-    if (!hg_core_rpc_info) {
-        HG_LOG_ERROR("Could not find RPC ID in function map");
-        ret = HG_NO_MATCH;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_rpc_info == NULL, done, ret, HG_NOENTRY,
+        "Could not find RPC ID in function map");
 
-    if (hg_core_rpc_info->data)
-        HG_LOG_WARNING("Overriding data previously registered");
+    HG_CHECK_WARNING(hg_core_rpc_info->data,
+        "Overriding data previously registered");
     hg_core_rpc_info->data = data;
     hg_core_rpc_info->free_callback = free_callback;
 
@@ -4258,19 +3959,14 @@ HG_Core_registered_data(hg_core_class_t *hg_core_class, hg_id_t id)
     struct hg_core_rpc_info *hg_core_rpc_info = NULL;
     void *data = NULL;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(hg_core_class == NULL, done, "NULL HG core class");
 
     hg_thread_spin_lock(&private_class->func_map_lock);
     hg_core_rpc_info = (struct hg_core_rpc_info *) hg_hash_table_lookup(
         private_class->func_map, (hg_hash_table_key_t) &id);
     hg_thread_spin_unlock(&private_class->func_map_lock);
-    if (!hg_core_rpc_info) {
-        HG_LOG_ERROR("Could not find RPC ID in function map");
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(hg_core_rpc_info == NULL, done,
+        "Could not find RPC ID in function map");
 
     data = hg_core_rpc_info->data;
 
@@ -4285,28 +3981,16 @@ HG_Core_addr_lookup(hg_core_context_t *context, hg_core_cb_t callback,
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!context) {
-        HG_LOG_ERROR("NULL HG core context");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (!callback) {
-        HG_LOG_ERROR("NULL callback");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (!name) {
-        HG_LOG_ERROR("NULL lookup name");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(context == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core context");
+    HG_CHECK_ERROR(callback == NULL, done, ret, HG_INVALID_ARG,
+        "NULL callback");
+    HG_CHECK_ERROR(name == NULL, done, ret, HG_INVALID_ARG,
+        "NULL lookup");
 
     ret = hg_core_addr_lookup((struct hg_core_private_context *) context,
         callback, arg, name, op_id);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not lookup address");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not lookup address");
 
 done:
     return ret;
@@ -4318,25 +4002,16 @@ HG_Core_addr_create(hg_core_class_t *hg_core_class, hg_core_addr_t *addr)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (hg_core_class == NULL) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (!addr) {
-        HG_LOG_ERROR("NULL pointer to address");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
+    HG_CHECK_ERROR(addr == NULL, done, ret, HG_INVALID_ARG,
+        "NULL pointer to address");
 
     *addr = (hg_core_addr_t) hg_core_addr_create(
         (struct hg_core_private_class *) hg_core_class,
         hg_core_class->na_class);
-    if (*addr == HG_CORE_ADDR_NULL) {
-        HG_LOG_ERROR("Could not create address");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(*addr == HG_CORE_ADDR_NULL, done, ret, HG_NOMEM,
+        "Could not create address");
 
 done:
     return ret;
@@ -4348,18 +4023,12 @@ HG_Core_addr_free(hg_core_class_t *hg_core_class, hg_core_addr_t addr)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
 
     ret = hg_core_addr_free((struct hg_core_private_class *) hg_core_class,
         (struct hg_core_private_addr *) addr);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not free address");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not free address");
 
 done:
     return ret;
@@ -4374,19 +4043,13 @@ HG_Core_addr_set_remove(hg_core_class_t *hg_core_class, hg_core_addr_t addr)
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
 
     na_ret = NA_Addr_set_remove(hg_core_addr->core_addr.na_class,
         hg_core_addr->core_addr.na_addr);
-    if (na_ret != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not set address to be removed");
-        ret = HG_NA_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+        "Could not set address to be removed (%s)", NA_Error_to_string(na_ret));
 
 done:
     return ret;
@@ -4398,23 +4061,14 @@ HG_Core_addr_self(hg_core_class_t *hg_core_class, hg_core_addr_t *addr)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (!addr) {
-        HG_LOG_ERROR("NULL pointer to address");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
+    HG_CHECK_ERROR(addr == NULL, done, ret, HG_INVALID_ARG,
+        "NULL pointer to address");
 
     ret = hg_core_addr_self((struct hg_core_private_class *) hg_core_class,
         (struct hg_core_private_addr **) addr);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get self address");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not get self address");
 
 done:
     return ret;
@@ -4427,29 +4081,17 @@ HG_Core_addr_dup(hg_core_class_t *hg_core_class, hg_core_addr_t addr,
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (addr == HG_CORE_ADDR_NULL) {
-        HG_LOG_ERROR("NULL addr");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (!new_addr) {
-        HG_LOG_ERROR("NULL pointer to destination address");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
+    HG_CHECK_ERROR(addr == HG_CORE_ADDR_NULL, done, ret, HG_INVALID_ARG,
+        "NULL addr");
+    HG_CHECK_ERROR(new_addr == NULL, done, ret, HG_INVALID_ARG,
+        "NULL pointer to dup addr");
 
     ret = hg_core_addr_dup((struct hg_core_private_class *) hg_core_class,
         (struct hg_core_private_addr *) addr,
         (struct hg_core_private_addr **) new_addr);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not duplicate address");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not duplicate address");
 
 done:
     return ret;
@@ -4462,18 +4104,14 @@ HG_Core_addr_to_string(hg_core_class_t *hg_core_class, char *buf,
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_core_class) {
-        HG_LOG_ERROR("NULL HG core class");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
+    HG_CHECK_ERROR(buf_size == NULL, done, ret, HG_INVALID_ARG,
+        "NULL pointer to buffer size");
 
     ret = hg_core_addr_to_string((struct hg_core_private_class *) hg_core_class,
         buf, buf_size, (struct hg_core_private_addr *) addr);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not convert address to string");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not convert address to string");
 
 done:
     return ret;
@@ -4492,16 +4130,10 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
     hg_bool_t use_sm = HG_FALSE;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!context) {
-        HG_LOG_ERROR("NULL HG core context");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (!handle) {
-        HG_LOG_ERROR("NULL pointer to HG core handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(context == NULL, error, ret, HG_INVALID_ARG,
+        "NULL HG core context");
+    HG_CHECK_ERROR(handle == NULL, error, ret, HG_INVALID_ARG,
+        "NULL pointer to HG core handle");
 
 #ifdef HG_HAS_SM_ROUTING
     if (private_addr
@@ -4511,37 +4143,30 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
 
     /* Create new handle */
     hg_core_handle = hg_core_create(private_context, use_sm);
-    if (!hg_core_handle) {
-        HG_LOG_ERROR("Could not create HG core handle");
-        ret = HG_NOMEM_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_handle == NULL, error, ret, HG_NOMEM,
+        "Could not create HG core handle");
 
     /* Set addr / RPC ID */
     ret = hg_core_set_rpc(hg_core_handle, private_addr, id);
-    if (ret != HG_SUCCESS) {
-        if (ret != HG_NO_MATCH) /* silence error if invalid ID is used */
-            HG_LOG_ERROR("Could not set rpc to handle");
-        goto done;
-    }
+    if (ret == HG_NOENTRY)
+        goto error;
+    HG_CHECK_HG_ERROR(error, ret, "Could not set rpc to handle");
 
     /* Execute class callback on handle, this allows upper layers to
      * allocate private data on handle creation */
     if (private_context->handle_create) {
         ret = private_context->handle_create((hg_core_handle_t) hg_core_handle,
             private_context->handle_create_arg);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Error in HG core handle create callback");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(error, ret, "Error in HG handle create callback");
     }
 
     *handle = (hg_core_handle_t) hg_core_handle;
 
-done:
-    if (ret != HG_SUCCESS) {
-        hg_core_destroy(hg_core_handle);
-    }
+    return ret;
+
+error:
+    hg_core_destroy(hg_core_handle);
+
     return ret;
 }
 
@@ -4553,21 +4178,15 @@ HG_Core_destroy(hg_core_handle_t handle)
         (struct hg_core_private_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_core_handle) {
-        HG_LOG_ERROR("NULL pointer to HG core handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_handle == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core handle");
 
     /* Repost handle if we were listening, otherwise destroy it */
     if (hg_core_handle->repost
         && !HG_CORE_HANDLE_CONTEXT(hg_core_handle)->finalizing) {
         /* Repost handle */
         ret = hg_core_reset_post(hg_core_handle);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Cannot repost handle");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Cannot repost handle");
     } else
         hg_core_destroy(hg_core_handle);
 
@@ -4585,36 +4204,26 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
         (struct hg_core_private_addr *) addr;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!handle) {
-        HG_LOG_ERROR("NULL HG core handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_handle == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core handle");
+
     /* Not safe to reset
      * TODO could add the ability to defer the reset operation */
-    if (hg_atomic_get32(&hg_core_handle->in_use)) {
-        HG_LOG_ERROR("Cannot reset HG core handle, handle is still in use, "
-            "refcount: %d",
-            hg_atomic_get32(&hg_core_handle->ref_count));
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_atomic_get32(&hg_core_handle->in_use), done, ret,
+        HG_BUSY, "Cannot reset HG core handle, still in use, "
+            "refcount: %d", hg_atomic_get32(&hg_core_handle->ref_count));
 
 #ifdef HG_HAS_SM_ROUTING
     if (hg_core_addr
         && (hg_core_addr->core_addr.na_class != hg_core_handle->na_class)) {
         struct hg_core_private_context *private_context =
             (struct hg_core_private_context *) hg_core_handle->core_handle.info.context;
-        hg_bool_t use_sm =
-            (private_context->core_context.core_class->na_sm_class
-                == hg_core_addr->core_addr.na_class);
+        hg_bool_t use_sm = (private_context->core_context.core_class->na_sm_class
+            == hg_core_addr->core_addr.na_class);
         /* In that case, we must free and re-allocate NA resources */
         hg_core_free_na(hg_core_handle);
         ret = hg_core_alloc_na(hg_core_handle, use_sm);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not re-allocate handle NA resources");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Could not re-allocate NA resources");
     }
 #endif
 
@@ -4623,9 +4232,9 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
 
     /* Set addr / RPC ID */
     ret = hg_core_set_rpc(hg_core_handle, hg_core_addr, id);
-    if (ret != HG_SUCCESS) {
+    if (ret == HG_NOENTRY)
         goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not set rpc to handle");
 
 done:
     return ret;
@@ -4637,15 +4246,14 @@ HG_Core_ref_incr(hg_core_handle_t handle)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) handle;
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!handle) {
-        HG_LOG_ERROR("NULL pointer to HG core handle");
-        return HG_INVALID_PARAM;
-    }
-#endif
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_CHECK_ERROR(hg_core_handle == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core handle");
     hg_atomic_incr32(&hg_core_handle->ref_count);
 
-    return HG_SUCCESS;
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4654,13 +4262,14 @@ HG_Core_ref_get(hg_core_handle_t handle)
 {
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) handle;
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!handle) {
-        HG_LOG_ERROR("NULL pointer to HG core handle");
-        return -1;
-    }
-#endif
-    return (hg_int32_t) hg_atomic_get32(&hg_core_handle->ref_count);
+    hg_int32_t ret;
+
+    HG_CHECK_ERROR(hg_core_handle == NULL, done, ret, -1,
+        "NULL HG core handle");
+    ret = (hg_int32_t) hg_atomic_get32(&hg_core_handle->ref_count);
+
+done:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4671,40 +4280,27 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
     struct hg_core_private_handle *hg_core_handle =
         (struct hg_core_private_handle *) handle;
     hg_size_t header_size;
+    hg_bool_t in_use;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_core_handle) {
-        HG_LOG_ERROR("NULL handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (hg_core_handle->core_handle.info.addr == HG_CORE_ADDR_NULL) {
-        HG_LOG_ERROR("NULL target addr");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-    if (!hg_core_handle->core_handle.info.id) {
-        HG_LOG_ERROR("NULL RPC ID");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_handle == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core handle");
+    HG_CHECK_ERROR(hg_core_handle->core_handle.info.addr == HG_CORE_ADDR_NULL,
+        done, ret, HG_INVALID_ARG, "NULL target addr");
+    HG_CHECK_ERROR(hg_core_handle->core_handle.info.id == 0, done, ret,
+        HG_INVALID_ARG, "NULL RPC ID");
+
 #ifndef HG_HAS_SELF_FORWARD
-    if (hg_core_handle->is_self) {
-        HG_LOG_ERROR("Not enabled, please enable HG_USE_SELF_FORWARD");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_handle->is_self, done, ret, HG_INVALID_PARAM,
+        "Forward to self not enabled, please enable HG_USE_SELF_FORWARD");
 #endif
-    if (hg_atomic_cas32(&hg_core_handle->in_use, HG_FALSE, HG_TRUE)
-        != HG_UTIL_TRUE) {
-        /* Not safe to reset
-         * TODO could add the ability to defer the reset operation */
-        HG_LOG_ERROR("Not safe to use HG core handle, handle is still in use, "
-            "refcount: %d", hg_atomic_get32(
-                &hg_core_handle->ref_count));
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    in_use = (hg_atomic_cas32(&hg_core_handle->in_use, HG_FALSE, HG_TRUE)
+        != HG_UTIL_TRUE);
+    /* Not safe to reset
+     * TODO could add the ability to defer the reset operation */
+    HG_CHECK_ERROR(in_use, done, ret, HG_BUSY,
+        "Not safe to use HG core handle, handle is still in use, refcount: %d",
+        hg_atomic_get32(&hg_core_handle->ref_count));
 
 #ifdef HG_HAS_COLLECT_STATS
     /* Increment counter */
@@ -4715,19 +4311,20 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
     hg_core_handle->na_op_count = 1; /* Default (no response) */
     hg_atomic_set32(&hg_core_handle->na_op_completed_count, 0);
 
+    /* Increase ref count here so that a call to HG_Destroy does not free the
+     * handle but only schedules its completion
+     */
+    hg_atomic_incr32(&hg_core_handle->ref_count);
+
     /* Set header size */
     header_size = hg_core_header_request_get_size() +
         hg_core_handle->core_handle.na_in_header_offset;
 
     /* Set the actual size of the msg that needs to be transmitted */
     hg_core_handle->in_buf_used = header_size + payload_size;
-    if (hg_core_handle->in_buf_used > hg_core_handle->core_handle.in_buf_size) {
-        HG_LOG_ERROR("Exceeding input buffer size");
-        ret = HG_SIZE_ERROR;
-        /* Handle is no longer in use */
-        hg_atomic_set32(&hg_core_handle->in_use, HG_FALSE);
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_handle->in_buf_used
+        > hg_core_handle->core_handle.in_buf_size, error, ret, HG_MSGSIZE,
+        "Exceeding input buffer size");
 
     /* Parse flags */
     if (flags & HG_CORE_NO_RESPONSE)
@@ -4753,32 +4350,25 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
     /* Encode request header */
     ret = hg_core_proc_header_request(&hg_core_handle->core_handle,
         &hg_core_handle->in_header, HG_ENCODE);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not encode header");
-        /* Handle is no longer in use */
-        hg_atomic_set32(&hg_core_handle->in_use, HG_FALSE);
-        goto done;
-    }
-
-    /* Increase ref count here so that a call to HG_Destroy does not free the
-     * handle but only schedules its completion
-     */
-    hg_atomic_incr32(&hg_core_handle->ref_count);
+    HG_CHECK_HG_ERROR(error, ret, "Could not encode header");
 
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
     ret = hg_core_handle->forward(hg_core_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not forward buffer");
-        /* Handle is no longer in use */
-        hg_atomic_set32(&hg_core_handle->in_use, HG_FALSE);
-        /* Rollback ref_count taken above */
-        hg_atomic_decr32(&hg_core_handle->ref_count);
-        goto done;
-    }
+    if (ret == HG_AGAIN)
+        goto error;
+    HG_CHECK_HG_ERROR(error, ret, "Could not forward buffer");
 
 done:
-     return ret;
+    return ret;
+
+error:
+    /* Handle is no longer in use */
+    hg_atomic_set32(&hg_core_handle->in_use, HG_FALSE);
+    /* Rollback ref_count taken above */
+    hg_atomic_decr32(&hg_core_handle->ref_count);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4791,25 +4381,12 @@ HG_Core_respond(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
     hg_size_t header_size;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!hg_core_handle) {
-        HG_LOG_ERROR("NULL handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-#ifndef HG_HAS_SELF_FORWARD
-    if (NA_Addr_is_self(hg_core_handle->core_handle.info.addr->na_class,
-        hg_core_handle->core_handle.info.addr->na_addr)) {
-        HG_LOG_ERROR("Not enabled, please enable HG_USE_SELF_FORWARD");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
-#endif
+    HG_CHECK_ERROR(hg_core_handle == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core handle");
+
     /* Cannot respond if no_response flag set */
-    if (hg_core_handle->no_response) {
-        HG_LOG_ERROR("Sending response was disabled on that RPC");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_handle->no_response, done, ret, HG_OPNOTSUPPORTED,
+        "Sending response was disabled on that RPC");
 
     /* Set header size */
     header_size = hg_core_header_response_get_size() +
@@ -4817,12 +4394,9 @@ HG_Core_respond(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
 
     /* Set the actual size of the msg that needs to be transmitted */
     hg_core_handle->out_buf_used = header_size + payload_size;
-    if (hg_core_handle->out_buf_used
-        > hg_core_handle->core_handle.out_buf_size) {
-        HG_LOG_ERROR("Exceeding output buffer size");
-        ret = HG_SIZE_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(hg_core_handle->out_buf_used
+        > hg_core_handle->core_handle.out_buf_size, done, ret, HG_MSGSIZE,
+        "Exceeding output buffer size");
 
     /* Set callback, keep request and response callbacks separate so that
      * they do not get overwritten when forwarding to ourself */
@@ -4837,18 +4411,12 @@ HG_Core_respond(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
     /* Encode response header */
     ret = hg_core_proc_header_response(&hg_core_handle->core_handle,
         &hg_core_handle->out_header, HG_ENCODE);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not encode header");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not encode header");
 
     /* If addr is self, forward locally, otherwise send the encoded buffer
      * through NA and pre-post response */
     ret = hg_core_handle->respond(hg_core_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not respond");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not respond");
 
 done:
     return ret;
@@ -4862,18 +4430,13 @@ HG_Core_progress(hg_core_context_t *context, unsigned int timeout)
         (struct hg_core_private_context *) context;
     hg_return_t ret = HG_SUCCESS;
 
-    if (!context) {
-        HG_LOG_ERROR("NULL HG core context");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(context == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core context");
 
     /* Make progress on the HG layer */
     ret = private_context->progress(private_context, timeout);
-    if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
-        HG_LOG_ERROR("Could not make progress");
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
+        "Could not make progress");
 
 done:
     return ret;
@@ -4886,18 +4449,13 @@ HG_Core_trigger(hg_core_context_t *context, unsigned int timeout,
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!context) {
-        HG_LOG_ERROR("NULL HG core context");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(context == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core context");
 
     ret = hg_core_trigger((struct hg_core_private_context *) context, timeout,
         max_count, actual_count);
-    if (ret != HG_SUCCESS && ret != HG_TIMEOUT) {
-        HG_LOG_ERROR("Could not trigger callbacks");
-        goto done;
-    }
+    HG_CHECK_ERROR_NORET(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
+        "Could not trigger callbacks");
 
 done:
     return ret;
@@ -4909,17 +4467,11 @@ HG_Core_cancel(hg_core_handle_t handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    if (!handle) {
-        HG_LOG_ERROR("NULL handle");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(handle == HG_CORE_HANDLE_NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core handle");
 
     ret = hg_core_cancel((struct hg_core_private_handle *) handle);
-    if (ret != HG_SUCCESS && ret != HG_CANCEL_ERROR) {
-        HG_LOG_ERROR("Could not cancel handle");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not cancel handle");
 
 done:
     return ret;

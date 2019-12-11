@@ -45,34 +45,24 @@ hg_proc_bulk_write_in_t(hg_proc_t proc, void *data)
     bulk_write_in_t *struct_data = (bulk_write_in_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->fildes);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_hg_size_t(proc, &struct_data->transfer_size);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_hg_size_t(proc, &struct_data->origin_offset);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_hg_size_t(proc, &struct_data->target_offset);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_hg_bulk_t(proc, &struct_data->bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -90,10 +80,8 @@ hg_proc_bulk_write_out_t(hg_proc_t proc, void *data)
     bulk_write_out_t *struct_data = (bulk_write_out_t *) data;
 
     ret = hg_proc_hg_size_t(proc, &struct_data->ret);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -112,16 +100,12 @@ hg_proc_bulk_bind_write_out_t(hg_proc_t proc, void *data)
     bulk_bind_write_out_t *struct_data = (bulk_bind_write_out_t *) data;
 
     ret = hg_proc_hg_size_t(proc, &struct_data->ret);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_hg_bulk_t(proc, &struct_data->bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
