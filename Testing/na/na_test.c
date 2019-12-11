@@ -300,10 +300,18 @@ na_test_gen_config(struct na_test_info *na_test_info)
             /* special-case SM (pid:id) */
             sprintf(info_string_ptr, "%d/%d", (int) getpid(), port_incr);
         }
-    } else if ((strcmp("tcp", na_test_info->protocol) == 0)
+    } else if (strcmp("psm2", na_test_info->protocol) == 0) {
+        if (!na_test_info->listen) {
+            sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
+                    33333);
+        } else {
+            sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
+                    22222);
+        }
+
+    } else if((strcmp("tcp", na_test_info->protocol) == 0)
         || (strcmp("verbs;ofi_rxm", na_test_info->protocol) == 0)
         || (strcmp("verbs", na_test_info->protocol) == 0)
-        || (strcmp("psm2", na_test_info->protocol) == 0)
         || (strcmp("sockets", na_test_info->protocol) == 0)) {
         if (!na_test_info->hostname) {
             /* Nothing */
@@ -479,6 +487,27 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
             na_test_info->target_name = strdup(test_addr_name);
             printf("# Target name read: %s\n", na_test_info->target_name);
         }
+    }
+
+    {
+        char addr_string[NA_TEST_MAX_ADDR_NAME];
+        na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
+        na_addr_t self_addr;
+        na_return_t nret;
+
+        /* TODO only rank 0 */
+        nret = NA_Addr_self(na_test_info->na_class, &self_addr);
+        if (nret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not get self addr");
+        }
+
+        nret = NA_Addr_to_string(na_test_info->na_class, addr_string,
+                &addr_string_len, self_addr);
+        if (nret != NA_SUCCESS) {
+            NA_LOG_ERROR("Could not convert addr to string");
+        }
+        NA_LOG_DEBUG("self URI: %s\n", addr_string);
+        NA_Addr_free(na_test_info->na_class, self_addr);
     }
 
 done:

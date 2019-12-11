@@ -75,6 +75,9 @@ if(NA_USE_OFI)
   set(NA_OFI_TESTING_PROTOCOL "sockets;tcp" CACHE STRING "Protocol(s) used for testing (e.g., sockets;psm2;verbs).")
   mark_as_advanced(NA_OFI_TESTING_PROTOCOL)
 
+  set(NA_TESTING_HOSTNAME "eth0" CACHE STRING "hostname used for testing (e.g., 192.168.1.100).")
+  mark_as_advanced(NA_TESTING_HOSTNAME)
+
   option(NA_OFI_TESTING_USE_CRAY_DRC
     "Use Cray DRC to allow multi-job communication." OFF)
   mark_as_advanced(NA_OFI_TESTING_USE_CRAY_DRC)
@@ -143,7 +146,7 @@ function(build_mercury_test test_name)
   endif()
 endfunction()
 
-macro(add_mercury_test_comm test_name comm protocol busy)
+macro(add_mercury_test_comm test_name comm protocol hostname busy)
   # Set full test name
   set(full_test_name ${test_name})
   set(opt_names ${comm} ${protocol})
@@ -155,7 +158,7 @@ macro(add_mercury_test_comm test_name comm protocol busy)
   endif()
 
   # Set test arguments
-  set(test_args --comm ${comm} --protocol ${protocol})
+  set(test_args --comm ${comm} --protocol ${protocol} --hostname ${hostname})
   if(${busy})
     set(test_args ${test_args} --busy)
   endif()
@@ -213,8 +216,8 @@ function(add_mercury_test test_name)
   foreach(comm ${NA_PLUGINS})
     string(TOUPPER ${comm} upper_comm)
     foreach(protocol ${NA_${upper_comm}_TESTING_PROTOCOL})
-      add_mercury_test_comm(${test_name} ${comm} ${protocol} false)
-      add_mercury_test_comm(${test_name} ${comm} ${protocol} true)
+      add_mercury_test_comm(${test_name} ${comm} ${protocol} ${NA_TESTING_HOSTNAME} false)
+      add_mercury_test_comm(${test_name} ${comm} ${protocol} ${NA_TESTING_HOSTNAME} true)
     endforeach()
   endforeach()
 endfunction()
