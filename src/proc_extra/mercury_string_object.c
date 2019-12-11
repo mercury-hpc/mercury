@@ -9,6 +9,7 @@
  */
 
 #include "mercury_string_object.h"
+#include "mercury_error.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -55,7 +56,7 @@ hg_string_object_init_const_char(hg_string_object_t *string, const char *s,
 {
     hg_return_t ret = HG_SUCCESS;
 
-    string->data = (char*) s;
+    string->data = (char *) s;
     string->is_owned = is_owned;
     string->is_const = 1;
 
@@ -87,9 +88,12 @@ hg_string_object_dup(hg_string_object_t string, hg_string_object_t *new_string)
     hg_return_t ret = HG_SUCCESS;
 
     new_string->data = strdup(string.data);
+    HG_CHECK_ERROR(new_string->data == NULL, done, ret, HG_NOMEM,
+        "Could not dup string data");
     new_string->is_owned = 1;
     new_string->is_const = 0;
 
+done:
     return ret;
 }
 

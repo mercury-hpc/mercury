@@ -66,22 +66,16 @@ hg_proc_open_in_t(hg_proc_t proc, void *data)
     open_in_t *struct_data = (open_in_t *) data;
 
     ret = hg_proc_hg_const_string_t(proc, &struct_data->path);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_int32_t(proc, &struct_data->flags);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_uint32_t(proc, &struct_data->mode);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -99,10 +93,8 @@ hg_proc_open_out_t(hg_proc_t proc, void *data)
     open_out_t *struct_data = (open_out_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->ret);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -120,10 +112,8 @@ hg_proc_close_in_t(hg_proc_t proc, void *data)
     close_in_t *struct_data = (close_in_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->fd);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -141,10 +131,8 @@ hg_proc_close_out_t(hg_proc_t proc, void *data)
     close_out_t *struct_data = (close_out_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->ret);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -163,16 +151,12 @@ hg_proc_write_in_t(hg_proc_t proc, void *data)
     write_in_t *struct_data = (write_in_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->fd);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_hg_bulk_t(proc, &struct_data->bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -190,10 +174,8 @@ hg_proc_write_out_t(hg_proc_t proc, void *data)
     write_out_t *struct_data = (write_out_t *) data;
 
     ret = hg_proc_int64_t(proc, &struct_data->ret);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -212,16 +194,12 @@ hg_proc_read_in_t(hg_proc_t proc, void *data)
     read_in_t *struct_data = (read_in_t *) data;
 
     ret = hg_proc_int32_t(proc, &struct_data->fd);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     ret = hg_proc_hg_bulk_t(proc, &struct_data->bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }
@@ -239,10 +217,8 @@ hg_proc_read_out_t(hg_proc_t proc, void *data)
     read_out_t *struct_data = (read_out_t *) data;
 
     ret = hg_proc_int64_t(proc, &struct_data->ret);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+    if (ret != HG_SUCCESS)
         return ret;
-    }
 
     return ret;
 }

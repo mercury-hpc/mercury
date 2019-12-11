@@ -127,7 +127,7 @@ main(int argc, char *argv[])
     }
 #else
     if (hg_test_info.secondary_contexts)
-        HG_LOG_WARNING("Secondary contexts only supported with thread pool");
+        HG_TEST_LOG_WARNING("Secondary contexts only supported with thread pool");
 
     do {
         unsigned int actual_count = 0;

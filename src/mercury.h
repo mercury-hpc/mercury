@@ -13,7 +13,6 @@
 
 #include "mercury_types.h"
 #include "mercury_header.h"
-#include "mercury_error.h"
 
 #include "mercury_core.h"
 
@@ -1097,8 +1096,8 @@ struct hg_context {
 
 /* HG handle */
 struct hg_handle {
-    hg_core_handle_t core_handle;       /* Core handle */
     struct hg_info info;                /* HG info */
+    hg_core_handle_t core_handle;       /* Core handle */
     void *data;                         /* User data */
     void (*data_free_callback)(void *); /* User data free callback */
 };
@@ -1107,12 +1106,6 @@ struct hg_handle {
 static HG_INLINE const char *
 HG_Class_get_name(const hg_class_t *hg_class)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!hg_class) {
-        HG_LOG_ERROR("NULL HG class");
-        return NULL;
-    }
-#endif
     return HG_Core_class_get_name(hg_class->core_class);
 }
 
@@ -1120,12 +1113,6 @@ HG_Class_get_name(const hg_class_t *hg_class)
 static HG_INLINE const char *
 HG_Class_get_protocol(const hg_class_t *hg_class)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!hg_class) {
-        HG_LOG_ERROR("NULL HG class");
-        return NULL;
-    }
-#endif
     return HG_Core_class_get_protocol(hg_class->core_class);
 }
 
@@ -1133,12 +1120,6 @@ HG_Class_get_protocol(const hg_class_t *hg_class)
 static HG_INLINE hg_bool_t
 HG_Class_is_listening(const hg_class_t *hg_class)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!hg_class) {
-        HG_LOG_ERROR("NULL HG class");
-        return HG_FALSE;
-    }
-#endif
     return HG_Core_class_is_listening(hg_class->core_class);
 }
 
@@ -1146,15 +1127,8 @@ HG_Class_is_listening(const hg_class_t *hg_class)
 static HG_INLINE hg_size_t
 HG_Class_get_input_eager_size(const hg_class_t *hg_class)
 {
-    hg_size_t core, header;
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!hg_class) {
-        HG_LOG_ERROR("NULL HG class");
-        return 0;
-    }
-#endif
-    core = HG_Core_class_get_input_eager_size(hg_class->core_class);
-    header = hg_header_get_size(HG_INPUT);
+    hg_size_t core = HG_Core_class_get_input_eager_size(hg_class->core_class),
+        header = hg_header_get_size(HG_INPUT);
 
     return (core > header) ? core - header : 0;
 }
@@ -1163,15 +1137,8 @@ HG_Class_get_input_eager_size(const hg_class_t *hg_class)
 static HG_INLINE hg_size_t
 HG_Class_get_output_eager_size(const hg_class_t *hg_class)
 {
-    hg_size_t core, header;
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!hg_class) {
-        HG_LOG_ERROR("NULL HG class");
-        return 0;
-    }
-#endif
-    core = HG_Core_class_get_output_eager_size(hg_class->core_class);
-    header = hg_header_get_size(HG_OUTPUT);
+    hg_size_t core = HG_Core_class_get_output_eager_size(hg_class->core_class),
+        header = hg_header_get_size(HG_OUTPUT);
 
     return (core > header) ? core - header : 0;
 }
@@ -1180,15 +1147,9 @@ HG_Class_get_output_eager_size(const hg_class_t *hg_class)
 static HG_INLINE hg_return_t
 HG_Class_set_input_offset(hg_class_t *hg_class, hg_size_t offset)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!hg_class) {
-        HG_LOG_ERROR("NULL HG class");
-        return HG_INVALID_PARAM;
-    }
-#endif
     /* Extra input header must not be larger than eager size */
     if (offset > HG_Class_get_input_eager_size(hg_class))
-        return HG_INVALID_PARAM;
+        return HG_INVALID_ARG;
 
     hg_class->in_offset = offset;
 
@@ -1199,15 +1160,9 @@ HG_Class_set_input_offset(hg_class_t *hg_class, hg_size_t offset)
 static HG_INLINE hg_return_t
 HG_Class_set_output_offset(hg_class_t *hg_class, hg_size_t offset)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!hg_class) {
-        HG_LOG_ERROR("NULL HG class");
-        return HG_INVALID_PARAM;
-    }
-#endif
     /* Extra output header must not be larger than eager size */
     if (offset > HG_Class_get_output_eager_size(hg_class))
-        return HG_INVALID_PARAM;
+        return HG_INVALID_ARG;
 
     hg_class->out_offset = offset;
 
@@ -1219,12 +1174,6 @@ static HG_INLINE hg_return_t
 HG_Class_set_data(hg_class_t *hg_class, void *data,
     void (*free_callback)(void *))
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!hg_class) {
-        HG_LOG_ERROR("NULL HG class");
-        return HG_INVALID_PARAM;
-    }
-#endif
     return HG_Core_class_set_data(hg_class->core_class, data, free_callback);
 }
 
@@ -1232,12 +1181,6 @@ HG_Class_set_data(hg_class_t *hg_class, void *data,
 static HG_INLINE void *
 HG_Class_get_data(const hg_class_t *hg_class)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!hg_class) {
-        HG_LOG_ERROR("NULL HG class");
-        return NULL;
-    }
-#endif
     return HG_Core_class_get_data(hg_class->core_class);
 }
 
@@ -1245,12 +1188,6 @@ HG_Class_get_data(const hg_class_t *hg_class)
 static HG_INLINE hg_class_t *
 HG_Context_get_class(const hg_context_t *context)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!context) {
-        HG_LOG_ERROR("NULL HG context");
-        return NULL;
-    }
-#endif
     return context->hg_class;
 }
 
@@ -1258,12 +1195,6 @@ HG_Context_get_class(const hg_context_t *context)
 static HG_INLINE hg_uint8_t
 HG_Context_get_id(const hg_context_t *context)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!context) {
-        HG_LOG_ERROR("NULL HG context");
-        return 0;
-    }
-#endif
     return HG_Core_context_get_id(context->core_context);
 }
 
@@ -1272,12 +1203,6 @@ static HG_INLINE hg_return_t
 HG_Context_set_data(hg_context_t *context, void *data,
     void (*free_callback)(void *))
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!context) {
-        HG_LOG_ERROR("NULL HG context");
-        return HG_INVALID_PARAM;
-    }
-#endif
     return HG_Core_context_set_data(context->core_context, data, free_callback);
 }
 
@@ -1285,12 +1210,6 @@ HG_Context_set_data(hg_context_t *context, void *data,
 static HG_INLINE void *
 HG_Context_get_data(const hg_context_t *context)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!context) {
-        HG_LOG_ERROR("NULL HG context");
-        return NULL;
-    }
-#endif
     return HG_Core_context_get_data(context->core_context);
 }
 
@@ -1298,12 +1217,6 @@ HG_Context_get_data(const hg_context_t *context)
 static HG_INLINE hg_return_t
 HG_Ref_incr(hg_handle_t handle)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!handle) {
-        HG_LOG_ERROR("NULL HG handle");
-        return HG_INVALID_PARAM;
-    }
-#endif
     return HG_Core_ref_incr(handle->core_handle);
 }
 
@@ -1311,12 +1224,6 @@ HG_Ref_incr(hg_handle_t handle)
 static HG_INLINE hg_int32_t
 HG_Ref_get(hg_handle_t handle)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!handle) {
-        HG_LOG_ERROR("NULL HG handle");
-        return -1;
-    }
-#endif
     return HG_Core_ref_get(handle->core_handle);
 }
 
@@ -1324,12 +1231,6 @@ HG_Ref_get(hg_handle_t handle)
 static HG_INLINE const struct hg_info *
 HG_Get_info(hg_handle_t handle)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!handle) {
-        HG_LOG_ERROR("NULL HG handle");
-        return NULL;
-    }
-#endif
     return &handle->info;
 }
 
@@ -1337,12 +1238,6 @@ HG_Get_info(hg_handle_t handle)
 static HG_INLINE hg_return_t
 HG_Set_data(hg_handle_t handle, void *data, void (*free_callback)(void *))
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!handle) {
-        HG_LOG_ERROR("NULL HG handle");
-        return HG_INVALID_PARAM;
-    }
-#endif
     handle->data = data;
     handle->data_free_callback = free_callback;
 
@@ -1353,12 +1248,6 @@ HG_Set_data(hg_handle_t handle, void *data, void (*free_callback)(void *))
 static HG_INLINE void *
 HG_Get_data(hg_handle_t handle)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!handle) {
-        HG_LOG_ERROR("NULL HG handle");
-        return NULL;
-    }
-#endif
     return handle->data;
 }
 
@@ -1366,12 +1255,6 @@ HG_Get_data(hg_handle_t handle)
 static HG_INLINE hg_return_t
 HG_Set_target_id(hg_handle_t handle, hg_uint8_t id)
 {
-#ifdef HG_HAS_VERBOSE_ERROR
-    if (!handle) {
-        HG_LOG_ERROR("NULL HG handle");
-        return HG_INVALID_PARAM;
-    }
-#endif
     handle->info.context_id = id;
 
     return HG_Core_set_target_id(handle->core_handle, id);

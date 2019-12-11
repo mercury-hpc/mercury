@@ -125,7 +125,7 @@ hg_proc_hg_test_drc_grant_in_t(hg_proc_t proc, void *data)
 
     ret = hg_proc_hg_uint32_t(proc, &struct_data->wlm_id);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+        HG_TEST_LOG_ERROR("Proc error");
         goto done;
     }
 
@@ -143,13 +143,13 @@ hg_proc_hg_test_drc_grant_out_t(hg_proc_t proc, void *data)
 #ifdef HG_TEST_DRC_USE_TOKEN
     ret = hg_proc_hg_string_t(proc, &struct_data->token);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+        HG_TEST_LOG_ERROR("Proc error");
         goto done;
     }
 #else
     ret = hg_proc_hg_uint32_t(proc, &struct_data->credential);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Proc error");
+        HG_TEST_LOG_ERROR("Proc error");
         goto done;
     }
 #endif
@@ -183,7 +183,7 @@ hg_test_drc_grant_cb(hg_handle_t handle)
     /* Get input buffer */
     ret = HG_Get_input(handle, &in_struct);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get input");
+        HG_TEST_LOG_ERROR("Could not get input");
         goto done;
     }
 
@@ -202,7 +202,7 @@ drc_grant_again:
             sleep(1);
             goto drc_grant_again;
         }
-        HG_LOG_ERROR("drc_grant() to %d failed (%d, %s)", hg_test_info->wlm_id,
+        HG_TEST_LOG_ERROR("drc_grant() to %d failed (%d, %s)", hg_test_info->wlm_id,
             rc, drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
         goto done;
@@ -214,7 +214,7 @@ drc_grant_again:
 #ifndef HG_TEST_DRC_IGNORE
     rc = drc_get_credential_token(hg_test_info->credential, &token);
     if (rc != DRC_SUCCESS) {
-        HG_LOG_ERROR("drc_get_credential_token() failed (%d, %s)", rc,
+        HG_TEST_LOG_ERROR("drc_get_credential_token() failed (%d, %s)", rc,
             drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
         goto done;
@@ -234,7 +234,7 @@ drc_grant_again:
     /* Free handle and send response back */
     ret = HG_Respond(handle, NULL, NULL, &out_struct);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not respond");
+        HG_TEST_LOG_ERROR("Could not respond");
         goto done;
     }
 
@@ -264,7 +264,7 @@ drc_acquire_again:
                 sleep(1);
                 goto drc_acquire_again;
             }
-            HG_LOG_ERROR("drc_acquire() failed (%d, %s)", rc, drc_strerror(-rc));
+            HG_TEST_LOG_ERROR("drc_acquire() failed (%d, %s)", rc, drc_strerror(-rc));
             ret = HG_PROTOCOL_ERROR;
             goto done;
         }
@@ -284,7 +284,7 @@ drc_access_again:
             sleep(1);
             goto drc_access_again;
         }
-        HG_LOG_ERROR("drc_access() failed (%d, %s)", rc,
+        HG_TEST_LOG_ERROR("drc_access() failed (%d, %s)", rc,
             drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
         goto done;
@@ -329,7 +329,7 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
         hg_test_info->request_class, hg_test_info->na_test_info.target_name,
         &hg_test_info->target_addr, HG_MAX_IDLE_TIME);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not find addr for target %s",
+        HG_TEST_LOG_ERROR("Could not find addr for target %s",
             hg_test_info->na_test_info.target_name);
         goto done;
     }
@@ -341,7 +341,7 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
     ret = HG_Create(hg_test_info->context, hg_test_info->target_addr,
         hg_test_drc_grant_id_g, &handle);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not create handle");
+        HG_TEST_LOG_ERROR("Could not create handle");
         goto done;
     }
 
@@ -357,7 +357,7 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
     fflush(stdout);
     ret = HG_Forward(handle, hg_test_drc_token_request_cb, request, &in_struct);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not forward call with id=%d",
+        HG_TEST_LOG_ERROR("Could not forward call with id=%d",
             hg_test_drc_grant_id_g);
         goto done;
     }
@@ -368,7 +368,7 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
     /* Get output */
     ret = HG_Get_output(handle, &out_struct);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not get output");
+        HG_TEST_LOG_ERROR("Could not get output");
         goto done;
     }
 
@@ -382,7 +382,7 @@ hg_test_drc_token_request(struct hg_test_info *hg_test_info)
 #ifndef HG_TEST_DRC_IGNORE
     rc = drc_access_with_token(token, 0, &hg_test_info->credential_info);
     if (rc != DRC_SUCCESS) {/* failed to grant access to the credential */
-        HG_LOG_ERROR("drc_access_with_token() failed (%d, %s)", rc,
+        HG_TEST_LOG_ERROR("drc_access_with_token() failed (%d, %s)", rc,
             drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
         goto done;
@@ -403,7 +403,7 @@ drc_access_again:
             sleep(1);
             goto drc_access_again;
         }
-        HG_LOG_ERROR("drc_access() failed (%d, %s)", rc,
+        HG_TEST_LOG_ERROR("drc_access() failed (%d, %s)", rc,
             drc_strerror(-rc));
         ret = HG_PROTOCOL_ERROR;
         goto done;
@@ -423,13 +423,13 @@ drc_access_again:
     /* Clean up resources */
     ret = HG_Free_output(handle, &out_struct);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not free output");
+        HG_TEST_LOG_ERROR("Could not free output");
         goto done;
     }
 
     ret = HG_Destroy(handle);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not destroy handle");
+        HG_TEST_LOG_ERROR("Could not destroy handle");
         goto done;
     }
 
@@ -438,7 +438,7 @@ drc_access_again:
     /* Free target addr */
     ret = HG_Addr_free(hg_test_info->hg_class, hg_test_info->target_addr);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not free addr");
+        HG_TEST_LOG_ERROR("Could not free addr");
         goto done;
     }
 
@@ -454,7 +454,7 @@ hg_test_drc_token_request_cb(const struct hg_cb_info *callback_info)
     hg_return_t ret = HG_SUCCESS;
 
     if (callback_info->ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Return from callback info is not HG_SUCCESS");
+        HG_TEST_LOG_ERROR("Return from callback info is not HG_SUCCESS");
         goto done;
     }
 
@@ -477,7 +477,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_drc_info.na_test_info.protocol = strdup("tcp");
     hg_test_drc_info.na_test_info.listen = hg_test_info->na_test_info.listen;
     if (NA_Test_init(argc, argv, &hg_test_drc_info.na_test_info) != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not initialize NA test layer");
+        HG_TEST_LOG_ERROR("Could not initialize NA test layer");
         ret = HG_NA_ERROR;
         goto done;
     }
@@ -489,7 +489,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
     ret = HG_Hl_init_opt(NULL, hg_test_drc_info.na_test_info.listen,
         &hg_test_drc_init_info);
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not initialize HG HL");
+        HG_TEST_LOG_ERROR("Could not initialize HG HL");
         goto done;
     }
     hg_test_drc_info.hg_class = HG_CLASS_DEFAULT;
@@ -510,21 +510,21 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
         ret = hg_test_drc_token_acquire(&hg_test_drc_info);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not acquire DRC token");
+            HG_TEST_LOG_ERROR("Could not acquire DRC token");
             goto done;
         }
 
         /* TODO only rank 0 */
         ret = HG_Addr_self(hg_test_drc_info.hg_class, &self_addr);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not get self addr");
+            HG_TEST_LOG_ERROR("Could not get self addr");
             goto done;
         }
 
         ret = HG_Addr_to_string(hg_test_drc_info.hg_class, addr_string,
             &addr_string_len, self_addr);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not convert addr to string");
+            HG_TEST_LOG_ERROR("Could not convert addr to string");
             goto done;
         }
         HG_Addr_free(hg_test_drc_info.hg_class, self_addr);
@@ -566,7 +566,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
         ret = hg_test_drc_token_request(&hg_test_drc_info);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not request DRC token");
+            HG_TEST_LOG_ERROR("Could not request DRC token");
             goto done;
         }
     }
@@ -578,7 +578,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
     /* Finalize HG HL interface */
     ret = HG_Hl_finalize();
     if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not finalize HG HL");
+        HG_TEST_LOG_ERROR("Could not finalize HG HL");
         goto done;
     }
 
@@ -587,7 +587,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_drc_info.na_test_info.mpi_no_finalize = NA_TRUE;
 #endif
     if (NA_Test_finalize(&hg_test_drc_info.na_test_info) != NA_SUCCESS) {
-        HG_LOG_ERROR("Could not finalize NA test interface");
+        HG_TEST_LOG_ERROR("Could not finalize NA test interface");
         ret = HG_NA_ERROR;
         goto done;
     }
@@ -596,7 +596,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
         hg_test_drc_info.credential = hg_test_info->credential;
         ret = hg_test_drc_token_acquire(&hg_test_drc_info);
         if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not acquire DRC token");
+            HG_TEST_LOG_ERROR("Could not acquire DRC token");
             goto done;
         }
     }
@@ -633,7 +633,7 @@ hg_test_drc_release(struct hg_test_info *hg_test_info)
     if (hg_test_info->credential_info) {
         rc = drc_release_local(&hg_test_info->credential_info);
         if (rc != DRC_SUCCESS) { /* failed to release credential info */
-            HG_LOG_ERROR("Could not release credential info (%d, %s)", rc,
+            HG_TEST_LOG_ERROR("Could not release credential info (%d, %s)", rc,
                 drc_strerror(-rc));
             ret = HG_PROTOCOL_ERROR;
             goto done;
@@ -645,7 +645,7 @@ hg_test_drc_release(struct hg_test_info *hg_test_info)
         rc = drc_revoke(hg_test_info->credential, hg_test_info->wlm_id,
             DRC_FLAGS_TARGET_WLM);
         if (rc != DRC_SUCCESS) { /* failed to release credential info */
-            HG_LOG_ERROR("Could not revoke access for %d (%d, %s)",
+            HG_TEST_LOG_ERROR("Could not revoke access for %d (%d, %s)",
                 hg_test_info->wlm_id, rc, drc_strerror(-rc));
             ret = HG_PROTOCOL_ERROR;
             goto done;
@@ -656,7 +656,7 @@ hg_test_drc_release(struct hg_test_info *hg_test_info)
         printf("# Releasing credential %u\n", hg_test_info->credential);
         rc = drc_release(hg_test_info->credential, 0);
         if (rc != DRC_SUCCESS) { /* failed to release credential */
-            HG_LOG_ERROR("Could not release credential (%d, %s)", rc,
+            HG_TEST_LOG_ERROR("Could not release credential (%d, %s)", rc,
                 drc_strerror(-rc));
             ret = HG_PROTOCOL_ERROR;
             goto done;

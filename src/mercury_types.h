@@ -30,8 +30,8 @@ struct hg_info {
     hg_class_t *hg_class;       /* HG class */
     hg_context_t *context;      /* HG context */
     hg_addr_t addr;             /* HG address at target/origin */
-    hg_uint8_t context_id;      /* Context ID at target/origin */
     hg_id_t id;                 /* RPC ID */
+    hg_uint8_t context_id;      /* Context ID at target/origin */
 };
 
 /**
@@ -62,15 +62,15 @@ struct hg_cb_info_bulk {
 };
 
 struct hg_cb_info {
-    void *arg;                  /* User data */
-    hg_return_t ret;            /* Return value */
-    hg_cb_type_t type;          /* Callback type */
     union {                     /* Union of callback info structures */
         struct hg_cb_info_lookup lookup;
         struct hg_cb_info_forward forward;
         struct hg_cb_info_respond respond;
         struct hg_cb_info_bulk bulk;
     } info;
+    void *arg;                  /* User data */
+    hg_cb_type_t type;          /* Callback type */
+    hg_return_t ret;            /* Return value */
 };
 
 /* RPC / HG callbacks */

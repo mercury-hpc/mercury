@@ -153,11 +153,9 @@ HG_Hl_init(const char *na_info_string, hg_bool_t na_listen)
 
     /* First register finalize function if not set */
     if (!hg_atexit_g) {
-        if (atexit(hg_hl_finalize) != 0) {
-            HG_LOG_ERROR("Cannot set exit function");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        int rc = atexit(hg_hl_finalize);
+        HG_CHECK_ERROR(rc != 0, done, ret, HG_INVALID_ARG,
+            "Cannot set exit function");
         hg_atexit_g = HG_TRUE;
     }
 
@@ -165,40 +163,29 @@ HG_Hl_init(const char *na_info_string, hg_bool_t na_listen)
     if (!na_info_string) {
         na_info_string = getenv(HG_PORT_NAME);
     }
-    if (!na_info_string) {
-        HG_LOG_ERROR(HG_PORT_NAME " environment variable must be set");
-        goto done;
-    }
+    HG_CHECK_ERROR(na_info_string == NULL, done, ret, HG_INVALID_ARG,
+        HG_PORT_NAME " environment variable must be set");
 
     /* Initialize HG */
     if (!HG_CLASS_DEFAULT) {
         HG_CLASS_DEFAULT = HG_Init(na_info_string, na_listen);
-        if (!HG_CLASS_DEFAULT) {
-            HG_LOG_ERROR("Could not initialize HG class");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(HG_CLASS_DEFAULT == NULL, done, ret, HG_FAULT,
+            "Could not initialize HG class");
     }
 
     /* Create HG context */
     if (!HG_CONTEXT_DEFAULT) {
         HG_CONTEXT_DEFAULT = HG_Context_create(HG_CLASS_DEFAULT);
-        if (!HG_CONTEXT_DEFAULT) {
-            HG_LOG_ERROR("Could not create HG context");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(HG_CONTEXT_DEFAULT == NULL, done, ret, HG_FAULT,
+            "Could not create HG context");
     }
 
     /* Initialize request class */
     if (!HG_REQUEST_CLASS_DEFAULT) {
         HG_REQUEST_CLASS_DEFAULT = hg_request_init(hg_hl_request_progress,
                 hg_hl_request_trigger, HG_CONTEXT_DEFAULT);
-        if (!HG_REQUEST_CLASS_DEFAULT) {
-            HG_LOG_ERROR("Could not create HG request class");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(HG_REQUEST_CLASS_DEFAULT == NULL, done, ret,
+            HG_FAULT, "Could not create HG request class");
     }
 
 done:
@@ -214,43 +201,32 @@ HG_Hl_init_opt(const char *na_info_string, hg_bool_t na_listen,
 
     /* First register finalize function if not set */
     if (!hg_atexit_g) {
-        if (atexit(hg_hl_finalize) != 0) {
-            HG_LOG_ERROR("Cannot set exit function");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        int rc = atexit(hg_hl_finalize);
+        HG_CHECK_ERROR(rc != 0, done, ret, HG_INVALID_ARG,
+            "Cannot set exit function");
         hg_atexit_g = HG_TRUE;
     }
 
     /* Initialize HG */
     if (!HG_CLASS_DEFAULT) {
         HG_CLASS_DEFAULT = HG_Init_opt(na_info_string, na_listen, hg_init_info);
-        if (!HG_CLASS_DEFAULT) {
-            HG_LOG_ERROR("Could not initialize HG class");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(HG_CLASS_DEFAULT == NULL, done, ret, HG_FAULT,
+            "Could not initialize HG class");
     }
 
     /* Create HG context */
     if (!HG_CONTEXT_DEFAULT) {
         HG_CONTEXT_DEFAULT = HG_Context_create(HG_CLASS_DEFAULT);
-        if (!HG_CONTEXT_DEFAULT) {
-            HG_LOG_ERROR("Could not create HG context");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(HG_CONTEXT_DEFAULT == NULL, done, ret, HG_FAULT,
+            "Could not create HG context");
     }
 
     /* Initialize request class */
     if (!HG_REQUEST_CLASS_DEFAULT) {
         HG_REQUEST_CLASS_DEFAULT = hg_request_init(hg_hl_request_progress,
                 hg_hl_request_trigger, HG_CONTEXT_DEFAULT);
-        if (!HG_REQUEST_CLASS_DEFAULT) {
-            HG_LOG_ERROR("Could not create HG request class");
-            ret = HG_PROTOCOL_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(HG_REQUEST_CLASS_DEFAULT == NULL, done, ret, HG_FAULT,
+            "Could not create HG request class");
     }
 
 done:
@@ -272,20 +248,14 @@ HG_Hl_finalize(void)
     /* Destroy context */
     if (HG_CONTEXT_DEFAULT) {
         ret = HG_Context_destroy(HG_CONTEXT_DEFAULT);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not destroy HG context");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Could not destroy HG context");
         HG_CONTEXT_DEFAULT = NULL;
     }
 
     /* Finalize interface */
     if (HG_CLASS_DEFAULT) {
         ret = HG_Finalize(HG_CLASS_DEFAULT);
-        if (ret != HG_SUCCESS) {
-            HG_LOG_ERROR("Could not finalize HG class");
-            goto done;
-        }
+        HG_CHECK_HG_ERROR(done, ret, "Could not finalize HG class");
         HG_CLASS_DEFAULT = NULL;
     }
 
@@ -303,11 +273,8 @@ HG_Hl_addr_lookup_wait(hg_context_t *context, hg_request_class_t *request_class,
     unsigned int flag = 0;
     struct hg_lookup_request_arg request_args;
 
-    if (!request_class) {
-        HG_LOG_ERROR("Uninitialized request class");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(request_class == NULL, done, ret, HG_INVALID_ARG,
+        "Uninitialized request class");
 
     request = hg_request_create(request_class);
     request_args.addr_ptr = addr;
@@ -316,18 +283,12 @@ HG_Hl_addr_lookup_wait(hg_context_t *context, hg_request_class_t *request_class,
     /* Forward call to remote addr and get a new request */
     ret = HG_Addr_lookup(context, hg_hl_addr_lookup_cb, &request_args, name,
             HG_OP_ID_IGNORE);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not lookup address");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not lookup address");
 
     /* Wait for request to be marked completed */
     hg_request_wait(request, timeout, &flag);
-    if (!flag) {
-        HG_LOG_ERROR("Operation did not complete");
-        ret = HG_TIMEOUT;
-        goto done;
-    }
+    HG_CHECK_ERROR(flag == 0, done, ret, HG_TIMEOUT,
+        "Operation did not complete");
 
     /* Free request */
     hg_request_destroy(request);
@@ -346,28 +307,19 @@ HG_Hl_forward_wait(hg_request_class_t *request_class, hg_handle_t handle,
     hg_return_t ret = HG_SUCCESS;
     unsigned int flag = 0;
 
-    if (!request_class) {
-        HG_LOG_ERROR("Uninitialized request class");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(request_class == NULL, done, ret, HG_INVALID_ARG,
+        "Uninitialized request class");
 
     request = hg_request_create(request_class);
 
     /* Forward call to remote addr and get a new request */
     ret = HG_Forward(handle, hg_hl_forward_cb, request, in_struct);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not forward call");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not forward call");
 
     /* Wait for request to be marked completed */
     hg_request_wait(request, timeout, &flag);
-    if (!flag) {
-        HG_LOG_ERROR("Operation did not complete");
-        ret = HG_TIMEOUT;
-        goto done;
-    }
+    HG_CHECK_ERROR(flag == 0, done, ret, HG_TIMEOUT,
+        "Operation did not complete");
 
     /* Free request */
     hg_request_destroy(request);
@@ -388,11 +340,8 @@ HG_Hl_bulk_transfer_wait(hg_context_t *context,
     hg_return_t ret = HG_SUCCESS;
     unsigned int flag = 0;
 
-    if (!request_class) {
-        HG_LOG_ERROR("Uninitialized request class");
-        ret = HG_PROTOCOL_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(request_class == NULL, done, ret, HG_INVALID_ARG,
+        "Uninitialized request class");
 
     request = hg_request_create(request_class);
 
@@ -400,18 +349,12 @@ HG_Hl_bulk_transfer_wait(hg_context_t *context,
     ret = HG_Bulk_transfer(context, hg_hl_bulk_transfer_cb, request, op,
             origin_addr, origin_handle, origin_offset, local_handle,
             local_offset, size, HG_OP_ID_IGNORE);
-    if (ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Could not transfer data");
-        goto done;
-    }
+    HG_CHECK_HG_ERROR(done, ret, "Could not transfer data");
 
     /* Wait for request to be marked completed */
     hg_request_wait(request, timeout, &flag);
-    if (!flag) {
-        HG_LOG_ERROR("Operation did not complete");
-        ret = HG_TIMEOUT;
-        goto done;
-    }
+    HG_CHECK_ERROR(flag == 0, done, ret, HG_TIMEOUT,
+        "Operation did not complete");
 
     /* Free request */
     hg_request_destroy(request);

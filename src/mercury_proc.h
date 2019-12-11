@@ -12,7 +12,6 @@
 #define MERCURY_PROC_H
 
 #include "mercury_types.h"
-#include "mercury_error.h"
 
 #include <stdlib.h>
 #include <string.h>

@@ -62,7 +62,7 @@ hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info)
     if (bulk_write_ret != args->expected_bytes) {
         HG_TEST_LOG_ERROR("Returned: %zu bytes, was expecting %zu",
             bulk_write_ret, args->expected_bytes);
-        args->ret = HG_SIZE_ERROR;
+        args->ret = HG_MSGSIZE;
     }
 
     /* Free request */
@@ -104,7 +104,7 @@ hg_test_bulk_bind_forward_cb(const struct hg_cb_info *callback_info)
     if (bulk_write_ret != args->expected_bytes) {
         HG_TEST_LOG_ERROR("Returned: %zu bytes, was expecting %zu",
             bulk_write_ret, args->expected_bytes);
-        args->ret = HG_SIZE_ERROR;
+        args->ret = HG_MSGSIZE;
     }
 
     /* Free request */
@@ -141,8 +141,8 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
     size_t i;
 
     if (origin_offset + transfer_size > bulk_size) {
-        HG_LOG_ERROR("Exceeding bulk size");
-        ret = HG_SIZE_ERROR;
+        HG_TEST_LOG_ERROR("Exceeding bulk size");
+        ret = HG_OVERFLOW;
         goto done;
     }
 
@@ -254,8 +254,8 @@ hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
     size_t i;
 
     if (origin_offset + transfer_size > bulk_size) {
-        HG_LOG_ERROR("Exceeding bulk size");
-        ret = HG_SIZE_ERROR;
+        HG_TEST_LOG_ERROR("Exceeding bulk size");
+        ret = HG_OVERFLOW;
         goto done;
     }
 
@@ -361,8 +361,8 @@ hg_test_bulk_small(hg_class_t *hg_class, hg_context_t *context,
     size_t i;
 
     if (origin_offset + transfer_size > bulk_size) {
-        HG_LOG_ERROR("Exceeding bulk size");
-        ret = HG_SIZE_ERROR;
+        HG_TEST_LOG_ERROR("Exceeding bulk size");
+        ret = HG_OVERFLOW;
         goto done;
     }
 

@@ -30,21 +30,41 @@ struct hg_init_info {
 };
 
 /* Error return codes:
- * Functions return 0 for success or HG_XXX_ERROR for failure */
-typedef enum hg_return {
-    HG_SUCCESS = 0,     /*!< operation succeeded */
-    HG_NA_ERROR,        /*!< error in NA layer */
-    HG_TIMEOUT,         /*!< reached timeout */
-    HG_INVALID_PARAM,   /*!< invalid parameter */
-    HG_SIZE_ERROR,      /*!< size error */
-    HG_NOMEM_ERROR,     /*!< no memory error */
-    HG_PROTOCOL_ERROR,  /*!< protocol does not match */
-    HG_NO_MATCH,        /*!< no function match */
-    HG_CHECKSUM_ERROR,  /*!< checksum error */
-    HG_CANCELED,        /*!< operation was canceled */
-    HG_CANCEL_ERROR,    /*!< operation could not be canceled */
-    HG_OTHER_ERROR      /*!< error from mercury_util or external to mercury */
-} hg_return_t;
+ * Functions return 0 for success or corresponding return code */
+#define HG_RETURN_VALUES                                                    \
+    X(HG_SUCCESS)           /*!< operation succeeded */                     \
+    X(HG_PERMISSION)        /*!< operation not permitted */                 \
+    X(HG_NOENTRY)           /*!< no such file or directory */               \
+    X(HG_INTERRUPT)         /*!< operation interrupted */                   \
+    X(HG_AGAIN)             /*!< operation must be retried */               \
+    X(HG_NOMEM)             /*!< out of memory */                           \
+    X(HG_ACCESS)            /*!< permission denied */                       \
+    X(HG_FAULT)             /*!< bad address */                             \
+    X(HG_BUSY)              /*!< device or resource busy */                 \
+    X(HG_NODEV)             /*!< no such device */                          \
+    X(HG_INVALID_ARG)       /*!< invalid argument */                        \
+    X(HG_PROTOCOL_ERROR)    /*!< protocol error */                          \
+    X(HG_OVERFLOW)          /*!< value too large */                         \
+    X(HG_MSGSIZE)           /*!< message size too long */                   \
+    X(HG_PROTONOSUPPORT)    /*!< protocol not supported */                  \
+    X(HG_OPNOTSUPPORTED)    /*!< operation not supported on endpoint */     \
+    X(HG_ADDRINUSE)         /*!< address already in use */                  \
+    X(HG_ADDRNOTAVAIL)      /*!< cannot assign requested address */         \
+    X(HG_TIMEOUT)           /*!< operation reached timeout */               \
+    X(HG_CANCELED)          /*!< operation canceled */                      \
+    X(HG_CHECKSUM_ERROR)    /*!< checksum error */                          \
+    X(HG_NA_ERROR)          /*!< generic NA error */                        \
+    X(HG_RETURN_MAX)
+
+#define X(a) a,
+typedef enum hg_return { HG_RETURN_VALUES } hg_return_t;
+#undef X
+
+/* Compat return codes */
+#define HG_INVALID_PARAM    HG_INVALID_ARG
+#define HG_SIZE_ERROR       HG_MSGSIZE
+#define HG_NOMEM_ERROR      HG_NOMEM
+#define HG_NO_MATCH         HG_NOENTRY
 
 /* Callback operation type */
 typedef enum hg_cb_type {

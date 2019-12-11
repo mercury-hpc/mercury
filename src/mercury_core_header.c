@@ -160,11 +160,8 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
 #endif
     hg_return_t ret = HG_SUCCESS;
 
-    if (buf_size < sizeof(struct hg_core_header_request)) {
-        HG_LOG_ERROR("Invalid buffer size");
-        ret = HG_INVALID_PARAM;
-        goto done;
-    }
+    HG_CHECK_ERROR(buf_size < sizeof(struct hg_core_header_request), done,
+        ret, HG_INVALID_ARG, "Invalid buffer size");
 
 #ifdef HG_HAS_CHECKSUMS
     /* Reset header checksum first */
@@ -195,12 +192,9 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     hg_proc_buf_memcpy(buf_ptr, &n_hash_header, sizeof(n_hash_header), op);
     if (op == HG_DECODE) {
         hg_uint16_t h_hash_header = ntohs(n_hash_header);
-        if (header->hash.header != h_hash_header) {
-            HG_LOG_ERROR("checksum 0x%04X does not match (expected 0x%04X!)",
-                header->hash.header, h_hash_header);
-            ret = HG_CHECKSUM_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(header->hash.header != h_hash_header, done, ret,
+            HG_CHECKSUM_ERROR,
+            "checksum 0x%04X does not match (expected 0x%04X!)");
     }
 #endif
 
@@ -220,11 +214,8 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
 #endif
     hg_return_t ret = HG_SUCCESS;
 
-    if (buf_size < sizeof(struct hg_core_header_response)) {
-        HG_LOG_ERROR("Invalid buffer size");
-        ret = HG_SIZE_ERROR;
-        goto done;
-    }
+    HG_CHECK_ERROR(buf_size < sizeof(struct hg_core_header_response), done, ret,
+        HG_OVERFLOW, "Invalid buffer size");
 
 #ifdef HG_HAS_CHECKSUMS
     /* Reset header checksum first */
@@ -249,12 +240,9 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     hg_proc_buf_memcpy(buf_ptr, &n_hash_header, sizeof(n_hash_header), op);
     if (op == HG_DECODE) {
         hg_uint16_t h_hash_header = ntohs(n_hash_header);
-        if (header->hash.header != h_hash_header) {
-            HG_LOG_ERROR("checksum 0x%04X does not match (expected 0x%04X!)",
-                header->hash.header, h_hash_header);
-            ret = HG_CHECKSUM_ERROR;
-            goto done;
-        }
+        HG_CHECK_ERROR(header->hash.header != h_hash_header, done, ret,
+            HG_CHECKSUM_ERROR,
+            "checksum 0x%04X does not match (expected 0x%04X!)");
     }
 #endif
 
@@ -270,18 +258,12 @@ hg_core_header_request_verify(const struct hg_core_header *hg_core_header)
     hg_return_t ret = HG_SUCCESS;
 
     /* Must match HG */
-    if ((((header->hg >> 1)  & 'H') != 'H') ||
-        (((header->hg)       & 'G') != 'G')) {
-        HG_LOG_ERROR("Invalid HG byte");
-        ret = HG_NO_MATCH;
-        goto done;
-    }
+    HG_CHECK_ERROR(
+        (((header->hg >> 1) & 'H') != 'H') || (((header->hg) & 'G') != 'G'),
+        done, ret, HG_PROTOCOL_ERROR, "Invalid HG byte");
 
-    if (header->protocol != HG_CORE_PROTOCOL_VERSION) {
-        HG_LOG_ERROR("Invalid protocol version");
-        ret = HG_NO_MATCH;
-        goto done;
-    }
+    HG_CHECK_ERROR(header->protocol != HG_CORE_PROTOCOL_VERSION, done, ret,
+        HG_PROTONOSUPPORT, "Invalid protocol version");
 
 done:
     return ret;
@@ -294,9 +276,8 @@ hg_core_header_response_verify(const struct hg_core_header *hg_core_header)
     const struct hg_core_header_response *header = &hg_core_header->msg.response;
     hg_return_t ret = HG_SUCCESS;
 
-    if (header->ret_code)
-        HG_LOG_WARNING("Response return code: %s",
-            HG_Error_to_string((hg_return_t) header->ret_code));
+    HG_CHECK_WARNING(header->ret_code, "Response return code: %s",
+        HG_Error_to_string((hg_return_t) header->ret_code));
 
     return ret;
 }

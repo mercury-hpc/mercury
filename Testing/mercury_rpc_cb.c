@@ -410,7 +410,7 @@ hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
         /* Fill output structure */
         out_struct.ret = 0;
     } else if (hg_cb_info->ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Error in callback");
+        HG_TEST_LOG_ERROR("Error in callback");
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
@@ -480,7 +480,7 @@ hg_test_bulk_bind_transfer_cb(const struct hg_cb_info *hg_cb_info)
         /* Fill output structure */
         out_struct.ret = 0;
     } else if (hg_cb_info->ret != HG_SUCCESS) {
-        HG_LOG_ERROR("Error in callback");
+        HG_TEST_LOG_ERROR("Error in callback");
         ret = HG_PROTOCOL_ERROR;
         goto done;
     }
