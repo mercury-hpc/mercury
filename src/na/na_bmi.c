@@ -643,7 +643,7 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
     char listen_addr[NA_BMI_MAX_ADDR_NAME] = {'\0'};
     char *listen_addr_p = NULL;
     char my_hostname[NA_BMI_MAX_ADDR_NAME] = {'\0'};
-    int flag = (listen) ? BMI_INIT_SERVER : 0;
+    int flag = (listen) ? (BMI_INIT_SERVER|BMI_TCP_BIND_SPECIFIC) : 0;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
     int port = 0;
