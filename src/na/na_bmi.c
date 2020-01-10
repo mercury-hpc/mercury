@@ -33,10 +33,6 @@
 /* Max addr name */
 #define NA_BMI_MAX_ADDR_NAME 256
 
-/* Default port */
-#define NA_BMI_DEFAULT_PORT 22222
-#define NA_BMI_DEFAULT_PORT_TRIES 128
-
 /* Msg sizes */
 #define NA_BMI_UNEXPECTED_SIZE 4096
 #define NA_BMI_EXPECTED_SIZE   NA_BMI_UNEXPECTED_SIZE
@@ -659,7 +655,7 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
     char listen_addr[NA_BMI_MAX_ADDR_NAME] = {'\0'};
     char *listen_addr_p = NULL;
     char my_hostname[NA_BMI_MAX_ADDR_NAME] = {'\0'};
-    int flag = (listen) ? BMI_INIT_SERVER : 0;
+    int flag = (listen) ? (BMI_INIT_SERVER | BMI_TCP_BIND_SPECIFIC) : 0;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
     int port = 0;
@@ -700,8 +696,7 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
             }
         } else {
             /* Addr unspecified but we are in server mode; get local
-             * hostname and then cycle through range of ports until we find
-             * one that works.
+             * hostname and let BMI choose port.
              */
             if (gethostname(my_hostname, NA_BMI_MAX_ADDR_NAME) < 0)
                 sprintf(my_hostname, "localhost");
@@ -709,11 +704,12 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
 
         /* Pick a default port */
         if (!port)
-            port = NA_BMI_DEFAULT_PORT;
+            desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s",
+                na_info->protocol_name, my_hostname);
+        else
+            desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s:%d",
+                na_info->protocol_name, my_hostname, port);
 
-again:
-        desc_len = snprintf(listen_addr, NA_BMI_MAX_ADDR_NAME, "%s://%s:%d",
-            na_info->protocol_name, my_hostname, port);
         if (desc_len > NA_BMI_MAX_ADDR_NAME) {
             NA_LOG_ERROR("Exceeding max addr name");
             ret = NA_SIZE_ERROR;
@@ -724,17 +720,7 @@ again:
     /* Initialize BMI */
     bmi_ret = BMI_initialize(method_list_p, listen_addr_p, flag);
     if (bmi_ret < 0) {
-        if (bmi_ret == -BMI_EADDRINUSE) {
-            port++;
-            if (port < (NA_BMI_DEFAULT_PORT + NA_BMI_DEFAULT_PORT_TRIES))
-                /* Try another port */
-                goto again;
-            else {
-                NA_LOG_ERROR("Exceeded number of tries");
-                ret = NA_ADDRINUSE_ERROR;
-            }
-        } else
-            ret = NA_PROTOCOL_ERROR;
+        ret = NA_PROTOCOL_ERROR;
         NA_LOG_ERROR("BMI_initialize() failed");
         goto done;
     } else
@@ -1050,10 +1036,11 @@ na_bmi_addr_to_string(na_class_t *na_class, char *buf,
         na_size_t *buf_size, na_addr_t addr)
 {
     struct na_bmi_addr *na_bmi_addr = NULL;
-    char full_rev_addr[NA_BMI_MAX_ADDR_NAME] = {'\0'};
+    char full_rev_addr[NA_BMI_MAX_ADDR_NAME + 3] = {'\0'};
     const char *bmi_rev_addr;
     na_size_t string_len;
     na_return_t ret = NA_SUCCESS;
+    int listen_port = 0;
 
     na_bmi_addr = (struct na_bmi_addr *) addr;
 
@@ -1063,6 +1050,23 @@ na_bmi_addr_to_string(na_class_t *na_class, char *buf,
             NA_LOG_ERROR("Cannot convert addr to string if not listening");
             ret = NA_PROTOCOL_ERROR;
             goto done;
+        }
+
+        /* if port was not specified, then we'll need to query BMI and
+         * append it to the listen_addr to produce something resolvable
+         * by remote peers
+         */
+        if(NA_BMI_CLASS(na_class)->port <= 0) {
+            BMI_get_info(0, BMI_TCP_GET_PORT, &listen_port);
+            snprintf(full_rev_addr, NA_BMI_MAX_ADDR_NAME + 3, "%s:%d",
+                bmi_rev_addr, listen_port);
+            /* populate state; we can reuse this next time without querying
+             * BMI or manipulating strings
+             */
+            free(NA_BMI_CLASS(na_class)->listen_addr);
+            NA_BMI_CLASS(na_class)->listen_addr = strdup(full_rev_addr);
+            NA_BMI_CLASS(na_class)->port = listen_port;
+            bmi_rev_addr = NA_BMI_CLASS(na_class)->listen_addr;
         }
     } else {
         if (na_bmi_addr->unexpected) {
