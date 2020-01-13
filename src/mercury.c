@@ -1596,8 +1596,8 @@ HG_Destroy(hg_handle_t handle)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    HG_CHECK_ERROR(handle == HG_HANDLE_NULL, done, ret, HG_INVALID_ARG,
-        "NULL HG handle");
+    if (handle == HG_HANDLE_NULL)
+        goto done;
 
     ret = HG_Core_destroy(handle->core_handle);
     HG_CHECK_HG_ERROR(done, ret, "Could not set handle to be destroyed (%s)",

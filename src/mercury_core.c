@@ -38,8 +38,6 @@
 /* Local Macros */
 /****************/
 
-#define HG_CORE_MAX_SELF_THREADS    4
-#define HG_CORE_MASK_NBITS          8
 #define HG_CORE_ATOMIC_QUEUE_SIZE   1024
 #define HG_CORE_PENDING_INCR        256
 #define HG_CORE_PROCESSING_TIMEOUT  1000
@@ -4178,8 +4176,8 @@ HG_Core_destroy(hg_core_handle_t handle)
         (struct hg_core_private_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
 
-    HG_CHECK_ERROR(hg_core_handle == NULL, done, ret, HG_INVALID_ARG,
-        "NULL HG core handle");
+    if (hg_core_handle == NULL)
+        goto done;
 
     /* Repost handle if we were listening, otherwise destroy it */
     if (hg_core_handle->repost
