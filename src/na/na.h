@@ -44,7 +44,7 @@ extern "C" {
  *
  * \return Pointer to NA class or NULL in case of failure
  */
-NA_EXPORT na_class_t *
+NA_PUBLIC na_class_t *
 NA_Initialize(
         const char *info_string,
         na_bool_t   listen
@@ -62,7 +62,7 @@ NA_Initialize(
  *
  * \return Pointer to NA class or NULL in case of failure
  */
-NA_EXPORT na_class_t *
+NA_PUBLIC na_class_t *
 NA_Initialize_opt(
         const char                *info_string,
         na_bool_t                  listen,
@@ -76,7 +76,7 @@ NA_Initialize_opt(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Finalize(
         na_class_t *na_class
         );
@@ -88,7 +88,7 @@ NA_Finalize(
  * abnormally to easily clean up those resources. This includes instances
  * from all plugins.
  */
-NA_EXPORT void
+NA_PUBLIC void
 NA_Cleanup(
         void
         );
@@ -136,7 +136,7 @@ NA_Is_listening(
  *
  * \return Pointer to NA context or NULL in case of failure
  */
-NA_EXPORT na_context_t *
+NA_PUBLIC na_context_t *
 NA_Context_create(
         na_class_t *na_class
         ) NA_WARN_UNUSED_RESULT;
@@ -149,7 +149,7 @@ NA_Context_create(
  *
  * \return Pointer to NA context or NULL in case of failure
  */
-NA_EXPORT na_context_t *
+NA_PUBLIC na_context_t *
 NA_Context_create_id(
         na_class_t *na_class,
         na_uint8_t id
@@ -163,7 +163,7 @@ NA_Context_create_id(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Context_destroy(
         na_class_t   *na_class,
         na_context_t *context
@@ -181,7 +181,7 @@ NA_Context_destroy(
  *
  * \return valid operation ID or NA_OP_ID_NULL
  */
-NA_EXPORT na_op_id_t
+NA_PUBLIC na_op_id_t
 NA_Op_create(
         na_class_t *na_class
         );
@@ -195,7 +195,7 @@ NA_Op_create(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Op_destroy(
         na_class_t *na_class,
         na_op_id_t op_id
@@ -220,7 +220,7 @@ NA_Op_destroy(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Addr_lookup(
         na_class_t   *na_class,
         na_context_t *context,
@@ -242,7 +242,7 @@ NA_Addr_lookup(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Addr_lookup2(
         na_class_t *na_class,
         const char *name,
@@ -257,7 +257,7 @@ NA_Addr_lookup2(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Addr_free(
         na_class_t *na_class,
         na_addr_t   addr
@@ -274,7 +274,7 @@ NA_Addr_free(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Addr_set_remove(
         na_class_t *na_class,
         na_addr_t   addr
@@ -288,7 +288,7 @@ NA_Addr_set_remove(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Addr_self(
         na_class_t *na_class,
         na_addr_t  *addr
@@ -305,7 +305,7 @@ NA_Addr_self(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Addr_dup(
         na_class_t *na_class,
         na_addr_t   addr,
@@ -340,7 +340,7 @@ NA_Addr_is_self(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Addr_to_string(
         na_class_t *na_class,
         char       *buf,
@@ -372,7 +372,7 @@ NA_Addr_get_serialize_size(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Addr_serialize(
         na_class_t  *na_class,
         void        *buf,
@@ -391,7 +391,7 @@ NA_Addr_serialize(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Addr_deserialize(
         na_class_t      *na_class,
         na_addr_t       *addr,
@@ -476,7 +476,7 @@ NA_Msg_get_max_tag(
  *
  * \return Pointer to allocated memory or NULL in case of failure
  */
-NA_EXPORT void *
+NA_PUBLIC void *
 NA_Msg_buf_alloc(
         na_class_t *na_class,
         na_size_t buf_size,
@@ -494,7 +494,7 @@ NA_Msg_buf_alloc(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Msg_buf_free(
         na_class_t *na_class,
         void *buf,
@@ -513,7 +513,7 @@ NA_Msg_buf_free(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Msg_init_unexpected(
         na_class_t *na_class,
         void *buf,
@@ -615,7 +615,7 @@ NA_Msg_recv_unexpected(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Msg_init_expected(
         na_class_t *na_class,
         void *buf,
@@ -726,7 +726,7 @@ NA_Msg_recv_expected(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Mem_handle_create(
         na_class_t      *na_class,
         void            *buf,
@@ -754,7 +754,7 @@ NA_Mem_handle_create(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Mem_handle_create_segments(
         na_class_t        *na_class,
         struct na_segment *segments,
@@ -771,7 +771,7 @@ NA_Mem_handle_create_segments(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Mem_handle_free(
         na_class_t      *na_class,
         na_mem_handle_t  mem_handle
@@ -787,7 +787,7 @@ NA_Mem_handle_free(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Mem_register(
         na_class_t      *na_class,
         na_mem_handle_t  mem_handle
@@ -801,7 +801,7 @@ NA_Mem_register(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Mem_deregister(
         na_class_t      *na_class,
         na_mem_handle_t  mem_handle
@@ -817,7 +817,7 @@ NA_Mem_deregister(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Mem_publish(
         na_class_t      *na_class,
         na_mem_handle_t  mem_handle
@@ -831,7 +831,7 @@ NA_Mem_publish(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Mem_unpublish(
         na_class_t      *na_class,
         na_mem_handle_t  mem_handle
@@ -867,7 +867,7 @@ NA_Mem_handle_get_serialize_size(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Mem_handle_serialize(
         na_class_t      *na_class,
         void            *buf,
@@ -885,7 +885,7 @@ NA_Mem_handle_serialize(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Mem_handle_deserialize(
         na_class_t      *na_class,
         na_mem_handle_t *mem_handle,
@@ -1002,7 +1002,7 @@ NA_Poll_get_fd(
  *
  * \return NA_TRUE if it is safe to block or NA_FALSE otherwise
  */
-NA_EXPORT na_bool_t
+NA_PUBLIC na_bool_t
 NA_Poll_try_wait(
         na_class_t      *na_class,
         na_context_t    *context
@@ -1021,7 +1021,7 @@ NA_Poll_try_wait(
  *
  * \return NA_SUCCESS if any completion has occurred / NA error code otherwise
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Progress(
         na_class_t   *na_class,
         na_context_t *context,
@@ -1041,7 +1041,7 @@ NA_Progress(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Trigger(
         na_context_t *context,
         unsigned int  timeout,
@@ -1059,7 +1059,7 @@ NA_Trigger(
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_Cancel(
         na_class_t   *na_class,
         na_context_t *context,
@@ -1073,7 +1073,7 @@ NA_Cancel(
  *
  * \return String
  */
-NA_EXPORT const char *
+NA_PUBLIC const char *
 NA_Error_to_string(
         na_return_t errnum
         ) NA_WARN_UNUSED_RESULT;

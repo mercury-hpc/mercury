@@ -74,8 +74,7 @@ struct na_cb_completion_data {
 /**
  * Plugin ops definition
  */
-#define NA_PLUGIN_OPS(plugin_name) \
-    const struct na_class_ops na_ ##plugin_name ##_class_ops_g
+#define NA_PLUGIN_OPS(plugin_name) na_ ##plugin_name ##_class_ops_g
 
 /*********************/
 /* Public Prototypes */
@@ -95,7 +94,7 @@ extern "C" {
  *
  * \return NA_SUCCESS or corresponding NA error code (failure is not an option)
  */
-NA_EXPORT na_return_t
+NA_PRIVATE na_return_t
 na_cb_completion_add(
         na_context_t                 *context,
         struct na_cb_completion_data *na_cb_completion_data
@@ -104,20 +103,21 @@ na_cb_completion_add(
 /*********************/
 /* Public Variables */
 /*********************/
+
 #ifdef NA_HAS_SM
-NA_EXPORT NA_PLUGIN_OPS(sm);
+extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(sm);
 #endif
 #ifdef NA_HAS_BMI
-NA_EXPORT NA_PLUGIN_OPS(bmi);
+extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(bmi);
 #endif
 #ifdef NA_HAS_MPI
-NA_EXPORT NA_PLUGIN_OPS(mpi);
+extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(mpi);
 #endif
 #ifdef NA_HAS_CCI
-NA_EXPORT NA_PLUGIN_OPS(cci);
+extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(cci);
 #endif
 #ifdef NA_HAS_OFI
-NA_EXPORT NA_PLUGIN_OPS(ofi);
+extern NA_PRIVATE const struct na_class_ops NA_PLUGIN_OPS(ofi);
 #endif
 
 #ifdef __cplusplus

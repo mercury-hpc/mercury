@@ -28,7 +28,7 @@ extern "C" {
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
-NA_EXPORT na_return_t
+NA_PUBLIC na_return_t
 NA_MPI_Set_init_intra_comm(MPI_Comm intra_comm);
 
 /**
@@ -39,7 +39,7 @@ NA_MPI_Set_init_intra_comm(MPI_Comm intra_comm);
  *
  * \return Pointer to string
  */
-NA_EXPORT const char *
+NA_PUBLIC const char *
 NA_MPI_Get_port_name(
         na_class_t *na_class
         );
