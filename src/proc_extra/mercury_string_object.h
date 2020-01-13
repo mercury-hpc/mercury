@@ -30,7 +30,7 @@ extern "C" {
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_string_object_init(hg_string_object_t *string);
 
 /**
@@ -42,7 +42,7 @@ hg_string_object_init(hg_string_object_t *string);
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_string_object_init_char(hg_string_object_t *string, char *s,
     hg_bool_t is_owned);
 
@@ -55,7 +55,7 @@ hg_string_object_init_char(hg_string_object_t *string, char *s,
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_string_object_init_const_char(hg_string_object_t *string, const char *s,
     hg_bool_t is_owned);
 
@@ -66,7 +66,7 @@ hg_string_object_init_const_char(hg_string_object_t *string, const char *s,
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_string_object_free(hg_string_object_t *string);
 
 /**
@@ -77,7 +77,7 @@ hg_string_object_free(hg_string_object_t *string);
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_string_object_dup(hg_string_object_t string, hg_string_object_t *new_string);
 
 /**
@@ -87,7 +87,7 @@ hg_string_object_dup(hg_string_object_t string, hg_string_object_t *new_string);
  *
  * \return Pointer to string contained by string before the swap
  */
-HG_EXPORT char *
+HG_PUBLIC char *
 hg_string_object_swap(hg_string_object_t *string, char *s);
 
 #ifdef __cplusplus

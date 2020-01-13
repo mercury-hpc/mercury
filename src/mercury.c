@@ -245,6 +245,11 @@ hg_core_respond_cb(
 static const char *const hg_return_name[] = { HG_RETURN_VALUES };
 #undef X
 
+/* Default error log mask */
+#ifdef HG_HAS_VERBOSE_ERROR
+unsigned int HG_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
+#endif
+
 /*---------------------------------------------------------------------------*/
 /**
  * Free function for value in function map.

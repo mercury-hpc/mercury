@@ -89,19 +89,20 @@ typedef hg_uint8_t   hg_bool_t;
 #endif
 
 /* Environment variable names (to be removed) */
-#define HG_NA_PLUGIN "MERCURY_NA_PLUGIN"
 #define HG_PORT_NAME "MERCURY_PORT_NAME"
 
 /* Shared libraries */
 #cmakedefine HG_BUILD_SHARED_LIBS
 #ifdef HG_BUILD_SHARED_LIBS
 # ifdef mercury_EXPORTS
-#  define HG_EXPORT HG_ABI_EXPORT
+#  define HG_PUBLIC HG_ABI_EXPORT
 # else
-#  define HG_EXPORT HG_ABI_IMPORT
+#  define HG_PUBLIC HG_ABI_IMPORT
 # endif
+# define HG_PRIVATE HG_ABI_HIDDEN
 #else
-# define HG_EXPORT
+# define HG_PUBLIC
+# define HG_PRIVATE
 #endif
 
 /* Build Options */

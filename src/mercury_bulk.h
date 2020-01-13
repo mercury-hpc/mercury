@@ -54,7 +54,7 @@ extern "C" {
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_create(
         hg_class_t *hg_class,
         hg_uint32_t count,
@@ -71,7 +71,7 @@ HG_Bulk_create(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_free(
         hg_bulk_t handle
         );
@@ -83,7 +83,7 @@ HG_Bulk_free(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_ref_incr(
         hg_bulk_t handle
         );
@@ -112,7 +112,7 @@ HG_Bulk_ref_incr(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_bind(
         hg_bulk_t handle,
         hg_context_t *context
@@ -126,7 +126,7 @@ HG_Bulk_bind(
  *
  * \return abstract HG address or HG_ADDR_NULL in case of error
 */
-HG_EXPORT hg_addr_t
+HG_PUBLIC hg_addr_t
 HG_Bulk_get_addr(
        hg_bulk_t handle
        );
@@ -139,7 +139,7 @@ HG_Bulk_get_addr(
  *
  * \return valid context ID or 0 by default
 */
-HG_EXPORT hg_uint8_t
+HG_PUBLIC hg_uint8_t
 HG_Bulk_get_context_id(
        hg_bulk_t handle
        );
@@ -163,7 +163,7 @@ HG_Bulk_get_context_id(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_access(
         hg_bulk_t handle,
         hg_size_t offset,
@@ -182,7 +182,7 @@ HG_Bulk_access(
  *
  * \return Non-negative value
  */
-HG_EXPORT hg_size_t
+HG_PUBLIC hg_size_t
 HG_Bulk_get_size(
         hg_bulk_t handle
         );
@@ -194,7 +194,7 @@ HG_Bulk_get_size(
  *
  * \return Non-negative value
  */
-HG_EXPORT hg_uint32_t
+HG_PUBLIC hg_uint32_t
 HG_Bulk_get_segment_count(
         hg_bulk_t handle
         );
@@ -209,7 +209,7 @@ HG_Bulk_get_segment_count(
  *
  * \return Non-negative value
  */
-HG_EXPORT hg_size_t
+HG_PUBLIC hg_size_t
 HG_Bulk_get_serialize_size(
         hg_bulk_t handle,
         hg_bool_t request_eager
@@ -228,7 +228,7 @@ HG_Bulk_get_serialize_size(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_serialize(
         void *buf,
         hg_size_t buf_size,
@@ -246,7 +246,7 @@ HG_Bulk_serialize(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_deserialize(
         hg_class_t *hg_class,
         hg_bulk_t *handle,
@@ -261,7 +261,7 @@ HG_Bulk_deserialize(
  *
  * \return Pointer to buffer or NULL in case of error
  */
-HG_EXPORT void *
+HG_PUBLIC void *
 HG_Bulk_get_serialize_cached_ptr(
         hg_bulk_t handle
         );
@@ -273,7 +273,7 @@ HG_Bulk_get_serialize_cached_ptr(
  *
  * \return Non-negative value or 0 in case of error
  */
-HG_EXPORT hg_size_t
+HG_PUBLIC hg_size_t
 HG_Bulk_get_serialize_cached_size(
         hg_bulk_t handle
         );
@@ -287,7 +287,7 @@ HG_Bulk_get_serialize_cached_size(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_set_serialize_cached_ptr(
         hg_bulk_t handle,
         void *buf,
@@ -315,7 +315,7 @@ HG_Bulk_set_serialize_cached_ptr(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_transfer(
         hg_context_t *context,
         hg_cb_t callback,
@@ -350,7 +350,7 @@ HG_Bulk_transfer(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_bind_transfer(
         hg_context_t *context,
         hg_cb_t callback,
@@ -387,7 +387,7 @@ HG_Bulk_bind_transfer(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_transfer_id(
         hg_context_t *context,
         hg_cb_t callback,
@@ -410,7 +410,7 @@ HG_Bulk_transfer_id(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Bulk_cancel(
         hg_op_id_t op_id
         );
