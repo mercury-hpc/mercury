@@ -71,6 +71,11 @@ extern const char *na_test_opt_arg_g; /* flag argument (or value) */
 extern const char *na_test_short_opt_g;
 extern const struct na_test_opt na_test_opt_g[];
 
+/* Default error log mask */
+#ifdef NA_HAS_VERBOSE_ERROR
+unsigned int NA_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
+#endif
+
 /*---------------------------------------------------------------------------*/
 void
 na_test_usage(const char *execname)
