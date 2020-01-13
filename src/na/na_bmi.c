@@ -509,7 +509,7 @@ na_bmi_cancel(
 /* Local Variables */
 /*******************/
 
-NA_PLUGIN_OPS(bmi) = {
+const struct na_class_ops NA_PLUGIN_OPS(bmi) = {
         "bmi",                                /* name */
         na_bmi_check_protocol,                /* check_protocol */
         na_bmi_initialize,                    /* initialize */

@@ -551,7 +551,7 @@ na_mpi_cancel(
 /* Local Variables */
 /*******************/
 
-NA_PLUGIN_OPS(mpi) = {
+const struct na_class_ops NA_PLUGIN_OPS(mpi) = {
         "mpi",                                /* name */
         na_mpi_check_protocol,                /* check_protocol */
         na_mpi_initialize,                    /* initialize */

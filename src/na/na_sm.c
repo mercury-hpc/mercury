@@ -895,7 +895,7 @@ na_sm_cancel(
 /* Local Variables */
 /*******************/
 
-NA_PLUGIN_OPS(sm) = {
+const struct na_class_ops NA_PLUGIN_OPS(sm) = {
     "na",                                   /* name */
     na_sm_check_protocol,                   /* check_protocol */
     na_sm_initialize,                       /* initialize */

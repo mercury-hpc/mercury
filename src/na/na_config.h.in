@@ -13,20 +13,96 @@
 #ifndef NA_CONFIG_H
 #define NA_CONFIG_H
 
-/* Import/export declarations */
-#if defined(_WIN32)
-    #define NA_ABI_IMPORT __declspec(dllimport)
-    #define NA_ABI_EXPORT __declspec(dllexport)
-    #define NA_ABI_HIDDEN
-#elif defined(__GNUC__) && (__GNUC__ >= 4)
-    #define NA_ABI_IMPORT __attribute__((visibility("default")))
-    #define NA_ABI_EXPORT __attribute__((visibility("default")))
-    #define NA_ABI_HIDDEN __attribute__((visibility("hidden")))
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
+/* Type definitions */
+#ifdef _WIN32
+  typedef signed   __int64 na_int64_t;
+  typedef signed   __int32 na_int32_t;
+  typedef signed   __int16 na_int16_t;
+  typedef signed   __int8  na_int8_t;
+  typedef unsigned __int64 na_uint64_t;
+  typedef unsigned __int32 na_uint32_t;
+  typedef unsigned __int16 na_uint16_t;
+  typedef unsigned __int8  na_uint8_t;
 #else
-    #define NA_ABI_IMPORT
-    #define NA_ABI_EXPORT
-    #define NA_ABI_HIDDEN
+# include <stdint.h>
+# include <stddef.h>
+  typedef int64_t  na_int64_t;
+  typedef int32_t  na_int32_t;
+  typedef int16_t  na_int16_t;
+  typedef int8_t   na_int8_t;
+  typedef uint64_t na_uint64_t;
+  typedef uint32_t na_uint32_t;
+  typedef uint16_t na_uint16_t;
+  typedef uint8_t  na_uint8_t;
 #endif
+typedef na_uint8_t   na_bool_t;
+typedef na_uint64_t  na_ptr_t;
+
+/* True / false */
+#define NA_TRUE     1
+#define NA_FALSE    0
+
+/*****************/
+/* Public Macros */
+/*****************/
+
+/* Visibility of symbols */
+#if defined(_WIN32)
+# define NA_ABI_IMPORT __declspec(dllimport)
+# define NA_ABI_EXPORT __declspec(dllexport)
+# define NA_ABI_HIDDEN
+#elif defined(__GNUC__) && (__GNUC__ >= 4)
+# define NA_ABI_IMPORT __attribute__((visibility("default")))
+# define NA_ABI_EXPORT __attribute__((visibility("default")))
+# define NA_ABI_HIDDEN __attribute__((visibility("hidden")))
+#else
+# define NA_ABI_IMPORT
+# define NA_ABI_EXPORT
+# define NA_ABI_HIDDEN
+#endif
+
+/* Inline macro */
+#ifdef _WIN32
+# define NA_INLINE __inline
+#else
+# define NA_INLINE __inline__
+#endif
+
+/* Unused return values */
+#if defined(__GNUC__)
+# define NA_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+#else
+# define NA_WARN_UNUSED_RESULT
+#endif
+
+/* Fallthrough macro */
+#if defined(__GNUC__) && (__GNUC__ >= 7)
+# define NA_FALLTHROUGH() __attribute__((fallthrough))
+#else
+# define NA_FALLTHROUGH()
+#endif
+
+/* Shared libraries */
+#cmakedefine NA_BUILD_SHARED_LIBS
+#ifdef NA_BUILD_SHARED_LIBS
+# ifdef na_EXPORTS
+#  define NA_PUBLIC NA_ABI_EXPORT
+# else
+#  define NA_PUBLIC NA_ABI_IMPORT
+# endif
+# define NA_PRIVATE NA_ABI_HIDDEN
+#else
+# define NA_PUBLIC
+# define NA_PRIVATE
+#endif
+
+/* Build Options */
+#cmakedefine NA_HAS_MULTI_PROGRESS
+#cmakedefine NA_HAS_VERBOSE_ERROR
 
 /* BMI */
 #cmakedefine NA_HAS_BMI
@@ -49,66 +125,4 @@
 #cmakedefine NA_SM_SHM_PREFIX "@NA_SM_SHM_PREFIX@"
 #cmakedefine NA_SM_TMP_DIRECTORY "@NA_SM_TMP_DIRECTORY@"
 
-/* Build Options */
-#cmakedefine NA_HAS_MULTI_PROGRESS
-#cmakedefine NA_HAS_VERBOSE_ERROR
-
-/* Define if build shared libraries */
-#cmakedefine NA_BUILD_SHARED_LIBS
-
-/* Define export declaration */
-#ifdef NA_BUILD_SHARED_LIBS
-    #ifdef na_EXPORTS
-      #define NA_EXPORT NA_ABI_EXPORT
-    #else
-      #define NA_EXPORT NA_ABI_IMPORT
-    #endif
-#else
-    #define NA_EXPORT
-#endif
-
-/* Standard types */
-#ifdef _WIN32
-    typedef signed   __int64 na_int64_t;
-    typedef signed   __int32 na_int32_t;
-    typedef signed   __int16 na_int16_t;
-    typedef signed   __int8  na_int8_t;
-    typedef unsigned __int64 na_uint64_t;
-    typedef unsigned __int32 na_uint32_t;
-    typedef unsigned __int16 na_uint16_t;
-    typedef unsigned __int8  na_uint8_t;
-#else
-    #include <stdint.h>
-    #include <stddef.h>
-    typedef int64_t  na_int64_t;
-    typedef int32_t  na_int32_t;
-    typedef int16_t  na_int16_t;
-    typedef int8_t   na_int8_t;
-    typedef uint64_t na_uint64_t;
-    typedef uint32_t na_uint32_t;
-    typedef uint16_t na_uint16_t;
-    typedef uint8_t  na_uint8_t;
-#endif
-typedef na_uint8_t   na_bool_t;
-typedef na_uint64_t  na_ptr_t;
-
-/* Inline declarations */
-#ifdef _WIN32
-   #define NA_INLINE __inline
-#else
-   #define NA_INLINE __inline__
-#endif
-
-/* Unused return values */
-#if defined(__GNUC__)
-    #define NA_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
-#else
-    #define NA_WARN_UNUSED_RESULT
-#endif
-
-/* Return codes */
-#define NA_TRUE     1
-#define NA_FALSE    0
-
 #endif /* NA_CONFIG_H */
-

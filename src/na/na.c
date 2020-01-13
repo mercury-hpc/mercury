@@ -91,19 +91,19 @@ na_info_print(struct na_info *na_info);
 /* NA plugin class table */
 static const struct na_class_ops *const na_class_table[] = {
 #ifdef NA_HAS_SM
-    &na_sm_class_ops_g, /* Keep NA SM first for protocol selection */
+    &NA_PLUGIN_OPS(sm), /* Keep NA SM first for protocol selection */
 #endif
 #ifdef NA_HAS_BMI
-    &na_bmi_class_ops_g,
+    &NA_PLUGIN_OPS(bmi),
 #endif
 #ifdef NA_HAS_MPI
-    &na_mpi_class_ops_g,
+    &NA_PLUGIN_OPS(mpi),
 #endif
 #ifdef NA_HAS_CCI
-    &na_cci_class_ops_g,
+    &NA_PLUGIN_OPS(cci),
 #endif
 #ifdef NA_HAS_OFI
-    &na_ofi_class_ops_g,
+    &NA_PLUGIN_OPS(ofi),
 #endif
     NULL
 };
@@ -112,6 +112,11 @@ static const struct na_class_ops *const na_class_table[] = {
 #define X(a) #a,
 static const char *const na_return_name[] = { NA_RETURN_VALUES };
 #undef X
+
+/* Default error log mask */
+#ifdef NA_HAS_VERBOSE_ERROR
+unsigned int NA_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
+#endif
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
