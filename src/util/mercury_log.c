@@ -57,7 +57,7 @@ hg_log_set_stream_error(FILE *stream)
 
 /*---------------------------------------------------------------------------*/
 void
-hg_log_write(hg_log_type_t log_type, const char *module, const char *file,
+hg_log_write(unsigned int log_type, const char *module, const char *file,
     unsigned int line, const char *func, const char *format, ...)
 {
     char buf[HG_UTIL_LOG_MAX_BUF];
