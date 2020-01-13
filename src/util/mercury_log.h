@@ -15,11 +15,10 @@
 
 #include <stdio.h>
 
-typedef enum {
-    HG_LOG_TYPE_DEBUG,
-    HG_LOG_TYPE_WARNING,
-    HG_LOG_TYPE_ERROR
-} hg_log_type_t;
+#define HG_LOG_TYPE_NONE    0
+#define HG_LOG_TYPE_DEBUG   0x01
+#define HG_LOG_TYPE_WARNING 0x02
+#define HG_LOG_TYPE_ERROR   0x04
 
 /* For compatibility */
 #if defined(__STDC_VERSION__) &&  (__STDC_VERSION__ < 199901L)
@@ -92,7 +91,7 @@ hg_log_set_stream_error(FILE *stream);
  * \param format [IN]           string format
  */
 HG_UTIL_EXPORT void
-hg_log_write(hg_log_type_t log_type, const char *module, const char *file,
+hg_log_write(unsigned int log_type, const char *module, const char *file,
     unsigned int line, const char *func, const char *format, ...);
 
 #ifdef __cplusplus
