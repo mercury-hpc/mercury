@@ -96,7 +96,7 @@ extern "C" {
  *
  * \return Pointer to HG core class or NULL in case of failure
  */
-HG_EXPORT hg_core_class_t *
+HG_PUBLIC hg_core_class_t *
 HG_Core_init(
         const char *na_info_string,
         hg_bool_t na_listen
@@ -115,7 +115,7 @@ HG_Core_init(
  *
  * \return Pointer to HG core class or NULL in case of failure
  */
-HG_EXPORT hg_core_class_t *
+HG_PUBLIC hg_core_class_t *
 HG_Core_init_opt(
         const char *na_info_string,
         hg_bool_t na_listen,
@@ -129,7 +129,7 @@ HG_Core_init_opt(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_finalize(
         hg_core_class_t *hg_core_class
         );
@@ -140,7 +140,7 @@ HG_Core_finalize(
  * to HG_Finalize(), this routine gives a chance to programs that terminate
  * abnormally to easily clean up those resources.
  */
-HG_EXPORT void
+HG_PUBLIC void
 HG_Core_cleanup(
         void
         );
@@ -160,7 +160,7 @@ HG_Core_cleanup(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_set_more_data_callback(
         struct hg_core_class *hg_core_class,
         hg_return_t (*more_data_acquire_callback)(hg_core_handle_t, hg_op_t,
@@ -292,7 +292,7 @@ HG_Core_class_get_data(
  *
  * \return Pointer to HG core context or NULL in case of failure
  */
-HG_EXPORT hg_core_context_t *
+HG_PUBLIC hg_core_context_t *
 HG_Core_context_create(
         hg_core_class_t *hg_core_class
         );
@@ -308,7 +308,7 @@ HG_Core_context_create(
  *
  * \return Pointer to HG core context or NULL in case of failure
  */
-HG_EXPORT hg_core_context_t *
+HG_PUBLIC hg_core_context_t *
 HG_Core_context_create_id(
         hg_core_class_t *hg_core_class,
         hg_uint8_t id
@@ -321,7 +321,7 @@ HG_Core_context_create_id(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_context_destroy(
         hg_core_context_t *context
         );
@@ -417,7 +417,7 @@ HG_Core_context_get_data(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_context_set_handle_create_callback(
         hg_core_context_t *context,
         hg_return_t (*callback)(hg_core_handle_t, void *),
@@ -437,7 +437,7 @@ HG_Core_context_set_handle_create_callback(
  *
  * \return the associated class
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_context_post(
         hg_core_context_t *context,
         unsigned int request_count,
@@ -454,7 +454,7 @@ HG_Core_context_post(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_register(
         hg_core_class_t *hg_core_class,
         hg_id_t id,
@@ -471,7 +471,7 @@ HG_Core_register(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_deregister(
         hg_core_class_t *hg_core_class,
         hg_id_t id
@@ -486,7 +486,7 @@ HG_Core_deregister(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_registered(
         hg_core_class_t *hg_core_class,
         hg_id_t id,
@@ -505,7 +505,7 @@ HG_Core_registered(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_register_data(
         hg_core_class_t *hg_core_class,
         hg_id_t id,
@@ -522,7 +522,7 @@ HG_Core_register_data(
  *
  * \return Pointer to data or NULL
  */
-HG_EXPORT void *
+HG_PUBLIC void *
 HG_Core_registered_data(
         hg_core_class_t *hg_core_class,
         hg_id_t id
@@ -541,7 +541,7 @@ HG_Core_registered_data(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_addr_lookup(
         hg_core_context_t *context,
         hg_core_cb_t callback,
@@ -558,7 +558,7 @@ HG_Core_addr_lookup(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_addr_create(
         hg_core_class_t *hg_core_class,
         hg_core_addr_t *addr
@@ -572,7 +572,7 @@ HG_Core_addr_create(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_addr_free(
         hg_core_class_t *hg_core_class,
         hg_core_addr_t addr
@@ -589,7 +589,7 @@ HG_Core_addr_free(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_addr_set_remove(
         hg_core_class_t *hg_core_class,
         hg_core_addr_t addr
@@ -641,7 +641,7 @@ HG_Core_addr_get_na_class(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_addr_self(
         hg_core_class_t *hg_core_class,
         hg_core_addr_t *addr
@@ -658,7 +658,7 @@ HG_Core_addr_self(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_addr_dup(
         hg_core_class_t *hg_core_class,
         hg_core_addr_t addr,
@@ -679,7 +679,7 @@ HG_Core_addr_dup(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_addr_to_string(
         hg_core_class_t *hg_core_class,
         char *buf,
@@ -700,7 +700,7 @@ HG_Core_addr_to_string(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_create(
         hg_core_context_t *context,
         hg_core_addr_t addr,
@@ -716,7 +716,7 @@ HG_Core_create(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_destroy(
         hg_core_handle_t handle
         );
@@ -733,7 +733,7 @@ HG_Core_destroy(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_reset(
         hg_core_handle_t handle,
         hg_core_addr_t addr,
@@ -747,7 +747,7 @@ HG_Core_reset(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_ref_incr(
         hg_core_handle_t handle
         );
@@ -759,7 +759,7 @@ HG_Core_ref_incr(
  *
  * \return Non-negative value or negative if the handle is not valid
  */
-HG_EXPORT hg_int32_t
+HG_PUBLIC hg_int32_t
 HG_Core_ref_get(
         hg_core_handle_t handle
         );
@@ -887,7 +887,7 @@ HG_Core_get_output(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_forward(
         hg_core_handle_t handle,
         hg_core_cb_t callback,
@@ -909,7 +909,7 @@ HG_Core_forward(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_respond(
         hg_core_handle_t handle,
         hg_core_cb_t callback,
@@ -930,7 +930,7 @@ HG_Core_respond(
  *
  * \return HG_SUCCESS if any completion has occurred / HG error code otherwise
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_progress(
         hg_core_context_t *context,
         unsigned int timeout
@@ -948,7 +948,7 @@ HG_Core_progress(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_trigger(
         hg_core_context_t *context,
         unsigned int timeout,
@@ -963,7 +963,7 @@ HG_Core_trigger(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Core_cancel(
         hg_core_handle_t handle
         );

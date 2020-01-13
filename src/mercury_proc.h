@@ -71,7 +71,7 @@ extern "C" {
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_create(
         hg_class_t *hg_class,
         hg_proc_hash_t hash,
@@ -93,7 +93,7 @@ hg_proc_create(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_create_set(
         hg_class_t *hg_class,
         void *buf,
@@ -110,7 +110,7 @@ hg_proc_create_set(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_free(
         hg_proc_t proc
         );
@@ -126,7 +126,7 @@ hg_proc_free(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_reset(
         hg_proc_t proc,
         void *buf,
@@ -141,7 +141,7 @@ hg_proc_reset(
  *
  * \return HG class
  */
-HG_EXPORT hg_class_t *
+HG_PUBLIC hg_class_t *
 hg_proc_get_class(
         hg_proc_t proc
         );
@@ -153,7 +153,7 @@ hg_proc_get_class(
  *
  * \return Operation type
  */
-HG_EXPORT hg_proc_op_t
+HG_PUBLIC hg_proc_op_t
 hg_proc_get_op(
         hg_proc_t proc
         );
@@ -165,7 +165,7 @@ hg_proc_get_op(
  *
  * \return Non-negative size value
  */
-HG_EXPORT hg_size_t
+HG_PUBLIC hg_size_t
 hg_proc_get_size(
         hg_proc_t proc
         );
@@ -177,7 +177,7 @@ hg_proc_get_size(
  *
  * \return Non-negative size value
  */
-HG_EXPORT hg_size_t
+HG_PUBLIC hg_size_t
 hg_proc_get_size_used(
         hg_proc_t proc
         );
@@ -192,7 +192,7 @@ hg_proc_get_size_used(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_set_size(
         hg_proc_t proc,
         hg_size_t buf_size
@@ -205,7 +205,7 @@ hg_proc_set_size(
  *
  * \return Non-negative size value
  */
-HG_EXPORT hg_size_t
+HG_PUBLIC hg_size_t
 hg_proc_get_size_left(
         hg_proc_t proc
         );
@@ -218,7 +218,7 @@ hg_proc_get_size_left(
  *
  * \return Buffer pointer
  */
-HG_EXPORT void *
+HG_PUBLIC void *
 hg_proc_save_ptr(
         hg_proc_t proc,
         hg_size_t data_size
@@ -232,7 +232,7 @@ hg_proc_save_ptr(
  *
  * \return XDR stream pointer
  */
-HG_EXPORT XDR *
+HG_PUBLIC XDR *
 hg_proc_get_xdr_ptr(
         hg_proc_t proc
         );
@@ -247,7 +247,7 @@ hg_proc_get_xdr_ptr(
  *
  * \return Buffer pointer
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_restore_ptr(
         hg_proc_t proc,
         void *data,
@@ -261,7 +261,7 @@ hg_proc_restore_ptr(
  *
  * \return Pointer to buffer or NULL if no extra buffer has been used
  */
-HG_EXPORT void *
+HG_PUBLIC void *
 hg_proc_get_extra_buf(
         hg_proc_t proc
         );
@@ -273,7 +273,7 @@ hg_proc_get_extra_buf(
  *
  * \return Size of buffer or 0 if no extra buffer has been used
  */
-HG_EXPORT hg_size_t
+HG_PUBLIC hg_size_t
 hg_proc_get_extra_size(
         hg_proc_t proc
         );
@@ -286,7 +286,7 @@ hg_proc_get_extra_size(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_set_extra_buf_is_mine(
         hg_proc_t proc,
         hg_bool_t mine
@@ -300,7 +300,7 @@ hg_proc_set_extra_buf_is_mine(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_flush(
         hg_proc_t proc
         );
@@ -315,7 +315,7 @@ hg_proc_flush(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_memcpy(
         hg_proc_t proc,
         void *data,
@@ -334,7 +334,7 @@ hg_proc_memcpy(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_checksum_get(
         hg_proc_t proc,
         void *hash,
@@ -352,7 +352,7 @@ hg_proc_checksum_get(
  *
  * \return HG_SUCCESS if matches or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 hg_proc_checksum_verify(
         hg_proc_t proc,
         const void *hash,

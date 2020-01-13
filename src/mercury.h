@@ -45,7 +45,7 @@ extern "C" {
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Version_get(
         unsigned int *major,
         unsigned int *minor,
@@ -59,7 +59,7 @@ HG_Version_get(
  *
  * \return String
  */
-HG_EXPORT const char *
+HG_PUBLIC const char *
 HG_Error_to_string(
         hg_return_t errnum
         );
@@ -75,7 +75,7 @@ HG_Error_to_string(
  *
  * \return Pointer to HG class or NULL in case of failure
  */
-HG_EXPORT hg_class_t *
+HG_PUBLIC hg_class_t *
 HG_Init(
         const char *na_info_string,
         hg_bool_t na_listen
@@ -94,7 +94,7 @@ HG_Init(
  *
  * \return Pointer to HG class or NULL in case of failure
  */
-HG_EXPORT hg_class_t *
+HG_PUBLIC hg_class_t *
 HG_Init_opt(
         const char *na_info_string,
         hg_bool_t na_listen,
@@ -108,7 +108,7 @@ HG_Init_opt(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Finalize(
         hg_class_t *hg_class
         );
@@ -119,7 +119,7 @@ HG_Finalize(
  * to HG_Finalize(), this routine gives a chance to programs that terminate
  * abnormally to easily clean up those resources.
  */
-HG_EXPORT void
+HG_PUBLIC void
 HG_Cleanup(
         void
         );
@@ -263,7 +263,7 @@ HG_Class_get_data(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Class_set_handle_create_callback(
         hg_class_t *hg_class,
         hg_return_t (*callback)(hg_handle_t, void *),
@@ -282,7 +282,7 @@ HG_Class_set_handle_create_callback(
  *
  * \return Pointer to HG context or NULL in case of failure
  */
-HG_EXPORT hg_context_t *
+HG_PUBLIC hg_context_t *
 HG_Context_create(
         hg_class_t *hg_class
         );
@@ -303,7 +303,7 @@ HG_Context_create(
  *
  * \return Pointer to HG context or NULL in case of failure
  */
-HG_EXPORT hg_context_t *
+HG_PUBLIC hg_context_t *
 HG_Context_create_id(
         hg_class_t *hg_class,
         hg_uint8_t id
@@ -316,7 +316,7 @@ HG_Context_create_id(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Context_destroy(
         hg_context_t *context
         );
@@ -388,7 +388,7 @@ HG_Context_get_data(
  *
  * \return unique ID associated to the registered function
  */
-HG_EXPORT hg_id_t
+HG_PUBLIC hg_id_t
 HG_Register_name(
         hg_class_t *hg_class,
         const char *func_name,
@@ -408,7 +408,7 @@ HG_Register_name(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Registered_name(
         hg_class_t *hg_class,
         const char *func_name,
@@ -429,7 +429,7 @@ HG_Registered_name(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Register(
         hg_class_t *hg_class,
         hg_id_t id,
@@ -448,7 +448,7 @@ HG_Register(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Deregister(
         hg_class_t *hg_class,
         hg_id_t id
@@ -463,7 +463,7 @@ HG_Deregister(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Registered(
         hg_class_t *hg_class,
         hg_id_t id,
@@ -482,7 +482,7 @@ HG_Registered(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Registered_proc_cb(
         hg_class_t *hg_class,
         hg_id_t id,
@@ -503,7 +503,7 @@ HG_Registered_proc_cb(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Register_data(
         hg_class_t *hg_class,
         hg_id_t id,
@@ -520,7 +520,7 @@ HG_Register_data(
  *
  * \return Pointer to data or NULL
  */
-HG_EXPORT void *
+HG_PUBLIC void *
 HG_Registered_data(
         hg_class_t *hg_class,
         hg_id_t id
@@ -540,7 +540,7 @@ HG_Registered_data(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Registered_disable_response(
         hg_class_t *hg_class,
         hg_id_t id,
@@ -558,7 +558,7 @@ HG_Registered_disable_response(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Registered_disabled_response(
         hg_class_t *hg_class,
         hg_id_t id,
@@ -578,7 +578,7 @@ HG_Registered_disabled_response(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Addr_lookup(
         hg_context_t *context,
         hg_cb_t       callback,
@@ -595,7 +595,7 @@ HG_Addr_lookup(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Addr_free(
         hg_class_t *hg_class,
         hg_addr_t   addr
@@ -612,7 +612,7 @@ HG_Addr_free(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Addr_set_remove(
         hg_class_t *hg_class,
         hg_addr_t   addr
@@ -626,7 +626,7 @@ HG_Addr_set_remove(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Addr_self(
         hg_class_t *hg_class,
         hg_addr_t  *addr
@@ -643,7 +643,7 @@ HG_Addr_self(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Addr_dup(
         hg_class_t *hg_class,
         hg_addr_t   addr,
@@ -664,7 +664,7 @@ HG_Addr_dup(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Addr_to_string(
         hg_class_t *hg_class,
         char       *buf,
@@ -685,7 +685,7 @@ HG_Addr_to_string(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Create(
         hg_context_t *context,
         hg_addr_t addr,
@@ -701,7 +701,7 @@ HG_Create(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Destroy(
         hg_handle_t handle
         );
@@ -718,7 +718,7 @@ HG_Destroy(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Reset(
         hg_handle_t handle,
         hg_addr_t addr,
@@ -805,7 +805,7 @@ HG_Get_data(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Get_input(
         hg_handle_t handle,
         void *in_struct
@@ -821,7 +821,7 @@ HG_Get_input(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Free_input(
         hg_handle_t handle,
         void *in_struct
@@ -841,7 +841,7 @@ HG_Free_input(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Get_output(
         hg_handle_t handle,
         void *out_struct
@@ -857,7 +857,7 @@ HG_Get_output(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Free_output(
         hg_handle_t handle,
         void *out_struct
@@ -882,7 +882,7 @@ HG_Free_output(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Get_input_buf(
         hg_handle_t handle,
         void **in_buf,
@@ -908,7 +908,7 @@ HG_Get_input_buf(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Get_output_buf(
         hg_handle_t handle,
         void **out_buf,
@@ -930,7 +930,7 @@ HG_Get_output_buf(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Get_input_extra_buf(
         hg_handle_t handle,
         void **in_buf,
@@ -952,7 +952,7 @@ HG_Get_input_extra_buf(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Get_output_extra_buf(
         hg_handle_t handle,
         void **out_buf,
@@ -993,7 +993,7 @@ HG_Set_target_id(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Forward(
         hg_handle_t handle,
         hg_cb_t callback,
@@ -1019,7 +1019,7 @@ HG_Forward(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Respond(
         hg_handle_t handle,
         hg_cb_t callback,
@@ -1039,7 +1039,7 @@ HG_Respond(
  *
  * \return HG_SUCCESS if any completion has occurred / HG error code otherwise
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Progress(
         hg_context_t *context,
         unsigned int timeout
@@ -1057,7 +1057,7 @@ HG_Progress(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Trigger(
         hg_context_t *context,
         unsigned int timeout,
@@ -1072,7 +1072,7 @@ HG_Trigger(
  *
  * \return HG_SUCCESS or HG_CANCEL_ERROR or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Cancel(
         hg_handle_t handle
         );

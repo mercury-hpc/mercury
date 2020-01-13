@@ -74,6 +74,11 @@ hg_request_class_t *HG_REQUEST_CLASS_DEFAULT = NULL;
 /* For convenience, register HG_Hl_finalize() */
 static hg_bool_t hg_atexit_g = HG_FALSE;
 
+/* Default error log mask */
+#ifdef HG_HAS_VERBOSE_ERROR
+unsigned int HG_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
+#endif
+
 /*---------------------------------------------------------------------------*/
 static int
 hg_hl_request_progress(unsigned int timeout, void *arg)

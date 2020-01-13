@@ -102,7 +102,7 @@ hg_header_get_size(hg_op_t op)
  * \param hg_header [IN/OUT]    pointer to header structure
  * \param op [IN]               HG operation type: HG_INPUT / HG_OUTPUT
  */
-HG_EXPORT void
+HG_PRIVATE void
 hg_header_init(
         struct hg_header *hg_header,
         hg_op_t op
@@ -113,7 +113,7 @@ hg_header_init(
  *
  * \param hg_header [IN/OUT]    pointer to header structure
  */
-HG_EXPORT void
+HG_PRIVATE void
 hg_header_finalize(
         struct hg_header *hg_header
         );
@@ -124,7 +124,7 @@ hg_header_finalize(
  * \param hg_header [IN/OUT]    pointer to header structure
  * \param op [IN]               HG operation type: HG_INPUT / HG_OUTPUT
  */
-HG_EXPORT void
+HG_PRIVATE void
 hg_header_reset(
         struct hg_header *hg_header,
         hg_op_t op
@@ -140,7 +140,7 @@ hg_header_reset(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PRIVATE hg_return_t
 hg_header_proc(
         hg_proc_op_t op,
         void *buf,

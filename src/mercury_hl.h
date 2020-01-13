@@ -37,9 +37,9 @@ extern "C" {
 /********************/
 
 /* HG default */
-extern HG_EXPORT hg_class_t *HG_CLASS_DEFAULT;
-extern HG_EXPORT hg_context_t *HG_CONTEXT_DEFAULT;
-extern HG_EXPORT hg_request_class_t *HG_REQUEST_CLASS_DEFAULT;
+extern HG_PUBLIC hg_class_t *HG_CLASS_DEFAULT;
+extern HG_PUBLIC hg_context_t *HG_CONTEXT_DEFAULT;
+extern HG_PUBLIC hg_request_class_t *HG_REQUEST_CLASS_DEFAULT;
 
 /*********************/
 /* Public Prototypes */
@@ -60,7 +60,7 @@ extern HG_EXPORT hg_request_class_t *HG_REQUEST_CLASS_DEFAULT;
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Hl_init(
         const char *na_info_string,
         hg_bool_t na_listen
@@ -81,7 +81,7 @@ HG_Hl_init(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Hl_init_opt(
         const char *na_info_string,
         hg_bool_t na_listen,
@@ -93,7 +93,7 @@ HG_Hl_init_opt(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Hl_finalize(
         void
         );
@@ -104,7 +104,7 @@ HG_Hl_finalize(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Hl_addr_lookup_wait(
         hg_context_t *context,
         hg_request_class_t *request_class,
@@ -120,7 +120,7 @@ HG_Hl_addr_lookup_wait(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Hl_forward_wait(
         hg_request_class_t *request_class,
         hg_handle_t handle,
@@ -144,7 +144,7 @@ HG_Hl_forward_wait(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PUBLIC hg_return_t
 HG_Hl_bulk_transfer_wait(
         hg_context_t *context,
         hg_request_class_t *request_class,

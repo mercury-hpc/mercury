@@ -132,7 +132,7 @@ hg_core_header_response_get_size(void)
  * \param hg_core_header [IN/OUT]   pointer to request header structure
  *
  */
-HG_EXPORT void
+HG_PRIVATE void
 hg_core_header_request_init(
         struct hg_core_header *hg_core_header
         );
@@ -143,7 +143,7 @@ hg_core_header_request_init(
  * \param hg_core_header [IN/OUT]   pointer to response header structure
  *
  */
-HG_EXPORT void
+HG_PRIVATE void
 hg_core_header_response_init(
         struct hg_core_header *hg_core_header
         );
@@ -154,7 +154,7 @@ hg_core_header_response_init(
  * \param hg_core_header [IN/OUT]   pointer to request header structure
  *
  */
-HG_EXPORT void
+HG_PRIVATE void
 hg_core_header_request_finalize(
         struct hg_core_header *hg_core_header
         );
@@ -165,7 +165,7 @@ hg_core_header_request_finalize(
  * \param hg_core_header [IN/OUT]   pointer to response header structure
  *
  */
-HG_EXPORT void
+HG_PRIVATE void
 hg_core_header_response_finalize(
         struct hg_core_header *hg_core_header
         );
@@ -176,7 +176,7 @@ hg_core_header_response_finalize(
  * \param hg_core_header [IN/OUT]   pointer to request header structure
  *
  */
-HG_EXPORT void
+HG_PRIVATE void
 hg_core_header_request_reset(
         struct hg_core_header *hg_core_header
         );
@@ -187,7 +187,7 @@ hg_core_header_request_reset(
  * \param hg_core_header [IN/OUT]   pointer to response header structure
  *
  */
-HG_EXPORT void
+HG_PRIVATE void
 hg_core_header_response_reset(
         struct hg_core_header *hg_core_header
         );
@@ -202,7 +202,7 @@ hg_core_header_response_reset(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PRIVATE hg_return_t
 hg_core_header_request_proc(
         hg_proc_op_t op,
         void *buf,
@@ -220,7 +220,7 @@ hg_core_header_request_proc(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PRIVATE hg_return_t
 hg_core_header_response_proc(
         hg_proc_op_t op,
         void *buf,
@@ -235,7 +235,7 @@ hg_core_header_response_proc(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PRIVATE hg_return_t
 hg_core_header_request_verify(
         const struct hg_core_header *hg_core_header
         );
@@ -247,7 +247,7 @@ hg_core_header_request_verify(
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
-HG_EXPORT hg_return_t
+HG_PRIVATE hg_return_t
 hg_core_header_response_verify(
         const struct hg_core_header *hg_core_header
         );
