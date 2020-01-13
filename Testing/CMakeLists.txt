@@ -267,18 +267,14 @@ build_mercury_test(server)
 set(MERCURY_tests
   rpc
   bulk
-  overflow
 )
-if(NOT WIN32)
-  set(MERCURY_tests ${MERCURY_tests} posix)
-endif()
-#build_mercury_test(nested)
-build_mercury_test(cancel)
-build_mercury_test(perf)
+
+# Benchmarks
 build_mercury_test(rpc_lat)
 build_mercury_test(write_bw)
 build_mercury_test(read_bw)
-#build_mercury_test(init)
+
+# Cray DRC test
 if(HG_TESTING_HAS_CRAY_DRC)
   build_mercury_test(drc_auth)
 endif()
