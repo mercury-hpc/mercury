@@ -13,10 +13,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-extern hg_id_t hg_test_bulk_write_id_g;
-extern hg_id_t hg_test_bulk_bind_write_id_g;
+/****************/
+/* Local Macros */
+/****************/
 
 #define BUFSIZE (MERCURY_TESTING_BUFFER_SIZE * 1024 * 1024)
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
 
 struct forward_cb_args {
     hg_request_t *request;
@@ -24,18 +29,22 @@ struct forward_cb_args {
     hg_return_t ret;
 };
 
-//#define HG_TEST_DEBUG
-#ifdef HG_TEST_DEBUG
-#define HG_TEST_LOG_DEBUG(...)                                \
-    HG_LOG_WRITE_DEBUG(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__)
-#else
-#define HG_TEST_LOG_DEBUG(...) (void)0
-#endif
+/********************/
+/* Local Prototypes */
+/********************/
+
+static hg_return_t
+hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info);
+
+
+/*******************/
+/* Local Variables */
+/*******************/
+
+extern hg_id_t hg_test_bulk_write_id_g;
+extern hg_id_t hg_test_bulk_bind_write_id_g;
 
 /*---------------------------------------------------------------------------*/
-/**
- * HG_Forward callback
- */
 static hg_return_t
 hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info)
 {
@@ -45,32 +54,24 @@ hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info)
     bulk_write_out_t bulk_write_out_struct;
     hg_return_t ret = HG_SUCCESS;
 
-    if (callback_info->ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Return from callback info is not HG_SUCCESS");
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR_NORET(callback_info->ret != HG_SUCCESS, done,
+        "Error in HG callback (%s)", HG_Error_to_string(callback_info->ret));
 
     /* Get output */
     ret = HG_Get_output(handle, &bulk_write_out_struct);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not get output");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Get_output() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Get output parameters */
     bulk_write_ret = bulk_write_out_struct.ret;
-    if (bulk_write_ret != args->expected_bytes) {
-        HG_TEST_LOG_ERROR("Returned: %zu bytes, was expecting %zu",
-            bulk_write_ret, args->expected_bytes);
-        args->ret = HG_MSGSIZE;
-    }
+    HG_TEST_CHECK_ERROR(bulk_write_ret != args->expected_bytes, done,
+        args->ret, HG_MSGSIZE, "Returned: %zu bytes, was expecting %zu",
+        bulk_write_ret, args->expected_bytes);
 
     /* Free request */
     ret = HG_Free_output(handle, &bulk_write_out_struct);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not free output");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Free_output() failed (%s)",
+        HG_Error_to_string(ret));
 
 done:
     hg_request_complete(args->request);
@@ -87,32 +88,24 @@ hg_test_bulk_bind_forward_cb(const struct hg_cb_info *callback_info)
     bulk_bind_write_out_t bulk_write_out_struct;
     hg_return_t ret = HG_SUCCESS;
 
-    if (callback_info->ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Return from callback info is not HG_SUCCESS");
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR_NORET(callback_info->ret != HG_SUCCESS, done,
+        "Error in HG callback (%s)", HG_Error_to_string(callback_info->ret));
 
     /* Get output */
     ret = HG_Get_output(handle, &bulk_write_out_struct);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not get output");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Get_output() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Get output parameters */
     bulk_write_ret = bulk_write_out_struct.ret;
-    if (bulk_write_ret != args->expected_bytes) {
-        HG_TEST_LOG_ERROR("Returned: %zu bytes, was expecting %zu",
-            bulk_write_ret, args->expected_bytes);
-        args->ret = HG_MSGSIZE;
-    }
+    HG_TEST_CHECK_ERROR(bulk_write_ret != args->expected_bytes, done,
+        args->ret, HG_MSGSIZE, "Returned: %zu bytes, was expecting %zu",
+        bulk_write_ret, args->expected_bytes);
 
     /* Free request */
     ret = HG_Free_output(handle, &bulk_write_out_struct);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not free output");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Free_output() failed (%s)",
+        HG_Error_to_string(ret));
 
 done:
     hg_request_complete(args->request);
@@ -140,14 +133,14 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
     hg_cb_t forward_cb = hg_test_bulk_forward_cb;
     size_t i;
 
-    if (origin_offset + transfer_size > bulk_size) {
-        HG_TEST_LOG_ERROR("Exceeding bulk size");
-        ret = HG_OVERFLOW;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(origin_offset + transfer_size > bulk_size, done, ret,
+        HG_OVERFLOW, "Exceeding bulk size");
 
     /* Prepare bulk_buf */
     bulk_buf = malloc(bulk_size);
+    HG_TEST_CHECK_ERROR(bulk_buf == NULL, done, ret, HG_NOMEM_ERROR,
+         "Could not allocate bulk_buf");
+
     for (i = 0; i < bulk_size; i++)
         bulk_buf[i] = (char) i;
     buf_ptrs[0] = bulk_buf;
@@ -160,10 +153,8 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
     /* Register memory */
     ret = HG_Bulk_create(hg_class, 2, buf_ptrs, buf_sizes, HG_BULK_READ_ONLY,
         &bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not create bulk handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_create() failed (%s)",
+        HG_Error_to_string(ret));
 
     if (bind_addr) {
         /* Bind local context to bulk, it is only necessary if this bulk handle
@@ -171,19 +162,16 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
          * should also work for normal case. Add here just to test the
          * functionality. */
         ret = HG_Bulk_bind(bulk_handle, context);
-        if (ret != HG_SUCCESS) {
-            HG_TEST_LOG_ERROR("Could not bind context to bulk handle");
-            goto done;
-        }
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_bind() failed (%s)",
+            HG_Error_to_string(ret));
+
         rpc_id = hg_test_bulk_bind_write_id_g;
         forward_cb = hg_test_bulk_bind_forward_cb;
     }
 
     ret = HG_Create(context, target_addr, rpc_id, &handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not create handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Fill input structure */
     bulk_write_in_struct.fildes = 0;
@@ -202,26 +190,20 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
     forward_cb_args.ret = HG_SUCCESS;
     ret = HG_Forward(handle, forward_cb, &forward_cb_args,
         &bulk_write_in_struct);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not forward call");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
+        HG_Error_to_string(ret));
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
     /* Free memory handle */
     ret = HG_Bulk_free(bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not destroy bulk handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_free() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Complete */
     ret = HG_Destroy(handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not destroy handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Destroy() failed (%s)",
+        HG_Error_to_string(ret));
 
     hg_request_destroy(request);
 
@@ -253,20 +235,26 @@ hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
     hg_size_t bulk_size = BUFSIZE;
     size_t i;
 
-    if (origin_offset + transfer_size > bulk_size) {
-        HG_TEST_LOG_ERROR("Exceeding bulk size");
-        ret = HG_OVERFLOW;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(origin_offset + transfer_size > bulk_size, done, ret,
+        HG_OVERFLOW, "Exceeding bulk size");
 
     /* Prepare bulk_buf */
     buf_ptrs = (void **) malloc(origin_segment_count * sizeof(void *));
+    HG_TEST_CHECK_ERROR(buf_ptrs == NULL, done, ret, HG_NOMEM_ERROR,
+         "Could not allocate buf_ptrs");
+
     buf_sizes = (hg_size_t *) malloc(origin_segment_count * sizeof(hg_size_t));
+    HG_TEST_CHECK_ERROR(buf_sizes == NULL, done, ret, HG_NOMEM_ERROR,
+         "Could not allocate buf_sizes");
+
     for (i = 0; i < origin_segment_count; i++) {
         hg_size_t j;
 
         buf_sizes[i] = bulk_size / origin_segment_count;
         buf_ptrs[i] = malloc(buf_sizes[i]);
+        HG_TEST_CHECK_ERROR(buf_ptrs == NULL, done, ret, HG_NOMEM_ERROR,
+             "Could not allocate bulk_buf");
+
         for (j = 0; j < buf_sizes[i]; j++) {
             ((char **) buf_ptrs)[i][j] = (char) (i * buf_sizes[i] + j);
         }
@@ -275,18 +263,14 @@ hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
     request = hg_request_create(request_class);
 
     ret = HG_Create(context, target_addr, hg_test_bulk_write_id_g, &handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not create handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Register memory */
     ret = HG_Bulk_create(hg_class, origin_segment_count, buf_ptrs,
         buf_sizes, HG_BULK_READ_ONLY, &bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not create bulk handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_create() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Fill input structure */
     bulk_write_in_struct.fildes = 0;
@@ -306,26 +290,20 @@ hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
     forward_cb_args.ret = HG_SUCCESS;
     ret = HG_Forward(handle, hg_test_bulk_forward_cb, &forward_cb_args,
             &bulk_write_in_struct);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not forward call");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
+        HG_Error_to_string(ret));
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
     /* Free memory handle */
     ret = HG_Bulk_free(bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not destroy bulk handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_free() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Complete */
     ret = HG_Destroy(handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not destroy handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Destroy() failed (%s)",
+        HG_Error_to_string(ret));
 
     hg_request_destroy(request);
 
@@ -360,11 +338,8 @@ hg_test_bulk_small(hg_class_t *hg_class, hg_context_t *context,
     hg_size_t bulk_size = 12;
     size_t i;
 
-    if (origin_offset + transfer_size > bulk_size) {
-        HG_TEST_LOG_ERROR("Exceeding bulk size");
-        ret = HG_OVERFLOW;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(origin_offset + transfer_size > bulk_size, done, ret,
+        HG_OVERFLOW, "Exceeding bulk size");
 
     /* Prepare bulk buf */
     for (i = 0; i < bulk_size; i++)
@@ -373,18 +348,14 @@ hg_test_bulk_small(hg_class_t *hg_class, hg_context_t *context,
     request = hg_request_create(request_class);
 
     ret = HG_Create(context, target_addr, hg_test_bulk_write_id_g, &handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not create handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Register memory */
     ret = HG_Bulk_create(hg_class, 2, buf_ptrs, buf_sizes, HG_BULK_READ_ONLY,
         &bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not create bulk handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_create() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Fill input structure */
     bulk_write_in_struct.fildes = 1;
@@ -404,26 +375,20 @@ hg_test_bulk_small(hg_class_t *hg_class, hg_context_t *context,
     forward_cb_args.ret = HG_SUCCESS;
     ret = HG_Forward(handle, hg_test_bulk_forward_cb, &forward_cb_args,
             &bulk_write_in_struct);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not forward call");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
+        HG_Error_to_string(ret));
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
     /* Free memory handle */
     ret = HG_Bulk_free(bulk_handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not destroy bulk handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_free() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Complete */
     ret = HG_Destroy(handle);
-    if (ret != HG_SUCCESS) {
-        HG_TEST_LOG_ERROR("Could not destroy handle");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Destroy() failed (%s)",
+        HG_Error_to_string(ret));
 
     hg_request_destroy(request);
 
@@ -435,146 +400,126 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
     struct hg_test_info hg_test_info = { 0 };
     hg_return_t hg_ret;
     int ret = EXIT_SUCCESS;
 
     /* Initialize the interface */
-    HG_Test_init(argc, argv, &hg_test_info);
+    hg_ret = HG_Test_init(argc, argv, &hg_test_info);
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "HG_Test_init() failed");
 
     /* Simple RPC bulk test */
     HG_TEST("contiguous RPC bulk (size BUFSIZE, offsets 0, 0)");
     hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, 0, hg_test_info.target_addr, BUFSIZE, 0, 0);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "contiguous RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("contiguous RPC bulk (size BUFSIZE/4, offsets BUFSIZE/2 + 1, 0)");
     hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, 0, hg_test_info.target_addr, BUFSIZE/4,
         BUFSIZE/2 + 1, 0);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "contiguous RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("contiguous RPC bulk (size BUFSIZE/8, offsets BUFSIZE/2 + 1, BUFSIZE/4)");
     hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, 0, hg_test_info.target_addr, BUFSIZE/8,
         BUFSIZE/2 + 1, BUFSIZE/4);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "contiguous RPC bulk failed");
     HG_PASSED();
 
     /* small bulk test */
     HG_TEST("small segmented RPC bulk (size 8, offsets 0, 0)");
     hg_ret = hg_test_bulk_small(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, hg_test_info.target_addr, 8, 0, 0);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "small segmented RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("small segmented RPC bulk (size 4, offsets 8, 0)");
     hg_ret = hg_test_bulk_small(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, hg_test_info.target_addr, 4, 8, 0);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "small segmented RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("small segmented RPC bulk (size 8, offsets 4, 2)");
     hg_ret = hg_test_bulk_small(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, hg_test_info.target_addr, 8, 4, 2);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "small segmented RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("segmented RPC bulk (size BUFSIZE, offsets 0, 0)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE, 0, 0, 16);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "segmented RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("segmented RPC bulk (size BUFSIZE/4, offsets BUFSIZE/2 + 1, 0)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE/4,
         BUFSIZE/2 + 1, 0, 16);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "segmented RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("segmented RPC bulk (size BUFSIZE/8, offsets BUFSIZE/2 + 1, BUFSIZE/4)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE/8,
         BUFSIZE/2 + 1, BUFSIZE/4, 16);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "segmented RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("over-segmented RPC bulk (size BUFSIZE, offsets 0, 0)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE, 0, 0,
         1024);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "over-segmented RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("over-segmented RPC bulk (size BUFSIZE/4, offsets BUFSIZE/2 + 1, 0)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE/4,
         BUFSIZE/2 + 1, 0, 1024);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "over-segmented RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("over-segmented RPC bulk (size BUFSIZE/8, offsets BUFSIZE/2 + 1, BUFSIZE/4)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE/8,
         BUFSIZE/2 + 1, BUFSIZE/4, 1024);
-    if (hg_ret != HG_SUCCESS) {
-        ret = EXIT_FAILURE;
-        goto done;
-    }
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "over-segmented RPC bulk failed");
     HG_PASSED();
 
     if (strcmp(HG_Class_get_name(hg_test_info.hg_class), "ofi") == 0) {
         HG_TEST("bind contiguous RPC bulk (size BUFSIZE, offsets 0, 0)");
         hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
             hg_test_info.request_class, 1, hg_test_info.target_addr, BUFSIZE, 0, 0);
-        if (hg_ret != HG_SUCCESS) {
-            ret = EXIT_FAILURE;
-            goto done;
-        }
+        HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+            "bind contiguous RPC bulk failed");
         HG_PASSED();
     }
 
 done:
     if (ret != EXIT_SUCCESS)
         HG_FAILED();
-    HG_Test_finalize(&hg_test_info);
+
+    hg_ret = HG_Test_finalize(&hg_test_info);
+    HG_TEST_CHECK_ERROR_DONE(hg_ret != HG_SUCCESS, "HG_Test_finalize() failed");
+
     return ret;
 }

@@ -79,12 +79,17 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
     /* Prepare bulk_buf */
     if (nbytes) {
         bulk_buf = malloc(nbytes);
+        HG_TEST_CHECK_ERROR(bulk_buf == NULL, done, ret, HG_NOMEM_ERROR,
+            "Could not allocate bulk buf");
         for (i = 0; i < nbytes; i++)
             bulk_buf[i] = (char) i;
     }
 
     /* Create handles */
     handles = malloc(nhandles * sizeof(hg_handle_t));
+    HG_TEST_CHECK_ERROR(handles == NULL, done, ret, HG_NOMEM_ERROR,
+        "Could not allocate handles");
+
     for (i = 0; i < nhandles; i++) {
         /* Use NULL RPC ID to skip proc encoding if total_size = 0 */
         hg_id_t rpc_id = total_size ? hg_test_perf_rpc_lat_id_g :
@@ -92,10 +97,8 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
 
         ret = HG_Create(hg_test_info->context, hg_test_info->target_addr,
             rpc_id, &handles[i]);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not start call\n");
-            goto done;
-        }
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
+            HG_Error_to_string(ret));
     }
 
     request = hg_request_create(hg_test_info->request_class);
@@ -114,10 +117,8 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
         for (j = 0; j < nhandles; j++) {
             ret = HG_Forward(handles[j], hg_test_perf_forward_cb,
                 &args, &in_struct);
-            if (ret != HG_SUCCESS) {
-                fprintf(stderr, "Could not forward call\n");
-                goto done;
-            }
+            HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
+                HG_Error_to_string(ret));
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
@@ -136,16 +137,17 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
 
         for (j = 0; j < nhandles; j++) {
             /* Assign handles to multiple targets */
-            if (hg_test_info->na_test_info.max_contexts > 1)
-                HG_Set_target_id(handles[j],
+            if (hg_test_info->na_test_info.max_contexts > 1) {
+                ret = HG_Set_target_id(handles[j],
                     (hg_uint8_t) (avg_iter % hg_test_info->na_test_info.max_contexts));
+                HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Set_target_id() failed (%s)",
+                    HG_Error_to_string(ret));
+            }
 
             ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args,
 			     &in_struct);
-            if (ret != HG_SUCCESS) {
-                fprintf(stderr, "Could not forward call\n");
-                goto done;
-            }
+            HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
+                HG_Error_to_string(ret));
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
@@ -178,10 +180,8 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
     hg_request_destroy(request);
     for (i = 0; i < nhandles; i++) {
         ret = HG_Destroy(handles[i]);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not complete\n");
-            goto done;
-        }
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Destroy() failed (%s)",
+            HG_Error_to_string(ret));
     }
 
 done:
@@ -197,8 +197,12 @@ main(int argc, char *argv[])
     struct hg_test_info hg_test_info = { 0 };
     unsigned int nhandles;
     size_t size;
+    hg_return_t hg_ret;
+    int ret = EXIT_SUCCESS;
 
-    HG_Test_init(argc, argv, &hg_test_info);
+    hg_ret = HG_Test_init(argc, argv, &hg_test_info);
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "HG_Test_init() failed");
 
     for (nhandles = 1; nhandles <= MAX_HANDLES; nhandles *= 2) {
         if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
@@ -215,16 +219,23 @@ main(int argc, char *argv[])
         }
 
         /* NULL RPC */
-        measure_rpc_latency(&hg_test_info, 0, nhandles);
+        hg_ret = measure_rpc_latency(&hg_test_info, 0, nhandles);
+        HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+            "measure_rpc_latency() failed");
 
         /* RPC with different sizes */
-        for (size = sizeof(hg_uint32_t); size <= MAX_MSG_SIZE; size *= 2)
-            measure_rpc_latency(&hg_test_info, size, nhandles);
+        for (size = sizeof(hg_uint32_t); size <= MAX_MSG_SIZE; size *= 2) {
+            hg_ret = measure_rpc_latency(&hg_test_info, size, nhandles);
+            HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+                "measure_rpc_latency() failed");
+        }
 
         fprintf(stdout, "\n");
     }
 
-    HG_Test_finalize(&hg_test_info);
+done:
+    hg_ret = HG_Test_finalize(&hg_test_info);
+    HG_TEST_CHECK_ERROR_DONE(hg_ret != HG_SUCCESS, "HG_Test_finalize() failed");
 
-    return EXIT_SUCCESS;
+    return ret;
 }
