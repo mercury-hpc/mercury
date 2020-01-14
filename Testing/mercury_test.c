@@ -591,6 +591,9 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
     if (hg_test_info->na_test_info.listen
         || hg_test_info->na_test_info.self_send) {
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
+        /* Give some time before shutting down */
+        sleep(1);
+
         hg_thread_pool_destroy(hg_test_info->thread_pool);
         hg_thread_mutex_destroy(&hg_test_info->bulk_handle_mutex);
 #endif
