@@ -222,6 +222,10 @@ static unsigned long const na_ofi_prov_flags[] = { NA_OFI_PROV_TYPES };
 /* Receive context bits for SEP */
 #define NA_OFI_SEP_RX_CTX_BITS          (8)
 
+/* Op ID status bits */
+#define NA_OFI_OP_COMPLETED             (1 << 0)
+#define NA_OFI_OP_CANCELED              (1 << 1)
+
 /* Private data access */
 #define NA_OFI_CLASS(na_class)      \
     ((struct na_ofi_class *)((na_class)->plugin_class))
@@ -322,8 +326,7 @@ struct na_ofi_op_id {
     na_context_t *context;                  /* NA context associated    */
     struct na_ofi_addr *addr;               /* Address associated       */
     HG_QUEUE_ENTRY(na_ofi_op_id) entry;     /* Entry in queue           */
-    hg_atomic_int32_t completed;            /* Operation completed      */
-    hg_atomic_int32_t canceled;             /* Operation canceled       */
+    hg_atomic_int32_t status;               /* Operation status         */
     hg_atomic_int32_t refcount;             /* Refcount                 */
 };
 
@@ -668,12 +671,6 @@ static NA_INLINE void
 na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id);
 
 /**
- * OP ID is valid.
- */
-static NA_INLINE na_bool_t
-na_ofi_op_id_valid(struct na_ofi_op_id *na_ofi_op_id);
-
-/**
  * Push OP ID to unexpected queue.
  */
 static NA_INLINE void
@@ -686,12 +683,6 @@ na_ofi_msg_unexpected_op_push(na_context_t *context,
 static NA_INLINE void
 na_ofi_msg_unexpected_op_remove(na_context_t *context,
     struct na_ofi_op_id *na_ofi_op_id);
-
-/**
- * Pop and return first OP ID from unexpected queue.
- */
-static NA_INLINE struct na_ofi_op_id *
-na_ofi_msg_unexpected_op_pop(na_context_t *context);
 
 /**
  * Read from CQ.
@@ -1186,12 +1177,10 @@ na_ofi_str_to_gni(const char *str, void **addr, na_size_t *len)
     gni_addr->cm_nic_cdm_id = cm_nic_cdm_id & 0xffffff;
     gni_addr->cookie = cookie;
     gni_addr->rx_ctx_cnt = rx_ctx_cnt & 0xff;
-    /*
     NA_LOG_DEBUG("GNI addr is: device_addr=%x, cdm_id=%x, name_type=%x, "
         "cm_nic_cdm_id=%x, cookie=%x, rx_ctx_cnt=%u",
         gni_addr->device_addr, gni_addr->cdm_id, gni_addr->name_type,
         gni_addr->cm_nic_cdm_id, gni_addr->cookie, gni_addr->rx_ctx_cnt);
-     */
 
     *addr = gni_addr;
 
@@ -1661,8 +1650,7 @@ na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
     }
     hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
     if (domain_found) {
-//        NA_LOG_DEBUG("Found existing domain (%s)",
-//            na_ofi_domain->prov_name);
+        NA_LOG_DEBUG("Found existing domain (%s)", na_ofi_domain->prov_name);
         *na_ofi_domain_p = na_ofi_domain;
         return ret;
     }
@@ -1675,10 +1663,10 @@ na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
     prov = providers;
     while (prov != NULL) {
         if (na_ofi_verify_provider(prov_type, domain_name, prov)) {
-//            NA_LOG_DEBUG("mode 0x%llx, fabric_attr -> prov_name: %s, name: %s; "
-//                "domain_attr -> name: %s, threading: %d.", prov->mode,
-//                prov->fabric_attr->prov_name, prov->fabric_attr->name,
-//                prov->domain_attr->name, prov->domain_attr->threading);
+            NA_LOG_DEBUG("mode 0x%llx, fabric_attr -> prov_name: %s, name: %s; "
+                "domain_attr -> name: %s, threading: %d.", prov->mode,
+                prov->fabric_attr->prov_name, prov->fabric_attr->name,
+                prov->domain_attr->name, prov->domain_attr->threading);
             prov_found = NA_TRUE;
             break;
         }
@@ -1765,9 +1753,9 @@ na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
             NA_INVALID_ARG, "Maximum number of requested contexts (%d) "
             "exceeds provider limitation (%d)", priv->max_contexts,
             min_ctx_cnt);
-//        NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d.",
-//            na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
-//            na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
+        NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d",
+            na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
+            na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
     }
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
@@ -2297,8 +2285,8 @@ na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr)
     /* Do not call fi_av_remove() here to prevent multiple insert/remove calls
      * into AV */
     if (na_ofi_addr->remove) {
-//        NA_LOG_DEBUG("fi_addr=%" SCNx64 " ht_key=%" SCNx64,
-//            na_ofi_addr->fi_addr, na_ofi_addr->ht_key);
+        NA_LOG_DEBUG("fi_addr=%" SCNx64 " ht_key=%" SCNx64,
+            na_ofi_addr->fi_addr, na_ofi_addr->ht_key);
         na_ofi_addr_ht_remove(na_ofi_addr->domain, &na_ofi_addr->fi_addr,
             &na_ofi_addr->ht_key);
     }
@@ -2509,16 +2497,6 @@ na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id)
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_bool_t
-na_ofi_op_id_valid(struct na_ofi_op_id *na_ofi_op_id)
-{
-    if (na_ofi_op_id == NULL)
-        return NA_FALSE;
-
-    return NA_TRUE;
-}
-
-/*---------------------------------------------------------------------------*/
 static NA_INLINE void
 na_ofi_msg_unexpected_op_push(na_context_t *context,
     struct na_ofi_op_id *na_ofi_op_id)
@@ -2541,21 +2519,6 @@ na_ofi_msg_unexpected_op_remove(na_context_t *context,
     HG_QUEUE_REMOVE(&ctx->unexpected_op_queue->queue, na_ofi_op_id,
         na_ofi_op_id, entry);
     hg_thread_spin_unlock(&ctx->unexpected_op_queue->lock);
-}
-
-/*---------------------------------------------------------------------------*/
-static NA_INLINE struct na_ofi_op_id *
-na_ofi_msg_unexpected_op_pop(na_context_t *context)
-{
-    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
-    struct na_ofi_op_id *na_ofi_op_id;
-
-    hg_thread_spin_lock(&ctx->unexpected_op_queue->lock);
-    na_ofi_op_id = HG_QUEUE_FIRST(&ctx->unexpected_op_queue->queue);
-    HG_QUEUE_POP_HEAD(&ctx->unexpected_op_queue->queue, entry);
-    hg_thread_spin_unlock(&ctx->unexpected_op_queue->lock);
-
-    return na_ofi_op_id;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2595,10 +2558,31 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
         "fi_cq_readerr() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
     switch (cq_err.err) {
-        case FI_ECANCELED:
-//            NA_LOG_DEBUG("got a FI_ECANCELED event, cq_event.flags 0x%x.",
-//                         cq_err.flags);
-            goto out;
+        case FI_ECANCELED: {
+            struct na_ofi_op_id *na_ofi_op_id = container_of(
+                cq_err.op_context, struct na_ofi_op_id, fi_ctx);
+
+            NA_CHECK_ERROR(na_ofi_op_id == NULL, out, ret, NA_INVALID_ARG,
+                "Invalid operation ID");
+            NA_CHECK_ERROR(
+                hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED,
+                out, ret, NA_FAULT, "Operation ID was completed");
+            NA_LOG_DEBUG("FI_ECANCELED event on operation ID %p", na_ofi_op_id);
+            NA_CHECK_ERROR(
+                !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELED),
+                out, ret, NA_FAULT, "Operation ID was not canceled");
+
+            if (na_ofi_op_id->completion_data.callback_info.type
+                == NA_CB_RECV_UNEXPECTED) {
+                /* Remove OP ID from OP queue if canceled */
+                na_ofi_msg_unexpected_op_remove(context, na_ofi_op_id);
+            }
+
+            /* Complete operation in canceled state */
+            ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+            NA_CHECK_NA_ERROR(out, ret, "Unable to complete operation");
+         }
+            break;
 
         case FI_EADDRNOTAVAIL:
             /* Only one error event processed in that case */
@@ -2607,14 +2591,10 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
             *src_err_addrlen = cq_err.err_data_size;
             *actual_count = 1;
             break;
-        case FI_EIO:
-            NA_GOTO_ERROR(out, ret, NA_PROTOCOL_ERROR,
-                "fi_cq_readerr() got err: %d(%s), prov_errno: %d(%s)",
-                cq_err.err, fi_strerror(cq_err.err), cq_err.prov_errno,
-                fi_strerror(-cq_err.prov_errno));
-            break;
+
         default:
-            NA_GOTO_ERROR(out, ret, NA_PROTOCOL_ERROR,
+            /* Ignore errors from OFI that we cannot handle */
+            NA_LOG_WARNING(
                 "fi_cq_readerr() got err: %d(%s), prov_errno: %d(%s)",
                 cq_err.err, fi_strerror(cq_err.err), cq_err.prov_errno,
                 fi_strerror(-cq_err.prov_errno));
@@ -2635,16 +2615,11 @@ na_ofi_cq_process_event(na_class_t *na_class, na_context_t *context,
         cq_event->op_context, struct na_ofi_op_id, fi_ctx);
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(!na_ofi_op_id_valid(na_ofi_op_id), out, ret,
-        NA_PROTOCOL_ERROR, "Bad na_ofi_op_id, ignoring event");
-    if (hg_atomic_get32(&na_ofi_op_id->canceled)) {
-        ret = NA_CANCELED;
-        goto complete;
-    }
-    // TODO check that
-    if (hg_atomic_get32(&na_ofi_op_id->completed))
-        NA_GOTO_ERROR(out, ret, NA_PROTOCOL_ERROR,
-            "Ignoring CQ event as the op is completed");
+    NA_CHECK_ERROR(na_ofi_op_id == NULL, out, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    /* Cannot have an already completed operation ID, sanity check */
+    NA_CHECK_ERROR(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED,
+        out, ret, NA_FAULT, "Operation ID was completed");
 
     if (cq_event->flags & FI_SEND) {
         ret = na_ofi_cq_process_send_event(na_ofi_op_id);
@@ -2669,7 +2644,6 @@ na_ofi_cq_process_event(na_class_t *na_class, na_context_t *context,
         NA_GOTO_ERROR(out, ret, NA_PROTONOSUPPORT,
             "Unsupported CQ event flags: 0x%x.", cq_event->flags);
 
-complete:
     /* Complete operation */
     ret = na_ofi_complete(na_ofi_op_id, ret);
     NA_CHECK_NA_ERROR(out, ret, "Unable to complete operation");
@@ -2796,11 +2770,26 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id, na_return_t op_ret)
 {
     struct na_ofi_addr *na_ofi_addr = na_ofi_op_id->addr;
     struct na_cb_info *callback_info = NULL;
+#if defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
+    hg_util_int32_t status;
+#endif
     na_return_t ret = NA_SUCCESS;
 
-    /* Mark op id as completed */
-    if (!hg_atomic_cas32(&na_ofi_op_id->completed, 0, 1))
-        return ret;
+#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
+    /* Mark op id as completed before checking for cancelation */
+    hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
+#else
+    do {
+        status = hg_atomic_get32(&na_ofi_op_id->status);
+    } while (!hg_atomic_cas32(&na_ofi_op_id->status, status,
+        (status | NA_OFI_OP_COMPLETED)));
+#endif
+
+    /* If it was canceled while being processed, set callback ret accordingly */
+    if (hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELED) {
+        NA_LOG_DEBUG("Operation ID %p was canceled", na_ofi_op_id);
+        op_ret = (op_ret == NA_SUCCESS) ? NA_CANCELED : op_ret;
+    }
 
     /* Init callback info */
     callback_info = &na_ofi_op_id->completion_data.callback_info;
@@ -2856,8 +2845,9 @@ na_ofi_release(void *arg)
 {
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) arg;
 
-    if (na_ofi_op_id && !hg_atomic_get32(&na_ofi_op_id->completed))
-        NA_LOG_WARNING("Releasing resources from an uncompleted operation");
+    NA_CHECK_WARNING(na_ofi_op_id &&
+        (!(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED)),
+        "Releasing resources from an uncompleted operation");
 
     na_ofi_op_id_decref(na_ofi_op_id);
 }
@@ -2884,11 +2874,11 @@ na_ofi_check_protocol(const char *protocol_name)
 
     prov = providers;
     while (prov != NULL) {
-//        NA_LOG_DEBUG("fabric_attr - prov_name %s, name - %s, "
-//            "domain_attr - name %s, mode: 0x%llx, domain_attr->mode 0x%llx, caps: 0x%llx.",
-//            prov->fabric_attr->prov_name, prov->fabric_attr->name,
-//            prov->domain_attr->name, prov->mode, prov->domain_attr->mode,
-//            prov->caps);
+        NA_LOG_DEBUG("fabric_attr - prov_name %s, name - %s, "
+            "domain_attr - name %s, mode: 0x%llx, domain_attr->mode 0x%llx, "
+            "caps: 0x%llx", prov->fabric_attr->prov_name,
+            prov->fabric_attr->name, prov->domain_attr->name, prov->mode,
+            prov->domain_attr->mode, prov->caps);
         if (!strcmp(na_ofi_prov_name[type], prov->fabric_attr->prov_name)) {
             accept = NA_TRUE;
             break;
@@ -2923,9 +2913,9 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     na_return_t ret = NA_SUCCESS;
     enum na_ofi_prov_type prov_type;
 
-//    NA_LOG_DEBUG("Entering na_ofi_initialize class_name %s, protocol_name %s, "
-//                 "host_name %s\n", na_info->class_name, na_info->protocol_name,
-//                 na_info->host_name);
+    NA_LOG_DEBUG("Entering na_ofi_initialize() class_name %s, protocol_name %s,"
+        " host_name %s", na_info->class_name, na_info->protocol_name,
+        na_info->host_name);
 
     prov_type = na_ofi_prov_name_to_type(na_info->protocol_name);
     NA_CHECK_ERROR(prov_type == NA_OFI_PROV_NULL, out, ret,
@@ -3294,7 +3284,7 @@ na_ofi_op_create(na_class_t NA_UNUSED *na_class)
         "Could not allocate NA OFI operation ID");
     hg_atomic_init32(&na_ofi_op_id->refcount, 1);
     /* Completed by default */
-    hg_atomic_init32(&na_ofi_op_id->completed, NA_TRUE);
+    hg_atomic_init32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
 
     /* Set op ID release callbacks */
     na_ofi_op_id->completion_data.plugin_callback = na_ofi_release;
@@ -3335,8 +3325,7 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->completion_data.callback_info.type = NA_CB_LOOKUP;
     na_ofi_op_id->completion_data.callback = callback;
     na_ofi_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_set32(&na_ofi_op_id->completed, NA_FALSE);
-    hg_atomic_set32(&na_ofi_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_ofi_op_id->status, 0);
 
     /* Lookup addr */
     ret = na_ofi_addr_lookup2(na_class, name, (na_addr_t *) &na_ofi_addr);
@@ -3736,8 +3725,7 @@ na_ofi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
     na_ofi_op_id->completion_data.callback_info.arg = arg;
     na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
     na_ofi_op_id->addr = na_ofi_addr;
-    hg_atomic_set32(&na_ofi_op_id->completed, NA_FALSE);
-    hg_atomic_set32(&na_ofi_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_ofi_op_id->status, 0);
 
     /* Specify target receive context */
     fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS);
@@ -3791,8 +3779,7 @@ na_ofi_msg_recv_unexpected(na_class_t NA_UNUSED *na_class,
     na_ofi_op_id->completion_data.callback = callback;
     na_ofi_op_id->completion_data.callback_info.arg = arg;
     na_ofi_op_id->addr = NULL; /* Make sure the addr is reset */
-    hg_atomic_set32(&na_ofi_op_id->completed, NA_FALSE);
-    hg_atomic_set32(&na_ofi_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_ofi_op_id->status, 0);
     na_ofi_op_id->info.recv_unexpected.buf = buf;
     na_ofi_op_id->info.recv_unexpected.buf_size = buf_size;
 
@@ -3851,8 +3838,7 @@ na_ofi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_ofi_op_id->completion_data.callback_info.arg = arg;
     na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
     na_ofi_op_id->addr = na_ofi_addr;
-    hg_atomic_set32(&na_ofi_op_id->completed, NA_FALSE);
-    hg_atomic_set32(&na_ofi_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_ofi_op_id->status, 0);
 
     /* Specify target receive context */
     fi_addr = fi_rx_addr(na_ofi_addr->fi_addr, dest_id, NA_OFI_SEP_RX_CTX_BITS);
@@ -3908,8 +3894,7 @@ na_ofi_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_ofi_op_id->completion_data.callback_info.type = NA_CB_RECV_EXPECTED;
     na_ofi_op_id->completion_data.callback = callback;
     na_ofi_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_set32(&na_ofi_op_id->completed, NA_FALSE);
-    hg_atomic_set32(&na_ofi_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_ofi_op_id->status, 0);
     na_ofi_addr_addref(na_ofi_addr); /* decref in na_ofi_complete() */
     na_ofi_op_id->addr = na_ofi_addr;
     na_ofi_op_id->info.recv_expected.buf = buf;
@@ -4156,8 +4141,7 @@ na_ofi_put(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_ofi_op_id->completion_data.callback_info.type = NA_CB_PUT;
     na_ofi_op_id->completion_data.callback = callback;
     na_ofi_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_set32(&na_ofi_op_id->completed, NA_FALSE);
-    hg_atomic_set32(&na_ofi_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_ofi_op_id->status, 0);
     na_ofi_addr_addref(na_ofi_addr); /* for na_ofi_complete() */
     na_ofi_op_id->addr = na_ofi_addr;
 
@@ -4239,8 +4223,7 @@ na_ofi_get(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_ofi_op_id->completion_data.callback_info.type = NA_CB_GET;
     na_ofi_op_id->completion_data.callback = callback;
     na_ofi_op_id->completion_data.callback_info.arg = arg;
-    hg_atomic_set32(&na_ofi_op_id->completed, NA_FALSE);
-    hg_atomic_set32(&na_ofi_op_id->canceled, NA_FALSE);
+    hg_atomic_set32(&na_ofi_op_id->status, 0);
     na_ofi_addr_addref(na_ofi_addr); /* for na_ofi_complete() */
     na_ofi_op_id->addr = na_ofi_addr;
 
@@ -4400,90 +4383,54 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     na_op_id_t op_id)
 {
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
-    ssize_t rc;
+    struct fid_ep *fi_ep = NULL;
     na_return_t ret = NA_SUCCESS;
+    ssize_t rc;
 
-    NA_CHECK_ERROR(na_ofi_op_id_valid(na_ofi_op_id) == NA_FALSE, out, ret,
-        NA_FAULT, "Invalid operation ID");
-
-    if (hg_atomic_get32(&na_ofi_op_id->completed))
+    /* Exit if op has already completed */
+    if (!hg_atomic_cas32(&na_ofi_op_id->status, 0, NA_OFI_OP_CANCELED))
         goto out;
 
-    if (!hg_atomic_cas32(&na_ofi_op_id->canceled, NA_FALSE, NA_TRUE)) {
-        NA_LOG_WARNING("ignore canceling for a canceled op.");
-        goto out;
-    }
-
-    hg_atomic_incr32(&na_ofi_op_id->canceled);
+    NA_LOG_DEBUG("Canceling operation ID %p", na_ofi_op_id);
 
     switch (na_ofi_op_id->completion_data.callback_info.type) {
-    case NA_CB_LOOKUP:
-        break;
-    case NA_CB_RECV_UNEXPECTED: {
-        struct na_ofi_op_id *tmp = NULL, *first = NULL;
-
-        rc = fi_cancel(&NA_OFI_CONTEXT(context)->fi_rx->fid,
-            &na_ofi_op_id->fi_ctx);
-        NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
-            "fi_cancel() unexpected recv failed, rc: %d(%s)",
-            rc, fi_strerror((int) -rc));
-
-        tmp = first = na_ofi_msg_unexpected_op_pop(context);
-        do {
-            NA_CHECK_ERROR(tmp == NULL, out, ret, NA_NOENTRY,
-                "Head of unexpected op queue is NULL");
-            if (tmp == na_ofi_op_id)
-                break;
-
-            na_ofi_msg_unexpected_op_push(context, tmp);
-            tmp = na_ofi_msg_unexpected_op_pop(context);
-            NA_CHECK_ERROR(tmp == first, out, ret, NA_NOENTRY,
-                "Could not find operation ID");
-        } while (tmp != na_ofi_op_id);
-
-        ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+        case NA_CB_RECV_UNEXPECTED:
+        case NA_CB_RECV_EXPECTED:
+            fi_ep = NA_OFI_CONTEXT(context)->fi_rx;
+            break;
+        case NA_CB_SEND_UNEXPECTED:
+        case NA_CB_SEND_EXPECTED:
+        case NA_CB_PUT:
+        case NA_CB_GET:
+            fi_ep = NA_OFI_CONTEXT(context)->fi_tx;
+            break;
+        case NA_CB_LOOKUP:
+        default:
+            NA_GOTO_ERROR(out, ret, NA_INVALID_ARG,
+                "Operation type %d not supported",
+                na_ofi_op_id->completion_data.callback_info.type);
+            break;
     }
-        break;
-    case NA_CB_RECV_EXPECTED:
-        rc = fi_cancel(&NA_OFI_CONTEXT(context)->fi_rx->fid,
-            &na_ofi_op_id->fi_ctx);
-        NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
-            "fi_cancel() expected recv failed, rc: %d(%s)",
-            rc, fi_strerror((int) -rc));
 
-        ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
-        break;
-    case NA_CB_SEND_UNEXPECTED:
-    case NA_CB_SEND_EXPECTED:
-    case NA_CB_PUT:
-    case NA_CB_GET:
-        /* May or may not be canceled in that case */
-        rc = fi_cancel(&NA_OFI_CONTEXT(context)->fi_tx->fid,
-            &na_ofi_op_id->fi_ctx);
-        if (rc != 0) {
-            NA_LOG_WARNING("fi_cancel() failed, rc: %d(%s)",
-                         rc, fi_strerror((int) -rc));
-        }
-        /* fi_cancel() is not guaranteed to return proper return code for now */
-//        if (rc == 0) {
-            /* Complete only if successfully canceled */
-        ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
-//        } else
-//            ret = NA_CANCEL_ERROR;
-        break;
-    default:
-        break;
-    }
+    /* fi_cancel() is an asynchronous operation, either the operation
+     * will be canceled and an FI_ECANCELED event will be generated
+     * or it will show up in the regular completion queue.
+     */
+    rc = fi_cancel(&fi_ep->fid, &na_ofi_op_id->fi_ctx);
+    NA_LOG_DEBUG("fi_cancel() rc: %d(%s)", (int) rc,
+        fi_strerror((int) -rc));
+//    NA_CHECK_ERROR(rc == -FI_ENOENT, out, ret, NA_OPNOTSUPPORTED,
+//        "fi_cancel() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
 
     /* Work around segfault on fi_cq_signal() in some providers */
     if (!(na_ofi_prov_flags[NA_OFI_CLASS(na_class)->domain->prov_type]
         & NA_OFI_SKIP_SIGNAL)) {
         /* Signal CQ to wake up and no longer wait on FD */
-        rc = fi_cq_signal(NA_OFI_CONTEXT(context)->fi_cq);
-        NA_CHECK_ERROR(rc != 0 && rc != -ENOSYS, out, ret,
+        int rc_signal = fi_cq_signal(NA_OFI_CONTEXT(context)->fi_cq);
+        NA_CHECK_ERROR(rc_signal != 0 && rc_signal != -ENOSYS, out, ret,
             NA_PROTOCOL_ERROR, "fi_cq_signal (op type %d) failed, rc: %d(%s)",
-            na_ofi_op_id->completion_data.callback_info.type, rc,
-            fi_strerror((int) -rc));
+            na_ofi_op_id->completion_data.callback_info.type, rc_signal,
+            fi_strerror((int) -rc_signal));
     }
 
 out:

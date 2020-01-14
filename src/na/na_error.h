@@ -83,4 +83,17 @@ extern NA_PRIVATE unsigned int NA_LOG_MASK;
     }                                                           \
 } while (0)
 
+#define NA_CHECK_ERROR_DONE(cond, ...) do {                     \
+    if (unlikely(cond)) {                                       \
+        NA_LOG_ERROR(__VA_ARGS__);                              \
+    }                                                           \
+} while (0)
+
+/* Check for cond and print warning */
+#define NA_CHECK_WARNING(cond, ...) do {                        \
+    if (unlikely(cond)) {                                       \
+        NA_LOG_WARNING(__VA_ARGS__);                            \
+    }                                                           \
+} while (0)
+
 #endif /* NA_ERROR_H */
