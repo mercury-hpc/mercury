@@ -15,26 +15,32 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/****************/
+/* Local Macros */
+/****************/
+
 #define BENCHMARK_NAME "Write BW (server bulk pull)"
 #define STRING(s) #s
 #define XSTRING(s) STRING(s)
-#define VERSION_NAME \
-    XSTRING(HG_VERSION_MAJOR) \
-    "." \
-    XSTRING(HG_VERSION_MINOR) \
-    "." \
+#define VERSION_NAME            \
+    XSTRING(HG_VERSION_MAJOR)   \
+    "."                         \
+    XSTRING(HG_VERSION_MINOR)   \
+    "."                         \
     XSTRING(HG_VERSION_PATCH)
 
-#define SMALL_SKIP 20
-#define LARGE_SKIP 10
-#define LARGE_SIZE 8192
+#define SMALL_SKIP      20
+#define LARGE_SKIP      10
+#define LARGE_SIZE      8192
 
-#define NDIGITS 2
-#define NWIDTH 20
-#define MAX_MSG_SIZE (MERCURY_TESTING_BUFFER_SIZE * 1024 * 1024)
-#define MAX_HANDLES 16
+#define NDIGITS         2
+#define NWIDTH          20
+#define MAX_MSG_SIZE    (MERCURY_TESTING_BUFFER_SIZE * 1024 * 1024)
+#define MAX_HANDLES     (MERCURY_TESTING_MAX_HANDLES)
 
-extern hg_id_t hg_test_perf_bulk_write_id_g;
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
 
 struct hg_test_perf_args {
     hg_request_t *request;
@@ -42,6 +48,20 @@ struct hg_test_perf_args {
     hg_atomic_int32_t op_completed_count;
 };
 
+/********************/
+/* Local Prototypes */
+/********************/
+
+static hg_return_t
+hg_test_perf_forward_cb(const struct hg_cb_info *callback_info);
+
+/*******************/
+/* Local Variables */
+/*******************/
+
+extern hg_id_t hg_test_perf_bulk_write_id_g;
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
 {
@@ -49,13 +69,13 @@ hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
         (struct hg_test_perf_args *) callback_info->arg;
 
     if ((unsigned int) hg_atomic_incr32(&args->op_completed_count)
-        == args->op_count) {
+        == args->op_count)
         hg_request_complete(args->request);
-    }
 
     return HG_SUCCESS;
 }
 
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
     unsigned int nhandles)
@@ -80,6 +100,8 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
 
     /* Prepare bulk_buf */
     bulk_buf = malloc(nbytes);
+    HG_TEST_CHECK_ERROR(bulk_buf == NULL, done, ret, HG_NOMEM_ERROR,
+        "Could not allocate bulk buf");
     for (i = 0; i < nbytes; i++)
         bulk_buf[i] = (char) i;
     buf_ptrs = (void **) &bulk_buf;
@@ -87,13 +109,14 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
 
     /* Create handles */
     handles = malloc(nhandles * sizeof(hg_handle_t));
+    HG_TEST_CHECK_ERROR(handles == NULL, done, ret, HG_NOMEM_ERROR,
+        "Could not allocate handles");
+
     for (i = 0; i < nhandles; i++) {
         ret = HG_Create(hg_test_info->context, hg_test_info->target_addr,
             hg_test_perf_bulk_write_id_g, &handles[i]);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not start call\n");
-            goto done;
-        }
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
+            HG_Error_to_string(ret));
     }
 
     request = hg_request_create(hg_test_info->request_class);
@@ -104,10 +127,8 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
     /* Register memory */
     ret = HG_Bulk_create(hg_test_info->hg_class, 1, buf_ptrs,
         (hg_size_t *) buf_sizes, HG_BULK_READ_ONLY, &bulk_handle);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not create bulk data handle\n");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_create() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Fill input structure */
     in_struct.fildes = 0;
@@ -118,11 +139,10 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
         unsigned int j;
 
         for (j = 0; j < nhandles; j++) {
-            ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args, &in_struct);
-            if (ret != HG_SUCCESS) {
-                fprintf(stderr, "Could not forward call\n");
-                goto done;
-            }
+            ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args,
+                &in_struct);
+            HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
+                HG_Error_to_string(ret));
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
@@ -140,11 +160,18 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
         hg_time_get_current(&t1);
 
         for (j = 0; j < nhandles; j++) {
-            ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args, &in_struct);
-            if (ret != HG_SUCCESS) {
-                fprintf(stderr, "Could not forward call\n");
-                goto done;
+            /* Assign handles to multiple targets */
+            if (hg_test_info->na_test_info.max_contexts > 1) {
+                ret = HG_Set_target_id(handles[j],
+                    (hg_uint8_t) (avg_iter % hg_test_info->na_test_info.max_contexts));
+                HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Set_target_id() failed (%s)",
+                    HG_Error_to_string(ret));
             }
+
+            ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args,
+                &in_struct);
+            HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
+                HG_Error_to_string(ret));
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
@@ -182,19 +209,15 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
 
     /* Free memory handle */
     ret = HG_Bulk_free(bulk_handle);
-    if (ret != HG_SUCCESS) {
-        fprintf(stderr, "Could not free bulk data handle\n");
-        goto done;
-    }
+    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_free() failed (%s)",
+        HG_Error_to_string(ret));
 
     /* Complete */
     hg_request_destroy(request);
     for (i = 0; i < nhandles; i++) {
         ret = HG_Destroy(handles[i]);
-        if (ret != HG_SUCCESS) {
-            fprintf(stderr, "Could not complete\n");
-            goto done;
-        }
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Destroy() failed (%s)",
+            HG_Error_to_string(ret));
     }
 
 done:
@@ -203,15 +226,19 @@ done:
     return ret;
 }
 
-/*****************************************************************************/
+/*---------------------------------------------------------------------------*/
 int
 main(int argc, char *argv[])
 {
     struct hg_test_info hg_test_info = { 0 };
     unsigned int nhandles;
     size_t size;
+    hg_return_t hg_ret;
+    int ret = EXIT_SUCCESS;
 
-    HG_Test_init(argc, argv, &hg_test_info);
+    hg_ret = HG_Test_init(argc, argv, &hg_test_info);
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "HG_Test_init() failed");
 
     for (nhandles = 1; nhandles <= MAX_HANDLES; nhandles *= 2) {
         if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
@@ -227,13 +254,18 @@ main(int argc, char *argv[])
             fflush(stdout);
         }
 
-        for (size = 1; size <= MAX_MSG_SIZE; size *= 2)
-            measure_bulk_transfer(&hg_test_info, size, nhandles);
+        for (size = 1; size <= MAX_MSG_SIZE; size *= 2) {
+            hg_ret = measure_bulk_transfer(&hg_test_info, size, nhandles);
+            HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+                "measure_bulk_transfer() failed");
+        }
 
         fprintf(stdout, "\n");
     }
 
-    HG_Test_finalize(&hg_test_info);
+done:
+    hg_ret = HG_Test_finalize(&hg_test_info);
+    HG_TEST_CHECK_ERROR_DONE(hg_ret != HG_SUCCESS, "HG_Test_finalize() failed");
 
-    return EXIT_SUCCESS;
+    return ret;
 }

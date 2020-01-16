@@ -16,12 +16,12 @@
  */
 hg_return_t
 hg_test_rpc_open_cb(hg_handle_t handle);
-
-/**
- * test_rpc (no response)
- */
 hg_return_t
 hg_test_rpc_open_no_resp_cb(hg_handle_t handle);
+hg_return_t
+hg_test_overflow_cb(hg_handle_t handle);
+hg_return_t
+hg_test_cancel_rpc_cb(hg_handle_t handle);
 
 /**
  * test_bulk
@@ -30,24 +30,6 @@ hg_return_t
 hg_test_bulk_write_cb(hg_handle_t handle);
 hg_return_t
 hg_test_bulk_bind_write_cb(hg_handle_t handle);
-
-///**
-// * test_pipeline
-// */
-//hg_return_t
-//hg_test_pipeline_write_cb(hg_handle_t handle);
-
-/**
- * test_posix
- */
-hg_return_t
-hg_test_posix_open_cb(hg_handle_t handle);
-hg_return_t
-hg_test_posix_write_cb(hg_handle_t handle);
-hg_return_t
-hg_test_posix_read_cb(hg_handle_t handle);
-hg_return_t
-hg_test_posix_close_cb(hg_handle_t handle);
 
 /**
  * test_perf
@@ -60,18 +42,6 @@ hg_return_t
 hg_test_perf_bulk_cb(hg_handle_t handle);
 hg_return_t
 hg_test_perf_bulk_read_cb(hg_handle_t handle);
-
-/**
- * test_overflow
- */
-hg_return_t
-hg_test_overflow_cb(hg_handle_t handle);
-
-/**
- * test_cancel
- */
-hg_return_t
-hg_test_cancel_rpc_cb(hg_handle_t handle);
 
 /**
  * test_nested

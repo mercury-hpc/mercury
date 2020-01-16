@@ -29,6 +29,11 @@ struct forward_cb_args {
     rpc_handle_t *rpc_handle;
 };
 
+struct lookup_cb_args {
+    hg_request_t *request;
+    hg_addr_t *addr_ptr;
+};
+
 /********************/
 /* Local Prototypes */
 /********************/
@@ -37,6 +42,8 @@ static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info);
 static hg_return_t
 hg_test_rpc_forward_no_resp_cb(const struct hg_cb_info *callback_info);
+static hg_return_t
+hg_test_rpc_lookup_cb(const struct hg_cb_info *callback_info);
 static hg_return_t
 hg_test_rpc_forward_reset_cb(const struct hg_cb_info *callback_info);
 static hg_return_t
@@ -63,7 +70,6 @@ hg_test_overflow(hg_context_t *context, hg_request_class_t *request_class,
 static hg_return_t
 hg_test_cancel_rpc(hg_context_t *context, hg_request_class_t *request_class,
     hg_addr_t addr, hg_id_t rpc_id, hg_cb_t callback);
-
 
 /*******************/
 /* Local Variables */
@@ -128,6 +134,20 @@ hg_test_rpc_forward_no_resp_cb(const struct hg_cb_info *callback_info)
 done:
     hg_request_complete(args->request);
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_rpc_lookup_cb(const struct hg_cb_info *callback_info)
+{
+    struct lookup_cb_args *request_args =
+        (struct lookup_cb_args *) callback_info->arg;
+
+    *request_args->addr_ptr = callback_info->info.lookup.addr;
+
+    hg_request_complete(request_args->request);
+
+    return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -270,13 +290,28 @@ hg_test_rpc_lookup(hg_context_t *context, hg_request_class_t *request_class,
     int i;
 
     for (i = 0; i < 32; i++) {
+        struct lookup_cb_args lookup_args;
+        unsigned int flag = 0;
+
         request = hg_request_create(request_class);
 
         /* Look up target addr using target name info */
-        ret = HG_Hl_addr_lookup_wait(context, request_class, target_name,
-            &target_addr, HG_MAX_IDLE_TIME);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Hl_addr_lookup_wait() failed (%s)",
+        lookup_args.addr_ptr = &target_addr;
+        lookup_args.request = request;
+
+        /* Forward call to remote addr and get a new request */
+        ret = HG_Addr_lookup(context, hg_test_rpc_lookup_cb,
+            &lookup_args, target_name, HG_OP_ID_IGNORE);
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_lookup() failed (%s)",
             HG_Error_to_string(ret));
+
+        /* Wait for request to be marked completed */
+        hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
+        HG_TEST_CHECK_ERROR(flag == 0, done, ret, HG_TIMEOUT,
+            "Operation did not complete");
+
+        /* Reset request */
+        hg_request_reset(request);
 
         /* Create RPC request */
         ret = HG_Create(context, target_addr, rpc_id, &handle);
@@ -648,6 +683,10 @@ main(int argc, char *argv[])
     /* RPC test with lookup/free */
     if (!hg_test_info.na_test_info.self_send &&
         strcmp(HG_Class_get_name(hg_test_info.hg_class), "mpi")) {
+        hg_request_t *request = NULL;
+        struct lookup_cb_args lookup_args;
+        unsigned int flag = 0;
+
         HG_Addr_free(hg_test_info.hg_class, hg_test_info.target_addr);
         hg_test_info.target_addr = HG_ADDR_NULL;
 
@@ -659,12 +698,26 @@ main(int argc, char *argv[])
             "lookup test failed");
         HG_PASSED();
 
+        request = hg_request_create(hg_test_info.request_class);
+
         /* Look up target addr using target name info */
-        hg_ret = HG_Hl_addr_lookup_wait(hg_test_info.context,
-            hg_test_info.request_class, hg_test_info.na_test_info.target_name,
-            &hg_test_info.target_addr, HG_MAX_IDLE_TIME);
+        lookup_args.addr_ptr = &hg_test_info.target_addr;
+        lookup_args.request = request;
+
+        /* Forward call to remote addr and get a new request */
+        hg_ret = HG_Addr_lookup(hg_test_info.context, hg_test_rpc_lookup_cb,
+            &lookup_args, hg_test_info.na_test_info.target_name,
+            HG_OP_ID_IGNORE);
         HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
-            "HG_Hl_addr_lookup_wait() failed (%s)", HG_Error_to_string(hg_ret));
+            "HG_Addr_lookup() failed (%s)", HG_Error_to_string(hg_ret));
+
+        /* Wait for request to be marked completed */
+        hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
+        HG_TEST_CHECK_ERROR(flag == 0, done, ret, EXIT_FAILURE,
+            "Operation did not complete");
+
+        /* Destroy request */
+        hg_request_destroy(request);
     }
 
     /* RPC reset test */

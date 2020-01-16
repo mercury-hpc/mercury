@@ -15,27 +15,32 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/****************/
+/* Local Macros */
+/****************/
+
 #define BENCHMARK_NAME "RPC latency"
 #define STRING(s) #s
 #define XSTRING(s) STRING(s)
-#define VERSION_NAME \
-    XSTRING(HG_VERSION_MAJOR) \
-    "." \
-    XSTRING(HG_VERSION_MINOR) \
-    "." \
+#define VERSION_NAME            \
+    XSTRING(HG_VERSION_MAJOR)   \
+    "."                         \
+    XSTRING(HG_VERSION_MINOR)   \
+    "."                         \
     XSTRING(HG_VERSION_PATCH)
 
-#define SMALL_SKIP 100
-#define LARGE_SKIP 10
-#define LARGE_SIZE 8192
+#define SMALL_SKIP      100
+#define LARGE_SKIP      10
+#define LARGE_SIZE      8192
 
-#define NDIGITS 2
-#define NWIDTH 20
-#define MAX_MSG_SIZE (MERCURY_TESTING_BUFFER_SIZE * 1024 * 1024)
-#define MAX_HANDLES 16
+#define NDIGITS         2
+#define NWIDTH          20
+#define MAX_MSG_SIZE    (MERCURY_TESTING_BUFFER_SIZE * 1024 * 1024)
+#define MAX_HANDLES     (MERCURY_TESTING_MAX_HANDLES)
 
-extern hg_id_t hg_test_perf_rpc_id_g;
-extern hg_id_t hg_test_perf_rpc_lat_id_g;
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
 
 struct hg_test_perf_args {
     hg_request_t *request;
@@ -43,6 +48,24 @@ struct hg_test_perf_args {
     hg_atomic_int32_t op_completed_count;
 };
 
+/********************/
+/* Local Prototypes */
+/********************/
+
+static hg_return_t
+hg_test_perf_forward_cb(const struct hg_cb_info *callback_info);
+static hg_return_t
+measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
+    unsigned int nhandles);
+
+/*******************/
+/* Local Variables */
+/*******************/
+
+extern hg_id_t hg_test_perf_rpc_id_g;
+extern hg_id_t hg_test_perf_rpc_lat_id_g;
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
 {
@@ -50,13 +73,13 @@ hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
         (struct hg_test_perf_args *) callback_info->arg;
 
     if ((unsigned int) hg_atomic_incr32(&args->op_completed_count)
-        == args->op_count) {
+        == args->op_count)
         hg_request_complete(args->request);
-    }
 
     return HG_SUCCESS;
 }
 
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
     unsigned int nhandles)
@@ -190,7 +213,7 @@ done:
     return ret;
 }
 
-/*****************************************************************************/
+/*---------------------------------------------------------------------------*/
 int
 main(int argc, char *argv[])
 {
