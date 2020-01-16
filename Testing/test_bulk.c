@@ -36,7 +36,6 @@ struct forward_cb_args {
 static hg_return_t
 hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info);
 
-
 /*******************/
 /* Local Variables */
 /*******************/

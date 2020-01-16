@@ -5,6 +5,10 @@ set(MERCURY_TESTING_BUFFER_SIZE "16" CACHE STRING
   "Total buffer size (in MB) used for testing.")
 mark_as_advanced(MERCURY_TESTING_BUFFER_SIZE)
 
+set(MERCURY_TESTING_MAX_HANDLES "16" CACHE STRING
+  "Max number of concurrent handles used for testing.")
+mark_as_advanced(MERCURY_TESTING_MAX_HANDLES)
+
 option(MERCURY_TESTING_USE_THREAD_POOL "Run tests using thread pool." ON)
 if(MERCURY_TESTING_USE_THREAD_POOL)
   set(MERCURY_TESTING_HAS_THREAD_POOL ON)
@@ -250,7 +254,7 @@ endif()
 #----------------------------------------------------------------------------
 
 add_library(mercury_test STATIC ${MERCURY_TEST_SRCS})
-target_link_libraries(mercury_test mercury_hl na_test
+target_link_libraries(mercury_test mercury na_test
   ${MERCURY_TEST_EXT_LIB_DEPENDENCIES}
 )
 if(MERCURY_ENABLE_COVERAGE)
@@ -267,12 +271,10 @@ build_mercury_test(server)
 set(MERCURY_tests
   rpc
   bulk
+  rpc_lat
+  write_bw
+  read_bw
 )
-
-# Benchmarks
-build_mercury_test(rpc_lat)
-build_mercury_test(write_bw)
-build_mercury_test(read_bw)
 
 # Cray DRC test
 if(HG_TESTING_HAS_CRAY_DRC)

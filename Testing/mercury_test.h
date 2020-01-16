@@ -23,9 +23,6 @@
 
 #include "test_rpc.h"
 #include "test_bulk.h"
-#ifndef _WIN32
-# include "test_posix.h"
-#endif
 #include "test_overflow.h"
 
 #ifdef HG_TESTING_HAS_CRAY_DRC
@@ -37,11 +34,17 @@
 /*************************************/
 
 struct hg_test_info {
+    struct na_test_info na_test_info;
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+    hg_thread_mutex_t bulk_handle_mutex;
+    hg_thread_pool_t *thread_pool;
+#endif
     hg_class_t *hg_class;
     hg_context_t *context;
     hg_context_t **secondary_contexts;
     hg_request_class_t *request_class;
     hg_addr_t target_addr;
+    hg_bulk_t bulk_handle;
     hg_bool_t auth;
 #ifdef HG_TESTING_HAS_CRAY_DRC
     uint32_t credential;
@@ -49,14 +52,8 @@ struct hg_test_info {
     drc_info_handle_t credential_info;
     uint32_t cookie;
 #endif
-    hg_bool_t auto_sm;
-    struct na_test_info na_test_info;
     unsigned int thread_count;
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
-    hg_thread_pool_t *thread_pool;
-    hg_thread_mutex_t bulk_handle_mutex;
-#endif
-    hg_bulk_t bulk_handle;
+    hg_bool_t auto_sm;
 };
 
 struct hg_test_context_info {

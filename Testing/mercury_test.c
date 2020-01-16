@@ -15,8 +15,6 @@
 # include <mercury_test_drc.h>
 #endif
 
-#include "mercury_hl.h"
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,6 +27,11 @@
 /* Local Type and Struct Definition */
 /************************************/
 
+struct hg_test_lookup_arg {
+    hg_addr_t *addr_ptr;
+    hg_request_t *request;
+};
+
 /********************/
 /* Local Prototypes */
 /********************/
@@ -40,10 +43,19 @@ void
 hg_test_parse_options(int argc, char *argv[],
     struct hg_test_info *hg_test_info);
 
+static int
+hg_test_request_progress(unsigned int timeout, void *arg);
+
+static int
+hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg);
+
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static hg_return_t
 hg_test_handle_create_cb(hg_handle_t handle, void *arg);
 #endif
+
+static hg_return_t
+hg_test_addr_lookup_cb(const struct hg_cb_info *callback_info);
 
 static hg_return_t
 hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id);
@@ -74,19 +86,12 @@ extern const struct na_test_opt na_test_opt_g[];
 /* test_rpc */
 hg_id_t hg_test_rpc_open_id_g = 0;
 hg_id_t hg_test_rpc_open_id_no_resp_g = 0;
+hg_id_t hg_test_overflow_id_g = 0;
+hg_id_t hg_test_cancel_rpc_id_g = 0;
 
 /* test_bulk */
 hg_id_t hg_test_bulk_write_id_g = 0;
 hg_id_t hg_test_bulk_bind_write_id_g = 0;
-
-/* test_pipeline */
-hg_id_t hg_test_pipeline_write_id_g = 0;
-
-/* test_posix */
-hg_id_t hg_test_posix_open_id_g = 0;
-hg_id_t hg_test_posix_write_id_g = 0;
-hg_id_t hg_test_posix_read_id_g = 0;
-hg_id_t hg_test_posix_close_id_g = 0;
 
 /* test_perf */
 hg_id_t hg_test_perf_rpc_id_g = 0;
@@ -94,12 +99,6 @@ hg_id_t hg_test_perf_rpc_lat_id_g = 0;
 hg_id_t hg_test_perf_bulk_id_g = 0;
 hg_id_t hg_test_perf_bulk_write_id_g = 0;
 hg_id_t hg_test_perf_bulk_read_id_g = 0;
-
-/* test_overflow */
-hg_id_t hg_test_overflow_id_g = 0;
-
-/* test_cancel */
-hg_id_t hg_test_cancel_rpc_id_g = 0;
 
 /* test_nested */
 hg_id_t hg_test_nested1_id_g = 0;
@@ -159,6 +158,34 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
 }
 
 /*---------------------------------------------------------------------------*/
+static int
+hg_test_request_progress(unsigned int timeout, void *arg)
+{
+    hg_context_t *context = (hg_context_t *) arg;
+    int ret = HG_UTIL_SUCCESS;
+
+    if (HG_Progress(context, timeout) != HG_SUCCESS)
+        ret = HG_UTIL_FAIL;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
+{
+    hg_context_t *context = (hg_context_t *) arg;
+    unsigned int actual_count = 0;
+    int ret = HG_UTIL_SUCCESS;
+
+    if (HG_Trigger(context, timeout, 1, &actual_count)
+            != HG_SUCCESS) ret = HG_UTIL_FAIL;
+    *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 #ifdef MERCURY_TESTING_HAS_THREAD_POOL
 static hg_return_t
 hg_test_handle_create_cb(hg_handle_t handle, void *arg)
@@ -177,6 +204,20 @@ done:
     return ret;
 }
 #endif
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_addr_lookup_cb(const struct hg_cb_info *callback_info)
+{
+    struct hg_test_lookup_arg *request_args =
+            (struct hg_test_lookup_arg *) callback_info->arg;
+
+    *request_args->addr_ptr = callback_info->info.lookup.addr;
+
+    hg_request_complete(request_args->request);
+
+    return HG_SUCCESS;
+}
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -259,13 +300,19 @@ hg_test_register(hg_class_t *hg_class)
     /* test_rpc */
     hg_test_rpc_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_rpc_open",
             rpc_open_in_t, rpc_open_out_t, hg_test_rpc_open_cb);
-
-    /* Disable response */
     hg_test_rpc_open_id_no_resp_g = MERCURY_REGISTER(hg_class,
         "hg_test_rpc_open_no_resp", rpc_open_in_t, rpc_open_out_t,
         hg_test_rpc_open_no_resp_cb);
+
+    /* Disable response */
     HG_Registered_disable_response(hg_class, hg_test_rpc_open_id_no_resp_g,
         HG_TRUE);
+
+    hg_test_overflow_id_g = MERCURY_REGISTER(hg_class, "hg_test_overflow",
+            void, overflow_out_t, hg_test_overflow_cb);
+    hg_test_cancel_rpc_id_g = MERCURY_REGISTER(hg_class, "hg_test_cancel_rpc",
+            void, void, hg_test_cancel_rpc_cb);
+
 
     /* test_bulk */
     hg_test_bulk_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_bulk_write",
@@ -273,18 +320,6 @@ hg_test_register(hg_class_t *hg_class)
     hg_test_bulk_bind_write_id_g = MERCURY_REGISTER(hg_class,
         "hg_test_bulk_bind_write", bulk_write_in_t, bulk_bind_write_out_t,
         hg_test_bulk_bind_write_cb);
-
-#ifndef _WIN32
-    /* test_posix */
-    hg_test_posix_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_open",
-            open_in_t, open_out_t, hg_test_posix_open_cb);
-    hg_test_posix_write_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_write",
-            write_in_t, write_out_t, hg_test_posix_write_cb);
-    hg_test_posix_read_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_read",
-            read_in_t, read_out_t, hg_test_posix_read_cb);
-    hg_test_posix_close_id_g = MERCURY_REGISTER(hg_class, "hg_test_posix_close",
-            close_in_t, close_out_t, hg_test_posix_close_cb);
-#endif
 
     /* test_perf */
     hg_test_perf_rpc_id_g = MERCURY_REGISTER(hg_class, "hg_test_perf_rpc",
@@ -298,14 +333,6 @@ hg_test_register(hg_class_t *hg_class)
     hg_test_perf_bulk_read_id_g = MERCURY_REGISTER(hg_class,
             "hg_test_perf_bulk_read", bulk_write_in_t, void,
             hg_test_perf_bulk_read_cb);
-
-    /* test_overflow */
-    hg_test_overflow_id_g = MERCURY_REGISTER(hg_class, "hg_test_overflow",
-            void, overflow_out_t, hg_test_overflow_cb);
-
-    /* test_cancel */
-    hg_test_cancel_rpc_id_g = MERCURY_REGISTER(hg_class, "hg_test_cancel_rpc",
-            void, void, hg_test_cancel_rpc_cb);
 
     /* test_nested */
 //    hg_test_nested1_id_g = MERCURY_REGISTER(hg_class, "hg_test_nested",
@@ -387,7 +414,6 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         hg_test_info->na_test_info.listen, &hg_init_info);
     HG_TEST_CHECK_ERROR(hg_test_info->hg_class == NULL, done, ret, HG_FAULT,
         "HG_Init_opt() failed (%s)");
-    HG_CLASS_DEFAULT = hg_test_info->hg_class;
 
     /* Attach test info to class */
     ret = HG_Class_set_data(hg_test_info->hg_class, hg_test_info, NULL);
@@ -409,21 +435,23 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     HG_Class_set_output_offset(hg_test_info->hg_class, sizeof(hg_uint64_t));
     */
 
-    /* For convenience */
-    ret = HG_Hl_init_opt(NULL, hg_test_info->na_test_info.listen,
-        &hg_init_info);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Hl_init_opt() failed (%s)",
-        HG_Error_to_string(ret));
+    /* Create primary context */
+    hg_test_info->context = HG_Context_create(hg_test_info->hg_class);
+    HG_TEST_CHECK_ERROR(hg_test_info->context == NULL, done, ret, HG_FAULT,
+        "Could not create HG context");
 
-    hg_test_info->context = HG_CONTEXT_DEFAULT;
-    hg_test_info->request_class = HG_REQUEST_CLASS_DEFAULT;
+    /* Create request class */
+    hg_test_info->request_class = hg_request_init(hg_test_request_progress,
+        hg_test_request_trigger, hg_test_info->context);
+    HG_TEST_CHECK_ERROR(hg_test_info->request_class == NULL, done, ret,
+        HG_FAULT, "Could not create request class");
 
     /* Attach context info to context */
     hg_test_context_info = malloc(sizeof(struct hg_test_context_info));
     HG_TEST_CHECK_ERROR(hg_test_context_info == NULL, done, ret, HG_NOMEM_ERROR,
         "Could not allocate HG test context info");
 
-    hg_atomic_set32(&hg_test_context_info->finalizing, 0);
+    hg_atomic_init32(&hg_test_context_info->finalizing, 0);
     ret = HG_Context_set_data(hg_test_info->context, hg_test_context_info, free);
     HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_set_data() failed (%s)",
         HG_Error_to_string(ret));
@@ -453,7 +481,6 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         /* Create bulk handle mutex */
         hg_thread_mutex_init(&hg_test_info->bulk_handle_mutex);
 #endif
-
         /* Create bulk buffer that can be used for receiving data */
         ret = HG_Bulk_create(hg_test_info->hg_class, 1, NULL,
             (hg_size_t *) &bulk_size, HG_BULK_READWRITE,
@@ -497,7 +524,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
                 HG_TEST_CHECK_ERROR(hg_test_context_info == NULL, done, ret,
                     HG_NOMEM_ERROR, "Could not allocate HG test context info");
 
-                hg_atomic_set32(&hg_test_context_info->finalizing, 0);
+                hg_atomic_init32(&hg_test_context_info->finalizing, 0);
                 ret = HG_Context_set_data(hg_test_info->secondary_contexts[i],
                     hg_test_context_info, free);
                 HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_set_data() failed"
@@ -536,6 +563,9 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
             HG_Error_to_string(ret));
     } else {
         char test_addr_name[NA_TEST_MAX_ADDR_NAME] = { '\0' };
+        hg_request_t *request = NULL;
+        unsigned int flag = 0;
+        struct hg_test_lookup_arg lookup_args;
 
 #ifdef MERCURY_HAS_PARALLEL_TESTING
         /* If static client must wait for server to write config file */
@@ -543,9 +573,8 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
             MPI_Barrier(MPI_COMM_WORLD);
 #endif
 
-        if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
+        if (hg_test_info->na_test_info.mpi_comm_rank == 0)
             na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
-        }
 
         /* Broadcast addr name */
         NA_Test_bcast(test_addr_name, NA_TEST_MAX_ADDR_NAME, 0,
@@ -558,11 +587,24 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
             hg_test_info->na_test_info.target_name);
 
         /* Look up target addr using target name info */
-        ret = HG_Hl_addr_lookup_wait(hg_test_info->context,
-            hg_test_info->request_class, hg_test_info->na_test_info.target_name,
-            &hg_test_info->target_addr, HG_MAX_IDLE_TIME);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Hl_addr_lookup_wait() failed (%s)",
+        request = hg_request_create(hg_test_info->request_class);
+        lookup_args.addr_ptr = &hg_test_info->target_addr;
+        lookup_args.request = request;
+
+        /* Forward call to remote addr and get a new request */
+        ret = HG_Addr_lookup(hg_test_info->context, hg_test_addr_lookup_cb,
+            &lookup_args, hg_test_info->na_test_info.target_name,
+            HG_OP_ID_IGNORE);
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_lookup() failed (%s)",
             HG_Error_to_string(ret));
+
+        /* Wait for request to be marked completed */
+        hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
+        HG_TEST_CHECK_ERROR(flag == 0, done, ret, HG_TIMEOUT,
+            "Operation did not complete");
+
+        /* Free request */
+        hg_request_destroy(request);
     }
 
 done:
@@ -578,8 +620,8 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
 
     NA_Test_barrier(&hg_test_info->na_test_info);
 
+    /* Client sends request to terminate server */
     if (!hg_test_info->na_test_info.listen) {
-        /* Send request to terminate server */
         if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
             hg_uint8_t i, context_count =
                 hg_test_info->na_test_info.max_contexts ?
@@ -587,48 +629,70 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
             for (i = 0; i < context_count; i++)
                 hg_test_finalize_rpc(hg_test_info, i);
         }
-
-        /* Free addr id */
-        ret = HG_Addr_free(hg_test_info->hg_class, hg_test_info->target_addr);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_free() failed (%s)",
-            HG_Error_to_string(ret));
     }
 
     NA_Test_barrier(&hg_test_info->na_test_info);
 
-    if (hg_test_info->na_test_info.listen
-        || hg_test_info->na_test_info.self_send) {
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
-        /* Give some time before shutting down */
-        sleep(1);
+    /* Free target addr */
+    if (hg_test_info->target_addr != HG_ADDR_NULL) {
+        ret = HG_Addr_free(hg_test_info->hg_class, hg_test_info->target_addr);
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_free() failed (%s)",
+            HG_Error_to_string(ret));
+        hg_test_info->target_addr = HG_ADDR_NULL;
+    }
 
+    /* Finalize request class */
+    if (hg_test_info->request_class) {
+        hg_request_finalize(hg_test_info->request_class, NULL);
+        hg_test_info->request_class = NULL;
+    }
+
+    /* Destroy context */
+    if (hg_test_info->context) {
+        ret = HG_Context_destroy(hg_test_info->context);
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_destroy() failed"
+            " (%s)", HG_Error_to_string(ret));
+        hg_test_info->context = NULL;
+    }
+
+    /* Destroy secondary contexts */
+    if (hg_test_info->secondary_contexts) {
+        hg_uint8_t secondary_contexts_count = (hg_uint8_t)
+                    (hg_test_info->na_test_info.max_contexts - 1);
+        hg_uint8_t i;
+
+        for (i = 0; i < secondary_contexts_count; i++) {
+            ret = HG_Context_destroy(hg_test_info->secondary_contexts[i]);
+            HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_destroy() failed"
+                " (%s)", HG_Error_to_string(ret));
+        }
+        free(hg_test_info->secondary_contexts);
+        hg_test_info->secondary_contexts = NULL;
+    }
+
+#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+    if (hg_test_info->thread_pool) {
         hg_thread_pool_destroy(hg_test_info->thread_pool);
+        hg_test_info->thread_pool = NULL;
         hg_thread_mutex_destroy(&hg_test_info->bulk_handle_mutex);
+    }
 #endif
+
+    if (hg_test_info->bulk_handle != HG_BULK_NULL) {
         /* Destroy bulk handle */
         ret = HG_Bulk_free(hg_test_info->bulk_handle);
         HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_free() failed (%s)",
             HG_Error_to_string(ret));
-
-        /* Destroy secondary contexts */
-        if (hg_test_info->secondary_contexts) {
-            hg_uint8_t secondary_contexts_count = (hg_uint8_t)
-                (hg_test_info->na_test_info.max_contexts - 1);
-            hg_uint8_t i;
-
-            for (i = 0; i < secondary_contexts_count; i++) {
-                ret = HG_Context_destroy(hg_test_info->secondary_contexts[i]);
-                HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_destroy() failed"
-                    " (%s)", HG_Error_to_string(ret));
-            }
-            free(hg_test_info->secondary_contexts);
-        }
+        hg_test_info->bulk_handle = HG_BULK_NULL;
     }
 
     /* Finalize interface */
-    ret = HG_Hl_finalize();
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Hl_finalize() failed (%s)",
-        HG_Error_to_string(ret));
+    if (hg_test_info->hg_class) {
+        ret = HG_Finalize(hg_test_info->hg_class);
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Finalize() failed (%s)",
+            HG_Error_to_string(ret));
+        hg_test_info->hg_class = NULL;
+    }
 
     /* Finalize NA test interface */
     na_ret = NA_Test_finalize(&hg_test_info->na_test_info);
