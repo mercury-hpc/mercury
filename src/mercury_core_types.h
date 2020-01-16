@@ -54,6 +54,7 @@ struct hg_init_info {
     X(HG_CANCELED)          /*!< operation canceled */                      \
     X(HG_CHECKSUM_ERROR)    /*!< checksum error */                          \
     X(HG_NA_ERROR)          /*!< generic NA error */                        \
+    X(HG_OTHER_ERROR)       /*!< generic HG error */                        \
     X(HG_RETURN_MAX)
 
 #define X(a) a,
