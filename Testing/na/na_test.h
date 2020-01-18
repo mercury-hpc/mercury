@@ -15,7 +15,7 @@
 #include "na.h"
 #include "na_error.h"
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
 # include <mpi.h>
 #endif
 
@@ -40,7 +40,7 @@ struct na_test_info {
     na_uint8_t max_contexts;    /* Max contexts */
     na_bool_t verbose;          /* Verbose mode */
     int max_number_of_peers;    /* Max number of peers */
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
     MPI_Comm mpi_comm;          /* MPI comm */
     na_bool_t mpi_no_finalize;  /* Prevent from finalizing MPI */
 #endif

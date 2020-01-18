@@ -134,7 +134,7 @@ hg_proc_perf_rpc_lat_in_t(hg_proc_t proc, void *data)
                 return ret;
         }
 
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
         if (hg_proc_get_op(proc) == HG_DECODE) {
             hg_size_t i;
             char *buf_ptr = struct_data->buf;

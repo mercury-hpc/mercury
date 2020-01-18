@@ -35,8 +35,8 @@
 
 #define NDIGITS         2
 #define NWIDTH          20
-#define MAX_MSG_SIZE    (MERCURY_TESTING_BUFFER_SIZE * 1024 * 1024)
-#define MAX_HANDLES     (MERCURY_TESTING_MAX_HANDLES)
+#define MAX_MSG_SIZE    (HG_TEST_BUFFER_SIZE * 1024 * 1024)
+#define MAX_HANDLES     (HG_TEST_MAX_HANDLES)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -182,7 +182,7 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
         hg_atomic_set32(&args.op_completed_count, 0);
 
 	/* We have received everything so calculate the bandwidth */
-#ifdef MERCURY_TESTING_PRINT_PARTIAL
+#ifdef HG_TEST_PRINT_PARTIAL
         read_lat = time_read * 1.0e6 / (double) (nhandles * (avg_iter + 1) *
             (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
         if (hg_test_info->na_test_info.mpi_comm_rank == 0)
@@ -190,7 +190,7 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
                 NDIGITS, (read_lat), NWIDTH, (int) (1.0e6 / read_lat));
 #endif
     }
-#ifndef MERCURY_TESTING_PRINT_PARTIAL
+#ifndef HG_TEST_PRINT_PARTIAL
     read_lat = time_read * 1.0e6 / (double) (nhandles * loop *
         (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
@@ -233,7 +233,7 @@ main(int argc, char *argv[])
             fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with "
                 "%u handle(s)\n",
                 hg_test_info.na_test_info.loop, 1, MAX_MSG_SIZE, nhandles);
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
             fprintf(stdout, "# WARNING verifying data, output will be slower\n");
 #endif
             fprintf(stdout, "%-*s%*s%*s\n", 10, "# Size", NWIDTH,

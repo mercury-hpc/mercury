@@ -35,8 +35,8 @@
 
 #define NDIGITS         2
 #define NWIDTH          20
-#define MAX_MSG_SIZE    (MERCURY_TESTING_BUFFER_SIZE * 1024 * 1024)
-#define MAX_HANDLES     (MERCURY_TESTING_MAX_HANDLES)
+#define MAX_MSG_SIZE    (HG_TEST_BUFFER_SIZE * 1024 * 1024)
+#define MAX_HANDLES     (HG_TEST_MAX_HANDLES)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -177,7 +177,7 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
         hg_request_reset(request);
         hg_atomic_set32(&args.op_completed_count, 0);
 
-#ifdef MERCURY_TESTING_PRINT_PARTIAL
+#ifdef HG_TEST_PRINT_PARTIAL
         read_bandwidth = nmbytes
             * (double) (nhandles * (avg_iter + 1) *
                 (unsigned int) hg_test_info->na_test_info.mpi_comm_size)
@@ -188,7 +188,7 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
             fprintf(stdout, "%-*d%*.*f\r", 10, (int) nbytes, NWIDTH,
                 NDIGITS, read_bandwidth);
 #endif
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
         for (i = 0; i < nbytes; i++) {
             if (bulk_buf[i] != (char) i) {
                 printf("Error detected in bulk transfer, buf[%d] = %d, "
@@ -199,7 +199,7 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
         }
 #endif
     }
-#ifndef MERCURY_TESTING_PRINT_PARTIAL
+#ifndef HG_TEST_PRINT_PARTIAL
     read_bandwidth = nmbytes
         * (double) (nhandles * loop *
             (unsigned int) hg_test_info->na_test_info.mpi_comm_size)
@@ -251,7 +251,7 @@ main(int argc, char *argv[])
             fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with "
                 "%u handle(s)\n",
                 hg_test_info.na_test_info.loop, 1, MAX_MSG_SIZE, nhandles);
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
             fprintf(stdout, "# WARNING verifying data, output will be slower\n");
 #endif
             fprintf(stdout, "%-*s%*s\n", 10, "# Size", NWIDTH,

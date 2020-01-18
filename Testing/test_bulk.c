@@ -17,7 +17,7 @@
 /* Local Macros */
 /****************/
 
-#define BUFSIZE (MERCURY_TESTING_BUFFER_SIZE * 1024 * 1024)
+#define BUFSIZE (HG_TEST_BUFFER_SIZE * 1024 * 1024)
 
 /************************************/
 /* Local Type and Struct Definition */

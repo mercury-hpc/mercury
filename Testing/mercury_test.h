@@ -15,7 +15,7 @@
 
 #include "mercury.h"
 #include "mercury_request.h"
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
 # include "mercury_thread_pool.h"
 # include "mercury_thread_mutex.h"
 #endif
@@ -25,7 +25,7 @@
 #include "test_bulk.h"
 #include "test_overflow.h"
 
-#ifdef HG_TESTING_HAS_CRAY_DRC
+#ifdef HG_TEST_HAS_CRAY_DRC
 # include <rdmacred.h>
 #endif
 
@@ -35,7 +35,7 @@
 
 struct hg_test_info {
     struct na_test_info na_test_info;
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     hg_thread_mutex_t bulk_handle_mutex;
     hg_thread_pool_t *thread_pool;
 #endif
@@ -46,7 +46,7 @@ struct hg_test_info {
     hg_addr_t target_addr;
     hg_bulk_t bulk_handle;
     hg_bool_t auth;
-#ifdef HG_TESTING_HAS_CRAY_DRC
+#ifdef HG_TEST_HAS_CRAY_DRC
     uint32_t credential;
     uint32_t wlm_id;
     drc_info_handle_t credential_info;
@@ -63,9 +63,6 @@ struct hg_test_context_info {
 /*****************/
 /* Public Macros */
 /*****************/
-
-/* Number of threads */
-#define MERCURY_TESTING_NUM_THREADS_DEFAULT 8
 
 /* Default error macro */
 #ifdef HG_HAS_VERBOSE_ERROR

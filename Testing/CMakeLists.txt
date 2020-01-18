@@ -3,48 +3,56 @@
 #------------------------------------------------------------------------------
 set(MERCURY_TESTING_BUFFER_SIZE "16" CACHE STRING
   "Total buffer size (in MB) used for testing.")
+set(HG_TEST_BUFFER_SIZE ${MERCURY_TESTING_BUFFER_SIZE})
 mark_as_advanced(MERCURY_TESTING_BUFFER_SIZE)
 
 set(MERCURY_TESTING_MAX_HANDLES "16" CACHE STRING
   "Max number of concurrent handles used for testing.")
+set(HG_TEST_MAX_HANDLES ${MERCURY_TESTING_MAX_HANDLES})
 mark_as_advanced(MERCURY_TESTING_MAX_HANDLES)
 
 option(MERCURY_TESTING_USE_THREAD_POOL "Run tests using thread pool." ON)
 if(MERCURY_TESTING_USE_THREAD_POOL)
-  set(MERCURY_TESTING_HAS_THREAD_POOL ON)
+  set(HG_TEST_HAS_THREAD_POOL 1)
 endif()
 mark_as_advanced(MERCURY_TESTING_USE_THREAD_POOL)
 
 option(MERCURY_TESTING_VERIFY_DATA
   "Verify data when running tests (disable when measuring bandwidth)." ON)
 if(MERCURY_TESTING_VERIFY_DATA)
-  set(MERCURY_TESTING_HAS_VERIFY_DATA ON)
+  set(HG_TEST_HAS_VERIFY_DATA 1)
 endif()
 mark_as_advanced(MERCURY_TESTING_VERIFY_DATA)
 
 option(MERCURY_TESTING_PRINT_PARTIAL
   "Print partial results between loops (disable when measuring)." OFF)
+if(MERCURY_TESTING_PRINT_PARTIAL)
+  set(HG_TEST_PRINT_PARTIAL 1)
+endif()
 mark_as_advanced(MERCURY_TESTING_PRINT_PARTIAL)
 
-option(MERCURY_ENABLE_PARALLEL_TESTING
+option(MERCURY_TESTING_ENABLE_PARALLEL
   "Enable testing in parallel (requires MPI)." OFF)
-if(MERCURY_ENABLE_PARALLEL_TESTING OR NA_USE_MPI)
-  set(MERCURY_HAS_PARALLEL_TESTING 1)
-  if(NA_USE_MPI AND NOT MERCURY_ENABLE_PARALLEL_TESTING)
+if(MERCURY_TESTING_ENABLE_PARALLEL OR NA_USE_MPI)
+  set(HG_TEST_HAS_PARALLEL 1)
+  if(NA_USE_MPI AND NOT MERCURY_TESTING_ENABLE_PARALLEL)
     # Always force parallel testing if NA_USE_MPI is turned ON
-    set(MERCURY_ENABLE_PARALLEL_TESTING "ON" CACHE BOOL
+    set(MERCURY_TESTING_ENABLE_PARALLEL "ON" CACHE BOOL
       "Enable testing in parallel (requires MPI)." FORCE)
   endif()
 else()
-  set(MERCURY_HAS_PARALLEL_TESTING 0)
+  set(HG_TEST_HAS_PARALLEL 0)
 endif()
+mark_as_advanced(MERCURY_TESTING_ENABLE_PARALLEL)
 
-set(MERCURY_TEST_INIT_COMMAND "" CACHE STRING
+set(MERCURY_TESTING_INIT_COMMAND "" CACHE STRING
   "Command to run before a client/server test begins. Multiple commands are separated by ';'.")
-mark_as_advanced(MERCURY_TEST_INIT_COMMAND)
+set(HG_TEST_INIT_COMMAND ${MERCURY_TESTING_INIT_COMMAND})
+mark_as_advanced(MERCURY_TESTING_INIT_COMMAND)
 
 set(MERCURY_TESTING_TEMP_DIRECTORY "." CACHE PATH
   "Location to use for temp data (default is current directory).")
+set(HG_TEST_TEMP_DIRECTORY ${MERCURY_TESTING_TEMP_DIRECTORY})
 mark_as_advanced(MERCURY_TESTING_TEMP_DIRECTORY)
 
 if(MERCURY_USE_SELF_FORWARD)
@@ -85,7 +93,7 @@ if(NA_USE_OFI)
   if(NA_OFI_TESTING_USE_CRAY_DRC)
     find_package(DRC REQUIRED)
     if(DRC_FOUND)
-      set(HG_TESTING_HAS_CRAY_DRC 1)
+      set(HG_TEST_HAS_CRAY_DRC 1)
       include_directories(${DRC_INCLUDE_DIRS})
       set(MERCURY_TEST_EXT_LIB_DEPENDENCIES
         ${MERCURY_TEST_EXT_LIB_DEPENDENCIES}
@@ -103,7 +111,7 @@ if(NA_USE_SM)
 endif()
 
 # Detect <sys/prctl.h>
-check_include_files("sys/prctl.h" HG_TESTING_HAS_SYSPRCTL_H)
+check_include_files("sys/prctl.h" HG_TEST_HAS_SYSPRCTL_H)
 
 #------------------------------------------------------------------------------
 # Compile kwsys library and setup TestDriver
@@ -118,7 +126,7 @@ include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-if(MERCURY_ENABLE_PARALLEL_TESTING)
+if(MERCURY_TESTING_ENABLE_PARALLEL)
   find_package(MPI REQUIRED)
   if(MPI_FOUND)
     include_directories(${MPI_INCLUDE_PATH})
@@ -147,7 +155,7 @@ function(build_mercury_test test_name)
   endif()
 endfunction()
 
-macro(add_mercury_test_comm test_name comm protocol busy)
+macro(add_mercury_test_comm test_name comm protocol busy serial)
   # Set full test name
   set(full_test_name ${test_name})
   set(opt_names ${comm} ${protocol})
@@ -163,6 +171,11 @@ macro(add_mercury_test_comm test_name comm protocol busy)
   if(${busy})
     set(test_args ${test_args} --busy)
   endif()
+  if(${serial})
+    set(numprocs 1)
+  else()
+    set(numprocs ${MPIEXEC_MAX_NUMPROCS})
+  endif()
 
   # Static client/server test
   if(${comm} STREQUAL "mpi" AND ${protocol} STREQUAL "static")
@@ -170,55 +183,63 @@ macro(add_mercury_test_comm test_name comm protocol busy)
     add_test(NAME "mercury_${full_test_name}"
       COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
       ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_server> ${MPIEXEC_POSTFLAGS}
-      ${static_test_args} : ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
+      ${static_test_args} : ${MPIEXEC_NUMPROC_FLAG} ${numprocs}
       ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${static_test_args}
     )
   else()
+    set(driver_args --server $<TARGET_FILE:hg_test_server>       ${test_args}
+                    --client $<TARGET_FILE:hg_test_${test_name}> ${test_args})
+    if(${serial})
+      set(driver_args ${driver_args} --serial)
+    endif()
     # Dynamic client/server test
     add_test(NAME "mercury_${full_test_name}"
       COMMAND $<TARGET_FILE:mercury_test_driver>
-      --server $<TARGET_FILE:hg_test_server>
-      --client $<TARGET_FILE:hg_test_${test_name}> ${test_args}
+      ${driver_args}
     )
   endif()
 
   # Coresident test (disable for BMI and MPI)
   if(MERCURY_TESTING_CORESIDENT AND
     (NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi") OR (${test_name} STREQUAL "cancel"))))
-    set(cores_test_name ${full_test_name}_self)
-    set(cores_test_args ${test_args} --self_send)
-    if (MERCURY_ENABLE_PARALLEL_TESTING)
-      add_test(NAME "mercury_${cores_test_name}"
-        COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
+    set(self_test_name ${full_test_name}_self)
+    set(self_test_args ${test_args} --self_send)
+    if(MERCURY_TESTING_ENABLE_PARALLEL)
+      add_test(NAME "mercury_${self_test_name}"
+        COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${numprocs}
         ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${MPIEXEC_POSTFLAGS}
-        ${cores_test_args}
+        ${self_test_args}
       )
     else()
       add_test(NAME "mercury_${cores_test_name}"
-        COMMAND $<TARGET_FILE:hg_test_${test_name}> ${cores_test_args}
+        COMMAND $<TARGET_FILE:hg_test_${test_name}> ${self_test_args}
       )
     endif()
   endif()
 
   # Scalable endpoint test
-  if(MERCURY_TESTING_HAS_THREAD_POOL AND ${comm} STREQUAL "ofi" AND
+  if(MERCURY_TESTING_USE_THREAD_POOL AND ${comm} STREQUAL "ofi" AND
     (NOT ((${protocol} STREQUAL "tcp") OR (${protocol} STREQUAL "verbs"))))
-    set(cores_test_name ${full_test_name}_scalable)
-    set(cores_test_args ${test_args} -C 2)
-    add_test(NAME "mercury_${cores_test_name}"
+    set(scalable_test_name ${full_test_name}_scalable)
+    set(scalable_test_args ${test_args} -C 2)
+    set(driver_args --server $<TARGET_FILE:hg_test_server>       ${scalable_test_args}
+                    --client $<TARGET_FILE:hg_test_${test_name}> ${scalable_test_args})
+    if(${serial})
+      set(driver_args ${driver_args} --serial)
+    endif()
+    add_test(NAME "mercury_${scalable_test_name}"
       COMMAND $<TARGET_FILE:mercury_test_driver>
-      --server $<TARGET_FILE:hg_test_server>
-      --client $<TARGET_FILE:hg_test_${test_name}> ${cores_test_args}
+      ${driver_args}
     )
   endif()
 endmacro()
 
-function(add_mercury_test test_name)
+function(add_mercury_test test_name serial)
   foreach(comm ${NA_PLUGINS})
     string(TOUPPER ${comm} upper_comm)
     foreach(protocol ${NA_${upper_comm}_TESTING_PROTOCOL})
-      add_mercury_test_comm(${test_name} ${comm} ${protocol} false)
-      add_mercury_test_comm(${test_name} ${comm} ${protocol} true)
+      add_mercury_test_comm(${test_name} ${comm} ${protocol} false ${serial})
+      add_mercury_test_comm(${test_name} ${comm} ${protocol} true ${serial})
     endforeach()
   endforeach()
 endfunction()
@@ -268,21 +289,31 @@ endif()
 # Server used for testing
 build_mercury_test(server)
 
-set(MERCURY_tests
+# List of tests
+set(MERCURY_TESTS
   rpc
   bulk
+)
+
+# List of serial tests
+set(MERCURY_SERIAL_TESTS
   rpc_lat
   write_bw
   read_bw
 )
 
 # Cray DRC test
-if(HG_TESTING_HAS_CRAY_DRC)
+if(NA_OFI_TESTING_USE_CRAY_DRC)
   build_mercury_test(drc_auth)
 endif()
 
 # Build tests and add them to ctest
-foreach(MERCURY_test ${MERCURY_tests})
-  build_mercury_test(${MERCURY_test})
-  add_mercury_test(${MERCURY_test})
+foreach(test ${MERCURY_TESTS})
+  build_mercury_test(${test})
+  add_mercury_test(${test} false)
+endforeach()
+
+foreach(test ${MERCURY_SERIAL_TESTS})
+  build_mercury_test(${test})
+  add_mercury_test(${test} true)
 endforeach()

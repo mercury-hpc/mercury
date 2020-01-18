@@ -171,7 +171,7 @@ measure_rpc2(struct hg_test_info *hg_test_info)
     hg_request_t *request;
     struct hg_test_perf_args args;
     double time_read = 0, min_time_read = -1, max_time_read = 0;
-    unsigned int nhandles = MERCURY_TESTING_NUM_THREADS_DEFAULT * 2;
+    unsigned int nhandles = HG_TEST_NUM_THREADS_DEFAULT * 2;
     hg_return_t ret = HG_SUCCESS;
     size_t i;
     unsigned int op_count = 0;
@@ -478,7 +478,7 @@ main(int argc, char *argv[])
 {
     struct hg_test_info hg_test_info = { 0 };
     size_t size_small = 1024; /* Use small values for eager message */
-    size_t size_big = (1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE);
+    size_t size_big = (1024 * 1024 * HG_TEST_BUFFER_SIZE);
 
     HG_Test_init(argc, argv, &hg_test_info);
 

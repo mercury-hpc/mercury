@@ -11,7 +11,7 @@
 #include "mercury_test.h"
 
 #include "mercury_time.h"
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
 #include "mercury_thread_pool.h"
 #endif
 #include "mercury_atomic.h"
@@ -22,13 +22,13 @@
 /* Local Macros */
 /****************/
 
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
 #define HG_TEST_ALLOC(size) calloc(size, sizeof(char))
 #else
 #define HG_TEST_ALLOC(size) malloc(size)
 #endif
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
 #define HG_TEST_RPC_CB(func_name, handle) \
     static hg_return_t \
     func_name ## _thread_cb(hg_handle_t handle)
@@ -133,7 +133,7 @@ static HG_INLINE size_t
 bulk_write(int fildes, const void *buf, size_t offset, size_t start_value,
     size_t nbyte, int verbose)
 {
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
     size_t i;
     int error = 0;
     const char *buf_ptr = (const char *) buf;
@@ -604,7 +604,7 @@ done:
 HG_TEST_RPC_CB(hg_test_perf_rpc_lat, handle)
 {
     hg_return_t ret = HG_SUCCESS;
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
     perf_rpc_lat_in_t in_struct;
 
     /* Get input struct */
@@ -655,7 +655,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
 
     origin_bulk_handle = in_struct.bulk_handle;
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     hg_thread_mutex_lock(&hg_test_info->bulk_handle_mutex);
 #endif
     local_bulk_handle = hg_test_info->bulk_handle;
@@ -677,14 +677,14 @@ HG_TEST_RPC_CB(hg_test_perf_bulk, handle)
     HG_TEST_CHECK_HG_ERROR(error, ret, "HG_Bulk_transfer_id() failed (%s)",
         HG_Error_to_string(ret));
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     hg_thread_mutex_unlock(&hg_test_info->bulk_handle_mutex);
 #endif
 
     return ret;
 
 error:
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     hg_thread_mutex_unlock(&hg_test_info->bulk_handle_mutex);
 #endif
 
@@ -720,7 +720,7 @@ HG_TEST_RPC_CB(hg_test_perf_bulk_read, handle)
 
     origin_bulk_handle = in_struct.bulk_handle;
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     hg_thread_mutex_lock(&hg_test_info->bulk_handle_mutex);
 #endif
     local_bulk_handle = hg_test_info->bulk_handle;
@@ -743,14 +743,14 @@ HG_TEST_RPC_CB(hg_test_perf_bulk_read, handle)
     HG_TEST_CHECK_HG_ERROR(error, ret, "HG_Bulk_transfer_id() failed (%s)",
         HG_Error_to_string(ret));
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     hg_thread_mutex_unlock(&hg_test_info->bulk_handle_mutex);
 #endif
 
     return ret;
 
 error:
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     hg_thread_mutex_unlock(&hg_test_info->bulk_handle_mutex);
 #endif
 
@@ -767,7 +767,7 @@ hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
     hg_handle_t handle = (hg_handle_t) hg_cb_info->arg;
     hg_bulk_t origin_bulk_handle = hg_cb_info->info.bulk.origin_handle;
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
     size_t size = HG_Bulk_get_size(hg_cb_info->info.bulk.origin_handle);
     void *buf;
     const char *buf_ptr;
@@ -778,7 +778,7 @@ hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
     HG_TEST_CHECK_ERROR_NORET(hg_cb_info->ret != HG_SUCCESS, done,
         "Error in HG callback (%s)", HG_Error_to_string(hg_cb_info->ret));
 
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
     ret = HG_Bulk_access(hg_cb_info->info.bulk.local_handle, 0,
         size, HG_BULK_READWRITE, 1, &buf, NULL, NULL);
     HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Bulk_access() failed (%s)",

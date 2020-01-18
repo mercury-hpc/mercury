@@ -29,7 +29,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
-#if defined(HG_TESTING_HAS_SYSPRCTL_H)
+#if defined(HG_TEST_HAS_SYSPRCTL_H)
 #include <sys/prctl.h>
 #endif
 #endif
@@ -51,7 +51,7 @@ static void
 na_test_parse_options(int argc, char *argv[],
     struct na_test_info *na_test_info);
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
 static void
 na_test_mpi_init(struct na_test_info *na_test_info);
 
@@ -179,7 +179,7 @@ na_test_parse_options(int argc, char *argv[],
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
 static void
 na_test_mpi_init(struct na_test_info *na_test_info)
 {
@@ -348,10 +348,10 @@ na_test_set_config(const char *addr_name)
 {
     FILE *config = NULL;
 
-    config = fopen(MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "w+");
+    config = fopen(HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "w+");
     if (!config) {
         NA_LOG_ERROR("Could not open config file from: %s",
-            MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
+            HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
         exit(1);
     }
     fprintf(config, "%s\n", addr_name);
@@ -364,10 +364,10 @@ na_test_get_config(char *addr_name, na_size_t len)
 {
     FILE *config = NULL;
 
-    config = fopen(MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "r");
+    config = fopen(HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "r");
     if (!config) {
         NA_LOG_ERROR("Could not open config file from: %s",
-            MERCURY_TESTING_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
+            HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
         exit(1);
     }
     if (fgets(addr_name, (int) len, config) == NULL) {
@@ -390,7 +390,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 
     na_test_parse_options(argc, argv, na_test_info);
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
     /* Test run in parallel using mpirun so must intialize MPI to get
      * basic setup info etc */
     na_test_mpi_init(na_test_info);
@@ -453,20 +453,20 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 
             na_test_set_config(addr_string);
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
             /* If static client must wait for server to write config file */
             if (na_test_info->mpi_static)
                 MPI_Barrier(MPI_COMM_WORLD);
 #endif
 
             /* Used by CTest Test Driver to know when to launch clients */
-            MERCURY_TESTING_READY_MSG();
+            HG_TEST_READY_MSG();
         }
         /* Get config from file if self option is not passed */
         else if (!na_test_info->self_send) {
             char test_addr_name[NA_TEST_MAX_ADDR_NAME] = { '\0' };
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
             /* If static client must wait for server to write config file */
             if (na_test_info->mpi_static)
                 MPI_Barrier(MPI_COMM_WORLD);
@@ -475,7 +475,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
                 na_test_get_config(test_addr_name, NA_TEST_MAX_ADDR_NAME);
             }
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
             /* Broadcast addr name */
             MPI_Bcast(test_addr_name, NA_TEST_MAX_ADDR_NAME, MPI_BYTE, 0,
                 na_test_info->mpi_comm);
@@ -510,7 +510,7 @@ NA_Test_finalize(struct na_test_info *na_test_info)
     free(na_test_info->hostname);
     free(na_test_info->key);
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
     na_test_mpi_finalize(na_test_info);
 #endif
 
@@ -522,7 +522,7 @@ done:
 void
 NA_Test_barrier(struct na_test_info *na_test_info)
 {
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
     MPI_Barrier(na_test_info->mpi_comm);
 #else
     (void) na_test_info;
@@ -533,7 +533,7 @@ NA_Test_barrier(struct na_test_info *na_test_info)
 void
 NA_Test_bcast(char *buf, int count, int root, struct na_test_info *na_test_info)
 {
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
     MPI_Bcast(buf, count, MPI_BYTE, root, na_test_info->mpi_comm);
 #else
     (void) na_test_info;

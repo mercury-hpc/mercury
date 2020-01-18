@@ -350,7 +350,7 @@ main(int argc, char *argv[])
     addr = hg_test_info.target_addr;
     rank = hg_test_info.na_test_info.mpi_comm_rank;
 #endif
-    sprintf(filename, MERCURY_TESTING_TEMP_DIRECTORY "/posix_test%d", rank);
+    sprintf(filename, HG_TEST_TEMP_DIRECTORY "/posix_test%d", rank);
 
     /* Prepare buffers */
     write_buf = (int*) malloc(sizeof(int) * n_ints);

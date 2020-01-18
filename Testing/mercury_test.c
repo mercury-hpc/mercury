@@ -11,7 +11,7 @@
 #include "mercury_test.h"
 #include "na_test_getopt.h"
 #include "mercury_rpc_cb.h"
-#ifdef HG_TESTING_HAS_CRAY_DRC
+#ifdef HG_TEST_HAS_CRAY_DRC
 # include <mercury_test_drc.h>
 #endif
 
@@ -49,7 +49,7 @@ hg_test_request_progress(unsigned int timeout, void *arg);
 static int
 hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg);
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
 static hg_return_t
 hg_test_handle_create_cb(hg_handle_t handle, void *arg);
 #endif
@@ -135,7 +135,7 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
             case 'a': /* auth service */
                 hg_test_info->auth = HG_TRUE;
                 break;
-#ifdef HG_TESTING_HAS_CRAY_DRC
+#ifdef HG_TEST_HAS_CRAY_DRC
             case 'k': /* auth key */
                 hg_test_info->credential = (uint32_t) atoi(na_test_opt_arg_g);
 #endif
@@ -154,7 +154,7 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
     na_test_opt_ind_g = 1;
 
     if (!hg_test_info->thread_count)
-        hg_test_info->thread_count = MERCURY_TESTING_NUM_THREADS_DEFAULT;
+        hg_test_info->thread_count = HG_TEST_NUM_THREADS_DEFAULT;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -186,7 +186,7 @@ hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
 static hg_return_t
 hg_test_handle_create_cb(hg_handle_t handle, void *arg)
 {
@@ -366,7 +366,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_parse_options(argc, argv, hg_test_info);
 
     if (hg_test_info->auth) {
-#ifdef HG_TESTING_HAS_CRAY_DRC
+#ifdef HG_TEST_HAS_CRAY_DRC
         char hg_test_drc_key[NA_TEST_MAX_ADDR_NAME] = { '\0' };
 
         ret = hg_test_drc_acquire(argc, argv, hg_test_info);
@@ -420,7 +420,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Class_set_data() failed (%s)",
         HG_Error_to_string(ret));
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     /* Attach handle created */
     ret = HG_Class_set_handle_create_callback(hg_test_info->hg_class,
         hg_test_handle_create_cb, hg_test_info->hg_class);
@@ -461,11 +461,11 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
     if (hg_test_info->na_test_info.listen
         || hg_test_info->na_test_info.self_send) {
-        size_t bulk_size = 1024 * 1024 * MERCURY_TESTING_BUFFER_SIZE;
+        size_t bulk_size = 1024 * 1024 * HG_TEST_BUFFER_SIZE;
         char *buf_ptr;
         size_t i;
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
         /* Make sure that thread count is at least max_contexts */
         if (hg_test_info->thread_count <
             hg_test_info->na_test_info.max_contexts)
@@ -548,14 +548,14 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
         na_test_set_config(addr_string);
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
         /* If static client, must wait for server to write config file */
         if (hg_test_info->na_test_info.mpi_static)
             MPI_Barrier(MPI_COMM_WORLD);
 #endif
 
         /* Used by CTest Test Driver to know when to launch clients */
-        MERCURY_TESTING_READY_MSG();
+        HG_TEST_READY_MSG();
     } else if (hg_test_info->na_test_info.self_send) {
         /* Self addr is target */
         ret = HG_Addr_self(hg_test_info->hg_class, &hg_test_info->target_addr);
@@ -567,7 +567,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         unsigned int flag = 0;
         struct hg_test_lookup_arg lookup_args;
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
         /* If static client must wait for server to write config file */
         if (hg_test_info->na_test_info.mpi_static)
             MPI_Barrier(MPI_COMM_WORLD);
@@ -670,7 +670,7 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
         hg_test_info->secondary_contexts = NULL;
     }
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     if (hg_test_info->thread_pool) {
         hg_thread_pool_destroy(hg_test_info->thread_pool);
         hg_test_info->thread_pool = NULL;
@@ -700,7 +700,7 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
         "NA_Test_finalize() failed (%s)", NA_Error_to_string(na_ret));
 
     if (hg_test_info->auth) {
-#ifdef HG_TESTING_HAS_CRAY_DRC
+#ifdef HG_TEST_HAS_CRAY_DRC
         ret = hg_test_drc_release(hg_test_info);
         HG_TEST_CHECK_HG_ERROR(done, ret, "hg_test_drc_release() failed (%s)",
             HG_Error_to_string(ret));

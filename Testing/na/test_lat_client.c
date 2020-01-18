@@ -278,7 +278,7 @@ again:
 
         hg_request_reset(recv_request);
 
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
     /* Check recv buf */
     const char *recv_buf_ptr = (const char*) recv_buf;
 
@@ -294,7 +294,7 @@ again:
 #endif
 
     /* At this point we have received everything so work out the bandwidth */
-#ifdef MERCURY_TESTING_PRINT_PARTIAL
+#ifdef HG_TEST_PRINT_PARTIAL
         read_lat = time_read * 1.0e6
             / (double) ((avg_iter + 1) * 2 *
                 (unsigned int) na_test_lat_info->na_test_info.mpi_comm_size);
@@ -303,7 +303,7 @@ again:
                 NDIGITS, read_lat);
 #endif
     }
-#ifndef MERCURY_TESTING_PRINT_PARTIAL
+#ifndef HG_TEST_PRINT_PARTIAL
     read_lat = time_read * 1.0e6
         / (double) (loop * 2 *
             (unsigned int) na_test_lat_info->na_test_info.mpi_comm_size);
@@ -411,7 +411,7 @@ main(int argc, char *argv[])
         fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
         fprintf(stdout, "# Loop %d times from size %d to %zu byte(s)\n",
             na_test_lat_info.na_test_info.loop, 1, max_size);
-#ifdef MERCURY_TESTING_HAS_VERIFY_DATA
+#ifdef HG_TEST_HAS_VERIFY_DATA
         fprintf(stdout, "# WARNING verifying data, output will be slower\n");
 #endif
         fprintf(stdout, "%-*s%*s\n", 10, "# Size", NWIDTH,
