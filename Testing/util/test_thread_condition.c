@@ -6,8 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MERCURY_TESTING_NUM_THREADS 8
-
 static hg_thread_cond_t thread_cond;
 static hg_thread_mutex_t thread_mutex;
 static int working = 0;
@@ -57,26 +55,26 @@ thread_cb_cond_all(void *arg)
 int
 main(int argc, char *argv[])
 {
-    hg_thread_t thread[MERCURY_TESTING_NUM_THREADS];
+    hg_thread_t thread[HG_TEST_NUM_THREADS_DEFAULT];
     int ret = EXIT_SUCCESS;
     int i;
 
     (void) argc;
     (void) argv;
 
-    for (i = 0; i < MERCURY_TESTING_NUM_THREADS; i++)
+    for (i = 0; i < HG_TEST_NUM_THREADS_DEFAULT; i++)
         hg_thread_init(&thread[i]);
     hg_thread_mutex_init(&thread_mutex);
     hg_thread_cond_init(&thread_cond);
 
-    for (i = 0; i < MERCURY_TESTING_NUM_THREADS; i++)
+    for (i = 0; i < HG_TEST_NUM_THREADS_DEFAULT; i++)
         hg_thread_create(&thread[i], thread_cb_cond, NULL);
-    for (i = 0; i < MERCURY_TESTING_NUM_THREADS; i++)
+    for (i = 0; i < HG_TEST_NUM_THREADS_DEFAULT; i++)
         hg_thread_join(thread[i]);
 
     working = 1;
 
-    for (i = 0; i < MERCURY_TESTING_NUM_THREADS; i++)
+    for (i = 0; i < HG_TEST_NUM_THREADS_DEFAULT; i++)
         hg_thread_create(&thread[i], thread_cb_cond_all, NULL);
 
     hg_thread_mutex_lock(&thread_mutex);
@@ -84,7 +82,7 @@ main(int argc, char *argv[])
     hg_thread_cond_broadcast(&thread_cond);
     hg_thread_mutex_unlock(&thread_mutex);
 
-    for (i = 0; i < MERCURY_TESTING_NUM_THREADS; i++)
+    for (i = 0; i < HG_TEST_NUM_THREADS_DEFAULT; i++)
         hg_thread_join(thread[i]);
 
     return ret;

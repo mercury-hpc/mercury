@@ -9,7 +9,6 @@
  */
 
 #include "mercury_test.h"
-#include "mercury_hl.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -230,7 +229,7 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
     hg_handle_t handle = HG_HANDLE_NULL;
     hg_return_t ret = HG_SUCCESS;
     struct forward_cb_args forward_cb_args;
-    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
+    hg_const_string_t rpc_open_path = HG_TEST_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
     rpc_open_in_t rpc_open_in_struct;
 
@@ -283,7 +282,7 @@ hg_test_rpc_lookup(hg_context_t *context, hg_request_class_t *request_class,
     hg_handle_t handle = HG_HANDLE_NULL;
     hg_return_t ret = HG_SUCCESS;
     struct forward_cb_args forward_cb_args;
-    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
+    hg_const_string_t rpc_open_path = HG_TEST_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
     rpc_open_in_t rpc_open_in_struct;
     hg_addr_t target_addr = HG_ADDR_NULL;
@@ -367,7 +366,7 @@ hg_test_rpc_reset(hg_context_t *context, hg_request_class_t *request_class,
     hg_handle_t handle = HG_HANDLE_NULL;
     hg_return_t ret = HG_SUCCESS;
     struct forward_cb_args forward_cb_args;
-    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
+    hg_const_string_t rpc_open_path = HG_TEST_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
     rpc_open_in_t rpc_open_in_struct;
 
@@ -418,7 +417,7 @@ hg_test_rpc_mask(hg_context_t *context, hg_request_class_t *request_class,
     hg_handle_t handle = HG_HANDLE_NULL;
     hg_return_t ret = HG_SUCCESS;
     struct forward_cb_args forward_cb_args;
-    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
+    hg_const_string_t rpc_open_path = HG_TEST_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
     rpc_open_in_t  rpc_open_in_struct;
 
@@ -469,7 +468,7 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     struct forward_cb_args forward_cb_args1, forward_cb_args2;
     hg_return_t ret = HG_SUCCESS;
     rpc_open_in_t rpc_open_in_struct;
-    hg_const_string_t rpc_open_path = MERCURY_TESTING_TEMP_DIRECTORY "/test.h5";
+    hg_const_string_t rpc_open_path = HG_TEST_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle1, rpc_open_handle2;
     /* Used for multiple in-flight RPCs */
     hg_request_t *request_m[NINFLIGHT];

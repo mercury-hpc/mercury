@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.5 FATAL_ERROR)
+cmake_minimum_required(VERSION 2.8.12.2 FATAL_ERROR)
 project(MERCURY_TEST_DRIVER CXX)
 
 set(KWSYS_NAMESPACE mercury_sys)

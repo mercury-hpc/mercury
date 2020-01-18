@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MERCURY_TESTING_NUM_THREADS 8
 #define POOL_NUM_POSTS 32
 
 /*
@@ -55,7 +54,7 @@ main(int argc, char *argv[])
     (void) argc;
     (void) argv;
     hg_thread_mutex_init(&mymutex);
-    hg_thread_pool_init(MERCURY_TESTING_NUM_THREADS, &thread_pool);
+    hg_thread_pool_init(HG_TEST_NUM_THREADS_DEFAULT, &thread_pool);
 
     for (i = 0; i < POOL_NUM_POSTS; i++) {
         work[i].func = myfunc;

@@ -24,7 +24,7 @@
 /* Local Type and Struct Definition */
 /************************************/
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
 struct hg_test_worker {
     struct hg_thread_work thread_work;
     hg_uint8_t context_id;
@@ -35,7 +35,7 @@ struct hg_test_worker {
 /* Local Prototypes */
 /********************/
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
 static HG_INLINE HG_THREAD_RETURN_TYPE
 hg_test_progress_thread(void *arg);
 static HG_INLINE HG_THREAD_RETURN_TYPE
@@ -47,7 +47,7 @@ hg_test_progress_work(void *arg);
 /*******************/
 
 /*---------------------------------------------------------------------------*/
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
 
 static HG_INLINE HG_THREAD_RETURN_TYPE
 hg_test_progress_thread(void *arg)
@@ -120,7 +120,7 @@ int
 main(int argc, char *argv[])
 {
     struct hg_test_info hg_test_info = { 0 };
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     struct hg_thread_work *progress_workers = NULL;
 #endif
     struct hg_test_context_info *hg_test_context_info;
@@ -136,7 +136,7 @@ main(int argc, char *argv[])
     hg_test_context_info = (struct hg_test_context_info *) HG_Context_get_data(
         hg_test_info.context);
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     if (hg_test_info.na_test_info.max_contexts > 1) {
         hg_uint8_t context_count = (hg_uint8_t)
             (hg_test_info.na_test_info.max_contexts);
@@ -202,7 +202,7 @@ done:
     ret = HG_Test_finalize(&hg_test_info);
     HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Test_finalize() failed");
 
-#ifdef MERCURY_TESTING_HAS_THREAD_POOL
+#ifdef HG_TEST_HAS_THREAD_POOL
     free(progress_workers);
 #endif
 

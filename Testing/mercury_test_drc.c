@@ -532,7 +532,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
         na_test_set_config(addr_string);
 
         /* Used by CTest Test Driver to know when to launch clients */
-        MERCURY_TESTING_READY_MSG();
+        HG_TEST_READY_MSG();
 
         /* Progress */
         do {
@@ -571,7 +571,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
         }
     }
 
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
     /* TODO bcast cookie when parallel mode */
 #endif
 
@@ -583,7 +583,7 @@ hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
     }
 
     /* Finalize NA test class interface */
-#ifdef MERCURY_HAS_PARALLEL_TESTING
+#ifdef HG_TEST_HAS_PARALLEL
     hg_test_drc_info.na_test_info.mpi_no_finalize = NA_TRUE;
 #endif
     if (NA_Test_finalize(&hg_test_drc_info.na_test_info) != NA_SUCCESS) {
