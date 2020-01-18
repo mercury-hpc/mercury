@@ -1006,7 +1006,7 @@ hg_core_created_list_wait(struct hg_core_private_context *context)
     while (remaining > 0) {
         unsigned int actual_count = 0;
         hg_time_t t1, t2;
-        hg_return_t trigger_ret;
+        hg_return_t trigger_ret, progress_ret;
 
         hg_time_get_current(&t1);
 
@@ -1014,6 +1014,8 @@ hg_core_created_list_wait(struct hg_core_private_context *context)
         do {
             trigger_ret = hg_core_trigger(context, 0, 1, &actual_count);
         } while ((trigger_ret == HG_SUCCESS) && actual_count);
+        HG_CHECK_ERROR(trigger_ret != HG_SUCCESS && trigger_ret != HG_TIMEOUT,
+            done, ret, trigger_ret, "Could not trigger entry");
 
         hg_thread_spin_lock(&context->created_list_lock);
         created_list_empty = HG_LIST_IS_EMPTY(&context->created_list);
@@ -1022,9 +1024,10 @@ hg_core_created_list_wait(struct hg_core_private_context *context)
         if (created_list_empty)
             break;
 
-        ret = context->progress(context, (unsigned int) (remaining * 1000.0));
-        HG_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done, ret, ret,
-            "Could not make progress");
+        progress_ret = context->progress(context,
+            (unsigned int) (remaining * 1000.0));
+        HG_CHECK_ERROR(progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT,
+            done, ret, progress_ret, "Could not make progress");
         hg_time_get_current(&t2);
         remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
     }
@@ -3693,6 +3696,9 @@ HG_Core_context_destroy(hg_core_context_t *context)
     do {
         na_ret = NA_Trigger(context->na_context, 0, 1, NULL, &actual_count);
     } while ((na_ret == NA_SUCCESS) && actual_count);
+    HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, ret,
+        (hg_return_t) na_ret, "Could not trigger NA callback (%s)",
+        NA_Error_to_string(na_ret));
 
 #ifdef HG_HAS_SM_ROUTING
     if (context->na_sm_context) {
@@ -3700,13 +3706,15 @@ HG_Core_context_destroy(hg_core_context_t *context)
             na_ret = NA_Trigger(context->na_sm_context, 0, 1, NULL,
                 &actual_count);
         } while ((na_ret == NA_SUCCESS) && actual_count);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, ret,
+            (hg_return_t) na_ret, "Could not trigger NA callback (%s)",
+            NA_Error_to_string(na_ret));
     }
 #endif
 
     /* Check that operations have completed */
     ret = hg_core_created_list_wait(private_context);
-    HG_CHECK_ERROR_NORET(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
-        "Could not wait on HG core handle list");
+    HG_CHECK_HG_ERROR(done, ret, "Could not wait on HG core handle list");
 
     /* Number of handles for that context should be 0 */
     n_handles = hg_atomic_get32(&private_context->n_handles);
