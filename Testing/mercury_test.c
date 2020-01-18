@@ -501,37 +501,6 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         na_size_t addr_string_len = NA_TEST_MAX_ADDR_NAME;
         hg_addr_t self_addr;
 
-        /* Create additional contexts (do not exceed total max contexts) */
-        if (hg_test_info->na_test_info.max_contexts > 1) {
-            hg_uint8_t secondary_contexts_count = (hg_uint8_t)
-                (hg_test_info->na_test_info.max_contexts - 1);
-            hg_uint8_t i;
-
-            hg_test_info->secondary_contexts = malloc(
-                secondary_contexts_count * sizeof(hg_context_t *));
-            HG_TEST_CHECK_ERROR(hg_test_info->secondary_contexts == NULL, done,
-                ret, HG_NOMEM_ERROR, "Could not allocate secondary contexts");
-            for (i = 0; i < secondary_contexts_count; i++) {
-                hg_uint8_t context_id = (hg_uint8_t) (i + 1);
-                hg_test_info->secondary_contexts[i] =
-                    HG_Context_create_id(hg_test_info->hg_class, context_id);
-                HG_TEST_CHECK_ERROR(hg_test_info->secondary_contexts[i] == NULL,
-                    done, ret, HG_FAULT, "HG_Context_create_id() failed");
-
-                /* Attach context info to context */
-                hg_test_context_info = malloc(
-                    sizeof(struct hg_test_context_info));
-                HG_TEST_CHECK_ERROR(hg_test_context_info == NULL, done, ret,
-                    HG_NOMEM_ERROR, "Could not allocate HG test context info");
-
-                hg_atomic_init32(&hg_test_context_info->finalizing, 0);
-                ret = HG_Context_set_data(hg_test_info->secondary_contexts[i],
-                    hg_test_context_info, free);
-                HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_set_data() failed"
-                    " (%s)", HG_Error_to_string(ret));
-            }
-        }
-
         /* TODO only rank 0 */
         ret = HG_Addr_self(hg_test_info->hg_class, &self_addr);
         HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_self() failed (%s)",
@@ -653,21 +622,6 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
         HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_destroy() failed"
             " (%s)", HG_Error_to_string(ret));
         hg_test_info->context = NULL;
-    }
-
-    /* Destroy secondary contexts */
-    if (hg_test_info->secondary_contexts) {
-        hg_uint8_t secondary_contexts_count = (hg_uint8_t)
-                    (hg_test_info->na_test_info.max_contexts - 1);
-        hg_uint8_t i;
-
-        for (i = 0; i < secondary_contexts_count; i++) {
-            ret = HG_Context_destroy(hg_test_info->secondary_contexts[i]);
-            HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_destroy() failed"
-                " (%s)", HG_Error_to_string(ret));
-        }
-        free(hg_test_info->secondary_contexts);
-        hg_test_info->secondary_contexts = NULL;
     }
 
 #ifdef HG_TEST_HAS_THREAD_POOL

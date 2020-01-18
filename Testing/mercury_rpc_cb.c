@@ -57,13 +57,13 @@
                     HG_Get_info(handle)->hg_class);                     \
             hg_return_t ret = HG_SUCCESS;                               \
                                                                         \
-            if (!hg_test_info->secondary_contexts) {                    \
+            if (hg_test_info->na_test_info.max_contexts > 1) {          \
+                func_name ## _thread(handle);                           \
+            } else {                                                    \
                 struct hg_thread_work *work = HG_Get_data(handle);      \
                 work->func = func_name ## _thread;                      \
                 work->args = handle;                                    \
                 hg_thread_pool_post(hg_test_info->thread_pool, work);   \
-            } else {                                                    \
-                func_name ## _thread(handle);                           \
             }                                                           \
                                                                         \
             return ret;                                                 \
