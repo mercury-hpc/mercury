@@ -27,6 +27,8 @@
 #ifdef HG_TEST_HAS_THREAD_POOL
 struct hg_test_worker {
     struct hg_thread_work thread_work;
+    hg_class_t *hg_class;
+    hg_context_t *context;
     hg_uint8_t context_id;
 };
 #endif
@@ -78,11 +80,33 @@ done:
 static HG_INLINE HG_THREAD_RETURN_TYPE
 hg_test_progress_work(void *arg)
 {
-    hg_context_t *context = (hg_context_t *) arg;
-    struct hg_test_context_info *hg_test_context_info =
-        (struct hg_test_context_info *) HG_Context_get_data(context);
+    struct hg_test_worker *worker = (struct hg_test_worker *) arg;
+    hg_context_t *context = NULL;
+    struct hg_test_context_info *hg_test_context_info = NULL;
     HG_THREAD_RETURN_TYPE tret = (HG_THREAD_RETURN_TYPE) 0;
     hg_return_t ret = HG_SUCCESS;
+
+    if (!worker->context) {
+        HG_TEST_LOG_DEBUG("Creating context with ID %d",
+            (int) worker->context_id);
+        context = HG_Context_create_id(worker->hg_class, worker->context_id);
+        HG_TEST_CHECK_ERROR(context == NULL, done, ret, HG_FAULT,
+            "HG_Context_create_id() failed");
+
+        /* Attach context info to context */
+        hg_test_context_info = malloc(sizeof(struct hg_test_context_info));
+        HG_TEST_CHECK_ERROR(hg_test_context_info == NULL, done, ret,
+            HG_NOMEM_ERROR, "Could not allocate HG test context info");
+
+        hg_atomic_init32(&hg_test_context_info->finalizing, 0);
+        ret = HG_Context_set_data(context, hg_test_context_info, free);
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_set_data() failed"
+            " (%s)", HG_Error_to_string(ret));
+    } else {
+        context = worker->context;
+        hg_test_context_info =
+            (struct hg_test_context_info *) HG_Context_get_data(context);
+    }
 
     do {
         unsigned int actual_count = 0;
@@ -110,6 +134,12 @@ hg_test_progress_work(void *arg)
         tret, (HG_THREAD_RETURN_TYPE) 0, "HG_Progress() failed (%s)",
         HG_Error_to_string(ret));
 
+    if (!worker->context) {
+        ret = HG_Context_destroy(context);
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_destroy() failed"
+            " (%s)", HG_Error_to_string(ret));
+    }
+
 done:
     return tret;
 }
@@ -121,7 +151,7 @@ main(int argc, char *argv[])
 {
     struct hg_test_info hg_test_info = { 0 };
 #ifdef HG_TEST_HAS_THREAD_POOL
-    struct hg_thread_work *progress_workers = NULL;
+    struct hg_test_worker *progress_workers = NULL;
 #endif
     struct hg_test_context_info *hg_test_context_info;
     hg_return_t ret = HG_SUCCESS;
@@ -143,20 +173,28 @@ main(int argc, char *argv[])
         hg_uint8_t i;
 
         progress_workers = malloc(
-            sizeof(struct hg_thread_work) * context_count);
+            sizeof(struct hg_test_worker) * context_count);
         HG_TEST_CHECK_ERROR(progress_workers == NULL, done, rc, EXIT_FAILURE,
             "Could not allocate progress_workers");
 
-        progress_workers[0].func = hg_test_progress_work;
-        progress_workers[0].args = hg_test_info.context;
+        progress_workers[0].thread_work.func = hg_test_progress_work;
+        progress_workers[0].thread_work.args = &progress_workers[0];
+        progress_workers[0].hg_class = hg_test_info.hg_class;
+        progress_workers[0].context = hg_test_info.context;
+        progress_workers[0].context_id = 0;
 
         for (i = 0; i < context_count - 1; i++) {
-            progress_workers[i + 1].func = hg_test_progress_work;
-            progress_workers[i + 1].args = hg_test_info.secondary_contexts[i];
-            hg_thread_pool_post(hg_test_info.thread_pool, &progress_workers[i + 1]);
+            progress_workers[i + 1].thread_work.func = hg_test_progress_work;
+            progress_workers[i + 1].thread_work.args = &progress_workers[i + 1];
+            progress_workers[i + 1].hg_class = hg_test_info.hg_class;
+            progress_workers[i + 1].context = NULL;
+            progress_workers[i + 1].context_id = (hg_uint8_t) (i + 1);
+
+            hg_thread_pool_post(hg_test_info.thread_pool,
+                &progress_workers[i + 1].thread_work);
         }
         /* Use main thread for progress on main context */
-        hg_test_progress_work(progress_workers[0].args);
+        hg_test_progress_work(&progress_workers[0]);
     } else {
         hg_thread_t progress_thread;
 
