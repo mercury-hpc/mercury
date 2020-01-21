@@ -93,6 +93,9 @@ static const struct na_class_ops *const na_class_table[] = {
 #ifdef NA_HAS_SM
     &NA_PLUGIN_OPS(sm), /* Keep NA SM first for protocol selection */
 #endif
+#ifdef NA_HAS_OFI
+    &NA_PLUGIN_OPS(ofi),
+#endif
 #ifdef NA_HAS_BMI
     &NA_PLUGIN_OPS(bmi),
 #endif
@@ -101,9 +104,6 @@ static const struct na_class_ops *const na_class_table[] = {
 #endif
 #ifdef NA_HAS_CCI
     &NA_PLUGIN_OPS(cci),
-#endif
-#ifdef NA_HAS_OFI
-    &NA_PLUGIN_OPS(ofi),
 #endif
     NULL
 };
