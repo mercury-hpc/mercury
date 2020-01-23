@@ -326,6 +326,14 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     struct hg_test_context_info *hg_test_context_info;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
+#ifdef HG_HAS_VERBOSE_ERROR
+    const char *log_level = NULL;
+
+    /* Set log level */
+    log_level = getenv("HG_TEST_LOG_LEVEL");
+    if (log_level && (strcmp(log_level, "debug") == 0))
+        HG_TEST_LOG_MASK |= HG_LOG_TYPE_DEBUG;
+#endif
 
     /* Get HG test options */
     hg_test_parse_options(argc, argv, hg_test_info);
