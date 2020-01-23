@@ -959,6 +959,14 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
     struct hg_private_class *hg_class = NULL;
+#ifdef HG_HAS_VERBOSE_ERROR
+    const char *log_level = NULL;
+
+    /* Set log level */
+    log_level = getenv("HG_LOG_LEVEL");
+    if (log_level && (strcmp(log_level, "debug") == 0))
+        HG_LOG_MASK |= HG_LOG_TYPE_DEBUG;
+#endif
 
     /* Make sure error return codes match */
     assert(HG_CANCELED == (hg_return_t) NA_CANCELED);
