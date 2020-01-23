@@ -21,11 +21,9 @@
 /****************/
 /* Local Macros */
 /****************/
+
 #define HG_BULK_MIN(a, b) \
     (a < b) ? a : b
-
-/* Number of retries when receiving NA_AGAIN error */
-#define HG_BULK_MAX_AGAIN_RETRY     (10)
 
 /* Remove warnings when plugin does not use callback arguments */
 #if defined(__cplusplus)
@@ -255,26 +253,9 @@ hg_bulk_na_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_offset_t remote_offset, na_size_t data_size, na_addr_t remote_addr,
     na_uint8_t remote_id, na_op_id_t *op_id)
 {
-    na_return_t na_ret;
-    int retry_cnt = 0;
-
-    /* Post RMA put */
-    do {
-        na_ret = NA_Put(na_class, context, callback, arg, local_mem_handle,
-            local_offset, remote_mem_handle, remote_offset, data_size,
-            remote_addr, remote_id, op_id);
-        if (na_ret != NA_AGAIN || retry_cnt++ > HG_BULK_MAX_AGAIN_RETRY)
-            break;
-
-        /* Attempt to make progress on NA with timeout of 0 */
-        na_ret = NA_Progress(na_class, context, 0);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done,
-            na_ret, na_ret, "Could not make progress on NA (%s)",
-            NA_Error_to_string(na_ret));
-    } while (1);
-
-done:
-    return na_ret;
+    return NA_Put(na_class, context, callback, arg, local_mem_handle,
+        local_offset, remote_mem_handle, remote_offset, data_size, remote_addr,
+        remote_id, op_id);
 }
 
 /**
@@ -288,26 +269,9 @@ hg_bulk_na_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_offset_t remote_offset, na_size_t data_size, na_addr_t remote_addr,
     na_uint8_t remote_id, na_op_id_t *op_id)
 {
-    na_return_t na_ret;
-    int retry_cnt = 0;
-
-    /* Post RMA get */
-    do {
-        na_ret = NA_Get(na_class, context, callback, arg, local_mem_handle,
-            local_offset, remote_mem_handle, remote_offset, data_size,
-            remote_addr, remote_id, op_id);
-        if (na_ret != NA_AGAIN || retry_cnt++ > HG_BULK_MAX_AGAIN_RETRY)
-            break;
-
-        /* Attempt to make progress on NA with timeout of 0 */
-        na_ret = NA_Progress(na_class, context, 0);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done,
-            na_ret, na_ret, "Could not make progress on NA (%s)",
-            NA_Error_to_string(na_ret));
-    } while (1);
-
-done:
-    return na_ret;
+    return NA_Get(na_class, context, callback, arg, local_mem_handle,
+        local_offset, remote_mem_handle, remote_offset, data_size, remote_addr,
+        remote_id, op_id);
 }
 
 /**
