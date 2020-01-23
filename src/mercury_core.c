@@ -50,9 +50,6 @@
 # define HG_CORE_MIN(a, b)          (a < b) ? a : b /* Min macro */
 #endif
 
-/* Number of retries when receiving NA_AGAIN error */
-#define HG_CORE_MAX_AGAIN_RETRY         (10)
-
 /* Remove warnings when routine does not use arguments */
 #if defined(__cplusplus)
 # define HG_UNUSED
@@ -1940,7 +1937,6 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
 {
     na_return_t na_ret;
     hg_return_t ret = HG_SUCCESS;
-    int retry_cnt = 0;
 
     /* Set operation type for trigger */
     hg_core_handle->op_type = HG_CORE_FORWARD;
@@ -1971,28 +1967,16 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
     hg_atomic_set32(&hg_core_handle->posted, HG_TRUE);
 
     /* Post send (input) */
-    do {
-        na_ret = NA_Msg_send_unexpected(hg_core_handle->na_class,
-            hg_core_handle->na_context, hg_core_send_input_cb, hg_core_handle,
-            hg_core_handle->core_handle.in_buf, hg_core_handle->in_buf_used,
-            hg_core_handle->in_buf_plugin_data,
-            hg_core_handle->core_handle.info.addr->na_addr,
-            hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
-            &hg_core_handle->na_send_op_id);
-        if (na_ret != NA_AGAIN || retry_cnt++ > HG_CORE_MAX_AGAIN_RETRY)
-            break;
-
-        /* Attempt to make progress on NA with timeout of 0 */
-        na_ret = NA_Progress(hg_core_handle->na_class,
-            hg_core_handle->na_context, 0);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, cancel,
-            ret, (hg_return_t) na_ret, "Could not make progress on NA (%s)",
-            NA_Error_to_string(na_ret));
-    } while (1);
-    /* Silently return on NA_AGAIN error so that users can manually retry */
+    na_ret = NA_Msg_send_unexpected(hg_core_handle->na_class,
+        hg_core_handle->na_context, hg_core_send_input_cb, hg_core_handle,
+        hg_core_handle->core_handle.in_buf, hg_core_handle->in_buf_used,
+        hg_core_handle->in_buf_plugin_data,
+        hg_core_handle->core_handle.info.addr->na_addr,
+        hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
+        &hg_core_handle->na_send_op_id);
     if (na_ret == NA_AGAIN)
+        /* Silently return on NA_AGAIN error so that users can manually retry */
         HG_GOTO_DONE(cancel, ret, HG_AGAIN);
-
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, cancel, ret, (hg_return_t) na_ret,
         "Could not post send for input buffer (%s)",
         NA_Error_to_string(na_ret));
@@ -2060,7 +2044,6 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
     hg_bool_t ack_recv_posted = HG_FALSE;
-    int retry_cnt = 0;
 
     /* Increment number of expected NA operations */
     hg_core_handle->na_op_count++;
@@ -2098,24 +2081,13 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
     }
 
     /* Post expected send (output) */
-    do {
-        na_ret = NA_Msg_send_expected(hg_core_handle->na_class,
-            hg_core_handle->na_context, hg_core_send_output_cb, hg_core_handle,
-            hg_core_handle->core_handle.out_buf, hg_core_handle->out_buf_used,
-            hg_core_handle->out_buf_plugin_data,
-            hg_core_handle->core_handle.info.addr->na_addr,
-            hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
-            &hg_core_handle->na_send_op_id);
-        if (na_ret != NA_AGAIN || retry_cnt++ > HG_CORE_MAX_AGAIN_RETRY)
-            break;
-
-        /* Attempt to make progress on NA with timeout of 0 */
-        na_ret = NA_Progress(hg_core_handle->na_class,
-            hg_core_handle->na_context, 0);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, error,
-            ret, (hg_return_t) na_ret, "Could not make progress on NA (%s)",
-            NA_Error_to_string(na_ret));
-    } while (1);
+    na_ret = NA_Msg_send_expected(hg_core_handle->na_class,
+        hg_core_handle->na_context, hg_core_send_output_cb, hg_core_handle,
+        hg_core_handle->core_handle.out_buf, hg_core_handle->out_buf_used,
+        hg_core_handle->out_buf_plugin_data,
+        hg_core_handle->core_handle.info.addr->na_addr,
+        hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
+        &hg_core_handle->na_send_op_id);
     /* Expected sends should always succeed after retry */
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
         "Could not post send for output buffer (%s)",
@@ -2430,7 +2402,6 @@ hg_core_send_ack(hg_core_handle_t handle)
         (struct hg_core_private_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
-    int retry_cnt = 0;
 
     /* Increment number of expected NA operations */
     hg_core_handle->na_op_count++;
@@ -2447,24 +2418,13 @@ hg_core_send_ack(hg_core_handle_t handle)
         "Could not initialize ack buffer (%s)", NA_Error_to_string(na_ret));
 
     /* Post expected send (ack) */
-    do {
-        na_ret = NA_Msg_send_expected(hg_core_handle->na_class,
-            hg_core_handle->na_context, hg_core_send_ack_cb, hg_core_handle,
-            hg_core_handle->ack_buf, sizeof(hg_uint8_t),
-            hg_core_handle->ack_buf_plugin_data,
-            hg_core_handle->core_handle.info.addr->na_addr,
-            hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
-            &hg_core_handle->na_ack_op_id);
-        if (na_ret != NA_AGAIN || retry_cnt++ > HG_CORE_MAX_AGAIN_RETRY)
-            break;
-
-        /* Attempt to make progress on NA with timeout of 0 */
-        na_ret = NA_Progress(hg_core_handle->na_class,
-            hg_core_handle->na_context, 0);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, error,
-            ret, (hg_return_t) na_ret, "Could not make progress on NA (%s)",
-            NA_Error_to_string(na_ret));
-    } while (1);
+    na_ret = NA_Msg_send_expected(hg_core_handle->na_class,
+        hg_core_handle->na_context, hg_core_send_ack_cb, hg_core_handle,
+        hg_core_handle->ack_buf, sizeof(hg_uint8_t),
+        hg_core_handle->ack_buf_plugin_data,
+        hg_core_handle->core_handle.info.addr->na_addr,
+        hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
+        &hg_core_handle->na_ack_op_id);
     /* Expected sends should always succeed after retry */
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
         "Could not post send for ack buffer (%s)", NA_Error_to_string(na_ret));
