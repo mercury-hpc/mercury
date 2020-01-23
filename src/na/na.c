@@ -78,12 +78,6 @@ na_info_free(
     struct na_info *na_info
     );
 
-#ifdef NA_DEBUG
-/* Print NA info */
-static void
-na_info_print(struct na_info *na_info);
-#endif
-
 /*******************/
 /* Local Variables */
 /*******************/
@@ -212,19 +206,6 @@ na_info_free(struct na_info *na_info)
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef NA_DEBUG
-static void
-na_info_print(struct na_info *na_info)
-{
-    if (!na_info) return;
-
-    printf("Class: %s\n", na_info->class_name);
-    printf("Protocol: %s\n", na_info->protocol_name);
-    printf("Hostname: %s\n", na_info->host_name);
-}
-#endif
-
-/*---------------------------------------------------------------------------*/
 na_class_t *
 NA_Initialize(const char *info_string, na_bool_t listen)
 {
@@ -242,10 +223,20 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
     const unsigned int plugin_count =
         sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
     na_bool_t plugin_found = NA_FALSE;
+#ifdef NA_HAS_VERBOSE_ERROR
+    const char *log_level = NULL;
+#endif
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_ERROR(info_string == NULL, error, ret, NA_INVALID_ARG,
         "NULL info string");
+
+#ifdef NA_HAS_VERBOSE_ERROR
+    /* Set log level */
+    log_level = getenv("HG_NA_LOG_LEVEL");
+    if (log_level && (strcmp(log_level, "debug") == 0))
+        NA_LOG_MASK |= HG_LOG_TYPE_DEBUG;
+#endif
 
     na_private_class = (struct na_private_class *) malloc(
         sizeof(struct na_private_class));
@@ -260,9 +251,9 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
     if (na_init_info)
         na_private_class->na_class.progress_mode = na_init_info->progress_mode;
 
-#ifdef NA_DEBUG
-    na_info_print(na_info);
-#endif
+    /* Print debug info */
+    NA_LOG_DEBUG("Class: %s, Protocol: %s, Hostname: %s" , na_info->class_name,
+        na_info->protocol_name, na_info->host_name);
 
     for (plugin_index = 0; plugin_index < plugin_count; plugin_index++) {
         na_bool_t verified = NA_FALSE;
