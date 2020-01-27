@@ -326,5 +326,5 @@ endforeach()
 
 foreach(test ${MERCURY_SERIAL_TESTS})
   build_mercury_test(${test})
-  add_mercury_test(${test} true)
+#  add_mercury_test(${test} true)
 endforeach()
