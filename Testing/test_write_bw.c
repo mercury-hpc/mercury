@@ -139,8 +139,13 @@ measure_bulk_transfer(struct hg_test_info *hg_test_info, size_t total_size,
         unsigned int j;
 
         for (j = 0; j < nhandles; j++) {
+again:
             ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args,
                 &in_struct);
+            if (ret == HG_AGAIN) {
+                hg_request_wait(request, 0, NULL);
+                goto again;
+            }
             HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
                 HG_Error_to_string(ret));
         }

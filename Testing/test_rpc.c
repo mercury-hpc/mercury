@@ -17,7 +17,7 @@
 /* Local Macros */
 /****************/
 
-#define NINFLIGHT 32
+#define NINFLIGHT   (HG_TEST_MAX_HANDLES)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -560,8 +560,13 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
         HG_TEST_LOG_DEBUG(" %d Forwarding rpc_open, op id: %u...", i, rpc_id);
         forward_cb_args_m[i].request = request_m[i];
         forward_cb_args_m[i].rpc_handle = &rpc_open_handle_m[i];
+again:
         ret = HG_Forward(handle_m[i], callback, &forward_cb_args_m[i],
             &rpc_open_in_struct);
+        if (ret == HG_AGAIN) {
+            hg_request_wait(request_m[i], 0, NULL);
+            goto again;
+        }
         HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
             HG_Error_to_string(ret));
     }
