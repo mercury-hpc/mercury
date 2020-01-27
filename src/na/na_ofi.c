@@ -245,7 +245,6 @@ struct na_ofi_addr {
     fi_addr_t fi_addr;                      /* FI address               */
     na_uint64_t ht_key;                     /* Key in hash-table        */
     hg_atomic_int32_t refcount;             /* Reference counter        */
-    na_bool_t self;                         /* Boolean for self         */
     na_bool_t remove;                       /* Remove from AV on free   */
 };
 
@@ -2180,7 +2179,6 @@ retry:
 
     na_ofi_addr->addr = addr;
     na_ofi_addr->addrlen = addrlen;
-    na_ofi_addr->self = NA_TRUE;
 
     /* Get URI from address */
     ret = na_ofi_get_uri(na_class, na_ofi_addr->addr, &na_ofi_addr->uri);
@@ -3401,8 +3399,7 @@ error:
 static NA_INLINE na_return_t
 na_ofi_addr_self(na_class_t *na_class, na_addr_t *addr)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
-    struct na_ofi_endpoint *ep = priv->endpoint;
+    struct na_ofi_endpoint *ep = NA_OFI_CLASS(na_class)->endpoint;
 
     na_ofi_addr_addref(ep->src_addr); /* decref in na_ofi_addr_free() */
     *addr = ep->src_addr;
@@ -3443,9 +3440,22 @@ na_ofi_addr_set_remove(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_bool_t
-na_ofi_addr_is_self(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+na_ofi_addr_is_self(na_class_t *na_class, na_addr_t addr)
 {
-    return ((struct na_ofi_addr *) addr)->self;
+    struct na_ofi_endpoint *ep = NA_OFI_CLASS(na_class)->endpoint;
+    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) addr;
+
+    if (ep->src_addr == na_ofi_addr)
+        goto done;
+
+    if (ep->src_addr->addrlen != na_ofi_addr->addrlen)
+        return NA_FALSE;
+
+    if (memcmp(ep->src_addr->addr, na_ofi_addr->addr, na_ofi_addr->addrlen))
+        return NA_FALSE;
+
+done:
+    return NA_TRUE;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3518,6 +3528,7 @@ na_ofi_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
     na_size_t buf_size, na_addr_t addr)
 {
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) addr;
+    na_uint8_t *p = buf;
     na_size_t len;
     na_return_t ret = NA_SUCCESS;
 
@@ -3536,9 +3547,9 @@ na_ofi_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
         "Buffer size too small for serializing address");
 
     /* TODO could skip the addrlen but include it for sanity check */
-    memcpy(buf, &na_ofi_addr->addrlen, sizeof(na_ofi_addr->addrlen));
-    memcpy((na_uint8_t *) buf + sizeof(na_ofi_addr->addrlen), na_ofi_addr->addr,
-        na_ofi_addr->addrlen);
+    memcpy(p, &na_ofi_addr->addrlen, sizeof(na_ofi_addr->addrlen));
+    p += sizeof(na_ofi_addr->addrlen);
+    memcpy(p, na_ofi_addr->addr, na_ofi_addr->addrlen);
 
 out:
     return ret;
@@ -3551,20 +3562,20 @@ na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
 {
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
     struct na_ofi_addr *na_ofi_addr = NULL;
+    const na_uint8_t *p = buf;
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate addr */
     na_ofi_addr = na_ofi_addr_alloc(domain);
     NA_CHECK_ERROR(na_ofi_addr == NULL, out, ret, NA_NOMEM,
         "na_ofi_addr_alloc() failed");
-    memcpy(&na_ofi_addr->addrlen, buf, sizeof(na_ofi_addr->addrlen));
+    memcpy(&na_ofi_addr->addrlen, p, sizeof(na_ofi_addr->addrlen));
+    p += sizeof(na_ofi_addr->addrlen);
 
     na_ofi_addr->addr = malloc(na_ofi_addr->addrlen);
     NA_CHECK_ERROR(na_ofi_addr->addr == NULL, error, ret, NA_NOMEM,
         "Could not allocate %zu bytes for address", na_ofi_addr->addrlen);
-    memcpy(na_ofi_addr->addr,
-        (const na_uint8_t *) buf + sizeof(na_ofi_addr->addrlen),
-        na_ofi_addr->addrlen);
+    memcpy(na_ofi_addr->addr, p, na_ofi_addr->addrlen);
 
     /* Skip URI generation, URI will only be generated when needed */
 
