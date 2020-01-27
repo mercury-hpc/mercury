@@ -762,18 +762,20 @@ main(int argc, char *argv[])
         "unregistered RPC test failed");
     HG_PASSED();
 
-    /* RPC test with invalid ID (not registered on server) */
-    inv_id = MERCURY_REGISTER(hg_test_info.hg_class, "inv_id", void, void,
-        NULL);
-    HG_TEST_CHECK_ERROR(inv_id == 0, done, ret, EXIT_FAILURE,
-        "HG_Register() failed");
+    if (!hg_test_info.na_test_info.self_send) {
+        /* RPC test with invalid ID (not registered on server) */
+        inv_id = MERCURY_REGISTER(hg_test_info.hg_class, "inv_id", void, void,
+            NULL);
+        HG_TEST_CHECK_ERROR(inv_id == 0, done, ret, EXIT_FAILURE,
+            "HG_Register() failed");
 
-    HG_TEST("invalid RPC");
-    hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
-        hg_test_info.target_addr, inv_id, hg_test_rpc_forward_cb);
-    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
-        "invalid RPC test failed");
-    HG_PASSED();
+        HG_TEST("invalid RPC");
+        hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
+            hg_test_info.target_addr, inv_id, hg_test_rpc_forward_cb);
+        HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+            "invalid RPC test failed");
+        HG_PASSED();
+    }
 
     /* RPC test with reset */
     HG_TEST("reset RPC");
