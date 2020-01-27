@@ -63,6 +63,8 @@ else()
 endif()
 mark_as_advanced(MERCURY_TESTING_CORESIDENT)
 
+set(HG_TEST_FAIL_REGULAR_EXPRESSION "[^a-z]Error;ERROR;Failed")
+
 #------------------------------------------------------------------------------
 # NA protocols used for testing
 # (case where the NA plugin defines multiple protocols)
@@ -186,6 +188,9 @@ macro(add_mercury_test_comm test_name comm protocol busy serial)
       ${static_test_args} : ${MPIEXEC_NUMPROC_FLAG} ${numprocs}
       ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${static_test_args}
     )
+    set_tests_properties("mercury_${full_test_name}" PROPERTIES
+      FAIL_REGULAR_EXPRESSION ${HG_TEST_FAIL_REGULAR_EXPRESSION}
+    )
   else()
     set(driver_args --server $<TARGET_FILE:hg_test_server>       ${test_args}
                     --client $<TARGET_FILE:hg_test_${test_name}> ${test_args})
@@ -210,9 +215,15 @@ macro(add_mercury_test_comm test_name comm protocol busy serial)
         ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${MPIEXEC_POSTFLAGS}
         ${self_test_args}
       )
+      set_tests_properties("mercury_${self_test_name}" PROPERTIES
+        FAIL_REGULAR_EXPRESSION ${HG_TEST_FAIL_REGULAR_EXPRESSION}
+      )
     else()
       add_test(NAME "mercury_${cores_test_name}"
         COMMAND $<TARGET_FILE:hg_test_${test_name}> ${self_test_args}
+      )
+      set_tests_properties("mercury_${cores_test_name}" PROPERTIES
+        FAIL_REGULAR_EXPRESSION ${HG_TEST_FAIL_REGULAR_EXPRESSION}
       )
     endif()
   endif()
