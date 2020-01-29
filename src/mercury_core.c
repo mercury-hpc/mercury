@@ -2716,7 +2716,8 @@ hg_core_completion_add(struct hg_core_context *context,
 
 #ifdef HG_HAS_SELF_FORWARD
     /* TODO could prevent from self notifying if hg_poll_wait() not entered */
-    if (self_notify && private_context->completion_queue_notify) {
+    if ((HG_CORE_CONTEXT_CLASS(private_context)->progress_mode != NA_NO_BLOCK)
+        && self_notify && private_context->completion_queue_notify) {
         int rc = hg_event_set(private_context->completion_queue_notify);
         HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
             "Could not signal completion queue");
@@ -2872,10 +2873,12 @@ hg_core_completion_queue_notify_cb(void *arg,
     hg_util_bool_t notified = HG_UTIL_FALSE;
     int rc = HG_UTIL_SUCCESS;
 
-    /* TODO could prevent from self notifying if hg_poll_wait() not entered */
-    rc = hg_event_get(context->completion_queue_notify, &notified);
-    HG_CHECK_ERROR_NORET(rc != HG_UTIL_SUCCESS, done,
-        "Could not get completion notification");
+    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode != NA_NO_BLOCK) {
+        /* TODO could prevent from self notifying if hg_poll_wait() not entered */
+        rc = hg_event_get(context->completion_queue_notify, &notified);
+        HG_CHECK_ERROR_NORET(rc != HG_UTIL_SUCCESS, done,
+            "Could not get completion notification");
+    }
 
     if (notified || !hg_atomic_queue_is_empty(context->completion_queue)
         || hg_atomic_get32(&context->backfill_queue_count)) {
