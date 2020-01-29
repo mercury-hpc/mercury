@@ -384,6 +384,7 @@ const struct na_class_ops NA_PLUGIN_OPS(cci) = {
     NULL,                                   /* addr_set_remove */
     na_cci_addr_self,                       /* addr_self */
     na_cci_addr_dup,                        /* addr_dup */
+    NULL,                                   /* addr_cmp */
     na_cci_addr_is_self,                    /* addr_is_self */
     na_cci_addr_to_string,                  /* addr_to_string */
     NULL,                                   /* addr_get_serialize_size */

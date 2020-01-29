@@ -1549,6 +1549,21 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_bool_t
+HG_Addr_cmp(hg_class_t *hg_class, hg_addr_t addr1, hg_addr_t addr2)
+{
+    hg_bool_t ret = HG_FALSE;
+
+    HG_CHECK_ERROR_NORET(hg_class == NULL, done, "NULL HG class");
+
+    ret = HG_Core_addr_cmp(hg_class->core_class, (hg_core_addr_t) addr1,
+        (hg_core_addr_t) addr2);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Addr_to_string(hg_class_t *hg_class, char *buf, hg_size_t *buf_size,
     hg_addr_t addr)

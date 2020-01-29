@@ -313,6 +313,22 @@ NA_Addr_dup(
         );
 
 /**
+ * Compare two addresses.
+ *
+ * \param na_class [IN/OUT]     pointer to NA class
+ * \param addr1 [IN]            abstract address
+ * \param addr2 [IN]            abstract address
+ *
+ * \return NA_TRUE if addresses are determined to be equal, NA_FALSE otherwise
+ */
+NA_PUBLIC na_bool_t
+NA_Addr_cmp(
+        na_class_t *na_class,
+        na_addr_t   addr1,
+        na_addr_t   addr2
+        );
+
+/**
  * Test whether address is self or not.
  *
  * \param na_class [IN/OUT]     pointer to NA class
@@ -1181,6 +1197,12 @@ struct na_class_ops {
             na_class_t *na_class,
             na_addr_t   addr,
             na_addr_t  *new_addr
+            );
+    na_bool_t
+    (*addr_cmp)(
+            na_class_t *na_class,
+            na_addr_t   addr1,
+            na_addr_t   addr2
             );
     na_bool_t
     (*addr_is_self)(

@@ -781,6 +781,14 @@ na_ofi_addr_lookup(na_class_t *na_class, na_context_t *context,
 static na_return_t
 na_ofi_addr_lookup2(na_class_t *na_class, const char *name, na_addr_t *addr);
 
+/* addr_free */
+static NA_INLINE na_return_t
+na_ofi_addr_free(na_class_t *na_class, na_addr_t addr);
+
+/* addr_set_remove */
+static NA_INLINE na_return_t
+na_ofi_addr_set_remove(na_class_t *na_class, na_addr_t addr);
+
 /* addr_self */
 static NA_INLINE na_return_t
 na_ofi_addr_self(na_class_t *na_class, na_addr_t *addr);
@@ -789,13 +797,9 @@ na_ofi_addr_self(na_class_t *na_class, na_addr_t *addr);
 static NA_INLINE na_return_t
 na_ofi_addr_dup(na_class_t *na_class, na_addr_t addr, na_addr_t *new_addr);
 
-/* addr_free */
-static NA_INLINE na_return_t
-na_ofi_addr_free(na_class_t *na_class, na_addr_t addr);
-
-/* addr_set_remove */
-static NA_INLINE na_return_t
-na_ofi_addr_set_remove(na_class_t *na_class, na_addr_t addr);
+/* addr_dup */
+static na_bool_t
+na_ofi_addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2);
 
 /* addr_is_self */
 static NA_INLINE na_bool_t
@@ -955,6 +959,7 @@ const struct na_class_ops NA_PLUGIN_OPS(ofi) = {
     na_ofi_addr_set_remove,                 /* addr_set_remove */
     na_ofi_addr_self,                       /* addr_self */
     na_ofi_addr_dup,                        /* addr_dup */
+    na_ofi_addr_cmp,                        /* addr_cmp */
     na_ofi_addr_is_self,                    /* addr_is_self */
     na_ofi_addr_to_string,                  /* addr_to_string */
     na_ofi_addr_get_serialize_size,         /* addr_get_serialize_size */
@@ -3397,6 +3402,24 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_return_t
+na_ofi_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+{
+    na_ofi_addr_decref((struct na_ofi_addr *) addr);
+
+    return NA_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_return_t
+na_ofi_addr_set_remove(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+{
+    ((struct na_ofi_addr *) addr)->remove = NA_TRUE;
+
+    return NA_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_return_t
 na_ofi_addr_self(na_class_t *na_class, na_addr_t *addr)
 {
     struct na_ofi_endpoint *ep = NA_OFI_CLASS(na_class)->endpoint;
@@ -3421,21 +3444,36 @@ na_ofi_addr_dup(na_class_t NA_UNUSED *na_class, na_addr_t addr,
 }
 
 /*---------------------------------------------------------------------------*/
-static NA_INLINE na_return_t
-na_ofi_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
+static na_bool_t
+na_ofi_addr_cmp(na_class_t NA_UNUSED *na_class, na_addr_t addr1,
+    na_addr_t addr2)
 {
-    na_ofi_addr_decref((struct na_ofi_addr *) addr);
+    struct na_ofi_addr *na_ofi_addr1 = (struct na_ofi_addr *) addr1;
+    struct na_ofi_addr *na_ofi_addr2 = (struct na_ofi_addr *) addr2;
 
-    return NA_SUCCESS;
-}
+    if ((na_ofi_addr1 == na_ofi_addr2)
+        || (na_ofi_addr1->fi_addr == na_ofi_addr2->fi_addr))
+        return NA_TRUE;
 
-/*---------------------------------------------------------------------------*/
-static NA_INLINE na_return_t
-na_ofi_addr_set_remove(na_class_t NA_UNUSED *na_class, na_addr_t addr)
-{
-    ((struct na_ofi_addr *) addr)->remove = NA_TRUE;
+    /* If we don't have the addr, look it up from AV */
+    if (!na_ofi_addr1->addr) {
+        na_return_t na_ret = na_ofi_av_lookup(na_ofi_addr1->domain,
+            na_ofi_addr1->fi_addr, &na_ofi_addr1->addr, &na_ofi_addr1->addrlen);
+        NA_CHECK_NA_ERROR(out, na_ret, "Could not get addr from AV");
+    }
+    if (!na_ofi_addr2->addr) {
+        na_return_t na_ret = na_ofi_av_lookup(na_ofi_addr2->domain,
+            na_ofi_addr2->fi_addr, &na_ofi_addr2->addr, &na_ofi_addr2->addrlen);
+        NA_CHECK_NA_ERROR(out, na_ret, "Could not get addr from AV");
+    }
 
-    return NA_SUCCESS;
+    if ((na_ofi_addr1->addrlen == na_ofi_addr2->addrlen)
+        && (memcmp(na_ofi_addr1->addr, na_ofi_addr2->addr,
+            na_ofi_addr1->addrlen) == 0))
+        return NA_TRUE;
+
+out:
+    return NA_FALSE;
 }
 
 /*---------------------------------------------------------------------------*/

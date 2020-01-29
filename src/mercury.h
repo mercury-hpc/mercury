@@ -651,6 +651,22 @@ HG_Addr_dup(
         );
 
 /**
+ * Compare two addresses.
+ *
+ * \param hg_class [IN]         pointer to HG class
+ * \param addr1 [IN]            abstract address
+ * \param addr2 [IN]            abstract address
+ *
+ * \return HG_TRUE if addresses are determined to be equal, HG_FALSE otherwise
+ */
+HG_PUBLIC hg_bool_t
+HG_Addr_cmp(
+        hg_class_t *hg_class,
+        hg_addr_t addr1,
+        hg_addr_t addr2
+        );
+
+/**
  * Convert an addr to a string (returned string includes the terminating
  * null byte '\0'). If buf is NULL, the address is not converted and only
  * the required size of the buffer is returned. If the input value passed

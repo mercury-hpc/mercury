@@ -607,6 +607,50 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
+NA_Addr_free(na_class_t *na_class, na_addr_t addr)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    NA_CHECK_ERROR(na_class == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class");
+    if (addr == NA_ADDR_NULL)
+        /* Nothing to do */
+        goto done;
+
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    NA_CHECK_ERROR(na_class->ops->addr_free == NULL, done, ret,
+        NA_OPNOTSUPPORTED, "addr_free plugin callback is not defined");
+
+    ret = na_class->ops->addr_free(na_class, addr);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_Addr_set_remove(na_class_t *na_class, na_addr_t addr)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    NA_CHECK_ERROR(na_class == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class");
+    if (addr == NA_ADDR_NULL)
+        /* Nothing to do */
+        goto done;
+
+    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_INVALID_ARG,
+        "NULL NA class ops");
+    if (na_class->ops->addr_set_remove)
+        ret = na_class->ops->addr_set_remove(na_class, addr);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
 NA_Addr_self(na_class_t *na_class, na_addr_t *addr)
 {
     na_return_t ret = NA_SUCCESS;
@@ -652,44 +696,24 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-na_return_t
-NA_Addr_free(na_class_t *na_class, na_addr_t addr)
+na_bool_t
+NA_Addr_cmp(na_class_t *na_class, na_addr_t addr1, na_addr_t addr2)
 {
-    na_return_t ret = NA_SUCCESS;
+    na_bool_t ret = NA_FALSE;
 
-    NA_CHECK_ERROR(na_class == NULL, done, ret, NA_INVALID_ARG,
-        "NULL NA class");
-    if (addr == NA_ADDR_NULL)
-        /* Nothing to do */
-        goto done;
+    NA_CHECK_ERROR_NORET(na_class == NULL, done, "NULL NA class");
 
-    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_INVALID_ARG,
-        "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->addr_free == NULL, done, ret,
-        NA_OPNOTSUPPORTED, "addr_free plugin callback is not defined");
+    if (addr1 == NA_ADDR_NULL && addr2 == NA_ADDR_NULL)
+        NA_GOTO_DONE(done, ret, NA_TRUE);
 
-    ret = na_class->ops->addr_free(na_class, addr);
+    if (addr1 == NA_ADDR_NULL || addr2 == NA_ADDR_NULL)
+        NA_GOTO_DONE(done, ret, NA_FALSE);
 
-done:
-    return ret;
-}
+    NA_CHECK_ERROR_NORET(na_class->ops == NULL, done, "NULL NA class ops");
+    NA_CHECK_ERROR_NORET(na_class->ops->addr_cmp == NULL, done,
+        "addr_cmp plugin callback is not defined");
 
-/*---------------------------------------------------------------------------*/
-na_return_t
-NA_Addr_set_remove(na_class_t *na_class, na_addr_t addr)
-{
-    na_return_t ret = NA_SUCCESS;
-
-    NA_CHECK_ERROR(na_class == NULL, done, ret, NA_INVALID_ARG,
-        "NULL NA class");
-    if (addr == NA_ADDR_NULL)
-        /* Nothing to do */
-        goto done;
-
-    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_INVALID_ARG,
-        "NULL NA class ops");
-    if (na_class->ops->addr_set_remove)
-        ret = na_class->ops->addr_set_remove(na_class, addr);
+    ret = na_class->ops->addr_cmp(na_class, addr1, addr2);
 
 done:
     return ret;

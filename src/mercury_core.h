@@ -648,6 +648,22 @@ HG_Core_addr_self(
         );
 
 /**
+ * Compare two addresses.
+ *
+ * \param hg_core_class [IN]    pointer to HG core class
+ * \param addr1 [IN]            abstract address
+ * \param addr2 [IN]            abstract address
+ *
+ * \return HG_TRUE if addresses are determined to be equal, HG_FALSE otherwise
+ */
+HG_PUBLIC hg_bool_t
+HG_Core_addr_cmp(
+        hg_core_class_t *hg_core_class,
+        hg_core_addr_t addr1,
+        hg_core_addr_t addr2
+        );
+
+/**
  * Duplicate an existing HG abstract address. The duplicated address can be
  * stored for later use and the origin address be freed safely. The duplicated
  * address must be freed with HG_Core_addr_free().

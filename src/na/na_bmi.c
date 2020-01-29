@@ -254,6 +254,14 @@ na_bmi_addr_dup(
         na_addr_t  *new_addr
         );
 
+/* addr_cmp */
+static na_bool_t
+na_bmi_addr_cmp(
+        na_class_t *na_class,
+        na_addr_t addr1,
+        na_addr_t addr2
+        );
+
 /* addr_is_self */
 static na_bool_t
 na_bmi_addr_is_self(
@@ -525,6 +533,7 @@ const struct na_class_ops NA_PLUGIN_OPS(bmi) = {
         NULL,                                 /* addr_set_remove */
         na_bmi_addr_self,                     /* addr_self */
         na_bmi_addr_dup,                      /* addr_dup */
+        na_bmi_addr_cmp,                      /* addr_cmp */
         na_bmi_addr_is_self,                  /* addr_is_self */
         na_bmi_addr_to_string,                /* addr_to_string */
         NULL,                                 /* addr_get_serialize_size */
@@ -1013,6 +1022,17 @@ na_bmi_addr_free(na_class_t NA_UNUSED *na_class, na_addr_t addr)
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_bool_t
+na_bmi_addr_cmp(na_class_t NA_UNUSED *na_class, na_addr_t addr1,
+    na_addr_t addr2)
+{
+    struct na_bmi_addr *na_bmi_addr1 = (struct na_bmi_addr *) addr1;
+    struct na_bmi_addr *na_bmi_addr2 = (struct na_bmi_addr *) addr2;
+
+    return (na_bmi_addr1->bmi_addr == na_bmi_addr2->bmi_addr);
 }
 
 /*---------------------------------------------------------------------------*/
