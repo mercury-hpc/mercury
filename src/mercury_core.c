@@ -4085,6 +4085,30 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+hg_bool_t
+HG_Core_addr_cmp(hg_core_class_t *hg_core_class, hg_core_addr_t addr1,
+    hg_core_addr_t addr2)
+{
+    hg_bool_t ret = HG_FALSE;
+
+    HG_CHECK_ERROR_NORET(hg_core_class == NULL, done, "NULL HG core class");
+
+    if (addr1 == HG_CORE_ADDR_NULL && addr2 == HG_CORE_ADDR_NULL)
+        HG_GOTO_DONE(done, ret, HG_TRUE);
+
+    if (addr1 == HG_CORE_ADDR_NULL || addr2 == HG_CORE_ADDR_NULL)
+        HG_GOTO_DONE(done, ret, HG_FALSE);
+
+    ret = NA_Addr_cmp(
+        ((struct hg_core_private_addr *) addr1)->core_addr.na_class,
+        ((struct hg_core_private_addr *) addr1)->core_addr.na_addr,
+        ((struct hg_core_private_addr *) addr2)->core_addr.na_addr);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Core_addr_to_string(hg_core_class_t *hg_core_class, char *buf,
     hg_size_t *buf_size, hg_core_addr_t addr)

@@ -678,6 +678,14 @@ na_sm_addr_dup(
     na_addr_t  *new_addr
     );
 
+/* addr_cmp */
+static na_bool_t
+na_sm_addr_cmp(
+    na_class_t *na_class,
+    na_addr_t   addr1,
+    na_addr_t   addr2
+    );
+
 /* addr_is_self */
 static NA_INLINE na_bool_t
 na_sm_addr_is_self(
@@ -911,6 +919,7 @@ const struct na_class_ops NA_PLUGIN_OPS(sm) = {
     NULL,                                   /* addr_set_remove */
     na_sm_addr_self,                        /* addr_self */
     na_sm_addr_dup,                         /* addr_dup */
+    na_sm_addr_cmp,                         /* addr_cmp */
     na_sm_addr_is_self,                     /* addr_is_self */
     na_sm_addr_to_string,                   /* addr_to_string */
     NULL,                                   /* addr_get_serialize_size */
@@ -3087,6 +3096,17 @@ na_sm_addr_dup(na_class_t NA_UNUSED *na_class, na_addr_t addr,
     *new_addr = (na_addr_t) na_sm_addr;
 
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_bool_t
+na_sm_addr_cmp(na_class_t NA_UNUSED *na_class, na_addr_t addr1, na_addr_t addr2)
+{
+    struct na_sm_addr *na_sm_addr1 = (struct na_sm_addr *) addr1;
+    struct na_sm_addr *na_sm_addr2 = (struct na_sm_addr *) addr2;
+
+    return (na_sm_addr1->pid == na_sm_addr2->pid)
+        && (na_sm_addr1->id == na_sm_addr2->id);
 }
 
 /*---------------------------------------------------------------------------*/
