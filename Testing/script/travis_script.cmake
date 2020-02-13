@@ -54,7 +54,7 @@ set(CTEST_TEST_TIMEOUT 180) # 180s timeout
 set(MERCURY_DO_COVERAGE $ENV{MERCURY_DO_COVERAGE})
 if(MERCURY_DO_COVERAGE)
   message("Enabling Coverage")
-  set(CTEST_COVERAGE_COMMAND "/usr/bin/gcov-8")
+  set(CTEST_COVERAGE_COMMAND "/usr/bin/$ENV{COV}")
   # don't run parallel coverage tests, no matter what.
   set(CTEST_TEST_ARGS PARALLEL_LEVEL 1)
 

@@ -7,9 +7,7 @@ compiler:
     - gcc
     - clang
 
-sudo: true
-dist: trusty
-group: beta
+dist: xenial
 
 cache:
   directories:
@@ -18,12 +16,12 @@ cache:
 env:
   global:
     - MERCURY_NO_LOOP="true"
-  matrix:
+  jobs:
     - MERCURY_BUILD_CONFIGURATION="Debug"
     - MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
     - MERCURY_BUILD_CONFIGURATION="Release"
 
-matrix:
+jobs:
   include:
    - os: linux
      compiler: gcc
@@ -32,8 +30,8 @@ matrix:
          sources:
          - ubuntu-toolchain-r-test
          packages:
-         - gcc-8
-         - g++-8
+         - gcc-9
+         - g++-9
          - libtsan0
          - libasan5
          - liblsan0
@@ -45,8 +43,8 @@ matrix:
          sources:
          - ubuntu-toolchain-r-test
          packages:
-         - gcc-8
-         - g++-8
+         - gcc-9
+         - g++-9
          - libtsan0
          - libasan5
          - liblsan0
@@ -58,8 +56,8 @@ matrix:
          sources:
          - ubuntu-toolchain-r-test
          packages:
-         - gcc-8
-         - g++-8
+         - gcc-9
+         - g++-9
      env: MERCURY_DO_COVERAGE="true"
 
 branches:
@@ -81,7 +79,7 @@ before_script:
     - export PATH=$HOME/install/bin:$PATH
     - export LD_LIBRARY_PATH=$HOME/install/lib:$HOME/install/lib64:$LD_LIBRARY_PATH
     - export PKG_CONFIG_PATH=$HOME/install/lib/pkgconfig:$PKG_CONFIG_PATH
-    - if [[ "$CC" == "gcc" && `command -v gcc-8` ]]; then export CC=gcc-8; export CXX=g++-8; export AR=gcc-ar-8; export NM=gcc-nm-8; export RANLIB=gcc-ranlib-8; which gcov-8; fi
+    - if [[ "$CC" == "gcc" && `command -v gcc-9` ]]; then export CC=gcc-9; export CXX=g++-9; export AR=gcc-ar-9; export NM=gcc-nm-9; export RANLIB=gcc-ranlib-9; export COV=gcov-9; fi
     - $CC --version
     - if [[ "$TRAVIS_EVENT_TYPE" == "cron" ]]; then export MERCURY_DASHBOARD_MODEL="Nightly"; elif [[ "$TRAVIS_EVENT_TYPE" == "pull_request" ]]; then export MERCURY_DASHBOARD_MODEL="Experimental"; else export MERCURY_DASHBOARD_MODEL="Continuous"; fi
     - ctest --version
