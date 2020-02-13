@@ -4,7 +4,6 @@ BMI_VERSION=master
 CMAKE_VERSION_MAJOR=3.16
 CMAKE_VERSION_MINOR=1
 MPI_VERSION=3.3.2
-CCI_VERSION=2.1
 OFI_VERSION=1.9.0
 PREFIX=$HOME/install
 
@@ -50,16 +49,6 @@ if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
     echo "${MPI_VERSION}" > $PREFIX/mpi_version.txt
   else
     echo "Using cached directory for MPI";
-  fi
-
-  # CCI
-  if [ ! -f "$PREFIX/bin/cci_info" ]; then
-    cd $HOME && wget http://cci-forum.com/wp-content/uploads/2017/05/cci-${CCI_VERSION}.tar.gz
-    tar -xzf cci-${CCI_VERSION}.tar.gz && cd cci-${CCI_VERSION};
-    patch -p1 < ${TRAVIS_BUILD_DIR}/Testing/script/cci_20170918.patch
-    ./configure --disable-silent-rules --disable-static --prefix=$PREFIX && make -j2 -s && make install;
-  else
-    echo "Using cached directory for CCI";
   fi
 
   # OFI
