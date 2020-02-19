@@ -100,7 +100,7 @@ struct hg_core_private_class {
     hg_atomic_int32_t n_addrs;          /* Atomic used for number of addrs */
     hg_atomic_int32_t request_tag;      /* Atomic used for tag generation */
     hg_thread_spin_t func_map_lock;     /* Function map lock */
-    na_progress_mode_t progress_mode;   /* NA progress mode */
+    na_uint32_t progress_mode;          /* NA progress mode */
     hg_bool_t na_ext_init;              /* NA externally initialized */
 #ifdef HG_HAS_COLLECT_STATS
     hg_bool_t stats;                    /* (Debug) Print stats at exit */
@@ -2676,7 +2676,7 @@ hg_core_completion_add(struct hg_core_context *context,
 
 #ifdef HG_HAS_SELF_FORWARD
     /* TODO could prevent from self notifying if hg_poll_wait() not entered */
-    if ((HG_CORE_CONTEXT_CLASS(private_context)->progress_mode != NA_NO_BLOCK)
+    if (!(HG_CORE_CONTEXT_CLASS(private_context)->progress_mode & NA_NO_BLOCK)
         && self_notify && private_context->completion_queue_notify) {
         int rc = hg_event_set(private_context->completion_queue_notify);
         HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
@@ -2833,7 +2833,7 @@ hg_core_completion_queue_notify_cb(void *arg,
     hg_util_bool_t notified = HG_UTIL_FALSE;
     int rc = HG_UTIL_SUCCESS;
 
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode != NA_NO_BLOCK) {
+    if (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)) {
         /* TODO could prevent from self notifying if hg_poll_wait() not entered */
         rc = hg_event_get(context->completion_queue_notify, &notified);
         HG_CHECK_ERROR_NORET(rc != HG_UTIL_SUCCESS, done,
@@ -2977,7 +2977,7 @@ hg_core_progress_na(struct hg_core_private_context *context,
     hg_return_t ret = HG_TIMEOUT;
 
     /* Do not block if NA_NO_BLOCK option is passed */
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode == NA_NO_BLOCK) {
+    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) {
         timeout = 0;
         remaining = 0;
     } else
@@ -3063,7 +3063,7 @@ hg_core_poll_try_wait_cb(void *arg)
         (struct hg_core_private_context *) arg;
 
     /* Do not try to wait if NA_NO_BLOCK is set */
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode == NA_NO_BLOCK)
+    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
         return NA_FALSE;
 
     /* Something is in one of the completion queues */
@@ -3095,7 +3095,7 @@ hg_core_progress_poll(struct hg_core_private_context *context,
     hg_return_t ret = HG_TIMEOUT;
 
     /* Do not block if NA_NO_BLOCK option is passed */
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode == NA_NO_BLOCK) {
+    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) {
         timeout = 0;
         remaining = 0;
     } else {
@@ -3142,7 +3142,7 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
     hg_return_t ret = HG_SUCCESS;
 
     /* Do not block if NA_NO_BLOCK option is passed */
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode == NA_NO_BLOCK) {
+    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) {
         timeout = 0;
         remaining = 0;
     } else {
@@ -3545,7 +3545,7 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
         hg_core_completion_queue_notify_cb, context);
 #endif
 
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode == NA_NO_BLOCK)
+    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
         /* Force to use progress poll */
         na_poll_fd = 0;
     else
@@ -3568,7 +3568,7 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
         HG_CHECK_ERROR_NORET(context->progress != hg_core_progress_poll, error,
             "Auto SM mode not supported with selected plugin");
 
-        if (HG_CORE_CONTEXT_CLASS(context)->progress_mode == NA_NO_BLOCK)
+        if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
             /* Force to use progress poll */
             na_poll_fd = 0;
         else {
@@ -3685,7 +3685,7 @@ HG_Core_context_destroy(hg_core_context_t *context)
     }
 #endif
 
-    if (HG_CORE_CONTEXT_CLASS(private_context)->progress_mode == NA_NO_BLOCK)
+    if (HG_CORE_CONTEXT_CLASS(private_context)->progress_mode & NA_NO_BLOCK)
         /* Was forced to use progress poll */
         na_poll_fd = 0;
     else
@@ -3700,7 +3700,7 @@ HG_Core_context_destroy(hg_core_context_t *context)
 
 #ifdef HG_HAS_SM_ROUTING
     if (context->na_sm_context) {
-        if (HG_CORE_CONTEXT_CLASS(private_context)->progress_mode == NA_NO_BLOCK)
+        if (HG_CORE_CONTEXT_CLASS(private_context)->progress_mode & NA_NO_BLOCK)
             /* Was forced to use progress poll */
             na_poll_fd = 0;
         else

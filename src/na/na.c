@@ -1150,7 +1150,7 @@ NA_Poll_try_wait(na_class_t *na_class, na_context_t *context)
     NA_CHECK_ERROR_NORET(context == NULL, error, "NULL context");
 
     /* Do not try to wait if NA_NO_BLOCK is set */
-    if (na_class->progress_mode == NA_NO_BLOCK)
+    if (na_class->progress_mode & NA_NO_BLOCK)
         return NA_FALSE;
 
     /* Something is in one of the completion queues */
@@ -1194,7 +1194,7 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
         NA_OPNOTSUPPORTED, "progress plugin callback is not defined");
 
     /* Do not block if NA_NO_BLOCK option is passed */
-    if (na_private_class->na_class.progress_mode == NA_NO_BLOCK)
+    if (na_private_class->na_class.progress_mode & NA_NO_BLOCK)
         remaining = 0;
     else
         remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
@@ -1295,7 +1295,7 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
 
     /* Do not block if NA_NO_BLOCK option is passed */
     na_private_class = (struct na_private_class *) na_private_context->na_class;
-    if (na_private_class->na_class.progress_mode == NA_NO_BLOCK) {
+    if (na_private_class->na_class.progress_mode & NA_NO_BLOCK) {
         timeout = 0;
         remaining = 0;
     } else

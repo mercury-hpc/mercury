@@ -637,7 +637,7 @@ na_cci_initialize(na_class_t * na_class, const struct na_info *na_info,
     }
     memset(na_class->plugin_class, 0, sizeof(struct na_cci_class));
     if (na_info->na_init_info
-        && na_info->na_init_info->progress_mode == NA_NO_BLOCK)
+        && (na_info->na_init_info->progress_mode & NA_NO_BLOCK))
         fd_p = NULL;
 
     /* Create unspecified endpoint if service is set */
