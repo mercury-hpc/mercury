@@ -385,7 +385,7 @@ na_return_t
 NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
 {
     char *info_string = NULL;
-    struct na_init_info na_init_info;
+    struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
 
     na_test_parse_options(argc, argv, na_test_info);
@@ -413,12 +413,10 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     if (na_test_info->listen && na_test_info->mpi_comm_rank == 0)
         NA_Cleanup();
 
-    memset(&na_init_info, 0, sizeof(struct na_init_info));
     if (na_test_info->busy_wait) {
         na_init_info.progress_mode = NA_NO_BLOCK;
         printf("# Initializing NA in busy wait mode\n");
-    } else
-        na_init_info.progress_mode = NA_DEFAULT;
+    }
     na_init_info.auth_key = na_test_info->key;
     na_init_info.max_contexts = na_test_info->max_contexts;
 

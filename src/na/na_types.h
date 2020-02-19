@@ -29,16 +29,10 @@ typedef void *na_op_id_t;               /* Abstract operation id */
 typedef void *na_mem_handle_t;          /* Abstract memory handle */
 typedef na_uint64_t na_offset_t;        /* Offset */
 
-/* Progress mode */
-typedef enum na_progress_mode {
-    NA_DEFAULT,     /*!< blocking progress, depending on timeout value */
-    NA_NO_BLOCK     /*!< no blocking progress, independent of timeout value */
-} na_progress_mode_t;
-
 /* Init info */
 struct na_init_info {
     const char *auth_key;               /* Authorization key */
-    na_progress_mode_t progress_mode;   /* Progress mode */
+    na_uint32_t progress_mode;          /* Progress mode */
     na_uint8_t max_contexts;            /* Max contexts */
 };
 
@@ -135,5 +129,13 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 #define NA_MEM_READ_ONLY    0x01
 #define NA_MEM_WRITE_ONLY   0x02
 #define NA_MEM_READWRITE    0x03
+
+/* Progress modes */
+#define NA_NO_BLOCK         0x01    /*!< no blocking progress, independent of timeout value */
+#define NA_NO_RETRY         0x02    /*!< no retry of operations in progress */
+
+/* NA init info initializer */
+#define NA_INIT_INFO_INITIALIZER \
+    { NULL, 0, 1 }
 
 #endif /* NA_TYPES_H */

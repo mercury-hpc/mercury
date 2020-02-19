@@ -3010,7 +3010,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     /* Get init info */
     if (na_info->na_init_info) {
         /* Progress mode */
-        if (na_info->na_init_info->progress_mode == NA_NO_BLOCK)
+        if (na_info->na_init_info->progress_mode & NA_NO_BLOCK)
             no_wait = NA_TRUE;
         /* Max contexts */
         max_contexts = na_info->na_init_info->max_contexts;

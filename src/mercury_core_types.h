@@ -101,4 +101,8 @@ typedef enum {
 /* HG size max */
 #define HG_SIZE_MAX         UINT64_MAX
 
+/* HG init info initializer */
+#define HG_INIT_INFO_INITIALIZER \
+    { NA_INIT_INFO_INITIALIZER, NULL, HG_FALSE, HG_FALSE }
+
 #endif /* MERCURY_CORE_TYPES_H */

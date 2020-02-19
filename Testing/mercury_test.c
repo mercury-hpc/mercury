@@ -349,7 +349,7 @@ hg_test_register(hg_class_t *hg_class)
 hg_return_t
 HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 {
-    struct hg_init_info hg_init_info;
+    struct hg_init_info hg_init_info = HG_INIT_INFO_INITIALIZER;
     struct hg_test_context_info *hg_test_context_info;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
@@ -384,13 +384,9 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     HG_TEST_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
         "NA_Test_init() failed (%s)",  NA_Error_to_string(na_ret));
 
-    memset(&hg_init_info, 0, sizeof(struct hg_init_info));
-
     /* Set progress mode */
     if (hg_test_info->na_test_info.busy_wait)
         hg_init_info.na_init_info.progress_mode = NA_NO_BLOCK;
-    else
-        hg_init_info.na_init_info.progress_mode = NA_DEFAULT;
 
     /* Set stats */
 #ifdef HG_HAS_COLLECT_STATS

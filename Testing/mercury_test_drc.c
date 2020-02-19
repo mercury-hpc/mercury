@@ -468,7 +468,7 @@ hg_return_t
 hg_test_drc_acquire(int argc, char *argv[], struct hg_test_info *hg_test_info)
 {
     struct hg_test_info hg_test_drc_info = { 0 };
-    struct hg_init_info hg_test_drc_init_info = { 0 };
+    struct hg_init_info hg_test_drc_init_info = HG_INIT_INFO_INITIALIZER;
     hg_return_t ret = HG_SUCCESS;
 
     if (!hg_test_info->credential) {
