@@ -4468,13 +4468,14 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
      * or it will show up in the regular completion queue.
      */
     rc = fi_cancel(&fi_ep->fid, &na_ofi_op_id->fi_ctx);
-    NA_LOG_DEBUG("fi_cancel() rc: %d(%s)", (int) rc,
-        fi_strerror((int) -rc));
+    NA_LOG_DEBUG("fi_cancel() rc: %d(%s)", (int) rc, fi_strerror((int) -rc));
 //    NA_CHECK_ERROR(rc == -FI_ENOENT, out, ret, NA_OPNOTSUPPORTED,
 //        "fi_cancel() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
-    if (rc != 0) {
+    if (rc == FI_ENOENT) {
         NA_LOG_DEBUG("Operation ID %p failed to cancel", na_ofi_op_id);
-        ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+        if (hg_atomic_cas32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED,
+                            NA_OFI_OP_COMPLETED))
+            ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
     }
 
     /* Work around segfault on fi_cq_signal() in some providers */
