@@ -4437,8 +4437,10 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     ssize_t rc;
 
     /* Exit if op has already completed */
-    if (!hg_atomic_cas32(&na_ofi_op_id->status, 0, NA_OFI_OP_CANCELED))
+    if (!hg_atomic_cas32(&na_ofi_op_id->status, 0, NA_OFI_OP_CANCELED)) {
+        NA_LOG_DEBUG("Operation ID %p already completed", na_ofi_op_id);
         goto out;
+    }
 
     NA_LOG_DEBUG("Canceling operation ID %p", na_ofi_op_id);
 
@@ -4470,6 +4472,10 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
         fi_strerror((int) -rc));
 //    NA_CHECK_ERROR(rc == -FI_ENOENT, out, ret, NA_OPNOTSUPPORTED,
 //        "fi_cancel() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
+    if (rc != 0) {
+        NA_LOG_DEBUG("Operation ID %p failed to cancel", na_ofi_op_id);
+        ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+    }
 
     /* Work around segfault on fi_cq_signal() in some providers */
     if (!(na_ofi_prov_flags[NA_OFI_CLASS(na_class)->domain->prov_type]
