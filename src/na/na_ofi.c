@@ -4434,6 +4434,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
     struct fid_ep *fi_ep = NULL;
     na_return_t ret = NA_SUCCESS;
+    na_bool_t manual_complete = NA_FALSE;
     ssize_t rc;
 
     /* Exit if op has already completed */
@@ -4451,6 +4452,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
             break;
         case NA_CB_SEND_UNEXPECTED:
         case NA_CB_SEND_EXPECTED:
+            manual_complete = NA_TRUE;
         case NA_CB_PUT:
         case NA_CB_GET:
             fi_ep = NA_OFI_CONTEXT(context)->fi_tx;
@@ -4471,11 +4473,12 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
     NA_LOG_DEBUG("fi_cancel() rc: %d(%s)", (int) rc, fi_strerror((int) -rc));
 //    NA_CHECK_ERROR(rc == -FI_ENOENT, out, ret, NA_OPNOTSUPPORTED,
 //        "fi_cancel() failed, rc: %d(%s)", rc, fi_strerror((int) -rc));
-    if (rc == FI_ENOENT) {
-        NA_LOG_DEBUG("Operation ID %p failed to cancel", na_ofi_op_id);
-        if (hg_atomic_cas32(&na_ofi_op_id->status, NA_OFI_OP_CANCELED,
-                            NA_OFI_OP_COMPLETED))
-            ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
+    /* in sockets provider if fi_ep is a TX context fi_cancel() returns
+     * -FI_NOENT right away.
+     */
+    if (rc == -FI_ENOENT && manual_complete) {
+        NA_LOG_WARNING("Operation ID %p failed to cancel", na_ofi_op_id);
+        ret = na_ofi_complete(na_ofi_op_id, NA_CANCELED);
     }
 
     /* Work around segfault on fi_cq_signal() in some providers */
