@@ -22,6 +22,10 @@
 #include <string.h>
 #include <assert.h>
 
+/* PVAR profiling support */
+#include "mercury_prof_pvar_impl.h"
+HG_PROF_PVAR_UINT_COUNTER_DECL_EXTERN(hg_pvar_hg_forward_count);
+
 /****************/
 /* Local Macros */
 /****************/
@@ -959,6 +963,7 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
     struct hg_private_class *hg_class = NULL;
+    int ret;
 #ifdef HG_HAS_VERBOSE_ERROR
     const char *log_level = NULL;
 
@@ -986,6 +991,11 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     /* Set more data callback */
     HG_Core_set_more_data_callback(hg_class->hg_class.core_class,
         hg_more_data_cb, hg_more_data_free_cb);
+
+
+    /* EXPERIMENTAL: Initialize PVAR profiling data structures */
+    ret = hg_prof_pvar_init();
+    assert(ret == HG_SUCCESS);
 
     return (hg_class_t *) hg_class;
 
@@ -1917,6 +1927,10 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
         goto done;
     HG_CHECK_HG_ERROR(done, ret, "Could not forward call (%s)",
         HG_Error_to_string(ret));
+
+    /* PVAR profiling support: Increment the value of the PVAR with the name "hg_pvar_hg_forward_count" */
+    fprintf(stderr, "[MERCURY_PROF_INTERFACE] Incrementing the value of PVAR with name hg_pvar_hg_forward_count\n");
+    HG_PROF_PVAR_COUNTER_INC(hg_pvar_hg_forward_count, 1);
 
 done:
     return ret;

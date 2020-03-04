@@ -185,6 +185,8 @@ set(MERCURY_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_header.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_header.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_prof_interface.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_prof_pvar_impl.c
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.c
 )
 set(MERCURY_HL_SRCS
@@ -240,6 +242,8 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_config.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_bulk.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_prof_interface.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_prof_types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_header.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_core_types.h
