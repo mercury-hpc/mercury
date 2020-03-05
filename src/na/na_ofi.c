@@ -4656,6 +4656,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
         rc = fi_cancel(&fi_ep->fid, &na_ofi_op_id->fi_ctx);
         NA_LOG_DEBUG("fi_cancel() rc: %d(%s)", (int) rc,
             fi_strerror((int) -rc));
+        (void)rc;
     }
 
     /* Work around segfault on fi_cq_signal() in some providers */

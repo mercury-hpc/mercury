@@ -24,10 +24,14 @@ extern NA_PRIVATE unsigned int NA_LOG_MASK;
     if (NA_LOG_MASK & HG_LOG_TYPE_ERROR)                        \
         HG_LOG_WRITE_ERROR(NA_LOG_MODULE_NAME, __VA_ARGS__);    \
 } while (0)
-# define NA_LOG_DEBUG(...) do {                                 \
+# ifdef NA_HAS_DEBUG
+#  define NA_LOG_DEBUG(...) do {                                \
     if (NA_LOG_MASK & HG_LOG_TYPE_DEBUG)                        \
         HG_LOG_WRITE_DEBUG(NA_LOG_MODULE_NAME, __VA_ARGS__);    \
 } while (0)
+# else
+#  define NA_LOG_DEBUG(...)     (void)0
+# endif
 # define NA_LOG_WARNING(...) do {                               \
     if (NA_LOG_MASK & HG_LOG_TYPE_WARNING)                      \
         HG_LOG_WRITE_WARNING(NA_LOG_MODULE_NAME, __VA_ARGS__);  \

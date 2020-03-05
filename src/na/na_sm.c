@@ -978,6 +978,7 @@ const struct na_class_ops NA_PLUGIN_OPS(sm) = {
 /********************/
 
 /* Debug information */
+#ifdef NA_HAS_DEBUG
 static char *
 itoa(uint64_t val, int base)
 {
@@ -989,6 +990,7 @@ itoa(uint64_t val, int base)
 
     return &buf[i + 1];
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 static char *
