@@ -135,7 +135,7 @@
         "tcp;ofi_rxm",                                                  \
         "tcp",                                                          \
         FI_SOCKADDR_IN,                                                 \
-        FI_PROGRESS_MANUAL,                                             \
+        FI_PROGRESS_AUTO,                                               \
         (FI_SOURCE | FI_DIRECTED_RECV),                                 \
         (NA_OFI_WAIT_FD | NA_OFI_NO_SEP | NA_OFI_SKIP_SIGNAL)           \
     )                                                                   \
