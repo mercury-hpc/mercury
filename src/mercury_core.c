@@ -2973,15 +2973,8 @@ static hg_return_t
 hg_core_progress_na(struct hg_core_private_context *context,
     unsigned int timeout)
 {
-    double remaining;
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_return_t ret = HG_TIMEOUT;
-
-    /* Do not block if NA_NO_BLOCK option is passed */
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) {
-        timeout = 0;
-        remaining = 0;
-    } else
-        remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
 
     for (;;) {
         unsigned int actual_count = 0;
@@ -3044,9 +3037,9 @@ hg_core_progress_na(struct hg_core_private_context *context,
         /* Trigger NA callbacks and check whether we completed something */
         if (na_ret == NA_SUCCESS)
             continue;
-        else if (na_ret == NA_TIMEOUT)
+        else if (na_ret == NA_TIMEOUT && (remaining <= 0))
             break;
-        else
+        else if (na_ret != NA_TIMEOUT)
             HG_GOTO_ERROR(done, ret, (hg_return_t) na_ret,
                 "Could not make NA Progress (%s)", NA_Error_to_string(na_ret));
     }
@@ -3091,28 +3084,22 @@ static hg_return_t
 hg_core_progress_poll(struct hg_core_private_context *context,
     unsigned int timeout)
 {
-    double remaining;
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_return_t ret = HG_TIMEOUT;
-
-    /* Do not block if NA_NO_BLOCK option is passed */
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) {
-        timeout = 0;
-        remaining = 0;
-    } else {
-        remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
-    }
 
     do {
         hg_time_t t1, t2;
         hg_util_bool_t progressed;
+        unsigned int poll_timeout =
+            (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) ? 0 :
+            (unsigned int) (remaining * 1000.0);
         int rc;
 
         if (timeout)
             hg_time_get_current(&t1);
 
         /* Will call hg_core_poll_try_wait_cb if timeout is not 0 */
-        rc = hg_poll_wait(context->poll_set, (unsigned int)(remaining * 1000.0),
-            &progressed);
+        rc = hg_poll_wait(context->poll_set, poll_timeout, &progressed);
         HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
             "hg_poll_wait() failed");
 
@@ -3137,17 +3124,9 @@ static hg_return_t
 hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
     unsigned int max_count, unsigned int *actual_count)
 {
-    double remaining;
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
-
-    /* Do not block if NA_NO_BLOCK option is passed */
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) {
-        timeout = 0;
-        remaining = 0;
-    } else {
-        remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
-    }
 
     while (count < max_count) {
         struct hg_completion_entry *hg_completion_entry = NULL;

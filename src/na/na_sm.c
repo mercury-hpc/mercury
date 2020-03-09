@@ -3823,13 +3823,15 @@ na_sm_progress(na_class_t *na_class, na_context_t NA_UNUSED *context,
     do {
         hg_time_t t1, t2;
         hg_util_bool_t progressed;
+        unsigned int poll_timeout = (NA_SM_CLASS(na_class)->no_wait) ? 0 :
+            (unsigned int) (remaining * 1000.0);
         int rc;
 
         if (timeout)
             hg_time_get_current(&t1);
 
-        rc = hg_poll_wait(NA_SM_CLASS(na_class)->poll_set,
-            (unsigned int) (remaining * 1000.0), &progressed);
+        rc = hg_poll_wait(NA_SM_CLASS(na_class)->poll_set, poll_timeout,
+            &progressed);
         NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, NA_PROTOCOL_ERROR,
             "hg_poll_wait() failed");
 
