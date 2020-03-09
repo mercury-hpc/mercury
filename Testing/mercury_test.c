@@ -225,7 +225,7 @@ hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id)
 {
     hg_request_t *request_object = NULL;
     hg_handle_t handle = HG_HANDLE_NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
 
     request_object = hg_request_create(hg_test_info->request_class);
 
@@ -247,9 +247,9 @@ hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id)
     hg_request_wait(request_object, HG_MAX_IDLE_TIME, NULL);
 
 done:
-    ret = HG_Destroy(handle);
-    HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Destroy() failed (%s)",
-        HG_Error_to_string(ret));
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
 
     hg_request_destroy(request_object);
 
@@ -653,7 +653,7 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
         HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done, ret,
             ret, "Could not trigger callback (%s)", HG_Error_to_string(ret));
 
-        ret = HG_Progress(hg_test_info->context, 0);
+        ret = HG_Progress(hg_test_info->context, 100);
     } while (ret == HG_SUCCESS);
     HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done, ret,
         ret, "HG_Progress failed (%s)", HG_Error_to_string(ret));
