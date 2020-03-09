@@ -41,6 +41,7 @@ struct hg_test_info {
 #endif
     hg_class_t *hg_class;
     hg_context_t *context;
+    hg_context_t **secondary_contexts;
     hg_request_class_t *request_class;
     hg_addr_t target_addr;
     hg_bulk_t bulk_handle;
