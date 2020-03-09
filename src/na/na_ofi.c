@@ -1865,9 +1865,10 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
         /* Cannot free yet */
         goto out;
 
-    /* Remove from domain list (won't remove if not inserted) */
+    /* Remove from domain list */
     hg_thread_mutex_lock(&na_ofi_domain_list_mutex_g);
-    HG_LIST_REMOVE(na_ofi_domain, entry);
+    if (na_ofi_domain->entry.next || na_ofi_domain->entry.prev)
+        HG_LIST_REMOVE(na_ofi_domain, entry);
     hg_thread_mutex_unlock(&na_ofi_domain_list_mutex_g);
 
     /* Close MR */
