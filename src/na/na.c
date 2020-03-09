@@ -1173,11 +1173,9 @@ error:
 na_return_t
 NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
 {
-    struct na_private_class *na_private_class =
-        (struct na_private_class *) na_class;
     struct na_private_context *na_private_context =
         (struct na_private_context *) context;
-    double remaining ;
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
 #ifdef NA_HAS_MULTI_PROGRESS
     hg_util_int32_t old, num;
 #endif
@@ -1192,12 +1190,6 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
         "NULL NA class ops");
     NA_CHECK_ERROR(na_class->ops->progress == NULL, done, ret,
         NA_OPNOTSUPPORTED, "progress plugin callback is not defined");
-
-    /* Do not block if NA_NO_BLOCK option is passed */
-    if (na_private_class->na_class.progress_mode & NA_NO_BLOCK)
-        remaining = 0;
-    else
-        remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
 
 #ifdef NA_HAS_MULTI_PROGRESS
     hg_atomic_incr32(&na_private_context->progressing);
@@ -1283,23 +1275,14 @@ na_return_t
 NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
     int callback_ret[], unsigned int *actual_count)
 {
-    struct na_private_class *na_private_class;
     struct na_private_context *na_private_context =
         (struct na_private_context *) context;
-    double remaining;
+    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
     na_return_t ret = NA_SUCCESS;
     unsigned int count = 0;
 
     NA_CHECK_ERROR(context == NULL, done, ret, NA_INVALID_ARG,
         "NULL context");
-
-    /* Do not block if NA_NO_BLOCK option is passed */
-    na_private_class = (struct na_private_class *) na_private_context->na_class;
-    if (na_private_class->na_class.progress_mode & NA_NO_BLOCK) {
-        timeout = 0;
-        remaining = 0;
-    } else
-        remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
 
     while (count < max_count) {
         struct na_cb_completion_data *completion_data = NULL;

@@ -4496,9 +4496,6 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
     struct fid *fids[1];
     int rc;
 
-    if (priv->no_wait)
-        return NA_FALSE;
-
     /* Keep making progress if retry queue is not empty */
     hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
     if (!HG_QUEUE_IS_EMPTY(&ctx->retry_op_queue->queue)) {
