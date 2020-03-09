@@ -1961,6 +1961,9 @@ hg_core_forward_na(struct hg_core_private_handle *hg_core_handle)
 
         /* Increment number of expected NA operations */
         hg_core_handle->na_op_count++;
+
+        /* Take reference to make sure the handle does not get freed */
+        hg_atomic_incr32(&hg_core_handle->ref_count);
     }
 
     /* Mark handle as posted */
@@ -2354,6 +2357,8 @@ complete:
     HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
 
 done:
+    /* Only decrement refcount and exit */
+    hg_core_destroy(hg_core_handle);
     return (int) completed;
 }
 
