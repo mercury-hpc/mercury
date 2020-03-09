@@ -227,7 +227,7 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
 {
     hg_request_t *request = NULL;
     hg_handle_t handle = HG_HANDLE_NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
     struct forward_cb_args forward_cb_args;
     hg_const_string_t rpc_open_path = HG_TEST_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
@@ -264,9 +264,9 @@ again:
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
 done:
-    ret = HG_Destroy(handle);
-    HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Destroy() failed (%s)",
-        HG_Error_to_string(ret));
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
 
     hg_request_destroy(request);
 
@@ -364,7 +364,7 @@ hg_test_rpc_reset(hg_context_t *context, hg_request_class_t *request_class,
 {
     hg_request_t *request = NULL;
     hg_handle_t handle = HG_HANDLE_NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
     struct forward_cb_args forward_cb_args;
     hg_const_string_t rpc_open_path = HG_TEST_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
@@ -399,9 +399,9 @@ hg_test_rpc_reset(hg_context_t *context, hg_request_class_t *request_class,
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
 done:
-    ret = HG_Destroy(handle);
-    HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Destroy() failed (%s)",
-        HG_Error_to_string(ret));
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
 
     hg_request_destroy(request);
 
@@ -415,7 +415,7 @@ hg_test_rpc_mask(hg_context_t *context, hg_request_class_t *request_class,
 {
     hg_request_t *request = NULL;
     hg_handle_t handle = HG_HANDLE_NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
     struct forward_cb_args forward_cb_args;
     hg_const_string_t rpc_open_path = HG_TEST_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
@@ -449,9 +449,9 @@ hg_test_rpc_mask(hg_context_t *context, hg_request_class_t *request_class,
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
 done:
-    ret = HG_Destroy(handle);
-    HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Destroy() failed (%s)",
-        HG_Error_to_string(ret));
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
 
     hg_request_destroy(request);
 
@@ -594,7 +594,7 @@ hg_test_overflow(hg_context_t *context, hg_request_class_t *request_class,
 {
     hg_request_t *request = NULL;
     hg_handle_t handle = HG_HANDLE_NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
 
     request = hg_request_create(request_class);
 
@@ -612,9 +612,9 @@ hg_test_overflow(hg_context_t *context, hg_request_class_t *request_class,
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
 done:
-    ret = HG_Destroy(handle);
-    HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Destroy() failed (%s)",
-        HG_Error_to_string(ret));
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
 
     hg_request_destroy(request);
 
@@ -628,7 +628,7 @@ hg_test_cancel_rpc(hg_context_t *context, hg_request_class_t *request_class,
 {
     hg_request_t *request = NULL;
     hg_handle_t handle = HG_HANDLE_NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
 
     request = hg_request_create(request_class);
 
@@ -652,9 +652,9 @@ hg_test_cancel_rpc(hg_context_t *context, hg_request_class_t *request_class,
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
 done:
-    ret = HG_Destroy(handle);
-    HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Destroy() failed (%s)",
-        HG_Error_to_string(ret));
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
 
     hg_request_destroy(request);
 
@@ -763,7 +763,7 @@ main(int argc, char *argv[])
     HG_TEST("unregistered RPC");
     hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
         hg_test_info.target_addr, inv_id, hg_test_rpc_forward_cb);
-    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+    HG_TEST_CHECK_ERROR(hg_ret != HG_NOENTRY, done, ret, EXIT_FAILURE,
         "unregistered RPC test failed");
     HG_PASSED();
 

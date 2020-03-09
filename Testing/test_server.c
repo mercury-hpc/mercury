@@ -146,7 +146,7 @@ main(int argc, char *argv[])
 
         progress_workers = malloc(
             sizeof(struct hg_test_worker) * context_count);
-        HG_TEST_CHECK_ERROR(progress_workers == NULL, done, rc, EXIT_FAILURE,
+        HG_TEST_CHECK_ERROR(progress_workers == NULL, error, rc, EXIT_FAILURE,
             "Could not allocate progress_workers");
 
         progress_workers[0].thread_work.func = hg_test_progress_work;
@@ -178,7 +178,7 @@ main(int argc, char *argv[])
             ret = HG_Trigger(hg_test_info.context, HG_TEST_TRIGGER_TIMEOUT, 1,
                 NULL);
         } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
-        HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
+        HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, error,
             rc, EXIT_FAILURE, "HG_Trigger() failed (%s)",
             HG_Error_to_string(ret));
 
@@ -191,7 +191,7 @@ main(int argc, char *argv[])
         do {
             ret = HG_Trigger(hg_test_info.context, 0, 1, &actual_count);
         } while ((ret == HG_SUCCESS) && actual_count);
-        HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
+        HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, error,
             rc, EXIT_FAILURE, "HG_Trigger() failed (%s)",
             HG_Error_to_string(ret));
 
@@ -201,12 +201,12 @@ main(int argc, char *argv[])
         /* Use same value as HG_TEST_TRIGGER_TIMEOUT for convenience */
         ret = HG_Progress(hg_test_info.context, HG_TEST_TRIGGER_TIMEOUT);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
-    HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
+    HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, error,
         rc, EXIT_FAILURE, "HG_Progress() failed (%s)",
         HG_Error_to_string(ret));
 #endif
 
-done:
+error:
     ret = HG_Test_finalize(&hg_test_info);
     HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Test_finalize() failed");
 
@@ -214,5 +214,6 @@ done:
     free(progress_workers);
 #endif
 
+done:
     return rc;
 }
