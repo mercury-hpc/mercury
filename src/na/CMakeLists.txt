@@ -244,6 +244,7 @@ configure_file(
 #------------------------------------------------------------------------------
 set(NA_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/na.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_ip.c
 )
 
 if(NA_HAS_BMI)

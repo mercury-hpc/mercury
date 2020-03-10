@@ -9,6 +9,7 @@
  */
 
 #include "na_plugin.h"
+#include "na_ip.h"
 
 #include "mercury_time.h"
 
@@ -159,6 +160,7 @@ struct na_bmi_class {
     char *listen_addr;                               /* Listen addr */
     int port;                                        /* Port used */
     char *protocol_name;                             /* Protocol used for this class */
+    char pref_anyip[16];                             /* for INADDR_ANY */
     hg_thread_mutex_t test_unexpected_mutex;         /* Mutex */
     HG_QUEUE_HEAD(na_bmi_unexpected_info) unexpected_msg_queue; /* Unexpected message queue */
     hg_thread_mutex_t unexpected_msg_queue_mutex;    /* Mutex */
@@ -616,7 +618,7 @@ na_bmi_check_protocol(const char *protocol_name)
 
     /* Obtain the list of transport protocols supported by BMI. */
     string_length = BMI_get_info(0, BMI_TRANSPORT_METHODS_STRING, &transport);
-    
+
     if (string_length <= 0 || transport == NULL) {
         /* bmi is not configured with any plugins, transport is NULL */
         return NA_FALSE;
@@ -695,11 +697,10 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
                 port = atoi(port_str);
             }
         } else {
-            /* Addr unspecified but we are in server mode; get local
-             * hostname and let BMI choose port.
+            /* Addr unspecified but we are in server mode; use INADDR_ANY
+             * and let BMI choose port.
              */
-            if (gethostname(my_hostname, NA_BMI_MAX_ADDR_NAME) < 0)
-                sprintf(my_hostname, "localhost");
+            snprintf(my_hostname, sizeof(my_hostname), "0.0.0.0");
         }
 
         /* Pick a default port */
@@ -714,6 +715,26 @@ na_bmi_initialize(na_class_t * na_class, const struct na_info *na_info,
             NA_LOG_ERROR("Exceeding max addr name");
             ret = NA_SIZE_ERROR;
             goto done;
+        }
+
+        /* get pref IP addr by subnet for INADDR_ANY */
+        if (strcmp(my_hostname, "0.0.0.0") == 0) {
+            uint32_t subnet = 0, netmask = 0;
+
+            if (na_info->na_init_info && na_info->na_init_info->ip_subnet) {
+                ret = na_ip_parse_subnet(na_info->na_init_info->ip_subnet,
+                    &subnet, &netmask);
+                if (ret != NA_SUCCESS) {
+                    NA_LOG_ERROR("BMI_initialize() failed - NA_Parse_subnet");
+                    goto done;
+                }
+            }
+            ret = na_ip_pref_addr(subnet, netmask,
+                NA_BMI_CLASS(na_class)->pref_anyip);
+            if (ret != NA_SUCCESS) {
+                NA_LOG_ERROR("BMI_initialize() failed - NA_Pref_ipaddr");
+                goto done;
+            }
         }
     }
 
@@ -1041,6 +1062,8 @@ na_bmi_addr_to_string(na_class_t *na_class, char *buf,
     na_size_t string_len;
     na_return_t ret = NA_SUCCESS;
     int listen_port = 0;
+    char *anyaddr;
+    int preflen;
 
     na_bmi_addr = (struct na_bmi_addr *) addr;
 
@@ -1067,6 +1090,14 @@ na_bmi_addr_to_string(na_class_t *na_class, char *buf,
             NA_BMI_CLASS(na_class)->listen_addr = strdup(full_rev_addr);
             NA_BMI_CLASS(na_class)->port = listen_port;
             bmi_rev_addr = NA_BMI_CLASS(na_class)->listen_addr;
+        }
+        anyaddr = strstr(bmi_rev_addr, "://0.0.0.0:");
+        if (anyaddr) {  /* can't advertise inaddr_any */
+            preflen = (int) (anyaddr - bmi_rev_addr);
+            snprintf(full_rev_addr, sizeof(full_rev_addr), "%.*s://%s:%s",
+                preflen, bmi_rev_addr, NA_BMI_CLASS(na_class)->pref_anyip,
+                anyaddr + sizeof("://0.0.0.0:") - 1);
+            bmi_rev_addr = full_rev_addr;
         }
     } else {
         if (na_bmi_addr->unexpected) {
@@ -2321,7 +2352,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
         case NA_CB_RECV_UNEXPECTED:
         {
             struct BMI_unexpected_info *unexpected_info = NULL;
- 
+
             unexpected_info =
                     na_bmi_op_id->info.recv_unexpected.unexpected_info;
 
