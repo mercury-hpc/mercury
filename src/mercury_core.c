@@ -2146,12 +2146,22 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
     /* If canceled, mark handle as canceled */
     if (callback_info->ret == NA_CANCELED)
         hg_core_handle->ret = HG_CANCELED;
-    else
-        HG_CHECK_ERROR_NORET(callback_info->ret != NA_SUCCESS, done,
-            "Error in NA callback (s)", NA_Error_to_string(callback_info->ret));
+    else if (callback_info->ret != NA_SUCCESS) {
+        HG_LOG_WARNING("NA callback returned error (%s)",
+            NA_Error_to_string(callback_info->ret));
+        hg_core_handle->ret = HG_NA_ERROR;
+
+        if (!hg_core_handle->no_response) {
+            /* Cancel posted recv for response */
+            na_return_t na_ret = NA_Cancel(hg_core_handle->na_class,
+                hg_core_handle->na_context, hg_core_handle->na_recv_op_id);
+            HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+                "Could not cancel recv op id (%s)", NA_Error_to_string(na_ret));
+        }
+    }
 
     ret = hg_core_complete_na(hg_core_handle, &completed);
-    HG_CHECK_HG_ERROR(done, ret, "Error in NA callback");
+    HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
 
 done:
     return (int) completed;
@@ -2310,9 +2320,11 @@ hg_core_send_output_cb(const struct na_cb_info *callback_info)
     /* If canceled, mark handle as canceled */
     if (callback_info->ret == NA_CANCELED)
         hg_core_handle->ret = HG_CANCELED;
-    else
-        HG_CHECK_ERROR_NORET(callback_info->ret != NA_SUCCESS, done,
-            "Error in NA callback (s)", NA_Error_to_string(callback_info->ret));
+    else if (callback_info->ret != NA_SUCCESS) {
+        HG_LOG_WARNING("NA callback returned error (%s)",
+            NA_Error_to_string(callback_info->ret));
+        hg_core_handle->ret = HG_NA_ERROR;
+    }
 
     /* Complete operation */
     ret = hg_core_complete_na(hg_core_handle, &completed);
@@ -2333,7 +2345,9 @@ hg_core_recv_output_cb(const struct na_cb_info *callback_info)
 
     /* If canceled, mark handle as canceled */
     if (callback_info->ret == NA_CANCELED) {
-        hg_core_handle->ret = HG_CANCELED;
+        /* Do not overwrite ret value if other callback has set error */
+        if (hg_core_handle->ret == HG_SUCCESS)
+            hg_core_handle->ret = HG_CANCELED;
 
         /* Do not add handle to completion queue if it was not posted */
         if (hg_atomic_get32(&hg_core_handle->posted))
@@ -2610,6 +2624,9 @@ hg_core_complete_na(struct hg_core_private_handle *hg_core_handle,
     /* Add handle to completion queue when expected operations have completed */
     if (hg_atomic_incr32(&hg_core_handle->na_op_completed_count)
         == (hg_util_int32_t) hg_core_handle->na_op_count && *completed) {
+        /* Handle is no longer posted */
+        hg_atomic_set32(&hg_core_handle->posted, HG_FALSE);
+
         /* Mark as completed */
         ret = hg_core_complete((hg_core_handle_t) hg_core_handle);
         HG_CHECK_HG_ERROR(done, ret, "Could not complete operation");
