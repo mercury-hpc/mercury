@@ -2882,13 +2882,12 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id)
         /* If it was canceled while being processed, set callback ret accordingly */
         NA_LOG_DEBUG("Operation ID %p is canceled", na_ofi_op_id);
         callback_info->ret = NA_CANCELED;
-    }
-
-    if (status & NA_OFI_OP_ERRORED) {
+    } else if (status & NA_OFI_OP_ERRORED) {
         /* If it was errored, set callback ret accordingly */
         NA_LOG_DEBUG("Operation ID %p is errored", na_ofi_op_id);
         callback_info->ret = NA_PROTOCOL_ERROR;
-    }
+    } else
+        callback_info->ret = NA_SUCCESS;
 
     switch (callback_info->type) {
         case NA_CB_RECV_UNEXPECTED:
