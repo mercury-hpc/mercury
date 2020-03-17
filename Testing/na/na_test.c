@@ -90,6 +90,8 @@ na_test_usage(const char *execname)
            "                        Available protocols: tcp, ib, etc\n");
     printf("    -H, --hostname      Select hostname / IP address to use\n"
            "                        Default: any\n");
+    printf("    -P, --port          Select port to use\n"
+           "                        Default: any\n");
     printf("    -L, --listen        Listen for incoming messages\n");
     printf("    -S, --self_send     Send to self\n");
     printf("    -a, --auth          Run auth key service\n");
@@ -133,6 +135,9 @@ na_test_parse_options(int argc, char *argv[],
             case 'H': /* hostname */
                 na_test_info->hostname = strdup(na_test_opt_arg_g);
                 break;
+            case 'P': /* hostname */
+                na_test_info->port = atoi(na_test_opt_arg_g);
+                break;
             case 'L': /* listen */
                 na_test_info->listen = NA_TRUE;
                 break;
@@ -149,7 +154,7 @@ na_test_parse_options(int argc, char *argv[],
                 na_test_info->auth = NA_TRUE;
                 break;
             case 'k': /* key */
-        //        na_test_info->key = strdup(na_test_opt_arg_g);
+                na_test_info->key = strdup(na_test_opt_arg_g);
                 break;
             case 'l': /* loop */
                 na_test_info->loop = atoi(na_test_opt_arg_g);
@@ -263,8 +268,6 @@ na_test_mpi_finalize(struct na_test_info *na_test_info)
 static char *
 na_test_gen_config(struct na_test_info *na_test_info)
 {
-    unsigned int base_port = 22222;
-    static unsigned int port_incr = 0;
     char *info_string = NULL, *info_string_ptr = NULL;
     na_return_t ret = NA_SUCCESS;
 
@@ -303,7 +306,8 @@ na_test_gen_config(struct na_test_info *na_test_info)
 #endif
         if (na_test_info->listen) {
             /* special-case SM (pid:id) */
-            sprintf(info_string_ptr, "%d/%d", (int) getpid(), port_incr);
+            sprintf(info_string_ptr, "%d/%d", (int) getpid(),
+                na_test_info->port);
         }
     } else if ((strcmp("tcp", na_test_info->protocol) == 0)
         || (strcmp("verbs;ofi_rxm", na_test_info->protocol) == 0)
@@ -313,9 +317,8 @@ na_test_gen_config(struct na_test_info *na_test_info)
         if (!na_test_info->hostname) {
             /* Nothing */
         } else if (na_test_info->listen) {
-            base_port += (unsigned int) na_test_info->mpi_comm_rank;
             sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
-                base_port + port_incr);
+                na_test_info->port + na_test_info->mpi_comm_rank);
         } else
             sprintf(info_string_ptr, "%s", na_test_info->hostname);
     } else if (strcmp("static", na_test_info->protocol) == 0) {
@@ -323,16 +326,13 @@ na_test_gen_config(struct na_test_info *na_test_info)
     } else if (strcmp("dynamic", na_test_info->protocol) == 0) {
         /* Nothing */
     } else if (strcmp("gni", na_test_info->protocol) == 0) {
-        base_port += (unsigned int) na_test_info->mpi_comm_rank;
         sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
-            base_port + port_incr);
+            na_test_info->port + na_test_info->mpi_comm_rank);
     } else {
         NA_LOG_ERROR("Unknown protocol: %s", na_test_info->protocol);
         ret = NA_INVALID_ARG;
         goto done;
     }
-
-    port_incr++;
 
 done:
     if (ret != NA_SUCCESS) {
