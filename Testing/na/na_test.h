@@ -30,6 +30,7 @@ struct na_test_info {
     char *domain;               /* Domain name */
     char *protocol;             /* Protocol name */
     char *hostname;             /* Hostname */
+    int port;                   /* Port */
     na_bool_t listen;           /* Listen */
     na_bool_t mpi_static;       /* MPI static comm */
     na_bool_t self_send;        /* Self send */
