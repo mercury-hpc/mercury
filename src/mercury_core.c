@@ -2199,6 +2199,9 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         HG_CHECK_ERROR_NORET(callback_info->ret != NA_SUCCESS, done,
             "Error in NA callback (s)", NA_Error_to_string(callback_info->ret));
 
+    /* Reset ret value */
+    hg_core_handle->ret = HG_SUCCESS;
+
     /* Fill unexpected info */
     hg_core_handle->core_handle.info.addr->na_addr =
         na_cb_info_recv_unexpected->source;
@@ -4336,6 +4339,9 @@ HG_Core_forward(hg_core_handle_t handle, hg_core_cb_t callback, void *arg,
     /* Reset op counts */
     hg_core_handle->na_op_count = 1; /* Default (no response) */
     hg_atomic_set32(&hg_core_handle->na_op_completed_count, 0);
+
+    /* Reset handle ret */
+    hg_core_handle->ret = HG_SUCCESS;
 
     /* Increase ref count here so that a call to HG_Destroy does not free the
      * handle but only schedules its completion
