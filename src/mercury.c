@@ -993,7 +993,7 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
         hg_more_data_cb, hg_more_data_free_cb);
 
 
-    /* EXPERIMENTAL: Initialize PVAR profiling data structures */
+    /* Initialize PVAR profiling data structures */
     ret = hg_prof_pvar_init();
     assert(ret == HG_SUCCESS);
 

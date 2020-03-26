@@ -11,6 +11,7 @@
 #ifndef MERCURY_PROF_INTERFACE_H
 #define MERCURY_PROF_INTERFACE_H
 
+#include "mercury_types.h"
 #include "mercury_prof_types.h"
 
 /*************************************/
@@ -29,7 +30,7 @@ extern "C" {
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t 
-HG_Prof_init();
+HG_Prof_init(hg_class_t *hg_class);
 
 /**
  * Client-side API to finalize the PVAR profiling interface.
@@ -37,7 +38,7 @@ HG_Prof_init();
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t 
-HG_Prof_finalize();
+HG_Prof_finalize(hg_class_t *hg_class);
 
 /**
  * Create a session. In this case, return a reference to the default session that is currently supported.
@@ -47,7 +48,7 @@ HG_Prof_finalize();
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t 
-HG_Prof_pvar_session_create(hg_prof_pvar_session_t *session);
+HG_Prof_pvar_session_create(hg_class_t *hg_class, hg_prof_pvar_session_t *session);
 
 /**
  * Client-side API to retrieve the number of PVARs currently exported.
@@ -55,7 +56,7 @@ HG_Prof_pvar_session_create(hg_prof_pvar_session_t *session);
  * \return int representing the number of PVARs
  */
 HG_PUBLIC int 
-HG_Prof_pvar_get_num();
+HG_Prof_pvar_get_num(hg_class_t* hg_class);
 
 /**
  * Gather information about every PVAR exported. This API is necessary in order for the client to discover the types, bindings, etc.
@@ -74,7 +75,7 @@ HG_Prof_pvar_get_num();
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t 
-HG_Prof_pvar_get_info(int pvar_index, char *name, int *name_len, 
+HG_Prof_pvar_get_info(hg_class_t *hg_class, int pvar_index, char *name, int *name_len, 
 			hg_prof_class_t *var_class, hg_prof_datatype_t *datatype, 
 			char *desc, int *desc_len, hg_prof_bind_t *bind, int *continuous);
 

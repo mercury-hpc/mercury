@@ -8,12 +8,14 @@
  * found at the root of the source code distribution tree.
  */
 
+#include "mercury.h"
 #include "mercury_bulk.h"
 #include "mercury_core.h"
 #include "mercury_private.h"
 #include "mercury_error.h"
 
 #include "mercury_atomic.h"
+#include "mercury_types.h"
 #include "mercury_prof_interface.h"
 #include "mercury_prof_pvar_impl.h"
 
@@ -41,48 +43,67 @@ struct hg_prof_pvar_handle {
 /* HG profiling session object concrete definition */
 struct hg_prof_pvar_session {
    hg_prof_pvar_handle_t * pvar_handle_array; /* PVAR handle array */
-   int num_pvars; /* no of PVARs currently supported */
-   int reference_counter; /* number of tools associated with session */
+   int is_initialized;     /* Is profiling initialized */
+};
+
+/* HG class */
+struct hg_private_class {
+    struct hg_class hg_class;       /* Must remain as first field */
+    int hg_prof_is_initialized;     /* Is profiling initialized */
+    int num_pvars;          /* No of PVARs currently supported */
+    hg_prof_pvar_session_t session; /* Is profiling initialized on the session */
 };
 
 /*******************/
 /* Local Variables */
 /*******************/
 
-static int hg_prof_is_initialized = 0; /* Variable denoting whether or not the profiling interface has been initialized */
-struct hg_prof_pvar_session default_session; /* Default session handle */
-
 /*---------------------------------------------------------------------------*/
 static void 
-hg_prof_set_is_initialized(int val)
+hg_prof_set_is_initialized(struct hg_private_class * hg_private_class)
 {
-  hg_prof_is_initialized = val;
+  hg_private_class->hg_prof_is_initialized = 1;
 }
 
 /*---------------------------------------------------------------------------*/
 static int 
-hg_prof_get_is_initialized() {
-   return hg_prof_is_initialized;
+hg_prof_get_is_initialized(struct hg_private_class * hg_private_class) {
+   return hg_private_class->hg_prof_is_initialized;
+}
+
+/*---------------------------------------------------------------------------*/
+static void 
+hg_prof_set_session_is_initialized(struct hg_prof_pvar_session * session)
+{
+  session->is_initialized = 1;
+}
+
+/*---------------------------------------------------------------------------*/
+static int 
+hg_prof_get_session_is_initialized(struct hg_prof_pvar_session * session) {
+   return session->is_initialized;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t 
-HG_Prof_init() {
+HG_Prof_init(hg_class_t *hg_class) {
 
-  default_session.reference_counter = 0;
-  default_session.num_pvars = NUM_PVARS;
-  default_session.pvar_handle_array = (hg_prof_pvar_handle_t *)malloc(sizeof(hg_prof_pvar_handle_t)*NUM_PVARS);
-  hg_prof_set_is_initialized(1);
+  struct hg_private_class *hg_private_class = (struct hg_private_class *)(hg_class);
+
+  hg_prof_set_is_initialized(hg_private_class);
+  hg_private_class->num_pvars = NUM_PVARS;
 
   return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 hg_return_t 
-HG_Prof_finalize() {
+HG_Prof_finalize(hg_class_t *hg_class) {
 
-  if(hg_prof_get_is_initialized()) {
-    hg_prof_set_is_initialized(0);
+  struct hg_private_class *hg_private_class = (struct hg_private_class *)(hg_class);
+
+  if(hg_prof_get_is_initialized(hg_private_class)) {
+    hg_prof_set_is_initialized(hg_private_class);
   }
 
   fprintf(stderr, "[MERCURY_PROF_INTERFACE] Successfully shutting down profiling interface\n");
@@ -91,9 +112,11 @@ HG_Prof_finalize() {
 
 /*---------------------------------------------------------------------------*/
 int 
-HG_Prof_pvar_get_num() {
-  if(hg_prof_get_is_initialized()) {
-    return NUM_PVARS;
+HG_Prof_pvar_get_num(hg_class_t *hg_class) {
+  struct hg_private_class *hg_private_class = (struct hg_private_class *)(hg_class);
+
+  if(hg_prof_get_is_initialized(hg_private_class)) {
+    return hg_private_class->num_pvars;
   } else {
     return 0;
   }
@@ -101,9 +124,11 @@ HG_Prof_pvar_get_num() {
 
 /*---------------------------------------------------------------------------*/
 hg_return_t 
-HG_Prof_pvar_get_info(int pvar_index, char *name, int *name_len, hg_prof_class_t *var_class, hg_prof_datatype_t *datatype, char *desc, int *desc_len, hg_prof_bind_t *bind, int *continuous) {
+HG_Prof_pvar_get_info(hg_class_t *hg_class, int pvar_index, char *name, int *name_len, hg_prof_class_t *var_class, hg_prof_datatype_t *datatype, char *desc, int *desc_len, hg_prof_bind_t *bind, int *continuous) {
   
-  if(!hg_prof_get_is_initialized())
+  struct hg_private_class *hg_private_class = (struct hg_private_class *)(hg_class);
+
+  if(!hg_prof_get_is_initialized(hg_private_class))
     return HG_NA_ERROR;
  
   assert(pvar_index < NUM_PVARS);
@@ -127,16 +152,18 @@ HG_Prof_pvar_get_info(int pvar_index, char *name, int *name_len, hg_prof_class_t
 
 /*---------------------------------------------------------------------------*/
 hg_return_t 
-HG_Prof_pvar_session_create(hg_prof_pvar_session_t *session) {
-  if(!hg_prof_get_is_initialized())
+HG_Prof_pvar_session_create(hg_class_t *hg_class, hg_prof_pvar_session_t *session) {
+
+  struct hg_private_class *hg_private_class = (struct hg_private_class *)(hg_class);
+
+  if(!hg_prof_get_is_initialized(hg_private_class))
     return HG_NA_ERROR;
 
-  default_session.reference_counter += 1;
+  (*session) = (hg_prof_pvar_session_t)malloc(sizeof(struct hg_prof_pvar_session));
+  (*session)->pvar_handle_array = (hg_prof_pvar_handle_t *)malloc(sizeof(hg_prof_pvar_handle_t)*NUM_PVARS);
+  hg_private_class->session = (*session);
 
-  /* Only support one tool at the moment */
-  assert(default_session.reference_counter == 1);
-
-  *session = &default_session;
+  hg_prof_set_session_is_initialized((*session));
 
   return HG_SUCCESS;
 }
@@ -145,11 +172,10 @@ HG_Prof_pvar_session_create(hg_prof_pvar_session_t *session) {
 hg_return_t 
 HG_Prof_pvar_handle_alloc(hg_prof_pvar_session_t session, int pvar_index, void *obj_handle, hg_prof_pvar_handle_t *handle, int *count) {
 
-  if(!hg_prof_get_is_initialized())
+  if(!hg_prof_get_session_is_initialized(session))
     return HG_NA_ERROR;
 
-  /* Only supporting a default session and null bind type at the moment */
-  assert(session == &default_session);
+  /* Only supporting a null bind type at the moment */
   assert(obj_handle == NULL);
 
   struct hg_prof_pvar_session s = *session;
@@ -183,8 +209,9 @@ HG_Prof_pvar_handle_alloc(hg_prof_pvar_session_t session, int pvar_index, void *
 /*---------------------------------------------------------------------------*/
 hg_return_t 
 HG_Prof_pvar_start(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle) {
-  if(!hg_prof_get_is_initialized())
+  if(!hg_prof_get_session_is_initialized(session))
     return HG_NA_ERROR;
+
   if (!(*handle).continuous && !((*handle).is_started))
      (*handle).is_started = 1;
   return HG_SUCCESS;
@@ -193,9 +220,8 @@ HG_Prof_pvar_start(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle)
 /*---------------------------------------------------------------------------*/
 hg_return_t 
 HG_Prof_pvar_read(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle, void *buf) {
-  if(!hg_prof_get_is_initialized())
+  if(!hg_prof_get_session_is_initialized(session))
     return HG_NA_ERROR;
-
 
   /* Assert first that handle belongs to the session provided. NOT DOING THIS HERE FOR NOW */
   struct hg_prof_pvar_handle h = (*handle);
