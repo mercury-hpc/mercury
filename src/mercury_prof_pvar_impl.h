@@ -13,6 +13,7 @@
 
 #include "mercury_prof_types.h"
 #include "mercury_hash_table.h"
+#include "mercury_atomic.h"
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -33,8 +34,6 @@ struct hg_prof_pvar_data_t {
 
 typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
 
-extern hg_hash_table_t *pvar_table; /* Internal hash table containing all the PVAR information */
-
 /*****************/
 /* Public Macros */
 /*****************/
@@ -43,23 +42,24 @@ extern hg_hash_table_t *pvar_table; /* Internal hash table containing all the PV
 
 /* PVAR declaration and registration macros */
 #define HG_PROF_PVAR_UINT_COUNTER_DECL(name) \
-    unsigned int PVAR_COUNTER_##name;
+    hg_atomic_int32_t PVAR_COUNTER_##name;
 
 #define HG_PROF_PVAR_UINT_COUNTER_DECL_EXTERN(name) \
-    extern unsigned int PVAR_COUNTER_##name;
+    extern hg_atomic_int32_t PVAR_COUNTER_##name;
 
 #define HG_PROF_PVAR_UINT_COUNTER_REGISTER(dtype, bind,\
             name, desc) \
-        void *addr; \
+        void *addr_##name; \
         /* Set initial value */ \
-        PVAR_COUNTER_##name = 0; \
+        hg_atomic_init32((&PVAR_COUNTER_##name), 0); \
         addr = &PVAR_COUNTER_##name; \
         HG_PROF_PVAR_REGISTER_impl(HG_PVAR_CLASS_COUNTER, dtype, #name, \
             addr, 1, bind, 1, desc); 
 
 /* Increment the value of a PVAR */
 #define HG_PROF_PVAR_COUNTER_INC(name, val) \
-    *(&PVAR_COUNTER_##name) += val;
+    for(int i=0; i < val; i++) \
+        hg_atomic_incr32(&PVAR_COUNTER_##name);
 
 /**
  * Internal routine that gets invoked during Mercury's own initialization routine.
@@ -69,6 +69,16 @@ extern hg_hash_table_t *pvar_table; /* Internal hash table containing all the PV
  */
 hg_return_t 
 hg_prof_pvar_init();
+
+
+/**
+ * Internal routine that returns the PVAR data associated with a key representing index.
+ *
+ * \param key [IN]	  PVAR index key
+ * \return hg_prof_pvar_data_t that represents the PVAR data
+ */
+hg_prof_pvar_data_t * 
+hg_prof_pvar_table_lookup(unsigned int key);
 
 /**
  * PVAR registration function. Used by internal Mercury modules to register any PVARs that they export.

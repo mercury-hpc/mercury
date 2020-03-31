@@ -137,7 +137,7 @@ HG_Prof_pvar_get_info(hg_class_t *hg_class, int pvar_index, char *name, int *nam
   hg_prof_pvar_data_t * val;
 
   /* Lookup the internal PVAR hash table to gather information about this PVAR */
-  val = hg_hash_table_lookup(pvar_table, (hg_hash_table_key_t)(&key));
+  val = hg_prof_pvar_table_lookup(key);
   strcpy(name, (*val).name);
   *name_len = strlen(name);
   strcpy(desc, (*val).description);
@@ -183,7 +183,7 @@ HG_Prof_pvar_handle_alloc(hg_prof_pvar_session_t session, int pvar_index, void *
   hg_prof_pvar_data_t * val;
 
   s.pvar_handle_array[pvar_index] = (hg_prof_pvar_handle_t)malloc(sizeof(struct hg_prof_pvar_handle));
-  val = hg_hash_table_lookup(pvar_table, (hg_hash_table_key_t)(&key)); 
+  val = hg_prof_pvar_table_lookup(key);
 
   /* Copy out information from the internal PVAR hash table */
   (*s.pvar_handle_array[pvar_index]).pvar_class = (*val).pvar_class;
