@@ -25,11 +25,9 @@
 /* Local Variables */
 /*******************/
 
-static hg_hash_table_t *pvar_table; /* Internal hash table containing PVAR info */
+static hg_hash_table_t *pvar_table; /* Internal hash table containing all PVAR info */
 
-HG_PROF_PVAR_UINT_COUNTER_DECL(hg_pvar_hg_forward_count); /* Declaring a PVAR */
-
-/* Internal routines for the pvar_hash_table data structure */
+/* Internal routines for the hash tables */
 static HG_INLINE int
 hg_prof_uint_equal(void *vlocation1, void *vlocation2)
 {
@@ -44,14 +42,34 @@ hg_prof_uint_hash(void *vlocation)
 }
 
 /*---------------------------------------------------------------------------*/
-
 hg_prof_pvar_data_t *
 hg_prof_pvar_table_lookup(unsigned int key)
 {
     return hg_hash_table_lookup(pvar_table, (hg_hash_table_key_t)(&key));
 }
-/*---------------------------------------------------------------------------*/
 
+/*---------------------------------------------------------------------------*/
+hg_atomic_int32_t * 
+hg_prof_get_pvar_addr_from_name(const char* name)
+{
+   hg_prof_pvar_data_t * value = NULL;
+
+   for(unsigned int i = 0; i < hg_hash_table_num_entries(pvar_table); i++) {
+     value = hg_hash_table_lookup(pvar_table, (hg_hash_table_key_t)(&i));
+     if(strcmp(value->name, name)==0) {
+       break;
+     }
+     value = NULL;
+   }
+
+   if(value != NULL) {
+     return (hg_atomic_int32_t *)value->addr;
+   } else {
+      return NULL;
+   }
+}
+
+/*---------------------------------------------------------------------------*/
 void 
 HG_PROF_PVAR_REGISTER_impl(hg_prof_class_t varclass, hg_prof_datatype_t dtype, const char* name, void *addr, int count,
     hg_prof_bind_t bind, int continuous, const char * desc) {
@@ -61,6 +79,7 @@ HG_PROF_PVAR_REGISTER_impl(hg_prof_class_t varclass, hg_prof_datatype_t dtype, c
     *key = hg_hash_table_num_entries(pvar_table);
     hg_prof_pvar_data_t * pvar_info = NULL;
     pvar_info = (hg_prof_pvar_data_t *)malloc(sizeof(hg_prof_pvar_data_t));
+
     (*pvar_info).pvar_class = varclass;
     (*pvar_info).pvar_datatype = dtype;
     (*pvar_info).pvar_bind = bind;
@@ -69,6 +88,7 @@ HG_PROF_PVAR_REGISTER_impl(hg_prof_class_t varclass, hg_prof_datatype_t dtype, c
     strcpy((*pvar_info).name, name);
     strcpy((*pvar_info).description, desc);
     (*pvar_info).continuous = continuous;
+
     hg_hash_table_insert(pvar_table, (hg_hash_table_key_t)key, (hg_hash_table_value_t)(pvar_info));
 }
 
@@ -80,7 +100,6 @@ hg_prof_pvar_init() {
     pvar_table = hg_hash_table_new(hg_prof_uint_hash, hg_prof_uint_equal);
     /* Register available PVARs */
     HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_forward_count, "Number of times HG_Forward has been invoked");
-    HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_dummy, "Dummy");
 
 return HG_SUCCESS;
 }

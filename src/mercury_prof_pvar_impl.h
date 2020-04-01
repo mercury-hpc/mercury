@@ -40,26 +40,23 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
 
 #define NUM_PVARS 1 /* Number of PVARs currently exported. PVAR indices go from 0......(NUM_PVARS - 1). */
 
-/* PVAR declaration and registration macros */
-#define HG_PROF_PVAR_UINT_COUNTER_DECL(name) \
-    hg_atomic_int32_t PVAR_COUNTER_##name;
-
-#define HG_PROF_PVAR_UINT_COUNTER_DECL_EXTERN(name) \
-    extern hg_atomic_int32_t PVAR_COUNTER_##name;
+/* PVAR handle declaration and registration macros */
+#define HG_PROF_PVAR_UINT_COUNTER(name) \
+    static hg_atomic_int32_t * addr_##name = NULL;
 
 #define HG_PROF_PVAR_UINT_COUNTER_REGISTER(dtype, bind,\
             name, desc) \
-        void *addr_##name; \
+        hg_atomic_int32_t *addr_##name = (hg_atomic_int32_t *)malloc(sizeof(hg_atomic_int32_t)); \
         /* Set initial value */ \
-        hg_atomic_init32((&PVAR_COUNTER_##name), 0); \
-        addr = &PVAR_COUNTER_##name; \
+        hg_atomic_init32(addr_##name, 0); \
         HG_PROF_PVAR_REGISTER_impl(HG_PVAR_CLASS_COUNTER, dtype, #name, \
-            addr, 1, bind, 1, desc); 
+            (void *)addr_##name, 1, bind, 1, desc); 
 
 /* Increment the value of a PVAR */
 #define HG_PROF_PVAR_COUNTER_INC(name, val) \
+    addr_##name = (addr_##name == NULL ? hg_prof_get_pvar_addr_from_name(#name): addr_##name); \
     for(int i=0; i < val; i++) \
-        hg_atomic_incr32(&PVAR_COUNTER_##name);
+        hg_atomic_incr32(addr_##name);
 
 /**
  * Internal routine that gets invoked during Mercury's own initialization routine.
@@ -70,6 +67,8 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
 hg_return_t 
 hg_prof_pvar_init();
 
+hg_atomic_int32_t *
+hg_prof_get_pvar_addr_from_name(const char* name);
 
 /**
  * Internal routine that returns the PVAR data associated with a key representing index.
@@ -79,6 +78,7 @@ hg_prof_pvar_init();
  */
 hg_prof_pvar_data_t * 
 hg_prof_pvar_table_lookup(unsigned int key);
+
 
 /**
  * PVAR registration function. Used by internal Mercury modules to register any PVARs that they export.

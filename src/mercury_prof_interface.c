@@ -230,6 +230,9 @@ HG_Prof_pvar_read(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle, 
       /*for(int i = 0; i < h.count; h++)*/ /* Need to support PVAR arrays, just a placeholder that assumes PVAR count is 1 */
       *((unsigned int *)buf) = *((unsigned int *)h.addr);
       break;
+    case HG_DOUBLE:
+      *((double *)buf) = *((double *)h.addr);
+      break;
   }
   return HG_SUCCESS;
 }

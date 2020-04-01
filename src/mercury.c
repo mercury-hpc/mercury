@@ -24,7 +24,6 @@
 
 /* PVAR profiling support */
 #include "mercury_prof_pvar_impl.h"
-HG_PROF_PVAR_UINT_COUNTER_DECL_EXTERN(hg_pvar_hg_forward_count);
 
 /****************/
 /* Local Macros */
@@ -963,7 +962,6 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
     struct hg_private_class *hg_class = NULL;
-    int ret;
 #ifdef HG_HAS_VERBOSE_ERROR
     const char *log_level = NULL;
 
@@ -994,7 +992,7 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
 
 
     /* Initialize PVAR profiling data structures */
-    ret = hg_prof_pvar_init();
+    int ret = hg_prof_pvar_init();
     assert(ret == HG_SUCCESS);
 
     return (hg_class_t *) hg_class;
@@ -1892,6 +1890,8 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     hg_bool_t more_data = HG_FALSE;
     hg_uint8_t flags = 0;
     hg_return_t ret = HG_SUCCESS;
+
+    HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_forward_count);
 
     HG_CHECK_ERROR(handle == HG_HANDLE_NULL, done, ret, HG_INVALID_ARG,
         "NULL HG handle");
