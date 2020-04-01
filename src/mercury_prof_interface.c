@@ -92,6 +92,7 @@ HG_Prof_init(hg_class_t *hg_class) {
 
   hg_prof_set_is_initialized(hg_private_class);
   hg_private_class->num_pvars = NUM_PVARS;
+  hg_private_class->session = NULL;
 
   return HG_SUCCESS;
 }
@@ -104,9 +105,9 @@ HG_Prof_finalize(hg_class_t *hg_class) {
 
   if(hg_prof_get_is_initialized(hg_private_class)) {
     hg_prof_set_is_initialized(hg_private_class);
+    hg_private_class->session = NULL;
   }
 
-  fprintf(stderr, "[MERCURY_PROF_INTERFACE] Successfully shutting down profiling interface\n");
   return HG_SUCCESS;
 }
 
@@ -170,6 +171,21 @@ HG_Prof_pvar_session_create(hg_class_t *hg_class, hg_prof_pvar_session_t *sessio
 
 /*---------------------------------------------------------------------------*/
 hg_return_t 
+HG_Prof_pvar_session_destroy(hg_class_t *hg_class, hg_prof_pvar_session_t *session) {
+
+  struct hg_private_class *hg_private_class = (struct hg_private_class *)(hg_class);
+
+  if(!hg_prof_get_is_initialized(hg_private_class))
+    return HG_NA_ERROR;
+
+  free((*session)->pvar_handle_array);
+  free((*session));
+  hg_private_class->session = NULL;
+
+  return HG_SUCCESS;
+}
+/*---------------------------------------------------------------------------*/
+hg_return_t 
 HG_Prof_pvar_handle_alloc(hg_prof_pvar_session_t session, int pvar_index, void *obj_handle, hg_prof_pvar_handle_t *handle, int *count) {
 
   if(!hg_prof_get_session_is_initialized(session))
@@ -201,7 +217,22 @@ HG_Prof_pvar_handle_alloc(hg_prof_pvar_session_t session, int pvar_index, void *
   /* Return handle */
   *handle = s.pvar_handle_array[pvar_index];
 
-  fprintf(stderr, "[MERCURY_PROF_INTERFACE] Successfully allocated handle for PVAR: %s\n", (*s.pvar_handle_array[pvar_index]).name);
+  return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t 
+HG_Prof_pvar_handle_free(hg_prof_pvar_session_t session, int pvar_index, hg_prof_pvar_handle_t *handle) {
+
+  if(!hg_prof_get_session_is_initialized(session))
+    return HG_NA_ERROR;
+
+  
+  struct hg_prof_pvar_session s = *session;
+  assert(s.pvar_handle_array[pvar_index] == *handle);
+  free(s.pvar_handle_array[pvar_index]);
+  s.pvar_handle_array[pvar_index] = NULL;
+  *handle = NULL;
 
   return HG_SUCCESS;
 }
@@ -214,6 +245,17 @@ HG_Prof_pvar_start(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle)
 
   if (!(*handle).continuous && !((*handle).is_started))
      (*handle).is_started = 1;
+  return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t 
+HG_Prof_pvar_stop(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle) {
+  if(!hg_prof_get_session_is_initialized(session))
+    return HG_NA_ERROR;
+
+  if (!(*handle).continuous && ((*handle).is_started))
+     (*handle).is_started = 0;
   return HG_SUCCESS;
 }
 

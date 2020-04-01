@@ -41,14 +41,26 @@ HG_PUBLIC hg_return_t
 HG_Prof_finalize(hg_class_t *hg_class);
 
 /**
- * Create a session. In this case, return a reference to the default session that is currently supported.
+ * Create a session.
  *
+ * \param hg_class [IN/OUT]       pointer to HG_CLASS 
  * \param session [IN/OUT]        pointer to PVAR session object 
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t 
 HG_Prof_pvar_session_create(hg_class_t *hg_class, hg_prof_pvar_session_t *session);
+
+/**
+ * Destroy a session.
+ *
+ * \param hg_class [IN/OUT]       pointer to HG_CLASS 
+ * \param session [IN/OUT]        pointer to PVAR session object 
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t 
+HG_Prof_pvar_session_destroy(hg_class_t *hg_class, hg_prof_pvar_session_t *session);
 
 /**
  * Client-side API to retrieve the number of PVARs currently exported.
@@ -97,6 +109,19 @@ HG_Prof_pvar_handle_alloc(hg_prof_pvar_session_t session,
 			int pvar_index, void *obj_handle, hg_prof_pvar_handle_t *handle, int *count);
 
 /**
+ * Free handle for a PVAR at a given index.
+ *
+ * \param session [IN]            opaque PVAR session object
+ * \param pvar_index [IN]	  PVAR index
+ * \param handle [IN/OUT]	  pointer to the opaque PVAR handle object that is returned to the calling client
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t 
+HG_Prof_pvar_handle_free(hg_prof_pvar_session_t session, 
+			int pvar_index, hg_prof_pvar_handle_t *handle);
+
+/**
  * Start the PVAR is it is not continuous and has not been started yet.
  *
  * \param session [IN]        opaque PVAR session object 
@@ -106,6 +131,17 @@ HG_Prof_pvar_handle_alloc(hg_prof_pvar_session_t session,
  */
 HG_PUBLIC hg_return_t 
 HG_Prof_pvar_start(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle);
+
+/**
+ * Stop the PVAR is it is not continuous and has been started.
+ *
+ * \param session [IN]        opaque PVAR session object 
+ * \param handle [IN]         opaque PVAR handle object 
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t 
+HG_Prof_pvar_stop(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle);
 
 /**
  * Read the value of the PVAR when the client supplies the handle.

@@ -105,3 +105,12 @@ return HG_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
+hg_return_t 
+hg_prof_pvar_finalize() {
+
+    /*Finalize internal PVAR data structures*/
+    hg_hash_table_free(pvar_table);
+    pvar_table = NULL;
+
+return HG_SUCCESS;
+}

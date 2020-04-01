@@ -1019,6 +1019,9 @@ HG_Finalize(hg_class_t *hg_class)
     hg_thread_spin_destroy(&private_class->register_lock);
     free(private_class);
 
+    /* Finalize PVAR data structures */
+    hg_prof_pvar_finalize();
+
 done:
     return ret;
 }
@@ -1929,7 +1932,6 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
         HG_Error_to_string(ret));
 
     /* PVAR profiling support: Increment the value of the PVAR with the name "hg_pvar_hg_forward_count" */
-    fprintf(stderr, "[MERCURY_PROF_INTERFACE] Incrementing the value of PVAR with name hg_pvar_hg_forward_count\n");
     HG_PROF_PVAR_COUNTER_INC(hg_pvar_hg_forward_count, 1);
 
 done:

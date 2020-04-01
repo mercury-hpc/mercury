@@ -67,6 +67,21 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
 hg_return_t 
 hg_prof_pvar_init();
 
+/**
+ * Internal routine that gets invoked during Mercury's own finalization routine.
+ * General routine for finalizing and freeing the internal PVAR data structures.
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+hg_return_t 
+hg_prof_pvar_finalize();
+
+/**
+ * Internal routine that returns the PVAR address associated with the name.
+ *
+ * \param name [IN]	  PVAR name
+ * \return hg_atomic_int32_t* that represents the PVAR addr
+ */
 hg_atomic_int32_t *
 hg_prof_get_pvar_addr_from_name(const char* name);
 
