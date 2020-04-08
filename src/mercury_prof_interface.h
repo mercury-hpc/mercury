@@ -14,6 +14,22 @@
 #include "mercury_types.h"
 #include "mercury_prof_types.h"
 
+
+/*************************************/
+/* Note */
+/*************************************/
+
+/* Refer to: https://www.mpi-forum.org/docs/mpi-3.1/mpi31-report/node372.htm#Node372 
+ * for the corresponding MPI 3.1 PVAR interface specification that this implementation is largely based off of.
+ *
+ * Notable differences with MPI (implementation, not interface spec):
+ * 1. PVAR sessions in Mercury are associated with the hg_class object to avoid the use of global variables.
+ * 2. Similarly, PVARs themselves are not global variables and aren't declared globally and used as such. 
+ *    Instead, each module interested in exporting PVARs must register these PVARs and refer to them by the 
+ *    use of handles (that internally fetch the address of the PVAR) within the local function where these PVARs are updated.
+ * 3. We used atomics for updating counter PVARs where MPI does not.
+ */
+
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
