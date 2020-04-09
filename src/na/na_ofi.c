@@ -1295,10 +1295,15 @@ na_ofi_addr_ht_lookup(struct na_ofi_domain *domain, na_uint32_t addr_format,
 
     ht_value = hg_hash_table_lookup(domain->addr_ht, ht_key);
     if (ht_value != HG_HASH_TABLE_NULL) {
-        /* in race condition, use addr in HT and remove the new addr from AV */
-        rc = fi_av_remove(domain->fi_av, fi_addr, 1, 0 /* flags */);
-        NA_CHECK_ERROR(rc != 0, unlock, ret, NA_PROTOCOL_ERROR,
-            "fi_av_remove() failed, rc: %d (%s)", rc, fi_strerror((int) -rc));
+        /* race condition that same source inserted to AV and hash_table, if the
+         * fi_addr is different then remove the newly inserted and reuse the
+         * fi_addr in hash-table.
+         */
+        if (*(fi_addr_t *) ht_value != *fi_addr) {
+            rc = fi_av_remove(domain->fi_av, fi_addr, 1, 0 /* flags */);
+            NA_CHECK_ERROR(rc != 0, unlock, ret, NA_PROTOCOL_ERROR,
+                "fi_av_remove() failed, rc: %d (%s)", rc, fi_strerror((int) -rc));
+        }
         *fi_addr = *(fi_addr_t *) ht_value;
         goto unlock;
     }
