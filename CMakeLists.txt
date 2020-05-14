@@ -138,13 +138,17 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose the type of build." FORCE)
   # Set the possible values of build type for cmake-gui
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release"
-    "MinSizeRel" "RelWithDebInfo")
+    "MinSizeRel" "RelWithDebInfo" "Asan" "Tsan")
 endif()
 
 if(NOT CMAKE_C_FLAGS AND CMAKE_COMPILER_IS_GNUCC)
   message(STATUS "GCC detected, setting additional flags")
   set(CMAKE_C_FLAGS "-Wall -Wextra -Winline -Wcast-qual -std=gnu99 -Wshadow" CACHE STRING "Flags used by the compiler during all build types." FORCE)
 endif()
+
+# Detect Asan and Tsan compiler flags
+include(CheckAsan)
+include(CheckTsan)
 
 #-----------------------------------------------------------------------------
 # Targets built within this project are exported at Install time for use
@@ -212,10 +216,12 @@ function(mercury_set_lib_options libtarget libname libtype)
 
   set_target_properties(${libtarget}
       PROPERTIES
-      DEBUG_OUTPUT_NAME          ${LIB_DEBUG_NAME}
-      RELEASE_OUTPUT_NAME        ${LIB_RELEASE_NAME}
-      MINSIZEREL_OUTPUT_NAME     ${LIB_RELEASE_NAME}
-      RELWITHDEBINFO_OUTPUT_NAME ${LIB_RELEASE_NAME}
+      OUTPUT_NAME_DEBUG          ${LIB_DEBUG_NAME}
+      OUTPUT_NAME_RELEASE        ${LIB_RELEASE_NAME}
+      OUTPUT_NAME_MINSIZEREL     ${LIB_RELEASE_NAME}
+      OUTPUT_NAME_RELWITHDEBINFO ${LIB_RELEASE_NAME}
+      OUTPUT_NAME_ASAN           ${LIB_DEBUG_NAME}
+      OUTPUT_NAME_TSAN           ${LIB_DEBUG_NAME}
       VERSION                    ${LIB_VERSION}
       SOVERSION                  ${API_VERSION}
   )
