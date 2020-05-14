@@ -41,6 +41,7 @@
 #define HG_CORE_ATOMIC_QUEUE_SIZE   1024
 #define HG_CORE_PENDING_INCR        256
 #define HG_CORE_CLEANUP_TIMEOUT     1000
+#define HG_CORE_MAX_EVENTS          16
 #define HG_CORE_MAX_TRIGGER_COUNT   1
 #ifdef HG_HAS_SM_ROUTING
 # define HG_CORE_UUID_MAX_LEN       36
@@ -679,7 +680,7 @@ static HG_INLINE int
 hg_core_completion_queue_notify_cb(
         void *arg,
         int error,
-        hg_util_bool_t *progressed
+        struct hg_poll_event *event
         );
 #endif
 
@@ -690,7 +691,7 @@ static int
 hg_core_progress_na_cb(
         void *arg,
         int error,
-        hg_util_bool_t *progressed
+        struct hg_poll_event *event
         );
 
 #ifdef HG_HAS_SM_ROUTING
@@ -701,7 +702,7 @@ static int
 hg_core_progress_na_sm_cb(
         void *arg,
         int error,
-        hg_util_bool_t *progressed
+        struct hg_poll_event *event
         );
 #endif
 
@@ -810,7 +811,7 @@ hg_core_get_sm_uuid(uuid_t *sm_uuid)
     char uuid_str[HG_CORE_UUID_MAX_LEN + 1];
     FILE *uuid_config;
     uuid_t new_uuid;
-    na_return_t ret = NA_SUCCESS;
+    hg_return_t ret = HG_SUCCESS;
 
     uuid_config = fopen(sm_path, "r");
     if (!uuid_config) {
@@ -2851,7 +2852,7 @@ done:
 #ifdef HG_HAS_SELF_FORWARD
 static HG_INLINE int
 hg_core_completion_queue_notify_cb(void *arg,
-    int HG_UNUSED error, hg_util_bool_t *progressed)
+    int HG_UNUSED error, struct hg_poll_event *event)
 {
     struct hg_core_private_context *context =
         (struct hg_core_private_context *) arg;
@@ -2867,11 +2868,11 @@ hg_core_completion_queue_notify_cb(void *arg,
 
     if (notified || !hg_atomic_queue_is_empty(context->completion_queue)
         || hg_atomic_get32(&context->backfill_queue_count)) {
-        *progressed = HG_UTIL_TRUE; /* Progressed */
+        event->progressed = HG_UTIL_TRUE; /* Progressed */
         goto done;
     }
 
-    *progressed = HG_UTIL_FALSE;
+    event->progressed = HG_UTIL_FALSE;
 
 done:
     return rc;
@@ -2881,7 +2882,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static int
 hg_core_progress_na_cb(void *arg, int HG_UNUSED error,
-    hg_util_bool_t *progressed)
+    struct hg_poll_event *event)
 {
     struct hg_core_private_context *context =
         (struct hg_core_private_context *) arg;
@@ -2896,7 +2897,7 @@ hg_core_progress_na_cb(void *arg, int HG_UNUSED error,
         context->core_context.na_context, 0);
     if (na_ret == NA_TIMEOUT) {
         /* Nothing progressed */
-        *progressed = HG_UTIL_FALSE;
+        event->progressed = HG_UTIL_FALSE;
         goto done;
     } else
         HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, rc, HG_UTIL_FAIL,
@@ -2924,11 +2925,11 @@ hg_core_progress_na_cb(void *arg, int HG_UNUSED error,
     if (!completed_count && hg_atomic_queue_is_empty(context->completion_queue)
         && !hg_atomic_get32(&context->backfill_queue_count)) {
         /* Nothing progressed */
-        *progressed = HG_UTIL_FALSE;
+        event->progressed = HG_UTIL_FALSE;
         goto done;
     }
 
-    *progressed = HG_UTIL_TRUE;
+    event->progressed = HG_UTIL_TRUE;
 
 done:
     return rc;
@@ -2938,7 +2939,7 @@ done:
 #ifdef HG_HAS_SM_ROUTING
 static int
 hg_core_progress_na_sm_cb(void *arg, int HG_UNUSED error,
-    hg_util_bool_t *progressed)
+    struct hg_poll_event *event)
 {
     struct hg_core_private_context *context =
         (struct hg_core_private_context *) arg;
@@ -2953,7 +2954,7 @@ hg_core_progress_na_sm_cb(void *arg, int HG_UNUSED error,
         context->core_context.na_sm_context, 0);
     if (na_ret == NA_TIMEOUT) {
         /* Nothing progressed */
-        *progressed = HG_UTIL_FALSE;
+        event->progressed = HG_UTIL_FALSE;
         goto done;
     } else
         HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, rc, HG_UTIL_FAIL,
@@ -2982,11 +2983,11 @@ hg_core_progress_na_sm_cb(void *arg, int HG_UNUSED error,
     if (!completed_count && hg_atomic_queue_is_empty(context->completion_queue)
         && !hg_atomic_get32(&context->backfill_queue_count)) {
         /* Nothing progressed */
-        *progressed = HG_UTIL_FALSE;
+        event->progressed = HG_UTIL_FALSE;
         goto done;
     }
 
-    *progressed = HG_UTIL_TRUE;
+    event->progressed = HG_UTIL_TRUE;
 
 done:
     return rc;
@@ -3114,24 +3115,28 @@ hg_core_progress_poll(struct hg_core_private_context *context,
 
     do {
         hg_time_t t1, t2;
-        hg_util_bool_t progressed;
+        struct hg_poll_event events[HG_CORE_MAX_EVENTS] = {0};
         unsigned int poll_timeout =
             (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) ? 0 :
             (unsigned int) (remaining * 1000.0);
+        unsigned int nevents, i;
         int rc;
 
         if (timeout)
             hg_time_get_current(&t1);
 
         /* Will call hg_core_poll_try_wait_cb if timeout is not 0 */
-        rc = hg_poll_wait(context->poll_set, poll_timeout, &progressed);
+        rc = hg_poll_wait(context->poll_set, poll_timeout, HG_CORE_MAX_EVENTS,
+            events, &nevents);
         HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
             "hg_poll_wait() failed");
 
         /* We progressed, return success */
-        if (progressed) {
-            ret = HG_SUCCESS;
-            break;
+        for (i = 0; i < nevents; i++) {
+            if (events[i].progressed) {
+                ret = HG_SUCCESS;
+                goto done;
+            }
         }
 
         if (timeout) {
