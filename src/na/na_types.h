@@ -74,7 +74,6 @@ typedef enum na_return { NA_RETURN_VALUES } na_return_t;
 
 /* Callback operation type */
 typedef enum na_cb_type {
-    NA_CB_LOOKUP,           /*!< lookup callback */
     NA_CB_SEND_UNEXPECTED,  /*!< unexpected send callback */
     NA_CB_RECV_UNEXPECTED,  /*!< unexpected recv callback */
     NA_CB_SEND_EXPECTED,    /*!< expected send callback */
@@ -84,10 +83,6 @@ typedef enum na_cb_type {
 } na_cb_type_t;
 
 /* Callback info structs */
-struct na_cb_info_lookup {
-    na_addr_t addr;
-};
-
 struct na_cb_info_recv_unexpected {
     na_size_t actual_buf_size;
     na_addr_t source;
@@ -97,7 +92,6 @@ struct na_cb_info_recv_unexpected {
 /* Callback info struct */
 struct na_cb_info {
     union {             /* Union of callback info structures */
-        struct na_cb_info_lookup lookup;
         struct na_cb_info_recv_unexpected recv_unexpected;
     } info;
     void *arg;          /* User data */
@@ -121,9 +115,13 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 /* Max timeout */
 #define NA_MAX_IDLE_TIME    (3600*1000)
 
-/* Tag upper bound
- * \remark This is not the user tag limit but only the limit imposed by the type */
-#define NA_TAG_UB           UINT_MAX
+/* Context ID max value
+ * \remark This is not the user limit but only the limit imposed by the type */
+#define NA_CONTEXT_ID_MAX   UINT8_MAX
+
+/* Tag max value
+ * \remark This is not the user limit but only the limit imposed by the type */
+#define NA_TAG_MAX          UINT_MAX
 
 /* The memory attributes associated with the memory handle
  * can be defined as read only, write only or read/write */

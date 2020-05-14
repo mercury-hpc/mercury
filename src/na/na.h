@@ -203,38 +203,7 @@ NA_Op_destroy(
 
 /**
  * Lookup an addr from a peer address/name. Addresses need to be
- * freed by calling NA_Addr_free(). After completion, user callback is placed
- * into a completion queue and can be triggered using NA_Trigger().
- *
- * In the case where op_id is not NA_OP_ID_IGNORE and *op_id is NA_OP_ID_NULL,
- * a new operation ID will be internally created and returned. Users may also
- * manually create an operation ID through NA_Op_create() and pass it through
- * op_id for future use and prevent multiple ID creation.
- *
- * \param na_class [IN/OUT]     pointer to NA class
- * \param context [IN/OUT]      pointer to context of execution
- * \param callback [IN]         pointer to function callback
- * \param arg [IN]              pointer to data passed to callback
- * \param name [IN]             lookup name
- * \param op_id [IN/OUT]        pointer to operation ID
- *
- * \return NA_SUCCESS or corresponding NA error code
- */
-NA_PUBLIC na_return_t
-NA_Addr_lookup(
-        na_class_t   *na_class,
-        na_context_t *context,
-        na_cb_t       callback,
-        void         *arg,
-        const char   *name,
-        na_op_id_t   *op_id
-        );
-
-/**
- * Lookup an addr from a peer address/name. Addresses need to be
  * freed by calling NA_Addr_free().
- *
- * \remark This is the immediate version of NA_Addr_lookup().
  *
  * \param na_class [IN/OUT]     pointer to NA class
  * \param name [IN]             lookup name
@@ -243,7 +212,7 @@ NA_Addr_lookup(
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PUBLIC na_return_t
-NA_Addr_lookup2(
+NA_Addr_lookup(
         na_class_t *na_class,
         const char *name,
         na_addr_t  *addr
@@ -1164,15 +1133,6 @@ struct na_class_ops {
             );
     na_return_t
     (*addr_lookup)(
-            na_class_t   *na_class,
-            na_context_t *context,
-            na_cb_t       callback,
-            void         *arg,
-            const char   *name,
-            na_op_id_t   *op_id
-            );
-    na_return_t
-    (*addr_lookup2)(
             na_class_t *na_class,
             const char *name,
             na_addr_t  *addr
