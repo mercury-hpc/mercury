@@ -75,7 +75,6 @@ struct hg_private_handle {
 /* HG op id */
 struct hg_op_info_lookup {
     struct hg_addr *hg_addr;        /* Address */
-    hg_core_op_id_t core_op_id;     /* Operation ID for lookup */
 };
 
 struct hg_op_id {
@@ -1442,7 +1441,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Addr_lookup(hg_context_t *context, hg_cb_t callback, void *arg,
+HG_Addr_lookup1(hg_context_t *context, hg_cb_t callback, void *arg,
     const char *name, hg_op_id_t *op_id)
 {
     struct hg_op_id *hg_op_id = NULL;
@@ -1450,6 +1449,7 @@ HG_Addr_lookup(hg_context_t *context, hg_cb_t callback, void *arg,
 
     HG_CHECK_ERROR(context == NULL, error, ret, HG_INVALID_ARG,
         "NULL HG context");
+    (void) op_id;
 
     /* Allocate op_id */
     hg_op_id = (struct hg_op_id *) malloc(sizeof(struct hg_op_id));
@@ -1462,20 +1462,34 @@ HG_Addr_lookup(hg_context_t *context, hg_cb_t callback, void *arg,
     hg_op_id->arg = arg;
     hg_op_id->info.lookup.hg_addr = HG_ADDR_NULL;
 
-    ret = HG_Core_addr_lookup(context->core_context, hg_core_addr_lookup_cb,
-        hg_op_id, name, &hg_op_id->info.lookup.core_op_id);
+    ret = HG_Core_addr_lookup1(context->core_context, hg_core_addr_lookup_cb,
+        hg_op_id, name, HG_CORE_OP_ID_IGNORE);
     HG_CHECK_HG_ERROR(error, ret, "Could not lookup %s (%s)", name,
         HG_Error_to_string(ret));
-
-    /* Assign op_id */
-    if (op_id && op_id != HG_OP_ID_IGNORE)
-        *op_id = (hg_op_id_t) hg_op_id;
 
     return ret;
 
 error:
     free(hg_op_id);
 
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Addr_lookup2(hg_class_t *hg_class, const char *name, hg_addr_t *addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_CHECK_ERROR(hg_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG class");
+
+    ret = HG_Core_addr_lookup2(hg_class->core_class, name,
+        (hg_core_addr_t *) addr);
+    HG_CHECK_HG_ERROR(done, ret, "Could not lookup %s (%s)", name,
+        HG_Error_to_string(ret));
+
+done:
     return ret;
 }
 

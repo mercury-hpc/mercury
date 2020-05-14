@@ -212,7 +212,6 @@ struct hg_core_private_handle {
 /* HG op id */
 struct hg_core_op_info_lookup {
     struct hg_core_private_addr *hg_core_addr;  /* Address */
-    na_op_id_t na_lookup_op_id;                 /* Operation ID for lookup */
 };
 
 struct hg_core_op_id {
@@ -341,27 +340,9 @@ hg_core_addr_create(
  */
 static hg_return_t
 hg_core_addr_lookup(
-        struct hg_core_private_context *context,
-        hg_core_cb_t callback,
-        void *arg,
+        struct hg_core_private_class *hg_core_class,
         const char *name,
-        hg_core_op_id_t *op_id
-        );
-
-/**
- * Lookup callback.
- */
-static int
-hg_core_addr_lookup_cb(
-        const struct na_cb_info *callback_info
-        );
-
-/**
- * Complete addr lookup.
- */
-static hg_return_t
-hg_core_addr_lookup_complete(
-        struct hg_core_op_id *hg_core_op_id
+        struct hg_core_private_addr **addr
         );
 
 /**
@@ -1228,38 +1209,22 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_addr_lookup(struct hg_core_private_context *context,
-    hg_core_cb_t callback, void *arg, const char *name, hg_core_op_id_t *op_id)
+hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
+    const char *name, struct hg_core_private_addr **addr)
 {
-    na_class_t *na_class = context->core_context.core_class->na_class;
-    na_context_t *na_context = context->core_context.na_context;
-    struct hg_core_op_id *hg_core_op_id = NULL;
+    na_class_t *na_class = hg_core_class->core_class.na_class;
     struct hg_core_private_addr *hg_core_addr = NULL;
-    na_addr_t na_addr = NA_ADDR_NULL;
     na_return_t na_ret;
 #ifdef HG_HAS_SM_ROUTING
     char lookup_name[HG_CORE_ADDR_MAX_SIZE] = {'\0'};
 #endif
     const char *name_str = name;
-    hg_return_t ret = HG_SUCCESS, progress_ret;
-
-    /* Allocate op_id */
-    hg_core_op_id = (struct hg_core_op_id *) malloc(
-        sizeof(struct hg_core_op_id));
-    HG_CHECK_ERROR(hg_core_op_id == NULL, error, ret, HG_NOMEM,
-        "Could not allocate HG operation ID");
-
-    hg_core_op_id->context = context;
-    hg_core_op_id->type = HG_CB_LOOKUP;
-    hg_core_op_id->callback = callback;
-    hg_core_op_id->arg = arg;
-    hg_core_op_id->info.lookup.hg_core_addr = NULL;
+    hg_return_t ret = HG_SUCCESS;
 
     /* Allocate addr */
-    hg_core_addr = hg_core_addr_create(HG_CORE_CONTEXT_CLASS(context), NULL);
+    hg_core_addr = hg_core_addr_create(hg_core_class, NULL);
     HG_CHECK_ERROR(hg_core_addr == NULL, error, ret, HG_NOMEM,
         "Could not create HG addr");
-    hg_core_op_id->info.lookup.hg_core_addr = hg_core_addr;
 
 #ifdef HG_HAS_SM_ROUTING
     /* Parse name string */
@@ -1284,12 +1249,10 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
         local_name = lookup_names;
 
         /* Compare UUIDs, if they match it's local address */
-        if (context->core_context.na_sm_context
-            && uuid_compare(hg_core_addr->na_sm_uuid,
-            HG_CORE_CONTEXT_CLASS(context)->na_sm_uuid) == 0) {
+        if (hg_core_class->core_class.na_sm_class && uuid_compare(
+            hg_core_addr->na_sm_uuid, hg_core_class->na_sm_uuid) == 0) {
             name_str = local_name;
-            na_class = context->core_context.core_class->na_sm_class;
-            na_context = context->core_context.na_sm_context;
+            na_class = hg_core_class->core_class.na_sm_class;
         } else {
             /* Remote lookup */
             name_str = remote_name;
@@ -1299,95 +1262,20 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
     /* Assign corresponding NA class */
     hg_core_addr->core_addr.na_class = na_class;
 
-    /* Try to use immediate lookup */
-    na_ret = NA_Addr_lookup2(na_class, name_str, &na_addr);
+    /* Lookup adress */
+    na_ret = NA_Addr_lookup(na_class, name_str,
+        &hg_core_addr->core_addr.na_addr);
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
-        "Could not start lookup for address %s (%s)", name_str,
+        "Could not lookup address %s (%s)", name_str,
         NA_Error_to_string(na_ret));
 
-    if (na_addr != NA_ADDR_NULL) {
-        struct na_cb_info callback_info;
-        callback_info.arg = hg_core_op_id;
-        callback_info.ret = NA_SUCCESS;
-        callback_info.type = NA_CB_LOOKUP;
-        callback_info.info.lookup.addr = na_addr;
-        hg_core_op_id->info.lookup.na_lookup_op_id = NA_OP_ID_NULL;
-
-        hg_core_addr_lookup_cb(&callback_info);
-    } else {
-        /* Create operation ID */
-        hg_core_op_id->info.lookup.na_lookup_op_id = NA_Op_create(na_class);
-
-        na_ret = NA_Addr_lookup(na_class, na_context, hg_core_addr_lookup_cb,
-            hg_core_op_id, name_str, &hg_core_op_id->info.lookup.na_lookup_op_id);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
-            "Could not start lookup for address %s (%s)", name_str,
-            NA_Error_to_string(na_ret));
-    }
-
-    /* TODO to avoid blocking after lookup make progress on the HG layer with
-     * timeout of 0 */
-    progress_ret = context->progress(context, 0);
-    HG_CHECK_ERROR(progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT,
-        error, ret, progress_ret, "Could not make progress");
-
-    /* Assign op_id */
-    if (op_id && op_id != HG_CORE_OP_ID_IGNORE)
-        *op_id = (hg_core_op_id_t) hg_core_op_id;
+    *addr = hg_core_addr;
 
     return ret;
 
 error:
-    free(hg_core_op_id);
-    hg_core_addr_free(HG_CORE_CONTEXT_CLASS(context), hg_core_addr);
+    hg_core_addr_free(hg_core_class, hg_core_addr);
 
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static int
-hg_core_addr_lookup_cb(const struct na_cb_info *callback_info)
-{
-    struct hg_core_op_id *hg_core_op_id =
-        (struct hg_core_op_id *) callback_info->arg;
-    na_return_t na_ret = callback_info->ret;
-    hg_return_t hg_ret;
-    int ret = 0;
-
-    HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done, "(%s)",
-        NA_Error_to_string(na_ret));
-
-    /* Assign addr */
-    hg_core_op_id->info.lookup.hg_core_addr->core_addr.na_addr =
-        callback_info->info.lookup.addr;
-
-    /* Mark as completed */
-    hg_ret = hg_core_addr_lookup_complete(hg_core_op_id);
-    HG_CHECK_HG_ERROR(done, hg_ret, "Could not complete operation");
-
-    ret++;
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_core_addr_lookup_complete(struct hg_core_op_id *hg_core_op_id)
-{
-    hg_core_context_t *context = &hg_core_op_id->context->core_context;
-    struct hg_completion_entry *hg_completion_entry =
-        &hg_core_op_id->hg_completion_entry;
-    hg_return_t ret = HG_SUCCESS;
-
-    hg_completion_entry->op_type = HG_ADDR;
-    hg_completion_entry->op_id.hg_core_op_id = hg_core_op_id;
-
-    ret = hg_core_completion_add(context, hg_completion_entry, HG_FALSE);
-    HG_CHECK_HG_ERROR(done, ret,
-        "Could not add HG completion entry to completion queue");
-
-done:
     return ret;
 }
 
@@ -3258,21 +3146,12 @@ hg_core_trigger_lookup_entry(struct hg_core_op_id *hg_core_op_id)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    /* Free op */
-    if (hg_core_op_id->info.lookup.na_lookup_op_id != NA_OP_ID_NULL) {
-        na_return_t na_ret = NA_Op_destroy(
-            hg_core_op_id->info.lookup.hg_core_addr->core_addr.na_class,
-            hg_core_op_id->info.lookup.na_lookup_op_id);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
-            "Could not destroy addr op ID (%s)", NA_Error_to_string(na_ret));
-    }
-
     /* Execute callback */
     if (hg_core_op_id->callback) {
         struct hg_core_cb_info hg_core_cb_info;
 
         hg_core_cb_info.arg = hg_core_op_id->arg;
-        hg_core_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
+        hg_core_cb_info.ret =  HG_SUCCESS;
         hg_core_cb_info.type = HG_CB_LOOKUP;
         hg_core_cb_info.info.lookup.addr =
             (hg_core_addr_t) hg_core_op_id->info.lookup.hg_core_addr;
@@ -3280,8 +3159,8 @@ hg_core_trigger_lookup_entry(struct hg_core_op_id *hg_core_op_id)
         hg_core_op_id->callback(&hg_core_cb_info);
     }
 
-done:
     free(hg_core_op_id);
+
     return ret;
 }
 
@@ -3972,28 +3851,6 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Core_addr_lookup(hg_core_context_t *context, hg_core_cb_t callback,
-    void *arg, const char *name, hg_core_op_id_t *op_id)
-{
-    hg_return_t ret = HG_SUCCESS;
-
-    HG_CHECK_ERROR(context == NULL, done, ret, HG_INVALID_ARG,
-        "NULL HG core context");
-    HG_CHECK_ERROR(callback == NULL, done, ret, HG_INVALID_ARG,
-        "NULL callback");
-    HG_CHECK_ERROR(name == NULL, done, ret, HG_INVALID_ARG,
-        "NULL lookup");
-
-    ret = hg_core_addr_lookup((struct hg_core_private_context *) context,
-        callback, arg, name, op_id);
-    HG_CHECK_HG_ERROR(done, ret, "Could not lookup address");
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_return_t
 HG_Core_addr_create(hg_core_class_t *hg_core_class, hg_core_addr_t *addr)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -4008,6 +3865,84 @@ HG_Core_addr_create(hg_core_class_t *hg_core_class, hg_core_addr_t *addr)
         hg_core_class->na_class);
     HG_CHECK_ERROR(*addr == HG_CORE_ADDR_NULL, done, ret, HG_NOMEM,
         "Could not create address");
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_addr_lookup1(hg_core_context_t *context, hg_core_cb_t callback,
+    void *arg, const char *name, hg_core_op_id_t *op_id)
+{
+    struct hg_core_op_id *hg_core_op_id = NULL;
+    struct hg_completion_entry *hg_completion_entry = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_CHECK_ERROR(context == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core context");
+    HG_CHECK_ERROR(callback == NULL, done, ret, HG_INVALID_ARG,
+        "NULL callback");
+    HG_CHECK_ERROR(name == NULL, done, ret, HG_INVALID_ARG,
+        "NULL lookup");
+    (void) op_id;
+
+    /* Allocate op_id */
+    hg_core_op_id = (struct hg_core_op_id *) malloc(
+        sizeof(struct hg_core_op_id));
+    HG_CHECK_ERROR(hg_core_op_id == NULL, error, ret, HG_NOMEM,
+        "Could not allocate HG operation ID");
+
+    hg_core_op_id->context = (struct hg_core_private_context *) context;
+    hg_core_op_id->type = HG_CB_LOOKUP;
+    hg_core_op_id->callback = callback;
+    hg_core_op_id->arg = arg;
+    hg_core_op_id->info.lookup.hg_core_addr = NULL;
+
+    ret = hg_core_addr_lookup(
+        (struct hg_core_private_class *) context->core_class, name,
+        &hg_core_op_id->info.lookup.hg_core_addr);
+    HG_CHECK_HG_ERROR(error, ret, "Could not lookup address");
+
+    /* Add callback to completion queue */
+    hg_completion_entry = &hg_core_op_id->hg_completion_entry;
+    hg_completion_entry->op_type = HG_ADDR;
+    hg_completion_entry->op_id.hg_core_op_id = hg_core_op_id;
+
+    ret = hg_core_completion_add(context, hg_completion_entry, HG_TRUE);
+    HG_CHECK_HG_ERROR(error, ret,
+        "Could not add HG completion entry to completion queue");
+
+done:
+    return ret;
+
+error:
+    if (hg_core_op_id) {
+        hg_core_addr_free((struct hg_core_private_class *) context->core_class,
+            hg_core_op_id->info.lookup.hg_core_addr);
+        free(hg_core_op_id);
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_addr_lookup2(hg_core_class_t *hg_core_class, const char *name,
+    hg_core_addr_t *addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
+    HG_CHECK_ERROR(name == NULL, done, ret, HG_INVALID_ARG,
+        "NULL lookup");
+    HG_CHECK_ERROR(addr == NULL, done, ret, HG_INVALID_ARG,
+        "NULL pointer to address");
+
+    ret = hg_core_addr_lookup((struct hg_core_private_class *) hg_core_class,
+        name, (struct hg_core_private_addr **) addr);
+    HG_CHECK_HG_ERROR(done, ret, "Could not lookup address");
 
 done:
     return ret;
