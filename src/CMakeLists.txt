@@ -327,12 +327,12 @@ install(
 # Export all exported targets to the build tree for use by parent project
 #-----------------------------------------------------------------------------
 if(NOT MERCURY_EXTERNALLY_CONFIGURED)
-EXPORT (
-  TARGETS
-    ${MERCURY_EXPORTED_LIBS}
-  FILE
-    ${MERCURY_EXPORTED_TARGETS}.cmake
-)
+  export(
+    TARGETS
+      ${MERCURY_EXPORTED_LIBS}
+    FILE
+      ${MERCURY_EXPORTED_TARGETS}.cmake
+  )
 endif()
 
 #------------------------------------------------------------------------------
@@ -355,9 +355,9 @@ if(NOT WIN32)
   # Mercury private library dependencies
   foreach(exported_lib ${MERCURY_EXPORTED_LIBS})
     if(lower_cmake_build_type MATCHES "debug")
-      get_target_property(MERCURY_LIBRARY ${exported_lib} DEBUG_OUTPUT_NAME)
+      get_target_property(MERCURY_LIBRARY ${exported_lib} OUTPUT_NAME_DEBUG)
     else()
-      get_target_property(MERCURY_LIBRARY ${exported_lib} RELEASE_OUTPUT_NAME)
+      get_target_property(MERCURY_LIBRARY ${exported_lib} OUTPUT_NAME_RELEASE)
     endif()
     set(MERCURY_LIBRARIES "${MERCURY_LIBRARIES} -l${MERCURY_LIBRARY}")
   endforeach()
