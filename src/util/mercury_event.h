@@ -12,24 +12,22 @@
 #define MERCURY_EVENT_H
 
 #include "mercury_util_config.h"
-#include "mercury_util_error.h"
 
 #ifdef _WIN32
 
 #else
-# include <errno.h>
-# include <string.h>
-# include <unistd.h>
-# if defined(HG_UTIL_HAS_SYSEVENTFD_H)
-#  include <sys/eventfd.h>
-#  ifndef HG_UTIL_HAS_EVENTFD_T
+#    include <errno.h>
+#    include <string.h>
+#    include <unistd.h>
+#    if defined(HG_UTIL_HAS_SYSEVENTFD_H)
+#        include <sys/eventfd.h>
+#        ifndef HG_UTIL_HAS_EVENTFD_T
 typedef uint64_t eventfd_t;
-#  endif
-# elif defined(HG_UTIL_HAS_SYSEVENT_H)
-# include <sys/event.h>
-/* User-defined ident */
-# define HG_EVENT_IDENT 42
-# endif
+#        endif
+#    elif defined(HG_UTIL_HAS_SYSEVENT_H)
+#        include <sys/event.h>
+#        define HG_EVENT_IDENT 42 /* User-defined ident */
+#    endif
 #endif
 
 /**
@@ -46,7 +44,7 @@ extern "C" {
  *
  * \return file descriptor on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_event_create(void);
 
 /**
@@ -56,7 +54,7 @@ hg_event_create(void);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_event_destroy(int fd);
 
 /**
@@ -84,111 +82,99 @@ hg_event_get(int fd, hg_util_bool_t *notified);
 #if defined(_WIN32)
 /* TODO */
 #elif defined(HG_UTIL_HAS_SYSEVENTFD_H)
+#    ifdef HG_UTIL_HAS_EVENTFD_T
 static HG_UTIL_INLINE int
 hg_event_set(int fd)
 {
-    int ret = HG_UTIL_SUCCESS;
-    eventfd_t count = 1;
-
-#ifdef HG_UTIL_HAS_EVENTFD_T
-    if (eventfd_write(fd, count) == -1) {
-#else
-    ssize_t s;
-
-    s = write(fd, &count, sizeof(eventfd_t));
-    if (s != sizeof(eventfd_t)) {
-#endif
-        if (errno == EAGAIN)
-            goto done;
-        HG_UTIL_LOG_ERROR("write() failed (%s)", strerror(errno));
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
-
-done:
-    return ret;
+    return (eventfd_write(fd, 1) == 0) ? HG_UTIL_SUCCESS : HG_UTIL_FAIL;
 }
+#    else
+static HG_UTIL_INLINE int
+hg_event_set(int fd)
+{
+    eventfd_t count = 1;
+    ssize_t s = write(fd, &count, sizeof(eventfd_t));
+
+    return (s == sizeof(eventfd_t)) ? HG_UTIL_SUCCESS : HG_UTIL_FAIL;
+}
+#    endif
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
 static HG_UTIL_INLINE int
 hg_event_set(int fd)
 {
-    int ret = HG_UTIL_SUCCESS;
     struct kevent kev;
     struct timespec timeout = {0, 0};
+    int rc;
 
     EV_SET(&kev, HG_EVENT_IDENT, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
 
     /* Trigger user-defined event */
-    if (kevent(fd, &kev, 1, NULL, 0, &timeout) == -1) {
-        HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+    rc = kevent(fd, &kev, 1, NULL, 0, &timeout);
 
-done:
-    return ret;
+    return (rc == -1) ? HG_UTIL_FAIL : HG_UTIL_SUCCESS;
 }
 #else
-# error "Not supported on this platform."
+#    error "Not supported on this platform."
 #endif
 
 /*---------------------------------------------------------------------------*/
 #if defined(_WIN32)
 #elif defined(HG_UTIL_HAS_SYSEVENTFD_H)
+#    ifdef HG_UTIL_HAS_EVENTFD_T
 static HG_UTIL_INLINE int
 hg_event_get(int fd, hg_util_bool_t *signaled)
 {
-    int ret = HG_UTIL_SUCCESS;
-    hg_util_bool_t event_signal = HG_UTIL_FALSE;
     eventfd_t count = 0;
 
-#ifdef HG_UTIL_HAS_EVENTFD_T
-    if (eventfd_read(fd, &count) == -1) {
-#else
-    ssize_t s;
-
-    s = read(fd, &count, sizeof(eventfd_t));
-    if (s != sizeof(eventfd_t)) {
-#endif
+    if ((eventfd_read(fd, &count) == 0) && count)
+        *signaled = HG_UTIL_TRUE;
+    else {
         if (errno == EAGAIN)
-            goto done;
-        HG_UTIL_LOG_ERROR("read() failed (%s)", strerror(errno));
-        ret = HG_UTIL_FAIL;
-        goto done;
+            *signaled = HG_UTIL_FALSE;
+        else
+            return HG_UTIL_FAIL;
     }
-    event_signal = HG_UTIL_TRUE;
 
-done:
-    if (signaled && ret != HG_UTIL_FAIL)
-        *signaled = event_signal;
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
+#    else
+static HG_UTIL_INLINE int
+hg_event_get(int fd, hg_util_bool_t *signaled)
+{
+    eventfd_t count = 0;
+    ssize_t s = read(fd, &count, sizeof(eventfd_t));
+    if ((s == sizeof(eventfd_t)) && count)
+        *signaled = HG_UTIL_TRUE;
+    else {
+        if (errno == EAGAIN)
+            *signaled = HG_UTIL_FALSE;
+        else
+            return HG_UTIL_FAIL;
+    }
+
+    return HG_UTIL_SUCCESS;
+}
+#    endif
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
 static HG_UTIL_INLINE int
 hg_event_get(int fd, hg_util_bool_t *signaled)
 {
-    int ret = HG_UTIL_SUCCESS;
-    hg_util_bool_t event_signal = HG_UTIL_FALSE;
     struct kevent kev;
     int nfds;
     struct timespec timeout = {0, 0};
 
     /* Check user-defined event */
     nfds = kevent(fd, NULL, 0, &kev, 1, &timeout);
-    if (nfds == -1) {
-        HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
-    if (nfds > 0 && kev.ident == HG_EVENT_IDENT)
-        event_signal = HG_UTIL_TRUE;
+    if (nfds == -1)
+        return HG_UTIL_FAIL;
 
-    if (signaled) *signaled = event_signal;
+    *signaled = ((nfds > 0) && (kev.ident == HG_EVENT_IDENT)) ? HG_UTIL_TRUE
+                                                              : HG_UTIL_FALSE;
 
-done:
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 #else
+#    error "Not supported on this platform."
 #endif
 
 #ifdef __cplusplus

@@ -9,12 +9,20 @@
  */
 
 #include "mercury_request.h"
-#include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
+#include "mercury_thread_mutex.h"
 #include "mercury_time.h"
 #include "mercury_util_error.h"
 
 #include <stdlib.h>
+
+/****************/
+/* Local Macros */
+/****************/
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
 
 struct hg_request_class {
     hg_request_progress_func_t progress_func;
@@ -25,6 +33,14 @@ struct hg_request_class {
     hg_thread_cond_t progress_cond;
 };
 
+/********************/
+/* Local Prototypes */
+/********************/
+
+/*******************/
+/* Local Variables */
+/*******************/
+
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_bool_t
 hg_request_check(hg_request_t *request)
@@ -34,13 +50,12 @@ hg_request_check(hg_request_t *request)
     hg_util_bool_t ret = HG_UTIL_FALSE;
 
     do {
-        trigger_ret = request->request_class->trigger_func(0, &trigger_flag,
-                request->request_class->arg);
+        trigger_ret = request->request_class->trigger_func(
+            0, &trigger_flag, request->request_class->arg);
     } while ((trigger_ret == HG_UTIL_SUCCESS) && trigger_flag);
 
-    if (hg_atomic_cas32(&request->completed, HG_UTIL_TRUE, HG_UTIL_FALSE)) {
+    if (hg_atomic_cas32(&request->completed, HG_UTIL_TRUE, HG_UTIL_FALSE))
         ret = HG_UTIL_TRUE;
-    }
 
     return ret;
 }
@@ -48,16 +63,14 @@ hg_request_check(hg_request_t *request)
 /*---------------------------------------------------------------------------*/
 hg_request_class_t *
 hg_request_init(hg_request_progress_func_t progress_func,
-        hg_request_trigger_func_t trigger_func, void *arg)
+    hg_request_trigger_func_t trigger_func, void *arg)
 {
     struct hg_request_class *hg_request_class = NULL;
 
-    hg_request_class = (struct hg_request_class *)
-            malloc(sizeof(struct hg_request_class));
-    if (!hg_request_class) {
-        HG_UTIL_LOG_ERROR("Could not allocate hg_request_class");
-        goto done;
-    }
+    hg_request_class =
+        (struct hg_request_class *) malloc(sizeof(struct hg_request_class));
+    HG_UTIL_CHECK_ERROR_NORET(
+        hg_request_class == NULL, done, "Could not allocate hg_request_class");
 
     hg_request_class->progress_func = progress_func;
     hg_request_class->trigger_func = trigger_func;
@@ -74,17 +87,17 @@ done:
 int
 hg_request_finalize(hg_request_class_t *request_class, void **arg)
 {
-    int ret = HG_UTIL_SUCCESS;
+    if (!request_class)
+        goto done;
 
-    if (!request_class) goto done;
-
-    if (arg) *arg = request_class->arg;
+    if (arg)
+        *arg = request_class->arg;
     hg_thread_mutex_destroy(&request_class->progress_mutex);
     hg_thread_cond_destroy(&request_class->progress_cond);
     free(request_class);
 
 done:
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -94,10 +107,8 @@ hg_request_create(hg_request_class_t *request_class)
     struct hg_request *hg_request = NULL;
 
     hg_request = (struct hg_request *) malloc(sizeof(struct hg_request));
-    if (!hg_request) {
-        HG_UTIL_LOG_ERROR("Could not allocate hg_request");
-        goto done;
-    }
+    HG_UTIL_CHECK_ERROR_NORET(
+        hg_request == NULL, done, "Could not allocate hg_request");
 
     hg_request->data = NULL;
     hg_atomic_set32(&hg_request->completed, HG_UTIL_FALSE);
@@ -146,7 +157,8 @@ hg_request_destroy(hg_request_t *request)
 int
 hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
 {
-    double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    double remaining =
+        timeout / 1000.0; /* Convert timeout in ms into seconds */
     hg_util_bool_t completed = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
 
@@ -156,7 +168,8 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
         hg_time_t t3, t4;
 
         completed = hg_request_check(request);
-        if (completed) break;
+        if (completed)
+            break;
 
         if (request->request_class->progressing) {
             hg_time_t t1, t2;
@@ -189,8 +202,7 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
             hg_time_get_current(&t3);
 
         request->request_class->progress_func(
-                (unsigned int) (remaining * 1000.0),
-                request->request_class->arg);
+            (unsigned int) (remaining * 1000.0), request->request_class->arg);
 
         if (timeout) {
             hg_time_get_current(&t4);
@@ -205,7 +217,8 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
 
     hg_thread_mutex_unlock(&request->request_class->progress_mutex);
 
-    if (flag) *flag = completed;
+    if (flag)
+        *flag = completed;
 
     return ret;
 }

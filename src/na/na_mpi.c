@@ -13,6 +13,7 @@
 
 #include "mercury_list.h"
 #include "mercury_time.h"
+#include "mercury_thread.h"
 
 #include <stdio.h>
 #include <stdlib.h>

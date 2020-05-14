@@ -12,16 +12,16 @@
 #define MERCURY_THREAD_SPIN_H
 
 #include "mercury_util_config.h"
+
 #if defined(_WIN32)
-# include <windows.h>
+#    include <windows.h>
 typedef volatile LONG hg_thread_spin_t;
 #elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
-# include <pthread.h>
-# include <errno.h>
+#    include <pthread.h>
 typedef pthread_spinlock_t hg_thread_spin_t;
 #else
 /* Default to hg_thread_mutex_t if pthread_spinlock_t is not supported */
-# include "mercury_thread_mutex.h"
+#    include "mercury_thread_mutex.h"
 typedef hg_thread_mutex_t hg_thread_spin_t;
 #endif
 
@@ -36,7 +36,7 @@ extern "C" {
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_spin_init(hg_thread_spin_t *lock);
 
 /**
@@ -46,7 +46,7 @@ hg_thread_spin_init(hg_thread_spin_t *lock);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_spin_destroy(hg_thread_spin_t *lock);
 
 /**
@@ -83,8 +83,6 @@ hg_thread_spin_unlock(hg_thread_spin_t *lock);
 static HG_UTIL_INLINE int
 hg_thread_spin_lock(hg_thread_spin_t *lock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #if defined(_WIN32)
     while (InterlockedExchange(lock, EBUSY)) {
         /* Don't lock while waiting */
@@ -95,50 +93,50 @@ hg_thread_spin_lock(hg_thread_spin_t *lock)
             MemoryBarrier();
         }
     }
+    return HG_UTIL_SUCCESS;
 #elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
-    if (pthread_spin_lock(lock)) ret = HG_UTIL_FAIL;
-#else
-    ret = hg_thread_mutex_lock(lock);
-#endif
+    if (pthread_spin_lock(lock))
+        return HG_UTIL_FAIL;
 
-    return ret;
+    return HG_UTIL_SUCCESS;
+#else
+    return hg_thread_mutex_lock(lock);
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
 hg_thread_spin_try_lock(hg_thread_spin_t *lock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #if defined(_WIN32)
-    ret = InterlockedExchange(lock, EBUSY);
+    return InterlockedExchange(lock, EBUSY);
 #elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
-    if (pthread_spin_trylock(lock)) ret = HG_UTIL_FAIL;
-#else
-    ret = hg_thread_mutex_try_lock(lock);
-#endif
+    if (pthread_spin_trylock(lock))
+        return HG_UTIL_FAIL;
 
-    return ret;
+    return HG_UTIL_SUCCESS;
+#else
+    return hg_thread_mutex_try_lock(lock);
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
 hg_thread_spin_unlock(hg_thread_spin_t *lock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #if defined(_WIN32)
     /* Compiler barrier. The store below acts with release semantics */
     MemoryBarrier();
-
     *lock = 0;
-#elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
-    if (pthread_spin_unlock(lock)) ret = HG_UTIL_FAIL;
-#else
-    ret = hg_thread_mutex_unlock(lock);
-#endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
+#elif defined(HG_UTIL_HAS_PTHREAD_SPINLOCK_T)
+    if (pthread_spin_unlock(lock))
+        return HG_UTIL_FAIL;
+    return HG_UTIL_SUCCESS;
+#else
+    return hg_thread_mutex_unlock(lock);
+#endif
 }
 
 #ifdef __cplusplus

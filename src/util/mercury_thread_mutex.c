@@ -14,39 +14,37 @@
 int
 hg_thread_mutex_init(hg_thread_mutex_t *mutex)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     InitializeCriticalSection(mutex);
 #else
     pthread_mutexattr_t mutex_attr;
 
     pthread_mutexattr_init(&mutex_attr);
-#ifdef HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP
+#    ifdef HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP
     /* Set type to PTHREAD_MUTEX_ADAPTIVE_NP to improve performance */
     pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_ADAPTIVE_NP);
-#else
+#    else
     pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_DEFAULT);
-#endif
-    if (pthread_mutex_init(mutex, &mutex_attr)) ret = HG_UTIL_FAIL;
+#    endif
+    if (pthread_mutex_init(mutex, &mutex_attr))
+        return HG_UTIL_FAIL;
 
     pthread_mutexattr_destroy(&mutex_attr);
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_mutex_destroy(hg_thread_mutex_t *mutex)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     DeleteCriticalSection(mutex);
 #else
-    if (pthread_mutex_destroy(mutex)) ret = HG_UTIL_FAIL;
+    if (pthread_mutex_destroy(mutex))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }

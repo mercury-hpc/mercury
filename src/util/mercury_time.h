@@ -12,33 +12,46 @@
 #define MERCURY_TIME_H
 
 #include "mercury_util_config.h"
+
 #if defined(_WIN32)
-# include <windows.h>
+#    include <windows.h>
 #elif defined(HG_UTIL_HAS_CLOCK_MONOTONIC)
-# if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
-#  include <time.h>
-# elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
-#  include <sys/time.h>
-#  include <mach/mach_time.h>
-# else
-#  error "Not supported on this platform."
-# endif
+#    if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
+#        include <time.h>
+#    elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
+#        include <mach/mach_time.h>
+#        include <sys/time.h>
+#    else
+#        error "Not supported on this platform."
+#    endif
 #else
-# include <unistd.h>
-# include <stdio.h>
-# if defined(HG_UTIL_HAS_SYSTIME_H)
-#  include <sys/time.h>
-# else
-#  error "Not supported on this platform."
-# endif
+#    include <stdio.h>
+#    include <unistd.h>
+#    if defined(HG_UTIL_HAS_SYSTIME_H)
+#        include <sys/time.h>
+#    else
+#        error "Not supported on this platform."
+#    endif
 #endif
 
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
 typedef struct hg_time hg_time_t;
-struct hg_time
-{
+
+struct hg_time {
     long tv_sec;
     long tv_usec;
 };
+
+/*****************/
+/* Public Macros */
+/*****************/
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {
@@ -160,7 +173,6 @@ hg_time_get_current(hg_time_t *tv)
     static double freq_to_usec;
     static int initialized = 0;
     static BOOL use_perf_counter = 0;
-    int ret = HG_UTIL_SUCCESS;
 
     if (!tv)
         return HG_UTIL_FAIL;
@@ -192,12 +204,12 @@ hg_time_get_current(hg_time_t *tv)
     tv->tv_sec = t.QuadPart / 1000000;
     tv->tv_usec = t.QuadPart % 1000000;
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 #elif defined(HG_UTIL_HAS_CLOCK_MONOTONIC)
 /*---------------------------------------------------------------------------*/
-# if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
+#    if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
 static HG_UTIL_INLINE int
 hg_time_get_current(hg_time_t *tv)
 {
@@ -216,13 +228,12 @@ hg_time_get_current(hg_time_t *tv)
 }
 
 /*---------------------------------------------------------------------------*/
-# elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
+#    elif defined(__APPLE__) && defined(HG_UTIL_HAS_SYSTIME_H)
 static HG_UTIL_INLINE int
 hg_time_get_current(hg_time_t *tv)
 {
     static uint64_t monotonic_timebase_factor = 0;
     uint64_t monotonic_nsec;
-    int ret = HG_UTIL_SUCCESS;
 
     if (!tv)
         return HG_UTIL_FAIL;
@@ -234,16 +245,16 @@ hg_time_get_current(hg_time_t *tv)
         monotonic_timebase_factor = timebase_info.numer / timebase_info.denom;
     }
     monotonic_nsec = (mach_absolute_time() * monotonic_timebase_factor);
-    tv->tv_sec  = (long) (monotonic_nsec / 1000000000);
+    tv->tv_sec = (long) (monotonic_nsec / 1000000000);
     tv->tv_usec = (long) ((monotonic_nsec - (uint64_t) tv->tv_sec) / 1000);
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
-# endif
+#    endif
 #else
 /*---------------------------------------------------------------------------*/
-# if defined(HG_UTIL_HAS_SYSTIME_H)
+#    if defined(HG_UTIL_HAS_SYSTIME_H)
 static HG_UTIL_INLINE int
 hg_time_get_current(hg_time_t *tv)
 {
@@ -255,7 +266,7 @@ hg_time_get_current(hg_time_t *tv)
     return HG_UTIL_SUCCESS;
 }
 
-# endif
+#    endif
 #endif
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE double
@@ -281,7 +292,7 @@ static HG_UTIL_INLINE int
 hg_time_less(hg_time_t in1, hg_time_t in2)
 {
     return ((in1.tv_sec < in2.tv_sec) ||
-        ((in1.tv_sec == in2.tv_sec) && (in1.tv_usec < in2.tv_usec)));
+            ((in1.tv_sec == in2.tv_sec) && (in1.tv_usec < in2.tv_usec)));
 }
 
 /*---------------------------------------------------------------------------*/
@@ -292,7 +303,7 @@ hg_time_add(hg_time_t in1, hg_time_t in2)
 
     out.tv_sec = in1.tv_sec + in2.tv_sec;
     out.tv_usec = in1.tv_usec + in2.tv_usec;
-    if(out.tv_usec > 1000000) {
+    if (out.tv_usec > 1000000) {
         out.tv_usec -= 1000000;
         out.tv_sec += 1;
     }
@@ -308,7 +319,7 @@ hg_time_subtract(hg_time_t in1, hg_time_t in2)
 
     out.tv_sec = in1.tv_sec - in2.tv_sec;
     out.tv_usec = in1.tv_usec - in2.tv_usec;
-    if(out.tv_usec < 0) {
+    if (out.tv_usec < 0) {
         out.tv_usec += 1000000;
         out.tv_sec -= 1;
     }
@@ -320,10 +331,8 @@ hg_time_subtract(hg_time_t in1, hg_time_t in2)
 static HG_UTIL_INLINE int
 hg_time_sleep(const hg_time_t rqt)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
-    DWORD dwMilliseconds = (DWORD) (hg_time_to_double(rqt) / 1000);
+    DWORD dwMilliseconds = (DWORD)(hg_time_to_double(rqt) / 1000);
 
     Sleep(dwMilliseconds);
 #elif defined(HG_UTIL_HAS_CLOCK_MONOTONIC)
@@ -332,20 +341,17 @@ hg_time_sleep(const hg_time_t rqt)
     rqtp.tv_sec = rqt.tv_sec;
     rqtp.tv_nsec = rqt.tv_usec * 1000;
 
-    if (nanosleep(&rqtp, NULL)) {
-        ret = HG_UTIL_FAIL;
-        return ret;
-    }
+    if (nanosleep(&rqtp, NULL))
+        return HG_UTIL_FAIL;
 #else
-    useconds_t usec = (useconds_t) rqt.tv_sec * 1000000 + (useconds_t) rqt.tv_usec;
+    useconds_t usec =
+        (useconds_t) rqt.tv_sec * 1000000 + (useconds_t) rqt.tv_usec;
 
-    if (usleep(usec)) {
-        ret = HG_UTIL_FAIL;
-        return ret;
-    }
+    if (usleep(usec))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -353,8 +359,7 @@ hg_time_sleep(const hg_time_t rqt)
 static HG_UTIL_INLINE char *
 hg_time_stamp(void)
 {
-    char *ret = NULL;
-    static char buf[HG_UTIL_STAMP_MAX];
+    static char buf[HG_UTIL_STAMP_MAX] = {'\0'};
 
 #if defined(_WIN32)
     /* TODO not implemented */
@@ -364,18 +369,11 @@ hg_time_stamp(void)
 
     t = time(NULL);
     local_time = localtime(&t);
-    if (local_time == NULL) {
-        ret = NULL;
-        return ret;
-    }
+    if (local_time == NULL)
+        return NULL;
 
-    if (strftime(buf, HG_UTIL_STAMP_MAX, "%a, %d %b %Y %T %Z",
-        local_time) == 0) {
-        ret = NULL;
-        return ret;
-    }
-
-    ret = buf;
+    if (strftime(buf, HG_UTIL_STAMP_MAX, "%a, %d %b %Y %T %Z", local_time) == 0)
+        return NULL;
 #else
     struct timeval tv;
     struct timezone tz;
@@ -384,17 +382,17 @@ hg_time_stamp(void)
     gettimeofday(&tv, &tz);
     days = (unsigned long) tv.tv_sec / (3600 * 24);
     hours = ((unsigned long) tv.tv_sec - days * 24 * 3600) / 3600;
-    minutes = ((unsigned long) tv.tv_sec - days * 24 * 3600 - hours * 3600) / 60;
-    seconds = (unsigned long) tv.tv_sec - days * 24 * 3600 - hours * 3600 - minutes * 60;
+    minutes =
+        ((unsigned long) tv.tv_sec - days * 24 * 3600 - hours * 3600) / 60;
+    seconds = (unsigned long) tv.tv_sec - days * 24 * 3600 - hours * 3600 -
+              minutes * 60;
     hours -= (unsigned long) tz.tz_minuteswest / 60;
 
-    snprintf(buf, HG_UTIL_STAMP_MAX, "%02lu:%02lu:%02lu (GMT-%d)",
-        hours, minutes, seconds, tz.tz_minuteswest / 60);
-
-    ret = buf;
+    snprintf(buf, HG_UTIL_STAMP_MAX, "%02lu:%02lu:%02lu (GMT-%d)", hours,
+        minutes, seconds, tz.tz_minuteswest / 60);
 #endif
 
-    return ret;
+    return buf;
 }
 
 #ifdef __cplusplus

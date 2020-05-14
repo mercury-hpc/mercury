@@ -12,38 +12,37 @@
 #define MERCURY_THREAD_H
 
 #if !defined(_WIN32) && !defined(_GNU_SOURCE)
-# define _GNU_SOURCE
+#    define _GNU_SOURCE
 #endif
 #include "mercury_util_config.h"
-#include "mercury_util_error.h"
 
 #ifdef _WIN32
-# include <windows.h>
+#    include <windows.h>
 typedef HANDLE hg_thread_t;
 typedef LPTHREAD_START_ROUTINE hg_thread_func_t;
 typedef DWORD hg_thread_ret_t;
-# define HG_THREAD_RETURN_TYPE hg_thread_ret_t WINAPI
+#    define HG_THREAD_RETURN_TYPE hg_thread_ret_t WINAPI
 typedef DWORD hg_thread_key_t;
 typedef DWORD_PTR hg_cpu_set_t;
 #else
-# include <pthread.h>
+#    include <pthread.h>
 typedef pthread_t hg_thread_t;
 typedef void *(*hg_thread_func_t)(void *);
 typedef void *hg_thread_ret_t;
-# define HG_THREAD_RETURN_TYPE hg_thread_ret_t
+#    define HG_THREAD_RETURN_TYPE hg_thread_ret_t
 typedef pthread_key_t hg_thread_key_t;
-# ifdef __APPLE__
+#    ifdef __APPLE__
 /* Size definition for CPU sets.  */
-#  define HG_CPU_SETSIZE  1024
-#  define HG_NCPUBITS     (8 * sizeof (hg_cpu_mask_t))
+#        define HG_CPU_SETSIZE 1024
+#        define HG_NCPUBITS    (8 * sizeof(hg_cpu_mask_t))
 /* Type for array elements in 'cpu_set_t'.  */
 typedef hg_util_uint64_t hg_cpu_mask_t;
 typedef struct {
     hg_cpu_mask_t bits[HG_CPU_SETSIZE / HG_NCPUBITS];
 } hg_cpu_set_t;
-# else
+#    else
 typedef cpu_set_t hg_cpu_set_t;
-# endif
+#    endif
 #endif
 
 #ifdef __cplusplus
@@ -55,7 +54,7 @@ extern "C" {
  *
  * \param thread [IN/OUT]       pointer to thread object
  */
-HG_UTIL_EXPORT void
+HG_UTIL_PUBLIC void
 hg_thread_init(hg_thread_t *thread);
 
 /**
@@ -67,7 +66,7 @@ hg_thread_init(hg_thread_t *thread);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data);
 
 /**
@@ -77,7 +76,7 @@ hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT void
+HG_UTIL_PUBLIC void
 hg_thread_exit(hg_thread_ret_t ret);
 
 /**
@@ -87,7 +86,7 @@ hg_thread_exit(hg_thread_ret_t ret);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_join(hg_thread_t thread);
 
 /**
@@ -97,7 +96,7 @@ hg_thread_join(hg_thread_t thread);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_cancel(hg_thread_t thread);
 
 /**
@@ -105,7 +104,7 @@ hg_thread_cancel(hg_thread_t thread);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_yield(void);
 
 /**
@@ -131,7 +130,7 @@ hg_thread_equal(hg_thread_t t1, hg_thread_t t2);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_key_create(hg_thread_key_t *key);
 
 /**
@@ -142,7 +141,7 @@ hg_thread_key_create(hg_thread_key_t *key);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_key_delete(hg_thread_key_t key);
 
 /**
@@ -174,7 +173,7 @@ hg_thread_setspecific(hg_thread_key_t key, const void *value);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_getaffinity(hg_thread_t thread, hg_cpu_set_t *cpu_mask);
 
 /**
@@ -185,7 +184,7 @@ hg_thread_getaffinity(hg_thread_t thread, hg_cpu_set_t *cpu_mask);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_setaffinity(hg_thread_t thread, const hg_cpu_set_t *cpu_mask);
 
 /*---------------------------------------------------------------------------*/
@@ -214,36 +213,26 @@ hg_thread_equal(hg_thread_t t1, hg_thread_t t2)
 static HG_UTIL_INLINE void *
 hg_thread_getspecific(hg_thread_key_t key)
 {
-    void *ret;
-
 #ifdef _WIN32
-    ret = TlsGetValue(key);
+    return TlsGetValue(key);
 #else
-    ret = pthread_getspecific(key);
+    return pthread_getspecific(key);
 #endif
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
 hg_thread_setspecific(hg_thread_key_t key, const void *value)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
-    if (!TlsSetValue(key, (LPVOID) value)) {
-        HG_UTIL_LOG_ERROR("TlsSetValue() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (!TlsSetValue(key, (LPVOID) value))
+        return HG_UTIL_FAIL;
 #else
-    if (pthread_setspecific(key, value)) {
-        HG_UTIL_LOG_ERROR("pthread_setspecific() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (pthread_setspecific(key, value))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 #ifdef __cplusplus

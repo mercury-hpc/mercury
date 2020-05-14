@@ -52,28 +52,26 @@
 int
 hg_thread_rwlock_init(hg_thread_rwlock_t *rwlock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     InitializeSRWLock(rwlock);
 #else
-    if (pthread_rwlock_init(rwlock, NULL)) ret = HG_UTIL_FAIL;
+    if (pthread_rwlock_init(rwlock, NULL))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_rwlock_destroy(hg_thread_rwlock_t *rwlock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     /* nothing to do */
 #else
-    if (pthread_rwlock_destroy(rwlock)) ret = HG_UTIL_FAIL;
+    if (pthread_rwlock_destroy(rwlock))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
