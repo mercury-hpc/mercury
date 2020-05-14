@@ -96,11 +96,6 @@ struct na_mpi_rma_info {
     na_tag_t tag;       /* Tag used for the data transfer */
 };
 
-/* na_mpi_info_lookup */
-struct na_mpi_info_lookup {
-    na_addr_t addr;
-};
-
 /* na_mpi_info_send_unexpected */
 struct na_mpi_info_send_unexpected {
     MPI_Request data_request;
@@ -152,7 +147,6 @@ struct na_mpi_op_id {
     hg_atomic_int32_t completed;    /* Operation completed */
     na_bool_t canceled;  /* Operation canceled */
     union {
-      struct na_mpi_info_lookup lookup;
       struct na_mpi_info_send_unexpected send_unexpected;
       struct na_mpi_info_recv_unexpected recv_unexpected;
       struct na_mpi_info_send_expected send_expected;
@@ -287,11 +281,8 @@ na_mpi_op_destroy(
 static na_return_t
 na_mpi_addr_lookup(
         na_class_t   *na_class,
-        na_context_t *context,
-        na_cb_t       callback,
-        void         *arg,
         const char   *name,
-        na_op_id_t   *op_id
+        na_addr_t    *addr
         );
 
 /* addr_self */
@@ -571,7 +562,6 @@ const struct na_class_ops NA_PLUGIN_OPS(mpi) = {
         na_mpi_op_create,                     /* op_create */
         na_mpi_op_destroy,                    /* op_destroy */
         na_mpi_addr_lookup,                   /* addr_lookup */
-        NULL,                                 /* addr_lookup2 */
         na_mpi_addr_free,                     /* addr_free */
         NULL,                                 /* addr_set_remove */
         na_mpi_addr_self,                     /* addr_self */
@@ -637,7 +627,6 @@ na_mpi_accept_service(void *args)
         NA_LOG_ERROR("Could not accept connection");
     }
 
-    hg_thread_exit(ret);
     return ret;
 }
 
@@ -1285,22 +1274,11 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
-        na_cb_t callback, void *arg, const char *name, na_op_id_t *op_id)
+na_mpi_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
 {
-    struct na_mpi_op_id *na_mpi_op_id = NULL;
     struct na_mpi_addr *na_mpi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
     int mpi_ret;
-
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
-    na_mpi_op_id->context = context;
-    na_mpi_op_id->type = NA_CB_LOOKUP;
-    na_mpi_op_id->callback = callback;
-    na_mpi_op_id->arg = arg;
-    hg_atomic_set32(&na_mpi_op_id->completed, 0);
-    na_mpi_op_id->canceled = NA_FALSE;
 
     /* Allocate addr */
     na_mpi_addr = (struct na_mpi_addr *) malloc(sizeof(struct na_mpi_addr));
@@ -1315,7 +1293,7 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_mpi_addr->unexpected = NA_FALSE;
     na_mpi_addr->self = NA_FALSE;
     na_mpi_addr->dynamic = NA_FALSE;
-    na_mpi_op_id->info.lookup.addr = (na_addr_t) na_mpi_addr;
+
     memset(na_mpi_addr->port_name, '\0', MPI_MAX_PORT_NAME);
     /* get port_name and remote server rank */
     na_mpi_get_port_info(name, na_mpi_addr->port_name, &na_mpi_addr->rank);
@@ -1377,18 +1355,11 @@ na_mpi_addr_lookup(na_class_t *na_class, na_context_t *context,
         na_mpi_addr, entry);
     hg_thread_mutex_unlock(&NA_MPI_CLASS(na_class)->remote_list_mutex);
 
-    /* TODO MPI calls are blocking and so is na_mpi_addr_lookup,
-     * i.e. we always complete here for now */
-    ret = na_mpi_complete(na_mpi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not complete operation");
-        goto done;
-    }
+    *addr = (na_addr_t) na_mpi_addr;
 
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_addr);
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
     }
 
     return ret;
@@ -2344,9 +2315,6 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
         }
 
         switch (na_mpi_op_id->type) {
-            case NA_CB_LOOKUP:
-                NA_LOG_ERROR("Should not complete lookup here");
-                break;
             case NA_CB_RECV_UNEXPECTED:
                 NA_LOG_ERROR("Should not complete unexpected recv here");
                 break;
@@ -2465,9 +2433,6 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
     callback_info->type = na_mpi_op_id->type;
 
     switch (na_mpi_op_id->type) {
-        case NA_CB_LOOKUP:
-            callback_info->info.lookup.addr = na_mpi_op_id->info.lookup.addr;
-            break;
         case NA_CB_SEND_UNEXPECTED:
             break;
         case NA_CB_RECV_UNEXPECTED:
@@ -2598,9 +2563,6 @@ na_mpi_cancel(na_class_t *na_class, na_context_t NA_UNUSED *context,
         goto done;
 
     switch (na_mpi_op_id->type) {
-        case NA_CB_LOOKUP:
-            /* Nothing for now */
-            break;
         case NA_CB_SEND_UNEXPECTED:
             mpi_ret = MPI_Cancel(&na_mpi_op_id->info.send_unexpected.data_request);
             if (mpi_ret != MPI_SUCCESS) {

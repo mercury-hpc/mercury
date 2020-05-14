@@ -60,7 +60,6 @@ struct na_cci_addr {
     HG_QUEUE_HEAD(na_cci_op_id) rxs; /* Posted recvs */
     HG_QUEUE_HEAD(na_cci_info_recv_expected) early; /* Expected recvs not yet posted */
     char *uri; /* Peer's URI */
-    na_cci_op_id_t *na_cci_op_id; /* For addr_lookup() */
     hg_atomic_int32_t refcnt; /* Reference counter */
     na_bool_t unexpected; /* Address generated from unexpected recv */
     na_bool_t self; /* Boolean for self */
@@ -78,10 +77,6 @@ typedef enum na_cci_rma_op {
     NA_CCI_RMA_PUT, /* Request a put operation */
     NA_CCI_RMA_GET /* Request a get operation */
 } na_cci_rma_op_t;
-
-struct na_cci_info_lookup {
-    na_addr_t addr;
-};
 
 struct na_cci_info_send_unexpected {
     cci_op_id_t op_id; /* CCI operation ID */
@@ -141,7 +136,6 @@ struct na_cci_op_id {
     hg_atomic_int32_t completed; /* Operation completed */
     hg_atomic_int32_t canceled; /* Operation canceled  */
     union {
-        struct na_cci_info_lookup lookup;
         struct na_cci_info_send_unexpected send_unexpected;
         struct na_cci_info_recv_unexpected recv_unexpected;
         struct na_cci_info_send_expected send_expected;
@@ -223,8 +217,7 @@ na_cci_op_destroy(na_class_t *na_class, na_op_id_t op_id);
 
 /* addr_lookup */
 static na_return_t
-na_cci_addr_lookup(na_class_t * na_class, na_context_t * context,
-    na_cb_t callback, void *arg, const char *name, na_op_id_t * op_id);
+na_cci_addr_lookup(na_class_t * na_class, const char *name, na_addr_t * addr);
 
 /* addr_self */
 static na_return_t
@@ -379,7 +372,6 @@ const struct na_class_ops NA_PLUGIN_OPS(cci) = {
     na_cci_op_create,                       /* op_create */
     na_cci_op_destroy,                      /* op_destroy */
     na_cci_addr_lookup,                     /* addr_lookup */
-    NULL,                                   /* addr_lookup2 */
     na_cci_addr_free,                       /* addr_free */
     NULL,                                   /* addr_set_remove */
     na_cci_addr_self,                       /* addr_self */
@@ -786,34 +778,13 @@ na_cci_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_addr_lookup(na_class_t * na_class, na_context_t * context,
-    na_cb_t callback, void *arg, const char *name, na_op_id_t * op_id)
+na_cci_addr_lookup(na_class_t * na_class, const char *name, na_addr_t * addr)
 {
     cci_endpoint_t *e = NA_CCI_CLASS(na_class)->endpoint;
     char *uri = NA_CCI_CLASS(na_class)->uri;
-    struct na_cci_op_id *na_cci_op_id = NULL;
     na_cci_addr_t *na_cci_addr = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
-
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_cci_op_id = (na_cci_op_id_t *) *op_id;
-        hg_atomic_incr32(&na_cci_op_id->refcnt);
-    } else {
-        na_cci_op_id = (na_cci_op_id_t *) na_cci_op_create(na_class);
-        if (!na_cci_op_id) {
-            NA_LOG_ERROR("Could not create NA CCI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto out;
-        }
-    }
-    na_cci_op_id->context = context;
-    na_cci_op_id->type = NA_CB_LOOKUP;
-    na_cci_op_id->callback = callback;
-    na_cci_op_id->arg = arg;
-    hg_atomic_set32(&na_cci_op_id->completed, 0);
-    hg_atomic_set32(&na_cci_op_id->canceled, 0);
 
     /* Allocate addr */
     na_cci_addr = (na_cci_addr_t *) malloc(sizeof(*na_cci_addr));
@@ -832,13 +803,8 @@ na_cci_addr_lookup(na_class_t * na_class, na_context_t * context,
     hg_atomic_set32(&na_cci_addr->refcnt, 1);
     na_cci_addr->unexpected = NA_FALSE;
     na_cci_addr->self = NA_FALSE;
-    na_cci_addr->na_cci_op_id = na_cci_op_id;
-    na_cci_op_id->info.lookup.addr = (na_addr_t) na_cci_addr;
 
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = (na_op_id_t) na_cci_op_id;
-
+    /* TODO we would need to ensure that connect completes before using the addr */
     rc = cci_connect(e, name, uri, (uint32_t) strlen(uri) + 1, CCI_CONN_ATTR_RO,
         na_cci_addr, 0, NULL);
     if (rc) {
@@ -851,10 +817,11 @@ na_cci_addr_lookup(na_class_t * na_class, na_context_t * context,
         goto out;
     }
 
+    *addr = (na_addr_t) na_cci_addr;
+
 out:
     if (ret != NA_SUCCESS) {
         free(na_cci_addr);
-        na_cci_op_destroy(na_class, na_cci_op_id);
     }
     return ret;
 }
@@ -877,7 +844,6 @@ na_cci_addr_self(na_class_t * na_class, na_addr_t * addr)
     na_cci_addr->uri = strdup(NA_CCI_CLASS(na_class)->uri);
     na_cci_addr->unexpected = NA_FALSE;
     na_cci_addr->self = NA_TRUE;
-    na_cci_addr->na_cci_op_id = NULL;
     hg_atomic_set32(&na_cci_addr->refcnt, 1);
 
     *addr = (na_addr_t) na_cci_addr;
@@ -1982,31 +1948,14 @@ handle_connect(na_class_t NA_UNUSED *class, na_context_t NA_UNUSED *context,
     cci_endpoint_t *e, cci_event_t *event)
 {
     na_cci_addr_t *na_cci_addr = event->connect.context;
-    na_cci_op_id_t *na_cci_op_id = na_cci_addr->na_cci_op_id;
-    na_return_t ret = NA_SUCCESS;
-
-    if (!na_cci_addr->na_cci_op_id) {
-        /* User canceled lookup */
-        addr_decref(na_cci_addr);
-        op_id_decref(na_cci_op_id);
-        goto out;
-    }
-
-    na_cci_addr->na_cci_op_id = NULL;
 
     if (event->connect.status != CCI_SUCCESS) {
         NA_LOG_ERROR("connect to %s failed with %s", na_cci_addr->uri,
             cci_strerror(e, event->connect.status));
-        ret = NA_PROTOCOL_ERROR;
     } else {
         na_cci_addr->cci_addr = event->connect.connection;
     }
 
-    ret = na_cci_complete(na_cci_addr, na_cci_op_id, ret);
-    if (ret != NA_SUCCESS)
-        NA_LOG_ERROR("Could not complete operation");
-
-out:
     return;
 }
 
@@ -2113,10 +2062,6 @@ na_cci_complete(na_cci_addr_t *na_cci_addr, na_cci_op_id_t *na_cci_op_id,
     callback_info->type = na_cci_op_id->type;
 
     switch (na_cci_op_id->type) {
-        case NA_CB_LOOKUP:
-            addr_addref(na_cci_op_id->info.lookup.addr);
-            callback_info->info.lookup.addr = na_cci_op_id->info.lookup.addr;
-            break;
         case NA_CB_RECV_UNEXPECTED: {
             /* Fill callback info */
             callback_info->info.recv_unexpected.actual_buf_size =
@@ -2193,13 +2138,6 @@ na_cci_cancel(na_class_t * na_class, na_context_t NA_UNUSED * context,
     op_id_addref(na_cci_op_id); /* will be decremented in handle_*() */
 
     switch (na_cci_op_id->type) {
-        case NA_CB_LOOKUP: {
-            na_cci_addr = na_cci_op_id->info.lookup.addr;
-
-            /* handle_connect() will need to cleanup the addr */
-            na_cci_addr->na_cci_op_id = NULL;
-        }
-            break;
         case NA_CB_RECV_UNEXPECTED: {
             na_cci_op_id_t *tmp = NULL, *first = NULL;
 
