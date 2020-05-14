@@ -18,7 +18,16 @@
  * without entering system calls.
  */
 
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
 typedef struct hg_poll_set hg_poll_set_t;
+
+struct hg_poll_event {
+    hg_util_bool_t progressed; /* Indicates progress */
+    void *ptr;                 /* Pointer to user data */
+};
 
 /**
  * Callback that can be used to signal when it is safe to block on the
@@ -31,22 +40,30 @@ typedef struct hg_poll_set hg_poll_set_t;
 typedef hg_util_bool_t (*hg_poll_try_wait_cb_t)(void *arg);
 
 /**
- * Polling callback, arg can be used to pass user arguments, progressed
- * indicates whether progress has been done after that call returns.
+ * Polling callback, arg can be used to pass user arguments, event can be used
+ * to return user arguments back to hg_poll_wait.
  *
  * \param arg [IN]              pointer to user data
  * \param error [IN]            any error event has occurred
- * \param progressed [OUT]      pointer to boolean indicating progress made
+ * \param ptr [OUT]             event data output
  *
  * \return Non-negative on success or negative on failure
  */
-typedef int (*hg_poll_cb_t)(void *arg, int error, hg_util_bool_t *progressed);
+typedef int (*hg_poll_cb_t)(void *arg, int error, struct hg_poll_event *event);
+
+/*****************/
+/* Public Macros */
+/*****************/
 
 /**
  * Polling events.
  */
-#define HG_POLLIN   0x001   /* Ready to read.   */
-#define HG_POLLOUT  0x004   /* Ready to write.  */
+#define HG_POLLIN  0x001 /* Ready to read.   */
+#define HG_POLLOUT 0x004 /* Ready to write.  */
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,7 +74,7 @@ extern "C" {
  *
  * \return Pointer to poll set or NULL in case of failure
  */
-HG_UTIL_EXPORT hg_poll_set_t *
+HG_UTIL_PUBLIC hg_poll_set_t *
 hg_poll_create(void);
 
 /**
@@ -67,7 +84,7 @@ hg_poll_create(void);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_poll_destroy(hg_poll_set_t *poll_set);
 
 /**
@@ -77,7 +94,7 @@ hg_poll_destroy(hg_poll_set_t *poll_set);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_poll_get_fd(hg_poll_set_t *poll_set);
 
 /**
@@ -91,7 +108,7 @@ hg_poll_get_fd(hg_poll_set_t *poll_set);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_poll_set_try_wait(hg_poll_set_t *poll_set, hg_poll_try_wait_cb_t try_wait_cb,
     void *try_wait_arg);
 
@@ -106,7 +123,7 @@ hg_poll_set_try_wait(hg_poll_set_t *poll_set, hg_poll_try_wait_cb_t try_wait_cb,
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
     hg_poll_cb_t poll_cb, void *poll_cb_arg);
 
@@ -118,7 +135,7 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, unsigned int flags,
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_poll_remove(hg_poll_set_t *poll_set, int fd);
 
 /**
@@ -135,9 +152,10 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
-    hg_util_bool_t *progressed);
+    unsigned int max_events, struct hg_poll_event events[],
+    unsigned int *actual_events);
 
 #ifdef __cplusplus
 }

@@ -16,7 +16,20 @@
 /* Local Macros */
 /****************/
 
-#define HG_UTIL_LOG_MAX_BUF 256
+#define HG_LOG_MAX_BUF 256
+
+#ifdef HG_UTIL_HAS_LOG_COLOR
+#    define HG_LOG_ESC     "\033"
+#    define HG_LOG_RESET   HG_LOG_ESC "[0m"
+#    define HG_LOG_REG     HG_LOG_ESC "[0;"
+#    define HG_LOG_BOLD    HG_LOG_ESC "[1;"
+#    define HG_LOG_RED     "31m"
+#    define HG_LOG_GREEN   "32m"
+#    define HG_LOG_YELLOW  "33m"
+#    define HG_LOG_BLUE    "34m"
+#    define HG_LOG_MAGENTA "35m"
+#    define HG_LOG_CYAN    "36m"
+#endif
 
 /*******************/
 /* Local Variables */
@@ -60,22 +73,33 @@ void
 hg_log_write(unsigned int log_type, const char *module, const char *file,
     unsigned int line, const char *func, const char *format, ...)
 {
-    char buf[HG_UTIL_LOG_MAX_BUF];
-    int desc_len;
+    char buf[HG_LOG_MAX_BUF];
     FILE *stream = NULL;
     const char *msg_type = NULL;
+#ifdef HG_UTIL_HAS_LOG_COLOR
+    const char *color = "";
+#endif
     va_list ap;
 
     switch (log_type) {
         case HG_LOG_TYPE_DEBUG:
+#ifdef HG_UTIL_HAS_LOG_COLOR
+            color = HG_LOG_BLUE;
+#endif
             stream = hg_log_stream_debug_g ? hg_log_stream_debug_g : stdout;
             msg_type = "Debug";
             break;
         case HG_LOG_TYPE_WARNING:
+#ifdef HG_UTIL_HAS_LOG_COLOR
+            color = HG_LOG_MAGENTA;
+#endif
             stream = hg_log_stream_warning_g ? hg_log_stream_warning_g : stdout;
             msg_type = "Warning";
             break;
         case HG_LOG_TYPE_ERROR:
+#ifdef HG_UTIL_HAS_LOG_COLOR
+            color = HG_LOG_RED;
+#endif
             stream = hg_log_stream_error_g ? hg_log_stream_error_g : stderr;
             msg_type = "Error";
             break;
@@ -84,17 +108,21 @@ hg_log_write(unsigned int log_type, const char *module, const char *file,
     };
 
     va_start(ap, format);
-    desc_len = vsnprintf(buf, HG_UTIL_LOG_MAX_BUF, format, ap);
-#ifdef HG_UTIL_HAS_VERBOSE_ERROR
-    if (desc_len > HG_UTIL_LOG_MAX_BUF)
-        /* Truncated */
-        fprintf(stderr, "Warning, log message truncated\n");
-#else
-    (void) desc_len;
-#endif
+    vsnprintf(buf, HG_LOG_MAX_BUF, format, ap);
     va_end(ap);
 
-    /* Print using logging function */
-    hg_log_func_g(stream, "# %s -- %s -- %s:%d\n"
-        " # %s(): %s\n", module, msg_type, file, line, func, buf);
+/* Print using logging function */
+#ifdef HG_UTIL_HAS_LOG_COLOR
+    hg_log_func_g(stream,
+        "# %s%s[%s -- %s%s%s%s%s -- %s:%d]%s\n"
+        "##    %s%s%s()%s: %s\n",
+        HG_LOG_REG, color, module, HG_LOG_BOLD, color, msg_type, HG_LOG_REG,
+        color, file, line, HG_LOG_RESET, HG_LOG_REG, HG_LOG_YELLOW, func,
+        HG_LOG_RESET, buf);
+#else
+    hg_log_func_g(stream,
+        "# %s -- %s -- %s:%d\n"
+        " # %s(): %s\n",
+        module, msg_type, file, line, func, buf);
+#endif
 }

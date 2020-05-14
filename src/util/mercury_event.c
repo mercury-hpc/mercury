@@ -10,61 +10,62 @@
 
 #include "mercury_event.h"
 
+#include "mercury_util_error.h"
+
 /*---------------------------------------------------------------------------*/
 int
 hg_event_create(void)
 {
-    int fd = 0;
+    int fd = -1;
 #if defined(_WIN32)
 
 #elif defined(HG_UTIL_HAS_SYSEVENTFD_H)
     /* Create local signal event on self address */
     fd = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE);
-    if (fd == -1) {
-        HG_UTIL_LOG_ERROR("eventfd() failed (%s)", strerror(errno));
-        goto done;
-    }
+    HG_UTIL_CHECK_ERROR_NORET(
+        fd == -1, done, "eventfd() failed (%s)", strerror(errno));
 #elif defined(HG_UTIL_HAS_SYSEVENT_H)
     struct kevent kev;
     struct timespec timeout = {0, 0};
+    int rc;
 
     /* Create kqueue */
     fd = kqueue();
-    if (fd == -1) {
-        HG_UTIL_LOG_ERROR("kqueue() failed (%s)", strerror(errno));
-        goto done;
-    }
+    HG_UTIL_CHECK_ERROR_NORET(
+        fd == -1, done, "kqueue() failed (%s)", strerror(errno));
 
     EV_SET(&kev, HG_EVENT_IDENT, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, NULL);
 
     /* Add user-defined event to kqueue */
-    if (kevent(fd, &kev, 1, NULL, 0, &timeout) == -1) {
-        HG_UTIL_LOG_ERROR("kevent() failed (%s)", strerror(errno));
-        hg_event_destroy(fd);
-        fd = 0;
-        goto done;
-    }
+    rc = kevent(fd, &kev, 1, NULL, 0, &timeout);
+    HG_UTIL_CHECK_ERROR_NORET(
+        rc == -1, error, "kevent() failed (%s)", strerror(errno));
 #else
 
 #endif
 
 done:
     return fd;
+
+#if defined(HG_UTIL_HAS_SYSEVENT_H)
+error:
+    hg_event_destroy(fd);
+
+    return -1;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
 int
 hg_event_destroy(int fd)
 {
-    int ret = HG_UTIL_SUCCESS;
+    int ret = HG_UTIL_SUCCESS, rc;
 #if defined(_WIN32)
 
 #else
-    if (close(fd) == -1) {
-        HG_UTIL_LOG_ERROR("close() failed (%s)", strerror(errno));
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+    rc = close(fd);
+    HG_UTIL_CHECK_ERROR(rc == -1, done, ret, HG_UTIL_FAIL,
+        "close() failed (%s)", strerror(errno));
 #endif
 done:
     return ret;

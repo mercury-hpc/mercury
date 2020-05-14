@@ -11,13 +11,13 @@ struct hg_test_poll_cb_args {
 };
 
 static int
-poll_cb(void *arg, int error, hg_util_bool_t *progressed)
+poll_cb(void *arg, int error, struct hg_poll_event *event)
 {
     struct hg_test_poll_cb_args *poll_cb_args =
         (struct hg_test_poll_cb_args *) arg;
     (void) error;
 
-    hg_event_get(poll_cb_args->event_fd, progressed);
+    hg_event_get(poll_cb_args->event_fd, &event->progressed);
 
     return HG_UTIL_SUCCESS;
 }
@@ -27,9 +27,9 @@ main(void)
 {
     struct hg_test_poll_cb_args poll_cb_args;
     hg_poll_set_t *poll_set;
-    hg_util_bool_t progressed;
-    int event_fd;
-    int ret = EXIT_SUCCESS;
+    struct hg_poll_event events[1];
+    unsigned int nevents = 0;
+    int event_fd, ret = EXIT_SUCCESS;
 
     poll_set = hg_poll_create();
     event_fd = hg_event_create();
@@ -43,43 +43,57 @@ main(void)
     hg_event_set(event_fd);
 
     /* Wait with timeout 0 */
-    hg_poll_wait(poll_set, 0, &progressed);
-    if (!progressed) {
+    hg_poll_wait(poll_set, 0, 1, events, &nevents);
+    if ((nevents != 1) || !events[0].progressed) {
         /* We expect success */
-        fprintf(stderr, "Error: did not progress correctly\n");
+        fprintf(stderr, "Error: should have progressed\n");
         ret = EXIT_FAILURE;
+        goto done;
     }
 
     /* Reset progressed */
-    progressed = HG_UTIL_FALSE;
+    nevents = 0;
+    events[0].progressed = HG_UTIL_FALSE;
 
     /* Wait with timeout 0 */
-    hg_poll_wait(poll_set, 0, &progressed);
-    if (progressed) {
+    hg_poll_wait(poll_set, 0, 1, events, &nevents);
+    if ((nevents != 1) || events[0].progressed) {
         /* We do not expect success */
-        fprintf(stderr, "Error: did not progress correctly\n");
+        fprintf(stderr, "Error: should not have progressed\n");
         ret = EXIT_FAILURE;
+        goto done;
     }
 
+    /* Reset progressed */
+    nevents = 0;
+    events[0].progressed = HG_UTIL_FALSE;
+
     /* Wait with timeout */
-    hg_poll_wait(poll_set, 100, &progressed);
-    if (progressed) {
+    hg_poll_wait(poll_set, 100, 1, events, &nevents);
+    if (nevents || events[0].progressed) {
         /* We do not expect success */
-        fprintf(stderr, "Error: did not progress correctly\n");
+        fprintf(stderr, "Error: should not have progressed\n");
         ret = EXIT_FAILURE;
+        goto done;
     }
 
     /* Set event */
     hg_event_set(event_fd);
 
+    /* Reset progressed */
+    nevents = 0;
+    events[0].progressed = HG_UTIL_FALSE;
+
     /* Wait with timeout */
-    hg_poll_wait(poll_set, 1000, &progressed);
-    if (!progressed) {
+    hg_poll_wait(poll_set, 1000, 1, events, &nevents);
+    if (!nevents || !events[0].progressed) {
         /* We expect success */
         fprintf(stderr, "Error: did not progress correctly\n");
         ret = EXIT_FAILURE;
+        goto done;
     }
 
+done:
     hg_poll_remove(poll_set, event_fd);
     hg_poll_destroy(poll_set);
     hg_event_destroy(event_fd);

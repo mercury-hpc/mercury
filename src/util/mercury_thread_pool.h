@@ -11,10 +11,13 @@
 #ifndef MERCURY_THREAD_POOL_H
 #define MERCURY_THREAD_POOL_H
 
-#include "mercury_thread.h"
 #include "mercury_queue.h"
+#include "mercury_thread.h"
 #include "mercury_thread_condition.h"
-#include "mercury_util_error.h"
+
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
 
 typedef struct hg_thread_pool hg_thread_pool_t;
 
@@ -32,6 +35,14 @@ struct hg_thread_work {
     HG_QUEUE_ENTRY(hg_thread_work) entry; /* Internal */
 };
 
+/*****************/
+/* Public Macros */
+/*****************/
+
+/*********************/
+/* Public Prototypes */
+/*********************/
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -45,7 +56,7 @@ extern "C" {
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_pool_init(unsigned int thread_count, hg_thread_pool_t **pool);
 
 /**
@@ -55,7 +66,7 @@ hg_thread_pool_init(unsigned int thread_count, hg_thread_pool_t **pool);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_pool_destroy(hg_thread_pool_t *pool);
 
 /**
@@ -76,29 +87,16 @@ hg_thread_pool_post(hg_thread_pool_t *pool, struct hg_thread_work *work)
 {
     int ret = HG_UTIL_SUCCESS;
 
-    if (!pool) {
-        HG_UTIL_LOG_ERROR("Thread pool not initialized");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+    if (!pool || !work)
+        return HG_UTIL_FAIL;
 
-    if (!work) {
-        HG_UTIL_LOG_ERROR("Thread work cannot be NULL");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
-
-    if (!work->func) {
-        HG_UTIL_LOG_ERROR("Function pointer cannot be NULL");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+    if (!work->func)
+        return HG_UTIL_FAIL;
 
     hg_thread_mutex_lock(&pool->mutex);
 
     /* Are we shutting down ? */
     if (pool->shutdown) {
-        HG_UTIL_LOG_ERROR("Pool is shutting down");
         ret = HG_UTIL_FAIL;
         goto unlock;
     }
@@ -107,17 +105,13 @@ hg_thread_pool_post(hg_thread_pool_t *pool, struct hg_thread_work *work)
     HG_QUEUE_PUSH_TAIL(&pool->queue, work, entry);
 
     /* Wake up sleeping worker */
-    if (pool->sleeping_worker_count) {
-        if (hg_thread_cond_signal(&pool->cond) != HG_UTIL_SUCCESS) {
-            HG_UTIL_LOG_ERROR("Cannot signal pool condition");
-            ret = HG_UTIL_FAIL;
-        }
-    }
+    if (pool->sleeping_worker_count &&
+        (hg_thread_cond_signal(&pool->cond) != HG_UTIL_SUCCESS))
+        ret = HG_UTIL_FAIL;
 
 unlock:
     hg_thread_mutex_unlock(&pool->mutex);
 
-done:
     return ret;
 }
 
