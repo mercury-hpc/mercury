@@ -574,17 +574,41 @@ HG_Registered_disabled_response(
  * \param callback [IN]         pointer to function callback
  * \param arg [IN]              pointer to data passed to callback
  * \param name [IN]             lookup name
- * \param op_id [OUT]           pointer to returned operation ID
+ * \param op_id [OUT]           pointer to returned operation ID (unused)
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Addr_lookup(
+HG_Addr_lookup1(
         hg_context_t *context,
         hg_cb_t       callback,
         void         *arg,
         const char   *name,
         hg_op_id_t   *op_id
+        );
+
+/* This will map to HG_Addr_lookup2() in the future */
+#ifndef HG_Addr_lookup
+#define HG_Addr_lookup HG_Addr_lookup1
+#endif
+
+/**
+ * Lookup an addr from a peer address/name. Addresses need to be
+ * freed by calling HG_Addr_free().
+ *
+ * \remark This is the immediate version of HG_Addr_lookup1().
+ *
+ * \param hg_class [IN/OUT]     pointer to HG class
+ * \param name [IN]             lookup name
+ * \param addr [OUT]            pointer to abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Addr_lookup2(
+        hg_class_t *hg_class,
+        const char *name,
+        hg_addr_t  *addr
         );
 
 /**
