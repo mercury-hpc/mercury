@@ -117,5 +117,6 @@ typedef hg_uint8_t   hg_bool_t;
 #cmakedefine HG_HAS_COLLECT_STATS
 
 #cmakedefine HG_HAS_VERBOSE_ERROR
+#cmakedefine HG_HAS_DEBUG
 
 #endif /* MERCURY_CONFIG_H */

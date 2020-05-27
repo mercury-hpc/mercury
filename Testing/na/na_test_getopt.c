@@ -17,13 +17,14 @@
 
 int na_test_opt_ind_g = 1; /* token pointer */
 const char *na_test_opt_arg_g = NULL; /* flag argument (or value) */
-const char *na_test_short_opt_g = "hc:d:p:H:LsSak:l:t:bmC:V";
+const char *na_test_short_opt_g = "hc:d:p:H:P:LsSak:l:t:bmC:V";
 const struct na_test_opt na_test_opt_g[] = {
     { "help", no_arg, 'h'},
     { "comm", require_arg, 'c' },
     { "domain", require_arg, 'd' },
     { "protocol", require_arg, 'p' },
     { "hostname", require_arg, 'H' },
+    { "port", require_arg, 'P' },
     { "listen", no_arg, 'L' },
     { "mpi_static", no_arg, 's' },
     { "self_send", no_arg, 'S' },

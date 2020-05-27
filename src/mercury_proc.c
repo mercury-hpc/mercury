@@ -103,8 +103,8 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
             break;
     }
 
-#ifdef HG_HAS_CHECKSUMS
     if (hash_method) {
+#ifdef HG_HAS_CHECKSUMS
         int rc = mchecksum_init(hash_method, &hg_proc->checksum);
         HG_CHECK_ERROR(rc < 0, error, ret, HG_CHECKSUM_ERROR,
             "Could not initialize checksum");
@@ -113,8 +113,8 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc)
         hg_proc->checksum_hash = (char *) malloc(hg_proc->checksum_size);
         HG_CHECK_ERROR(hg_proc->checksum_hash == NULL, error, ret,
             HG_NOMEM, "Could not allocate space for checksum hash");
-    }
 #endif
+    }
 
     /* Default to proc_buf */
     hg_proc->current_buf = &hg_proc->proc_buf;
@@ -491,8 +491,8 @@ done:
 hg_return_t
 hg_proc_flush(hg_proc_t proc)
 {
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
 #ifdef HG_HAS_CHECKSUMS
+    struct hg_proc *hg_proc = (struct hg_proc *) proc;
     int rc;
 #endif
     hg_return_t ret = HG_SUCCESS;

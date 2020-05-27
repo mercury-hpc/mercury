@@ -29,7 +29,6 @@ struct hg_test_worker {
     struct hg_thread_work thread_work;
     hg_class_t *hg_class;
     hg_context_t *context;
-    hg_uint8_t context_id;
 };
 #endif
 
@@ -81,32 +80,11 @@ static HG_INLINE HG_THREAD_RETURN_TYPE
 hg_test_progress_work(void *arg)
 {
     struct hg_test_worker *worker = (struct hg_test_worker *) arg;
-    hg_context_t *context = NULL;
-    struct hg_test_context_info *hg_test_context_info = NULL;
+    hg_context_t *context = worker->context;
+    struct hg_test_context_info *hg_test_context_info =
+        (struct hg_test_context_info *) HG_Context_get_data(context);
     HG_THREAD_RETURN_TYPE tret = (HG_THREAD_RETURN_TYPE) 0;
     hg_return_t ret = HG_SUCCESS;
-
-    if (!worker->context) {
-        HG_TEST_LOG_DEBUG("Creating context with ID %d",
-            (int) worker->context_id);
-        context = HG_Context_create_id(worker->hg_class, worker->context_id);
-        HG_TEST_CHECK_ERROR(context == NULL, done, ret, HG_FAULT,
-            "HG_Context_create_id() failed");
-
-        /* Attach context info to context */
-        hg_test_context_info = malloc(sizeof(struct hg_test_context_info));
-        HG_TEST_CHECK_ERROR(hg_test_context_info == NULL, done, ret,
-            HG_NOMEM_ERROR, "Could not allocate HG test context info");
-
-        hg_atomic_init32(&hg_test_context_info->finalizing, 0);
-        ret = HG_Context_set_data(context, hg_test_context_info, free);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_set_data() failed"
-            " (%s)", HG_Error_to_string(ret));
-    } else {
-        context = worker->context;
-        hg_test_context_info =
-            (struct hg_test_context_info *) HG_Context_get_data(context);
-    }
 
     do {
         unsigned int actual_count = 0;
@@ -133,12 +111,6 @@ hg_test_progress_work(void *arg)
     HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
         tret, (HG_THREAD_RETURN_TYPE) 0, "HG_Progress() failed (%s)",
         HG_Error_to_string(ret));
-
-    if (!worker->context) {
-        ret = HG_Context_destroy(context);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_destroy() failed"
-            " (%s)", HG_Error_to_string(ret));
-    }
 
 done:
     return tret;
@@ -174,21 +146,19 @@ main(int argc, char *argv[])
 
         progress_workers = malloc(
             sizeof(struct hg_test_worker) * context_count);
-        HG_TEST_CHECK_ERROR(progress_workers == NULL, done, rc, EXIT_FAILURE,
+        HG_TEST_CHECK_ERROR(progress_workers == NULL, error, rc, EXIT_FAILURE,
             "Could not allocate progress_workers");
 
         progress_workers[0].thread_work.func = hg_test_progress_work;
         progress_workers[0].thread_work.args = &progress_workers[0];
         progress_workers[0].hg_class = hg_test_info.hg_class;
         progress_workers[0].context = hg_test_info.context;
-        progress_workers[0].context_id = 0;
 
         for (i = 0; i < context_count - 1; i++) {
             progress_workers[i + 1].thread_work.func = hg_test_progress_work;
             progress_workers[i + 1].thread_work.args = &progress_workers[i + 1];
             progress_workers[i + 1].hg_class = hg_test_info.hg_class;
-            progress_workers[i + 1].context = NULL;
-            progress_workers[i + 1].context_id = (hg_uint8_t) (i + 1);
+            progress_workers[i + 1].context = hg_test_info.secondary_contexts[i];
 
             hg_thread_pool_post(hg_test_info.thread_pool,
                 &progress_workers[i + 1].thread_work);
@@ -208,7 +178,7 @@ main(int argc, char *argv[])
             ret = HG_Trigger(hg_test_info.context, HG_TEST_TRIGGER_TIMEOUT, 1,
                 NULL);
         } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
-        HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
+        HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, error,
             rc, EXIT_FAILURE, "HG_Trigger() failed (%s)",
             HG_Error_to_string(ret));
 
@@ -221,7 +191,7 @@ main(int argc, char *argv[])
         do {
             ret = HG_Trigger(hg_test_info.context, 0, 1, &actual_count);
         } while ((ret == HG_SUCCESS) && actual_count);
-        HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
+        HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, error,
             rc, EXIT_FAILURE, "HG_Trigger() failed (%s)",
             HG_Error_to_string(ret));
 
@@ -231,12 +201,12 @@ main(int argc, char *argv[])
         /* Use same value as HG_TEST_TRIGGER_TIMEOUT for convenience */
         ret = HG_Progress(hg_test_info.context, HG_TEST_TRIGGER_TIMEOUT);
     } while (ret == HG_SUCCESS || ret == HG_TIMEOUT);
-    HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
+    HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, error,
         rc, EXIT_FAILURE, "HG_Progress() failed (%s)",
         HG_Error_to_string(ret));
 #endif
 
-done:
+error:
     ret = HG_Test_finalize(&hg_test_info);
     HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Test_finalize() failed");
 
@@ -244,5 +214,6 @@ done:
     free(progress_workers);
 #endif
 
+done:
     return rc;
 }

@@ -225,6 +225,11 @@ endif()
 
 if(MERCURY_ENABLE_VERBOSE_ERROR)
   set(NA_HAS_VERBOSE_ERROR 1)
+  if(MERCURY_ENABLE_DEBUG)
+    set(NA_HAS_DEBUG 1)
+  else()
+    set(NA_HAS_DEBUG 0)
+  endif()
 else()
   set(NA_HAS_VERBOSE_ERROR 0)
 endif()
@@ -239,6 +244,7 @@ configure_file(
 #------------------------------------------------------------------------------
 set(NA_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/na.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/na_ip.c
 )
 
 if(NA_HAS_BMI)

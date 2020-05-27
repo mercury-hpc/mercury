@@ -25,13 +25,8 @@ typedef OPA_ptr_t hg_atomic_int64_t; /* OPA has only limited 64-bit support */
 # define HG_ATOMIC_VAR_INIT(x) OPA_PTR_T_INITIALIZER(x)
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
 # include <stdatomic.h>
-# ifdef __INTEL_COMPILER
 typedef atomic_int hg_atomic_int32_t;
 typedef atomic_llong hg_atomic_int64_t;
-# else
-typedef _Atomic hg_util_int32_t hg_atomic_int32_t;
-typedef _Atomic hg_util_int64_t hg_atomic_int64_t;
-# endif
 # define HG_ATOMIC_VAR_INIT(x) ATOMIC_VAR_INIT(x)
 #elif defined(__APPLE__)
 # include <libkern/OSAtomic.h>
@@ -94,7 +89,6 @@ hg_atomic_incr32(hg_atomic_int32_t *ptr);
 static HG_UTIL_INLINE hg_util_int32_t
 hg_atomic_decr32(hg_atomic_int32_t *ptr);
 
-#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
 /**
  * OR atomic value (32-bit integer).
  *
@@ -127,7 +121,6 @@ hg_atomic_xor32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
  */
 static HG_UTIL_INLINE hg_util_int32_t
 hg_atomic_and32(hg_atomic_int32_t *ptr, hg_util_int32_t value);
-#endif
 
 /**
  * Compare and swap values (32-bit integer).
@@ -171,7 +164,6 @@ hg_atomic_set64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_get64(hg_atomic_int64_t *ptr);
 
-#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
 /**
  * Increment atomic value (64-bit integer).
  *
@@ -192,7 +184,6 @@ hg_atomic_incr64(hg_atomic_int64_t *ptr);
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_decr64(hg_atomic_int64_t *ptr);
 
-#if defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H)
 /**
  * OR atomic value (64-bit integer).
  *
@@ -225,9 +216,6 @@ hg_atomic_xor64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
  */
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_and64(hg_atomic_int64_t *ptr, hg_util_int64_t value);
-
-#endif /* defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H) */
-#endif /* !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H) */
 
 /**
  * Compare and swap values (64-bit integer).
@@ -341,7 +329,6 @@ hg_atomic_decr32(hg_atomic_int32_t *ptr)
     return ret;
 }
 
-#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int32_t
 hg_atomic_or32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
@@ -350,12 +337,14 @@ hg_atomic_or32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 
 #if defined(_WIN32)
     ret = InterlockedOrNoFence(&ptr->value, value);
-#elif defined(HG_UTIL_HAS_STDATOMIC_H)
+#elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     ret = atomic_fetch_or_explicit(ptr, value, memory_order_acq_rel);
 #elif defined(__APPLE__)
     ret = OSAtomicOr32Orig((uint32_t) value, (volatile uint32_t *) &ptr->value);
 #else
-    #error "Not supported on this platform."
+    do {
+        ret = hg_atomic_get32(ptr);
+    } while (!hg_atomic_cas32(ptr, ret, (ret | value)));
 #endif
 
     return ret;
@@ -369,12 +358,14 @@ hg_atomic_xor32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 
 #if defined(_WIN32)
     ret = InterlockedXorNoFence(&ptr->value, value);
-#elif defined(HG_UTIL_HAS_STDATOMIC_H)
+#elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     ret = atomic_fetch_xor_explicit(ptr, value, memory_order_acq_rel);
 #elif defined(__APPLE__)
     ret = OSAtomicXor32Orig((uint32_t) value, (volatile uint32_t *) &ptr->value);
 #else
-    #error "Not supported on this platform."
+    do {
+        ret = hg_atomic_get32(ptr);
+    } while (!hg_atomic_cas32(ptr, ret, (ret ^ value)));
 #endif
 
     return ret;
@@ -388,17 +379,18 @@ hg_atomic_and32(hg_atomic_int32_t *ptr, hg_util_int32_t value)
 
 #if defined(_WIN32)
     ret = InterlockedAndNoFence(&ptr->value, value);
-#elif defined(HG_UTIL_HAS_STDATOMIC_H)
+#elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     ret = atomic_fetch_and_explicit(ptr, value, memory_order_acq_rel);
 #elif defined(__APPLE__)
     ret = OSAtomicAnd32Orig((uint32_t) value, (volatile uint32_t *) &ptr->value);
 #else
-    #error "Not supported on this platform."
+    do {
+        ret = hg_atomic_get32(ptr);
+    } while (!hg_atomic_cas32(ptr, ret, (ret & value)));
 #endif
 
     return ret;
 }
-#endif /* !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H) */
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_bool_t
@@ -473,7 +465,6 @@ hg_atomic_get64(hg_atomic_int64_t *ptr)
     return ret;
 }
 
-#if !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_incr64(hg_atomic_int64_t *ptr)
@@ -482,12 +473,15 @@ hg_atomic_incr64(hg_atomic_int64_t *ptr)
 
 #if defined(_WIN32)
     ret = InterlockedIncrementNoFence64(&ptr->value);
-#elif defined(HG_UTIL_HAS_STDATOMIC_H)
+#elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     ret = atomic_fetch_add_explicit(ptr, 1, memory_order_acq_rel) + 1;
 #elif defined(__APPLE__)
     ret = OSAtomicIncrement64(&ptr->value);
 #else
-    #error "Not supported on this platform."
+    do {
+        ret = hg_atomic_get64(ptr);
+    } while (!hg_atomic_cas64(ptr, ret, ret + 1));
+    ret++;
 #endif
 
     return ret;
@@ -501,18 +495,20 @@ hg_atomic_decr64(hg_atomic_int64_t *ptr)
 
 #if defined(_WIN32)
     ret = InterlockedDecrementNoFence64(&ptr->value);
-#elif defined(HG_UTIL_HAS_STDATOMIC_H)
+#elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     ret = atomic_fetch_sub_explicit(ptr, 1, memory_order_acq_rel) - 1;
 #elif defined(__APPLE__)
     ret = OSAtomicDecrement64(&ptr->value);
 #else
-    #error "Not supported on this platform."
+    do {
+        ret = hg_atomic_get64(ptr);
+    } while (!hg_atomic_cas64(ptr, ret, ret - 1));
+    ret--;
 #endif
 
     return ret;
 }
 
-#if defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H)
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_int64_t
 hg_atomic_or64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
@@ -521,10 +517,12 @@ hg_atomic_or64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 
 #if defined(_WIN32)
     ret = InterlockedOr64NoFence(&ptr->value, value);
-#elif defined(HG_UTIL_HAS_STDATOMIC_H)
+#elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     ret = atomic_fetch_or_explicit(ptr, value, memory_order_acq_rel);
 #else
-    #error "Not supported on this platform."
+    do {
+        ret = hg_atomic_get64(ptr);
+    } while (!hg_atomic_cas64(ptr, ret, (ret | value)));
 #endif
 
     return ret;
@@ -538,10 +536,12 @@ hg_atomic_xor64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 
 #if defined(_WIN32)
     ret = InterlockedXor64NoFence(&ptr->value, value);
-#elif defined(HG_UTIL_HAS_STDATOMIC_H)
+#elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     ret = atomic_fetch_xor_explicit(ptr, value, memory_order_acq_rel);
 #else
-    #error "Not supported on this platform."
+    do {
+        ret = hg_atomic_get64(ptr);
+    } while (!hg_atomic_cas64(ptr, ret, (ret ^ value)));
 #endif
 
     return ret;
@@ -555,16 +555,16 @@ hg_atomic_and64(hg_atomic_int64_t *ptr, hg_util_int64_t value)
 
 #if defined(_WIN32)
     ret = InterlockedAnd64NoFence(&ptr->value, value);
-#elif defined(HG_UTIL_HAS_STDATOMIC_H)
+#elif defined(HG_UTIL_HAS_STDATOMIC_H) && !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H)
     ret = atomic_fetch_and_explicit(ptr, value, memory_order_acq_rel);
 #else
-    #error "Not supported on this platform."
+    do {
+        ret = hg_atomic_get64(ptr);
+    } while (!hg_atomic_cas64(ptr, ret, (ret & value)));
 #endif
 
     return ret;
 }
-#endif /* defined(_WIN32) || defined(HG_UTIL_HAS_STDATOMIC_H) */
-#endif /* !defined(HG_UTIL_HAS_OPA_PRIMITIVES_H) */
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE hg_util_bool_t

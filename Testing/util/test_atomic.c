@@ -1,133 +1,245 @@
 #include "mercury_atomic.h"
-#include "mercury_thread.h"
 
 #include "mercury_test_config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
-static HG_THREAD_RETURN_TYPE
-thread_cb_incr32(void *arg)
-{
-    hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
-    hg_atomic_int32_t *atomic_int32 = (hg_atomic_int32_t *) arg;
-    hg_util_int32_t incr;
-
-    incr = hg_atomic_incr32(atomic_int32);
-    if (!incr)
-        fprintf(stderr, "Error: incr is %d\n", incr);
-    incr = hg_atomic_decr32(atomic_int32);
-    if (incr)
-        fprintf(stderr, "Error: incr is %d\n", incr);
-
-    hg_thread_exit(thread_ret);
-    return thread_ret;
-}
-
-static HG_THREAD_RETURN_TYPE
-thread_cb_cas32(void *arg)
-{
-    hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
-    hg_atomic_int32_t *atomic_int32 = (hg_atomic_int32_t *) arg;
-
-    hg_atomic_incr32(atomic_int32);
-
-    if (HG_UTIL_TRUE == hg_atomic_cas32(atomic_int32, 2, 99)) {
-        hg_atomic_incr32(atomic_int32);
-    }
-
-    hg_thread_exit(thread_ret);
-    return thread_ret;
-}
-
-#ifndef HG_UTIL_HAS_OPA_PRIMITIVES_H
-static HG_THREAD_RETURN_TYPE
-thread_cb_incr64(void *arg)
-{
-    hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
-    hg_atomic_int64_t *atomic_int64 = (hg_atomic_int64_t *) arg;
-    hg_util_int64_t incr;
-
-    incr = hg_atomic_incr64(atomic_int64);
-    if (!incr)
-        fprintf(stderr, "Error: incr is %ld\n", (long) incr);
-    incr = hg_atomic_decr64(atomic_int64);
-    if (incr)
-        fprintf(stderr, "Error: incr is %ld\n", (long) incr);
-
-    hg_thread_exit(thread_ret);
-    return thread_ret;
-}
-
-static HG_THREAD_RETURN_TYPE
-thread_cb_cas64(void *arg)
-{
-    hg_thread_ret_t thread_ret = (hg_thread_ret_t) 0;
-    hg_atomic_int64_t *atomic_int64 = (hg_atomic_int64_t *) arg;
-
-    hg_atomic_incr64(atomic_int64);
-
-    if (HG_UTIL_TRUE == hg_atomic_cas64(atomic_int64, 2, 99)) {
-        hg_atomic_incr64(atomic_int64);
-    }
-
-    hg_thread_exit(thread_ret);
-    return thread_ret;
-}
-#endif
-
 int
-main(int argc, char *argv[])
+main(void)
 {
-    hg_thread_t thread, thread1;
     hg_atomic_int32_t atomic_int32;
-    hg_util_int32_t value32 = 0;
-#ifndef HG_UTIL_HAS_OPA_PRIMITIVES_H
+    hg_util_int32_t val32, init_val32;
     hg_atomic_int64_t atomic_int64;
-    hg_util_int64_t value64 = 0;
-#endif
+    hg_util_int64_t val64, init_val64;
     int ret = EXIT_SUCCESS;
 
-    (void) argc;
-    (void) argv;
-
-    /* Atomic 32 test */
-    hg_thread_init(&thread);
-    hg_atomic_set32(&atomic_int32, value32);
-    hg_thread_create(&thread, thread_cb_incr32, &atomic_int32);
-    hg_thread_join(thread);
-
-    hg_thread_init(&thread1);
-    hg_thread_create(&thread1, thread_cb_cas32, &atomic_int32);
-    hg_thread_create(&thread, thread_cb_cas32, &atomic_int32);
-    hg_thread_join(thread);
-    hg_thread_join(thread1);
-
-    value32 = hg_atomic_get32(&atomic_int32);
-    if (value32 != 100) {
-        fprintf(stderr, "Error: atomic value is %d\n", value32);
+    /* Init32 test */
+    hg_atomic_init32(&atomic_int32, 1);
+    val32 = hg_atomic_get32(&atomic_int32);
+    if (val32 != 1) {
+        fprintf(stderr, "Error in hg_atomic_init32: atomic value is %d\n", val32);
         ret = EXIT_FAILURE;
+        goto done;
     }
 
-#ifndef HG_UTIL_HAS_OPA_PRIMITIVES_H
-    /* Atomic 64 test */
-    hg_thread_init(&thread);
-    hg_atomic_set64(&atomic_int64, value64);
-    hg_thread_create(&thread, thread_cb_incr64, &atomic_int64);
-    hg_thread_join(thread);
-
-    hg_thread_init(&thread1);
-    hg_thread_create(&thread1, thread_cb_cas64, &atomic_int64);
-    hg_thread_create(&thread, thread_cb_cas64, &atomic_int64);
-    hg_thread_join(thread);
-    hg_thread_join(thread1);
-
-    value64 = hg_atomic_get64(&atomic_int64);
-    if (value64 != 100) {
-        fprintf(stderr, "Error: atomic value is %ld\n", (long) value64);
+    /* Set32 test */
+    hg_atomic_set32(&atomic_int32, 2);
+    val32 = hg_atomic_get32(&atomic_int32);
+    if (val32 != 2) {
+        fprintf(stderr, "Error in hg_atomic_set32: atomic value is %d\n", val32);
         ret = EXIT_FAILURE;
+        goto done;
     }
-#endif
 
+    /* Incr32 test */
+    val32 = hg_atomic_incr32(&atomic_int32);
+    if (val32 != 3) {
+        fprintf(stderr, "Error in hg_atomic_incr32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val32 = hg_atomic_get32(&atomic_int32);
+    if (val32 != 3) {
+        fprintf(stderr, "Error in hg_atomic_incr32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Decr32 test */
+    val32 = hg_atomic_decr32(&atomic_int32);
+    if (val32 != 2) {
+        fprintf(stderr, "Error in hg_atomic_decr32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val32 = hg_atomic_get32(&atomic_int32);
+    if (val32 != 2) {
+        fprintf(stderr, "Error in hg_atomic_decr32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Or32 test */
+    init_val32 = hg_atomic_get32(&atomic_int32);
+    val32 = hg_atomic_or32(&atomic_int32, 8);
+    if (val32 != init_val32) {
+        fprintf(stderr, "Error in hg_atomic_or32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val32 = hg_atomic_get32(&atomic_int32);
+    if (val32 != (init_val32 | 8)) {
+        fprintf(stderr, "Error in hg_atomic_or32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Xor32 test */
+    init_val32 = hg_atomic_get32(&atomic_int32);
+    val32 = hg_atomic_xor32(&atomic_int32, 17);
+    if (val32 != init_val32) {
+        fprintf(stderr, "Error in hg_atomic_xor32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val32 = hg_atomic_get32(&atomic_int32);
+    if (val32 != (init_val32 ^ 17)) {
+        fprintf(stderr, "Error in hg_atomic_xor32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* And32 test */
+    init_val32 = hg_atomic_get32(&atomic_int32);
+    val32 = hg_atomic_and32(&atomic_int32, 33);
+    if (val32 != init_val32) {
+        fprintf(stderr, "Error in hg_atomic_and32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val32 = hg_atomic_get32(&atomic_int32);
+    if (val32 != (init_val32 & 33)) {
+        fprintf(stderr, "Error in hg_atomic_and32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Cas32 test */
+    init_val32 = hg_atomic_get32(&atomic_int32);
+    val32 = 128;
+    if (hg_atomic_cas32(&atomic_int32, init_val32, val32) == HG_UTIL_FALSE) {
+        fprintf(stderr, "Error in hg_atomic_cas32: could not swap values"
+            "with %d, is %d, expected %d\n", val32,
+            hg_atomic_get32(&atomic_int32), init_val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val32 = hg_atomic_get32(&atomic_int32);
+    if (val32 != 128) {
+        fprintf(stderr, "Error in hg_atomic_cas32: atomic value is %d\n", val32);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    if (hg_atomic_cas32(&atomic_int32, 1, 0) == HG_UTIL_TRUE) {
+        fprintf(stderr, "Error in hg_atomic_cas32: should not swap values\n");
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Init64 test */
+    hg_atomic_init64(&atomic_int64, 1);
+    val64 = hg_atomic_get64(&atomic_int64);
+    if (val64 != 1) {
+        fprintf(stderr, "Error in hg_atomic_init64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Set64 test */
+    hg_atomic_set64(&atomic_int64, 2);
+    val64 = hg_atomic_get64(&atomic_int64);
+    if (val64 != 2) {
+        fprintf(stderr, "Error in hg_atomic_set64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Incr64 test */
+    val64 = hg_atomic_incr64(&atomic_int64);
+    if (val64 != 3) {
+        fprintf(stderr, "Error in hg_atomic_incr64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val64 = hg_atomic_get64(&atomic_int64);
+    if (val64 != 3) {
+        fprintf(stderr, "Error in hg_atomic_incr64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Decr64 test */
+    val64 = hg_atomic_decr64(&atomic_int64);
+    if (val64 != 2) {
+        fprintf(stderr, "Error in hg_atomic_decr64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val64 = hg_atomic_get64(&atomic_int64);
+    if (val64 != 2) {
+        fprintf(stderr, "Error in hg_atomic_decr64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Or64 test */
+    init_val64 = hg_atomic_get64(&atomic_int64);
+    val64 = hg_atomic_or64(&atomic_int64, 8);
+    if (val64 != init_val64) {
+        fprintf(stderr, "Error in hg_atomic_or64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val64 = hg_atomic_get64(&atomic_int64);
+    if (val64 != (init_val64 | 8)) {
+        fprintf(stderr, "Error in hg_atomic_or64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Xor64 test */
+    init_val64 = hg_atomic_get64(&atomic_int64);
+    val64 = hg_atomic_xor64(&atomic_int64, 17);
+    if (val64 != init_val64) {
+        fprintf(stderr, "Error in hg_atomic_xor64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val64 = hg_atomic_get64(&atomic_int64);
+    if (val64 != (init_val64 ^ 17)) {
+        fprintf(stderr, "Error in hg_atomic_xor64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* And64 test */
+    init_val64 = hg_atomic_get64(&atomic_int64);
+    val64 = hg_atomic_and64(&atomic_int64, 33);
+    if (val64 != init_val64) {
+        fprintf(stderr, "Error in hg_atomic_and64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val64 = hg_atomic_get64(&atomic_int64);
+    if (val64 != (init_val64 & 33)) {
+        fprintf(stderr, "Error in hg_atomic_and64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+    /* Cas64 test */
+    init_val64 = hg_atomic_get64(&atomic_int64);
+    val64 = 128;
+    if (hg_atomic_cas64(&atomic_int64, init_val64, val64) == HG_UTIL_FALSE) {
+        fprintf(stderr, "Error in hg_atomic_cas64: could not swap values"
+            "with %ld, is %ld, expected %ld\n", val64,
+            hg_atomic_get64(&atomic_int64), init_val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    val64 = hg_atomic_get64(&atomic_int64);
+    if (val64 != 128) {
+        fprintf(stderr, "Error in hg_atomic_cas64: atomic value is %ld\n", val64);
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+    if (hg_atomic_cas64(&atomic_int64, 1, 0) == HG_UTIL_TRUE) {
+        fprintf(stderr, "Error in hg_atomic_cas64: should not swap values\n");
+        ret = EXIT_FAILURE;
+        goto done;
+    }
+
+done:
     return ret;
 }

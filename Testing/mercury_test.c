@@ -225,7 +225,7 @@ hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id)
 {
     hg_request_t *request_object = NULL;
     hg_handle_t handle = HG_HANDLE_NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
 
     request_object = hg_request_create(hg_test_info->request_class);
 
@@ -247,9 +247,9 @@ hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id)
     hg_request_wait(request_object, HG_MAX_IDLE_TIME, NULL);
 
 done:
-    ret = HG_Destroy(handle);
-    HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Destroy() failed (%s)",
-        HG_Error_to_string(ret));
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
 
     hg_request_destroy(request_object);
 
@@ -349,7 +349,7 @@ hg_test_register(hg_class_t *hg_class)
 hg_return_t
 HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 {
-    struct hg_init_info hg_init_info;
+    struct hg_init_info hg_init_info = HG_INIT_INFO_INITIALIZER;
     struct hg_test_context_info *hg_test_context_info;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
@@ -384,13 +384,9 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     HG_TEST_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
         "NA_Test_init() failed (%s)",  NA_Error_to_string(na_ret));
 
-    memset(&hg_init_info, 0, sizeof(struct hg_init_info));
-
     /* Set progress mode */
     if (hg_test_info->na_test_info.busy_wait)
         hg_init_info.na_init_info.progress_mode = NA_NO_BLOCK;
-    else
-        hg_init_info.na_init_info.progress_mode = NA_DEFAULT;
 
     /* Set stats */
 #ifdef HG_HAS_COLLECT_STATS
@@ -439,6 +435,37 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_info->context = HG_Context_create(hg_test_info->hg_class);
     HG_TEST_CHECK_ERROR(hg_test_info->context == NULL, done, ret, HG_FAULT,
         "Could not create HG context");
+
+    /* Create additional contexts (do not exceed total max contexts) */
+    if (hg_test_info->na_test_info.max_contexts > 1) {
+        hg_uint8_t secondary_contexts_count = (hg_uint8_t)
+                        (hg_test_info->na_test_info.max_contexts - 1);
+        hg_uint8_t i;
+
+        hg_test_info->secondary_contexts = malloc(
+            secondary_contexts_count * sizeof(hg_context_t *));
+        HG_TEST_CHECK_ERROR(hg_test_info->secondary_contexts == NULL, done,
+            ret, HG_NOMEM_ERROR, "Could not allocate secondary contexts");
+        for (i = 0; i < secondary_contexts_count; i++) {
+            hg_uint8_t context_id = (hg_uint8_t) (i + 1);
+            hg_test_info->secondary_contexts[i] =
+                HG_Context_create_id(hg_test_info->hg_class, context_id);
+            HG_TEST_CHECK_ERROR(hg_test_info->secondary_contexts[i] == NULL,
+                done, ret, HG_FAULT, "HG_Context_create_id() failed");
+
+            /* Attach context info to context */
+            hg_test_context_info = malloc(
+                sizeof(struct hg_test_context_info));
+            HG_TEST_CHECK_ERROR(hg_test_context_info == NULL, done, ret,
+                HG_NOMEM_ERROR, "Could not allocate HG test context info");
+
+            hg_atomic_init32(&hg_test_context_info->finalizing, 0);
+            ret = HG_Context_set_data(hg_test_info->secondary_contexts[i],
+                hg_test_context_info, free);
+            HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_set_data() failed"
+                " (%s)", HG_Error_to_string(ret));
+        }
+    }
 
     /* Create request class */
     hg_test_info->request_class = hg_request_init(hg_test_request_progress,
@@ -616,13 +643,20 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
         hg_test_info->request_class = NULL;
     }
 
-    /* Destroy context */
-    if (hg_test_info->context) {
-        ret = HG_Context_destroy(hg_test_info->context);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_destroy() failed"
-            " (%s)", HG_Error_to_string(ret));
-        hg_test_info->context = NULL;
-    }
+    /* Make sure we triggered everything */
+    do {
+        unsigned int actual_count;
+
+        do {
+            ret = HG_Trigger(hg_test_info->context, 0, 1, &actual_count);
+        } while ((ret == HG_SUCCESS) && actual_count);
+        HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done, ret,
+            ret, "Could not trigger callback (%s)", HG_Error_to_string(ret));
+
+        ret = HG_Progress(hg_test_info->context, 100);
+    } while (ret == HG_SUCCESS);
+    HG_TEST_CHECK_ERROR(ret != HG_SUCCESS && ret != HG_TIMEOUT, done, ret,
+        ret, "HG_Progress failed (%s)", HG_Error_to_string(ret));
 
 #ifdef HG_TEST_HAS_THREAD_POOL
     if (hg_test_info->thread_pool) {
@@ -631,6 +665,29 @@ HG_Test_finalize(struct hg_test_info *hg_test_info)
         hg_thread_mutex_destroy(&hg_test_info->bulk_handle_mutex);
     }
 #endif
+
+    /* Destroy secondary contexts */
+    if (hg_test_info->secondary_contexts) {
+        hg_uint8_t secondary_contexts_count =
+            (hg_uint8_t) (hg_test_info->na_test_info.max_contexts - 1);
+        hg_uint8_t i;
+
+        for (i = 0; i < secondary_contexts_count; i++) {
+            ret = HG_Context_destroy(hg_test_info->secondary_contexts[i]);
+            HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_destroy() failed"
+                " (%s)", HG_Error_to_string(ret));
+        }
+        free(hg_test_info->secondary_contexts);
+        hg_test_info->secondary_contexts = NULL;
+    }
+
+    /* Destroy context */
+    if (hg_test_info->context) {
+        ret = HG_Context_destroy(hg_test_info->context);
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Context_destroy() failed"
+            " (%s)", HG_Error_to_string(ret));
+        hg_test_info->context = NULL;
+    }
 
     if (hg_test_info->bulk_handle != HG_BULK_NULL) {
         /* Destroy bulk handle */

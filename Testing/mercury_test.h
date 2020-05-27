@@ -41,6 +41,7 @@ struct hg_test_info {
 #endif
     hg_class_t *hg_class;
     hg_context_t *context;
+    hg_context_t **secondary_contexts;
     hg_request_class_t *request_class;
     hg_addr_t target_addr;
     hg_bulk_t bulk_handle;
@@ -74,10 +75,14 @@ extern unsigned int HG_TEST_LOG_MASK;
     if (HG_TEST_LOG_MASK & HG_LOG_TYPE_ERROR)                       \
         HG_LOG_WRITE_ERROR(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);   \
 } while (0)
-# define HG_TEST_LOG_DEBUG(...) do {                                \
+# ifdef HG_HAS_DEBUG
+#  define HG_TEST_LOG_DEBUG(...) do {                               \
     if (HG_TEST_LOG_MASK & HG_LOG_TYPE_DEBUG)                       \
         HG_LOG_WRITE_DEBUG(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);   \
 } while (0)
+# else
+#  define HG_TEST_LOG_DEBUG(...)    (void)0
+# endif
 # define HG_TEST_LOG_WARNING(...) do {                              \
     if (HG_TEST_LOG_MASK & HG_LOG_TYPE_WARNING)                     \
         HG_LOG_WRITE_WARNING(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__); \
