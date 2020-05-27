@@ -1972,7 +1972,6 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
 
     HG_PROF_PVAR_DOUBLE_COUNTER(hg_pvar_hg_output_serial_time);
     hg_time_t t1, t2;
-    hg_time_get_current(&t1);
 
     HG_CHECK_ERROR(handle == HG_HANDLE_NULL, done, ret, HG_INVALID_ARG,
         "NULL HG handle");
