@@ -24,6 +24,7 @@
 
 /* PVAR profiling support */
 #include "mercury_prof_pvar_impl.h"
+#include "mercury_time.h"
 
 /****************/
 /* Local Macros */
@@ -1670,6 +1671,10 @@ done:
 hg_return_t
 HG_Get_input(hg_handle_t handle, void *in_struct)
 {
+    HG_PROF_PVAR_DOUBLE_COUNTER(hg_pvar_hg_input_deserial_time);
+    hg_time_t t1, t2;
+    hg_time_get_current(&t1);
+
     const struct hg_proc_info *hg_proc_info;
     hg_return_t ret = HG_SUCCESS;
 
@@ -1690,6 +1695,8 @@ HG_Get_input(hg_handle_t handle, void *in_struct)
     HG_CHECK_HG_ERROR(done, ret, "Could not get input (%s)",
         HG_Error_to_string(ret));
 
+    hg_time_get_current(&t2);
+    HG_PROF_PVAR_DOUBLE_COUNTER_INC(hg_pvar_hg_input_deserial_time, hg_time_to_double(hg_time_subtract(t2, t1)));
 done:
     return ret;
 }
@@ -1726,6 +1733,10 @@ done:
 hg_return_t
 HG_Get_output(hg_handle_t handle, void *out_struct)
 {
+    HG_PROF_PVAR_DOUBLE_COUNTER(hg_pvar_hg_output_deserial_time);
+    hg_time_t t1, t2;
+    hg_time_get_current(&t1);
+
     const struct hg_proc_info *hg_proc_info;
     hg_return_t ret = HG_SUCCESS;
 
@@ -1745,6 +1756,9 @@ HG_Get_output(hg_handle_t handle, void *out_struct)
         HG_OUTPUT, out_struct);
     HG_CHECK_HG_ERROR(done, ret, "Could not get output (%s)",
         HG_Error_to_string(ret));
+
+    hg_time_get_current(&t2);
+    HG_PROF_PVAR_DOUBLE_COUNTER_INC(hg_pvar_hg_output_deserial_time, hg_time_to_double(hg_time_subtract(t2, t1)));
 
 done:
     return ret;
@@ -1895,6 +1909,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     hg_return_t ret = HG_SUCCESS;
 
     HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_forward_count);
+    HG_PROF_PVAR_DOUBLE_COUNTER(hg_pvar_hg_input_serial_time);
 
     HG_CHECK_ERROR(handle == HG_HANDLE_NULL, done, ret, HG_INVALID_ARG,
         "NULL HG handle");
@@ -1910,8 +1925,13 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
         "Could not get proc info");
 
     /* Set input struct */
+    hg_time_t t1, t2;
+    hg_time_get_current(&t1);
     ret = hg_set_struct(private_handle, hg_proc_info, HG_INPUT, in_struct,
         &payload_size, &more_data);
+
+    hg_time_get_current(&t2);
+    HG_PROF_PVAR_DOUBLE_COUNTER_INC(hg_pvar_hg_input_serial_time, hg_time_to_double(hg_time_subtract(t2, t1)));
     HG_CHECK_HG_ERROR(done, ret, "Could not set input (%s)",
         HG_Error_to_string(ret));
 
@@ -1932,7 +1952,7 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
         HG_Error_to_string(ret));
 
     /* PVAR profiling support: Increment the value of the PVAR with the name "hg_pvar_hg_forward_count" */
-    HG_PROF_PVAR_COUNTER_INC(hg_pvar_hg_forward_count, 1);
+    HG_PROF_PVAR_UINT_COUNTER_INC(hg_pvar_hg_forward_count, 1);
 
 done:
     return ret;
@@ -1950,6 +1970,10 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
     hg_uint8_t flags = 0;
     hg_return_t ret = HG_SUCCESS;
 
+    HG_PROF_PVAR_DOUBLE_COUNTER(hg_pvar_hg_output_serial_time);
+    hg_time_t t1, t2;
+    hg_time_get_current(&t1);
+
     HG_CHECK_ERROR(handle == HG_HANDLE_NULL, done, ret, HG_INVALID_ARG,
         "NULL HG handle");
 
@@ -1964,8 +1988,11 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
         "Could not get proc info");
 
     /* Set output struct */
+    hg_time_get_current(&t1);
     ret = hg_set_struct(private_handle, hg_proc_info, HG_OUTPUT, out_struct,
         &payload_size, &more_data);
+    hg_time_get_current(&t2);
+    HG_PROF_PVAR_DOUBLE_COUNTER_INC(hg_pvar_hg_output_serial_time, hg_time_to_double(hg_time_subtract(t2, t1)));
     HG_CHECK_HG_ERROR(done, ret, "Could not set output (%s)",
         HG_Error_to_string(ret));
 

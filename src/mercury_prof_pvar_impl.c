@@ -100,6 +100,10 @@ hg_prof_pvar_init() {
     pvar_table = hg_hash_table_new(hg_prof_uint_hash, hg_prof_uint_equal);
     /* Register available PVARs */
     HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_forward_count, "Number of times HG_Forward has been invoked");
+    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_input_serial_time, "Time taken to serialize input (s)");
+    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_input_deserial_time, "Time taken to de-serialize input (s)");
+    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_output_deserial_time, "Time taken to de-serialize output (s)");
+    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_output_serial_time, "Time taken to serialize output (s)");
 
 return HG_SUCCESS;
 }
