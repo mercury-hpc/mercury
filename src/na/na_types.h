@@ -55,6 +55,7 @@ struct na_segment {
     X(NA_ACCESS)            /*!< permission denied */                       \
     X(NA_FAULT)             /*!< bad address */                             \
     X(NA_BUSY)              /*!< device or resource busy */                 \
+    X(NA_EXIST)             /*!< entry already exists */                    \
     X(NA_NODEV)             /*!< no such device */                          \
     X(NA_INVALID_ARG)       /*!< invalid argument */                        \
     X(NA_PROTOCOL_ERROR)    /*!< protocol error */                          \

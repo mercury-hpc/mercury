@@ -41,6 +41,7 @@ struct hg_init_info {
     X(HG_ACCESS)            /*!< permission denied */                       \
     X(HG_FAULT)             /*!< bad address */                             \
     X(HG_BUSY)              /*!< device or resource busy */                 \
+    X(HG_EXIST)             /*!< entry already exists */                    \
     X(HG_NODEV)             /*!< no such device */                          \
     X(HG_INVALID_ARG)       /*!< invalid argument */                        \
     X(HG_PROTOCOL_ERROR)    /*!< protocol error */                          \
