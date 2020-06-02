@@ -37,9 +37,9 @@ struct hg_test_worker {
 /********************/
 
 #ifdef HG_TEST_HAS_THREAD_POOL
-static HG_INLINE HG_THREAD_RETURN_TYPE
+static HG_THREAD_RETURN_TYPE
 hg_test_progress_thread(void *arg);
-static HG_INLINE HG_THREAD_RETURN_TYPE
+static HG_THREAD_RETURN_TYPE
 hg_test_progress_work(void *arg);
 #endif
 
@@ -50,7 +50,7 @@ hg_test_progress_work(void *arg);
 /*---------------------------------------------------------------------------*/
 #ifdef HG_TEST_HAS_THREAD_POOL
 
-static HG_INLINE HG_THREAD_RETURN_TYPE
+static HG_THREAD_RETURN_TYPE
 hg_test_progress_thread(void *arg)
 {
     hg_context_t *context = (hg_context_t *) arg;
@@ -76,7 +76,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE HG_THREAD_RETURN_TYPE
+static HG_THREAD_RETURN_TYPE
 hg_test_progress_work(void *arg)
 {
     struct hg_test_worker *worker = (struct hg_test_worker *) arg;
