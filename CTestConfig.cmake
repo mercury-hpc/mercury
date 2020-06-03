@@ -8,8 +8,8 @@
 set(CTEST_PROJECT_NAME "MERCURY")
 set(CTEST_NIGHTLY_START_TIME "00:00:00 CST")
 
-set(CTEST_DROP_METHOD "http")
-set(CTEST_DROP_SITE "149.28.123.102/CDash")
+set(CTEST_DROP_METHOD "https")
+set(CTEST_DROP_SITE "mercury-cdash.hdfgroup.org")
 set(CTEST_DROP_LOCATION "/submit.php?project=Mercury")
 set(CTEST_DROP_SITE_CDASH TRUE)
 
