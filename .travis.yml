@@ -14,8 +14,6 @@ cache:
     - $HOME/install
 
 env:
-  global:
-    - MERCURY_NO_LOOP="true"
   jobs:
     - MERCURY_BUILD_CONFIGURATION="Debug"
     - MERCURY_BUILD_CONFIGURATION="RelWithDebInfo"
@@ -35,7 +33,7 @@ jobs:
          - libtsan0
          - libasan5
          - liblsan0
-     env: MERCURY_MEMORYCHECK_TYPE="ThreadSanitizer"
+     env: MERCURY_BUILD_CONFIGURATION="Tsan"
    - os: linux
      compiler: gcc
      addons:
@@ -48,7 +46,7 @@ jobs:
          - libtsan0
          - libasan5
          - liblsan0
-     env: MERCURY_MEMORYCHECK_TYPE="AddressSanitizer"
+     env: MERCURY_BUILD_CONFIGURATION="Asan"
    - os: linux
      compiler: gcc
      addons:
