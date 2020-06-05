@@ -20,7 +20,10 @@ include(CheckSymbolExists)
 include(CheckTypeSize)
 
 # Threads
-include(FindThreads)
+set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+find_package(Threads REQUIRED)
+
 set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES
   ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
   ${CMAKE_THREAD_LIBS_INIT}
@@ -36,7 +39,8 @@ if(CMAKE_USE_PTHREADS_INIT)
   check_type_size(PTHREAD_MUTEX_ADAPTIVE_NP HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP)
 
   # Detect pthread_condattr_setclock
-  check_symbol_exists(pthread_condattr_setclock pthread.h HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
+  check_symbol_exists(pthread_condattr_setclock pthread.h
+    HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
 endif()
 
 # Rt
@@ -91,16 +95,12 @@ if(NOT WIN32)
   if(MERCURY_USE_OPA)
     # Use OpenPA if stdatomic is not available
     find_package(OPA REQUIRED)
-    if(OPA_FOUND)
-      message(STATUS "OPA include directory: ${OPA_INCLUDE_DIRS}")
-      set(HG_UTIL_HAS_OPA_PRIMITIVES_H 1)
-      set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES
-        ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
-        ${OPA_INCLUDE_DIRS}
-      )
-    else()
-      message(FATAL_ERROR "Could not find OPA.")
-    endif()
+    message(STATUS "OPA include directory: ${OPA_INCLUDE_DIRS}")
+    set(HG_UTIL_HAS_OPA_PRIMITIVES_H 1)
+    set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES
+      ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
+      ${OPA_INCLUDE_DIRS}
+    )
   endif()
 endif()
 
@@ -159,6 +159,9 @@ endforeach()
 
 # UTIL
 add_library(mercury_util ${MERCURY_UTIL_SRCS})
+if(THREADS_HAVE_PTHREAD_ARG)
+  target_compile_options(mercury_util PUBLIC "${CMAKE_THREAD_LIBS_INIT}")
+endif()
 target_include_directories(mercury_util
   PUBLIC "$<BUILD_INTERFACE:${MERCURY_UTIL_BUILD_INCLUDE_DEPENDENCIES}>"
           $<INSTALL_INTERFACE:${MERCURY_INSTALL_INCLUDE_INTERFACE}>

@@ -372,14 +372,16 @@ if(NOT WIN32)
   foreach(lib_dep ${MERCURY_EXT_LIB_DEPENDENCIES})
     # get library name
     get_filename_component(lib_name ${lib_dep} NAME_WE)
-    if(lib_name MATCHES "^-l")
+    if(lib_name MATCHES "^-l" OR lib_name MATCHES "-pthread")
       # lib_name found is -lxxx
-      set(MERCURY_EXT_LIB_DEPENDENCIES_LIST ${MERCURY_EXT_LIB_DEPENDENCIES_LIST} ${lib_name})
+      set(MERCURY_EXT_LIB_DEPENDENCIES_LIST
+          ${MERCURY_EXT_LIB_DEPENDENCIES_LIST} ${lib_name})
     else()
       # lib_name is /path/to/lib so get library path and name
       get_filename_component(lib_path ${lib_dep} PATH)
       string(REGEX REPLACE "^lib" "" lib_name ${lib_name})
-      set(MERCURY_EXT_LIB_DEPENDENCIES_LIST ${MERCURY_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path} -l${lib_name})
+      set(MERCURY_EXT_LIB_DEPENDENCIES_LIST
+          ${MERCURY_EXT_LIB_DEPENDENCIES_LIST} -L${lib_path} -l${lib_name})
     endif()
   endforeach()
   if(MERCURY_EXT_LIB_DEPENDENCIES_LIST)
