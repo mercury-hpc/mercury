@@ -63,6 +63,7 @@ branches:
     - master
 
 before_install:
+    - if [[ "$TRAVIS_PULL_REQUEST" != "false" ]]; then git fetch origin pull/${TRAVIS_PULL_REQUEST}/head:pr${TRAVIS_PULL_REQUEST}; git checkout pr${TRAVIS_PULL_REQUEST}; fi
     - echo "Existing directories in $HOME" && ls $HOME
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew cask uninstall --force oclint; fi
