@@ -511,4 +511,6 @@ endif()
 if(COMMAND dashboard_hook_end)
   dashboard_hook_end()
 endif()
-
+if(dashboard_do_submit)
+  ctest_submit(PARTS Done)
+endif()
