@@ -28,7 +28,7 @@
 #include "mercury_error.h"
 
 #ifdef HG_HAS_SM_ROUTING
-#include <uuid/uuid.h>
+#include <na_sm.h>
 #endif
 
 #include <stdlib.h>
@@ -44,7 +44,6 @@
 #define HG_CORE_MAX_EVENTS          16
 #define HG_CORE_MAX_TRIGGER_COUNT   1
 #ifdef HG_HAS_SM_ROUTING
-# define HG_CORE_UUID_MAX_LEN       36
 # define HG_CORE_ADDR_MAX_SIZE      256
 # define HG_CORE_PROTO_DELIMITER    ":"
 # define HG_CORE_ADDR_DELIMITER     "#"
@@ -90,7 +89,7 @@ typedef hg_atomic_int32_t hg_core_stat_t;
 struct hg_core_private_class {
     struct hg_core_class core_class;    /* Must remain as first field */
 #ifdef HG_HAS_SM_ROUTING
-    uuid_t na_sm_uuid;                  /* UUID for local identification */
+    na_sm_id_t host_id;                 /* Host ID for local identification */
 #endif
     hg_hash_table_t *func_map;          /* Function map */
     hg_return_t (*more_data_acquire)(hg_core_handle_t, hg_op_t,
@@ -150,7 +149,7 @@ struct hg_core_self_cb_info {
 struct hg_core_private_addr {
     struct hg_core_addr core_addr;      /* Must remain as first field */
 #ifdef HG_HAS_SM_ROUTING
-    uuid_t na_sm_uuid;                  /* NA SM UUID */
+    na_sm_id_t host_id;                 /* NA SM Host ID */
 #endif
     hg_atomic_int32_t ref_count;        /* Reference count */
     hg_bool_t is_mine;                  /* Created internally or not */
@@ -228,16 +227,6 @@ struct hg_core_op_id {
 /********************/
 /* Local Prototypes */
 /********************/
-
-#ifdef HG_HAS_SM_ROUTING
-/**
- * Get local ID used for detecting local nodes.
- */
-static hg_return_t
-hg_core_get_sm_uuid(
-        uuid_t *sm_uuid
-        );
-#endif
 
 /**
  * Equal function for function map.
@@ -784,40 +773,6 @@ hg_core_print_stats(void)
 #endif
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SM_ROUTING
-static hg_return_t
-hg_core_get_sm_uuid(uuid_t *sm_uuid)
-{
-    const char *sm_path = NA_SM_TMP_DIRECTORY "/" NA_SM_SHM_PREFIX "/uuid.cfg";
-    char uuid_str[HG_CORE_UUID_MAX_LEN + 1];
-    FILE *uuid_config;
-    uuid_t new_uuid;
-    hg_return_t ret = HG_SUCCESS;
-
-    uuid_config = fopen(sm_path, "r");
-    if (!uuid_config) {
-        /* Generate a new one */
-        uuid_generate(new_uuid);
-
-        uuid_config = fopen(sm_path, "w");
-        HG_CHECK_ERROR(uuid_config == NULL, done, ret, HG_NOENTRY,
-            "Could not open %s for write", sm_path);
-        uuid_unparse(new_uuid, uuid_str);
-        fprintf(uuid_config, "%s\n", uuid_str);
-    } else {
-        /* Get the existing one */
-        fgets(uuid_str, HG_CORE_UUID_MAX_LEN + 1, uuid_config);
-        uuid_parse(uuid_str, new_uuid);
-    }
-    fclose(uuid_config);
-    uuid_copy(*sm_uuid, new_uuid);
-
-done:
-    return ret;
-}
-#endif
-
-/*---------------------------------------------------------------------------*/
 static HG_INLINE int
 hg_core_int_equal(void *vlocation1, void *vlocation2)
 {
@@ -1060,6 +1015,8 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
 #ifdef HG_HAS_SM_ROUTING
     /* Initialize SM plugin */
     if (auto_sm) {
+        na_return_t na_ret;
+
         HG_CHECK_ERROR(strcmp(NA_Get_class_name(
             hg_core_class->core_class.na_class), "na") == 0, error, ret,
             HG_PROTONOSUPPORT, "Cannot use auto SM mode if initialized "
@@ -1071,9 +1028,10 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
         HG_CHECK_ERROR(hg_core_class->core_class.na_sm_class == NULL, error,
             ret, HG_NA_ERROR, "Could not initialize NA SM class");
 
-        /* Get SM UUID */
-        ret = hg_core_get_sm_uuid(&hg_core_class->na_sm_uuid);
-        HG_CHECK_HG_ERROR(error, ret, "Could not get SM UUID");
+        /* Get SM host ID */
+        na_ret = NA_SM_Host_id_get(hg_core_class->host_id);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+            "NA_SM_Host_id_get() failed (%s)", NA_Error_to_string(na_ret));
     }
 #endif
 
@@ -1234,23 +1192,27 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
 
         strcpy(lookup_name, name);
 
-        /* Get first part of address string with UUID */
+        /* Get first part of address string with host ID */
         strtok_r(lookup_name, HG_CORE_ADDR_DELIMITER, &lookup_names);
 
         HG_CHECK_ERROR(strstr(name, HG_CORE_PROTO_DELIMITER) == NULL, error,
             ret, HG_PROTOCOL_ERROR, "Malformed address format");
 
-        /* Get address SM UUID */
+        /* Get address SM host ID */
         strtok_r(lookup_name, HG_CORE_PROTO_DELIMITER, &local_id_str);
-        uuid_parse(local_id_str + 2, hg_core_addr->na_sm_uuid);
+        na_ret = NA_SM_String_to_host_id(
+            local_id_str + 2, hg_core_addr->host_id);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+            "NA_SM_String_to_host_id() failed (%s)",
+            NA_Error_to_string(na_ret));
 
         /* Separate remaining two parts */
         strtok_r(lookup_names, HG_CORE_ADDR_DELIMITER, &remote_name);
         local_name = lookup_names;
 
-        /* Compare UUIDs, if they match it's local address */
-        if (hg_core_class->core_class.na_sm_class && uuid_compare(
-            hg_core_addr->na_sm_uuid, hg_core_class->na_sm_uuid) == 0) {
+        /* Compare IDs, if they match it's local address */
+        if (hg_core_class->core_class.na_sm_class && NA_SM_Host_id_cmp(
+            hg_core_addr->host_id, hg_core_class->host_id) == 0) {
             name_str = local_name;
             na_class = hg_core_class->core_class.na_sm_class;
         } else {
@@ -1346,8 +1308,8 @@ hg_core_addr_self(struct hg_core_private_class *hg_core_class,
         HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
             "Could not get self SM address (%s)", NA_Error_to_string(na_ret));
 
-        /* Copy local UUID */
-        uuid_copy(hg_core_addr->na_sm_uuid, hg_core_class->na_sm_uuid);
+        /* Copy local host ID */
+        NA_SM_Host_id_copy(hg_core_addr->host_id, hg_core_class->host_id);
     }
 #endif
 
@@ -1409,11 +1371,15 @@ hg_core_addr_to_string(struct hg_core_private_class *hg_core_class, char *buf,
 #ifdef HG_HAS_SM_ROUTING
     if (hg_core_addr->core_addr.na_sm_addr) {
         char addr_str[HG_CORE_ADDR_MAX_SIZE];
-        char uuid_str[HG_CORE_UUID_MAX_LEN + 1];
+        char uuid_str[NA_SM_HOST_ID_LEN + 1];
         int desc_len;
 
-        /* Convert UUID to string and generate addr string */
-        uuid_unparse(hg_core_addr->na_sm_uuid, uuid_str);
+        /* Convert host ID to string and generate addr string */
+        na_ret = NA_SM_Host_id_to_string(hg_core_addr->host_id, uuid_str);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "NA_SM_Host_id_to_string() failed (%s)",
+            NA_Error_to_string(na_ret));
+
         desc_len = snprintf(addr_str, HG_CORE_ADDR_MAX_SIZE,
             "uid://%s" HG_CORE_ADDR_DELIMITER, uuid_str);
         HG_CHECK_ERROR(desc_len > HG_CORE_ADDR_MAX_SIZE, done, ret,
