@@ -1212,7 +1212,8 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
 
         /* Compare IDs, if they match it's local address */
         if (hg_core_class->core_class.na_sm_class && NA_SM_Host_id_cmp(
-            hg_core_addr->host_id, hg_core_class->host_id) == 0) {
+            hg_core_addr->host_id, hg_core_class->host_id)) {
+            HG_LOG_DEBUG("This is a local address");
             name_str = local_name;
             na_class = hg_core_class->core_class.na_sm_class;
         } else {
@@ -1411,7 +1412,7 @@ hg_core_addr_to_string(struct hg_core_private_class *hg_core_class, char *buf,
 #endif
 
     /* Get NA address string */
-    na_ret = NA_Addr_to_string(hg_core_class->core_class.na_class, buf_ptr,
+    na_ret = NA_Addr_to_string(hg_core_addr->core_addr.na_class, buf_ptr,
         &new_buf_size, hg_core_addr->core_addr.na_addr);
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
         "Could not convert address to string (%s)", NA_Error_to_string(na_ret));
