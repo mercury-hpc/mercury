@@ -47,16 +47,12 @@ if(MERCURY_USE_BOOST_PP)
   option(MERCURY_USE_SYSTEM_BOOST "Use system-installed Boost libraries." OFF)
   if(MERCURY_USE_SYSTEM_BOOST)
     find_package(Boost 1.41.0 REQUIRED)
-    if(Boost_FOUND)
-      message(STATUS "Boost include directory: ${Boost_INCLUDE_DIRS}")
-      set(HG_HAS_BOOST 1)
-      set(MERCURY_EXT_INCLUDE_DEPENDENCIES
-        ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
-        ${Boost_INCLUDE_DIRS}
-      )
-    else()
-      message(FATAL_ERROR "Could not find Boost, please check Boost_INCLUDE_DIR.")
-    endif()
+    message(STATUS "Boost include directory: ${Boost_INCLUDE_DIRS}")
+    set(HG_HAS_BOOST 1)
+    set(MERCURY_EXT_INCLUDE_DEPENDENCIES
+      ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+      ${Boost_INCLUDE_DIRS}
+    )
   else()
     set(HG_HAS_BOOST 1)
     set(MERCURY_BUILD_INCLUDE_DEPENDENCIES
@@ -73,14 +69,10 @@ if(MERCURY_USE_CHECKSUMS)
   option(MERCURY_USE_SYSTEM_MCHECKSUM "Use system-installed MChecksum." OFF)
   if(MERCURY_USE_SYSTEM_MCHECKSUM)
     find_package(mchecksum REQUIRED)
-    if(mchecksum_FOUND)
-      set(MERCURY_EXT_PKG_DEPENDENCIES
-        ${MERCURY_EXT_PKG_DEPENDENCIES}
-        mchecksum
-      )
-    else()
-      message(FATAL_ERROR "Could not find MChecksum, please check mchecksum_INCLUDE_DIR.")
-    endif()
+    set(MERCURY_EXT_PKG_DEPENDENCIES
+      ${MERCURY_EXT_PKG_DEPENDENCIES}
+      mchecksum
+    )
   else()
     set(MCHECKSUM_EXTERNALLY_CONFIGURED 1)
     set(MCHECKSUM_INSTALL_BIN_DIR ${MERCURY_INSTALL_BIN_DIR})
@@ -129,24 +121,11 @@ option(MERCURY_USE_SM_ROUTING
   "Enable routing of local communication through shared-memory (requires SM)."
   OFF)
 if(MERCURY_USE_SM_ROUTING)
-  find_package(UUID)
-  if(UUID_FOUND)
-    set(HG_HAS_SM_ROUTING 1)
-    set(MERCURY_EXT_INCLUDE_DEPENDENCIES
-      ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
-      ${UUID_INCLUDE_DIRS}
-    )
-    set(MERCURY_EXT_LIB_DEPENDENCIES
-      ${MERCURY_EXT_LIB_DEPENDENCIES}
-      ${UUID_LIBRARIES}
-    )
-  else()
-      message(FATAL_ERROR "Could not find libUUID, please check UUID_INCLUDE_DIR.")
-  endif()
-  if(MERCURY_USE_SM_ROUTING AND NOT NA_USE_SM)
+  if(NOT NA_USE_SM)
     # Always force SM if NA_USE_SM is turned OFF
     set(NA_USE_SM "ON" CACHE BOOL "Use shared-memory plugin." FORCE)
   endif()
+  set(HG_HAS_SM_ROUTING 1)
 endif()
 
 # Collect statistics

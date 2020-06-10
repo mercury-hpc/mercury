@@ -11,6 +11,7 @@
 #if !defined(_WIN32) && !defined(_GNU_SOURCE)
 #    define _GNU_SOURCE
 #endif
+#include "na_sm.h"
 #include "na_plugin.h"
 
 #include "mercury_event.h"
@@ -27,6 +28,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <uuid/uuid.h>
 
 #ifdef _WIN32
 #    include <process.h>
@@ -945,6 +948,75 @@ lltoa(hg_util_uint64_t val, char *string, int radix)
     return &string[i];
 }
 #endif
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_SM_Host_id_get(na_sm_id_t id)
+{
+    char uuid_str[NA_SM_HOST_ID_LEN + 1];
+    FILE *uuid_config = NULL;
+    uuid_t new_uuid;
+    char pathname[NA_SM_MAX_FILENAME] = {'\0'};
+    char *username = getlogin_safe();
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    rc = snprintf(pathname, NA_SM_MAX_FILENAME, "%s/%s_%s/uuid.cfg",
+        NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX, username);
+    NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret, NA_OVERFLOW,
+        "snprintf() failed, rc: %d", rc);
+
+    uuid_config = fopen(pathname, "r");
+    if (!uuid_config) {
+        /* Generate a new one */
+        uuid_generate(new_uuid);
+
+        uuid_config = fopen(pathname, "w");
+        NA_CHECK_ERROR(uuid_config == NULL, done, ret, na_sm_errno_to_na(errno),
+            "Could not open %s for write (%s)", pathname, strerror(errno));
+        uuid_unparse(new_uuid, uuid_str);
+        fprintf(uuid_config, "%s\n", uuid_str);
+    } else {
+        /* Get the existing one */
+        fgets(uuid_str, NA_SM_HOST_ID_LEN + 1, uuid_config);
+        uuid_parse(uuid_str, new_uuid);
+    }
+    fclose(uuid_config);
+    uuid_copy(id, new_uuid);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_SM_Host_id_to_string(na_sm_id_t id, char *string)
+{
+    uuid_unparse(id, string);
+
+    return NA_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+na_return_t
+NA_SM_String_to_host_id(const char *string, na_sm_id_t id)
+{
+    return (uuid_parse(string, id) == 0) ? NA_SUCCESS : NA_PROTOCOL_ERROR;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+NA_SM_Host_id_copy(na_sm_id_t dst, na_sm_id_t src)
+{
+    uuid_copy(dst, src);
+}
+
+/*---------------------------------------------------------------------------*/
+na_bool_t
+NA_SM_Host_id_cmp(na_sm_id_t id1, na_sm_id_t id2)
+{
+    return (uuid_compare(id1, id2) == 0) ? NA_TRUE : NA_FALSE;
+}
 
 /*---------------------------------------------------------------------------*/
 static char *
@@ -3170,21 +3242,26 @@ na_sm_cleanup(void)
 {
     char pathname[NA_SM_MAX_FILENAME] = {'\0'};
     char *username = getlogin_safe();
-    int ret;
+    int rc;
 
-    sprintf(
-        pathname, "%s/%s_%s", NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX, username);
+    rc = snprintf(pathname, NA_SM_MAX_FILENAME, "%s/%s_%s", NA_SM_TMP_DIRECTORY,
+        NA_SM_SHM_PREFIX, username);
+    NA_CHECK_ERROR_NORET(rc < 0 || rc > NA_SM_MAX_FILENAME, done,
+        "snprintf() failed, rc: %d", rc);
 
     /* We need to remove all files first before being able to remove the
      * directories */
-    ret = nftw(pathname, na_sm_sock_path_cleanup, NA_SM_CLEANUP_NFDS,
+    rc = nftw(pathname, na_sm_sock_path_cleanup, NA_SM_CLEANUP_NFDS,
         FTW_PHYS | FTW_DEPTH);
     NA_CHECK_WARNING(
-        ret != 0 && errno != ENOENT, "nftw() failed (%s)", strerror(errno));
+        rc != 0 && errno != ENOENT, "nftw() failed (%s)", strerror(errno));
 
-    ret = nftw(NA_SM_SHM_PATH, na_sm_shm_cleanup, NA_SM_CLEANUP_NFDS, FTW_PHYS);
+    rc = nftw(NA_SM_SHM_PATH, na_sm_shm_cleanup, NA_SM_CLEANUP_NFDS, FTW_PHYS);
     NA_CHECK_WARNING(
-        ret != 0 && errno != ENOENT, "nftw() failed (%s)", strerror(errno));
+        rc != 0 && errno != ENOENT, "nftw() failed (%s)", strerror(errno));
+
+done:
+    return;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3368,8 +3445,12 @@ na_sm_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
     na_size_t string_len;
     char addr_string[NA_SM_MAX_FILENAME] = {'\0'};
     na_return_t ret = NA_SUCCESS;
+    int rc;
 
-    sprintf(addr_string, "sm://%d/%" SCNu8, na_sm_addr->pid, na_sm_addr->id);
+    rc = snprintf(addr_string, NA_SM_MAX_FILENAME, "sm://%d/%" SCNu8,
+        na_sm_addr->pid, na_sm_addr->id);
+    NA_CHECK_ERROR(rc < 0 || rc > NA_SM_MAX_FILENAME, done, ret, NA_OVERFLOW,
+        "snprintf() failed, rc: %d", rc);
 
     string_len = strlen(addr_string);
     if (buf) {
