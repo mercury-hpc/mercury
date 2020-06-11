@@ -1029,7 +1029,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             ret, HG_NA_ERROR, "Could not initialize NA SM class");
 
         /* Get SM host ID */
-        na_ret = NA_SM_Host_id_get(hg_core_class->host_id);
+        na_ret = NA_SM_Host_id_get(&hg_core_class->host_id);
         HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
             "NA_SM_Host_id_get() failed (%s)", NA_Error_to_string(na_ret));
     }
@@ -1201,7 +1201,7 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
         /* Get address SM host ID */
         strtok_r(lookup_name, HG_CORE_PROTO_DELIMITER, &local_id_str);
         na_ret = NA_SM_String_to_host_id(
-            local_id_str + 2, hg_core_addr->host_id);
+            local_id_str + 2, &hg_core_addr->host_id);
         HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
             "NA_SM_String_to_host_id() failed (%s)",
             NA_Error_to_string(na_ret));
@@ -1310,7 +1310,7 @@ hg_core_addr_self(struct hg_core_private_class *hg_core_class,
             "Could not get self SM address (%s)", NA_Error_to_string(na_ret));
 
         /* Copy local host ID */
-        NA_SM_Host_id_copy(hg_core_addr->host_id, hg_core_class->host_id);
+        NA_SM_Host_id_copy(&hg_core_addr->host_id, hg_core_class->host_id);
     }
 #endif
 

@@ -29,7 +29,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <uuid/uuid.h>
+#ifdef NA_SM_HAS_UUID
+#    include <uuid/uuid.h>
+#endif
 
 #ifdef _WIN32
 #    include <process.h>
@@ -951,8 +953,9 @@ lltoa(hg_util_uint64_t val, char *string, int radix)
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_SM_Host_id_get(na_sm_id_t id)
+NA_SM_Host_id_get(na_sm_id_t *id)
 {
+#ifdef NA_SM_HAS_UUID
     char uuid_str[NA_SM_HOST_ID_LEN + 1];
     FILE *uuid_config = NULL;
     uuid_t new_uuid;
@@ -982,40 +985,73 @@ NA_SM_Host_id_get(na_sm_id_t id)
         uuid_parse(uuid_str, new_uuid);
     }
     fclose(uuid_config);
-    uuid_copy(id, new_uuid);
+    uuid_copy(*id, new_uuid);
 
 done:
     return ret;
+#else
+    *id = gethostid();
+
+    return NA_SUCCESS;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
 na_return_t
 NA_SM_Host_id_to_string(na_sm_id_t id, char *string)
 {
+#ifdef NA_SM_HAS_UUID
     uuid_unparse(id, string);
 
     return NA_SUCCESS;
+#else
+    na_return_t ret = NA_SUCCESS;
+    int rc = snprintf(string, NA_SM_HOST_ID_LEN + 1, "%ld", id);
+    NA_CHECK_ERROR(rc < 0 || rc > NA_SM_HOST_ID_LEN + 1, done, ret, NA_OVERFLOW,
+        "snprintf() failed, rc: %d", rc);
+
+done:
+    return ret;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_SM_String_to_host_id(const char *string, na_sm_id_t id)
+NA_SM_String_to_host_id(const char *string, na_sm_id_t *id)
 {
-    return (uuid_parse(string, id) == 0) ? NA_SUCCESS : NA_PROTOCOL_ERROR;
+#ifdef NA_SM_HAS_UUID
+    return (uuid_parse(string, *id) == 0) ? NA_SUCCESS : NA_PROTOCOL_ERROR;
+#else
+    na_return_t ret = NA_SUCCESS;
+    int rc = sscanf(string, "%ld", id);
+    NA_CHECK_ERROR(rc != 1, done, ret, NA_PROTOCOL_ERROR,
+        "sscanf() failed, rc: %d", rc);
+
+done:
+    return ret;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
 void
-NA_SM_Host_id_copy(na_sm_id_t dst, na_sm_id_t src)
+NA_SM_Host_id_copy(na_sm_id_t *dst, na_sm_id_t src)
 {
-    uuid_copy(dst, src);
+#ifdef NA_SM_HAS_UUID
+    uuid_copy(*dst, src);
+#else
+    *dst = src;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
 na_bool_t
 NA_SM_Host_id_cmp(na_sm_id_t id1, na_sm_id_t id2)
 {
+#ifdef NA_SM_HAS_UUID
     return (uuid_compare(id1, id2) == 0) ? NA_TRUE : NA_FALSE;
+#else
+    return (id1 == id2);
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
