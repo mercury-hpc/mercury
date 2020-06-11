@@ -47,11 +47,6 @@ struct na_test_lat_info {
     struct na_test_info na_test_info;
 };
 
-struct na_test_target_lookup_arg {
-    na_addr_t *addr_ptr;
-    hg_request_t *request;
-};
-
 /********************/
 /* Local Prototypes */
 /********************/
@@ -64,9 +59,6 @@ na_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg);
 
 static na_return_t
 na_test_target_lookup(struct na_test_lat_info *na_test_lat_info);
-
-static NA_INLINE int
-na_test_target_lookup_cb(const struct na_cb_info *na_cb_info);
 
 static NA_INLINE int
 na_test_recv_expected_cb(const struct na_cb_info *na_cb_info);
@@ -118,47 +110,19 @@ na_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
 static na_return_t
 na_test_target_lookup(struct na_test_lat_info *na_test_lat_info)
 {
-    struct na_test_target_lookup_arg request_args = { 0 };
-    hg_request_t *request = NULL;
-    na_op_id_t op_id = NA_OP_ID_NULL;
     na_return_t ret = NA_SUCCESS;
 
-    request = hg_request_create(na_test_lat_info->request_class);
-    request_args.addr_ptr = &na_test_lat_info->target_addr;
-    request_args.request = request;
-
-    op_id = NA_Op_create(na_test_lat_info->na_class);
-
     /* Forward call to remote addr and get a new request */
-    ret = NA_Addr_lookup(na_test_lat_info->na_class, na_test_lat_info->context,
-        na_test_target_lookup_cb, &request_args,
-        na_test_lat_info->na_test_info.target_name, &op_id);
+    ret = NA_Addr_lookup(na_test_lat_info->na_class,
+        na_test_lat_info->na_test_info.target_name,
+        &na_test_lat_info->target_addr);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR("Could not lookup address (%s)", NA_Error_to_string(ret));
         goto done;
     }
 
-    /* Wait for request to be marked completed */
-    hg_request_wait(request, NA_MAX_IDLE_TIME, NULL);
-
 done:
-    NA_Op_destroy(na_test_lat_info->na_class, op_id);
-    hg_request_destroy(request);
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static NA_INLINE int
-na_test_target_lookup_cb(const struct na_cb_info *na_cb_info)
-{
-    struct na_test_target_lookup_arg *na_test_target_lookup_arg =
-        (struct na_test_target_lookup_arg *) na_cb_info->arg;
-
-    *na_test_target_lookup_arg->addr_ptr = na_cb_info->info.lookup.addr;
-
-    hg_request_complete(na_test_target_lookup_arg->request);
-
-    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
