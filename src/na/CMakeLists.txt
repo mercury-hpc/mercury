@@ -162,15 +162,20 @@ if(NA_USE_SM)
   if(WIN32)
     message(WARNING "SM plugin not supported on this platform yet.")
   else()
-    find_package(UUID REQUIRED)
-    set(NA_INT_INCLUDE_DEPENDENCIES
-      ${NA_INT_INCLUDE_DEPENDENCIES}
-      ${UUID_INCLUDE_DIRS}
-    )
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
-      ${UUID_LIBRARIES}
-    )
+    option(NA_SM_USE_UUID "Use UUIDs for host identification instead of standard host ID." OFF)
+    if(NA_SM_USE_UUID)
+      find_package(UUID REQUIRED)
+      set(NA_SM_HAS_UUID 1)
+      set(NA_INT_INCLUDE_DEPENDENCIES
+        ${NA_INT_INCLUDE_DEPENDENCIES}
+        ${UUID_INCLUDE_DIRS}
+      )
+      set(NA_EXT_LIB_DEPENDENCIES
+        ${NA_EXT_LIB_DEPENDENCIES}
+        ${UUID_LIBRARIES}
+      )
+    endif()
+    mark_as_advanced(NA_SM_USE_UUID)
     include(CheckFunctionExists)
     check_function_exists(process_vm_readv NA_SM_HAS_CMA)
     if(NA_SM_HAS_CMA)

@@ -17,14 +17,22 @@
 /* Public Type and Struct Definition */
 /*************************************/
 
+#ifdef NA_SM_HAS_UUID
 typedef unsigned char na_sm_id_t[16];
+#else
+typedef long na_sm_id_t;
+#endif
 
 /*****************/
 /* Public Macros */
 /*****************/
 
 /* String length of Host ID */
-#define NA_SM_HOST_ID_LEN 36
+#ifdef NA_SM_HAS_UUID
+#    define NA_SM_HOST_ID_LEN 36
+#else
+#    define NA_SM_HOST_ID_LEN 11
+#endif
 
 /*********************/
 /* Public Prototypes */
@@ -37,12 +45,12 @@ extern "C" {
 /**
  * Get the curent host ID (generate a new one if none exists).
  *
- * \param id [IN/OUT]           SM host ID
+ * \param id [IN/OUT]           pointer to SM host ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PUBLIC na_return_t
-NA_SM_Host_id_get(na_sm_id_t id);
+NA_SM_Host_id_get(na_sm_id_t *id);
 
 /**
  * Convert host ID to string. String size must be NA_SM_HOST_ID_LEN + 1.
@@ -59,27 +67,27 @@ NA_SM_Host_id_to_string(na_sm_id_t id, char *string);
  * Convert string to host ID. String size must be NA_SM_HOST_ID_LEN + 1.
  *
  * \param string [IN]           pointer to string
- * \param id [IN/OUT]           SM host ID
+ * \param id [IN/OUT]           pointer to SM host ID
  *
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PUBLIC na_return_t
-NA_SM_String_to_host_id(const char *string, na_sm_id_t id);
+NA_SM_String_to_host_id(const char *string, na_sm_id_t *id);
 
 /**
  * Copy src host ID to dst.
  *
- * \param dst [IN/OUT]          destination SM host ID
+ * \param dst [IN/OUT]          pointer to destination SM host ID
  * \param src [IN]              source SM host ID
  */
 NA_PUBLIC void
-NA_SM_Host_id_copy(na_sm_id_t dst, na_sm_id_t src);
+NA_SM_Host_id_copy(na_sm_id_t *dst, na_sm_id_t src);
 
 /**
  * Compare two host IDs.
  *
- * \param id1 [IN/OUT]          SM host ID
- * \param id2 [IN/OUT]          SM host ID
+ * \param id1 [IN]              SM host ID
+ * \param id2 [IN]              SM host ID
  *
  * \return NA_TRUE if equal or NA_FALSE otherwise
  */
