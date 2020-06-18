@@ -100,6 +100,8 @@
 
 /* Private data access */
 #define NA_SM_CLASS(na_class) ((struct na_sm_class *) (na_class->plugin_class))
+#define NA_SM_CONTEXT(context)                                                 \
+    ((struct na_sm_context *) (context->plugin_context))
 
 /* Generate SHM file name */
 #define NA_SM_GEN_SHM_NAME(filename, maxlen, username, pid, id)                \
@@ -147,8 +149,8 @@ typedef union {
 
 /* Msg buffers (page aligned) */
 struct na_sm_copy_buf {
-    char buf[NA_SM_NUM_BUFS][NA_SM_COPY_BUF_SIZE]; /* Array of buffers */
     hg_thread_spin_t buf_locks[NA_SM_NUM_BUFS];    /* Locks on buffers */
+    char buf[NA_SM_NUM_BUFS][NA_SM_COPY_BUF_SIZE]; /* Array of buffers */
     na_sm_cacheline_atomic_int64_t available;      /* Available bitmask */
 };
 
@@ -215,6 +217,13 @@ struct na_sm_region {
     na_sm_cacheline_atomic_int256_t available;     /* Available pairs */
 };
 
+/* Poll type */
+typedef enum na_sm_poll_type {
+    NA_SM_POLL_SOCK = 1,
+    NA_SM_POLL_RX_NOTIFY,
+    NA_SM_POLL_TX_NOTIFY
+} na_sm_poll_type_t;
+
 /* Address */
 struct na_sm_addr {
     HG_LIST_ENTRY(na_sm_addr) entry;    /* Entry in poll list */
@@ -223,6 +232,8 @@ struct na_sm_addr {
     struct na_sm_msg_queue *rx_queue;   /* Pointer to shared rx queue */
     int tx_notify;                      /* Notify fd for tx queue */
     int rx_notify;                      /* Notify fd for rx queue */
+    na_sm_poll_type_t tx_poll_type;     /* Tx poll type */
+    na_sm_poll_type_t rx_poll_type;     /* Rx poll type */
     hg_atomic_int32_t ref_count;        /* Ref count */
     pid_t pid;                          /* PID */
     na_uint8_t id;                      /* SM ID */
@@ -316,7 +327,13 @@ struct na_sm_endpoint {
     struct na_sm_addr *source_addr;            /* Source addr */
     hg_poll_set_t *poll_set;                   /* Poll set */
     int sock;                                  /* Sock fd */
+    na_sm_poll_type_t sock_poll_type;          /* Sock poll type */
     na_bool_t listen;                          /* Listen on sock */
+};
+
+/* Private context */
+struct na_sm_context {
+    struct hg_poll_event events[NA_SM_MAX_EVENTS];
 };
 
 /* Private data */
@@ -517,8 +534,7 @@ na_sm_event_get(int event, na_bool_t *signaled);
  * Register addr to poll set.
  */
 static na_return_t
-na_sm_poll_register(
-    hg_poll_set_t *poll_set, int fd, hg_poll_cb_t poll_cb, void *poll_arg);
+na_sm_poll_register(hg_poll_set_t *poll_set, int fd, void *ptr);
 
 /**
  * Deregister addr from poll set.
@@ -639,8 +655,9 @@ na_sm_offset_translate(struct na_sm_mem_handle *mem_handle, na_offset_t offset,
 /**
  * Progress on endpoint sock.
  */
-static int
-na_sm_progress_sock(void *arg, int error, struct hg_poll_event *event);
+static na_return_t
+na_sm_progress_sock(struct na_sm_endpoint *na_sm_endpoint, const char *username,
+    na_bool_t *progressed);
 
 /**
  * Process cmd.
@@ -652,14 +669,14 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 /**
  * Progress on tx notifications.
  */
-static int
-na_sm_progress_tx_notify(void *arg, int error, struct hg_poll_event *event);
+static na_return_t
+na_sm_progress_tx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed);
 
 /**
  * Progress on rx notifications.
  */
-static int
-na_sm_progress_rx_notify(void *arg, int error, struct hg_poll_event *event);
+static na_return_t
+na_sm_progress_rx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed);
 
 /**
  * Progress rx queue.
@@ -713,6 +730,14 @@ na_sm_initialize(
 /* finalize */
 static na_return_t
 na_sm_finalize(na_class_t *na_class);
+
+/* context_create */
+static na_return_t
+na_sm_context_create(na_class_t *na_class, void **context, na_uint8_t id);
+
+/* context_destroy */
+static na_return_t
+na_sm_context_destroy(na_class_t *na_class, void *context);
 
 /* cleanup */
 static void
@@ -883,8 +908,8 @@ const struct na_class_ops NA_PLUGIN_OPS(sm) = {
     na_sm_initialize,                  /* initialize */
     na_sm_finalize,                    /* finalize */
     na_sm_cleanup,                     /* cleanup */
-    NULL,                              /* context_create */
-    NULL,                              /* context_destroy */
+    na_sm_context_create,              /* context_create */
+    na_sm_context_destroy,             /* context_destroy */
     na_sm_op_create,                   /* op_create */
     na_sm_op_destroy,                  /* op_destroy */
     na_sm_addr_lookup,                 /* addr_lookup */
@@ -1024,8 +1049,8 @@ NA_SM_String_to_host_id(const char *string, na_sm_id_t *id)
 #else
     na_return_t ret = NA_SUCCESS;
     int rc = sscanf(string, "%ld", id);
-    NA_CHECK_ERROR(rc != 1, done, ret, NA_PROTOCOL_ERROR,
-        "sscanf() failed, rc: %d", rc);
+    NA_CHECK_ERROR(
+        rc != 1, done, ret, NA_PROTOCOL_ERROR, "sscanf() failed, rc: %d", rc);
 
 done:
     return ret;
@@ -1757,14 +1782,13 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_poll_register(
-    hg_poll_set_t *poll_set, int fd, hg_poll_cb_t poll_cb, void *poll_arg)
+na_sm_poll_register(hg_poll_set_t *poll_set, int fd, void *ptr)
 {
-    unsigned int flags = HG_POLLIN;
+    struct hg_poll_event event = {.events = HG_POLLIN, .data.ptr = ptr};
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    rc = hg_poll_add(poll_set, fd, flags, poll_cb, poll_arg);
+    rc = hg_poll_add(poll_set, fd, &event);
     NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, na_sm_errno_to_na(errno),
         "hg_poll_add() failed");
 
@@ -1849,11 +1873,12 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
         NA_CHECK_NA_ERROR(error, ret, "Could not open sock");
 
         if (listen) {
+            na_sm_endpoint->sock_poll_type = NA_SM_POLL_SOCK;
             NA_LOG_DEBUG(
                 "Registering sock %d for polling", na_sm_endpoint->sock);
             /* Add sock to poll set (ony required if we're listening) */
             ret = na_sm_poll_register(na_sm_endpoint->poll_set,
-                na_sm_endpoint->sock, na_sm_progress_sock, na_sm_endpoint);
+                na_sm_endpoint->sock, &na_sm_endpoint->sock_poll_type);
             NA_CHECK_NA_ERROR(error, ret, "Could not add sock to poll set");
             sock_registered = NA_TRUE;
         }
@@ -1873,9 +1898,10 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 
     /* Add source tx notify to poll set for local notifications */
     if (!no_wait) {
+        na_sm_endpoint->source_addr->tx_poll_type = NA_SM_POLL_TX_NOTIFY;
         NA_LOG_DEBUG("Registering tx notify %d for polling", tx_notify);
         ret = na_sm_poll_register(na_sm_endpoint->poll_set, tx_notify,
-            na_sm_progress_tx_notify, na_sm_endpoint->source_addr);
+            &na_sm_endpoint->source_addr->tx_poll_type);
         NA_CHECK_NA_ERROR(error, ret, "Could not add tx notify to poll set");
     }
 
@@ -2328,11 +2354,12 @@ na_sm_addr_create(struct na_sm_endpoint *na_sm_endpoint,
     }
 
     if (na_sm_endpoint->poll_set && (na_sm_addr->rx_notify > 0)) {
+        na_sm_addr->rx_poll_type = NA_SM_POLL_RX_NOTIFY;
         NA_LOG_DEBUG(
             "Registering rx notify %d for polling", na_sm_addr->rx_notify);
         /* Add remote rx notify to poll set */
         ret = na_sm_poll_register(na_sm_endpoint->poll_set,
-            na_sm_addr->rx_notify, na_sm_progress_rx_notify, na_sm_addr);
+            na_sm_addr->rx_notify, &na_sm_addr->rx_poll_type);
         NA_CHECK_NA_ERROR(done, ret, "Could not add rx notify to poll set");
     }
 
@@ -2655,38 +2682,28 @@ na_sm_offset_translate(struct na_sm_mem_handle *mem_handle, na_offset_t offset,
 }
 
 /*---------------------------------------------------------------------------*/
-static int
-na_sm_progress_sock(void *arg, int error, struct hg_poll_event *event)
+static na_return_t
+na_sm_progress_sock(struct na_sm_endpoint *na_sm_endpoint, const char *username,
+    na_bool_t *progressed)
 {
-    struct na_sm_endpoint *na_sm_endpoint = (struct na_sm_endpoint *) arg;
-    struct na_sm_class *na_sm_class =
-        container_of(na_sm_endpoint, struct na_sm_class, endpoint);
     na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
-    int tx_notify, rx_notify;
-    na_bool_t progressed = NA_FALSE;
+    int tx_notify = -1, rx_notify = -1;
     na_return_t ret = NA_SUCCESS;
-
-    NA_CHECK_ERROR(error, done, ret, NA_FAULT, "Unexpected poll error");
 
     /* Attempt to receive addr info (events, queue index) */
     ret = na_sm_addr_event_recv(
-        na_sm_endpoint->sock, &cmd_hdr, &tx_notify, &rx_notify, &progressed);
+        na_sm_endpoint->sock, &cmd_hdr, &tx_notify, &rx_notify, progressed);
     NA_CHECK_NA_ERROR(done, ret, "Could not recv addr events");
-    if (!progressed) {
-        event->progressed = HG_UTIL_FALSE;
-        goto done;
+
+    if (*progressed) {
+        /* Process received cmd, TODO would be nice to use cmd queue */
+        ret = na_sm_process_cmd(
+            na_sm_endpoint, username, cmd_hdr, tx_notify, rx_notify);
+        NA_CHECK_NA_ERROR(done, ret, "Could not process cmd");
     }
 
-    /* Process received cmd, TODO would be nice to use cmd queue */
-    ret = na_sm_process_cmd(
-        na_sm_endpoint, na_sm_class->username, cmd_hdr, tx_notify, rx_notify);
-    NA_CHECK_NA_ERROR(done, ret, "Could not process cmd");
-
-    event->progressed = HG_UTIL_TRUE;
-    event->ptr = NULL;
-
 done:
-    return (ret == NA_SUCCESS) ? HG_UTIL_SUCCESS : HG_UTIL_FAIL;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2773,51 +2790,37 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static int
-na_sm_progress_tx_notify(void *arg, int error, struct hg_poll_event *event)
+static na_return_t
+na_sm_progress_tx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed)
 {
-    struct na_sm_addr *poll_addr = (struct na_sm_addr *) arg;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    NA_CHECK_ERROR(error, done, ret, NA_FAULT, "Unexpected poll error");
-
     /* Local notification only */
-    rc = hg_event_get(poll_addr->tx_notify, &event->progressed);
+    rc = hg_event_get(poll_addr->tx_notify, (hg_util_bool_t *) progressed);
     NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, na_sm_errno_to_na(errno),
         "Could not get completion notification");
-    if (!event->progressed)
-        goto done;
 
     NA_LOG_DEBUG("Progressed tx notify %d", poll_addr->tx_notify);
 
-    event->ptr = NULL;
-
 done:
-    return (ret == NA_SUCCESS) ? HG_UTIL_SUCCESS : HG_UTIL_FAIL;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
-static int
-na_sm_progress_rx_notify(void *arg, int error, struct hg_poll_event *event)
+static na_return_t
+na_sm_progress_rx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed)
 {
-    struct na_sm_addr *poll_addr = (struct na_sm_addr *) arg;
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(error, done, ret, NA_FAULT, "Unexpected poll error");
-
     /* Remote notification only */
-    ret = na_sm_event_get(poll_addr->rx_notify, &event->progressed);
+    ret = na_sm_event_get(poll_addr->rx_notify, progressed);
     NA_CHECK_NA_ERROR(done, ret, "Could not get completion notification");
-    if (!event->progressed)
-        goto done;
 
     NA_LOG_DEBUG("Progressed rx notify %d", poll_addr->rx_notify);
 
-    event->ptr = poll_addr;
-
 done:
-    return (ret == NA_SUCCESS) ? HG_UTIL_SUCCESS : HG_UTIL_FAIL;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3217,7 +3220,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     /* Initialize private data */
     na_class->plugin_class = malloc(sizeof(struct na_sm_class));
     NA_CHECK_ERROR(na_class->plugin_class == NULL, error, ret, NA_NOMEM,
-        "Could not allocate NA private data class");
+        "Could not allocate SM private class");
     memset(na_class->plugin_class, 0, sizeof(struct na_sm_class));
     NA_SM_CLASS(na_class)->no_wait = no_wait;
     NA_SM_CLASS(na_class)->max_contexts = max_contexts;
@@ -3270,6 +3273,30 @@ na_sm_finalize(na_class_t *na_class)
 
 done:
     return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_context_create(
+    na_class_t NA_UNUSED *na_class, void **context, na_uint8_t NA_UNUSED id)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    *context = malloc(sizeof(struct na_sm_context));
+    NA_CHECK_ERROR(*context == NULL, done, ret, NA_NOMEM,
+        "Could not allocate SM private context");
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_context_destroy(na_class_t NA_UNUSED *na_class, void *context)
+{
+    free(context);
+
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4409,26 +4436,19 @@ done:
 static NA_INLINE na_bool_t
 na_sm_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
-    struct na_sm_endpoint *na_sm_endpoint = &NA_SM_CLASS(na_class)->endpoint;
-    struct na_sm_addr_list *poll_addr_list = &na_sm_endpoint->poll_addr_list;
     struct na_sm_addr *na_sm_addr;
 
     /* Check whether something is in one of the rx queues */
-    hg_thread_spin_lock(&poll_addr_list->lock);
-    HG_LIST_FOREACH (na_sm_addr, &poll_addr_list->list, entry) {
+    hg_thread_spin_lock(&NA_SM_CLASS(na_class)->endpoint.poll_addr_list.lock);
+    HG_LIST_FOREACH (na_sm_addr,
+        &NA_SM_CLASS(na_class)->endpoint.poll_addr_list.list, entry) {
         if (!na_sm_msg_queue_is_empty(na_sm_addr->rx_queue)) {
-            hg_thread_spin_unlock(&poll_addr_list->lock);
+            hg_thread_spin_unlock(
+                &NA_SM_CLASS(na_class)->endpoint.poll_addr_list.lock);
             return NA_FALSE;
         }
     }
-    hg_thread_spin_unlock(&poll_addr_list->lock);
-
-    /* Check whether something is in the cmd queue */
-    if (na_sm_endpoint->source_addr->shared_region &&
-        !na_sm_cmd_queue_is_empty(
-            &na_sm_endpoint->source_addr->shared_region->cmd_queue)) {
-        return NA_FALSE;
-    }
+    hg_thread_spin_unlock(&NA_SM_CLASS(na_class)->endpoint.poll_addr_list.lock);
 
     return NA_TRUE;
 }
@@ -4436,23 +4456,27 @@ na_sm_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_progress(
-    na_class_t *na_class, na_context_t NA_UNUSED *context, unsigned int timeout)
+    na_class_t *na_class, na_context_t *context, unsigned int timeout)
 {
     struct na_sm_endpoint *na_sm_endpoint = &NA_SM_CLASS(na_class)->endpoint;
+    const char *username = NA_SM_CLASS(na_class)->username;
+    struct hg_poll_event *events = NA_SM_CONTEXT(context)->events;
     double remaining =
         timeout / 1000.0; /* Convert timeout in ms into seconds */
     na_return_t ret = NA_TIMEOUT;
 
     do {
-        struct hg_poll_event events[NA_SM_MAX_EVENTS] = {0};
-        unsigned int nevents = 0, i;
         na_bool_t progressed = NA_FALSE;
         hg_time_t t1, t2;
 
         if (timeout)
             hg_time_get_current(&t1);
 
-        if (na_sm_endpoint->poll_set) {
+        if (timeout && na_sm_endpoint->poll_set) {
+            unsigned int nevents = 0, i;
+            /* Just wait on a single event, anything greater may increase
+             * latency, and slow down progress, we will not wait next round
+             * if something is still in the queues */
             int rc = hg_poll_wait(na_sm_endpoint->poll_set,
                 (unsigned int) (remaining * 1000.0), NA_SM_MAX_EVENTS, events,
                 &nevents);
@@ -4461,43 +4485,103 @@ na_sm_progress(
 
             /* Process events */
             for (i = 0; i < nevents; i++) {
-                if (events[i].progressed && events[i].ptr) {
-                    na_bool_t progressed_rx;
+                struct na_sm_addr *poll_addr = NULL;
+                na_bool_t progressed_notify = NA_FALSE;
+                na_bool_t progressed_rx = NA_FALSE;
 
-                    ret = na_sm_progress_rx_queue(
-                        na_sm_endpoint, events[i].ptr, &progressed_rx);
-                    NA_CHECK_NA_ERROR(done, ret, "Could not progress rx queue");
-                    progressed |= progressed_rx;
+                switch (*(na_sm_poll_type_t *) events[i].data.ptr) {
+                    case NA_SM_POLL_SOCK:
+                        NA_LOG_DEBUG("NA_SM_POLL_SOCK event");
+                        ret = na_sm_progress_sock(
+                            na_sm_endpoint, username, &progressed_notify);
+                        NA_CHECK_NA_ERROR(done, ret, "Could not progress sock");
+                        break;
+                    case NA_SM_POLL_TX_NOTIFY:
+                        NA_LOG_DEBUG("NA_SM_POLL_TX_NOTIFY event");
+                        poll_addr = container_of(events[i].data.ptr,
+                            struct na_sm_addr, tx_poll_type);
+                        ret = na_sm_progress_tx_notify(
+                            poll_addr, &progressed_notify);
+                        NA_CHECK_NA_ERROR(
+                            done, ret, "Could not progress tx notify");
+                        break;
+                    case NA_SM_POLL_RX_NOTIFY:
+                        NA_LOG_DEBUG("NA_SM_POLL_RX_NOTIFY event");
+                        poll_addr = container_of(events[i].data.ptr,
+                            struct na_sm_addr, rx_poll_type);
+
+                        ret = na_sm_progress_rx_notify(
+                            poll_addr, &progressed_notify);
+                        NA_CHECK_NA_ERROR(
+                            done, ret, "Could not progress rx notify");
+
+                        ret = na_sm_progress_rx_queue(
+                            na_sm_endpoint, poll_addr, &progressed_rx);
+                        NA_CHECK_NA_ERROR(
+                            done, ret, "Could not progress rx queue");
+
+                        break;
+                    default:
+                        NA_GOTO_ERROR(done, ret, NA_INVALID_ARG,
+                            "Operation type %d not supported",
+                            *(na_sm_poll_type_t *) events[i].data.ptr);
                 }
-                progressed |= events[i].progressed;
+
+                progressed |= (progressed_rx | progressed_notify);
             }
         } else {
             struct na_sm_addr_list *poll_addr_list =
                 &na_sm_endpoint->poll_addr_list;
-            struct na_sm_addr *na_sm_addr;
+            struct na_sm_addr *poll_addr;
 
             /* Check whether something is in one of the rx queues */
             hg_thread_spin_lock(&poll_addr_list->lock);
-            HG_LIST_FOREACH (na_sm_addr, &poll_addr_list->list, entry) {
-                na_bool_t progressed_rx;
+            HG_LIST_FOREACH (poll_addr, &poll_addr_list->list, entry) {
+                na_bool_t progressed_rx = NA_FALSE;
 
+                hg_thread_spin_unlock(&poll_addr_list->lock);
+
+                if (na_sm_endpoint->poll_set) {
+                    na_bool_t progressed_notify = NA_FALSE;
+                    ret =
+                        na_sm_progress_rx_notify(poll_addr, &progressed_notify);
+                    NA_CHECK_NA_ERROR(
+                        done, ret, "Could not progress rx notify");
+                    progressed |= progressed_notify;
+                }
                 ret = na_sm_progress_rx_queue(
-                    na_sm_endpoint, na_sm_addr, &progressed_rx);
+                    na_sm_endpoint, poll_addr, &progressed_rx);
                 NA_CHECK_NA_ERROR(done, ret, "Could not progress rx queue");
-
                 progressed |= progressed_rx;
+
+                hg_thread_spin_lock(&poll_addr_list->lock);
             }
             hg_thread_spin_unlock(&poll_addr_list->lock);
 
             /* Look for message in cmd queue (if listening) */
-            if (na_sm_endpoint->source_addr->shared_region) {
+            if (na_sm_endpoint->poll_set) {
+                na_bool_t progressed_notify = NA_FALSE;
+
+                ret = na_sm_progress_tx_notify(
+                    na_sm_endpoint->source_addr, &progressed_notify);
+                NA_CHECK_NA_ERROR(done, ret, "Could not progress tx notify");
+                progressed |= progressed_notify;
+
+                if (na_sm_endpoint->source_addr->shared_region) {
+                    na_bool_t progressed_sock = NA_FALSE;
+                    ret = na_sm_progress_sock(
+                        na_sm_endpoint, username, &progressed_sock);
+                    NA_CHECK_NA_ERROR(done, ret, "Could not progress sock");
+                    progressed |= progressed_sock;
+                }
+            } else if (na_sm_endpoint->source_addr->shared_region) {
                 na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
 
                 while (na_sm_cmd_queue_pop(
                     &na_sm_endpoint->source_addr->shared_region->cmd_queue,
                     &cmd_hdr)) {
-                    ret = na_sm_process_cmd(na_sm_endpoint,
-                        NA_SM_CLASS(na_class)->username, cmd_hdr, -1, -1);
+                    ret = na_sm_process_cmd(
+                        na_sm_endpoint, username, cmd_hdr, -1, -1);
                     NA_CHECK_NA_ERROR(done, ret, "Could not process cmd");
                     progressed |= NA_TRUE;
                 }
@@ -4513,7 +4597,7 @@ na_sm_progress(
             remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
         }
 
-        if (nevents == 0 || !progressed)
+        if (!progressed)
             ret = NA_TIMEOUT; /* Return NA_TIMEOUT if no events */
 
     } while (remaining > 0 && (ret != NA_SUCCESS));
