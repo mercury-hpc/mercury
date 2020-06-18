@@ -41,7 +41,7 @@
 #define HG_CORE_ATOMIC_QUEUE_SIZE   1024
 #define HG_CORE_PENDING_INCR        256
 #define HG_CORE_CLEANUP_TIMEOUT     1000
-#define HG_CORE_MAX_EVENTS          16
+#define HG_CORE_MAX_EVENTS          1
 #define HG_CORE_MAX_TRIGGER_COUNT   1
 #ifdef HG_HAS_SM_ROUTING
 # define HG_CORE_ADDR_MAX_SIZE      256
@@ -107,6 +107,15 @@ struct hg_core_private_class {
 #endif
 };
 
+/* Poll type */
+typedef enum hg_core_poll_type {
+    HG_CORE_POLL_LOOPBACK = 1,
+#ifdef HG_HAS_SM_ROUTING
+    HG_CORE_POLL_SM,
+#endif
+    HG_CORE_POLL_NA
+} hg_core_poll_type_t;
+
 /* HG context */
 struct hg_core_private_context {
     struct hg_core_context core_context;        /* Must remain as first field */
@@ -122,8 +131,7 @@ struct hg_core_private_context {
     hg_return_t (*handle_create)(hg_core_handle_t, void *); /* handle_create */
     void *handle_create_arg;                    /* handle_create arg */
     struct hg_poll_set *poll_set;               /* Context poll set */
-    hg_return_t (*progress)(struct hg_core_private_context *context,
-        unsigned int timeout);                  /* Progress function */
+    struct hg_poll_event poll_events[HG_CORE_MAX_EVENTS]; /* Context poll events */
     hg_atomic_int32_t backfill_queue_count;     /* Backfill queue count */
     hg_atomic_int32_t trigger_waiting;          /* Waiting in trigger */
     hg_atomic_int32_t n_handles;                /* Atomic used for number of handles */
@@ -638,7 +646,8 @@ hg_core_reset_post(
  */
 static hg_return_t
 hg_core_progress_na(
-        struct hg_core_private_context *context,
+        na_class_t *na_class,
+        na_context_t *na_context,
         unsigned int timeout
         );
 
@@ -646,49 +655,25 @@ hg_core_progress_na(
 /**
  * Completion queue notification callback.
  */
-static HG_INLINE int
-hg_core_completion_queue_notify_cb(
-        void *arg,
-        int error,
-        struct hg_poll_event *event
+static HG_INLINE hg_return_t
+hg_core_progress_loopback_notify(
+        struct hg_core_private_context *context
         );
 #endif
 
 /**
- * Progress callback on NA layer when hg_core_progress_poll() is used.
+ * Determines when it is safe to block.
  */
-static int
-hg_core_progress_na_cb(
-        void *arg,
-        int error,
-        struct hg_poll_event *event
-        );
-
-#ifdef HG_HAS_SM_ROUTING
-/**
- * Progress callback on NA SM layer when hg_core_progress_poll() is used.
- */
-static int
-hg_core_progress_na_sm_cb(
-        void *arg,
-        int error,
-        struct hg_poll_event *event
-        );
-#endif
-
-/**
- * Callback for HG poll progress that determines when it is safe to block.
- */
-static HG_INLINE hg_util_bool_t
-hg_core_poll_try_wait_cb(
-        void *arg
+static HG_INLINE hg_bool_t
+hg_core_poll_try_wait(
+        struct hg_core_private_context *context
         );
 
 /**
  * Make progress.
  */
 static hg_return_t
-hg_core_progress_poll(
+hg_core_progress(
         struct hg_core_private_context *context,
         unsigned int timeout
         );
@@ -941,7 +926,7 @@ hg_core_context_lists_wait(struct hg_core_private_context *context)
         if (created_list_empty && pending_list_empty && sm_pending_list_empty)
             break;
 
-        progress_ret = context->progress(context,
+        progress_ret = hg_core_progress(context,
             (unsigned int) (remaining * 1000.0));
         HG_CHECK_ERROR(progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT,
             done, ret, progress_ret, "Could not make progress");
@@ -2704,163 +2689,16 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SELF_FORWARD
-static HG_INLINE int
-hg_core_completion_queue_notify_cb(void *arg,
-    int HG_UNUSED error, struct hg_poll_event *event)
-{
-    struct hg_core_private_context *context =
-        (struct hg_core_private_context *) arg;
-    hg_util_bool_t notified = HG_UTIL_FALSE;
-    int rc = HG_UTIL_SUCCESS;
-
-    if (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)) {
-        /* TODO could prevent from self notifying if hg_poll_wait() not entered */
-        rc = hg_event_get(context->completion_queue_notify, &notified);
-        HG_CHECK_ERROR_NORET(rc != HG_UTIL_SUCCESS, done,
-            "Could not get completion notification");
-    }
-
-    if (notified || !hg_atomic_queue_is_empty(context->completion_queue)
-        || hg_atomic_get32(&context->backfill_queue_count)) {
-        event->progressed = HG_UTIL_TRUE; /* Progressed */
-        goto done;
-    }
-
-    event->progressed = HG_UTIL_FALSE;
-
-done:
-    return rc;
-}
-#endif
-
-/*---------------------------------------------------------------------------*/
-static int
-hg_core_progress_na_cb(void *arg, int HG_UNUSED error,
-    struct hg_poll_event *event)
-{
-    struct hg_core_private_context *context =
-        (struct hg_core_private_context *) arg;
-     unsigned int actual_count = 0;
-    unsigned int completed_count = 0;
-    int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
-    int rc = HG_UTIL_SUCCESS;
-    na_return_t na_ret;
-
-    /* Check progress on NA (no need to call try_wait here) */
-    na_ret = NA_Progress(HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
-        context->core_context.na_context, 0);
-    if (na_ret == NA_TIMEOUT) {
-        /* Nothing progressed */
-        event->progressed = HG_UTIL_FALSE;
-        goto done;
-    } else
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, rc, HG_UTIL_FAIL,
-            "Could not make progress on NA (%s)", NA_Error_to_string(na_ret));
-
-    /* Trigger everything we can from NA, if something completed it will
-     * be moved to the HG context completion queue */
-    do {
-        unsigned int i;
-
-        na_ret = NA_Trigger(context->core_context.na_context, 0,
-            HG_CORE_MAX_TRIGGER_COUNT, cb_ret, &actual_count);
-
-        /* Return value of callback is completion count */
-        for (i = 0; i < actual_count; i++)
-            completed_count += (unsigned int) cb_ret[i];
-    } while ((na_ret == NA_SUCCESS) && actual_count);
-    HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, rc,
-        HG_UTIL_FAIL, "Could not trigger NA callback (%s)",
-        NA_Error_to_string(na_ret));
-
-    /* We can't only verify that the completion queue is not empty, we need
-     * to check what was added to the completion queue, as the completion queue
-     * may have been concurrently emptied */
-    if (!completed_count && hg_atomic_queue_is_empty(context->completion_queue)
-        && !hg_atomic_get32(&context->backfill_queue_count)) {
-        /* Nothing progressed */
-        event->progressed = HG_UTIL_FALSE;
-        goto done;
-    }
-
-    event->progressed = HG_UTIL_TRUE;
-
-done:
-    return rc;
-}
-
-/*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SM_ROUTING
-static int
-hg_core_progress_na_sm_cb(void *arg, int HG_UNUSED error,
-    struct hg_poll_event *event)
-{
-    struct hg_core_private_context *context =
-        (struct hg_core_private_context *) arg;
-    unsigned int actual_count = 0;
-    unsigned int completed_count = 0;
-    int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
-    int rc = HG_UTIL_SUCCESS;
-    na_return_t na_ret;
-
-    /* Check progress on NA SM (no need to call try_wait here) */
-    na_ret = NA_Progress(HG_CORE_CONTEXT_CLASS(context)->core_class.na_sm_class,
-        context->core_context.na_sm_context, 0);
-    if (na_ret == NA_TIMEOUT) {
-        /* Nothing progressed */
-        event->progressed = HG_UTIL_FALSE;
-        goto done;
-    } else
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, rc, HG_UTIL_FAIL,
-            "Could not make progress on NA SM (%s)",
-            NA_Error_to_string(na_ret));
-
-    /* Trigger everything we can from NA, if something completed it will
-     * be moved to the HG context completion queue */
-    do {
-        unsigned int i;
-
-        na_ret = NA_Trigger(context->core_context.na_sm_context, 0,
-            HG_CORE_MAX_TRIGGER_COUNT, cb_ret, &actual_count);
-
-        /* Return value of callback is completion count */
-        for (i = 0; i < actual_count; i++)
-            completed_count += (unsigned int)cb_ret[i];
-    } while ((na_ret == NA_SUCCESS) && actual_count);
-    HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, rc,
-        HG_UTIL_FAIL, "Could not trigger NA SM callback (%s)",
-        NA_Error_to_string(na_ret));
-
-    /* We can't only verify that the completion queue is not empty, we need
-     * to check what was added to the completion queue, as the completion queue
-     * may have been concurrently emptied */
-    if (!completed_count && hg_atomic_queue_is_empty(context->completion_queue)
-        && !hg_atomic_get32(&context->backfill_queue_count)) {
-        /* Nothing progressed */
-        event->progressed = HG_UTIL_FALSE;
-        goto done;
-    }
-
-    event->progressed = HG_UTIL_TRUE;
-
-done:
-    return rc;
-}
-#endif
-
-/*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_progress_na(struct hg_core_private_context *context,
+hg_core_progress_na(na_class_t *na_class, na_context_t *na_context,
     unsigned int timeout)
 {
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    unsigned int completed_count = 0;
     hg_return_t ret = HG_TIMEOUT;
 
     for (;;) {
         unsigned int actual_count = 0;
-        int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
-        unsigned int completed_count = 0;
         unsigned int progress_timeout;
         na_return_t na_ret;
         hg_time_t t1, t2;
@@ -2868,26 +2706,23 @@ hg_core_progress_na(struct hg_core_private_context *context,
         /* Trigger everything we can from NA, if something completed it will
          * be moved to the HG context completion queue */
         do {
+            int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
             unsigned int i;
 
-            na_ret = NA_Trigger(context->core_context.na_context, 0,
-                HG_CORE_MAX_TRIGGER_COUNT, cb_ret, &actual_count);
+            na_ret = NA_Trigger(na_context, 0, HG_CORE_MAX_TRIGGER_COUNT,
+                cb_ret, &actual_count);
 
             /* Return value of callback is completion count */
             for (i = 0; i < actual_count; i++)
-                completed_count += (unsigned int)cb_ret[i];
+                completed_count += (unsigned int) cb_ret[i];
         } while ((na_ret == NA_SUCCESS) && actual_count);
         HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, ret,
             (hg_return_t) na_ret, "Could not trigger NA callback (%s)",
             NA_Error_to_string(na_ret));
 
-        /* We can't only verify that the completion queue is not empty, we need
-         * to check what was added to the completion queue, as the completion
-         * queue may have been concurrently emptied */
-        if (completed_count
-            || !hg_atomic_queue_is_empty(context->completion_queue)
-            || hg_atomic_get32(&context->backfill_queue_count)) {
-            ret = HG_SUCCESS; /* Progressed */
+        /* Progressed */
+        if (completed_count) {
+            ret = HG_SUCCESS;
             break;
         }
 
@@ -2898,31 +2733,24 @@ hg_core_progress_na(struct hg_core_private_context *context,
             hg_time_get_current(&t1);
 
         /* Make sure that it is safe to block */
-        if (timeout && NA_Poll_try_wait(
-            HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
-            context->core_context.na_context))
+        if (timeout && NA_Poll_try_wait(na_class, na_context))
             progress_timeout = (unsigned int) (remaining * 1000.0);
         else
             progress_timeout = 0;
 
         /* Otherwise try to make progress on NA */
-        na_ret = NA_Progress(
-            HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
-            context->core_context.na_context, progress_timeout);
+        na_ret = NA_Progress(na_class, na_context, progress_timeout);
+        if (na_ret == NA_TIMEOUT && (remaining <= 0))
+            break;
+        else
+            HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, ret,
+                (hg_return_t) na_ret, "Could not make progress on NA (%s)",
+                NA_Error_to_string(na_ret));
 
         if (timeout) {
             hg_time_get_current(&t2);
             remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
         }
-
-        /* Trigger NA callbacks and check whether we completed something */
-        if (na_ret == NA_SUCCESS)
-            continue;
-        else if (na_ret == NA_TIMEOUT && (remaining <= 0))
-            break;
-        else if (na_ret != NA_TIMEOUT)
-            HG_GOTO_ERROR(done, ret, (hg_return_t) na_ret,
-                "Could not make NA Progress (%s)", NA_Error_to_string(na_ret));
     }
 
 done:
@@ -2930,39 +2758,53 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_util_bool_t
-hg_core_poll_try_wait_cb(void *arg)
+#ifdef HG_HAS_SELF_FORWARD
+static HG_INLINE hg_return_t
+hg_core_progress_loopback_notify(struct hg_core_private_context *context)
 {
-    struct hg_core_private_context *context =
-        (struct hg_core_private_context *) arg;
+    hg_util_bool_t progressed = HG_UTIL_FALSE;
+    hg_return_t ret = HG_SUCCESS;
+    int rc;
 
-    /* Do not try to wait if NA_NO_BLOCK is set */
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
-        return NA_FALSE;
+    rc = hg_event_get(context->completion_queue_notify, &progressed);
+    if (progressed)
+        ret = HG_SUCCESS;
+    else
+        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
+            "Could not get completion notification");
 
-    /* Something is in one of the completion queues */
-    if (!hg_atomic_queue_is_empty(context->completion_queue) ||
-        hg_atomic_get32(&context->backfill_queue_count)) {
-        return NA_FALSE;
-    }
-
-#ifdef HG_HAS_SM_ROUTING
-    if (context->core_context.core_class->na_sm_class) {
-        na_bool_t ret = NA_Poll_try_wait(
-            context->core_context.core_class->na_sm_class,
-            context->core_context.na_sm_context);
-        if (ret)
-            return ret;
-    }
+done:
+    return ret;
+}
 #endif
 
-    return NA_Poll_try_wait(context->core_context.core_class->na_class,
-        context->core_context.na_context);
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_bool_t
+hg_core_poll_try_wait(struct hg_core_private_context *context)
+{
+    return HG_FALSE;
+    /* Something is in one of the completion queues */
+    if (!hg_atomic_queue_is_empty(context->completion_queue) ||
+        (hg_atomic_get32(&context->backfill_queue_count) > 0))
+        return HG_FALSE;
+
+#ifdef HG_HAS_SM_ROUTING
+    if (context->core_context.core_class->na_sm_class
+        && !NA_Poll_try_wait(context->core_context.core_class->na_sm_class,
+            context->core_context.na_sm_context))
+        return HG_FALSE;
+#endif
+
+    if (!NA_Poll_try_wait(context->core_context.core_class->na_class,
+        context->core_context.na_context))
+        return HG_FALSE;
+
+    return HG_TRUE;
 }
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_progress_poll(struct hg_core_private_context *context,
+hg_core_progress(struct hg_core_private_context *context,
     unsigned int timeout)
 {
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
@@ -2970,28 +2812,112 @@ hg_core_progress_poll(struct hg_core_private_context *context,
 
     do {
         hg_time_t t1, t2;
-        struct hg_poll_event events[HG_CORE_MAX_EVENTS] = {0};
-        unsigned int poll_timeout =
-            (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) ? 0 :
-            (unsigned int) (remaining * 1000.0);
-        unsigned int nevents, i;
-        int rc;
 
         if (timeout)
             hg_time_get_current(&t1);
 
-        /* Will call hg_core_poll_try_wait_cb if timeout is not 0 */
-        rc = hg_poll_wait(context->poll_set, poll_timeout, HG_CORE_MAX_EVENTS,
-            events, &nevents);
-        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
-            "hg_poll_wait() failed");
+        /* Only enter blocking wait if it is safe to */
+        if (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
+            && context->poll_set && timeout && hg_core_poll_try_wait(context)) {
+            unsigned int i, nevents;
+            int rc;
 
-        /* We progressed, return success */
-        for (i = 0; i < nevents; i++) {
-            if (events[i].progressed) {
+            rc = hg_poll_wait(context->poll_set,
+                (unsigned int) (remaining * 1000.0), HG_CORE_MAX_EVENTS,
+                context->poll_events, &nevents);
+            HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
+                "hg_poll_wait() failed");
+
+            for (i = 0; i < nevents; i++) {
+                switch (context->poll_events[i].data.u32) {
+#ifdef HG_HAS_SELF_FORWARD
+                    case HG_CORE_POLL_LOOPBACK:
+                        HG_LOG_DEBUG("HG_CORE_POLL_LOOPBACK event");
+                        ret = hg_core_progress_loopback_notify(context);
+                        if (ret != HG_TIMEOUT)
+                            HG_CHECK_HG_ERROR(done, ret,
+                                "hg_core_progress_loopback_notify() failed");
+                        break;
+#endif
+#ifdef HG_HAS_SM_ROUTING
+                    case HG_CORE_POLL_SM:
+                        HG_LOG_DEBUG("HG_CORE_POLL_SM event");
+                        ret = hg_core_progress_na(
+                            HG_CORE_CONTEXT_CLASS(
+                                context)->core_class.na_sm_class,
+                            context->core_context.na_sm_context, 0);
+                        if (ret != HG_TIMEOUT)
+                            HG_CHECK_HG_ERROR(done, ret,
+                                "hg_core_progress_na() failed");
+                        break;
+#endif
+                    case HG_CORE_POLL_NA:
+                        HG_LOG_DEBUG("HG_CORE_POLL_NA event");
+                        ret = hg_core_progress_na(
+                            HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
+                            context->core_context.na_context, 0);
+                            if (ret != HG_TIMEOUT)
+                                HG_CHECK_HG_ERROR(done, ret,
+                                    "hg_core_progress_na() failed");
+                        break;
+                    default:
+                        HG_GOTO_ERROR(done, ret, HG_INVALID_ARG,
+                            "Invalid type of poll event (%d)",
+                            (int) context->poll_events[i].data.u32);
+                }
+            }
+
+            /* We progressed, will return success */
+            if (nevents > 0) {
                 ret = HG_SUCCESS;
                 goto done;
             }
+        } else {
+            hg_bool_t progressed = HG_FALSE;
+            unsigned int progress_timeout;
+#ifdef HG_HAS_SM_ROUTING
+            if (context->core_context.na_sm_context) {
+                progress_timeout = 0;
+
+                ret = hg_core_progress_na(
+                    HG_CORE_CONTEXT_CLASS(context)->core_class.na_sm_class,
+                    context->core_context.na_sm_context, progress_timeout);
+                if (ret == HG_SUCCESS)
+                    progressed |= HG_TRUE;
+                else if (ret != HG_TIMEOUT)
+                    HG_CHECK_HG_ERROR(
+                        done, ret, "hg_core_progress_na() failed");
+            } else {
+#else
+            progress_timeout =
+                (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
+                && timeout && hg_core_poll_try_wait(context)) ?
+                    (unsigned int) (remaining * 1000.0) : 0;
+#endif
+#ifdef HG_HAS_SM_ROUTING
+            }
+#endif
+
+            ret = hg_core_progress_na(
+                HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
+                context->core_context.na_context, progress_timeout);
+            if (ret == HG_SUCCESS)
+                progressed |= HG_TRUE;
+            else if (ret != HG_TIMEOUT)
+                HG_CHECK_HG_ERROR(done, ret, "hg_core_progress_na() failed");
+
+            /* We progressed, return success */
+            if (progressed) {
+                ret = HG_SUCCESS;
+                break;
+            }
+        }
+
+        /* There is stuff in the queues to process */
+        if (!hg_atomic_queue_is_empty(context->completion_queue)
+            || (hg_atomic_get32(&context->backfill_queue_count) > 0)) {
+            ret = HG_SUCCESS;
+            break;
         }
 
         if (timeout) {
@@ -3333,9 +3259,6 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
 {
     struct hg_core_private_context *context = NULL;
     int na_poll_fd;
-#ifdef HG_HAS_SELF_FORWARD
-    int fd;
-#endif
 
     HG_CHECK_ERROR_NORET(hg_core_class == NULL, error, "NULL HG core class");
 
@@ -3384,58 +3307,54 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
     }
 #endif
 
-    /* Create poll set */
-    context->poll_set = hg_poll_create();
-    HG_CHECK_ERROR_NORET(context->poll_set == NULL, error,
-        "Could not create poll set");
+    /* If NA plugin exposes fd, we will use poll set and use appropriate
+        * progress function */
+    na_poll_fd = NA_Poll_get_fd(hg_core_class->na_class,
+        context->core_context.na_context);
 
-#ifdef HG_HAS_SELF_FORWARD
-    /* Create event for completion queue notification */
-    fd = hg_event_create();
-    HG_CHECK_ERROR_NORET(fd < 0, error, "Could not create event");
-    context->completion_queue_notify = fd;
+    if (!HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK
+        && (na_poll_fd > 0)) {
+        struct hg_poll_event event = {.events = HG_POLLIN, .data.u64 = 0};
+        int rc;
 
-    /* Add event to context poll set */
-    hg_poll_add(context->poll_set, fd, HG_POLLIN,
-        hg_core_completion_queue_notify_cb, context);
-#endif
+        /* Create poll set */
+        context->poll_set = hg_poll_create();
+        HG_CHECK_ERROR_NORET(context->poll_set == NULL, error,
+            "Could not create poll set");
 
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
-        /* Force to use progress poll */
-        na_poll_fd = 0;
-    else
-        /* If NA plugin exposes fd, add it to poll set and use appropriate
-         * progress function */
-        na_poll_fd = NA_Poll_get_fd(hg_core_class->na_class,
-            context->core_context.na_context);
-    if (na_poll_fd >= 0) {
-        hg_poll_add(context->poll_set, na_poll_fd, HG_POLLIN,
-            hg_core_progress_na_cb, context);
-        hg_poll_set_try_wait(context->poll_set, hg_core_poll_try_wait_cb,
-            context);
-        context->progress = hg_core_progress_poll;
-    } else
-        context->progress = hg_core_progress_na;
+        event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_NA;
+        rc = hg_poll_add(context->poll_set, na_poll_fd, &event);
+        HG_CHECK_ERROR_NORET(
+            rc != HG_UTIL_SUCCESS, error, "hg_poll_add() failed");
 
 #ifdef HG_HAS_SM_ROUTING
-    /* Auto SM requires hg_core_progress_poll */
-    if (context->core_context.na_sm_context) {
-        HG_CHECK_ERROR_NORET(context->progress != hg_core_progress_poll, error,
-            "Auto SM mode not supported with selected plugin");
-
-        if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
-            /* Force to use progress poll */
-            na_poll_fd = 0;
-        else {
+        if (context->core_context.na_sm_context) {
             na_poll_fd = NA_Poll_get_fd(hg_core_class->na_sm_class,
                 context->core_context.na_sm_context);
             HG_CHECK_ERROR_NORET(na_poll_fd < 0, error,
                 "Could not get NA SM poll fd");
+
+            event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_SM;
+            rc = hg_poll_add(context->poll_set, na_poll_fd, &event);
+            HG_CHECK_ERROR_NORET(
+                rc != HG_UTIL_SUCCESS, error, "hg_poll_add() failed");
         }
-        hg_poll_add(context->poll_set, na_poll_fd, HG_POLLIN,
-            hg_core_progress_na_sm_cb, context);
-    }
 #endif
+
+#ifdef HG_HAS_SELF_FORWARD
+        /* Create event for completion queue notification */
+        context->completion_queue_notify = hg_event_create();
+        HG_CHECK_ERROR_NORET(context->completion_queue_notify < 0, error,
+            "Could not create event");
+
+        /* Add event to context poll set */
+        event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_LOOPBACK;
+        rc = hg_poll_add(
+            context->poll_set, context->completion_queue_notify, &event);
+        HG_CHECK_ERROR_NORET(
+            rc != HG_UTIL_SUCCESS, error, "hg_poll_add() failed");
+#endif
+    }
 
     /* Assign context ID */
     context->core_context.id = id;
@@ -3457,7 +3376,6 @@ HG_Core_context_destroy(hg_core_context_t *context)
     struct hg_core_private_context *private_context =
         (struct hg_core_private_context *) context;
     unsigned int actual_count;
-    int na_poll_fd;
     hg_util_int32_t n_handles;
     hg_bool_t empty;
     na_return_t na_ret;
@@ -3540,29 +3458,23 @@ HG_Core_context_destroy(hg_core_context_t *context)
     }
 #endif
 
-    if (HG_CORE_CONTEXT_CLASS(private_context)->progress_mode & NA_NO_BLOCK)
-        /* Was forced to use progress poll */
-        na_poll_fd = 0;
-    else
+    if (private_context->poll_set) {
         /* If NA plugin exposes fd, remove it from poll set */
-        na_poll_fd = NA_Poll_get_fd(context->core_class->na_class,
+        int na_poll_fd = NA_Poll_get_fd(context->core_class->na_class,
             context->na_context);
-    if (na_poll_fd >= 0) {
-        rc = hg_poll_remove(private_context->poll_set, na_poll_fd);
-        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_NOENTRY,
-            "Could not remove NA poll descriptor from poll set");
+        if (na_poll_fd > 0) {
+            rc = hg_poll_remove(private_context->poll_set, na_poll_fd);
+            HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_NOENTRY,
+                "Could not remove NA poll descriptor from poll set");
+        }
     }
 
 #ifdef HG_HAS_SM_ROUTING
-    if (context->na_sm_context) {
-        if (HG_CORE_CONTEXT_CLASS(private_context)->progress_mode & NA_NO_BLOCK)
-            /* Was forced to use progress poll */
-            na_poll_fd = 0;
-        else
-            /* If NA plugin exposes fd, remove it from poll set */
-            na_poll_fd = NA_Poll_get_fd(context->core_class->na_sm_class,
-                context->na_sm_context);
-        if (na_poll_fd >= 0) {
+    if (context->na_sm_context && private_context->poll_set) {
+        /* If NA plugin exposes fd, remove it from poll set */
+        int na_poll_fd = NA_Poll_get_fd(context->core_class->na_sm_class,
+            context->na_sm_context);
+        if (na_poll_fd > 0) {
             rc = hg_poll_remove(private_context->poll_set, na_poll_fd);
             HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_NOENTRY,
                 "Could not remove NA poll descriptor from poll set");
@@ -3571,9 +3483,11 @@ HG_Core_context_destroy(hg_core_context_t *context)
 #endif
 
     /* Destroy poll set */
-    rc = hg_poll_destroy(private_context->poll_set);
-    HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
-        "Could not destroy poll set");
+    if (private_context->poll_set) {
+        rc = hg_poll_destroy(private_context->poll_set);
+        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
+            "Could not destroy poll set");
+    }
 
     /* Destroy NA context */
     if (context->na_context) {
@@ -4374,7 +4288,7 @@ HG_Core_progress(hg_core_context_t *context, unsigned int timeout)
         "NULL HG core context");
 
     /* Make progress on the HG layer */
-    ret = private_context->progress(private_context, timeout);
+    ret = hg_core_progress(private_context, timeout);
     HG_CHECK_ERROR_NORET(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
         "Could not make progress");
 
