@@ -2792,7 +2792,6 @@ done:
 static HG_INLINE hg_bool_t
 hg_core_poll_try_wait(struct hg_core_private_context *context)
 {
-    return HG_FALSE;
     /* Something is in one of the completion queues */
     if (!hg_atomic_queue_is_empty(context->completion_queue) ||
         (hg_atomic_get32(&context->backfill_queue_count) > 0))
