@@ -121,6 +121,7 @@ struct hg_core_private_context {
     struct hg_core_context core_context;        /* Must remain as first field */
     hg_thread_cond_t  completion_queue_cond;    /* Completion queue cond */
     hg_thread_mutex_t completion_queue_mutex;   /* Completion queue mutex */
+    hg_thread_mutex_t completion_queue_notify_mutex; /* Notify mutex */
     HG_QUEUE_HEAD(hg_completion_entry) backfill_queue;  /* Backfill completion queue */
     struct hg_atomic_queue *completion_queue;           /* Default completion queue */
     HG_LIST_HEAD(hg_core_private_handle) created_list;  /* List of handles for that context */
@@ -132,6 +133,7 @@ struct hg_core_private_context {
     void *handle_create_arg;                    /* handle_create arg */
     struct hg_poll_set *poll_set;               /* Context poll set */
     struct hg_poll_event poll_events[HG_CORE_MAX_EVENTS]; /* Context poll events */
+    hg_atomic_int32_t completion_queue_must_notify; /* Notify of completion queue events */
     hg_atomic_int32_t backfill_queue_count;     /* Backfill queue count */
     hg_atomic_int32_t trigger_waiting;          /* Waiting in trigger */
     hg_atomic_int32_t n_handles;                /* Atomic used for number of handles */
@@ -2541,12 +2543,20 @@ hg_core_completion_add(struct hg_core_context *context,
     }
 
 #ifdef HG_HAS_SELF_FORWARD
-    /* TODO could prevent from self notifying if hg_poll_wait() not entered */
     if (!(HG_CORE_CONTEXT_CLASS(private_context)->progress_mode & NA_NO_BLOCK)
-        && self_notify && private_context->completion_queue_notify) {
-        int rc = hg_event_set(private_context->completion_queue_notify);
-        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
-            "Could not signal completion queue");
+        && self_notify && (private_context->completion_queue_notify > 0)) {
+            hg_thread_mutex_lock(
+                &private_context->completion_queue_notify_mutex);
+            /* Do not bother notifying if it's not needed as any event call will
+             * increase latency */
+            if (hg_atomic_get32(
+                &private_context->completion_queue_must_notify)) {
+                int rc = hg_event_set(private_context->completion_queue_notify);
+                HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
+                    "Could not signal completion queue");
+            }
+            hg_thread_mutex_unlock(
+                &private_context->completion_queue_notify_mutex);
     }
 #else
     (void) self_notify;
@@ -2763,7 +2773,7 @@ static HG_INLINE hg_return_t
 hg_core_progress_loopback_notify(struct hg_core_private_context *context)
 {
     hg_util_bool_t progressed = HG_UTIL_FALSE;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_AGAIN;
     int rc;
 
     rc = hg_event_get(context->completion_queue_notify, &progressed);
@@ -2812,19 +2822,32 @@ hg_core_progress(struct hg_core_private_context *context,
 
     do {
         hg_time_t t1, t2;
+        hg_bool_t safe_wait = HG_FALSE;
 
         if (timeout)
             hg_time_get_current(&t1);
 
-        /* Only enter blocking wait if it is safe to */
         if (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
-            && context->poll_set && timeout && hg_core_poll_try_wait(context)) {
+            && timeout) {
+            hg_thread_mutex_lock(&context->completion_queue_notify_mutex);
+
+            if (hg_core_poll_try_wait(context)) {
+                safe_wait = HG_TRUE;
+                hg_atomic_set32(&context->completion_queue_must_notify, 1);
+            }
+
+            hg_thread_mutex_unlock(&context->completion_queue_notify_mutex);
+        }
+
+        /* Only enter blocking wait if it is safe to */
+        if (context->poll_set && safe_wait) {
             unsigned int i, nevents;
             int rc;
 
             rc = hg_poll_wait(context->poll_set,
                 (unsigned int) (remaining * 1000.0), HG_CORE_MAX_EVENTS,
                 context->poll_events, &nevents);
+            hg_atomic_set32(&context->completion_queue_must_notify, 0);
             HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
                 "hg_poll_wait() failed");
 
@@ -2834,9 +2857,8 @@ hg_core_progress(struct hg_core_private_context *context,
                     case HG_CORE_POLL_LOOPBACK:
                         HG_LOG_DEBUG("HG_CORE_POLL_LOOPBACK event");
                         ret = hg_core_progress_loopback_notify(context);
-                        if (ret != HG_TIMEOUT)
-                            HG_CHECK_HG_ERROR(done, ret,
-                                "hg_core_progress_loopback_notify() failed");
+                        HG_CHECK_HG_ERROR(done, ret,
+                            "hg_core_progress_loopback_notify() failed");
                         break;
 #endif
 #ifdef HG_HAS_SM_ROUTING
@@ -2890,9 +2912,7 @@ hg_core_progress(struct hg_core_private_context *context,
             } else {
 #else
             progress_timeout =
-                (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
-                && timeout && hg_core_poll_try_wait(context)) ?
-                    (unsigned int) (remaining * 1000.0) : 0;
+                safe_wait ? (unsigned int) (remaining * 1000.0) : 0;
 #endif
 #ifdef HG_HAS_SM_ROUTING
             }
@@ -3285,6 +3305,10 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
     /* No handle created yet */
     hg_atomic_init32(&context->n_handles, 0);
 
+    /* Notifications of completion queue events */
+    hg_atomic_init32(&context->completion_queue_must_notify, 0);
+    hg_thread_mutex_init(&context->completion_queue_notify_mutex);
+
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&context->completion_queue_mutex);
     hg_thread_cond_init(&context->completion_queue_cond);
@@ -3512,6 +3536,7 @@ HG_Core_context_destroy(hg_core_context_t *context)
         context->data_free_callback(context->data);
 
     /* Destroy completion queue mutex/cond */
+    hg_thread_mutex_destroy(&private_context->completion_queue_notify_mutex);
     hg_thread_mutex_destroy(&private_context->completion_queue_mutex);
     hg_thread_cond_destroy(&private_context->completion_queue_cond);
     hg_thread_spin_destroy(&private_context->pending_list_lock);
