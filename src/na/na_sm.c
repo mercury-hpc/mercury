@@ -356,6 +356,12 @@ static char *
 getlogin_safe(void);
 
 /**
+ * Get value from ptrace_scope.
+ */
+static int
+na_sm_get_ptrace_scope_value(void);
+
+/**
  * Convert errno to NA return values.
  */
 static na_return_t
@@ -1089,6 +1095,29 @@ getlogin_safe(void)
     passwd = getpwuid(getuid());
 
     return passwd ? passwd->pw_name : "unknown";
+}
+
+/*---------------------------------------------------------------------------*/
+static int
+na_sm_get_ptrace_scope_value(void)
+{
+    FILE *file;
+    int val = 0, rc;
+
+    /* Try to open ptrace_scope */
+    file = fopen("/proc/sys/kernel/yama/ptrace_scope", "r");
+    if (file) {
+        rc = fscanf(file, "%d", &val);
+        NA_CHECK_ERROR_NORET(
+            rc != 1, done, "Could not get value from ptrace_scope");
+
+        rc = fclose(file);
+        NA_CHECK_ERROR_NORET(
+            rc != 0, done, "fclose() failed (%s)", strerror(errno));
+    }
+
+done:
+    return val;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4256,8 +4285,23 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 #if defined(NA_SM_HAS_CMA)
     nwrite = process_vm_writev(na_sm_addr->pid, local_iov, liovcnt, remote_iov,
         riovcnt, /* unused */ 0);
-    NA_CHECK_ERROR(nwrite < 0, error, ret, na_sm_errno_to_na(errno),
-        "process_vm_writev() failed (%s)", strerror(errno));
+    if (unlikely(nwrite < 0)) {
+        if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
+            NA_GOTO_ERROR(error, ret, na_sm_errno_to_na(errno),
+                "process_vm_writev() failed (%s):\n",
+                "Kernel Yama configuration does not allow cross-memory attach, "
+                "either run as root: \n"
+                "# /usr/sbin/sysctl kernel.yama.ptrace_scope=0\n"
+                "or if set to restricted, add the following call to your "
+                "application:\n"
+                "prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);\n"
+                "See https://www.kernel.org/doc/Documentation/security/Yama.txt"
+                " for more details.",
+                strerror(errno));
+        } else
+            NA_GOTO_ERROR(error, ret, na_sm_errno_to_na(errno),
+                "process_vm_writev() failed (%s)", strerror(errno));
+    }
     NA_CHECK_ERROR((na_size_t) nwrite != length, error, ret, NA_MSGSIZE,
         "Wrote %ld bytes, was expecting %lu bytes", nwrite, length);
 #elif defined(__APPLE__)
@@ -4378,8 +4422,23 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 #if defined(NA_SM_HAS_CMA)
     nread = process_vm_readv(na_sm_addr->pid, local_iov, liovcnt, remote_iov,
         riovcnt, /* unused */ 0);
-    NA_CHECK_ERROR(nread < 0, error, ret, na_sm_errno_to_na(errno),
-        "process_vm_readv() failed (%s)", strerror(errno));
+    if (unlikely(nread < 0)) {
+        if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
+            NA_GOTO_ERROR(error, ret, na_sm_errno_to_na(errno),
+                "process_vm_readv() failed (%s):\n",
+                "Kernel Yama configuration does not allow cross-memory attach, "
+                "either run as root: \n"
+                "# /usr/sbin/sysctl kernel.yama.ptrace_scope=0\n"
+                "or if set to restricted, add the following call to your "
+                "application:\n"
+                "prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);\n"
+                "See https://www.kernel.org/doc/Documentation/security/Yama.txt"
+                " for more details.",
+                strerror(errno));
+        } else
+            NA_CHECK_ERROR(nread < 0, error, ret, na_sm_errno_to_na(errno),
+                "process_vm_readv() failed (%s)", strerror(errno));
+    }
 #elif defined(__APPLE__)
     kret = task_for_pid(mach_task_self(), na_sm_addr->pid, &remote_task);
     NA_CHECK_ERROR(kret != KERN_SUCCESS, error, ret, NA_PERMISSION,
