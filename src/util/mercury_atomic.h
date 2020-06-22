@@ -33,7 +33,7 @@ typedef OPA_ptr_t hg_atomic_int64_t; /* OPA has only limited 64-bit support */
 #elif defined(HG_UTIL_HAS_STDATOMIC_H)
 #    include <stdatomic.h>
 typedef atomic_int hg_atomic_int32_t;
-#    if HG_UTIL_ATOMIC_LONG_WIDTH == 8
+#    if (HG_UTIL_ATOMIC_LONG_WIDTH == 8) && !defined(__APPLE__)
 typedef atomic_long hg_atomic_int64_t;
 #    else
 typedef atomic_llong hg_atomic_int64_t;
