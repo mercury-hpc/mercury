@@ -3335,7 +3335,7 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
     na_poll_fd = NA_Poll_get_fd(hg_core_class->na_class,
         context->core_context.na_context);
 
-    if (!HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK
+    if (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
         && (na_poll_fd > 0)) {
         struct hg_poll_event event = {.events = HG_POLLIN, .data.u64 = 0};
         int rc;
