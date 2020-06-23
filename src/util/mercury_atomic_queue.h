@@ -44,6 +44,21 @@
 #include "mercury_atomic.h"
 #include "mercury_mem.h"
 
+/* For busy loop spinning */
+#ifndef cpu_spinwait
+#    if defined(_WIN32)
+#        define cpu_spinwait YieldProcessor
+#    elif defined(__x86_64__) || defined(__i386__)
+#        include <immintrin.h>
+#        define cpu_spinwait _mm_pause
+#    elif defined(__arm__)
+#        define cpu_spinwait() __asm__ __volatile__("yield")
+#    else
+#        warning "Processor yield is not supported on this architecture."
+#        define cpu_spinwait
+#    endif
+#endif
+
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
@@ -65,14 +80,6 @@ struct hg_atomic_queue {
 /*****************/
 /* Public Macros */
 /*****************/
-
-#ifndef cpu_spinwait
-#    if defined(__x86_64__) || defined(__amd64__)
-#        define cpu_spinwait() asm volatile("pause\n" : : : "memory");
-#    else
-#        define cpu_spinwait() ;
-#    endif
-#endif
 
 /*********************/
 /* Public Prototypes */
