@@ -38,7 +38,7 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
 /* Public Macros */
 /*****************/
 
-#define NUM_PVARS 5 /* Number of PVARs currently exported. PVAR indices go from 0......(NUM_PVARS - 1). */
+#define NUM_PVARS 6 /* Number of PVARs currently exported. PVAR indices go from 0......(NUM_PVARS - 1). */
 
 /* PVAR handle declaration and registration macros */
 #define HG_PROF_PVAR_UINT_COUNTER(name) \
@@ -63,7 +63,7 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
         HG_PROF_PVAR_REGISTER_impl(HG_PVAR_CLASS_COUNTER, dtype, #name, \
             (void *)addr_##name, 1, bind, 1, desc); 
 
-/* Increment the value of a PVAR */
+/* Change the value of a PVAR */
 #define HG_PROF_PVAR_UINT_COUNTER_INC(name, val) \
     addr_##name = (addr_##name == NULL ? hg_prof_get_pvar_addr_from_name(#name): addr_##name); \
     for(int i=0; i < val; i++) \
@@ -72,6 +72,10 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
 #define HG_PROF_PVAR_DOUBLE_COUNTER_INC(name, val) \
     addr_##name = (addr_##name == NULL ? hg_prof_get_pvar_addr_from_name(#name): addr_##name); \
     *(addr_##name) += val;
+
+#define HG_PROF_PVAR_UINT_COUNTER_SET(name, val) \
+    addr_##name = (addr_##name == NULL ? hg_prof_get_pvar_addr_from_name(#name): addr_##name); \
+    hg_atomic_set32(addr_##name, val);
 
 /**
  * Internal routine that gets invoked during Mercury's own initialization routine.
