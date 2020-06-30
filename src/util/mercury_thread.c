@@ -25,19 +25,16 @@ hg_thread_init(hg_thread_t *thread)
 int
 hg_thread_create(hg_thread_t *thread, hg_thread_func_t f, void *data)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     *thread = CreateThread(NULL, 0, f, data, 0, NULL);
-    if (*thread == NULL) ret = HG_UTIL_FAIL;
+    if (*thread == NULL)
+        return HG_UTIL_FAIL;
 #else
-    if (pthread_create(thread, NULL, f, data)) {
-        HG_UTIL_LOG_ERROR("pthread_create() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (pthread_create(thread, NULL, f, data))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -55,46 +52,36 @@ hg_thread_exit(hg_thread_ret_t ret)
 int
 hg_thread_join(hg_thread_t thread)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     WaitForSingleObject(thread, INFINITE);
     CloseHandle(thread);
 #else
-    if (pthread_join(thread, NULL)) {
-        HG_UTIL_LOG_ERROR("pthread_join() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (pthread_join(thread, NULL))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_cancel(hg_thread_t thread)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     WaitForSingleObject(thread, 0);
     CloseHandle(thread);
 #else
-    if (pthread_cancel(thread)) {
-        HG_UTIL_LOG_ERROR("pthread_cancel() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (pthread_cancel(thread))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_yield(void)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     SwitchToThread();
 #elif defined(__APPLE__)
@@ -103,98 +90,73 @@ hg_thread_yield(void)
     pthread_yield();
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_key_create(hg_thread_key_t *key)
 {
-    int ret = HG_UTIL_SUCCESS;
-
-    if (!key) {
-        HG_UTIL_LOG_ERROR("NULL pointer to hg_thread_key_t");
-        ret = HG_UTIL_FAIL;
-        return ret;
-    }
+    if (!key)
+        return HG_UTIL_FAIL;
 
 #ifdef _WIN32
-    if ((*key = TlsAlloc()) == TLS_OUT_OF_INDEXES) {
-        HG_UTIL_LOG_ERROR("TlsAlloc() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if ((*key = TlsAlloc()) == TLS_OUT_OF_INDEXES)
+        return HG_UTIL_FAIL;
 #else
-    if (pthread_key_create(key, NULL)) {
-        HG_UTIL_LOG_ERROR("pthread_key_create() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (pthread_key_create(key, NULL))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_key_delete(hg_thread_key_t key)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
-    if (!TlsFree(key)) {
-        HG_UTIL_LOG_ERROR("TlsFree() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (!TlsFree(key))
+        return HG_UTIL_FAIL;
 #else
-    if (pthread_key_delete(key)) {
-        HG_UTIL_LOG_ERROR("pthread_key_delete() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (pthread_key_delete(key))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_getaffinity(hg_thread_t thread, hg_cpu_set_t *cpu_mask)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #if defined(_WIN32)
-    HG_UTIL_LOG_ERROR("not supported");
+    return HG_UTIL_FAIL;
 #elif defined(__APPLE__)
-    (void)thread;
-    (void)cpu_mask;
+    (void) thread;
+    (void) cpu_mask;
+    return HG_UTIL_FAIL;
 #else
-    if (pthread_getaffinity_np(thread, sizeof(hg_cpu_set_t), cpu_mask)) {
-        HG_UTIL_LOG_ERROR("pthread_getaffinity_np() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (pthread_getaffinity_np(thread, sizeof(hg_cpu_set_t), cpu_mask))
+        return HG_UTIL_FAIL;
+    return HG_UTIL_SUCCESS;
 #endif
-
-    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 int
 hg_thread_setaffinity(hg_thread_t thread, const hg_cpu_set_t *cpu_mask)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #if defined(_WIN32)
-    if (!SetThreadAffinityMask(thread, *cpu_mask)) {
-        HG_UTIL_LOG_ERROR("SetThreadAffinityMask() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (!SetThreadAffinityMask(thread, *cpu_mask))
+        return HG_UTIL_FAIL;
 #elif defined(__APPLE__)
-    (void)thread;
-    (void)cpu_mask;
+    (void) thread;
+    (void) cpu_mask;
+    return HG_UTIL_FAIL;
 #else
-    if (pthread_setaffinity_np(thread, sizeof(hg_cpu_set_t), cpu_mask)) {
-        HG_UTIL_LOG_ERROR("pthread_setaffinity_np() failed");
-        ret = HG_UTIL_FAIL;
-    }
+    if (pthread_setaffinity_np(thread, sizeof(hg_cpu_set_t), cpu_mask))
+        return HG_UTIL_FAIL;
+    return HG_UTIL_SUCCESS;
 #endif
-
-    return ret;
 }

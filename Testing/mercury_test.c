@@ -27,11 +27,6 @@
 /* Local Type and Struct Definition */
 /************************************/
 
-struct hg_test_lookup_arg {
-    hg_addr_t *addr_ptr;
-    hg_request_t *request;
-};
-
 /********************/
 /* Local Prototypes */
 /********************/
@@ -53,9 +48,6 @@ hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg);
 static hg_return_t
 hg_test_handle_create_cb(hg_handle_t handle, void *arg);
 #endif
-
-static hg_return_t
-hg_test_addr_lookup_cb(const struct hg_cb_info *callback_info);
 
 static hg_return_t
 hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id);
@@ -204,20 +196,6 @@ done:
     return ret;
 }
 #endif
-
-/*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_test_addr_lookup_cb(const struct hg_cb_info *callback_info)
-{
-    struct hg_test_lookup_arg *request_args =
-            (struct hg_test_lookup_arg *) callback_info->arg;
-
-    *request_args->addr_ptr = callback_info->info.lookup.addr;
-
-    hg_request_complete(request_args->request);
-
-    return HG_SUCCESS;
-}
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -559,9 +537,6 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
             HG_Error_to_string(ret));
     } else {
         char test_addr_name[NA_TEST_MAX_ADDR_NAME] = { '\0' };
-        hg_request_t *request = NULL;
-        unsigned int flag = 0;
-        struct hg_test_lookup_arg lookup_args;
 
 #ifdef HG_TEST_HAS_PARALLEL
         /* If static client must wait for server to write config file */
@@ -582,25 +557,11 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
         printf("# Target name read: %s\n",
             hg_test_info->na_test_info.target_name);
 
-        /* Look up target addr using target name info */
-        request = hg_request_create(hg_test_info->request_class);
-        lookup_args.addr_ptr = &hg_test_info->target_addr;
-        lookup_args.request = request;
-
         /* Forward call to remote addr and get a new request */
-        ret = HG_Addr_lookup(hg_test_info->context, hg_test_addr_lookup_cb,
-            &lookup_args, hg_test_info->na_test_info.target_name,
-            HG_OP_ID_IGNORE);
+        ret = HG_Addr_lookup2(hg_test_info->hg_class,
+            hg_test_info->na_test_info.target_name, &hg_test_info->target_addr);
         HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_lookup() failed (%s)",
             HG_Error_to_string(ret));
-
-        /* Wait for request to be marked completed */
-        hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
-        HG_TEST_CHECK_ERROR(flag == 0, done, ret, HG_TIMEOUT,
-            "Operation did not complete");
-
-        /* Free request */
-        hg_request_destroy(request);
     }
 
 done:

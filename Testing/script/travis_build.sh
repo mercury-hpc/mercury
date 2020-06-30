@@ -1,10 +1,10 @@
 #!/bin/bash
 
 BMI_VERSION=master
-CMAKE_VERSION_MAJOR=3.16
-CMAKE_VERSION_MINOR=5
+CMAKE_VERSION_MAJOR=3.17
+CMAKE_VERSION_MINOR=3
 MPI_VERSION=3.3.2
-OFI_VERSION=1.9.1
+OFI_VERSION=1.10.1
 PREFIX=$HOME/install
 
 set -e
@@ -58,7 +58,7 @@ if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
   if [ ! -f "$PREFIX/bin/fi_info" ] || [ "${OFI_INSTALLED_VERSION}" != "${OFI_VERSION}" ]; then
     cd $HOME && wget https://github.com/ofiwg/libfabric/releases/download/v${OFI_VERSION}/libfabric-${OFI_VERSION}.tar.bz2
     tar -xjf libfabric-${OFI_VERSION}.tar.bz2;
-    cd libfabric-${OFI_VERSION} && ./configure --prefix=$PREFIX --disable-rxd --disable-usnic --disable-mrail --disable-rstream --disable-perf --disable-efa --disable-psm2 --disable-psm --disable-udp --disable-verbs --disable-shm --disable-static --disable-silent-rules CFLAGS="-O2 -g" && make -j2 -s && make install;
+    cd libfabric-${OFI_VERSION} && ./configure --prefix=$PREFIX --disable-usnic --disable-mrail --disable-rstream --disable-perf --disable-efa --disable-psm2 --disable-psm --disable-verbs --disable-shm --disable-static --disable-silent-rules CFLAGS="-O2 -g" && make -j2 -s && make install;
     echo "${OFI_VERSION}" > $PREFIX/ofi_version.txt
   else
     echo "Using cached directory for OFI";

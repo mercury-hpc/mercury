@@ -299,9 +299,9 @@ hg_test_rpc_lookup(hg_context_t *context, hg_request_class_t *request_class,
         lookup_args.request = request;
 
         /* Forward call to remote addr and get a new request */
-        ret = HG_Addr_lookup(context, hg_test_rpc_lookup_cb,
+        ret = HG_Addr_lookup1(context, hg_test_rpc_lookup_cb,
             &lookup_args, target_name, HG_OP_ID_IGNORE);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_lookup() failed (%s)",
+        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_lookup1() failed (%s)",
             HG_Error_to_string(ret));
 
         /* Wait for request to be marked completed */
@@ -709,11 +709,11 @@ main(int argc, char *argv[])
         lookup_args.request = request;
 
         /* Forward call to remote addr and get a new request */
-        hg_ret = HG_Addr_lookup(hg_test_info.context, hg_test_rpc_lookup_cb,
+        hg_ret = HG_Addr_lookup1(hg_test_info.context, hg_test_rpc_lookup_cb,
             &lookup_args, hg_test_info.na_test_info.target_name,
             HG_OP_ID_IGNORE);
         HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
-            "HG_Addr_lookup() failed (%s)", HG_Error_to_string(hg_ret));
+            "HG_Addr_lookup1() failed (%s)", HG_Error_to_string(hg_ret));
 
         /* Wait for request to be marked completed */
         hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);

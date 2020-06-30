@@ -286,7 +286,7 @@ HG_Hl_addr_lookup_wait(hg_context_t *context, hg_request_class_t *request_class,
     request_args.request = request;
 
     /* Forward call to remote addr and get a new request */
-    ret = HG_Addr_lookup(context, hg_hl_addr_lookup_cb, &request_args, name,
+    ret = HG_Addr_lookup1(context, hg_hl_addr_lookup_cb, &request_args, name,
             HG_OP_ID_IGNORE);
     HG_CHECK_HG_ERROR(done, ret, "Could not lookup address");
 

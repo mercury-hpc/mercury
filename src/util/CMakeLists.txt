@@ -20,7 +20,10 @@ include(CheckSymbolExists)
 include(CheckTypeSize)
 
 # Threads
-include(FindThreads)
+set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+find_package(Threads REQUIRED)
+
 set(MERCURY_UTIL_EXT_LIB_DEPENDENCIES
   ${MERCURY_UTIL_EXT_LIB_DEPENDENCIES}
   ${CMAKE_THREAD_LIBS_INIT}
@@ -36,7 +39,11 @@ if(CMAKE_USE_PTHREADS_INIT)
   check_type_size(PTHREAD_MUTEX_ADAPTIVE_NP HG_UTIL_HAS_PTHREAD_MUTEX_ADAPTIVE_NP)
 
   # Detect pthread_condattr_setclock
-  check_symbol_exists(pthread_condattr_setclock pthread.h HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
+  check_symbol_exists(pthread_condattr_setclock pthread.h
+    HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
+
+  unset(CMAKE_EXTRA_INCLUDE_FILES)
+  unset(CMAKE_REQUIRED_LIBRARIES)
 endif()
 
 # Rt
@@ -81,6 +88,10 @@ check_include_files("sys/event.h" HG_UTIL_HAS_SYSEVENT_H)
 if(NOT WIN32)
   # Detect stdatomic
   check_include_files("stdatomic.h" HG_UTIL_HAS_STDATOMIC_H)
+  # Detect size of atomic_long
+  set(CMAKE_EXTRA_INCLUDE_FILES stdatomic.h)
+  check_type_size(atomic_long HG_UTIL_ATOMIC_LONG_WIDTH)
+  unset(CMAKE_EXTRA_INCLUDE_FILES)
   # OpenPA
   option(MERCURY_USE_OPA "Use OpenPA for atomics." OFF)
   # Force use of OPA if <stdatomic.h> is not found
@@ -91,18 +102,21 @@ if(NOT WIN32)
   if(MERCURY_USE_OPA)
     # Use OpenPA if stdatomic is not available
     find_package(OPA REQUIRED)
-    if(OPA_FOUND)
-      message(STATUS "OPA include directory: ${OPA_INCLUDE_DIRS}")
-      set(HG_UTIL_HAS_OPA_PRIMITIVES_H 1)
-      set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES
-        ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
-        ${OPA_INCLUDE_DIRS}
-      )
-    else()
-      message(FATAL_ERROR "Could not find OPA.")
-    endif()
+    message(STATUS "OPA include directory: ${OPA_INCLUDE_DIRS}")
+    set(HG_UTIL_HAS_OPA_PRIMITIVES_H 1)
+    set(MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES
+      ${MERCURY_UTIL_EXT_INCLUDE_DEPENDENCIES}
+      ${OPA_INCLUDE_DIRS}
+    )
   endif()
 endif()
+
+# Colored output
+option(MERCURY_ENABLE_LOG_COLOR "Use colored output for log." OFF)
+if(MERCURY_ENABLE_LOG_COLOR)
+  set(HG_UTIL_HAS_LOG_COLOR 1)
+endif()
+mark_as_advanced(MERCURY_ENABLE_LOG_COLOR)
 
 #------------------------------------------------------------------------------
 # Configure module header files
@@ -144,6 +158,7 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.c
 )
 
 #----------------------------------------------------------------------------
@@ -159,6 +174,9 @@ endforeach()
 
 # UTIL
 add_library(mercury_util ${MERCURY_UTIL_SRCS})
+if(THREADS_HAVE_PTHREAD_ARG)
+  target_compile_options(mercury_util PUBLIC "${CMAKE_THREAD_LIBS_INIT}")
+endif()
 target_include_directories(mercury_util
   PUBLIC "$<BUILD_INTERFACE:${MERCURY_UTIL_BUILD_INCLUDE_DEPENDENCIES}>"
           $<INSTALL_INTERFACE:${MERCURY_INSTALL_INCLUDE_INTERFACE}>
@@ -208,7 +226,6 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.h
 )
 
 #-----------------------------------------------------------------------------

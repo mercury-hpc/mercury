@@ -13,9 +13,20 @@
 
 #include "mercury_util_config.h"
 
-/**
- * Purpose: memory related utility functions.
- */
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
+/*****************/
+/* Public Macros */
+/*****************/
+
+#define HG_MEM_CACHE_LINE_SIZE 64
+#define HG_MEM_PAGE_SIZE       4096
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,7 +37,7 @@ extern "C" {
  *
  * \return page size on success or negative on failure
  */
-HG_UTIL_EXPORT long
+HG_UTIL_PUBLIC long
 hg_mem_get_page_size(void);
 
 /**
@@ -39,7 +50,7 @@ hg_mem_get_page_size(void);
  *
  * \return a pointer to the allocated memory, or NULL in case of failure
  */
-HG_UTIL_EXPORT void *
+HG_UTIL_PUBLIC void *
 hg_mem_aligned_alloc(size_t alignment, size_t size);
 
 /**
@@ -47,7 +58,7 @@ hg_mem_aligned_alloc(size_t alignment, size_t size);
  *
  * \param mem_ptr [IN]          pointer to allocated memory
  */
-HG_UTIL_EXPORT void
+HG_UTIL_PUBLIC void
 hg_mem_aligned_free(void *mem_ptr);
 
 /**
@@ -59,7 +70,7 @@ hg_mem_aligned_free(void *mem_ptr);
  *
  * \return a pointer to the mapped memory region, or NULL in case of failure
  */
-HG_UTIL_EXPORT void *
+HG_UTIL_PUBLIC void *
 hg_mem_shm_map(const char *name, size_t size, hg_util_bool_t create);
 
 /**
@@ -71,7 +82,7 @@ hg_mem_shm_map(const char *name, size_t size, hg_util_bool_t create);
  *
  * \return non-negative on success, or negative in case of failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_mem_shm_unmap(const char *name, void *mem_ptr, size_t size);
 
 #ifdef __cplusplus

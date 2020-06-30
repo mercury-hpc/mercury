@@ -50,12 +50,12 @@
 #define MERCURY_THREAD_RWLOCK_H
 
 #include "mercury_util_config.h"
+
 #ifdef _WIN32
-# include <windows.h>
+#    include <windows.h>
 typedef PSRWLOCK hg_thread_rwlock_t;
 #else
-# include <pthread.h>
-# include <errno.h>
+#    include <pthread.h>
 typedef pthread_rwlock_t hg_thread_rwlock_t;
 #endif
 
@@ -70,7 +70,7 @@ extern "C" {
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_rwlock_init(hg_thread_rwlock_t *rwlock);
 
 /**
@@ -80,7 +80,7 @@ hg_thread_rwlock_init(hg_thread_rwlock_t *rwlock);
  *
  * \return Non-negative on success or negative on failure
  */
-HG_UTIL_EXPORT int
+HG_UTIL_PUBLIC int
 hg_thread_rwlock_destroy(hg_thread_rwlock_t *rwlock);
 
 /**
@@ -147,90 +147,86 @@ hg_thread_rwlock_release_wrlock(hg_thread_rwlock_t *rwlock);
 static HG_UTIL_INLINE int
 hg_thread_rwlock_rdlock(hg_thread_rwlock_t *rwlock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     AcquireSRWLockShared(rwlock);
 #else
-    if (pthread_rwlock_rdlock(rwlock)) ret = HG_UTIL_FAIL;
+    if (pthread_rwlock_rdlock(rwlock))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
 hg_thread_rwlock_try_rdlock(hg_thread_rwlock_t *rwlock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
-    if (TryAcquireSRWLockShared(rwlock) == 0) ret = HG_UTIL_FAIL;
+    if (TryAcquireSRWLockShared(rwlock) == 0)
+        return HG_UTIL_FAIL;
 #else
-    if (pthread_rwlock_tryrdlock(rwlock)) ret = HG_UTIL_FAIL;
+    if (pthread_rwlock_tryrdlock(rwlock))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
 hg_thread_rwlock_release_rdlock(hg_thread_rwlock_t *rwlock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     ReleaseSRWLockShared(rwlock);
 #else
-    if (pthread_rwlock_unlock(rwlock)) ret = HG_UTIL_FAIL;
+    if (pthread_rwlock_unlock(rwlock))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
 hg_thread_rwlock_wrlock(hg_thread_rwlock_t *rwlock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     ReleaseSRWLockExclusive(rwlock);
 #else
-    if (pthread_rwlock_wrlock(rwlock)) ret = HG_UTIL_FAIL;
+    if (pthread_rwlock_wrlock(rwlock))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
 hg_thread_rwlock_try_wrlock(hg_thread_rwlock_t *rwlock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
-    if (TryAcquireSRWLockExclusive(rwlock) == 0) ret = HG_UTIL_FAIL;
+    if (TryAcquireSRWLockExclusive(rwlock) == 0)
+        return HG_UTIL_FAIL;
 #else
-    if (pthread_rwlock_trywrlock(rwlock)) ret = HG_UTIL_FAIL;
+    if (pthread_rwlock_trywrlock(rwlock))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE int
 hg_thread_rwlock_release_wrlock(hg_thread_rwlock_t *rwlock)
 {
-    int ret = HG_UTIL_SUCCESS;
-
 #ifdef _WIN32
     ReleaseSRWLockExclusive(rwlock);
 #else
-    if (pthread_rwlock_unlock(rwlock)) ret = HG_UTIL_FAIL;
+    if (pthread_rwlock_unlock(rwlock))
+        return HG_UTIL_FAIL;
 #endif
 
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 #ifdef __cplusplus

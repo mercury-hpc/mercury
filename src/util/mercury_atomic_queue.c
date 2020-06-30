@@ -48,7 +48,7 @@
 /****************/
 
 /* From <sys/param.h> */
-#define powerof2(x)     ((((x) - 1) & (x)) == 0)
+#define powerof2(x) ((((x) -1) & (x)) == 0)
 
 /*---------------------------------------------------------------------------*/
 struct hg_atomic_queue *
@@ -56,17 +56,13 @@ hg_atomic_queue_alloc(unsigned int count)
 {
     struct hg_atomic_queue *hg_atomic_queue = NULL;
 
-    if (!powerof2(count)) {
-       HG_UTIL_LOG_ERROR("atomic queue size must be power of 2");
-       goto done;
-    }
+    HG_UTIL_CHECK_ERROR_NORET(
+        !powerof2(count), done, "atomic queue size must be power of 2");
 
-    hg_atomic_queue = malloc(sizeof(struct hg_atomic_queue) +
-        count * HG_ATOMIC_QUEUE_ELT_SIZE);
-    if (!hg_atomic_queue) {
-        HG_UTIL_LOG_ERROR("Could not allocate atomic queue");
-        goto done;
-    }
+    hg_atomic_queue = malloc(
+        sizeof(struct hg_atomic_queue) + count * sizeof(hg_atomic_int64_t));
+    HG_UTIL_CHECK_ERROR_NORET(
+        hg_atomic_queue == NULL, done, "Could not allocate atomic queue");
 
     hg_atomic_queue->prod_size = hg_atomic_queue->cons_size = count;
     hg_atomic_queue->prod_mask = hg_atomic_queue->cons_mask = count - 1;

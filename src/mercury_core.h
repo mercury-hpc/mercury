@@ -529,28 +529,6 @@ HG_Core_registered_data(
         );
 
 /**
- * Lookup an addr from a peer address/name. Addresses need to be
- * freed by calling HG_Core_addr_free(). After completion, user callback is
- * placed into a completion queue and can be triggered using HG_Core_trigger().
- *
- * \param context [IN]          pointer to context of execution
- * \param callback [IN]         pointer to function callback
- * \param arg [IN]              pointer to data passed to callback
- * \param name [IN]             lookup name
- * \param op_id [OUT]           pointer to returned operation ID
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_PUBLIC hg_return_t
-HG_Core_addr_lookup(
-        hg_core_context_t *context,
-        hg_core_cb_t callback,
-        void *arg,
-        const char *name,
-        hg_core_op_id_t *op_id
-        );
-
-/**
  * Create a HG core address.
  *
  * \param hg_core_class [IN]    pointer to HG core class
@@ -561,6 +539,45 @@ HG_Core_addr_lookup(
 HG_PUBLIC hg_return_t
 HG_Core_addr_create(
         hg_core_class_t *hg_core_class,
+        hg_core_addr_t *addr
+        );
+
+/**
+ * Lookup an addr from a peer address/name. Addresses need to be
+ * freed by calling HG_Core_addr_free(). After completion, user callback is
+ * placed into a completion queue and can be triggered using HG_Core_trigger().
+ *
+ * \param context [IN]          pointer to context of execution
+ * \param callback [IN]         pointer to function callback
+ * \param arg [IN]              pointer to data passed to callback
+ * \param name [IN]             lookup name
+ * \param op_id [OUT]           pointer to returned operation ID (unused)
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Core_addr_lookup1(
+        hg_core_context_t *context,
+        hg_core_cb_t callback,
+        void *arg,
+        const char *name,
+        hg_core_op_id_t *op_id
+        );
+
+/**
+ * Lookup an addr from a peer address/name. Addresses need to be
+ * freed by calling HG_Core_addr_free().
+ *
+ * \param hg_core_class [IN]    pointer to HG core class
+ * \param name [IN]             lookup name
+ * \param addr [OUT]            pointer to abstract address
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+HG_PUBLIC hg_return_t
+HG_Core_addr_lookup2(
+        hg_core_class_t *hg_core_class,
+        const char *name,
         hg_core_addr_t *addr
         );
 

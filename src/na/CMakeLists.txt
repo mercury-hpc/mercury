@@ -65,21 +65,17 @@ include(CheckIncludeFiles)
 option(NA_USE_BMI "Use BMI." OFF)
 if(NA_USE_BMI)
   find_package(BMI REQUIRED)
-  if(BMI_FOUND)
-    message(STATUS "BMI include directory: ${BMI_INCLUDE_DIR}")
-    set(NA_PLUGINS ${NA_PLUGINS} bmi)
-    set(NA_HAS_BMI 1)
-    set(NA_INT_INCLUDE_DEPENDENCIES
-      ${NA_INT_INCLUDE_DEPENDENCIES}
-      ${BMI_INCLUDE_DIR}
-    )
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
-      ${BMI_LIBRARIES}
-    )
-  else()
-    message(FATAL_ERROR "Could not find BMI.")
-  endif()
+  message(STATUS "BMI include directory: ${BMI_INCLUDE_DIR}")
+  set(NA_PLUGINS ${NA_PLUGINS} bmi)
+  set(NA_HAS_BMI 1)
+  set(NA_INT_INCLUDE_DEPENDENCIES
+    ${NA_INT_INCLUDE_DEPENDENCIES}
+    ${BMI_INCLUDE_DIR}
+  )
+  set(NA_EXT_LIB_DEPENDENCIES
+    ${NA_EXT_LIB_DEPENDENCIES}
+    ${BMI_LIBRARIES}
+  )
 endif()
 
 
@@ -87,41 +83,32 @@ endif()
 option(NA_USE_MPI "Use MPI." OFF)
 if(NA_USE_MPI)
   find_package(MPI REQUIRED)
-  if(MPI_FOUND)
-    message(STATUS "MPI include directory: ${MPI_INCLUDE_PATH}")
-    set(NA_HAS_MPI 1)
-    set(NA_PLUGINS ${NA_PLUGINS} mpi)
-    set(NA_EXT_INCLUDE_DEPENDENCIES
-      ${NA_EXT_INCLUDE_DEPENDENCIES}
-      ${MPI_INCLUDE_PATH}
+  message(STATUS "MPI include directory: ${MPI_INCLUDE_PATH}")
+  set(NA_HAS_MPI 1)
+  set(NA_PLUGINS ${NA_PLUGINS} mpi)
+  set(NA_EXT_INCLUDE_DEPENDENCIES
+    ${NA_EXT_INCLUDE_DEPENDENCIES}
+    ${MPI_INCLUDE_PATH}
+  )
+  set(NA_EXT_LIB_DEPENDENCIES
+   ${NA_EXT_LIB_DEPENDENCIES}
+    ${MPI_LIBRARIES}
+  )
+  # Extra job setup for Cray MPI without ALPS support
+  option(NA_MPI_USE_GNI_SETUP
+    "Define NA_MPI_Gni_job_setup() to setup the Aries NIC resources for the job." OFF)
+  mark_as_advanced(NA_MPI_USE_GNI_SETUP)
+  if(NA_MPI_USE_GNI_SETUP)
+    find_package(GNI REQUIRED)
+    set(NA_MPI_HAS_GNI_SETUP 1)
+    set(NA_INT_INCLUDE_DEPENDENCIES
+      ${NA_INT_INCLUDE_DEPENDENCIES}
+      ${GNI_INCLUDE_DIRS}
     )
     set(NA_EXT_LIB_DEPENDENCIES
       ${NA_EXT_LIB_DEPENDENCIES}
-      ${MPI_LIBRARIES}
+      ${GNI_LIBRARIES}
     )
-    # Extra job setup for Cray MPI without ALPS support
-    option(NA_MPI_USE_GNI_SETUP
-      "Define NA_MPI_Gni_job_setup() to setup the Aries NIC resources for the job." OFF)
-    mark_as_advanced(NA_MPI_USE_GNI_SETUP)
-    if(NA_MPI_USE_GNI_SETUP)
-      find_package(GNI REQUIRED)
-      if(GNI_FOUND)
-        set(NA_MPI_HAS_GNI_SETUP 1)
-        set(NA_INT_INCLUDE_DEPENDENCIES
-          ${NA_INT_INCLUDE_DEPENDENCIES}
-          ${GNI_INCLUDE_DIRS}
-        )
-        set(NA_EXT_LIB_DEPENDENCIES
-          ${NA_EXT_LIB_DEPENDENCIES}
-          ${GNI_LIBRARIES}
-        )
-      else()
-        message(FATAL_ERROR "Could not find GNI.")
-      endif()
-    endif()
-  # we may want to add an option for MPI_VERSION >= 3
-  else()
-    message(FATAL_ERROR "Could not find MPI.")
   endif()
 endif()
 
@@ -129,52 +116,44 @@ endif()
 option(NA_USE_CCI "Use CCI." OFF)
 if(NA_USE_CCI)
   find_package(CCI REQUIRED)
-  if(CCI_FOUND)
-    message(STATUS "CCI include directory: ${CCI_INCLUDE_DIR}")
-    set(NA_PLUGINS ${NA_PLUGINS} cci)
-    set(NA_HAS_CCI 1)
-    set(NA_INT_INCLUDE_DEPENDENCIES
-      ${NA_INT_INCLUDE_DEPENDENCIES}
-      ${CCI_INCLUDE_DIR}
-    )
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
-      ${CCI_LIBRARIES}
-    )
-  else()
-    message(FATAL_ERROR "Could not find CCI.")
-  endif()
+  message(STATUS "CCI include directory: ${CCI_INCLUDE_DIR}")
+  set(NA_PLUGINS ${NA_PLUGINS} cci)
+  set(NA_HAS_CCI 1)
+  set(NA_INT_INCLUDE_DEPENDENCIES
+    ${NA_INT_INCLUDE_DEPENDENCIES}
+    ${CCI_INCLUDE_DIR}
+  )
+  set(NA_EXT_LIB_DEPENDENCIES
+    ${NA_EXT_LIB_DEPENDENCIES}
+    ${CCI_LIBRARIES}
+  )
 endif()
 
 # OFI
 option(NA_USE_OFI "Use libfabric plugin." OFF)
 if(NA_USE_OFI)
   find_package(OFI 1.5 REQUIRED)
-  if(OFI_FOUND)
-    message(STATUS "OFI include directory: ${OFI_INCLUDE_DIR}")
-    set(NA_PLUGINS ${NA_PLUGINS} ofi)
-    set(NA_HAS_OFI 1)
-    # Detect <rdma/fi_ext_gni.h>
-    set(CMAKE_REQUIRED_INCLUDES ${OFI_INCLUDE_DIR})
-    check_include_files("rdma/fi_ext_gni.h" NA_OFI_HAS_EXT_GNI_H)
-    if(NA_OFI_HAS_EXT_GNI_H)
-      option(NA_OFI_GNI_USE_UDREG "Force gni provider to use udreg instead of internal MR cache." OFF)
-      if(NA_OFI_GNI_USE_UDREG)
-        set(NA_OFI_GNI_HAS_UDREG 1)
-      endif()
-      mark_as_advanced(NA_OFI_GNI_USE_UDREG)
+  message(STATUS "OFI include directory: ${OFI_INCLUDE_DIR}")
+  set(NA_PLUGINS ${NA_PLUGINS} ofi)
+  set(NA_HAS_OFI 1)
+  # Detect <rdma/fi_ext_gni.h>
+  set(CMAKE_REQUIRED_INCLUDES ${OFI_INCLUDE_DIR})
+  check_include_files("rdma/fi_ext_gni.h" NA_OFI_HAS_EXT_GNI_H)
+  if(NA_OFI_HAS_EXT_GNI_H)
+    option(NA_OFI_GNI_USE_UDREG "Force gni provider to use udreg instead of internal MR cache." OFF)
+    if(NA_OFI_GNI_USE_UDREG)
+      set(NA_OFI_GNI_HAS_UDREG 1)
     endif()
-    set(NA_INT_INCLUDE_DEPENDENCIES
-      ${NA_INT_INCLUDE_DEPENDENCIES}
-      ${OFI_INCLUDE_DIR}
-    )
-    set(NA_EXT_LIB_DEPENDENCIES
-      ${NA_EXT_LIB_DEPENDENCIES}
-      ${OFI_LIBRARIES}
-    )
-  else()
-    message(FATAL_ERROR "Could not find OFI.")
+    mark_as_advanced(NA_OFI_GNI_USE_UDREG)
   endif()
+  set(NA_INT_INCLUDE_DEPENDENCIES
+    ${NA_INT_INCLUDE_DEPENDENCIES}
+    ${OFI_INCLUDE_DIR}
+  )
+  set(NA_EXT_LIB_DEPENDENCIES
+    ${NA_EXT_LIB_DEPENDENCIES}
+    ${OFI_LIBRARIES}
+  )
 endif()
 
 # SM
@@ -183,6 +162,20 @@ if(NA_USE_SM)
   if(WIN32)
     message(WARNING "SM plugin not supported on this platform yet.")
   else()
+    option(NA_SM_USE_UUID "Use UUIDs for host identification instead of standard host ID." OFF)
+    if(NA_SM_USE_UUID)
+      find_package(UUID REQUIRED)
+      set(NA_SM_HAS_UUID 1)
+      set(NA_INT_INCLUDE_DEPENDENCIES
+        ${NA_INT_INCLUDE_DEPENDENCIES}
+        ${UUID_INCLUDE_DIRS}
+      )
+      set(NA_EXT_LIB_DEPENDENCIES
+        ${NA_EXT_LIB_DEPENDENCIES}
+        ${UUID_LIBRARIES}
+      )
+    endif()
+    mark_as_advanced(NA_SM_USE_UUID)
     include(CheckFunctionExists)
     check_function_exists(process_vm_readv NA_SM_HAS_CMA)
     if(NA_SM_HAS_CMA)
@@ -340,6 +333,13 @@ if(NA_HAS_MPI)
   set(NA_HEADERS
     ${NA_HEADERS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_mpi.h
+  )
+endif()
+
+if(NA_HAS_SM)
+  set(NA_HEADERS
+    ${NA_HEADERS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_sm.h
   )
 endif()
 
