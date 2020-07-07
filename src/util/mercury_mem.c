@@ -29,15 +29,17 @@
 long
 hg_mem_get_page_size(void)
 {
-    long page_size;
+    static long page_size = 0;
 
+    if (page_size == 0) {
 #ifdef _WIN32
-    SYSTEM_INFO system_info;
-    GetSystemInfo(&system_info);
-    page_size = system_info.dwPageSize;
+        SYSTEM_INFO system_info;
+        GetSystemInfo(&system_info);
+        page_size = system_info.dwPageSize;
 #else
-    page_size = sysconf(_SC_PAGE_SIZE);
+        page_size = sysconf(_SC_PAGE_SIZE);
 #endif
+    }
 
     return page_size;
 }
