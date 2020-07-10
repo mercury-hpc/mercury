@@ -3,6 +3,7 @@ project(MERCURY_TEST_DRIVER CXX)
 
 include(CheckAsan)
 include(CheckTsan)
+include(CheckUbsan)
 
 set(KWSYS_NAMESPACE mercury_sys)
 set(KWSYS_USE_SystemTools 1)

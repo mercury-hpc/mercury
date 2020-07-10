@@ -48,6 +48,9 @@ endif()
 if(MERCURY_BUILD_CONFIGURATION MATCHES "Tsan")
   set(MERCURY_MEMORYCHECK_TYPE "ThreadSanitizer")
 endif()
+if(MERCURY_BUILD_CONFIGURATION MATCHES "Ubsan")
+  set(MERCURY_MEMORYCHECK_TYPE "UndefinedBehaviorSanitizer")
+endif()
 
 # MERCURY_DASHBOARD_MODEL=Experimental | Nightly | Continuous
 set(MERCURY_DASHBOARD_MODEL "$ENV{MERCURY_DASHBOARD_MODEL}")
@@ -113,6 +116,12 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
 
   # Asan
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "AddressSanitizer")
+    # Must add verbosity / Error in build if no memory output file is produced
+    set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
+  endif()
+
+  # Ubsan
+  if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "UndefinedBehaviorSanitizer")
     # Must add verbosity / Error in build if no memory output file is produced
     set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
   endif()
