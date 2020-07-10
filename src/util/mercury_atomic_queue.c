@@ -59,7 +59,7 @@ hg_atomic_queue_alloc(unsigned int count)
     HG_UTIL_CHECK_ERROR_NORET(
         !powerof2(count), done, "atomic queue size must be power of 2");
 
-    hg_atomic_queue = malloc(
+    hg_atomic_queue = hg_mem_aligned_alloc(HG_MEM_CACHE_LINE_SIZE,
         sizeof(struct hg_atomic_queue) + count * sizeof(hg_atomic_int64_t));
     HG_UTIL_CHECK_ERROR_NORET(
         hg_atomic_queue == NULL, done, "Could not allocate atomic queue");
@@ -79,5 +79,5 @@ done:
 void
 hg_atomic_queue_free(struct hg_atomic_queue *hg_atomic_queue)
 {
-    free(hg_atomic_queue);
+    hg_mem_aligned_free(hg_atomic_queue);
 }
