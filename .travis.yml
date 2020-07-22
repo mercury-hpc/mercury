@@ -7,7 +7,7 @@ compiler:
     - gcc
     - clang
 
-dist: xenial
+dist: bionic
 
 cache:
   directories:
@@ -21,49 +21,70 @@ env:
 
 jobs:
   include:
-   - os: linux
-     compiler: gcc
-     addons:
-       apt:
-         sources:
-         - ubuntu-toolchain-r-test
-         packages:
-         - gcc-9
-         - g++-9
-         - libtsan0
-         - libasan5
-         - liblsan0
-     env: MERCURY_BUILD_CONFIGURATION="Tsan"
-   - os: linux
-     compiler: gcc
-     addons:
-       apt:
-         sources:
-         - ubuntu-toolchain-r-test
-         packages:
-         - gcc-9
-         - g++-9
-         - libtsan0
-         - libasan5
-         - liblsan0
-     env: MERCURY_BUILD_CONFIGURATION="Asan"
-   - os: linux
-     compiler: gcc
-     addons:
-       apt:
-         sources:
-         - ubuntu-toolchain-r-test
-         packages:
-         - gcc-9
-         - g++-9
-     env: MERCURY_DO_COVERAGE="true"
+    - os: linux
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          packages:
+          - clang-format-10
+      env: CHECK_FORMAT="true"
+    - os: linux
+      compiler: gcc
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          packages:
+          - gcc-10
+          - g++-10
+          - libtsan0
+          - libasan6
+          - libubsan1
+      env: MERCURY_BUILD_CONFIGURATION="Tsan"
+    - os: linux
+      compiler: gcc
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          packages:
+          - gcc-10
+          - g++-10
+          - libtsan0
+          - libasan6
+          - libubsan1
+      env: MERCURY_BUILD_CONFIGURATION="Asan"
+    - os: linux
+      compiler: gcc
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          packages:
+          - gcc-10
+          - g++-10
+          - libtsan0
+          - libasan6
+          - libubsan1
+      env: MERCURY_BUILD_CONFIGURATION="Ubsan"
+    - os: linux
+      compiler: gcc
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          packages:
+          - gcc-10
+          - g++-10
+      env: MERCURY_DO_COVERAGE="true"
 
 branches:
   only:
     - master
 
 before_install:
-    - if [[ "$TRAVIS_PULL_REQUEST" != "false" ]]; then git fetch origin pull/${TRAVIS_PULL_REQUEST}/head:pr${TRAVIS_PULL_REQUEST}; git checkout pr${TRAVIS_PULL_REQUEST}; fi
+    - if [[ "$TRAVIS_PULL_REQUEST" != "false" ]] && [[ "$CHECK_FORMAT" != "true" ]]; then git fetch origin pull/${TRAVIS_PULL_REQUEST}/head:pr${TRAVIS_PULL_REQUEST}; git checkout pr${TRAVIS_PULL_REQUEST}; fi
     - echo "Existing directories in $HOME" && ls $HOME
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew cask uninstall --force oclint; fi
@@ -71,21 +92,21 @@ before_install:
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install libfabric; fi
 
 install:
-    - ./Testing/script/travis_build.sh
+    - if [[ "$CHECK_FORMAT" == "true" ]]; then install -D ./Testing/script/git-clang-format $HOME/install/bin/git-clang-format; else ./Testing/script/travis_build.sh; fi
 
 before_script:
     - if [ -d "$HOME/install/bin" ]; then ls $HOME/install/bin; fi
     - export PATH=$HOME/install/bin:$PATH
     - export LD_LIBRARY_PATH=$HOME/install/lib:$HOME/install/lib64:$LD_LIBRARY_PATH
     - export PKG_CONFIG_PATH=$HOME/install/lib/pkgconfig:$PKG_CONFIG_PATH
-    - if [[ "$CC" == "gcc" && `command -v gcc-9` ]]; then export CC=gcc-9; export CXX=g++-9; export AR=gcc-ar-9; export NM=gcc-nm-9; export RANLIB=gcc-ranlib-9; export COV=gcov-9; fi
+    - if [[ "$CC" == "gcc" && `command -v gcc-10` ]]; then export CC=gcc-10; export CXX=g++-10; export AR=gcc-ar-10; export NM=gcc-nm-10; export RANLIB=gcc-ranlib-10; export COV=gcov-10; fi
     - $CC --version
     - if [[ "$TRAVIS_EVENT_TYPE" == "cron" ]]; then export MERCURY_DASHBOARD_MODEL="Nightly"; elif [[ "$TRAVIS_EVENT_TYPE" == "pull_request" ]]; then export MERCURY_DASHBOARD_MODEL="Experimental"; else export MERCURY_DASHBOARD_MODEL="Continuous"; fi
     - ctest --version
     - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then cat /proc/sys/kernel/yama/ptrace_scope; fi
     - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ulimit -a; fi
-    - fi_info
+    - if [[ "$CHECK_FORMAT" != "true" ]]; then fi_info; fi
+    - if [[ "$CHECK_FORMAT" == "true" ]]; then which clang-format-10; git config --global clangFormat.binary clang-format-10; fi
 
 script:
-    - ctest -VV --output-on-failure -S ./Testing/script/travis_script.cmake
-
+    - if [[ "$CHECK_FORMAT" == "true" ]]; then echo "${TRAVIS_COMMIT_RANGE/.../}"; ./Testing/script/travis_format.sh "${TRAVIS_COMMIT_RANGE/.../ }"; else ctest -VV --output-on-failure -S ./Testing/script/travis_script.cmake; fi

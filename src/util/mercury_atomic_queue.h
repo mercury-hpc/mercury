@@ -55,7 +55,7 @@
 #        define cpu_spinwait() __asm__ __volatile__("yield")
 #    else
 #        warning "Processor yield is not supported on this architecture."
-#        define cpu_spinwait
+#        define cpu_spinwait(x)
 #    endif
 #endif
 
