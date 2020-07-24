@@ -1408,7 +1408,7 @@ HG_Bulk_serialize(void *buf, hg_size_t buf_size, hg_bool_t request_eager,
         if (hg_bulk->na_sm_mem_handles) {
             if (hg_bulk->na_sm_mem_handles[i]) {
                 serialize_size = NA_Mem_handle_get_serialize_size(
-                    na_class, hg_bulk->na_sm_mem_handles[i]);
+                    na_sm_class, hg_bulk->na_sm_mem_handles[i]);
             } else
                 serialize_size = 0;
             ret = hg_bulk_serialize_memcpy(&buf_ptr, &buf_size_left,

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 2.8.12.2 FATAL_ERROR)
 project(MERCURY_TEST_DRIVER CXX)
 
+include(CheckAsan)
+include(CheckTsan)
+include(CheckUbsan)
+
 set(KWSYS_NAMESPACE mercury_sys)
 set(KWSYS_USE_SystemTools 1)
 set(KWSYS_USE_Process 1)

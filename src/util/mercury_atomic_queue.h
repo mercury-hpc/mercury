@@ -42,39 +42,44 @@
 #define MERCURY_ATOMIC_QUEUE_H
 
 #include "mercury_atomic.h"
-#include "mercury_thread.h"
+#include "mercury_mem.h"
+
+/* For busy loop spinning */
+#ifndef cpu_spinwait
+#    if defined(_WIN32)
+#        define cpu_spinwait YieldProcessor
+#    elif defined(__x86_64__) || defined(__i386__)
+#        include <immintrin.h>
+#        define cpu_spinwait _mm_pause
+#    elif defined(__arm__)
+#        define cpu_spinwait() __asm__ __volatile__("yield")
+#    else
+#        warning "Processor yield is not supported on this architecture."
+#        define cpu_spinwait(x)
+#    endif
+#endif
 
 /*************************************/
 /* Public Type and Struct Definition */
 /*************************************/
 
-#define HG_UTIL_CACHE_ALIGNMENT 64
 struct hg_atomic_queue {
     hg_atomic_int32_t prod_head;
     hg_atomic_int32_t prod_tail;
-    unsigned int      prod_size;
-    unsigned int      prod_mask;
-    hg_util_uint64_t  drops;
-    hg_atomic_int32_t cons_head __attribute__((aligned(HG_UTIL_CACHE_ALIGNMENT)));
+    unsigned int prod_size;
+    unsigned int prod_mask;
+    hg_util_uint64_t drops;
+    hg_atomic_int32_t cons_head
+        __attribute__((aligned(HG_MEM_CACHE_LINE_SIZE)));
     hg_atomic_int32_t cons_tail;
-    unsigned int      cons_size;
-    unsigned int      cons_mask;
-    hg_atomic_int64_t *ring[1] __attribute__((aligned(HG_UTIL_CACHE_ALIGNMENT)));
+    unsigned int cons_size;
+    unsigned int cons_mask;
+    hg_atomic_int64_t ring[] __attribute__((aligned(HG_MEM_CACHE_LINE_SIZE)));
 };
 
 /*****************/
 /* Public Macros */
 /*****************/
-
-#define HG_ATOMIC_QUEUE_ELT_SIZE sizeof(hg_atomic_int64_t)
-
-#ifndef cpu_spinwait
-# if defined(__x86_64__) || defined(__amd64__)
-#  define cpu_spinwait() asm volatile("pause\n": : :"memory");
-# else
-#  define cpu_spinwait();
-# endif
-#endif
 
 /*********************/
 /* Public Prototypes */
@@ -91,7 +96,7 @@ extern "C" {
  *
  * \return pointer to allocated queue or NULL on failure
  */
-HG_UTIL_EXPORT struct hg_atomic_queue *
+HG_UTIL_PUBLIC struct hg_atomic_queue *
 hg_atomic_queue_alloc(unsigned int count);
 
 /**
@@ -99,7 +104,7 @@ hg_atomic_queue_alloc(unsigned int count);
  *
  * \param hg_atomic_queue [IN]      pointer to queue
  */
-HG_UTIL_EXPORT void
+HG_UTIL_PUBLIC void
 hg_atomic_queue_free(struct hg_atomic_queue *hg_atomic_queue);
 
 /**
@@ -158,7 +163,6 @@ static HG_UTIL_INLINE int
 hg_atomic_queue_push(struct hg_atomic_queue *hg_atomic_queue, void *entry)
 {
     hg_util_int32_t prod_head, prod_next, cons_tail;
-    int ret = HG_UTIL_SUCCESS;
 
     do {
         prod_head = hg_atomic_get32(&hg_atomic_queue->prod_head);
@@ -171,16 +175,14 @@ hg_atomic_queue_push(struct hg_atomic_queue *hg_atomic_queue, void *entry)
                 cons_tail == hg_atomic_get32(&hg_atomic_queue->cons_tail)) {
                 hg_atomic_queue->drops++;
                 /* Full */
-                ret = HG_UTIL_FAIL;
-                goto done;
+                return HG_UTIL_FAIL;
             }
             continue;
         }
-    } while (!hg_atomic_cas32(&hg_atomic_queue->prod_head, prod_head,
-        prod_next));
+    } while (
+        !hg_atomic_cas32(&hg_atomic_queue->prod_head, prod_head, prod_next));
 
-    hg_atomic_set64((hg_atomic_int64_t *) &hg_atomic_queue->ring[prod_head],
-        (hg_util_int64_t) entry);
+    hg_atomic_set64(&hg_atomic_queue->ring[prod_head], (hg_util_int64_t) entry);
 
     /*
      * If there are other enqueues in progress
@@ -192,8 +194,7 @@ hg_atomic_queue_push(struct hg_atomic_queue *hg_atomic_queue, void *entry)
 
     hg_atomic_set32(&hg_atomic_queue->prod_tail, prod_next);
 
-done:
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -208,12 +209,11 @@ hg_atomic_queue_pop_mc(struct hg_atomic_queue *hg_atomic_queue)
         cons_next = (cons_head + 1) & (int) hg_atomic_queue->cons_mask;
 
         if (cons_head == hg_atomic_get32(&hg_atomic_queue->prod_tail))
-            goto done;
-    } while (!hg_atomic_cas32(&hg_atomic_queue->cons_head, cons_head,
-        cons_next));
+            return NULL;
+    } while (
+        !hg_atomic_cas32(&hg_atomic_queue->cons_head, cons_head, cons_next));
 
-    entry = (void *) hg_atomic_get64(
-        (hg_atomic_int64_t *) &hg_atomic_queue->ring[cons_head]);
+    entry = (void *) hg_atomic_get64(&hg_atomic_queue->ring[cons_head]);
 
     /*
      * If there are other dequeues in progress
@@ -225,7 +225,6 @@ hg_atomic_queue_pop_mc(struct hg_atomic_queue *hg_atomic_queue)
 
     hg_atomic_set32(&hg_atomic_queue->cons_tail, cons_next);
 
-done:
     return entry;
 }
 
@@ -243,16 +242,14 @@ hg_atomic_queue_pop_sc(struct hg_atomic_queue *hg_atomic_queue)
 
     if (cons_head == prod_tail)
         /* Empty */
-        goto done;
+        return NULL;
 
     hg_atomic_set32(&hg_atomic_queue->cons_head, cons_next);
 
-    entry = (void *) hg_atomic_get64(
-        (hg_atomic_int64_t *) &hg_atomic_queue->ring[cons_head]);
+    entry = (void *) hg_atomic_get64(&hg_atomic_queue->ring[cons_head]);
 
     hg_atomic_set32(&hg_atomic_queue->cons_tail, cons_next);
 
-done:
     return entry;
 }
 
@@ -261,17 +258,17 @@ static HG_UTIL_INLINE hg_util_bool_t
 hg_atomic_queue_is_empty(struct hg_atomic_queue *hg_atomic_queue)
 {
     return (hg_atomic_get32(&hg_atomic_queue->cons_head) ==
-        hg_atomic_get32(&hg_atomic_queue->prod_tail));
+            hg_atomic_get32(&hg_atomic_queue->prod_tail));
 }
 
 /*---------------------------------------------------------------------------*/
 static HG_UTIL_INLINE unsigned int
 hg_atomic_queue_count(struct hg_atomic_queue *hg_atomic_queue)
 {
-    return ((hg_atomic_queue->prod_size
-        + (unsigned int) hg_atomic_get32(&hg_atomic_queue->prod_tail)
-        - (unsigned int) hg_atomic_get32(&hg_atomic_queue->cons_tail))
-        & hg_atomic_queue->prod_mask);
+    return ((hg_atomic_queue->prod_size +
+                (unsigned int) hg_atomic_get32(&hg_atomic_queue->prod_tail) -
+                (unsigned int) hg_atomic_get32(&hg_atomic_queue->cons_tail)) &
+            hg_atomic_queue->prod_mask);
 }
 
 #ifdef __cplusplus

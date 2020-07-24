@@ -943,8 +943,7 @@ const struct na_class_ops NA_PLUGIN_OPS(ofi) = {
     na_ofi_context_destroy,                 /* context_destroy */
     na_ofi_op_create,                       /* op_create */
     na_ofi_op_destroy,                      /* op_destroy */
-    NULL,                                   /* addr_lookup */
-    na_ofi_addr_lookup,                     /* addr_lookup2 */
+    na_ofi_addr_lookup,                     /* addr_lookup */
     na_ofi_addr_free,                       /* addr_free */
     na_ofi_addr_set_remove,                 /* addr_set_remove */
     na_ofi_addr_self,                       /* addr_self */
@@ -1277,12 +1276,13 @@ na_ofi_addr_ht_lookup(struct na_ofi_domain *domain, na_uint32_t addr_format,
     /* Lookup key */
     hg_thread_rwlock_rdlock(&domain->rwlock);
     ht_value = hg_hash_table_lookup(domain->addr_ht, ht_key);
-    hg_thread_rwlock_release_rdlock(&domain->rwlock);
     if (ht_value != HG_HASH_TABLE_NULL) {
         /* Found */
         *fi_addr = *(fi_addr_t *) ht_value;
+        hg_thread_rwlock_release_rdlock(&domain->rwlock);
         goto out;
     }
+    hg_thread_rwlock_release_rdlock(&domain->rwlock);
 
     /* Insert addr into AV if key not found */
     na_ofi_domain_lock(domain);
@@ -1344,10 +1344,16 @@ static na_return_t
 na_ofi_addr_ht_remove(struct na_ofi_domain *domain, fi_addr_t *fi_addr,
     na_uint64_t *addr_key)
 {
+    hg_hash_table_value_t ht_value = NULL;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
     hg_thread_rwlock_wrlock(&domain->rwlock);
+    ht_value = hg_hash_table_lookup(domain->addr_ht,
+        (hg_hash_table_key_t) addr_key);
+    if (ht_value == HG_HASH_TABLE_NULL)
+        goto unlock;
+
     rc = hg_hash_table_remove(domain->addr_ht, (hg_hash_table_key_t) addr_key);
     NA_CHECK_ERROR(rc != 1, unlock, ret, NA_NOENTRY,
         "hg_hash_table_remove() failed");
@@ -2825,7 +2831,6 @@ na_ofi_cq_process_retries(na_context_t *context)
                 rc = fi_readmsg(ctx->fi_tx, &na_ofi_op_id->info.rma.fi_rma,
                     NA_OFI_GET_COMPLETION);
                 break;
-            case NA_CB_LOOKUP:
             default:
                 NA_GOTO_ERROR(error, ret, NA_INVALID_ARG,
                     "Operation type %d not supported",
@@ -2926,7 +2931,6 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id)
         case NA_CB_PUT:
         case NA_CB_GET:
             break;
-        case NA_CB_LOOKUP:
         default:
             NA_GOTO_ERROR(out, ret, NA_INVALID_ARG,
                 "Operation type %d not supported", callback_info->type);
@@ -4636,7 +4640,6 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context,
         case NA_CB_GET:
             fi_ep = NA_OFI_CONTEXT(context)->fi_tx;
             break;
-        case NA_CB_LOOKUP:
         default:
             NA_GOTO_ERROR(out, ret, NA_INVALID_ARG,
                 "Operation type %d not supported",

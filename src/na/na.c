@@ -362,6 +362,14 @@ NA_Cleanup(void)
     unsigned int plugin_count =
         sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
     unsigned int i;
+#ifdef NA_HAS_VERBOSE_ERROR
+    const char *log_level = NULL;
+
+    /* Set log level */
+    log_level = getenv("HG_NA_LOG_LEVEL");
+    if (log_level && (strcmp(log_level, "debug") == 0))
+        NA_LOG_MASK |= HG_LOG_TYPE_DEBUG;
+#endif
 
     for (i = 0; i < plugin_count; i++) {
         if (!na_class_table[i]->cleanup)
@@ -524,48 +532,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Addr_lookup(na_class_t *na_class, na_context_t *context, na_cb_t callback,
-    void *arg, const char *name, na_op_id_t *op_id)
-{
-    char *name_string = NULL;
-    char *short_name = NULL;
-    na_return_t ret = NA_SUCCESS;
-
-    NA_CHECK_ERROR(na_class == NULL, done, ret, NA_INVALID_ARG,
-        "NULL NA class");
-    NA_CHECK_ERROR(context == NULL, done, ret, NA_INVALID_ARG,
-        "NULL context");
-    NA_CHECK_ERROR(name == NULL, done, ret, NA_INVALID_ARG,
-        "Lookup name is NULL");
-
-    NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_INVALID_ARG,
-        "NULL NA class ops");
-    NA_CHECK_ERROR(na_class->ops->addr_lookup == NULL, done, ret,
-        NA_OPNOTSUPPORTED, "addr_lookup plugin callback is not defined");
-
-    /* Copy name and work from that */
-    name_string = strdup(name);
-    NA_CHECK_ERROR(name_string == NULL, done, ret, NA_NOMEM,
-        "Could not duplicate string");
-
-    /* If NA class name was specified, we can remove the name here:
-     * ie. bmi+tcp://hostname:port -> tcp://hostname:port */
-    if (strstr(name_string, NA_CLASS_DELIMITER) != NULL)
-        strtok_r(name_string, NA_CLASS_DELIMITER, &short_name);
-    else
-        short_name = name_string;
-
-    ret = na_class->ops->addr_lookup(na_class, context, callback, arg,
-        short_name, op_id);
-
-done:
-    free(name_string);
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-na_return_t
-NA_Addr_lookup2(na_class_t *na_class, const char *name, na_addr_t *addr)
+NA_Addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
 {
     char *name_string = NULL;
     char *short_name = NULL;
@@ -580,11 +547,8 @@ NA_Addr_lookup2(na_class_t *na_class, const char *name, na_addr_t *addr)
 
     NA_CHECK_ERROR(na_class->ops == NULL, done, ret, NA_INVALID_ARG,
         "NULL NA class ops");
-    if (!na_class->ops->addr_lookup2)
-        /* Until we switch to new lookup, exit if no callback */
-        goto done;
-//    NA_CHECK_ERROR(na_class->ops->addr_lookup2 == NULL, done, ret,
-//        NA_PROTOCOL_ERROR, "addr_lookup2 plugin callback is not defined");
+    NA_CHECK_ERROR(na_class->ops->addr_lookup == NULL, done, ret,
+        NA_PROTOCOL_ERROR, "addr_lookup2 plugin callback is not defined");
 
     /* Copy name and work from that */
     name_string = strdup(name);
@@ -598,7 +562,7 @@ NA_Addr_lookup2(na_class_t *na_class, const char *name, na_addr_t *addr)
     else
         short_name = name_string;
 
-    ret = na_class->ops->addr_lookup2(na_class, short_name, addr);
+    ret = na_class->ops->addr_lookup(na_class, short_name, addr);
 
 done:
     free(name_string);

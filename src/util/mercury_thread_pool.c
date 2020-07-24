@@ -10,7 +10,17 @@
 
 #include "mercury_thread_pool.h"
 
+#include "mercury_util_error.h"
+
 #include <stdlib.h>
+
+/****************/
+/* Local Macros */
+/****************/
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
 
 struct hg_thread_pool_private {
     struct hg_thread_pool pool;
@@ -18,14 +28,26 @@ struct hg_thread_pool_private {
     hg_thread_t *threads;
 };
 
+/********************/
+/* Local Prototypes */
+/********************/
+
 /**
  * Worker thread run by the thread pool
  */
 static HG_THREAD_RETURN_TYPE
+hg_thread_pool_worker(void *args);
+
+/*******************/
+/* Local Variables */
+/*******************/
+
+/*---------------------------------------------------------------------------*/
+static HG_THREAD_RETURN_TYPE
 hg_thread_pool_worker(void *args)
 {
     hg_thread_ret_t ret = 0;
-    hg_thread_pool_t *pool = (hg_thread_pool_t*) args;
+    hg_thread_pool_t *pool = (hg_thread_pool_t *) args;
     struct hg_thread_work *work;
 
     while (1) {
@@ -33,17 +55,19 @@ hg_thread_pool_worker(void *args)
 
         /* If not shutting down and nothing to do, worker sleeps */
         while (!pool->shutdown && HG_QUEUE_IS_EMPTY(&pool->queue)) {
+            int rc;
+
             pool->sleeping_worker_count++;
-            if (hg_thread_cond_wait(&pool->cond, &pool->mutex) != HG_UTIL_SUCCESS) {
-                HG_UTIL_LOG_ERROR("Thread cannot wait on condition variable");
-                goto unlock;
-            }
+
+            rc = hg_thread_cond_wait(&pool->cond, &pool->mutex);
+            HG_UTIL_CHECK_ERROR_NORET(rc != HG_UTIL_SUCCESS, unlock,
+                "Thread cannot wait on condition variable");
+
             pool->sleeping_worker_count--;
         }
 
-        if (pool->shutdown && HG_QUEUE_IS_EMPTY(&pool->queue)) {
+        if (pool->shutdown && HG_QUEUE_IS_EMPTY(&pool->queue))
             goto unlock;
-        }
 
         /* Grab our task */
         work = HG_QUEUE_FIRST(&pool->queue);
@@ -58,7 +82,7 @@ hg_thread_pool_worker(void *args)
 
 unlock:
     hg_thread_mutex_unlock(&pool->mutex);
-    hg_thread_exit(ret);
+
     return ret;
 }
 
@@ -66,66 +90,53 @@ unlock:
 int
 hg_thread_pool_init(unsigned int thread_count, hg_thread_pool_t **pool_ptr)
 {
-    int ret = HG_UTIL_SUCCESS;
+    int ret = HG_UTIL_SUCCESS, rc;
     struct hg_thread_pool_private *priv_pool = NULL;
     unsigned int i;
 
-    if (!pool_ptr) {
-        HG_UTIL_LOG_ERROR("Cannot pass NULL pointer");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+    HG_UTIL_CHECK_ERROR(
+        pool_ptr == NULL, error, ret, HG_UTIL_FAIL, "NULL pointer");
 
     priv_pool = (struct hg_thread_pool_private *) malloc(
         sizeof(struct hg_thread_pool_private));
-    if (!priv_pool) {
-        HG_UTIL_LOG_ERROR("Could not allocate thread pool");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+    HG_UTIL_CHECK_ERROR(priv_pool == NULL, error, ret, HG_UTIL_FAIL,
+        "Could not allocate thread pool");
+
     priv_pool->pool.sleeping_worker_count = 0;
     priv_pool->thread_count = thread_count;
     priv_pool->threads = NULL;
     HG_QUEUE_INIT(&priv_pool->pool.queue);
     priv_pool->pool.shutdown = 0;
 
-    if (hg_thread_mutex_init(&priv_pool->pool.mutex) != HG_UTIL_SUCCESS) {
-        HG_UTIL_LOG_ERROR("Could not initialize mutex");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
-    if (hg_thread_cond_init(&priv_pool->pool.cond) != HG_UTIL_SUCCESS) {
-        HG_UTIL_LOG_ERROR("Could not initialize thread condition");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+    rc = hg_thread_mutex_init(&priv_pool->pool.mutex);
+    HG_UTIL_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_UTIL_FAIL,
+        "Could not initialize mutex");
 
-    priv_pool->threads = (hg_thread_t*) malloc(thread_count * sizeof(hg_thread_t));
-    if (!priv_pool->threads) {
-        HG_UTIL_LOG_ERROR("Could not allocate thread pool array");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
+    rc = hg_thread_cond_init(&priv_pool->pool.cond);
+    HG_UTIL_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_UTIL_FAIL,
+        "Could not initialize thread condition");
+
+    priv_pool->threads =
+        (hg_thread_t *) malloc(thread_count * sizeof(hg_thread_t));
+    HG_UTIL_CHECK_ERROR(!priv_pool->threads, error, ret, HG_UTIL_FAIL,
+        "Could not allocate thread pool array");
 
     /* Start worker threads */
     for (i = 0; i < thread_count; i++) {
-        if (hg_thread_create(&priv_pool->threads[i], hg_thread_pool_worker,
-                (void*) priv_pool) != HG_UTIL_SUCCESS) {
-            HG_UTIL_LOG_ERROR("Could not create thread");
-            ret = HG_UTIL_FAIL;
-            goto done;
-        }
+        rc = hg_thread_create(
+            &priv_pool->threads[i], hg_thread_pool_worker, (void *) priv_pool);
+        HG_UTIL_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_UTIL_FAIL,
+            "Could not create thread");
     }
 
     *pool_ptr = (struct hg_thread_pool *) priv_pool;
 
-done:
-    if (ret != HG_UTIL_SUCCESS) {
-        if (priv_pool) {
-            hg_thread_pool_destroy((struct hg_thread_pool *) priv_pool);
-        }
-        priv_pool = NULL;
-    }
+    return ret;
+
+error:
+    if (priv_pool)
+        hg_thread_pool_destroy((struct hg_thread_pool *) priv_pool);
+
     return ret;
 }
 
@@ -135,50 +146,46 @@ hg_thread_pool_destroy(hg_thread_pool_t *pool)
 {
     struct hg_thread_pool_private *priv_pool =
         (struct hg_thread_pool_private *) pool;
-    int ret = HG_UTIL_SUCCESS;
+    int ret = HG_UTIL_SUCCESS, rc;
     unsigned int i;
 
-    if (!priv_pool) goto done;
+    if (!priv_pool)
+        goto done;
 
     if (priv_pool->threads) {
         hg_thread_mutex_lock(&priv_pool->pool.mutex);
 
         priv_pool->pool.shutdown = 1;
 
-        if (hg_thread_cond_broadcast(&priv_pool->pool.cond) != HG_UTIL_SUCCESS) {
-            HG_UTIL_LOG_ERROR("Could not broadcast condition signal");
-            ret = HG_UTIL_FAIL;
-        }
+        rc = hg_thread_cond_broadcast(&priv_pool->pool.cond);
+        HG_UTIL_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_UTIL_FAIL,
+            "Could not broadcast condition signal");
 
         hg_thread_mutex_unlock(&priv_pool->pool.mutex);
 
-        if (ret != HG_UTIL_SUCCESS) goto done;
-
-        for(i = 0; i < priv_pool->thread_count; i++) {
-            if (hg_thread_join(priv_pool->threads[i]) != HG_UTIL_SUCCESS) {
-                HG_UTIL_LOG_ERROR("Could not join thread");
-                ret = HG_UTIL_FAIL;
-                goto done;
-            }
+        for (i = 0; i < priv_pool->thread_count; i++) {
+            rc = hg_thread_join(priv_pool->threads[i]);
+            HG_UTIL_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_UTIL_FAIL,
+                "Could not join thread");
         }
     }
 
+    rc = hg_thread_mutex_destroy(&priv_pool->pool.mutex);
+    HG_UTIL_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_UTIL_FAIL,
+        "Could not destroy mutex");
+
+    rc = hg_thread_cond_destroy(&priv_pool->pool.cond);
+    HG_UTIL_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_UTIL_FAIL,
+        "Could not destroy thread condition");
+
     free(priv_pool->threads);
-    priv_pool->threads = NULL;
-
-    if (hg_thread_mutex_destroy(&priv_pool->pool.mutex) != HG_UTIL_SUCCESS) {
-        HG_UTIL_LOG_ERROR("Could not destroy mutex");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
-    if (hg_thread_cond_destroy(&priv_pool->pool.cond) != HG_UTIL_SUCCESS){
-        HG_UTIL_LOG_ERROR("Could not destroy thread condition");
-        ret = HG_UTIL_FAIL;
-        goto done;
-    }
-
     free(priv_pool);
 
 done:
+    return ret;
+
+error:
+    hg_thread_mutex_unlock(&priv_pool->pool.mutex);
+
     return ret;
 }

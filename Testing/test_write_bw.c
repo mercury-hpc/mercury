@@ -265,7 +265,8 @@ main(int argc, char *argv[])
                 "measure_bulk_transfer() failed");
         }
 
-        fprintf(stdout, "\n");
+        if (hg_test_info.na_test_info.mpi_comm_rank == 0)
+            fprintf(stdout, "\n");
     }
 
 done:

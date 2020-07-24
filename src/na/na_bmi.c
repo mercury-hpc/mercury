@@ -39,12 +39,12 @@
 #define NA_BMI_EXPECTED_SIZE   NA_BMI_UNEXPECTED_SIZE
 
 /* Max tag */
-#define NA_BMI_MAX_TAG (NA_TAG_UB >> 2)
+#define NA_BMI_MAX_TAG (NA_TAG_MAX >> 2)
 
 /* Default tag used for one-sided over two-sided */
 #define NA_BMI_RMA_REQUEST_TAG (NA_BMI_MAX_TAG + 1)
 #define NA_BMI_RMA_TAG (NA_BMI_RMA_REQUEST_TAG + 1)
-#define NA_BMI_MAX_RMA_TAG (NA_TAG_UB >> 1)
+#define NA_BMI_MAX_RMA_TAG (NA_TAG_MAX >> 1)
 
 #define NA_BMI_CLASS(na_class) \
     ((struct na_bmi_class *)(na_class->plugin_class))
@@ -144,7 +144,6 @@ struct na_bmi_op_id {
     hg_atomic_int32_t completed;    /* Operation completed */
     uint64_t cancel;
     union {
-      struct na_bmi_info_lookup lookup;
       struct na_bmi_info_send_unexpected send_unexpected;
       struct na_bmi_info_recv_unexpected recv_unexpected;
       struct na_bmi_info_send_expected send_expected;
@@ -223,11 +222,8 @@ na_bmi_op_destroy(
 static na_return_t
 na_bmi_addr_lookup(
         na_class_t   *na_class,
-        na_context_t *context,
-        na_cb_t       callback,
-        void         *arg,
         const char   *name,
-        na_op_id_t   *op_id
+        na_addr_t    *addr
         );
 
 /* addr_free */
@@ -526,7 +522,6 @@ const struct na_class_ops NA_PLUGIN_OPS(bmi) = {
         na_bmi_op_create,                     /* op_create */
         na_bmi_op_destroy,                    /* op_destroy */
         na_bmi_addr_lookup,                   /* addr_lookup */
-        NULL,                                 /* addr_lookup2 */
         na_bmi_addr_free,                     /* addr_free */
         NULL,                                 /* addr_set_remove */
         na_bmi_addr_self,                     /* addr_self */
@@ -895,32 +890,12 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_addr_lookup(na_class_t *na_class, na_context_t *context,
-        na_cb_t callback, void *arg, const char *name, na_op_id_t *op_id)
+na_bmi_addr_lookup(na_class_t NA_UNUSED *na_class, const char *name,
+    na_addr_t *addr)
 {
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
     struct na_bmi_addr *na_bmi_addr = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
-
-    /* Allocate op_id if not provided */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id != NA_OP_ID_NULL) {
-        na_bmi_op_id = (struct na_bmi_op_id *) *op_id;
-        hg_atomic_incr32(&na_bmi_op_id->ref_count);
-    } else {
-        na_bmi_op_id = (struct na_bmi_op_id *) na_bmi_op_create(na_class);
-        if (!na_bmi_op_id) {
-            NA_LOG_ERROR("Could not allocate NA BMI operation ID");
-            ret = NA_NOMEM_ERROR;
-            goto done;
-        }
-    }
-    na_bmi_op_id->context = context;
-    na_bmi_op_id->type = NA_CB_LOOKUP;
-    na_bmi_op_id->callback = callback;
-    na_bmi_op_id->arg = arg;
-    hg_atomic_set32(&na_bmi_op_id->completed, 0);
-    na_bmi_op_id->cancel = 0;
 
     /* Allocate addr */
     na_bmi_addr = (struct na_bmi_addr *) malloc(sizeof(struct na_bmi_addr));
@@ -933,11 +908,6 @@ na_bmi_addr_lookup(na_class_t *na_class, na_context_t *context,
     na_bmi_addr->unexpected = NA_FALSE;
     na_bmi_addr->self = NA_FALSE;
     hg_atomic_set32(&na_bmi_addr->ref_count, 1);
-    na_bmi_op_id->info.lookup.addr = (na_addr_t) na_bmi_addr;
-
-    /* Assign op_id */
-    if (op_id && op_id != NA_OP_ID_IGNORE && *op_id == NA_OP_ID_NULL)
-        *op_id = na_bmi_op_id;
 
     /* Perform an address lookup */
     bmi_ret = BMI_addr_lookup(&na_bmi_addr->bmi_addr, name);
@@ -947,17 +917,11 @@ na_bmi_addr_lookup(na_class_t *na_class, na_context_t *context,
         goto done;
     }
 
-    /* TODO we always complete here for now as lookup is blocking */
-    ret = na_bmi_complete(na_bmi_op_id);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not complete operation");
-        goto done;
-    }
+    *addr = (na_addr_t) na_bmi_addr;
 
 done:
     if (ret != NA_SUCCESS) {
         free(na_bmi_addr);
-        na_bmi_op_destroy(na_class, (na_op_id_t) na_bmi_op_id);
     }
     return ret;
 }
@@ -2071,9 +2035,6 @@ na_bmi_progress_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
         }
 
         switch (na_bmi_op_id->type) {
-            case NA_CB_LOOKUP:
-                NA_LOG_ERROR("Should not complete lookup here");
-                break;
             case NA_CB_RECV_UNEXPECTED:
                 NA_LOG_ERROR("Should not complete unexpected recv here");
                 break;
@@ -2344,9 +2305,6 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
     callback_info->type = na_bmi_op_id->type;
 
     switch (na_bmi_op_id->type) {
-        case NA_CB_LOOKUP:
-            callback_info->info.lookup.addr = na_bmi_op_id->info.lookup.addr;
-            break;
         case NA_CB_SEND_UNEXPECTED:
             break;
         case NA_CB_RECV_UNEXPECTED:
@@ -2469,9 +2427,6 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
         goto done;
 
     switch (na_bmi_op_id->type) {
-        case NA_CB_LOOKUP:
-            /* Nothing for now */
-            break;
         case NA_CB_SEND_UNEXPECTED:
             bmi_ret = BMI_cancel(na_bmi_op_id->info.send_unexpected.op_id,
                     *bmi_context);

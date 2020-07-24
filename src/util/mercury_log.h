@@ -21,28 +21,31 @@
 #define HG_LOG_TYPE_ERROR   0x04
 
 /* For compatibility */
-#if defined(__STDC_VERSION__) &&  (__STDC_VERSION__ < 199901L)
-  #if defined(__GNUC__) && (__GNUC__ >= 2)
-    #define __func__ __FUNCTION__
-  #else
-    #define __func__ "<unknown>"
-  #endif
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ < 199901L)
+#    if defined(__GNUC__) && (__GNUC__ >= 2)
+#        define __func__ __FUNCTION__
+#    else
+#        define __func__ "<unknown>"
+#    endif
 #elif defined(_WIN32)
-  #define __func__ __FUNCTION__
+#    define __func__ __FUNCTION__
 #endif
 
-#define HG_LOG_WRITE_ERROR(HG_LOG_MODULE_NAME, ...) do {                  \
-    hg_log_write(HG_LOG_TYPE_ERROR, HG_LOG_MODULE_NAME, __FILE__,         \
-        __LINE__, __func__, __VA_ARGS__);                                 \
-} while (0)
-#define HG_LOG_WRITE_DEBUG(HG_LOG_MODULE_NAME, ...) do {                  \
-    hg_log_write(HG_LOG_TYPE_DEBUG, HG_LOG_MODULE_NAME, __FILE__,         \
-        __LINE__, __func__, __VA_ARGS__);                                 \
-} while (0)
-#define HG_LOG_WRITE_WARNING(HG_LOG_MODULE_NAME, ...) do {                \
-    hg_log_write(HG_LOG_TYPE_WARNING, HG_LOG_MODULE_NAME, __FILE__,       \
-    __LINE__,  __func__, __VA_ARGS__);                                    \
-} while (0)
+#define HG_LOG_WRITE_ERROR(HG_LOG_MODULE_NAME, ...)                            \
+    do {                                                                       \
+        hg_log_write(HG_LOG_TYPE_ERROR, HG_LOG_MODULE_NAME, __FILE__,          \
+            __LINE__, __func__, __VA_ARGS__);                                  \
+    } while (0)
+#define HG_LOG_WRITE_DEBUG(HG_LOG_MODULE_NAME, ...)                            \
+    do {                                                                       \
+        hg_log_write(HG_LOG_TYPE_DEBUG, HG_LOG_MODULE_NAME, __FILE__,          \
+            __LINE__, __func__, __VA_ARGS__);                                  \
+    } while (0)
+#define HG_LOG_WRITE_WARNING(HG_LOG_MODULE_NAME, ...)                          \
+    do {                                                                       \
+        hg_log_write(HG_LOG_TYPE_WARNING, HG_LOG_MODULE_NAME, __FILE__,        \
+            __LINE__, __func__, __VA_ARGS__);                                  \
+    } while (0)
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,7 +56,7 @@ extern "C" {
  *
  * \param log_func [IN]         pointer to function
  */
-HG_UTIL_EXPORT void
+HG_UTIL_PUBLIC void
 hg_log_set_func(int (*log_func)(FILE *stream, const char *format, ...));
 
 /**
@@ -61,7 +64,7 @@ hg_log_set_func(int (*log_func)(FILE *stream, const char *format, ...));
  *
  * \param stream [IN/OUT]       pointer to stream
  */
-HG_UTIL_EXPORT void
+HG_UTIL_PUBLIC void
 hg_log_set_stream_debug(FILE *stream);
 
 /**
@@ -69,7 +72,7 @@ hg_log_set_stream_debug(FILE *stream);
  *
  * \param stream [IN/OUT]       pointer to stream
  */
-HG_UTIL_EXPORT void
+HG_UTIL_PUBLIC void
 hg_log_set_stream_warning(FILE *stream);
 
 /**
@@ -77,7 +80,7 @@ hg_log_set_stream_warning(FILE *stream);
  *
  * \param stream [IN/OUT]       pointer to stream
  */
-HG_UTIL_EXPORT void
+HG_UTIL_PUBLIC void
 hg_log_set_stream_error(FILE *stream);
 
 /**
@@ -90,7 +93,7 @@ hg_log_set_stream_error(FILE *stream);
  * \param func [IN]             function name
  * \param format [IN]           string format
  */
-HG_UTIL_EXPORT void
+HG_UTIL_PUBLIC void
 hg_log_write(unsigned int log_type, const char *module, const char *file,
     unsigned int line, const char *func, const char *format, ...);
 

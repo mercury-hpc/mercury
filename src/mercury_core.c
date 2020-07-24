@@ -28,7 +28,7 @@
 #include "mercury_error.h"
 
 #ifdef HG_HAS_SM_ROUTING
-#include <uuid/uuid.h>
+#include <na_sm.h>
 #endif
 
 #include <stdlib.h>
@@ -41,9 +41,9 @@
 #define HG_CORE_ATOMIC_QUEUE_SIZE   1024
 #define HG_CORE_PENDING_INCR        256
 #define HG_CORE_CLEANUP_TIMEOUT     1000
+#define HG_CORE_MAX_EVENTS          1
 #define HG_CORE_MAX_TRIGGER_COUNT   1
 #ifdef HG_HAS_SM_ROUTING
-# define HG_CORE_UUID_MAX_LEN       36
 # define HG_CORE_ADDR_MAX_SIZE      256
 # define HG_CORE_PROTO_DELIMITER    ":"
 # define HG_CORE_ADDR_DELIMITER     "#"
@@ -89,7 +89,7 @@ typedef hg_atomic_int32_t hg_core_stat_t;
 struct hg_core_private_class {
     struct hg_core_class core_class;    /* Must remain as first field */
 #ifdef HG_HAS_SM_ROUTING
-    uuid_t na_sm_uuid;                  /* UUID for local identification */
+    na_sm_id_t host_id;                 /* Host ID for local identification */
 #endif
     hg_hash_table_t *func_map;          /* Function map */
     hg_return_t (*more_data_acquire)(hg_core_handle_t, hg_op_t,
@@ -107,11 +107,21 @@ struct hg_core_private_class {
 #endif
 };
 
+/* Poll type */
+typedef enum hg_core_poll_type {
+    HG_CORE_POLL_LOOPBACK = 1,
+#ifdef HG_HAS_SM_ROUTING
+    HG_CORE_POLL_SM,
+#endif
+    HG_CORE_POLL_NA
+} hg_core_poll_type_t;
+
 /* HG context */
 struct hg_core_private_context {
     struct hg_core_context core_context;        /* Must remain as first field */
     hg_thread_cond_t  completion_queue_cond;    /* Completion queue cond */
     hg_thread_mutex_t completion_queue_mutex;   /* Completion queue mutex */
+    hg_thread_mutex_t completion_queue_notify_mutex; /* Notify mutex */
     HG_QUEUE_HEAD(hg_completion_entry) backfill_queue;  /* Backfill completion queue */
     struct hg_atomic_queue *completion_queue;           /* Default completion queue */
     HG_LIST_HEAD(hg_core_private_handle) created_list;  /* List of handles for that context */
@@ -122,8 +132,8 @@ struct hg_core_private_context {
     hg_return_t (*handle_create)(hg_core_handle_t, void *); /* handle_create */
     void *handle_create_arg;                    /* handle_create arg */
     struct hg_poll_set *poll_set;               /* Context poll set */
-    hg_return_t (*progress)(struct hg_core_private_context *context,
-        unsigned int timeout);                  /* Progress function */
+    struct hg_poll_event poll_events[HG_CORE_MAX_EVENTS]; /* Context poll events */
+    hg_atomic_int32_t completion_queue_must_notify; /* Notify of completion queue events */
     hg_atomic_int32_t backfill_queue_count;     /* Backfill queue count */
     hg_atomic_int32_t trigger_waiting;          /* Waiting in trigger */
     hg_atomic_int32_t n_handles;                /* Atomic used for number of handles */
@@ -149,7 +159,7 @@ struct hg_core_self_cb_info {
 struct hg_core_private_addr {
     struct hg_core_addr core_addr;      /* Must remain as first field */
 #ifdef HG_HAS_SM_ROUTING
-    uuid_t na_sm_uuid;                  /* NA SM UUID */
+    na_sm_id_t host_id;                 /* NA SM Host ID */
 #endif
     hg_atomic_int32_t ref_count;        /* Reference count */
     hg_bool_t is_mine;                  /* Created internally or not */
@@ -211,7 +221,6 @@ struct hg_core_private_handle {
 /* HG op id */
 struct hg_core_op_info_lookup {
     struct hg_core_private_addr *hg_core_addr;  /* Address */
-    na_op_id_t na_lookup_op_id;                 /* Operation ID for lookup */
 };
 
 struct hg_core_op_id {
@@ -228,16 +237,6 @@ struct hg_core_op_id {
 /********************/
 /* Local Prototypes */
 /********************/
-
-#ifdef HG_HAS_SM_ROUTING
-/**
- * Get local ID used for detecting local nodes.
- */
-static hg_return_t
-hg_core_get_sm_uuid(
-        uuid_t *sm_uuid
-        );
-#endif
 
 /**
  * Equal function for function map.
@@ -340,27 +339,9 @@ hg_core_addr_create(
  */
 static hg_return_t
 hg_core_addr_lookup(
-        struct hg_core_private_context *context,
-        hg_core_cb_t callback,
-        void *arg,
+        struct hg_core_private_class *hg_core_class,
         const char *name,
-        hg_core_op_id_t *op_id
-        );
-
-/**
- * Lookup callback.
- */
-static int
-hg_core_addr_lookup_cb(
-        const struct na_cb_info *callback_info
-        );
-
-/**
- * Complete addr lookup.
- */
-static hg_return_t
-hg_core_addr_lookup_complete(
-        struct hg_core_op_id *hg_core_op_id
+        struct hg_core_private_addr **addr
         );
 
 /**
@@ -667,7 +648,8 @@ hg_core_reset_post(
  */
 static hg_return_t
 hg_core_progress_na(
-        struct hg_core_private_context *context,
+        na_class_t *na_class,
+        na_context_t *na_context,
         unsigned int timeout
         );
 
@@ -675,49 +657,25 @@ hg_core_progress_na(
 /**
  * Completion queue notification callback.
  */
-static HG_INLINE int
-hg_core_completion_queue_notify_cb(
-        void *arg,
-        int error,
-        hg_util_bool_t *progressed
+static HG_INLINE hg_return_t
+hg_core_progress_loopback_notify(
+        struct hg_core_private_context *context
         );
 #endif
 
 /**
- * Progress callback on NA layer when hg_core_progress_poll() is used.
+ * Determines when it is safe to block.
  */
-static int
-hg_core_progress_na_cb(
-        void *arg,
-        int error,
-        hg_util_bool_t *progressed
-        );
-
-#ifdef HG_HAS_SM_ROUTING
-/**
- * Progress callback on NA SM layer when hg_core_progress_poll() is used.
- */
-static int
-hg_core_progress_na_sm_cb(
-        void *arg,
-        int error,
-        hg_util_bool_t *progressed
-        );
-#endif
-
-/**
- * Callback for HG poll progress that determines when it is safe to block.
- */
-static HG_INLINE hg_util_bool_t
-hg_core_poll_try_wait_cb(
-        void *arg
+static HG_INLINE hg_bool_t
+hg_core_poll_try_wait(
+        struct hg_core_private_context *context
         );
 
 /**
  * Make progress.
  */
 static hg_return_t
-hg_core_progress_poll(
+hg_core_progress(
         struct hg_core_private_context *context,
         unsigned int timeout
         );
@@ -798,40 +756,6 @@ hg_core_print_stats(void)
         (unsigned long) hg_core_stat_get(&hg_core_rpc_extra_count_g));
     printf("Bulk transfer count:  %lu\n",
         (unsigned long) hg_core_stat_get(&hg_core_bulk_count_g));
-}
-#endif
-
-/*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SM_ROUTING
-static hg_return_t
-hg_core_get_sm_uuid(uuid_t *sm_uuid)
-{
-    const char *sm_path = NA_SM_TMP_DIRECTORY "/" NA_SM_SHM_PREFIX "/uuid.cfg";
-    char uuid_str[HG_CORE_UUID_MAX_LEN + 1];
-    FILE *uuid_config;
-    uuid_t new_uuid;
-    na_return_t ret = NA_SUCCESS;
-
-    uuid_config = fopen(sm_path, "r");
-    if (!uuid_config) {
-        /* Generate a new one */
-        uuid_generate(new_uuid);
-
-        uuid_config = fopen(sm_path, "w");
-        HG_CHECK_ERROR(uuid_config == NULL, done, ret, HG_NOENTRY,
-            "Could not open %s for write", sm_path);
-        uuid_unparse(new_uuid, uuid_str);
-        fprintf(uuid_config, "%s\n", uuid_str);
-    } else {
-        /* Get the existing one */
-        fgets(uuid_str, HG_CORE_UUID_MAX_LEN + 1, uuid_config);
-        uuid_parse(uuid_str, new_uuid);
-    }
-    fclose(uuid_config);
-    uuid_copy(*sm_uuid, new_uuid);
-
-done:
-    return ret;
 }
 #endif
 
@@ -1004,7 +928,7 @@ hg_core_context_lists_wait(struct hg_core_private_context *context)
         if (created_list_empty && pending_list_empty && sm_pending_list_empty)
             break;
 
-        progress_ret = context->progress(context,
+        progress_ret = hg_core_progress(context,
             (unsigned int) (remaining * 1000.0));
         HG_CHECK_ERROR(progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT,
             done, ret, progress_ret, "Could not make progress");
@@ -1078,6 +1002,8 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
 #ifdef HG_HAS_SM_ROUTING
     /* Initialize SM plugin */
     if (auto_sm) {
+        na_return_t na_ret;
+
         HG_CHECK_ERROR(strcmp(NA_Get_class_name(
             hg_core_class->core_class.na_class), "na") == 0, error, ret,
             HG_PROTONOSUPPORT, "Cannot use auto SM mode if initialized "
@@ -1089,9 +1015,10 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
         HG_CHECK_ERROR(hg_core_class->core_class.na_sm_class == NULL, error,
             ret, HG_NA_ERROR, "Could not initialize NA SM class");
 
-        /* Get SM UUID */
-        ret = hg_core_get_sm_uuid(&hg_core_class->na_sm_uuid);
-        HG_CHECK_HG_ERROR(error, ret, "Could not get SM UUID");
+        /* Get SM host ID */
+        na_ret = NA_SM_Host_id_get(&hg_core_class->host_id);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+            "NA_SM_Host_id_get() failed (%s)", NA_Error_to_string(na_ret));
     }
 #endif
 
@@ -1227,38 +1154,22 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_addr_lookup(struct hg_core_private_context *context,
-    hg_core_cb_t callback, void *arg, const char *name, hg_core_op_id_t *op_id)
+hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
+    const char *name, struct hg_core_private_addr **addr)
 {
-    na_class_t *na_class = context->core_context.core_class->na_class;
-    na_context_t *na_context = context->core_context.na_context;
-    struct hg_core_op_id *hg_core_op_id = NULL;
+    na_class_t *na_class = hg_core_class->core_class.na_class;
     struct hg_core_private_addr *hg_core_addr = NULL;
-    na_addr_t na_addr = NA_ADDR_NULL;
     na_return_t na_ret;
 #ifdef HG_HAS_SM_ROUTING
     char lookup_name[HG_CORE_ADDR_MAX_SIZE] = {'\0'};
 #endif
     const char *name_str = name;
-    hg_return_t ret = HG_SUCCESS, progress_ret;
-
-    /* Allocate op_id */
-    hg_core_op_id = (struct hg_core_op_id *) malloc(
-        sizeof(struct hg_core_op_id));
-    HG_CHECK_ERROR(hg_core_op_id == NULL, error, ret, HG_NOMEM,
-        "Could not allocate HG operation ID");
-
-    hg_core_op_id->context = context;
-    hg_core_op_id->type = HG_CB_LOOKUP;
-    hg_core_op_id->callback = callback;
-    hg_core_op_id->arg = arg;
-    hg_core_op_id->info.lookup.hg_core_addr = NULL;
+    hg_return_t ret = HG_SUCCESS;
 
     /* Allocate addr */
-    hg_core_addr = hg_core_addr_create(HG_CORE_CONTEXT_CLASS(context), NULL);
+    hg_core_addr = hg_core_addr_create(hg_core_class, NULL);
     HG_CHECK_ERROR(hg_core_addr == NULL, error, ret, HG_NOMEM,
         "Could not create HG addr");
-    hg_core_op_id->info.lookup.hg_core_addr = hg_core_addr;
 
 #ifdef HG_HAS_SM_ROUTING
     /* Parse name string */
@@ -1268,27 +1179,30 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
 
         strcpy(lookup_name, name);
 
-        /* Get first part of address string with UUID */
+        /* Get first part of address string with host ID */
         strtok_r(lookup_name, HG_CORE_ADDR_DELIMITER, &lookup_names);
 
         HG_CHECK_ERROR(strstr(name, HG_CORE_PROTO_DELIMITER) == NULL, error,
             ret, HG_PROTOCOL_ERROR, "Malformed address format");
 
-        /* Get address SM UUID */
+        /* Get address SM host ID */
         strtok_r(lookup_name, HG_CORE_PROTO_DELIMITER, &local_id_str);
-        uuid_parse(local_id_str + 2, hg_core_addr->na_sm_uuid);
+        na_ret = NA_SM_String_to_host_id(
+            local_id_str + 2, &hg_core_addr->host_id);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
+            "NA_SM_String_to_host_id() failed (%s)",
+            NA_Error_to_string(na_ret));
 
         /* Separate remaining two parts */
         strtok_r(lookup_names, HG_CORE_ADDR_DELIMITER, &remote_name);
         local_name = lookup_names;
 
-        /* Compare UUIDs, if they match it's local address */
-        if (context->core_context.na_sm_context
-            && uuid_compare(hg_core_addr->na_sm_uuid,
-            HG_CORE_CONTEXT_CLASS(context)->na_sm_uuid) == 0) {
+        /* Compare IDs, if they match it's local address */
+        if (hg_core_class->core_class.na_sm_class && NA_SM_Host_id_cmp(
+            hg_core_addr->host_id, hg_core_class->host_id)) {
+            HG_LOG_DEBUG("This is a local address");
             name_str = local_name;
-            na_class = context->core_context.core_class->na_sm_class;
-            na_context = context->core_context.na_sm_context;
+            na_class = hg_core_class->core_class.na_sm_class;
         } else {
             /* Remote lookup */
             name_str = remote_name;
@@ -1298,95 +1212,20 @@ hg_core_addr_lookup(struct hg_core_private_context *context,
     /* Assign corresponding NA class */
     hg_core_addr->core_addr.na_class = na_class;
 
-    /* Try to use immediate lookup */
-    na_ret = NA_Addr_lookup2(na_class, name_str, &na_addr);
+    /* Lookup adress */
+    na_ret = NA_Addr_lookup(na_class, name_str,
+        &hg_core_addr->core_addr.na_addr);
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
-        "Could not start lookup for address %s (%s)", name_str,
+        "Could not lookup address %s (%s)", name_str,
         NA_Error_to_string(na_ret));
 
-    if (na_addr != NA_ADDR_NULL) {
-        struct na_cb_info callback_info;
-        callback_info.arg = hg_core_op_id;
-        callback_info.ret = NA_SUCCESS;
-        callback_info.type = NA_CB_LOOKUP;
-        callback_info.info.lookup.addr = na_addr;
-        hg_core_op_id->info.lookup.na_lookup_op_id = NA_OP_ID_NULL;
-
-        hg_core_addr_lookup_cb(&callback_info);
-    } else {
-        /* Create operation ID */
-        hg_core_op_id->info.lookup.na_lookup_op_id = NA_Op_create(na_class);
-
-        na_ret = NA_Addr_lookup(na_class, na_context, hg_core_addr_lookup_cb,
-            hg_core_op_id, name_str, &hg_core_op_id->info.lookup.na_lookup_op_id);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
-            "Could not start lookup for address %s (%s)", name_str,
-            NA_Error_to_string(na_ret));
-    }
-
-    /* TODO to avoid blocking after lookup make progress on the HG layer with
-     * timeout of 0 */
-    progress_ret = context->progress(context, 0);
-    HG_CHECK_ERROR(progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT,
-        error, ret, progress_ret, "Could not make progress");
-
-    /* Assign op_id */
-    if (op_id && op_id != HG_CORE_OP_ID_IGNORE)
-        *op_id = (hg_core_op_id_t) hg_core_op_id;
+    *addr = hg_core_addr;
 
     return ret;
 
 error:
-    free(hg_core_op_id);
-    hg_core_addr_free(HG_CORE_CONTEXT_CLASS(context), hg_core_addr);
+    hg_core_addr_free(hg_core_class, hg_core_addr);
 
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static int
-hg_core_addr_lookup_cb(const struct na_cb_info *callback_info)
-{
-    struct hg_core_op_id *hg_core_op_id =
-        (struct hg_core_op_id *) callback_info->arg;
-    na_return_t na_ret = callback_info->ret;
-    hg_return_t hg_ret;
-    int ret = 0;
-
-    HG_CHECK_ERROR_NORET(na_ret != NA_SUCCESS, done, "(%s)",
-        NA_Error_to_string(na_ret));
-
-    /* Assign addr */
-    hg_core_op_id->info.lookup.hg_core_addr->core_addr.na_addr =
-        callback_info->info.lookup.addr;
-
-    /* Mark as completed */
-    hg_ret = hg_core_addr_lookup_complete(hg_core_op_id);
-    HG_CHECK_HG_ERROR(done, hg_ret, "Could not complete operation");
-
-    ret++;
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static hg_return_t
-hg_core_addr_lookup_complete(struct hg_core_op_id *hg_core_op_id)
-{
-    hg_core_context_t *context = &hg_core_op_id->context->core_context;
-    struct hg_completion_entry *hg_completion_entry =
-        &hg_core_op_id->hg_completion_entry;
-    hg_return_t ret = HG_SUCCESS;
-
-    hg_completion_entry->op_type = HG_ADDR;
-    hg_completion_entry->op_id.hg_core_op_id = hg_core_op_id;
-
-    ret = hg_core_completion_add(context, hg_completion_entry, HG_FALSE);
-    HG_CHECK_HG_ERROR(done, ret,
-        "Could not add HG completion entry to completion queue");
-
-done:
     return ret;
 }
 
@@ -1457,8 +1296,8 @@ hg_core_addr_self(struct hg_core_private_class *hg_core_class,
         HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
             "Could not get self SM address (%s)", NA_Error_to_string(na_ret));
 
-        /* Copy local UUID */
-        uuid_copy(hg_core_addr->na_sm_uuid, hg_core_class->na_sm_uuid);
+        /* Copy local host ID */
+        NA_SM_Host_id_copy(&hg_core_addr->host_id, hg_core_class->host_id);
     }
 #endif
 
@@ -1520,11 +1359,15 @@ hg_core_addr_to_string(struct hg_core_private_class *hg_core_class, char *buf,
 #ifdef HG_HAS_SM_ROUTING
     if (hg_core_addr->core_addr.na_sm_addr) {
         char addr_str[HG_CORE_ADDR_MAX_SIZE];
-        char uuid_str[HG_CORE_UUID_MAX_LEN + 1];
+        char uuid_str[NA_SM_HOST_ID_LEN + 1];
         int desc_len;
 
-        /* Convert UUID to string and generate addr string */
-        uuid_unparse(hg_core_addr->na_sm_uuid, uuid_str);
+        /* Convert host ID to string and generate addr string */
+        na_ret = NA_SM_Host_id_to_string(hg_core_addr->host_id, uuid_str);
+        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
+            "NA_SM_Host_id_to_string() failed (%s)",
+            NA_Error_to_string(na_ret));
+
         desc_len = snprintf(addr_str, HG_CORE_ADDR_MAX_SIZE,
             "uid://%s" HG_CORE_ADDR_DELIMITER, uuid_str);
         HG_CHECK_ERROR(desc_len > HG_CORE_ADDR_MAX_SIZE, done, ret,
@@ -1556,7 +1399,7 @@ hg_core_addr_to_string(struct hg_core_private_class *hg_core_class, char *buf,
 #endif
 
     /* Get NA address string */
-    na_ret = NA_Addr_to_string(hg_core_class->core_class.na_class, buf_ptr,
+    na_ret = NA_Addr_to_string(hg_core_addr->core_addr.na_class, buf_ptr,
         &new_buf_size, hg_core_addr->core_addr.na_addr);
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
         "Could not convert address to string (%s)", NA_Error_to_string(na_ret));
@@ -2700,12 +2543,20 @@ hg_core_completion_add(struct hg_core_context *context,
     }
 
 #ifdef HG_HAS_SELF_FORWARD
-    /* TODO could prevent from self notifying if hg_poll_wait() not entered */
     if (!(HG_CORE_CONTEXT_CLASS(private_context)->progress_mode & NA_NO_BLOCK)
-        && self_notify && private_context->completion_queue_notify) {
-        int rc = hg_event_set(private_context->completion_queue_notify);
-        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
-            "Could not signal completion queue");
+        && self_notify && (private_context->completion_queue_notify > 0)) {
+            hg_thread_mutex_lock(
+                &private_context->completion_queue_notify_mutex);
+            /* Do not bother notifying if it's not needed as any event call will
+             * increase latency */
+            if (hg_atomic_get32(
+                &private_context->completion_queue_must_notify)) {
+                int rc = hg_event_set(private_context->completion_queue_notify);
+                HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
+                    "Could not signal completion queue");
+            }
+            hg_thread_mutex_unlock(
+                &private_context->completion_queue_notify_mutex);
     }
 #else
     (void) self_notify;
@@ -2848,163 +2699,16 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SELF_FORWARD
-static HG_INLINE int
-hg_core_completion_queue_notify_cb(void *arg,
-    int HG_UNUSED error, hg_util_bool_t *progressed)
-{
-    struct hg_core_private_context *context =
-        (struct hg_core_private_context *) arg;
-    hg_util_bool_t notified = HG_UTIL_FALSE;
-    int rc = HG_UTIL_SUCCESS;
-
-    if (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)) {
-        /* TODO could prevent from self notifying if hg_poll_wait() not entered */
-        rc = hg_event_get(context->completion_queue_notify, &notified);
-        HG_CHECK_ERROR_NORET(rc != HG_UTIL_SUCCESS, done,
-            "Could not get completion notification");
-    }
-
-    if (notified || !hg_atomic_queue_is_empty(context->completion_queue)
-        || hg_atomic_get32(&context->backfill_queue_count)) {
-        *progressed = HG_UTIL_TRUE; /* Progressed */
-        goto done;
-    }
-
-    *progressed = HG_UTIL_FALSE;
-
-done:
-    return rc;
-}
-#endif
-
-/*---------------------------------------------------------------------------*/
-static int
-hg_core_progress_na_cb(void *arg, int HG_UNUSED error,
-    hg_util_bool_t *progressed)
-{
-    struct hg_core_private_context *context =
-        (struct hg_core_private_context *) arg;
-     unsigned int actual_count = 0;
-    unsigned int completed_count = 0;
-    int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
-    int rc = HG_UTIL_SUCCESS;
-    na_return_t na_ret;
-
-    /* Check progress on NA (no need to call try_wait here) */
-    na_ret = NA_Progress(HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
-        context->core_context.na_context, 0);
-    if (na_ret == NA_TIMEOUT) {
-        /* Nothing progressed */
-        *progressed = HG_UTIL_FALSE;
-        goto done;
-    } else
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, rc, HG_UTIL_FAIL,
-            "Could not make progress on NA (%s)", NA_Error_to_string(na_ret));
-
-    /* Trigger everything we can from NA, if something completed it will
-     * be moved to the HG context completion queue */
-    do {
-        unsigned int i;
-
-        na_ret = NA_Trigger(context->core_context.na_context, 0,
-            HG_CORE_MAX_TRIGGER_COUNT, cb_ret, &actual_count);
-
-        /* Return value of callback is completion count */
-        for (i = 0; i < actual_count; i++)
-            completed_count += (unsigned int) cb_ret[i];
-    } while ((na_ret == NA_SUCCESS) && actual_count);
-    HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, rc,
-        HG_UTIL_FAIL, "Could not trigger NA callback (%s)",
-        NA_Error_to_string(na_ret));
-
-    /* We can't only verify that the completion queue is not empty, we need
-     * to check what was added to the completion queue, as the completion queue
-     * may have been concurrently emptied */
-    if (!completed_count && hg_atomic_queue_is_empty(context->completion_queue)
-        && !hg_atomic_get32(&context->backfill_queue_count)) {
-        /* Nothing progressed */
-        *progressed = HG_UTIL_FALSE;
-        goto done;
-    }
-
-    *progressed = HG_UTIL_TRUE;
-
-done:
-    return rc;
-}
-
-/*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SM_ROUTING
-static int
-hg_core_progress_na_sm_cb(void *arg, int HG_UNUSED error,
-    hg_util_bool_t *progressed)
-{
-    struct hg_core_private_context *context =
-        (struct hg_core_private_context *) arg;
-    unsigned int actual_count = 0;
-    unsigned int completed_count = 0;
-    int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
-    int rc = HG_UTIL_SUCCESS;
-    na_return_t na_ret;
-
-    /* Check progress on NA SM (no need to call try_wait here) */
-    na_ret = NA_Progress(HG_CORE_CONTEXT_CLASS(context)->core_class.na_sm_class,
-        context->core_context.na_sm_context, 0);
-    if (na_ret == NA_TIMEOUT) {
-        /* Nothing progressed */
-        *progressed = HG_UTIL_FALSE;
-        goto done;
-    } else
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, rc, HG_UTIL_FAIL,
-            "Could not make progress on NA SM (%s)",
-            NA_Error_to_string(na_ret));
-
-    /* Trigger everything we can from NA, if something completed it will
-     * be moved to the HG context completion queue */
-    do {
-        unsigned int i;
-
-        na_ret = NA_Trigger(context->core_context.na_sm_context, 0,
-            HG_CORE_MAX_TRIGGER_COUNT, cb_ret, &actual_count);
-
-        /* Return value of callback is completion count */
-        for (i = 0; i < actual_count; i++)
-            completed_count += (unsigned int)cb_ret[i];
-    } while ((na_ret == NA_SUCCESS) && actual_count);
-    HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, rc,
-        HG_UTIL_FAIL, "Could not trigger NA SM callback (%s)",
-        NA_Error_to_string(na_ret));
-
-    /* We can't only verify that the completion queue is not empty, we need
-     * to check what was added to the completion queue, as the completion queue
-     * may have been concurrently emptied */
-    if (!completed_count && hg_atomic_queue_is_empty(context->completion_queue)
-        && !hg_atomic_get32(&context->backfill_queue_count)) {
-        /* Nothing progressed */
-        *progressed = HG_UTIL_FALSE;
-        goto done;
-    }
-
-    *progressed = HG_UTIL_TRUE;
-
-done:
-    return rc;
-}
-#endif
-
-/*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_progress_na(struct hg_core_private_context *context,
+hg_core_progress_na(na_class_t *na_class, na_context_t *na_context,
     unsigned int timeout)
 {
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
+    unsigned int completed_count = 0;
     hg_return_t ret = HG_TIMEOUT;
 
     for (;;) {
         unsigned int actual_count = 0;
-        int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
-        unsigned int completed_count = 0;
         unsigned int progress_timeout;
         na_return_t na_ret;
         hg_time_t t1, t2;
@@ -3012,26 +2716,23 @@ hg_core_progress_na(struct hg_core_private_context *context,
         /* Trigger everything we can from NA, if something completed it will
          * be moved to the HG context completion queue */
         do {
+            int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
             unsigned int i;
 
-            na_ret = NA_Trigger(context->core_context.na_context, 0,
-                HG_CORE_MAX_TRIGGER_COUNT, cb_ret, &actual_count);
+            na_ret = NA_Trigger(na_context, 0, HG_CORE_MAX_TRIGGER_COUNT,
+                cb_ret, &actual_count);
 
             /* Return value of callback is completion count */
             for (i = 0; i < actual_count; i++)
-                completed_count += (unsigned int)cb_ret[i];
+                completed_count += (unsigned int) cb_ret[i];
         } while ((na_ret == NA_SUCCESS) && actual_count);
         HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, ret,
             (hg_return_t) na_ret, "Could not trigger NA callback (%s)",
             NA_Error_to_string(na_ret));
 
-        /* We can't only verify that the completion queue is not empty, we need
-         * to check what was added to the completion queue, as the completion
-         * queue may have been concurrently emptied */
-        if (completed_count
-            || !hg_atomic_queue_is_empty(context->completion_queue)
-            || hg_atomic_get32(&context->backfill_queue_count)) {
-            ret = HG_SUCCESS; /* Progressed */
+        /* Progressed */
+        if (completed_count) {
+            ret = HG_SUCCESS;
             break;
         }
 
@@ -3042,31 +2743,24 @@ hg_core_progress_na(struct hg_core_private_context *context,
             hg_time_get_current(&t1);
 
         /* Make sure that it is safe to block */
-        if (timeout && NA_Poll_try_wait(
-            HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
-            context->core_context.na_context))
+        if (timeout && NA_Poll_try_wait(na_class, na_context))
             progress_timeout = (unsigned int) (remaining * 1000.0);
         else
             progress_timeout = 0;
 
         /* Otherwise try to make progress on NA */
-        na_ret = NA_Progress(
-            HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
-            context->core_context.na_context, progress_timeout);
+        na_ret = NA_Progress(na_class, na_context, progress_timeout);
+        if (na_ret == NA_TIMEOUT && (remaining <= 0))
+            break;
+        else
+            HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, ret,
+                (hg_return_t) na_ret, "Could not make progress on NA (%s)",
+                NA_Error_to_string(na_ret));
 
         if (timeout) {
             hg_time_get_current(&t2);
             remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
         }
-
-        /* Trigger NA callbacks and check whether we completed something */
-        if (na_ret == NA_SUCCESS)
-            continue;
-        else if (na_ret == NA_TIMEOUT && (remaining <= 0))
-            break;
-        else if (na_ret != NA_TIMEOUT)
-            HG_GOTO_ERROR(done, ret, (hg_return_t) na_ret,
-                "Could not make NA Progress (%s)", NA_Error_to_string(na_ret));
     }
 
 done:
@@ -3074,39 +2768,52 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_util_bool_t
-hg_core_poll_try_wait_cb(void *arg)
+#ifdef HG_HAS_SELF_FORWARD
+static HG_INLINE hg_return_t
+hg_core_progress_loopback_notify(struct hg_core_private_context *context)
 {
-    struct hg_core_private_context *context =
-        (struct hg_core_private_context *) arg;
+    hg_util_bool_t progressed = HG_UTIL_FALSE;
+    hg_return_t ret = HG_AGAIN;
+    int rc;
 
-    /* Do not try to wait if NA_NO_BLOCK is set */
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
-        return NA_FALSE;
+    rc = hg_event_get(context->completion_queue_notify, &progressed);
+    if (progressed)
+        ret = HG_SUCCESS;
+    else
+        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
+            "Could not get completion notification");
 
-    /* Something is in one of the completion queues */
-    if (!hg_atomic_queue_is_empty(context->completion_queue) ||
-        hg_atomic_get32(&context->backfill_queue_count)) {
-        return NA_FALSE;
-    }
-
-#ifdef HG_HAS_SM_ROUTING
-    if (context->core_context.core_class->na_sm_class) {
-        na_bool_t ret = NA_Poll_try_wait(
-            context->core_context.core_class->na_sm_class,
-            context->core_context.na_sm_context);
-        if (ret)
-            return ret;
-    }
+done:
+    return ret;
+}
 #endif
 
-    return NA_Poll_try_wait(context->core_context.core_class->na_class,
-        context->core_context.na_context);
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_bool_t
+hg_core_poll_try_wait(struct hg_core_private_context *context)
+{
+    /* Something is in one of the completion queues */
+    if (!hg_atomic_queue_is_empty(context->completion_queue) ||
+        (hg_atomic_get32(&context->backfill_queue_count) > 0))
+        return HG_FALSE;
+
+#ifdef HG_HAS_SM_ROUTING
+    if (context->core_context.core_class->na_sm_class
+        && !NA_Poll_try_wait(context->core_context.core_class->na_sm_class,
+            context->core_context.na_sm_context))
+        return HG_FALSE;
+#endif
+
+    if (!NA_Poll_try_wait(context->core_context.core_class->na_class,
+        context->core_context.na_context))
+        return HG_FALSE;
+
+    return HG_TRUE;
 }
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-hg_core_progress_poll(struct hg_core_private_context *context,
+hg_core_progress(struct hg_core_private_context *context,
     unsigned int timeout)
 {
     double remaining = timeout / 1000.0; /* Convert timeout in ms into seconds */
@@ -3114,22 +2821,120 @@ hg_core_progress_poll(struct hg_core_private_context *context,
 
     do {
         hg_time_t t1, t2;
-        hg_util_bool_t progressed;
-        unsigned int poll_timeout =
-            (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) ? 0 :
-            (unsigned int) (remaining * 1000.0);
-        int rc;
+        hg_bool_t safe_wait = HG_FALSE;
 
         if (timeout)
             hg_time_get_current(&t1);
 
-        /* Will call hg_core_poll_try_wait_cb if timeout is not 0 */
-        rc = hg_poll_wait(context->poll_set, poll_timeout, &progressed);
-        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
-            "hg_poll_wait() failed");
+        if (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
+            && timeout) {
+            hg_thread_mutex_lock(&context->completion_queue_notify_mutex);
 
-        /* We progressed, return success */
-        if (progressed) {
+            if (hg_core_poll_try_wait(context)) {
+                safe_wait = HG_TRUE;
+                hg_atomic_set32(&context->completion_queue_must_notify, 1);
+            }
+
+            hg_thread_mutex_unlock(&context->completion_queue_notify_mutex);
+        }
+
+        /* Only enter blocking wait if it is safe to */
+        if (context->poll_set && safe_wait) {
+            unsigned int i, nevents;
+            int rc;
+
+            rc = hg_poll_wait(context->poll_set,
+                (unsigned int) (remaining * 1000.0), HG_CORE_MAX_EVENTS,
+                context->poll_events, &nevents);
+            hg_atomic_set32(&context->completion_queue_must_notify, 0);
+            HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
+                "hg_poll_wait() failed");
+
+            for (i = 0; i < nevents; i++) {
+                switch (context->poll_events[i].data.u32) {
+#ifdef HG_HAS_SELF_FORWARD
+                    case HG_CORE_POLL_LOOPBACK:
+                        HG_LOG_DEBUG("HG_CORE_POLL_LOOPBACK event");
+                        ret = hg_core_progress_loopback_notify(context);
+                        HG_CHECK_HG_ERROR(done, ret,
+                            "hg_core_progress_loopback_notify() failed");
+                        break;
+#endif
+#ifdef HG_HAS_SM_ROUTING
+                    case HG_CORE_POLL_SM:
+                        HG_LOG_DEBUG("HG_CORE_POLL_SM event");
+                        ret = hg_core_progress_na(
+                            HG_CORE_CONTEXT_CLASS(
+                                context)->core_class.na_sm_class,
+                            context->core_context.na_sm_context, 0);
+                        if (ret != HG_TIMEOUT)
+                            HG_CHECK_HG_ERROR(done, ret,
+                                "hg_core_progress_na() failed");
+                        break;
+#endif
+                    case HG_CORE_POLL_NA:
+                        HG_LOG_DEBUG("HG_CORE_POLL_NA event");
+                        ret = hg_core_progress_na(
+                            HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
+                            context->core_context.na_context, 0);
+                            if (ret != HG_TIMEOUT)
+                                HG_CHECK_HG_ERROR(done, ret,
+                                    "hg_core_progress_na() failed");
+                        break;
+                    default:
+                        HG_GOTO_ERROR(done, ret, HG_INVALID_ARG,
+                            "Invalid type of poll event (%d)",
+                            (int) context->poll_events[i].data.u32);
+                }
+            }
+
+            /* We progressed, will return success */
+            if (nevents > 0) {
+                ret = HG_SUCCESS;
+                goto done;
+            }
+        } else {
+            hg_bool_t progressed = HG_FALSE;
+            unsigned int progress_timeout;
+#ifdef HG_HAS_SM_ROUTING
+            if (context->core_context.na_sm_context) {
+                progress_timeout = 0;
+
+                ret = hg_core_progress_na(
+                    HG_CORE_CONTEXT_CLASS(context)->core_class.na_sm_class,
+                    context->core_context.na_sm_context, progress_timeout);
+                if (ret == HG_SUCCESS)
+                    progressed |= HG_TRUE;
+                else if (ret != HG_TIMEOUT)
+                    HG_CHECK_HG_ERROR(
+                        done, ret, "hg_core_progress_na() failed");
+            } else {
+#else
+            progress_timeout =
+                safe_wait ? (unsigned int) (remaining * 1000.0) : 0;
+#endif
+#ifdef HG_HAS_SM_ROUTING
+            }
+#endif
+
+            ret = hg_core_progress_na(
+                HG_CORE_CONTEXT_CLASS(context)->core_class.na_class,
+                context->core_context.na_context, progress_timeout);
+            if (ret == HG_SUCCESS)
+                progressed |= HG_TRUE;
+            else if (ret != HG_TIMEOUT)
+                HG_CHECK_HG_ERROR(done, ret, "hg_core_progress_na() failed");
+
+            /* We progressed, return success */
+            if (progressed) {
+                ret = HG_SUCCESS;
+                break;
+            }
+        }
+
+        /* There is stuff in the queues to process */
+        if (!hg_atomic_queue_is_empty(context->completion_queue)
+            || (hg_atomic_get32(&context->backfill_queue_count) > 0)) {
             ret = HG_SUCCESS;
             break;
         }
@@ -3253,21 +3058,12 @@ hg_core_trigger_lookup_entry(struct hg_core_op_id *hg_core_op_id)
 {
     hg_return_t ret = HG_SUCCESS;
 
-    /* Free op */
-    if (hg_core_op_id->info.lookup.na_lookup_op_id != NA_OP_ID_NULL) {
-        na_return_t na_ret = NA_Op_destroy(
-            hg_core_op_id->info.lookup.hg_core_addr->core_addr.na_class,
-            hg_core_op_id->info.lookup.na_lookup_op_id);
-        HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
-            "Could not destroy addr op ID (%s)", NA_Error_to_string(na_ret));
-    }
-
     /* Execute callback */
     if (hg_core_op_id->callback) {
         struct hg_core_cb_info hg_core_cb_info;
 
         hg_core_cb_info.arg = hg_core_op_id->arg;
-        hg_core_cb_info.ret =  HG_SUCCESS; /* TODO report failure */
+        hg_core_cb_info.ret =  HG_SUCCESS;
         hg_core_cb_info.type = HG_CB_LOOKUP;
         hg_core_cb_info.info.lookup.addr =
             (hg_core_addr_t) hg_core_op_id->info.lookup.hg_core_addr;
@@ -3275,8 +3071,8 @@ hg_core_trigger_lookup_entry(struct hg_core_op_id *hg_core_op_id)
         hg_core_op_id->callback(&hg_core_cb_info);
     }
 
-done:
     free(hg_core_op_id);
+
     return ret;
 }
 
@@ -3482,9 +3278,6 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
 {
     struct hg_core_private_context *context = NULL;
     int na_poll_fd;
-#ifdef HG_HAS_SELF_FORWARD
-    int fd;
-#endif
 
     HG_CHECK_ERROR_NORET(hg_core_class == NULL, error, "NULL HG core class");
 
@@ -3511,6 +3304,10 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
     /* No handle created yet */
     hg_atomic_init32(&context->n_handles, 0);
 
+    /* Notifications of completion queue events */
+    hg_atomic_init32(&context->completion_queue_must_notify, 0);
+    hg_thread_mutex_init(&context->completion_queue_notify_mutex);
+
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&context->completion_queue_mutex);
     hg_thread_cond_init(&context->completion_queue_cond);
@@ -3533,58 +3330,54 @@ HG_Core_context_create_id(hg_core_class_t *hg_core_class, hg_uint8_t id)
     }
 #endif
 
-    /* Create poll set */
-    context->poll_set = hg_poll_create();
-    HG_CHECK_ERROR_NORET(context->poll_set == NULL, error,
-        "Could not create poll set");
+    /* If NA plugin exposes fd, we will use poll set and use appropriate
+        * progress function */
+    na_poll_fd = NA_Poll_get_fd(hg_core_class->na_class,
+        context->core_context.na_context);
 
-#ifdef HG_HAS_SELF_FORWARD
-    /* Create event for completion queue notification */
-    fd = hg_event_create();
-    HG_CHECK_ERROR_NORET(fd < 0, error, "Could not create event");
-    context->completion_queue_notify = fd;
+    if (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
+        && (na_poll_fd > 0)) {
+        struct hg_poll_event event = {.events = HG_POLLIN, .data.u64 = 0};
+        int rc;
 
-    /* Add event to context poll set */
-    hg_poll_add(context->poll_set, fd, HG_POLLIN,
-        hg_core_completion_queue_notify_cb, context);
-#endif
+        /* Create poll set */
+        context->poll_set = hg_poll_create();
+        HG_CHECK_ERROR_NORET(context->poll_set == NULL, error,
+            "Could not create poll set");
 
-    if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
-        /* Force to use progress poll */
-        na_poll_fd = 0;
-    else
-        /* If NA plugin exposes fd, add it to poll set and use appropriate
-         * progress function */
-        na_poll_fd = NA_Poll_get_fd(hg_core_class->na_class,
-            context->core_context.na_context);
-    if (na_poll_fd >= 0) {
-        hg_poll_add(context->poll_set, na_poll_fd, HG_POLLIN,
-            hg_core_progress_na_cb, context);
-        hg_poll_set_try_wait(context->poll_set, hg_core_poll_try_wait_cb,
-            context);
-        context->progress = hg_core_progress_poll;
-    } else
-        context->progress = hg_core_progress_na;
+        event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_NA;
+        rc = hg_poll_add(context->poll_set, na_poll_fd, &event);
+        HG_CHECK_ERROR_NORET(
+            rc != HG_UTIL_SUCCESS, error, "hg_poll_add() failed");
 
 #ifdef HG_HAS_SM_ROUTING
-    /* Auto SM requires hg_core_progress_poll */
-    if (context->core_context.na_sm_context) {
-        HG_CHECK_ERROR_NORET(context->progress != hg_core_progress_poll, error,
-            "Auto SM mode not supported with selected plugin");
-
-        if (HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK)
-            /* Force to use progress poll */
-            na_poll_fd = 0;
-        else {
+        if (context->core_context.na_sm_context) {
             na_poll_fd = NA_Poll_get_fd(hg_core_class->na_sm_class,
                 context->core_context.na_sm_context);
             HG_CHECK_ERROR_NORET(na_poll_fd < 0, error,
                 "Could not get NA SM poll fd");
+
+            event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_SM;
+            rc = hg_poll_add(context->poll_set, na_poll_fd, &event);
+            HG_CHECK_ERROR_NORET(
+                rc != HG_UTIL_SUCCESS, error, "hg_poll_add() failed");
         }
-        hg_poll_add(context->poll_set, na_poll_fd, HG_POLLIN,
-            hg_core_progress_na_sm_cb, context);
-    }
 #endif
+
+#ifdef HG_HAS_SELF_FORWARD
+        /* Create event for completion queue notification */
+        context->completion_queue_notify = hg_event_create();
+        HG_CHECK_ERROR_NORET(context->completion_queue_notify < 0, error,
+            "Could not create event");
+
+        /* Add event to context poll set */
+        event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_LOOPBACK;
+        rc = hg_poll_add(
+            context->poll_set, context->completion_queue_notify, &event);
+        HG_CHECK_ERROR_NORET(
+            rc != HG_UTIL_SUCCESS, error, "hg_poll_add() failed");
+#endif
+    }
 
     /* Assign context ID */
     context->core_context.id = id;
@@ -3606,7 +3399,6 @@ HG_Core_context_destroy(hg_core_context_t *context)
     struct hg_core_private_context *private_context =
         (struct hg_core_private_context *) context;
     unsigned int actual_count;
-    int na_poll_fd;
     hg_util_int32_t n_handles;
     hg_bool_t empty;
     na_return_t na_ret;
@@ -3689,29 +3481,23 @@ HG_Core_context_destroy(hg_core_context_t *context)
     }
 #endif
 
-    if (HG_CORE_CONTEXT_CLASS(private_context)->progress_mode & NA_NO_BLOCK)
-        /* Was forced to use progress poll */
-        na_poll_fd = 0;
-    else
+    if (private_context->poll_set) {
         /* If NA plugin exposes fd, remove it from poll set */
-        na_poll_fd = NA_Poll_get_fd(context->core_class->na_class,
+        int na_poll_fd = NA_Poll_get_fd(context->core_class->na_class,
             context->na_context);
-    if (na_poll_fd >= 0) {
-        rc = hg_poll_remove(private_context->poll_set, na_poll_fd);
-        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_NOENTRY,
-            "Could not remove NA poll descriptor from poll set");
+        if (na_poll_fd > 0) {
+            rc = hg_poll_remove(private_context->poll_set, na_poll_fd);
+            HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_NOENTRY,
+                "Could not remove NA poll descriptor from poll set");
+        }
     }
 
 #ifdef HG_HAS_SM_ROUTING
-    if (context->na_sm_context) {
-        if (HG_CORE_CONTEXT_CLASS(private_context)->progress_mode & NA_NO_BLOCK)
-            /* Was forced to use progress poll */
-            na_poll_fd = 0;
-        else
-            /* If NA plugin exposes fd, remove it from poll set */
-            na_poll_fd = NA_Poll_get_fd(context->core_class->na_sm_class,
-                context->na_sm_context);
-        if (na_poll_fd >= 0) {
+    if (context->na_sm_context && private_context->poll_set) {
+        /* If NA plugin exposes fd, remove it from poll set */
+        int na_poll_fd = NA_Poll_get_fd(context->core_class->na_sm_class,
+            context->na_sm_context);
+        if (na_poll_fd > 0) {
             rc = hg_poll_remove(private_context->poll_set, na_poll_fd);
             HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_NOENTRY,
                 "Could not remove NA poll descriptor from poll set");
@@ -3720,9 +3506,11 @@ HG_Core_context_destroy(hg_core_context_t *context)
 #endif
 
     /* Destroy poll set */
-    rc = hg_poll_destroy(private_context->poll_set);
-    HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
-        "Could not destroy poll set");
+    if (private_context->poll_set) {
+        rc = hg_poll_destroy(private_context->poll_set);
+        HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_FAULT,
+            "Could not destroy poll set");
+    }
 
     /* Destroy NA context */
     if (context->na_context) {
@@ -3747,6 +3535,7 @@ HG_Core_context_destroy(hg_core_context_t *context)
         context->data_free_callback(context->data);
 
     /* Destroy completion queue mutex/cond */
+    hg_thread_mutex_destroy(&private_context->completion_queue_notify_mutex);
     hg_thread_mutex_destroy(&private_context->completion_queue_mutex);
     hg_thread_cond_destroy(&private_context->completion_queue_cond);
     hg_thread_spin_destroy(&private_context->pending_list_lock);
@@ -3967,28 +3756,6 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Core_addr_lookup(hg_core_context_t *context, hg_core_cb_t callback,
-    void *arg, const char *name, hg_core_op_id_t *op_id)
-{
-    hg_return_t ret = HG_SUCCESS;
-
-    HG_CHECK_ERROR(context == NULL, done, ret, HG_INVALID_ARG,
-        "NULL HG core context");
-    HG_CHECK_ERROR(callback == NULL, done, ret, HG_INVALID_ARG,
-        "NULL callback");
-    HG_CHECK_ERROR(name == NULL, done, ret, HG_INVALID_ARG,
-        "NULL lookup");
-
-    ret = hg_core_addr_lookup((struct hg_core_private_context *) context,
-        callback, arg, name, op_id);
-    HG_CHECK_HG_ERROR(done, ret, "Could not lookup address");
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_return_t
 HG_Core_addr_create(hg_core_class_t *hg_core_class, hg_core_addr_t *addr)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -4003,6 +3770,84 @@ HG_Core_addr_create(hg_core_class_t *hg_core_class, hg_core_addr_t *addr)
         hg_core_class->na_class);
     HG_CHECK_ERROR(*addr == HG_CORE_ADDR_NULL, done, ret, HG_NOMEM,
         "Could not create address");
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_addr_lookup1(hg_core_context_t *context, hg_core_cb_t callback,
+    void *arg, const char *name, hg_core_op_id_t *op_id)
+{
+    struct hg_core_op_id *hg_core_op_id = NULL;
+    struct hg_completion_entry *hg_completion_entry = NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_CHECK_ERROR(context == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core context");
+    HG_CHECK_ERROR(callback == NULL, done, ret, HG_INVALID_ARG,
+        "NULL callback");
+    HG_CHECK_ERROR(name == NULL, done, ret, HG_INVALID_ARG,
+        "NULL lookup");
+    (void) op_id;
+
+    /* Allocate op_id */
+    hg_core_op_id = (struct hg_core_op_id *) malloc(
+        sizeof(struct hg_core_op_id));
+    HG_CHECK_ERROR(hg_core_op_id == NULL, error, ret, HG_NOMEM,
+        "Could not allocate HG operation ID");
+
+    hg_core_op_id->context = (struct hg_core_private_context *) context;
+    hg_core_op_id->type = HG_CB_LOOKUP;
+    hg_core_op_id->callback = callback;
+    hg_core_op_id->arg = arg;
+    hg_core_op_id->info.lookup.hg_core_addr = NULL;
+
+    ret = hg_core_addr_lookup(
+        (struct hg_core_private_class *) context->core_class, name,
+        &hg_core_op_id->info.lookup.hg_core_addr);
+    HG_CHECK_HG_ERROR(error, ret, "Could not lookup address");
+
+    /* Add callback to completion queue */
+    hg_completion_entry = &hg_core_op_id->hg_completion_entry;
+    hg_completion_entry->op_type = HG_ADDR;
+    hg_completion_entry->op_id.hg_core_op_id = hg_core_op_id;
+
+    ret = hg_core_completion_add(context, hg_completion_entry, HG_TRUE);
+    HG_CHECK_HG_ERROR(error, ret,
+        "Could not add HG completion entry to completion queue");
+
+done:
+    return ret;
+
+error:
+    if (hg_core_op_id) {
+        hg_core_addr_free((struct hg_core_private_class *) context->core_class,
+            hg_core_op_id->info.lookup.hg_core_addr);
+        free(hg_core_op_id);
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+hg_return_t
+HG_Core_addr_lookup2(hg_core_class_t *hg_core_class, const char *name,
+    hg_core_addr_t *addr)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_CHECK_ERROR(hg_core_class == NULL, done, ret, HG_INVALID_ARG,
+        "NULL HG core class");
+    HG_CHECK_ERROR(name == NULL, done, ret, HG_INVALID_ARG,
+        "NULL lookup");
+    HG_CHECK_ERROR(addr == NULL, done, ret, HG_INVALID_ARG,
+        "NULL pointer to address");
+
+    ret = hg_core_addr_lookup((struct hg_core_private_class *) hg_core_class,
+        name, (struct hg_core_private_addr **) addr);
+    HG_CHECK_HG_ERROR(done, ret, "Could not lookup address");
 
 done:
     return ret;
@@ -4467,7 +4312,7 @@ HG_Core_progress(hg_core_context_t *context, unsigned int timeout)
         "NULL HG core context");
 
     /* Make progress on the HG layer */
-    ret = private_context->progress(private_context, timeout);
+    ret = hg_core_progress(private_context, timeout);
     HG_CHECK_ERROR_NORET(ret != HG_SUCCESS && ret != HG_TIMEOUT, done,
         "Could not make progress");
 
