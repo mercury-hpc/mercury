@@ -18,13 +18,14 @@
 /*************************************/
 
 #if defined(__GNUC__) || defined(_WIN32)
-# pragma pack(push,1)
+#    pragma pack(push, 1)
 #else
-# warning "Proc header struct padding may not be consistent across platforms."
+#    warning                                                                   \
+        "Proc header struct padding may not be consistent across platforms."
 #endif
 #ifdef HG_HAS_CHECKSUMS
 struct hg_header_hash {
-    hg_uint32_t payload;        /* Payload checksum (32-bits checksum) */
+    hg_uint32_t payload; /* Payload checksum (32-bits checksum) */
 };
 #endif
 
@@ -45,7 +46,7 @@ struct hg_header_output {
     /* 128/64 bits here */
 };
 #if defined(__GNUC__) || defined(_WIN32)
-# pragma pack(pop)
+#    pragma pack(pop)
 #endif
 
 /* Common header struct input/output */
@@ -61,7 +62,6 @@ struct hg_header {
 /* Public Macros */
 /*****************/
 
-
 /*********************/
 /* Public Prototypes */
 /*********************/
@@ -70,7 +70,8 @@ struct hg_header {
 extern "C" {
 #endif
 
-static HG_INLINE size_t hg_header_get_size(hg_op_t op);
+static HG_INLINE size_t
+hg_header_get_size(hg_op_t op);
 
 /**
  * Get size reserved for header (separate user data stored in payload).
@@ -103,10 +104,7 @@ hg_header_get_size(hg_op_t op)
  * \param op [IN]               HG operation type: HG_INPUT / HG_OUTPUT
  */
 HG_PRIVATE void
-hg_header_init(
-        struct hg_header *hg_header,
-        hg_op_t op
-        );
+hg_header_init(struct hg_header *hg_header, hg_op_t op);
 
 /**
  * Finalize RPC header.
@@ -114,9 +112,7 @@ hg_header_init(
  * \param hg_header [IN/OUT]    pointer to header structure
  */
 HG_PRIVATE void
-hg_header_finalize(
-        struct hg_header *hg_header
-        );
+hg_header_finalize(struct hg_header *hg_header);
 
 /**
  * Reset RPC header.
@@ -125,10 +121,7 @@ hg_header_finalize(
  * \param op [IN]               HG operation type: HG_INPUT / HG_OUTPUT
  */
 HG_PRIVATE void
-hg_header_reset(
-        struct hg_header *hg_header,
-        hg_op_t op
-        );
+hg_header_reset(struct hg_header *hg_header, hg_op_t op);
 
 /**
  * Process private information for sending/receiving RPC.
@@ -142,11 +135,7 @@ hg_header_reset(
  */
 HG_PRIVATE hg_return_t
 hg_header_proc(
-        hg_proc_op_t op,
-        void *buf,
-        size_t buf_size,
-        struct hg_header *hg_header
-        );
+    hg_proc_op_t op, void *buf, size_t buf_size, struct hg_header *hg_header);
 
 #ifdef __cplusplus
 }

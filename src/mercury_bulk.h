@@ -23,9 +23,9 @@
 
 /* The memory attributes associated with the bulk handle
  * can be defined as read only, write only or read/write */
-#define HG_BULK_READ_ONLY   0x01
-#define HG_BULK_WRITE_ONLY  0x02
-#define HG_BULK_READWRITE   0x03
+#define HG_BULK_READ_ONLY  0x01
+#define HG_BULK_WRITE_ONLY 0x02
+#define HG_BULK_READWRITE  0x03
 
 /*********************/
 /* Public Prototypes */
@@ -55,14 +55,8 @@ extern "C" {
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_create(
-        hg_class_t *hg_class,
-        hg_uint32_t count,
-        void **buf_ptrs,
-        const hg_size_t *buf_sizes,
-        hg_uint8_t flags,
-        hg_bulk_t *handle
-        );
+HG_Bulk_create(hg_class_t *hg_class, hg_uint32_t count, void **buf_ptrs,
+    const hg_size_t *buf_sizes, hg_uint8_t flags, hg_bulk_t *handle);
 
 /**
  * Free bulk handle.
@@ -72,9 +66,7 @@ HG_Bulk_create(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_free(
-        hg_bulk_t handle
-        );
+HG_Bulk_free(hg_bulk_t handle);
 
 /**
  * Increment ref count on bulk handle.
@@ -84,9 +76,7 @@ HG_Bulk_free(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_ref_incr(
-        hg_bulk_t handle
-        );
+HG_Bulk_ref_incr(hg_bulk_t handle);
 
 /**
  * Bind an existing bulk handle to a local HG context and associate its local
@@ -113,10 +103,7 @@ HG_Bulk_ref_incr(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_bind(
-        hg_bulk_t handle,
-        hg_context_t *context
-        );
+HG_Bulk_bind(hg_bulk_t handle, hg_context_t *context);
 
 /**
  * Return attached addressing information from a handle that was previously
@@ -125,11 +112,9 @@ HG_Bulk_bind(
  * \param handle [IN]           abstract bulk handle
  *
  * \return abstract HG address or HG_ADDR_NULL in case of error
-*/
+ */
 HG_PUBLIC hg_addr_t
-HG_Bulk_get_addr(
-       hg_bulk_t handle
-       );
+HG_Bulk_get_addr(hg_bulk_t handle);
 
 /**
  * Return attached context ID from a handle that was previously bound to a
@@ -138,11 +123,9 @@ HG_Bulk_get_addr(
  * \param handle [IN]           abstract bulk handle
  *
  * \return valid context ID or 0 by default
-*/
+ */
 HG_PUBLIC hg_uint8_t
-HG_Bulk_get_context_id(
-       hg_bulk_t handle
-       );
+HG_Bulk_get_context_id(hg_bulk_t handle);
 
 /**
  * Access bulk handle to retrieve memory segments abstracted by handle.
@@ -164,16 +147,9 @@ HG_Bulk_get_context_id(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_access(
-        hg_bulk_t handle,
-        hg_size_t offset,
-        hg_size_t size,
-        hg_uint8_t flags,
-        hg_uint32_t max_count,
-        void **buf_ptrs,
-        hg_size_t *buf_sizes,
-        hg_uint32_t *actual_count
-        );
+HG_Bulk_access(hg_bulk_t handle, hg_size_t offset, hg_size_t size,
+    hg_uint8_t flags, hg_uint32_t max_count, void **buf_ptrs,
+    hg_size_t *buf_sizes, hg_uint32_t *actual_count);
 
 /**
  * Get total size of data abstracted by bulk handle.
@@ -183,9 +159,7 @@ HG_Bulk_access(
  * \return Non-negative value
  */
 HG_PUBLIC hg_size_t
-HG_Bulk_get_size(
-        hg_bulk_t handle
-        );
+HG_Bulk_get_size(hg_bulk_t handle);
 
 /**
  * Get total number of segments abstracted by bulk handle.
@@ -195,9 +169,7 @@ HG_Bulk_get_size(
  * \return Non-negative value
  */
 HG_PUBLIC hg_uint32_t
-HG_Bulk_get_segment_count(
-        hg_bulk_t handle
-        );
+HG_Bulk_get_segment_count(hg_bulk_t handle);
 
 /**
  * Get size required to serialize bulk handle.
@@ -210,10 +182,7 @@ HG_Bulk_get_segment_count(
  * \return Non-negative value
  */
 HG_PUBLIC hg_size_t
-HG_Bulk_get_serialize_size(
-        hg_bulk_t handle,
-        hg_bool_t request_eager
-        );
+HG_Bulk_get_serialize_size(hg_bulk_t handle, hg_bool_t request_eager);
 
 /**
  * Serialize bulk handle into a buffer.
@@ -230,11 +199,7 @@ HG_Bulk_get_serialize_size(
  */
 HG_PUBLIC hg_return_t
 HG_Bulk_serialize(
-        void *buf,
-        hg_size_t buf_size,
-        hg_bool_t request_eager,
-        hg_bulk_t handle
-        );
+    void *buf, hg_size_t buf_size, hg_bool_t request_eager, hg_bulk_t handle);
 
 /**
  * Deserialize bulk handle from an existing buffer.
@@ -247,12 +212,8 @@ HG_Bulk_serialize(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_deserialize(
-        hg_class_t *hg_class,
-        hg_bulk_t *handle,
-        const void *buf,
-        hg_size_t buf_size
-        );
+HG_Bulk_deserialize(hg_class_t *hg_class, hg_bulk_t *handle, const void *buf,
+    hg_size_t buf_size);
 
 /**
  * Get pointer to cached serialized buffer if any was priorly set.
@@ -262,9 +223,7 @@ HG_Bulk_deserialize(
  * \return Pointer to buffer or NULL in case of error
  */
 HG_PUBLIC void *
-HG_Bulk_get_serialize_cached_ptr(
-        hg_bulk_t handle
-        );
+HG_Bulk_get_serialize_cached_ptr(hg_bulk_t handle);
 
 /**
  * Get pointer to cached serialized buffer size if any was priorly set.
@@ -274,9 +233,7 @@ HG_Bulk_get_serialize_cached_ptr(
  * \return Non-negative value or 0 in case of error
  */
 HG_PUBLIC hg_size_t
-HG_Bulk_get_serialize_cached_size(
-        hg_bulk_t handle
-        );
+HG_Bulk_get_serialize_cached_size(hg_bulk_t handle);
 
 /**
  * Set cached pointer to serialization buffer.
@@ -289,10 +246,7 @@ HG_Bulk_get_serialize_cached_size(
  */
 HG_PUBLIC hg_return_t
 HG_Bulk_set_serialize_cached_ptr(
-        hg_bulk_t handle,
-        void *buf,
-        na_size_t buf_size
-        );
+    hg_bulk_t handle, void *buf, na_size_t buf_size);
 
 /**
  * Transfer data to/from origin using abstract bulk handles and explicit origin
@@ -316,19 +270,10 @@ HG_Bulk_set_serialize_cached_ptr(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_transfer(
-        hg_context_t *context,
-        hg_cb_t callback,
-        void *arg,
-        hg_bulk_op_t op,
-        hg_addr_t origin_addr,
-        hg_bulk_t origin_handle,
-        hg_size_t origin_offset,
-        hg_bulk_t local_handle,
-        hg_size_t local_offset,
-        hg_size_t size,
-        hg_op_id_t *op_id
-        );
+HG_Bulk_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
+    hg_bulk_op_t op, hg_addr_t origin_addr, hg_bulk_t origin_handle,
+    hg_size_t origin_offset, hg_bulk_t local_handle, hg_size_t local_offset,
+    hg_size_t size, hg_op_id_t *op_id);
 
 /**
  * Transfer data to/from origin using abstract bulk handles and implicit origin
@@ -351,18 +296,10 @@ HG_Bulk_transfer(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_bind_transfer(
-        hg_context_t *context,
-        hg_cb_t callback,
-        void *arg,
-        hg_bulk_op_t op,
-        hg_bulk_t origin_handle,
-        hg_size_t origin_offset,
-        hg_bulk_t local_handle,
-        hg_size_t local_offset,
-        hg_size_t size,
-        hg_op_id_t *op_id
-        );
+HG_Bulk_bind_transfer(hg_context_t *context, hg_cb_t callback, void *arg,
+    hg_bulk_op_t op, hg_bulk_t origin_handle, hg_size_t origin_offset,
+    hg_bulk_t local_handle, hg_size_t local_offset, hg_size_t size,
+    hg_op_id_t *op_id);
 
 /**
  * Transfer data to/from origin using abstract bulk handles, explicit origin
@@ -388,20 +325,10 @@ HG_Bulk_bind_transfer(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_transfer_id(
-        hg_context_t *context,
-        hg_cb_t callback,
-        void *arg,
-        hg_bulk_op_t op,
-        hg_addr_t origin_addr,
-        hg_uint8_t origin_id,
-        hg_bulk_t origin_handle,
-        hg_size_t origin_offset,
-        hg_bulk_t local_handle,
-        hg_size_t local_offset,
-        hg_size_t size,
-        hg_op_id_t *op_id
-        );
+HG_Bulk_transfer_id(hg_context_t *context, hg_cb_t callback, void *arg,
+    hg_bulk_op_t op, hg_addr_t origin_addr, hg_uint8_t origin_id,
+    hg_bulk_t origin_handle, hg_size_t origin_offset, hg_bulk_t local_handle,
+    hg_size_t local_offset, hg_size_t size, hg_op_id_t *op_id);
 
 /**
  * Cancel an ongoing operation.
@@ -411,9 +338,7 @@ HG_Bulk_transfer_id(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Bulk_cancel(
-        hg_op_id_t op_id
-        );
+HG_Bulk_cancel(hg_op_id_t op_id);
 
 #ifdef __cplusplus
 }
