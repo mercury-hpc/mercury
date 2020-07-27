@@ -21,9 +21,9 @@
 
 /* Completion type */
 typedef enum {
-    HG_ADDR,            /*!< Addr completion */
-    HG_RPC,             /*!< RPC completion */
-    HG_BULK             /*!< Bulk completion */
+    HG_ADDR, /*!< Addr completion */
+    HG_RPC,  /*!< RPC completion */
+    HG_BULK  /*!< Bulk completion */
 } hg_op_type_t;
 
 /* Completion queue entry */

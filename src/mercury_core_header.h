@@ -18,23 +18,24 @@
 /*************************************/
 
 #if defined(__GNUC__) || defined(_WIN32)
-# pragma pack(push,1)
+#    pragma pack(push, 1)
 #else
-# warning "Proc header struct padding may not be consistent across platforms."
+#    warning                                                                   \
+        "Proc header struct padding may not be consistent across platforms."
 #endif
 #ifdef HG_HAS_CHECKSUMS
 union hg_core_header_hash {
-    hg_uint16_t header;         /* Header checksum (16-bits checksum) */
+    hg_uint16_t header; /* Header checksum (16-bits checksum) */
     hg_uint32_t pad;
 };
 #endif
 
 struct hg_core_header_request {
-    hg_uint8_t  hg;             /* Mercury identifier */
-    hg_uint8_t  protocol;       /* Version number */
-    hg_uint64_t id;             /* RPC request identifier */
-    hg_uint8_t  flags;          /* Flags */
-    hg_uint8_t  cookie;         /* Cookie */
+    hg_uint8_t hg;       /* Mercury identifier */
+    hg_uint8_t protocol; /* Version number */
+    hg_uint64_t id;      /* RPC request identifier */
+    hg_uint8_t flags;    /* Flags */
+    hg_uint8_t cookie;   /* Cookie */
     /* 96 bits here */
 #ifdef HG_HAS_CHECKSUMS
     union hg_core_header_hash hash; /* Hash */
@@ -43,16 +44,16 @@ struct hg_core_header_request {
 };
 
 struct hg_core_header_response {
-    hg_int8_t   ret_code;       /* Return code */
-    hg_uint8_t  flags;          /* Flags */
-    hg_uint16_t cookie;         /* Cookie */
+    hg_int8_t ret_code; /* Return code */
+    hg_uint8_t flags;   /* Flags */
+    hg_uint16_t cookie; /* Cookie */
 #ifdef HG_HAS_CHECKSUMS
     union hg_core_header_hash hash; /* Hash */
 #endif
     /* 64/32 bits here */
 };
 #if defined(__GNUC__) || defined(_WIN32)
-# pragma pack(pop)
+#    pragma pack(pop)
 #endif
 
 /* Common header struct request/response */
@@ -62,7 +63,7 @@ struct hg_core_header {
         struct hg_core_header_response response;
     } msg;
 #ifdef HG_HAS_CHECKSUMS
-    void *checksum;        /* Checksum of header */
+    void *checksum; /* Checksum of header */
 #endif
 };
 
@@ -91,7 +92,7 @@ struct hg_core_header {
 #define HG_CORE_PROTOCOL_VERSION 0x04
 
 /* Flags */
-#define HG_CORE_SELF_FORWARD 0x80   /* Forward to self */
+#define HG_CORE_SELF_FORWARD 0x80 /* Forward to self */
 
 /*********************/
 /* Public Prototypes */
@@ -101,8 +102,10 @@ struct hg_core_header {
 extern "C" {
 #endif
 
-static HG_INLINE size_t hg_core_header_request_get_size(void);
-static HG_INLINE size_t hg_core_header_response_get_size(void);
+static HG_INLINE size_t
+hg_core_header_request_get_size(void);
+static HG_INLINE size_t
+hg_core_header_response_get_size(void);
 
 /**
  * Get size reserved for request header (separate user data stored in payload).
@@ -133,9 +136,7 @@ hg_core_header_response_get_size(void)
  *
  */
 HG_PRIVATE void
-hg_core_header_request_init(
-        struct hg_core_header *hg_core_header
-        );
+hg_core_header_request_init(struct hg_core_header *hg_core_header);
 
 /**
  * Initialize RPC response header.
@@ -144,9 +145,7 @@ hg_core_header_request_init(
  *
  */
 HG_PRIVATE void
-hg_core_header_response_init(
-        struct hg_core_header *hg_core_header
-        );
+hg_core_header_response_init(struct hg_core_header *hg_core_header);
 
 /**
  * Finalize RPC request header.
@@ -155,9 +154,7 @@ hg_core_header_response_init(
  *
  */
 HG_PRIVATE void
-hg_core_header_request_finalize(
-        struct hg_core_header *hg_core_header
-        );
+hg_core_header_request_finalize(struct hg_core_header *hg_core_header);
 
 /**
  * Finalize RPC response header.
@@ -166,9 +163,7 @@ hg_core_header_request_finalize(
  *
  */
 HG_PRIVATE void
-hg_core_header_response_finalize(
-        struct hg_core_header *hg_core_header
-        );
+hg_core_header_response_finalize(struct hg_core_header *hg_core_header);
 
 /**
  * Reset RPC request header.
@@ -177,9 +172,7 @@ hg_core_header_response_finalize(
  *
  */
 HG_PRIVATE void
-hg_core_header_request_reset(
-        struct hg_core_header *hg_core_header
-        );
+hg_core_header_request_reset(struct hg_core_header *hg_core_header);
 
 /**
  * Reset RPC response header.
@@ -188,9 +181,7 @@ hg_core_header_request_reset(
  *
  */
 HG_PRIVATE void
-hg_core_header_response_reset(
-        struct hg_core_header *hg_core_header
-        );
+hg_core_header_response_reset(struct hg_core_header *hg_core_header);
 
 /**
  * Process private information for sending/receiving RPC request.
@@ -203,12 +194,8 @@ hg_core_header_response_reset(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PRIVATE hg_return_t
-hg_core_header_request_proc(
-        hg_proc_op_t op,
-        void *buf,
-        size_t buf_size,
-        struct hg_core_header *hg_core_header
-        );
+hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
+    struct hg_core_header *hg_core_header);
 
 /**
  * Process private information for sending/receiving response.
@@ -221,12 +208,8 @@ hg_core_header_request_proc(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PRIVATE hg_return_t
-hg_core_header_response_proc(
-        hg_proc_op_t op,
-        void *buf,
-        size_t buf_size,
-        struct hg_core_header *hg_core_header
-        );
+hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
+    struct hg_core_header *hg_core_header);
 
 /**
  * Verify private information from request header.
@@ -236,9 +219,7 @@ hg_core_header_response_proc(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PRIVATE hg_return_t
-hg_core_header_request_verify(
-        const struct hg_core_header *hg_core_header
-        );
+hg_core_header_request_verify(const struct hg_core_header *hg_core_header);
 
 /**
  * Verify private information from response header.
@@ -248,9 +229,7 @@ hg_core_header_request_verify(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PRIVATE hg_return_t
-hg_core_header_response_verify(
-        const struct hg_core_header *hg_core_header
-        );
+hg_core_header_response_verify(const struct hg_core_header *hg_core_header);
 
 #ifdef __cplusplus
 }

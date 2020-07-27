@@ -32,7 +32,8 @@ hg_proc_buf_memcpy(void *buf, void *data, hg_size_t data_size, hg_proc_op_t op)
     const void *src = NULL;
     void *dest = NULL;
 
-    if ((op != HG_ENCODE) && (op != HG_DECODE)) return NULL;
+    if ((op != HG_ENCODE) && (op != HG_DECODE))
+        return NULL;
     src = (op == HG_ENCODE) ? (const void *) data : (const void *) buf;
     dest = (op == HG_ENCODE) ? buf : data;
     memcpy(dest, src, data_size);

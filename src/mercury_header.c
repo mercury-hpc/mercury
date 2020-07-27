@@ -9,13 +9,13 @@
  */
 
 #include "mercury_header.h"
-#include "mercury_proc_buf.h"
 #include "mercury_error.h"
+#include "mercury_proc_buf.h"
 
 #ifdef _WIN32
-# include <winsock2.h>
+#    include <winsock2.h>
 #else
-# include <arpa/inet.h>
+#    include <arpa/inet.h>
 #endif
 #include <stdlib.h>
 #include <string.h>
@@ -24,17 +24,18 @@
 /* Local Macros */
 /****************/
 
-#define HG_HEADER_PROC(hg_header, buf_ptr, data, op) \
+#define HG_HEADER_PROC(hg_header, buf_ptr, data, op)                           \
     buf_ptr = hg_proc_buf_memcpy(buf_ptr, &data, sizeof(data), op);
 
-#define HG_HEADER_PROC32(hg_header, buf_ptr, data, op, tmp) do { \
-    hg_uint32_t tmp;                                             \
-    if (op == HG_ENCODE)                                         \
-        tmp = htonl(data);                                       \
-    HG_HEADER_PROC(hg_header, buf_ptr, tmp, op);                 \
-    if (op == HG_DECODE)                                         \
-        data = ntohl(tmp);                                       \
-} while (0)
+#define HG_HEADER_PROC32(hg_header, buf_ptr, data, op, tmp)                    \
+    do {                                                                       \
+        hg_uint32_t tmp;                                                       \
+        if (op == HG_ENCODE)                                                   \
+            tmp = htonl(data);                                                 \
+        HG_HEADER_PROC(hg_header, buf_ptr, tmp, op);                           \
+        if (op == HG_DECODE)                                                   \
+            data = ntohl(tmp);                                                 \
+    } while (0)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -81,8 +82,8 @@ hg_header_reset(struct hg_header *hg_header, hg_op_t op)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_header_proc(hg_proc_op_t op, void *buf, size_t buf_size,
-    struct hg_header *hg_header)
+hg_header_proc(
+    hg_proc_op_t op, void *buf, size_t buf_size, struct hg_header *hg_header)
 {
     void *buf_ptr = buf;
 #ifdef HG_HAS_CHECKSUMS

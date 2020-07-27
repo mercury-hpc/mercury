@@ -38,16 +38,16 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
             /* If HG_BULK_NULL set 0 to buf_size */
             if (*bulk_ptr == HG_BULK_NULL)
                 buf_size = 0;
-            else if ((cached_ptr = HG_Bulk_get_serialize_cached_ptr(*bulk_ptr))
-                != NULL)
+            else if ((cached_ptr = HG_Bulk_get_serialize_cached_ptr(
+                          *bulk_ptr)) != NULL)
                 buf_size = HG_Bulk_get_serialize_cached_size(*bulk_ptr);
             else {
 #ifdef HG_HAS_EAGER_BULK
-                hg_size_t serialize_size = HG_Bulk_get_serialize_size(*bulk_ptr,
-                    HG_TRUE);
-                request_eager =
-                    (hg_proc_get_size_left(proc) > serialize_size) ? HG_TRUE :
-                        HG_FALSE;
+                hg_size_t serialize_size =
+                    HG_Bulk_get_serialize_size(*bulk_ptr, HG_TRUE);
+                request_eager = (hg_proc_get_size_left(proc) > serialize_size)
+                                    ? HG_TRUE
+                                    : HG_FALSE;
                 if (request_eager)
                     buf_size = serialize_size;
                 else
@@ -64,8 +64,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
                 hg_proc_raw(proc, cached_ptr, buf_size);
             else {
                 buf = hg_proc_save_ptr(proc, buf_size);
-                ret = HG_Bulk_serialize(buf, buf_size, request_eager,
-                    *bulk_ptr);
+                ret =
+                    HG_Bulk_serialize(buf, buf_size, request_eager, *bulk_ptr);
                 if (ret != HG_SUCCESS)
                     return ret;
                 hg_proc_restore_ptr(proc, buf, buf_size);
