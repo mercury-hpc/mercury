@@ -16,8 +16,8 @@
 
 #include "mercury_atomic_queue.h"
 #include "mercury_queue.h"
-#include "mercury_thread_mutex.h"
 #include "mercury_thread_condition.h"
+#include "mercury_thread_mutex.h"
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -28,11 +28,11 @@ typedef void (*na_plugin_cb_t)(void *arg);
 
 /* Completion data stored in completion queue */
 struct na_cb_completion_data {
-    struct na_cb_info callback_info;    /* Callback info struct */
-    na_cb_t callback;                   /* Pointer to function */
-    na_plugin_cb_t plugin_callback;     /* Callback which will be called after
-                                         * the user callback returns. */
-    void *plugin_callback_args;         /* Argument to plugin_callback */
+    struct na_cb_info callback_info; /* Callback info struct */
+    na_cb_t callback;                /* Pointer to function */
+    na_plugin_cb_t plugin_callback;  /* Callback which will be called after
+                                      * the user callback returns. */
+    void *plugin_callback_args;      /* Argument to plugin_callback */
     HG_QUEUE_ENTRY(na_cb_completion_data) entry; /* Completion queue entry */
 };
 
@@ -42,11 +42,11 @@ struct na_cb_completion_data {
 
 /* Remove warnings when plugin does not use callback arguments */
 #if defined(__cplusplus)
-# define NA_UNUSED
+#    define NA_UNUSED
 #elif defined(__GNUC__) && (__GNUC__ >= 4)
-# define NA_UNUSED __attribute__((unused))
+#    define NA_UNUSED __attribute__((unused))
 #else
-# define NA_UNUSED
+#    define NA_UNUSED
 #endif
 
 /**
@@ -57,24 +57,24 @@ struct na_cb_completion_data {
  *
  */
 #if !defined(container_of)
-# define container_of(ptr, type, member) \
-    ((type *) ((char *) ptr - offsetof(type, member)))
+#    define container_of(ptr, type, member)                                    \
+        ((type *) ((char *) ptr - offsetof(type, member)))
 #endif
 
 /**
  * Min/max macros
  */
 #ifndef MAX
-# define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#    define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #endif
 #ifndef MIN
-# define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#    define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #endif
 
 /**
  * Plugin ops definition
  */
-#define NA_PLUGIN_OPS(plugin_name) na_ ##plugin_name ##_class_ops_g
+#define NA_PLUGIN_OPS(plugin_name) na_##plugin_name##_class_ops_g
 
 /*********************/
 /* Public Prototypes */
@@ -96,9 +96,7 @@ extern "C" {
  */
 NA_PRIVATE na_return_t
 na_cb_completion_add(
-        na_context_t                 *context,
-        struct na_cb_completion_data *na_cb_completion_data
-        );
+    na_context_t *context, struct na_cb_completion_data *na_cb_completion_data);
 
 /*********************/
 /* Public Variables */
