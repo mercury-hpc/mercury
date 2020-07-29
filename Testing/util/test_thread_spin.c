@@ -1,5 +1,5 @@
-#include "mercury_thread_spin.h"
 #include "mercury_thread.h"
+#include "mercury_thread_spin.h"
 
 #include "mercury_test_config.h"
 

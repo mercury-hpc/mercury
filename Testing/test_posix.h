@@ -14,9 +14,9 @@
 #include "mercury_macros.h"
 #include "mercury_proc_string.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -35,20 +35,21 @@
  */
 
 /* open */
-MERCURY_GEN_PROC( open_in_t, ((hg_const_string_t)(path)) ((hg_int32_t)(flags)) ((hg_uint32_t)(mode)) )
-MERCURY_GEN_PROC( open_out_t, ((hg_int32_t)(ret)) )
+MERCURY_GEN_PROC(open_in_t,
+    ((hg_const_string_t)(path))((hg_int32_t)(flags))((hg_uint32_t)(mode)))
+MERCURY_GEN_PROC(open_out_t, ((hg_int32_t)(ret)))
 
 /* close */
-MERCURY_GEN_PROC( close_in_t, ((hg_int32_t)(fd)) )
-MERCURY_GEN_PROC( close_out_t, ((hg_int32_t)(ret)) )
+MERCURY_GEN_PROC(close_in_t, ((hg_int32_t)(fd)))
+MERCURY_GEN_PROC(close_out_t, ((hg_int32_t)(ret)))
 
 /* write */
-MERCURY_GEN_PROC( write_in_t, ((hg_int32_t)(fd)) ((hg_bulk_t)(bulk_handle)) )
-MERCURY_GEN_PROC( write_out_t, ((hg_int64_t)(ret)) )
+MERCURY_GEN_PROC(write_in_t, ((hg_int32_t)(fd))((hg_bulk_t)(bulk_handle)))
+MERCURY_GEN_PROC(write_out_t, ((hg_int64_t)(ret)))
 
 /* read */
-MERCURY_GEN_PROC( read_in_t, ((hg_int32_t)(fd)) ((hg_bulk_t)(bulk_handle)) )
-MERCURY_GEN_PROC( read_out_t, ((hg_int64_t)(ret)) )
+MERCURY_GEN_PROC(read_in_t, ((hg_int32_t)(fd))((hg_bulk_t)(bulk_handle)))
+MERCURY_GEN_PROC(read_out_t, ((hg_int64_t)(ret)))
 
 #else /* HG_HAS_BOOST */
 /* Define open_in_t */

@@ -21,12 +21,11 @@
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */
 MERCURY_GEN_PROC(bulk_write_in_t,
-    ((hg_int32_t)(fildes)) ((hg_size_t)(transfer_size))
-    ((hg_size_t)(origin_offset)) ((hg_size_t)(target_offset))
-    ((hg_bulk_t)(bulk_handle)))
+    ((hg_int32_t)(fildes))((hg_size_t)(transfer_size))((hg_size_t)(
+        origin_offset))((hg_size_t)(target_offset))((hg_bulk_t)(bulk_handle)))
 MERCURY_GEN_PROC(bulk_write_out_t, ((hg_size_t)(ret)))
-MERCURY_GEN_PROC(bulk_bind_write_out_t,
-    ((hg_size_t)(ret)) ((hg_bulk_t)(bulk_handle)))
+MERCURY_GEN_PROC(
+    bulk_bind_write_out_t, ((hg_size_t)(ret))((hg_bulk_t)(bulk_handle)))
 #else
 /* Define bulk_write_in_t */
 typedef struct {

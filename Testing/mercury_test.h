@@ -16,17 +16,17 @@
 #include "mercury.h"
 #include "mercury_request.h"
 #ifdef HG_TEST_HAS_THREAD_POOL
-# include "mercury_thread_pool.h"
-# include "mercury_thread_mutex.h"
+#    include "mercury_thread_mutex.h"
+#    include "mercury_thread_pool.h"
 #endif
 #include "mercury_atomic.h"
 
-#include "test_rpc.h"
 #include "test_bulk.h"
 #include "test_overflow.h"
+#include "test_rpc.h"
 
 #ifdef HG_TEST_HAS_CRAY_DRC
-# include <rdmacred.h>
+#    include <rdmacred.h>
 #endif
 
 /*************************************/
@@ -66,105 +66,118 @@ struct hg_test_context_info {
 
 /* Default error macro */
 #ifdef HG_HAS_VERBOSE_ERROR
-# include <mercury_log.h>
-# define HG_TEST_LOG_MASK hg_test_log_mask
+#    include <mercury_log.h>
+#    define HG_TEST_LOG_MASK hg_test_log_mask
 /* Log mask will be initialized in init routine */
 extern unsigned int HG_TEST_LOG_MASK;
-# define HG_TEST_LOG_MODULE_NAME "HG Test"
-# define HG_TEST_LOG_ERROR(...) do {                                \
-    if (HG_TEST_LOG_MASK & HG_LOG_TYPE_ERROR)                       \
-        HG_LOG_WRITE_ERROR(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);   \
-} while (0)
-# ifdef HG_HAS_DEBUG
-#  define HG_TEST_LOG_DEBUG(...) do {                               \
-    if (HG_TEST_LOG_MASK & HG_LOG_TYPE_DEBUG)                       \
-        HG_LOG_WRITE_DEBUG(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);   \
-} while (0)
-# else
-#  define HG_TEST_LOG_DEBUG(...)    (void)0
-# endif
-# define HG_TEST_LOG_WARNING(...) do {                              \
-    if (HG_TEST_LOG_MASK & HG_LOG_TYPE_WARNING)                     \
-        HG_LOG_WRITE_WARNING(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__); \
-} while (0)
+#    define HG_TEST_LOG_MODULE_NAME "HG Test"
+#    define HG_TEST_LOG_ERROR(...)                                             \
+        do {                                                                   \
+            if (HG_TEST_LOG_MASK & HG_LOG_TYPE_ERROR)                          \
+                HG_LOG_WRITE_ERROR(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);      \
+        } while (0)
+#    ifdef HG_HAS_DEBUG
+#        define HG_TEST_LOG_DEBUG(...)                                         \
+            do {                                                               \
+                if (HG_TEST_LOG_MASK & HG_LOG_TYPE_DEBUG)                      \
+                    HG_LOG_WRITE_DEBUG(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);  \
+            } while (0)
+#    else
+#        define HG_TEST_LOG_DEBUG(...) (void) 0
+#    endif
+#    define HG_TEST_LOG_WARNING(...)                                           \
+        do {                                                                   \
+            if (HG_TEST_LOG_MASK & HG_LOG_TYPE_WARNING)                        \
+                HG_LOG_WRITE_WARNING(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);    \
+        } while (0)
 #else
-# define HG_TEST_LOG_ERROR(...)     (void)0
-# define HG_TEST_LOG_DEBUG(...)     (void)0
-# define HG_TEST_LOG_WARNING(...)   (void)0
+#    define HG_TEST_LOG_ERROR(...)   (void) 0
+#    define HG_TEST_LOG_DEBUG(...)   (void) 0
+#    define HG_TEST_LOG_WARNING(...) (void) 0
 #endif
 
 /* Branch predictor hints */
 #ifndef _WIN32
-# define likely(x)       __builtin_expect(!!(x), 1)
-# define unlikely(x)     __builtin_expect(!!(x), 0)
+#    define likely(x)   __builtin_expect(!!(x), 1)
+#    define unlikely(x) __builtin_expect(!!(x), 0)
 #else
-# define likely(x)       (x)
-# define unlikely(x)     (x)
+#    define likely(x)   (x)
+#    define unlikely(x) (x)
 #endif
 
 /* Error macros */
-#define HG_TEST_GOTO_DONE(label, ret, ret_val) do {             \
-    ret = ret_val;                                              \
-    goto label;                                                 \
-} while (0)
+#define HG_TEST_GOTO_DONE(label, ret, ret_val)                                 \
+    do {                                                                       \
+        ret = ret_val;                                                         \
+        goto label;                                                            \
+    } while (0)
 
-#define HG_TEST_GOTO_ERROR(label, ret, err_val, ...) do {       \
-    HG_LOG_ERROR(__VA_ARGS__);                                  \
-    ret = err_val;                                              \
-    goto label;                                                 \
-} while (0)
+#define HG_TEST_GOTO_ERROR(label, ret, err_val, ...)                           \
+    do {                                                                       \
+        HG_LOG_ERROR(__VA_ARGS__);                                             \
+        ret = err_val;                                                         \
+        goto label;                                                            \
+    } while (0)
 
 /* Check for hg_ret value and goto label */
-#define HG_TEST_CHECK_HG_ERROR(label, hg_ret, ...) do {         \
-    if (unlikely(hg_ret != HG_SUCCESS)) {                       \
-        HG_TEST_LOG_ERROR(__VA_ARGS__);                         \
-        goto label;                                             \
-    }                                                           \
-} while (0)
+#define HG_TEST_CHECK_HG_ERROR(label, hg_ret, ...)                             \
+    do {                                                                       \
+        if (unlikely(hg_ret != HG_SUCCESS)) {                                  \
+            HG_TEST_LOG_ERROR(__VA_ARGS__);                                    \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
 
 /* Check for cond, set ret to err_val and goto label */
-#define HG_TEST_CHECK_ERROR(cond, label, ret, err_val, ...) do {\
-    if (unlikely(cond)) {                                       \
-        HG_TEST_LOG_ERROR(__VA_ARGS__);                         \
-        ret = err_val;                                          \
-        goto label;                                             \
-    }                                                           \
-} while (0)
+#define HG_TEST_CHECK_ERROR(cond, label, ret, err_val, ...)                    \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            HG_TEST_LOG_ERROR(__VA_ARGS__);                                    \
+            ret = err_val;                                                     \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
 
-#define HG_TEST_CHECK_ERROR_NORET(cond, label, ...) do {        \
-    if (unlikely(cond)) {                                       \
-        HG_TEST_LOG_ERROR(__VA_ARGS__);                         \
-        goto label;                                             \
-    }                                                           \
-} while (0)
+#define HG_TEST_CHECK_ERROR_NORET(cond, label, ...)                            \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            HG_TEST_LOG_ERROR(__VA_ARGS__);                                    \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
 
-#define HG_TEST_CHECK_ERROR_DONE(cond, ...) do {                \
-    if (unlikely(cond)) {                                       \
-        HG_TEST_LOG_ERROR(__VA_ARGS__);                         \
-    }                                                           \
-} while (0)
+#define HG_TEST_CHECK_ERROR_DONE(cond, ...)                                    \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            HG_TEST_LOG_ERROR(__VA_ARGS__);                                    \
+        }                                                                      \
+    } while (0)
 
 /* Check for cond and print warning */
-#define HG_TEST_CHECK_WARNING(cond, ...) do {                   \
-    if (unlikely(cond)) {                                       \
-        HG_TEST_LOG_WARNING(__VA_ARGS__);                       \
-    }                                                           \
-} while (0)
+#define HG_TEST_CHECK_WARNING(cond, ...)                                       \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            HG_TEST_LOG_WARNING(__VA_ARGS__);                                  \
+        }                                                                      \
+    } while (0)
 
-#define HG_TEST(x) do {                                         \
-    printf("Testing %-62s", x);                                 \
-    fflush(stdout);                                             \
-} while (0)
+#define HG_TEST(x)                                                             \
+    do {                                                                       \
+        printf("Testing %-62s", x);                                            \
+        fflush(stdout);                                                        \
+    } while (0)
 
-#define HG_PASSED() do {                                        \
-    puts(" PASSED");                                            \
-    fflush(stdout);                                             \
-} while (0)
+#define HG_PASSED()                                                            \
+    do {                                                                       \
+        puts(" PASSED");                                                       \
+        fflush(stdout);                                                        \
+    } while (0)
 
-#define HG_FAILED() do {                                        \
-    puts("*FAILED*");                                           \
-    fflush(stdout);                                             \
-} while (0)
+#define HG_FAILED()                                                            \
+    do {                                                                       \
+        puts("*FAILED*");                                                      \
+        fflush(stdout);                                                        \
+    } while (0)
 
 /*********************/
 /* Public Prototypes */

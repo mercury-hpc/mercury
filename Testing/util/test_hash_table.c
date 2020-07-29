@@ -45,8 +45,8 @@ main(int argc, char *argv[])
     (void) argv;
 
     hash_table = hg_hash_table_new(int_hash, int_equal);
-    hg_hash_table_register_free_functions(hash_table,
-            int_hash_key_free, int_hash_value_free);
+    hg_hash_table_register_free_functions(
+        hash_table, int_hash_key_free, int_hash_value_free);
 
     key1 = (int *) malloc(sizeof(int));
     key2 = (int *) malloc(sizeof(int));
@@ -65,12 +65,12 @@ main(int argc, char *argv[])
 
     if (2 != hg_hash_table_num_entries(hash_table)) {
         fprintf(stderr, "Error: was expecting 2 entries, got %u\n",
-                hg_hash_table_num_entries(hash_table));
+            hg_hash_table_num_entries(hash_table));
         ret = EXIT_FAILURE;
         goto done;
     }
 
-    if (*value1 != *((int *)hg_hash_table_lookup(hash_table, key1))) {
+    if (*value1 != *((int *) hg_hash_table_lookup(hash_table, key1))) {
         fprintf(stderr, "Error: values do not match\n");
         ret = EXIT_FAILURE;
         goto done;
@@ -79,7 +79,7 @@ main(int argc, char *argv[])
 
     if (1 != hg_hash_table_num_entries(hash_table)) {
         fprintf(stderr, "Error: was expecting 1 entry, got %u\n",
-                hg_hash_table_num_entries(hash_table));
+            hg_hash_table_num_entries(hash_table));
         ret = EXIT_FAILURE;
         goto done;
     }
@@ -90,7 +90,7 @@ main(int argc, char *argv[])
         ret = EXIT_FAILURE;
         goto done;
     }
-    if (*value2 != *((int *)hg_hash_table_iter_next(&hash_table_iter))) {
+    if (*value2 != *((int *) hg_hash_table_iter_next(&hash_table_iter))) {
         fprintf(stderr, "Error: values do not match\n");
         ret = EXIT_FAILURE;
         goto done;

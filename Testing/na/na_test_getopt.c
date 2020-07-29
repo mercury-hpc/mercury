@@ -12,52 +12,44 @@
 
 #include "na_test_getopt.h"
 
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
-int na_test_opt_ind_g = 1; /* token pointer */
+int na_test_opt_ind_g = 1;            /* token pointer */
 const char *na_test_opt_arg_g = NULL; /* flag argument (or value) */
 const char *na_test_short_opt_g = "hc:d:p:H:P:LsSak:l:t:bmC:V";
 const struct na_test_opt na_test_opt_g[] = {
-    { "help", no_arg, 'h'},
-    { "comm", require_arg, 'c' },
-    { "domain", require_arg, 'd' },
-    { "protocol", require_arg, 'p' },
-    { "hostname", require_arg, 'H' },
-    { "port", require_arg, 'P' },
-    { "listen", no_arg, 'L' },
-    { "mpi_static", no_arg, 's' },
-    { "self_send", no_arg, 'S' },
-    { "auth", no_arg, 'a' },
-    { "key", require_arg, 'k' },
-    { "loop", require_arg, 'l'},
-    { "threads", require_arg, 't'},
-    { "busy", no_arg, 'b'},
-    { "memory", no_arg, 'm'},
-    { "contexts", require_arg, 'C'},
-    { "verbose", no_arg, 'V' },
-    { NULL, 0, '\0' } /* Must add this at the end */
+    {"help", no_arg, 'h'}, {"comm", require_arg, 'c'},
+    {"domain", require_arg, 'd'}, {"protocol", require_arg, 'p'},
+    {"hostname", require_arg, 'H'}, {"port", require_arg, 'P'},
+    {"listen", no_arg, 'L'}, {"mpi_static", no_arg, 's'},
+    {"self_send", no_arg, 'S'}, {"auth", no_arg, 'a'},
+    {"key", require_arg, 'k'}, {"loop", require_arg, 'l'},
+    {"threads", require_arg, 't'}, {"busy", no_arg, 'b'},
+    {"memory", no_arg, 'm'}, {"contexts", require_arg, 'C'},
+    {"verbose", no_arg, 'V'}, {NULL, 0, '\0'} /* Must add this at the end */
 };
 
 int
-na_test_getopt(int argc, char *argv[], const char *opts,
-        const struct na_test_opt *l_opts)
+na_test_getopt(
+    int argc, char *argv[], const char *opts, const struct na_test_opt *l_opts)
 {
     static int sp = 1; /* character index in current token */
     int opt_opt = '?'; /* option character passed back to user */
 
     if (sp == 1) {
         /* check for more flag-like tokens */
-        if (na_test_opt_ind_g >= argc || argv[na_test_opt_ind_g][0] != '-' || argv[na_test_opt_ind_g][1] == '\0') {
+        if (na_test_opt_ind_g >= argc || argv[na_test_opt_ind_g][0] != '-' ||
+            argv[na_test_opt_ind_g][1] == '\0') {
             return EOF;
-        }
-        else if (strcmp(argv[na_test_opt_ind_g], "--") == 0) {
+        } else if (strcmp(argv[na_test_opt_ind_g], "--") == 0) {
             na_test_opt_ind_g++;
             return EOF;
         }
     }
 
-    if (sp == 1 && argv[na_test_opt_ind_g][0] == '-' && argv[na_test_opt_ind_g][1] == '-') {
+    if (sp == 1 && argv[na_test_opt_ind_g][0] == '-' &&
+        argv[na_test_opt_ind_g][1] == '-') {
         /* long command line option */
         const char *arg = &argv[na_test_opt_ind_g][2];
         int i;
@@ -77,15 +69,17 @@ na_test_getopt(int argc, char *argv[], const char *opts,
                             if (argv[na_test_opt_ind_g + 1][0] != '-')
                                 na_test_opt_arg_g = argv[++na_test_opt_ind_g];
                     } else if (l_opts[i].has_arg == require_arg) {
-                        fprintf(stderr, "%s: option required for \"--%s\" flag\n",
-                                argv[0], arg);
+                        fprintf(stderr,
+                            "%s: option required for \"--%s\" flag\n", argv[0],
+                            arg);
                         opt_opt = '?';
                     } else
                         na_test_opt_arg_g = NULL;
                 } else {
                     if (arg[len] == '=') {
-                        fprintf(stderr, "%s: no option required for \"%s\" flag\n",
-                                argv[0], arg);
+                        fprintf(stderr,
+                            "%s: no option required for \"%s\" flag\n", argv[0],
+                            arg);
                         opt_opt = '?';
                     }
                     na_test_opt_arg_g = NULL;
@@ -102,7 +96,7 @@ na_test_getopt(int argc, char *argv[], const char *opts,
         na_test_opt_ind_g++;
         sp = 1;
     } else {
-        char *cp;    /* pointer into current token */
+        char *cp; /* pointer into current token */
 
         /* short command line option */
         opt_opt = argv[na_test_opt_ind_g][sp];
@@ -124,7 +118,7 @@ na_test_getopt(int argc, char *argv[], const char *opts,
                 na_test_opt_arg_g = &argv[na_test_opt_ind_g++][sp + 1];
             } else if (++na_test_opt_ind_g >= argc) {
                 fprintf(stderr, "%s: value expected for option \"%c\"\n",
-                        argv[0], opt_opt);
+                    argv[0], opt_opt);
                 opt_opt = '?';
             } else {
                 /* flag value is next token */
@@ -137,7 +131,8 @@ na_test_getopt(int argc, char *argv[], const char *opts,
             /* check the next argument */
             na_test_opt_ind_g++;
             /* we do have an extra argument, check if not last */
-            if ( argv[na_test_opt_ind_g][0] != '-' && (na_test_opt_ind_g+1) < argc ) {
+            if (argv[na_test_opt_ind_g][0] != '-' &&
+                (na_test_opt_ind_g + 1) < argc) {
                 na_test_opt_arg_g = argv[na_test_opt_ind_g++];
             } else {
                 na_test_opt_arg_g = NULL;

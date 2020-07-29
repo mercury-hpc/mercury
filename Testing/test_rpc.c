@@ -17,7 +17,7 @@
 /* Local Macros */
 /****************/
 
-#define NINFLIGHT   (HG_TEST_MAX_HANDLES)
+#define NINFLIGHT (HG_TEST_MAX_HANDLES)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -84,7 +84,8 @@ static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
 {
     hg_handle_t handle = callback_info->info.forward.handle;
-    struct forward_cb_args *args = (struct forward_cb_args *) callback_info->arg;
+    struct forward_cb_args *args =
+        (struct forward_cb_args *) callback_info->arg;
     int rpc_open_ret;
     int rpc_open_event_id;
     rpc_open_out_t rpc_open_out_struct;
@@ -98,22 +99,22 @@ hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info)
 
     /* Get output */
     ret = HG_Get_output(handle, &rpc_open_out_struct);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Get_output() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Get_output() failed (%s)", HG_Error_to_string(ret));
 
     /* Get output parameters */
     rpc_open_ret = rpc_open_out_struct.ret;
     rpc_open_event_id = rpc_open_out_struct.event_id;
     HG_TEST_LOG_DEBUG("rpc_open returned: %d with event_id: %d", rpc_open_ret,
         rpc_open_event_id);
-    (void)rpc_open_ret;
+    (void) rpc_open_ret;
     HG_TEST_CHECK_ERROR(rpc_open_event_id != (int) args->rpc_handle->cookie,
         done, ret, HG_FAULT, "Cookie did not match RPC response");
 
     /* Free request */
     ret = HG_Free_output(handle, &rpc_open_out_struct);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Free_output() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Free_output() failed (%s)", HG_Error_to_string(ret));
 
 done:
     hg_request_complete(args->request);
@@ -124,7 +125,8 @@ done:
 static hg_return_t
 hg_test_rpc_forward_no_resp_cb(const struct hg_cb_info *callback_info)
 {
-    struct forward_cb_args *args = (struct forward_cb_args *) callback_info->arg;
+    struct forward_cb_args *args =
+        (struct forward_cb_args *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
     HG_TEST_CHECK_ERROR_NORET(callback_info->ret != HG_SUCCESS, done,
@@ -153,15 +155,16 @@ hg_test_rpc_lookup_cb(const struct hg_cb_info *callback_info)
 static hg_return_t
 hg_test_rpc_forward_reset_cb(const struct hg_cb_info *callback_info)
 {
-    struct forward_cb_args *args = (struct forward_cb_args *) callback_info->arg;
+    struct forward_cb_args *args =
+        (struct forward_cb_args *) callback_info->arg;
     hg_return_t ret = HG_SUCCESS;
 
     HG_TEST_CHECK_ERROR_NORET(callback_info->ret != HG_SUCCESS, done,
         "Error in HG callback (%s)", HG_Error_to_string(callback_info->ret));
 
     ret = HG_Reset(callback_info->info.forward.handle, HG_ADDR_NULL, 0);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Reset() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Reset() failed (%s)", HG_Error_to_string(ret));
 
 done:
     hg_request_complete(args->request);
@@ -184,8 +187,8 @@ hg_test_rpc_forward_overflow_cb(const struct hg_cb_info *callback_info)
 
     /* Get output */
     ret = HG_Get_output(handle, &out_struct);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Get_output() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Get_output() failed (%s)", HG_Error_to_string(ret));
 
     /* Get output parameters */
     string = out_struct.string;
@@ -194,8 +197,8 @@ hg_test_rpc_forward_overflow_cb(const struct hg_cb_info *callback_info)
 
     /* Free request */
     ret = HG_Free_output(handle, &out_struct);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Free_output() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Free_output() failed (%s)", HG_Error_to_string(ret));
 
 done:
     hg_request_complete(request);
@@ -213,7 +216,8 @@ hg_test_rpc_forward_cancel_cb(const struct hg_cb_info *callback_info)
         HG_TEST_LOG_DEBUG("HG_Forward() was successfully canceled");
     else
         HG_TEST_CHECK_ERROR_NORET(callback_info->ret != HG_SUCCESS, done,
-            "Error in HG callback (%s)", HG_Error_to_string(callback_info->ret));
+            "Error in HG callback (%s)",
+            HG_Error_to_string(callback_info->ret));
 
 done:
     hg_request_complete(request);
@@ -239,8 +243,8 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
     ret = HG_Create(context, addr, rpc_id, &handle);
     if (ret == HG_NOENTRY)
         goto done;
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
     /* Fill input structure */
     rpc_open_handle.cookie = 100;
@@ -252,14 +256,13 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
     forward_cb_args.request = request;
     forward_cb_args.rpc_handle = &rpc_open_handle;
 again:
-    ret = HG_Forward(handle, callback, &forward_cb_args,
-        &rpc_open_in_struct);
+    ret = HG_Forward(handle, callback, &forward_cb_args, &rpc_open_in_struct);
     if (ret == HG_AGAIN) {
         hg_request_wait(request, 0, NULL);
         goto again;
     }
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
@@ -299,23 +302,23 @@ hg_test_rpc_lookup(hg_context_t *context, hg_request_class_t *request_class,
         lookup_args.request = request;
 
         /* Forward call to remote addr and get a new request */
-        ret = HG_Addr_lookup1(context, hg_test_rpc_lookup_cb,
-            &lookup_args, target_name, HG_OP_ID_IGNORE);
+        ret = HG_Addr_lookup1(context, hg_test_rpc_lookup_cb, &lookup_args,
+            target_name, HG_OP_ID_IGNORE);
         HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_lookup1() failed (%s)",
             HG_Error_to_string(ret));
 
         /* Wait for request to be marked completed */
         hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
-        HG_TEST_CHECK_ERROR(flag == 0, done, ret, HG_TIMEOUT,
-            "Operation did not complete");
+        HG_TEST_CHECK_ERROR(
+            flag == 0, done, ret, HG_TIMEOUT, "Operation did not complete");
 
         /* Reset request */
         hg_request_reset(request);
 
         /* Create RPC request */
         ret = HG_Create(context, target_addr, rpc_id, &handle);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
-            HG_Error_to_string(ret));
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
         /* Fill input structure */
         rpc_open_handle.cookie = 100;
@@ -326,25 +329,25 @@ hg_test_rpc_lookup(hg_context_t *context, hg_request_class_t *request_class,
         HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
         forward_cb_args.request = request;
         forward_cb_args.rpc_handle = &rpc_open_handle;
-        ret = HG_Forward(handle, callback, &forward_cb_args,
-            &rpc_open_in_struct);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-            HG_Error_to_string(ret));
+        ret =
+            HG_Forward(handle, callback, &forward_cb_args, &rpc_open_in_struct);
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
         /* Complete */
         ret = HG_Destroy(handle);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Destroy() failed (%s)",
-            HG_Error_to_string(ret));
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
 
         ret = HG_Addr_set_remove(context->hg_class, target_addr);
         HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_set_remove() failed (%s)",
             HG_Error_to_string(ret));
 
         ret = HG_Addr_free(context->hg_class, target_addr);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_free() failed (%s)",
-            HG_Error_to_string(ret));
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Addr_free() failed (%s)", HG_Error_to_string(ret));
         target_addr = HG_ADDR_NULL;
 
         hg_request_destroy(request);
@@ -374,13 +377,13 @@ hg_test_rpc_reset(hg_context_t *context, hg_request_class_t *request_class,
 
     /* Create request with invalid RPC id */
     ret = HG_Create(context, HG_ADDR_NULL, 0, &handle);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
     /* Reset with valid addr and ID */
     ret = HG_Reset(handle, addr, rpc_id);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Reset() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Reset() failed (%s)", HG_Error_to_string(ret));
 
     /* Fill input structure */
     rpc_open_handle.cookie = 100;
@@ -391,10 +394,9 @@ hg_test_rpc_reset(hg_context_t *context, hg_request_class_t *request_class,
     HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
     forward_cb_args.request = request;
     forward_cb_args.rpc_handle = &rpc_open_handle;
-    ret = HG_Forward(handle, callback, &forward_cb_args,
-        &rpc_open_in_struct);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-        HG_Error_to_string(ret));
+    ret = HG_Forward(handle, callback, &forward_cb_args, &rpc_open_in_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
@@ -419,18 +421,18 @@ hg_test_rpc_mask(hg_context_t *context, hg_request_class_t *request_class,
     struct forward_cb_args forward_cb_args;
     hg_const_string_t rpc_open_path = HG_TEST_TEMP_DIRECTORY "/test.h5";
     rpc_handle_t rpc_open_handle;
-    rpc_open_in_t  rpc_open_in_struct;
+    rpc_open_in_t rpc_open_in_struct;
 
     request = hg_request_create(request_class);
 
     /* Create request with invalid RPC id */
     ret = HG_Create(context, addr, rpc_id, &handle);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
     ret = HG_Set_target_id(handle, 0);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Set_target_id() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Set_target_id() failed (%s)", HG_Error_to_string(ret));
 
     /* Fill input structure */
     rpc_open_handle.cookie = 100;
@@ -441,10 +443,9 @@ hg_test_rpc_mask(hg_context_t *context, hg_request_class_t *request_class,
     HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
     forward_cb_args.request = request;
     forward_cb_args.rpc_handle = &rpc_open_handle;
-    ret = HG_Forward(handle, callback, &forward_cb_args,
-        &rpc_open_in_struct);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-        HG_Error_to_string(ret));
+    ret = HG_Forward(handle, callback, &forward_cb_args, &rpc_open_in_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
@@ -481,12 +482,12 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     request1 = hg_request_create(request_class);
 
     ret = HG_Create(context, addr, rpc_id, &handle1);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
     ret = HG_Set_target_id(handle1, target_id);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Set_target_id() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Set_target_id() failed (%s)", HG_Error_to_string(ret));
 
     /* Fill input structure */
     rpc_open_handle1.cookie = 1;
@@ -498,19 +499,19 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     forward_cb_args1.request = request1;
     forward_cb_args1.rpc_handle = &rpc_open_handle1;
     ret = HG_Forward(handle1, callback, &forward_cb_args1, &rpc_open_in_struct);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
     /* Create request 2 */
     request2 = hg_request_create(request_class);
 
     ret = HG_Create(context, addr, rpc_id, &handle2);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
     ret = HG_Set_target_id(handle2, target_id);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Set_target_id() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Set_target_id() failed (%s)", HG_Error_to_string(ret));
 
     /* Fill input structure */
     rpc_open_handle2.cookie = 2;
@@ -522,20 +523,20 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     forward_cb_args2.request = request2;
     forward_cb_args2.rpc_handle = &rpc_open_handle2;
     ret = HG_Forward(handle2, callback, &forward_cb_args2, &rpc_open_in_struct);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
     hg_request_wait(request2, HG_MAX_IDLE_TIME, NULL);
     hg_request_wait(request1, HG_MAX_IDLE_TIME, NULL);
 
     /* Complete */
     ret = HG_Destroy(handle1);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Destroy() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
 
     ret = HG_Destroy(handle2);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Destroy() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
 
     hg_request_destroy(request1);
     hg_request_destroy(request2);
@@ -547,8 +548,8 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     for (i = 0; i < NINFLIGHT; i++) {
         request_m[i] = hg_request_create(request_class);
         ret = HG_Create(context, addr, rpc_id, handle_m + i);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
-            HG_Error_to_string(ret));
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
         ret = HG_Set_target_id(handle_m[i], target_id);
         HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Set_target_id() failed (%s)",
@@ -561,14 +562,14 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
         forward_cb_args_m[i].request = request_m[i];
         forward_cb_args_m[i].rpc_handle = &rpc_open_handle_m[i];
 again:
-        ret = HG_Forward(handle_m[i], callback, &forward_cb_args_m[i],
-            &rpc_open_in_struct);
+        ret = HG_Forward(
+            handle_m[i], callback, &forward_cb_args_m[i], &rpc_open_in_struct);
         if (ret == HG_AGAIN) {
             hg_request_wait(request_m[i], 0, NULL);
             goto again;
         }
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-            HG_Error_to_string(ret));
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
     }
 
     /* Complete */
@@ -576,8 +577,8 @@ again:
         hg_request_wait(request_m[i], HG_MAX_IDLE_TIME, NULL);
 
         ret = HG_Destroy(handle_m[i]);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Destroy() failed (%s)",
-            HG_Error_to_string(ret));
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
 
         hg_request_destroy(request_m[i]);
     }
@@ -600,14 +601,14 @@ hg_test_overflow(hg_context_t *context, hg_request_class_t *request_class,
 
     /* Create RPC request */
     ret = HG_Create(context, addr, rpc_id, &handle);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
     /* Forward call to remote addr and get a new request */
     HG_TEST_LOG_DEBUG("Forwarding RPC, op id: %u...", rpc_id);
     ret = HG_Forward(handle, callback, request, NULL);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
@@ -634,20 +635,20 @@ hg_test_cancel_rpc(hg_context_t *context, hg_request_class_t *request_class,
 
     /* Create RPC request */
     ret = HG_Create(context, addr, rpc_id, &handle);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
     /* Forward call to remote addr and get a new request */
     HG_TEST_LOG_DEBUG("Forwarding RPC, op id: %u...", rpc_id);
     ret = HG_Forward(handle, callback, request, NULL);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
     /* Cancel request before making progress, this ensures that the RPC has not
      * completed yet. */
     ret = HG_Cancel(handle);
-    HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Cancel() failed (%s)",
-        HG_Error_to_string(ret));
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Cancel() failed (%s)", HG_Error_to_string(ret));
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
@@ -665,15 +666,15 @@ done:
 int
 main(int argc, char *argv[])
 {
-    struct hg_test_info hg_test_info = { 0 };
+    struct hg_test_info hg_test_info = {0};
     hg_return_t hg_ret;
     hg_id_t inv_id;
     int ret = EXIT_SUCCESS;
 
     /* Initialize the interface */
     hg_ret = HG_Test_init(argc, argv, &hg_test_info);
-    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
-        "HG_Test_init() failed");
+    HG_TEST_CHECK_ERROR(
+        hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "HG_Test_init() failed");
 
     /* Simple RPC test */
     HG_TEST("simple RPC");
@@ -717,8 +718,8 @@ main(int argc, char *argv[])
 
         /* Wait for request to be marked completed */
         hg_request_wait(request, HG_MAX_IDLE_TIME, &flag);
-        HG_TEST_CHECK_ERROR(flag == 0, done, ret, EXIT_FAILURE,
-            "Operation did not complete");
+        HG_TEST_CHECK_ERROR(
+            flag == 0, done, ret, EXIT_FAILURE, "Operation did not complete");
 
         /* Destroy request */
         hg_request_destroy(request);
@@ -729,8 +730,8 @@ main(int argc, char *argv[])
     hg_ret = hg_test_rpc_reset(hg_test_info.context, hg_test_info.request_class,
         hg_test_info.target_addr, hg_test_rpc_open_id_g,
         hg_test_rpc_forward_cb);
-    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
-        "reset RPC test failed");
+    HG_TEST_CHECK_ERROR(
+        hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "reset RPC test failed");
     HG_PASSED();
 
     /* RPC test with tag mask */
@@ -752,10 +753,10 @@ main(int argc, char *argv[])
     HG_PASSED();
 
     /* RPC test with unregistered ID */
-    inv_id = MERCURY_REGISTER(hg_test_info.hg_class, "unreg_id", void, void,
-        NULL);
-    HG_TEST_CHECK_ERROR(inv_id == 0, done, ret, EXIT_FAILURE,
-        "HG_Register() failed");
+    inv_id =
+        MERCURY_REGISTER(hg_test_info.hg_class, "unreg_id", void, void, NULL);
+    HG_TEST_CHECK_ERROR(
+        inv_id == 0, done, ret, EXIT_FAILURE, "HG_Register() failed");
     hg_ret = HG_Deregister(hg_test_info.hg_class, inv_id);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "HG_Deregister() failed (%s)", HG_Error_to_string(hg_ret));
@@ -769,10 +770,10 @@ main(int argc, char *argv[])
 
     if (!hg_test_info.na_test_info.self_send) {
         /* RPC test with invalid ID (not registered on server) */
-        inv_id = MERCURY_REGISTER(hg_test_info.hg_class, "inv_id", void, void,
-            NULL);
-        HG_TEST_CHECK_ERROR(inv_id == 0, done, ret, EXIT_FAILURE,
-            "HG_Register() failed");
+        inv_id =
+            MERCURY_REGISTER(hg_test_info.hg_class, "inv_id", void, void, NULL);
+        HG_TEST_CHECK_ERROR(
+            inv_id == 0, done, ret, EXIT_FAILURE, "HG_Register() failed");
 
         HG_TEST("invalid RPC");
         hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
@@ -787,8 +788,8 @@ main(int argc, char *argv[])
     hg_ret = hg_test_rpc(hg_test_info.context, hg_test_info.request_class,
         hg_test_info.target_addr, hg_test_rpc_open_id_g,
         hg_test_rpc_forward_reset_cb);
-    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
-        "reset RPC test failed");
+    HG_TEST_CHECK_ERROR(
+        hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "reset RPC test failed");
     HG_PASSED();
 
     /* RPC test with multiple handle in flight */
@@ -802,8 +803,7 @@ main(int argc, char *argv[])
 
     /* RPC test with multiple handle to multiple target contexts */
     if (hg_test_info.na_test_info.max_contexts) {
-        hg_uint8_t i, context_count =
-            hg_test_info.na_test_info.max_contexts;
+        hg_uint8_t i, context_count = hg_test_info.na_test_info.max_contexts;
 
         HG_TEST("multi context target RPCs");
         for (i = 0; i < context_count; i++) {

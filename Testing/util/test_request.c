@@ -27,7 +27,8 @@ progress(unsigned int timeout, void *arg)
     */
     (void) timeout;
     (void) arg;
-    if (!progressed) progressed = 1;
+    if (!progressed)
+        progressed = 1;
 
     return HG_UTIL_SUCCESS;
 }
@@ -40,7 +41,7 @@ trigger(unsigned int timeout, unsigned int *flag, void *arg)
     */
     (void) timeout;
     (void) arg;
-    if (progressed && ! triggered) {
+    if (progressed && !triggered) {
         user_cb();
         *flag = 1;
         triggered = 1;

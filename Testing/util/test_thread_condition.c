@@ -1,5 +1,5 @@
-#include "mercury_thread_condition.h"
 #include "mercury_thread.h"
+#include "mercury_thread_condition.h"
 
 #include "mercury_test_config.h"
 

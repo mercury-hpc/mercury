@@ -79,13 +79,13 @@ main(int argc, char *argv[])
     hg_bool_t listen = HG_TRUE;
     hg_id_t id = 1;
     struct hg_test_lookup_arg arg1, arg2;
-//    hg_return_t ret = HG_SUCCESS;
+    //    hg_return_t ret = HG_SUCCESS;
 
     /* Generate info strings */
     na_info_string1 = strdup(na_test_gen_config(argc, argv, listen));
-//    HG_TEST_LOG_WARNING("%s", na_info_string1);
+    //    HG_TEST_LOG_WARNING("%s", na_info_string1);
     na_info_string2 = strdup(na_test_gen_config(argc, argv, listen));
-//    HG_TEST_LOG_WARNING("%s", na_info_string2);
+    //    HG_TEST_LOG_WARNING("%s", na_info_string2);
 
     hg_class1 = HG_Init(na_info_string1, listen);
     hg_class2 = HG_Init(na_info_string2, listen);
@@ -105,12 +105,14 @@ main(int argc, char *argv[])
     arg1.hg_class = hg_class1;
     arg1.context = context1;
     arg1.id = id;
-    HG_Addr_lookup(context1, hg_test_lookup_cb, &arg1, addr2_str, HG_OP_ID_IGNORE);
+    HG_Addr_lookup(
+        context1, hg_test_lookup_cb, &arg1, addr2_str, HG_OP_ID_IGNORE);
 
     arg2.hg_class = hg_class2;
     arg2.context = context2;
     arg2.id = id;
-    HG_Addr_lookup(context2, hg_test_lookup_cb, &arg2, addr1_str, HG_OP_ID_IGNORE);
+    HG_Addr_lookup(
+        context2, hg_test_lookup_cb, &arg2, addr1_str, HG_OP_ID_IGNORE);
 
     while (signaled < 2) {
         HG_Progress(context1, 0);
