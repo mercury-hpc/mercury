@@ -1,5 +1,5 @@
-#include "mercury_thread_pool.h"
 #include "mercury_thread_mutex.h"
+#include "mercury_thread_pool.h"
 
 #include "mercury_test_config.h"
 
@@ -9,9 +9,9 @@
 #define POOL_NUM_POSTS 32
 
 /*
-#include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 static HG_THREAD_RETURN_TYPE
 myfunc(void *args)
@@ -68,7 +68,7 @@ main(int argc, char *argv[])
 
     if (ncalls != POOL_NUM_POSTS) {
         fprintf(stderr, "Did not execute all the operations posted (%u/%d)\n",
-                ncalls, POOL_NUM_POSTS);
+            ncalls, POOL_NUM_POSTS);
         ret = EXIT_FAILURE;
     }
     return ret;

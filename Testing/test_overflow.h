@@ -16,7 +16,8 @@
 
 #ifdef HG_HAS_BOOST
 
-MERCURY_GEN_PROC( overflow_out_t, ((hg_string_t)(string)) ((hg_uint64_t)(string_len)) )
+MERCURY_GEN_PROC(
+    overflow_out_t, ((hg_string_t)(string))((hg_uint64_t)(string_len)))
 #else
 /* Define overflow_out_t */
 typedef struct {

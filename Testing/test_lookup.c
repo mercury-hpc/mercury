@@ -59,13 +59,13 @@ hg_test_lookup_thread(void *arg)
 
     hg_thread_mutex_lock(&hg_test_thread_args->test_mutex);
     while (hg_test_thread_args->n_threads != HG_TEST_NUM_THREADS_DEFAULT)
-        hg_thread_cond_wait(&hg_test_thread_args->test_cond,
-            &hg_test_thread_args->test_mutex);
+        hg_thread_cond_wait(
+            &hg_test_thread_args->test_cond, &hg_test_thread_args->test_mutex);
     hg_thread_mutex_unlock(&hg_test_thread_args->test_mutex);
 
     HG_TEST_LOG_DEBUG("Now doing lookup in loop");
-    hg_ret = hg_test_rpc_lookup(hg_test_info->hg_class,
-        hg_test_info->na_test_info.target_name);
+    hg_ret = hg_test_rpc_lookup(
+        hg_test_info->hg_class, hg_test_info->na_test_info.target_name);
     HG_TEST_CHECK_ERROR_NORET(hg_ret != HG_SUCCESS, done, "lookup test failed");
 
 done:
@@ -84,16 +84,16 @@ hg_test_rpc_lookup(hg_class_t *hg_class, const char *target_name)
     for (i = 0; i < 32; i++) {
         /* Forward call to remote addr and get a new request */
         ret = HG_Addr_lookup2(hg_class, target_name, &target_addr);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Addr_lookup() failed (%s)",
-            HG_Error_to_string(ret));
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Addr_lookup() failed (%s)", HG_Error_to_string(ret));
 
         ret = HG_Addr_set_remove(hg_class, target_addr);
         HG_TEST_CHECK_HG_ERROR(error, ret, "HG_Addr_set_remove() failed (%s)",
             HG_Error_to_string(ret));
 
         ret = HG_Addr_free(hg_class, target_addr);
-        HG_TEST_CHECK_HG_ERROR(error, ret, "HG_Addr_free() failed (%s)",
-            HG_Error_to_string(ret));
+        HG_TEST_CHECK_HG_ERROR(
+            error, ret, "HG_Addr_free() failed (%s)", HG_Error_to_string(ret));
         target_addr = HG_ADDR_NULL;
     }
 
@@ -110,7 +110,7 @@ error:
 int
 main(int argc, char *argv[])
 {
-    struct hg_test_info hg_test_info = { 0 };
+    struct hg_test_info hg_test_info = {0};
 #ifdef HG_TEST_HAS_THREAD_POOL
     struct hg_test_thread_args hg_test_thread_args;
     hg_thread_t threads[HG_TEST_NUM_THREADS_DEFAULT];
@@ -121,8 +121,8 @@ main(int argc, char *argv[])
 
     /* Initialize the interface */
     hg_ret = HG_Test_init(argc, argv, &hg_test_info);
-    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
-        "HG_Test_init() failed");
+    HG_TEST_CHECK_ERROR(
+        hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "HG_Test_init() failed");
 
     HG_Addr_free(hg_test_info.hg_class, hg_test_info.target_addr);
     hg_test_info.target_addr = HG_ADDR_NULL;
@@ -138,16 +138,16 @@ main(int argc, char *argv[])
     HG_TEST("lookup RPC");
 #ifdef HG_TEST_HAS_THREAD_POOL
     for (i = 0; i < HG_TEST_NUM_THREADS_DEFAULT; i++)
-        hg_thread_create(&threads[i], hg_test_lookup_thread,
-            &hg_test_thread_args);
+        hg_thread_create(
+            &threads[i], hg_test_lookup_thread, &hg_test_thread_args);
 
     for (i = 0; i < HG_TEST_NUM_THREADS_DEFAULT; i++)
         hg_thread_join(threads[i]);
 #else
-    hg_ret = hg_test_rpc_lookup(hg_test_info.hg_class,
-        hg_test_info.na_test_info.target_name);
-    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
-        "lookup test failed");
+    hg_ret = hg_test_rpc_lookup(
+        hg_test_info.hg_class, hg_test_info.na_test_info.target_name);
+    HG_TEST_CHECK_ERROR(
+        hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "lookup test failed");
 #endif
     HG_PASSED();
 

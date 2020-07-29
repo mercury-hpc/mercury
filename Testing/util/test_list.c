@@ -18,8 +18,8 @@ main(void)
     HG_LIST_HEAD_INIT(my_head, list);
     int ret = EXIT_SUCCESS;
     int value1 = 10, value2 = 20;
-    struct my_entry my_entry1 = { .value = value1 };
-    struct my_entry my_entry2 = { .value = value2 };
+    struct my_entry my_entry1 = {.value = value1};
+    struct my_entry my_entry2 = {.value = value2};
 
     if (!HG_LIST_IS_EMPTY(&list)) {
         fprintf(stderr, "Error: list should be empty\n");

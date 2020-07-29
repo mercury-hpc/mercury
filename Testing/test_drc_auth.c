@@ -13,8 +13,8 @@
 #include <stdlib.h>
 
 extern void
-hg_test_parse_options(int argc, char *argv[],
-    struct hg_test_info *hg_test_info);
+hg_test_parse_options(
+    int argc, char *argv[], struct hg_test_info *hg_test_info);
 
 /**
  *
@@ -22,7 +22,7 @@ hg_test_parse_options(int argc, char *argv[],
 int
 main(int argc, char *argv[])
 {
-    struct hg_test_info hg_test_info = { 0 };
+    struct hg_test_info hg_test_info = {0};
 
     hg_test_parse_options(argc, argv, &hg_test_info);
 

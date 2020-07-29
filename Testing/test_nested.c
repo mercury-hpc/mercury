@@ -41,8 +41,8 @@ main(int argc, char *argv[])
     /* Initialize the interface (for convenience, shipper_test_client_init
      * initializes the network interface with the selected plugin)
      */
-    hg_class = HG_Test_client_init(argc, argv, &addr, NULL, &context,
-            &request_class);
+    hg_class =
+        HG_Test_client_init(argc, argv, &addr, NULL, &context, &request_class);
 
     request = hg_request_create(request_class);
 

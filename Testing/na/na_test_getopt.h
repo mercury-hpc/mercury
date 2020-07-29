@@ -42,10 +42,10 @@
  * end.
  */
 struct na_test_opt {
-    const char  *name;     /* name of the long option                */
-    int          has_arg;  /* whether we should look for an arg      */
-    char         shortval; /* the shortname equivalent of long arg
-                            * this gets returned from na_test_getopt */
+    const char *name; /* name of the long option                */
+    int has_arg;      /* whether we should look for an arg      */
+    char shortval;    /* the shortname equivalent of long arg
+                       * this gets returned from na_test_getopt */
 };
 
 enum {
@@ -59,8 +59,8 @@ extern "C" {
 #endif
 
 int
-na_test_getopt(int argc, char *argv[], const char *opts,
-        const struct na_test_opt *l_opts);
+na_test_getopt(
+    int argc, char *argv[], const char *opts, const struct na_test_opt *l_opts);
 
 #ifdef __cplusplus
 }
