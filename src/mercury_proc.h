@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #ifdef HG_HAS_XDR
+#    include <limits.h>
 #    include <rpc/types.h>
 #    include <rpc/xdr.h>
 #    ifdef __APPLE__
@@ -25,6 +26,14 @@
 #        define xdr_uint32_t xdr_u_int32_t
 #        define xdr_uint64_t xdr_u_int64_t
 #    endif
+#    define xdr_hg_int8_t   xdr_int8_t
+#    define xdr_hg_uint8_t  xdr_uint8_t
+#    define xdr_hg_int16_t  xdr_int16_t
+#    define xdr_hg_uint16_t xdr_uint16_t
+#    define xdr_hg_int32_t  xdr_int32_t
+#    define xdr_hg_uint32_t xdr_uint32_t
+#    define xdr_hg_int64_t  xdr_int64_t
+#    define xdr_hg_uint64_t xdr_uint64_t
 #endif
 
 /*************************************/
@@ -46,6 +55,144 @@ typedef enum { HG_CRC16, HG_CRC32, HG_CRC64, HG_NOHASH } hg_proc_hash_t;
 #define HG_GET_PATCH(value) (value & 0xFFFF)
 #define HG_VERSION                                                             \
     ((HG_VERSION_MAJOR << 24) | (HG_VERSION_MINOR << 16) | HG_VERSION_PATCH)
+
+/* Branch predictor hints */
+#ifndef _WIN32
+#    ifndef likely
+#        define likely(x) __builtin_expect(!!(x), 1)
+#    endif
+#    ifndef unlikely
+#        define unlikely(x) __builtin_expect(!!(x), 0)
+#    endif
+#else
+#    ifndef likely
+#        define likely(x) (x)
+#    endif
+#    ifndef unlikely
+#        define unlikely(x) (x)
+#    endif
+#endif
+
+/* Check whether size exceeds current proc size left */
+#ifdef HG_HAS_XDR
+#    define HG_PROC_CHECK_SIZE(proc, size, label, ret)                         \
+        do {                                                                   \
+            if (unlikely(((struct hg_proc *) proc)->current_buf->size_left <   \
+                         size)) {                                              \
+                ret = HG_OVERFLOW;                                             \
+                goto label;                                                    \
+            }                                                                  \
+        } while (0)
+#else
+#    define HG_PROC_CHECK_SIZE(proc, size, label, ret)                         \
+        do {                                                                   \
+            if (unlikely(((struct hg_proc *) proc)->current_buf->size_left <   \
+                         size)) {                                              \
+                ret = hg_proc_set_size(proc, hg_proc_get_size(proc) + size);   \
+                if (ret != HG_SUCCESS)                                         \
+                    goto label;                                                \
+            }                                                                  \
+        } while (0)
+#endif
+
+/* Encode type */
+#define HG_PROC_TYPE_ENCODE(proc, data, size)                                  \
+    memcpy(((struct hg_proc *) proc)->current_buf->buf_ptr, data, size)
+
+/* Decode type */
+#define HG_PROC_TYPE_DECODE(proc, data, size)                                  \
+    memcpy(data, ((struct hg_proc *) proc)->current_buf->buf_ptr, size)
+
+/* Update proc pointers */
+#define HG_PROC_UPDATE(proc, size)                                             \
+    do {                                                                       \
+        ((struct hg_proc *) proc)->current_buf->buf_ptr =                      \
+            (char *) ((struct hg_proc *) proc)->current_buf->buf_ptr + size;   \
+        ((struct hg_proc *) proc)->current_buf->size_left -= size;             \
+    } while (0)
+
+/* Update checksum */
+#ifdef HG_HAS_CHECKSUMS
+#    define HG_PROC_CHECKSUM_UPDATE(proc, data, size)                          \
+        hg_proc_checksum_update(proc, data, size)
+#else
+#    define HG_PROC_CHECKSUM_UPDATE(proc, data, size)
+#endif
+
+/* Base proc function */
+#ifdef HG_HAS_XDR
+#    define HG_PROC_TYPE(proc, type, data, label, ret)                         \
+        do {                                                                   \
+            HG_PROC_CHECK_SIZE(proc, sizeof(type), label, ret);                \
+                                                                               \
+            if (xdr_##type(hg_proc_get_xdr_ptr(proc), data) == 0) {            \
+                ret = HG_PROTOCOL_ERROR;                                       \
+                goto label;                                                    \
+            }                                                                  \
+                                                                               \
+            HG_PROC_UPDATE(proc, sizeof(type));                                \
+            HG_PROC_CHECKSUM_UPDATE(proc, data, sizeof(type));                 \
+        } while (0)
+#else
+#    define HG_PROC_TYPE(proc, type, data, label, ret)                         \
+        do {                                                                   \
+            /* Do nothing in HG_FREE for basic types */                        \
+            if (hg_proc_get_op(proc) == HG_FREE)                               \
+                goto label;                                                    \
+                                                                               \
+            /* If not enough space allocate extra space if encoding or just */ \
+            /* get extra buffer if decoding */                                 \
+            HG_PROC_CHECK_SIZE(proc, sizeof(type), label, ret);                \
+                                                                               \
+            /* Encode, decode type */                                          \
+            if (hg_proc_get_op(proc) == HG_ENCODE)                             \
+                HG_PROC_TYPE_ENCODE(proc, data, sizeof(type));                 \
+            else                                                               \
+                HG_PROC_TYPE_DECODE(proc, data, sizeof(type));                 \
+                                                                               \
+            /* Update proc pointers etc */                                     \
+            HG_PROC_UPDATE(proc, sizeof(type));                                \
+            HG_PROC_CHECKSUM_UPDATE(proc, data, sizeof(type));                 \
+        } while (0)
+#endif
+
+/* Base proc function */
+#ifdef HG_HAS_XDR
+#    define HG_PROC_BYTES(proc, data, size, label, ret)                        \
+        do {                                                                   \
+            HG_PROC_CHECK_SIZE(proc, size, label, ret);                        \
+                                                                               \
+            if (xdr_bytes(hg_proc_get_xdr_ptr(proc), (char **) &data,          \
+                    (u_int *) &size, UINT_MAX) == 0) {                         \
+                ret = HG_PROTOCOL_ERROR;                                       \
+                goto label;                                                    \
+            }                                                                  \
+                                                                               \
+            HG_PROC_UPDATE(proc, size);                                        \
+            HG_PROC_CHECKSUM_UPDATE(proc, data, size);                         \
+        } while (0)
+#else
+#    define HG_PROC_BYTES(proc, data, size, label, ret)                        \
+        do {                                                                   \
+            /* Do nothing in HG_FREE for basic types */                        \
+            if (hg_proc_get_op(proc) == HG_FREE)                               \
+                goto label;                                                    \
+                                                                               \
+            /* If not enough space allocate extra space if encoding or just */ \
+            /* get extra buffer if decoding */                                 \
+            HG_PROC_CHECK_SIZE(proc, size, label, ret);                        \
+                                                                               \
+            /* Encode, decode type */                                          \
+            if (hg_proc_get_op(proc) == HG_ENCODE)                             \
+                HG_PROC_TYPE_ENCODE(proc, data, size);                         \
+            else                                                               \
+                HG_PROC_TYPE_DECODE(proc, data, size);                         \
+                                                                               \
+            /* Update proc pointers etc */                                     \
+            HG_PROC_UPDATE(proc, size);                                        \
+            HG_PROC_CHECKSUM_UPDATE(proc, data, size);                         \
+        } while (0)
+#endif
 
 /*********************/
 /* Public Prototypes */
@@ -76,11 +223,11 @@ hg_proc_create(hg_class_t *hg_class, hg_proc_hash_t hash, hg_proc_t *proc);
  * \param buf [IN]              pointer to buffer that will be used for
  *                              serialization/deserialization
  * \param buf_size [IN]         buffer size
- * \param op [IN]               operation type: HG_ENCODE / HG_DECODE / HG_FREE
- * \param hash [IN]             hash method used for computing checksum
- *                              (if NULL, checksum is not computed)
- *                              hash method: HG_CRC16, HG_CRC64, HG_NOHASH
- * \param proc [OUT]            pointer to abstract processor object
+ * \param op [IN]               operation type: HG_ENCODE / HG_DECODE /
+ * HG_FREE \param hash [IN]             hash method used for computing
+ * checksum (if NULL, checksum is not computed) hash method: HG_CRC16,
+ * HG_CRC64, HG_NOHASH \param proc [OUT]            pointer to abstract
+ * processor object
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -105,7 +252,8 @@ hg_proc_free(hg_proc_t proc);
  * \param buf [IN]              pointer to buffer that will be used for
  *                              serialization/deserialization
  * \param buf_size [IN]         buffer size
- * \param op [IN]               operation type: HG_ENCODE / HG_DECODE / HG_FREE
+ * \param op [IN]               operation type: HG_ENCODE / HG_DECODE /
+ * HG_FREE
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
@@ -119,7 +267,7 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op);
  *
  * \return HG class
  */
-HG_PUBLIC hg_class_t *
+static HG_INLINE hg_class_t *
 hg_proc_get_class(hg_proc_t proc);
 
 /**
@@ -129,7 +277,7 @@ hg_proc_get_class(hg_proc_t proc);
  *
  * \return Operation type
  */
-HG_PUBLIC hg_proc_op_t
+static HG_INLINE hg_proc_op_t
 hg_proc_get_op(hg_proc_t proc);
 
 /**
@@ -139,7 +287,7 @@ hg_proc_get_op(hg_proc_t proc);
  *
  * \return Non-negative size value
  */
-HG_PUBLIC hg_size_t
+static HG_INLINE hg_size_t
 hg_proc_get_size(hg_proc_t proc);
 
 /**
@@ -149,12 +297,12 @@ hg_proc_get_size(hg_proc_t proc);
  *
  * \return Non-negative size value
  */
-HG_PUBLIC hg_size_t
+static HG_INLINE hg_size_t
 hg_proc_get_size_used(hg_proc_t proc);
 
 /**
- * Request a new buffer size. This will modify the size of the buffer attached
- * to the processor or create an extra processing buffer.
+ * Request a new buffer size. This will modify the size of the buffer
+ * attached to the processor or create an extra processing buffer.
  *
  * \param proc [IN/OUT]         abstract processor object
  * \param buf_size [IN]         buffer size
@@ -171,11 +319,12 @@ hg_proc_set_size(hg_proc_t proc, hg_size_t buf_size);
  *
  * \return Non-negative size value
  */
-HG_PUBLIC hg_size_t
+static HG_INLINE hg_size_t
 hg_proc_get_size_left(hg_proc_t proc);
 
 /**
- * Get pointer to current buffer. Will reserve data_size for manual encoding.
+ * Get pointer to current buffer. Will reserve data_size for manual
+ * encoding.
  *
  * \param proc [IN]             abstract processor object
  * \param data_size [IN]        data size
@@ -184,18 +333,6 @@ hg_proc_get_size_left(hg_proc_t proc);
  */
 HG_PUBLIC void *
 hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size);
-
-#ifdef HG_HAS_XDR
-/**
- * Get pointer to current XDR stream (for manual encoding).
- *
- * \param proc [IN]             abstract processor object
- *
- * \return XDR stream pointer
- */
-HG_PUBLIC XDR *
-hg_proc_get_xdr_ptr(hg_proc_t proc);
-#endif
 
 /**
  * Restore pointer from current buffer.
@@ -209,6 +346,18 @@ hg_proc_get_xdr_ptr(hg_proc_t proc);
 HG_PUBLIC hg_return_t
 hg_proc_restore_ptr(hg_proc_t proc, void *data, hg_size_t data_size);
 
+#ifdef HG_HAS_XDR
+/**
+ * Get pointer to current XDR stream (for manual encoding).
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return XDR stream pointer
+ */
+static HG_INLINE XDR *
+hg_proc_get_xdr_ptr(hg_proc_t proc);
+#endif
+
 /**
  * Get eventual extra buffer used by processor.
  *
@@ -216,7 +365,7 @@ hg_proc_restore_ptr(hg_proc_t proc, void *data, hg_size_t data_size);
  *
  * \return Pointer to buffer or NULL if no extra buffer has been used
  */
-HG_PUBLIC void *
+static HG_INLINE void *
 hg_proc_get_extra_buf(hg_proc_t proc);
 
 /**
@@ -226,7 +375,7 @@ hg_proc_get_extra_buf(hg_proc_t proc);
  *
  * \return Size of buffer or 0 if no extra buffer has been used
  */
-HG_PUBLIC hg_size_t
+static HG_INLINE hg_size_t
 hg_proc_get_extra_size(hg_proc_t proc);
 
 /**
@@ -241,8 +390,8 @@ HG_PUBLIC hg_return_t
 hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
 
 /**
- * Flush the proc after data has been encoded or decoded and finalize internal
- * checksum if checksum of data processed was initially requested.
+ * Flush the proc after data has been encoded or decoded and finalize
+ * internal checksum if checksum of data processed was initially requested.
  *
  * \param proc [IN]             abstract processor object
  *
@@ -250,19 +399,6 @@ hg_proc_set_extra_buf_is_mine(hg_proc_t proc, hg_bool_t mine);
  */
 HG_PUBLIC hg_return_t
 hg_proc_flush(hg_proc_t proc);
-
-/**
- * Base proc routine using memcpy().
- * \remark Only uses memcpy() / use hg_proc_raw() for encoding raw buffers.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param data [IN/OUT]         pointer to data
- * \param data_size [IN]        data size
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
-HG_PUBLIC hg_return_t
-hg_proc_memcpy(hg_proc_t proc, void *data, hg_size_t data_size);
 
 #ifdef HG_HAS_CHECKSUMS
 /**
@@ -295,27 +431,107 @@ hg_proc_checksum_verify(hg_proc_t proc, const void *hash, hg_size_t hash_size);
 #endif
 
 /**
- * Inline prototypes (do not remove)
+ * Generic processing routine.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ *
+ * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
 hg_proc_hg_int8_t(hg_proc_t proc, void *data);
+
+/**
+ * Generic processing routine.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
 static HG_INLINE hg_return_t
 hg_proc_hg_uint8_t(hg_proc_t proc, void *data);
+
+/**
+ * Generic processing routine.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
 static HG_INLINE hg_return_t
 hg_proc_hg_int16_t(hg_proc_t proc, void *data);
+
+/**
+ * Generic processing routine.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
 static HG_INLINE hg_return_t
 hg_proc_hg_uint16_t(hg_proc_t proc, void *data);
+
+/**
+ * Generic processing routine.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
 static HG_INLINE hg_return_t
 hg_proc_hg_int32_t(hg_proc_t proc, void *data);
+
+/**
+ * Generic processing routine.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
 static HG_INLINE hg_return_t
 hg_proc_hg_uint32_t(hg_proc_t proc, void *data);
+
+/**
+ * Generic processing routine.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
 static HG_INLINE hg_return_t
 hg_proc_hg_int64_t(hg_proc_t proc, void *data);
+
+/**
+ * Generic processing routine.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
 static HG_INLINE hg_return_t
 hg_proc_hg_uint64_t(hg_proc_t proc, void *data);
 
 /* Note: float types are not supported but can be built on top of the existing
  * proc routines; encoding floats using XDR could modify checksum */
+
+/**
+ * Generic processing routine for encoding stream of bytes.
+ *
+ * \param proc [IN/OUT]         abstract processor object
+ * \param data [IN/OUT]         pointer to data
+ * \param data_size [IN]        data size
+ *
+ * \return HG_SUCCESS or corresponding HG error code
+ */
+static HG_INLINE hg_return_t
+hg_proc_bytes(hg_proc_t proc, void *data, hg_size_t data_size);
 
 /**
  * For convenience map stdint types to hg types
@@ -335,174 +551,211 @@ hg_proc_hg_uint64_t(hg_proc_t proc, void *data);
 #define hg_proc_hg_size_t hg_proc_hg_uint64_t
 #define hg_proc_hg_id_t   hg_proc_hg_uint32_t
 
-/* For now, map hg_proc_raw to hg_proc_memcpy */
-#define hg_proc_raw hg_proc_memcpy
+/* Map hg_proc_raw/hg_proc_memcpy to hg_proc_bytes */
+#define hg_proc_memcpy hg_proc_raw
+#define hg_proc_raw    hg_proc_bytes
 
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param data [IN/OUT]         pointer to data
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
+/* Update checksum */
+#ifdef HG_HAS_CHECKSUMS
+HG_PUBLIC void
+hg_proc_checksum_update(hg_proc_t proc, void *data, hg_size_t data_size);
+#endif
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
+
+/* HG proc buf */
+struct hg_proc_buf {
+    void *buf;           /* Pointer to allocated buffer */
+    void *buf_ptr;       /* Pointer to current position */
+    hg_size_t size;      /* Total buffer size */
+    hg_size_t size_left; /* Available size for user */
+    hg_bool_t is_mine;
+#ifdef HG_HAS_XDR
+    XDR xdr;
+#endif
+};
+
+/* HG proc */
+struct hg_proc {
+    struct hg_proc_buf proc_buf;
+    struct hg_proc_buf extra_buf;
+    hg_class_t *hg_class; /* HG class */
+    struct hg_proc_buf *current_buf;
+#ifdef HG_HAS_CHECKSUMS
+    void *checksum;       /* Checksum */
+    void *checksum_hash;  /* Base checksum buf */
+    size_t checksum_size; /* Checksum size */
+#endif
+    hg_proc_op_t op;
+};
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_class_t *
+hg_proc_get_class(hg_proc_t proc)
+{
+    return ((struct hg_proc *) proc)->hg_class;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_proc_op_t
+hg_proc_get_op(hg_proc_t proc)
+{
+    return ((struct hg_proc *) proc)->op;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_size_t
+hg_proc_get_size(hg_proc_t proc)
+{
+    return ((struct hg_proc *) proc)->proc_buf.size +
+           ((struct hg_proc *) proc)->extra_buf.size;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_size_t
+hg_proc_get_size_used(hg_proc_t proc)
+{
+    return ((struct hg_proc *) proc)->current_buf->size -
+           ((struct hg_proc *) proc)->current_buf->size_left;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_size_t
+hg_proc_get_size_left(hg_proc_t proc)
+{
+    return ((struct hg_proc *) proc)->current_buf->size_left;
+}
+
+/*---------------------------------------------------------------------------*/
+#ifdef HG_HAS_XDR
+static HG_INLINE XDR *
+hg_proc_get_xdr_ptr(hg_proc_t proc)
+{
+    return &((struct hg_proc *) proc)->current_buf->xdr;
+}
+#endif
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void *
+hg_proc_get_extra_buf(hg_proc_t proc)
+{
+    return ((struct hg_proc *) proc)->extra_buf.buf;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_size_t
+hg_proc_get_extra_size(hg_proc_t proc)
+{
+    return ((struct hg_proc *) proc)->extra_buf.size;
+}
+
+/*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 hg_proc_hg_int8_t(hg_proc_t proc, void *data)
 {
-    hg_return_t ret;
-#ifdef HG_HAS_XDR
-    ret = xdr_int8_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS
-                                                      : HG_PROTOCOL_ERROR;
-#else
-    ret = hg_proc_memcpy(proc, data, sizeof(hg_int8_t));
-#endif
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_PROC_TYPE(proc, hg_int8_t, data, done, ret);
+
+done:
     return ret;
 }
 
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param data [IN/OUT]         pointer to data
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
+/*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 hg_proc_hg_uint8_t(hg_proc_t proc, void *data)
 {
-    hg_return_t ret;
-#ifdef HG_HAS_XDR
-    ret = xdr_uint8_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS
-                                                       : HG_PROTOCOL_ERROR;
-#else
-    ret = hg_proc_memcpy(proc, data, sizeof(hg_uint8_t));
-#endif
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_PROC_TYPE(proc, hg_uint8_t, data, done, ret);
+
+done:
     return ret;
 }
 
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param data [IN/OUT]         pointer to data
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
+/*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 hg_proc_hg_int16_t(hg_proc_t proc, void *data)
 {
-    hg_return_t ret;
-#ifdef HG_HAS_XDR
-    ret = xdr_int16_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS
-                                                       : HG_PROTOCOL_ERROR;
-#else
-    ret = hg_proc_memcpy(proc, data, sizeof(hg_int16_t));
-#endif
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_PROC_TYPE(proc, hg_int16_t, data, done, ret);
+
+done:
     return ret;
 }
 
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param data [IN/OUT]         pointer to data
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
+/*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 hg_proc_hg_uint16_t(hg_proc_t proc, void *data)
 {
-    hg_return_t ret;
-#ifdef HG_HAS_XDR
-    ret = xdr_uint16_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS
-                                                        : HG_PROTOCOL_ERROR;
-#else
-    ret = hg_proc_memcpy(proc, data, sizeof(hg_uint16_t));
-#endif
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_PROC_TYPE(proc, hg_uint16_t, data, done, ret);
+
+done:
     return ret;
 }
 
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param data [IN/OUT]         pointer to data
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
+/*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 hg_proc_hg_int32_t(hg_proc_t proc, void *data)
 {
-    hg_return_t ret;
-#ifdef HG_HAS_XDR
-    ret = xdr_int32_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS
-                                                       : HG_PROTOCOL_ERROR;
-#else
-    ret = hg_proc_memcpy(proc, data, sizeof(hg_int32_t));
-#endif
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_PROC_TYPE(proc, hg_int32_t, data, done, ret);
+
+done:
     return ret;
 }
 
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param data [IN/OUT]         pointer to data
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
+/*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 hg_proc_hg_uint32_t(hg_proc_t proc, void *data)
 {
-    hg_return_t ret;
-#ifdef HG_HAS_XDR
-    ret = xdr_uint32_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS
-                                                        : HG_PROTOCOL_ERROR;
-#else
-    ret = hg_proc_memcpy(proc, data, sizeof(hg_uint32_t));
-#endif
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_PROC_TYPE(proc, hg_uint32_t, data, done, ret);
+
+done:
     return ret;
 }
 
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param data [IN/OUT]         pointer to data
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
+/*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 hg_proc_hg_int64_t(hg_proc_t proc, void *data)
 {
-    hg_return_t ret;
-#ifdef HG_HAS_XDR
-    ret = xdr_int64_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS
-                                                       : HG_PROTOCOL_ERROR;
-#else
-    ret = hg_proc_memcpy(proc, data, sizeof(hg_int64_t));
-#endif
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_PROC_TYPE(proc, hg_int64_t, data, done, ret);
+
+done:
     return ret;
 }
 
-/**
- * Generic processing routine.
- *
- * \param proc [IN/OUT]         abstract processor object
- * \param data [IN/OUT]         pointer to data
- *
- * \return HG_SUCCESS or corresponding HG error code
- */
+/*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
 hg_proc_hg_uint64_t(hg_proc_t proc, void *data)
 {
-    hg_return_t ret;
-#ifdef HG_HAS_XDR
-    ret = xdr_uint64_t(hg_proc_get_xdr_ptr(proc), data) ? HG_SUCCESS
-                                                        : HG_PROTOCOL_ERROR;
-#else
-    ret = hg_proc_memcpy(proc, data, sizeof(hg_uint64_t));
-#endif
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_PROC_TYPE(proc, hg_uint64_t, data, done, ret);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_return_t
+hg_proc_bytes(hg_proc_t proc, void *data, hg_size_t data_size)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_PROC_BYTES(proc, data, data_size, done, ret);
+
+done:
     return ret;
 }
 
