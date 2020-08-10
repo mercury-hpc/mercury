@@ -1719,7 +1719,7 @@ na_bmi_progress(
         hg_time_t t1, t2;
 
         if (timeout)
-            hg_time_get_current(&t1);
+            hg_time_get_current_ms(&t1);
 
         /* Try to make progress here from the BMI unexpected queue */
         ret = na_bmi_progress_unexpected(na_class, context, 0);
@@ -1747,8 +1747,8 @@ na_bmi_progress(
             break; /* Progressed */
 
         if (timeout) {
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            hg_time_get_current_ms(&t2);
+            remaining -= hg_time_diff(t2, t1);
         }
     } while (remaining > 0);
 

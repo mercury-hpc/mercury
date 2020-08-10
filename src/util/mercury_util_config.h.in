@@ -93,9 +93,6 @@ typedef hg_util_uint64_t hg_util_ptr_t;
 /* Define if has 'clock_gettime()' */
 #cmakedefine HG_UTIL_HAS_CLOCK_GETTIME
 
-/* Define if has CLOCK_MONOTONIC */
-#cmakedefine HG_UTIL_HAS_CLOCK_MONOTONIC
-
 /* Define if has eventfd_t type */
 #cmakedefine HG_UTIL_HAS_EVENTFD_T
 

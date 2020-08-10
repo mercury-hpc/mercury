@@ -1868,7 +1868,7 @@ na_mpi_progress(
         hg_time_t t1, t2;
 
         if (timeout)
-            hg_time_get_current(&t1);
+            hg_time_get_current_ms(&t1);
 
         /* Try to make unexpected progress */
         ret = na_mpi_progress_unexpected(na_class, context, 0);
@@ -1892,8 +1892,8 @@ na_mpi_progress(
             break; /* Progressed */
 
         if (timeout) {
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            hg_time_get_current_ms(&t2);
+            remaining -= hg_time_diff(t2, t1);
         }
     } while (remaining > 0);
 

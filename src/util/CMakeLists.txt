@@ -54,13 +54,6 @@ if(NOT WIN32 AND NOT APPLE)
   )
 endif()
 
-# Monotonic time
-option(MERCURY_USE_MONOTONIC_CLOCK "Use monotonic clock for time." OFF)
-if(MERCURY_USE_MONOTONIC_CLOCK)
-  set(HG_UTIL_HAS_CLOCK_MONOTONIC 1)
-endif()
-mark_as_advanced(MERCURY_USE_MONOTONIC_CLOCK)
-
 # Detect <time.h>
 check_include_files("time.h" HG_UTIL_HAS_TIME_H)
 if(HG_UTIL_HAS_TIME_H)

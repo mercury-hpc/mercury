@@ -791,7 +791,7 @@ hg_core_context_lists_wait(struct hg_core_private_context *context)
         hg_time_t t1, t2;
         hg_return_t trigger_ret, progress_ret;
 
-        hg_time_get_current(&t1);
+        hg_time_get_current_ms(&t1);
 
         /* Trigger everything we can from HG */
         do {
@@ -818,8 +818,8 @@ hg_core_context_lists_wait(struct hg_core_private_context *context)
             hg_core_progress(context, (unsigned int) (remaining * 1000.0));
         HG_CHECK_ERROR(progress_ret != HG_SUCCESS && progress_ret != HG_TIMEOUT,
             done, ret, progress_ret, "Could not make progress");
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        hg_time_get_current_ms(&t2);
+        remaining -= hg_time_diff(t2, t1);
         if (remaining < 0)
             remaining = 0;
     } while (remaining > 0 || !pending_list_empty || !sm_pending_list_empty);
@@ -2639,7 +2639,7 @@ hg_core_progress_na(
             break;
 
         if (timeout)
-            hg_time_get_current(&t1);
+            hg_time_get_current_ms(&t1);
 
         /* Make sure that it is safe to block */
         if (timeout && NA_Poll_try_wait(na_class, na_context))
@@ -2657,8 +2657,8 @@ hg_core_progress_na(
                 NA_Error_to_string(na_ret));
 
         if (timeout) {
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            hg_time_get_current_ms(&t2);
+            remaining -= hg_time_diff(t2, t1);
         }
     }
 
@@ -2723,7 +2723,7 @@ hg_core_progress(struct hg_core_private_context *context, unsigned int timeout)
         hg_bool_t safe_wait = HG_FALSE;
 
         if (timeout)
-            hg_time_get_current(&t1);
+            hg_time_get_current_ms(&t1);
 
         if (!(HG_CORE_CONTEXT_CLASS(context)->progress_mode & NA_NO_BLOCK) &&
             timeout) {
@@ -2838,8 +2838,8 @@ hg_core_progress(struct hg_core_private_context *context, unsigned int timeout)
         }
 
         if (timeout) {
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            hg_time_get_current_ms(&t2);
+            remaining -= hg_time_diff(t2, t1);
         }
     } while ((int) (remaining * 1000.0) > 0);
 
@@ -2884,7 +2884,7 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
                     break;
                 }
 
-                hg_time_get_current(&t1);
+                hg_time_get_current_ms(&t1);
 
                 hg_atomic_incr32(&context->trigger_waiting);
                 hg_thread_mutex_lock(&context->completion_queue_mutex);
@@ -2905,8 +2905,8 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
                 if (ret == HG_TIMEOUT)
                     break;
 
-                hg_time_get_current(&t2);
-                remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+                hg_time_get_current_ms(&t2);
+                remaining -= hg_time_diff(t2, t1);
                 continue; /* Give another change to grab it */
             }
         }
