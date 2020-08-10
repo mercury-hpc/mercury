@@ -76,6 +76,7 @@ extern const char *na_test_short_opt_g;
 extern const struct na_test_opt na_test_opt_g[];
 
 /* test_rpc */
+hg_id_t hg_test_rpc_null_id_g = 0;
 hg_id_t hg_test_rpc_open_id_g = 0;
 hg_id_t hg_test_rpc_open_id_no_resp_g = 0;
 hg_id_t hg_test_overflow_id_g = 0;
@@ -275,6 +276,8 @@ static void
 hg_test_register(hg_class_t *hg_class)
 {
     /* test_rpc */
+    hg_test_rpc_null_id_g = MERCURY_REGISTER(
+        hg_class, "hg_test_rpc_null", void, void, hg_test_rpc_null_cb);
     hg_test_rpc_open_id_g = MERCURY_REGISTER(hg_class, "hg_test_rpc_open",
         rpc_open_in_t, rpc_open_out_t, hg_test_rpc_open_cb);
     hg_test_rpc_open_id_no_resp_g =

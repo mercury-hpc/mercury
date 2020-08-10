@@ -11,8 +11,24 @@
 #include "mercury_string_object.h"
 #include "mercury_error.h"
 
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
+
+/****************/
+/* Local Macros */
+/****************/
+
+/************************************/
+/* Local Type and Struct Definition */
+/************************************/
+
+/********************/
+/* Local Prototypes */
+/********************/
+
+/*******************/
+/* Local Variables */
+/*******************/
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
@@ -29,8 +45,8 @@ hg_string_object_init(hg_string_object_t *string)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_string_object_init_char(hg_string_object_t *string, char *s,
-        hg_bool_t is_owned)
+hg_string_object_init_char(
+    hg_string_object_t *string, char *s, hg_bool_t is_owned)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -45,14 +61,14 @@ hg_string_object_init_char(hg_string_object_t *string, char *s,
 /* We need to suppress -Wcast-qual warnings here as the const qualifier is
  * handled by the string object.
  */
-#if defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 406) && \
+#if defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 406) &&           \
     !defined(__INTEL_COMPILER)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-qual"
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wcast-qual"
 #endif
 hg_return_t
-hg_string_object_init_const_char(hg_string_object_t *string, const char *s,
-        hg_bool_t is_owned)
+hg_string_object_init_const_char(
+    hg_string_object_t *string, const char *s, hg_bool_t is_owned)
 {
     hg_return_t ret = HG_SUCCESS;
 
@@ -62,9 +78,9 @@ hg_string_object_init_const_char(hg_string_object_t *string, const char *s,
 
     return ret;
 }
-#if defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 406) && \
+#if defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 406) &&           \
     !defined(__INTEL_COMPILER)
-#pragma GCC diagnostic pop
+#    pragma GCC diagnostic pop
 #endif
 
 /*---------------------------------------------------------------------------*/
@@ -101,11 +117,11 @@ done:
 char *
 hg_string_object_swap(hg_string_object_t *string, char *s)
 {
-     char *old = string->data;
+    char *old = string->data;
 
-     string->data = s;
-     string->is_const = 0;
-     string->is_owned = 0;
+    string->data = s;
+    string->is_const = 0;
+    string->is_owned = 0;
 
-     return old;
+    return old;
 }

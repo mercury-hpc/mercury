@@ -15,6 +15,8 @@
  * test_rpc
  */
 hg_return_t
+hg_test_rpc_null_cb(hg_handle_t handle);
+hg_return_t
 hg_test_rpc_open_cb(hg_handle_t handle);
 hg_return_t
 hg_test_rpc_open_no_resp_cb(hg_handle_t handle);

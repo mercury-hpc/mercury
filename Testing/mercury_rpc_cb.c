@@ -171,6 +171,24 @@ bulk_write(int fildes, const void *buf, size_t offset, size_t start_value,
 /*---------------------------------------------------------------------------*/
 /* RPC callbacks */
 /*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_rpc_null, handle)
+{
+    hg_return_t ret = HG_SUCCESS;
+
+    /* Send response back */
+    ret = HG_Respond(handle, NULL, NULL, NULL);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Respond() failed (%s)", HG_Error_to_string(ret));
+
+done:
+    ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(
+        ret != HG_SUCCESS, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 HG_TEST_RPC_CB(hg_test_rpc_open, handle)
 {
     rpc_open_in_t in_struct;
@@ -880,6 +898,7 @@ done:
 //}
 
 /*---------------------------------------------------------------------------*/
+HG_TEST_THREAD_CB(hg_test_rpc_null)
 HG_TEST_THREAD_CB(hg_test_rpc_open)
 HG_TEST_THREAD_CB(hg_test_rpc_open_no_resp)
 HG_TEST_THREAD_CB(hg_test_overflow)

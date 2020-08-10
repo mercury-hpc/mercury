@@ -11,7 +11,6 @@
 #include "mercury_proc.h"
 #include "mercury_error.h"
 #include "mercury_mem.h"
-#include "mercury_proc_buf.h"
 
 #ifdef HG_HAS_CHECKSUMS
 #    include <mchecksum.h>
@@ -25,41 +24,9 @@
 /* Local Type and Struct Definition */
 /************************************/
 
-struct hg_proc_buf {
-    void *buf;           /* Pointer to allocated buffer */
-    void *buf_ptr;       /* Pointer to current position */
-    hg_size_t size;      /* Total buffer size */
-    hg_size_t size_left; /* Available size for user */
-    hg_bool_t is_mine;
-#ifdef HG_HAS_XDR
-    XDR xdr;
-#endif
-};
-
-struct hg_proc {
-    struct hg_proc_buf proc_buf;
-    struct hg_proc_buf extra_buf;
-    hg_class_t *hg_class; /* HG class */
-    struct hg_proc_buf *current_buf;
-#ifdef HG_HAS_CHECKSUMS
-    mchecksum_object_t checksum; /* Checksum */
-    void *checksum_hash;         /* Base checksum buf */
-    size_t checksum_size;        /* Checksum size */
-#endif
-    hg_proc_op_t op;
-};
-
 /********************/
 /* Local Prototypes */
 /********************/
-
-/**
- * Update checksum.
- */
-#ifdef HG_HAS_CHECKSUMS
-static HG_INLINE hg_return_t
-hg_proc_checksum_update(hg_proc_t proc, void *data, hg_size_t data_size);
-#endif
 
 /*******************/
 /* Local Variables */
@@ -203,16 +170,16 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
 #ifdef HG_HAS_XDR
     switch (op) {
         case HG_ENCODE:
-            xdrmem_create(
-                &hg_proc->proc_buf.xdr, (char *) buf, buf_size, XDR_ENCODE);
+            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf,
+                (hg_uint32_t) buf_size, XDR_ENCODE);
             break;
         case HG_DECODE:
-            xdrmem_create(
-                &hg_proc->proc_buf.xdr, (char *) buf, buf_size, XDR_DECODE);
+            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf,
+                (hg_uint32_t) buf_size, XDR_DECODE);
             break;
         case HG_FREE:
-            xdrmem_create(
-                &hg_proc->proc_buf.xdr, (char *) buf, buf_size, XDR_FREE);
+            xdrmem_create(&hg_proc->proc_buf.xdr, (char *) buf,
+                (hg_uint32_t) buf_size, XDR_FREE);
             break;
         default:
             HG_GOTO_ERROR(
@@ -249,66 +216,6 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
 
 done:
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_class_t *
-hg_proc_get_class(hg_proc_t proc)
-{
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    hg_class_t *hg_class = NULL;
-
-    HG_CHECK_ERROR_NORET(proc == HG_PROC_NULL, done, "Proc is not initialized");
-
-    hg_class = hg_proc->hg_class;
-
-done:
-    return hg_class;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_proc_op_t
-hg_proc_get_op(hg_proc_t proc)
-{
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    hg_proc_op_t proc_op = HG_ENCODE;
-
-    HG_CHECK_ERROR_NORET(proc == HG_PROC_NULL, done, "Proc is not initialized");
-
-    proc_op = hg_proc->op;
-
-done:
-    return proc_op;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_size_t
-hg_proc_get_size(hg_proc_t proc)
-{
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    hg_size_t size = 0;
-
-    HG_CHECK_ERROR_NORET(proc == HG_PROC_NULL, done, "Proc is not initialized");
-
-    size = hg_proc->proc_buf.size + hg_proc->extra_buf.size;
-
-done:
-    return size;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_size_t
-hg_proc_get_size_used(hg_proc_t proc)
-{
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    hg_size_t size = 0;
-
-    HG_CHECK_ERROR_NORET(proc == HG_PROC_NULL, done, "Proc is not initialized");
-
-    size = hg_proc->current_buf->size - hg_proc->current_buf->size_left;
-
-done:
-    return size;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -369,21 +276,6 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-hg_size_t
-hg_proc_get_size_left(hg_proc_t proc)
-{
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    hg_size_t size = 0;
-
-    HG_CHECK_ERROR_NORET(proc == HG_PROC_NULL, done, "Proc is not initialized");
-
-    size = hg_proc->current_buf->size_left;
-
-done:
-    return size;
-}
-
-/*---------------------------------------------------------------------------*/
 void *
 hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
 {
@@ -407,28 +299,12 @@ hg_proc_save_ptr(hg_proc_t proc, hg_size_t data_size)
     hg_proc->current_buf->size_left -= data_size;
 #ifdef HG_HAS_XDR
     cur_pos = xdr_getpos(&hg_proc->current_buf->xdr);
-    xdr_setpos(&hg_proc->current_buf->xdr, cur_pos + data_size);
+    xdr_setpos(&hg_proc->current_buf->xdr, (hg_uint32_t)(cur_pos + data_size));
 #endif
 
 done:
     return ptr;
 }
-
-/*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_XDR
-XDR *
-hg_proc_get_xdr_ptr(hg_proc_t proc)
-{
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    XDR *ptr = NULL;
-
-    if (hg_proc) {
-        ptr = &hg_proc->current_buf->xdr;
-    }
-
-    return ptr;
-}
-#endif
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
@@ -436,37 +312,19 @@ hg_proc_restore_ptr(hg_proc_t proc, void *data, hg_size_t data_size)
 {
     hg_return_t ret = HG_SUCCESS;
 
+    HG_CHECK_ERROR(proc == HG_PROC_NULL, done, ret, HG_INVALID_ARG,
+        "Proc is not initialized");
+
 #ifdef HG_HAS_CHECKSUMS
-    ret = hg_proc_checksum_update(proc, data, data_size);
-    HG_CHECK_HG_ERROR(done, ret, "Could not update checksum");
+    hg_proc_checksum_update(proc, data, data_size);
 #else
     /* Silent warning */
-    (void) proc;
     (void) data;
     (void) data_size;
-    goto done;
 #endif
 
 done:
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-void *
-hg_proc_get_extra_buf(hg_proc_t proc)
-{
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-
-    return hg_proc->extra_buf.buf;
-}
-
-/*---------------------------------------------------------------------------*/
-hg_size_t
-hg_proc_get_extra_size(hg_proc_t proc)
-{
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-
-    return hg_proc->extra_buf.size;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -511,58 +369,19 @@ done:
     return ret;
 }
 
-/*---------------------------------------------------------------------------*/
-hg_return_t
-hg_proc_memcpy(hg_proc_t proc, void *data, hg_size_t data_size)
-{
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    hg_return_t ret = HG_SUCCESS;
-
-    HG_CHECK_ERROR(proc == HG_PROC_NULL, done, ret, HG_INVALID_ARG,
-        "Proc is not initialized");
-
-    if (hg_proc->op == HG_FREE)
-        goto done;
-
-    /* If not enough space allocate extra space if encoding or
-     * just get extra buffer if decoding */
-    if (hg_proc->current_buf->size_left < data_size)
-        hg_proc_set_size(
-            proc, hg_proc->proc_buf.size + hg_proc->extra_buf.size + data_size);
-
-    /* Process data */
-    hg_proc->current_buf->buf_ptr = hg_proc_buf_memcpy(
-        hg_proc->current_buf->buf_ptr, data, data_size, hg_proc->op);
-    hg_proc->current_buf->size_left -= data_size;
-
-#ifdef HG_HAS_CHECKSUMS
-    ret = hg_proc_checksum_update(proc, data, data_size);
-    HG_CHECK_HG_ERROR(done, ret, "Could not update checksum");
-#endif
-
-done:
-    return ret;
-}
-
 #ifdef HG_HAS_CHECKSUMS
 /*---------------------------------------------------------------------------*/
-static HG_INLINE hg_return_t
+void
 hg_proc_checksum_update(hg_proc_t proc, void *data, hg_size_t data_size)
 {
-    struct hg_proc *hg_proc = (struct hg_proc *) proc;
-    hg_return_t ret = HG_SUCCESS;
     int rc;
 
-    HG_CHECK_ERROR(proc == HG_PROC_NULL, done, ret, HG_INVALID_ARG,
-        "Proc is not initialized");
-
     /* Update checksum */
-    rc = mchecksum_update(hg_proc->checksum, data, data_size);
-    HG_CHECK_ERROR(
-        rc < 0, done, ret, HG_CHECKSUM_ERROR, "Could not update checksum");
+    rc = mchecksum_update(((struct hg_proc *) proc)->checksum, data, data_size);
+    HG_CHECK_ERROR_NORET(rc < 0, done, "Could not update checksum");
 
 done:
-    return ret;
+    return;
 }
 
 /*---------------------------------------------------------------------------*/

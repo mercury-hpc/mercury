@@ -488,6 +488,7 @@ main(int argc, char *argv[])
         "segmented RPC bulk failed");
     HG_PASSED();
 
+#ifndef HG_HAS_XDR
     HG_TEST("over-segmented RPC bulk (size BUFSIZE, offsets 0, 0)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
         hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE, 0, 0,
@@ -513,6 +514,7 @@ main(int argc, char *argv[])
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "over-segmented RPC bulk failed");
     HG_PASSED();
+#endif
 
     if (strcmp(HG_Class_get_name(hg_test_info.hg_class), "ofi") == 0) {
         HG_TEST("bind contiguous RPC bulk (size BUFSIZE, offsets 0, 0)");

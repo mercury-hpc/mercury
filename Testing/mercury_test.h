@@ -14,6 +14,7 @@
 #include "na_test.h"
 
 #include "mercury.h"
+#include "mercury_bulk.h"
 #include "mercury_request.h"
 #ifdef HG_TEST_HAS_THREAD_POOL
 #    include "mercury_thread_mutex.h"

@@ -38,6 +38,8 @@ struct lookup_cb_args {
 /********************/
 
 static hg_return_t
+hg_test_rpc_null_cb(const struct hg_cb_info *callback_info);
+static hg_return_t
 hg_test_rpc_forward_cb(const struct hg_cb_info *callback_info);
 static hg_return_t
 hg_test_rpc_forward_no_resp_cb(const struct hg_cb_info *callback_info);
@@ -45,8 +47,10 @@ static hg_return_t
 hg_test_rpc_lookup_cb(const struct hg_cb_info *callback_info);
 static hg_return_t
 hg_test_rpc_forward_reset_cb(const struct hg_cb_info *callback_info);
+#ifndef HG_HAS_XDR
 static hg_return_t
 hg_test_rpc_forward_overflow_cb(const struct hg_cb_info *callback_info);
+#endif
 
 static hg_return_t
 hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
@@ -63,9 +67,11 @@ hg_test_rpc_mask(hg_context_t *context, hg_request_class_t *request_class,
 static hg_return_t
 hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     hg_addr_t addr, hg_uint8_t target_id, hg_id_t rpc_id, hg_cb_t callback);
+#ifndef HG_HAS_XDR
 static hg_return_t
 hg_test_overflow(hg_context_t *context, hg_request_class_t *request_class,
     hg_addr_t addr, hg_id_t rpc_id, hg_cb_t callback);
+#endif
 static hg_return_t
 hg_test_cancel_rpc(hg_context_t *context, hg_request_class_t *request_class,
     hg_addr_t addr, hg_id_t rpc_id, hg_cb_t callback);
@@ -74,10 +80,27 @@ hg_test_cancel_rpc(hg_context_t *context, hg_request_class_t *request_class,
 /* Local Variables */
 /*******************/
 
+extern hg_id_t hg_test_rpc_null_id_g;
 extern hg_id_t hg_test_rpc_open_id_g;
 extern hg_id_t hg_test_rpc_open_id_no_resp_g;
 extern hg_id_t hg_test_overflow_id_g;
 extern hg_id_t hg_test_cancel_rpc_id_g;
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_rpc_null_cb(const struct hg_cb_info *callback_info)
+{
+    struct forward_cb_args *args =
+        (struct forward_cb_args *) callback_info->arg;
+    hg_return_t ret = HG_SUCCESS;
+
+    HG_TEST_CHECK_ERROR_NORET(callback_info->ret != HG_SUCCESS, done,
+        "Error in HG callback (%s)", HG_Error_to_string(callback_info->ret));
+
+done:
+    hg_request_complete(args->request);
+    return ret;
+}
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -172,6 +195,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+#ifndef HG_HAS_XDR
 static hg_return_t
 hg_test_rpc_forward_overflow_cb(const struct hg_cb_info *callback_info)
 {
@@ -204,6 +228,7 @@ done:
     hg_request_complete(request);
     return ret;
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -221,6 +246,48 @@ hg_test_rpc_forward_cancel_cb(const struct hg_cb_info *callback_info)
 
 done:
     hg_request_complete(request);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_rpc_null(
+    hg_context_t *context, hg_request_class_t *request_class, hg_addr_t addr)
+{
+    hg_request_t *request = NULL;
+    hg_handle_t handle = HG_HANDLE_NULL;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
+    struct forward_cb_args forward_cb_args;
+
+    request = hg_request_create(request_class);
+
+    /* Create RPC request */
+    ret = HG_Create(context, addr, hg_test_rpc_null_id_g, &handle);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
+
+    /* Forward call to remote addr and get a new request */
+    HG_TEST_LOG_DEBUG("Forwarding null RPC, op id: %u...", rpc_id);
+    forward_cb_args.request = request;
+
+again:
+    ret = HG_Forward(handle, hg_test_rpc_null_cb, &forward_cb_args, NULL);
+    if (ret == HG_AGAIN) {
+        hg_request_wait(request, 0, NULL);
+        goto again;
+    }
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
+
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+
+done:
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
+
+    hg_request_destroy(request);
+
     return ret;
 }
 
@@ -589,6 +656,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+#ifndef HG_HAS_XDR
 static hg_return_t
 hg_test_overflow(hg_context_t *context, hg_request_class_t *request_class,
     hg_addr_t addr, hg_id_t rpc_id, hg_cb_t callback)
@@ -621,6 +689,7 @@ done:
 
     return ret;
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -675,6 +744,14 @@ main(int argc, char *argv[])
     hg_ret = HG_Test_init(argc, argv, &hg_test_info);
     HG_TEST_CHECK_ERROR(
         hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "HG_Test_init() failed");
+
+    /* NULL RPC test */
+    HG_TEST("NULL RPC");
+    hg_ret = hg_test_rpc_null(hg_test_info.context, hg_test_info.request_class,
+        hg_test_info.target_addr);
+    HG_TEST_CHECK_ERROR(
+        hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "NULL RPC test failed");
+    HG_PASSED();
 
     /* Simple RPC test */
     HG_TEST("simple RPC");
@@ -816,6 +893,7 @@ main(int argc, char *argv[])
         HG_PASSED();
     }
 
+#ifndef HG_HAS_XDR
     /* Overflow RPC test */
     HG_TEST("overflow RPC");
     hg_ret = hg_test_overflow(hg_test_info.context, hg_test_info.request_class,
@@ -824,6 +902,7 @@ main(int argc, char *argv[])
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "overflow RPC test failed");
     HG_PASSED();
+#endif
 
     /* Cancel RPC test (self cancelation is not supported) */
     if (!hg_test_info.na_test_info.self_send) {
