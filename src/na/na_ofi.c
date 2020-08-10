@@ -4558,7 +4558,7 @@ na_ofi_progress(
         if (timeout) {
             struct fid_wait *wait_hdl = NA_OFI_CONTEXT(context)->fi_wait;
 
-            hg_time_get_current(&t1);
+            hg_time_get_current_ms(&t1);
 
             if (wait_hdl) {
                 /* Wait in wait set if provider does not support wait on FDs */
@@ -4587,8 +4587,8 @@ na_ofi_progress(
         NA_CHECK_NA_ERROR(out, ret, "Could not process retries");
 
         if (timeout) {
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            hg_time_get_current_ms(&t2);
+            remaining -= hg_time_diff(t2, t1);
         }
 
         if (actual_count == 0) {

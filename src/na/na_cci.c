@@ -1994,7 +1994,7 @@ na_cci_progress(
         cci_event_t *event = NULL;
 
         if (timeout)
-            hg_time_get_current(&t1);
+            hg_time_get_current_ms(&t1);
 
         rc = cci_get_event(e, &event);
         if (rc) {
@@ -2003,8 +2003,8 @@ na_cci_progress(
                     "cci_return_event() failed %s", cci_strerror(e, rc));
 
             if (timeout) {
-                hg_time_get_current(&t2);
-                remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+                hg_time_get_current_ms(&t2);
+                remaining -= hg_time_diff(t2, t1);
             }
             if (remaining <= 0)
                 break; /* Return NA_TIMEOUT */

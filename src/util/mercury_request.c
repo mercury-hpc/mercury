@@ -179,15 +179,15 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
                 break;
             }
 
-            hg_time_get_current(&t1);
+            hg_time_get_current_ms(&t1);
             if (hg_thread_cond_timedwait(&request->request_class->progress_cond,
                     &request->request_class->progress_mutex,
                     (unsigned int) (remaining * 1000.0)) != HG_UTIL_SUCCESS) {
                 /* Timeout occurred so leave */
                 break;
             }
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            hg_time_get_current_ms(&t2);
+            remaining -= hg_time_diff(t2, t1);
             if (remaining < 0)
                 break;
             /* Continue as request may have completed in the meantime */
@@ -199,14 +199,14 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
         hg_thread_mutex_unlock(&request->request_class->progress_mutex);
 
         if (timeout)
-            hg_time_get_current(&t3);
+            hg_time_get_current_ms(&t3);
 
         request->request_class->progress_func(
             (unsigned int) (remaining * 1000.0), request->request_class->arg);
 
         if (timeout) {
-            hg_time_get_current(&t4);
-            remaining -= hg_time_to_double(hg_time_subtract(t4, t3));
+            hg_time_get_current_ms(&t4);
+            remaining -= hg_time_diff(t4, t3);
         }
 
         hg_thread_mutex_lock(&request->request_class->progress_mutex);

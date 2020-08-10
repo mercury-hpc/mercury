@@ -1161,7 +1161,7 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
             goto done;
         }
 
-        hg_time_get_current(&t1);
+        hg_time_get_current_ms(&t1);
 
         /* Prevent multiple threads from concurrently calling progress on
          * the same context */
@@ -1181,8 +1181,8 @@ NA_Progress(na_class_t *na_class, na_context_t *context, unsigned int timeout)
 
         hg_thread_mutex_unlock(&na_private_context->progress_mutex);
 
-        hg_time_get_current(&t2);
-        remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+        hg_time_get_current_ms(&t2);
+        remaining -= hg_time_diff(t2, t1);
         /* Give a chance to call progress with timeout of 0 */
         if (remaining < 0)
             remaining = 0;
@@ -1268,7 +1268,7 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
                     break;
                 }
 
-                hg_time_get_current(&t1);
+                hg_time_get_current_ms(&t1);
 
                 hg_atomic_incr32(&na_private_context->trigger_waiting);
                 hg_thread_mutex_lock(
@@ -1293,8 +1293,8 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
                 if (ret == NA_TIMEOUT)
                     break;
 
-                hg_time_get_current(&t2);
-                remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+                hg_time_get_current_ms(&t2);
+                remaining -= hg_time_diff(t2, t1);
                 continue; /* Give another chance to grab it */
             }
         }

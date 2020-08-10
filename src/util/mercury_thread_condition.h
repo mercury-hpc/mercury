@@ -16,7 +16,8 @@
 #ifdef _WIN32
 typedef CONDITION_VARIABLE hg_thread_cond_t;
 #else
-#    if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
+#    if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK) &&                      \
+        defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
 #        include "mercury_time.h"
 #    elif defined(HG_UTIL_HAS_SYSTIME_H)
 #        include <sys/time.h>
@@ -145,26 +146,28 @@ hg_thread_cond_timedwait(
     if (!SleepConditionVariableCS(cond, mutex, timeout))
         return HG_UTIL_FAIL;
 #else
-#    if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
+#    if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK) &&                      \
+        defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
     hg_time_t now;
-#    elif defined(HG_UTIL_HAS_SYSTIME_H)
+#    else
     struct timeval now;
 #    endif
     struct timespec abs_timeout;
-    long int abs_timeout_us;
     ldiv_t ld;
 
     /* Need to convert timeout (ms) to absolute time */
-#    if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK)
-    if (hg_time_get_current(&now) != HG_UTIL_SUCCESS)
-        return HG_UTIL_FAIL;
-#    elif defined(HG_UTIL_HAS_SYSTIME_H)
-    if (gettimeofday(&now, NULL) != 0)
-        return HG_UTIL_FAIL;
-#    endif
-    abs_timeout_us = now.tv_usec + timeout * 1000L;
+#    if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK) &&                      \
+        defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
+    hg_time_get_current_ms(&now);
+
     /* Get sec / nsec */
-    ld = ldiv(abs_timeout_us, 1000000L);
+    ld = ldiv(now.tv_nsec + timeout * 1000000L, 1000000L);
+#    elif defined(HG_UTIL_HAS_SYSTIME_H)
+    gettimeofday(&now, NULL);
+
+    /* Get sec / nsec */
+    ld = ldiv(now.tv_usec + timeout * 1000L, 1000000L);
+#    endif
     abs_timeout.tv_sec = now.tv_sec + ld.quot;
     abs_timeout.tv_nsec = ld.rem * 1000L;
 
