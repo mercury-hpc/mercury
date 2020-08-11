@@ -141,7 +141,7 @@ if(MERCURY_USE_XDR)
   check_include_files("rpc/xdr.h" HG_HAS_RPC_XDR_H)
 
   # <rpc/xdr.h> is not present in recent distributions, look for tirpc instead
-  if(NOT HG_HAS_RPC_XDR_H)
+  if(NOT HG_HAS_RPC_XDR_H AND NOT APPLE AND NOT WIN32)
     find_package(TIRPC REQUIRED)
     message(STATUS "TIRPC include directory: ${TIRPC_INCLUDE_DIRS}")
     set(MERCURY_EXT_INCLUDE_DEPENDENCIES
