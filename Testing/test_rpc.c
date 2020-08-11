@@ -267,7 +267,8 @@ hg_test_rpc_null(
         done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
     /* Forward call to remote addr and get a new request */
-    HG_TEST_LOG_DEBUG("Forwarding null RPC, op id: %u...", rpc_id);
+    HG_TEST_LOG_DEBUG(
+        "Forwarding null RPC, op id: %u...", hg_test_rpc_null_id_g);
     forward_cb_args.request = request;
 
 again:
