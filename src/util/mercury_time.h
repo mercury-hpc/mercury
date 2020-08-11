@@ -247,10 +247,14 @@ hg_time_get_current(hg_time_t *tv)
 static HG_UTIL_INLINE int
 hg_time_get_current_ms(hg_time_t *tv)
 {
+#    ifdef HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE
     /* We don't need fine grain time stamps, _COARSE resolution is 1ms */
     clock_gettime(CLOCK_MONOTONIC_COARSE, tv);
 
     return HG_UTIL_SUCCESS;
+#    else
+    return hg_time_get_current(tv);
+#    endif
 }
 
 /*---------------------------------------------------------------------------*/

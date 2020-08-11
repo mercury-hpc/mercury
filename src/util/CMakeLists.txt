@@ -57,8 +57,15 @@ endif()
 # Detect <time.h>
 check_include_files("time.h" HG_UTIL_HAS_TIME_H)
 if(HG_UTIL_HAS_TIME_H)
+  set(CMAKE_EXTRA_INCLUDE_FILES time.h)
+
   # Detect clock_gettime
   check_symbol_exists(clock_gettime time.h HG_UTIL_HAS_CLOCK_GETTIME)
+
+  # Use type size to check enum value
+  check_type_size(CLOCK_MONOTONIC_COARSE HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE)
+
+  unset(CMAKE_EXTRA_INCLUDE_FILES)
 endif()
 
 # Detect <sys/time.h>
