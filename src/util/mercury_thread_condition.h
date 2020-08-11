@@ -17,8 +17,8 @@
 typedef CONDITION_VARIABLE hg_thread_cond_t;
 #else
 #    if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK) &&                      \
-        defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
-#        include "mercury_time.h"
+        defined(HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE)
+#        include <time.h>
 #    elif defined(HG_UTIL_HAS_SYSTIME_H)
 #        include <sys/time.h>
 #    endif
@@ -147,8 +147,8 @@ hg_thread_cond_timedwait(
         return HG_UTIL_FAIL;
 #else
 #    if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK) &&                      \
-        defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
-    hg_time_t now;
+        defined(HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE)
+    struct timespec now;
 #    else
     struct timeval now;
 #    endif
@@ -157,8 +157,8 @@ hg_thread_cond_timedwait(
 
     /* Need to convert timeout (ms) to absolute time */
 #    if defined(HG_UTIL_HAS_PTHREAD_CONDATTR_SETCLOCK) &&                      \
-        defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
-    hg_time_get_current_ms(&now);
+        defined(HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE)
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &now);
 
     /* Get sec / nsec */
     ld = ldiv(now.tv_nsec + timeout * 1000000L, 1000000L);
