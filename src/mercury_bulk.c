@@ -649,8 +649,8 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
     /* If canceled, mark handle as canceled */
     if (callback_info->ret == NA_CANCELED)
         hg_atomic_cas32(&hg_bulk_op_id->canceled, 0, 1);
-    else
-        HG_CHECK_ERROR_NORET(callback_info->ret != NA_SUCCESS, done,
+    else if (callback_info->ret != NA_SUCCESS)
+        HG_LOG_ERROR(
             "Error in NA callback (s)", NA_Error_to_string(callback_info->ret));
 
     /* When all NA transfers that correspond to bulk operation complete
