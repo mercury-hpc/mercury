@@ -27,6 +27,9 @@
 #include "mercury_time.h"
 #include "mercury_error.h"
 
+/* PVAR profiling support */
+#include "mercury_prof_pvar_impl.h"
+
 #ifdef HG_HAS_SM_ROUTING
 #include <na_sm.h>
 #endif
@@ -2958,8 +2961,12 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
     unsigned int count = 0;
     hg_return_t ret = HG_SUCCESS;
 
+    HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_backfill_queue_count);
     while (count < max_count) {
         struct hg_completion_entry *hg_completion_entry = NULL;
+
+        /* Set value of PVAR */
+        HG_PROF_PVAR_UINT_COUNTER_SET(hg_pvar_hg_backfill_queue_count, hg_atomic_get32(&context->backfill_queue_count));
 
         hg_completion_entry =
             hg_atomic_queue_pop_mc(context->completion_queue);
