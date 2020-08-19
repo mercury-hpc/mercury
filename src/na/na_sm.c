@@ -4531,7 +4531,7 @@ na_sm_progress(
         if (timeout)
             hg_time_get_current_ms(&t1);
 
-        if (timeout && na_sm_endpoint->poll_set) {
+        if (na_sm_endpoint->poll_set) {
             unsigned int nevents = 0, i;
             /* Just wait on a single event, anything greater may increase
              * latency, and slow down progress, we will not wait next round
