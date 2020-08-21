@@ -698,6 +698,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
             HG_OVERFLOW, "Extra bulk handle could not fit into buffer");
 
         *more_data = HG_TRUE;
+	fprintf(stderr, "More data flag is set\n");
     }
 
     /* Encode header */
