@@ -772,6 +772,8 @@ hg_get_extra_payload(struct hg_private_handle *hg_handle, hg_op_t op,
     hg_bulk_t local_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS;
 
+    apex_profiler_handle profiler = apex_start(APEX_NAME_STRING, "hg_get_extra_payload");
+
     switch (op) {
         case HG_INPUT:
             /* Use custom header offset */
@@ -844,6 +846,8 @@ done:
         HG_Bulk_free(*extra_bulk);
         *extra_bulk = HG_BULK_NULL;
     }
+    fprintf(stderr, "Do I get here?\n");
+    apex_stop(profiler);
     return ret;
 }
 
@@ -994,6 +998,19 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
 
     /* Initialize PVAR profiling data structures */
     int ret = hg_prof_pvar_init();
+
+    int pid = getpid();
+    char * mypid = malloc(11);   // ex. 34567
+    sprintf(mypid, "%d.add", pid);
+    int my_rank, total_ranks;
+    FILE *fp = fopen(mypid, "r");
+    fscanf(fp, "%d %d", &my_rank, &total_ranks);
+    
+    apex_init("apex_margo", my_rank, total_ranks);
+    apex_set_untied_timers(1);
+    apex_set_use_screen_output(1);
+    fclose(fp);
+
     assert(ret == HG_SUCCESS);
 
     return (hg_class_t *) hg_class;
@@ -1022,6 +1039,9 @@ HG_Finalize(hg_class_t *hg_class)
 
     /* Finalize PVAR data structures */
     hg_prof_pvar_finalize();
+
+    apex_finalize();
+    apex_cleanup();
 
 done:
     return ret;

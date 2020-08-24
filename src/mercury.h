@@ -11,6 +11,7 @@
 #ifndef MERCURY_H
 #define MERCURY_H
 
+#include "apex.h"
 #include "mercury_types.h"
 #include "mercury_header.h"
 
