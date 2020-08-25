@@ -698,7 +698,6 @@ hg_set_struct(struct hg_private_handle *hg_handle,
             HG_OVERFLOW, "Extra bulk handle could not fit into buffer");
 
         *more_data = HG_TRUE;
-	fprintf(stderr, "More data flag is set\n");
     }
 
     /* Encode header */
@@ -773,6 +772,9 @@ hg_get_extra_payload(struct hg_private_handle *hg_handle, hg_op_t op,
     hg_return_t ret = HG_SUCCESS;
 
     apex_profiler_handle profiler = apex_start(APEX_NAME_STRING, "hg_get_extra_payload");
+  
+    hg_time_t t1, t2; 
+    hg_time_get_current(&t1);
 
     switch (op) {
         case HG_INPUT:
@@ -846,8 +848,8 @@ done:
         HG_Bulk_free(*extra_bulk);
         *extra_bulk = HG_BULK_NULL;
     }
-    fprintf(stderr, "Do I get here?\n");
     apex_stop(profiler);
+    hg_time_get_current(&t2);
     return ret;
 }
 

@@ -38,7 +38,7 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
 /* Public Macros */
 /*****************/
 
-#define NUM_PVARS 6 /* Number of PVARs currently exported. PVAR indices go from 0......(NUM_PVARS - 1). */
+#define NUM_PVARS 7 /* Number of PVARs currently exported. PVAR indices go from 0......(NUM_PVARS - 1). */
 
 /* PVAR handle declaration and registration macros */
 #define HG_PROF_PVAR_UINT_COUNTER(name) \
@@ -55,6 +55,14 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
         HG_PROF_PVAR_REGISTER_impl(HG_PVAR_CLASS_COUNTER, dtype, #name, \
             (void *)addr_##name, 1, bind, 1, desc); 
 
+#define HG_PROF_PVAR_UINT_COUNTER_REGISTER_WITH_INIT_VALUE(dtype, bind,\
+            name, desc, val) \
+        hg_atomic_int32_t *addr_##name = (hg_atomic_int32_t *)malloc(sizeof(hg_atomic_int32_t)); \
+        /* Set initial value */ \
+        hg_atomic_init32(addr_##name, val); \
+        HG_PROF_PVAR_REGISTER_impl(HG_PVAR_CLASS_COUNTER, dtype, #name, \
+            (void *)addr_##name, 1, bind, 1, desc); 
+
 #define HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(dtype, bind,\
             name, desc) \
         double *addr_##name = (double *)malloc(sizeof(double)); \
@@ -68,6 +76,11 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
     addr_##name = (addr_##name == NULL ? hg_prof_get_pvar_addr_from_name(#name): addr_##name); \
     for(int i=0; i < val; i++) \
         hg_atomic_incr32(addr_##name);
+
+#define HG_PROF_PVAR_UINT_COUNTER_DECR(name, val) \
+    addr_##name = (addr_##name == NULL ? hg_prof_get_pvar_addr_from_name(#name): addr_##name); \
+    for(int i=0; i < val; i++) \
+        hg_atomic_decr32(addr_##name);
 
 #define HG_PROF_PVAR_DOUBLE_COUNTER_INC(name, val) \
     addr_##name = (addr_##name == NULL ? hg_prof_get_pvar_addr_from_name(#name): addr_##name); \
