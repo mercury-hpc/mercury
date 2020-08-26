@@ -4,7 +4,15 @@ BMI_VERSION=master
 CMAKE_VERSION_MAJOR=3.17
 CMAKE_VERSION_MINOR=3
 MPI_VERSION=3.3.2
-OFI_VERSION=1.11.0rc2
+if [[ $MERCURY_BUILD_CONFIGURATION == 'Tsan' ]]; then
+  OFI_CFLAGS="-O1 -g -fsanitize=thread"
+  OFI_EXTRA_FLAGS="--enable-debug"
+fi
+if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
+  OFI_EXTRA_FLAGS="--enable-debug"
+fi
+#OFI_PR=
+OFI_VERSION=1.11.0
 PREFIX=$HOME/install
 
 set -e
@@ -56,9 +64,18 @@ if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
     OFI_INSTALLED_VERSION=`cat $PREFIX/ofi_version.txt`;
   fi
   if [ ! -f "$PREFIX/bin/fi_info" ] || [ "${OFI_INSTALLED_VERSION}" != "${OFI_VERSION}" ]; then
-    cd $HOME && wget https://github.com/ofiwg/libfabric/releases/download/v${OFI_VERSION}/libfabric-${OFI_VERSION}.tar.bz2
-    tar -xjf libfabric-${OFI_VERSION}.tar.bz2;
-    cd libfabric-${OFI_VERSION} && ./configure --prefix=$PREFIX --disable-usnic --disable-mrail --disable-rstream --disable-perf --disable-efa --disable-psm2 --disable-psm --disable-verbs --disable-shm --disable-static --disable-silent-rules CFLAGS="-O2 -g" && make -j2 -s && make install;
+    if [ -z "$OFI_PR" ]; then
+      cd $HOME && wget https://github.com/ofiwg/libfabric/releases/download/v${OFI_VERSION}/libfabric-${OFI_VERSION}.tar.bz2
+      tar -xjf libfabric-${OFI_VERSION}.tar.bz2;
+      cd libfabric-${OFI_VERSION};
+    else
+      git clone https://github.com/ofiwg/libfabric.git libfabric-${OFI_VERSION};
+      cd libfabric-${OFI_VERSION};
+      git fetch origin pull/${OFI_PR}/head:ofi_pr;
+      git checkout ofi_pr;
+      ./autogen.sh;
+    fi
+    ./configure --prefix=$PREFIX --disable-usnic --disable-mrail --disable-rstream --disable-perf --disable-efa --disable-psm2 --disable-psm --disable-verbs --disable-shm --disable-static --disable-silent-rules ${OFI_EXTRA_FLAGS} CC="${CC}" CFLAGS="${OFI_CFLAGS}" && make -j2 -s && make install;
     echo "${OFI_VERSION}" > $PREFIX/ofi_version.txt
   else
     echo "Using cached directory for OFI";
