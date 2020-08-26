@@ -698,6 +698,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
             HG_OVERFLOW, "Extra bulk handle could not fit into buffer");
 
         *more_data = HG_TRUE;
+	fprintf(stderr, "More data is set\n");
     }
 
     /* Encode header */
@@ -771,8 +772,6 @@ hg_get_extra_payload(struct hg_private_handle *hg_handle, hg_op_t op,
     hg_bulk_t local_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS;
 
-    apex_profiler_handle profiler = apex_start(APEX_NAME_STRING, "hg_get_extra_payload");
-  
     hg_time_t t1, t2; 
     hg_time_get_current(&t1);
 
@@ -848,8 +847,9 @@ done:
         HG_Bulk_free(*extra_bulk);
         *extra_bulk = HG_BULK_NULL;
     }
-    apex_stop(profiler);
+
     hg_time_get_current(&t2);
+    fprintf(stderr, "Internal RDMA transfer time: %f and size: %d\n", hg_time_to_double(hg_time_subtract(t2, t1)), extra_buf_size);
     return ret;
 }
 
@@ -1001,18 +1001,6 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     /* Initialize PVAR profiling data structures */
     int ret = hg_prof_pvar_init();
 
-    int pid = getpid();
-    char * mypid = malloc(11);   // ex. 34567
-    sprintf(mypid, "%d.add", pid);
-    int my_rank, total_ranks;
-    FILE *fp = fopen(mypid, "r");
-    fscanf(fp, "%d %d", &my_rank, &total_ranks);
-    
-    apex_init("apex_margo", my_rank, total_ranks);
-    apex_set_untied_timers(1);
-    apex_set_use_screen_output(1);
-    fclose(fp);
-
     assert(ret == HG_SUCCESS);
 
     return (hg_class_t *) hg_class;
@@ -1041,9 +1029,6 @@ HG_Finalize(hg_class_t *hg_class)
 
     /* Finalize PVAR data structures */
     hg_prof_pvar_finalize();
-
-    apex_finalize();
-    apex_cleanup();
 
 done:
     return ret;
