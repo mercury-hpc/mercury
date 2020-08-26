@@ -90,6 +90,8 @@ before_install:
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew cask uninstall --force oclint; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc" ]]; then brew install gcc; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install libfabric; fi
+    - if [[ "$CC" == "gcc" && `command -v gcc-10` ]]; then export CC=gcc-10; export CXX=g++-10; export AR=gcc-ar-10; export NM=gcc-nm-10; export RANLIB=gcc-ranlib-10; export COV=gcov-10; fi
+    - $CC --version
 
 install:
     - if [[ "$CHECK_FORMAT" == "true" ]]; then install -D ./Testing/script/git-clang-format $HOME/install/bin/git-clang-format; else ./Testing/script/travis_build.sh; fi
@@ -99,8 +101,6 @@ before_script:
     - export PATH=$HOME/install/bin:$PATH
     - export LD_LIBRARY_PATH=$HOME/install/lib:$HOME/install/lib64:$LD_LIBRARY_PATH
     - export PKG_CONFIG_PATH=$HOME/install/lib/pkgconfig:$PKG_CONFIG_PATH
-    - if [[ "$CC" == "gcc" && `command -v gcc-10` ]]; then export CC=gcc-10; export CXX=g++-10; export AR=gcc-ar-10; export NM=gcc-nm-10; export RANLIB=gcc-ranlib-10; export COV=gcov-10; fi
-    - $CC --version
     - if [[ "$TRAVIS_EVENT_TYPE" == "cron" ]]; then export MERCURY_DASHBOARD_MODEL="Nightly"; elif [[ "$TRAVIS_EVENT_TYPE" == "pull_request" ]]; then export MERCURY_DASHBOARD_MODEL="Experimental"; else export MERCURY_DASHBOARD_MODEL="Continuous"; fi
     - ctest --version
     - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then cat /proc/sys/kernel/yama/ptrace_scope; fi
