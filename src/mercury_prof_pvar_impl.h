@@ -48,26 +48,24 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
     static double * addr_##name = NULL;
 
 #define HG_PROF_PVAR_UINT_COUNTER_REGISTER(dtype, bind,\
-            name, desc) \
-        hg_atomic_int32_t *addr_##name = (hg_atomic_int32_t *)malloc(sizeof(hg_atomic_int32_t)); \
-        /* Set initial value */ \
-        hg_atomic_init32(addr_##name, 0); \
-        HG_PROF_PVAR_REGISTER_impl(HG_PVAR_CLASS_COUNTER, dtype, #name, \
-            (void *)addr_##name, 1, bind, 1, desc); 
-
-#define HG_PROF_PVAR_UINT_COUNTER_REGISTER_WITH_INIT_VALUE(dtype, bind,\
             name, desc, val) \
-        hg_atomic_int32_t *addr_##name = (hg_atomic_int32_t *)malloc(sizeof(hg_atomic_int32_t)); \
-        /* Set initial value */ \
-        hg_atomic_init32(addr_##name, val); \
+	hg_atomic_int32_t *addr_##name = NULL;\
+	if(bind == HG_PROF_BIND_NO_OBJECT) {\
+          *addr_##name = (hg_atomic_int32_t *)malloc(sizeof(hg_atomic_int32_t)); \
+          /* Set initial value */ \
+          hg_atomic_init32(addr_##name, val); \
+        }\
         HG_PROF_PVAR_REGISTER_impl(HG_PVAR_CLASS_COUNTER, dtype, #name, \
             (void *)addr_##name, 1, bind, 1, desc); 
 
 #define HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(dtype, bind,\
-            name, desc) \
-        double *addr_##name = (double *)malloc(sizeof(double)); \
-        /* Set initial value */ \
-        *(addr_##name) = 0.; \
+            name, desc, val) \
+	double *addr_##name = NULL;\
+	if(bind == HG_PROF_BIND_NO_OBJECT) {\
+          *addr_##name = (double *)malloc(sizeof(double)); \
+	  /* Set initial value */ \
+          *(addr_##name) = val; \
+        }\
         HG_PROF_PVAR_REGISTER_impl(HG_PVAR_CLASS_COUNTER, dtype, #name, \
             (void *)addr_##name, 1, bind, 1, desc); 
 
