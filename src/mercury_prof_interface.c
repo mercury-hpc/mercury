@@ -56,6 +56,11 @@ struct hg_private_class {
 };
 
 /*******************/
+/* Externs */
+/*******************/
+void * hg_get_handle_performance_data(unsigned int index, hg_handle_t mercury_handle);
+
+/*******************/
 /* Local Variables */
 /*******************/
 
@@ -263,7 +268,7 @@ HG_Prof_pvar_stop(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle) 
 
 /*---------------------------------------------------------------------------*/
 hg_return_t 
-HG_Prof_pvar_read(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle, void *buf) {
+HG_Prof_pvar_read(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle, hg_handle_t mercury_handle, void *buf) {
   if(!hg_prof_get_session_is_initialized(session))
     return HG_NA_ERROR;
 
@@ -284,13 +289,14 @@ HG_Prof_pvar_read(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle, 
     switch(h.pvar_datatype) {
       case HG_UINT:
         /*for(int i = 0; i < h.count; h++)*/ /* Need to support PVAR arrays, just a placeholder that assumes PVAR count is 1 */
-//        *((unsigned int *)buf) = hg_prof_get_handle_performance_data(h.index, mercury_handle);
+        *((unsigned int *)buf) = *((unsigned int *)hg_get_handle_performance_data(h.index, mercury_handle));
         break;
       case HG_DOUBLE:
-//        *((double *)buf) = hg_prof_get_handle_performance_data(h.index, mercury_handle);
+        *((double *)buf) = *((double *)hg_get_handle_performance_data(h.index, mercury_handle));
         break;
     }
   }
   return HG_SUCCESS;
 }
+
 /*---------------------------------------------------------------------------*/

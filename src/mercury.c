@@ -269,6 +269,14 @@ hg_prof_uint_hash(void *vlocation)
 }
 
 /*---------------------------------------------------------------------------*/
+void * hg_get_handle_performance_data(unsigned int index, hg_handle_t handle)
+{
+
+    struct hg_private_handle *private_handle = (struct hg_private_handle *)handle;
+    return hg_hash_table_lookup(private_handle->pvar_table, (hg_hash_table_key_t)(&index));
+}
+
+/*---------------------------------------------------------------------------*/
 /**
  * Free function for value in function map.
  */
