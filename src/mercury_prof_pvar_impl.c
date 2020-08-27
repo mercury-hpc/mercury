@@ -70,6 +70,24 @@ hg_prof_get_pvar_addr_from_name(const char* name)
 }
 
 /*---------------------------------------------------------------------------*/
+int 
+hg_prof_get_pvar_index_from_name(const char* name)
+{
+   hg_prof_pvar_data_t * value = NULL;
+   int index = -1;
+   for(unsigned int i = 0; i < hg_hash_table_num_entries(pvar_table); i++) {
+     value = hg_hash_table_lookup(pvar_table, (hg_hash_table_key_t)(&i));
+     if(strcmp(value->name, name)==0) {
+       index = i;
+       break;
+     }
+     value = NULL;
+   }
+
+   return index;
+}
+
+/*---------------------------------------------------------------------------*/
 void 
 HG_PROF_PVAR_REGISTER_impl(hg_prof_class_t varclass, hg_prof_datatype_t dtype, const char* name, void *addr, int count,
     hg_prof_bind_t bind, int continuous, const char * desc) {
