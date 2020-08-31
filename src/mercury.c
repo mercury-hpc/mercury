@@ -74,6 +74,14 @@ struct hg_private_handle {
     hg_bulk_t out_extra_bulk;       /* Extra output bulk handle */
     hg_size_t in_extra_buf_size;    /* Extra input buffer size */
     hg_size_t out_extra_buf_size;   /* Extra output buffer size */
+    /* PVAR */
+    double hg_pvar_hg_input_serial_time;
+    double hg_pvar_hg_output_serial_time;
+    double hg_pvar_hg_input_deserial_time;
+    double hg_pvar_hg_output_deserial_time;
+    double hg_pvar_hg_internal_rdma_transfer_time;
+    hg_size_t hg_pvar_hg_internal_rdma_transfer_size;
+
 };
 
 /* HG op id */
@@ -252,6 +260,34 @@ static const char *const hg_return_name[] = { HG_RETURN_VALUES };
 #ifdef HG_HAS_VERBOSE_ERROR
 unsigned int HG_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
 #endif
+
+/*---------------------------------------------------------------------------*/
+void hg_get_handle_pvar_data(int index, hg_handle_t handle, void *buf)
+{
+
+    HG_PROF_PVAR_GET_INDEX_BY_NAME(hg_pvar_hg_input_serial_time, input_serial_time_pvar_index);
+    HG_PROF_PVAR_GET_INDEX_BY_NAME(hg_pvar_hg_output_serial_time, output_serial_time_pvar_index);
+    HG_PROF_PVAR_GET_INDEX_BY_NAME(hg_pvar_hg_input_deserial_time, input_deserial_time_pvar_index);
+    HG_PROF_PVAR_GET_INDEX_BY_NAME(hg_pvar_hg_output_deserial_time, output_deserial_time_pvar_index);
+    HG_PROF_PVAR_GET_INDEX_BY_NAME(hg_pvar_hg_internal_rdma_transfer_time, internal_rdma_transfer_time_pvar_index);
+    HG_PROF_PVAR_GET_INDEX_BY_NAME(hg_pvar_hg_internal_rdma_transfer_size, internal_rdma_transfer_size_pvar_index);
+
+    struct hg_private_handle *private_handle = (struct hg_private_handle *)handle;
+
+    if(index == input_serial_time_pvar_index) {
+	  *(double *)buf = private_handle->hg_pvar_hg_input_serial_time;
+    } else if (index == output_serial_time_pvar_index) {
+	  *(double *)buf = private_handle->hg_pvar_hg_output_serial_time;
+    } else if (index == input_deserial_time_pvar_index) {
+	  *(double *)buf = private_handle->hg_pvar_hg_input_deserial_time;
+    } else if (index == output_deserial_time_pvar_index) {
+	  *(double *)buf = private_handle->hg_pvar_hg_output_deserial_time;
+    } else if(index == internal_rdma_transfer_time_pvar_index) {
+	  *(double *)buf = private_handle->hg_pvar_hg_internal_rdma_transfer_time;
+    } else if (index == internal_rdma_transfer_size_pvar_index) {
+	  *(hg_size_t *)buf = *((hg_size_t *)private_handle->hg_pvar_hg_internal_rdma_transfer_size);
+    }
+}
 
 /*---------------------------------------------------------------------------*/
 /**
@@ -698,6 +734,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
             HG_OVERFLOW, "Extra bulk handle could not fit into buffer");
 
         *more_data = HG_TRUE;
+	fprintf(stderr, "More data is set\n");
     }
 
     /* Encode header */
@@ -771,6 +808,10 @@ hg_get_extra_payload(struct hg_private_handle *hg_handle, hg_op_t op,
     hg_bulk_t local_handle = HG_BULK_NULL;
     hg_return_t ret = HG_SUCCESS;
 
+    hg_time_t t1, t2; 
+
+    hg_time_get_current(&t1);
+
     switch (op) {
         case HG_INPUT:
             /* Use custom header offset */
@@ -843,6 +884,12 @@ done:
         HG_Bulk_free(*extra_bulk);
         *extra_bulk = HG_BULK_NULL;
     }
+
+    hg_time_get_current(&t2);
+    hg_handle->hg_pvar_hg_internal_rdma_transfer_time = hg_time_to_double(hg_time_subtract(t2, t1));
+    hg_handle->hg_pvar_hg_internal_rdma_transfer_size = *extra_buf_size;
+
+    fprintf(stderr, "Internal RDMA transfer time: %f and size: %ln\n", hg_time_to_double(hg_time_subtract(t2, t1)), extra_buf_size);
     return ret;
 }
 
@@ -993,6 +1040,7 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
 
     /* Initialize PVAR profiling data structures */
     int ret = hg_prof_pvar_init();
+
     assert(ret == HG_SUCCESS);
 
     return (hg_class_t *) hg_class;
@@ -1685,7 +1733,6 @@ done:
 hg_return_t
 HG_Get_input(hg_handle_t handle, void *in_struct)
 {
-    HG_PROF_PVAR_DOUBLE_COUNTER(hg_pvar_hg_input_deserial_time);
     hg_time_t t1, t2;
     hg_time_get_current(&t1);
 
@@ -1710,7 +1757,8 @@ HG_Get_input(hg_handle_t handle, void *in_struct)
         HG_Error_to_string(ret));
 
     hg_time_get_current(&t2);
-    HG_PROF_PVAR_DOUBLE_COUNTER_INC(hg_pvar_hg_input_deserial_time, hg_time_to_double(hg_time_subtract(t2, t1)));
+    struct hg_private_handle * private_handle = (struct hg_private_handle *) handle;
+    private_handle->hg_pvar_hg_input_deserial_time = hg_time_to_double(hg_time_subtract(t2, t1));
 done:
     return ret;
 }
@@ -1747,7 +1795,6 @@ done:
 hg_return_t
 HG_Get_output(hg_handle_t handle, void *out_struct)
 {
-    HG_PROF_PVAR_DOUBLE_COUNTER(hg_pvar_hg_output_deserial_time);
     hg_time_t t1, t2;
     hg_time_get_current(&t1);
 
@@ -1772,7 +1819,9 @@ HG_Get_output(hg_handle_t handle, void *out_struct)
         HG_Error_to_string(ret));
 
     hg_time_get_current(&t2);
-    HG_PROF_PVAR_DOUBLE_COUNTER_INC(hg_pvar_hg_output_deserial_time, hg_time_to_double(hg_time_subtract(t2, t1)));
+
+    struct hg_private_handle * private_handle = (struct hg_private_handle *) handle;
+    private_handle->hg_pvar_hg_output_deserial_time = hg_time_to_double(hg_time_subtract(t2, t1));
 
 done:
     return ret;
@@ -1923,7 +1972,6 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
     hg_return_t ret = HG_SUCCESS;
 
     HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_forward_count);
-    HG_PROF_PVAR_DOUBLE_COUNTER(hg_pvar_hg_input_serial_time);
 
     HG_CHECK_ERROR(handle == HG_HANDLE_NULL, done, ret, HG_INVALID_ARG,
         "NULL HG handle");
@@ -1945,7 +1993,8 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
         &payload_size, &more_data);
 
     hg_time_get_current(&t2);
-    HG_PROF_PVAR_DOUBLE_COUNTER_INC(hg_pvar_hg_input_serial_time, hg_time_to_double(hg_time_subtract(t2, t1)));
+    private_handle->hg_pvar_hg_input_serial_time = hg_time_to_double(hg_time_subtract(t2, t1));
+
     HG_CHECK_HG_ERROR(done, ret, "Could not set input (%s)",
         HG_Error_to_string(ret));
 
@@ -1984,7 +2033,6 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
     hg_uint8_t flags = 0;
     hg_return_t ret = HG_SUCCESS;
 
-    HG_PROF_PVAR_DOUBLE_COUNTER(hg_pvar_hg_output_serial_time);
     hg_time_t t1, t2;
 
     HG_CHECK_ERROR(handle == HG_HANDLE_NULL, done, ret, HG_INVALID_ARG,
@@ -2005,7 +2053,9 @@ HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct)
     ret = hg_set_struct(private_handle, hg_proc_info, HG_OUTPUT, out_struct,
         &payload_size, &more_data);
     hg_time_get_current(&t2);
-    HG_PROF_PVAR_DOUBLE_COUNTER_INC(hg_pvar_hg_output_serial_time, hg_time_to_double(hg_time_subtract(t2, t1)));
+
+    private_handle->hg_pvar_hg_output_serial_time = hg_time_to_double(hg_time_subtract(t2, t1));
+
     HG_CHECK_HG_ERROR(done, ret, "Could not set output (%s)",
         HG_Error_to_string(ret));
 

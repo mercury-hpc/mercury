@@ -38,6 +38,7 @@ struct hg_prof_pvar_handle {
    int count; /* number of values associated with PVAR */
    char name[128]; /* PVAR name */
    char description[128]; /* PVAR description */
+   int index; /* PVAR index */
 };
 
 /* HG profiling session object concrete definition */
@@ -53,6 +54,11 @@ struct hg_private_class {
     int num_pvars;          /* No of PVARs currently supported */
     hg_prof_pvar_session_t session; /* Is profiling initialized on the session */
 };
+
+/*******************/
+/* Externs */
+/*******************/
+extern void * hg_get_handle_pvar_data(int index, hg_handle_t mercury_handle, void * buf);
 
 /*******************/
 /* Local Variables */
@@ -207,6 +213,7 @@ HG_Prof_pvar_handle_alloc(hg_prof_pvar_session_t session, int pvar_index, void *
   (*s.pvar_handle_array[pvar_index]).pvar_bind = (*val).pvar_bind;
   (*s.pvar_handle_array[pvar_index]).continuous = (*val).continuous;
   (*s.pvar_handle_array[pvar_index]).is_started = 0;
+  (*s.pvar_handle_array[pvar_index]).index = pvar_index;
   (*s.pvar_handle_array[pvar_index]).addr = (*val).addr;
   if((*val).continuous)
     (*s.pvar_handle_array[pvar_index]).is_started = 1;
@@ -261,21 +268,28 @@ HG_Prof_pvar_stop(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle) 
 
 /*---------------------------------------------------------------------------*/
 hg_return_t 
-HG_Prof_pvar_read(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle, void *buf) {
+HG_Prof_pvar_read(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle, hg_handle_t mercury_handle, void *buf) {
   if(!hg_prof_get_session_is_initialized(session))
     return HG_NA_ERROR;
 
   /* Assert first that handle belongs to the session provided. NOT DOING THIS HERE FOR NOW */
   struct hg_prof_pvar_handle h = (*handle);
-  switch(h.pvar_datatype) {
-    case HG_UINT:
+
+  if(h.pvar_bind == HG_PROF_BIND_NO_OBJECT) {
+    switch(h.pvar_datatype) {
+      case HG_UINT:
+        /*for(int i = 0; i < h.count; h++)*/ /* Need to support PVAR arrays, just a placeholder that assumes PVAR count is 1 */
+        *((unsigned int *)buf) = *((unsigned int *)h.addr);
+        break;
+      case HG_DOUBLE:
+        *((double *)buf) = *((double *)h.addr);
+        break;
+    }
+  } else {
       /*for(int i = 0; i < h.count; h++)*/ /* Need to support PVAR arrays, just a placeholder that assumes PVAR count is 1 */
-      *((unsigned int *)buf) = *((unsigned int *)h.addr);
-      break;
-    case HG_DOUBLE:
-      *((double *)buf) = *((double *)h.addr);
-      break;
+      hg_get_handle_pvar_data(h.index, mercury_handle, buf);
   }
   return HG_SUCCESS;
 }
+
 /*---------------------------------------------------------------------------*/

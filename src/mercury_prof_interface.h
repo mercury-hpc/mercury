@@ -165,12 +165,13 @@ HG_Prof_pvar_stop(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle);
  *
  * \param session [IN]        opaque PVAR session object 
  * \param handle [IN]         opaque PVAR handle object 
+ * \param mercury_handle [IN] opaque hg_handle object, can be NULL
  * \param buf [IN/OUT]        buffer that contains the PVAR data
  *
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t 
-HG_Prof_pvar_read(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle, void *buf);
+HG_Prof_pvar_read(hg_prof_pvar_session_t session, hg_prof_pvar_handle_t handle, hg_handle_t mercury_handle, void *buf);
 
 #ifdef __cplusplus
 }

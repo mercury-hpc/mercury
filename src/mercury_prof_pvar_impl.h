@@ -38,9 +38,13 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
 /* Public Macros */
 /*****************/
 
-#define NUM_PVARS 6 /* Number of PVARs currently exported. PVAR indices go from 0......(NUM_PVARS - 1). */
+#define NUM_PVARS 10 /* Number of PVARs currently exported. PVAR indices go from 0......(NUM_PVARS - 1). */
 
 /* PVAR handle declaration and registration macros */
+# define HG_PROF_PVAR_GET_INDEX_BY_NAME(name, index) \
+    static int index = -1; \
+    index = (index == -1)? hg_prof_get_pvar_index_from_name(#name): index;
+
 #define HG_PROF_PVAR_UINT_COUNTER(name) \
     static hg_atomic_int32_t * addr_##name = NULL;
 
@@ -48,18 +52,24 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
     static double * addr_##name = NULL;
 
 #define HG_PROF_PVAR_UINT_COUNTER_REGISTER(dtype, bind,\
-            name, desc) \
-        hg_atomic_int32_t *addr_##name = (hg_atomic_int32_t *)malloc(sizeof(hg_atomic_int32_t)); \
-        /* Set initial value */ \
-        hg_atomic_init32(addr_##name, 0); \
+            name, desc, val) \
+	hg_atomic_int32_t *addr_##name = NULL;\
+	if(bind == HG_PROF_BIND_NO_OBJECT) {\
+          addr_##name = (hg_atomic_int32_t *)malloc(sizeof(hg_atomic_int32_t)); \
+          /* Set initial value */ \
+          hg_atomic_init32(addr_##name, val); \
+        }\
         HG_PROF_PVAR_REGISTER_impl(HG_PVAR_CLASS_COUNTER, dtype, #name, \
             (void *)addr_##name, 1, bind, 1, desc); 
 
 #define HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(dtype, bind,\
-            name, desc) \
-        double *addr_##name = (double *)malloc(sizeof(double)); \
-        /* Set initial value */ \
-        *(addr_##name) = 0.; \
+            name, desc, val) \
+	double *addr_##name = NULL;\
+	if(bind == HG_PROF_BIND_NO_OBJECT) {\
+          addr_##name = (double *)malloc(sizeof(double)); \
+	  /* Set initial value */ \
+          *(addr_##name) = val; \
+        }\
         HG_PROF_PVAR_REGISTER_impl(HG_PVAR_CLASS_COUNTER, dtype, #name, \
             (void *)addr_##name, 1, bind, 1, desc); 
 
@@ -68,6 +78,11 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
     addr_##name = (addr_##name == NULL ? hg_prof_get_pvar_addr_from_name(#name): addr_##name); \
     for(int i=0; i < val; i++) \
         hg_atomic_incr32(addr_##name);
+
+#define HG_PROF_PVAR_UINT_COUNTER_DECR(name, val) \
+    addr_##name = (addr_##name == NULL ? hg_prof_get_pvar_addr_from_name(#name): addr_##name); \
+    for(int i=0; i < val; i++) \
+        hg_atomic_decr32(addr_##name);
 
 #define HG_PROF_PVAR_DOUBLE_COUNTER_INC(name, val) \
     addr_##name = (addr_##name == NULL ? hg_prof_get_pvar_addr_from_name(#name): addr_##name); \
@@ -103,6 +118,15 @@ hg_prof_pvar_finalize();
  */
 hg_atomic_int32_t *
 hg_prof_get_pvar_addr_from_name(const char* name);
+
+/**
+ * Internal routine that returns the PVAR index associated with the name.
+ *
+ * \param name [IN]	  PVAR name
+ * \return int that represents the PVAR index
+ */
+int
+hg_prof_get_pvar_index_from_name(const char* name);
 
 /**
  * Internal routine that returns the PVAR data associated with a key representing index.

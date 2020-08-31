@@ -70,6 +70,24 @@ hg_prof_get_pvar_addr_from_name(const char* name)
 }
 
 /*---------------------------------------------------------------------------*/
+int 
+hg_prof_get_pvar_index_from_name(const char* name)
+{
+   hg_prof_pvar_data_t * value = NULL;
+   int index = -1;
+   for(unsigned int i = 0; i < hg_hash_table_num_entries(pvar_table); i++) {
+     value = hg_hash_table_lookup(pvar_table, (hg_hash_table_key_t)(&i));
+     if(strcmp(value->name, name)==0) {
+       index = i;
+       break;
+     }
+     value = NULL;
+   }
+
+   return index;
+}
+
+/*---------------------------------------------------------------------------*/
 void 
 HG_PROF_PVAR_REGISTER_impl(hg_prof_class_t varclass, hg_prof_datatype_t dtype, const char* name, void *addr, int count,
     hg_prof_bind_t bind, int continuous, const char * desc) {
@@ -99,12 +117,16 @@ hg_prof_pvar_init() {
     /*Initialize internal PVAR data structures*/
     pvar_table = hg_hash_table_new(hg_prof_uint_hash, hg_prof_uint_equal);
     /* Register available PVARs */
-    HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_backfill_queue_count, "Backfill queue size");
-    HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_forward_count, "Number of times HG_Forward has been invoked");
-    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_input_serial_time, "Time taken to serialize input (s)");
-    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_input_deserial_time, "Time taken to de-serialize input (s)");
-    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_output_deserial_time, "Time taken to de-serialize output (s)");
-    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_output_serial_time, "Time taken to serialize output (s)");
+    HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_num_posted_handles, "Number of posted handles", 256);
+    HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_backfill_queue_count, "Backfill queue size", 0);
+    HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_forward_count, "Number of times HG_Forward has been invoked", 0);
+    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_HANDLE, hg_pvar_hg_origin_callback_completion_time, "Time taken for origin to trigger callback(s)", 0);
+    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_HANDLE, hg_pvar_hg_internal_rdma_transfer_time, "Time taken for internal RDMA transfer(s)", 0);
+    HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_HANDLE, hg_pvar_hg_internal_rdma_transfer_size, "Size of internal RDMA transfer (bytes)", 0);
+    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_HANDLE, hg_pvar_hg_input_serial_time, "Time taken to serialize input (s)", 0);
+    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_HANDLE, hg_pvar_hg_input_deserial_time, "Time taken to de-serialize input (s)", 0);
+    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_HANDLE, hg_pvar_hg_output_deserial_time, "Time taken to de-serialize output (s)", 0);
+    HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_HANDLE, hg_pvar_hg_output_serial_time, "Time taken to serialize output (s)", 0);
 
 return HG_SUCCESS;
 }

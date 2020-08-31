@@ -2028,6 +2028,10 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
     hg_bool_t completed = HG_TRUE;
     hg_return_t ret;
 
+
+    HG_PROF_PVAR_UINT_COUNTER(hg_pvar_num_posted_handles);
+    HG_PROF_PVAR_UINT_COUNTER_INC(hg_pvar_num_posted_handles, 1);
+
     /* Remove handle from pending list */
     hg_thread_spin_lock(
         &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->pending_list_lock);
@@ -2631,6 +2635,8 @@ hg_core_post(struct hg_core_private_handle *hg_core_handle)
 
     /* Handle is now in use */
     hg_atomic_set32(&hg_core_handle->in_use, HG_TRUE);
+    HG_PROF_PVAR_UINT_COUNTER(hg_pvar_num_posted_handles);
+    HG_PROF_PVAR_UINT_COUNTER_DECR(hg_pvar_num_posted_handles, 1);
 
 #ifdef HG_HAS_SM_ROUTING
     if (hg_core_handle->na_class ==
