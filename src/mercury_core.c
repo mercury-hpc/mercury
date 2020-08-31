@@ -219,6 +219,10 @@ struct hg_core_private_handle {
     hg_bool_t repost;                   /* Repost handle on completion (listen) */
     hg_bool_t is_self;                  /* Self processed */
     hg_bool_t no_response;              /* Require response or not */
+
+    /* PVAR */
+    hg_time_t completion_add_time;
+    double hg_pvar_hg_origin_callback_completion_time;
 };
 
 /* HG op id */
@@ -744,6 +748,19 @@ static hg_core_stat_t hg_core_rpc_count_g = HG_CORE_STAT_INIT(0);
 static hg_core_stat_t hg_core_rpc_extra_count_g = HG_CORE_STAT_INIT(0);
 static hg_core_stat_t hg_core_bulk_count_g = HG_CORE_STAT_INIT(0);
 #endif
+
+/*---------------------------------------------------------------------------*/
+void HG_Core_get_handle_pvar_data(int index, hg_core_handle_t handle, void *buf)
+{
+
+    HG_PROF_PVAR_GET_INDEX_BY_NAME(hg_pvar_hg_origin_callback_completion_time, origin_callback_completion_time_pvar_index);
+
+    struct hg_core_private_handle *private_handle = (struct hg_core_private_handle *)handle;
+
+    if(index == origin_callback_completion_time_pvar_index) {
+	  *(double *)buf = private_handle->hg_pvar_hg_origin_callback_completion_time;
+    }
+}
 
 /*---------------------------------------------------------------------------*/
 #ifdef HG_HAS_COLLECT_STATS
@@ -2507,6 +2524,8 @@ hg_core_complete(hg_core_handle_t handle)
     hg_completion_entry->op_type = HG_RPC;
     hg_completion_entry->op_id.hg_core_handle = handle;
 
+    /* PVAR */
+    hg_time_get_current(&(hg_core_handle->completion_add_time)); 
     ret = hg_core_completion_add(context, hg_completion_entry,
         hg_core_handle->is_self);
     HG_CHECK_HG_ERROR(done, ret,
@@ -2968,6 +2987,9 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
     hg_return_t ret = HG_SUCCESS;
 
     HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_backfill_queue_count);
+    HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_completion_queue_count);
+    HG_PROF_PVAR_UINT_COUNTER_SET(hg_pvar_hg_backfill_queue_count, hg_atomic_get32(&context->backfill_queue_count));
+
     while (count < max_count) {
         struct hg_completion_entry *hg_completion_entry = NULL;
 
@@ -3098,6 +3120,11 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
     if (hg_core_handle->op_type == HG_CORE_PROCESS) {
         /* Take another reference to make sure the handle does not get freed */
         hg_atomic_incr32(&hg_core_handle->ref_count);
+
+        /* PVAR */
+	hg_time_t t2;
+	hg_time_get_current(&t2);
+        hg_core_handle->hg_pvar_hg_origin_callback_completion_time = hg_time_to_double(hg_time_subtract(t2, hg_core_handle->completion_add_time));
 
         /* Run RPC callback */
         ret = hg_core_process(hg_core_handle);

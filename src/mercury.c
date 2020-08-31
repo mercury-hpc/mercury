@@ -286,6 +286,8 @@ void hg_get_handle_pvar_data(int index, hg_handle_t handle, void *buf)
 	  *(double *)buf = private_handle->hg_pvar_hg_internal_rdma_transfer_time;
     } else if (index == internal_rdma_transfer_size_pvar_index) {
 	  *(hg_size_t *)buf = *((hg_size_t *)private_handle->hg_pvar_hg_internal_rdma_transfer_size);
+    } else {
+	  HG_Core_get_handle_pvar_data(index, handle->core_handle, buf);
     }
 }
 

@@ -119,6 +119,8 @@ hg_prof_pvar_init() {
     /* Register available PVARs */
     HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_num_posted_handles, "Number of posted handles", 256);
     HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_backfill_queue_count, "Backfill queue size", 0);
+    HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_completion_queue_count, "Completion queue size", 0);
+    HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_na_ofi_completion_count, "Number of actual events during a fi_cq_read operation", 0);
     HG_PROF_PVAR_UINT_COUNTER_REGISTER(HG_UINT, HG_PROF_BIND_NO_OBJECT, hg_pvar_hg_forward_count, "Number of times HG_Forward has been invoked", 0);
     HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_HANDLE, hg_pvar_hg_origin_callback_completion_time, "Time taken for origin to trigger callback(s)", 0);
     HG_PROF_PVAR_DOUBLE_COUNTER_REGISTER(HG_DOUBLE, HG_PROF_BIND_HANDLE, hg_pvar_hg_internal_rdma_transfer_time, "Time taken for internal RDMA transfer(s)", 0);
