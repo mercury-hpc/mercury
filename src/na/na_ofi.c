@@ -56,7 +56,8 @@
 #include "mercury_mem.h"
 
 /* PVAR profiling support */
-#include "mercury_prof_pvar_impl.h"
+#include "../mercury_types.h"
+#include "../mercury_prof_pvar_impl.h"
 
 #include <rdma/fabric.h>
 #include <rdma/fi_domain.h>

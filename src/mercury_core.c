@@ -2544,6 +2544,9 @@ hg_core_completion_add(struct hg_core_context *context,
         (struct hg_core_private_context *) context;
     hg_return_t ret = HG_SUCCESS;
 
+    HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_backfill_queue_count);
+    HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_completion_queue_count);
+
 #ifdef HG_HAS_COLLECT_STATS
     /* Increment counter */
     if (hg_completion_entry->op_type == HG_BULK)
@@ -2558,7 +2561,11 @@ hg_core_completion_add(struct hg_core_context *context,
             entry);
         hg_atomic_incr32(&private_context->backfill_queue_count);
         hg_thread_mutex_unlock(&private_context->completion_queue_mutex);
+
+        HG_PROF_PVAR_UINT_COUNTER_INC(hg_pvar_hg_backfill_queue_count, 1);
     }
+
+    HG_PROF_PVAR_UINT_COUNTER_INC(hg_pvar_hg_completion_queue_count, 1);
 
     if (hg_atomic_get32(&private_context->trigger_waiting)) {
         hg_thread_mutex_lock(&private_context->completion_queue_mutex);
@@ -2988,13 +2995,9 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
 
     HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_backfill_queue_count);
     HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_completion_queue_count);
-    HG_PROF_PVAR_UINT_COUNTER_SET(hg_pvar_hg_backfill_queue_count, hg_atomic_get32(&context->backfill_queue_count));
 
     while (count < max_count) {
         struct hg_completion_entry *hg_completion_entry = NULL;
-
-        /* Set value of PVAR */
-        HG_PROF_PVAR_UINT_COUNTER_SET(hg_pvar_hg_backfill_queue_count, hg_atomic_get32(&context->backfill_queue_count));
 
         hg_completion_entry =
             hg_atomic_queue_pop_mc(context->completion_queue);
@@ -3006,6 +3009,7 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
                 HG_QUEUE_POP_HEAD(&context->backfill_queue, entry);
                 hg_atomic_decr32(&context->backfill_queue_count);
                 hg_thread_mutex_unlock(&context->completion_queue_mutex);
+    		HG_PROF_PVAR_UINT_COUNTER_DECR(hg_pvar_hg_backfill_queue_count, 1);
                 if (!hg_completion_entry)
                     continue; /* Give another change to grab it */
             } else {
@@ -3046,6 +3050,8 @@ hg_core_trigger(struct hg_core_private_context *context, unsigned int timeout,
                 continue; /* Give another change to grab it */
             }
         }
+
+    	HG_PROF_PVAR_UINT_COUNTER_DECR(hg_pvar_hg_completion_queue_count, 1);
 
         /* Completion queue should not be empty now */
         HG_CHECK_ERROR(hg_completion_entry == NULL, done, ret,
