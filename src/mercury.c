@@ -891,7 +891,6 @@ done:
     hg_handle->hg_pvar_hg_internal_rdma_transfer_time = hg_time_to_double(hg_time_subtract(t2, t1));
     hg_handle->hg_pvar_hg_internal_rdma_transfer_size = *extra_buf_size;
 
-    fprintf(stderr, "Internal RDMA transfer time: %f and size: %ln\n", hg_time_to_double(hg_time_subtract(t2, t1)), extra_buf_size);
     return ret;
 }
 
