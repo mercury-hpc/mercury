@@ -38,7 +38,7 @@ typedef struct hg_prof_pvar_data_t hg_prof_pvar_data_t;
 /* Public Macros */
 /*****************/
 
-#define NUM_PVARS 10 /* Number of PVARs currently exported. PVAR indices go from 0......(NUM_PVARS - 1). */
+#define NUM_PVARS 12 /* Number of PVARs currently exported. PVAR indices go from 0......(NUM_PVARS - 1). */
 
 /* PVAR handle declaration and registration macros */
 # define HG_PROF_PVAR_GET_INDEX_BY_NAME(name, index) \
