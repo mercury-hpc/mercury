@@ -2,3 +2,29 @@ UCX design notes
 ----------------
 
 First paragraph.
+
+UCP API mapping.
+
+Initialize/Finalize
+-------------------
+(na_class_t / na_context_t)
+
+Connection management (connected/unconnected) 
+---------------------
+(na_addr_t)
+ability to lookup
+get your self/local address
+
+Tag matching and small messaging
+--------------------------------
+send/recv small messages (check limit of those)
+
+RMA
+---
+register memory / exchange descriptors
+how to do put/get
+
+Progress
+--------
+check completion queues with ucx
+what is progress model ? does UCX do automatic progress or is there a progress function?
