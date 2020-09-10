@@ -1,19 +1,62 @@
 UCX design notes
 ----------------
 
-First paragraph.
+The UCX API called UCP appears to provide all of the facilities that
+Mercury's NA interface requires.  NA and UCP operate at similar levels
+of abstraction.
 
-UCP API mapping.
+UCP is built on UCT.  UCT operates closer to the hardware, and it offers
+more degrees of freedom.  At first blush, writing an NA plugin using UCT
+entails tracking more communications state than we have to if we use UCP.
+For example, using UCT, our plugin may be responsible to both defragment
+received messages and select the copy mode (immediate, bounce, zero-copy).
+UCP handles those details for us.
+
+It does not look like our plugin can usefully blend the UCP & UCT APIs
+by, say, writing the plugin using UCP, first, and then rewriting fast
+paths with UCT.
+
+I have more to learn about UCT, but for a prototype plugin, we probably
+should use UCP.  Then, if UCP performance disappoints us, then we can
+investigate the use of UCT.
 
 Initialize/Finalize
 -------------------
-(na_class_t / na_context_t)
+
+NA <-> UCP correspondence
+
+na_class_t: ucp_context_h, a UCP application context
+
+    ucp_init()/_cleanup()
+
+na_context_t: ucp_worker_h, a worker "represents an instance of a local
+    communication resource and the progress engine associated with it."
+
+    ucp_worker_create()/_destroy()
 
 Connection management (connected/unconnected) 
 ---------------------
-(na_addr_t)
-ability to lookup
-get your self/local address
+na_addr_t: ucp_address_t
+
+ucs_status_t ucp_worker_get_address(ucp_worker_h worker, ucp_address_t
+    **address_p, size_t *address_length_p): return the worker's opaque
+    address and its length.  Presumably, we can share this out-of-band
+    with communication peers.
+
+Before a program can communicate with a peer, it has to use the peer's
+address to create an "endpoint" (ucp_ep_h), but it's possible to start
+communication with the endpoint immediately.  That is, you don't have
+to initiate a connection, wait for the connection to finish, et cetera,
+like you do with a BSD socket.
+
+I was surprised to find no peer-discovery methods in UCX.  That is,
+you cannot use UCX to indicate your membership in a communications group
+and to list the other group members by address.
+
+There is no broadcast/multicast in UCX.
+
+Between a worker and each of its endpoints there is a reliable data
+stream.
 
 Tag matching and small messaging
 --------------------------------
@@ -26,5 +69,13 @@ how to do put/get
 
 Progress
 --------
+ucp_worker_progress(worker) gives the progress engine an opportunity
+    to run, returning non-zero if progress was made, 0 otherwise.
+
+ucp_worker_wait(worker) blocks until an event has happened.
+
 check completion queues with ucx
-what is progress model ? does UCX do automatic progress or is there a progress function?
+what is progress model ? does UCX do automatic progress or is there a
+progress function?
+
+
