@@ -36,7 +36,30 @@ na_context_t: ucp_worker_h, a worker "represents an instance of a local
 
 Connection management (connected/unconnected)
 ---------------------
-na_addr_t: ucp_address_t
+na_addr_t: ucp_address_t, variable-length, opaque address.
+
+    Our "concrete" na_addr_t should look like this,
+
+	struct {
+		ucp_address_t *addr;
+		size_t addrlen;
+	};
+
+    All of the na_class_ops methods having anything to do with addresses
+    seem to have straightforward implementations.
+
+    BTW, UCX defines ucp_address_t like this,
+
+	typedef struct ucp_address ucp_address_t;
+
+    UCX never defines `struct ucp_address`.  UCP and its clients use
+    `ucp_address_t *`, but there is not sufficient information to use a
+    `ucp_address_t`-type variable or parameter.  This is a cute trick
+    that contributes to type safety.  Mercury could use the same trick
+    with na_addr_t.  Individual plugins could (I think) have private
+    na_addr_t definitions.
+
+    can treat the ucp_address_t like an array of bytes.
 
 ucs_status_t ucp_worker_get_address(ucp_worker_h worker, ucp_address_t
     **address_p, size_t *address_length_p): return the worker's opaque
@@ -60,12 +83,31 @@ stream.
 
 Tag matching and small messaging
 --------------------------------
-send/recv small messages (check limit of those)
+
+ucs_status_ptr_t ucp_tag_send_nb(ucp_ep_h ep, const void *buffer,
+    size_t count, ucp_datatype_t datatype, ucp_tag_t tag,
+    ucp_send_callback_t cb): non-blocking tagged send
+
+ucs_status_ptr_t ucp_tag_recv_nb(ucp_worker_h worker, void *buffer,
+    size_t count, ucp_datatype_t datatype, ucp_tag_t tag,
+    ucp_tag_t tag_mask, ucp_tag_recv_callback_t cb): non-blocking
+    tagged receive
+
+Using these routines, you can perform scatter-gather I/O by passing a
+`datatype` of `UCP_DATATYPE_IOV` and a vector of `count` `ucp_dt_iov_t`
+in `buffer`.
+
+There are various other tagged send/receive functions.
+
+All of the UCP routines abstract over immediate/eager/rendezvous
+maximum data length, so a maximum message size is not defined.
 
 RMA
 ---
 register memory / exchange descriptors
 how to do put/get
+
+Yes we can!  Details, later. :-)
 
 Progress
 --------
@@ -73,6 +115,13 @@ ucp_worker_progress(worker) gives the progress engine an opportunity
     to run, returning non-zero if progress was made, 0 otherwise.
 
 ucp_worker_wait(worker) blocks until an event has happened.
+
+ucp_worker_get_efd(worker) returns a descriptor that we can add
+    to a poll set.
+
+ucp_worker_arm(worker) has to be called under some circumstances
+    after the last ucp_worker_progress(worker) call but before
+    ucp_worker_wait(worker) or polling the descriptor.
 
 check completion queues with ucx
 what is progress model ? does UCX do automatic progress or is there a
