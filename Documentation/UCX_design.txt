@@ -104,13 +104,40 @@ maximum data length, so a maximum message size is not defined.
 
 RMA
 ---
-register memory / exchange descriptors
-how to do put/get
 
-Yes we can!  Details, later. :-)
+Memory registration:
+
+ucs_status_t ucp_mem_map(ucp_context_h context,
+    const ucp_mem_map_params_t *params, ucp_mem_h *memh_p): register
+    the memory region described by `params` or, if `params->address` is
+    NULL, allocate a region `params->length` bytes long and register it.
+    Store a handle for the registered region at `memh_p`.
+
+ucs_status_t ucp_mem_unmap(ucp_context_h context, ucp_mem_h memh):
+    unregister a region (and free it if `ucp_mem_map` allocated it).
+
+ucs_status_t ucp_rkey_pack(ucp_context_h context, ucp_mem_h memh,
+    void **rkey_buffer_p, size_t *size_p): pack a remote access key for
+    `memh` into the given buffer.  To share the key with a remote peer,
+    send it all `*size_p` bytes of `*rkey_buffer_p`.
+
+ucs_status_t ucp_ep_rkey_unpack(ucp_ep_h ep, const void *rkey_buffer,
+    ucp_rkey_h *rkey_p): unpack the remote access key in `rkey_buffer` and
+    store it at `rkey_p`.
+
+ucs_status_ptr_t ucp_put_nb(ucp_ep_h ep, const void *buffer, size_t length,
+    uint64_t remote_addr, ucp_rkey_h rkey, ucp_send_callback_t cb),
+ucs_status_t ucp_put_nbi(ucp_ep_h ep, const void *buffer, size_t length,
+    uint64_t remote_addr, ucp_rkey_h rkey): put `length`-byte `buffer`
+    at `remote_addr` using access key `rkey`, with or without an explicit
+    indication that UCP is finished with `buffer`.
+
+The documentation has no specific guidance on the derivation and use of a
+`uint64_t` remote address.
 
 Progress
 --------
+
 ucp_worker_progress(worker) gives the progress engine an opportunity
     to run, returning non-zero if progress was made, 0 otherwise.
 
@@ -123,6 +150,3 @@ ucp_worker_arm(worker) has to be called under some circumstances
     after the last ucp_worker_progress(worker) call but before
     ucp_worker_wait(worker) or polling the descriptor.
 
-check completion queues with ucx
-what is progress model ? does UCX do automatic progress or is there a
-progress function?
