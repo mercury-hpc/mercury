@@ -40,7 +40,8 @@ Possibly set up only one worker per class instead of one worker per
 context.
 
 Connection management (connected/unconnected)
----------------------
+---------------------------------------------
+
 na_addr_t: ucp_address_t, variable-length, opaque address.
 
     Our "concrete" na_addr_t should look like this,
@@ -72,7 +73,7 @@ ucs_status_t ucp_worker_get_address(ucp_worker_h worker, ucp_address_t
     with communication peers.
 
 Before a program can communicate with a peer, it has to use the peer's
-address to create an "endpoint" (ucp_ep_h), but it's possible to start
+address to create an "endpoint" (ucp_ep_h).  It's possible to start
 communication with the endpoint immediately.  That is, you don't have
 to initiate a connection, wait for the connection to finish, et cetera,
 like you do with a BSD socket.
