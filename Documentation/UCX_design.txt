@@ -34,6 +34,11 @@ na_context_t: ucp_worker_h, a worker "represents an instance of a local
 
     ucp_worker_create()/_destroy()
 
+In NA, there is one address per na_class_t, but in UCX it appears that
+there is one address per worker.  So there may be a mismatch here.
+Possibly set up only one worker per class instead of one worker per
+context.
+
 Connection management (connected/unconnected) 
 ---------------------
 na_addr_t: ucp_address_t, variable-length, opaque address.
@@ -59,7 +64,7 @@ na_addr_t: ucp_address_t, variable-length, opaque address.
     with na_addr_t.  Individual plugins could (I think) have private
     na_addr_t definitions.
 
-    can treat the ucp_address_t like an array of bytes.
+    We can treat the ucp_address_t like an array of bytes.
 
 ucs_status_t ucp_worker_get_address(ucp_worker_h worker, ucp_address_t
     **address_p, size_t *address_length_p): return the worker's opaque
