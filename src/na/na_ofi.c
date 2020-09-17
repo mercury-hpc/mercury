@@ -486,7 +486,8 @@ na_ofi_av_lookup(struct na_ofi_domain *na_ofi_domain, fi_addr_t fi_addr,
  * Get info caps from providers and return matching providers.
  */
 static na_return_t
-na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers);
+na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
+    const char *user_requested_protocol);
 
 /**
  * Check and resolve interfaces from hostname.
@@ -1376,8 +1377,86 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+static void
+na_ofi_provider_check(
+    enum na_ofi_prov_type prov_type, const char *user_requested_protocol)
+{
+    int rc;
+    struct fi_info *cur;
+    struct fi_info *prev = NULL;
+    size_t avail_len = 0;
+    char *avail;
+    struct fi_info *providers = NULL;
+
+    /* query libfabric with no restrictions to determine what providers
+     * are present
+     */
+    rc = fi_getinfo(NA_OFI_VERSION, /* OFI version requested */
+        NULL,                       /* Optional name or fabric to resolve */
+        NULL,                       /* Optional service name to request */
+        0ULL,                       /* Optional flag */
+        NULL,                       /* Optional hints to filter providers */
+        &providers);                /* Out: List of matching providers */
+    if (rc != 0)
+        return;
+
+    /* look for match */
+    for (cur = providers; cur; cur = cur->next) {
+        if (!strcmp(cur->fabric_attr->prov_name, na_ofi_prov_name[prov_type])) {
+            /* The provider is there at least; follow normal error
+             * handling path rather than printing a special message.
+             */
+            return;
+        }
+        if (!prev ||
+            strcmp(prev->fabric_attr->prov_name, cur->fabric_attr->prov_name)) {
+            /* calculate how large of a string we need to hold
+             * provider list for potential error message */
+            avail_len += strlen(cur->fabric_attr->prov_name) + 1;
+        }
+        prev = cur;
+    }
+
+    prev = NULL;
+    avail = calloc(avail_len + 1, 1);
+    if (!avail) {
+        /* This function is best effort; don't further obfuscate root error
+         * with an memory allocation problem.  Just return.
+         */
+        return;
+    }
+
+    /* generate list of available providers */
+    for (cur = providers; cur; cur = cur->next) {
+        if (!prev ||
+            strcmp(prev->fabric_attr->prov_name, cur->fabric_attr->prov_name)) {
+            /* construct comma delimited list */
+            strcat(avail, cur->fabric_attr->prov_name);
+            strcat(avail, ",");
+        }
+        prev = cur;
+    }
+    /* truncate final comma */
+    avail[strlen(avail) - 1] = '\0';
+
+    /* display error message */
+    NA_LOG_ERROR("Requested OFI provider \"%s\" (derived from\n"
+                 "  \"%s\" Mercury protocol) is not available.",
+        na_ofi_prov_name[prov_type], user_requested_protocol);
+    NA_LOG_ERROR("Please re-compile libfabric with support for\n"
+                 "  \"%s\" or use one of the following available providers:\n"
+                 "  %s",
+        na_ofi_prov_name[prov_type], avail);
+
+    free(avail);
+
+    return;
+}
+
+/*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers)
+na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers,
+    const char *user_requested_protocol)
 {
     struct fi_info *hints = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -1455,6 +1534,14 @@ na_ofi_getinfo(enum na_ofi_prov_type prov_type, struct fi_info **providers)
         0ULL,                       /* Optional flag */
         hints,                      /* In: Hints to filter providers */
         providers);                 /* Out: List of matching providers */
+    if (rc != 0) {
+        /* getinfo failed.  This could be because Mercury was
+         * linked against a libfabric library that was not compiled with
+         * support for the desired provider.  Attempt to detect this case
+         * and display a user-friendly error message.
+         */
+        na_ofi_provider_check(prov_type, user_requested_protocol);
+    }
     NA_CHECK_ERROR(rc != 0, cleanup, ret, NA_PROTOCOL_ERROR,
         "fi_getinfo() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
@@ -1640,7 +1727,7 @@ na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
     }
 
     /* If no pre-existing domain, get OFI providers info */
-    ret = na_ofi_getinfo(prov_type, &providers);
+    ret = na_ofi_getinfo(prov_type, &providers, NULL);
     NA_CHECK_NA_ERROR(error, ret, "na_ofi_getinfo() failed");
 
     /* Try to find provider that matches protocol and domain/host name */
@@ -1948,6 +2035,7 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
 
     rc = fi_getinfo(
         NA_OFI_VERSION, node, NULL, flags, hints, &na_ofi_endpoint->fi_prov);
+
     NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
         "fi_getinfo(%s) failed, rc: %d (%s)", node, rc, fi_strerror(-rc));
 
@@ -2955,7 +3043,7 @@ na_ofi_check_protocol(const char *protocol_name)
         "Protocol %s not supported", protocol_name);
 
     /* Get info from provider */
-    ret = na_ofi_getinfo(type, &providers);
+    ret = na_ofi_getinfo(type, &providers, protocol_name);
     NA_CHECK_NA_ERROR(out, ret, "na_ofi_getinfo() failed");
 
     prov = providers;
