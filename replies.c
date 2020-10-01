@@ -192,6 +192,9 @@ run_server(ucp_worker_h worker)
     recv_desc_t recv_desc[3];
     int i;
 
+    /* Allocate a buffer for each receive descriptor and queue with
+     * UCP.
+     */
     for (i = 0; i < NELTS(recv_desc); i++) {
         wireup_msg_t *msg;
         const size_t msglen = sizeof(*msg);
@@ -219,6 +222,8 @@ run_server(ucp_worker_h worker)
         recv_desc_setup(worker, recv_desc[i].msg, recv_desc[i].msglen,
             &recv_desc[i]);
     }
+
+    /* Release UCP resources held by each descriptor.  Free buffers. */
     for (i = 0; i < NELTS(recv_desc); i++) {
         void *request;
         recv_desc_t *desc = &recv_desc[i];
@@ -228,6 +233,7 @@ run_server(ucp_worker_h worker)
         desc->request = NULL;
         ucp_request_cancel(worker, request);
         ucp_request_release(request);
+        free(desc->msg);
     }
 }
 
