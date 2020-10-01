@@ -6,6 +6,6 @@ itme: itme.c
 	gcc -g -O0 -Wall -pedantic -std=c11 -Werror -D_POSIX_C_SOURCE=200809L \
 	    $(UCX_CONFIG) -o itme itme.c
 
-replies: replies.c
+replies: replies.c util.c
 	gcc -g -O0 -Wall -pedantic -std=c11 -Werror -D_POSIX_C_SOURCE=200809L \
-	    $(UCX_CONFIG) -o replies replies.c
+	    $(UCX_CONFIG) -o replies replies.c util.c
