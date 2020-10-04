@@ -39,11 +39,7 @@ extern "C" {
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PRIVATE na_return_t
-na_ip_parse_subnet(
-        const char *spec,
-        na_uint32_t *netp,
-        na_uint32_t *netmaskp
-        );
+na_ip_parse_subnet(const char *spec, na_uint32_t *netp, na_uint32_t *netmaskp);
 
 /**
  * Get preferred ip address (based on provided subnet).
@@ -55,11 +51,7 @@ na_ip_parse_subnet(
  * \return NA_SUCCESS or corresponding NA error code
  */
 NA_PRIVATE na_return_t
-na_ip_pref_addr(
-        na_uint32_t net,
-        na_uint32_t netmask,
-        char *outstr
-        );
+na_ip_pref_addr(na_uint32_t net, na_uint32_t netmask, char *outstr);
 
 #ifdef __cplusplus
 }

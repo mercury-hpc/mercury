@@ -24,8 +24,8 @@
  * if we ever need to. Users should use macros and not global variables
  * directly.
  */
-#define HG_CLASS_DEFAULT hg_class_default_g
-#define HG_CONTEXT_DEFAULT hg_context_default_g
+#define HG_CLASS_DEFAULT         hg_class_default_g
+#define HG_CONTEXT_DEFAULT       hg_context_default_g
 #define HG_REQUEST_CLASS_DEFAULT hg_request_class_default_g
 
 #ifdef __cplusplus
@@ -61,10 +61,7 @@ extern HG_PUBLIC hg_request_class_t *HG_REQUEST_CLASS_DEFAULT;
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Hl_init(
-        const char *na_info_string,
-        hg_bool_t na_listen
-        );
+HG_Hl_init(const char *na_info_string, hg_bool_t na_listen);
 
 /**
  * Initialize Mercury high-level layer with options provided by init_info.
@@ -82,11 +79,8 @@ HG_Hl_init(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Hl_init_opt(
-        const char *na_info_string,
-        hg_bool_t na_listen,
-        const struct hg_init_info *hg_init_info
-        );
+HG_Hl_init_opt(const char *na_info_string, hg_bool_t na_listen,
+    const struct hg_init_info *hg_init_info);
 
 /**
  * Finalize Mercury high-level layer.
@@ -94,9 +88,7 @@ HG_Hl_init_opt(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Hl_finalize(
-        void
-        );
+HG_Hl_finalize(void);
 
 /**
  * Lookup an address and wait for its completion. Address must be freed
@@ -105,13 +97,8 @@ HG_Hl_finalize(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Hl_addr_lookup_wait(
-        hg_context_t *context,
-        hg_request_class_t *request_class,
-        const char *name,
-        hg_addr_t *addr,
-        unsigned int timeout
-        );
+HG_Hl_addr_lookup_wait(hg_context_t *context, hg_request_class_t *request_class,
+    const char *name, hg_addr_t *addr, unsigned int timeout);
 
 /**
  * Forward a call and wait for its completion. A HG handle must have been
@@ -121,12 +108,8 @@ HG_Hl_addr_lookup_wait(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Hl_forward_wait(
-        hg_request_class_t *request_class,
-        hg_handle_t handle,
-        void *in_struct,
-        unsigned int timeout
-        );
+HG_Hl_forward_wait(hg_request_class_t *request_class, hg_handle_t handle,
+    void *in_struct, unsigned int timeout);
 
 /**
  * Initiate a bulk data transfer and wait for its completion.
@@ -145,18 +128,10 @@ HG_Hl_forward_wait(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Hl_bulk_transfer_wait(
-        hg_context_t *context,
-        hg_request_class_t *request_class,
-        hg_bulk_op_t op,
-        hg_addr_t origin_addr,
-        hg_bulk_t origin_handle,
-        hg_size_t origin_offset,
-        hg_bulk_t local_handle,
-        hg_size_t local_offset,
-        hg_size_t size,
-        unsigned int timeout
-        );
+HG_Hl_bulk_transfer_wait(hg_context_t *context,
+    hg_request_class_t *request_class, hg_bulk_op_t op, hg_addr_t origin_addr,
+    hg_bulk_t origin_handle, hg_size_t origin_offset, hg_bulk_t local_handle,
+    hg_size_t local_offset, hg_size_t size, unsigned int timeout);
 
 #ifdef __cplusplus
 }

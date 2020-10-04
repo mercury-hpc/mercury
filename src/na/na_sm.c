@@ -4529,9 +4529,9 @@ na_sm_progress(
         hg_time_t t1, t2;
 
         if (timeout)
-            hg_time_get_current(&t1);
+            hg_time_get_current_ms(&t1);
 
-        if (timeout && na_sm_endpoint->poll_set) {
+        if (na_sm_endpoint->poll_set) {
             unsigned int nevents = 0, i;
             /* Just wait on a single event, anything greater may increase
              * latency, and slow down progress, we will not wait next round
@@ -4652,8 +4652,8 @@ na_sm_progress(
         NA_CHECK_NA_ERROR(done, ret, "Could not process retried msgs");
 
         if (timeout) {
-            hg_time_get_current(&t2);
-            remaining -= hg_time_to_double(hg_time_subtract(t2, t1));
+            hg_time_get_current_ms(&t2);
+            remaining -= hg_time_diff(t2, t1);
         }
 
         if (!progressed)

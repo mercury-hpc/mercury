@@ -14,8 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define NA_TEST_BULK_SIZE 1024 * 1024
-#define NA_TEST_BULK_TAG 102
+#define NA_TEST_BULK_SIZE    1024 * 1024
+#define NA_TEST_BULK_TAG     102
 #define NA_TEST_BULK_ACK_TAG 103
 
 static int test_done_g = 0;
@@ -38,15 +38,18 @@ struct na_test_params {
 };
 
 /* NA test routines */
-static int test_send_respond(struct na_test_params *params, na_tag_t send_tag);
+static int
+test_send_respond(struct na_test_params *params, na_tag_t send_tag);
 #ifdef NA_HAS_CCI
-static int test_bulk_prepare(struct na_test_params *params);
+static int
+test_bulk_prepare(struct na_test_params *params);
 #endif
 
 static int
 msg_unexpected_recv_cb(const struct na_cb_info *callback_info)
 {
-    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
+    struct na_test_params *params =
+        (struct na_test_params *) callback_info->arg;
     na_tag_t recv_tag;
     na_return_t ret = NA_SUCCESS;
 
@@ -103,7 +106,8 @@ msg_expected_send_final_cb(const struct na_cb_info *callback_info)
 static int
 bulk_put_cb(const struct na_cb_info *callback_info)
 {
-    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
+    struct na_test_params *params =
+        (struct na_test_params *) callback_info->arg;
     na_tag_t ack_tag = NA_TEST_BULK_ACK_TAG;
     na_return_t ret = NA_SUCCESS;
 
@@ -160,7 +164,8 @@ bulk_put_cb(const struct na_cb_info *callback_info)
 static int
 bulk_get_cb(const struct na_cb_info *callback_info)
 {
-    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
+    struct na_test_params *params =
+        (struct na_test_params *) callback_info->arg;
     na_return_t ret = NA_SUCCESS;
     unsigned int i;
     na_bool_t error = 0;
@@ -189,7 +194,8 @@ bulk_get_cb(const struct na_cb_info *callback_info)
     for (i = 0; i < params->bulk_size; i++) {
         if ((na_size_t) params->bulk_buf[i] != i) {
             printf("Error detected in bulk transfer, bulk_buf[%u] = %d,\t"
-                " was expecting %u!\n", i, params->bulk_buf[i], i);
+                   " was expecting %u!\n",
+                i, params->bulk_buf[i], i);
             error = 1;
             break;
         }
@@ -224,7 +230,8 @@ bulk_get_cb(const struct na_cb_info *callback_info)
 static int
 mem_handle_expected_recv_cb(const struct na_cb_info *callback_info)
 {
-    struct na_test_params *params = (struct na_test_params *) callback_info->arg;
+    struct na_test_params *params =
+        (struct na_test_params *) callback_info->arg;
     na_op_id_t op_id;
     na_return_t ret = NA_SUCCESS;
 
@@ -270,10 +277,9 @@ test_send_respond(struct na_test_params *params, na_tag_t send_tag)
     /* Respond back */
     sprintf(params->send_buf, "Hello Client!");
 
-    na_ret = NA_Msg_send_expected(params->na_class, params->context,
-        NULL, NULL, params->send_buf, params->send_buf_len,
-        params->send_buf_plugin_data, params->source_addr, 0,
-        send_tag, NA_OP_ID_IGNORE);
+    na_ret = NA_Msg_send_expected(params->na_class, params->context, NULL, NULL,
+        params->send_buf, params->send_buf_len, params->send_buf_plugin_data,
+        params->source_addr, 0, send_tag, NA_OP_ID_IGNORE);
     if (na_ret != NA_SUCCESS) {
         fprintf(stderr, "Could not start send of message\n");
         return EXIT_FAILURE;
@@ -323,7 +329,7 @@ test_bulk_prepare(struct na_test_params *params)
 int
 main(int argc, char *argv[])
 {
-    struct na_test_info na_test_info = { 0 };
+    struct na_test_info na_test_info = {0};
     int peer;
     struct na_test_params params;
     na_return_t na_ret;
@@ -338,14 +344,14 @@ main(int argc, char *argv[])
     /* Allocate send/recv/bulk bufs */
     params.send_buf_len = NA_Msg_get_max_unexpected_size(params.na_class);
     params.recv_buf_len = params.send_buf_len;
-    params.send_buf = (char*)NA_Msg_buf_alloc(params.na_class,
-        params.send_buf_len, &params.send_buf_plugin_data);
-    params.recv_buf = (char*)NA_Msg_buf_alloc(params.na_class,
-        params.recv_buf_len, &params.recv_buf_plugin_data);
+    params.send_buf = (char *) NA_Msg_buf_alloc(
+        params.na_class, params.send_buf_len, &params.send_buf_plugin_data);
+    params.recv_buf = (char *) NA_Msg_buf_alloc(
+        params.na_class, params.recv_buf_len, &params.recv_buf_plugin_data);
 
     /* Prepare bulk_buf */
     params.bulk_size = NA_TEST_BULK_SIZE;
-    params.bulk_buf = (int*) malloc(params.bulk_size * sizeof(int));
+    params.bulk_buf = (int *) malloc(params.bulk_size * sizeof(int));
 
     for (peer = 0; peer < na_test_info.max_number_of_peers; peer++) {
         unsigned int i;
@@ -376,14 +382,15 @@ main(int argc, char *argv[])
             unsigned int actual_count = 0;
 
             do {
-                trigger_ret = NA_Trigger(params.context, 0, 1, NULL, &actual_count);
+                trigger_ret =
+                    NA_Trigger(params.context, 0, 1, NULL, &actual_count);
             } while ((trigger_ret == NA_SUCCESS) && actual_count);
 
             if (test_done_g)
                 break;
 
-            na_ret = NA_Progress(params.na_class, params.context,
-                NA_MAX_IDLE_TIME);
+            na_ret =
+                NA_Progress(params.na_class, params.context, NA_MAX_IDLE_TIME);
             if (na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT) {
                 return EXIT_SUCCESS;
             }
@@ -401,8 +408,10 @@ main(int argc, char *argv[])
     printf("Finalizing...\n");
 
     free(params.bulk_buf);
-    NA_Msg_buf_free(params.na_class, params.recv_buf, params.recv_buf_plugin_data);
-    NA_Msg_buf_free(params.na_class, params.send_buf, params.send_buf_plugin_data);
+    NA_Msg_buf_free(
+        params.na_class, params.recv_buf, params.recv_buf_plugin_data);
+    NA_Msg_buf_free(
+        params.na_class, params.send_buf, params.send_buf_plugin_data);
 
     NA_Context_destroy(params.na_class, params.context);
 

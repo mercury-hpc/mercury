@@ -31,7 +31,7 @@ hg_test_posix_forward_cb(const struct hg_cb_info *callback_info)
 static int
 open_rpc(const char *pathname, int flags, mode_t mode)
 {
-    open_in_t  open_in_struct;
+    open_in_t open_in_struct;
     open_out_t open_out_struct;
     hg_request_t *request;
     hg_handle_t handle;
@@ -52,7 +52,8 @@ open_rpc(const char *pathname, int flags, mode_t mode)
     open_in_struct.mode = mode;
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(handle, hg_test_posix_forward_cb, request, &open_in_struct);
+    hg_ret =
+        HG_Forward(handle, hg_test_posix_forward_cb, request, &open_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         goto done;
@@ -94,7 +95,7 @@ done:
 static int
 close_rpc(int fd)
 {
-    close_in_t  close_in_struct;
+    close_in_t close_in_struct;
     close_out_t close_out_struct;
     hg_request_t *request;
     hg_handle_t handle;
@@ -113,8 +114,8 @@ close_rpc(int fd)
     close_in_struct.fd = fd;
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(handle, hg_test_posix_forward_cb, request,
-            &close_in_struct);
+    hg_ret =
+        HG_Forward(handle, hg_test_posix_forward_cb, request, &close_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         goto done;
@@ -156,7 +157,7 @@ done:
 static ssize_t
 write_rpc(int fd, void *buf, size_t count)
 {
-    write_in_t  write_in_struct;
+    write_in_t write_in_struct;
     write_out_t write_out_struct;
 
     hg_bulk_t bulk_handle;
@@ -174,8 +175,8 @@ write_rpc(int fd, void *buf, size_t count)
     }
 
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_class, 1, &buf, (hg_size_t *) &count, HG_BULK_READ_ONLY,
-            &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_class, 1, &buf, (hg_size_t *) &count,
+        HG_BULK_READ_ONLY, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         goto done;
@@ -186,8 +187,8 @@ write_rpc(int fd, void *buf, size_t count)
     write_in_struct.fd = fd;
 
     /* Forward call to remote addr and get a new request */
-    hg_ret = HG_Forward(handle, hg_test_posix_forward_cb, request,
-            &write_in_struct);
+    hg_ret =
+        HG_Forward(handle, hg_test_posix_forward_cb, request, &write_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         goto done;
@@ -236,7 +237,7 @@ done:
 static ssize_t
 read_rpc(int fd, void *buf, size_t count)
 {
-    read_in_t  read_in_struct;
+    read_in_t read_in_struct;
     read_out_t read_out_struct;
 
     hg_bulk_t bulk_handle;
@@ -254,8 +255,8 @@ read_rpc(int fd, void *buf, size_t count)
     }
 
     /* Register memory */
-    hg_ret = HG_Bulk_create(hg_class, 1, &buf, (hg_size_t *) &count, HG_BULK_READWRITE,
-            &bulk_handle);
+    hg_ret = HG_Bulk_create(hg_class, 1, &buf, (hg_size_t *) &count,
+        HG_BULK_READWRITE, &bulk_handle);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not create bulk data handle\n");
         goto done;
@@ -266,8 +267,8 @@ read_rpc(int fd, void *buf, size_t count)
     read_in_struct.fd = fd;
 
     /* Forward call to remote addr */
-    hg_ret = HG_Forward(handle, hg_test_posix_forward_cb, request,
-            &read_in_struct);
+    hg_ret =
+        HG_Forward(handle, hg_test_posix_forward_cb, request, &read_in_struct);
     if (hg_ret != HG_SUCCESS) {
         fprintf(stderr, "Could not forward call\n");
         goto done;
@@ -332,14 +333,14 @@ main(int argc, char *argv[])
     int fd = 0;
     int *read_buf = NULL;
     int *write_buf = NULL;
-    size_t n_ints = 1024*1024;
+    size_t n_ints = 1024 * 1024;
     unsigned int i;
     int error = 0;
     int rank;
     ssize_t nbyte;
 
 #ifndef MERCURY_HAS_ADVANCED_MACROS
-    struct hg_test_info hg_test_info = { 0 };
+    struct hg_test_info hg_test_info = {0};
 
     printf("Initializing...\n");
     /* Initialize the interface */
@@ -353,8 +354,8 @@ main(int argc, char *argv[])
     sprintf(filename, HG_TEST_TEMP_DIRECTORY "/posix_test%d", rank);
 
     /* Prepare buffers */
-    write_buf = (int*) malloc(sizeof(int) * n_ints);
-    read_buf =  (int*) malloc(sizeof(int) * n_ints);
+    write_buf = (int *) malloc(sizeof(int) * n_ints);
+    read_buf = (int *) malloc(sizeof(int) * n_ints);
     for (i = 0; i < n_ints; i++) {
         write_buf[i] = (int) i;
         read_buf[i] = 0;
@@ -413,13 +414,15 @@ main(int argc, char *argv[])
     /* Check bulk buf */
     for (i = 0; i < n_ints; i++) {
         if (read_buf[i] != write_buf[i]) {
-            printf("(%d) Error detected in bulk transfer, read_buf[%u] = %d, was expecting %d!\n",
-                    rank, i, read_buf[i], write_buf[i]);
+            printf("(%d) Error detected in bulk transfer, read_buf[%u] = %d, "
+                   "was expecting %d!\n",
+                rank, i, read_buf[i], write_buf[i]);
             error = 1;
             break;
         }
     }
-    if (!error) printf("(%d) Successfully transferred %zd bytes!\n", rank, nbyte);
+    if (!error)
+        printf("(%d) Successfully transferred %zd bytes!\n", rank, nbyte);
 
     /* Free bulk data */
     free(write_buf);

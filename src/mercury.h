@@ -11,8 +11,8 @@
 #ifndef MERCURY_H
 #define MERCURY_H
 
-#include "mercury_types.h"
 #include "mercury_header.h"
+#include "mercury_types.h"
 
 #include "mercury_core.h"
 
@@ -46,11 +46,7 @@ extern "C" {
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Version_get(
-        unsigned int *major,
-        unsigned int *minor,
-        unsigned int *patch
-        );
+HG_Version_get(unsigned int *major, unsigned int *minor, unsigned int *patch);
 
 /**
  * Convert error return code to string (null terminated).
@@ -60,9 +56,7 @@ HG_Version_get(
  * \return String
  */
 HG_PUBLIC const char *
-HG_Error_to_string(
-        hg_return_t errnum
-        );
+HG_Error_to_string(hg_return_t errnum);
 
 /**
  * Initialize the Mercury layer.
@@ -76,10 +70,7 @@ HG_Error_to_string(
  * \return Pointer to HG class or NULL in case of failure
  */
 HG_PUBLIC hg_class_t *
-HG_Init(
-        const char *na_info_string,
-        hg_bool_t na_listen
-        );
+HG_Init(const char *na_info_string, hg_bool_t na_listen);
 
 /**
  * Initialize the Mercury layer with options provided by init_info.
@@ -95,11 +86,8 @@ HG_Init(
  * \return Pointer to HG class or NULL in case of failure
  */
 HG_PUBLIC hg_class_t *
-HG_Init_opt(
-        const char *na_info_string,
-        hg_bool_t na_listen,
-        const struct hg_init_info *hg_init_info
-        );
+HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
+    const struct hg_init_info *hg_init_info);
 
 /**
  * Finalize the Mercury layer.
@@ -109,9 +97,7 @@ HG_Init_opt(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Finalize(
-        hg_class_t *hg_class
-        );
+HG_Finalize(hg_class_t *hg_class);
 
 /**
  * Clean up all temporary files that were created in previous HG instances.
@@ -120,9 +106,7 @@ HG_Finalize(
  * abnormally to easily clean up those resources.
  */
 HG_PUBLIC void
-HG_Cleanup(
-        void
-        );
+HG_Cleanup(void);
 
 /**
  * Obtain the name of the given class.
@@ -132,9 +116,7 @@ HG_Cleanup(
  * \return the name of the class, or NULL if not a valid class
  */
 static HG_INLINE const char *
-HG_Class_get_name(
-        const hg_class_t *hg_class
-        );
+HG_Class_get_name(const hg_class_t *hg_class);
 
 /**
  * Obtain the protocol of the given class.
@@ -144,9 +126,7 @@ HG_Class_get_name(
  * \return the name of the class's transport, or NULL if not a valid class
  */
 static HG_INLINE const char *
-HG_Class_get_protocol(
-        const hg_class_t *hg_class
-        );
+HG_Class_get_protocol(const hg_class_t *hg_class);
 
 /**
  * Test whether class is listening or not.
@@ -156,9 +136,7 @@ HG_Class_get_protocol(
  * \return HG_TRUE if listening or HG_FALSE if not, or not a valid class
  */
 static HG_INLINE hg_bool_t
-HG_Class_is_listening(
-        const hg_class_t *hg_class
-        );
+HG_Class_is_listening(const hg_class_t *hg_class);
 
 /**
  * Obtain the maximum eager size for sending RPC inputs, for a given class.
@@ -170,9 +148,7 @@ HG_Class_is_listening(
  * being used
  */
 static HG_INLINE hg_size_t
-HG_Class_get_input_eager_size(
-        const hg_class_t *hg_class
-        );
+HG_Class_get_input_eager_size(const hg_class_t *hg_class);
 
 /**
  * Obtain the maximum eager size for sending RPC outputs, for a given class.
@@ -184,9 +160,7 @@ HG_Class_get_input_eager_size(
  * being used
  */
 static HG_INLINE hg_size_t
-HG_Class_get_output_eager_size(
-        const hg_class_t *hg_class
-        );
+HG_Class_get_output_eager_size(const hg_class_t *hg_class);
 
 /**
  * Set offset used for serializing / deserializing input. This allows upper
@@ -200,10 +174,7 @@ HG_Class_get_output_eager_size(
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-HG_Class_set_input_offset(
-        hg_class_t *hg_class,
-        hg_size_t offset
-        );
+HG_Class_set_input_offset(hg_class_t *hg_class, hg_size_t offset);
 
 /**
  * Set offset used for serializing / deserializing output. This allows upper
@@ -217,10 +188,7 @@ HG_Class_set_input_offset(
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-HG_Class_set_output_offset(
-        hg_class_t *hg_class,
-        hg_size_t offset
-        );
+HG_Class_set_output_offset(hg_class_t *hg_class, hg_size_t offset);
 
 /**
  * Associate user data to class. When HG_Finalize() is called,
@@ -234,10 +202,7 @@ HG_Class_set_output_offset(
  */
 static HG_INLINE hg_return_t
 HG_Class_set_data(
-        hg_class_t *hg_class,
-        void *data,
-        void (*free_callback)(void *)
-        );
+    hg_class_t *hg_class, void *data, void (*free_callback)(void *));
 
 /**
  * Retrieve previously associated data from a given class.
@@ -247,9 +212,7 @@ HG_Class_set_data(
  * \return Pointer to user data or NULL if not set or any error has occurred
  */
 static HG_INLINE void *
-HG_Class_get_data(
-        const hg_class_t *hg_class
-        );
+HG_Class_get_data(const hg_class_t *hg_class);
 
 /**
  * Set callback to be called on HG handle creation. Handles are created
@@ -264,11 +227,8 @@ HG_Class_get_data(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Class_set_handle_create_callback(
-        hg_class_t *hg_class,
-        hg_return_t (*callback)(hg_handle_t, void *),
-        void *arg
-        );
+HG_Class_set_handle_create_callback(hg_class_t *hg_class,
+    hg_return_t (*callback)(hg_handle_t, void *), void *arg);
 
 /**
  * Create a new context. Must be destroyed by calling HG_Context_destroy().
@@ -283,9 +243,7 @@ HG_Class_set_handle_create_callback(
  * \return Pointer to HG context or NULL in case of failure
  */
 HG_PUBLIC hg_context_t *
-HG_Context_create(
-        hg_class_t *hg_class
-        );
+HG_Context_create(hg_class_t *hg_class);
 
 /**
  * Create a new context with a user-defined context identifier. The context
@@ -304,10 +262,7 @@ HG_Context_create(
  * \return Pointer to HG context or NULL in case of failure
  */
 HG_PUBLIC hg_context_t *
-HG_Context_create_id(
-        hg_class_t *hg_class,
-        hg_uint8_t id
-        );
+HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id);
 
 /**
  * Destroy a context created by HG_Context_create().
@@ -317,9 +272,7 @@ HG_Context_create_id(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Context_destroy(
-        hg_context_t *context
-        );
+HG_Context_destroy(hg_context_t *context);
 
 /**
  * Retrieve the class used to create the given context.
@@ -329,9 +282,7 @@ HG_Context_destroy(
  * \return Pointer to associated HG class or NULL if not a valid context
  */
 static HG_INLINE hg_class_t *
-HG_Context_get_class(
-        const hg_context_t *context
-        );
+HG_Context_get_class(const hg_context_t *context);
 
 /**
  * Retrieve context ID from context (max value of 255).
@@ -341,9 +292,7 @@ HG_Context_get_class(
  * \return Non-negative integer (max value of 255) or 0 if no ID has been set
  */
 static HG_INLINE hg_uint8_t
-HG_Context_get_id(
-        const hg_context_t *context
-        );
+HG_Context_get_id(const hg_context_t *context);
 
 /**
  * Associate user data to context. When HG_Context_destroy() is called,
@@ -357,10 +306,7 @@ HG_Context_get_id(
  */
 static HG_INLINE hg_return_t
 HG_Context_set_data(
-        hg_context_t *context,
-        void *data,
-        void (*free_callback)(void *)
-        );
+    hg_context_t *context, void *data, void (*free_callback)(void *));
 
 /**
  * Retrieve previously associated data from a given context.
@@ -370,9 +316,7 @@ HG_Context_set_data(
  * \return Pointer to user data or NULL if not set or any error has occurred
  */
 static HG_INLINE void *
-HG_Context_get_data(
-        const hg_context_t *context
-        );
+HG_Context_get_data(const hg_context_t *context);
 
 /**
  * Dynamically register a function func_name as an RPC as well as the
@@ -389,13 +333,8 @@ HG_Context_get_data(
  * \return unique ID associated to the registered function
  */
 HG_PUBLIC hg_id_t
-HG_Register_name(
-        hg_class_t *hg_class,
-        const char *func_name,
-        hg_proc_cb_t in_proc_cb,
-        hg_proc_cb_t out_proc_cb,
-        hg_rpc_cb_t rpc_cb
-        );
+HG_Register_name(hg_class_t *hg_class, const char *func_name,
+    hg_proc_cb_t in_proc_cb, hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb);
 
 /*
  * Indicate whether HG_Register_name() has been called for the RPC specified by
@@ -410,11 +349,7 @@ HG_Register_name(
  */
 HG_PUBLIC hg_return_t
 HG_Registered_name(
-        hg_class_t *hg_class,
-        const char *func_name,
-        hg_id_t *id,
-        hg_bool_t *flag
-        );
+    hg_class_t *hg_class, const char *func_name, hg_id_t *id, hg_bool_t *flag);
 
 /**
  * Dynamically register an RPC ID as well as the RPC callback executed when the
@@ -430,13 +365,8 @@ HG_Registered_name(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Register(
-        hg_class_t *hg_class,
-        hg_id_t id,
-        hg_proc_cb_t in_proc_cb,
-        hg_proc_cb_t out_proc_cb,
-        hg_rpc_cb_t rpc_cb
-        );
+HG_Register(hg_class_t *hg_class, hg_id_t id, hg_proc_cb_t in_proc_cb,
+    hg_proc_cb_t out_proc_cb, hg_rpc_cb_t rpc_cb);
 
 /**
  * Deregister RPC ID. Further requests with RPC ID will return an error, it
@@ -449,10 +379,7 @@ HG_Register(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Deregister(
-        hg_class_t *hg_class,
-        hg_id_t id
-        );
+HG_Deregister(hg_class_t *hg_class, hg_id_t id);
 
 /**
  * Indicate whether HG_Register() has been called.
@@ -464,11 +391,7 @@ HG_Deregister(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Registered(
-        hg_class_t *hg_class,
-        hg_id_t id,
-        hg_bool_t *flag
-        );
+HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag);
 
 /**
  * Indicate whether HG_Register() has been called, and if so return pointers
@@ -483,13 +406,8 @@ HG_Registered(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Registered_proc_cb(
-        hg_class_t *hg_class,
-        hg_id_t id,
-        hg_bool_t *flag,
-        hg_proc_cb_t *in_proc_cb,
-        hg_proc_cb_t *out_proc_cb
-        );
+HG_Registered_proc_cb(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag,
+    hg_proc_cb_t *in_proc_cb, hg_proc_cb_t *out_proc_cb);
 
 /**
  * Register and associate user data to registered function. When HG_Finalize()
@@ -504,12 +422,8 @@ HG_Registered_proc_cb(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Register_data(
-        hg_class_t *hg_class,
-        hg_id_t id,
-        void *data,
-        void (*free_callback)(void *)
-        );
+HG_Register_data(hg_class_t *hg_class, hg_id_t id, void *data,
+    void (*free_callback)(void *));
 
 /**
  * Indicate whether HG_Register_data() has been called and return associated
@@ -521,10 +435,7 @@ HG_Register_data(
  * \return Pointer to data or NULL
  */
 HG_PUBLIC void *
-HG_Registered_data(
-        hg_class_t *hg_class,
-        hg_id_t id
-        );
+HG_Registered_data(hg_class_t *hg_class, hg_id_t id);
 
 /**
  * Disable response for a given RPC ID. This allows an origin process to send an
@@ -542,10 +453,7 @@ HG_Registered_data(
  */
 HG_PUBLIC hg_return_t
 HG_Registered_disable_response(
-        hg_class_t *hg_class,
-        hg_id_t id,
-        hg_bool_t disable
-        );
+    hg_class_t *hg_class, hg_id_t id, hg_bool_t disable);
 
 /**
  * Check if response is disabled for a given RPC ID
@@ -560,10 +468,7 @@ HG_Registered_disable_response(
  */
 HG_PUBLIC hg_return_t
 HG_Registered_disabled_response(
-        hg_class_t *hg_class,
-        hg_id_t id,
-        hg_bool_t *disabled
-        );
+    hg_class_t *hg_class, hg_id_t id, hg_bool_t *disabled);
 
 /**
  * Lookup an addr from a peer address/name. Addresses need to be
@@ -579,17 +484,12 @@ HG_Registered_disabled_response(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Addr_lookup1(
-        hg_context_t *context,
-        hg_cb_t       callback,
-        void         *arg,
-        const char   *name,
-        hg_op_id_t   *op_id
-        );
+HG_Addr_lookup1(hg_context_t *context, hg_cb_t callback, void *arg,
+    const char *name, hg_op_id_t *op_id);
 
 /* This will map to HG_Addr_lookup2() in the future */
 #ifndef HG_Addr_lookup
-#define HG_Addr_lookup HG_Addr_lookup1
+#    define HG_Addr_lookup HG_Addr_lookup1
 #endif
 
 /**
@@ -605,11 +505,7 @@ HG_Addr_lookup1(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Addr_lookup2(
-        hg_class_t *hg_class,
-        const char *name,
-        hg_addr_t  *addr
-        );
+HG_Addr_lookup2(hg_class_t *hg_class, const char *name, hg_addr_t *addr);
 
 /**
  * Free the addr.
@@ -620,10 +516,7 @@ HG_Addr_lookup2(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Addr_free(
-        hg_class_t *hg_class,
-        hg_addr_t   addr
-        );
+HG_Addr_free(hg_class_t *hg_class, hg_addr_t addr);
 
 /**
  * Hint that the address is no longer valid. This may happen if the peer is
@@ -637,10 +530,7 @@ HG_Addr_free(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Addr_set_remove(
-        hg_class_t *hg_class,
-        hg_addr_t   addr
-        );
+HG_Addr_set_remove(hg_class_t *hg_class, hg_addr_t addr);
 
 /**
  * Access self address. Address must be freed with HG_Addr_free().
@@ -651,10 +541,7 @@ HG_Addr_set_remove(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Addr_self(
-        hg_class_t *hg_class,
-        hg_addr_t  *addr
-        );
+HG_Addr_self(hg_class_t *hg_class, hg_addr_t *addr);
 
 /**
  * Duplicate an existing HG abstract address. The duplicated address can be
@@ -668,11 +555,7 @@ HG_Addr_self(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Addr_dup(
-        hg_class_t *hg_class,
-        hg_addr_t   addr,
-        hg_addr_t  *new_addr
-        );
+HG_Addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr);
 
 /**
  * Compare two addresses.
@@ -684,11 +567,7 @@ HG_Addr_dup(
  * \return HG_TRUE if addresses are determined to be equal, HG_FALSE otherwise
  */
 HG_PUBLIC hg_bool_t
-HG_Addr_cmp(
-        hg_class_t *hg_class,
-        hg_addr_t addr1,
-        hg_addr_t addr2
-        );
+HG_Addr_cmp(hg_class_t *hg_class, hg_addr_t addr1, hg_addr_t addr2);
 
 /**
  * Convert an addr to a string (returned string includes the terminating
@@ -706,11 +585,7 @@ HG_Addr_cmp(
  */
 HG_PUBLIC hg_return_t
 HG_Addr_to_string(
-        hg_class_t *hg_class,
-        char       *buf,
-        hg_size_t  *buf_size,
-        hg_addr_t   addr
-        );
+    hg_class_t *hg_class, char *buf, hg_size_t *buf_size, hg_addr_t addr);
 
 /**
  * Initiate a new HG RPC using the specified function ID and the local/remote
@@ -727,11 +602,7 @@ HG_Addr_to_string(
  */
 HG_PUBLIC hg_return_t
 HG_Create(
-        hg_context_t *context,
-        hg_addr_t addr,
-        hg_id_t id,
-        hg_handle_t *handle
-        );
+    hg_context_t *context, hg_addr_t addr, hg_id_t id, hg_handle_t *handle);
 
 /**
  * Destroy HG handle. Decrement reference count, resources associated to the
@@ -742,9 +613,7 @@ HG_Create(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Destroy(
-        hg_handle_t handle
-        );
+HG_Destroy(hg_handle_t handle);
 
 /**
  * Reset an existing HG handle to make it reusable for RPC forwarding.
@@ -759,11 +628,7 @@ HG_Destroy(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Reset(
-        hg_handle_t handle,
-        hg_addr_t addr,
-        hg_id_t id
-        );
+HG_Reset(hg_handle_t handle, hg_addr_t addr, hg_id_t id);
 
 /**
  * Increment ref count on handle.
@@ -773,9 +638,7 @@ HG_Reset(
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-HG_Ref_incr(
-        hg_handle_t hg_handle
-        );
+HG_Ref_incr(hg_handle_t hg_handle);
 
 /**
  * Retrieve ref count from handle.
@@ -785,9 +648,7 @@ HG_Ref_incr(
  * \return Non-negative value or negative if the handle is not valid
  */
 static HG_INLINE hg_int32_t
-HG_Ref_get(
-        hg_handle_t handle
-        );
+HG_Ref_get(hg_handle_t handle);
 
 /**
  * Get info from handle.
@@ -799,9 +660,7 @@ HG_Ref_get(
  * \return Pointer to info or NULL in case of failure
  */
 static HG_INLINE const struct hg_info *
-HG_Get_info(
-        hg_handle_t handle
-        );
+HG_Get_info(hg_handle_t handle);
 
 /**
  * Associate user data to handle. When HG_Destroy() is called,
@@ -814,11 +673,7 @@ HG_Get_info(
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-HG_Set_data(
-        hg_handle_t handle,
-        void *data,
-        void (*free_callback)(void *)
-        );
+HG_Set_data(hg_handle_t handle, void *data, void (*free_callback)(void *));
 
 /**
  * Retrieve previously associated data from a given handle.
@@ -828,9 +683,7 @@ HG_Set_data(
  * \return Pointer to user data or NULL if not set or any error has occurred
  */
 static HG_INLINE void *
-HG_Get_data(
-        hg_handle_t handle
-        );
+HG_Get_data(hg_handle_t handle);
 
 /**
  * Get input from handle (requires registration of input proc to deserialize
@@ -846,10 +699,7 @@ HG_Get_data(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Get_input(
-        hg_handle_t handle,
-        void *in_struct
-        );
+HG_Get_input(hg_handle_t handle, void *in_struct);
 
 /**
  * Free resources allocated when deserializing the input.
@@ -862,10 +712,7 @@ HG_Get_input(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Free_input(
-        hg_handle_t handle,
-        void *in_struct
-        );
+HG_Free_input(hg_handle_t handle, void *in_struct);
 
 /**
  * Get output from handle (requires registration of output proc to deserialize
@@ -882,10 +729,7 @@ HG_Free_input(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Get_output(
-        hg_handle_t handle,
-        void *out_struct
-        );
+HG_Get_output(hg_handle_t handle, void *out_struct);
 
 /**
  * Free resources allocated when deserializing the output.
@@ -898,10 +742,7 @@ HG_Get_output(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Free_output(
-        hg_handle_t handle,
-        void *out_struct
-        );
+HG_Free_output(hg_handle_t handle, void *out_struct);
 
 /**
  * Get raw input buffer from handle that can be used for encoding and decoding
@@ -923,11 +764,7 @@ HG_Free_output(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Get_input_buf(
-        hg_handle_t handle,
-        void **in_buf,
-        hg_size_t *in_buf_size
-        );
+HG_Get_input_buf(hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size);
 
 /**
  * Get raw output buffer from handle that can be used for encoding and decoding
@@ -949,11 +786,7 @@ HG_Get_input_buf(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Get_output_buf(
-        hg_handle_t handle,
-        void **out_buf,
-        hg_size_t *out_buf_size
-        );
+HG_Get_output_buf(hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size);
 
 /**
  * Get raw extra input buffer from handle that can be used for encoding and
@@ -972,10 +805,7 @@ HG_Get_output_buf(
  */
 HG_PUBLIC hg_return_t
 HG_Get_input_extra_buf(
-        hg_handle_t handle,
-        void **in_buf,
-        hg_size_t *in_buf_size
-        );
+    hg_handle_t handle, void **in_buf, hg_size_t *in_buf_size);
 
 /**
  * Get raw extra output buffer from handle that can be used for encoding and
@@ -994,10 +824,7 @@ HG_Get_input_extra_buf(
  */
 HG_PUBLIC hg_return_t
 HG_Get_output_extra_buf(
-        hg_handle_t handle,
-        void **out_buf,
-        hg_size_t *out_buf_size
-        );
+    hg_handle_t handle, void **out_buf, hg_size_t *out_buf_size);
 
 /**
  * Set target context ID that will receive and process the RPC request
@@ -1009,10 +836,7 @@ HG_Get_output_extra_buf(
  * \return HG_SUCCESS or corresponding HG error code
  */
 static HG_INLINE hg_return_t
-HG_Set_target_id(
-        hg_handle_t handle,
-        hg_uint8_t id
-        );
+HG_Set_target_id(hg_handle_t handle, hg_uint8_t id);
 
 /**
  * Forward a call to a local/remote target using an existing HG handle.
@@ -1034,12 +858,7 @@ HG_Set_target_id(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Forward(
-        hg_handle_t handle,
-        hg_cb_t callback,
-        void *arg,
-        void *in_struct
-        );
+HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct);
 
 /**
  * Respond back to origin using an existing HG handle.
@@ -1060,12 +879,7 @@ HG_Forward(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Respond(
-        hg_handle_t handle,
-        hg_cb_t callback,
-        void *arg,
-        void *out_struct
-        );
+HG_Respond(hg_handle_t handle, hg_cb_t callback, void *arg, void *out_struct);
 
 /**
  * Try to progress RPC execution for at most timeout until timeout is reached or
@@ -1080,10 +894,7 @@ HG_Respond(
  * \return HG_SUCCESS if any completion has occurred / HG error code otherwise
  */
 HG_PUBLIC hg_return_t
-HG_Progress(
-        hg_context_t *context,
-        unsigned int timeout
-        );
+HG_Progress(hg_context_t *context, unsigned int timeout);
 
 /**
  * Execute at most max_count callbacks. If timeout is non-zero, wait up to
@@ -1098,12 +909,8 @@ HG_Progress(
  * \return HG_SUCCESS or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Trigger(
-        hg_context_t *context,
-        unsigned int timeout,
-        unsigned int max_count,
-        unsigned int *actual_count
-        );
+HG_Trigger(hg_context_t *context, unsigned int timeout, unsigned int max_count,
+    unsigned int *actual_count);
 
 /**
  * Cancel an ongoing operation.
@@ -1113,9 +920,7 @@ HG_Trigger(
  * \return HG_SUCCESS or HG_CANCEL_ERROR or corresponding HG error code
  */
 HG_PUBLIC hg_return_t
-HG_Cancel(
-        hg_handle_t handle
-        );
+HG_Cancel(hg_handle_t handle);
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -1123,15 +928,15 @@ HG_Cancel(
 
 /* HG class */
 struct hg_class {
-    hg_core_class_t *core_class;        /* Core class */
-    hg_size_t in_offset;                /* Input offset */
-    hg_size_t out_offset;               /* Output offset */
+    hg_core_class_t *core_class; /* Core class */
+    hg_size_t in_offset;         /* Input offset */
+    hg_size_t out_offset;        /* Output offset */
 };
 
 /* HG context */
 struct hg_context {
-    hg_core_context_t *core_context;    /* Core context */
-    hg_class_t *hg_class;               /* HG class */
+    hg_core_context_t *core_context; /* Core context */
+    hg_class_t *hg_class;            /* HG class */
 };
 
 /* HG handle */
@@ -1168,7 +973,7 @@ static HG_INLINE hg_size_t
 HG_Class_get_input_eager_size(const hg_class_t *hg_class)
 {
     hg_size_t core = HG_Core_class_get_input_eager_size(hg_class->core_class),
-        header = hg_header_get_size(HG_INPUT);
+              header = hg_header_get_size(HG_INPUT);
 
     return (core > header) ? core - header : 0;
 }
@@ -1178,7 +983,7 @@ static HG_INLINE hg_size_t
 HG_Class_get_output_eager_size(const hg_class_t *hg_class)
 {
     hg_size_t core = HG_Core_class_get_output_eager_size(hg_class->core_class),
-        header = hg_header_get_size(HG_OUTPUT);
+              header = hg_header_get_size(HG_OUTPUT);
 
     return (core > header) ? core - header : 0;
 }
@@ -1211,8 +1016,8 @@ HG_Class_set_output_offset(hg_class_t *hg_class, hg_size_t offset)
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-HG_Class_set_data(hg_class_t *hg_class, void *data,
-    void (*free_callback)(void *))
+HG_Class_set_data(
+    hg_class_t *hg_class, void *data, void (*free_callback)(void *))
 {
     return HG_Core_class_set_data(hg_class->core_class, data, free_callback);
 }
@@ -1240,8 +1045,8 @@ HG_Context_get_id(const hg_context_t *context)
 
 /*---------------------------------------------------------------------------*/
 static HG_INLINE hg_return_t
-HG_Context_set_data(hg_context_t *context, void *data,
-    void (*free_callback)(void *))
+HG_Context_set_data(
+    hg_context_t *context, void *data, void (*free_callback)(void *))
 {
     return HG_Core_context_set_data(context->core_context, data, free_callback);
 }

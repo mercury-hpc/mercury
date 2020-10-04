@@ -28,7 +28,7 @@ typedef struct {
 /* 1. Generate processor and struct for additional struct types
  * MERCURY_GEN_STRUCT_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_STRUCT_PROC( rpc_handle_t, ((hg_uint64_t)(cookie)) )
+MERCURY_GEN_STRUCT_PROC(rpc_handle_t, ((hg_uint64_t)(cookie)))
 
 /* Dummy function that needs to be shipped (already defined) */
 /* int rpc_open(const char *path, rpc_handle_t handle, int *event_id); */
@@ -36,8 +36,9 @@ MERCURY_GEN_STRUCT_PROC( rpc_handle_t, ((hg_uint64_t)(cookie)) )
 /* 2. Generate processor and struct for required input/output structs
  * MERCURY_GEN_PROC( struct_type_name, fields )
  */
-MERCURY_GEN_PROC( rpc_open_in_t, ((hg_const_string_t)(path)) ((rpc_handle_t)(handle)) )
-MERCURY_GEN_PROC( rpc_open_out_t, ((hg_int32_t)(ret)) ((hg_int32_t)(event_id)) )
+MERCURY_GEN_PROC(
+    rpc_open_in_t, ((hg_const_string_t)(path))((rpc_handle_t)(handle)))
+MERCURY_GEN_PROC(rpc_open_out_t, ((hg_int32_t)(ret))((hg_int32_t)(event_id)))
 #else
 /* Dummy function that needs to be shipped (already defined) */
 /* int rpc_open(const char *path, rpc_handle_t handle, int *event_id); */
@@ -122,7 +123,8 @@ hg_proc_perf_rpc_lat_in_t(hg_proc_t proc, void *data)
                 struct_data->buf = malloc(struct_data->buf_size);
                 HG_FALLTHROUGH();
             case HG_ENCODE:
-                ret = hg_proc_raw(proc, struct_data->buf, struct_data->buf_size);
+                ret =
+                    hg_proc_raw(proc, struct_data->buf, struct_data->buf_size);
                 if (ret != HG_SUCCESS)
                     return ret;
                 break;
@@ -142,8 +144,8 @@ hg_proc_perf_rpc_lat_in_t(hg_proc_t proc, void *data)
             for (i = 0; i < struct_data->buf_size; i++) {
                 if (buf_ptr[i] != (char) i) {
                     printf("Error detected in bulk transfer, buf[%d] = %d, "
-                        "was expecting %d!\n", (int) i, (char) buf_ptr[i],
-                        (char) i);
+                           "was expecting %d!\n",
+                        (int) i, (char) buf_ptr[i], (char) i);
                     break;
                 }
             }

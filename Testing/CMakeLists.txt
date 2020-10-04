@@ -306,6 +306,7 @@ set(MERCURY_TESTS
   bulk
 )
 build_mercury_test(lookup)
+build_mercury_test(proc)
 
 # List of serial tests
 set(MERCURY_SERIAL_TESTS

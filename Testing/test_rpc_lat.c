@@ -8,9 +8,9 @@
  * found at the root of the source code distribution tree.
  */
 
+#include "mercury_atomic.h"
 #include "mercury_test.h"
 #include "mercury_time.h"
-#include "mercury_atomic.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,23 +20,20 @@
 /****************/
 
 #define BENCHMARK_NAME "RPC latency"
-#define STRING(s) #s
-#define XSTRING(s) STRING(s)
-#define VERSION_NAME            \
-    XSTRING(HG_VERSION_MAJOR)   \
-    "."                         \
-    XSTRING(HG_VERSION_MINOR)   \
-    "."                         \
-    XSTRING(HG_VERSION_PATCH)
+#define STRING(s)      #s
+#define XSTRING(s)     STRING(s)
+#define VERSION_NAME                                                           \
+    XSTRING(HG_VERSION_MAJOR)                                                  \
+    "." XSTRING(HG_VERSION_MINOR) "." XSTRING(HG_VERSION_PATCH)
 
-#define SMALL_SKIP      100
-#define LARGE_SKIP      10
-#define LARGE_SIZE      8192
+#define SMALL_SKIP 100
+#define LARGE_SKIP 10
+#define LARGE_SIZE 8192
 
-#define NDIGITS         2
-#define NWIDTH          20
-#define MAX_MSG_SIZE    (HG_TEST_BUFFER_SIZE * 1024 * 1024)
-#define MAX_HANDLES     (HG_TEST_MAX_HANDLES)
+#define NDIGITS      2
+#define NWIDTH       20
+#define MAX_MSG_SIZE (HG_TEST_BUFFER_SIZE * 1024 * 1024)
+#define MAX_HANDLES  (HG_TEST_MAX_HANDLES)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -72,8 +69,8 @@ hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
     struct hg_test_perf_args *args =
         (struct hg_test_perf_args *) callback_info->arg;
 
-    if ((unsigned int) hg_atomic_incr32(&args->op_completed_count)
-        == args->op_count)
+    if ((unsigned int) hg_atomic_incr32(&args->op_completed_count) ==
+        args->op_count)
         hg_request_complete(args->request);
 
     return HG_SUCCESS;
@@ -81,15 +78,17 @@ hg_test_perf_forward_cb(const struct hg_cb_info *callback_info)
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
-measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
-    unsigned int nhandles)
+measure_rpc_latency(
+    struct hg_test_info *hg_test_info, size_t total_size, unsigned int nhandles)
 {
     perf_rpc_lat_in_t in_struct;
     char *bulk_buf = NULL;
-    size_t nbytes = (total_size > sizeof(in_struct.buf_size)) ?
-        total_size - sizeof(in_struct.buf_size) : 0;
-    size_t loop = (total_size > LARGE_SIZE) ? (size_t) hg_test_info->na_test_info.loop :
-        (size_t) hg_test_info->na_test_info.loop * 100;
+    size_t nbytes = (total_size > sizeof(in_struct.buf_size))
+                        ? total_size - sizeof(in_struct.buf_size)
+                        : 0;
+    size_t loop = (total_size > LARGE_SIZE)
+                      ? (size_t) hg_test_info->na_test_info.loop
+                      : (size_t) hg_test_info->na_test_info.loop * 100;
     size_t skip = (total_size > LARGE_SIZE) ? LARGE_SKIP : SMALL_SKIP;
     hg_handle_t *handles = NULL;
     hg_request_t *request;
@@ -115,13 +114,13 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
 
     for (i = 0; i < nhandles; i++) {
         /* Use NULL RPC ID to skip proc encoding if total_size = 0 */
-        hg_id_t rpc_id = total_size ? hg_test_perf_rpc_lat_id_g :
-            hg_test_perf_rpc_id_g;
+        hg_id_t rpc_id =
+            total_size ? hg_test_perf_rpc_lat_id_g : hg_test_perf_rpc_id_g;
 
         ret = HG_Create(hg_test_info->context, hg_test_info->target_addr,
             rpc_id, &handles[i]);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Create() failed (%s)",
-            HG_Error_to_string(ret));
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
     }
 
     request = hg_request_create(hg_test_info->request_class);
@@ -139,14 +138,14 @@ measure_rpc_latency(struct hg_test_info *hg_test_info, size_t total_size,
 
         for (j = 0; j < nhandles; j++) {
 again:
-            ret = HG_Forward(handles[j], hg_test_perf_forward_cb,
-                &args, &in_struct);
+            ret = HG_Forward(
+                handles[j], hg_test_perf_forward_cb, &args, &in_struct);
             if (ret == HG_AGAIN) {
                 hg_request_wait(request, 0, NULL);
                 goto again;
             }
-            HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-                HG_Error_to_string(ret));
+            HG_TEST_CHECK_HG_ERROR(
+                done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
@@ -167,15 +166,16 @@ again:
             /* Assign handles to multiple targets */
             if (hg_test_info->na_test_info.max_contexts > 1) {
                 ret = HG_Set_target_id(handles[j],
-                    (hg_uint8_t) (avg_iter % hg_test_info->na_test_info.max_contexts));
-                HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Set_target_id() failed (%s)",
-                    HG_Error_to_string(ret));
+                    (hg_uint8_t)(
+                        avg_iter % hg_test_info->na_test_info.max_contexts));
+                HG_TEST_CHECK_HG_ERROR(done, ret,
+                    "HG_Set_target_id() failed (%s)", HG_Error_to_string(ret));
             }
 
-            ret = HG_Forward(handles[j], hg_test_perf_forward_cb, &args,
-			     &in_struct);
-            HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Forward() failed (%s)",
-                HG_Error_to_string(ret));
+            ret = HG_Forward(
+                handles[j], hg_test_perf_forward_cb, &args, &in_struct);
+            HG_TEST_CHECK_HG_ERROR(
+                done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
         }
 
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
@@ -186,30 +186,35 @@ again:
         hg_request_reset(request);
         hg_atomic_set32(&args.op_completed_count, 0);
 
-	/* We have received everything so calculate the bandwidth */
+        /* We have received everything so calculate the bandwidth */
 #ifdef HG_TEST_PRINT_PARTIAL
-        read_lat = time_read * 1.0e6 / (double) (nhandles * (avg_iter + 1) *
-            (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
+        read_lat =
+            time_read * 1.0e6 /
+            (double) (nhandles * (avg_iter + 1) *
+                      (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
         if (hg_test_info->na_test_info.mpi_comm_rank == 0)
             fprintf(stdout, "%-*d%*.*f%*d\r", 10, (int) total_size, NWIDTH,
                 NDIGITS, (read_lat), NWIDTH, (int) (1.0e6 / read_lat));
 #endif
     }
 #ifndef HG_TEST_PRINT_PARTIAL
-    read_lat = time_read * 1.0e6 / (double) (nhandles * loop *
-        (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
+    read_lat =
+        time_read * 1.0e6 /
+        (double) (nhandles * loop *
+                  (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-        fprintf(stdout, "%-*d%*.*f%*d\r", 10, (int) total_size, NWIDTH,
-            NDIGITS, (read_lat), NWIDTH, (int) (1.0e6 / read_lat));
+        fprintf(stdout, "%-*d%*.*f%*d\r", 10, (int) total_size, NWIDTH, NDIGITS,
+            (read_lat), NWIDTH, (int) (1.0e6 / read_lat));
 #endif
-    if (hg_test_info->na_test_info.mpi_comm_rank == 0) fprintf(stdout, "\n");
+    if (hg_test_info->na_test_info.mpi_comm_rank == 0)
+        fprintf(stdout, "\n");
 
     /* Complete */
     hg_request_destroy(request);
     for (i = 0; i < nhandles; i++) {
         ret = HG_Destroy(handles[i]);
-        HG_TEST_CHECK_HG_ERROR(done, ret, "HG_Destroy() failed (%s)",
-            HG_Error_to_string(ret));
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
     }
 
 done:
@@ -222,24 +227,26 @@ done:
 int
 main(int argc, char *argv[])
 {
-    struct hg_test_info hg_test_info = { 0 };
+    struct hg_test_info hg_test_info = {0};
     unsigned int nhandles;
     size_t size;
     hg_return_t hg_ret;
     int ret = EXIT_SUCCESS;
 
     hg_ret = HG_Test_init(argc, argv, &hg_test_info);
-    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
-        "HG_Test_init() failed");
+    HG_TEST_CHECK_ERROR(
+        hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "HG_Test_init() failed");
 
     for (nhandles = 1; nhandles <= MAX_HANDLES; nhandles *= 2) {
         if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
             fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
-            fprintf(stdout, "# Loop %d times from size %d to %d byte(s) with "
+            fprintf(stdout,
+                "# Loop %d times from size %d to %d byte(s) with "
                 "%u handle(s)\n",
                 hg_test_info.na_test_info.loop, 1, MAX_MSG_SIZE, nhandles);
 #ifdef HG_TEST_HAS_VERIFY_DATA
-            fprintf(stdout, "# WARNING verifying data, output will be slower\n");
+            fprintf(
+                stdout, "# WARNING verifying data, output will be slower\n");
 #endif
             fprintf(stdout, "%-*s%*s%*s\n", 10, "# Size", NWIDTH,
                 "Latency (us)", NWIDTH, "RPC rate (RPC/s)");

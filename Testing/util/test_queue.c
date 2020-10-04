@@ -18,8 +18,8 @@ main(void)
     HG_QUEUE_HEAD_INIT(my_head, queue);
     int ret = EXIT_SUCCESS;
     int value1 = 10, value2 = 20;
-    struct my_entry my_entry1 = { .value = value1 };
-    struct my_entry my_entry2 = { .value = value2 };
+    struct my_entry my_entry1 = {.value = value1};
+    struct my_entry my_entry2 = {.value = value2};
 
     if (!HG_QUEUE_IS_EMPTY(&queue)) {
         fprintf(stderr, "Error: queue should be empty\n");

@@ -16,7 +16,7 @@
 #include "na_error.h"
 
 #ifdef HG_TEST_HAS_PARALLEL
-# include <mpi.h>
+#    include <mpi.h>
 #endif
 
 /*************************************/
@@ -24,30 +24,30 @@
 /*************************************/
 
 struct na_test_info {
-    na_class_t *na_class;       /* NA class */
-    char *target_name;          /* Target name */
-    char *comm;                 /* Comm/Plugin name */
-    char *domain;               /* Domain name */
-    char *protocol;             /* Protocol name */
-    char *hostname;             /* Hostname */
-    int port;                   /* Port */
-    na_bool_t listen;           /* Listen */
-    na_bool_t mpi_static;       /* MPI static comm */
-    na_bool_t self_send;        /* Self send */
-    na_bool_t auth;             /* Auth service */
-    char *key;                  /* Auth key */
-    int loop;                   /* Number of loops */
-    na_bool_t busy_wait;        /* Busy wait */
-    na_uint8_t max_contexts;    /* Max contexts */
-    na_bool_t verbose;          /* Verbose mode */
-    int max_number_of_peers;    /* Max number of peers */
+    na_class_t *na_class;    /* NA class */
+    char *target_name;       /* Target name */
+    char *comm;              /* Comm/Plugin name */
+    char *domain;            /* Domain name */
+    char *protocol;          /* Protocol name */
+    char *hostname;          /* Hostname */
+    int port;                /* Port */
+    na_bool_t listen;        /* Listen */
+    na_bool_t mpi_static;    /* MPI static comm */
+    na_bool_t self_send;     /* Self send */
+    na_bool_t auth;          /* Auth service */
+    char *key;               /* Auth key */
+    int loop;                /* Number of loops */
+    na_bool_t busy_wait;     /* Busy wait */
+    na_uint8_t max_contexts; /* Max contexts */
+    na_bool_t verbose;       /* Verbose mode */
+    int max_number_of_peers; /* Max number of peers */
 #ifdef HG_TEST_HAS_PARALLEL
-    MPI_Comm mpi_comm;          /* MPI comm */
-    na_bool_t mpi_no_finalize;  /* Prevent from finalizing MPI */
+    MPI_Comm mpi_comm;         /* MPI comm */
+    na_bool_t mpi_no_finalize; /* Prevent from finalizing MPI */
 #endif
-    int mpi_comm_rank;          /* MPI comm rank */
-    int mpi_comm_size;          /* MPI comm size */
-    na_bool_t extern_init;      /* Extern init */
+    int mpi_comm_rank;     /* MPI comm rank */
+    int mpi_comm_size;     /* MPI comm size */
+    na_bool_t extern_init; /* Extern init */
 };
 
 /*****************/
@@ -104,7 +104,8 @@ NA_Test_barrier(struct na_test_info *na_test_info);
  * Call MPI_Bcast if available
  */
 void
-NA_Test_bcast(char *buf, int count, int root, struct na_test_info *na_test_info);
+NA_Test_bcast(
+    char *buf, int count, int root, struct na_test_info *na_test_info);
 
 #ifdef __cplusplus
 }

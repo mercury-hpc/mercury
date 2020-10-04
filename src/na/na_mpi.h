@@ -40,9 +40,7 @@ NA_MPI_Set_init_intra_comm(MPI_Comm intra_comm);
  * \return Pointer to string
  */
 NA_PUBLIC const char *
-NA_MPI_Get_port_name(
-        na_class_t *na_class
-        );
+NA_MPI_Get_port_name(na_class_t *na_class);
 
 /**
  * Setup the Aries NIC resources for the job when NA MPI is used with

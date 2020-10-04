@@ -12,26 +12,26 @@
 #include "na_test_getopt.h"
 
 #ifdef NA_HAS_MPI
-#include "na_mpi.h"
+#    include "na_mpi.h"
 #endif
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #ifdef _WIN32
-#include <Winsock2.h>
-#include <Ws2tcpip.h>
+#    include <Winsock2.h>
+#    include <Ws2tcpip.h>
 #else
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
-#if defined(HG_TEST_HAS_SYSPRCTL_H)
-#include <sys/prctl.h>
-#endif
+#    include <arpa/inet.h>
+#    include <netdb.h>
+#    include <netinet/in.h>
+#    include <sys/socket.h>
+#    include <sys/types.h>
+#    include <unistd.h>
+#    if defined(HG_TEST_HAS_SYSPRCTL_H)
+#        include <sys/prctl.h>
+#    endif
 #endif
 
 /****************/
@@ -48,8 +48,8 @@
 /********************/
 
 static void
-na_test_parse_options(int argc, char *argv[],
-    struct na_test_info *na_test_info);
+na_test_parse_options(
+    int argc, char *argv[], struct na_test_info *na_test_info);
 
 #ifdef HG_TEST_HAS_PARALLEL
 static void
@@ -66,7 +66,7 @@ na_test_gen_config(struct na_test_info *na_test_info);
 /* Local Variables */
 /*******************/
 
-extern int na_test_opt_ind_g; /* token pointer */
+extern int na_test_opt_ind_g;         /* token pointer */
 extern const char *na_test_opt_arg_g; /* flag argument (or value) */
 extern const char *na_test_short_opt_g;
 extern const struct na_test_opt na_test_opt_g[];
@@ -103,8 +103,7 @@ na_test_usage(const char *execname)
 
 /*---------------------------------------------------------------------------*/
 static void
-na_test_parse_options(int argc, char *argv[],
-    struct na_test_info *na_test_info)
+na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
 {
     int opt;
 
@@ -113,8 +112,8 @@ na_test_parse_options(int argc, char *argv[],
         exit(1);
     }
 
-    while ((opt = na_test_getopt(argc, argv, na_test_short_opt_g,
-        na_test_opt_g)) != EOF) {
+    while ((opt = na_test_getopt(
+                argc, argv, na_test_short_opt_g, na_test_opt_g)) != EOF) {
         switch (opt) {
             case 'h':
                 na_test_usage(argv[0]);
@@ -204,13 +203,13 @@ na_test_mpi_init(struct na_test_info *na_test_info)
         goto done;
     }
 
-#ifdef NA_MPI_HAS_GNI_SETUP
+#    ifdef NA_MPI_HAS_GNI_SETUP
     /* Setup GNI job before initializing MPI */
     if (NA_MPI_Gni_job_setup() != NA_SUCCESS) {
         NA_LOG_ERROR("Could not setup GNI job");
         return;
     }
-#endif
+#    endif
     if (na_test_info->listen || na_test_info->mpi_static) {
         int provided;
 
@@ -227,16 +226,17 @@ na_test_mpi_init(struct na_test_info *na_test_info)
             /* Color is 1 for server, 2 for client */
             color = (na_test_info->listen) ? 1 : 2;
 
-            /* Assume that the application did not split MPI_COMM_WORLD already */
-            mpi_ret = MPI_Comm_split(MPI_COMM_WORLD, color, global_rank,
-                &na_test_info->mpi_comm);
+            /* Assume that the application did not split MPI_COMM_WORLD already
+             */
+            mpi_ret = MPI_Comm_split(
+                MPI_COMM_WORLD, color, global_rank, &na_test_info->mpi_comm);
             if (mpi_ret != MPI_SUCCESS) {
                 NA_LOG_ERROR("Could not split communicator");
             }
-#ifdef NA_HAS_MPI
+#    ifdef NA_HAS_MPI
             /* Set init comm that will be used to setup NA MPI */
             NA_MPI_Set_init_intra_comm(na_test_info->mpi_comm);
-#endif
+#    endif
         }
     } else {
         MPI_Init(NULL, NULL);
@@ -281,9 +281,11 @@ na_test_gen_config(struct na_test_info *na_test_info)
     info_string_ptr = info_string;
     if (na_test_info->comm)
         info_string_ptr += sprintf(info_string_ptr, "%s+", na_test_info->comm);
-    info_string_ptr += sprintf(info_string_ptr, "%s://", na_test_info->protocol);
+    info_string_ptr +=
+        sprintf(info_string_ptr, "%s://", na_test_info->protocol);
     if (na_test_info->domain)
-        info_string_ptr += sprintf(info_string_ptr, "%s/", na_test_info->domain);
+        info_string_ptr +=
+            sprintf(info_string_ptr, "%s/", na_test_info->domain);
 
     if (strcmp("sm", na_test_info->protocol) == 0) {
 #if defined(PR_SET_PTRACER) && defined(PR_SET_PTRACER_ANY)
@@ -298,22 +300,22 @@ na_test_gen_config(struct na_test_info *na_test_info)
         }
 
         /* Enable CMA on systems with YAMA */
-        if ((yama_val != '0')
-            && prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0) < 0) {
+        if ((yama_val != '0') &&
+            prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0) < 0) {
             NA_LOG_ERROR("Could not set ptracer\n");
             exit(1);
         }
 #endif
         if (na_test_info->listen) {
             /* special-case SM (pid:id) */
-            sprintf(info_string_ptr, "%d/%d", (int) getpid(),
-                na_test_info->port);
+            sprintf(
+                info_string_ptr, "%d/%d", (int) getpid(), na_test_info->port);
         }
-    } else if ((strcmp("tcp", na_test_info->protocol) == 0)
-        || (strcmp("verbs;ofi_rxm", na_test_info->protocol) == 0)
-        || (strcmp("verbs", na_test_info->protocol) == 0)
-        || (strcmp("psm2", na_test_info->protocol) == 0)
-        || (strcmp("sockets", na_test_info->protocol) == 0)) {
+    } else if ((strcmp("tcp", na_test_info->protocol) == 0) ||
+               (strcmp("verbs;ofi_rxm", na_test_info->protocol) == 0) ||
+               (strcmp("verbs", na_test_info->protocol) == 0) ||
+               (strcmp("psm2", na_test_info->protocol) == 0) ||
+               (strcmp("sockets", na_test_info->protocol) == 0)) {
         if (!na_test_info->hostname) {
             /* Nothing */
         } else if (na_test_info->listen) {
@@ -421,8 +423,8 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     na_init_info.max_contexts = na_test_info->max_contexts;
 
     printf("# Using info string: %s\n", info_string);
-    na_test_info->na_class = NA_Initialize_opt(info_string,
-        na_test_info->listen, &na_init_info);
+    na_test_info->na_class =
+        NA_Initialize_opt(info_string, na_test_info->listen, &na_init_info);
     if (!na_test_info->na_class) {
         NA_LOG_ERROR("Could not initialize NA");
         ret = NA_PROTOCOL_ERROR;
@@ -462,7 +464,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
         }
         /* Get config from file if self option is not passed */
         else if (!na_test_info->self_send) {
-            char test_addr_name[NA_TEST_MAX_ADDR_NAME] = { '\0' };
+            char test_addr_name[NA_TEST_MAX_ADDR_NAME] = {'\0'};
 
 #ifdef HG_TEST_HAS_PARALLEL
             /* If static client must wait for server to write config file */
@@ -513,7 +515,7 @@ NA_Test_finalize(struct na_test_info *na_test_info)
 #endif
 
 done:
-     return ret;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/

@@ -80,7 +80,7 @@ na_test_request_progress(unsigned int timeout, void *arg)
 
     /* Progress */
     if (NA_Progress(na_test_lat_info->na_class, na_test_lat_info->context,
-        timeout_progress) != NA_SUCCESS)
+            timeout_progress) != NA_SUCCESS)
         ret = HG_UTIL_FAIL;
 
     return ret;
@@ -94,8 +94,9 @@ na_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
     unsigned int actual_count = 0;
     int ret = HG_UTIL_SUCCESS;
 
-    if (NA_Trigger(na_test_lat_info->context, timeout, 1, NULL, &actual_count)
-        != NA_SUCCESS) ret = HG_UTIL_FAIL;
+    if (NA_Trigger(na_test_lat_info->context, timeout, 1, NULL,
+            &actual_count) != NA_SUCCESS)
+        ret = HG_UTIL_FAIL;
     *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
 
     return ret;
@@ -115,15 +116,17 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
 #ifdef HG_TEST_HAS_VERIFY_DATA
     if (na_test_source_recv_arg->tag != NA_TEST_TAG_DONE) {
         /* Check recv buf */
-        const char *recv_buf_ptr = (const char*) na_test_source_recv_arg->recv_buf;
+        const char *recv_buf_ptr =
+            (const char *) na_test_source_recv_arg->recv_buf;
         na_size_t i;
 
         for (i = NA_Msg_get_unexpected_header_size(na_test_lat_info->na_class);
-            i < na_cb_info->info.recv_unexpected.actual_buf_size; i++) {
+             i < na_cb_info->info.recv_unexpected.actual_buf_size; i++) {
             if (recv_buf_ptr[i] != (char) i) {
-                fprintf(stderr, "Error detected in bulk transfer, buf[%d] = %d, "
-                    "was expecting %d!\n", (int) i, (char) recv_buf_ptr[i],
-                    (char) i);
+                fprintf(stderr,
+                    "Error detected in bulk transfer, buf[%d] = %d, "
+                    "was expecting %d!\n",
+                    (int) i, (char) recv_buf_ptr[i], (char) i);
                 break;
             }
         }
@@ -133,20 +136,19 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
     /* Post send */
     ret = NA_Msg_send_expected(na_test_lat_info->na_class,
         na_test_lat_info->context, na_test_send_expected_cb,
-        na_test_source_recv_arg->request,
-        na_test_source_recv_arg->send_buf,
+        na_test_source_recv_arg->request, na_test_source_recv_arg->send_buf,
         na_cb_info->info.recv_unexpected.actual_buf_size,
         na_test_source_recv_arg->send_buf_data,
-        na_cb_info->info.recv_unexpected.source,
-        0,
+        na_cb_info->info.recv_unexpected.source, 0,
         na_cb_info->info.recv_unexpected.tag,
         &na_test_source_recv_arg->send_op_id);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("NA_Msg_send_expected() failed (%s)", NA_Error_to_string(ret));
+        NA_LOG_ERROR(
+            "NA_Msg_send_expected() failed (%s)", NA_Error_to_string(ret));
     }
 
-    NA_Addr_free(na_test_lat_info->na_class,
-        na_cb_info->info.recv_unexpected.source);
+    NA_Addr_free(
+        na_test_lat_info->na_class, na_cb_info->info.recv_unexpected.source);
 
     return NA_SUCCESS;
 }
@@ -166,7 +168,7 @@ na_test_send_expected_cb(const struct na_cb_info *na_cb_info)
 static na_return_t
 na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
 {
-    struct na_test_source_recv_arg na_test_source_recv_arg = { 0 };
+    struct na_test_source_recv_arg na_test_source_recv_arg = {0};
     char *send_buf = NULL, *recv_buf = NULL;
     void *send_buf_data, *recv_buf_data;
     na_op_id_t send_op_id;
@@ -180,14 +182,14 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
     na_return_t ret = NA_SUCCESS;
 
     /* Prepare send_buf */
-    send_buf = NA_Msg_buf_alloc(na_test_lat_info->na_class, expected_size,
-        &send_buf_data);
+    send_buf = NA_Msg_buf_alloc(
+        na_test_lat_info->na_class, expected_size, &send_buf_data);
     for (i = 0; i < expected_size; i++)
         send_buf[i] = (char) i;
 
     /* Prepare recv buf */
-    recv_buf = NA_Msg_buf_alloc(na_test_lat_info->na_class, unexpected_size,
-        &recv_buf_data);
+    recv_buf = NA_Msg_buf_alloc(
+        na_test_lat_info->na_class, unexpected_size, &recv_buf_data);
     memset(recv_buf, 0, unexpected_size);
 
     /* Create operation IDs */
@@ -207,10 +209,11 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
         /* Post recv */
         ret = NA_Msg_recv_unexpected(na_test_lat_info->na_class,
             na_test_lat_info->context, na_test_recv_unexpected_cb,
-            &na_test_source_recv_arg, recv_buf, unexpected_size,
-            recv_buf_data, &recv_op_id);
+            &na_test_source_recv_arg, recv_buf, unexpected_size, recv_buf_data,
+            &recv_op_id);
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("NA_Msg_recv_unexpected() failed (%s)", NA_Error_to_string(ret));
+            NA_LOG_ERROR("NA_Msg_recv_unexpected() failed (%s)",
+                NA_Error_to_string(ret));
             goto done;
         }
 
@@ -232,7 +235,7 @@ done:
 int
 main(int argc, char *argv[])
 {
-    struct na_test_lat_info na_test_lat_info = { 0 };
+    struct na_test_lat_info na_test_lat_info = {0};
     int ret = EXIT_SUCCESS;
 
     /* Initialize the interface */
@@ -240,8 +243,8 @@ main(int argc, char *argv[])
     NA_Test_init(argc, argv, &na_test_lat_info.na_test_info);
     na_test_lat_info.na_class = na_test_lat_info.na_test_info.na_class;
     na_test_lat_info.context = NA_Context_create(na_test_lat_info.na_class);
-    na_test_lat_info.request_class = hg_request_init(na_test_request_progress,
-        na_test_request_trigger, &na_test_lat_info);
+    na_test_lat_info.request_class = hg_request_init(
+        na_test_request_progress, na_test_request_trigger, &na_test_lat_info);
 
     /* Process */
     na_test_loop_latency(&na_test_lat_info);

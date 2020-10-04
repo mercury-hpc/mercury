@@ -19,32 +19,32 @@
 
 /* Type definitions */
 #ifdef _WIN32
-  typedef signed   __int64 na_int64_t;
-  typedef signed   __int32 na_int32_t;
-  typedef signed   __int16 na_int16_t;
-  typedef signed   __int8  na_int8_t;
-  typedef unsigned __int64 na_uint64_t;
-  typedef unsigned __int32 na_uint32_t;
-  typedef unsigned __int16 na_uint16_t;
-  typedef unsigned __int8  na_uint8_t;
+typedef signed __int64 na_int64_t;
+typedef signed __int32 na_int32_t;
+typedef signed __int16 na_int16_t;
+typedef signed __int8 na_int8_t;
+typedef unsigned __int64 na_uint64_t;
+typedef unsigned __int32 na_uint32_t;
+typedef unsigned __int16 na_uint16_t;
+typedef unsigned __int8 na_uint8_t;
 #else
-# include <stdint.h>
-# include <stddef.h>
-  typedef int64_t  na_int64_t;
-  typedef int32_t  na_int32_t;
-  typedef int16_t  na_int16_t;
-  typedef int8_t   na_int8_t;
-  typedef uint64_t na_uint64_t;
-  typedef uint32_t na_uint32_t;
-  typedef uint16_t na_uint16_t;
-  typedef uint8_t  na_uint8_t;
+#    include <stddef.h>
+#    include <stdint.h>
+typedef int64_t na_int64_t;
+typedef int32_t na_int32_t;
+typedef int16_t na_int16_t;
+typedef int8_t na_int8_t;
+typedef uint64_t na_uint64_t;
+typedef uint32_t na_uint32_t;
+typedef uint16_t na_uint16_t;
+typedef uint8_t na_uint8_t;
 #endif
-typedef na_uint8_t   na_bool_t;
-typedef na_uint64_t  na_ptr_t;
+typedef na_uint8_t na_bool_t;
+typedef na_uint64_t na_ptr_t;
 
 /* True / false */
-#define NA_TRUE     1
-#define NA_FALSE    0
+#define NA_TRUE  1
+#define NA_FALSE 0
 
 /*****************/
 /* Public Macros */
@@ -52,52 +52,52 @@ typedef na_uint64_t  na_ptr_t;
 
 /* Visibility of symbols */
 #if defined(_WIN32)
-# define NA_ABI_IMPORT __declspec(dllimport)
-# define NA_ABI_EXPORT __declspec(dllexport)
-# define NA_ABI_HIDDEN
+#    define NA_ABI_IMPORT __declspec(dllimport)
+#    define NA_ABI_EXPORT __declspec(dllexport)
+#    define NA_ABI_HIDDEN
 #elif defined(__GNUC__) && (__GNUC__ >= 4)
-# define NA_ABI_IMPORT __attribute__((visibility("default")))
-# define NA_ABI_EXPORT __attribute__((visibility("default")))
-# define NA_ABI_HIDDEN __attribute__((visibility("hidden")))
+#    define NA_ABI_IMPORT __attribute__((visibility("default")))
+#    define NA_ABI_EXPORT __attribute__((visibility("default")))
+#    define NA_ABI_HIDDEN __attribute__((visibility("hidden")))
 #else
-# define NA_ABI_IMPORT
-# define NA_ABI_EXPORT
-# define NA_ABI_HIDDEN
+#    define NA_ABI_IMPORT
+#    define NA_ABI_EXPORT
+#    define NA_ABI_HIDDEN
 #endif
 
 /* Inline macro */
 #ifdef _WIN32
-# define NA_INLINE __inline
+#    define NA_INLINE __inline
 #else
-# define NA_INLINE __inline__
+#    define NA_INLINE __inline__
 #endif
 
 /* Unused return values */
 #if defined(__GNUC__)
-# define NA_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+#    define NA_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
 #else
-# define NA_WARN_UNUSED_RESULT
+#    define NA_WARN_UNUSED_RESULT
 #endif
 
 /* Fallthrough macro */
 #if defined(__GNUC__) && (__GNUC__ >= 7)
-# define NA_FALLTHROUGH() __attribute__((fallthrough))
+#    define NA_FALLTHROUGH() __attribute__((fallthrough))
 #else
-# define NA_FALLTHROUGH()
+#    define NA_FALLTHROUGH()
 #endif
 
 /* Shared libraries */
 #cmakedefine NA_BUILD_SHARED_LIBS
 #ifdef NA_BUILD_SHARED_LIBS
-# ifdef na_EXPORTS
-#  define NA_PUBLIC NA_ABI_EXPORT
-# else
-#  define NA_PUBLIC NA_ABI_IMPORT
-# endif
-# define NA_PRIVATE NA_ABI_HIDDEN
+#    ifdef na_EXPORTS
+#        define NA_PUBLIC NA_ABI_EXPORT
+#    else
+#        define NA_PUBLIC NA_ABI_IMPORT
+#    endif
+#    define NA_PRIVATE NA_ABI_HIDDEN
 #else
-# define NA_PUBLIC
-# define NA_PRIVATE
+#    define NA_PUBLIC
+#    define NA_PRIVATE
 #endif
 
 /* Build Options */

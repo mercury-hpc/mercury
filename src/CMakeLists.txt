@@ -137,6 +137,22 @@ endif()
 # XDR
 option(MERCURY_USE_XDR "Use XDR for generic encoding." OFF)
 if(MERCURY_USE_XDR)
+  # Detect <rpc/xdr.h>
+  check_include_files("rpc/xdr.h" HG_HAS_RPC_XDR_H)
+
+  # <rpc/xdr.h> is not present in recent distributions, look for tirpc instead
+  if(NOT HG_HAS_RPC_XDR_H AND NOT APPLE AND NOT WIN32)
+    find_package(TIRPC REQUIRED)
+    message(STATUS "TIRPC include directory: ${TIRPC_INCLUDE_DIRS}")
+    set(MERCURY_EXT_INCLUDE_DEPENDENCIES
+      ${MERCURY_EXT_INCLUDE_DEPENDENCIES}
+      ${TIRPC_INCLUDE_DIRS}
+    )
+    set(MERCURY_EXT_LIB_DEPENDENCIES
+      ${MERCURY_EXT_LIB_DEPENDENCIES}
+      ${TIRPC_LIBRARIES}
+    )
+  endif()
   set(HG_HAS_XDR 1)
 endif()
 
@@ -166,6 +182,8 @@ set(MERCURY_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_prof_interface.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_prof_pvar_impl.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_proc_bulk.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_proc_string.c
   ${CMAKE_CURRENT_SOURCE_DIR}/proc_extra/mercury_string_object.c
 )
 set(MERCURY_HL_SRCS

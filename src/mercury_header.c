@@ -9,13 +9,12 @@
  */
 
 #include "mercury_header.h"
-#include "mercury_proc_buf.h"
 #include "mercury_error.h"
 
 #ifdef _WIN32
-# include <winsock2.h>
+#    include <winsock2.h>
 #else
-# include <arpa/inet.h>
+#    include <arpa/inet.h>
 #endif
 #include <stdlib.h>
 #include <string.h>
@@ -24,17 +23,23 @@
 /* Local Macros */
 /****************/
 
-#define HG_HEADER_PROC(hg_header, buf_ptr, data, op) \
-    buf_ptr = hg_proc_buf_memcpy(buf_ptr, &data, sizeof(data), op);
+/* Convert values between host and network byte order */
+#define hg_header_proc_hg_uint32_t_enc(x) htonl(x & 0xffffffff)
+#define hg_header_proc_hg_uint32_t_dec(x) ntohl(x & 0xffffffff)
 
-#define HG_HEADER_PROC32(hg_header, buf_ptr, data, op, tmp) do { \
-    hg_uint32_t tmp;                                             \
-    if (op == HG_ENCODE)                                         \
-        tmp = htonl(data);                                       \
-    HG_HEADER_PROC(hg_header, buf_ptr, tmp, op);                 \
-    if (op == HG_DECODE)                                         \
-        data = ntohl(tmp);                                       \
-} while (0)
+/* Proc type */
+#define HG_HEADER_PROC_TYPE(buf_ptr, data, type, op)                           \
+    do {                                                                       \
+        type __tmp;                                                            \
+        if (op == HG_ENCODE) {                                                 \
+            __tmp = hg_header_proc_##type##_enc(data);                         \
+            memcpy(buf_ptr, &__tmp, sizeof(type));                             \
+        } else {                                                               \
+            memcpy(&__tmp, buf_ptr, sizeof(type));                             \
+            data = hg_header_proc_##type##_dec(__tmp);                         \
+        }                                                                      \
+        buf_ptr = (char *) buf_ptr + sizeof(type);                             \
+    } while (0)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -81,8 +86,8 @@ hg_header_reset(struct hg_header *hg_header, hg_op_t op)
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-hg_header_proc(hg_proc_op_t op, void *buf, size_t buf_size,
-    struct hg_header *hg_header)
+hg_header_proc(
+    hg_proc_op_t op, void *buf, size_t buf_size, struct hg_header *hg_header)
 {
     void *buf_ptr = buf;
 #ifdef HG_HAS_CHECKSUMS
@@ -111,7 +116,7 @@ hg_header_proc(hg_proc_op_t op, void *buf, size_t buf_size,
 
 #ifdef HG_HAS_CHECKSUMS
     /* Checksum of user payload */
-    HG_HEADER_PROC32(hg_header, buf_ptr, header_hash->payload, op, tmp);
+    HG_HEADER_PROC_TYPE(buf_ptr, header_hash->payload, hg_uint32_t, op);
 #else
     (void) hg_header;
     (void) buf_ptr;

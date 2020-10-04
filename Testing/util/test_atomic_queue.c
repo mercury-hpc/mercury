@@ -17,8 +17,8 @@ main(void)
     struct hg_atomic_queue *hg_atomic_queue;
     int ret = EXIT_SUCCESS;
     int value1 = 10, value2 = 20;
-    struct my_entry my_entry1 = { .value = value1 };
-    struct my_entry my_entry2 = { .value = value2 };
+    struct my_entry my_entry1 = {.value = value1};
+    struct my_entry my_entry2 = {.value = value2};
     struct my_entry *my_entry_ptr;
 
     hg_atomic_queue = hg_atomic_queue_alloc(HG_TEST_QUEUE_SIZE);
