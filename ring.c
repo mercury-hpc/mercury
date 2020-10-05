@@ -25,7 +25,7 @@ rxdesc_callback(void *request, ucs_status_t status,
 
     assert(request == desc->request);
     desc->request = NULL;
-    ucp_request_release(request);
+    ucp_request_free(request);
 }
 
 void
@@ -93,7 +93,7 @@ rxring_destroy(rxring_t *ring)
             continue;
         desc->request = NULL;
         ucp_request_cancel(worker, request);
-        ucp_request_release(request);
+        ucp_request_free(request);
         free(desc->buf);
     }
 }
