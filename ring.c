@@ -17,9 +17,10 @@ rxdesc_callback(void *request, ucs_status_t status,
     if (desc->request == NULL)
         return;
 
-    desc->status = status;
-    desc->rxlen = tag_info->length;
-    desc->sender_tag = tag_info->sender_tag;
+    if ((desc->status = status) == UCS_OK) {
+        desc->rxlen = tag_info->length;
+        desc->sender_tag = tag_info->sender_tag;
+    }
     desc->completed = true;
 
     assert(request == desc->request);

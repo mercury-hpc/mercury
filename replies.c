@@ -229,12 +229,10 @@ run_server(ucp_worker_h worker)
             /* Twice the message length is twice the header length plus
              * twice the payload length, so subtract one header length.
              */
-            size_t nbuflen =
-                MAX(rdesc->rxlen, twice_or_max(buflen) - hdrlen);
+            size_t nbuflen = twice_or_max(buflen) - hdrlen;
 
-            printf("%zu-byte message truncated, "
-                   "increasing buffer length %zu -> %zu bytes.\n",
-                rdesc->rxlen, buflen, nbuflen);
+            printf("increasing buffer length %zu -> %zu bytes.\n",
+                buflen, nbuflen);
 
             free(buf);
 
