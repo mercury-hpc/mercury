@@ -208,7 +208,8 @@ run_server(ucp_worker_h worker)
     const size_t ndescs = NELTS(rring.desc);
     int i;
 
-    rxring_init(worker, &rring, wireup_tag, UINT64_MAX, sizeof(wireup_msg_t));
+    rxring_init(worker, &rring, wireup_tag, UINT64_MAX,
+        sizeof(wireup_msg_t) + 93);
 
     for (i = 0; ; i = (i + 1) % ndescs) {
         rxdesc_t *rdesc = &rring.desc[i];
