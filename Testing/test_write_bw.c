@@ -92,7 +92,7 @@ measure_bulk_transfer(
     hg_request_t *request;
     struct hg_test_perf_args args;
     size_t avg_iter;
-    double time_read = 0, read_bandwidth;
+    double time_read = 0, read_bandwidth, read_rate;
     hg_return_t ret = HG_SUCCESS;
     size_t i;
 
@@ -181,7 +181,7 @@ again:
         hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
         NA_Test_barrier(&hg_test_info->na_test_info);
         hg_time_get_current(&t2);
-        time_read += hg_time_to_double(hg_time_subtract(t2, t1));
+        time_read += hg_time_diff(t2, t1);
 
         hg_request_reset(request);
         hg_atomic_set32(&args.op_completed_count, 0);
@@ -192,12 +192,16 @@ again:
             (double) (nhandles * (avg_iter + 1) *
                       (unsigned int) hg_test_info->na_test_info.mpi_comm_size) /
             time_read;
+        read_rate =
+            (double) (nhandles * (avg_iter + 1) *
+                      (unsigned int) hg_test_info->na_test_info.mpi_comm_size) /
+            time_read;
 
         /* At this point we have received everything so work out the bandwidth
          */
         if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-            fprintf(stdout, "%-*d%*.*f\r", 10, (int) nbytes, NWIDTH, NDIGITS,
-                read_bandwidth);
+            fprintf(stdout, "%-*d%*.*f%*.*f\r", 10, (int) nbytes, NWIDTH,
+                NDIGITS, read_bandwidth, NWIDTH, NDIGITS, read_rate);
 #endif
     }
 #ifndef HG_TEST_PRINT_PARTIAL
@@ -206,11 +210,15 @@ again:
         (double) (nhandles * loop *
                   (unsigned int) hg_test_info->na_test_info.mpi_comm_size) /
         time_read;
+    read_rate =
+        (double) (nhandles * loop *
+                  (unsigned int) hg_test_info->na_test_info.mpi_comm_size) /
+        time_read;
 
     /* At this point we have received everything so work out the bandwidth */
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-        fprintf(stdout, "%-*d%*.*f", 10, (int) nbytes, NWIDTH, NDIGITS,
-            read_bandwidth);
+        fprintf(stdout, "%-*d%*.*f%*.*f", 10, (int) nbytes, NWIDTH, NDIGITS,
+            read_bandwidth, NWIDTH, NDIGITS, read_rate);
 #endif
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
         fprintf(stdout, "\n");
@@ -259,8 +267,8 @@ main(int argc, char *argv[])
             fprintf(
                 stdout, "# WARNING verifying data, output will be slower\n");
 #endif
-            fprintf(
-                stdout, "%-*s%*s\n", 10, "# Size", NWIDTH, "Bandwidth (MB/s)");
+            fprintf(stdout, "%-*s%*s%*s\n", 10, "# Size", NWIDTH,
+                "Bandwidth (MB/s)", NWIDTH, "Rate (op/s)");
             fflush(stdout);
         }
 
