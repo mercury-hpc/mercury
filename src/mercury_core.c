@@ -190,8 +190,6 @@ typedef enum {
 struct hg_core_private_handle {
 
     /* PVAR */
-    hg_time_t completion_add_time;
-    double hg_pvar_hg_origin_callback_completion_time;
     struct hg_core_handle core_handle; /* Must remain as first field */
     struct hg_completion_entry
         hg_completion_entry; /* Entry in completion queue */
@@ -234,6 +232,8 @@ struct hg_core_private_handle {
     hg_bool_t repost;            /* Repost handle on completion (listen) */
     hg_bool_t is_self;           /* Self processed */
     hg_bool_t no_response;       /* Require response or not */
+    hg_time_t completion_add_time;
+    double hg_pvar_hg_origin_callback_completion_time;
 };
 
 /* HG op id */
@@ -1591,6 +1591,8 @@ hg_core_reset(
     hg_core_handle->na_op_count = 1; /* Default (no response) */
     hg_atomic_set32(&hg_core_handle->na_op_completed_count, 0);
     hg_core_handle->no_response = HG_FALSE;
+    hg_core_handle->completion_add_time = 0;
+    hg_core_handle->hg_pvar_hg_origin_callback_completion_time = 0;
 
     /* Free extra data here if needed */
     if (HG_CORE_HANDLE_CLASS(hg_core_handle)->more_data_release)
