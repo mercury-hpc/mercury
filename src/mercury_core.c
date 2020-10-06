@@ -1591,7 +1591,6 @@ hg_core_reset(
     hg_core_handle->na_op_count = 1; /* Default (no response) */
     hg_atomic_set32(&hg_core_handle->na_op_completed_count, 0);
     hg_core_handle->no_response = HG_FALSE;
-    hg_core_handle->completion_add_time = 0;
     hg_core_handle->hg_pvar_hg_origin_callback_completion_time = 0;
 
     /* Free extra data here if needed */
