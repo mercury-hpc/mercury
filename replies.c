@@ -50,6 +50,22 @@ send_callback(void *request, ucs_status_t status, void *user_data)
 }
 
 static void
+ep_close(ucp_worker_h worker, ucp_ep_h ep)
+{
+    void *request;
+    request = ucp_ep_close_nb(ep, UCP_EP_CLOSE_MODE_FLUSH);
+    if (request == UCS_OK)
+        return;
+    if (UCS_PTR_IS_ERR(request)) {
+        warnx("%s: ucp_ep_close_nb: %s", __func__,
+            ucs_status_string(UCS_PTR_STATUS(request)));
+        return;
+    }
+    while (!ucp_request_is_completed(request))
+        ucp_worker_progress(worker);
+}
+
+static void
 run_client(ucp_worker_h worker, ucp_address_t *local_addr,
     size_t local_addr_len, ucp_address_t *remote_addr,
     size_t remote_addr_len)
@@ -117,14 +133,7 @@ run_client(ucp_worker_h worker, ucp_address_t *local_addr,
 
     rxring_destroy(&rring);
 
-    request = ucp_ep_close_nb(remote_ep, UCP_EP_CLOSE_MODE_FLUSH);
-    if (request == UCS_OK)
-        return;
-    if (UCS_PTR_IS_ERR(request))
-        warnx("%s: ucp_ep_close_nb: %s", __func__,
-            ucs_status_string(UCS_PTR_STATUS(request)));
-    while (!ucp_request_is_completed(request))
-        ucp_worker_progress(worker);
+    ep_close(worker, remote_ep);
 }
 
 static const char *
@@ -207,7 +216,7 @@ process_rx_msg(ucp_worker_h worker, ucp_tag_t tag, void *buf, size_t buflen)
     } else if (request == UCS_OK)
         printf("send succeeded immediately, exiting.\n");
 
-    ucp_ep_destroy(reply_ep);
+    ep_close(worker, reply_ep);
 }
 
 static void
