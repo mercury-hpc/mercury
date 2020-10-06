@@ -1,0 +1,98 @@
+/*
+ * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ *                    UChicago Argonne, LLC and The HDF Group.
+ * All rights reserved.
+ *
+ * The full copyright notice, including terms governing use, modification,
+ * and redistribution, is contained in the COPYING file that can be
+ * found at the root of the source code distribution tree.
+ */
+
+/* Generated file. Only edit mchecksum_config.h.in. */
+
+#ifndef MCHECKSUM_CONFIG_H
+#define MCHECKSUM_CONFIG_H
+
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
+#ifdef _WIN32
+  typedef signed   __int64 mchecksum_int64_t;
+  typedef signed   __int32 mchecksum_int32_t;
+  typedef signed   __int16 mchecksum_int16_t;
+  typedef signed   __int8  mchecksum_int8_t;
+  typedef unsigned __int64 mchecksum_uint64_t;
+  typedef unsigned __int32 mchecksum_uint32_t;
+  typedef unsigned __int16 mchecksum_uint16_t;
+  typedef unsigned __int8  mchecksum_uint8_t;
+#else
+# include <stdint.h>
+# include <stddef.h>
+  typedef int64_t  mchecksum_int64_t;
+  typedef int32_t  mchecksum_int32_t;
+  typedef int16_t  mchecksum_int16_t;
+  typedef int8_t   mchecksum_int8_t;
+  typedef uint64_t mchecksum_uint64_t;
+  typedef uint32_t mchecksum_uint32_t;
+  typedef uint16_t mchecksum_uint16_t;
+  typedef uint8_t  mchecksum_uint8_t;
+#endif
+
+/* True / false */
+#define MCHECKSUM_TRUE     1
+#define MCHECKSUM_FALSE    0
+
+/*****************/
+/* Public Macros */
+/*****************/
+
+/* Reflects major releases of MChecksum */
+#define MCHECKSUM_VERSION_MAJOR @MCHECKSUM_VERSION_MAJOR@
+/* Reflects any API changes */
+#define MCHECKSUM_VERSION_MINOR @MCHECKSUM_VERSION_MINOR@
+/* Reflects any library code changes */
+#define MCHECKSUM_VERSION_PATCH @MCHECKSUM_VERSION_PATCH@
+
+/* Visibility of symbols */
+#if defined(_WIN32)
+# define MCHECKSUM_ABI_IMPORT __declspec(dllimport)
+# define MCHECKSUM_ABI_EXPORT __declspec(dllexport)
+# define MCHECKSUM_ABI_HIDDEN
+#elif defined(__GNUC__) && (__GNUC__ >= 4)
+# define MCHECKSUM_ABI_IMPORT __attribute__((visibility("default")))
+# define MCHECKSUM_ABI_EXPORT __attribute__((visibility("default")))
+# define MCHECKSUM_ABI_HIDDEN __attribute__((visibility("hidden")))
+#else
+# define MCHECKSUM_ABI_IMPORT
+# define MCHECKSUM_ABI_EXPORT
+# define MCHECKSUM_ABI_HIDDEN
+#endif
+
+/* Inline macro */
+#ifdef _WIN32
+# define MCHECKSUM_INLINE __inline
+#else
+# define MCHECKSUM_INLINE __inline__
+#endif
+
+/* Shared libraries */
+#cmakedefine MCHECKSUM_BUILD_SHARED_LIBS
+#ifdef MCHECKSUM_BUILD_SHARED_LIBS
+# ifdef mchecksum_EXPORTS
+#  define MCHECKSUM_EXPORT MCHECKSUM_ABI_EXPORT
+# else
+#  define MCHECKSUM_EXPORT MCHECKSUM_ABI_IMPORT
+# endif
+#else
+# define MCHECKSUM_EXPORT
+#endif
+
+/* Build Options */
+#cmakedefine MCHECKSUM_HAS_ISAL
+#cmakedefine MCHECKSUM_HAS_SSE4_2
+#cmakedefine MCHECKSUM_HAS_ZLIB
+
+#cmakedefine MCHECKSUM_HAS_VERBOSE_ERROR
+
+#endif /* MCHECKSUM_CONFIG_H */

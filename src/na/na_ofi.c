@@ -55,6 +55,10 @@
 #include "mercury_thread_spin.h"
 #include "mercury_time.h"
 
+/* PVAR profiling support */
+#include "../mercury_types.h"
+#include "../mercury_prof_pvar_impl.h"
+
 #include <rdma/fabric.h>
 #include <rdma/fi_cm.h>
 #include <rdma/fi_domain.h>
@@ -4634,6 +4638,8 @@ na_ofi_progress(
     double remaining = timeout / 1000.0;
     na_return_t ret = NA_TIMEOUT;
 
+    HG_PROF_PVAR_UINT_COUNTER(hg_pvar_hg_na_ofi_completion_count);
+
     do {
         struct fi_cq_tagged_entry cq_events[NA_OFI_CQ_EVENT_NUM];
         fi_addr_t src_addrs[NA_OFI_CQ_EVENT_NUM] = {FI_ADDR_UNSPEC};
@@ -4668,7 +4674,10 @@ na_ofi_progress(
         /* Read from CQ */
         ret = na_ofi_cq_read(context, NA_OFI_CQ_EVENT_NUM, cq_events, src_addrs,
             &src_err_addr_ptr, &src_err_addrlen, &actual_count);
-        NA_CHECK_NA_ERROR(out, ret, "Could not read events from context CQ");
+	HG_PROF_PVAR_UINT_COUNTER_SET(hg_pvar_hg_na_ofi_completion_count, actual_count);
+        
+        NA_CHECK_NA_ERROR(out, ret,
+            "Could not read events from context CQ");
 
         /* Attempt to process retries */
         ret = na_ofi_cq_process_retries(context);
