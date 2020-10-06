@@ -75,7 +75,7 @@ run_client(ucp_worker_h worker, ucp_address_t *local_addr,
     , .err_mode = UCP_ERR_HANDLING_MODE_NONE
     };
 
-    reqlen = sizeof(*req) + remote_addr_len;
+    reqlen = sizeof(*req) + local_addr_len;
     if ((req = calloc(1, reqlen)) == NULL)
         err(EXIT_FAILURE, "%s: malloc", __func__);
 
