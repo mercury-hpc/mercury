@@ -117,7 +117,14 @@ run_client(ucp_worker_h worker, ucp_address_t *local_addr,
 
     rxring_destroy(&rring);
 
-    ucp_ep_destroy(remote_ep);
+    request = ucp_ep_close_nb(remote_ep, UCP_EP_CLOSE_MODE_FLUSH);
+    if (request == UCS_OK)
+        return;
+    if (UCS_PTR_IS_ERR(request))
+        warnx("%s: ucp_ep_close_nb: %s", __func__,
+            ucs_status_string(UCS_PTR_STATUS(request)));
+    while (!ucp_request_is_completed(request))
+        ucp_worker_progress(worker);
 }
 
 static const char *
