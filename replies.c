@@ -46,7 +46,7 @@ send_callback(void *request, ucs_status_t status, void *user_data)
     desc->status = status;
 
     desc->completed = true;
-    ucp_request_release(request);
+    ucp_request_free(request);
 }
 
 static void
