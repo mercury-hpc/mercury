@@ -88,12 +88,17 @@ rxring_destroy(rxring_t *ring)
     for (i = 0; i < ndescs; i++) {
         void *request;
         rxdesc_t *desc = &ring->desc[i];
+        void *buf;
+
+        if ((buf = desc->buf) != NULL) {
+            desc->buf = NULL;
+            free(buf);
+        }
 
         if ((request = desc->request) == NULL)
             continue;
         desc->request = NULL;
         ucp_request_cancel(worker, request);
         ucp_request_free(request);
-        free(desc->buf);
     }
 }

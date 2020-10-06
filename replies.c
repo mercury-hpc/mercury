@@ -106,6 +106,8 @@ run_client(ucp_worker_h worker, ucp_address_t *local_addr,
     } else if (request == UCS_OK)
         printf("send succeeded immediately, exiting.\n");
 
+    free(req);
+
     while (!rdesc->completed)
         ucp_worker_progress(worker);
 
@@ -235,13 +237,12 @@ run_server(ucp_worker_h worker)
             printf("increasing buffer length %zu -> %zu bytes.\n",
                 buflen, nbuflen);
 
-            free(buf);
-
             if ((nbuf = malloc(nbuflen)) == NULL)
                 err(EXIT_FAILURE, "%s: malloc", __func__);
 
             rdesc->buflen = nbuflen;
             rdesc->buf = nbuf;
+            free(buf);
         } else {
             printf("receive error, %s, exiting.\n",
                 ucs_status_string(rdesc->status));
@@ -290,20 +291,22 @@ main(int argc, char **argv)
     if ((status = ucp_config_read(NULL, NULL, &config)) != UCS_OK)
         errx(EXIT_FAILURE, "%s: ucp_config_read", __func__);
 
-    if ((status = ucp_init(&global_params, config, &context)) != UCS_OK)
-        errx(EXIT_FAILURE, "%s: ucp_init", __func__);
+    status = ucp_init(&global_params, config, &context);
 
     ucp_config_release(config);
 
+    if (status != UCS_OK)
+        errx(EXIT_FAILURE, "%s: ucp_init", __func__);
+
     status = ucp_worker_create(context, &worker_params, &worker);
     if (status != UCS_OK) {
-        errx(EXIT_FAILURE, "%s: ucp_worker_create", __func__);
+        warnx("%s: ucp_worker_create", __func__);
         goto cleanup_context;
     }
 
     status = ucp_worker_get_address(worker, &local_addr, &local_addr_len);
     if (status != UCS_OK) {
-        errx(EXIT_FAILURE, "%s: ucp_worker_get_address", __func__);
+        warnx("%s: ucp_worker_get_address", __func__);
         goto cleanup_worker;
     }
 
@@ -317,6 +320,7 @@ main(int argc, char **argv)
     if (remote_addr != NULL) {      /* * * client mode * * */
         run_client(worker, local_addr, local_addr_len,
             remote_addr, remote_addr_len);
+        free(remote_addr);
     } else {                        /* * * server mode * * */
         run_server(worker);
     }
