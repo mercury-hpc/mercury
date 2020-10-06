@@ -160,6 +160,15 @@ process_rx_msg(ucp_worker_h worker, ucp_tag_t tag, void *buf, size_t buflen)
     , .address = NULL
     , .err_mode = UCP_ERR_HANDLING_MODE_NONE
     };
+    wireup_msg_t reply = (wireup_msg_t){ .sender_ep_idx = 0, .op = OP_ACK, .addrlen = 0};
+    txdesc_t desc = {.completed = false};
+    const ucp_request_param_t send_params = {
+      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK |
+                      UCP_OP_ATTR_FIELD_USER_DATA 
+    , .cb = {.send = send_callback}
+    , .user_data = &desc
+    };
+    void *request;
     wireup_msg_t *msg;
     ucp_ep_h reply_ep;
     const size_t hdrlen = offsetof(wireup_msg_t, addr[0]);
@@ -188,16 +197,6 @@ process_rx_msg(ucp_worker_h worker, ucp_tag_t tag, void *buf, size_t buflen)
     /* TBD send nack on error */
     if (status != UCS_OK)
         warnx("%s: ucp_ep_create failed", __func__);
-
-    wireup_msg_t reply = (wireup_msg_t){ .sender_ep_idx = 0, .op = OP_ACK, .addrlen = 0};
-    txdesc_t desc = {.completed = false};
-    const ucp_request_param_t send_params = {
-      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK |
-                      UCP_OP_ATTR_FIELD_USER_DATA 
-    , .cb = {.send = send_callback}
-    , .user_data = &desc
-    };
-    void *request;
 
     request = ucp_tag_send_nbx(reply_ep, &reply, sizeof(reply),
         tag, &send_params);
