@@ -64,10 +64,11 @@ hg_test_bulk_forward_cb(const struct hg_cb_info *callback_info)
 
     /* Get output parameters */
     bulk_write_ret = bulk_write_out_struct.ret;
-    HG_TEST_CHECK_ERROR(bulk_write_ret != args->expected_bytes, done, args->ret,
-        HG_MSGSIZE, "Returned: %zu bytes, was expecting %zu", bulk_write_ret,
-        args->expected_bytes);
+    HG_TEST_CHECK_ERROR(bulk_write_ret != args->expected_bytes, error,
+        args->ret, HG_MSGSIZE, "Returned: %zu bytes, was expecting %zu",
+        bulk_write_ret, args->expected_bytes);
 
+error:
     /* Free request */
     ret = HG_Free_output(handle, &bulk_write_out_struct);
     HG_TEST_CHECK_HG_ERROR(
@@ -99,10 +100,11 @@ hg_test_bulk_bind_forward_cb(const struct hg_cb_info *callback_info)
 
     /* Get output parameters */
     bulk_write_ret = bulk_write_out_struct.ret;
-    HG_TEST_CHECK_ERROR(bulk_write_ret != args->expected_bytes, done, args->ret,
-        HG_MSGSIZE, "Returned: %zu bytes, was expecting %zu", bulk_write_ret,
-        args->expected_bytes);
+    HG_TEST_CHECK_ERROR(bulk_write_ret != args->expected_bytes, error,
+        args->ret, HG_MSGSIZE, "Returned: %zu bytes, was expecting %zu",
+        bulk_write_ret, args->expected_bytes);
 
+error:
     /* Free request */
     ret = HG_Free_output(handle, &bulk_write_out_struct);
     HG_TEST_CHECK_HG_ERROR(
@@ -110,6 +112,80 @@ hg_test_bulk_bind_forward_cb(const struct hg_cb_info *callback_info)
 
 done:
     hg_request_complete(args->request);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_bulk_null(hg_class_t *hg_class, hg_context_t *context,
+    hg_request_class_t *request_class, hg_addr_t target_addr)
+{
+    hg_request_t *request = NULL;
+    hg_handle_t handle;
+    hg_bulk_t bulk_handle = HG_BULK_NULL;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
+    struct forward_cb_args forward_cb_args;
+    bulk_write_in_t bulk_write_in_struct;
+    char *bulk_buf = NULL;
+    void *buf_ptrs[2] = {NULL, NULL};
+    hg_size_t buf_sizes[2] = {0, 0};
+    hg_id_t rpc_id = hg_test_bulk_write_id_g;
+    hg_cb_t forward_cb = hg_test_bulk_forward_cb;
+
+    /* Prepare bulk_buf */
+    request = hg_request_create(request_class);
+
+    /* Register memory */
+    ret = HG_Bulk_create(
+        hg_class, 2, buf_ptrs, buf_sizes, HG_BULK_READ_ONLY, &bulk_handle);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Bulk_create() failed (%s)", HG_Error_to_string(ret));
+
+    ret = HG_Create(context, target_addr, rpc_id, &handle);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
+
+    /* Fill input structure */
+    bulk_write_in_struct.fildes = 0;
+    bulk_write_in_struct.transfer_size = 0;
+    bulk_write_in_struct.origin_offset = 0;
+    bulk_write_in_struct.target_offset = 0;
+    bulk_write_in_struct.bulk_handle = bulk_handle;
+    HG_TEST_LOG_DEBUG("Requesting transfer_size=%zu, origin_offset=%zu, "
+                      "target_offset=%zu",
+        bulk_write_in_struct.transfer_size, bulk_write_in_struct.origin_offset,
+        bulk_write_in_struct.target_offset);
+
+    /* Forward call to remote addr and get a new request */
+    HG_TEST_LOG_DEBUG("Forwarding call with op id: %u...", rpc_id);
+    forward_cb_args.request = request;
+    forward_cb_args.expected_bytes = 0;
+    forward_cb_args.ret = HG_SUCCESS;
+    ret =
+        HG_Forward(handle, forward_cb, &forward_cb_args, &bulk_write_in_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
+
+    hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
+
+    /* Assign ret from CB */
+    ret = forward_cb_args.ret;
+
+done:
+    /* Free memory handle */
+    cleanup_ret = HG_Bulk_free(bulk_handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Bulk_free() failed (%s)", HG_Error_to_string(cleanup_ret));
+
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
+
+    hg_request_destroy(request);
+
+    /* Free bulk data */
+    free(bulk_buf);
+
     return ret;
 }
 
@@ -123,7 +199,7 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
     hg_request_t *request = NULL;
     hg_handle_t handle;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
     struct forward_cb_args forward_cb_args;
     bulk_write_in_t bulk_write_in_struct;
     char *bulk_buf = NULL;
@@ -197,25 +273,24 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
-    /* Free memory handle */
-    ret = HG_Bulk_free(bulk_handle);
-    HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Bulk_free() failed (%s)", HG_Error_to_string(ret));
+    /* Assign ret from CB */
+    ret = forward_cb_args.ret;
 
-    /* Complete */
-    ret = HG_Destroy(handle);
-    HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
+done:
+    /* Free memory handle */
+    cleanup_ret = HG_Bulk_free(bulk_handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Bulk_free() failed (%s)", HG_Error_to_string(cleanup_ret));
+
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
 
     hg_request_destroy(request);
 
     /* Free bulk data */
     free(bulk_buf);
 
-    /* Assign ret from CB */
-    ret = forward_cb_args.ret;
-
-done:
     return ret;
 }
 
@@ -229,11 +304,11 @@ hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
     hg_request_t *request = NULL;
     hg_handle_t handle;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
     struct forward_cb_args forward_cb_args;
     bulk_write_in_t bulk_write_in_struct;
-    void **buf_ptrs;
-    hg_size_t *buf_sizes;
+    void **buf_ptrs = NULL;
+    hg_size_t *buf_sizes = NULL;
     hg_size_t bulk_size = BUFSIZE;
     size_t i;
 
@@ -298,28 +373,29 @@ hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
-    /* Free memory handle */
-    ret = HG_Bulk_free(bulk_handle);
-    HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Bulk_free() failed (%s)", HG_Error_to_string(ret));
-
-    /* Complete */
-    ret = HG_Destroy(handle);
-    HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
-
-    hg_request_destroy(request);
-
-    /* Free bulk data */
-    for (i = 0; i < origin_segment_count; i++)
-        free(buf_ptrs[i]);
-    free(buf_ptrs);
-    free(buf_sizes);
-
     /* Assign ret from CB */
     ret = forward_cb_args.ret;
 
 done:
+    /* Free memory handle */
+    cleanup_ret = HG_Bulk_free(bulk_handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Bulk_free() failed (%s)", HG_Error_to_string(cleanup_ret));
+
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
+
+    hg_request_destroy(request);
+
+    /* Free bulk data */
+    if (buf_ptrs) {
+        for (i = 0; i < origin_segment_count; i++)
+            free(buf_ptrs[i]);
+        free(buf_ptrs);
+    }
+    free(buf_sizes);
+
     return ret;
 }
 
@@ -332,7 +408,7 @@ hg_test_bulk_small(hg_class_t *hg_class, hg_context_t *context,
     hg_request_t *request = NULL;
     hg_handle_t handle;
     hg_bulk_t bulk_handle = HG_BULK_NULL;
-    hg_return_t ret = HG_SUCCESS;
+    hg_return_t ret = HG_SUCCESS, cleanup_ret;
     struct forward_cb_args forward_cb_args;
     bulk_write_in_t bulk_write_in_struct;
     char data[12];
@@ -384,22 +460,21 @@ hg_test_bulk_small(hg_class_t *hg_class, hg_context_t *context,
 
     hg_request_wait(request, HG_MAX_IDLE_TIME, NULL);
 
-    /* Free memory handle */
-    ret = HG_Bulk_free(bulk_handle);
-    HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Bulk_free() failed (%s)", HG_Error_to_string(ret));
-
-    /* Complete */
-    ret = HG_Destroy(handle);
-    HG_TEST_CHECK_HG_ERROR(
-        done, ret, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
-
-    hg_request_destroy(request);
-
     /* Assign ret from CB */
     ret = forward_cb_args.ret;
 
 done:
+    /* Free memory handle */
+    cleanup_ret = HG_Bulk_free(bulk_handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Bulk_free() failed (%s)", HG_Error_to_string(cleanup_ret));
+
+    cleanup_ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(cleanup_ret != HG_SUCCESS,
+        "HG_Destroy() failed (%s)", HG_Error_to_string(cleanup_ret));
+
+    hg_request_destroy(request);
+
     return ret;
 }
 
@@ -415,6 +490,22 @@ main(int argc, char *argv[])
     hg_ret = HG_Test_init(argc, argv, &hg_test_info);
     HG_TEST_CHECK_ERROR(
         hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "HG_Test_init() failed");
+
+    /* Zero size RPC bulk test */
+    HG_TEST("null RPC bulk");
+    hg_ret = hg_test_bulk_null(hg_test_info.hg_class, hg_test_info.context,
+        hg_test_info.request_class, hg_test_info.target_addr);
+    HG_TEST_CHECK_ERROR(
+        hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "null RPC bulk failed");
+    HG_PASSED();
+
+    /* Zero size RPC bulk test */
+    HG_TEST("zero size RPC bulk (size 0, offsets 0, 0)");
+    hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
+        hg_test_info.request_class, 0, hg_test_info.target_addr, 0, 0, 0);
+    HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
+        "zero size RPC bulk failed");
+    HG_PASSED();
 
     /* Simple RPC bulk test */
     HG_TEST("contiguous RPC bulk (size BUFSIZE, offsets 0, 0)");

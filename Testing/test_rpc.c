@@ -202,8 +202,10 @@ hg_test_rpc_forward_overflow_cb(const struct hg_cb_info *callback_info)
     hg_handle_t handle = callback_info->info.forward.handle;
     hg_request_t *request = (hg_request_t *) callback_info->arg;
     overflow_out_t out_struct;
+#    ifdef HG_HAS_DEBUG
     hg_string_t string;
     size_t string_len;
+#    endif
     hg_return_t ret = HG_SUCCESS;
 
     HG_TEST_CHECK_ERROR_NORET(callback_info->ret != HG_SUCCESS, done,
@@ -215,8 +217,10 @@ hg_test_rpc_forward_overflow_cb(const struct hg_cb_info *callback_info)
         done, ret, "HG_Get_output() failed (%s)", HG_Error_to_string(ret));
 
     /* Get output parameters */
+#    ifdef HG_HAS_DEBUG
     string = out_struct.string;
     string_len = out_struct.string_len;
+#    endif
     HG_TEST_LOG_DEBUG("Returned string (length %zu): %s", string_len, string);
 
     /* Free request */
