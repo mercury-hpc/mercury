@@ -118,6 +118,9 @@ rpc_open(const char *path, rpc_handle_t handle, int *event_id)
 {
     HG_TEST_LOG_DEBUG("Called rpc_open of %s with cookie %lu\n", path,
         (unsigned long) handle.cookie);
+#ifndef HG_HAS_DEBUG
+    (void) path;
+#endif
     *event_id = (int) handle.cookie;
 
     return HG_SUCCESS;
@@ -137,10 +140,8 @@ bulk_write(int fildes, const void *buf, size_t offset, size_t start_value,
     if (verbose)
         HG_TEST_LOG_DEBUG("Executing bulk_write with fildes %d...", fildes);
 
-    if (nbyte == 0) {
-        HG_TEST_LOG_ERROR("Error detected in bulk transfer, nbyte is zero!");
-        error = 1;
-    }
+    if (nbyte == 0)
+        return nbyte;
 
     if (verbose)
         HG_TEST_LOG_DEBUG("Checking data...");
