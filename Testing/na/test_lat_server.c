@@ -38,7 +38,7 @@ struct na_test_source_recv_arg {
     void *send_buf;
     void *send_buf_data;
     na_tag_t tag;
-    na_op_id_t send_op_id;
+    na_op_id_t *send_op_id;
     hg_request_t *request;
     struct na_test_lat_info *na_test_lat_info;
 };
@@ -141,7 +141,7 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
         na_test_source_recv_arg->send_buf_data,
         na_cb_info->info.recv_unexpected.source, 0,
         na_cb_info->info.recv_unexpected.tag,
-        &na_test_source_recv_arg->send_op_id);
+        na_test_source_recv_arg->send_op_id);
     if (ret != NA_SUCCESS) {
         NA_LOG_ERROR(
             "NA_Msg_send_expected() failed (%s)", NA_Error_to_string(ret));
@@ -171,8 +171,8 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
     struct na_test_source_recv_arg na_test_source_recv_arg = {0};
     char *send_buf = NULL, *recv_buf = NULL;
     void *send_buf_data, *recv_buf_data;
-    na_op_id_t send_op_id;
-    na_op_id_t recv_op_id;
+    na_op_id_t *send_op_id;
+    na_op_id_t *recv_op_id;
     hg_request_t *send_request = NULL;
     na_size_t unexpected_size =
         NA_Msg_get_max_unexpected_size(na_test_lat_info->na_class);
@@ -210,7 +210,7 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
         ret = NA_Msg_recv_unexpected(na_test_lat_info->na_class,
             na_test_lat_info->context, na_test_recv_unexpected_cb,
             &na_test_source_recv_arg, recv_buf, unexpected_size, recv_buf_data,
-            &recv_op_id);
+            recv_op_id);
         if (ret != NA_SUCCESS) {
             NA_LOG_ERROR("NA_Msg_recv_unexpected() failed (%s)",
                 NA_Error_to_string(ret));

@@ -37,6 +37,7 @@
 /* Local Type and Struct Definition */
 /************************************/
 
+/* Private class */
 struct na_private_class {
     struct na_class na_class; /* Must remain as first field */
 };
@@ -63,6 +64,15 @@ struct na_private_context {
     hg_atomic_int32_t progressing; /* Progressing count */
 #endif
 };
+
+/* NA address */
+struct na_addr;
+
+/* NA memory handle */
+struct na_mem_handle;
+
+/* NA op ID */
+struct na_op_id;
 
 /********************/
 /* Local Prototypes */
@@ -487,10 +497,10 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-na_op_id_t
+na_op_id_t *
 NA_Op_create(na_class_t *na_class)
 {
-    na_op_id_t ret = NA_OP_ID_NULL;
+    na_op_id_t *ret = NULL;
 
     NA_CHECK_ERROR_NORET(na_class == NULL, done, "NULL NA class");
     NA_CHECK_ERROR_NORET(na_class->ops == NULL, done, "NULL NA class ops");
@@ -505,14 +515,14 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Op_destroy(na_class_t *na_class, na_op_id_t op_id)
+NA_Op_destroy(na_class_t *na_class, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_ERROR(
         na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
 
-    if (op_id == NA_OP_ID_NULL)
+    if (op_id == NULL)
         /* Nothing to do */
         goto done;
 
@@ -994,48 +1004,6 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Mem_publish(na_class_t *na_class, na_mem_handle_t mem_handle)
-{
-    na_return_t ret = NA_SUCCESS;
-
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret, NA_INVALID_ARG,
-        "NULL memory handle");
-
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    if (na_class->ops->mem_publish)
-        /* Optional */
-        ret = na_class->ops->mem_publish(na_class, mem_handle);
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-na_return_t
-NA_Mem_unpublish(na_class_t *na_class, na_mem_handle_t mem_handle)
-{
-    na_return_t ret = NA_SUCCESS;
-
-    NA_CHECK_ERROR(
-        na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
-    NA_CHECK_ERROR(mem_handle == NA_MEM_HANDLE_NULL, done, ret, NA_INVALID_ARG,
-        "NULL memory handle");
-
-    NA_CHECK_ERROR(
-        na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");
-    if (na_class->ops->mem_unpublish)
-        /* Optional */
-        ret = na_class->ops->mem_unpublish(na_class, mem_handle);
-
-done:
-    return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-na_return_t
 NA_Mem_handle_serialize(na_class_t *na_class, void *buf, na_size_t buf_size,
     na_mem_handle_t mem_handle)
 {
@@ -1333,7 +1301,7 @@ done:
 
 /*---------------------------------------------------------------------------*/
 na_return_t
-NA_Cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
+NA_Cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
 {
     na_return_t ret = NA_SUCCESS;
 
@@ -1341,7 +1309,7 @@ NA_Cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
         na_class == NULL, done, ret, NA_INVALID_ARG, "NULL NA class");
     NA_CHECK_ERROR(context == NULL, done, ret, NA_INVALID_ARG, "NULL context");
     NA_CHECK_ERROR(
-        op_id == NA_OP_ID_NULL, done, ret, NA_INVALID_ARG, "NULL operation ID");
+        op_id == NULL, done, ret, NA_INVALID_ARG, "NULL operation ID");
 
     NA_CHECK_ERROR(
         na_class->ops == NULL, done, ret, NA_INVALID_ARG, "NULL NA class ops");

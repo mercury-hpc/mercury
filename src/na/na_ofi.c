@@ -185,6 +185,12 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 /* The predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
 
+/* Uncomment to register SGL regions */
+// #define NA_OFI_USE_REGV
+
+/* Maximum number of pre-allocated IOV entries */
+#define NA_OFI_IOV_STATIC_MAX (8)
+
 /* The completion flags for PUT/GET operations */
 #define NA_OFI_PUT_COMPLETION (FI_COMPLETION | FI_DELIVERY_COMPLETE)
 #define NA_OFI_GET_COMPLETION (FI_COMPLETION)
@@ -203,6 +209,36 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
     ((struct na_ofi_class *) ((na_class)->plugin_class))
 #define NA_OFI_CONTEXT(na_context)                                             \
     ((struct na_ofi_context *) ((na_context)->plugin_context))
+
+/* Get IOV */
+#define NA_OFI_IOV(x)                                                          \
+    ((x)->desc.info.iovcnt > NA_OFI_IOV_STATIC_MAX) ? (x)->desc.iov.d          \
+                                                    : (x)->desc.iov.s
+
+/* Get msg IOV */
+#define NA_OFI_MSG_IOV(x)                                                      \
+    ((x)->info.rma.local_iovcnt > NA_OFI_IOV_STATIC_MAX)                       \
+        ? (x)->info.rma.local_iov.d                                            \
+        : (x)->info.rma.local_iov.s
+
+/* Get rma IOV */
+#define NA_OFI_RMA_IOV(x)                                                      \
+    ((x)->info.rma.remote_iovcnt > NA_OFI_IOV_STATIC_MAX)                      \
+        ? (x)->info.rma.remote_iov.d                                           \
+        : (x)->info.rma.remote_iov.s
+
+/* Set RMA msg */
+#define NA_OFI_MSG_RMA_SET(fi_msg_rma, local_iov, remote_iov, na_ofi_op_id)    \
+    do {                                                                       \
+        fi_msg_rma.msg_iov = local_iov;                                        \
+        fi_msg_rma.desc = &na_ofi_op_id->info.rma.local_desc;                  \
+        fi_msg_rma.iov_count = na_ofi_op_id->info.rma.local_iovcnt;            \
+        fi_msg_rma.addr = na_ofi_op_id->info.rma.fi_addr;                      \
+        fi_msg_rma.rma_iov = remote_iov;                                       \
+        fi_msg_rma.rma_iov_count = na_ofi_op_id->info.rma.remote_iovcnt;       \
+        fi_msg_rma.context = &na_ofi_op_id->fi_ctx;                            \
+        fi_msg_rma.data = 0;                                                   \
+    } while (0)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -251,14 +287,24 @@ struct na_ofi_gni_addr {
     na_uint64_t reserved[3];
 };
 
-/* Memory handle */
-struct na_ofi_mem_desc {
-    na_uint64_t fi_mr_key; /* FI MR key                */
-    na_ptr_t base;         /* Base address of memory   */
-    na_size_t size;        /* Size of region           */
-    na_uint8_t attr;       /* Flag of operation access */
+/* Memory descriptor info */
+struct na_ofi_mem_desc_info {
+    na_uint64_t fi_mr_key; /* FI MR key                   */
+    size_t len;            /* Size of region              */
+    unsigned long iovcnt;  /* Segment count               */
+    na_uint8_t flags;      /* Flag of operation access    */
 };
 
+/* Memory descriptor */
+struct na_ofi_mem_desc {
+    struct na_ofi_mem_desc_info info; /* Segment info */
+    union {
+        struct iovec s[NA_OFI_IOV_STATIC_MAX]; /* Single segment */
+        struct iovec *d;                       /* Multiple segments */
+    } iov;                                     /* Remain last */
+};
+
+/* Memory handle */
 struct na_ofi_mem_handle {
     struct na_ofi_mem_desc desc; /* Memory descriptor        */
     struct fid_mr *fi_mr;        /* FI MR handle             */
@@ -279,10 +325,19 @@ struct na_ofi_msg_info {
 
 /* RMA info */
 struct na_ofi_rma_info {
-    struct fi_msg_rma fi_rma;
-    struct fi_rma_iov remote_iov;
-    struct iovec local_iov;
+    union {
+        struct iovec s[NA_OFI_IOV_STATIC_MAX]; /* Single segment */
+        struct iovec *d;                       /* Multiple segments */
+    } local_iov;
     void *local_desc;
+    size_t local_iovcnt;
+    fi_addr_t fi_addr;
+    union {
+        struct fi_rma_iov s[NA_OFI_IOV_STATIC_MAX]; /* Single segment */
+        struct fi_rma_iov *d;                       /* Multiple segments */
+    } remote_iov;
+    size_t remote_iovcnt;
+    void *context;
 };
 
 /* Operation ID */
@@ -344,6 +399,7 @@ struct na_ofi_domain {
     hg_hash_table_t *addr_ht;        /* Address hash_table       */
     char *prov_name;                 /* Provider name            */
     enum na_ofi_prov_type prov_type; /* Provider type            */
+    hg_atomic_int32_t mr_reg_count;  /* Number of MR registered  */
     hg_atomic_int32_t refcount;      /* Refcount of this domain  */
 };
 
@@ -361,11 +417,11 @@ struct na_ofi_mem_node {
  * functions.
  */
 struct na_ofi_mem_pool {
-    HG_QUEUE_HEAD(na_ofi_mem_node) node_list; /* Node list            */
-    HG_QUEUE_ENTRY(na_ofi_mem_pool) entry;    /* Entry in pool list       */
-    struct fid_mr *mr_hdl;                    /* MR handle                */
-    na_size_t block_size;                     /* Node block size          */
-    hg_thread_spin_t node_list_lock;          /* Node list lock           */
+    HG_QUEUE_HEAD(na_ofi_mem_node) node_list; /* Node list               */
+    HG_QUEUE_ENTRY(na_ofi_mem_pool) entry;    /* Entry in pool list      */
+    struct fid_mr *mr_hdl;                    /* MR handle               */
+    na_size_t block_size;                     /* Node block size         */
+    hg_thread_spin_t node_list_lock;          /* Node list lock          */
 };
 
 /* Private data */
@@ -375,8 +431,9 @@ struct na_ofi_class {
     struct na_ofi_domain *domain;            /* Domain pointer           */
     struct na_ofi_endpoint *endpoint;        /* Endpoint pointer         */
     hg_thread_spin_t buf_pool_lock;          /* Buf pool lock            */
+    na_size_t iov_max;                       /* Max number of IOVs       */
     na_uint8_t contexts;                     /* Number of context        */
-    na_uint8_t max_contexts;                 /* Max number of contexts   */
+    na_uint8_t context_max;                  /* Max number of contexts   */
     na_bool_t no_wait;                       /* Ignore wait object       */
     na_bool_t no_retry;                      /* Do not retry operations  */
 };
@@ -516,7 +573,7 @@ na_ofi_gni_set_domain_op_value(
  * Open domain.
  */
 static na_return_t
-na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
+na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
     const char *domain_name, const char *auth_key,
     struct na_ofi_domain **na_ofi_domain_p);
 
@@ -601,7 +658,8 @@ na_ofi_mem_pool_create(
  * Destroy memory pool.
  */
 static void
-na_ofi_mem_pool_destroy(struct na_ofi_mem_pool *na_ofi_mem_pool);
+na_ofi_mem_pool_destroy(
+    na_class_t *na_class, struct na_ofi_mem_pool *na_ofi_mem_pool);
 
 /**
  * Allocate memory for transfers.
@@ -613,7 +671,7 @@ na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl);
  * Free memory.
  */
 static NA_INLINE void
-na_ofi_mem_free(void *mem_ptr, struct fid_mr *mr_hdl);
+na_ofi_mem_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl);
 
 /**
  * Allocate memory pool and register memory.
@@ -640,6 +698,53 @@ na_ofi_op_id_addref(struct na_ofi_op_id *na_ofi_op_id);
  */
 static NA_INLINE void
 na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id);
+
+/**
+ * Get IOV index and offset pair from an absolute offset.
+ */
+static NA_INLINE void
+na_ofi_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
+    na_offset_t offset, unsigned long *iov_start_index,
+    unsigned long *iov_start_offset);
+
+/**
+ * Get IOV count for a given length.
+ */
+static NA_INLINE unsigned long
+na_ofi_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len);
+
+/**
+ * Create new IOV for transferring length data.
+ */
+static NA_INLINE void
+na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
+    struct iovec *new_iov, unsigned long new_iovcnt);
+
+/**
+ * Create new RMA IOV for transferring length data.
+ */
+static NA_INLINE void
+na_ofi_rma_iov_translate(const struct iovec *iov, unsigned long iovcnt,
+    na_uint64_t key, unsigned long iov_start_index,
+    na_offset_t iov_start_offset, na_size_t len, struct fi_rma_iov *new_iov,
+    unsigned long new_iovcnt);
+
+/**
+ * Do RMA operation (put/get).
+ */
+static na_return_t
+na_ofi_rma(na_class_t *na_class, na_context_t *context, na_cb_type_t op,
+    na_cb_t callback, void *arg,
+    ssize_t (*fi_rma_op)(
+        struct fid_ep *ep, const struct fi_msg_rma *msg, uint64_t flags),
+    na_uint64_t fi_rma_flags, struct na_ofi_mem_handle *na_ofi_mem_handle_local,
+    na_offset_t local_offset,
+    struct na_ofi_mem_handle *na_ofi_mem_handle_remote,
+    na_offset_t remote_offset, na_size_t length,
+    struct na_ofi_addr *na_ofi_addr, na_uint8_t remote_id,
+    struct na_ofi_op_id *na_ofi_op_id);
 
 /**
  * Read from CQ.
@@ -728,12 +833,12 @@ static na_return_t
 na_ofi_context_destroy(na_class_t *na_class, void *context);
 
 /* op_create */
-static na_op_id_t
+static na_op_id_t *
 na_ofi_op_create(na_class_t *na_class);
 
 /* op_destroy */
 static na_return_t
-na_ofi_op_destroy(na_class_t *na_class, na_op_id_t op_id);
+na_ofi_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
 static na_return_t
@@ -843,7 +948,15 @@ na_ofi_mem_handle_create(na_class_t *na_class, void *buf, na_size_t buf_size,
     unsigned long flags, na_mem_handle_t *mem_handle);
 
 static na_return_t
+na_ofi_mem_handle_create_segments(na_class_t NA_UNUSED *na_class,
+    struct na_segment *segments, na_size_t segment_count, unsigned long flags,
+    na_mem_handle_t *mem_handle);
+
+static na_return_t
 na_ofi_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
+
+static NA_INLINE na_size_t
+na_ofi_mem_handle_get_max_segments(const na_class_t *na_class);
 
 static na_return_t
 na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle);
@@ -895,7 +1008,7 @@ na_ofi_progress(
 
 /* cancel */
 static na_return_t
-na_ofi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id);
+na_ofi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 
 /*******************/
 /* Local Variables */
@@ -936,12 +1049,11 @@ const struct na_class_ops NA_PLUGIN_OPS(ofi) = {
     na_ofi_msg_send_expected,              /* msg_send_expected */
     na_ofi_msg_recv_expected,              /* msg_recv_expected */
     na_ofi_mem_handle_create,              /* mem_handle_create */
-    NULL,                                  /* mem_handle_create_segment */
+    na_ofi_mem_handle_create_segments,     /* mem_handle_create_segment */
     na_ofi_mem_handle_free,                /* mem_handle_free */
+    na_ofi_mem_handle_get_max_segments,    /* mem_handle_get_max_segments */
     na_ofi_mem_register,                   /* mem_register */
     na_ofi_mem_deregister,                 /* mem_deregister */
-    NULL,                                  /* mem_publish */
-    NULL,                                  /* mem_unpublish */
     na_ofi_mem_handle_get_serialize_size,  /* mem_handle_get_serialize_size */
     na_ofi_mem_handle_serialize,           /* mem_handle_serialize */
     na_ofi_mem_handle_deserialize,         /* mem_handle_deserialize */
@@ -1694,10 +1806,11 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
+na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
     const char *domain_name, const char *auth_key,
     struct na_ofi_domain **na_ofi_domain_p)
 {
+    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_domain *na_ofi_domain;
     struct fi_av_attr av_attr = {0};
     struct fi_info *prov, *providers = NULL;
@@ -1753,6 +1866,7 @@ na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
     NA_CHECK_ERROR(na_ofi_domain == NULL, error, ret, NA_NOMEM,
         "Could not allocate na_ofi_domain");
     memset(na_ofi_domain, 0, sizeof(struct na_ofi_domain));
+    hg_atomic_init32(&na_ofi_domain->mr_reg_count, 0);
     hg_atomic_init32(&na_ofi_domain->refcount, 1);
 
     /* Init mutex */
@@ -1819,15 +1933,15 @@ na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
     NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
         "fi_domain() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-    if (priv->max_contexts > 1) {
+    if (priv->context_max > 1) {
         size_t min_ctx_cnt =
             MIN(na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
                 na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
-        NA_CHECK_ERROR(priv->max_contexts > min_ctx_cnt, error, ret,
+        NA_CHECK_ERROR(priv->context_max > min_ctx_cnt, error, ret,
             NA_INVALID_ARG,
-            "Maximum number of requested contexts (%d) "
-            "exceeds provider limitation (%d)",
-            priv->max_contexts, min_ctx_cnt);
+            "Maximum number of requested contexts (%d) exceeds provider "
+            "limitation (%d)",
+            priv->context_max, min_ctx_cnt);
         NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d",
             na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
             na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
@@ -1877,7 +1991,9 @@ na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
             0 /* offset */, requested_key, 0 /* flags */, &na_ofi_domain->fi_mr,
             NULL /* context */);
         NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
-            "fi_mr_reg failed(), rc: %d (%s)", rc, fi_strerror(-rc));
+            "fi_mr_reg failed(), rc: %d (%s), mr_reg_count: %d", rc,
+            fi_strerror(-rc), hg_atomic_get32(&na_ofi_domain->mr_reg_count));
+        hg_atomic_incr32(&na_ofi_domain->mr_reg_count);
 
         /* Requested key may not be the same, currently RxM provider forces
          * the underlying provider to provide keys and ignores user-provided
@@ -1947,6 +2063,7 @@ na_ofi_domain_close(struct na_ofi_domain *na_ofi_domain)
         NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
             "fi_close() MR failed, rc: %d (%s)", rc, fi_strerror(-rc));
         na_ofi_domain->fi_mr = NULL;
+        hg_atomic_decr32(&na_ofi_domain->mr_reg_count);
     }
 
     /* Close AV */
@@ -2406,9 +2523,10 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static void
-na_ofi_mem_pool_destroy(struct na_ofi_mem_pool *na_ofi_mem_pool)
+na_ofi_mem_pool_destroy(
+    na_class_t *na_class, struct na_ofi_mem_pool *na_ofi_mem_pool)
 {
-    na_ofi_mem_free(na_ofi_mem_pool, na_ofi_mem_pool->mr_hdl);
+    na_ofi_mem_free(na_class, na_ofi_mem_pool, na_ofi_mem_pool->mr_hdl);
     hg_thread_spin_destroy(&na_ofi_mem_pool->node_list_lock);
 }
 
@@ -2437,9 +2555,11 @@ na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
             NULL /* context */);
         if (unlikely(rc != 0)) {
             hg_mem_aligned_free(mem_ptr);
-            NA_GOTO_ERROR(out, mem_ptr, NULL, "fi_mr_reg() failed, rc: %d (%s)",
-                rc, fi_strerror(-rc));
+            NA_GOTO_ERROR(out, mem_ptr, NULL,
+                "fi_mr_reg() failed, rc: %d (%s), mr_reg_count: %d", rc,
+                fi_strerror(-rc), hg_atomic_get32(&domain->mr_reg_count));
         }
+        hg_atomic_incr32(&domain->mr_reg_count);
     }
 
 out:
@@ -2448,13 +2568,14 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_ofi_mem_free(void *mem_ptr, struct fid_mr *mr_hdl)
+na_ofi_mem_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
 {
     /* Release MR handle is there was any */
     if (mr_hdl) {
         int rc = fi_close(&mr_hdl->fid);
         NA_CHECK_ERROR_NORET(rc != 0, out,
             "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
+        hg_atomic_decr32(&NA_OFI_CLASS(na_class)->domain->mr_reg_count);
     }
 
 out:
@@ -2561,6 +2682,249 @@ na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id)
 
     /* No more references, cleanup */
     free(na_ofi_op_id);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE void
+na_ofi_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
+    na_offset_t offset, unsigned long *iov_start_index,
+    unsigned long *iov_start_offset)
+{
+    na_offset_t new_iov_offset = offset, next_offset = 0;
+    unsigned long i, new_iov_start_index = 0;
+
+    /* Get start index and handle offset */
+    for (i = 0; i < iovcnt; i++) {
+        next_offset += iov[i].iov_len;
+
+        if (offset < next_offset) {
+            new_iov_start_index = i;
+            break;
+        }
+        new_iov_offset -= iov[i].iov_len;
+    }
+
+    *iov_start_index = new_iov_start_index;
+    *iov_start_offset = new_iov_offset;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE unsigned long
+na_ofi_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len)
+{
+    na_size_t remaining_len =
+        len - MIN(len, iov[iov_start_index].iov_len - iov_start_offset);
+    unsigned long i, iov_index;
+
+    for (i = 1, iov_index = iov_start_index + 1;
+         remaining_len > 0 && iov_index < iovcnt; i++, iov_index++) {
+        /* Decrease remaining len from the len of data */
+        remaining_len -= MIN(remaining_len, iov[iov_index].iov_len);
+    }
+
+    return i;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE void
+na_ofi_iov_translate(const struct iovec *iov, unsigned long iovcnt,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
+    struct iovec *new_iov, unsigned long new_iovcnt)
+{
+    na_size_t remaining_len = len;
+    unsigned long i, iov_index;
+
+    /* Offset is only within first segment */
+    new_iov[0].iov_base =
+        (char *) iov[iov_start_index].iov_base + iov_start_offset;
+    new_iov[0].iov_len =
+        MIN(remaining_len, iov[iov_start_index].iov_len - iov_start_offset);
+    remaining_len -= new_iov[0].iov_len;
+
+    for (i = 1, iov_index = iov_start_index + 1;
+         remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
+         i++, iov_index++) {
+        new_iov[i].iov_base = iov[iov_index].iov_base;
+        new_iov[i].iov_len = MIN(remaining_len, iov[iov_index].iov_len);
+
+        /* Decrease remaining len from the len of data */
+        remaining_len -= new_iov[i].iov_len;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE void
+na_ofi_rma_iov_translate(const struct iovec *iov, unsigned long iovcnt,
+    na_uint64_t key, unsigned long iov_start_index,
+    na_offset_t iov_start_offset, na_size_t len, struct fi_rma_iov *new_iov,
+    unsigned long new_iovcnt)
+{
+    na_size_t remaining_len = len;
+    unsigned long i, iov_index;
+
+    /* Offset is only within first segment */
+    new_iov[0].addr =
+        (uint64_t) iov[iov_start_index].iov_base + iov_start_offset;
+    new_iov[0].len =
+        MIN(remaining_len, iov[iov_start_index].iov_len - iov_start_offset);
+    new_iov[0].key = key;
+    remaining_len -= new_iov[0].len;
+
+    for (i = 1, iov_index = iov_start_index + 1;
+         remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
+         i++, iov_index++) {
+        new_iov[i].addr = (uint64_t) iov[iov_index].iov_base;
+        new_iov[i].len = MIN(remaining_len, iov[iov_index].iov_len);
+        new_iov[i].key = key;
+
+        /* Decrease remaining len from the len of data */
+        remaining_len -= new_iov[i].len;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_rma(na_class_t *na_class, na_context_t *context, na_cb_type_t cb_type,
+    na_cb_t callback, void *arg,
+    ssize_t (*fi_rma_op)(
+        struct fid_ep *ep, const struct fi_msg_rma *msg, uint64_t flags),
+    na_uint64_t fi_rma_flags, struct na_ofi_mem_handle *na_ofi_mem_handle_local,
+    na_offset_t local_offset,
+    struct na_ofi_mem_handle *na_ofi_mem_handle_remote,
+    na_offset_t remote_offset, na_size_t length,
+    struct na_ofi_addr *na_ofi_addr, na_uint8_t remote_id,
+    struct na_ofi_op_id *na_ofi_op_id)
+{
+    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
+    struct iovec *local_iov = NA_OFI_IOV(na_ofi_mem_handle_local),
+                 *remote_iov = NA_OFI_IOV(na_ofi_mem_handle_remote);
+    unsigned long local_iovcnt = na_ofi_mem_handle_local->desc.info.iovcnt,
+                  remote_iovcnt = na_ofi_mem_handle_remote->desc.info.iovcnt;
+    na_uint64_t remote_key = na_ofi_mem_handle_remote->desc.info.fi_mr_key;
+    unsigned long local_iov_start_index = 0, remote_iov_start_index = 0;
+    na_offset_t local_iov_start_offset = 0, remote_iov_start_offset = 0;
+    struct iovec *liov;
+    struct fi_rma_iov *riov;
+    struct fi_msg_rma fi_msg_rma;
+    na_return_t ret = NA_SUCCESS;
+    ssize_t rc;
+
+    NA_CHECK_ERROR(
+        na_ofi_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
+        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
+    /* Make sure op ID is fully released before re-using it */
+    while (hg_atomic_cas32(&na_ofi_op_id->refcount, 1, 2) != HG_UTIL_TRUE)
+        cpu_spinwait();
+
+    na_ofi_op_id->context = context;
+    na_ofi_op_id->completion_data.callback_info.type = cb_type;
+    na_ofi_op_id->completion_data.callback = callback;
+    na_ofi_op_id->completion_data.callback_info.arg = arg;
+    na_ofi_addr_addref(na_ofi_addr);
+    na_ofi_op_id->addr = na_ofi_addr;
+    hg_atomic_set32(&na_ofi_op_id->status, 0);
+
+    /* Translate local offset */
+    if (local_offset > 0)
+        na_ofi_iov_get_index_offset(local_iov, local_iovcnt, local_offset,
+            &local_iov_start_index, &local_iov_start_offset);
+
+    if (length != na_ofi_mem_handle_local->desc.info.len)
+        na_ofi_op_id->info.rma.local_iovcnt =
+            na_ofi_iov_get_count(local_iov, local_iovcnt, local_iov_start_index,
+                local_iov_start_offset, length);
+    else
+        na_ofi_op_id->info.rma.local_iovcnt = local_iovcnt;
+
+    if (na_ofi_op_id->info.rma.local_iovcnt > NA_OFI_IOV_STATIC_MAX) {
+        na_ofi_op_id->info.rma.local_iov.d = (struct iovec *) malloc(
+            na_ofi_op_id->info.rma.local_iovcnt * sizeof(struct iovec));
+        NA_CHECK_ERROR(na_ofi_op_id->info.rma.local_iov.d == NULL, error, ret,
+            NA_NOMEM, "Could not allocate iovec");
+
+        liov = na_ofi_op_id->info.rma.local_iov.d;
+    } else
+        liov = na_ofi_op_id->info.rma.local_iov.s;
+
+    na_ofi_iov_translate(local_iov, local_iovcnt, local_iov_start_index,
+        local_iov_start_offset, length, liov,
+        na_ofi_op_id->info.rma.local_iovcnt);
+
+    /* Set local desc */
+    na_ofi_op_id->info.rma.local_desc =
+        fi_mr_desc(na_ofi_mem_handle_local->fi_mr);
+
+    /* Translate remote offset */
+    if (remote_offset > 0)
+        na_ofi_iov_get_index_offset(remote_iov, remote_iovcnt, remote_offset,
+            &remote_iov_start_index, &remote_iov_start_offset);
+
+    if (length != na_ofi_mem_handle_remote->desc.info.len)
+        na_ofi_op_id->info.rma.remote_iovcnt =
+            na_ofi_iov_get_count(remote_iov, remote_iovcnt,
+                remote_iov_start_index, remote_iov_start_offset, length);
+    else
+        na_ofi_op_id->info.rma.remote_iovcnt = remote_iovcnt;
+
+    if (na_ofi_op_id->info.rma.remote_iovcnt > NA_OFI_IOV_STATIC_MAX) {
+        na_ofi_op_id->info.rma.remote_iov.d = (struct fi_rma_iov *) malloc(
+            na_ofi_op_id->info.rma.remote_iovcnt * sizeof(struct fi_rma_iov));
+        NA_CHECK_ERROR(na_ofi_op_id->info.rma.remote_iov.d == NULL, error, ret,
+            NA_NOMEM, "Could not allocate rma iovec");
+
+        riov = na_ofi_op_id->info.rma.remote_iov.d;
+    } else
+        riov = na_ofi_op_id->info.rma.remote_iov.s;
+
+    na_ofi_rma_iov_translate(remote_iov, remote_iovcnt, remote_key,
+        remote_iov_start_index, remote_iov_start_offset, length, riov,
+        na_ofi_op_id->info.rma.remote_iovcnt);
+
+    na_ofi_op_id->info.rma.fi_addr =
+        fi_rx_addr(na_ofi_addr->fi_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS);
+
+    /* Set RMA msg */
+    NA_OFI_MSG_RMA_SET(fi_msg_rma, liov, riov, na_ofi_op_id);
+
+    NA_LOG_DEBUG("Posting RMA op (op id=%p)", na_ofi_op_id);
+
+    /* Post the OFI RMA operation */
+    rc = fi_rma_op(ctx->fi_tx, &fi_msg_rma, fi_rma_flags);
+    if (unlikely(rc == -FI_EAGAIN)) {
+        if (NA_OFI_CLASS(na_class)->no_retry)
+            /* Do not attempt to retry */
+            NA_GOTO_DONE(error, ret, NA_AGAIN);
+        else {
+            NA_LOG_DEBUG("Pushing %p for retry", na_ofi_op_id);
+
+            /* Push op ID to retry queue */
+            hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
+            HG_QUEUE_PUSH_TAIL(
+                &ctx->retry_op_queue->queue, na_ofi_op_id, entry);
+            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
+            hg_thread_mutex_unlock(&ctx->retry_op_queue->mutex);
+        }
+    } else
+        NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
+            "fi_rma_op() failed, rc: %d (%s)", rc, fi_strerror((int) -rc));
+
+out:
+    return ret;
+
+error:
+    if (na_ofi_op_id->info.rma.local_iovcnt > NA_OFI_IOV_STATIC_MAX)
+        free(na_ofi_op_id->info.rma.local_iov.d);
+    if (na_ofi_op_id->info.rma.remote_iovcnt > NA_OFI_IOV_STATIC_MAX)
+        free(na_ofi_op_id->info.rma.remote_iov.d);
+
+    na_ofi_addr_decref(na_ofi_addr);
+    hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
+    na_ofi_op_id_decref(na_ofi_op_id);
+
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2885,14 +3249,28 @@ na_ofi_cq_process_retries(na_context_t *context)
                     na_ofi_op_id->info.msg.fi_addr, na_ofi_op_id->info.msg.tag,
                     0, &na_ofi_op_id->fi_ctx);
                 break;
-            case NA_CB_PUT:
-                rc = fi_writemsg(ctx->fi_tx, &na_ofi_op_id->info.rma.fi_rma,
-                    NA_OFI_PUT_COMPLETION);
+            case NA_CB_PUT: {
+                struct iovec *msg_iov = NA_OFI_MSG_IOV(na_ofi_op_id);
+                struct fi_rma_iov *rma_iov = NA_OFI_RMA_IOV(na_ofi_op_id);
+                struct fi_msg_rma fi_msg_rma;
+
+                /* Set RMA msg */
+                NA_OFI_MSG_RMA_SET(fi_msg_rma, msg_iov, rma_iov, na_ofi_op_id);
+                rc =
+                    fi_writemsg(ctx->fi_tx, &fi_msg_rma, NA_OFI_PUT_COMPLETION);
                 break;
-            case NA_CB_GET:
-                rc = fi_readmsg(ctx->fi_tx, &na_ofi_op_id->info.rma.fi_rma,
-                    NA_OFI_GET_COMPLETION);
+            }
+            case NA_CB_GET: {
+                struct iovec *msg_iov = NA_OFI_MSG_IOV(na_ofi_op_id);
+                struct fi_rma_iov *rma_iov = NA_OFI_RMA_IOV(na_ofi_op_id);
+                struct fi_msg_rma fi_msg_rma;
+
+                /* Set RMA msg */
+                NA_OFI_MSG_RMA_SET(fi_msg_rma, msg_iov, rma_iov, na_ofi_op_id);
+
+                rc = fi_readmsg(ctx->fi_tx, &fi_msg_rma, NA_OFI_GET_COMPLETION);
                 break;
+            }
             default:
                 NA_GOTO_ERROR(error, ret, NA_INVALID_ARG,
                     "Operation type %d not supported",
@@ -2991,8 +3369,18 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id)
             break;
         case NA_CB_SEND_UNEXPECTED:
         case NA_CB_SEND_EXPECTED:
+            break;
         case NA_CB_PUT:
         case NA_CB_GET:
+            /* Can free extra IOVs here */
+            if (na_ofi_op_id->info.rma.local_iovcnt > NA_OFI_IOV_STATIC_MAX) {
+                free(na_ofi_op_id->info.rma.local_iov.d);
+                na_ofi_op_id->info.rma.local_iov.d = NULL;
+            }
+            if (na_ofi_op_id->info.rma.remote_iovcnt > NA_OFI_IOV_STATIC_MAX) {
+                free(na_ofi_op_id->info.rma.remote_iov.d);
+                na_ofi_op_id->info.rma.remote_iov.d = NULL;
+            }
             break;
         default:
             NA_GOTO_ERROR(out, ret, NA_INVALID_ARG,
@@ -3084,7 +3472,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     char *domain_name_ptr = NULL;
     char domain_name[NA_OFI_MAX_URI_LEN] = {'\0'};
     na_bool_t no_wait = NA_FALSE, no_retry = NA_FALSE;
-    na_uint8_t max_contexts = 1; /* Default */
+    na_uint8_t context_max = 1; /* Default */
     const char *auth_key = NULL;
     na_return_t ret = NA_SUCCESS;
     enum na_ofi_prov_type prov_type;
@@ -3190,7 +3578,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         if (na_info->na_init_info->progress_mode & NA_NO_RETRY)
             no_retry = NA_TRUE;
         /* Max contexts */
-        max_contexts = na_info->na_init_info->max_contexts;
+        context_max = na_info->na_init_info->max_contexts;
         /* Auth key */
         auth_key = na_info->na_init_info->auth_key;
     }
@@ -3204,7 +3592,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     priv = NA_OFI_CLASS(na_class);
     priv->no_wait = no_wait;
     priv->no_retry = no_retry;
-    priv->max_contexts = max_contexts;
+    priv->context_max = context_max;
     priv->contexts = 0;
 
     /* Initialize queue / mutex */
@@ -3215,14 +3603,17 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     HG_QUEUE_INIT(&priv->buf_pool);
 
     /* Create domain */
-    ret = na_ofi_domain_open(na_class->plugin_class, prov_type, domain_name_ptr,
-        auth_key, &priv->domain);
+    ret = na_ofi_domain_open(
+        na_class, prov_type, domain_name_ptr, auth_key, &priv->domain);
     NA_CHECK_NA_ERROR(out, ret, "Could not open domain for %s, %s",
         na_ofi_prov_name[prov_type], domain_name_ptr);
 
+    /* Cache IOV max */
+    priv->iov_max = priv->domain->fi_prov->domain_attr->mr_iov_limit;
+
     /* Create endpoint */
     ret = na_ofi_endpoint_open(priv->domain, node_ptr, src_addr, src_addrlen,
-        priv->no_wait, priv->max_contexts, &priv->endpoint);
+        priv->no_wait, priv->context_max, &priv->endpoint);
     NA_CHECK_NA_ERROR(
         out, ret, "Could not create endpoint for %s", resolve_name);
 
@@ -3266,7 +3657,7 @@ na_ofi_finalize(na_class_t *na_class)
             HG_QUEUE_FIRST(&priv->buf_pool);
         HG_QUEUE_POP_HEAD(&priv->buf_pool, entry);
 
-        na_ofi_mem_pool_destroy(na_ofi_mem_pool);
+        na_ofi_mem_pool_destroy(na_class, na_ofi_mem_pool);
     }
     hg_thread_spin_destroy(&NA_OFI_CLASS(na_class)->buf_pool_lock);
 
@@ -3322,10 +3713,10 @@ na_ofi_context_create(na_class_t *na_class, void **context, na_uint8_t id)
         hg_thread_mutex_init(&ctx->retry_op_queue->mutex);
 
         NA_CHECK_ERROR(
-            priv->contexts >= priv->max_contexts || id >= priv->max_contexts,
+            priv->contexts >= priv->context_max || id >= priv->context_max,
             error, ret, NA_OPNOTSUPPORTED,
             "contexts %d, context id %d, max_contexts %d", priv->contexts, id,
-            priv->max_contexts);
+            priv->context_max);
 
         if (!priv->no_wait) {
             if (na_ofi_prov_flags[domain->prov_type] & NA_OFI_WAIT_FD)
@@ -3454,7 +3845,7 @@ out:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_op_id_t
+static na_op_id_t *
 na_ofi_op_create(na_class_t NA_UNUSED *na_class)
 {
     struct na_ofi_op_id *na_ofi_op_id = NULL;
@@ -3472,12 +3863,12 @@ na_ofi_op_create(na_class_t NA_UNUSED *na_class)
     na_ofi_op_id->completion_data.plugin_callback_args = na_ofi_op_id;
 
 out:
-    return (na_op_id_t) na_ofi_op_id;
+    return (na_op_id_t *) na_ofi_op_id;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
+na_ofi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
 
@@ -3556,7 +3947,7 @@ na_ofi_addr_self(na_class_t *na_class, na_addr_t *addr)
     struct na_ofi_endpoint *ep = NA_OFI_CLASS(na_class)->endpoint;
 
     na_ofi_addr_addref(ep->src_addr); /* decref in na_ofi_addr_free() */
-    *addr = ep->src_addr;
+    *addr = (na_addr_t) ep->src_addr;
 
     return NA_SUCCESS;
 }
@@ -3753,7 +4144,7 @@ na_ofi_addr_deserialize(na_class_t *na_class, na_addr_t *addr, const void *buf,
         na_ofi_addr->addrlen, &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
     NA_CHECK_NA_ERROR(error, ret, "na_ofi_addr_ht_lookup() failed");
 
-    *addr = na_ofi_addr;
+    *addr = (na_addr_t) na_ofi_addr;
 
 out:
     return ret;
@@ -3848,8 +4239,7 @@ na_ofi_msg_buf_free(na_class_t *na_class, void *buf, void *plugin_data)
 #ifdef NA_OFI_HAS_MEM_POOL
     na_ofi_mem_pool_free(na_class, buf, mr_hdl);
 #else
-    (void) na_class;
-    na_ofi_mem_free(buf, mr_hdl);
+    na_ofi_mem_free(na_class, buf, mr_hdl);
 #endif
 
     return NA_SUCCESS;
@@ -3888,16 +4278,13 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 {
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) dest_addr;
-    struct na_ofi_op_id *na_ofi_op_id = NULL;
+    struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
     /* Check op_id */
     NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        out, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+        na_ofi_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
@@ -3966,16 +4353,13 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     void *plugin_data, na_op_id_t *op_id)
 {
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
-    struct na_ofi_op_id *na_ofi_op_id = NULL;
+    struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
     /* Check op_id */
     NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        out, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+        na_ofi_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
@@ -4041,16 +4425,13 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 {
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) dest_addr;
-    struct na_ofi_op_id *na_ofi_op_id = NULL;
+    struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
     /* Check op_id */
     NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        out, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+        na_ofi_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
@@ -4120,16 +4501,13 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 {
     struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
     struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) source_addr;
-    struct na_ofi_op_id *na_ofi_op_id = NULL;
+    struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
     ssize_t rc;
 
     /* Check op_id */
     NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        out, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
+        na_ofi_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
@@ -4200,16 +4578,75 @@ na_ofi_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     /* Allocate memory handle */
     na_ofi_mem_handle = (struct na_ofi_mem_handle *) calloc(
         1, sizeof(struct na_ofi_mem_handle));
-    NA_CHECK_ERROR(na_ofi_mem_handle == NULL, out, ret, NA_NOMEM,
+    NA_CHECK_ERROR(na_ofi_mem_handle == NULL, done, ret, NA_NOMEM,
         "Could not allocate NA OFI memory handle");
 
-    na_ofi_mem_handle->desc.base = (na_ptr_t) buf;
-    na_ofi_mem_handle->desc.size = buf_size;
-    na_ofi_mem_handle->desc.attr = (na_uint8_t) flags;
+    na_ofi_mem_handle->desc.iov.s[0].iov_base = buf;
+    na_ofi_mem_handle->desc.iov.s[0].iov_len = buf_size;
+    na_ofi_mem_handle->desc.info.iovcnt = 1;
+    na_ofi_mem_handle->desc.info.flags = flags & 0xff;
+    na_ofi_mem_handle->desc.info.len = buf_size;
 
     *mem_handle = (na_mem_handle_t) na_ofi_mem_handle;
 
-out:
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_mem_handle_create_segments(na_class_t *na_class,
+    struct na_segment *segments, na_size_t segment_count, unsigned long flags,
+    na_mem_handle_t *mem_handle)
+{
+    struct na_ofi_mem_handle *na_ofi_mem_handle = NULL;
+    struct iovec *iov = NULL;
+    na_return_t ret = NA_SUCCESS;
+    na_size_t i;
+
+    NA_CHECK_WARNING(segment_count == 1, "Segment count is 1");
+
+    /* Check that we do not exceed IOV limit */
+    NA_CHECK_ERROR(segment_count > NA_OFI_CLASS(na_class)->iov_max, error, ret,
+        NA_INVALID_ARG, "Segment count exceeds provider limit (%d)",
+        NA_OFI_CLASS(na_class)->iov_max);
+
+    /* Allocate memory handle */
+    na_ofi_mem_handle = (struct na_ofi_mem_handle *) calloc(
+        1, sizeof(struct na_ofi_mem_handle));
+    NA_CHECK_ERROR(na_ofi_mem_handle == NULL, error, ret, NA_NOMEM,
+        "Could not allocate NA OFI memory handle");
+
+    if (segment_count > NA_OFI_IOV_STATIC_MAX) {
+        /* Allocate IOVs */
+        na_ofi_mem_handle->desc.iov.d =
+            (struct iovec *) calloc(segment_count, sizeof(struct iovec));
+        NA_CHECK_ERROR(na_ofi_mem_handle->desc.iov.d == NULL, error, ret,
+            NA_NOMEM, "Could not allocate IOV array");
+
+        iov = na_ofi_mem_handle->desc.iov.d;
+    } else
+        iov = na_ofi_mem_handle->desc.iov.s;
+
+    na_ofi_mem_handle->desc.info.len = 0;
+    for (i = 0; i < segment_count; i++) {
+        iov[i].iov_base = (void *) segments[i].base;
+        iov[i].iov_len = segments[i].len;
+        na_ofi_mem_handle->desc.info.len += iov[i].iov_len;
+    }
+    na_ofi_mem_handle->desc.info.iovcnt = segment_count;
+    na_ofi_mem_handle->desc.info.flags = flags & 0xff;
+
+    *mem_handle = (na_mem_handle_t) na_ofi_mem_handle;
+
+    return ret;
+
+error:
+    if (na_ofi_mem_handle) {
+        if (segment_count > NA_OFI_IOV_STATIC_MAX)
+            free(na_ofi_mem_handle->desc.iov.d);
+        free(na_ofi_mem_handle);
+    }
     return ret;
 }
 
@@ -4218,18 +4655,38 @@ static na_return_t
 na_ofi_mem_handle_free(
     na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
 {
-    free((struct na_ofi_mem_handle *) mem_handle);
+    struct na_ofi_mem_handle *na_ofi_mem_handle =
+        (struct na_ofi_mem_handle *) mem_handle;
+
+    if (na_ofi_mem_handle->desc.info.iovcnt > NA_OFI_IOV_STATIC_MAX)
+        free(na_ofi_mem_handle->desc.iov.d);
+    free(na_ofi_mem_handle);
 
     return NA_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_size_t
+na_ofi_mem_handle_get_max_segments(const na_class_t *na_class)
+{
+#ifdef NA_OFI_USE_REGV
+    return NA_OFI_CLASS(na_class)->iov_max;
+#else
+    (void) na_class;
+    return 1;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
-    struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
+    struct na_ofi_mem_handle *na_ofi_mem_handle =
+        (struct na_ofi_mem_handle *) mem_handle;
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
-    const void *base;
+    const struct iovec *iov = NULL;
+    const struct iovec null_iov = {0, 0};
+    size_t count = 0;
     na_uint64_t access;
     int rc = 0;
     na_return_t ret = NA_SUCCESS;
@@ -4239,12 +4696,12 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
     if (!(domain->fi_prov->domain_attr->mr_mode & FI_MR_ALLOCATED)) {
         /* Use global handle and key */
         na_ofi_mem_handle->fi_mr = domain->fi_mr;
-        na_ofi_mem_handle->desc.fi_mr_key = domain->fi_mr_key;
+        na_ofi_mem_handle->desc.info.fi_mr_key = domain->fi_mr_key;
         goto out;
     }
 
     /* Set access mode */
-    switch (na_ofi_mem_handle->desc.attr) {
+    switch (na_ofi_mem_handle->desc.info.flags) {
         case NA_MEM_READ_ONLY:
             access = FI_REMOTE_READ | FI_WRITE;
             break;
@@ -4260,19 +4717,27 @@ na_ofi_mem_register(na_class_t *na_class, na_mem_handle_t mem_handle)
             break;
     }
 
+    /* Use virtual addresses only when provider needs it */
+    if (domain->fi_prov->domain_attr->mr_mode & FI_MR_VIRT_ADDR) {
+        count = na_ofi_mem_handle->desc.info.iovcnt;
+        iov = NA_OFI_IOV(na_ofi_mem_handle);
+    } else {
+        count = 1;
+        iov = &null_iov;
+    }
+
     /* Register region */
-    base = (domain->fi_prov->domain_attr->mr_mode & FI_MR_VIRT_ADDR)
-               ? (const void *) na_ofi_mem_handle->desc.base
-               : NULL;
-    rc = fi_mr_reg(domain->fi_domain, base,
-        (size_t) na_ofi_mem_handle->desc.size, access, 0 /* offset */,
+    rc = fi_mr_regv(domain->fi_domain, iov, count, access, 0 /* offset */,
         0 /* requested key */, 0 /* flags */, &na_ofi_mem_handle->fi_mr,
         NULL /* context */);
     NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
-        "fi_mr_reg() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+        "fi_mr_regv() failed, rc: %d (%s), mr_reg_count: %d", rc,
+        fi_strerror(-rc), hg_atomic_get32(&domain->mr_reg_count));
+    hg_atomic_incr32(&domain->mr_reg_count);
 
     /* Retrieve key */
-    na_ofi_mem_handle->desc.fi_mr_key = fi_mr_key(na_ofi_mem_handle->fi_mr);
+    na_ofi_mem_handle->desc.info.fi_mr_key =
+        fi_mr_key(na_ofi_mem_handle->fi_mr);
 
 out:
     return ret;
@@ -4283,7 +4748,8 @@ static na_return_t
 na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
 {
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
-    struct na_ofi_mem_handle *na_ofi_mem_handle = mem_handle;
+    struct na_ofi_mem_handle *na_ofi_mem_handle =
+        (struct na_ofi_mem_handle *) mem_handle;
     na_return_t ret = NA_SUCCESS;
     int rc;
 
@@ -4295,6 +4761,7 @@ na_ofi_mem_deregister(na_class_t *na_class, na_mem_handle_t mem_handle)
     rc = fi_close(&na_ofi_mem_handle->fi_mr->fid);
     NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
         "fi_close() mr_hdl failed, rc: %d (%s)", rc, fi_strerror(-rc));
+    hg_atomic_decr32(&domain->mr_reg_count);
 
 out:
     return ret;
@@ -4305,7 +4772,11 @@ static NA_INLINE na_size_t
 na_ofi_mem_handle_get_serialize_size(
     na_class_t NA_UNUSED *na_class, na_mem_handle_t mem_handle)
 {
-    return sizeof(((struct na_ofi_mem_handle *) mem_handle)->desc);
+    struct na_ofi_mem_handle *na_ofi_mem_handle =
+        (struct na_ofi_mem_handle *) mem_handle;
+
+    return sizeof(na_ofi_mem_handle->desc.info) +
+           na_ofi_mem_handle->desc.info.iovcnt * sizeof(struct iovec);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4315,13 +4786,18 @@ na_ofi_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) mem_handle;
+    struct iovec *iov = NA_OFI_IOV(na_ofi_mem_handle);
+    char *buf_ptr = (char *) buf;
+    na_size_t buf_size_left = buf_size;
     na_return_t ret = NA_SUCCESS;
 
-    NA_CHECK_ERROR(buf_size < sizeof(struct na_ofi_mem_desc), out, ret,
-        NA_OVERFLOW, "Buffer size too small for serializing handle");
+    /* Descriptor info */
+    NA_ENCODE(out, ret, buf_ptr, buf_size_left, &na_ofi_mem_handle->desc.info,
+        struct na_ofi_mem_desc_info);
 
-    /* Copy struct */
-    memcpy(buf, &na_ofi_mem_handle->desc, sizeof(na_ofi_mem_handle->desc));
+    /* IOV */
+    NA_ENCODE_ARRAY(out, ret, buf_ptr, buf_size_left, iov, struct iovec,
+        na_ofi_mem_handle->desc.info.iovcnt);
 
 out:
     return ret;
@@ -4333,23 +4809,47 @@ na_ofi_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     na_mem_handle_t *mem_handle, const void *buf, na_size_t buf_size)
 {
     struct na_ofi_mem_handle *na_ofi_mem_handle = NULL;
+    const char *buf_ptr = (const char *) buf;
+    na_size_t buf_size_left = buf_size;
+    struct iovec *iov = NULL;
     na_return_t ret = NA_SUCCESS;
-
-    NA_CHECK_ERROR(buf_size < sizeof(struct na_ofi_mem_desc), out, ret,
-        NA_OVERFLOW, "Buffer size too small for deserializing handle");
 
     na_ofi_mem_handle =
         (struct na_ofi_mem_handle *) malloc(sizeof(struct na_ofi_mem_handle));
-    NA_CHECK_ERROR(na_ofi_mem_handle == NULL, out, ret, NA_NOMEM,
+    NA_CHECK_ERROR(na_ofi_mem_handle == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA OFI memory handle");
-
-    /* Copy struct */
-    memcpy(&na_ofi_mem_handle->desc, buf, sizeof(na_ofi_mem_handle->desc));
+    na_ofi_mem_handle->desc.iov.d = NULL;
     na_ofi_mem_handle->fi_mr = NULL;
+
+    /* Descriptor info */
+    NA_DECODE(error, ret, buf_ptr, buf_size_left, &na_ofi_mem_handle->desc.info,
+        struct na_ofi_mem_desc_info);
+
+    /* IOV */
+    if (na_ofi_mem_handle->desc.info.iovcnt > NA_OFI_IOV_STATIC_MAX) {
+        /* Allocate IOV */
+        na_ofi_mem_handle->desc.iov.d = (struct iovec *) malloc(
+            na_ofi_mem_handle->desc.info.iovcnt * sizeof(struct iovec));
+        NA_CHECK_ERROR(na_ofi_mem_handle->desc.iov.d == NULL, error, ret,
+            NA_NOMEM, "Could not allocate segment array");
+
+        iov = na_ofi_mem_handle->desc.iov.d;
+    } else
+        iov = na_ofi_mem_handle->desc.iov.s;
+
+    NA_DECODE_ARRAY(error, ret, buf_ptr, buf_size_left, iov, struct iovec,
+        na_ofi_mem_handle->desc.info.iovcnt);
 
     *mem_handle = (na_mem_handle_t) na_ofi_mem_handle;
 
-out:
+    return ret;
+
+error:
+    if (na_ofi_mem_handle) {
+        if (na_ofi_mem_handle->desc.info.iovcnt > NA_OFI_IOV_STATIC_MAX)
+            free(na_ofi_mem_handle->desc.iov.d);
+        free(na_ofi_mem_handle);
+    }
     return ret;
 }
 
@@ -4361,102 +4861,16 @@ na_ofi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t *op_id)
 {
-    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
-    struct na_ofi_mem_handle *ofi_local_mem_handle =
-        (struct na_ofi_mem_handle *) local_mem_handle;
-    struct na_ofi_mem_handle *ofi_remote_mem_handle =
-        (struct na_ofi_mem_handle *) remote_mem_handle;
-    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) remote_addr;
-    struct na_ofi_op_id *na_ofi_op_id = NULL;
-    const struct fi_msg_rma na_ofi_msg_rma_initializer = {.msg_iov = NULL,
-        .desc = NULL,
-        .iov_count = 1,
-        .addr = 0,
-        .rma_iov = NULL,
-        .rma_iov_count = 1,
-        .context = NULL,
-        .data = 0};
     na_return_t ret = NA_SUCCESS;
-    ssize_t rc;
 
-    /* Check op_id */
-    NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        out, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
-    NA_CHECK_ERROR(
-        !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
-        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_ofi_op_id->refcount, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
-
-    na_ofi_op_id->context = context;
-    na_ofi_op_id->completion_data.callback_info.type = NA_CB_PUT;
-    na_ofi_op_id->completion_data.callback = callback;
-    na_ofi_op_id->completion_data.callback_info.arg = arg;
-    na_ofi_addr_addref(na_ofi_addr);
-    na_ofi_op_id->addr = na_ofi_addr;
-    hg_atomic_set32(&na_ofi_op_id->status, 0);
-
-    /* Set local desc */
-    na_ofi_op_id->info.rma.local_desc = fi_mr_desc(ofi_local_mem_handle->fi_mr);
-
-    /* Set local IOV */
-    na_ofi_op_id->info.rma.local_iov.iov_base =
-        (char *) ofi_local_mem_handle->desc.base + local_offset;
-    na_ofi_op_id->info.rma.local_iov.iov_len = length;
-
-    /* Set remote IOV */
-    na_ofi_op_id->info.rma.remote_iov.addr =
-        (na_uint64_t) ofi_remote_mem_handle->desc.base + remote_offset;
-    na_ofi_op_id->info.rma.remote_iov.len = length;
-    na_ofi_op_id->info.rma.remote_iov.key =
-        ofi_remote_mem_handle->desc.fi_mr_key;
-
-    /* Set RMA msg */
-    na_ofi_op_id->info.rma.fi_rma = na_ofi_msg_rma_initializer;
-    na_ofi_op_id->info.rma.fi_rma.msg_iov = &na_ofi_op_id->info.rma.local_iov;
-    na_ofi_op_id->info.rma.fi_rma.desc = &na_ofi_op_id->info.rma.local_desc;
-    na_ofi_op_id->info.rma.fi_rma.addr =
-        fi_rx_addr(na_ofi_addr->fi_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS);
-    na_ofi_op_id->info.rma.fi_rma.rma_iov = &na_ofi_op_id->info.rma.remote_iov;
-    na_ofi_op_id->info.rma.fi_rma.context = &na_ofi_op_id->fi_ctx;
-
-    NA_LOG_DEBUG("Posting RMA put (op id=%p)", na_ofi_op_id);
-
-    /* Post the OFI RMA write.
-     * For writes, FI_DELIVERY_COMPLETE guarantees that the operation
-     * has been processed by the destination */
-    rc = fi_writemsg(
-        ctx->fi_tx, &na_ofi_op_id->info.rma.fi_rma, NA_OFI_PUT_COMPLETION);
-    if (unlikely(rc == -FI_EAGAIN)) {
-        if (NA_OFI_CLASS(na_class)->no_retry)
-            /* Do not attempt to retry */
-            NA_GOTO_DONE(error, ret, NA_AGAIN);
-        else {
-            NA_LOG_DEBUG("Pushing %p for retry", na_ofi_op_id);
-
-            /* Push op ID to retry queue */
-            hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
-            HG_QUEUE_PUSH_TAIL(
-                &ctx->retry_op_queue->queue, na_ofi_op_id, entry);
-            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
-            hg_thread_mutex_unlock(&ctx->retry_op_queue->mutex);
-        }
-    } else
-        NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
-            "fi_writemsg() failed, rc: %d (%s)", rc, fi_strerror((int) -rc));
+    ret = na_ofi_rma(na_class, context, NA_CB_PUT, callback, arg, fi_writemsg,
+        NA_OFI_PUT_COMPLETION, (struct na_ofi_mem_handle *) local_mem_handle,
+        local_offset, (struct na_ofi_mem_handle *) remote_mem_handle,
+        remote_offset, length, (struct na_ofi_addr *) remote_addr, remote_id,
+        (struct na_ofi_op_id *) op_id);
+    NA_CHECK_NA_ERROR(out, ret, "Could not post RMA put");
 
 out:
-    return ret;
-
-error:
-    na_ofi_addr_decref(na_ofi_addr);
-    hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
-    na_ofi_op_id_decref(na_ofi_op_id);
-
     return ret;
 }
 
@@ -4468,101 +4882,16 @@ na_ofi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t *op_id)
 {
-    struct na_ofi_context *ctx = NA_OFI_CONTEXT(context);
-    struct fid_ep *ep_hdl = ctx->fi_tx;
-    struct na_ofi_mem_handle *ofi_local_mem_handle =
-        (struct na_ofi_mem_handle *) local_mem_handle;
-    struct na_ofi_mem_handle *ofi_remote_mem_handle =
-        (struct na_ofi_mem_handle *) remote_mem_handle;
-    struct na_ofi_addr *na_ofi_addr = (struct na_ofi_addr *) remote_addr;
-    struct na_ofi_op_id *na_ofi_op_id = NULL;
-    const struct fi_msg_rma na_ofi_msg_rma_initializer = {.msg_iov = NULL,
-        .desc = NULL,
-        .iov_count = 1,
-        .addr = 0,
-        .rma_iov = NULL,
-        .rma_iov_count = 1,
-        .context = NULL,
-        .data = 0};
     na_return_t ret = NA_SUCCESS;
-    ssize_t rc;
 
-    /* Check op_id */
-    NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        out, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_ofi_op_id = (struct na_ofi_op_id *) *op_id;
-    NA_CHECK_ERROR(
-        !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
-        ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_ofi_op_id->refcount, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
-
-    na_ofi_op_id->context = context;
-    na_ofi_op_id->completion_data.callback_info.type = NA_CB_GET;
-    na_ofi_op_id->completion_data.callback = callback;
-    na_ofi_op_id->completion_data.callback_info.arg = arg;
-    na_ofi_addr_addref(na_ofi_addr);
-    na_ofi_op_id->addr = na_ofi_addr;
-    hg_atomic_set32(&na_ofi_op_id->status, 0);
-
-    /* Set local desc */
-    na_ofi_op_id->info.rma.local_desc = fi_mr_desc(ofi_local_mem_handle->fi_mr);
-
-    /* Set local IOV */
-    na_ofi_op_id->info.rma.local_iov.iov_base =
-        (char *) ofi_local_mem_handle->desc.base + local_offset;
-    na_ofi_op_id->info.rma.local_iov.iov_len = length;
-
-    /* Set remote IOV */
-    na_ofi_op_id->info.rma.remote_iov.addr =
-        (na_uint64_t) ofi_remote_mem_handle->desc.base + remote_offset;
-    na_ofi_op_id->info.rma.remote_iov.len = length;
-    na_ofi_op_id->info.rma.remote_iov.key =
-        ofi_remote_mem_handle->desc.fi_mr_key;
-
-    /* Set RMA msg */
-    na_ofi_op_id->info.rma.fi_rma = na_ofi_msg_rma_initializer;
-    na_ofi_op_id->info.rma.fi_rma.msg_iov = &na_ofi_op_id->info.rma.local_iov;
-    na_ofi_op_id->info.rma.fi_rma.desc = &na_ofi_op_id->info.rma.local_desc;
-    na_ofi_op_id->info.rma.fi_rma.addr =
-        fi_rx_addr(na_ofi_addr->fi_addr, remote_id, NA_OFI_SEP_RX_CTX_BITS);
-    na_ofi_op_id->info.rma.fi_rma.rma_iov = &na_ofi_op_id->info.rma.remote_iov;
-    na_ofi_op_id->info.rma.fi_rma.context = &na_ofi_op_id->fi_ctx;
-
-    NA_LOG_DEBUG("Posting RMA get (op id=%p)", na_ofi_op_id);
-
-    /* Post the OFI RMA read */
-    rc = fi_readmsg(
-        ep_hdl, &na_ofi_op_id->info.rma.fi_rma, NA_OFI_GET_COMPLETION);
-    if (unlikely(rc == -FI_EAGAIN)) {
-        if (NA_OFI_CLASS(na_class)->no_retry)
-            /* Do not attempt to retry */
-            NA_GOTO_DONE(error, ret, NA_AGAIN);
-        else {
-            NA_LOG_DEBUG("Pushing %p for retry", na_ofi_op_id);
-
-            /* Push op ID to retry queue */
-            hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
-            HG_QUEUE_PUSH_TAIL(
-                &ctx->retry_op_queue->queue, na_ofi_op_id, entry);
-            hg_atomic_or32(&na_ofi_op_id->status, NA_OFI_OP_QUEUED);
-            hg_thread_mutex_unlock(&ctx->retry_op_queue->mutex);
-        }
-    } else
-        NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
-            "fi_readmsg() failed, rc: %d (%s)", rc, fi_strerror((int) -rc));
+    ret = na_ofi_rma(na_class, context, NA_CB_GET, callback, arg, fi_readmsg,
+        NA_OFI_GET_COMPLETION, (struct na_ofi_mem_handle *) local_mem_handle,
+        local_offset, (struct na_ofi_mem_handle *) remote_mem_handle,
+        remote_offset, length, (struct na_ofi_addr *) remote_addr, remote_id,
+        (struct na_ofi_op_id *) op_id);
+    NA_CHECK_NA_ERROR(out, ret, "Could not post RMA get");
 
 out:
-    return ret;
-
-error:
-    na_ofi_addr_decref(na_ofi_addr);
-    hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
-    na_ofi_op_id_decref(na_ofi_op_id);
-
     return ret;
 }
 
@@ -4699,7 +5028,7 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id)
+na_ofi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
 {
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
     struct fid_ep *fi_ep = NULL;
