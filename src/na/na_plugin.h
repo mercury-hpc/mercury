@@ -76,6 +76,44 @@ struct na_cb_completion_data {
  */
 #define NA_PLUGIN_OPS(plugin_name) na_##plugin_name##_class_ops_g
 
+/**
+ * Encode type
+ */
+#define NA_TYPE_ENCODE(label, ret, buf_ptr, buf_size_left, data, size)         \
+    do {                                                                       \
+        NA_CHECK_ERROR(buf_size_left < size, label, ret, NA_OVERFLOW,          \
+            "Buffer size too small (%zu)", buf_size_left);                     \
+        memcpy(buf_ptr, data, size);                                           \
+        buf_ptr += size;                                                       \
+        buf_size_left -= size;                                                 \
+    } while (0)
+
+#define NA_ENCODE(label, ret, buf_ptr, buf_size_left, data, type)              \
+    NA_TYPE_ENCODE(label, ret, buf_ptr, buf_size_left, data, sizeof(type))
+
+#define NA_ENCODE_ARRAY(label, ret, buf_ptr, buf_size_left, data, type, count) \
+    NA_TYPE_ENCODE(                                                            \
+        label, ret, buf_ptr, buf_size_left, data, sizeof(type) * count)
+
+/**
+ * Decode type
+ */
+#define NA_TYPE_DECODE(label, ret, buf_ptr, buf_size_left, data, size)         \
+    do {                                                                       \
+        NA_CHECK_ERROR(buf_size_left < size, label, ret, NA_OVERFLOW,          \
+            "Buffer size too small (%zu)", buf_size_left);                     \
+        memcpy(data, buf_ptr, size);                                           \
+        buf_ptr += size;                                                       \
+        buf_size_left -= size;                                                 \
+    } while (0)
+
+#define NA_DECODE(label, ret, buf_ptr, buf_size_left, data, type)              \
+    NA_TYPE_DECODE(label, ret, buf_ptr, buf_size_left, data, sizeof(type))
+
+#define NA_DECODE_ARRAY(label, ret, buf_ptr, buf_size_left, data, type, count) \
+    NA_TYPE_DECODE(                                                            \
+        label, ret, buf_ptr, buf_size_left, data, sizeof(type) * count)
+
 /*********************/
 /* Public Prototypes */
 /*********************/

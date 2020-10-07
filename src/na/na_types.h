@@ -21,13 +21,13 @@
 
 typedef struct na_class na_class_t;     /* Opaque NA class */
 typedef struct na_context na_context_t; /* Opaque NA execution context */
-typedef void *na_addr_t;                /* Abstract NA address */
+typedef struct na_addr *na_addr_t;      /* Abstract NA address */
 typedef na_uint64_t na_size_t;          /* Size */
 typedef na_uint32_t na_tag_t;           /* Tag */
-typedef void *na_op_id_t;               /* Abstract operation id */
+typedef struct na_op_id na_op_id_t;     /* Opaque operation id */
 
-typedef void *na_mem_handle_t;   /* Abstract memory handle */
-typedef na_uint64_t na_offset_t; /* Offset */
+typedef struct na_mem_handle *na_mem_handle_t; /* Abstract memory handle */
+typedef na_uint64_t na_offset_t;               /* Offset */
 
 /* Init info */
 struct na_init_info {
@@ -39,8 +39,8 @@ struct na_init_info {
 
 /* Segment */
 struct na_segment {
-    na_ptr_t address; /* Address of the segment */
-    na_size_t size;   /* Size of the segment in bytes */
+    na_ptr_t base; /* Address of the segment */
+    na_size_t len; /* Size of the segment in bytes */
 };
 
 /* Return codes:
@@ -109,8 +109,6 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 
 /* Constant values */
 #define NA_ADDR_NULL       ((na_addr_t) 0)
-#define NA_OP_ID_NULL      ((na_op_id_t) 0)
-#define NA_OP_ID_IGNORE    ((na_op_id_t *) 1)
 #define NA_MEM_HANDLE_NULL ((na_mem_handle_t) 0)
 
 /* Max timeout */

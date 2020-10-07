@@ -90,6 +90,9 @@
 /* Max tag */
 #define NA_SM_MAX_TAG NA_TAG_MAX
 
+/* Maximum number of pre-allocated IOV entries */
+#define NA_SM_IOV_STATIC_MAX (8)
+
 /* Max events */
 #define NA_SM_MAX_EVENTS 16
 
@@ -120,6 +123,10 @@
             NA_SM_TMP_DIRECTORY, NA_SM_SHM_PREFIX, username, pid, id, index,   \
             pair)
 #endif
+
+/* Get IOV */
+#define NA_SM_IOV(x)                                                           \
+    ((x)->info.iovcnt > NA_SM_IOV_STATIC_MAX) ? (x)->iov.d : (x)->iov.s
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -261,12 +268,23 @@ struct na_sm_lookup_args {
     na_uint8_t id;
 };
 
-/* Memory handle */
-struct na_sm_mem_handle {
-    struct iovec *iov;    /* I/O segments */
+/* Memory descriptor info */
+struct na_sm_mem_desc_info {
     unsigned long iovcnt; /* Segment count */
     size_t len;           /* Size of region */
     na_uint8_t flags;     /* Flag of operation access */
+};
+
+/* IOV descriptor */
+typedef union {
+    struct iovec s[NA_SM_IOV_STATIC_MAX]; /* Single segment */
+    struct iovec *d;                      /* Multiple segments */
+} na_sm_iov_t;
+
+/* Memory handle */
+struct na_sm_mem_handle {
+    struct na_sm_mem_desc_info info; /* Segment info */
+    na_sm_iov_t iov;                 /* Remain last */
 };
 
 /* Msg info */
@@ -340,7 +358,8 @@ struct na_sm_context {
 struct na_sm_class {
     struct na_sm_endpoint endpoint; /* Endpoint */
     char *username;                 /* Username */
-    na_uint8_t max_contexts;        /* Max number of contexts */
+    na_size_t iov_max;              /* Max number of IOVs */
+    na_uint8_t context_max;         /* Max number of contexts */
     na_bool_t no_wait;              /* Ignore wait object */
 };
 
@@ -652,11 +671,27 @@ na_sm_buf_copy_from(struct na_sm_copy_buf *na_sm_copy_buf, unsigned int index,
     void *dest, size_t n);
 
 /**
- * Translate offset from mem_handle into usable iovec.
+ * Get IOV index and offset pair from an absolute offset.
  */
-static void
-na_sm_offset_translate(struct na_sm_mem_handle *mem_handle, na_offset_t offset,
-    na_size_t length, struct iovec *iov, unsigned long *iovcnt);
+static NA_INLINE void
+na_sm_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
+    na_offset_t offset, unsigned long *iov_start_index,
+    unsigned long *iov_start_offset);
+
+/**
+ * Get IOV count for a given length.
+ */
+static NA_INLINE unsigned long
+na_sm_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len);
+
+/**
+ * Create new IOV for transferring length data.
+ */
+static NA_INLINE void
+na_sm_iov_translate(const struct iovec *iov, unsigned long iovcnt,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
+    struct iovec *new_iov, unsigned long new_iovcnt);
 
 /**
  * Progress on endpoint sock.
@@ -750,12 +785,12 @@ static void
 na_sm_cleanup(void);
 
 /* op_create */
-static na_op_id_t
+static na_op_id_t *
 na_sm_op_create(na_class_t *na_class);
 
 /* op_destroy */
 static na_return_t
-na_sm_op_destroy(na_class_t *na_class, na_op_id_t op_id);
+na_sm_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
 static na_return_t
@@ -856,6 +891,10 @@ na_sm_mem_handle_create_segments(na_class_t *na_class,
 static na_return_t
 na_sm_mem_handle_free(na_class_t *na_class, na_mem_handle_t mem_handle);
 
+/* mem_handle_get_max_segments */
+static na_size_t
+na_sm_mem_handle_get_max_segments(const na_class_t *na_class);
+
 /* mem_handle_get_serialize_size */
 static NA_INLINE na_size_t
 na_sm_mem_handle_get_serialize_size(
@@ -902,7 +941,7 @@ na_sm_progress(
 
 /* cancel */
 static na_return_t
-na_sm_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id);
+na_sm_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 
 /*******************/
 /* Local Variables */
@@ -949,10 +988,9 @@ const struct na_class_ops NA_PLUGIN_OPS(sm) = {
     NULL, /* mem_handle_create_segments */
 #endif
     na_sm_mem_handle_free,               /* mem_handle_free */
+    na_sm_mem_handle_get_max_segments,   /* mem_handle_get_max_segments */
     NULL,                                /* mem_register */
     NULL,                                /* mem_deregister */
-    NULL,                                /* mem_publish */
-    NULL,                                /* mem_unpublish */
     na_sm_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
     na_sm_mem_handle_serialize,          /* mem_handle_serialize */
     na_sm_mem_handle_deserialize,        /* mem_handle_deserialize */
@@ -2672,42 +2710,72 @@ na_sm_buf_copy_from(struct na_sm_copy_buf *na_sm_copy_buf, unsigned int index,
 }
 
 /*---------------------------------------------------------------------------*/
-static void
-na_sm_offset_translate(struct na_sm_mem_handle *mem_handle, na_offset_t offset,
-    na_size_t length, struct iovec *iov, unsigned long *iovcnt)
+static NA_INLINE void
+na_sm_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
+    na_offset_t offset, unsigned long *iov_start_index,
+    unsigned long *iov_start_offset)
 {
-    unsigned long i, new_start_index = 0;
-    na_offset_t new_offset = offset, next_offset = 0;
-    na_size_t remaining_len = length;
+    na_offset_t new_iov_offset = offset, next_offset = 0;
+    unsigned long i, new_iov_start_index = 0;
 
     /* Get start index and handle offset */
-    for (i = 0; i < mem_handle->iovcnt; i++) {
-        next_offset += mem_handle->iov[i].iov_len;
+    for (i = 0; i < iovcnt; i++) {
+        next_offset += iov[i].iov_len;
+
         if (offset < next_offset) {
-            new_start_index = i;
+            new_iov_start_index = i;
             break;
         }
-        new_offset -= mem_handle->iov[i].iov_len;
+        new_iov_offset -= iov[i].iov_len;
     }
 
-    iov[0].iov_base =
-        (char *) mem_handle->iov[new_start_index].iov_base + new_offset;
-    iov[0].iov_len = MIN(
-        remaining_len, mem_handle->iov[new_start_index].iov_len - new_offset);
-    remaining_len -= iov[0].iov_len;
+    *iov_start_index = new_iov_start_index;
+    *iov_start_offset = new_iov_offset;
+}
 
-    for (i = 1; remaining_len && (i < mem_handle->iovcnt - new_start_index);
-         i++) {
-        iov[i].iov_base = mem_handle->iov[i + new_start_index].iov_base;
-        /* Can only transfer smallest size */
-        iov[i].iov_len =
-            MIN(remaining_len, mem_handle->iov[i + new_start_index].iov_len);
+/*---------------------------------------------------------------------------*/
+static NA_INLINE unsigned long
+na_sm_iov_get_count(const struct iovec *iov, unsigned long iovcnt,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len)
+{
+    na_size_t remaining_len =
+        len - MIN(len, iov[iov_start_index].iov_len - iov_start_offset);
+    unsigned long i, iov_index;
+
+    for (i = 1, iov_index = iov_start_index + 1;
+         remaining_len > 0 && iov_index < iovcnt; i++, iov_index++) {
+        /* Decrease remaining len from the len of data */
+        remaining_len -= MIN(remaining_len, iov[iov_index].iov_len);
+    }
+
+    return i;
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE void
+na_sm_iov_translate(const struct iovec *iov, unsigned long iovcnt,
+    unsigned long iov_start_index, na_offset_t iov_start_offset, na_size_t len,
+    struct iovec *new_iov, unsigned long new_iovcnt)
+{
+    na_size_t remaining_len = len;
+    unsigned long i, iov_index;
+
+    /* Offset is only within first segment */
+    new_iov[0].iov_base =
+        (char *) iov[iov_start_index].iov_base + iov_start_offset;
+    new_iov[0].iov_len =
+        MIN(remaining_len, iov[iov_start_index].iov_len - iov_start_offset);
+    remaining_len -= new_iov[0].iov_len;
+
+    for (i = 1, iov_index = iov_start_index + 1;
+         remaining_len > 0 && i < new_iovcnt && iov_index < iovcnt;
+         i++, iov_index++) {
+        new_iov[i].iov_base = iov[iov_index].iov_base;
+        new_iov[i].iov_len = MIN(remaining_len, iov[iov_index].iov_len);
 
         /* Decrease remaining len from the len of data */
-        remaining_len -= iov[i].iov_len;
+        remaining_len -= new_iov[i].iov_len;
     }
-
-    *iovcnt = i;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3187,10 +3255,11 @@ na_sm_release(void *arg)
         "Releasing resources from an uncompleted operation");
 
     if (na_sm_op_id->na_sm_addr) {
-        na_sm_addr_free(na_sm_op_id->na_class, na_sm_op_id->na_sm_addr);
+        na_sm_addr_free(
+            na_sm_op_id->na_class, (na_addr_t) na_sm_op_id->na_sm_addr);
         na_sm_op_id->na_sm_addr = NULL;
     }
-    na_sm_op_destroy(na_sm_op_id->na_class, na_sm_op_id);
+    na_sm_op_destroy(na_sm_op_id->na_class, (na_op_id_t *) na_sm_op_id);
 }
 
 /********************/
@@ -3218,7 +3287,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     unsigned int id;
     char *username = NULL;
     na_bool_t no_wait = NA_FALSE;
-    na_uint8_t max_contexts = 1; /* Default */
+    na_uint8_t context_max = 1; /* Default */
     na_return_t ret = NA_SUCCESS;
 
     /* Get init info */
@@ -3227,7 +3296,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
         if (na_info->na_init_info->progress_mode & NA_NO_BLOCK)
             no_wait = NA_TRUE;
         /* Max contexts */
-        max_contexts = na_info->na_init_info->max_contexts;
+        context_max = na_info->na_init_info->max_contexts;
     }
 
     /* Get PID */
@@ -3252,7 +3321,12 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
         "Could not allocate SM private class");
     memset(na_class->plugin_class, 0, sizeof(struct na_sm_class));
     NA_SM_CLASS(na_class)->no_wait = no_wait;
-    NA_SM_CLASS(na_class)->max_contexts = max_contexts;
+#ifdef NA_SM_HAS_CMA
+    NA_SM_CLASS(na_class)->iov_max = (na_size_t) sysconf(_SC_IOV_MAX);
+#else
+    NA_SM_CLASS(na_class)->iov_max = 1;
+#endif
+    NA_SM_CLASS(na_class)->context_max = context_max;
 
     /* Copy username */
     NA_SM_CLASS(na_class)->username = strdup(username);
@@ -3357,7 +3431,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_op_id_t
+static na_op_id_t *
 na_sm_op_create(na_class_t *na_class)
 {
     struct na_sm_op_id *na_sm_op_id = NULL;
@@ -3377,12 +3451,12 @@ na_sm_op_create(na_class_t *na_class)
     na_sm_op_id->completion_data.plugin_callback_args = na_sm_op_id;
 
 done:
-    return (na_op_id_t) na_sm_op_id;
+    return (na_op_id_t *) na_sm_op_id;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
+na_sm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
 
@@ -3624,7 +3698,7 @@ na_sm_addr_deserialize(
     /* Increment refcount */
     hg_atomic_incr32(&na_sm_addr->ref_count);
 
-    *addr = na_sm_addr;
+    *addr = (na_addr_t) na_sm_addr;
 
 done:
     return ret;
@@ -3658,7 +3732,7 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     void NA_UNUSED *plugin_data, na_addr_t dest_addr,
     na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
-    struct na_sm_op_id *na_sm_op_id = NULL;
+    struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest_addr;
     unsigned int buf_idx;
     na_bool_t reserved = NA_FALSE;
@@ -3669,10 +3743,7 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Check op_id */
     NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        done, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
@@ -3749,6 +3820,7 @@ error:
     if (reserved)
         na_sm_buf_release(&na_sm_addr->shared_region->copy_bufs, buf_idx);
     hg_atomic_decr32(&na_sm_addr->ref_count);
+    hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
     hg_atomic_decr32(&na_sm_op_id->ref_count);
 
     return ret;
@@ -3763,7 +3835,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     struct na_sm_unexpected_msg_queue *unexpected_msg_queue =
         &NA_SM_CLASS(na_class)->endpoint.unexpected_msg_queue;
     struct na_sm_unexpected_info *na_sm_unexpected_info;
-    struct na_sm_op_id *na_sm_op_id = NULL;
+    struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_ERROR(buf_size > NA_SM_UNEXPECTED_SIZE, done, ret, NA_OVERFLOW,
@@ -3771,10 +3843,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Check op_id */
     NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        done, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
@@ -3831,6 +3900,7 @@ done:
 
 error:
     hg_atomic_decr32(&na_sm_op_id->na_sm_addr->ref_count);
+    hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
     hg_atomic_decr32(&na_sm_op_id->ref_count);
 
     return ret;
@@ -3843,7 +3913,7 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     void NA_UNUSED *plugin_data, na_addr_t dest_addr,
     na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
-    struct na_sm_op_id *na_sm_op_id = NULL;
+    struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest_addr;
     unsigned int buf_idx;
     na_bool_t reserved = NA_FALSE;
@@ -3854,10 +3924,7 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
 
     /* Check op_id */
     NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        done, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
@@ -3934,6 +4001,7 @@ error:
     if (reserved)
         na_sm_buf_release(&na_sm_addr->shared_region->copy_bufs, buf_idx);
     hg_atomic_decr32(&na_sm_op_id->na_sm_addr->ref_count);
+    hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
     hg_atomic_decr32(&na_sm_op_id->ref_count);
 
     return ret;
@@ -3948,7 +4016,7 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 {
     struct na_sm_op_queue *expected_op_queue =
         &NA_SM_CLASS(na_class)->endpoint.expected_op_queue;
-    struct na_sm_op_id *na_sm_op_id = NULL;
+    struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) source_addr;
     na_return_t ret = NA_SUCCESS;
 
@@ -3957,10 +4025,7 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 
     /* Check op_id */
     NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        done, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
@@ -4000,67 +4065,68 @@ na_sm_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     struct na_sm_mem_handle *na_sm_mem_handle = NULL;
     na_return_t ret = NA_SUCCESS;
 
+    /* Allocate memory handle */
     na_sm_mem_handle =
-        (struct na_sm_mem_handle *) malloc(sizeof(struct na_sm_mem_handle));
-    NA_CHECK_ERROR(na_sm_mem_handle == NULL, error, ret, NA_NOMEM,
+        (struct na_sm_mem_handle *) calloc(1, sizeof(struct na_sm_mem_handle));
+    NA_CHECK_ERROR(na_sm_mem_handle == NULL, done, ret, NA_NOMEM,
         "Could not allocate NA SM memory handle");
 
-    na_sm_mem_handle->iov = (struct iovec *) malloc(sizeof(struct iovec));
-    NA_CHECK_ERROR(na_sm_mem_handle->iov == NULL, error, ret, NA_NOMEM,
-        "Could not allocate iovec");
-
-    na_sm_mem_handle->iov->iov_base = buf;
-    na_sm_mem_handle->iov->iov_len = buf_size;
-    na_sm_mem_handle->iovcnt = 1;
-    na_sm_mem_handle->flags = flags & 0xff;
-    na_sm_mem_handle->len = buf_size;
+    na_sm_mem_handle->iov.s[0].iov_base = buf;
+    na_sm_mem_handle->iov.s[0].iov_len = buf_size;
+    na_sm_mem_handle->info.iovcnt = 1;
+    na_sm_mem_handle->info.flags = flags & 0xff;
+    na_sm_mem_handle->info.len = buf_size;
 
     *mem_handle = (na_mem_handle_t) na_sm_mem_handle;
 
-    return ret;
-
-error:
-    if (na_sm_mem_handle) {
-        free(na_sm_mem_handle->iov);
-        free(na_sm_mem_handle);
-    }
+done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 #ifdef NA_SM_HAS_CMA
 static na_return_t
-na_sm_mem_handle_create_segments(na_class_t NA_UNUSED *na_class,
+na_sm_mem_handle_create_segments(na_class_t *na_class,
     struct na_segment *segments, na_size_t segment_count, unsigned long flags,
     na_mem_handle_t *mem_handle)
 {
     struct na_sm_mem_handle *na_sm_mem_handle = NULL;
+    struct iovec *iov = NULL;
     na_return_t ret = NA_SUCCESS;
-    na_size_t i, iov_max;
+    na_size_t i;
+
+    NA_CHECK_WARNING(segment_count == 1, "Segment count is 1");
 
     /* Check that we do not exceed IOV_MAX */
-    iov_max = (na_size_t) sysconf(_SC_IOV_MAX);
-    NA_CHECK_ERROR(segment_count > iov_max, error, ret, NA_INVALID_ARG,
-        "Segment count exceeds IOV_MAX limit");
+    NA_CHECK_ERROR(segment_count > NA_SM_CLASS(na_class)->iov_max, error, ret,
+        NA_INVALID_ARG, "Segment count exceeds IOV_MAX limit (%zu)",
+        NA_SM_CLASS(na_class)->iov_max);
 
+    /* Allocate memory handle */
     na_sm_mem_handle =
-        (struct na_sm_mem_handle *) malloc(sizeof(struct na_sm_mem_handle));
+        (struct na_sm_mem_handle *) calloc(1, sizeof(struct na_sm_mem_handle));
     NA_CHECK_ERROR(na_sm_mem_handle == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA SM memory handle");
 
-    na_sm_mem_handle->iov =
-        (struct iovec *) malloc(segment_count * sizeof(struct iovec));
-    NA_CHECK_ERROR(na_sm_mem_handle->iov == NULL, error, ret, NA_NOMEM,
-        "Could not allocate iovec");
+    if (segment_count > NA_SM_IOV_STATIC_MAX) {
+        /* Allocate IOVs */
+        na_sm_mem_handle->iov.d =
+            (struct iovec *) calloc(segment_count, sizeof(struct iovec));
+        NA_CHECK_ERROR(na_sm_mem_handle->iov.d == NULL, error, ret, NA_NOMEM,
+            "Could not allocate iovec");
 
-    na_sm_mem_handle->len = 0;
+        iov = na_sm_mem_handle->iov.d;
+    } else
+        iov = na_sm_mem_handle->iov.s;
+
+    na_sm_mem_handle->info.len = 0;
     for (i = 0; i < segment_count; i++) {
-        na_sm_mem_handle->iov[i].iov_base = (void *) segments[i].address;
-        na_sm_mem_handle->iov[i].iov_len = segments[i].size;
-        na_sm_mem_handle->len += na_sm_mem_handle->iov[i].iov_len;
+        iov[i].iov_base = (void *) segments[i].base;
+        iov[i].iov_len = segments[i].len;
+        na_sm_mem_handle->info.len += iov[i].iov_len;
     }
-    na_sm_mem_handle->iovcnt = segment_count;
-    na_sm_mem_handle->flags = flags & 0xff;
+    na_sm_mem_handle->info.iovcnt = segment_count;
+    na_sm_mem_handle->info.flags = flags & 0xff;
 
     *mem_handle = (na_mem_handle_t) na_sm_mem_handle;
 
@@ -4068,7 +4134,8 @@ na_sm_mem_handle_create_segments(na_class_t NA_UNUSED *na_class,
 
 error:
     if (na_sm_mem_handle) {
-        free(na_sm_mem_handle->iov);
+        if (segment_count > NA_SM_IOV_STATIC_MAX)
+            free(na_sm_mem_handle->iov.d);
         free(na_sm_mem_handle);
     }
     return ret;
@@ -4082,12 +4149,19 @@ na_sm_mem_handle_free(
 {
     struct na_sm_mem_handle *na_sm_mem_handle =
         (struct na_sm_mem_handle *) mem_handle;
-    na_return_t ret = NA_SUCCESS;
 
-    free(na_sm_mem_handle->iov);
+    if (na_sm_mem_handle->info.iovcnt > NA_SM_IOV_STATIC_MAX)
+        free(na_sm_mem_handle->iov.d);
     free(na_sm_mem_handle);
 
-    return ret;
+    return NA_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_size_t
+na_sm_mem_handle_get_max_segments(const na_class_t *na_class)
+{
+    return NA_SM_CLASS(na_class)->iov_max;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4097,13 +4171,9 @@ na_sm_mem_handle_get_serialize_size(
 {
     struct na_sm_mem_handle *na_sm_mem_handle =
         (struct na_sm_mem_handle *) mem_handle;
-    unsigned long i;
-    na_size_t ret = 2 * sizeof(unsigned long) + sizeof(size_t);
 
-    for (i = 0; i < na_sm_mem_handle->iovcnt; i++)
-        ret += sizeof(void *) + sizeof(size_t);
-
-    return ret;
+    return sizeof(na_sm_mem_handle->info) +
+           na_sm_mem_handle->info.iovcnt * sizeof(struct iovec);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4113,30 +4183,20 @@ na_sm_mem_handle_serialize(na_class_t NA_UNUSED *na_class, void *buf,
 {
     struct na_sm_mem_handle *na_sm_mem_handle =
         (struct na_sm_mem_handle *) mem_handle;
+    struct iovec *iov = NA_SM_IOV(na_sm_mem_handle);
     char *buf_ptr = (char *) buf;
+    na_size_t buf_size_left = buf_size;
     na_return_t ret = NA_SUCCESS;
-    unsigned long i;
 
-    /* Number of segments */
-    memcpy(buf_ptr, &na_sm_mem_handle->iovcnt, sizeof(unsigned long));
-    buf_ptr += sizeof(unsigned long);
+    /* Descriptor info */
+    NA_ENCODE(done, ret, buf_ptr, buf_size_left, &na_sm_mem_handle->info,
+        struct na_sm_mem_desc_info);
 
-    /* Flags */
-    memcpy(buf_ptr, &na_sm_mem_handle->flags, sizeof(unsigned long));
-    buf_ptr += sizeof(unsigned long);
+    /* IOV */
+    NA_ENCODE_ARRAY(done, ret, buf_ptr, buf_size_left, iov, struct iovec,
+        na_sm_mem_handle->info.iovcnt);
 
-    /* Length */
-    memcpy(buf_ptr, &na_sm_mem_handle->len, sizeof(size_t));
-    buf_ptr += sizeof(size_t);
-
-    /* Segments */
-    for (i = 0; i < na_sm_mem_handle->iovcnt; i++) {
-        memcpy(buf_ptr, &na_sm_mem_handle->iov[i].iov_base, sizeof(void *));
-        buf_ptr += sizeof(void *);
-        memcpy(buf_ptr, &na_sm_mem_handle->iov[i].iov_len, sizeof(size_t));
-        buf_ptr += sizeof(size_t);
-    }
-
+done:
     return ret;
 }
 
@@ -4147,41 +4207,34 @@ na_sm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
 {
     struct na_sm_mem_handle *na_sm_mem_handle = NULL;
     const char *buf_ptr = (const char *) buf;
+    na_size_t buf_size_left = buf_size;
+    struct iovec *iov = NULL;
     na_return_t ret = NA_SUCCESS;
-    unsigned long i;
 
     na_sm_mem_handle =
         (struct na_sm_mem_handle *) malloc(sizeof(struct na_sm_mem_handle));
     NA_CHECK_ERROR(na_sm_mem_handle == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA SM memory handle");
-    na_sm_mem_handle->iov = NULL;
+    na_sm_mem_handle->iov.d = NULL;
 
-    /* Number of segments */
-    memcpy(&na_sm_mem_handle->iovcnt, buf_ptr, sizeof(unsigned long));
-    buf_ptr += sizeof(unsigned long);
-    NA_CHECK_ERROR(na_sm_mem_handle->iovcnt == 0, error, ret, NA_FAULT,
-        "NULL segment count");
+    /* Descriptor info */
+    NA_DECODE(error, ret, buf_ptr, buf_size_left, &na_sm_mem_handle->info,
+        struct na_sm_mem_desc_info);
 
-    /* Flags */
-    memcpy(&na_sm_mem_handle->flags, buf_ptr, sizeof(unsigned long));
-    buf_ptr += sizeof(unsigned long);
+    /* IOV */
+    if (na_sm_mem_handle->info.iovcnt > NA_SM_IOV_STATIC_MAX) {
+        /* Allocate IOV */
+        na_sm_mem_handle->iov.d = (struct iovec *) malloc(
+            na_sm_mem_handle->info.iovcnt * sizeof(struct iovec));
+        NA_CHECK_ERROR(na_sm_mem_handle->iov.d == NULL, error, ret, NA_NOMEM,
+            "Could not allocate segment array");
 
-    /* Length */
-    memcpy(&na_sm_mem_handle->len, buf_ptr, sizeof(size_t));
-    buf_ptr += sizeof(size_t);
+        iov = na_sm_mem_handle->iov.d;
+    } else
+        iov = na_sm_mem_handle->iov.s;
 
-    /* Segments */
-    na_sm_mem_handle->iov = (struct iovec *) malloc(
-        na_sm_mem_handle->iovcnt * sizeof(struct iovec));
-    NA_CHECK_ERROR(na_sm_mem_handle->iov == NULL, error, ret, NA_NOMEM,
-        "Could not allocate iovec");
-
-    for (i = 0; i < na_sm_mem_handle->iovcnt; i++) {
-        memcpy(&na_sm_mem_handle->iov[i].iov_base, buf_ptr, sizeof(void *));
-        buf_ptr += sizeof(void *);
-        memcpy(&na_sm_mem_handle->iov[i].iov_len, buf_ptr, sizeof(size_t));
-        buf_ptr += sizeof(size_t);
-    }
+    NA_DECODE_ARRAY(error, ret, buf_ptr, buf_size_left, iov, struct iovec,
+        na_sm_mem_handle->info.iovcnt);
 
     *mem_handle = (na_mem_handle_t) na_sm_mem_handle;
 
@@ -4189,7 +4242,8 @@ na_sm_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
 
 error:
     if (na_sm_mem_handle) {
-        free(na_sm_mem_handle->iov);
+        if (na_sm_mem_handle->info.iovcnt > NA_SM_IOV_STATIC_MAX)
+            free(na_sm_mem_handle->iov.d);
         free(na_sm_mem_handle);
     }
     return ret;
@@ -4203,16 +4257,21 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED remote_id,
     na_op_id_t *op_id)
 {
-    struct na_sm_op_id *na_sm_op_id = NULL;
+    struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
     struct na_sm_mem_handle *na_sm_mem_handle_local =
         (struct na_sm_mem_handle *) local_mem_handle;
     struct na_sm_mem_handle *na_sm_mem_handle_remote =
         (struct na_sm_mem_handle *) remote_mem_handle;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) remote_addr;
-    struct iovec *local_iov, *remote_iov;
-    struct iovec *local_iovs[IOV_MAX] = {NULL, 0};
-    struct iovec *remote_iovs[IOV_MAX] = {NULL, 0};
-    unsigned long liovcnt, riovcnt;
+    struct iovec *local_iov = NA_SM_IOV(na_sm_mem_handle_local),
+                 *remote_iov = NA_SM_IOV(na_sm_mem_handle_remote);
+    unsigned long local_iovcnt = na_sm_mem_handle_local->info.iovcnt,
+                  remote_iovcnt = na_sm_mem_handle_remote->info.iovcnt;
+    unsigned long local_iov_start_index = 0, remote_iov_start_index = 0;
+    na_offset_t local_iov_start_offset = 0, remote_iov_start_offset = 0;
+    na_sm_iov_t local_trans_iov, remote_trans_iov;
+    struct iovec *liov, *riov;
+    unsigned long liovcnt = 0, riovcnt = 0;
     na_return_t ret = NA_SUCCESS;
 #if defined(NA_SM_HAS_CMA)
     ssize_t nwrite;
@@ -4226,7 +4285,7 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         done, ret, NA_OPNOTSUPPORTED, "Not implemented for this platform");
 #endif
 
-    switch (na_sm_mem_handle_remote->flags) {
+    switch (na_sm_mem_handle_remote->info.flags) {
         case NA_MEM_READ_ONLY:
             NA_GOTO_ERROR(done, ret, NA_PERMISSION,
                 "Registered memory requires write permission");
@@ -4241,10 +4300,7 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 
     /* Check op_id */
     NA_CHECK_ERROR(
-        op_id == NULL || op_id == NA_OP_ID_IGNORE || *op_id == NA_OP_ID_NULL,
-        done, ret, NA_INVALID_ARG, "Invalid operation ID");
-
-    na_sm_op_id = (struct na_sm_op_id *) *op_id;
+        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
@@ -4260,31 +4316,61 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_sm_op_id->na_sm_addr = na_sm_addr;
     hg_atomic_set32(&na_sm_op_id->status, 0);
 
-    /* Translate local offset, skip this step if not necessary */
-    if (local_offset || length != na_sm_mem_handle_local->len) {
-        local_iov = (struct iovec *) local_iovs;
-        na_sm_offset_translate(
-            na_sm_mem_handle_local, local_offset, length, local_iov, &liovcnt);
-        NA_LOG_DEBUG("Translated local offsets into %lu segment(s)", liovcnt);
+    /* Translate local offset */
+    if (local_offset > 0)
+        na_sm_iov_get_index_offset(local_iov, local_iovcnt, local_offset,
+            &local_iov_start_index, &local_iov_start_offset);
+
+    if (length != na_sm_mem_handle_local->info.len) {
+        liovcnt = na_sm_iov_get_count(local_iov, local_iovcnt,
+            local_iov_start_index, local_iov_start_offset, length);
+
+        if (liovcnt > NA_SM_IOV_STATIC_MAX) {
+            local_trans_iov.d =
+                (struct iovec *) malloc(liovcnt * sizeof(struct iovec));
+            NA_CHECK_ERROR(local_trans_iov.d == NULL, error, ret, NA_NOMEM,
+                "Could not allocate iovec");
+
+            liov = local_trans_iov.d;
+        } else
+            liov = local_trans_iov.s;
+
+        na_sm_iov_translate(local_iov, local_iovcnt, local_iov_start_index,
+            local_iov_start_offset, length, liov, liovcnt);
     } else {
-        local_iov = na_sm_mem_handle_local->iov;
-        liovcnt = na_sm_mem_handle_local->iovcnt;
+        liov = local_iov;
+        liovcnt = local_iovcnt;
     }
 
-    /* Translate remote offset, skip this step if not necessary */
-    if (remote_offset || length != na_sm_mem_handle_remote->len) {
-        remote_iov = (struct iovec *) remote_iovs;
-        na_sm_offset_translate(na_sm_mem_handle_remote, remote_offset, length,
-            remote_iov, &riovcnt);
-        NA_LOG_DEBUG("Translated remote offsets into %lu segment(s)", riovcnt);
+    /* Translate remote offset */
+    if (remote_offset > 0)
+        na_sm_iov_get_index_offset(remote_iov, remote_iovcnt, remote_offset,
+            &remote_iov_start_index, &remote_iov_start_offset);
+
+    if (length != na_sm_mem_handle_remote->info.len) {
+        riovcnt = na_sm_iov_get_count(remote_iov, remote_iovcnt,
+            remote_iov_start_index, remote_iov_start_offset, length);
+
+        if (riovcnt > NA_SM_IOV_STATIC_MAX) {
+            remote_trans_iov.d =
+                (struct iovec *) malloc(riovcnt * sizeof(struct iovec));
+            NA_CHECK_ERROR(remote_trans_iov.d == NULL, error, ret, NA_NOMEM,
+                "Could not allocate iovec");
+
+            riov = remote_trans_iov.d;
+        } else
+            riov = remote_trans_iov.s;
+
+        na_sm_iov_translate(remote_iov, remote_iovcnt, remote_iov_start_index,
+            remote_iov_start_offset, length, riov, riovcnt);
     } else {
-        remote_iov = na_sm_mem_handle_remote->iov;
-        riovcnt = na_sm_mem_handle_remote->iovcnt;
+        riov = remote_iov;
+        riovcnt = remote_iovcnt;
     }
 
 #if defined(NA_SM_HAS_CMA)
-    nwrite = process_vm_writev(na_sm_addr->pid, local_iov, liovcnt, remote_iov,
-        riovcnt, /* unused */ 0);
+    nwrite =
+        process_vm_writev(na_sm_addr->pid, liov, liovcnt, riov, riovcnt, 0);
     if (unlikely(nwrite < 0)) {
         if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
             NA_GOTO_ERROR(error, ret, na_sm_errno_to_na(errno),
@@ -4314,9 +4400,8 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     NA_CHECK_ERROR(liovcnt > 1 || riovcnt > 1, error, ret, NA_OPNOTSUPPORTED,
         "Non-contiguous transfers are not supported");
 
-    kret = mach_vm_write(remote_task, (mach_vm_address_t) remote_iov->iov_base,
-        (mach_vm_address_t) local_iov->iov_base,
-        (mach_msg_type_number_t) length);
+    kret = mach_vm_write(remote_task, (mach_vm_address_t) riov[0].iov_base,
+        (mach_vm_address_t) liov[0].iov_base, (mach_msg_type_number_t) length);
     NA_CHECK_ERROR(kret != KERN_SUCCESS, error, ret, NA_PROTOCOL_ERROR,
         "mach_vm_write() failed (%s)", mach_error_string(kret));
 #endif
@@ -4327,10 +4412,25 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
 
 done:
+    if (liovcnt > NA_SM_IOV_STATIC_MAX &&
+        (length != na_sm_mem_handle_local->info.len))
+        free(local_trans_iov.d);
+    if (riovcnt > NA_SM_IOV_STATIC_MAX &&
+        (length != na_sm_mem_handle_remote->info.len))
+        free(remote_trans_iov.d);
+
     return ret;
 
 error:
+    if (liovcnt > NA_SM_IOV_STATIC_MAX &&
+        (length != na_sm_mem_handle_local->info.len))
+        free(local_trans_iov.d);
+    if (riovcnt > NA_SM_IOV_STATIC_MAX &&
+        (length != na_sm_mem_handle_remote->info.len))
+        free(remote_trans_iov.d);
+
     hg_atomic_decr32(&na_sm_op_id->na_sm_addr->ref_count);
+    hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
     hg_atomic_decr32(&na_sm_op_id->ref_count);
 
     return ret;
@@ -4344,16 +4444,21 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED remote_id,
     na_op_id_t *op_id)
 {
-    struct na_sm_op_id *na_sm_op_id = NULL;
+    struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
     struct na_sm_mem_handle *na_sm_mem_handle_local =
         (struct na_sm_mem_handle *) local_mem_handle;
     struct na_sm_mem_handle *na_sm_mem_handle_remote =
         (struct na_sm_mem_handle *) remote_mem_handle;
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) remote_addr;
-    struct iovec *local_iov, *remote_iov;
-    struct iovec *local_iovs[IOV_MAX] = {NULL, 0};
-    struct iovec *remote_iovs[IOV_MAX] = {NULL, 0};
-    unsigned long liovcnt, riovcnt;
+    struct iovec *local_iov = NA_SM_IOV(na_sm_mem_handle_local),
+                 *remote_iov = NA_SM_IOV(na_sm_mem_handle_remote);
+    unsigned long local_iovcnt = na_sm_mem_handle_local->info.iovcnt,
+                  remote_iovcnt = na_sm_mem_handle_remote->info.iovcnt;
+    unsigned long local_iov_start_index = 0, remote_iov_start_index = 0;
+    na_offset_t local_iov_start_offset = 0, remote_iov_start_offset = 0;
+    na_sm_iov_t local_trans_iov, remote_trans_iov;
+    struct iovec *liov, *riov;
+    unsigned long liovcnt = 0, riovcnt = 0;
     na_return_t ret = NA_SUCCESS;
 #if defined(NA_SM_HAS_CMA)
     ssize_t nread;
@@ -4368,7 +4473,7 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         done, ret, NA_OPNOTSUPPORTED, "Not implemented for this platform");
 #endif
 
-    switch (na_sm_mem_handle_remote->flags) {
+    switch (na_sm_mem_handle_remote->info.flags) {
         case NA_MEM_WRITE_ONLY:
             NA_GOTO_ERROR(done, ret, NA_PERMISSION,
                 "Registered memory requires write permission");
@@ -4381,7 +4486,9 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
                 done, ret, NA_INVALID_ARG, "Invalid memory access flag");
     }
 
-    na_sm_op_id = (struct na_sm_op_id *) *op_id;
+    /* Check op_id */
+    NA_CHECK_ERROR(
+        na_sm_op_id == NULL, done, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
@@ -4397,31 +4504,60 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     na_sm_op_id->na_sm_addr = na_sm_addr;
     hg_atomic_set32(&na_sm_op_id->status, 0);
 
-    /* Translate local offset, skip this step if not necessary */
-    if (local_offset || length != na_sm_mem_handle_local->len) {
-        local_iov = (struct iovec *) local_iovs;
-        na_sm_offset_translate(
-            na_sm_mem_handle_local, local_offset, length, local_iov, &liovcnt);
-        NA_LOG_DEBUG("Translated local offsets into %lu segment(s)", liovcnt);
+    /* Translate local offset */
+    if (local_offset > 0)
+        na_sm_iov_get_index_offset(local_iov, local_iovcnt, local_offset,
+            &local_iov_start_index, &local_iov_start_offset);
+
+    if (length != na_sm_mem_handle_local->info.len) {
+        liovcnt = na_sm_iov_get_count(local_iov, local_iovcnt,
+            local_iov_start_index, local_iov_start_offset, length);
+
+        if (liovcnt > NA_SM_IOV_STATIC_MAX) {
+            local_trans_iov.d =
+                (struct iovec *) malloc(liovcnt * sizeof(struct iovec));
+            NA_CHECK_ERROR(local_trans_iov.d == NULL, error, ret, NA_NOMEM,
+                "Could not allocate iovec");
+
+            liov = local_trans_iov.d;
+        } else
+            liov = local_trans_iov.s;
+
+        na_sm_iov_translate(local_iov, local_iovcnt, local_iov_start_index,
+            local_iov_start_offset, length, liov, liovcnt);
     } else {
-        local_iov = na_sm_mem_handle_local->iov;
-        liovcnt = na_sm_mem_handle_local->iovcnt;
+        liov = local_iov;
+        liovcnt = local_iovcnt;
     }
 
-    /* Translate remote offset, skip this step if not necessary */
-    if (remote_offset || length != na_sm_mem_handle_remote->len) {
-        remote_iov = (struct iovec *) remote_iovs;
-        na_sm_offset_translate(na_sm_mem_handle_remote, remote_offset, length,
-            remote_iov, &riovcnt);
-        NA_LOG_DEBUG("Translated remote offsets into %lu segment(s)", riovcnt);
+    /* Translate remote offset */
+    if (remote_offset > 0)
+        na_sm_iov_get_index_offset(remote_iov, remote_iovcnt, remote_offset,
+            &remote_iov_start_index, &remote_iov_start_offset);
+
+    if (length != na_sm_mem_handle_remote->info.len) {
+        riovcnt = na_sm_iov_get_count(remote_iov, remote_iovcnt,
+            remote_iov_start_index, remote_iov_start_offset, length);
+
+        if (riovcnt > NA_SM_IOV_STATIC_MAX) {
+            remote_trans_iov.d =
+                (struct iovec *) malloc(riovcnt * sizeof(struct iovec));
+            NA_CHECK_ERROR(remote_trans_iov.d == NULL, error, ret, NA_NOMEM,
+                "Could not allocate iovec");
+
+            riov = remote_trans_iov.d;
+        } else
+            riov = remote_trans_iov.s;
+
+        na_sm_iov_translate(remote_iov, remote_iovcnt, remote_iov_start_index,
+            remote_iov_start_offset, length, riov, riovcnt);
     } else {
-        remote_iov = na_sm_mem_handle_remote->iov;
-        riovcnt = na_sm_mem_handle_remote->iovcnt;
+        riov = remote_iov;
+        riovcnt = remote_iovcnt;
     }
 
 #if defined(NA_SM_HAS_CMA)
-    nread = process_vm_readv(na_sm_addr->pid, local_iov, liovcnt, remote_iov,
-        riovcnt, /* unused */ 0);
+    nread = process_vm_readv(na_sm_addr->pid, liov, liovcnt, riov, riovcnt, 0);
     if (unlikely(nread < 0)) {
         if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
             NA_GOTO_ERROR(error, ret, na_sm_errno_to_na(errno),
@@ -4450,8 +4586,8 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         "Non-contiguous transfers are not supported");
 
     kret = mach_vm_read_overwrite(remote_task,
-        (mach_vm_address_t) remote_iov->iov_base, length,
-        (mach_vm_address_t) local_iov->iov_base, &nread);
+        (mach_vm_address_t) riov[0].iov_base, length,
+        (mach_vm_address_t) liov[0].iov_base, &nread);
     NA_CHECK_ERROR(kret != KERN_SUCCESS, error, ret, NA_PROTOCOL_ERROR,
         "mach_vm_read_overwrite() failed (%s)", mach_error_string(kret));
 #endif
@@ -4466,10 +4602,25 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
 
 done:
+    if (liovcnt > NA_SM_IOV_STATIC_MAX &&
+        (length != na_sm_mem_handle_local->info.len))
+        free(local_trans_iov.d);
+    if (riovcnt > NA_SM_IOV_STATIC_MAX &&
+        (length != na_sm_mem_handle_remote->info.len))
+        free(remote_trans_iov.d);
+
     return ret;
 
 error:
+    if (liovcnt > NA_SM_IOV_STATIC_MAX &&
+        (length != na_sm_mem_handle_local->info.len))
+        free(local_trans_iov.d);
+    if (riovcnt > NA_SM_IOV_STATIC_MAX &&
+        (length != na_sm_mem_handle_remote->info.len))
+        free(remote_trans_iov.d);
+
     hg_atomic_decr32(&na_sm_op_id->na_sm_addr->ref_count);
+    hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
     hg_atomic_decr32(&na_sm_op_id->ref_count);
 
     return ret;
@@ -4668,7 +4819,7 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_cancel(
-    na_class_t *na_class, na_context_t NA_UNUSED *context, na_op_id_t op_id)
+    na_class_t *na_class, na_context_t NA_UNUSED *context, na_op_id_t *op_id)
 {
     struct na_sm_op_queue *op_queue = NULL;
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;

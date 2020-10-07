@@ -401,10 +401,9 @@ const struct na_class_ops NA_PLUGIN_OPS(cci) = {
     na_cci_mem_handle_create,             /* mem_handle_create */
     NULL,                                 /* mem_handle_create_segment */
     na_cci_mem_handle_free,               /* mem_handle_free */
+    NULL,                                 /* mem_handle_get_max_segments */
     na_cci_mem_register,                  /* mem_register */
     na_cci_mem_deregister,                /* mem_deregister */
-    NULL,                                 /* mem_publish */
-    NULL,                                 /* mem_unpublish */
     na_cci_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
     na_cci_mem_handle_serialize,          /* mem_handle_serialize */
     na_cci_mem_handle_deserialize,        /* mem_handle_deserialize */
