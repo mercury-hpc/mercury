@@ -72,9 +72,9 @@ endif()
 #------------------------------------------------------------------------------
 # Network abstraction test
 #build_na_test(client)
-build_na_test(server)
+#build_na_test(server)
 #build_na_test(cancel_client)
-build_na_test(cancel_server)
+#build_na_test(cancel_server)
 build_na_test(lat_client)
 build_na_test(lat_server)
 

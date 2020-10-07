@@ -238,12 +238,12 @@ static na_return_t
 na_mpi_finalize(na_class_t *na_class);
 
 /* op_create */
-static na_op_id_t
+static na_op_id_t *
 na_mpi_op_create(na_class_t *na_class);
 
 /* op_destroy */
 static na_return_t
-na_mpi_op_destroy(na_class_t *na_class, na_op_id_t op_id);
+na_mpi_op_destroy(na_class_t *na_class, na_op_id_t *op_id);
 
 /* addr_lookup */
 static na_return_t
@@ -385,7 +385,7 @@ na_mpi_release(void *arg);
 
 /* cancel */
 static na_return_t
-na_mpi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t op_id);
+na_mpi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id);
 
 /*******************/
 /* Local Variables */
@@ -428,10 +428,9 @@ const struct na_class_ops NA_PLUGIN_OPS(mpi) = {
     na_mpi_mem_handle_create,             /* mem_handle_create */
     NULL,                                 /* mem_handle_create_segment */
     na_mpi_mem_handle_free,               /* mem_handle_free */
+    NULL,                                 /* mem_handle_get_max_segments */
     na_mpi_mem_register,                  /* mem_register */
     na_mpi_mem_deregister,                /* mem_deregister */
-    NULL,                                 /* mem_publish */
-    NULL,                                 /* mem_unpublish */
     na_mpi_mem_handle_get_serialize_size, /* mem_handle_get_serialize_size */
     na_mpi_mem_handle_serialize,          /* mem_handle_serialize */
     na_mpi_mem_handle_deserialize,        /* mem_handle_deserialize */
@@ -1073,7 +1072,7 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
-static na_op_id_t
+static na_op_id_t *
 na_mpi_op_create(na_class_t NA_UNUSED *na_class)
 {
     struct na_mpi_op_id *na_mpi_op_id = NULL;
@@ -1089,12 +1088,12 @@ na_mpi_op_create(na_class_t NA_UNUSED *na_class)
     hg_atomic_init32(&na_mpi_op_id->completed, 1);
 
 done:
-    return (na_op_id_t) na_mpi_op_id;
+    return (na_op_id_t *) na_mpi_op_id;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_mpi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t op_id)
+na_mpi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     struct na_mpi_op_id *na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
@@ -1366,7 +1365,7 @@ na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     int mpi_ret;
 
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_SEND_UNEXPECTED;
@@ -1392,7 +1391,7 @@ na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
     }
     return ret;
 }
@@ -1407,7 +1406,7 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
 
     /* Allocate na_op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_RECV_UNEXPECTED;
@@ -1441,7 +1440,7 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
     }
     return ret;
 }
@@ -1461,7 +1460,7 @@ na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     int mpi_ret;
 
     /* Allocate op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_SEND_EXPECTED;
@@ -1487,7 +1486,7 @@ na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
     }
     return ret;
 }
@@ -1507,7 +1506,7 @@ na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     int mpi_ret;
 
     /* Allocate op_id */
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_RECV_EXPECTED;
@@ -1535,7 +1534,7 @@ na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
     }
     return ret;
 }
@@ -1695,7 +1694,7 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_PUT;
@@ -1752,7 +1751,7 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_rma_info);
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
     }
     return ret;
 }
@@ -1793,7 +1792,7 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    na_mpi_op_id = (struct na_mpi_op_id *) *op_id;
+    na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_GET;
@@ -1850,7 +1849,7 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_rma_info);
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
     }
     return ret;
 }
@@ -2119,7 +2118,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_rma_info);
-        na_mpi_op_destroy(na_class, (na_op_id_t) na_mpi_op_id);
+        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
     }
     return ret;
 }
@@ -2381,13 +2380,13 @@ na_mpi_release(void *arg)
     if (na_mpi_op_id && !hg_atomic_get32(&na_mpi_op_id->completed)) {
         NA_LOG_WARNING("Releasing resources from an uncompleted operation");
     }
-    na_mpi_op_destroy(NULL, (na_op_id_t) na_mpi_op_id);
+    na_mpi_op_destroy(NULL, (na_op_id_t *) na_mpi_op_id);
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_mpi_cancel(
-    na_class_t *na_class, na_context_t NA_UNUSED *context, na_op_id_t op_id)
+    na_class_t *na_class, na_context_t NA_UNUSED *context, na_op_id_t *op_id)
 {
     struct na_mpi_op_id *na_mpi_op_id = (struct na_mpi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
