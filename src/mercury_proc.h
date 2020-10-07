@@ -56,6 +56,11 @@ typedef enum { HG_CRC16, HG_CRC32, HG_CRC64, HG_NOHASH } hg_proc_hash_t;
 #define HG_VERSION                                                             \
     ((HG_VERSION_MAJOR << 24) | (HG_VERSION_MINOR << 16) | HG_VERSION_PATCH)
 
+/**
+ * Operation flags.
+ */
+#define HG_PROC_SM (1 << 0)
+
 /* Branch predictor hints */
 #ifndef _WIN32
 #    ifndef likely
@@ -279,6 +284,27 @@ hg_proc_get_class(hg_proc_t proc);
  */
 static HG_INLINE hg_proc_op_t
 hg_proc_get_op(hg_proc_t proc);
+
+/**
+ * Set flags to be associated with the processor.
+ * Flags are reset after a call to hg_proc_reset().
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Non-negative flag value
+ */
+static HG_INLINE void
+hg_proc_set_flags(hg_proc_t proc, hg_uint8_t flags);
+
+/**
+ * Get the flags associated to the processor.
+ *
+ * \param proc [IN]             abstract processor object
+ *
+ * \return Non-negative flag value
+ */
+static HG_INLINE hg_uint8_t
+hg_proc_get_flags(hg_proc_t proc);
 
 /**
  * Get buffer size available for processing.
@@ -589,6 +615,7 @@ struct hg_proc {
     size_t checksum_size; /* Checksum size */
 #endif
     hg_proc_op_t op;
+    hg_uint8_t flags;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -603,6 +630,20 @@ static HG_INLINE hg_proc_op_t
 hg_proc_get_op(hg_proc_t proc)
 {
     return ((struct hg_proc *) proc)->op;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE void
+hg_proc_set_flags(hg_proc_t proc, hg_uint8_t flags)
+{
+    ((struct hg_proc *) proc)->flags = flags;
+}
+
+/*---------------------------------------------------------------------------*/
+static HG_INLINE hg_uint8_t
+hg_proc_get_flags(hg_proc_t proc)
+{
+    return ((struct hg_proc *) proc)->flags;
 }
 
 /*---------------------------------------------------------------------------*/
