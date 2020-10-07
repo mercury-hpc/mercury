@@ -26,7 +26,7 @@
 /* Local Macros */
 /****************/
 
-#define HG_POST_LIMIT_DEFAULT 256
+#define HG_POST_LIMIT_DEFAULT (256)
 
 #define HG_CONTEXT_CLASS(context)                                              \
     ((struct hg_private_class *) (context->hg_class))
@@ -596,6 +596,13 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     ret = hg_proc_reset(proc, buf, buf_size, HG_ENCODE);
     HG_CHECK_HG_ERROR(done, ret, "Could not reset proc");
 
+#ifdef HG_HAS_SM_ROUTING
+    /* Determine if we need special handling for SM */
+    if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
+        NA_ADDR_NULL)
+        hg_proc_set_flags(proc, HG_PROC_SM);
+#endif
+
     /* Encode parameters */
     ret = proc_cb(proc, struct_ptr);
     HG_CHECK_HG_ERROR(done, ret, "Could not encode parameters");
@@ -639,6 +646,13 @@ hg_set_struct(struct hg_private_handle *hg_handle,
         /* Reset proc */
         ret = hg_proc_reset(proc, buf, buf_size, HG_ENCODE);
         HG_CHECK_HG_ERROR(done, ret, "Could not reset proc");
+
+#ifdef HG_HAS_SM_ROUTING
+        /* Determine if we need special handling for SM */
+        if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
+            NA_ADDR_NULL)
+            hg_proc_set_flags(proc, HG_PROC_SM);
+#endif
 
         /* Encode extra_bulk_handle, we can do that safely here because
          * the user payload has been copied so we don't have to worry
@@ -1068,8 +1082,9 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 
     /* If we are listening, start posting requests */
     if (HG_Core_class_is_listening(hg_class->core_class)) {
-        hg_return_t ret = HG_Core_context_post(
-            hg_context->core_context, request_count, HG_TRUE);
+        /* TODO for SM make sure request count is at least 64? */
+        hg_return_t ret =
+            HG_Core_context_post(hg_context->core_context, request_count);
         HG_CHECK_HG_ERROR(error, ret, "Could not post context requests (%s)",
             HG_Error_to_string(ret));
     }
@@ -1492,7 +1507,7 @@ HG_Addr_free(hg_class_t *hg_class, hg_addr_t addr)
     HG_CHECK_ERROR(
         hg_class == NULL, done, ret, HG_INVALID_ARG, "NULL HG class");
 
-    ret = HG_Core_addr_free(hg_class->core_class, (hg_core_addr_t) addr);
+    ret = HG_Core_addr_free((hg_core_addr_t) addr);
     HG_CHECK_HG_ERROR(
         done, ret, "Could not free addr (%s)", HG_Error_to_string(ret));
 
@@ -1509,7 +1524,7 @@ HG_Addr_set_remove(hg_class_t *hg_class, hg_addr_t addr)
     HG_CHECK_ERROR(
         hg_class == NULL, done, ret, HG_INVALID_ARG, "NULL HG class");
 
-    ret = HG_Core_addr_set_remove(hg_class->core_class, (hg_core_addr_t) addr);
+    ret = HG_Core_addr_set_remove((hg_core_addr_t) addr);
     HG_CHECK_HG_ERROR(done, ret, "Could not set addr to be removed (%s)",
         HG_Error_to_string(ret));
 
@@ -1543,8 +1558,7 @@ HG_Addr_dup(hg_class_t *hg_class, hg_addr_t addr, hg_addr_t *new_addr)
     HG_CHECK_ERROR(
         hg_class == NULL, done, ret, HG_INVALID_ARG, "NULL HG class");
 
-    ret = HG_Core_addr_dup(hg_class->core_class, (hg_core_addr_t) addr,
-        (hg_core_addr_t *) new_addr);
+    ret = HG_Core_addr_dup((hg_core_addr_t) addr, (hg_core_addr_t *) new_addr);
     HG_CHECK_HG_ERROR(
         done, ret, "Could not dup addr (%s)", HG_Error_to_string(ret));
 
@@ -1560,8 +1574,7 @@ HG_Addr_cmp(hg_class_t *hg_class, hg_addr_t addr1, hg_addr_t addr2)
 
     HG_CHECK_ERROR_NORET(hg_class == NULL, done, "NULL HG class");
 
-    ret = HG_Core_addr_cmp(
-        hg_class->core_class, (hg_core_addr_t) addr1, (hg_core_addr_t) addr2);
+    ret = HG_Core_addr_cmp((hg_core_addr_t) addr1, (hg_core_addr_t) addr2);
 
 done:
     return ret;
@@ -1577,8 +1590,7 @@ HG_Addr_to_string(
     HG_CHECK_ERROR(
         hg_class == NULL, done, ret, HG_INVALID_ARG, "NULL HG class");
 
-    ret = HG_Core_addr_to_string(
-        hg_class->core_class, buf, buf_size, (hg_core_addr_t) addr);
+    ret = HG_Core_addr_to_string(buf, buf_size, (hg_core_addr_t) addr);
     HG_CHECK_HG_ERROR(done, ret, "Could not convert addr to string (%s)",
         HG_Error_to_string(ret));
 

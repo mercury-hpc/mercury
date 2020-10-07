@@ -187,6 +187,9 @@ hg_proc_reset(hg_proc_t proc, void *buf, hg_size_t buf_size, hg_proc_op_t op)
     }
 #endif
 
+    /* Reset flags */
+    hg_proc->flags = 0;
+
     /* Reset proc buf */
     hg_proc->proc_buf.buf = buf;
     hg_proc->proc_buf.size = buf_size;
