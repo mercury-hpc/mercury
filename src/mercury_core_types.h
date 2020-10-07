@@ -89,6 +89,11 @@ typedef enum {
                   request */
 } hg_proc_op_t;
 
+/**
+ * Encode/decode operation flags.
+ */
+#define HG_CORE_SM (1 << 0)
+
 /*****************/
 /* Public Macros */
 /*****************/

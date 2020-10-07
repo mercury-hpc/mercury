@@ -204,7 +204,7 @@ hg_core_header_request_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     if (op == HG_ENCODE) {
         HG_CORE_HEADER_PROC_TYPE(buf_ptr, header->hash.header, hg_uint16_t, op);
     } else { /* HG_DECODE */
-        hg_uint16_t h_hash_header;
+        hg_uint16_t h_hash_header = 0;
 
         HG_CORE_HEADER_PROC_TYPE(buf_ptr, h_hash_header, hg_uint16_t, op);
         HG_CHECK_ERROR(header->hash.header != h_hash_header, done, ret,
@@ -253,7 +253,7 @@ hg_core_header_response_proc(hg_proc_op_t op, void *buf, size_t buf_size,
     if (op == HG_ENCODE) {
         HG_CORE_HEADER_PROC_TYPE(buf_ptr, header->hash.header, hg_uint16_t, op);
     } else { /* HG_DECODE */
-        hg_uint16_t h_hash_header;
+        hg_uint16_t h_hash_header = 0;
 
         HG_CORE_HEADER_PROC_TYPE(buf_ptr, h_hash_header, hg_uint16_t, op);
         HG_CHECK_ERROR(header->hash.header != h_hash_header, done, ret,
