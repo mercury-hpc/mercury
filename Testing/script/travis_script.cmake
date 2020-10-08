@@ -129,10 +129,16 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "UndefinedBehaviorSanitizer")
     # Must add verbosity / Error in build if no memory output file is produced
     set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
+    # Disable checksums to prevent output from checksum library
+    set(USE_CHECKSUMS OFF)
+  else()
+    set(USE_CHECKSUMS ON)
   endif()
 
   # needed by mercury_common.cmake
   set(dashboard_do_memcheck TRUE)
+else()
+  set(USE_CHECKSUMS ON)
 endif()
 
 # Build name referenced in cdash
@@ -180,6 +186,7 @@ COVERAGE_COMMAND:FILEPATH=${CTEST_COVERAGE_COMMAND}
 MERCURY_ENABLE_COVERAGE:BOOL=${dashboard_do_coverage}
 MERCURY_ENABLE_DEBUG:BOOL=${enable_debug}
 MERCURY_USE_BOOST_PP:BOOL=OFF
+MERCURY_USE_CHECKSUMS:BOOL=${USE_CHECKSUMS}
 MERCURY_USE_SELF_FORWARD:BOOL=ON
 MERCURY_USE_XDR:BOOL=OFF
 NA_USE_BMI:BOOL=${USE_BMI}
