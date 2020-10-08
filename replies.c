@@ -66,12 +66,12 @@ ep_close(ucp_worker_h worker, ucp_ep_h ep)
 }
 
 static void
-run_client(ucp_worker_h worker, ucp_address_t *local_addr,
-    size_t local_addr_len, ucp_address_t *remote_addr,
-    size_t remote_addr_len)
+run_client(ucp_worker_h worker, size_t request_size,
+    ucp_address_t *local_addr, size_t local_addr_len,
+    ucp_address_t *remote_addr, size_t remote_addr_len)
 {
     rxring_t rring;
-    rxdesc_t *rdesc = &rring.desc[0];
+    rxdesc_t *rdesc;
     ucs_status_t status;
     void *request;
     ucp_ep_h remote_ep;
@@ -98,7 +98,8 @@ run_client(ucp_worker_h worker, ucp_address_t *local_addr,
     if ((status = ucp_ep_create(worker, &ep_params, &remote_ep)) != UCS_OK)
         errx(EXIT_FAILURE, "client %s: ucp_ep_create", __func__);
 
-    rxring_init(worker, &rring, wireup_tag, UINT64_MAX, sizeof(wireup_msg_t));
+    rxring_init(worker, &rring, request_size,
+        wireup_tag, UINT64_MAX, sizeof(wireup_msg_t), 3);
 
     req->op = OP_REQ;
     req->sender_ep_idx = 0;
@@ -124,7 +125,7 @@ run_client(ucp_worker_h worker, ucp_address_t *local_addr,
 
     free(req);
 
-    while (!rdesc->completed)
+    while ((rdesc = rxring_next(&rring)) == NULL)
         ucp_worker_progress(worker);
 
     reply = rdesc->buf;
@@ -219,22 +220,18 @@ process_rx_msg(ucp_worker_h worker, ucp_tag_t tag, void *buf, size_t buflen)
 }
 
 static void
-run_server(ucp_worker_h worker)
+run_server(ucp_worker_h worker, size_t request_size)
 {
     rxring_t rring;
-    const size_t ndescs = NELTS(rring.desc);
-    int i;
 
-    rxring_init(worker, &rring, wireup_tag, UINT64_MAX,
-        sizeof(wireup_msg_t) + 93);
+    rxring_init(worker, &rring, request_size, wireup_tag, UINT64_MAX,
+        sizeof(wireup_msg_t) + 93, 3);
 
-    for (i = 0; ; i = (i + 1) % ndescs) {
-        rxdesc_t *rdesc = &rring.desc[i];
+    for (;;) {
+        rxdesc_t *rdesc;
 
-        while (!rdesc->completed)
+        while ((rdesc = rxring_next(&rring)) == NULL)
             ucp_worker_progress(worker);
-
-        assert(rdesc->request == NULL);
 
         if (rdesc->status == UCS_OK) {
             printf("received %zu-byte message tagged %" PRIu64
@@ -242,6 +239,8 @@ run_server(ucp_worker_h worker)
             process_rx_msg(worker, rdesc->sender_tag, rdesc->buf, rdesc->rxlen);
         } else if (rdesc->status == UCS_ERR_MESSAGE_TRUNCATED) {
             const size_t hdrlen = offsetof(wireup_msg_t, addr[0]);
+            printf("%s: truncated desc %p buf %p buflen %zu\n", __func__,
+               (void *)rdesc, rdesc->buf, rdesc->buflen);
             size_t buflen = rdesc->buflen;
             void * const buf = rdesc->buf, *nbuf;
             /* Twice the message length is twice the header length plus
@@ -280,9 +279,13 @@ main(int argc, char **argv)
     ucp_address_t *remote_addr;
     size_t i, local_addr_len, remote_addr_len;
     const char *delim = "";
+    ucp_context_attr_t context_attrs;
     ucp_params_t global_params = {
-      .field_mask = UCP_PARAM_FIELD_FEATURES
+      .field_mask = UCP_PARAM_FIELD_FEATURES | UCP_PARAM_FIELD_REQUEST_SIZE |
+                    UCP_PARAM_FIELD_REQUEST_INIT
     , .features = UCP_FEATURE_TAG | UCP_FEATURE_RMA
+    , .request_size = sizeof(rxdesc_t)
+    , .request_init = rxdesc_init
     };
     ucp_worker_params_t worker_params = {
       .field_mask = UCP_WORKER_PARAM_FIELD_THREAD_MODE
@@ -313,6 +316,15 @@ main(int argc, char **argv)
     if (status != UCS_OK)
         errx(EXIT_FAILURE, "%s: ucp_init", __func__);
 
+    context_attrs.field_mask = UCP_ATTR_FIELD_REQUEST_SIZE;
+    status = ucp_context_query(context, &context_attrs);
+
+    if (status != UCS_OK)
+        errx(EXIT_FAILURE, "%s: ucp_context_query", __func__);
+
+    if ((context_attrs.field_mask & UCP_ATTR_FIELD_REQUEST_SIZE) == 0)
+        errx(EXIT_FAILURE, "context attributes contain no request size");
+
     status = ucp_worker_create(context, &worker_params, &worker);
     if (status != UCS_OK) {
         warnx("%s: ucp_worker_create", __func__);
@@ -333,11 +345,11 @@ main(int argc, char **argv)
     printf("\n");
 
     if (remote_addr != NULL) {      /* * * client mode * * */
-        run_client(worker, local_addr, local_addr_len,
-            remote_addr, remote_addr_len);
+        run_client(worker, context_attrs.request_size,
+            local_addr, local_addr_len, remote_addr, remote_addr_len);
         free(remote_addr);
     } else {                        /* * * server mode * * */
-        run_server(worker);
+        run_server(worker, context_attrs.request_size);
     }
 
     ucp_worker_release_address(worker, local_addr);
