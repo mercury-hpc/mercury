@@ -1,8 +1,8 @@
 #!/bin/bash
 
 BMI_VERSION=master
-CMAKE_VERSION_MAJOR=3.17
-CMAKE_VERSION_MINOR=3
+CMAKE_VERSION_MAJOR=3.18
+CMAKE_VERSION_MINOR=4
 MPI_VERSION=3.3.2
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Tsan' ]]; then
   OFI_CFLAGS="-O1 -g -fsanitize=thread"
@@ -12,7 +12,7 @@ if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
   OFI_EXTRA_FLAGS="--enable-debug"
 fi
 #OFI_PR=
-OFI_VERSION=1.11.0
+OFI_VERSION=1.11.1rc1
 PREFIX=$HOME/install
 
 set -e
