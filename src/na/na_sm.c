@@ -4693,6 +4693,15 @@ na_sm_progress(
             NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret,
                 na_sm_errno_to_na(errno), "hg_poll_wait() failed");
 
+            if (nevents == 1 && (events[0].events & HG_POLLINTR)) {
+                NA_LOG_DEBUG("Interrupted");
+                if (timeout) {
+                    hg_time_get_current_ms(&t2);
+                    remaining -= hg_time_diff(t2, t1);
+                }
+                continue;
+            }
+
             /* Process events */
             for (i = 0; i < nevents; i++) {
                 struct na_sm_addr *poll_addr = NULL;
