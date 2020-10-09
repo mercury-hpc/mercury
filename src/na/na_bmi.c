@@ -982,12 +982,19 @@ na_bmi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) dest_addr;
     bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    na_bmi_op_id = (struct na_bmi_op_id *) op_id;
-    hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(!hg_atomic_get32(&na_bmi_op_id->completed), done, ret,
+        NA_BUSY, "Attempting to use OP ID that was not completed");
+    /* Make sure op ID is fully released before re-using it */
+    while (hg_atomic_cas32(&na_bmi_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+        cpu_spinwait();
+
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_SEND_UNEXPECTED;
     na_bmi_op_id->callback = callback;
@@ -1029,11 +1036,18 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     void NA_UNUSED *plugin_data, na_op_id_t *op_id)
 {
     struct na_bmi_unexpected_info *unexpected_info = NULL;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
 
-    na_bmi_op_id = (struct na_bmi_op_id *) op_id;
-    hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(!hg_atomic_get32(&na_bmi_op_id->completed), done, ret,
+        NA_BUSY, "Attempting to use OP ID that was not completed");
+    /* Make sure op ID is fully released before re-using it */
+    while (hg_atomic_cas32(&na_bmi_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+        cpu_spinwait();
+
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_RECV_UNEXPECTED;
     na_bmi_op_id->callback = callback;
@@ -1043,15 +1057,6 @@ na_bmi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_bmi_op_id->info.recv_unexpected.buf_size = (bmi_size_t) buf_size;
     na_bmi_op_id->info.recv_unexpected.unexpected_info = NULL;
     na_bmi_op_id->cancel = 0;
-
-    /* Try to make progress here from the BMI unexpected queue */
-    do {
-        ret = na_bmi_progress_unexpected(na_class, context, 0);
-        if (ret != NA_SUCCESS && ret != NA_TIMEOUT) {
-            NA_LOG_ERROR("Could not check BMI unexpected message queue");
-            goto done;
-        }
-    } while (ret == NA_SUCCESS);
 
     /* Look for an unexpected message already received */
     unexpected_info = na_bmi_msg_unexpected_pop(na_class);
@@ -1173,12 +1178,19 @@ na_bmi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) dest_addr;
     bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    na_bmi_op_id = (struct na_bmi_op_id *) op_id;
-    hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(!hg_atomic_get32(&na_bmi_op_id->completed), done, ret,
+        NA_BUSY, "Attempting to use OP ID that was not completed");
+    /* Make sure op ID is fully released before re-using it */
+    while (hg_atomic_cas32(&na_bmi_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+        cpu_spinwait();
+
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_SEND_EXPECTED;
     na_bmi_op_id->callback = callback;
@@ -1224,12 +1236,19 @@ na_bmi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     bmi_size_t bmi_buf_size = (bmi_size_t) buf_size;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) source_addr;
     bmi_msg_tag_t bmi_tag = (bmi_msg_tag_t) tag;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    na_bmi_op_id = (struct na_bmi_op_id *) op_id;
-    hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(!hg_atomic_get32(&na_bmi_op_id->completed), done, ret,
+        NA_BUSY, "Attempting to use OP ID that was not completed");
+    /* Make sure op ID is fully released before re-using it */
+    while (hg_atomic_cas32(&na_bmi_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+        cpu_spinwait();
+
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_RECV_EXPECTED;
     na_bmi_op_id->callback = callback;
@@ -1403,7 +1422,7 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     bmi_size_t bmi_remote_offset = (bmi_size_t) remote_offset;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) remote_addr;
     bmi_size_t bmi_length = (bmi_size_t) length;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     struct na_bmi_rma_info *na_bmi_rma_info = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
@@ -1422,8 +1441,15 @@ na_bmi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    na_bmi_op_id = (struct na_bmi_op_id *) op_id;
-    hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(!hg_atomic_get32(&na_bmi_op_id->completed), done, ret,
+        NA_BUSY, "Attempting to use OP ID that was not completed");
+    /* Make sure op ID is fully released before re-using it */
+    while (hg_atomic_cas32(&na_bmi_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+        cpu_spinwait();
+
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_PUT;
     na_bmi_op_id->callback = callback;
@@ -1531,7 +1557,7 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     bmi_size_t bmi_remote_offset = (bmi_size_t) remote_offset;
     struct na_bmi_addr *na_bmi_addr = (struct na_bmi_addr *) remote_addr;
     bmi_size_t bmi_length = (bmi_size_t) length;
-    struct na_bmi_op_id *na_bmi_op_id = NULL;
+    struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
     struct na_bmi_rma_info *na_bmi_rma_info = NULL;
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
@@ -1550,8 +1576,15 @@ na_bmi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
             goto done;
     }
 
-    na_bmi_op_id = (struct na_bmi_op_id *) op_id;
-    hg_atomic_incr32(&na_bmi_op_id->ref_count);
+    /* Check op_id */
+    NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
+        "Invalid operation ID");
+    NA_CHECK_ERROR(!hg_atomic_get32(&na_bmi_op_id->completed), done, ret,
+        NA_BUSY, "Attempting to use OP ID that was not completed");
+    /* Make sure op ID is fully released before re-using it */
+    while (hg_atomic_cas32(&na_bmi_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
+        cpu_spinwait();
+
     na_bmi_op_id->context = context;
     na_bmi_op_id->type = NA_CB_GET;
     na_bmi_op_id->callback = callback;
