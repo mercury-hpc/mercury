@@ -40,6 +40,7 @@
 #    include <ftw.h>
 #    include <pwd.h>
 #    include <sys/mman.h>
+#    include <sys/resource.h>
 #    include <sys/socket.h>
 #    include <sys/stat.h>
 #    include <sys/types.h>
@@ -82,6 +83,11 @@
 
 /* Max number of peers */
 #define NA_SM_MAX_PEERS (NA_CONTEXT_ID_MAX + 1)
+
+/* Addr status bits */
+#define NA_SM_ADDR_RESERVED   (1 << 0)
+#define NA_SM_ADDR_CMD_PUSHED (1 << 1)
+#define NA_SM_ADDR_RESOLVED   (1 << 2)
 
 /* Msg sizes */
 #define NA_SM_UNEXPECTED_SIZE NA_SM_COPY_BUF_SIZE
@@ -242,6 +248,7 @@ struct na_sm_addr {
     na_sm_poll_type_t tx_poll_type;     /* Tx poll type */
     na_sm_poll_type_t rx_poll_type;     /* Rx poll type */
     hg_atomic_int32_t ref_count;        /* Ref count */
+    hg_atomic_int32_t status;           /* Status bits */
     pid_t pid;                          /* PID */
     na_uint8_t id;                      /* SM ID */
     na_uint8_t queue_pair_idx;          /* Shared queue pair index */
@@ -263,7 +270,6 @@ struct na_sm_map {
 /* Map insert cb args */
 struct na_sm_lookup_args {
     struct na_sm_endpoint *endpoint;
-    const char *username;
     pid_t pid;
     na_uint8_t id;
 };
@@ -346,6 +352,8 @@ struct na_sm_endpoint {
     hg_poll_set_t *poll_set;                   /* Poll set */
     int sock;                                  /* Sock fd */
     na_sm_poll_type_t sock_poll_type;          /* Sock poll type */
+    hg_atomic_int32_t nofile;                  /* Number of opened fds */
+    na_uint32_t nofile_max;                    /* Max number of fds */
     na_bool_t listen;                          /* Listen on sock */
 };
 
@@ -360,7 +368,6 @@ struct na_sm_class {
     char *username;                 /* Username */
     na_size_t iov_max;              /* Max number of IOVs */
     na_uint8_t context_max;         /* Max number of contexts */
-    na_bool_t no_wait;              /* Ignore wait object */
 };
 
 /********************/
@@ -572,7 +579,8 @@ na_sm_poll_deregister(hg_poll_set_t *poll_set, int fd);
  */
 static na_return_t
 na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
-    pid_t pid, na_uint8_t id, na_bool_t listen, na_bool_t no_wait);
+    pid_t pid, na_uint8_t id, na_bool_t listen, na_bool_t no_wait,
+    na_uint32_t nofile_max);
 
 /**
  * Close shared-memory endpoint.
@@ -617,16 +625,28 @@ na_sm_addr_lookup_insert_cb(void *arg, struct na_sm_addr **addr);
  * Create new address.
  */
 static na_return_t
-na_sm_addr_create(struct na_sm_endpoint *na_sm_endpoint,
-    struct na_sm_region *shared_region, pid_t pid, na_uint8_t id,
-    na_uint8_t queue_pair_idx, int tx_notify, int rx_notify,
-    na_bool_t unexpected, struct na_sm_addr **addr);
+na_sm_addr_create(
+    pid_t pid, na_uint8_t id, na_bool_t unexpected, struct na_sm_addr **addr);
 
 /**
  * Destroy address.
  */
 static na_return_t
 na_sm_addr_destroy(struct na_sm_endpoint *na_sm_endpoint, const char *username,
+    struct na_sm_addr *na_sm_addr);
+
+/**
+ * Resolve address.
+ */
+static na_return_t
+na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
+    struct na_sm_addr *na_sm_addr);
+
+/**
+ * Release address.
+ */
+static na_return_t
+na_sm_addr_release(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     struct na_sm_addr *na_sm_addr);
 
 /**
@@ -671,6 +691,12 @@ na_sm_buf_copy_from(struct na_sm_copy_buf *na_sm_copy_buf, unsigned int index,
     void *dest, size_t n);
 
 /**
+ * Push operation for retry.
+ */
+static NA_INLINE void
+na_sm_op_retry(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id);
+
+/**
  * Get IOV index and offset pair from an absolute offset.
  */
 static NA_INLINE void
@@ -694,11 +720,32 @@ na_sm_iov_translate(const struct iovec *iov, unsigned long iovcnt,
     struct iovec *new_iov, unsigned long new_iovcnt);
 
 /**
+ * Poll waiting for timeout milliseconds.
+ */
+static na_return_t
+na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
+    const char *username, unsigned int timeout, na_bool_t *progressed_ptr);
+
+/**
+ * Poll without waiting.
+ */
+static na_return_t
+na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, const char *username,
+    na_bool_t *progressed_ptr);
+
+/**
  * Progress on endpoint sock.
  */
 static na_return_t
 na_sm_progress_sock(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     na_bool_t *progressed);
+
+/**
+ * Progress cmd queue.
+ */
+static na_return_t
+na_sm_progress_cmd_queue(struct na_sm_endpoint *na_sm_endpoint,
+    const char *username, na_bool_t *progressed);
 
 /**
  * Process cmd.
@@ -745,7 +792,8 @@ na_sm_process_expected(struct na_sm_op_queue *expected_op_queue,
  * Process retries.
  */
 static na_return_t
-na_sm_process_retries(struct na_sm_op_queue *retry_op_queue);
+na_sm_process_retries(
+    struct na_sm_endpoint *na_sm_endpoint, const char *username);
 
 /**
  * Complete operation.
@@ -1881,7 +1929,8 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
-    pid_t pid, na_uint8_t id, na_bool_t listen, na_bool_t no_wait)
+    pid_t pid, na_uint8_t id, na_bool_t listen, na_bool_t no_wait,
+    na_uint32_t nofile_max)
 {
     struct na_sm_region *shared_region = NULL;
     na_uint8_t queue_pair_idx = 0;
@@ -1904,6 +1953,10 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 
     HG_QUEUE_INIT(&na_sm_endpoint->retry_op_queue.queue);
     hg_thread_spin_init(&na_sm_endpoint->retry_op_queue.lock);
+
+    /* Initialize number of fds */
+    hg_atomic_init32(&na_sm_endpoint->nofile, 0);
+    na_sm_endpoint->nofile_max = nofile_max;
 
     /* Initialize poll addr list */
     HG_LIST_INIT(&na_sm_endpoint->poll_addr_list.list);
@@ -1934,10 +1987,12 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
         na_sm_endpoint->poll_set = hg_poll_create();
         NA_CHECK_ERROR(na_sm_endpoint->poll_set == NULL, error, ret,
             na_sm_errno_to_na(errno), "Cannot create poll set");
+        hg_atomic_incr32(&na_sm_endpoint->nofile);
 
         /* Create endpoint sock */
         ret = na_sm_sock_open(username, pid, id, listen, &na_sm_endpoint->sock);
         NA_CHECK_NA_ERROR(error, ret, "Could not open sock");
+        hg_atomic_incr32(&na_sm_endpoint->nofile);
 
         if (listen) {
             na_sm_endpoint->sock_poll_type = NA_SM_POLL_SOCK;
@@ -1954,17 +2009,28 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
         tx_notify = hg_event_create();
         NA_CHECK_ERROR(tx_notify == -1, error, ret, na_sm_errno_to_na(errno),
             "hg_event_create() failed");
+        hg_atomic_incr32(&na_sm_endpoint->nofile);
     } else {
         na_sm_endpoint->sock = -1;
     }
 
     /* Allocate source address */
-    ret = na_sm_addr_create(na_sm_endpoint, shared_region, pid, id,
-        queue_pair_idx, tx_notify, -1, NA_FALSE, &na_sm_endpoint->source_addr);
+    ret = na_sm_addr_create(pid, id, NA_FALSE, &na_sm_endpoint->source_addr);
     NA_CHECK_NA_ERROR(error, ret, "Could not allocate source address");
+
+    if (listen) {
+        na_sm_endpoint->source_addr->queue_pair_idx = queue_pair_idx;
+        na_sm_endpoint->source_addr->shared_region = shared_region;
+
+        na_sm_endpoint->source_addr->tx_queue =
+            &shared_region->queue_pairs[queue_pair_idx].tx_queue;
+        na_sm_endpoint->source_addr->rx_queue =
+            &shared_region->queue_pairs[queue_pair_idx].rx_queue;
+    }
 
     /* Add source tx notify to poll set for local notifications */
     if (!no_wait) {
+        na_sm_endpoint->source_addr->tx_notify = tx_notify;
         na_sm_endpoint->source_addr->tx_poll_type = NA_SM_POLL_TX_NOTIFY;
         NA_LOG_DEBUG("Registering tx notify %d for polling", tx_notify);
         ret = na_sm_poll_register(na_sm_endpoint->poll_set, tx_notify,
@@ -1977,8 +2043,10 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 error:
     if (na_sm_endpoint->source_addr)
         free(na_sm_endpoint->source_addr);
-    if (tx_notify > 0)
+    if (tx_notify > 0) {
         hg_event_destroy(tx_notify);
+        hg_atomic_decr32(&na_sm_endpoint->nofile);
+    }
     if (sock_registered) {
         err_ret = na_sm_poll_deregister(
             na_sm_endpoint->poll_set, na_sm_endpoint->sock);
@@ -1989,9 +2057,12 @@ error:
         err_ret =
             na_sm_sock_close(username, pid, id, listen, na_sm_endpoint->sock);
         NA_CHECK_ERROR_DONE(err_ret != NA_SUCCESS, "na_sm_sock_close() failed");
+        hg_atomic_decr32(&na_sm_endpoint->nofile);
     }
-    if (na_sm_endpoint->poll_set)
+    if (na_sm_endpoint->poll_set) {
         hg_poll_destroy(na_sm_endpoint->poll_set);
+        hg_atomic_decr32(&na_sm_endpoint->nofile);
+    }
     if (queue_pair_reserved)
         na_sm_queue_pair_release(shared_region, queue_pair_idx);
     if (shared_region)
@@ -2093,6 +2164,7 @@ na_sm_endpoint_close(
             rc = hg_event_destroy(source_addr->tx_notify);
             NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret,
                 na_sm_errno_to_na(errno), "hg_event_destroy() failed");
+            hg_atomic_decr32(&na_sm_endpoint->nofile);
         }
         if (na_sm_endpoint->sock > 0) {
             if (na_sm_endpoint->listen) {
@@ -2103,6 +2175,7 @@ na_sm_endpoint_close(
             ret = na_sm_sock_close(username, source_addr->pid, source_addr->id,
                 na_sm_endpoint->listen, na_sm_endpoint->sock);
             NA_CHECK_NA_ERROR(done, ret, "na_sm_sock_close() failed");
+            hg_atomic_decr32(&na_sm_endpoint->nofile);
 
             na_sm_endpoint->sock = -1;
         }
@@ -2114,6 +2187,7 @@ na_sm_endpoint_close(
         int rc = hg_poll_destroy(na_sm_endpoint->poll_set);
         NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret,
             na_sm_errno_to_na(errno), "hg_poll_destroy() failed");
+        hg_atomic_decr32(&na_sm_endpoint->nofile);
 
         na_sm_endpoint->poll_set = NULL;
     }
@@ -2123,6 +2197,11 @@ na_sm_endpoint_close(
         hg_hash_table_free(na_sm_endpoint->addr_map.map);
         hg_thread_rwlock_destroy(&na_sm_endpoint->addr_map.lock);
     }
+
+    /* Check that all fds have been freed */
+    NA_CHECK_ERROR(hg_atomic_get32(&na_sm_endpoint->nofile) != 0, done, ret,
+        NA_BUSY, "File descriptors remain opened on this endpoint (nofile=%d)",
+        hg_atomic_get32(&na_sm_endpoint->nofile));
 
     /* Destroy mutexes */
     hg_thread_spin_destroy(&na_sm_endpoint->unexpected_msg_queue.lock);
@@ -2275,60 +2354,11 @@ na_sm_addr_lookup_insert_cb(void *arg, struct na_sm_addr **addr)
 {
     struct na_sm_lookup_args *args = (struct na_sm_lookup_args *) arg;
     struct na_sm_addr *na_sm_addr = NULL;
-    na_uint8_t queue_pair_idx = 0;
-    na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
-    struct na_sm_region *shared_region = NULL;
-    na_bool_t queue_pair_reserved = NA_FALSE;
-    int tx_notify = -1, rx_notify = -1;
     na_return_t ret = NA_SUCCESS;
-    int rc;
-
-    /* Open shm region */
-    ret = na_sm_region_open(
-        args->username, args->pid, args->id, NA_FALSE, &shared_region);
-    NA_CHECK_NA_ERROR(error, ret, "Could not open shared-memory region");
-
-    /* Reserve queue pair */
-    ret = na_sm_queue_pair_reserve(shared_region, &queue_pair_idx);
-    NA_CHECK_NA_ERROR(error, ret, "Could not reserve queue pair");
-    queue_pair_reserved = NA_TRUE;
-
-    /* Fill cmd header */
-    cmd_hdr.hdr.type = NA_SM_RESERVED;
-    cmd_hdr.hdr.pid = (unsigned int) args->endpoint->source_addr->pid;
-    cmd_hdr.hdr.id = args->endpoint->source_addr->id & 0xff;
-    cmd_hdr.hdr.pair_idx = queue_pair_idx & 0xff;
-
-    /* Do not create signals if not waiting */
-    if (args->endpoint->poll_set) {
-        /* Create tx event */
-        ret = na_sm_event_create(args->username, args->pid, args->id,
-            queue_pair_idx, 't', &tx_notify);
-        NA_CHECK_NA_ERROR(error, ret, "Could not create event");
-
-        /* Create rx event */
-        ret = na_sm_event_create(args->username, args->pid, args->id,
-            queue_pair_idx, 'r', &rx_notify);
-        NA_CHECK_NA_ERROR(error, ret, "Could not create event");
-
-        /* Send events to remote process */
-        ret = na_sm_addr_event_send(args->endpoint->sock, args->username,
-            args->pid, args->id, cmd_hdr, tx_notify, rx_notify, NA_FALSE);
-        NA_CHECK_NA_ERROR(error, ret, "Could not send addr events");
-    } else {
-        NA_LOG_DEBUG("Pushing cmd with %d for %d/%" SCNu8 "/%" SCNu8 " val=%lu",
-            cmd_hdr.hdr.type, cmd_hdr.hdr.pid, cmd_hdr.hdr.id,
-            cmd_hdr.hdr.pair_idx, cmd_hdr.val);
-
-        /* TODO would be nice to also do that with poll set */
-        rc = na_sm_cmd_queue_push(&shared_region->cmd_queue, cmd_hdr);
-        NA_CHECK_ERROR(rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
-    }
 
     /* Allocate address */
-    ret = na_sm_addr_create(args->endpoint, shared_region, args->pid, args->id,
-        queue_pair_idx, tx_notify, rx_notify, NA_FALSE, &na_sm_addr);
-    NA_CHECK_NA_ERROR(error, ret, "Could not allocate address");
+    ret = na_sm_addr_create(args->pid, args->id, NA_FALSE, &na_sm_addr);
+    NA_CHECK_NA_ERROR(done, ret, "Could not allocate address");
 
     /* Add address to list of addresses to poll */
     hg_thread_spin_lock(&args->endpoint->poll_addr_list.lock);
@@ -2338,44 +2368,14 @@ na_sm_addr_lookup_insert_cb(void *arg, struct na_sm_addr **addr)
 
     *addr = na_sm_addr;
 
-    return ret;
-
-error:
-    if (shared_region) {
-        na_return_t err_ret;
-
-        if (queue_pair_reserved) {
-            na_sm_queue_pair_release(shared_region, queue_pair_idx);
-
-            if (tx_notify > 0) {
-                err_ret = na_sm_event_destroy(args->username, args->pid,
-                    args->id, queue_pair_idx, 't', NA_TRUE, tx_notify);
-                NA_CHECK_ERROR_DONE(
-                    err_ret != NA_SUCCESS, "na_sm_event_destroy() failed");
-            }
-            if (rx_notify > 0) {
-                err_ret = na_sm_event_destroy(args->username, args->pid,
-                    args->id, queue_pair_idx, 'r', NA_TRUE, rx_notify);
-                NA_CHECK_ERROR_DONE(
-                    err_ret != NA_SUCCESS, "na_sm_event_destroy() failed");
-            }
-        }
-
-        err_ret = na_sm_region_close(
-            args->username, args->pid, args->id, NA_FALSE, shared_region);
-        NA_CHECK_ERROR_DONE(
-            err_ret != NA_SUCCESS, "Could not close shared-memory region");
-    }
-
+done:
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_addr_create(struct na_sm_endpoint *na_sm_endpoint,
-    struct na_sm_region *shared_region, pid_t pid, na_uint8_t id,
-    na_uint8_t queue_pair_idx, int tx_notify, int rx_notify,
-    na_bool_t unexpected, struct na_sm_addr **addr)
+na_sm_addr_create(
+    pid_t pid, na_uint8_t id, na_bool_t unexpected, struct na_sm_addr **addr)
 {
     struct na_sm_addr *na_sm_addr = NULL;
     na_return_t ret = NA_SUCCESS;
@@ -2387,48 +2387,15 @@ na_sm_addr_create(struct na_sm_endpoint *na_sm_endpoint,
     memset(na_sm_addr, 0, sizeof(struct na_sm_addr));
     na_sm_addr->unexpected = unexpected;
     hg_atomic_init32(&na_sm_addr->ref_count, 1);
+    hg_atomic_init32(&na_sm_addr->status, 0);
 
     /* Assign PID/ID */
     na_sm_addr->pid = pid;
     na_sm_addr->id = id;
 
-    /* Assign queue pair index / shared region */
-    na_sm_addr->queue_pair_idx = queue_pair_idx;
-    na_sm_addr->shared_region = shared_region;
-
-    if (!unexpected) {
-        /* Simply assign queues (source address may not have shared region) */
-        na_sm_addr->tx_queue =
-            shared_region ? &shared_region->queue_pairs[queue_pair_idx].tx_queue
-                          : NULL;
-        na_sm_addr->rx_queue =
-            shared_region ? &shared_region->queue_pairs[queue_pair_idx].rx_queue
-                          : NULL;
-
-        /* Simply assign notify descriptors */
-        na_sm_addr->tx_notify = tx_notify;
-        na_sm_addr->rx_notify = rx_notify;
-    } else {
-        /* Invert queues so that local rx is remote tx */
-        na_sm_addr->tx_queue =
-            &shared_region->queue_pairs[queue_pair_idx].rx_queue;
-        na_sm_addr->rx_queue =
-            &shared_region->queue_pairs[queue_pair_idx].tx_queue;
-
-        /* Invert descriptors so that local rx is remote tx */
-        na_sm_addr->tx_notify = rx_notify;
-        na_sm_addr->rx_notify = tx_notify;
-    }
-
-    if (na_sm_endpoint->poll_set && (na_sm_addr->rx_notify > 0)) {
-        na_sm_addr->rx_poll_type = NA_SM_POLL_RX_NOTIFY;
-        NA_LOG_DEBUG(
-            "Registering rx notify %d for polling", na_sm_addr->rx_notify);
-        /* Add remote rx notify to poll set */
-        ret = na_sm_poll_register(na_sm_endpoint->poll_set,
-            na_sm_addr->rx_notify, &na_sm_addr->rx_poll_type);
-        NA_CHECK_NA_ERROR(done, ret, "Could not add rx notify to poll set");
-    }
+    /* Default values */
+    na_sm_addr->tx_notify = -1;
+    na_sm_addr->rx_notify = -1;
 
     *addr = na_sm_addr;
 
@@ -2439,6 +2406,156 @@ done:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_sm_addr_destroy(struct na_sm_endpoint *na_sm_endpoint, const char *username,
+    struct na_sm_addr *na_sm_addr)
+{
+    na_return_t ret = NA_SUCCESS;
+
+    if (na_sm_addr->shared_region) {
+        ret = na_sm_addr_release(na_sm_endpoint, username, na_sm_addr);
+        NA_CHECK_NA_ERROR(done, ret, "Could not release NA SM addr");
+    }
+
+    free(na_sm_addr);
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
+    struct na_sm_addr *na_sm_addr)
+{
+    na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    /* Open shm region */
+    if (!na_sm_addr->shared_region) {
+        ret = na_sm_region_open(username, na_sm_addr->pid, na_sm_addr->id,
+            NA_FALSE, &na_sm_addr->shared_region);
+        NA_CHECK_NA_ERROR(error, ret, "Could not open shared-memory region");
+    }
+
+    /* Reserve queue pair */
+    if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESERVED)) {
+        ret = na_sm_queue_pair_reserve(
+            na_sm_addr->shared_region, &na_sm_addr->queue_pair_idx);
+        NA_CHECK_NA_ERROR(error, ret, "Could not reserve queue pair");
+        hg_atomic_or32(&na_sm_addr->status, NA_SM_ADDR_RESERVED);
+
+        na_sm_addr->tx_queue =
+            &na_sm_addr->shared_region->queue_pairs[na_sm_addr->queue_pair_idx]
+                 .tx_queue;
+        na_sm_addr->rx_queue =
+            &na_sm_addr->shared_region->queue_pairs[na_sm_addr->queue_pair_idx]
+                 .rx_queue;
+    }
+
+    /* Fill cmd header */
+    cmd_hdr.hdr.type = NA_SM_RESERVED;
+    cmd_hdr.hdr.pid = (unsigned int) na_sm_endpoint->source_addr->pid;
+    cmd_hdr.hdr.id = na_sm_endpoint->source_addr->id & 0xff;
+    cmd_hdr.hdr.pair_idx = na_sm_addr->queue_pair_idx & 0xff;
+
+    NA_LOG_DEBUG("Pushing cmd with %d for %d/%" SCNu8 "/%" SCNu8 " val=%lu",
+        cmd_hdr.hdr.type, cmd_hdr.hdr.pid, cmd_hdr.hdr.id, cmd_hdr.hdr.pair_idx,
+        cmd_hdr.val);
+
+    /* Push cmd to cmd queue */
+    if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_CMD_PUSHED)) {
+        rc = na_sm_cmd_queue_push(
+            &na_sm_addr->shared_region->cmd_queue, cmd_hdr);
+        NA_CHECK_ERROR(rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
+        hg_atomic_or32(&na_sm_addr->status, NA_SM_ADDR_CMD_PUSHED);
+    }
+
+    /* Do not create signals if not waiting */
+    if (na_sm_endpoint->poll_set) {
+        /* Create tx event */
+        if (na_sm_addr->tx_notify < 0) {
+            ret = na_sm_event_create(username, na_sm_addr->pid, na_sm_addr->id,
+                na_sm_addr->queue_pair_idx, 't', &na_sm_addr->tx_notify);
+            NA_CHECK_NA_ERROR(error, ret, "Could not create event");
+            hg_atomic_incr32(&na_sm_endpoint->nofile);
+        }
+
+        /* Create rx event */
+        if (na_sm_addr->rx_notify < 0) {
+            ret = na_sm_event_create(username, na_sm_addr->pid, na_sm_addr->id,
+                na_sm_addr->queue_pair_idx, 'r', &na_sm_addr->rx_notify);
+            NA_CHECK_NA_ERROR(error, ret, "Could not create event");
+            hg_atomic_incr32(&na_sm_endpoint->nofile);
+
+            na_sm_addr->rx_poll_type = NA_SM_POLL_RX_NOTIFY;
+            NA_LOG_DEBUG(
+                "Registering rx notify %d for polling", na_sm_addr->rx_notify);
+
+            /* Add remote rx notify to poll set */
+            ret = na_sm_poll_register(na_sm_endpoint->poll_set,
+                na_sm_addr->rx_notify, &na_sm_addr->rx_poll_type);
+            NA_CHECK_NA_ERROR(
+                error, ret, "Could not add rx notify to poll set");
+        }
+
+        /* Send events to remote process */
+        if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED)) {
+            ret = na_sm_addr_event_send(na_sm_endpoint->sock, username,
+                na_sm_addr->pid, na_sm_addr->id, cmd_hdr, na_sm_addr->tx_notify,
+                na_sm_addr->rx_notify, NA_FALSE);
+            if (unlikely(ret == NA_AGAIN))
+                return ret;
+            else
+                NA_CHECK_NA_ERROR(error, ret, "Could not send addr events");
+        }
+    }
+
+    hg_atomic_or32(&na_sm_addr->status, NA_SM_ADDR_RESOLVED);
+
+    return ret;
+
+error:
+    if (na_sm_addr->shared_region) {
+        na_return_t err_ret;
+
+        if (hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESERVED) {
+            na_sm_queue_pair_release(
+                na_sm_addr->shared_region, na_sm_addr->queue_pair_idx);
+            hg_atomic_and32(&na_sm_addr->status, ~NA_SM_ADDR_RESERVED);
+
+            if (na_sm_addr->tx_notify > 0) {
+                err_ret = na_sm_event_destroy(username, na_sm_addr->pid,
+                    na_sm_addr->id, na_sm_addr->queue_pair_idx, 't', NA_TRUE,
+                    na_sm_addr->tx_notify);
+                NA_CHECK_ERROR_DONE(
+                    err_ret != NA_SUCCESS, "na_sm_event_destroy() failed");
+                hg_atomic_decr32(&na_sm_endpoint->nofile);
+                na_sm_addr->tx_notify = -1;
+            }
+            if (na_sm_addr->rx_notify > 0) {
+                err_ret = na_sm_event_destroy(username, na_sm_addr->pid,
+                    na_sm_addr->id, na_sm_addr->queue_pair_idx, 'r', NA_TRUE,
+                    na_sm_addr->rx_notify);
+                NA_CHECK_ERROR_DONE(
+                    err_ret != NA_SUCCESS, "na_sm_event_destroy() failed");
+                hg_atomic_decr32(&na_sm_endpoint->nofile);
+                na_sm_addr->rx_notify = -1;
+            }
+        }
+
+        err_ret = na_sm_region_close(username, na_sm_addr->pid, na_sm_addr->id,
+            NA_FALSE, na_sm_addr->shared_region);
+        NA_CHECK_ERROR_DONE(
+            err_ret != NA_SUCCESS, "Could not close shared-memory region");
+        na_sm_addr->shared_region = NULL;
+    }
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_addr_release(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     struct na_sm_addr *na_sm_addr)
 {
     na_return_t ret = NA_SUCCESS;
@@ -2456,9 +2573,8 @@ na_sm_addr_destroy(struct na_sm_endpoint *na_sm_endpoint, const char *username,
         cmd_hdr.hdr.id = na_sm_endpoint->source_addr->id & 0xff;
         cmd_hdr.hdr.pair_idx = na_sm_addr->queue_pair_idx & 0xff;
 
-        /* Do not create signals if not waiting */
         if (na_sm_endpoint->poll_set) {
-            /* Send events to remote process (ignore error as this is best
+            /* Send events to remote process (silence error as this is best
              * effort to clean up resources) */
             ret = na_sm_addr_event_send(na_sm_endpoint->sock, username,
                 na_sm_addr->pid, na_sm_addr->id, cmd_hdr, -1, -1, NA_TRUE);
@@ -2471,7 +2587,7 @@ na_sm_addr_destroy(struct na_sm_endpoint *na_sm_endpoint, const char *username,
                 cmd_hdr.hdr.type, cmd_hdr.hdr.pid, cmd_hdr.hdr.id,
                 cmd_hdr.hdr.pair_idx, cmd_hdr.val);
 
-            /* TODO would be nice to also do that with poll set */
+            /* Push cmd to cmd queue */
             rc = na_sm_cmd_queue_push(
                 &na_sm_addr->shared_region->cmd_queue, cmd_hdr);
             NA_CHECK_ERROR(rc == NA_FALSE, done, ret, NA_AGAIN, "Full queue");
@@ -2488,6 +2604,7 @@ na_sm_addr_destroy(struct na_sm_endpoint *na_sm_endpoint, const char *username,
             na_sm_addr->queue_pair_idx, 't', !na_sm_addr->unexpected,
             na_sm_addr->tx_notify);
         NA_CHECK_NA_ERROR(done, ret, "na_sm_event_destroy() failed");
+        hg_atomic_decr32(&na_sm_endpoint->nofile);
     }
 
     if (na_sm_addr->rx_notify > 0) {
@@ -2499,9 +2616,8 @@ na_sm_addr_destroy(struct na_sm_endpoint *na_sm_endpoint, const char *username,
             na_sm_addr->queue_pair_idx, 'r', !na_sm_addr->unexpected,
             na_sm_addr->rx_notify);
         NA_CHECK_NA_ERROR(done, ret, "na_sm_event_destroy() failed");
+        hg_atomic_decr32(&na_sm_endpoint->nofile);
     }
-
-    free(na_sm_addr);
 
 done:
     return ret;
@@ -2570,8 +2686,11 @@ na_sm_addr_event_send(int sock, const char *username, pid_t pid, na_uint8_t id,
 
     nsend = sendmsg(sock, &msg, 0);
     if (!ignore_error) {
-        NA_CHECK_ERROR(nsend == -1, done, ret, na_sm_errno_to_na(errno),
-            "sendmsg() failed (%s)", strerror(errno));
+        if (unlikely(nsend == -1 && errno == ETOOMANYREFS))
+            ret = NA_AGAIN;
+        else
+            NA_CHECK_ERROR(nsend == -1, done, ret, na_sm_errno_to_na(errno),
+                "sendmsg() failed (%s)", strerror(errno));
     }
 
 done:
@@ -2711,6 +2830,22 @@ na_sm_buf_copy_from(struct na_sm_copy_buf *na_sm_copy_buf, unsigned int index,
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
+na_sm_op_retry(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id)
+{
+    struct na_sm_op_queue *retry_op_queue =
+        &NA_SM_CLASS(na_class)->endpoint.retry_op_queue;
+
+    NA_LOG_DEBUG("Pushing %p for retry", na_sm_op_id);
+
+    /* Push op ID to retry queue */
+    hg_thread_spin_lock(&retry_op_queue->lock);
+    HG_QUEUE_PUSH_TAIL(&retry_op_queue->queue, na_sm_op_id, entry);
+    hg_atomic_or32(&na_sm_op_id->status, NA_SM_OP_QUEUED);
+    hg_thread_spin_unlock(&retry_op_queue->lock);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE void
 na_sm_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
     na_offset_t offset, unsigned long *iov_start_index,
     unsigned long *iov_start_offset)
@@ -2780,6 +2915,120 @@ na_sm_iov_translate(const struct iovec *iov, unsigned long iovcnt,
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
+na_sm_poll_wait(na_context_t *context, struct na_sm_endpoint *na_sm_endpoint,
+    const char *username, unsigned int timeout, na_bool_t *progressed_ptr)
+{
+    struct hg_poll_event *events = NA_SM_CONTEXT(context)->events;
+    unsigned int nevents = 0, i;
+    na_bool_t progressed = NA_FALSE;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    /* Just wait on a single event, anything greater may increase
+     * latency, and slow down progress, we will not wait next round
+     * if something is still in the queues */
+    rc = hg_poll_wait(
+        na_sm_endpoint->poll_set, timeout, NA_SM_MAX_EVENTS, events, &nevents);
+    NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, na_sm_errno_to_na(errno),
+        "hg_poll_wait() failed");
+
+    if (nevents == 1 && (events[0].events & HG_POLLINTR)) {
+        NA_LOG_DEBUG("Interrupted");
+        *progressed_ptr = NA_FALSE;
+        return ret;
+    }
+
+    /* Process events */
+    for (i = 0; i < nevents; i++) {
+        struct na_sm_addr *poll_addr = NULL;
+        na_bool_t progressed_notify = NA_FALSE;
+        na_bool_t progressed_rx = NA_FALSE;
+
+        switch (*(na_sm_poll_type_t *) events[i].data.ptr) {
+            case NA_SM_POLL_SOCK:
+                NA_LOG_DEBUG("NA_SM_POLL_SOCK event");
+                ret = na_sm_progress_sock(
+                    na_sm_endpoint, username, &progressed_notify);
+                NA_CHECK_NA_ERROR(done, ret, "Could not progress sock");
+                break;
+            case NA_SM_POLL_TX_NOTIFY:
+                NA_LOG_DEBUG("NA_SM_POLL_TX_NOTIFY event");
+                poll_addr = container_of(
+                    events[i].data.ptr, struct na_sm_addr, tx_poll_type);
+                ret = na_sm_progress_tx_notify(poll_addr, &progressed_notify);
+                NA_CHECK_NA_ERROR(done, ret, "Could not progress tx notify");
+                break;
+            case NA_SM_POLL_RX_NOTIFY:
+                NA_LOG_DEBUG("NA_SM_POLL_RX_NOTIFY event");
+                poll_addr = container_of(
+                    events[i].data.ptr, struct na_sm_addr, rx_poll_type);
+
+                ret = na_sm_progress_rx_notify(poll_addr, &progressed_notify);
+                NA_CHECK_NA_ERROR(done, ret, "Could not progress rx notify");
+
+                ret = na_sm_progress_rx_queue(
+                    na_sm_endpoint, poll_addr, &progressed_rx);
+                NA_CHECK_NA_ERROR(done, ret, "Could not progress rx queue");
+
+                break;
+            default:
+                NA_GOTO_ERROR(done, ret, NA_INVALID_ARG,
+                    "Operation type %d not supported",
+                    *(na_sm_poll_type_t *) events[i].data.ptr);
+        }
+        progressed |= (progressed_rx | progressed_notify);
+    }
+
+    *progressed_ptr = progressed;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_poll(struct na_sm_endpoint *na_sm_endpoint, const char *username,
+    na_bool_t *progressed_ptr)
+{
+    struct na_sm_addr_list *poll_addr_list = &na_sm_endpoint->poll_addr_list;
+    struct na_sm_addr *poll_addr;
+    na_bool_t progressed = NA_FALSE;
+    na_return_t ret = NA_SUCCESS;
+
+    /* Check whether something is in one of the rx queues */
+    hg_thread_spin_lock(&poll_addr_list->lock);
+    HG_LIST_FOREACH (poll_addr, &poll_addr_list->list, entry) {
+        na_bool_t progressed_rx = NA_FALSE;
+
+        hg_thread_spin_unlock(&poll_addr_list->lock);
+
+        ret =
+            na_sm_progress_rx_queue(na_sm_endpoint, poll_addr, &progressed_rx);
+        NA_CHECK_NA_ERROR(done, ret, "Could not progress rx queue");
+        progressed |= progressed_rx;
+
+        hg_thread_spin_lock(&poll_addr_list->lock);
+    }
+    hg_thread_spin_unlock(&poll_addr_list->lock);
+
+    /* Look for message in cmd queue (if listening) */
+    if (na_sm_endpoint->source_addr->shared_region) {
+        na_bool_t progressed_cmd = NA_FALSE;
+
+        ret =
+            na_sm_progress_cmd_queue(na_sm_endpoint, username, &progressed_cmd);
+        NA_CHECK_NA_ERROR(done, ret, "Could not progress cmd queue");
+        progressed |= progressed_cmd;
+    }
+
+    *progressed_ptr = progressed;
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
 na_sm_progress_sock(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     na_bool_t *progressed)
 {
@@ -2793,11 +3042,39 @@ na_sm_progress_sock(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     NA_CHECK_NA_ERROR(done, ret, "Could not recv addr events");
 
     if (*progressed) {
+        if (tx_notify > 0)
+            hg_atomic_incr32(&na_sm_endpoint->nofile);
+
+        if (rx_notify > 0)
+            hg_atomic_incr32(&na_sm_endpoint->nofile);
+
         /* Process received cmd, TODO would be nice to use cmd queue */
         ret = na_sm_process_cmd(
             na_sm_endpoint, username, cmd_hdr, tx_notify, rx_notify);
         NA_CHECK_NA_ERROR(done, ret, "Could not process cmd");
     }
+
+done:
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_sm_progress_cmd_queue(struct na_sm_endpoint *na_sm_endpoint,
+    const char *username, na_bool_t *progressed)
+{
+    na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
+    na_return_t ret = NA_SUCCESS;
+
+    /* Look for message in cmd queue */
+    if (!na_sm_cmd_queue_pop(
+            &na_sm_endpoint->source_addr->shared_region->cmd_queue, &cmd_hdr)) {
+        *progressed = NA_FALSE;
+        goto done;
+    }
+
+    ret = na_sm_process_cmd(na_sm_endpoint, username, cmd_hdr, -1, -1);
+    NA_CHECK_NA_ERROR(done, ret, "Could not process cmd");
 
 done:
     return ret;
@@ -2819,12 +3096,42 @@ na_sm_process_cmd(struct na_sm_endpoint *na_sm_endpoint, const char *username,
             struct na_sm_addr *na_sm_addr = NULL;
 
             /* Allocate source address */
-            ret = na_sm_addr_create(na_sm_endpoint,
-                na_sm_endpoint->source_addr->shared_region,
-                (pid_t) cmd_hdr.hdr.pid, cmd_hdr.hdr.id, cmd_hdr.hdr.pair_idx,
-                tx_notify, rx_notify, NA_TRUE, &na_sm_addr);
+            ret = na_sm_addr_create(
+                (pid_t) cmd_hdr.hdr.pid, cmd_hdr.hdr.id, NA_TRUE, &na_sm_addr);
             NA_CHECK_NA_ERROR(
                 done, ret, "Could not allocate unexpected address");
+
+            na_sm_addr->shared_region =
+                na_sm_endpoint->source_addr->shared_region;
+            na_sm_addr->queue_pair_idx = cmd_hdr.hdr.pair_idx;
+
+            /* Invert queues so that local rx is remote tx */
+            na_sm_addr->tx_queue =
+                &na_sm_addr->shared_region
+                     ->queue_pairs[na_sm_addr->queue_pair_idx]
+                     .rx_queue;
+            na_sm_addr->rx_queue =
+                &na_sm_addr->shared_region
+                     ->queue_pairs[na_sm_addr->queue_pair_idx]
+                     .tx_queue;
+
+            /* Invert descriptors so that local rx is remote tx */
+            na_sm_addr->tx_notify = rx_notify;
+            na_sm_addr->rx_notify = tx_notify;
+
+            if (na_sm_endpoint->poll_set && (na_sm_addr->rx_notify > 0)) {
+                na_sm_addr->rx_poll_type = NA_SM_POLL_RX_NOTIFY;
+                NA_LOG_DEBUG("Registering rx notify %d for polling",
+                    na_sm_addr->rx_notify);
+                /* Add remote rx notify to poll set */
+                ret = na_sm_poll_register(na_sm_endpoint->poll_set,
+                    na_sm_addr->rx_notify, &na_sm_addr->rx_poll_type);
+                NA_CHECK_NA_ERROR(
+                    done, ret, "Could not add rx notify to poll set");
+            }
+
+            /* Unexpected addresses are always resolved */
+            hg_atomic_or32(&na_sm_addr->status, NA_SM_ADDR_RESOLVED);
 
             /* Add address to list of addresses to poll */
             hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
@@ -2893,6 +3200,7 @@ na_sm_progress_tx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed)
     na_return_t ret = NA_SUCCESS;
     int rc;
 
+    /* TODO we should be able to safely remove EFD_SEMAPHORE behavior */
     /* Local notification only */
     rc = hg_event_get(poll_addr->tx_notify, (hg_util_bool_t *) progressed);
     NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, na_sm_errno_to_na(errno),
@@ -2910,6 +3218,7 @@ na_sm_progress_rx_notify(struct na_sm_addr *poll_addr, na_bool_t *progressed)
 {
     na_return_t ret = NA_SUCCESS;
 
+    /* TODO we should be able to safely remove EFD_SEMAPHORE behavior */
     /* Remote notification only */
     ret = na_sm_event_get(poll_addr->rx_notify, progressed);
     NA_CHECK_NA_ERROR(done, ret, "Could not get completion notification");
@@ -2925,7 +3234,7 @@ static na_return_t
 na_sm_progress_rx_queue(struct na_sm_endpoint *na_sm_endpoint,
     struct na_sm_addr *poll_addr, na_bool_t *progressed)
 {
-    na_sm_msg_hdr_t msg_hdr;
+    na_sm_msg_hdr_t msg_hdr = {.val = 0};
     na_return_t ret = NA_SUCCESS;
 
     /* Look for message in rx queue */
@@ -3090,8 +3399,10 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_sm_process_retries(struct na_sm_op_queue *retry_op_queue)
+na_sm_process_retries(
+    struct na_sm_endpoint *na_sm_endpoint, const char *username)
 {
+    struct na_sm_op_queue *retry_op_queue = &na_sm_endpoint->retry_op_queue;
     struct na_sm_op_id *na_sm_op_id = NULL;
     unsigned int buf_idx;
     na_return_t ret = NA_SUCCESS;
@@ -3109,11 +3420,20 @@ na_sm_process_retries(struct na_sm_op_queue *retry_op_queue)
 
         NA_LOG_DEBUG("Attempting to retry %p", na_sm_op_id);
 
+        /* Attempt to resolve address first */
+        if (!(hg_atomic_get32(&na_sm_op_id->na_sm_addr->status) &
+                NA_SM_ADDR_RESOLVED)) {
+            ret = na_sm_addr_resolve(
+                na_sm_endpoint, username, na_sm_op_id->na_sm_addr);
+            if (unlikely(ret == NA_AGAIN))
+                return NA_SUCCESS;
+        }
+
         /* Try to reserve buffer atomically */
-        if (na_sm_buf_reserve(
-                &na_sm_op_id->na_sm_addr->shared_region->copy_bufs, &buf_idx) ==
-            NA_AGAIN)
-            break;
+        ret = na_sm_buf_reserve(
+            &na_sm_op_id->na_sm_addr->shared_region->copy_bufs, &buf_idx);
+        if (unlikely(ret == NA_AGAIN))
+            return NA_SUCCESS;
 
         /* Successfully reserved a buffer, check that the operation has not
          * been canceled in the meantime so that we can dequeue the op from
@@ -3286,9 +3606,11 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     pid_t pid;
     unsigned int id;
     char *username = NULL;
+    struct rlimit rlimit;
     na_bool_t no_wait = NA_FALSE;
     na_uint8_t context_max = 1; /* Default */
     na_return_t ret = NA_SUCCESS;
+    int rc;
 
     /* Get init info */
     if (na_info->na_init_info) {
@@ -3315,12 +3637,19 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     /* Reset errno */
     errno = 0;
 
+    /* Check RLIMIT_NOFILE */
+    rc = getrlimit(RLIMIT_NOFILE, &rlimit);
+    NA_CHECK_ERROR(rc != 0, error, ret, na_sm_errno_to_na(errno),
+        "getrlimit() failed (%s)", strerror(errno));
+
+    NA_LOG_DEBUG(
+        "RLIMIT_NOFILE is: %d, max %d", rlimit.rlim_cur, rlimit.rlim_max);
+
     /* Initialize private data */
     na_class->plugin_class = malloc(sizeof(struct na_sm_class));
     NA_CHECK_ERROR(na_class->plugin_class == NULL, error, ret, NA_NOMEM,
         "Could not allocate SM private class");
     memset(na_class->plugin_class, 0, sizeof(struct na_sm_class));
-    NA_SM_CLASS(na_class)->no_wait = no_wait;
 #ifdef NA_SM_HAS_CMA
     NA_SM_CLASS(na_class)->iov_max = (na_size_t) sysconf(_SC_IOV_MAX);
 #else
@@ -3338,7 +3667,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
 
     /* Open endpoint */
     ret = na_sm_endpoint_open(&NA_SM_CLASS(na_class)->endpoint, username, pid,
-        id & 0xff, listen, no_wait);
+        id & 0xff, listen, no_wait, (na_uint32_t) rlimit.rlim_cur);
     NA_CHECK_NA_ERROR(
         error, ret, "Could not open endpoint for PID=%d, ID=%u", pid, id);
 
@@ -3493,10 +3822,8 @@ na_sm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
     /* Lookup addr from hash table */
     na_sm_addr = na_sm_addr_map_lookup(&na_sm_endpoint->addr_map, addr_key);
     if (!na_sm_addr) {
-        struct na_sm_lookup_args args = {.endpoint = na_sm_endpoint,
-            .username = NA_SM_CLASS(na_class)->username,
-            .pid = pid,
-            .id = id};
+        struct na_sm_lookup_args args = {
+            .endpoint = na_sm_endpoint, .pid = pid, .id = id};
         na_return_t na_ret;
 
         NA_LOG_DEBUG("Addess was not found, attempting to insert it (key=%lu)",
@@ -3736,7 +4063,9 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest_addr;
     unsigned int buf_idx;
     na_bool_t reserved = NA_FALSE;
+    na_sm_msg_hdr_t msg_hdr;
     na_return_t ret = NA_SUCCESS;
+    na_bool_t rc;
 
     NA_CHECK_ERROR(buf_size > NA_SM_UNEXPECTED_SIZE, done, ret, NA_OVERFLOW,
         "Exceeds unexpected size, %d", buf_size);
@@ -3765,53 +4094,50 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_sm_op_id->info.msg.actual_buf_size = buf_size;
     na_sm_op_id->info.msg.tag = tag;
 
+    /* Attempt to resolve address first if not resolved */
+    if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED)) {
+        ret = na_sm_addr_resolve(&NA_SM_CLASS(na_class)->endpoint,
+            NA_SM_CLASS(na_class)->username, na_sm_addr);
+        if (unlikely(ret == NA_AGAIN)) {
+            na_sm_op_retry(na_class, na_sm_op_id);
+            return NA_SUCCESS;
+        } else
+            NA_CHECK_NA_ERROR(error, ret, "Could not resolve address");
+    }
+
     /* Try to reserve buffer atomically */
     ret = na_sm_buf_reserve(&na_sm_addr->shared_region->copy_bufs, &buf_idx);
     if (unlikely(ret == NA_AGAIN)) {
-        struct na_sm_op_queue *retry_op_queue =
-            &NA_SM_CLASS(na_class)->endpoint.retry_op_queue;
-
-        NA_LOG_DEBUG("Pushing %p for retry", na_sm_op_id);
-
-        /* Push op ID to retry queue */
-        hg_thread_spin_lock(&retry_op_queue->lock);
-        HG_QUEUE_PUSH_TAIL(&retry_op_queue->queue, na_sm_op_id, entry);
-        hg_atomic_or32(&na_sm_op_id->status, NA_SM_OP_QUEUED);
-        hg_thread_spin_unlock(&retry_op_queue->lock);
-
-        ret = NA_SUCCESS;
-    } else {
-        na_sm_msg_hdr_t msg_hdr;
-        na_bool_t rc;
-
-        /* Successfully reserved a buffer */
-        reserved = NA_TRUE;
-
-        /* Reservation succeeded, copy buffer */
-        na_sm_buf_copy_to(
-            &na_sm_addr->shared_region->copy_bufs, buf_idx, buf, buf_size);
-
-        /* Post message to queue */
-        msg_hdr.hdr.type = na_sm_op_id->completion_data.callback_info.type;
-        msg_hdr.hdr.buf_idx = buf_idx & 0xff;
-        msg_hdr.hdr.buf_size = buf_size & 0xffff;
-        msg_hdr.hdr.tag = tag;
-
-        rc = na_sm_msg_queue_push(na_sm_addr->tx_queue, msg_hdr);
-        NA_CHECK_ERROR(rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
-
-        /* Notify remote if notifications are enabled */
-        if (na_sm_addr->tx_notify > 0) {
-            ret = na_sm_event_set(na_sm_addr->tx_notify);
-            NA_CHECK_NA_ERROR(
-                error, ret, "Could not send completion notification");
-        }
-
-        /* Immediate completion, add directly to completion queue. */
-        ret = na_sm_complete(na_sm_op_id,
-            NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
-        NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
+        na_sm_op_retry(na_class, na_sm_op_id);
+        return NA_SUCCESS;
     }
+
+    /* Successfully reserved a buffer */
+    reserved = NA_TRUE;
+
+    /* Reservation succeeded, copy buffer */
+    na_sm_buf_copy_to(
+        &na_sm_addr->shared_region->copy_bufs, buf_idx, buf, buf_size);
+
+    /* Post message to queue */
+    msg_hdr.hdr.type = na_sm_op_id->completion_data.callback_info.type;
+    msg_hdr.hdr.buf_idx = buf_idx & 0xff;
+    msg_hdr.hdr.buf_size = buf_size & 0xffff;
+    msg_hdr.hdr.tag = tag;
+
+    rc = na_sm_msg_queue_push(na_sm_addr->tx_queue, msg_hdr);
+    NA_CHECK_ERROR(rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
+
+    /* Notify remote if notifications are enabled */
+    if (na_sm_addr->tx_notify > 0) {
+        ret = na_sm_event_set(na_sm_addr->tx_notify);
+        NA_CHECK_NA_ERROR(error, ret, "Could not send completion notification");
+    }
+
+    /* Immediate completion, add directly to completion queue. */
+    ret = na_sm_complete(
+        na_sm_op_id, NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
+    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
 
 done:
     return ret;
@@ -3917,7 +4243,9 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     struct na_sm_addr *na_sm_addr = (struct na_sm_addr *) dest_addr;
     unsigned int buf_idx;
     na_bool_t reserved = NA_FALSE;
+    na_sm_msg_hdr_t msg_hdr;
     na_return_t ret = NA_SUCCESS;
+    na_bool_t rc;
 
     NA_CHECK_ERROR(buf_size > NA_SM_EXPECTED_SIZE, done, ret, NA_OVERFLOW,
         "Exceeds expected size, %d", buf_size);
@@ -3946,53 +4274,50 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_sm_op_id->info.msg.actual_buf_size = buf_size;
     na_sm_op_id->info.msg.tag = tag;
 
+    /* Attempt to resolve address first if not resolved */
+    if (!(hg_atomic_get32(&na_sm_addr->status) & NA_SM_ADDR_RESOLVED)) {
+        ret = na_sm_addr_resolve(&NA_SM_CLASS(na_class)->endpoint,
+            NA_SM_CLASS(na_class)->username, na_sm_addr);
+        if (unlikely(ret == NA_AGAIN)) {
+            na_sm_op_retry(na_class, na_sm_op_id);
+            return NA_SUCCESS;
+        } else
+            NA_CHECK_NA_ERROR(error, ret, "Could not resolve address");
+    }
+
     /* Try to reserve buffer atomically */
     ret = na_sm_buf_reserve(&na_sm_addr->shared_region->copy_bufs, &buf_idx);
     if (unlikely(ret == NA_AGAIN)) {
-        struct na_sm_op_queue *retry_op_queue =
-            &NA_SM_CLASS(na_class)->endpoint.retry_op_queue;
-
-        NA_LOG_DEBUG("Pushing %p for retry", na_sm_op_id);
-
-        /* Push op ID to retry queue */
-        hg_thread_spin_lock(&retry_op_queue->lock);
-        HG_QUEUE_PUSH_TAIL(&retry_op_queue->queue, na_sm_op_id, entry);
-        hg_atomic_or32(&na_sm_op_id->status, NA_SM_OP_QUEUED);
-        hg_thread_spin_unlock(&retry_op_queue->lock);
-
-        ret = NA_SUCCESS;
-    } else {
-        na_sm_msg_hdr_t msg_hdr;
-        na_bool_t rc;
-
-        /* Successfully reserved a buffer */
-        reserved = NA_TRUE;
-
-        /* Reservation succeeded, copy buffer */
-        na_sm_buf_copy_to(
-            &na_sm_addr->shared_region->copy_bufs, buf_idx, buf, buf_size);
-
-        /* Post message to queue */
-        msg_hdr.hdr.type = na_sm_op_id->completion_data.callback_info.type;
-        msg_hdr.hdr.buf_idx = buf_idx & 0xff;
-        msg_hdr.hdr.buf_size = buf_size & 0xffff;
-        msg_hdr.hdr.tag = tag;
-
-        rc = na_sm_msg_queue_push(na_sm_addr->tx_queue, msg_hdr);
-        NA_CHECK_ERROR(rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
-
-        /* Notify remote if notifications are enabled */
-        if (na_sm_addr->tx_notify > 0) {
-            ret = na_sm_event_set(na_sm_addr->tx_notify);
-            NA_CHECK_NA_ERROR(
-                error, ret, "Could not send completion notification");
-        }
-
-        /* Immediate completion, add directly to completion queue. */
-        ret = na_sm_complete(na_sm_op_id,
-            NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
-        NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
+        na_sm_op_retry(na_class, na_sm_op_id);
+        return NA_SUCCESS;
     }
+
+    /* Successfully reserved a buffer */
+    reserved = NA_TRUE;
+
+    /* Reservation succeeded, copy buffer */
+    na_sm_buf_copy_to(
+        &na_sm_addr->shared_region->copy_bufs, buf_idx, buf, buf_size);
+
+    /* Post message to queue */
+    msg_hdr.hdr.type = na_sm_op_id->completion_data.callback_info.type;
+    msg_hdr.hdr.buf_idx = buf_idx & 0xff;
+    msg_hdr.hdr.buf_size = buf_size & 0xffff;
+    msg_hdr.hdr.tag = tag;
+
+    rc = na_sm_msg_queue_push(na_sm_addr->tx_queue, msg_hdr);
+    NA_CHECK_ERROR(rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
+
+    /* Notify remote if notifications are enabled */
+    if (na_sm_addr->tx_notify > 0) {
+        ret = na_sm_event_set(na_sm_addr->tx_notify);
+        NA_CHECK_NA_ERROR(error, ret, "Could not send completion notification");
+    }
+
+    /* Immediate completion, add directly to completion queue. */
+    ret = na_sm_complete(
+        na_sm_op_id, NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
+    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
 
 done:
     return ret;
@@ -4646,19 +4971,26 @@ done:
 static NA_INLINE na_bool_t
 na_sm_poll_try_wait(na_class_t *na_class, na_context_t NA_UNUSED *context)
 {
+    struct na_sm_endpoint *na_sm_endpoint = &NA_SM_CLASS(na_class)->endpoint;
     struct na_sm_addr *na_sm_addr;
+    na_bool_t empty = NA_FALSE;
 
     /* Check whether something is in one of the rx queues */
-    hg_thread_spin_lock(&NA_SM_CLASS(na_class)->endpoint.poll_addr_list.lock);
-    HG_LIST_FOREACH (na_sm_addr,
-        &NA_SM_CLASS(na_class)->endpoint.poll_addr_list.list, entry) {
+    hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
+    HG_LIST_FOREACH (na_sm_addr, &na_sm_endpoint->poll_addr_list.list, entry) {
         if (!na_sm_msg_queue_is_empty(na_sm_addr->rx_queue)) {
-            hg_thread_spin_unlock(
-                &NA_SM_CLASS(na_class)->endpoint.poll_addr_list.lock);
+            hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
             return NA_FALSE;
         }
     }
-    hg_thread_spin_unlock(&NA_SM_CLASS(na_class)->endpoint.poll_addr_list.lock);
+    hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
+
+    /* Check whether something is in the retry queue */
+    hg_thread_spin_lock(&na_sm_endpoint->retry_op_queue.lock);
+    empty = HG_QUEUE_IS_EMPTY(&na_sm_endpoint->retry_op_queue.queue);
+    hg_thread_spin_unlock(&na_sm_endpoint->retry_op_queue.lock);
+    if (!empty)
+        return NA_FALSE;
 
     return NA_TRUE;
 }
@@ -4670,10 +5002,9 @@ na_sm_progress(
 {
     struct na_sm_endpoint *na_sm_endpoint = &NA_SM_CLASS(na_class)->endpoint;
     const char *username = NA_SM_CLASS(na_class)->username;
-    struct hg_poll_event *events = NA_SM_CONTEXT(context)->events;
     double remaining =
         timeout / 1000.0; /* Convert timeout in ms into seconds */
-    na_return_t ret = NA_TIMEOUT;
+    na_return_t ret;
 
     do {
         na_bool_t progressed = NA_FALSE;
@@ -4683,145 +5014,34 @@ na_sm_progress(
             hg_time_get_current_ms(&t1);
 
         if (na_sm_endpoint->poll_set) {
-            unsigned int nevents = 0, i;
-            /* Just wait on a single event, anything greater may increase
-             * latency, and slow down progress, we will not wait next round
-             * if something is still in the queues */
-            int rc = hg_poll_wait(na_sm_endpoint->poll_set,
-                (unsigned int) (remaining * 1000.0), NA_SM_MAX_EVENTS, events,
-                &nevents);
-            NA_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret,
-                na_sm_errno_to_na(errno), "hg_poll_wait() failed");
-
-            if (nevents == 1 && (events[0].events & HG_POLLINTR)) {
-                NA_LOG_DEBUG("Interrupted");
-                if (timeout) {
-                    hg_time_get_current_ms(&t2);
-                    remaining -= hg_time_diff(t2, t1);
-                }
-                continue;
-            }
-
-            /* Process events */
-            for (i = 0; i < nevents; i++) {
-                struct na_sm_addr *poll_addr = NULL;
-                na_bool_t progressed_notify = NA_FALSE;
-                na_bool_t progressed_rx = NA_FALSE;
-
-                switch (*(na_sm_poll_type_t *) events[i].data.ptr) {
-                    case NA_SM_POLL_SOCK:
-                        NA_LOG_DEBUG("NA_SM_POLL_SOCK event");
-                        ret = na_sm_progress_sock(
-                            na_sm_endpoint, username, &progressed_notify);
-                        NA_CHECK_NA_ERROR(done, ret, "Could not progress sock");
-                        break;
-                    case NA_SM_POLL_TX_NOTIFY:
-                        NA_LOG_DEBUG("NA_SM_POLL_TX_NOTIFY event");
-                        poll_addr = container_of(events[i].data.ptr,
-                            struct na_sm_addr, tx_poll_type);
-                        ret = na_sm_progress_tx_notify(
-                            poll_addr, &progressed_notify);
-                        NA_CHECK_NA_ERROR(
-                            done, ret, "Could not progress tx notify");
-                        break;
-                    case NA_SM_POLL_RX_NOTIFY:
-                        NA_LOG_DEBUG("NA_SM_POLL_RX_NOTIFY event");
-                        poll_addr = container_of(events[i].data.ptr,
-                            struct na_sm_addr, rx_poll_type);
-
-                        ret = na_sm_progress_rx_notify(
-                            poll_addr, &progressed_notify);
-                        NA_CHECK_NA_ERROR(
-                            done, ret, "Could not progress rx notify");
-
-                        ret = na_sm_progress_rx_queue(
-                            na_sm_endpoint, poll_addr, &progressed_rx);
-                        NA_CHECK_NA_ERROR(
-                            done, ret, "Could not progress rx queue");
-
-                        break;
-                    default:
-                        NA_GOTO_ERROR(done, ret, NA_INVALID_ARG,
-                            "Operation type %d not supported",
-                            *(na_sm_poll_type_t *) events[i].data.ptr);
-                }
-
-                progressed |= (progressed_rx | progressed_notify);
-            }
+            /* Make blocking progress */
+            ret = na_sm_poll_wait(context, na_sm_endpoint, username,
+                (unsigned int) (remaining * 1000.0), &progressed);
+            NA_CHECK_NA_ERROR(
+                error, ret, "Could not make blocking progress on context");
         } else {
-            struct na_sm_addr_list *poll_addr_list =
-                &na_sm_endpoint->poll_addr_list;
-            struct na_sm_addr *poll_addr;
-
-            /* Check whether something is in one of the rx queues */
-            hg_thread_spin_lock(&poll_addr_list->lock);
-            HG_LIST_FOREACH (poll_addr, &poll_addr_list->list, entry) {
-                na_bool_t progressed_rx = NA_FALSE;
-
-                hg_thread_spin_unlock(&poll_addr_list->lock);
-
-                if (na_sm_endpoint->poll_set) {
-                    na_bool_t progressed_notify = NA_FALSE;
-                    ret =
-                        na_sm_progress_rx_notify(poll_addr, &progressed_notify);
-                    NA_CHECK_NA_ERROR(
-                        done, ret, "Could not progress rx notify");
-                    progressed |= progressed_notify;
-                }
-                ret = na_sm_progress_rx_queue(
-                    na_sm_endpoint, poll_addr, &progressed_rx);
-                NA_CHECK_NA_ERROR(done, ret, "Could not progress rx queue");
-                progressed |= progressed_rx;
-
-                hg_thread_spin_lock(&poll_addr_list->lock);
-            }
-            hg_thread_spin_unlock(&poll_addr_list->lock);
-
-            /* Look for message in cmd queue (if listening) */
-            if (na_sm_endpoint->poll_set) {
-                na_bool_t progressed_notify = NA_FALSE;
-
-                ret = na_sm_progress_tx_notify(
-                    na_sm_endpoint->source_addr, &progressed_notify);
-                NA_CHECK_NA_ERROR(done, ret, "Could not progress tx notify");
-                progressed |= progressed_notify;
-
-                if (na_sm_endpoint->source_addr->shared_region) {
-                    na_bool_t progressed_sock = NA_FALSE;
-                    ret = na_sm_progress_sock(
-                        na_sm_endpoint, username, &progressed_sock);
-                    NA_CHECK_NA_ERROR(done, ret, "Could not progress sock");
-                    progressed |= progressed_sock;
-                }
-            } else if (na_sm_endpoint->source_addr->shared_region) {
-                na_sm_cmd_hdr_t cmd_hdr = {.val = 0};
-
-                while (na_sm_cmd_queue_pop(
-                    &na_sm_endpoint->source_addr->shared_region->cmd_queue,
-                    &cmd_hdr)) {
-                    ret = na_sm_process_cmd(
-                        na_sm_endpoint, username, cmd_hdr, -1, -1);
-                    NA_CHECK_NA_ERROR(done, ret, "Could not process cmd");
-                    progressed |= NA_TRUE;
-                }
-            }
+            /* Make non-blocking progress */
+            ret = na_sm_poll(na_sm_endpoint, username, &progressed);
+            NA_CHECK_NA_ERROR(
+                error, ret, "Could not make non-blocking progress on context");
         }
 
         /* Process retries */
-        ret = na_sm_process_retries(&na_sm_endpoint->retry_op_queue);
-        NA_CHECK_NA_ERROR(done, ret, "Could not process retried msgs");
+        ret = na_sm_process_retries(na_sm_endpoint, username);
+        NA_CHECK_NA_ERROR(error, ret, "Could not process retried msgs");
+
+        if (progressed)
+            return NA_SUCCESS;
 
         if (timeout) {
             hg_time_get_current_ms(&t2);
             remaining -= hg_time_diff(t2, t1);
         }
+    } while ((int) (remaining * 1000.0) > 0);
 
-        if (!progressed)
-            ret = NA_TIMEOUT; /* Return NA_TIMEOUT if no events */
+    return NA_TIMEOUT;
 
-    } while (remaining > 0 && (ret != NA_SUCCESS));
-
-done:
+error:
     return ret;
 }
 
