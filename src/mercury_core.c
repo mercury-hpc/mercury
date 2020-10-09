@@ -3780,6 +3780,16 @@ hg_core_progress(struct hg_core_private_context *context, unsigned int timeout)
             HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, done, ret, HG_PROTOCOL_ERROR,
                 "hg_poll_wait() failed");
 
+            if (nevents == 1 &&
+                (context->poll_events[0].events & HG_POLLINTR)) {
+                HG_LOG_DEBUG("Interrupted");
+                if (timeout) {
+                    hg_time_get_current_ms(&t2);
+                    remaining -= hg_time_diff(t2, t1);
+                }
+                continue;
+            }
+
             for (i = 0; i < nevents; i++) {
                 switch (context->poll_events[i].data.u32) {
 #ifdef HG_HAS_SELF_FORWARD

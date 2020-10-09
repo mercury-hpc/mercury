@@ -38,10 +38,11 @@ struct hg_poll_event {
 /**
  * Polling events.
  */
-#define HG_POLLIN  0x001 /* There is data to read. */
-#define HG_POLLOUT 0x004 /* Writing now will not block. */
-#define HG_POLLERR 0x008 /* Error condition. */
-#define HG_POLLHUP 0x010 /* Hung up. */
+#define HG_POLLIN   (1 << 0) /* There is data to read. */
+#define HG_POLLOUT  (1 << 1) /* Writing now will not block. */
+#define HG_POLLERR  (1 << 2) /* Error condition. */
+#define HG_POLLHUP  (1 << 3) /* Hung up. */
+#define HG_POLLINTR (1 << 4) /* Interrupted. */
 
 /*********************/
 /* Public Prototypes */
