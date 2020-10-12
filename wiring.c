@@ -365,6 +365,7 @@ wireup_respond(wiring_t **wiringp, sender_id_t rid,
     wireup_msg_t *msg;
     wire_t *w;
     ucp_ep_h ep;
+    const ucp_tag_t tag = TAG_CHNL_WIREUP | SHIFTIN(rid, TAG_ID_MASK);
     ucs_status_ptr_t request;
     sender_id_t id;
     const size_t msglen = sizeof(*msg);
@@ -399,7 +400,7 @@ wireup_respond(wiring_t **wiringp, sender_id_t rid,
     , .cb = {.send = wireup_send_callback}
     , .user_data = msg
     };
-    request = ucp_tag_send_nbx(ep, msg, msglen, wireup_start_tag, &tx_params);
+    request = ucp_tag_send_nbx(ep, msg, msglen, tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
         warnx("%s: ucp_tag_send_nbx: %s", __func__,
