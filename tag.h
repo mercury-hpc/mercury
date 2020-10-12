@@ -1,0 +1,20 @@
+#ifndef _TAG_H_
+#define _TAG_H_
+
+#include "bits.h"
+
+#define TAG_CHNL_MASK       BITS(63, 62)
+#define TAG_ID_MASK         BITS(61, 0)
+
+#define CHANNEL_WIREUP 1
+#define CHANNEL_TWOWAY 2
+
+#define TAG_CHNL_UNUSED0    SHIFTIN(0, TAG_CHNL_MASK)
+#define TAG_CHNL_WIREUP     SHIFTIN(CHANNEL_WIREUP, TAG_CHNL_MASK)
+#define TAG_CHNL_TWOWAY     SHIFTIN(CHANNEL_TWOWAY, TAG_CHNL_MASK)
+#define TAG_CHNL_UNUSED3    SHIFTIN(3, TAG_CHNL_MASK)
+
+#define TAG_GET_ID(_x)      SHIFTOUT(_x, TAG_ID_MASK)
+#define TAG_GET_CHNL(_x)    SHIFTOUT(_x, TAG_CHNL_MASK)
+
+#endif /* _TAG_H_ */

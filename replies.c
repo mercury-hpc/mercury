@@ -12,21 +12,7 @@
 
 #include "ring.h"
 #include "util.h"
-
-typedef enum {
-      OP_REQ   = 0
-    , OP_ACK   = 1
-    , OP_NACK  = 2
-} wireup_op_t;
-
-typedef struct _wireup_msg {
-    uint32_t sender_ep_idx;
-    uint16_t op;        // wireup_op_t
-    uint16_t addrlen;
-    uint8_t addr[];
-} wireup_msg_t;
-
-static const ucp_tag_t wireup_tag = 17;
+#include "wireup.h"
 
 static void
 usage(const char *_progname)
@@ -99,15 +85,15 @@ run_client(ucp_worker_h worker, size_t request_size,
         errx(EXIT_FAILURE, "client %s: ucp_ep_create", __func__);
 
     rxring_init(worker, &rring, request_size,
-        wireup_tag, UINT64_MAX, sizeof(wireup_msg_t), 3);
+        START_WIREUP_TAG, UINT64_MAX, sizeof(wireup_msg_t), 3);
 
     req->op = OP_REQ;
-    req->sender_ep_idx = 0;
+    req->sender_id = 0;
     req->addrlen = local_addr_len;
     memcpy(&req->addr[0], local_addr, local_addr_len);
 
     request = ucp_tag_send_nbx(remote_ep, req, reqlen,
-        wireup_tag, &send_params);
+        START_WIREUP_TAG, &send_params);
 
     if (UCS_PTR_IS_ERR(request)) {
         warnx("%s: ucp_tag_send_nbx: %s", __func__,
@@ -137,21 +123,6 @@ run_client(ucp_worker_h worker, size_t request_size,
     ep_close(worker, remote_ep);
 }
 
-static const char *
-wireup_op_string(wireup_op_t op)
-{
-    switch (op) {
-    case OP_REQ:
-        return "req";
-    case OP_ACK:
-        return "ack";
-    case OP_NACK:
-        return "nack";
-    default:
-        return "<unknown>";
-    }
-}
-
 static void
 process_rx_msg(ucp_worker_h worker, ucp_tag_t tag, void *buf, size_t buflen)
 {
@@ -161,7 +132,7 @@ process_rx_msg(ucp_worker_h worker, ucp_tag_t tag, void *buf, size_t buflen)
     , .address = NULL
     , .err_mode = UCP_ERR_HANDLING_MODE_NONE
     };
-    wireup_msg_t reply = (wireup_msg_t){ .sender_ep_idx = 0, .op = OP_ACK, .addrlen = 0};
+    wireup_msg_t reply = (wireup_msg_t){ .sender_id = 0, .op = OP_ACK, .addrlen = 0};
     txdesc_t desc = {.completed = false};
     const ucp_request_param_t send_params = {
       .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK |
@@ -219,51 +190,58 @@ process_rx_msg(ucp_worker_h worker, ucp_tag_t tag, void *buf, size_t buflen)
     ep_close(worker, reply_ep);
 }
 
+static bool
+run_server_once(rxring_t *rring)
+{
+    rxdesc_t *rdesc;
+
+    if ((rdesc = rxring_next(rring)) == NULL)
+        return true;
+
+    if (rdesc->status == UCS_OK) {
+        printf("received %zu-byte message tagged %" PRIu64
+               ", processing...\n", rdesc->rxlen, rdesc->sender_tag);
+        process_rx_msg(rring->worker, rdesc->sender_tag, rdesc->buf,
+            rdesc->rxlen);
+    } else if (rdesc->status == UCS_ERR_MESSAGE_TRUNCATED) {
+        const size_t hdrlen = offsetof(wireup_msg_t, addr[0]);
+        printf("%s: truncated desc %p buf %p buflen %zu\n", __func__,
+           (void *)rdesc, rdesc->buf, rdesc->buflen);
+        size_t buflen = rdesc->buflen;
+        void * const buf = rdesc->buf, *nbuf;
+        /* Twice the message length is twice the header length plus
+         * twice the payload length, so subtract one header length.
+         */
+        size_t nbuflen = twice_or_max(buflen) - hdrlen;
+
+        printf("increasing buffer length %zu -> %zu bytes.\n",
+            buflen, nbuflen);
+
+        if ((nbuf = malloc(nbuflen)) == NULL)
+            err(EXIT_FAILURE, "%s: malloc", __func__);
+
+        rdesc->buflen = nbuflen;
+        rdesc->buf = nbuf;
+        free(buf);
+    } else {
+        printf("receive error, %s, exiting.\n",
+            ucs_status_string(rdesc->status));
+        return false;
+    }
+    rxdesc_setup(rring, rdesc->buf, rdesc->buflen, rdesc);
+    return true;
+}
+
 static void
 run_server(ucp_worker_h worker, size_t request_size)
 {
     rxring_t rring;
 
-    rxring_init(worker, &rring, request_size, wireup_tag, UINT64_MAX,
+    rxring_init(worker, &rring, request_size, START_WIREUP_TAG, UINT64_MAX,
         sizeof(wireup_msg_t) + 93, 3);
 
-    for (;;) {
-        rxdesc_t *rdesc;
-
-        while ((rdesc = rxring_next(&rring)) == NULL)
+    while (run_server_once(&rring))
             ucp_worker_progress(worker);
-
-        if (rdesc->status == UCS_OK) {
-            printf("received %zu-byte message tagged %" PRIu64
-                   ", processing...\n", rdesc->rxlen, rdesc->sender_tag);
-            process_rx_msg(worker, rdesc->sender_tag, rdesc->buf, rdesc->rxlen);
-        } else if (rdesc->status == UCS_ERR_MESSAGE_TRUNCATED) {
-            const size_t hdrlen = offsetof(wireup_msg_t, addr[0]);
-            printf("%s: truncated desc %p buf %p buflen %zu\n", __func__,
-               (void *)rdesc, rdesc->buf, rdesc->buflen);
-            size_t buflen = rdesc->buflen;
-            void * const buf = rdesc->buf, *nbuf;
-            /* Twice the message length is twice the header length plus
-             * twice the payload length, so subtract one header length.
-             */
-            size_t nbuflen = twice_or_max(buflen) - hdrlen;
-
-            printf("increasing buffer length %zu -> %zu bytes.\n",
-                buflen, nbuflen);
-
-            if ((nbuf = malloc(nbuflen)) == NULL)
-                err(EXIT_FAILURE, "%s: malloc", __func__);
-
-            rdesc->buflen = nbuflen;
-            rdesc->buf = nbuf;
-            free(buf);
-        } else {
-            printf("receive error, %s, exiting.\n",
-                ucs_status_string(rdesc->status));
-            break;
-        }
-        rxdesc_setup(&rring, rdesc->buf, rdesc->buflen, rdesc);
-    }
 
     rxring_destroy(&rring);
 }
