@@ -1841,7 +1841,7 @@ na_ofi_domain_open(struct na_ofi_class *priv, enum na_ofi_prov_type prov_type,
     }
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
-    if (na_ofi_domain->nod_prov_type == NA_OFI_PROV_GNI) {
+    if (na_ofi_domain->prov_type == NA_OFI_PROV_GNI) {
         int enable = 1;
 # ifdef NA_OFI_GNI_HAS_UDREG
         char *other_reg_type = "udreg";
