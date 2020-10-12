@@ -5,6 +5,8 @@
 
 #include <sys/queue.h>
 
+#include <ucp/api/ucp.h>
+
 typedef struct _txdesc {
     void *request;
     ucs_status_t status;
