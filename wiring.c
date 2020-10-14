@@ -14,7 +14,7 @@
 struct _wire_state {
     wire_state_t *(*timeout)(wiring_t *, wire_t *);
     wire_state_t *(*receive)(wiring_t *, wire_t *, const wireup_msg_t *);
-    uint64_t expiration;
+    const char *descr;
 };
 
 enum {
@@ -46,13 +46,17 @@ static wire_state_t *start_late_life(wiring_t *, wire_t *);
 
 wire_state_t state[] = {
   [WIRE_S_INITIAL] = {.timeout = destroy,
-                      .receive = start_early_life}
+                      .receive = start_early_life,
+                      .descr = "initial"}
 , [WIRE_S_EARLY_LIFE] = {.timeout = start_late_life,
-                         .receive = continue_early_life}
+                         .receive = continue_early_life,
+                         .descr = "early life"}
 , [WIRE_S_LATE_LIFE] = {.timeout = destroy,
-                        .receive = continue_early_life}
+                        .receive = continue_early_life,
+                        .descr = "late life"}
 , [WIRE_S_DEAD] = {.timeout = reject_timeout,
-                   .receive = reject_msg}
+                   .receive = reject_msg,
+                   .descr = "dead"}
 };
 
 static void *
@@ -77,11 +81,12 @@ wireup_msg_transition(wiring_t *wiring, const ucp_tag_t sender_tag,
     const wireup_msg_t *msg)
 {
     wire_t *w;
+    wire_state_t *ostate, *nstate;
     const uint64_t proto_id = TAG_GET_ID(sender_tag);
     sender_id_t id;
 
     if (proto_id > SENDER_ID_MAX) {
-        warnx("%s: illegal sender ID %016" PRIx64 " id mask %016" PRIx64 " chnl mask %016" PRIx64, __func__, proto_id, TAG_ID_MASK, TAG_CHNL_MASK);
+        warnx("%s: illegal sender ID %" PRIu64, __func__, proto_id);
         return;
     }
     if (proto_id >= wiring->nwires) {
@@ -92,28 +97,36 @@ wireup_msg_transition(wiring_t *wiring, const ucp_tag_t sender_tag,
     id = (sender_id_t)proto_id;
     w = &wiring->wire[id];
 
-    w->state = (*w->state->receive)(wiring, w, msg);
+    ostate = w->state;
+    nstate = w->state = (*ostate->receive)(wiring, w, msg);
+
+    printf("%s: wire %" PRIdSENDER " %s message state change %s -> %s\n",
+        __func__, id, wireup_op_string(msg->op), ostate->descr, nstate->descr);
 }
 
-#if 0
 static void
 wireup_timeout_transition(wiring_t *wiring, uint64_t now)
 {
     wire_t *w;
+    wire_state_t *ostate, *nstate;
 
-    while ((w = wiring_timeout_peek(wiring)) != NULL && w->expiration <= now) {
+    while ((w = wiring_timeout_peek(wiring)) != NULL) {
+        if (w->expiration > now)
+            break;
         wiring_timeout_remove(wiring, w);
-        w->state = (*w->state->timeout)(wiring, w);
+        ostate = w->state;
+        nstate = w->state = (*w->state->timeout)(wiring, w);
+        printf("%s: wire %td timeout state change %s -> %s\n",
+            __func__, w - &wiring->wire[0], ostate->descr, nstate->descr);
     }
 }
-#endif
 
 static wire_state_t *
 start_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 {
     sender_id_t id = w - &wiring->wire[0];
 
-    if (msg->sender_id > INT32_MAX) {
+    if (msg->sender_id > SENDER_ID_MAX) {
         warnx("%s: bad foreign sender ID %" PRId32 " for wire %" PRIdSENDER,
             __func__, msg->sender_id, id);
         return w->state;
@@ -131,7 +144,7 @@ start_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
         return w->state;
     }
 
-    w->id = id;
+    w->id = msg->sender_id;
     wiring_timeout_remove(wiring, w);
     wiring_timeout_put(wiring, w, getnanos() + timeout_interval);
 
@@ -143,7 +156,7 @@ continue_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 {
     sender_id_t id = w - &wiring->wire[0];
 
-    if (msg->sender_id > INT32_MAX) {
+    if (msg->sender_id > SENDER_ID_MAX) {
         warnx("%s: bad foreign sender ID %" PRId32 " for wire %" PRIdSENDER,
             __func__, msg->sender_id, id);
         return w->state;
@@ -247,7 +260,8 @@ wireup_send_callback(void *request, ucs_status_t status, void *user_data)
 void
 wiring_destroy(wiring_t *wiring)
 {
-    rxring_destroy(&wiring->ring);
+    if (wiring->ring != NULL)
+        rxring_destroy(wiring->ring);
     /* TBD tear down wires; send a bad keepalive or a "bye" to destroy wires
      * on peers?
      */
@@ -283,8 +297,13 @@ wiring_create(ucp_worker_h worker, size_t request_size)
 
     wiring->first_to_expire = wiring->last_to_expire = SENDER_ID_NIL;
 
-    rxring_init(worker, &wiring->ring, request_size,
+    wiring->ring = rxring_create(worker, request_size,
         TAG_CHNL_WIREUP, TAG_CHNL_MASK, sizeof(wireup_msg_t) + 93, 3);
+
+    if (wiring->ring == NULL) {
+        wiring_destroy(wiring);
+        return NULL;
+    }
 
     return wiring;
 }
@@ -386,7 +405,7 @@ wireup_respond(wiring_t **wiringp, sender_id_t rid,
 
     *msg = (wireup_msg_t){.op = OP_ACK, .sender_id = id, .addrlen = 0};
 
-    status = ucp_ep_create(wiring->ring.worker, &ep_params, &ep);
+    status = ucp_ep_create(wiring->ring->worker, &ep_params, &ep);
     if (status != UCS_OK) {
         warnx("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
         goto free_wire;
@@ -456,7 +475,7 @@ wireup_start(wiring_t **wiringp, ucp_address_t *laddr, size_t laddrlen,
     *msg = (wireup_msg_t){.op = OP_REQ, .sender_id = id, .addrlen = laddrlen};
     memcpy(&msg->addr[0], laddr, laddrlen);
 
-    status = ucp_ep_create(wiring->ring.worker, &ep_params, &ep);
+    status = ucp_ep_create(wiring->ring->worker, &ep_params, &ep);
     if (status != UCS_OK) {
         warnx("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
         goto free_wire;
@@ -564,12 +583,14 @@ wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
 }
 
 bool
-wireup_once(wiring_t *wiring)
+wireup_once(wiring_t **wiringp)
 {
-    rxring_t *ring = &wiring->ring;
+    wiring_t *wiring = *wiringp;
+    rxring_t *ring = wiring->ring;
     rxdesc_t *rdesc;
+    uint64_t now = getnanos();
 
-    /* TBD timeouts */
+    wireup_timeout_transition(wiring, now);
 
     if ((rdesc = rxring_next(ring)) == NULL)
         return true;
@@ -577,7 +598,7 @@ wireup_once(wiring_t *wiring)
     if (rdesc->status == UCS_OK) {
         printf("received %zu-byte message tagged %" PRIu64
                ", processing...\n", rdesc->rxlen, rdesc->sender_tag);
-        wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf,
+        wiring = wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf,
             rdesc->rxlen);
     } else if (rdesc->status == UCS_ERR_MESSAGE_TRUNCATED) {
         const size_t hdrlen = offsetof(wireup_msg_t, addr[0]);
@@ -607,5 +628,6 @@ wireup_once(wiring_t *wiring)
         return false;
     }
     rxdesc_setup(ring, rdesc->buf, rdesc->buflen, rdesc);
+    *wiringp = wiring;
     return true;
 }

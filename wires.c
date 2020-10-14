@@ -26,51 +26,20 @@ usage(const char *_progname)
 }
 
 static void
-run_client(ucp_worker_h worker, size_t request_size,
+run_client(wiring_t **wiringp, ucp_worker_h worker,
     ucp_address_t *laddr, size_t laddrlen,
     ucp_address_t *raddr, size_t raddrlen)
 {
-    wiring_t *wiring;
-
-    if ((wiring = wiring_create(worker, request_size)) == NULL)
-        errx(EXIT_FAILURE, "%s: could not create wiring", __func__);
-
-    wireup_start(&wiring, laddr, laddrlen, raddr, raddrlen);
-
-    while (wireup_once(wiring))
-            ucp_worker_progress(worker);
-
-    wiring_destroy(wiring);
-}
-
-static void
-run_server(ucp_worker_h worker, size_t request_size)
-{
-    wiring_t *wiring;
-
-    if ((wiring = wiring_create(worker, request_size)) == NULL)
-        errx(EXIT_FAILURE, "%s: could not create wiring", __func__);
-
-    while (wireup_once(wiring))
-            ucp_worker_progress(worker);
-
-    wiring_destroy(wiring);
+    wireup_start(wiringp, laddr, laddrlen, raddr, raddrlen);
 }
 
 int
 main(int argc, char **argv)
 {
-    ucs_status_t status;
-    ucp_config_t *config;
-    ucp_context_h context;
-    ucp_worker_h worker;
-    ucp_address_t *laddr;
-    ucp_address_t *raddr;
-    size_t i, laddrlen, raddrlen;
-    const char *delim = "";
     ucp_context_attr_t context_attrs;
     ucp_params_t global_params = {
-      .field_mask = UCP_PARAM_FIELD_FEATURES | UCP_PARAM_FIELD_REQUEST_SIZE |
+      .field_mask = UCP_PARAM_FIELD_FEATURES |
+                    UCP_PARAM_FIELD_REQUEST_SIZE |
                     UCP_PARAM_FIELD_REQUEST_INIT
     , .features = UCP_FEATURE_TAG | UCP_FEATURE_RMA
     , .request_size = sizeof(rxdesc_t)
@@ -80,6 +49,15 @@ main(int argc, char **argv)
       .field_mask = UCP_WORKER_PARAM_FIELD_THREAD_MODE
     , .thread_mode = UCS_THREAD_MODE_MULTI
     };
+    wiring_t *wiring;
+    ucp_config_t *config;
+    ucp_context_h context;
+    ucp_worker_h worker;
+    ucp_address_t *laddr;
+    ucp_address_t *raddr;
+    const char *delim = "";
+    size_t i, laddrlen, raddrlen;
+    ucs_status_t status;
 
     if (argc > 2)
         usage(argv[0]);
@@ -133,13 +111,17 @@ main(int argc, char **argv)
     }
     printf("\n");
 
+    if ((wiring = wiring_create(worker, context_attrs.request_size)) == NULL)
+        errx(EXIT_FAILURE, "%s: could not create wiring", __func__);
+
     if (raddr != NULL) {      /* * * client mode * * */
-        run_client(worker, context_attrs.request_size,
-            laddr, laddrlen, raddr, raddrlen);
-        free(raddr);
-    } else {                        /* * * server mode * * */
-        run_server(worker, context_attrs.request_size);
+        run_client(&wiring, worker, laddr, laddrlen, raddr, raddrlen);
     }
+
+    while (wireup_once(&wiring))
+            ucp_worker_progress(worker);
+
+    wiring_destroy(wiring);
 
     ucp_worker_release_address(worker, laddr);
 cleanup_worker:

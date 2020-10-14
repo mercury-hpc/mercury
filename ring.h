@@ -51,6 +51,8 @@ struct _rxring {
 void rxdesc_init(void *);
 rxdesc_t *rxring_next(rxring_t *);
 void rxdesc_setup(rxring_t *, void *, size_t, rxdesc_t *);
+rxring_t *rxring_create(ucp_worker_h, size_t, ucp_tag_t, ucp_tag_t,
+    size_t, size_t);
 void rxring_init(ucp_worker_h, rxring_t *, size_t, ucp_tag_t, ucp_tag_t,
    size_t, size_t);
 void rxring_destroy(rxring_t *);

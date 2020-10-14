@@ -116,6 +116,20 @@ header_free(size_t header_size, size_t alignment, void *buf)
     free((char *)buf - header_size - pad);
 }
 
+rxring_t *
+rxring_create(ucp_worker_h worker, size_t request_size,
+    ucp_tag_t tag, ucp_tag_t tag_mask, size_t buflen, size_t nelts)
+{
+    rxring_t *ring;
+
+    ring = malloc(sizeof(*ring));
+    if (ring == NULL)
+        return NULL;
+
+    rxring_init(worker, ring, request_size, tag, tag_mask, buflen, nelts);
+    return ring;
+}
+
 void
 rxring_init(ucp_worker_h worker, rxring_t *ring, size_t request_size,
     ucp_tag_t tag, ucp_tag_t tag_mask, size_t buflen, size_t nelts)

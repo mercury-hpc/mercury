@@ -43,7 +43,7 @@ struct _wire {
 };
 
 struct _wiring {
-    rxring_t ring;
+    rxring_t *ring;
     sender_id_t first_free;
     sender_id_t first_to_expire, last_to_expire;
     size_t nwires;
@@ -166,7 +166,7 @@ wire_is_connected(const wire_t *w)
 }
 
 wiring_t *wiring_create(ucp_worker_h, size_t);
-bool wireup_once(wiring_t *);
+bool wireup_once(wiring_t **);
 wiring_t *wiring_enlarge(wiring_t *);
 void wiring_destroy(wiring_t *);
 wire_t *wireup_start(wiring_t **, ucp_address_t *, size_t,
