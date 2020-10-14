@@ -14,6 +14,8 @@
 #include "util.h"
 #include "wireup.h"
 
+#define START_WIREUP_TAG 17
+
 static void
 usage(const char *_progname)
 {
