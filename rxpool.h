@@ -13,8 +13,8 @@ typedef struct _txdesc {
     bool completed;
 } txdesc_t;
 
-struct _rxring;
-typedef struct _rxring rxring_t;
+struct _rxpool;
+typedef struct _rxpool rxpool_t;
 
 struct _rxdesc;
 typedef struct _rxdesc rxdesc_t;
@@ -40,7 +40,7 @@ typedef struct _rxdesc_fifo {
 
 typedef TAILQ_HEAD(_rxdesc_list, _rxdesc) rxdesc_list_t;
 
-struct _rxring {
+struct _rxpool {
     ucp_tag_t tag, tag_mask;
     ucp_worker_h worker;
     size_t request_size;
@@ -49,12 +49,12 @@ struct _rxring {
 };
 
 void rxdesc_init(void *);
-rxdesc_t *rxring_next(rxring_t *);
-void rxdesc_setup(rxring_t *, void *, size_t, rxdesc_t *);
-rxring_t *rxring_create(ucp_worker_h, size_t, ucp_tag_t, ucp_tag_t,
+rxdesc_t *rxpool_next(rxpool_t *);
+void rxdesc_setup(rxpool_t *, void *, size_t, rxdesc_t *);
+rxpool_t *rxpool_create(ucp_worker_h, size_t, ucp_tag_t, ucp_tag_t,
     size_t, size_t);
-void rxring_init(ucp_worker_h, rxring_t *, size_t, ucp_tag_t, ucp_tag_t,
+void rxpool_init(ucp_worker_h, rxpool_t *, size_t, ucp_tag_t, ucp_tag_t,
    size_t, size_t);
-void rxring_destroy(rxring_t *);
+void rxpool_destroy(rxpool_t *);
 
 #endif /* _RING_H_ */

@@ -10,7 +10,7 @@
 
 #include <ucp/api/ucp.h>
 
-#include "ring.h"
+#include "rxpool.h"
 #include "util.h"
 #include "wiring.h"
 #include "wireup.h"

@@ -5,7 +5,7 @@
 #include <time.h> /* clock_gettime(2) */
 #include <unistd.h> /* size_t, SIZE_MAX */
 
-#include "ring.h"
+#include "rxpool.h"
 #include "tag.h"
 #include "util.h"
 #include "wireup.h"
@@ -260,8 +260,8 @@ wireup_send_callback(void *request, ucs_status_t status, void *user_data)
 void
 wiring_destroy(wiring_t *wiring)
 {
-    if (wiring->ring != NULL)
-        rxring_destroy(wiring->ring);
+    if (wiring->rxpool != NULL)
+        rxpool_destroy(wiring->rxpool);
     /* TBD tear down wires; send a bad keepalive or a "bye" to destroy wires
      * on peers?
      */
@@ -297,10 +297,10 @@ wiring_create(ucp_worker_h worker, size_t request_size)
 
     wiring->first_to_expire = wiring->last_to_expire = SENDER_ID_NIL;
 
-    wiring->ring = rxring_create(worker, request_size,
+    wiring->rxpool = rxpool_create(worker, request_size,
         TAG_CHNL_WIREUP, TAG_CHNL_MASK, sizeof(wireup_msg_t) + 93, 3);
 
-    if (wiring->ring == NULL) {
+    if (wiring->rxpool == NULL) {
         wiring_destroy(wiring);
         return NULL;
     }
@@ -405,7 +405,7 @@ wireup_respond(wiring_t **wiringp, sender_id_t rid,
 
     *msg = (wireup_msg_t){.op = OP_ACK, .sender_id = id, .addrlen = 0};
 
-    status = ucp_ep_create(wiring->ring->worker, &ep_params, &ep);
+    status = ucp_ep_create(wiring->rxpool->worker, &ep_params, &ep);
     if (status != UCS_OK) {
         warnx("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
         goto free_wire;
@@ -475,7 +475,7 @@ wireup_start(wiring_t **wiringp, ucp_address_t *laddr, size_t laddrlen,
     *msg = (wireup_msg_t){.op = OP_REQ, .sender_id = id, .addrlen = laddrlen};
     memcpy(&msg->addr[0], laddr, laddrlen);
 
-    status = ucp_ep_create(wiring->ring->worker, &ep_params, &ep);
+    status = ucp_ep_create(wiring->rxpool->worker, &ep_params, &ep);
     if (status != UCS_OK) {
         warnx("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
         goto free_wire;
@@ -586,13 +586,13 @@ bool
 wireup_once(wiring_t **wiringp)
 {
     wiring_t *wiring = *wiringp;
-    rxring_t *ring = wiring->ring;
+    rxpool_t *rxpool = wiring->rxpool;
     rxdesc_t *rdesc;
     uint64_t now = getnanos();
 
     wireup_timeout_transition(wiring, now);
 
-    if ((rdesc = rxring_next(ring)) == NULL)
+    if ((rdesc = rxpool_next(rxpool)) == NULL)
         return true;
 
     if (rdesc->status == UCS_OK) {
@@ -627,7 +627,7 @@ wireup_once(wiring_t **wiringp)
             ucs_status_string(rdesc->status));
         return false;
     }
-    rxdesc_setup(ring, rdesc->buf, rdesc->buflen, rdesc);
+    rxdesc_setup(rxpool, rdesc->buf, rdesc->buflen, rdesc);
     *wiringp = wiring;
     return true;
 }

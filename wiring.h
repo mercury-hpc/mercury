@@ -43,7 +43,7 @@ struct _wire {
 };
 
 struct _wiring {
-    rxring_t *ring;
+    rxpool_t *rxpool;
     sender_id_t first_free;
     sender_id_t first_to_expire, last_to_expire;
     size_t nwires;

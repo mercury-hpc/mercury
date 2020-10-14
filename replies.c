@@ -10,7 +10,7 @@
 
 #include <ucp/api/ucp.h>
 
-#include "ring.h"
+#include "rxpool.h"
 #include "util.h"
 #include "wireup.h"
 
@@ -58,7 +58,7 @@ run_client(ucp_worker_h worker, size_t request_size,
     ucp_address_t *local_addr, size_t local_addr_len,
     ucp_address_t *remote_addr, size_t remote_addr_len)
 {
-    rxring_t rring;
+    rxpool_t rxpool;
     rxdesc_t *rdesc;
     ucs_status_t status;
     void *request;
@@ -86,7 +86,7 @@ run_client(ucp_worker_h worker, size_t request_size,
     if ((status = ucp_ep_create(worker, &ep_params, &remote_ep)) != UCS_OK)
         errx(EXIT_FAILURE, "client %s: ucp_ep_create", __func__);
 
-    rxring_init(worker, &rring, request_size,
+    rxpool_init(worker, &rxpool, request_size,
         START_WIREUP_TAG, UINT64_MAX, sizeof(wireup_msg_t), 3);
 
     req->op = OP_REQ;
@@ -113,14 +113,14 @@ run_client(ucp_worker_h worker, size_t request_size,
 
     free(req);
 
-    while ((rdesc = rxring_next(&rring)) == NULL)
+    while ((rdesc = rxpool_next(&rxpool)) == NULL)
         ucp_worker_progress(worker);
 
     reply = rdesc->buf;
 
     assert(reply->op == OP_ACK);
 
-    rxring_destroy(&rring);
+    rxpool_destroy(&rxpool);
 
     ep_close(worker, remote_ep);
 }
@@ -193,17 +193,17 @@ process_rx_msg(ucp_worker_h worker, ucp_tag_t tag, void *buf, size_t buflen)
 }
 
 static bool
-run_server_once(rxring_t *rring)
+run_server_once(rxpool_t *rxpool)
 {
     rxdesc_t *rdesc;
 
-    if ((rdesc = rxring_next(rring)) == NULL)
+    if ((rdesc = rxpool_next(rxpool)) == NULL)
         return true;
 
     if (rdesc->status == UCS_OK) {
         printf("received %zu-byte message tagged %" PRIu64
                ", processing...\n", rdesc->rxlen, rdesc->sender_tag);
-        process_rx_msg(rring->worker, rdesc->sender_tag, rdesc->buf,
+        process_rx_msg(rxpool->worker, rdesc->sender_tag, rdesc->buf,
             rdesc->rxlen);
     } else if (rdesc->status == UCS_ERR_MESSAGE_TRUNCATED) {
         const size_t hdrlen = offsetof(wireup_msg_t, addr[0]);
@@ -230,22 +230,22 @@ run_server_once(rxring_t *rring)
             ucs_status_string(rdesc->status));
         return false;
     }
-    rxdesc_setup(rring, rdesc->buf, rdesc->buflen, rdesc);
+    rxdesc_setup(rxpool, rdesc->buf, rdesc->buflen, rdesc);
     return true;
 }
 
 static void
 run_server(ucp_worker_h worker, size_t request_size)
 {
-    rxring_t rring;
+    rxpool_t rxpool;
 
-    rxring_init(worker, &rring, request_size, START_WIREUP_TAG, UINT64_MAX,
+    rxpool_init(worker, &rxpool, request_size, START_WIREUP_TAG, UINT64_MAX,
         sizeof(wireup_msg_t) + 93, 3);
 
-    while (run_server_once(&rring))
+    while (run_server_once(&rxpool))
             ucp_worker_progress(worker);
 
-    rxring_destroy(&rring);
+    rxpool_destroy(&rxpool);
 }
 
 int
