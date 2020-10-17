@@ -1249,7 +1249,8 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
                     if (hg_thread_cond_timedwait(
                             &na_private_context->completion_queue_cond,
                             &na_private_context->completion_queue_mutex,
-                            timeout) != HG_UTIL_SUCCESS) {
+                            (unsigned int) (remaining * 1000.0)) !=
+                        HG_UTIL_SUCCESS) {
                         /* Timeout occurred so leave */
                         ret = NA_TIMEOUT;
                         break;
