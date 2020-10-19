@@ -362,6 +362,9 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
         events[0].events |= HG_POLLINTR;
         *actual_events = 1;
 
+        /* Reset errno */
+        errno = 0;
+
         return HG_UTIL_SUCCESS;
     }
 
