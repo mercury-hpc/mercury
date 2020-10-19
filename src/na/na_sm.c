@@ -3284,8 +3284,10 @@ na_sm_process_unexpected(struct na_sm_op_queue *unexpected_op_queue,
     /* Pop op ID from queue */
     hg_thread_spin_lock(&unexpected_op_queue->lock);
     na_sm_op_id = HG_QUEUE_FIRST(&unexpected_op_queue->queue);
-    HG_QUEUE_POP_HEAD(&unexpected_op_queue->queue, entry);
-    hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_QUEUED);
+    if (likely(na_sm_op_id)) {
+        HG_QUEUE_POP_HEAD(&unexpected_op_queue->queue, entry);
+        hg_atomic_and32(&na_sm_op_id->status, ~NA_SM_OP_QUEUED);
+    }
     hg_thread_spin_unlock(&unexpected_op_queue->lock);
 
     if (likely(na_sm_op_id)) {
