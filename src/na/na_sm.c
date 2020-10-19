@@ -269,7 +269,6 @@ struct na_sm_map {
 
 /* Map insert cb args */
 struct na_sm_lookup_args {
-    struct na_sm_endpoint *endpoint;
     pid_t pid;
     na_uint8_t id;
 };
@@ -2360,12 +2359,6 @@ na_sm_addr_lookup_insert_cb(void *arg, struct na_sm_addr **addr)
     ret = na_sm_addr_create(args->pid, args->id, NA_FALSE, &na_sm_addr);
     NA_CHECK_NA_ERROR(done, ret, "Could not allocate address");
 
-    /* Add address to list of addresses to poll */
-    hg_thread_spin_lock(&args->endpoint->poll_addr_list.lock);
-    HG_LIST_INSERT_HEAD(
-        &args->endpoint->poll_addr_list.list, na_sm_addr, entry);
-    hg_thread_spin_unlock(&args->endpoint->poll_addr_list.lock);
-
     *addr = na_sm_addr;
 
 done:
@@ -2511,6 +2504,12 @@ na_sm_addr_resolve(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     }
 
     hg_atomic_or32(&na_sm_addr->status, NA_SM_ADDR_RESOLVED);
+
+    /* Add address to list of addresses to poll */
+    hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
+    HG_LIST_INSERT_HEAD(
+        &na_sm_endpoint->poll_addr_list.list, na_sm_addr, entry);
+    hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
 
     return ret;
 
@@ -3822,8 +3821,7 @@ na_sm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
     /* Lookup addr from hash table */
     na_sm_addr = na_sm_addr_map_lookup(&na_sm_endpoint->addr_map, addr_key);
     if (!na_sm_addr) {
-        struct na_sm_lookup_args args = {
-            .endpoint = na_sm_endpoint, .pid = pid, .id = id};
+        struct na_sm_lookup_args args = {.pid = pid, .id = id};
         na_return_t na_ret;
 
         NA_LOG_DEBUG("Addess was not found, attempting to insert it (key=%lu)",
