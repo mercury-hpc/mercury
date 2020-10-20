@@ -49,7 +49,7 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
                 break;
             }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
             /* Are we using SM routing */
             if (hg_proc_get_flags(proc) & HG_PROC_SM)
                 flags |= HG_BULK_SM;

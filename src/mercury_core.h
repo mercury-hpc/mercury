@@ -197,7 +197,7 @@ HG_Core_class_is_listening(const hg_core_class_t *hg_core_class);
 static HG_INLINE na_class_t *
 HG_Core_class_get_na(const hg_core_class_t *hg_core_class);
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 /**
  * Obtain the underlying NA SM class.
  *
@@ -309,7 +309,7 @@ HG_Core_context_get_class(const hg_core_context_t *context);
 static HG_INLINE na_context_t *
 HG_Core_context_get_na(const hg_core_context_t *context);
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 /**
  * Retrieve the underlying NA SM context.
  *
@@ -517,7 +517,7 @@ HG_Core_addr_set_remove(hg_core_addr_t addr);
 static HG_INLINE na_addr_t
 HG_Core_addr_get_na(hg_core_addr_t addr);
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 /**
  * Obtain the underlying NA SM address from an HG address.
  *
@@ -867,7 +867,7 @@ HG_Core_cancel(hg_core_handle_t handle);
 /* HG core class */
 struct hg_core_class {
     na_class_t *na_class; /* NA class */
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     na_class_t *na_sm_class; /* NA SM class */
 #endif
     void *data;                         /* User data */
@@ -878,7 +878,7 @@ struct hg_core_class {
 struct hg_core_context {
     struct hg_core_class *core_class; /* HG core class */
     na_context_t *na_context;         /* NA context */
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     na_context_t *na_sm_context; /* NA SM context */
 #endif
     void *data;                         /* User data */
@@ -890,7 +890,7 @@ struct hg_core_context {
 struct hg_core_addr {
     struct hg_core_class *core_class; /* HG core class */
     na_addr_t na_addr;                /* NA address */
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     na_addr_t na_sm_addr; /* NA SM address */
 #endif
     hg_bool_t is_self; /* Self address */
@@ -946,7 +946,7 @@ HG_Core_class_get_na(const hg_core_class_t *hg_core_class)
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 static HG_INLINE na_class_t *
 HG_Core_class_get_na_sm(const hg_core_class_t *hg_core_class)
 {
@@ -1010,7 +1010,7 @@ HG_Core_context_get_na(const hg_core_context_t *context)
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 static HG_INLINE na_context_t *
 HG_Core_context_get_na_sm(const hg_core_context_t *context)
 {
@@ -1051,7 +1051,7 @@ HG_Core_addr_get_na(hg_core_addr_t addr)
 }
 
 /*---------------------------------------------------------------------------*/
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 static HG_INLINE na_addr_t
 HG_Core_addr_get_na_sm(hg_core_addr_t addr)
 {
