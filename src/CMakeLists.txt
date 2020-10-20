@@ -107,15 +107,6 @@ if(MERCURY_USE_EAGER_BULK)
   set(HG_HAS_EAGER_BULK 1)
 endif()
 
-# Post limit
-option(MERCURY_ENABLE_POST_LIMIT "Limit number of handles posted by listeners." ON)
-if(MERCURY_ENABLE_POST_LIMIT)
-  set(HG_HAS_POST_LIMIT 1)
-endif()
-mark_as_advanced(MERCURY_ENABLE_POST_LIMIT)
-set(MERCURY_POST_LIMIT "256" CACHE STRING "Number of handles posted.")
-mark_as_advanced(MERCURY_POST_LIMIT)
-
 # Transparent shared-memory routing
 option(MERCURY_USE_SM_ROUTING
   "Enable routing of local communication through shared-memory (requires SM)."
