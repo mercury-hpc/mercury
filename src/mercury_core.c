@@ -868,6 +868,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     na_tag_t na_max_tag;
 #ifdef NA_HAS_SM
     na_tag_t na_sm_max_tag;
+    const char *na_class_name;
     hg_bool_t auto_sm = HG_FALSE;
 #endif
     hg_return_t ret = HG_SUCCESS;
@@ -925,16 +926,24 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
     }
 
 #ifdef NA_HAS_SM
+    /* Retrieve NA class name */
+    na_class_name = NA_Get_class_name(hg_core_class->core_class.na_class);
+
+    /* Check for compatibility with SM */
+    if (auto_sm && strcmp(na_class_name, "mpi") == 0) {
+        HG_LOG_WARNING(
+            "Auto SM mode is not compatible with MPI NA class, disabling");
+        auto_sm = HG_FALSE;
+    }
+    if (auto_sm && strcmp(na_class_name, "na") == 0) {
+        HG_LOG_WARNING(
+            "Auto SM mode is set but NA class is already SM, ignoring");
+        auto_sm = HG_FALSE;
+    }
+
     /* Initialize SM plugin */
     if (auto_sm) {
         na_return_t na_ret;
-
-        HG_CHECK_ERROR(
-            strcmp(NA_Get_class_name(hg_core_class->core_class.na_class),
-                "na") == 0,
-            error, ret, HG_PROTONOSUPPORT,
-            "Cannot use auto SM mode if initialized "
-            "NA class is already using SM");
 
         /* Initialize NA SM first so that tmp directories are created */
         hg_core_class->core_class.na_sm_class =
@@ -1554,7 +1563,8 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
 
 #ifdef NA_HAS_SM
     /* Parse name string */
-    if (strstr(name, HG_CORE_ADDR_DELIMITER)) {
+    if (hg_core_class->core_class.na_sm_class &&
+        strstr(name, HG_CORE_ADDR_DELIMITER)) {
         char *lookup_names, *local_id_str;
         char *remote_name, *local_name;
 
@@ -1579,8 +1589,7 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
         local_name = lookup_names;
 
         /* Compare IDs, if they match it's local address */
-        if (hg_core_class->core_class.na_sm_class &&
-            NA_SM_Host_id_cmp(hg_core_addr->host_id, hg_core_class->host_id)) {
+        if (NA_SM_Host_id_cmp(hg_core_addr->host_id, hg_core_class->host_id)) {
             HG_LOG_DEBUG("This is a local address");
             name_str = local_name;
             na_class_ptr = &hg_core_addr->core_addr.core_class->na_sm_class;
