@@ -49,6 +49,11 @@ struct hg_init_info {
      * Default is: false */
     hg_bool_t auto_sm;
 
+    /* Controls whether mercury should _NOT_ attempt to transfer small bulk data
+     * along with the RPC request.
+     * Default is: false */
+    hg_bool_t no_bulk_eager;
+
     /* (Debug) Print stats at exit.
      * Default is: false */
     hg_bool_t stats;
@@ -132,7 +137,7 @@ typedef enum {
 /* HG init info initializer */
 #define HG_INIT_INFO_INITIALIZER                                               \
     {                                                                          \
-        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, HG_FALSE               \
+        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, HG_FALSE, HG_FALSE     \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */
