@@ -27,7 +27,7 @@
 #include "mercury_thread_spin.h"
 #include "mercury_time.h"
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
 #    include <na_sm.h>
 #endif
 
@@ -38,18 +38,29 @@
 /* Local Macros */
 /****************/
 
-#define HG_CORE_ATOMIC_QUEUE_SIZE  (1024)
+/* Size of comletion queue used for holding completed requests */
+#define HG_CORE_ATOMIC_QUEUE_SIZE (1024)
+
+/* Pre-posted requests and op IDs */
 #define HG_CORE_POST_INIT          (256)
 #define HG_CORE_POST_INCR          (256)
 #define HG_CORE_BULK_OP_INIT_COUNT (256)
-#define HG_CORE_CLEANUP_TIMEOUT    (1000)
-#define HG_CORE_MAX_EVENTS         (1)
-#define HG_CORE_MAX_TRIGGER_COUNT  (1)
-#ifdef HG_HAS_SM_ROUTING
+
+/* Timeout on finalize */
+#define HG_CORE_CLEANUP_TIMEOUT (1000)
+
+/* Max number of events for progress */
+#define HG_CORE_MAX_EVENTS        (1)
+#define HG_CORE_MAX_TRIGGER_COUNT (1)
+
+#ifdef NA_HAS_SM
+/* Addr string format */
 #    define HG_CORE_ADDR_MAX_SIZE   (256)
 #    define HG_CORE_PROTO_DELIMITER ":"
 #    define HG_CORE_ADDR_DELIMITER  "#"
-#    define HG_CORE_MIN(a, b)       (a < b) ? a : b /* Min macro */
+
+/* Min macro */
+#    define HG_CORE_MIN(a, b) (a < b) ? a : b
 #endif
 
 /* Op status bits */
@@ -98,6 +109,7 @@ typedef hg_atomic_int32_t hg_core_stat_t;
 #    define HG_CORE_STAT_INIT HG_ATOMIC_VAR_INIT
 #endif
 
+/* Private accessors */
 #define HG_CORE_CONTEXT_CLASS(context)                                         \
     ((struct hg_core_private_class *) (context->core_context.core_class))
 
@@ -116,7 +128,7 @@ typedef hg_atomic_int32_t hg_core_stat_t;
 /* HG class */
 struct hg_core_private_class {
     struct hg_core_class core_class; /* Must remain as first field */
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     na_sm_id_t host_id; /* Host ID for local identification */
 #endif
     hg_hash_table_t *func_map; /* Function map */
@@ -140,7 +152,7 @@ struct hg_core_private_class {
 /* Poll type */
 typedef enum hg_core_poll_type {
     HG_CORE_POLL_LOOPBACK = 1,
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     HG_CORE_POLL_SM,
 #endif
     HG_CORE_POLL_NA
@@ -156,7 +168,7 @@ struct hg_core_private_context {
     struct hg_atomic_queue *completion_queue;          /* Default queue */
     HG_LIST_HEAD(hg_core_private_handle) created_list; /* Created handle list */
     HG_LIST_HEAD(hg_core_private_handle) pending_list; /* Pending handle list */
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     HG_LIST_HEAD(hg_core_private_handle) sm_pending_list; /* Pending handles */
 #endif
     hg_return_t (*handle_create)(hg_core_handle_t, void *); /* Create cb */
@@ -190,7 +202,7 @@ struct hg_core_self_cb_info {
 struct hg_core_private_addr {
     struct hg_core_addr core_addr;    /* Must remain as first field */
     na_size_t na_addr_serialize_size; /* Cached serialization size */
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     na_size_t na_sm_addr_serialize_size; /* Cached serialization size */
     na_sm_id_t host_id;                  /* NA SM Host ID */
 #endif
@@ -854,7 +866,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
 {
     struct hg_core_private_class *hg_core_class = NULL;
     na_tag_t na_max_tag;
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     na_tag_t na_sm_max_tag;
     hg_bool_t auto_sm = HG_FALSE;
 #endif
@@ -883,12 +895,12 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             hg_core_class->request_post_incr = hg_init_info->request_post_incr;
         }
         hg_core_class->progress_mode = hg_init_info->na_init_info.progress_mode;
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
         auto_sm = hg_init_info->auto_sm;
 #else
         HG_CHECK_WARNING(hg_init_info->auto_sm,
-            "Auto SM requested but not enabled, "
-            "please turn ON MERCURY_USE_SM_ROUTING in CMake options");
+            "Option auto_sm requested but NA SM pluging was not compiled, "
+            "please turn ON NA_USE_SM in CMake options");
 #endif
 #ifdef HG_HAS_COLLECT_STATS
         hg_core_class->stats = hg_init_info->stats;
@@ -912,7 +924,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             HG_NA_ERROR, "Could not initialize NA class");
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     /* Initialize SM plugin */
     if (auto_sm) {
         na_return_t na_ret;
@@ -943,7 +955,7 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
         na_max_tag == 0, error, ret, HG_NA_ERROR, "NA Max tag is not defined");
     hg_core_class->request_max_tag = na_max_tag;
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (auto_sm) {
         na_sm_max_tag =
             NA_Msg_get_max_tag(hg_core_class->core_class.na_sm_class);
@@ -1026,7 +1038,7 @@ hg_core_finalize(struct hg_core_private_class *hg_core_class)
         hg_core_class->core_class.na_class = NULL;
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     /* Finalize SM interface */
     na_ret = NA_Finalize(hg_core_class->core_class.na_sm_class);
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret, (hg_return_t) na_ret,
@@ -1064,7 +1076,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
     HG_QUEUE_INIT(&context->backfill_queue);
     hg_atomic_init32(&context->backfill_queue_count, 0);
     HG_LIST_INIT(&context->pending_list);
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     HG_LIST_INIT(&context->sm_pending_list);
 #endif
     HG_LIST_INIT(&context->created_list);
@@ -1090,7 +1102,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
     HG_CHECK_ERROR(context->core_context.na_context == NULL, error, ret,
         HG_NOMEM, "Could not create NA context");
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (hg_core_class->na_sm_class) {
         context->core_context.na_sm_context =
             NA_Context_create(hg_core_class->na_sm_class);
@@ -1119,7 +1131,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
         HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
             "hg_poll_add() failed");
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
         if (context->core_context.na_sm_context) {
             na_poll_fd = NA_Poll_get_fd(hg_core_class->na_sm_class,
                 context->core_context.na_sm_context);
@@ -1246,7 +1258,7 @@ hg_core_context_destroy(struct hg_core_private_context *context)
         }
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (context->core_context.na_sm_context && context->poll_set) {
         /* If NA plugin exposes fd, remove it from poll set */
         int na_poll_fd =
@@ -1276,7 +1288,7 @@ hg_core_context_destroy(struct hg_core_private_context *context)
             "Could not destroy NA context (%s)", NA_Error_to_string(na_ret));
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     /* Destroy NA SM context */
     if (context->core_context.na_sm_context) {
         na_return_t na_ret =
@@ -1372,7 +1384,7 @@ hg_core_context_unpost(struct hg_core_private_context *context)
         HG_CHECK_HG_ERROR(error, ret, "Could not cancel handle");
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     HG_LIST_FOREACH (hg_core_handle, &context->sm_pending_list, pending) {
         /* Prevent reposts */
         hg_core_handle->repost = HG_FALSE;
@@ -1394,7 +1406,7 @@ hg_core_context_unpost(struct hg_core_private_context *context)
         (hg_return_t) na_ret, "Could not trigger NA callback (%s)",
         NA_Error_to_string(na_ret));
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (context->core_context.na_sm_context) {
         do {
             na_ret = NA_Trigger(
@@ -1430,7 +1442,7 @@ hg_core_context_check_pending(struct hg_core_private_context *context,
     /* Check if we need more handles */
     hg_thread_spin_lock(&context->pending_list_lock);
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (na_class == context->core_context.core_class->na_sm_class) {
         pending_empty = HG_LIST_IS_EMPTY(&context->sm_pending_list);
     } else
@@ -1456,7 +1468,7 @@ hg_core_context_lists_wait(struct hg_core_private_context *context)
 {
     hg_util_bool_t created_list_empty = HG_UTIL_FALSE;
     hg_util_bool_t pending_list_empty = HG_UTIL_FALSE;
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     hg_util_bool_t sm_pending_list_empty = HG_UTIL_FALSE;
 #else
     hg_util_bool_t sm_pending_list_empty = HG_UTIL_TRUE;
@@ -1485,7 +1497,7 @@ hg_core_context_lists_wait(struct hg_core_private_context *context)
 
         hg_thread_spin_lock(&context->pending_list_lock);
         pending_list_empty = HG_LIST_IS_EMPTY(&context->pending_list);
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
         sm_pending_list_empty = HG_LIST_IS_EMPTY(&context->sm_pending_list);
 #endif
         hg_thread_spin_unlock(&context->pending_list_lock);
@@ -1527,7 +1539,7 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
     na_addr_t *na_addr_ptr = NULL;
     na_size_t *na_addr_serialize_size_ptr = NULL;
     na_return_t na_ret;
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     char lookup_name[HG_CORE_ADDR_MAX_SIZE] = {'\0'};
 #endif
     const char *name_str = name;
@@ -1540,7 +1552,7 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
 
     /* TODO lookup could also create self addresses */
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     /* Parse name string */
     if (strstr(name, HG_CORE_ADDR_DELIMITER)) {
         char *lookup_names, *local_id_str;
@@ -1588,7 +1600,7 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
         na_class_ptr = &hg_core_addr->core_addr.core_class->na_class;
         na_addr_ptr = &hg_core_addr->core_addr.na_addr;
         na_addr_serialize_size_ptr = &hg_core_addr->na_addr_serialize_size;
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     }
 #endif
 
@@ -1626,7 +1638,7 @@ hg_core_addr_create(struct hg_core_private_class *hg_core_class)
     memset(hg_core_addr, 0, sizeof(struct hg_core_private_addr));
     hg_core_addr->core_addr.core_class = (hg_core_class_t *) hg_core_class;
     hg_core_addr->core_addr.na_addr = NA_ADDR_NULL;
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     hg_core_addr->core_addr.na_sm_addr = NA_ADDR_NULL;
 #endif
     hg_core_addr->core_addr.is_self = HG_FALSE;
@@ -1682,7 +1694,7 @@ hg_core_addr_free_na(struct hg_core_private_addr *hg_core_addr)
         hg_core_addr->na_addr_serialize_size = 0;
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     /* Free NA SM address */
     if (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
         na_return_t na_ret =
@@ -1714,7 +1726,7 @@ hg_core_addr_set_remove(struct hg_core_private_addr *hg_core_addr)
             "NA_Addr_set_remove() failed (%s)", NA_Error_to_string(na_ret));
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
         na_ret =
             NA_Addr_set_remove(hg_core_addr->core_addr.core_class->na_sm_class,
@@ -1752,7 +1764,7 @@ hg_core_addr_self(struct hg_core_private_class *hg_core_class,
     hg_core_addr->na_addr_serialize_size = NA_Addr_get_serialize_size(
         hg_core_class->core_class.na_class, hg_core_addr->core_addr.na_addr);
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (hg_core_class->core_class.na_sm_class) {
         /* Get SM address */
         na_ret = NA_Addr_self(hg_core_class->core_class.na_sm_class,
@@ -1805,7 +1817,7 @@ hg_core_addr_dup(struct hg_core_private_addr *hg_core_addr,
             hg_core_addr->na_addr_serialize_size;
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
         na_ret = NA_Addr_dup(hg_core_addr->core_addr.core_class->na_sm_class,
             hg_core_addr->core_addr.na_sm_addr,
@@ -1851,7 +1863,7 @@ hg_core_addr_cmp(
     ret &= (hg_bool_t) NA_Addr_cmp(addr1->core_addr.core_class->na_class,
         addr1->core_addr.na_addr, addr2->core_addr.na_addr);
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     /* Compare NA SM addresses */
     if (addr1->core_addr.core_class->na_sm_class)
         ret &= (hg_bool_t) NA_Addr_cmp(addr1->core_addr.core_class->na_sm_class,
@@ -1875,7 +1887,7 @@ hg_core_addr_to_string(
 
     new_buf_size = *buf_size;
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     /* When we have local and remote addresses */
     if ((hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) &&
         (hg_core_addr->core_addr.na_addr != NA_ADDR_NULL)) {
@@ -1952,7 +1964,7 @@ hg_core_addr_get_serialize_size(
         ret += hg_core_addr->na_addr_serialize_size;
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     ret += sizeof(na_size_t);
 
     if ((flags & HG_CORE_SM) &&
@@ -2004,7 +2016,7 @@ hg_core_addr_serialize(void *buf, hg_size_t buf_size, hg_uint8_t flags,
             &na_sm_addr_serialize_size, na_size_t);
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if ((flags & HG_CORE_SM) &&
         hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL) {
         na_return_t na_ret;
@@ -2069,7 +2081,7 @@ hg_core_addr_deserialize(struct hg_core_private_class *hg_core_class,
             hg_core_addr->core_addr.na_addr);
     }
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     HG_CORE_DECODE(error, ret, buf_ptr, buf_size_left,
         &hg_core_addr->na_sm_addr_serialize_size, na_size_t);
 
@@ -2529,7 +2541,7 @@ hg_core_post(struct hg_core_private_handle *hg_core_handle)
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (hg_core_handle->na_class ==
         hg_core_handle->core_handle.info.core_class->na_sm_class) {
         hg_thread_spin_lock(
@@ -2548,7 +2560,7 @@ hg_core_post(struct hg_core_private_handle *hg_core_handle)
             hg_core_handle, pending);
         hg_thread_spin_unlock(
             &HG_CORE_HANDLE_CONTEXT(hg_core_handle)->pending_list_lock);
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     }
 #endif
 
@@ -3064,7 +3076,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
 
         /* Fill unexpected info */
         hg_core_handle->na_addr = na_cb_info_recv_unexpected->source;
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
         if (hg_core_handle->na_class ==
             hg_core_handle->core_handle.info.core_class->na_sm_class) {
             HG_LOG_DEBUG("Using NA SM class for this handle");
@@ -3722,7 +3734,7 @@ hg_core_poll_try_wait(struct hg_core_private_context *context)
         (hg_atomic_get32(&context->backfill_queue_count) > 0))
         return HG_FALSE;
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (context->core_context.core_class->na_sm_class &&
         !NA_Poll_try_wait(context->core_context.core_class->na_sm_class,
             context->core_context.na_sm_context))
@@ -3775,7 +3787,7 @@ hg_core_poll_wait(struct hg_core_private_context *context, unsigned int timeout,
                     done, ret, "hg_core_progress_loopback_notify() failed");
                 break;
 #endif
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
             case HG_CORE_POLL_SM:
                 HG_LOG_DEBUG("HG_CORE_POLL_SM event");
 
@@ -3818,7 +3830,7 @@ hg_core_poll(struct hg_core_private_context *context, unsigned int timeout,
     unsigned int progress_timeout;
     hg_return_t ret;
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     /* Poll over SM first if set */
     if (context->core_context.na_sm_context) {
         ret = hg_core_progress_na(
@@ -3832,7 +3844,7 @@ hg_core_poll(struct hg_core_private_context *context, unsigned int timeout,
     } else {
 #endif
         progress_timeout = timeout;
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     }
 #endif
 
@@ -4367,7 +4379,7 @@ HG_Core_context_post(hg_core_context_t *context)
     HG_CHECK_HG_ERROR(error, ret, "Could not post requests on context");
     posted = HG_TRUE;
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (context->na_sm_context) {
         ret = hg_core_context_post((struct hg_core_private_context *) context,
             context->core_class->na_sm_class, context->na_sm_context,
@@ -4830,7 +4842,7 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
     HG_LOG_DEBUG("Creating new handle with ID=%llu, address=%p", id, addr);
 
     /* Determine which NA class/context to use */
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (hg_core_addr && !hg_core_addr->core_addr.is_self &&
         (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL)) {
         HG_LOG_DEBUG("Using NA SM class for this handle");
@@ -4846,7 +4858,7 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
         na_context = context->na_context;
         if (hg_core_addr)
             na_addr = hg_core_addr->core_addr.na_addr;
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     }
 #endif
 
@@ -4919,7 +4931,7 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
         "Resetting handle (%p) with ID=%llu, address (%p)", handle, id, addr);
 
     /* Determine which NA class/context to use */
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     if (hg_core_addr && !hg_core_addr->core_addr.is_self &&
         (hg_core_addr->core_addr.na_sm_addr != NA_ADDR_NULL)) {
         HG_LOG_DEBUG("Using NA SM class for this handle");
@@ -4936,7 +4948,7 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
         na_context = hg_core_handle->core_handle.info.context->na_context;
         if (hg_core_addr)
             na_addr = hg_core_addr->core_addr.na_addr;
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     }
 #endif
 

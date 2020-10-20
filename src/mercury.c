@@ -594,7 +594,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     ret = hg_proc_reset(proc, buf, buf_size, HG_ENCODE);
     HG_CHECK_HG_ERROR(done, ret, "Could not reset proc");
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     /* Determine if we need special handling for SM */
     if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
         NA_ADDR_NULL)
@@ -645,7 +645,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
         ret = hg_proc_reset(proc, buf, buf_size, HG_ENCODE);
         HG_CHECK_HG_ERROR(done, ret, "Could not reset proc");
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
         /* Determine if we need special handling for SM */
         if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
             NA_ADDR_NULL)
