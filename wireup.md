@@ -1,4 +1,4 @@
-Establishing Two-Way Communication with "Wireup"
+# Establishing Two-Way Communication with "Wireup"
 
 UCP addresses are long (addresses 185 bytes long are not uncommon)
 and their length varies, so they are not suitable for embedding into
@@ -13,12 +13,12 @@ To facilitate two-way communications, a peer establishes on each of
 its remote peers a short, fixed-length Sender ID that it uses as a
 return address.
 
-Before a peer sends a message that requires a reply from the recipient, it looks
-up the recipient's endpoint and Sender ID.  The sender embeds the Sender
-ID in the message and transmits it over the endpoint.  The recipient
-uses the Sender ID to look up its endpoint for the sender, as well as
-the recipient's Sender ID.  The recipient's Sender ID is embedded into
-the reply, and the reply is sent over the endpoint.
+Before a peer sends a message that requires a reply from the recipient,
+it looks up the recipient's endpoint and Sender ID.  The sender
+embeds the Sender ID in the message and transmits it over the endpoint.
+The recipient uses the Sender ID to look up its endpoint for the sender,
+as well as the recipient's Sender ID.  The recipient's Sender ID is
+embedded into the reply, and the reply is sent over the endpoint.
 
 Sender and recipient establish Sender ID -> UCP endpoint lookup tables by
 performing a handshake called "wireup."  A sender starts the handshake
