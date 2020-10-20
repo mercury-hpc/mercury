@@ -26,8 +26,6 @@
 /* Local Macros */
 /****************/
 
-#define HG_POST_LIMIT_DEFAULT (256)
-
 #define HG_CONTEXT_CLASS(context)                                              \
     ((struct hg_private_class *) (context->hg_class))
 
@@ -1056,12 +1054,6 @@ hg_context_t *
 HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 {
     struct hg_context *hg_context = NULL;
-#ifdef HG_POST_LIMIT
-    unsigned int request_count =
-        (HG_POST_LIMIT > 0) ? HG_POST_LIMIT : HG_POST_LIMIT_DEFAULT;
-#else
-    unsigned int request_count = HG_POST_LIMIT_DEFAULT;
-#endif
 
     HG_CHECK_ERROR_NORET(hg_class == NULL, error, "NULL HG class");
 
@@ -1082,9 +1074,7 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 
     /* If we are listening, start posting requests */
     if (HG_Core_class_is_listening(hg_class->core_class)) {
-        /* TODO for SM make sure request count is at least 64? */
-        hg_return_t ret =
-            HG_Core_context_post(hg_context->core_context, request_count);
+        hg_return_t ret = HG_Core_context_post(hg_context->core_context);
         HG_CHECK_HG_ERROR(error, ret, "Could not post context requests (%s)",
             HG_Error_to_string(ret));
     }

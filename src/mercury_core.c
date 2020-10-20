@@ -39,7 +39,8 @@
 /****************/
 
 #define HG_CORE_ATOMIC_QUEUE_SIZE  (1024)
-#define HG_CORE_PENDING_INCR       (256)
+#define HG_CORE_POST_INIT          (256)
+#define HG_CORE_POST_INCR          (256)
 #define HG_CORE_BULK_OP_INIT_COUNT (256)
 #define HG_CORE_CLEANUP_TIMEOUT    (1000)
 #define HG_CORE_MAX_EVENTS         (1)
@@ -128,6 +129,8 @@ struct hg_core_private_class {
     hg_atomic_int32_t request_tag;  /* Atomic used for tag generation */
     hg_thread_spin_t func_map_lock; /* Function map lock */
     na_uint32_t progress_mode;      /* NA progress mode */
+    hg_uint32_t request_post_init;  /* Init count of posted requests */
+    hg_uint32_t request_post_incr;  /* Incr count of posted requests */
     hg_bool_t na_ext_init;          /* NA externally initialized */
 #ifdef HG_HAS_COLLECT_STATS
     hg_bool_t stats; /* (Debug) Print stats at exit */
@@ -346,14 +349,12 @@ hg_core_context_post(struct hg_core_private_context *context,
 static hg_return_t
 hg_core_context_unpost(struct hg_core_private_context *context);
 
-#ifndef HG_HAS_POST_LIMIT
 /**
  * Check pending list and repost batch of requests as needed.
  */
 static hg_return_t
 hg_core_context_check_pending(struct hg_core_private_context *context,
     na_class_t *na_class, na_context_t *na_context, unsigned int request_count);
-#endif
 
 /**
  * Wail until handle lists are empty.
@@ -873,6 +874,14 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             hg_core_class->core_class.na_class = hg_init_info->na_class;
             hg_core_class->na_ext_init = HG_TRUE;
         }
+        /* request_post_incr is used only if request_post_init is non-zero */
+        if (hg_init_info->request_post_init == 0) {
+            hg_core_class->request_post_init = HG_CORE_POST_INIT;
+            hg_core_class->request_post_incr = HG_CORE_POST_INCR;
+        } else {
+            hg_core_class->request_post_init = hg_init_info->request_post_init;
+            hg_core_class->request_post_incr = hg_init_info->request_post_incr;
+        }
         hg_core_class->progress_mode = hg_init_info->na_init_info.progress_mode;
 #ifdef HG_HAS_SM_ROUTING
         auto_sm = hg_init_info->auto_sm;
@@ -890,6 +899,9 @@ hg_core_init(const char *na_info_string, hg_bool_t na_listen,
             hg_core_print_stats_registered_g = HG_TRUE;
         }
 #endif
+    } else {
+        hg_core_class->request_post_init = HG_CORE_POST_INIT;
+        hg_core_class->request_post_incr = HG_CORE_POST_INCR;
     }
 
     /* Initialize NA if not provided externally */
@@ -1408,7 +1420,6 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
-#ifndef HG_HAS_POST_LIMIT
 static hg_return_t
 hg_core_context_check_pending(struct hg_core_private_context *context,
     na_class_t *na_class, na_context_t *na_context, unsigned int request_count)
@@ -1419,11 +1430,11 @@ hg_core_context_check_pending(struct hg_core_private_context *context,
     /* Check if we need more handles */
     hg_thread_spin_lock(&context->pending_list_lock);
 
-#    ifdef HG_HAS_SM_ROUTING
+#ifdef HG_HAS_SM_ROUTING
     if (na_class == context->core_context.core_class->na_sm_class) {
         pending_empty = HG_LIST_IS_EMPTY(&context->sm_pending_list);
     } else
-#    endif
+#endif
         pending_empty = HG_LIST_IS_EMPTY(&context->pending_list);
 
     hg_thread_spin_unlock(&context->pending_list_lock);
@@ -1438,7 +1449,6 @@ hg_core_context_check_pending(struct hg_core_private_context *context,
 done:
     return ret;
 }
-#endif
 
 /*---------------------------------------------------------------------------*/
 static hg_return_t
@@ -3042,14 +3052,15 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         /* Mark handle as errored */
         hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
     } else {
-#ifndef HG_HAS_POST_LIMIT
-        /* Check pending list and repost more handles if needed */
-        ret = hg_core_context_check_pending(
-            HG_CORE_HANDLE_CONTEXT(hg_core_handle), hg_core_handle->na_class,
-            hg_core_handle->na_context, HG_CORE_PENDING_INCR);
-        HG_CHECK_HG_ERROR(
-            done, ret, "Could not check and repost pending requests");
-#endif
+        if (HG_CORE_HANDLE_CLASS(hg_core_handle)->request_post_incr > 0) {
+            /* Check pending list and repost more handles if needed */
+            ret = hg_core_context_check_pending(
+                HG_CORE_HANDLE_CONTEXT(hg_core_handle),
+                hg_core_handle->na_class, hg_core_handle->na_context,
+                HG_CORE_HANDLE_CLASS(hg_core_handle)->request_post_incr);
+            HG_CHECK_HG_ERROR(
+                done, ret, "Could not check and repost pending requests");
+        }
 
         /* Fill unexpected info */
         hg_core_handle->na_addr = na_cb_info_recv_unexpected->source;
@@ -4335,16 +4346,20 @@ done:
 
 /*---------------------------------------------------------------------------*/
 hg_return_t
-HG_Core_context_post(hg_core_context_t *context, unsigned int request_count)
+HG_Core_context_post(hg_core_context_t *context)
 {
     hg_return_t ret = HG_SUCCESS;
     hg_bool_t posted = HG_FALSE;
+    unsigned int request_count;
 
     HG_CHECK_ERROR(
         context == NULL, error, ret, HG_INVALID_ARG, "NULL HG core context");
+
+    /* Get request count from init info */
+    request_count = ((struct hg_core_private_class *) context->core_class)
+                        ->request_post_init;
     HG_CHECK_ERROR(request_count == 0, error, ret, HG_INVALID_ARG,
         "Request count must be greater than 0");
-
     HG_LOG_DEBUG("Posting %u requests on context (%p)", request_count, context);
 
     ret = hg_core_context_post((struct hg_core_private_context *) context,

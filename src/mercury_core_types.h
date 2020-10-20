@@ -23,10 +23,35 @@ typedef hg_uint64_t hg_id_t;   /* RPC ID */
 
 /* HG init info struct */
 struct hg_init_info {
-    struct na_init_info na_init_info; /* NA Init Info */
-    na_class_t *na_class;             /* NA class */
-    hg_bool_t auto_sm;                /* Use NA SM plugin with local addrs */
-    hg_bool_t stats;                  /* (Debug) Print stats at exit */
+    /* NA init info struct, see na_types.h for documentation */
+    struct na_init_info na_init_info;
+
+    /* Optional NA class that can be used for initializing an HG class. Using
+     * that option makes the init string passed to HG_Init() ignored.
+     * Default is: NULL */
+    na_class_t *na_class;
+
+    /* Controls the initial number of requests that are posted on context
+     * creation when the HG class is initialized with listen set to true.
+     * A value of zero is equivalent to using the internal default value.
+     * Default value is: 256 */
+    hg_uint32_t request_post_init;
+
+    /* Controls the number of requests that are incrementally posted when the
+     * initial number of requests is exhausted, a value of 0 means that only the
+     * initial number of requests will be re-used. This value is used only if
+     * \request_post_init is set to a non-zero value.
+     * Default value is: 256 */
+    hg_uint32_t request_post_incr;
+
+    /* Controls whether the NA shared-memory interface should be automatically
+     * used if/when the RPC target address shares the same node as its origin.
+     * Default is: false */
+    hg_bool_t auto_sm;
+
+    /* (Debug) Print stats at exit.
+     * Default is: false */
+    hg_bool_t stats;
 };
 
 /* Error return codes:
@@ -102,12 +127,12 @@ typedef enum {
 #define HG_MAX_IDLE_TIME (3600 * 1000)
 
 /* HG size max */
-#define HG_SIZE_MAX UINT64_MAX
+#define HG_SIZE_MAX (UINT64_MAX)
 
 /* HG init info initializer */
 #define HG_INIT_INFO_INITIALIZER                                               \
     {                                                                          \
-        NA_INIT_INFO_INITIALIZER, NULL, HG_FALSE, HG_FALSE                     \
+        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, HG_FALSE               \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */
