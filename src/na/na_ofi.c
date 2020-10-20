@@ -159,6 +159,7 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_MAX_URI_LEN             (128)
 #define NA_OFI_GNI_AV_STR_ADDR_VERSION (1)
 #define NA_OFI_GNI_IFACE_DEFAULT       "ipogif0"
+#define NA_OFI_GNI_UDREG_REG_LIMIT     (2048)
 
 /* Memory pool (enabled by default, comment out to disable) */
 #define NA_OFI_HAS_MEM_POOL
@@ -178,9 +179,6 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_CQ_DEPTH (8192)
 /* CQ max err data size (fix to 48 to work around bug in gni provider code) */
 #define NA_OFI_CQ_MAX_ERR_DATA_SIZE (48)
-
-/* Number of retries when receiving FI_EINTR error */
-#define NA_OFI_MAX_EINTR_RETRY (1000)
 
 /* The predefined RMA KEY for MR_SCALABLE */
 #define NA_OFI_RMA_KEY (0x0F1B0F1BULL)
@@ -1952,7 +1950,7 @@ na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
         int32_t enable = 1;
 #    ifdef NA_OFI_GNI_HAS_UDREG
         char *other_reg_type = "udreg";
-        int32_t udreg_limit = 1024;
+        int32_t udreg_limit = NA_OFI_GNI_UDREG_REG_LIMIT;
 
         /* Enable use of udreg instead of internal MR cache */
         ret = na_ofi_gni_set_domain_op_value(
@@ -4961,7 +4959,7 @@ na_ofi_progress(
 {
     /* Convert timeout in ms into seconds */
     double remaining = timeout / 1000.0;
-    na_return_t ret = NA_TIMEOUT;
+    na_return_t ret;
 
     do {
         struct fi_cq_tagged_entry cq_events[NA_OFI_CQ_EVENT_NUM];
@@ -4979,50 +4977,50 @@ na_ofi_progress(
 
             if (wait_hdl) {
                 /* Wait in wait set if provider does not support wait on FDs */
-                int rc = 0, retry_cnt = 0;
-                do {
-                    rc = fi_wait(wait_hdl, (int) (remaining * 1000.0));
-                } while (
-                    rc == -FI_EINTR && retry_cnt++ < NA_OFI_MAX_EINTR_RETRY);
+                int rc = fi_wait(wait_hdl, (int) (remaining * 1000.0));
+
+                if (rc == -FI_EINTR) {
+                    hg_time_get_current_ms(&t2);
+                    remaining -= hg_time_diff(t2, t1);
+                    continue;
+                }
 
                 if (rc == -FI_ETIMEDOUT)
                     break;
 
-                NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
+                NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
                     "fi_wait() failed, rc: %d (%s)", rc,
                     fi_strerror((int) -rc));
             }
         }
 
-        /* Read from CQ */
+        /* Read from CQ and process events */
         ret = na_ofi_cq_read(context, NA_OFI_CQ_EVENT_NUM, cq_events, src_addrs,
             &src_err_addr_ptr, &src_err_addrlen, &actual_count);
-        NA_CHECK_NA_ERROR(out, ret, "Could not read events from context CQ");
+        NA_CHECK_NA_ERROR(error, ret, "Could not read events from context CQ");
+
+        for (i = 0; i < actual_count; i++) {
+            ret = na_ofi_cq_process_event(na_class, &cq_events[i], src_addrs[i],
+                src_err_addr_ptr, src_err_addrlen);
+            NA_CHECK_NA_ERROR(error, ret, "Could not process event");
+        }
 
         /* Attempt to process retries */
         ret = na_ofi_cq_process_retries(context);
-        NA_CHECK_NA_ERROR(out, ret, "Could not process retries");
+        NA_CHECK_NA_ERROR(error, ret, "Could not process retries");
+
+        if (actual_count > 0)
+            return NA_SUCCESS;
 
         if (timeout) {
             hg_time_get_current_ms(&t2);
             remaining -= hg_time_diff(t2, t1);
         }
+    } while ((int) (remaining * 1000.0) > 0);
 
-        if (actual_count == 0) {
-            ret = NA_TIMEOUT; /* Return NA_TIMEOUT if no events */
-            if (remaining <= 0)
-                break;
-            continue;
-        }
+    return NA_TIMEOUT;
 
-        for (i = 0; i < actual_count; i++) {
-            ret = na_ofi_cq_process_event(na_class, &cq_events[i], src_addrs[i],
-                src_err_addr_ptr, src_err_addrlen);
-            NA_CHECK_NA_ERROR(out, ret, "Could not process event");
-        }
-    } while (remaining > 0 && ret != NA_SUCCESS);
-
-out:
+error:
     return ret;
 }
 
