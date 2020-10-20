@@ -101,12 +101,6 @@ if(MERCURY_USE_SELF_FORWARD)
 endif()
 set(MERCURY_USE_SELF_FORWARD PARENT_SCOPE)
 
-# Eager bulk transfer
-option(MERCURY_USE_EAGER_BULK "Encode bulk data with RPC when bulk region described is small." ON)
-if(MERCURY_USE_EAGER_BULK)
-  set(HG_HAS_EAGER_BULK 1)
-endif()
-
 # Collect statistics
 option(MERCURY_ENABLE_STATS "Enable collection of stats that can be printed at exit." OFF)
 if(MERCURY_ENABLE_STATS)

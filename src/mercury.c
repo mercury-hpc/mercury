@@ -27,7 +27,10 @@
 /****************/
 
 #define HG_CONTEXT_CLASS(context)                                              \
-    ((struct hg_private_class *) (context->hg_class))
+    ((struct hg_private_class *) ((context)->hg_class))
+
+#define HG_HANDLE_CLASS(handle)                                                \
+    ((struct hg_private_class *) ((handle)->info.hg_class))
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -39,6 +42,7 @@ struct hg_private_class {
     hg_return_t (*handle_create)(hg_handle_t, void *); /* handle_create */
     void *handle_create_arg;                           /* handle_create arg */
     hg_thread_spin_t register_lock;                    /* Register lock */
+    hg_bool_t bulk_eager;                              /* Eager bulk proc */
 };
 
 /* Info for function map */
@@ -522,6 +526,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
 {
     hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
+    hg_uint8_t proc_flags = 0;
     void *buf, **extra_buf;
     hg_size_t buf_size, *extra_buf_size;
     hg_bulk_t *extra_bulk;
@@ -598,8 +603,14 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     /* Determine if we need special handling for SM */
     if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
         NA_ADDR_NULL)
-        hg_proc_set_flags(proc, HG_PROC_SM);
+        proc_flags |= HG_PROC_SM;
 #endif
+
+    /* Attempt to use eager bulk transfers when appropriate */
+    if (HG_HANDLE_CLASS(&hg_handle->handle)->bulk_eager)
+        proc_flags |= HG_PROC_BULK_EAGER;
+
+    hg_proc_set_flags(proc, proc_flags);
 
     /* Encode parameters */
     ret = proc_cb(proc, struct_ptr);
@@ -645,12 +656,21 @@ hg_set_struct(struct hg_private_handle *hg_handle,
         ret = hg_proc_reset(proc, buf, buf_size, HG_ENCODE);
         HG_CHECK_HG_ERROR(done, ret, "Could not reset proc");
 
+        /* Reset proc flags */
+        proc_flags = 0;
+
 #ifdef NA_HAS_SM
         /* Determine if we need special handling for SM */
         if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
             NA_ADDR_NULL)
-            hg_proc_set_flags(proc, HG_PROC_SM);
+            proc_flags |= HG_PROC_SM;
 #endif
+
+        /* Attempt to use eager bulk transfers when appropriate */
+        if (HG_HANDLE_CLASS(&hg_handle->handle)->bulk_eager)
+            proc_flags |= HG_PROC_BULK_EAGER;
+
+        hg_proc_set_flags(proc, proc_flags);
 
         /* Encode extra_bulk_handle, we can do that safely here because
          * the user payload has been copied so we don't have to worry
@@ -978,6 +998,13 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
 
     memset(hg_class, 0, sizeof(struct hg_private_class));
     hg_thread_spin_init(&hg_class->register_lock);
+
+    /* Save bulk eager information */
+    if (hg_init_info) {
+        hg_class->bulk_eager = !hg_init_info->no_bulk_eager;
+    } else {
+        hg_class->bulk_eager = HG_TRUE;
+    }
 
     hg_class->hg_class.core_class =
         HG_Core_init_opt(na_info_string, na_listen, hg_init_info);
