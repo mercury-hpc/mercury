@@ -111,7 +111,6 @@ typedef hg_uint8_t hg_bool_t;
 #cmakedefine HG_HAS_SELF_FORWARD
 #cmakedefine HG_HAS_EAGER_BULK
 #cmakedefine HG_HAS_XDR
-#cmakedefine HG_HAS_SM_ROUTING
 #cmakedefine HG_HAS_COLLECT_STATS
 
 #cmakedefine HG_HAS_VERBOSE_ERROR

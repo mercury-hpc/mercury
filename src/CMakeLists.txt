@@ -107,18 +107,6 @@ if(MERCURY_USE_EAGER_BULK)
   set(HG_HAS_EAGER_BULK 1)
 endif()
 
-# Transparent shared-memory routing
-option(MERCURY_USE_SM_ROUTING
-  "Enable routing of local communication through shared-memory (requires SM)."
-  OFF)
-if(MERCURY_USE_SM_ROUTING)
-  if(NOT NA_USE_SM)
-    # Always force SM if NA_USE_SM is turned OFF
-    set(NA_USE_SM "ON" CACHE BOOL "Use shared-memory plugin." FORCE)
-  endif()
-  set(HG_HAS_SM_ROUTING 1)
-endif()
-
 # Collect statistics
 option(MERCURY_ENABLE_STATS "Enable collection of stats that can be printed at exit." OFF)
 if(MERCURY_ENABLE_STATS)
