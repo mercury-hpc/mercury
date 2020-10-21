@@ -48,7 +48,6 @@ struct _rxpool {
     rxdesc_fifo_t complete;
 };
 
-void rxdesc_init(void *);
 rxdesc_t *rxpool_next(rxpool_t *);
 void rxdesc_setup(rxpool_t *, void *, size_t, rxdesc_t *);
 rxpool_t *rxpool_create(ucp_worker_h, size_t, ucp_tag_t, ucp_tag_t,

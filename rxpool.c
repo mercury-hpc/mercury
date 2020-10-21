@@ -230,11 +230,6 @@ rxpool_destroy(rxpool_t *rxpool)
     }
 }
 
-void
-rxdesc_init(void *request)
-{
-}
-
 rxdesc_t *
 rxpool_next(rxpool_t *rxpool)
 {
