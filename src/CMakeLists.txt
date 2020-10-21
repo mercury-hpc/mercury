@@ -94,13 +94,6 @@ if(MERCURY_USE_CHECKSUMS)
   endif()
 endif()
 
-# Coresident RPC
-option(MERCURY_USE_SELF_FORWARD "Execute RPC call locally and bypass NA layer when using NA self address." OFF)
-if(MERCURY_USE_SELF_FORWARD)
-  set(HG_HAS_SELF_FORWARD 1)
-endif()
-set(MERCURY_USE_SELF_FORWARD PARENT_SCOPE)
-
 # Collect statistics
 option(MERCURY_ENABLE_STATS "Enable collection of stats that can be printed at exit." OFF)
 if(MERCURY_ENABLE_STATS)
