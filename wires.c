@@ -62,8 +62,7 @@ main(int argc, char **argv)
     if (argc == 2) {
         uint8_t *buf;
 
-        if (colon_separated_octets_to_bytes(argv[1], &buf,
-                                            &raddrlen) == -1)
+        if (colon_separated_octets_to_bytes(argv[1], &buf, &raddrlen) == -1)
             errx(EXIT_FAILURE, "could not parse remote address `%s`", argv[1]);
         printf("parsed %zu-byte remote address\n", raddrlen);
         raddr = (void *)buf;
