@@ -25,12 +25,12 @@ usage(const char *_progname)
     exit(EXIT_FAILURE);
 }
 
-static void
+static bool
 run_client(wiring_t **wiringp, ucp_worker_h worker,
     ucp_address_t *laddr, size_t laddrlen,
     ucp_address_t *raddr, size_t raddrlen)
 {
-    wireup_start(wiringp, laddr, laddrlen, raddr, raddrlen);
+    return wireup_start(wiringp, laddr, laddrlen, raddr, raddrlen) != NULL;
 }
 
 int
@@ -56,6 +56,7 @@ main(int argc, char **argv)
     const char *delim = "";
     size_t i, laddrlen, raddrlen;
     ucs_status_t status;
+    int rc = EXIT_SUCCESS;
 
     if (argc > 2)
         usage(argv[0]);
@@ -112,18 +113,25 @@ main(int argc, char **argv)
         errx(EXIT_FAILURE, "%s: could not create wiring", __func__);
 
     if (raddr != NULL) {      /* * * client mode * * */
-        run_client(&wiring, worker, laddr, laddrlen, raddr, raddrlen);
+        bool ok;
+        ok = run_client(&wiring, worker, laddr, laddrlen, raddr, raddrlen);
+        ucp_worker_release_address(worker, laddr);
+
+        if (!ok) {
+            warnx("%s: could not start wireup", __func__);
+            rc = EXIT_FAILURE;
+            goto cleanup_wiring;
+        }
     }
 
     while (wireup_once(&wiring))
             ucp_worker_progress(worker);
 
+cleanup_wiring:
     wiring_destroy(wiring);
-
-    ucp_worker_release_address(worker, laddr);
 cleanup_worker:
     ucp_worker_destroy(worker);
 cleanup_context:
     ucp_cleanup(context);
-    return EXIT_SUCCESS;
+    return rc;
 }

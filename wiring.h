@@ -16,6 +16,8 @@
 
 #include <ucp/api/ucp.h>
 
+#include "wireup.h"
+
 typedef int32_t sender_id_t;
 
 #define SENDER_ID_MAX INT32_MAX
@@ -40,6 +42,11 @@ struct _wire {
     ucp_ep_h ep;        // Endpoint connected to remote
     wire_state_t *state;
     sender_id_t id;     // Sender ID assigned by remote
+    size_t msglen;
+    wireup_msg_t *msg;  /* In initial state, the request to be
+                         * (re)transmitted.  In all other states,
+                         * NULL.
+                         */
 };
 
 struct _wiring {
@@ -141,11 +148,14 @@ static inline sender_id_t
 wiring_free_get(wiring_t *wiring)
 {
     sender_id_t id;
+    wire_t *w;
 
     if ((id = wiring->first_free) == SENDER_ID_NIL)
         return SENDER_ID_NIL;
-    wiring->first_free = wiring->wire[id].next_free;
-    wiring->wire[id].next_free = SENDER_ID_NIL;
+    w = &wiring->wire[id];
+    assert(w->next_to_expire == id && w->prev_to_expire == id);
+    wiring->first_free = w->next_free;
+    w->next_free = SENDER_ID_NIL;
 
     return id;
 }

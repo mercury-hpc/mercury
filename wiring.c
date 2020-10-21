@@ -35,17 +35,19 @@ static wiring_t *wireup_rx_req(wiring_t *, const wireup_msg_t *);
 
 static void wireup_send_callback(void *, ucs_status_t, void *);
 
-static wire_state_t *destroy(wiring_t *, wire_t *);
-static wire_state_t *reject_timeout(wiring_t *, wire_t *);
-static wire_state_t *reject_msg(wiring_t *, wire_t *, const wireup_msg_t *);
+static bool wireup_send(wire_t *);
 static wire_state_t *continue_early_life(wiring_t *, wire_t *,
     const wireup_msg_t *);
+static wire_state_t *destroy(wiring_t *, wire_t *);
+static wire_state_t *reject_msg(wiring_t *, wire_t *, const wireup_msg_t *);
+static wire_state_t *reject_timeout(wiring_t *, wire_t *);
+static wire_state_t *retry(wiring_t *, wire_t *);
 static wire_state_t *start_early_life(wiring_t *, wire_t *,
     const wireup_msg_t *);
 static wire_state_t *start_late_life(wiring_t *, wire_t *);
 
 wire_state_t state[] = {
-  [WIRE_S_INITIAL] = {.timeout = destroy,
+  [WIRE_S_INITIAL] = {.timeout = retry,
                       .receive = start_early_life,
                       .descr = "initial"}
 , [WIRE_S_EARLY_LIFE] = {.timeout = start_late_life,
@@ -69,9 +71,29 @@ static void
 wiring_release_wire(wiring_t *wiring, wire_t *w)
 {
     sender_id_t id = w - &wiring->wire[0];
+    wireup_msg_t *msg;
+    ucp_ep_h ep;
 
     assert(id < wiring->nwires);
 
+    if ((msg = w->msg) != NULL) {
+        w->msg = NULL;
+        free(msg);
+    }
+    if ((ep = w->ep) != NULL) {
+        void *request;
+
+        w->ep = NULL;
+        request = ucp_ep_close_nb(ep, UCP_EP_CLOSE_MODE_FLUSH);
+        if (UCS_PTR_IS_ERR(request)) {
+            warnx("%s: ucp_ep_close_nb: %s", __func__,
+                ucs_status_string(UCS_PTR_STATUS(request)));
+        } else if (request != UCS_OK)
+            ucp_request_free(request);
+    }
+    w->id = SENDER_ID_NIL;
+    w->expiration = 0;
+    w->msglen = 0;
     wiring_timeout_remove(wiring, w);
     wiring_free_put(wiring, id);
 }
@@ -124,6 +146,7 @@ wireup_timeout_transition(wiring_t *wiring, uint64_t now)
 static wire_state_t *
 start_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 {
+    wireup_msg_t *imsg;
     sender_id_t id = w - &wiring->wire[0];
 
     if (msg->sender_id > SENDER_ID_MAX) {
@@ -145,6 +168,10 @@ start_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     }
 
     w->id = msg->sender_id;
+    imsg = w->msg;
+    w->msg = NULL;
+    free(imsg);
+    w->msglen = 0;
     wiring_timeout_remove(wiring, w);
     wiring_timeout_put(wiring, w, getnanos() + timeout_interval);
 
@@ -240,6 +267,23 @@ reject_msg(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 }
 
 static wire_state_t *
+retry(wiring_t *wiring, wire_t *w)
+{
+    sender_id_t id = w - &wiring->wire[0];
+
+    warnx("%s: retrying establishment of wire %" PRIdSENDER, __func__, id);
+
+    if (!wireup_send(w)) {
+        wiring_release_wire(wiring, w);
+        return &state[WIRE_S_DEAD];
+    }
+
+    wiring_timeout_put(wiring, w, getnanos() + timeout_interval);
+
+    return &state[WIRE_S_INITIAL];
+}
+
+static wire_state_t *
 destroy(wiring_t *wiring, wire_t *w)
 {
     wiring_release_wire(wiring, w);
@@ -286,7 +330,8 @@ wiring_create(ucp_worker_h worker, size_t request_size)
         wiring->wire[i] = (wire_t){
               .next_free = i + 1
             , .state = &state[WIRE_S_DEAD]
-            , .next_to_expire = SENDER_ID_NIL
+            , .prev_to_expire = i
+            , .next_to_expire = i
             , .ep = NULL
             , .id = SENDER_ID_NIL
             , .expiration = 0};
@@ -330,7 +375,8 @@ wiring_enlarge(wiring_t *wiring)
         wiring->wire[i] = (wire_t){
               .next_free = i + 1
             , .state = &state[WIRE_S_DEAD]
-            , .next_to_expire = SENDER_ID_NIL
+            , .prev_to_expire = i
+            , .next_to_expire = i
             , .ep = NULL
             , .id = SENDER_ID_NIL
             , .expiration = 0};
@@ -424,7 +470,7 @@ wireup_respond(wiring_t **wiringp, sender_id_t rid,
     if (UCS_PTR_IS_ERR(request)) {
         warnx("%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
-        goto free_wire; 
+        goto free_wire;
     } else if (request == UCS_OK)
         free(msg);
 
@@ -434,6 +480,29 @@ free_wire:
 free_msg:
     free(msg);
     return NULL;
+}
+
+static bool
+wireup_send(wire_t *w)
+{
+    ucp_ep_h ep = w->ep;
+    wireup_msg_t *msg = w->msg;
+    ucs_status_ptr_t request;
+    size_t msglen = w->msglen;
+
+    ucp_request_param_t tx_params = {
+      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
+    , .cb = {.send = wireup_send_callback}
+    , .user_data = msg
+    };
+    request = ucp_tag_send_nbx(ep, msg, msglen, wireup_start_tag, &tx_params);
+
+    if (UCS_PTR_IS_ERR(request)) {
+        warnx("%s: ucp_tag_send_nbx: %s", __func__,
+            ucs_status_string(UCS_PTR_STATUS(request)));
+        return false;
+    }
+    return true;
 }
 
 /* Initiate wireup: create a wire, configure an endpoint for `raddr`, send
@@ -449,12 +518,10 @@ wireup_start(wiring_t **wiringp, ucp_address_t *laddr, size_t laddrlen,
     , .address = raddr
     , .err_mode = UCP_ERR_HANDLING_MODE_NONE
     };
-    ucp_request_param_t tx_params;
     wiring_t *wiring = *wiringp;
     wireup_msg_t *msg;
     wire_t *w;
     ucp_ep_h ep;
-    ucs_status_ptr_t request;
     sender_id_t id;
     const size_t msglen = sizeof(*msg) + laddrlen;
     ucs_status_t status;
@@ -481,29 +548,19 @@ wireup_start(wiring_t **wiringp, ucp_address_t *laddr, size_t laddrlen,
         goto free_wire;
     }
     *w = (wire_t){.ep = ep, .id = SENDER_ID_NIL,
-        .state = &state[WIRE_S_INITIAL]};
+        .state = &state[WIRE_S_INITIAL], .msg = msg, .msglen = msglen};
 
     wiring_timeout_put(wiring, w, getnanos() + timeout_interval);
 
-    tx_params = (ucp_request_param_t){
-      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
-    , .cb = {.send = wireup_send_callback}
-    , .user_data = msg
-    };
-    request = ucp_tag_send_nbx(ep, msg, msglen, wireup_start_tag, &tx_params);
-
-    if (UCS_PTR_IS_ERR(request)) {
-        warnx("%s: ucp_tag_send_nbx: %s", __func__,
-            ucs_status_string(UCS_PTR_STATUS(request)));
+    if (!wireup_send(w))
         goto free_wire;
-    } else if (request == UCS_OK)
-        free(msg);
 
     return w;
-free_wire:
-    wiring_free_put(wiring, id);
 free_msg:
     free(msg);
+    return NULL;
+free_wire:
+    wiring_release_wire(wiring, w);
     return NULL;
 }
 
