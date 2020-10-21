@@ -91,9 +91,6 @@ struct hg_core_header {
 /* Mercury protocol version number */
 #define HG_CORE_PROTOCOL_VERSION 0x04
 
-/* Flags */
-#define HG_CORE_SELF_FORWARD 0x80 /* Forward to self */
-
 /*********************/
 /* Public Prototypes */
 /*********************/

@@ -75,8 +75,8 @@ typedef hg_return_t (*hg_core_cb_t)(
 #define HG_CORE_OP_ID_IGNORE ((hg_core_op_id_t *) 1)
 
 /* Flags */
-#define HG_CORE_MORE_DATA   0x01 /* More data required */
-#define HG_CORE_NO_RESPONSE 0x02 /* No response required */
+#define HG_CORE_MORE_DATA   (1 << 0) /* More data required */
+#define HG_CORE_NO_RESPONSE (1 << 1) /* No response required */
 
 /*********************/
 /* Public Prototypes */

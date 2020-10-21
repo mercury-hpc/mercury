@@ -21,7 +21,10 @@
 typedef hg_uint64_t hg_size_t; /* Size */
 typedef hg_uint64_t hg_id_t;   /* RPC ID */
 
-/* HG init info struct */
+/**
+ * HG init info struct
+ * NB. should be initialized using HG_INIT_INFO_INITIALIZER
+ */
 struct hg_init_info {
     /* NA init info struct, see na_types.h for documentation */
     struct na_init_info na_init_info;
@@ -39,8 +42,10 @@ struct hg_init_info {
 
     /* Controls the number of requests that are incrementally posted when the
      * initial number of requests is exhausted, a value of 0 means that only the
-     * initial number of requests will be re-used. This value is used only if
-     * \request_post_init is set to a non-zero value.
+     * initial number of requests will be re-used after they complete. Note that
+     * if the number of requests that are posted reaches 0, the underlying
+     * NA transport is responsible for queueing incoming requests. This value is
+     * used only if \request_post_init is set to a non-zero value.
      * Default value is: 256 */
     hg_uint32_t request_post_incr;
 
@@ -53,6 +58,13 @@ struct hg_init_info {
      * along with the RPC request.
      * Default is: false */
     hg_bool_t no_bulk_eager;
+
+    /* Disable internal loopback interface that enables forwarding of RPC
+     * requests to self addresses. Doing so will force traffic to be routed
+     * through NA. For performance reasons, users should be cautious when using
+     * that option.
+     * Default is: false */
+    hg_bool_t no_loopback;
 
     /* (Debug) Print stats at exit.
      * Default is: false */
@@ -137,7 +149,8 @@ typedef enum {
 /* HG init info initializer */
 #define HG_INIT_INFO_INITIALIZER                                               \
     {                                                                          \
-        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, HG_FALSE, HG_FALSE     \
+        NA_INIT_INFO_INITIALIZER, NULL, 0, 0, HG_FALSE, HG_FALSE, HG_FALSE,    \
+            HG_FALSE                                                           \
     }
 
 #endif /* MERCURY_CORE_TYPES_H */
