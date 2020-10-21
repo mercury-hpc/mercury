@@ -209,7 +209,7 @@ start_late_life(wiring_t *wiring, wire_t *w)
     if (UCS_PTR_IS_ERR(request)) {
         warnx("%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
-        free(msg); 
+        free(msg);
     } else if (request == UCS_OK)
         free(msg);
 
@@ -495,7 +495,7 @@ wireup_start(wiring_t **wiringp, ucp_address_t *laddr, size_t laddrlen,
     if (UCS_PTR_IS_ERR(request)) {
         warnx("%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
-        goto free_wire; 
+        goto free_wire;
     } else if (request == UCS_OK)
         free(msg);
 
