@@ -115,9 +115,7 @@ static const char *const na_return_name[] = {NA_RETURN_VALUES};
 #undef X
 
 /* Default error log mask */
-#ifdef NA_HAS_VERBOSE_ERROR
-unsigned int NA_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
-#endif
+enum hg_log_type NA_LOG_MASK = HG_LOG_TYPE_NONE;
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
@@ -231,20 +229,15 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
     const unsigned int plugin_count =
         sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
     na_bool_t plugin_found = NA_FALSE;
-#ifdef NA_HAS_VERBOSE_ERROR
-    const char *log_level = NULL;
-#endif
     na_return_t ret = NA_SUCCESS;
+    const char *log_level = getenv("HG_NA_LOG_LEVEL");
+
+    /* Set log level */
+    if (log_level)
+        NA_LOG_MASK = hg_log_name_to_type(log_level);
 
     NA_CHECK_ERROR(
         info_string == NULL, error, ret, NA_INVALID_ARG, "NULL info string");
-
-#ifdef NA_HAS_VERBOSE_ERROR
-    /* Set log level */
-    log_level = getenv("HG_NA_LOG_LEVEL");
-    if (log_level && (strcmp(log_level, "debug") == 0))
-        NA_LOG_MASK |= HG_LOG_TYPE_DEBUG;
-#endif
 
     na_private_class =
         (struct na_private_class *) malloc(sizeof(struct na_private_class));
@@ -369,14 +362,11 @@ NA_Cleanup(void)
     unsigned int plugin_count =
         sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
     unsigned int i;
-#ifdef NA_HAS_VERBOSE_ERROR
-    const char *log_level = NULL;
+    const char *log_level = getenv("HG_NA_LOG_LEVEL");
 
     /* Set log level */
-    log_level = getenv("HG_NA_LOG_LEVEL");
-    if (log_level && (strcmp(log_level, "debug") == 0))
-        NA_LOG_MASK |= HG_LOG_TYPE_DEBUG;
-#endif
+    if (log_level)
+        NA_LOG_MASK = hg_log_name_to_type(log_level);
 
     for (i = 0; i < plugin_count; i++) {
         if (!na_class_table[i]->cleanup)
@@ -384,6 +374,14 @@ NA_Cleanup(void)
 
         na_class_table[i]->cleanup();
     }
+}
+
+/*---------------------------------------------------------------------------*/
+void
+NA_Set_log_level(const char *level)
+{
+    /* Set log level */
+    NA_LOG_MASK = hg_log_name_to_type(level);
 }
 
 /*---------------------------------------------------------------------------*/
