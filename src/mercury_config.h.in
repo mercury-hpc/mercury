@@ -88,9 +88,6 @@ typedef hg_uint8_t hg_bool_t;
 #    define HG_FALLTHROUGH()
 #endif
 
-/* Environment variable names (to be removed) */
-#define HG_PORT_NAME "MERCURY_PORT_NAME"
-
 /* Shared libraries */
 #cmakedefine HG_BUILD_SHARED_LIBS
 #ifdef HG_BUILD_SHARED_LIBS
@@ -111,7 +108,6 @@ typedef hg_uint8_t hg_bool_t;
 #cmakedefine HG_HAS_XDR
 #cmakedefine HG_HAS_COLLECT_STATS
 
-#cmakedefine HG_HAS_VERBOSE_ERROR
 #cmakedefine HG_HAS_DEBUG
 
 #endif /* MERCURY_CONFIG_H */

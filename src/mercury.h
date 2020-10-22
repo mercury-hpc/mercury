@@ -109,6 +109,15 @@ HG_PUBLIC void
 HG_Cleanup(void);
 
 /**
+ * Set the log level for HG. That setting is valid for all HG classes.
+ *
+ * \param level [IN]            level string, valid values are:
+ *                                "none", "error", "warning", "debug"
+ */
+HG_PUBLIC void
+HG_Set_log_level(const char *level);
+
+/**
  * Obtain the name of the given class.
  *
  * \param hg_class [IN]         pointer to HG class

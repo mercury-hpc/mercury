@@ -15,6 +15,8 @@
 #    include "na_mpi.h"
 #endif
 
+#include "mercury_util.h"
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,9 +74,7 @@ extern const char *na_test_short_opt_g;
 extern const struct na_test_opt na_test_opt_g[];
 
 /* Default error log mask */
-#ifdef NA_HAS_VERBOSE_ERROR
-unsigned int NA_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
-#endif
+enum hg_log_type NA_LOG_MASK = HG_LOG_TYPE_NONE;
 
 /*---------------------------------------------------------------------------*/
 void
@@ -389,6 +389,15 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     char *info_string = NULL;
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
+    const char *log_level = getenv("HG_TEST_LOG_LEVEL");
+
+    /* Set log level */
+    if (!log_level)
+        log_level = "warning";
+
+    NA_LOG_MASK = hg_log_name_to_type(log_level);
+    NA_Set_log_level(log_level);
+    HG_Util_set_log_level(log_level);
 
     na_test_parse_options(argc, argv, na_test_info);
 
