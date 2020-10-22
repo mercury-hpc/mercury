@@ -98,9 +98,10 @@
 #define NA_OFI_VERIFY_PROV_DOM (1 << 0) /* requires domain verification */
 #define NA_OFI_WAIT_SET        (1 << 1) /* supports FI_WAIT_SET */
 #define NA_OFI_WAIT_FD         (1 << 2) /* supports FI_WAIT_FD */
-#define NA_OFI_SKIP_SIGNAL     (1 << 4) /* supports fi_signal() */
+#define NA_OFI_SIGNAL          (1 << 4) /* supports fi_signal() */
 #define NA_OFI_DOMAIN_LOCK     (1 << 5) /* serialize domain access */
-#define NA_OFI_NO_SEP          (1 << 6) /* does not support SEPs */
+#define NA_OFI_SEP             (1 << 6) /* supports SEPs */
+#define NA_OFI_SOURCE_MSG      (1 << 7) /* requires source info in the MSG */
 
 /* X-macro to define the following for each supported provider:
  * - enum type
@@ -117,20 +118,22 @@
 #define NA_OFI_PROV_TYPES                                                      \
     X(NA_OFI_PROV_NULL, "", "", 0, 0, 0, 0)                                    \
     X(NA_OFI_PROV_SOCKETS, "sockets", "", FI_SOCKADDR_IN, FI_PROGRESS_AUTO,    \
-        (FI_SOURCE | FI_DIRECTED_RECV),                                        \
-        (NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD))                             \
+        FI_SOURCE | FI_DIRECTED_RECV,                                          \
+        NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG |          \
+            NA_OFI_SEP)                                                        \
     X(NA_OFI_PROV_TCP, "tcp;ofi_rxm", "tcp", FI_SOCKADDR_IN, FI_PROGRESS_AUTO, \
-        (FI_SOURCE | FI_DIRECTED_RECV),                                        \
-        (NA_OFI_WAIT_FD | NA_OFI_NO_SEP | NA_OFI_SKIP_SIGNAL))                 \
+        FI_SOURCE | FI_DIRECTED_RECV, NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG)      \
+    X(NA_OFI_PROV_PSM, "psm", "", FI_ADDR_PSMX, FI_PROGRESS_MANUAL, 0,         \
+        NA_OFI_WAIT_SET | NA_OFI_SOURCE_MSG)                                   \
     X(NA_OFI_PROV_PSM2, "psm2", "", FI_ADDR_PSMX2, FI_PROGRESS_AUTO,           \
-        (FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV),                        \
-        (NA_OFI_DOMAIN_LOCK | NA_OFI_WAIT_FD))                                 \
+        FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV,                          \
+        NA_OFI_DOMAIN_LOCK | NA_OFI_WAIT_FD | NA_OFI_SIGNAL | NA_OFI_SEP)      \
     X(NA_OFI_PROV_VERBS, "verbs;ofi_rxm", "verbs", FI_SOCKADDR_IN,             \
-        FI_PROGRESS_MANUAL, (FI_SOURCE | FI_DIRECTED_RECV),                    \
-        (NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_NO_SEP |             \
-            NA_OFI_SKIP_SIGNAL))                                               \
+        FI_PROGRESS_MANUAL, FI_SOURCE | FI_DIRECTED_RECV,                      \
+        NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG)           \
     X(NA_OFI_PROV_GNI, "gni", "", FI_ADDR_GNI, FI_PROGRESS_AUTO,               \
-        (FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV), NA_OFI_WAIT_SET)       \
+        FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV,                          \
+        NA_OFI_WAIT_SET | NA_OFI_SIGNAL | NA_OFI_SEP)                          \
     X(NA_OFI_PROV_MAX, "", "", 0, 0, 0, 0)
 
 #define X(a, b, c, d, e, f, g) a,
@@ -257,6 +260,11 @@ struct na_ofi_addr {
 /* SIN address */
 struct na_ofi_sin_addr {
     struct sockaddr_in sin;
+};
+
+/* PSM address */
+struct na_ofi_psm_addr {
+    na_uint64_t addr0;
 };
 
 /* PSM2 address */
@@ -447,6 +455,12 @@ static NA_INLINE enum na_ofi_prov_type
 na_ofi_prov_name_to_type(const char *prov_name);
 
 /**
+ * Get provider encoded address size.
+ */
+static NA_INLINE size_t
+na_ofi_prov_addr_size(na_uint32_t addr_format);
+
+/**
  * Domain lock.
  */
 static NA_INLINE void
@@ -485,6 +499,8 @@ na_ofi_str_to_addr(
 static na_return_t
 na_ofi_str_to_sin(const char *str, void **addr, na_size_t *len);
 static na_return_t
+na_ofi_str_to_psm(const char *str, void **addr, na_size_t *len);
+static na_return_t
 na_ofi_str_to_psm2(const char *str, void **addr, na_size_t *len);
 static na_return_t
 na_ofi_str_to_gni(const char *str, void **addr, na_size_t *len);
@@ -496,6 +512,8 @@ static NA_INLINE na_uint64_t
 na_ofi_addr_to_key(na_uint32_t addr_format, const void *addr, na_size_t len);
 static NA_INLINE na_uint64_t
 na_ofi_sin_to_key(const struct na_ofi_sin_addr *addr);
+static NA_INLINE na_uint64_t
+na_ofi_psm_to_key(const struct na_ofi_psm_addr *addr);
 static NA_INLINE na_uint64_t
 na_ofi_psm2_to_key(const struct na_ofi_psm2_addr *addr);
 static NA_INLINE na_uint64_t
@@ -1086,6 +1104,25 @@ na_ofi_prov_name_to_type(const char *prov_name)
 }
 
 /*---------------------------------------------------------------------------*/
+static NA_INLINE size_t
+na_ofi_prov_addr_size(na_uint32_t addr_format)
+{
+    switch (addr_format) {
+        case FI_SOCKADDR_IN:
+            return sizeof(struct na_ofi_sin_addr);
+        case FI_ADDR_PSMX:
+            return sizeof(struct na_ofi_psm_addr);
+        case FI_ADDR_PSMX2:
+            return sizeof(struct na_ofi_psm2_addr);
+        case FI_ADDR_GNI:
+            return sizeof(struct na_ofi_gni_addr);
+        default:
+            NA_LOG_ERROR("Unsupported address format");
+            return 0;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 static NA_INLINE void
 na_ofi_domain_lock(struct na_ofi_domain *domain)
 {
@@ -1116,7 +1153,7 @@ na_ofi_with_msg_hdr(const na_class_t *na_class)
 {
     struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
 
-    return (na_ofi_prov_addr_format[domain->prov_type] == FI_SOCKADDR_IN);
+    return (na_ofi_prov_flags[domain->prov_type] & NA_OFI_SOURCE_MSG);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1143,6 +1180,8 @@ na_ofi_str_to_addr(
     switch (addr_format) {
         case FI_SOCKADDR_IN:
             return na_ofi_str_to_sin(str, addr, len);
+        case FI_ADDR_PSMX:
+            return na_ofi_str_to_psm(str, addr, len);
         case FI_ADDR_PSMX2:
             return na_ofi_str_to_psm2(str, addr, len);
         case FI_ADDR_GNI:
@@ -1189,6 +1228,32 @@ na_ofi_str_to_sin(const char *str, void **addr, na_size_t *len)
 
 error:
     free(sin_addr);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_str_to_psm(const char *str, void **addr, na_size_t *len)
+{
+    struct na_ofi_psm_addr *psm_addr;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    *len = sizeof(*psm_addr);
+    psm_addr = calloc(1, *len);
+    NA_CHECK_ERROR(psm_addr == NULL, error, ret, NA_NOMEM,
+        "Could not allocate psm address");
+
+    rc = sscanf(str, "%*[^:]://%" SCNx64, (uint64_t *) &psm_addr->addr0);
+    NA_CHECK_ERROR(rc != 1, error, ret, NA_PROTONOSUPPORT,
+        "Could not convert addr string to PSM addr format");
+
+    *addr = psm_addr;
+
+    return ret;
+
+error:
+    free(psm_addr);
     return ret;
 }
 
@@ -1274,6 +1339,11 @@ na_ofi_addr_to_key(na_uint32_t addr_format, const void *addr, na_size_t len)
                 "Addr len (%zu) does not match for FI_SOCKADDR_IN (%zu)", len,
                 sizeof(struct na_ofi_sin_addr));
             return na_ofi_sin_to_key((const struct na_ofi_sin_addr *) addr);
+        case FI_ADDR_PSMX:
+            NA_CHECK_ERROR_NORET(len != sizeof(struct na_ofi_psm_addr), out,
+                "Addr len (%zu) does not match for FI_ADDR_PSMX (%zu)", len,
+                sizeof(struct na_ofi_psm_addr));
+            return na_ofi_psm_to_key((const struct na_ofi_psm_addr *) addr);
         case FI_ADDR_PSMX2:
             NA_CHECK_ERROR_NORET(len != sizeof(struct na_ofi_psm2_addr), out,
                 "Addr len (%zu) does not match for FI_ADDR_PSMX2 (%zu)", len,
@@ -1299,6 +1369,13 @@ na_ofi_sin_to_key(const struct na_ofi_sin_addr *addr)
 {
     return (
         ((na_uint64_t) addr->sin.sin_addr.s_addr) << 32 | addr->sin.sin_port);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_uint64_t
+na_ofi_psm_to_key(const struct na_ofi_psm_addr *addr)
+{
+    return addr->addr0;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2154,13 +2231,13 @@ na_ofi_endpoint_open(const struct na_ofi_domain *na_ofi_domain,
     NA_CHECK_ERROR(rc != 0, out, ret, NA_PROTOCOL_ERROR,
         "fi_getinfo(%s) failed, rc: %d (%s)", node, rc, fi_strerror(-rc));
 
-    if ((na_ofi_prov_flags[na_ofi_domain->prov_type] & NA_OFI_NO_SEP) ||
-        max_contexts < 2) {
-        ret = na_ofi_basic_ep_open(na_ofi_domain, no_wait, na_ofi_endpoint);
-        NA_CHECK_NA_ERROR(out, ret, "na_ofi_basic_ep_open() failed");
-    } else {
+    if ((na_ofi_prov_flags[na_ofi_domain->prov_type] & NA_OFI_SEP) &&
+        max_contexts > 1) {
         ret = na_ofi_sep_open(na_ofi_domain, na_ofi_endpoint);
         NA_CHECK_NA_ERROR(out, ret, "na_ofi_sep_open() failed");
+    } else {
+        ret = na_ofi_basic_ep_open(na_ofi_domain, no_wait, na_ofi_endpoint);
+        NA_CHECK_NA_ERROR(out, ret, "na_ofi_basic_ep_open() failed");
     }
 
     *na_ofi_endpoint_p = na_ofi_endpoint;
@@ -2187,6 +2264,8 @@ na_ofi_basic_ep_open(const struct na_ofi_domain *na_ofi_domain,
     struct fi_cq_attr cq_attr = {0};
     na_return_t ret = NA_SUCCESS;
     int rc;
+
+    NA_LOG_DEBUG("Opening standard endpoint");
 
     /* Create a transport level communication endpoint */
     rc = fi_endpoint(na_ofi_domain->fi_domain, /* In:  Domain object */
@@ -2255,6 +2334,8 @@ na_ofi_sep_open(const struct na_ofi_domain *na_ofi_domain,
 {
     na_return_t ret = NA_SUCCESS;
     int rc;
+
+    NA_LOG_DEBUG("Opening SEP endpoint");
 
     /* Create a transport level communication endpoint (sep) */
     rc = fi_scalable_ep(na_ofi_domain->fi_domain, /* In:  Domain object */
@@ -3118,7 +3199,8 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
      * can be used when needed. */
 
     /* Use src_addr when available */
-    if (src_addr != FI_ADDR_UNSPEC)
+    if ((na_ofi_prov_extra_caps[domain->prov_type] & FI_SOURCE) &&
+        src_addr != FI_ADDR_UNSPEC)
         na_ofi_addr->fi_addr = src_addr;
     else if (src_err_addr && src_err_addrlen) { /* addr from error info */
         /* We do not need to keep a copy of src_err_addr */
@@ -3128,8 +3210,10 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
         NA_CHECK_NA_ERROR(error, ret, "na_ofi_addr_ht_lookup() failed");
     } else if (na_ofi_with_msg_hdr(na_class)) { /* addr from msg header */
         /* We do not need to keep a copy of msg header */
-        ret = na_ofi_addr_ht_lookup(domain, FI_SOCKADDR_IN,
-            na_ofi_op_id->info.msg.buf.ptr, sizeof(struct na_ofi_sin_addr),
+        ret = na_ofi_addr_ht_lookup(domain,
+            na_ofi_prov_addr_format[domain->prov_type],
+            na_ofi_op_id->info.msg.buf.ptr,
+            na_ofi_prov_addr_size(na_ofi_prov_addr_format[domain->prov_type]),
             &na_ofi_addr->fi_addr, &na_ofi_addr->ht_key);
         NA_CHECK_NA_ERROR(error, ret, "na_ofi_addr_ht_lookup() failed");
     } else
@@ -3563,6 +3647,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
             NA_CHECK_ERROR(ptr == NULL, out, ret, NA_ADDRNOTAVAIL,
                 "Could not convert IP to string");
             node_ptr = node;
+        } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_PSMX) {
+            /* Nothing to do */
         } else if (na_ofi_prov_addr_format[prov_type] == FI_ADDR_PSMX2) {
             /* Nothing to do */
         }
@@ -4193,9 +4279,10 @@ na_ofi_msg_get_max_expected_size(const na_class_t NA_UNUSED *na_class)
 static NA_INLINE na_size_t
 na_ofi_msg_get_unexpected_header_size(const na_class_t *na_class)
 {
-    if (na_ofi_with_msg_hdr(na_class))
-        return sizeof(struct na_ofi_sin_addr);
-    else
+    if (na_ofi_with_msg_hdr(na_class)) {
+        return na_ofi_prov_addr_size(
+            na_ofi_prov_addr_format[NA_OFI_CLASS(na_class)->domain->prov_type]);
+    } else
         return 0;
 }
 
@@ -4255,12 +4342,11 @@ na_ofi_msg_init_unexpected(na_class_t *na_class, void *buf, na_size_t buf_size)
      */
     if (na_ofi_with_msg_hdr(na_class)) {
         struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
-        struct na_ofi_sin_addr *na_ofi_sin_addr =
-            (struct na_ofi_sin_addr *) priv->endpoint->src_addr->addr;
 
-        NA_CHECK_ERROR(buf_size < sizeof(*na_ofi_sin_addr), out, ret,
+        NA_CHECK_ERROR(buf_size < priv->endpoint->src_addr->addrlen, out, ret,
             NA_OVERFLOW, "Buffer size too small to copy addr");
-        memcpy(buf, na_ofi_sin_addr, sizeof(*na_ofi_sin_addr));
+        memcpy(buf, priv->endpoint->src_addr->addr,
+            priv->endpoint->src_addr->addrlen);
     }
 
 out:
@@ -4924,6 +5010,9 @@ na_ofi_poll_try_wait(na_class_t *na_class, na_context_t *context)
     struct fid *fids[1];
     int rc;
 
+    if (priv->no_wait)
+        return NA_FALSE;
+
     /* Keep making progress if retry queue is not empty */
     hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
     if (!HG_QUEUE_IS_EMPTY(&ctx->retry_op_queue->queue)) {
@@ -5085,8 +5174,8 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
     }
 
     /* Work around segfault on fi_cq_signal() in some providers */
-    if (!(na_ofi_prov_flags[NA_OFI_CLASS(na_class)->domain->prov_type] &
-            NA_OFI_SKIP_SIGNAL)) {
+    if (na_ofi_prov_flags[NA_OFI_CLASS(na_class)->domain->prov_type] &
+        NA_OFI_SIGNAL) {
         /* Signal CQ to wake up and no longer wait on FD */
         int rc_signal = fi_cq_signal(NA_OFI_CONTEXT(context)->fi_cq);
         NA_CHECK_ERROR(rc_signal != 0 && rc_signal != -ENOSYS, out, ret,
