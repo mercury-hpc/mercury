@@ -84,6 +84,15 @@ NA_PUBLIC void
 NA_Cleanup(void);
 
 /**
+ * Set the log level for NA. That setting is valid for all NA classes.
+ *
+ * \param level [IN]            level string, valid values are:
+ *                                "none", "error", "warning", "debug"
+ */
+NA_PUBLIC void
+NA_Set_log_level(const char *level);
+
+/**
  * Return the name of the NA class.
  *
  * \param na_class [IN]         pointer to NA class

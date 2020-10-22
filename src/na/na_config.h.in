@@ -102,7 +102,6 @@ typedef na_uint64_t na_ptr_t;
 
 /* Build Options */
 #cmakedefine NA_HAS_MULTI_PROGRESS
-#cmakedefine NA_HAS_VERBOSE_ERROR
 #cmakedefine NA_HAS_DEBUG
 
 /* BMI */

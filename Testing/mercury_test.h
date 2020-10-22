@@ -66,35 +66,23 @@ struct hg_test_context_info {
 /*****************/
 
 /* Default error macro */
-#ifdef HG_HAS_VERBOSE_ERROR
-#    include <mercury_log.h>
-#    define HG_TEST_LOG_MASK hg_test_log_mask
+#include <mercury_log.h>
+#define HG_TEST_LOG_MASK hg_test_log_mask
 /* Log mask will be initialized in init routine */
-extern unsigned int HG_TEST_LOG_MASK;
-#    define HG_TEST_LOG_MODULE_NAME "HG Test"
-#    define HG_TEST_LOG_ERROR(...)                                             \
-        do {                                                                   \
-            if (HG_TEST_LOG_MASK & HG_LOG_TYPE_ERROR)                          \
-                HG_LOG_WRITE_ERROR(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);      \
-        } while (0)
-#    ifdef HG_HAS_DEBUG
-#        define HG_TEST_LOG_DEBUG(...)                                         \
-            do {                                                               \
-                if (HG_TEST_LOG_MASK & HG_LOG_TYPE_DEBUG)                      \
-                    HG_LOG_WRITE_DEBUG(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);  \
-            } while (0)
-#    else
-#        define HG_TEST_LOG_DEBUG(...) (void) 0
-#    endif
-#    define HG_TEST_LOG_WARNING(...)                                           \
-        do {                                                                   \
-            if (HG_TEST_LOG_MASK & HG_LOG_TYPE_WARNING)                        \
-                HG_LOG_WRITE_WARNING(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);    \
-        } while (0)
+extern enum hg_log_type HG_TEST_LOG_MASK;
+#define HG_TEST_LOG_MODULE_NAME "HG Test"
+#define HG_TEST_LOG_ERROR(...)                                                 \
+    HG_LOG_WRITE(HG_TEST_LOG_MASK, HG_LOG_TYPE_ERROR, HG_TEST_LOG_MODULE_NAME, \
+        __VA_ARGS__)
+#define HG_TEST_LOG_WARNING(...)                                               \
+    HG_LOG_WRITE(HG_TEST_LOG_MASK, HG_LOG_TYPE_WARNING,                        \
+        HG_TEST_LOG_MODULE_NAME, __VA_ARGS__)
+#ifdef HG_HAS_DEBUG
+#    define HG_TEST_LOG_DEBUG(...)                                             \
+        HG_LOG_WRITE(HG_TEST_LOG_MASK, HG_LOG_TYPE_DEBUG,                      \
+            HG_TEST_LOG_MODULE_NAME, __VA_ARGS__)
 #else
-#    define HG_TEST_LOG_ERROR(...)   (void) 0
-#    define HG_TEST_LOG_DEBUG(...)   (void) 0
-#    define HG_TEST_LOG_WARNING(...) (void) 0
+#    define HG_TEST_LOG_DEBUG(...) (void) 0
 #endif
 
 /* Branch predictor hints */

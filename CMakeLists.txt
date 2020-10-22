@@ -172,19 +172,13 @@ else()
 endif()
 
 #------------------------------------------------------------------------------
-# Enable verbose error.
+# Enable debug output.
 #------------------------------------------------------------------------------
-option(MERCURY_ENABLE_VERBOSE_ERROR "Print error messages to stderr." ON)
-if(MERCURY_ENABLE_VERBOSE_ERROR)
-  set(HG_HAS_VERBOSE_ERROR 1)
-  option(MERCURY_ENABLE_DEBUG "Enable debug statements." OFF)
-  if(MERCURY_ENABLE_DEBUG)
-    set(HG_HAS_DEBUG 1)
-  else()
-    set(HG_HAS_DEBUG 0)
-  endif()
+option(MERCURY_ENABLE_DEBUG "Enable debug statements." OFF)
+if(MERCURY_ENABLE_DEBUG)
+  set(HG_HAS_DEBUG 1)
 else()
-  set(HG_HAS_VERBOSE_ERROR 0)
+  set(HG_HAS_DEBUG 0)
 endif()
 
 #-------------------------------------------------------------------------------
