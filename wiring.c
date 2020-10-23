@@ -67,6 +67,22 @@ zalloc(size_t sz)
     return calloc(1, sz);
 }
 
+/* Return the next larger buffer length to try if `buflen` did not fit a
+ * received packet.
+ *
+ * Twice the message length is twice the header length plus twice the
+ * payload length, so subtract one header length to double only the
+ * payload length.
+ */
+static size_t
+next_buflen(size_t buflen)
+{
+        const size_t hdrlen = offsetof(wireup_msg_t, addr[0]);
+        if (buflen == 0)
+            return sizeof(wireup_msg_t) + 93;
+        return twice_or_max(buflen) - hdrlen;
+}
+
 static void
 wiring_release_wire(wiring_t *wiring, wire_t *w)
 {
@@ -342,8 +358,8 @@ wiring_create(ucp_worker_h worker, size_t request_size)
 
     wiring->first_to_expire = wiring->last_to_expire = SENDER_ID_NIL;
 
-    wiring->rxpool = rxpool_create(worker, request_size,
-        TAG_CHNL_WIREUP, TAG_CHNL_MASK, sizeof(wireup_msg_t) + 93, 3);
+    wiring->rxpool = rxpool_create(worker, next_buflen, request_size,
+        TAG_CHNL_WIREUP, TAG_CHNL_MASK, 3);
 
     if (wiring->rxpool == NULL) {
         wiring_destroy(wiring);
@@ -657,28 +673,6 @@ wireup_once(wiring_t **wiringp)
                ", processing...\n", rdesc->rxlen, rdesc->sender_tag);
         wiring = wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf,
             rdesc->rxlen);
-    } else if (rdesc->status == UCS_ERR_MESSAGE_TRUNCATED) {
-        const size_t hdrlen = offsetof(wireup_msg_t, addr[0]);
-        printf("%s: truncated desc %p buf %p buflen %zu\n", __func__,
-           (void *)rdesc, rdesc->buf, rdesc->buflen);
-        size_t buflen = rdesc->buflen;
-        void * const buf = rdesc->buf, *nbuf;
-        /* Twice the message length is twice the header length plus
-         * twice the payload length, so subtract one header length to
-         * double only the payload length.
-         */
-        size_t nbuflen = twice_or_max(buflen) - hdrlen;
-
-        /* TBD enlarge all Rx buffers */
-
-        printf("increasing buffer length %zu -> %zu bytes.\n", buflen, nbuflen);
-
-        if ((nbuf = malloc(nbuflen)) == NULL)
-            err(EXIT_FAILURE, "%s: malloc", __func__);
-
-        rdesc->buflen = nbuflen;
-        rdesc->buf = nbuf;
-        free(buf);
     } else {
         printf("receive error, %s, exiting.\n",
             ucs_status_string(rdesc->status));

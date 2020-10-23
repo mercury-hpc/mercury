@@ -116,8 +116,8 @@ header_free(size_t header_size, size_t alignment, void *buf)
 }
 
 rxpool_t *
-rxpool_create(ucp_worker_h worker, size_t request_size,
-    ucp_tag_t tag, ucp_tag_t tag_mask, size_t buflen, size_t nelts)
+rxpool_create(ucp_worker_h worker, rxpool_next_buflen_t next_buflen,
+    size_t request_size, ucp_tag_t tag, ucp_tag_t tag_mask, size_t nelts)
 {
     rxpool_t *rxpool;
 
@@ -125,19 +125,25 @@ rxpool_create(ucp_worker_h worker, size_t request_size,
     if (rxpool == NULL)
         return NULL;
 
-    rxpool_init(worker, rxpool, request_size, tag, tag_mask, buflen, nelts);
+    rxpool_init(rxpool, worker, next_buflen, request_size, tag, tag_mask,
+        nelts);
     return rxpool;
 }
 
 void
-rxpool_init(ucp_worker_h worker, rxpool_t *rxpool, size_t request_size,
-    ucp_tag_t tag, ucp_tag_t tag_mask, size_t buflen, size_t nelts)
+rxpool_init(rxpool_t *rxpool, ucp_worker_h worker,
+    rxpool_next_buflen_t next_buflen, size_t request_size,
+    ucp_tag_t tag, ucp_tag_t tag_mask, size_t nelts)
 {
     size_t i;
+    const size_t buflen = (*next_buflen)(0);
+    assert(buflen > 0);
 
     TAILQ_INIT(&rxpool->alldesc);
     rxdesc_fifo_init(&rxpool->complete);
 
+    rxpool->next_buflen = next_buflen;
+    rxpool->initbuflen = buflen;
     rxpool->worker = worker;
     rxpool->tag = tag;
     rxpool->tag_mask = tag_mask;
@@ -229,8 +235,54 @@ rxpool_destroy(rxpool_t *rxpool)
     }
 }
 
+/* Return the next completed Rx descriptor in the pool or NULL if
+ * there are none.  The caller should check the error status
+ * before trying to use the Rx buffer.
+ *
+ * Callers are responsible for synchronizing calls to rxpool_next().
+ */
 rxdesc_t *
 rxpool_next(rxpool_t *rxpool)
 {
-    return rxdesc_fifo_get(&rxpool->complete);
+    rxdesc_t *rdesc = rxdesc_fifo_get(&rxpool->complete);
+    size_t buflen, nbuflen;
+
+    if (rdesc == NULL)
+        return NULL;
+
+    if (rdesc->status != UCS_ERR_MESSAGE_TRUNCATED)
+        return rdesc;
+
+    void * const buf = rdesc->buf, *nbuf;
+
+    buflen = rdesc->buflen;
+
+    printf("%s: truncated desc %p buf %p buflen %zu\n", __func__,
+       (void *)rdesc, rdesc->buf, buflen);
+
+    if (rdesc->buflen < rxpool->initbuflen)
+        nbuflen = rxpool->initbuflen;
+    else {
+        nbuflen = (*rxpool->next_buflen)(buflen);
+        /* Cannot increase buffer length.  Let the caller handle it. */
+        if (nbuflen == buflen)
+            return rdesc;
+
+        rxpool->initbuflen = nbuflen;
+    }
+
+    /* TBD enlarge all Rx buffers */
+
+    printf("increasing buffer length %zu -> %zu bytes.\n", buflen, nbuflen);
+
+    /* If we cannot allocate a new buffer, let the caller handle the
+     * error.
+     */
+    if ((nbuf = malloc(nbuflen)) == NULL)
+        return rdesc;
+
+    rxdesc_setup(rxpool, nbuf, nbuflen, rdesc);
+    free(buf);
+
+    return NULL;
 }

@@ -13,6 +13,8 @@ typedef struct _txdesc {
     bool completed;
 } txdesc_t;
 
+typedef size_t (*rxpool_next_buflen_t)(size_t);
+
 struct _rxpool;
 typedef struct _rxpool rxpool_t;
 
@@ -44,16 +46,18 @@ struct _rxpool {
     ucp_tag_t tag, tag_mask;
     ucp_worker_h worker;
     size_t request_size;
+    size_t initbuflen;
+    rxpool_next_buflen_t next_buflen;
     rxdesc_list_t alldesc;
     rxdesc_fifo_t complete;
 };
 
 rxdesc_t *rxpool_next(rxpool_t *);
 void rxdesc_setup(rxpool_t *, void *, size_t, rxdesc_t *);
-rxpool_t *rxpool_create(ucp_worker_h, size_t, ucp_tag_t, ucp_tag_t,
-    size_t, size_t);
-void rxpool_init(ucp_worker_h, rxpool_t *, size_t, ucp_tag_t, ucp_tag_t,
-   size_t, size_t);
+rxpool_t *rxpool_create(ucp_worker_h, rxpool_next_buflen_t, size_t, ucp_tag_t,
+    ucp_tag_t, size_t);
+void rxpool_init(rxpool_t *, ucp_worker_h, rxpool_next_buflen_t, size_t,
+    ucp_tag_t, ucp_tag_t, size_t);
 void rxpool_destroy(rxpool_t *);
 
 #endif /* _RING_H_ */
