@@ -8,13 +8,13 @@
  * found at the root of the source code distribution tree.
  */
 
-#include <stdio.h>
-#include <assert.h>
-#include <unistd.h>
-#include <pthread.h>
-
-#include "example_rpc_engine.h"
 #include "example_rpc.h"
+#include "example_rpc_engine.h"
+
+#include <assert.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <unistd.h>
 
 /* This is an example client program that issues 4 concurrent RPCs, each of
  * which includes a bulk transfer driven by the server.
@@ -33,74 +33,67 @@ static pthread_cond_t done_cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t done_mutex = PTHREAD_MUTEX_INITIALIZER;
 static hg_id_t my_rpc_id;
 
-static hg_return_t my_rpc_cb(const struct hg_cb_info *info);
-static void run_my_rpc(int value);
-static hg_return_t lookup_cb(const struct hg_cb_info *callback_info);
+static void
+run_my_rpc(const char *svr_addr_string, int value);
+static hg_return_t
+my_rpc_cb(const struct hg_cb_info *info);
 
 /* struct used to carry state of overall operation across callbacks */
-struct my_rpc_state
-{
+struct my_rpc_state {
     int value;
     hg_size_t size;
-    void* buffer;
+    void *buffer;
     hg_bulk_t bulk_handle;
     hg_handle_t handle;
 };
 
-int main(void)
+int
+main(int argc, char *argv[])
 {
+    const char *svr_addr_string;
     int i;
+
+    if (argc < 2) {
+        printf("Usage is: %s <svr address string>\n", argv[0]);
+        return (0);
+    }
+    svr_addr_string = argv[1];
 
     /* start mercury and register RPC */
 
     /* NOTE: the address here is mainly used to identify the transport; this
      * is a client and will not be listening for requests.
      */
-    hg_engine_init(NA_FALSE, "tcp");
+    hg_engine_init(HG_FALSE, "tcp");
     my_rpc_id = my_rpc_register();
 
     /* issue 4 RPCs (these will proceed concurrently using callbacks) */
-    for(i=0; i<4; i++)
-        run_my_rpc(i);
+    for (i = 0; i < 4; i++)
+        run_my_rpc(svr_addr_string, i);
 
     /* wait for callbacks to finish */
     pthread_mutex_lock(&done_mutex);
-    while(done < 4)
+    while (done < 4)
         pthread_cond_wait(&done_cond, &done_mutex);
     pthread_mutex_unlock(&done_mutex);
 
     /* shut down */
     hg_engine_finalize();
 
-    return(0);
+    return (0);
 }
 
-
-static void run_my_rpc(int value)
+static void
+run_my_rpc(const char *svr_addr_string, int value)
 {
-    int *heap_value;
-
-    heap_value = malloc(sizeof(*heap_value));
-    assert(heap_value);
-    *heap_value = value;
-
-    /* address lookup.  This is an async operation as well so we continue in
-     * a callback from here.
-     */
-    hg_engine_addr_lookup("tcp://localhost:1234", lookup_cb, heap_value);
-
-    return;
-}
-
-static hg_return_t lookup_cb(const struct hg_cb_info *callback_info)
-{
-    na_addr_t svr_addr = callback_info->info.lookup.addr;
+    hg_addr_t svr_addr;
     my_rpc_in_t in;
     const struct hg_info *hgi;
     int ret;
     struct my_rpc_state *my_rpc_state_p;
 
-    assert(callback_info->ret == 0);
+    /* address lookup. */
+    hg_engine_addr_lookup(svr_addr_string, &svr_addr);
 
     /* set up state structure */
     my_rpc_state_p = malloc(sizeof(*my_rpc_state_p));
@@ -108,9 +101,8 @@ static hg_return_t lookup_cb(const struct hg_cb_info *callback_info)
     /* This includes allocating a src buffer for bulk transfer */
     my_rpc_state_p->buffer = calloc(1, 512);
     assert(my_rpc_state_p->buffer);
-    sprintf((char*)my_rpc_state_p->buffer, "Hello world!\n");
-    my_rpc_state_p->value = *((int*)callback_info->arg);
-    free(callback_info->arg);
+    sprintf((char *) my_rpc_state_p->buffer, "Hello world!\n");
+    my_rpc_state_p->value = value;
 
     /* create create handle to represent this rpc operation */
     hg_engine_create_handle(svr_addr, my_rpc_id, &my_rpc_state_p->handle);
@@ -118,24 +110,27 @@ static hg_return_t lookup_cb(const struct hg_cb_info *callback_info)
     /* register buffer for rdma/bulk access by server */
     hgi = HG_Get_info(my_rpc_state_p->handle);
     assert(hgi);
-    ret = HG_Bulk_create(hgi->hg_class, 1, &my_rpc_state_p->buffer, &my_rpc_state_p->size,
-        HG_BULK_READ_ONLY, &in.bulk_handle);
+    ret = HG_Bulk_create(hgi->hg_class, 1, &my_rpc_state_p->buffer,
+        &my_rpc_state_p->size, HG_BULK_READ_ONLY, &in.bulk_handle);
     my_rpc_state_p->bulk_handle = in.bulk_handle;
     assert(ret == 0);
 
     /* Send rpc. Note that we are also transmitting the bulk handle in the
-     * input struct.  It was set above. 
-     */ 
+     * input struct.  It was set above.
+     */
     in.input_val = my_rpc_state_p->value;
     ret = HG_Forward(my_rpc_state_p->handle, my_rpc_cb, my_rpc_state_p, &in);
     assert(ret == 0);
-    (void)ret;
+    (void) ret;
 
-    return(NA_SUCCESS);
+    hg_engine_addr_free(svr_addr);
+
+    return;
 }
 
 /* callback triggered upon receipt of rpc response */
-static hg_return_t my_rpc_cb(const struct hg_cb_info *info)
+static hg_return_t
+my_rpc_cb(const struct hg_cb_info *info)
 {
     my_rpc_out_t out;
     int ret;
@@ -146,7 +141,7 @@ static hg_return_t my_rpc_cb(const struct hg_cb_info *info)
     /* decode response */
     ret = HG_Get_output(info->info.forward.handle, &out);
     assert(ret == 0);
-    (void)ret;
+    (void) ret;
 
     printf("Got response ret: %d\n", out.ret);
 
@@ -163,5 +158,5 @@ static hg_return_t my_rpc_cb(const struct hg_cb_info *info)
     pthread_cond_signal(&done_cond);
     pthread_mutex_unlock(&done_mutex);
 
-    return(HG_SUCCESS);
+    return HG_SUCCESS;
 }

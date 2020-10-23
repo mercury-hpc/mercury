@@ -12,6 +12,7 @@
 #define MERCURY_MACROS_H
 
 #include "mercury.h"
+#include "mercury_bulk.h"
 #include "mercury_proc.h"
 #include "mercury_proc_bulk.h"
 
