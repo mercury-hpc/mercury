@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <err.h>
+#include <pthread.h>
 #include <stdalign.h> /* alignof */
 #include <stdlib.h> /* malloc */
 
@@ -7,8 +8,6 @@
 
 #include "rxpool.h"
 #include "util.h"
-
-#include <pthread.h>
 
 static void
 rxdesc_fifo_init(rxdesc_fifo_t *fifo)
