@@ -2,9 +2,9 @@ UCX_CONFIG!=pkg-config --cflags --libs --static ucx
 
 all: itme wires
 
-itme: itme.c
+itme: itme.c util.c
 	gcc -g -O0 -Wall -pedantic -std=c11 -Werror -D_POSIX_C_SOURCE=200809L \
-	    $(UCX_CONFIG) -o itme itme.c
+	    $(UCX_CONFIG) -o itme itme.c util.c
 
 wires: wires.c rxpool.c util.c wiring.c
 	gcc -fsanitize=address -fsanitize=pointer-compare \
