@@ -211,7 +211,8 @@ rxpool_destroy(rxpool_t *rxpool)
     /* Release UCP resources held by each descriptor.  Free buffers. */
     TAILQ_FOREACH(desc, &rxpool->alldesc, linkall) {
         printf("%s: cancelling desc %p\n", __func__, (void *)desc);
-        ucp_request_cancel(worker, desc);
+        if (desc->ucx_owns)
+            ucp_request_cancel(worker, desc);
     }
 
     while ((desc = TAILQ_FIRST(&rxpool->alldesc)) != NULL) {
