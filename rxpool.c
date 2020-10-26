@@ -9,6 +9,8 @@
 #include "rxpool.h"
 #include "util.h"
 
+static rxdesc_t *rxpool_next_slow(rxpool_t *, rxdesc_t *);
+
 static void
 rxdesc_fifo_init(rxdesc_fifo_t *fifo)
 {
@@ -246,44 +248,93 @@ rxdesc_t *
 rxpool_next(rxpool_t *rxpool)
 {
     rxdesc_t *rdesc = rxdesc_fifo_get(&rxpool->complete);
-    size_t buflen, nbuflen;
 
     if (rdesc == NULL)
         return NULL;
 
-    if (rdesc->status != UCS_ERR_MESSAGE_TRUNCATED)
+    if (rdesc->status != UCS_ERR_MESSAGE_TRUNCATED &&
+        rdesc->status != UCS_ERR_CANCELED)
         return rdesc;
 
-    void * const buf = rdesc->buf, *nbuf;
+    /* TBD Loop here while a truncated or cancelled descriptor is at
+     * the head of the FIFO.
+     */
+    return rxpool_next_slow(rxpool, rdesc);
+}
 
-    buflen = rdesc->buflen;
+static size_t
+rxpool_buflen_step(rxpool_t *rxpool, rxdesc_t *head)
+{
+    const size_t buflen = head->buflen;
+    size_t nbuflen;
+    rxdesc_t *desc;
 
-    printf("%s: truncated desc %p buf %p buflen %zu\n", __func__,
-       (void *)rdesc, rdesc->buf, buflen);
+    if (buflen >= rxpool->initbuflen)
+        rxpool->initbuflen = (*rxpool->next_buflen)(buflen);
 
-    if (rdesc->buflen < rxpool->initbuflen)
-        nbuflen = rxpool->initbuflen;
-    else {
-        nbuflen = (*rxpool->next_buflen)(buflen);
-        /* Cannot increase buffer length.  Let the caller handle it. */
-        if (nbuflen == buflen)
-            return rdesc;
+    nbuflen = rxpool->initbuflen;
 
-        rxpool->initbuflen = nbuflen;
-    }
-
-    /* TBD enlarge all Rx buffers */
+    /* If we could not increase the buffer length, there is nothing
+     * more we can do.
+     */
+    if (nbuflen == buflen)
+        return nbuflen;
 
     printf("increasing buffer length %zu -> %zu bytes.\n", buflen, nbuflen);
 
-    /* If we cannot allocate a new buffer, let the caller handle the
-     * error.
+    /* Cancel the rest so that we enlarge them in the following
+     * rxpool_next() calls.
      */
-    if ((nbuf = malloc(nbuflen)) == NULL)
-        return rdesc;
+    TAILQ_FOREACH(desc, &rxpool->alldesc, linkall) {
+        if (desc == head)
+            continue;
+        if (!desc->ucx_owns)
+            continue;
+        if (desc->buflen >= nbuflen)
+            continue;
+        printf("%s: cancelling short desc %p\n", __func__, (void *)desc);
+        ucp_request_cancel(rxpool->worker, desc);
+    }
 
-    rxdesc_setup(rxpool, nbuf, nbuflen, rdesc);
-    free(buf);
+    return nbuflen;
+}
 
-    return NULL;
+static rxdesc_t *
+rxpool_next_slow(rxpool_t *rxpool, rxdesc_t *head)
+{
+    size_t nbuflen;
+
+    nbuflen = rxpool->initbuflen;
+
+    do {
+        size_t buflen = head->buflen;
+        void * const buf = head->buf, *nbuf;
+
+        printf("%s: rx desc %p %s, buflen %zu\n", __func__, (void *)head,
+           (head->status == UCS_ERR_CANCELED) ? "cancelled" : "truncated",
+           head->buflen);
+
+        /* If we cannot allocate a new buffer, then we cannot resolve
+         * the cancellation/truncation here, so toss the error up to the
+         * caller.
+         */
+        if (head->status == UCS_ERR_MESSAGE_TRUNCATED && buflen >= nbuflen) {
+            nbuflen = rxpool_buflen_step(rxpool, head);
+
+            /* If we could not increase the buffer length, then let the caller
+             * handle it.
+             */
+            if (nbuflen == buflen)
+                break;
+        }
+        if ((nbuf = malloc(nbuflen)) == NULL)
+            break;
+
+        rxdesc_setup(rxpool, nbuf, nbuflen, head);
+        free(buf);
+    } while ((head = rxdesc_fifo_get(&rxpool->complete)) != NULL &&
+             (head->status == UCS_ERR_MESSAGE_TRUNCATED ||
+              head->status == UCS_ERR_CANCELED));
+
+    return head;
 }
