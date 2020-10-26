@@ -177,7 +177,7 @@ rxdesc_setup(rxpool_t *rxpool, void *buf, size_t buflen, rxdesc_t *desc)
     const ucp_request_param_t recv_params = {
       .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK |
                       UCP_OP_ATTR_FIELD_REQUEST |
-                      UCP_OP_ATTR_FIELD_USER_DATA 
+                      UCP_OP_ATTR_FIELD_USER_DATA
     , .cb = {.recv = rxdesc_callback}
     , .request = desc
     , .user_data = rxpool
