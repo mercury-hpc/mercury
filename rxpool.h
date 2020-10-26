@@ -59,5 +59,6 @@ rxpool_t *rxpool_create(ucp_worker_h, rxpool_next_buflen_t, size_t, ucp_tag_t,
 void rxpool_init(rxpool_t *, ucp_worker_h, rxpool_next_buflen_t, size_t,
     ucp_tag_t, ucp_tag_t, size_t);
 void rxpool_destroy(rxpool_t *);
+void rxdesc_release(rxpool_t *, rxdesc_t *);
 
 #endif /* _RING_H_ */

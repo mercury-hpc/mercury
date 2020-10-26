@@ -338,3 +338,19 @@ rxpool_next_slow(rxpool_t *rxpool, rxdesc_t *head)
 
     return head;
 }
+
+void
+rxdesc_release(rxpool_t *rxpool, rxdesc_t *rdesc)
+{
+    const size_t nbuflen = rxpool->initbuflen;
+
+    if (nbuflen > rdesc->buflen) {
+        void *const buf = rdesc->buf, *nbuf;
+        if ((nbuf = malloc(nbuflen)) != NULL) {
+            rdesc->buf = nbuf;
+            rdesc->buflen = nbuflen;
+            free(buf);
+        }
+    }
+    rxdesc_setup(rxpool, rdesc->buf, rdesc->buflen, rdesc);
+}

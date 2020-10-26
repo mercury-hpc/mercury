@@ -678,7 +678,7 @@ wireup_once(wiring_t **wiringp)
             ucs_status_string(rdesc->status));
         return false;
     }
-    rxdesc_setup(rxpool, rdesc->buf, rdesc->buflen, rdesc);
+    rxdesc_release(rxpool, rdesc);
     *wiringp = wiring;
     return true;
 }
