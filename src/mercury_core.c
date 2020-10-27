@@ -2674,12 +2674,13 @@ done:
     return ret;
 
 error:
-    /* Handle is no longer in use */
-    if (!(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED))
+    /* Handle is no longer in use (ignore if still processing cancelation) */
+    if (!(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED)) {
         hg_atomic_set32(&hg_core_handle->status, HG_CORE_OP_COMPLETED);
 
-    /* Rollback ref_count taken above */
-    hg_atomic_decr32(&hg_core_handle->ref_count);
+        /* Rollback ref_count taken above */
+        hg_atomic_decr32(&hg_core_handle->ref_count);
+    }
 
     return ret;
 }
@@ -2988,8 +2989,12 @@ hg_core_send_input_cb(const struct na_cb_info *callback_info)
         status = hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_ERRORED);
 
         if (!(status & HG_CORE_OP_CANCELED) && !hg_core_handle->no_response) {
+            na_return_t na_ret;
+
+            hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_CANCELED);
+
             /* Cancel posted recv for response */
-            na_return_t na_ret = NA_Cancel(hg_core_handle->na_class,
+            na_ret = NA_Cancel(hg_core_handle->na_class,
                 hg_core_handle->na_context, hg_core_handle->na_recv_op_id);
             HG_CHECK_ERROR(na_ret != NA_SUCCESS, done, ret,
                 (hg_return_t) na_ret, "Could not cancel recv op id (%s)",
@@ -4056,7 +4061,13 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
     hg_return_t ret = HG_SUCCESS;
 
     if (hg_core_handle->op_type == HG_CORE_PROCESS) {
-        /* Take another reference to make sure the handle does not get freed */
+
+        /* Simply exit if error occurred */
+        if (hg_core_handle->ret != HG_SUCCESS)
+            HG_GOTO_DONE(done, ret, HG_SUCCESS);
+
+        /* Take another reference to make sure the handle only gets freed
+         * after the response is sent */
         hg_atomic_incr32(&hg_core_handle->ref_count);
 
         /* Run RPC callback */
@@ -4120,11 +4131,11 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
             hg_cb(&hg_core_cb_info);
     }
 
+done:
     /* Repost handle if we were listening, otherwise destroy it */
     ret = hg_core_destroy(hg_core_handle);
     HG_CHECK_HG_ERROR(done, ret, "Could not destroy handle");
 
-done:
     return ret;
 }
 
