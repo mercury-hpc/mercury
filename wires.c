@@ -1,10 +1,11 @@
 #include <assert.h>
 #include <err.h>
-#include <inttypes.h>   /* for PRIx8, etc. */
+#include <inttypes.h>   /* PRIx8, etc. */
 #include <libgen.h>     /* basename */
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>     /* sigaction */
 
 #include <sys/param.h>  /* for MIN, MAX */
 
@@ -14,6 +15,14 @@
 #include "util.h"
 #include "wiring.h"
 #include "wireup.h"
+
+static sig_atomic_t go = 1;
+ 
+static void
+handle_intr(int signo)
+{
+    go = 0;
+}
 
 static void
 usage(const char *_progname)
@@ -47,6 +56,7 @@ main(int argc, char **argv)
       .field_mask = UCP_WORKER_PARAM_FIELD_THREAD_MODE
     , .thread_mode = UCS_THREAD_MODE_MULTI
     };
+    struct sigaction sa = {.sa_handler = handle_intr}, osa;
     wiring_t *wiring;
     ucp_config_t *config;
     ucp_context_h context;
@@ -57,6 +67,9 @@ main(int argc, char **argv)
     size_t i, laddrlen, raddrlen;
     ucs_status_t status;
     int rc = EXIT_SUCCESS;
+
+    if (sigemptyset(&sa.sa_mask) == -1)
+        err(EXIT_FAILURE, "%s: sigemptyset", __func__);
 
     if (argc > 2)
         usage(argv[0]);
@@ -126,8 +139,14 @@ main(int argc, char **argv)
         }
     }
 
-    while (wireup_once(wiring))
+    if (sigaction(SIGINT, &sa, &osa) == -1)
+        err(EXIT_FAILURE, "%s.%d: sigaction", __func__, __LINE__);
+
+    while (wireup_once(wiring) && go)
             ucp_worker_progress(worker);
+
+    if (sigaction(SIGINT, &osa, NULL) == -1)
+        err(EXIT_FAILURE, "%s.%d: sigaction", __func__, __LINE__);
 
 cleanup_wiring:
     wiring_destroy(wiring);
