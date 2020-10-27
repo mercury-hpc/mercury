@@ -26,11 +26,11 @@ usage(const char *_progname)
 }
 
 static bool
-run_client(wiring_t **wiringp, ucp_worker_h worker,
+run_client(wiring_t *wiring, ucp_worker_h worker,
     ucp_address_t *laddr, size_t laddrlen,
     ucp_address_t *raddr, size_t raddrlen)
 {
-    return wireup_start(wiringp, laddr, laddrlen, raddr, raddrlen) != NULL;
+    return wireup_start(wiring, laddr, laddrlen, raddr, raddrlen) != NULL;
 }
 
 int
@@ -116,7 +116,7 @@ main(int argc, char **argv)
 
     if (raddr != NULL) {      /* * * client mode * * */
         bool ok;
-        ok = run_client(&wiring, worker, laddr, laddrlen, raddr, raddrlen);
+        ok = run_client(wiring, worker, laddr, laddrlen, raddr, raddrlen);
         ucp_worker_release_address(worker, laddr);
 
         if (!ok) {
@@ -126,7 +126,7 @@ main(int argc, char **argv)
         }
     }
 
-    while (wireup_once(&wiring))
+    while (wireup_once(wiring))
             ucp_worker_progress(worker);
 
 cleanup_wiring:
