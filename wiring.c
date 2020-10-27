@@ -522,7 +522,7 @@ wireup_send(wire_t *w)
 }
 
 /* Initiate wireup: create a wire, configure an endpoint for `raddr`, send
- * a message to the endpoint telling our wire's Sender ID.
+ * a message to the endpoint telling our wire's Sender ID and our address.
  */
 wire_t *
 wireup_start(wiring_t **wiringp, ucp_address_t *laddr, size_t laddrlen,
