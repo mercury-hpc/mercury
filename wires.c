@@ -78,8 +78,10 @@ main(int argc, char **argv)
 
     ucp_config_release(config);
 
-    if (status != UCS_OK)
-        errx(EXIT_FAILURE, "%s: ucp_init", __func__);
+    if (status != UCS_OK) {
+        errx(EXIT_FAILURE, "%s: ucp_init: %s", __func__,
+            ucs_status_string(status));
+    }
 
     context_attrs.field_mask = UCP_ATTR_FIELD_REQUEST_SIZE;
     status = ucp_context_query(context, &context_attrs);
