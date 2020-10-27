@@ -34,6 +34,7 @@ static uint64_t getnanos(void);
 static wiring_t *wireup_rx_req(wiring_t *, const wireup_msg_t *);
 
 static void wireup_send_callback(void *, ucs_status_t, void *);
+static void wireup_last_send_callback(void *, ucs_status_t, void *);
 
 static bool wireup_send(wire_t *);
 static wire_state_t *continue_early_life(wiring_t *, wire_t *,
@@ -243,7 +244,7 @@ start_late_life(wiring_t *wiring, wire_t *w)
 
     tx_params = (ucp_request_param_t){
       .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
-    , .cb = {.send = wireup_send_callback}
+    , .cb = {.send = wireup_last_send_callback}
     , .user_data = msg
     };
 
@@ -308,6 +309,15 @@ destroy(wiring_t *wiring, wire_t *w)
 
 static void
 wireup_send_callback(void *request, ucs_status_t status, void *user_data)
+{
+    wireup_msg_t *msg = user_data;
+
+    printf("%s: sent id %" PRIu32 " addr. len. %" PRIu16 " status %s\n",
+        __func__, msg->sender_id, msg->addrlen, ucs_status_string(status));
+}
+
+static void
+wireup_last_send_callback(void *request, ucs_status_t status, void *user_data)
 {
     wireup_msg_t *msg = user_data;
 
@@ -478,7 +488,7 @@ wireup_respond(wiring_t **wiringp, sender_id_t rid,
 
     tx_params = (ucp_request_param_t){
       .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
-    , .cb = {.send = wireup_send_callback}
+    , .cb = {.send = wireup_last_send_callback}
     , .user_data = msg
     };
     request = ucp_tag_send_nbx(ep, msg, msglen, tag, &tx_params);
