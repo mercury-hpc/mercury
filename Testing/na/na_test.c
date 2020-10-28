@@ -81,7 +81,7 @@ void
 na_test_usage(const char *execname)
 {
     printf("usage: %s [OPTIONS]\n", execname);
-    printf("    OPTIONS\n");
+    printf("    NA OPTIONS\n");
     printf("    -h, --help          Print a usage message and exit\n");
     printf("    -c, --comm          Select NA plugin\n"
            "                        NA plugins: bmi, mpi, cci, etc\n");
@@ -94,7 +94,6 @@ na_test_usage(const char *execname)
            "                        Default: any\n");
     printf("    -L, --listen        Listen for incoming messages\n");
     printf("    -S, --self_send     Send to self\n");
-    printf("    -a, --auth          Run auth key service\n");
     printf("    -k, --key           Pass auth key\n");
     printf("    -l, --loop          Number of loops (default: 1)\n");
     printf("    -b, --busy          Busy wait\n");
@@ -134,7 +133,7 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
             case 'H': /* hostname */
                 na_test_info->hostname = strdup(na_test_opt_arg_g);
                 break;
-            case 'P': /* hostname */
+            case 'P': /* port */
                 na_test_info->port = atoi(na_test_opt_arg_g);
                 break;
             case 'L': /* listen */
@@ -148,9 +147,6 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 break;
             case 'S': /* self */
                 na_test_info->self_send = NA_TRUE;
-                break;
-            case 'a': /* auth service */
-                na_test_info->auth = NA_TRUE;
                 break;
             case 'k': /* key */
                 na_test_info->key = strdup(na_test_opt_arg_g);

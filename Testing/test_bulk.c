@@ -17,8 +17,6 @@
 /* Local Macros */
 /****************/
 
-#define BUFSIZE (HG_TEST_BUFFER_SIZE * 1024 * 1024)
-
 /************************************/
 /* Local Type and Struct Definition */
 /************************************/
@@ -193,8 +191,8 @@ done:
 static hg_return_t
 hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
     hg_request_class_t *request_class, hg_bool_t bind_addr,
-    hg_addr_t target_addr, hg_size_t transfer_size, hg_size_t origin_offset,
-    hg_size_t target_offset)
+    hg_addr_t target_addr, hg_size_t bulk_size, hg_size_t transfer_size,
+    hg_size_t origin_offset, hg_size_t target_offset)
 {
     hg_request_t *request = NULL;
     hg_handle_t handle;
@@ -205,7 +203,6 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
     char *bulk_buf = NULL;
     void *buf_ptrs[2];
     hg_size_t buf_sizes[2];
-    hg_size_t bulk_size = BUFSIZE;
     hg_id_t rpc_id = hg_test_bulk_write_id_g;
     hg_cb_t forward_cb = hg_test_bulk_forward_cb;
     size_t i;
@@ -298,8 +295,8 @@ done:
 static hg_return_t
 hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
     hg_request_class_t *request_class, hg_addr_t target_addr,
-    hg_size_t transfer_size, hg_size_t origin_offset, hg_size_t target_offset,
-    hg_uint32_t origin_segment_count)
+    hg_size_t bulk_size, hg_size_t transfer_size, hg_size_t origin_offset,
+    hg_size_t target_offset, hg_uint32_t origin_segment_count)
 {
     hg_request_t *request = NULL;
     hg_handle_t handle;
@@ -309,7 +306,6 @@ hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
     bulk_write_in_t bulk_write_in_struct;
     void **buf_ptrs = NULL;
     hg_size_t *buf_sizes = NULL;
-    hg_size_t bulk_size = BUFSIZE;
     size_t i;
 
     HG_TEST_CHECK_ERROR(origin_offset + transfer_size > bulk_size, done, ret,
@@ -483,6 +479,7 @@ int
 main(int argc, char *argv[])
 {
     struct hg_test_info hg_test_info = {0};
+    hg_size_t buf_size;
     hg_return_t hg_ret;
     int ret = EXIT_SUCCESS;
 
@@ -490,6 +487,7 @@ main(int argc, char *argv[])
     hg_ret = HG_Test_init(argc, argv, &hg_test_info);
     HG_TEST_CHECK_ERROR(
         hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "HG_Test_init() failed");
+    buf_size = hg_test_info.buf_size_max;
 
     /* Zero size RPC bulk test */
     HG_TEST("null RPC bulk");
@@ -502,7 +500,8 @@ main(int argc, char *argv[])
     /* Zero size RPC bulk test */
     HG_TEST("zero size RPC bulk (size 0, offsets 0, 0)");
     hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, 0, hg_test_info.target_addr, 0, 0, 0);
+        hg_test_info.request_class, 0, hg_test_info.target_addr, buf_size, 0, 0,
+        0);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "zero size RPC bulk failed");
     HG_PASSED();
@@ -510,15 +509,16 @@ main(int argc, char *argv[])
     /* Simple RPC bulk test */
     HG_TEST("contiguous RPC bulk (size BUFSIZE, offsets 0, 0)");
     hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, 0, hg_test_info.target_addr, BUFSIZE, 0, 0);
+        hg_test_info.request_class, 0, hg_test_info.target_addr, buf_size,
+        buf_size, 0, 0);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "contiguous RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("contiguous RPC bulk (size BUFSIZE/4, offsets BUFSIZE/2 + 1, 0)");
     hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, 0, hg_test_info.target_addr, BUFSIZE / 4,
-        BUFSIZE / 2 + 1, 0);
+        hg_test_info.request_class, 0, hg_test_info.target_addr, buf_size,
+        buf_size / 4, buf_size / 2 + 1, 0);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "contiguous RPC bulk failed");
     HG_PASSED();
@@ -526,8 +526,8 @@ main(int argc, char *argv[])
     HG_TEST("contiguous RPC bulk (size BUFSIZE/8, offsets BUFSIZE/2 + 1, "
             "BUFSIZE/4)");
     hg_ret = hg_test_bulk_contig(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, 0, hg_test_info.target_addr, BUFSIZE / 8,
-        BUFSIZE / 2 + 1, BUFSIZE / 4);
+        hg_test_info.request_class, 0, hg_test_info.target_addr, buf_size,
+        buf_size / 8, buf_size / 2 + 1, buf_size / 4);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "contiguous RPC bulk failed");
     HG_PASSED();
@@ -556,16 +556,16 @@ main(int argc, char *argv[])
 
     HG_TEST("segmented RPC bulk (size BUFSIZE, offsets 0, 0)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE, 0, 0,
-        16);
+        hg_test_info.request_class, hg_test_info.target_addr, buf_size,
+        buf_size, 0, 0, 16);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "segmented RPC bulk failed");
     HG_PASSED();
 
     HG_TEST("segmented RPC bulk (size BUFSIZE/4, offsets BUFSIZE/2 + 1, 0)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE / 4,
-        BUFSIZE / 2 + 1, 0, 16);
+        hg_test_info.request_class, hg_test_info.target_addr, buf_size,
+        buf_size / 4, buf_size / 2 + 1, 0, 16);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "segmented RPC bulk failed");
     HG_PASSED();
@@ -573,8 +573,8 @@ main(int argc, char *argv[])
     HG_TEST("segmented RPC bulk (size BUFSIZE/8, offsets BUFSIZE/2 + 1, "
             "BUFSIZE/4)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE / 8,
-        BUFSIZE / 2 + 1, BUFSIZE / 4, 16);
+        hg_test_info.request_class, hg_test_info.target_addr, buf_size,
+        buf_size / 8, buf_size / 2 + 1, buf_size / 4, 16);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "segmented RPC bulk failed");
     HG_PASSED();
@@ -582,8 +582,8 @@ main(int argc, char *argv[])
 #ifndef HG_HAS_XDR
     HG_TEST("over-segmented RPC bulk (size BUFSIZE, offsets 0, 0)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE, 0, 0,
-        1024);
+        hg_test_info.request_class, hg_test_info.target_addr, buf_size,
+        buf_size, 0, 0, 1024);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "over-segmented RPC bulk failed");
     HG_PASSED();
@@ -591,8 +591,8 @@ main(int argc, char *argv[])
     HG_TEST(
         "over-segmented RPC bulk (size BUFSIZE/4, offsets BUFSIZE/2 + 1, 0)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE / 4,
-        BUFSIZE / 2 + 1, 0, 1024);
+        hg_test_info.request_class, hg_test_info.target_addr, buf_size,
+        buf_size / 4, buf_size / 2 + 1, 0, 1024);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "over-segmented RPC bulk failed");
     HG_PASSED();
@@ -600,8 +600,8 @@ main(int argc, char *argv[])
     HG_TEST("over-segmented RPC bulk (size BUFSIZE/8, offsets BUFSIZE/2 + 1, "
             "BUFSIZE/4)");
     hg_ret = hg_test_bulk_seg(hg_test_info.hg_class, hg_test_info.context,
-        hg_test_info.request_class, hg_test_info.target_addr, BUFSIZE / 8,
-        BUFSIZE / 2 + 1, BUFSIZE / 4, 1024);
+        hg_test_info.request_class, hg_test_info.target_addr, buf_size,
+        buf_size / 8, buf_size / 2 + 1, buf_size / 4, 1024);
     HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
         "over-segmented RPC bulk failed");
     HG_PASSED();
@@ -611,7 +611,7 @@ main(int argc, char *argv[])
         HG_TEST("bind contiguous RPC bulk (size BUFSIZE, offsets 0, 0)");
         hg_ret = hg_test_bulk_contig(hg_test_info.hg_class,
             hg_test_info.context, hg_test_info.request_class, 1,
-            hg_test_info.target_addr, BUFSIZE, 0, 0);
+            hg_test_info.target_addr, buf_size, buf_size, 0, 0);
         HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
             "bind contiguous RPC bulk failed");
         HG_PASSED();
