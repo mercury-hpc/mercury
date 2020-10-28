@@ -46,14 +46,16 @@ struct hg_test_info {
     hg_request_class_t *request_class;
     hg_addr_t target_addr;
     hg_bulk_t bulk_handle;
-    hg_bool_t auth;
+    hg_size_t buf_size_max;
 #ifdef HG_TEST_HAS_CRAY_DRC
     uint32_t credential;
     uint32_t wlm_id;
     drc_info_handle_t credential_info;
     uint32_t cookie;
 #endif
+    unsigned int handle_max;
     unsigned int thread_count;
+    hg_bool_t auth;
     hg_bool_t auto_sm;
 };
 

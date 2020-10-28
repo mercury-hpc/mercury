@@ -17,7 +17,8 @@
 /* Local Macros */
 /****************/
 
-#define NINFLIGHT (HG_TEST_MAX_HANDLES)
+/* Do not use HG_TEST_MAX_HANDLES for that and keep it fixed */
+#define NINFLIGHT (16)
 
 /************************************/
 /* Local Type and Struct Definition */
