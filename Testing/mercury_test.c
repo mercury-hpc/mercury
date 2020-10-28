@@ -19,10 +19,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /****************/
 /* Local Macros */
 /****************/
+
+/* Wait max 5s */
+#define HG_TEST_TIMEOUT_MAX (5000)
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -85,6 +89,9 @@ hg_id_t hg_test_cancel_rpc_id_g = 0;
 hg_id_t hg_test_bulk_write_id_g = 0;
 hg_id_t hg_test_bulk_bind_write_id_g = 0;
 
+/* test_kill */
+hg_id_t hg_test_killed_rpc_id_g = 0;
+
 /* test_perf */
 hg_id_t hg_test_perf_rpc_id_g = 0;
 hg_id_t hg_test_perf_rpc_lat_id_g = 0;
@@ -104,6 +111,12 @@ static void
 hg_test_usage(const char *execname)
 {
     na_test_usage(execname);
+    printf("    HG OPTIONS\n");
+    printf("    -a, --auth          Run auth key service\n");
+    printf("    -z, --buf_size      Max buffer size (in bytes)\n");
+    printf("    -x, --handle        Max number of handles\n");
+    printf("    -m, --memory        Use shared-memory with local targets\n");
+    printf("    -t, --threads       Number of server threads\n");
 }
 
 /*---------------------------------------------------------------------------*/
@@ -139,42 +152,58 @@ hg_test_parse_options(int argc, char *argv[], struct hg_test_info *hg_test_info)
                 hg_test_info->thread_count =
                     (unsigned int) atoi(na_test_opt_arg_g);
                 break;
+            case 'x': /* number of handles */
+                hg_test_info->handle_max =
+                    (unsigned int) atoi(na_test_opt_arg_g);
+                break;
+            case 'z': /* max buffer size */
+                hg_test_info->buf_size_max =
+                    (hg_size_t) atol(na_test_opt_arg_g);
+                break;
             default:
                 break;
         }
     }
     na_test_opt_ind_g = 1;
 
-    if (!hg_test_info->thread_count)
-        hg_test_info->thread_count = HG_TEST_NUM_THREADS_DEFAULT;
+    /* Set defaults */
+    if (!hg_test_info->thread_count) {
+        /* Try to guess */
+        long int cpu_count = sysconf(_SC_NPROCESSORS_CONF);
+
+        hg_test_info->thread_count = (cpu_count > 0)
+                                         ? (unsigned int) cpu_count
+                                         : HG_TEST_NUM_THREADS_DEFAULT;
+    }
+    if (!hg_test_info->handle_max)
+        hg_test_info->handle_max = 1;
+    if (!hg_test_info->buf_size_max)
+        hg_test_info->buf_size_max = (1 << 20);
 }
 
 /*---------------------------------------------------------------------------*/
 static int
 hg_test_request_progress(unsigned int timeout, void *arg)
 {
-    hg_context_t *context = (hg_context_t *) arg;
-    int ret = HG_UTIL_SUCCESS;
+    if (HG_Progress((hg_context_t *) arg, timeout) != HG_SUCCESS)
+        return HG_UTIL_FAIL;
 
-    if (HG_Progress(context, timeout) != HG_SUCCESS)
-        ret = HG_UTIL_FAIL;
-
-    return ret;
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
 static int
 hg_test_request_trigger(unsigned int timeout, unsigned int *flag, void *arg)
 {
-    hg_context_t *context = (hg_context_t *) arg;
-    unsigned int actual_count = 0;
-    int ret = HG_UTIL_SUCCESS;
+    unsigned int count = 0;
 
-    if (HG_Trigger(context, timeout, 1, &actual_count) != HG_SUCCESS)
-        ret = HG_UTIL_FAIL;
-    *flag = (actual_count) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
+    if (HG_Trigger((hg_context_t *) arg, timeout, 1, &count) != HG_SUCCESS)
+        return HG_UTIL_FAIL;
 
-    return ret;
+    if (flag)
+        *flag = (count > 0) ? HG_UTIL_TRUE : HG_UTIL_FALSE;
+
+    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -204,6 +233,7 @@ hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id)
     hg_request_t *request_object = NULL;
     hg_handle_t handle = HG_HANDLE_NULL;
     hg_return_t ret = HG_SUCCESS, cleanup_ret;
+    unsigned int completed;
 
     request_object = hg_request_create(hg_test_info->request_class);
 
@@ -222,7 +252,16 @@ hg_test_finalize_rpc(struct hg_test_info *hg_test_info, hg_uint8_t target_id)
     HG_TEST_CHECK_HG_ERROR(
         done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
 
-    hg_request_wait(request_object, HG_MAX_IDLE_TIME, NULL);
+    hg_request_wait(request_object, HG_TEST_TIMEOUT_MAX, &completed);
+    if (!completed) {
+        HG_TEST_LOG_WARNING("Canceling finalize, no response from server");
+
+        ret = HG_Cancel(handle);
+        HG_TEST_CHECK_HG_ERROR(
+            done, ret, "HG_Cancel() failed (%s)", HG_Error_to_string(ret));
+
+        hg_request_wait(request_object, HG_TEST_TIMEOUT_MAX, &completed);
+    }
 
 done:
     cleanup_ret = HG_Destroy(handle);
@@ -298,6 +337,10 @@ hg_test_register(hg_class_t *hg_class)
     hg_test_bulk_bind_write_id_g =
         MERCURY_REGISTER(hg_class, "hg_test_bulk_bind_write", bulk_write_in_t,
             bulk_bind_write_out_t, hg_test_bulk_bind_write_cb);
+
+    /* test_kill */
+    hg_test_killed_rpc_id_g = MERCURY_REGISTER(
+        hg_class, "hg_test_killed_rpc", void, void, hg_test_killed_rpc_cb);
 
     /* test_perf */
     hg_test_perf_rpc_id_g = MERCURY_REGISTER(
@@ -470,7 +513,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
 
     if (hg_test_info->na_test_info.listen ||
         hg_test_info->na_test_info.self_send) {
-        size_t bulk_size = 1024 * 1024 * HG_TEST_BUFFER_SIZE;
+        size_t bulk_size = hg_test_info->buf_size_max;
         char *buf_ptr;
         size_t i;
 

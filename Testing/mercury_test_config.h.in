@@ -62,8 +62,6 @@
     } while (0)
 
 /* Test options */
-#cmakedefine HG_TEST_BUFFER_SIZE (@HG_TEST_BUFFER_SIZE@)
-#cmakedefine HG_TEST_MAX_HANDLES (@HG_TEST_MAX_HANDLES@)
 #cmakedefine HG_TEST_HAS_THREAD_POOL
 #cmakedefine HG_TEST_HAS_VERIFY_DATA
 #cmakedefine HG_TEST_PRINT_PARTIAL
