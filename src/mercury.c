@@ -605,7 +605,8 @@ hg_set_struct(struct hg_private_handle *hg_handle,
 #endif
 
     /* Attempt to use eager bulk transfers when appropriate */
-    if (HG_HANDLE_CLASS(&hg_handle->handle)->bulk_eager)
+    if (HG_HANDLE_CLASS(&hg_handle->handle)->bulk_eager &&
+        !HG_Core_addr_is_self(hg_handle->handle.core_handle->info.addr))
         proc_flags |= HG_PROC_BULK_EAGER;
 
     hg_proc_set_flags(proc, proc_flags);
@@ -665,7 +666,8 @@ hg_set_struct(struct hg_private_handle *hg_handle,
 #endif
 
         /* Attempt to use eager bulk transfers when appropriate */
-        if (HG_HANDLE_CLASS(&hg_handle->handle)->bulk_eager)
+        if (HG_HANDLE_CLASS(&hg_handle->handle)->bulk_eager &&
+            !HG_Core_addr_is_self(hg_handle->handle.core_handle->info.addr))
             proc_flags |= HG_PROC_BULK_EAGER;
 
         hg_proc_set_flags(proc, proc_flags);
