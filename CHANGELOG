@@ -1,7 +1,229 @@
 ================
+v2.0.0
+================
+Jerome Soumagne (7):
+  2020-10-30 v2.0.0
+  2020-10-30 Update copyright dates
+  2020-10-30 Update README file
+  2020-10-30 NA OFI: psm2 provider is not threadsafe with FI_PROGRESS_AUTO (fix #356)
+  2020-10-27 HG test: add server kill test
+  2020-10-28 HG: disable eager bulk when sending to self
+  2020-10-27 HG Util: minor fixes and clean up to request emulation API
+
+================
+v2.0.0rc3
+================
+Jerome Soumagne (20):
+  2020-10-28 v2.0.0rc3
+  2020-10-26 HG core: make sure handle is not released until cancelation is processed
+  2020-10-22 Update examples
+  2020-10-22 NA CCI: fixes to let it compile without errors (deprecated)
+  2020-10-22 NA OFI: add support for PSM provider
+  2020-10-22 HG util: rework logging to simplify log levels (fix #373)
+  2020-10-21 HG: remove MERCURY_USE_SELF cmake option and use runtime option
+  2020-10-20 HG core: add sanity checks for use of auto SM features
+  2020-10-20 HG: make eager bulk transfers a runtime option
+  2020-10-20 HG: remove MERCURY_USE_SM_ROUTING CMake option (fix #345)
+  2020-10-20 HG/core: remove HG_POST_LIMIT and HG_HAS_POST_LIMIT static definitions
+  2020-10-19 NA OFI: reset udreg reg limit to be 2048 by default (fix #386)
+  2020-10-19 HG util: reset errno in hg_poll_wait() when EINTR occurred
+  2020-10-18 NA SM: fix op ID status assignment when unexpected queue is empty
+  2020-10-18 NA SM: fix potential issue where unresolved address would get polled
+  2020-10-16 HG Core: clean up progress routines and fix some timeout conversions
+  2020-10-09 NA SM: defer send of events to send operations (fix #385)
+  2020-10-12 Travis: update for OFI 1.11.1
+  2020-10-08 HG Util: Improve handling on EINTR errors in hg_poll_wait() (fix #392)
+  2020-10-08 NA BMI: prevent progress_unexpected from racing with main progress function
+
+================
+v2.0.0rc2
+================
+Jerome Soumagne (20):
+  2020-10-08 v2.0.0rc2
+  2020-10-08 Travis: update OFI testing to 1.11.1rc1
+  2020-10-08 Travis: disable checksums for UBSan builds
+  2020-10-04 HG test: add op rate to write_bw test
+  2020-10-07 Fix test_config for older versions of cmake
+  2020-10-07 HG test: add null bulk test and clean up rpc/bulk tests
+  2020-10-07 HG bulk: refactor and rewrite interface to prevent allocations
+  2020-10-07 NA: improve handling of scatter-gather list transfers
+  2020-08-26 Testing: update to OFI 1.11.0
+  2020-08-11 Travis: enable log debug in continuous testing
+  2020-08-11 CMake: do not look for tirpc on MacOS
+  2020-08-11 HG util: check for CLOCK_MONOTONIC_COARSE
+  2020-08-11 Travis: test OFI v1.11.0rc2
+  2020-08-10 HG util: add hg_time_get_current_ms() to support CLOCK_MONOTONIC_COARSE w/ms resolution
+  2020-08-10 HG/HG core: rework proc encode/decode routines to optimize use of memcpy
+  2020-07-29 Testing: run clang-format to align with format
+  2020-07-27 HG: run clang-format to align to format
+  2020-07-27 NA: run clang-format to align to format
+  2020-07-10 HG util: fix alignment issue in mercury_atomic_queue
+  2020-07-10 Add support for Ubsan builds
+
+Phil Carns (2):
+  2020-09-17 print verbose error if ofi provider not available
+  2020-08-19 use epoll_wait() in na_sm even with timeout 0
+
+Xuezhao Liu (2):
+  2020-08-12 bulk: fix an bug in hg_bulk_transfer_cb
+  2020-07-07 util: refine hg_mem_get_page_size
+
+Rob Latham (1):
+  2020-07-07 Fix build error in the "no atomics" case
+
+================
+v2.0.0rc1
+================
+Jerome Soumagne (93):
+  2020-06-23 v2.0.0rc1
+  2020-06-22 HG util: make cpu_spinwait use intrinsics
+  2020-06-22 NA SM: add CMA documentation when encountering EPERM error (fix #344)
+  2020-06-22 HG Core: fix missing parentheses
+  2020-06-22 HG util: fix atomic_long type on MacOS
+  2020-06-19 HG core: fix busy spin accidentally inserted into previous commit
+  2020-06-19 HG core: skip completion queue notifications if not needed
+  2020-06-18 HG Core: update progress mechanism after mercury poll updates
+  2020-06-18 NA SM: update progress mechanism after mercury poll updates
+  2020-06-18 HG util: Rework mercury poll and no longer use callbacks
+  2020-06-11 NA Test: fix test_lat_client test
+  2020-06-11 NA SM: use gethostid() by default for host IDs and use UUIDs as an option
+  2020-06-10 HG: fix addr_to_string on unexpected SM address with auto_sm (fix #324)
+  2020-06-10 SM: add SM header to query host ID
+  2020-06-08 CDash: mark build as done
+  2020-06-08 Travis: Force use of head for PRs instead of merge commit
+  2020-06-04 Update travis build for OFI 1.10.1 and cmake 3.17.3
+  2020-06-04 Update travis build scripts for new Asan/Tsan builds
+  2020-06-01 Testing: add concurrent lookup test
+  2020-06-01 NA SM: rework plugin to use connectionless model
+  2020-05-14 HG Test: use HG_Addr_lookup2() for init lookups
+  2020-05-14 HG: Add HG/Core_addr_lookup2() for immediate lookups
+  2020-05-14 NA: remove callback from NA_Addr_lookup()
+  2020-05-14 HG Core: update hg_core_poll_wait() after hg_poll_wait() changes
+  2020-05-14 HG Util: fix hg_poll_wait() to return events
+  2020-06-05 CMake: Correct usage of FindThreads to add -pthread compile option
+  2020-05-14 CMake: add support for Asan/Tsan builds
+  2020-05-14 Add gitignore file
+  2020-05-14 Add clang format file
+  2020-06-02 Update CDash URL
+  2020-03-16 NA test: add -P option to select port
+  2020-03-16 NA OFI: reset op ID ret value to NA_SUCCESS if no error
+  2020-03-12 NA OFI: handle I/O errors that are returned from error CQ
+  2020-03-10 NA OFI: fix op ID state to be completed in case of error
+  2020-03-10 NA BMI: add support for subnet selection (fix #342)
+  2020-03-09 Travis: update to OFI 1.9.1 and to CMake 3.16.5
+  2020-03-09 NA OFI: switch prov/tcp to FI_PROGRESS_AUTO
+  2020-03-09 HG Test: fix tests and error returns/cleanup
+  2020-03-09 NA OFI: fix domain close on non-inserted domain
+  2020-03-09 HG: take refcount when posting unexpected recv
+  2020-03-09 HG/NA: honor timeout when using NA_NO_BLOCK
+  2020-03-09 HG Test: revert 3ddc4bfc47f86eec5db0480075b739ab041df309 and clean up shutdown
+  2020-02-17 Experimental CDash
+  2020-03-04 HG: add enable debug option (OFF by default)
+  2020-01-23 NA OFI: add support for retries
+  2020-01-27 HG Test: fix test_rpc/test_rpc_lat/test_write_bw to handle HG_AGAIN
+  2020-01-23 NA SM: Rework / clean up and enable retries
+  2020-02-25 HG util: add fallback methods for unsupported atomics when using OPA
+  2020-02-19 NA: add NA_NO_RETRY progress mode
+  2020-02-21 HG proc: fix warnings
+  2020-02-13 CI: update travis yml and switch to xenial/gcc-9
+  2020-02-13 CI: disable NA CCI builds
+  2020-01-29 HG: addr HG_Addr_cmp() to compare two addresses
+  2020-01-23 HG: remove retry progress loop
+  2020-01-29 HG Core: skip self notification if NA_NO_BLOCK is set
+  2020-01-26 NA OFI: fix na_ofi_addr_is_self() to no longer use self field, this cannot be used reliably with
+             addr_serialize/deserialize()
+  2020-01-26 HG Test: disable benchmark tests for now
+  2020-01-26 HG Test RPC: skip invalid test when self forwarding
+  2020-01-26 HG Test: use FAIL_REGULAR_EXPRESSION to detect errors
+  2020-01-17 HG Test: switch SEP test to create context within progress thread
+  2020-01-17 Integrate test driver fixes
+  2020-01-16 Clean up tests and add rpc_lat, read_bw, write_bw to test suite
+  2020-01-24 HG Core: wait for pending handles to complete after cancel (fix #335)
+  2020-01-23 HG Test: add ability to set HG_TEST_LOG_LEVEL=debug to turn on debug
+  2020-01-23 HG: add ability to set HG_LOG_LEVEL=debug to turn on debug
+  2020-01-21 NA: let OFI take precedence over CCI
+  2020-01-17 HG: fix HG_TIMEOUT return value of HG_Context_destroy()
+  2020-01-16 HG: add HG_OTHER_ERROR return code back
+  2020-01-14 HG Test: wait before shutting down server in MT mode
+  2020-01-14 HG: prepare for supporting retries
+  2020-01-14 NA OFI: rework cancelation
+  2020-01-13 HG: allow NULL HG handles to be destroyed
+  2020-01-13 Clean up HG tests and combine overflow/cancel tests
+  2020-01-13 NA Test: support for log mask
+  2020-01-13 HG: switch HG_EXPORT to HG_PUBLIC / HG_PRIVATE
+  2020-01-13 Switch NA_EXPORT to NA_PUBLIC / NA_PRIVATE
+  2020-01-13 HG Util: update log to use log mask
+  2019-12-10 HG: rework error return codes and align to NA changes
+  2019-11-29 NA: rework error return codes and add NA_AGAIN
+  2019-12-11 Update travis build deps
+  2019-11-12 NA OFI: allow for passing explicit domain name (fixes #297)
+  2019-11-12 Add hg_thread_self() and hg_thread_equal()
+  2019-11-11 Update travis testing for OFI 1.9.0rc2
+  2019-11-11 NA: fix incorrect error returned in check protocol (fix #322)
+  2019-11-07 NA OFI: add FI_SOURCE to caps
+  2019-10-24 HG: add HG_Addr_set_remove() to force removal of addresses
+  2019-10-22 NA: add NA_Addr_lookup2() for immediate lookups
+  2019-10-21 NA OFI: fix spinlock initialization issue introduced in previous commit
+  2019-10-21 NA: add new error macros and clean up
+  2019-10-14 HG: add HG_Get_input_extra_buf() and HG_Get_output_extra_buf()
+  2019-10-01 Update travis to use OFI 1.8.1
+  2019-09-26 NA SM: use fallback if login information cannot be accessed
+  2019-09-23 NA SM: add username to SM paths
+
+Liang Zhen (1):
+  2019-09-03 refcount of na_ofi_op_id is overwritten
+
+Phil Carns (1):
+  2020-01-10 NA BMI: make BMI honor attempts to bind to specific IPs
+
+Rob Latham (1):
+  2019-10-22 NA OFI: shrink udreg cache
+
+Xuezhao Liu (1):
+  2020-04-09 NA OFI: fix a potential bug in na_ofi_addr_ht_lookup
+
+================
+v2.0.0a1
+================
+Jerome Soumagne (25):
+  2019-08-26 v2.0.0a1
+  2019-08-26 NA OFI: complete canceled SEND/RMA ops immediately
+  2019-08-26 HG: fix HG_Get_output_buf() to not return extra buffer
+  2019-08-26 Fix test_poll after previous commit
+  2019-08-26 HG Core: remove internal thread pool for self forwarding (fix #293)
+  2019-08-25 Update mchecksum submodule
+  2019-08-12 Remove cancel test from CTest
+  2019-08-12 Clean up and fix versioning of library (fix #298)
+  2019-07-19 NA test: remove default localhost hostname
+  2019-07-19 NA OFI: fix initialization when no hostname is passed
+  2019-07-19 HG: fix HG init not returning NULL class on failure (fix #283)
+  2019-07-19 HG: fix protocol delimiter to prevent conflict with libfabric (fix #277)
+  2019-07-08 Disable NA test simple from list of tests
+  2019-07-08 Skip cancel test for OFI/tcp until fixed in upstream OFI provider
+  2019-07-06 NA OFI: enable tcp provider using tcp;ofi_rxm
+  2019-08-06 Work around https git issue with travis and BMI repo
+  2019-08-06 Work around https git issue with travis
+  2019-08-06 Fix BMI repo dependency for travis testing
+  2019-07-06 Update travis build to OFI 1.8.0 and tweak configure options
+  2019-05-13 NA OFI: return appropriate error code if operation cannot be canceled
+  2019-05-16 HG: allow for NULL size argument to HG_Get_output_buf()
+  2019-05-07 Update travis to use libfabric v1.7.1
+  2019-03-31 Update travis build for OFI 1.7.1rc2 and CMake 3.14
+  2019-03-08 HG Core: fix missing static inline in mercury_core.h
+  2019-03-05 Bump version
+
+Phil Carns (3):
+  2019-08-23 HG: fix HG_Get_input_buf() to not return extra buffer (fix #302)
+  2019-05-15 allow NULL size argument to HG_Get_input_buf()
+  2019-05-15 bug fix to header encoding for null input RPCs
+
+================
 v1.0.1
 ================
-Jerome Soumagne (12):
+Jerome Soumagne (15):
+  2019-02-15 Update copyright date
+  2019-02-15 Update README for req gcc version w/ stdatomic.h
+  2019-02-15 Update CHANGELOG
   2019-02-11 HG: Fix HG_Reset() to reset NA resources upon NA class change (fix #272)
   2019-01-18 HG Util: move inline functions for get/set and export create/destroy
   2019-01-08 Travis: update build script to OFI 1.7.0
