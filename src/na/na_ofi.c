@@ -125,9 +125,9 @@
         FI_SOURCE | FI_DIRECTED_RECV, NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG)      \
     X(NA_OFI_PROV_PSM, "psm", "", FI_ADDR_PSMX, FI_PROGRESS_MANUAL, 0,         \
         NA_OFI_WAIT_SET | NA_OFI_SOURCE_MSG)                                   \
-    X(NA_OFI_PROV_PSM2, "psm2", "", FI_ADDR_PSMX2, FI_PROGRESS_AUTO,           \
+    X(NA_OFI_PROV_PSM2, "psm2", "", FI_ADDR_PSMX2, FI_PROGRESS_MANUAL,         \
         FI_SOURCE | FI_SOURCE_ERR | FI_DIRECTED_RECV,                          \
-        NA_OFI_DOMAIN_LOCK | NA_OFI_WAIT_FD | NA_OFI_SIGNAL | NA_OFI_SEP)      \
+        NA_OFI_DOMAIN_LOCK | NA_OFI_SIGNAL | NA_OFI_SEP)                       \
     X(NA_OFI_PROV_VERBS, "verbs;ofi_rxm", "verbs", FI_SOCKADDR_IN,             \
         FI_PROGRESS_MANUAL, FI_SOURCE | FI_DIRECTED_RECV,                      \
         NA_OFI_VERIFY_PROV_DOM | NA_OFI_WAIT_FD | NA_OFI_SOURCE_MSG)           \
