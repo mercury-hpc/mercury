@@ -131,6 +131,7 @@ main(int argc, char **argv)
         bool ok;
         ok = run_client(wiring, worker, laddr, laddrlen, raddr, raddrlen);
         ucp_worker_release_address(worker, laddr);
+        free(raddr);
 
         if (!ok) {
             warnx("%s: could not start wireup", __func__);
