@@ -138,7 +138,8 @@ main(int argc, char **argv)
             rc = EXIT_FAILURE;
             goto cleanup_wiring;
         }
-    }
+    } else
+        ucp_worker_release_address(worker, laddr);
 
     if (sigaction(SIGINT, &sa, &osa) == -1)
         err(EXIT_FAILURE, "%s.%d: sigaction", __func__, __LINE__);
