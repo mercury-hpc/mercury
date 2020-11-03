@@ -205,7 +205,7 @@ rxdesc_setup(rxpool_t *rxpool, void *buf, size_t buflen, rxdesc_t *desc)
 }
 
 void
-rxpool_destroy(rxpool_t *rxpool)
+rxpool_teardown(rxpool_t *rxpool)
 {
     rxdesc_t *desc;
     ucp_worker_h worker = rxpool->worker;
@@ -236,6 +236,13 @@ rxpool_destroy(rxpool_t *rxpool)
 
         header_free(rxpool->request_size, alignof(rxdesc_t), desc);
     }
+}
+
+void
+rxpool_destroy(rxpool_t *rxpool)
+{
+    rxpool_teardown(rxpool);
+    free(rxpool);
 }
 
 /* Return the next completed Rx descriptor in the pool or NULL if
