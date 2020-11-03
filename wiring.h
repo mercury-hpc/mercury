@@ -58,8 +58,7 @@ struct _wiring {
 
 wiring_t *wiring_create(ucp_worker_h, size_t);
 bool wireup_once(wiring_t *);
-wstorage_t *wiring_enlarge(wstorage_t *);
-void wiring_destroy(wiring_t *);
+void wiring_destroy(wiring_t *, bool);
 wire_t *wireup_start(wiring_t *, ucp_address_t *, size_t,
     ucp_address_t *, size_t);
 

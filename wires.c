@@ -151,7 +151,7 @@ main(int argc, char **argv)
         err(EXIT_FAILURE, "%s.%d: sigaction", __func__, __LINE__);
 
 cleanup_wiring:
-    wiring_destroy(wiring);
+    wiring_destroy(wiring, false);
 cleanup_worker:
     ucp_worker_destroy(worker);
 cleanup_context:

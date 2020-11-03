@@ -36,6 +36,7 @@ static void wireup_rx_req(wiring_t *, const wireup_msg_t *);
 static void wireup_send_callback(void *, ucs_status_t, void *);
 static void wireup_last_send_callback(void *, ucs_status_t, void *);
 
+static wstorage_t *wiring_enlarge(wstorage_t *);
 static bool wireup_send(wire_t *);
 static wire_state_t *continue_early_life(wiring_t *, wire_t *,
     const wireup_msg_t *);
@@ -336,8 +337,12 @@ wireup_last_send_callback(void *request, ucs_status_t status, void *user_data)
     free(msg);
 }
 
+/* Release all resources belonging to `wiring` and free `wiring` itself.
+ * If `orderly` is true, then alert our peers that we are discarding all
+ * of our wires so that they can clean up their local state.
+ */
 void
-wiring_destroy(wiring_t *wiring)
+wiring_destroy(wiring_t *wiring, bool orderly)
 {
     wstorage_t *st = wiring->storage;
 
@@ -346,9 +351,9 @@ wiring_destroy(wiring_t *wiring)
     /* TBD tear down wires; send a bad keepalive or a "bye" to destroy wires
      * on peers?
      */
-    assert(false);
     free(st);
     free(wiring);
+    assert(!orderly);
 }
 
 wiring_t *
@@ -391,14 +396,14 @@ wiring_create(ucp_worker_h worker, size_t request_size)
         TAG_CHNL_WIREUP, TAG_CHNL_MASK, 3);
 
     if (st->rxpool == NULL) {
-        wiring_destroy(wiring);
+        wiring_destroy(wiring, true);
         return NULL;
     }
 
     return wiring;
 }
 
-wstorage_t *
+static wstorage_t *
 wiring_enlarge(wstorage_t *st)
 {
     const size_t hdrsize = sizeof(wstorage_t),
