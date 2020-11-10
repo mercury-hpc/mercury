@@ -7,6 +7,7 @@ typedef enum {
       OP_REQ        = 0
     , OP_ACK        = 1
     , OP_KEEPALIVE  = 2
+    , OP_STOP       = 3
 } wireup_op_t;
 
 typedef struct _wireup_msg {

@@ -176,7 +176,10 @@ start_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
         return w->state;
     }
 
-    if (msg->op != OP_ACK) {
+    if (msg->op == OP_STOP) {
+        wiring_release_wire(wiring, w);
+        return &state[WIRE_S_DEAD];
+    } else if (msg->op != OP_ACK) {
         warnx("%s: unexpected opcode %" PRIu16 " for wire %" PRIdSENDER,
             __func__, msg->op, id);
         return w->state;
@@ -210,7 +213,10 @@ continue_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
         return w->state;
     }
 
-    if (msg->op != OP_KEEPALIVE) {
+    if (msg->op == OP_STOP) {
+        wiring_release_wire(wiring, w);
+        return &state[WIRE_S_DEAD];
+    } else if (msg->op != OP_KEEPALIVE) {
         warnx("%s: unexpected opcode %" PRIu16 " for wire %" PRIdSENDER,
             __func__, msg->op, id);
         return w->state;
@@ -343,15 +349,57 @@ void
 wiring_destroy(wiring_t *wiring, bool orderly)
 {
     wstorage_t *st = wiring->storage;
+    size_t i;
 
     if (st->rxpool != NULL)
         rxpool_destroy(st->rxpool);
-    /* TBD tear down wires; send a bad keepalive or a "bye" to destroy wires
-     * on peers?
-     */
+
+    for (i = 0; i < st->nwires; i++)
+        wireup_stop(wiring, &st->wire[i], orderly);
+
     free(st);
     free(wiring);
-    assert(!orderly);
+}
+
+/* Move the state machine on wire `w` to DEAD state and release its
+ * resources.  If `orderly` is true, then send a STOP message to the peer
+ * so that it can release its wire.
+ */
+void
+wireup_stop(wiring_t *wiring, wire_t *w, bool orderly)
+{
+    ucp_request_param_t tx_params;
+    wireup_msg_t *msg;
+    ucs_status_ptr_t request;
+    wstorage_t *st = wiring->storage;
+    const ucp_tag_t tag = TAG_CHNL_WIREUP | SHIFTIN(w->id, TAG_ID_MASK);
+    const sender_id_t id = w - &st->wire[0];
+
+    if (w->state == &state[WIRE_S_DEAD])
+        goto out;
+
+    if ((msg = zalloc(sizeof(*msg))) == NULL)
+        goto out;
+
+    *msg = (wireup_msg_t){.op = OP_STOP, .sender_id = id, .addrlen = 0};
+
+    tx_params = (ucp_request_param_t){
+      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
+    , .cb = {.send = wireup_last_send_callback}
+    , .user_data = msg
+    };
+
+    request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
+
+    if (UCS_PTR_IS_ERR(request)) {
+        warnx("%s: ucp_tag_send_nbx: %s", __func__,
+            ucs_status_string(UCS_PTR_STATUS(request)));
+        free(msg);
+    } else if (request == UCS_OK)
+        free(msg);
+
+out:
+    wiring_release_wire(wiring, w);
 }
 
 wiring_t *
@@ -451,12 +499,14 @@ const char *
 wireup_op_string(wireup_op_t op)
 {
     switch (op) {
-    case OP_REQ:
-        return "req";
     case OP_ACK:
         return "ack";
     case OP_KEEPALIVE:
         return "keepalive";
+    case OP_REQ:
+        return "req";
+    case OP_STOP:
+        return "stop";
     default:
         return "<unknown>";
     }
@@ -631,9 +681,10 @@ wireup_rx_msg(wiring_t * const wiring, const ucp_tag_t sender_tag,
     msg = buf;
 
     switch (msg->op) {
-    case OP_REQ:
     case OP_ACK:
     case OP_KEEPALIVE:
+    case OP_REQ:
+    case OP_STOP:
         op = msg->op;
         break;
     default:
@@ -649,13 +700,12 @@ wireup_rx_msg(wiring_t * const wiring, const ucp_tag_t sender_tag,
     }
 
     switch (op) {
-    case OP_ACK:
-        wireup_msg_transition(wiring, sender_tag, msg);
-        break;
     case OP_REQ:
         wireup_rx_req(wiring, msg);
         break;
+    case OP_ACK:
     case OP_KEEPALIVE:
+    case OP_STOP:
         wireup_msg_transition(wiring, sender_tag, msg);
         break;
     }
