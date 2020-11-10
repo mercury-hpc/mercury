@@ -168,7 +168,6 @@ static wire_state_t *
 start_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 {
     wstorage_t *st = wiring->storage;
-    wireup_msg_t *imsg;
     sender_id_t id = w - &st->wire[0];
 
     if (msg->sender_id > SENDER_ID_MAX) {
@@ -190,9 +189,8 @@ start_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     }
 
     w->id = msg->sender_id;
-    imsg = w->msg;
+    free(w->msg);
     w->msg = NULL;
-    free(imsg);
     w->msglen = 0;
     wiring_timeout_remove(st, w);
     wiring_timeout_put(st, w, getnanos() + timeout_interval);
