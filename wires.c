@@ -47,8 +47,7 @@ main(int argc, char **argv)
 {
     ucp_context_attr_t context_attrs;
     ucp_params_t global_params = {
-      .field_mask = UCP_PARAM_FIELD_FEATURES |
-                    UCP_PARAM_FIELD_REQUEST_SIZE
+      .field_mask = UCP_PARAM_FIELD_FEATURES | UCP_PARAM_FIELD_REQUEST_SIZE
     , .features = UCP_FEATURE_TAG | UCP_FEATURE_RMA
     , .request_size = sizeof(rxdesc_t)
     };
