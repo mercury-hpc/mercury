@@ -3,6 +3,30 @@
 
 #include "wiring.h"
 
+struct _wstorage;
+typedef struct _wstorage wstorage_t;
+
+struct _wire_state;
+typedef struct _wire_state wire_state_t;
+
+struct _wire {
+    sender_id_t next_free;
+    sender_id_t prev_to_expire, next_to_expire;
+    uint64_t expiration;
+    ucp_ep_h ep;        // Endpoint connected to remote
+    wire_state_t *state;
+    sender_id_t id;     // Sender ID assigned by remote
+    size_t msglen;
+    wireup_msg_t *msg;  /* In initial state, the request to be
+                         * (re)transmitted.  In all other states,
+                         * NULL.
+                         */
+};
+
+struct _wiring {
+    wstorage_t *storage;
+};
+
 struct _wstorage {
     rxpool_t *rxpool;
     sender_id_t first_free;

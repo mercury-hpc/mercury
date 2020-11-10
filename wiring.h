@@ -29,32 +29,8 @@ typedef int32_t sender_id_t;
 struct _wire;
 typedef struct _wire wire_t;
 
-struct _wstorage;
-typedef struct _wstorage wstorage_t;
-
 struct _wiring;
 typedef struct _wiring wiring_t;
-
-struct _wire_state;
-typedef struct _wire_state wire_state_t;
-
-struct _wire {
-    sender_id_t next_free;
-    sender_id_t prev_to_expire, next_to_expire;
-    uint64_t expiration;
-    ucp_ep_h ep;        // Endpoint connected to remote
-    wire_state_t *state;
-    sender_id_t id;     // Sender ID assigned by remote
-    size_t msglen;
-    wireup_msg_t *msg;  /* In initial state, the request to be
-                         * (re)transmitted.  In all other states,
-                         * NULL.
-                         */
-};
-
-struct _wiring {
-    wstorage_t *storage;
-};
 
 wiring_t *wiring_create(ucp_worker_h, size_t);
 bool wireup_once(wiring_t *);
