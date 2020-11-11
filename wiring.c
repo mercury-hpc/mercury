@@ -759,3 +759,21 @@ wireup_once(wiring_t *wiring)
     rxdesc_release(rxpool, rdesc);
     return true;
 }
+
+/* Store at `maskp` and `atagp` the mask and tag that wireup reserves
+ * for the application program.  For each application message tag,
+ * `tag`, `tag & *maskp` must equal `*atagp`.
+ *
+ * All bits in the mask are consecutive.  They bits include either the
+ * most-significant bit or the least-significant bit.
+ *
+ * If either pointer is NULL, don't try to write through it.
+ */
+void
+wireup_app_tag(wiring_t *wiring, uint64_t *atagp, uint64_t *maskp)
+{
+    if (atagp != NULL)
+        *atagp = TAG_CHNL_APP;
+    if (maskp != NULL)
+        *maskp = TAG_CHNL_MASK;
+}

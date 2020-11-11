@@ -38,5 +38,6 @@ void wiring_destroy(wiring_t *, bool);
 wire_t *wireup_start(wiring_t *, ucp_address_t *, size_t,
     ucp_address_t *, size_t);
 void wireup_stop(wiring_t *, wire_t *, bool);
+void wireup_app_tag(wiring_t *, uint64_t *, uint64_t *);
 
 #endif /* _WIRES_H_ */
