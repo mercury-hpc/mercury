@@ -714,7 +714,6 @@ wireup_rx_msg(wiring_t * const wiring, const ucp_tag_t sender_tag,
 static void
 wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
 {
-    wstorage_t *st = wiring->storage;
     wire_t *w;
 
     /* XXX In principle, can't the empty string be a valid address? */
@@ -732,7 +731,7 @@ wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
     }
 
     printf("%s: my sender id %td, remote sender id %" PRIdSENDER "\n", __func__,
-        w - &st->wire[0], w->id);
+        w - &wiring->storage->wire[0], w->id);
 }
 
 bool
