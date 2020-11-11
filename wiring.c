@@ -12,8 +12,8 @@
 #include "wiring_impl.h"
 
 struct _wire_state {
-    wire_state_t *(*timeout)(wiring_t *, wire_t *);
-    wire_state_t *(*receive)(wiring_t *, wire_t *, const wireup_msg_t *);
+    const wire_state_t *(*expire)(wiring_t *, wire_t *);
+    const wire_state_t *(*receive)(wiring_t *, wire_t *, const wireup_msg_t *);
     const char *descr;
 };
 
@@ -38,27 +38,28 @@ static void wireup_last_send_callback(void *, ucs_status_t, void *);
 
 static wstorage_t *wiring_enlarge(wstorage_t *);
 static bool wireup_send(wire_t *);
-static wire_state_t *continue_early_life(wiring_t *, wire_t *,
+static const wire_state_t *continue_early_life(wiring_t *, wire_t *,
     const wireup_msg_t *);
-static wire_state_t *destroy(wiring_t *, wire_t *);
-static wire_state_t *reject_msg(wiring_t *, wire_t *, const wireup_msg_t *);
-static wire_state_t *reject_timeout(wiring_t *, wire_t *);
-static wire_state_t *retry(wiring_t *, wire_t *);
-static wire_state_t *start_early_life(wiring_t *, wire_t *,
+static const wire_state_t *destroy(wiring_t *, wire_t *);
+static const wire_state_t *reject_msg(wiring_t *, wire_t *,
     const wireup_msg_t *);
-static wire_state_t *start_late_life(wiring_t *, wire_t *);
+static const wire_state_t *reject_timeout(wiring_t *, wire_t *);
+static const wire_state_t *retry(wiring_t *, wire_t *);
+static const wire_state_t *start_early_life(wiring_t *, wire_t *,
+    const wireup_msg_t *);
+static const wire_state_t *start_late_life(wiring_t *, wire_t *);
 
 wire_state_t state[] = {
-  [WIRE_S_INITIAL] = {.timeout = retry,
+  [WIRE_S_INITIAL] = {.expire = retry,
                       .receive = start_early_life,
                       .descr = "initial"}
-, [WIRE_S_EARLY_LIFE] = {.timeout = start_late_life,
+, [WIRE_S_EARLY_LIFE] = {.expire = start_late_life,
                          .receive = continue_early_life,
                          .descr = "early life"}
-, [WIRE_S_LATE_LIFE] = {.timeout = destroy,
+, [WIRE_S_LATE_LIFE] = {.expire = destroy,
                         .receive = continue_early_life,
                         .descr = "late life"}
-, [WIRE_S_DEAD] = {.timeout = reject_timeout,
+, [WIRE_S_DEAD] = {.expire = reject_timeout,
                    .receive = reject_msg,
                    .descr = "dead"}
 };
@@ -118,12 +119,25 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
 }
 
 static void
+wireup_transition(wiring_t *wiring, wire_t *w,
+    const wire_state_t *nstate)
+{
+    wstorage_t *st = wiring->storage;
+    const wire_state_t *ostate;
+
+    ostate = w->state;
+    w->state = nstate;
+
+    printf("%s: wire %td state change %s -> %s\n",
+        __func__, w - &st->wire[0], ostate->descr, nstate->descr);
+}
+
+static void
 wireup_msg_transition(wiring_t *wiring, const ucp_tag_t sender_tag,
     const wireup_msg_t *msg)
 {
     wstorage_t *st = wiring->storage;
     wire_t *w;
-    wire_state_t *ostate, *nstate;
     const uint64_t proto_id = TAG_GET_ID(sender_tag);
     sender_id_t id;
 
@@ -139,11 +153,10 @@ wireup_msg_transition(wiring_t *wiring, const ucp_tag_t sender_tag,
     id = (sender_id_t)proto_id;
     w = &st->wire[id];
 
-    ostate = w->state;
-    nstate = w->state = (*ostate->receive)(wiring, w, msg);
+    printf("%s: wire %" PRIdSENDER " %s message\n",
+        __func__, id, wireup_op_string(msg->op));
 
-    printf("%s: wire %" PRIdSENDER " %s message state change %s -> %s\n",
-        __func__, id, wireup_op_string(msg->op), ostate->descr, nstate->descr);
+    wireup_transition(wiring, w, (*w->state->receive)(wiring, w, msg));
 }
 
 static void
@@ -151,20 +164,17 @@ wireup_timeout_transition(wiring_t *wiring, uint64_t now)
 {
     wstorage_t *st = wiring->storage;
     wire_t *w;
-    wire_state_t *ostate, *nstate;
 
     while ((w = wiring_timeout_peek(st)) != NULL) {
         if (w->expiration > now)
             break;
         wiring_timeout_remove(st, w);
-        ostate = w->state;
-        nstate = w->state = (*w->state->timeout)(wiring, w);
-        printf("%s: wire %td timeout state change %s -> %s\n",
-            __func__, w - &st->wire[0], ostate->descr, nstate->descr);
+        printf("%s: wire %td expired\n", __func__, w - &st->wire[0]);
+        wireup_transition(wiring, w, (*w->state->expire)(wiring, w));
     }
 }
 
-static wire_state_t *
+static const wire_state_t *
 start_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 {
     wstorage_t *st = wiring->storage;
@@ -201,7 +211,7 @@ start_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     return &state[WIRE_S_EARLY_LIFE];
 }
 
-static wire_state_t *
+static const wire_state_t *
 continue_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 {
     wstorage_t *st = wiring->storage;
@@ -238,7 +248,7 @@ continue_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     return &state[WIRE_S_EARLY_LIFE];
 }
 
-static wire_state_t *
+static const wire_state_t *
 start_late_life(wiring_t *wiring, wire_t *w)
 {
     wstorage_t *st = wiring->storage;
@@ -273,18 +283,18 @@ start_late_life(wiring_t *wiring, wire_t *w)
     return &state[WIRE_S_LATE_LIFE];
 }
 
-static wire_state_t *
+static const wire_state_t *
 reject_timeout(wiring_t *wiring, wire_t *w)
 {
     wstorage_t *st = wiring->storage;
     sender_id_t id = w - &st->wire[0];
 
-    warnx("%s: rejecting timeout for wire %" PRIdSENDER, __func__, id);
+    warnx("%s: rejecting expiration for wire %" PRIdSENDER, __func__, id);
 
     return &state[WIRE_S_DEAD];
 }
 
-static wire_state_t *
+static const wire_state_t *
 reject_msg(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 {
     wstorage_t *st = wiring->storage;
@@ -296,7 +306,7 @@ reject_msg(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     return &state[WIRE_S_DEAD];
 }
 
-static wire_state_t *
+static const wire_state_t *
 retry(wiring_t *wiring, wire_t *w)
 {
     wstorage_t *st = wiring->storage;
@@ -314,7 +324,7 @@ retry(wiring_t *wiring, wire_t *w)
     return &state[WIRE_S_INITIAL];
 }
 
-static wire_state_t *
+static const wire_state_t *
 destroy(wiring_t *wiring, wire_t *w)
 {
     wiring_release_wire(wiring, w);
@@ -426,8 +436,7 @@ wiring_create(ucp_worker_h worker, size_t request_size)
         st->wire[i] = (wire_t){
               .next_free = i + 1
             , .state = &state[WIRE_S_DEAD]
-            , .prev_to_expire = i
-            , .next_to_expire = i
+            , .expire = {.prev = i, .next = i}
             , .ep = NULL
             , .id = SENDER_ID_NIL
             , .expiration = 0};
@@ -436,7 +445,7 @@ wiring_create(ucp_worker_h worker, size_t request_size)
     st->wire[nwires - 1].next_free = SENDER_ID_NIL;
     st->first_free = 0;
 
-    st->first_to_expire = st->last_to_expire = SENDER_ID_NIL;
+    st->expire.first = st->expire.last = SENDER_ID_NIL;
 
     st->rxpool = rxpool_create(worker, next_buflen, request_size,
         TAG_CHNL_WIREUP, TAG_CHNL_MASK, 3);
@@ -471,8 +480,7 @@ wiring_enlarge(wstorage_t *st)
         st->wire[i] = (wire_t){
               .next_free = i + 1
             , .state = &state[WIRE_S_DEAD]
-            , .prev_to_expire = i
-            , .next_to_expire = i
+            , .expire = {.prev = i, .next = i}
             , .ep = NULL
             , .id = SENDER_ID_NIL
             , .expiration = 0};
