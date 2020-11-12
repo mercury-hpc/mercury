@@ -112,9 +112,8 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
             ucp_request_free(request);
     }
     w->id = SENDER_ID_NIL;
-    w->expiration = 0;
     w->msglen = 0;
-    wiring_timeout_remove(st, w);
+    wiring_expiration_remove(st, w);
     wiring_free_put(st, id);
 }
 
@@ -165,10 +164,10 @@ wireup_timeout_transition(wiring_t *wiring, uint64_t now)
     wstorage_t *st = wiring->storage;
     wire_t *w;
 
-    while ((w = wiring_timeout_peek(st)) != NULL) {
-        if (w->expiration > now)
+    while ((w = wiring_expiration_peek(st)) != NULL) {
+        if (w->tlink[timo_expire].due > now)
             break;
-        wiring_timeout_remove(st, w);
+        wiring_expiration_remove(st, w);
         printf("%s: wire %td expired\n", __func__, w - &st->wire[0]);
         wireup_transition(wiring, w, (*w->state->expire)(wiring, w));
     }
@@ -205,8 +204,8 @@ start_early_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     free(w->msg);
     w->msg = NULL;
     w->msglen = 0;
-    wiring_timeout_remove(st, w);
-    wiring_timeout_put(st, w, getnanos() + timeout_interval);
+    wiring_expiration_remove(st, w);
+    wiring_expiration_put(st, w, getnanos() + timeout_interval);
 
     return &state[WIRE_S_EARLY_LIFE];
 }
@@ -278,7 +277,7 @@ start_late_life(wiring_t *wiring, wire_t *w)
     } else if (request == UCS_OK)
         free(msg);
 
-    wiring_timeout_put(st, w, getnanos() + timeout_interval);
+    wiring_expiration_put(st, w, getnanos() + timeout_interval);
 
     return &state[WIRE_S_LATE_LIFE];
 }
@@ -319,7 +318,7 @@ retry(wiring_t *wiring, wire_t *w)
         return &state[WIRE_S_DEAD];
     }
 
-    wiring_timeout_put(st, w, getnanos() + timeout_interval);
+    wiring_expiration_put(st, w, getnanos() + timeout_interval);
 
     return &state[WIRE_S_INITIAL];
 }
@@ -436,16 +435,17 @@ wiring_create(ucp_worker_h worker, size_t request_size)
         st->wire[i] = (wire_t){
               .next_free = i + 1
             , .state = &state[WIRE_S_DEAD]
-            , .expire = {.prev = i, .next = i}
+            , .tlink = {{.prev = i, .next = i, .due = 0},
+                        {.prev = i, .next = i, .due = 0}}
             , .ep = NULL
-            , .id = SENDER_ID_NIL
-            , .expiration = 0};
+            , .id = SENDER_ID_NIL};
     }
 
     st->wire[nwires - 1].next_free = SENDER_ID_NIL;
     st->first_free = 0;
 
-    st->expire.first = st->expire.last = SENDER_ID_NIL;
+    for (i = 0; i < timo_nlinks; i++)
+        st->thead[i].first = st->thead[i].last = SENDER_ID_NIL;
 
     st->rxpool = rxpool_create(worker, next_buflen, request_size,
         TAG_CHNL_WIREUP, TAG_CHNL_MASK, 3);
@@ -480,10 +480,10 @@ wiring_enlarge(wstorage_t *st)
         st->wire[i] = (wire_t){
               .next_free = i + 1
             , .state = &state[WIRE_S_DEAD]
-            , .expire = {.prev = i, .next = i}
+            , .tlink = {{.prev = i, .next = i, .due = 0},
+                        {.prev = i, .next = i, .due = 0}}
             , .ep = NULL
-            , .id = SENDER_ID_NIL
-            , .expiration = 0};
+            , .id = SENDER_ID_NIL};
     }
     st->wire[nwires - 1].next_free = st->first_free;
     st->first_free = st->nwires;
@@ -564,7 +564,7 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
     }
     *w = (wire_t){.ep = ep, .id = rid, .state = &state[WIRE_S_EARLY_LIFE]};
 
-    wiring_timeout_put(st, w, getnanos() + timeout_interval);
+    wiring_expiration_put(st, w, getnanos() + timeout_interval);
 
     tx_params = (ucp_request_param_t){
       .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
@@ -656,7 +656,7 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     *w = (wire_t){.ep = ep, .id = SENDER_ID_NIL,
         .state = &state[WIRE_S_INITIAL], .msg = msg, .msglen = msglen};
 
-    wiring_timeout_put(st, w, getnanos() + timeout_interval);
+    wiring_expiration_put(st, w, getnanos() + timeout_interval);
 
     if (!wireup_send(w))
         goto free_wire;
