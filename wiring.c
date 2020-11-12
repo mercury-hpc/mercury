@@ -417,6 +417,7 @@ wiring_create(ucp_worker_h worker, size_t request_size)
     wiring_t *wiring;
     wstorage_t *st;
     const size_t nwires = 1;
+    int which;
     size_t i;
 
     if ((wiring = malloc(sizeof(*wiring))) == NULL)
@@ -444,8 +445,8 @@ wiring_create(ucp_worker_h worker, size_t request_size)
     st->wire[nwires - 1].next_free = SENDER_ID_NIL;
     st->first_free = 0;
 
-    for (i = 0; i < timo_nlinks; i++)
-        st->thead[i].first = st->thead[i].last = SENDER_ID_NIL;
+    for (which = 0; which < timo_nlinks; which++)
+        st->thead[which].first = st->thead[which].last = SENDER_ID_NIL;
 
     st->rxpool = rxpool_create(worker, next_buflen, request_size,
         TAG_CHNL_WIREUP, TAG_CHNL_MASK, 3);

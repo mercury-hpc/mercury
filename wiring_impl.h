@@ -20,7 +20,7 @@ typedef struct _timeout_head {
 
 enum {
   timo_expire = 0
-, timo_ping
+, timo_wakeup
 , timo_nlinks
 };
 
@@ -50,11 +50,12 @@ struct _wstorage {
 };
 
 static inline void
-wiring_expiration_put(wstorage_t *storage, wire_t *w, uint64_t expiration)
+wiring_timeout_put(wstorage_t *storage, wire_t *w, int which,
+    uint64_t expiration)
 {
     sender_id_t id = w - &storage->wire[0];
-    timeout_link_t *link = &w->tlink[timo_expire];
-    timeout_head_t *head = &storage->thead[timo_expire];
+    timeout_link_t *link = &w->tlink[which];
+    timeout_head_t *head = &storage->thead[which];
 
     link->due = expiration;
     link->next = SENDER_ID_NIL;
@@ -65,7 +66,7 @@ wiring_expiration_put(wstorage_t *storage, wire_t *w, uint64_t expiration)
         head->first = id;
     } else {
         timeout_link_t *lastlink =
-            &storage->wire[head->last].tlink[timo_expire];
+            &storage->wire[head->last].tlink[which];
         assert(lastlink->due <= expiration);
         lastlink->next = id;
     }
@@ -73,10 +74,10 @@ wiring_expiration_put(wstorage_t *storage, wire_t *w, uint64_t expiration)
 }
 
 static inline wire_t *
-wiring_expiration_peek(wstorage_t *storage)
+wiring_timeout_peek(wstorage_t *storage, int which)
 {
     sender_id_t id;
-    timeout_head_t *head = &storage->thead[timo_expire];
+    timeout_head_t *head = &storage->thead[which];
 
     if ((id = head->first) == SENDER_ID_NIL)
         return NULL;
@@ -87,18 +88,18 @@ wiring_expiration_peek(wstorage_t *storage)
 }
 
 static inline wire_t *
-wiring_expiration_get(wstorage_t *storage)
+wiring_timeout_get(wstorage_t *storage, int which)
 {
     sender_id_t id;
     wire_t *w;
-    timeout_head_t *head = &storage->thead[timo_expire];
+    timeout_head_t *head = &storage->thead[which];
     timeout_link_t *link;
 
     if ((id = head->first) == SENDER_ID_NIL)
         return NULL;
 
     w = &storage->wire[id];
-    link = &w->tlink[timo_expire];
+    link = &w->tlink[which];
     head->first = link->next;
 
     assert(link->next != id && link->prev != id);
@@ -110,7 +111,7 @@ wiring_expiration_get(wstorage_t *storage)
         head->last = SENDER_ID_NIL;
     else {
         timeout_link_t *lastlink =
-            &storage->wire[head->first].tlink[timo_expire];
+            &storage->wire[head->first].tlink[which];
         lastlink->prev = SENDER_ID_NIL;
     }
 
@@ -119,11 +120,11 @@ wiring_expiration_get(wstorage_t *storage)
 }
 
 static inline void
-wiring_expiration_remove(wstorage_t *storage, wire_t *w)
+wiring_timeout_remove(wstorage_t *storage, wire_t *w, int which)
 {
     sender_id_t id = w - &storage->wire[0];
-    timeout_head_t *head = &storage->thead[timo_expire];
-    timeout_link_t *link = &w->tlink[timo_expire];
+    timeout_head_t *head = &storage->thead[which];
+    timeout_link_t *link = &w->tlink[which];
 
     assert(0 <= id && id < storage->nwires);
 
@@ -136,31 +137,82 @@ wiring_expiration_remove(wstorage_t *storage, wire_t *w)
         assert(head->last == id);
         head->last = link->prev;
     } else {
-        storage->wire[link->next].tlink[timo_expire].prev = link->prev;
+        storage->wire[link->next].tlink[which].prev = link->prev;
     }
 
     if (link->prev == SENDER_ID_NIL) {
         assert(head->first == id);
         head->first = link->next;
     } else {
-        storage->wire[link->prev].tlink[timo_expire].next = link->next;
+        storage->wire[link->prev].tlink[which].next = link->next;
     }
 
     link->due = 0;
     link->next = link->prev = id;
 }
 
+static inline void
+wiring_expiration_put(wstorage_t *storage, wire_t *w, uint64_t expiration)
+{
+    wiring_timeout_put(storage, w, timo_expire, expiration);
+}
+
+static inline wire_t *
+wiring_expiration_peek(wstorage_t *storage)
+{
+    return wiring_timeout_peek(storage, timo_expire);
+}
+
+static inline wire_t *
+wiring_expiration_get(wstorage_t *storage)
+{
+    return wiring_timeout_get(storage, timo_expire);
+}
+
+static inline void
+wiring_expiration_remove(wstorage_t *storage, wire_t *w)
+{
+    wiring_timeout_remove(storage, w, timo_expire);
+}
+
+static inline void
+wiring_wakeup_put(wstorage_t *storage, wire_t *w, uint64_t wakeup)
+{
+    wiring_timeout_put(storage, w, timo_wakeup, wakeup);
+}
+
+static inline wire_t *
+wiring_wakeup_peek(wstorage_t *storage)
+{
+    return wiring_timeout_peek(storage, timo_wakeup);
+}
+
+static inline wire_t *
+wiring_wakeup_get(wstorage_t *storage)
+{
+    return wiring_timeout_get(storage, timo_wakeup);
+}
+
+static inline void
+wiring_wakeup_remove(wstorage_t *storage, wire_t *w)
+{
+    wiring_timeout_remove(storage, w, timo_wakeup);
+}
+
 static inline sender_id_t
 wiring_free_get(wstorage_t *storage)
 {
-    sender_id_t id;
     wire_t *w;
+    sender_id_t id;
+    int which;
 
     if ((id = storage->first_free) == SENDER_ID_NIL)
         return SENDER_ID_NIL;
     w = &storage->wire[id];
-    timeout_link_t *link = &w->tlink[timo_expire];
-    assert(link->next == id && link->prev == id);
+    for (which = 0; which < timo_nlinks; which++) {
+        timeout_link_t *link = &w->tlink[which];
+        assert(link->next == id && link->prev == id);
+    }
     storage->first_free = w->next_free;
     w->next_free = SENDER_ID_NIL;
 
