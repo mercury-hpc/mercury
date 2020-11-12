@@ -26,18 +26,25 @@ typedef int32_t sender_id_t;
 
 #define SENDER_ID_NIL ((sender_id_t)-1)
 
-struct _wire;
-typedef struct _wire wire_t;
-
 struct _wiring;
 typedef struct _wiring wiring_t;
+
+typedef struct _wire_id {
+    sender_id_t id;
+} wire_id_t;
 
 wiring_t *wiring_create(ucp_worker_h, size_t);
 bool wireup_once(wiring_t *);
 void wiring_destroy(wiring_t *, bool);
-wire_t *wireup_start(wiring_t *, ucp_address_t *, size_t,
+wire_id_t wireup_start(wiring_t *, ucp_address_t *, size_t,
     ucp_address_t *, size_t);
-void wireup_stop(wiring_t *, wire_t *, bool);
+bool wireup_stop(wiring_t *, wire_id_t, bool);
 void wireup_app_tag(wiring_t *, uint64_t *, uint64_t *);
+
+static inline bool
+wire_id_is_valid(wire_id_t wid)
+{
+    return wid.id != SENDER_ID_NIL;
+}
 
 #endif /* _WIRES_H_ */

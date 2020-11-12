@@ -39,7 +39,8 @@ run_client(wiring_t *wiring, ucp_worker_h worker,
     ucp_address_t *laddr, size_t laddrlen,
     ucp_address_t *raddr, size_t raddrlen)
 {
-    return wireup_start(wiring, laddr, laddrlen, raddr, raddrlen) != NULL;
+    wire_id_t id = wireup_start(wiring, laddr, laddrlen, raddr, raddrlen);
+    return wire_id_is_valid(id);
 }
 
 int

@@ -33,6 +33,7 @@ static uint64_t getnanos(void);
 
 static void wireup_rx_req(wiring_t *, const wireup_msg_t *);
 
+static void wireup_stop_internal(wiring_t *, wire_t *, bool);
 static void wireup_send_callback(void *, ucs_status_t, void *);
 static void wireup_last_send_callback(void *, ucs_status_t, void *);
 
@@ -396,18 +397,30 @@ wiring_destroy(wiring_t *wiring, bool orderly)
         rxpool_destroy(st->rxpool);
 
     for (i = 0; i < st->nwires; i++)
-        wireup_stop(wiring, &st->wire[i], orderly);
+        wireup_stop_internal(wiring, &st->wire[i], orderly);
 
     free(st);
     free(wiring);
+}
+
+bool
+wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
+{
+    wstorage_t *st = wiring->storage;
+
+    if (wid.id < 0 || st->nwires <= wid.id)
+        return false;
+
+    wireup_stop_internal(wiring, &st->wire[wid.id], orderly);
+    return true;
 }
 
 /* Move the state machine on wire `w` to DEAD state and release its
  * resources.  If `orderly` is true, then send a STOP message to the peer
  * so that it can release its wire.
  */
-void
-wireup_stop(wiring_t *wiring, wire_t *w, bool orderly)
+static void
+wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
 {
     ucp_request_param_t tx_params;
     wireup_msg_t *msg;
@@ -648,7 +661,7 @@ wireup_send(wire_t *w)
 /* Initiate wireup: create a wire, configure an endpoint for `raddr`, send
  * a message to the endpoint telling our wire's Sender ID and our address.
  */
-wire_t *
+wire_id_t
 wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     ucp_address_t *raddr, size_t raddrlen)
 {
@@ -667,7 +680,7 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     ucs_status_t status;
 
     if ((msg = zalloc(msglen)) == NULL)
-        return NULL;
+        return (wire_id_t){.id = SENDER_ID_NIL};
 
     if ((id = wiring_free_get(st)) == SENDER_ID_NIL) {
         if ((st = wiring_enlarge(st)) == NULL)
@@ -695,13 +708,13 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     if (!wireup_send(w))
         goto free_wire;
 
-    return w;
+    return (wire_id_t){.id = id};
 free_msg:
     free(msg);
-    return NULL;
+    return (wire_id_t){.id = SENDER_ID_NIL};
 free_wire:
     wiring_release_wire(wiring, w);
-    return NULL;
+    return (wire_id_t){.id = SENDER_ID_NIL};
 }
 
 static void

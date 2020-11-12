@@ -6,6 +6,9 @@
 struct _wstorage;
 typedef struct _wstorage wstorage_t;
 
+struct _wire;
+typedef struct _wire wire_t;
+
 struct _wire_state;
 typedef struct _wire_state wire_state_t;
 
