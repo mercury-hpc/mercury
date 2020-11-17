@@ -329,7 +329,6 @@ struct na_sm_op_id {
     na_context_t *context;             /* NA context associated    */
     struct na_sm_addr *na_sm_addr;     /* Address associated       */
     hg_atomic_int32_t status;          /* Operation status         */
-    hg_atomic_int32_t ref_count;       /* Refcount                 */
 };
 
 /* Op ID queue */
@@ -3486,7 +3485,7 @@ error:
     na_sm_buf_release(
         &na_sm_op_id->na_sm_addr->shared_region->copy_bufs, buf_idx);
     hg_atomic_decr32(&na_sm_op_id->na_sm_addr->ref_count);
-    hg_atomic_decr32(&na_sm_op_id->ref_count);
+    hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
 
     return ret;
 }
@@ -3515,8 +3514,6 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id, int notify)
         callback_info->ret = NA_SUCCESS;
 
     switch (callback_info->type) {
-        case NA_CB_SEND_UNEXPECTED:
-            break;
         case NA_CB_RECV_UNEXPECTED:
             if (callback_info->ret != NA_SUCCESS) {
                 /* In case of cancellation where no recv'd data */
@@ -3536,12 +3533,10 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id, int notify)
                     na_sm_op_id->info.msg.tag;
             }
             break;
+        case NA_CB_SEND_UNEXPECTED:
         case NA_CB_SEND_EXPECTED:
-            break;
         case NA_CB_RECV_EXPECTED:
-            break;
         case NA_CB_PUT:
-            break;
         case NA_CB_GET:
             break;
         default:
@@ -3550,9 +3545,7 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id, int notify)
     }
 
     /* Add OP to NA completion queue */
-    ret = na_cb_completion_add(
-        na_sm_op_id->context, &na_sm_op_id->completion_data);
-    NA_CHECK_NA_ERROR(done, ret, "Could not add callback to completion queue");
+    na_cb_completion_add(na_sm_op_id->context, &na_sm_op_id->completion_data);
 
     /* Notify local completion */
     if (notify > 0) {
@@ -3580,7 +3573,6 @@ na_sm_release(void *arg)
             na_sm_op_id->na_class, (na_addr_t) na_sm_op_id->na_sm_addr);
         na_sm_op_id->na_sm_addr = NULL;
     }
-    na_sm_op_destroy(na_sm_op_id->na_class, (na_op_id_t *) na_sm_op_id);
 }
 
 /********************/
@@ -3772,7 +3764,7 @@ na_sm_op_create(na_class_t *na_class)
     memset(na_sm_op_id, 0, sizeof(struct na_sm_op_id));
 
     na_sm_op_id->na_class = na_class;
-    hg_atomic_init32(&na_sm_op_id->ref_count, 1);
+
     /* Completed by default */
     hg_atomic_init32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
 
@@ -3789,15 +3781,16 @@ static na_return_t
 na_sm_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     struct na_sm_op_id *na_sm_op_id = (struct na_sm_op_id *) op_id;
+    na_return_t ret = NA_SUCCESS;
 
-    if (hg_atomic_decr32(&na_sm_op_id->ref_count)) {
-        /* Cannot free yet */
-        goto done;
-    }
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
+        ret, NA_BUSY, "Attempting to free OP ID that was not completed");
+
     free(na_sm_op_id);
 
 done:
-    return NA_SUCCESS;
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4076,9 +4069,6 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_sm_op_id->context = context;
     na_sm_op_id->completion_data.callback_info.type = NA_CB_SEND_UNEXPECTED;
@@ -4087,6 +4077,7 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     hg_atomic_incr32(&na_sm_addr->ref_count);
     na_sm_op_id->na_sm_addr = na_sm_addr;
     hg_atomic_set32(&na_sm_op_id->status, 0);
+
     /* TODO we assume that buf remains valid (safe because we pre-allocate
      * buffers) */
     na_sm_op_id->info.msg.buf.const_ptr = buf;
@@ -4147,7 +4138,6 @@ error:
         na_sm_buf_release(&na_sm_addr->shared_region->copy_bufs, buf_idx);
     hg_atomic_decr32(&na_sm_addr->ref_count);
     hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
-    hg_atomic_decr32(&na_sm_op_id->ref_count);
 
     return ret;
 }
@@ -4173,9 +4163,6 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_sm_op_id->context = context;
     na_sm_op_id->completion_data.callback_info.type = NA_CB_RECV_UNEXPECTED;
@@ -4183,6 +4170,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_sm_op_id->completion_data.callback_info.arg = arg;
     na_sm_op_id->na_sm_addr = NULL;
     hg_atomic_set32(&na_sm_op_id->status, 0);
+
     na_sm_op_id->info.msg.buf.ptr = buf;
     na_sm_op_id->info.msg.buf_size = buf_size;
 
@@ -4227,7 +4215,6 @@ done:
 error:
     hg_atomic_decr32(&na_sm_op_id->na_sm_addr->ref_count);
     hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
-    hg_atomic_decr32(&na_sm_op_id->ref_count);
 
     return ret;
 }
@@ -4256,9 +4243,6 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_sm_op_id->context = context;
     na_sm_op_id->completion_data.callback_info.type = NA_CB_SEND_EXPECTED;
@@ -4267,6 +4251,7 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     hg_atomic_incr32(&na_sm_addr->ref_count);
     na_sm_op_id->na_sm_addr = na_sm_addr;
     hg_atomic_set32(&na_sm_op_id->status, 0);
+
     /* TODO we assume that buf remains valid (safe because we pre-allocate
      * buffers) */
     na_sm_op_id->info.msg.buf.const_ptr = buf;
@@ -4327,7 +4312,6 @@ error:
         na_sm_buf_release(&na_sm_addr->shared_region->copy_bufs, buf_idx);
     hg_atomic_decr32(&na_sm_op_id->na_sm_addr->ref_count);
     hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
-    hg_atomic_decr32(&na_sm_op_id->ref_count);
 
     return ret;
 }
@@ -4354,9 +4338,6 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_sm_op_id->context = context;
     na_sm_op_id->completion_data.callback_info.type = NA_CB_RECV_EXPECTED;
@@ -4365,6 +4346,7 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     hg_atomic_incr32(&na_sm_addr->ref_count);
     na_sm_op_id->na_sm_addr = na_sm_addr;
     hg_atomic_set32(&na_sm_op_id->status, 0);
+
     na_sm_op_id->info.msg.buf.ptr = buf;
     na_sm_op_id->info.msg.buf_size = buf_size;
     na_sm_op_id->info.msg.actual_buf_size = 0;
@@ -4629,9 +4611,6 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_sm_op_id->context = context;
     na_sm_op_id->completion_data.callback_info.type = NA_CB_PUT;
@@ -4756,7 +4735,6 @@ error:
 
     hg_atomic_decr32(&na_sm_op_id->na_sm_addr->ref_count);
     hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
-    hg_atomic_decr32(&na_sm_op_id->ref_count);
 
     return ret;
 }
@@ -4801,7 +4779,7 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     switch (na_sm_mem_handle_remote->info.flags) {
         case NA_MEM_WRITE_ONLY:
             NA_GOTO_ERROR(done, ret, NA_PERMISSION,
-                "Registered memory requires write permission");
+                "Registered memory requires read permission");
             break;
         case NA_MEM_READ_ONLY:
         case NA_MEM_READWRITE:
@@ -4817,9 +4795,6 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_sm_op_id->status) & NA_SM_OP_COMPLETED), done,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_sm_op_id->ref_count, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_sm_op_id->context = context;
     na_sm_op_id->completion_data.callback_info.type = NA_CB_GET;
@@ -4946,7 +4921,6 @@ error:
 
     hg_atomic_decr32(&na_sm_op_id->na_sm_addr->ref_count);
     hg_atomic_set32(&na_sm_op_id->status, NA_SM_OP_COMPLETED);
-    hg_atomic_decr32(&na_sm_op_id->ref_count);
 
     return ret;
 }

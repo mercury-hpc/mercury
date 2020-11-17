@@ -1204,22 +1204,23 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
     NA_CHECK_ERROR(context == NULL, done, ret, NA_INVALID_ARG, "NULL context");
 
     while (count < max_count) {
-        struct na_cb_completion_data *completion_data = NULL;
+        struct na_cb_completion_data *completion_data_ptr = NULL;
+        struct na_cb_completion_data completion_data;
 
-        completion_data =
+        completion_data_ptr =
             hg_atomic_queue_pop_mc(na_private_context->completion_queue);
-        if (!completion_data) {
+        if (!completion_data_ptr) {
             /* Check backfill queue */
             if (hg_atomic_get32(&na_private_context->backfill_queue_count)) {
                 hg_thread_mutex_lock(
                     &na_private_context->completion_queue_mutex);
-                completion_data =
+                completion_data_ptr =
                     HG_QUEUE_FIRST(&na_private_context->backfill_queue);
                 HG_QUEUE_POP_HEAD(&na_private_context->backfill_queue, entry);
                 hg_atomic_decr32(&na_private_context->backfill_queue_count);
                 hg_thread_mutex_unlock(
                     &na_private_context->completion_queue_mutex);
-                if (!completion_data)
+                if (!completion_data_ptr)
                     continue; /* Give another chance to grab it */
             } else {
                 hg_time_t t1, t2;
@@ -1267,26 +1268,27 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         }
 
         /* Completion data should be valid */
-        NA_CHECK_ERROR(completion_data == NULL, done, ret, NA_INVALID_ARG,
+        NA_CHECK_ERROR(completion_data_ptr == NULL, done, ret, NA_INVALID_ARG,
             "NULL completion data");
+        completion_data = *completion_data_ptr;
+
+        /* Execute plugin callback (free resources etc) first since actual
+         * callback will notify user that operation has completed.
+         * NB. If the NA operation ID is reused by the plugin for another
+         * operation we must be careful that resources are released BEFORE that
+         * operation ID gets re-used.
+         */
+        if (completion_data.plugin_callback)
+            completion_data.plugin_callback(
+                completion_data.plugin_callback_args);
 
         /* Execute callback */
-        if (completion_data->callback) {
+        if (completion_data.callback) {
             int cb_ret =
-                completion_data->callback(&completion_data->callback_info);
+                completion_data.callback(&completion_data.callback_info);
             if (callback_ret)
                 callback_ret[count] = cb_ret;
         }
-
-        /* Execute plugin callback (free resources etc)
-         * NB. If the NA operation ID is reused by the plugin for another
-         * operation we must be careful that resources are released BEFORE
-         * that operation ID gets re-used. This is currently not protected
-         * and left upon the plugin implementation.
-         */
-        if (completion_data->plugin_callback)
-            completion_data->plugin_callback(
-                completion_data->plugin_callback_args);
 
         count++;
     }
@@ -1329,13 +1331,12 @@ NA_Error_to_string(na_return_t errnum)
 }
 
 /*---------------------------------------------------------------------------*/
-na_return_t
+void
 na_cb_completion_add(
     na_context_t *context, struct na_cb_completion_data *na_cb_completion_data)
 {
     struct na_private_context *na_private_context =
         (struct na_private_context *) context;
-    na_return_t ret = NA_SUCCESS;
 
     if (hg_atomic_queue_push(na_private_context->completion_queue,
             na_cb_completion_data) != HG_UTIL_SUCCESS) {
@@ -1354,6 +1355,4 @@ na_cb_completion_add(
         hg_thread_cond_signal(&na_private_context->completion_queue_cond);
         hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
     }
-
-    return ret;
 }

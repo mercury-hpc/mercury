@@ -358,7 +358,6 @@ struct na_ofi_op_id {
     na_context_t *context;              /* NA context associated    */
     struct na_ofi_addr *addr;           /* Address associated       */
     hg_atomic_int32_t status;           /* Operation status         */
-    hg_atomic_int32_t refcount;         /* Refcount                 */
 };
 
 /* Op queue */
@@ -702,18 +701,6 @@ na_ofi_mem_pool_alloc(
 static void
 na_ofi_mem_pool_free(
     na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl);
-
-/**
- * Increment refcount on OP ID.
- */
-static NA_INLINE void
-na_ofi_op_id_addref(struct na_ofi_op_id *na_ofi_op_id);
-
-/**
- * Decrement refcount on OP ID.
- */
-static NA_INLINE void
-na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id);
 
 /**
  * Get IOV index and offset pair from an absolute offset.
@@ -2743,28 +2730,6 @@ na_ofi_mem_pool_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void
-na_ofi_op_id_addref(struct na_ofi_op_id *na_ofi_op_id)
-{
-    hg_atomic_incr32(&na_ofi_op_id->refcount);
-}
-
-/*---------------------------------------------------------------------------*/
-static NA_INLINE void
-na_ofi_op_id_decref(struct na_ofi_op_id *na_ofi_op_id)
-{
-    if (na_ofi_op_id == NULL)
-        return;
-
-    /* If there are more references, return */
-    if (hg_atomic_decr32(&na_ofi_op_id->refcount))
-        return;
-
-    /* No more references, cleanup */
-    free(na_ofi_op_id);
-}
-
-/*---------------------------------------------------------------------------*/
-static NA_INLINE void
 na_ofi_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
     na_offset_t offset, unsigned long *iov_start_index,
     unsigned long *iov_start_offset)
@@ -2894,9 +2859,6 @@ na_ofi_rma(na_class_t *na_class, na_context_t *context, na_cb_type_t cb_type,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_ofi_op_id->refcount, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_ofi_op_id->context = context;
     na_ofi_op_id->completion_data.callback_info.type = cb_type;
@@ -3001,7 +2963,6 @@ error:
 
     na_ofi_addr_decref(na_ofi_addr);
     hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
-    na_ofi_op_id_decref(na_ofi_op_id);
 
     return ret;
 }
@@ -3471,9 +3432,7 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id)
     }
 
     /* Add OP to NA completion queue */
-    ret = na_cb_completion_add(
-        na_ofi_op_id->context, &na_ofi_op_id->completion_data);
-    NA_CHECK_NA_ERROR(out, ret, "Could not add callback to completion queue");
+    na_cb_completion_add(na_ofi_op_id->context, &na_ofi_op_id->completion_data);
 
 out:
     return ret;
@@ -3493,7 +3452,6 @@ na_ofi_release(void *arg)
         na_ofi_addr_decref(na_ofi_op_id->addr);
         na_ofi_op_id->addr = NULL;
     }
-    na_ofi_op_id_decref(na_ofi_op_id);
 }
 
 /********************/
@@ -3938,7 +3896,7 @@ na_ofi_op_create(na_class_t NA_UNUSED *na_class)
         (struct na_ofi_op_id *) calloc(1, sizeof(struct na_ofi_op_id));
     NA_CHECK_ERROR_NORET(
         na_ofi_op_id == NULL, out, "Could not allocate NA OFI operation ID");
-    hg_atomic_init32(&na_ofi_op_id->refcount, 1);
+
     /* Completed by default */
     hg_atomic_init32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
 
@@ -3955,10 +3913,16 @@ static na_return_t
 na_ofi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
     struct na_ofi_op_id *na_ofi_op_id = (struct na_ofi_op_id *) op_id;
+    na_return_t ret = NA_SUCCESS;
 
-    na_ofi_op_id_decref(na_ofi_op_id);
+    NA_CHECK_ERROR(
+        !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
+        ret, NA_BUSY, "Attempting to free OP ID that was not completed");
 
-    return NA_SUCCESS;
+    free(na_ofi_op_id);
+
+out:
+    return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4372,9 +4336,6 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_ofi_op_id->refcount, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_ofi_op_id->context = context;
     na_ofi_op_id->completion_data.callback_info.type = NA_CB_SEND_UNEXPECTED;
@@ -4425,7 +4386,6 @@ out:
 error:
     na_ofi_addr_decref(na_ofi_addr);
     hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
-    na_ofi_op_id_decref(na_ofi_op_id);
 
     return ret;
 }
@@ -4447,9 +4407,6 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_ofi_op_id->refcount, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_ofi_op_id->context = context;
     na_ofi_op_id->completion_data.callback_info.type = NA_CB_RECV_UNEXPECTED;
@@ -4495,7 +4452,6 @@ out:
 
 error:
     hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
-    na_ofi_op_id_decref(na_ofi_op_id);
 
     return ret;
 }
@@ -4519,9 +4475,6 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_ofi_op_id->refcount, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_ofi_op_id->context = context;
     na_ofi_op_id->completion_data.callback_info.type = NA_CB_SEND_EXPECTED;
@@ -4571,7 +4524,6 @@ out:
 error:
     na_ofi_addr_decref(na_ofi_addr);
     hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
-    na_ofi_op_id_decref(na_ofi_op_id);
 
     return ret;
 }
@@ -4595,9 +4547,6 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     NA_CHECK_ERROR(
         !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED), out,
         ret, NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_ofi_op_id->refcount, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_ofi_op_id->context = context;
     na_ofi_op_id->completion_data.callback_info.type = NA_CB_RECV_EXPECTED;
@@ -4646,7 +4595,6 @@ out:
 error:
     na_ofi_addr_decref(na_ofi_addr);
     hg_atomic_set32(&na_ofi_op_id->status, NA_OFI_OP_COMPLETED);
-    na_ofi_op_id_decref(na_ofi_op_id);
 
     return ret;
 }
