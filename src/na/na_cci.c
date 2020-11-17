@@ -133,7 +133,6 @@ struct na_cci_op_id {
     na_cb_type_t type;
     na_cb_t callback; /* Callback */
     void *arg;
-    hg_atomic_int32_t refcnt;    /* Reference counter   */
     hg_atomic_int32_t completed; /* Operation completed */
     hg_atomic_int32_t canceled;  /* Operation canceled  */
     union {
@@ -183,9 +182,6 @@ typedef union cci_msg {
 /********************/
 /* Local Prototypes */
 /********************/
-
-static void
-op_id_decref(na_cci_op_id_t *na_cci_op_id);
 
 /* check_protocol */
 static na_bool_t
@@ -755,7 +751,7 @@ na_cci_op_create(na_class_t NA_UNUSED *na_class)
         goto done;
     }
     memset(na_cci_op_id, 0, sizeof(na_cci_op_id_t));
-    hg_atomic_set32(&na_cci_op_id->refcnt, 1);
+
     /* Completed by default */
     hg_atomic_set32(&na_cci_op_id->completed, 1);
 
@@ -770,7 +766,8 @@ na_cci_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
     na_cci_op_id_t *na_cci_op_id = (na_cci_op_id_t *) op_id;
     na_return_t ret = NA_SUCCESS;
 
-    op_id_decref(na_cci_op_id);
+    /* No more references, cleanup */
+    free(na_cci_op_id);
 
     return ret;
 }
@@ -853,31 +850,6 @@ out:
         free(na_cci_addr);
     }
     return ret;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-op_id_addref(na_cci_op_id_t *na_cci_op_id)
-{
-    assert(hg_atomic_get32(&na_cci_op_id->refcnt));
-    hg_atomic_incr32(&na_cci_op_id->refcnt);
-    return;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-op_id_decref(na_cci_op_id_t *na_cci_op_id)
-{
-    assert(hg_atomic_get32(&na_cci_op_id->refcnt) > 0);
-
-    /* If there are more references, return */
-    if (hg_atomic_decr32(&na_cci_op_id->refcnt))
-        return;
-
-    /* No more references, cleanup */
-    free(na_cci_op_id);
-
-    return;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1031,9 +1003,6 @@ na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         na_cci_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(!hg_atomic_get32(&na_cci_op_id->completed), out, ret,
         NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_cci_op_id->refcnt, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_SEND_UNEXPECTED;
@@ -1064,7 +1033,7 @@ na_cci_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        na_cci_op_destroy(na_class, (na_op_id_t *) na_cci_op_id);
+        hg_atomic_set32(&na_cci_op_id->completed, 1);
     }
     return ret;
 }
@@ -1084,9 +1053,6 @@ na_cci_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         na_cci_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(!hg_atomic_get32(&na_cci_op_id->completed), out, ret,
         NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_cci_op_id->refcnt, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_RECV_UNEXPECTED;
@@ -1129,7 +1095,7 @@ na_cci_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
 out:
     if (ret != NA_SUCCESS) {
-        na_cci_op_destroy(na_class, (na_op_id_t *) na_cci_op_id);
+        hg_atomic_set32(&na_cci_op_id->completed, 1);
     }
     return ret;
 }
@@ -1233,9 +1199,6 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t *context,
         na_cci_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(!hg_atomic_get32(&na_cci_op_id->completed), out, ret,
         NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_cci_op_id->refcnt, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_SEND_EXPECTED;
@@ -1266,14 +1229,14 @@ na_cci_msg_send_expected(na_class_t *na_class, na_context_t *context,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        na_cci_op_destroy(na_class, (na_op_id_t *) na_cci_op_id);
+        hg_atomic_set32(&na_cci_op_id->completed, 1);
     }
     return ret;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_cci_msg_recv_expected(na_class_t *na_class, na_context_t *context,
+na_cci_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_cb_t callback, void *arg, void *buf, na_size_t buf_size,
     void NA_UNUSED *plugin_data, na_addr_t source_addr,
     na_uint8_t NA_UNUSED source_id, na_tag_t tag, na_op_id_t *op_id)
@@ -1298,9 +1261,6 @@ na_cci_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         na_cci_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(!hg_atomic_get32(&na_cci_op_id->completed), out, ret,
         NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_cci_op_id->refcnt, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_RECV_EXPECTED;
@@ -1343,7 +1303,7 @@ na_cci_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        na_cci_op_destroy(na_class, (na_op_id_t *) na_cci_op_id);
+        hg_atomic_set32(&na_cci_op_id->completed, 1);
     }
     return ret;
 }
@@ -1558,9 +1518,6 @@ na_cci_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         na_cci_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(!hg_atomic_get32(&na_cci_op_id->completed), out, ret,
         NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_cci_op_id->refcnt, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_PUT;
@@ -1589,7 +1546,7 @@ na_cci_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        na_cci_op_destroy(na_class, (na_op_id_t *) na_cci_op_id);
+        hg_atomic_set32(&na_cci_op_id->completed, 1);
     }
     return ret;
 }
@@ -1628,9 +1585,6 @@ na_cci_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         na_cci_op_id == NULL, out, ret, NA_INVALID_ARG, "Invalid operation ID");
     NA_CHECK_ERROR(!hg_atomic_get32(&na_cci_op_id->completed), out, ret,
         NA_BUSY, "Attempting to use OP ID that was not completed");
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&na_cci_op_id->refcnt, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
 
     na_cci_op_id->context = context;
     na_cci_op_id->type = NA_CB_GET;
@@ -1656,7 +1610,7 @@ na_cci_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 out:
     if (ret != NA_SUCCESS) {
         addr_decref(na_cci_addr);
-        na_cci_op_destroy(na_class, (na_op_id_t *) na_cci_op_id);
+        hg_atomic_set32(&na_cci_op_id->completed, 1);
     }
     return ret;
 }
@@ -2047,11 +2001,7 @@ na_cci_complete(
     na_cci_op_id->completion_data.plugin_callback = na_cci_release;
     na_cci_op_id->completion_data.plugin_callback_args = na_cci_op_id;
 
-    ret = na_cb_completion_add(
-        na_cci_op_id->context, &na_cci_op_id->completion_data);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-    }
+    na_cb_completion_add(na_cci_op_id->context, &na_cci_op_id->completion_data);
 
 out:
     if (na_cci_addr)
@@ -2068,7 +2018,6 @@ na_cci_release(void *arg)
     if (na_cci_op_id && !hg_atomic_get32(&na_cci_op_id->completed)) {
         NA_LOG_WARNING("Releasing resources from an uncompleted operation");
     }
-    op_id_decref(na_cci_op_id);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2084,14 +2033,10 @@ na_cci_cancel(
         goto out;
 
     hg_atomic_incr32(&na_cci_op_id->canceled);
-    op_id_addref(na_cci_op_id); /* will be decremented in handle_*() */
 
     switch (na_cci_op_id->type) {
         case NA_CB_RECV_UNEXPECTED: {
             na_cci_op_id_t *tmp = NULL, *first = NULL;
-
-            /* we can't decref in handle_recv_unexpected() */
-            op_id_decref(na_cci_op_id);
 
             tmp = first = na_cci_msg_unexpected_op_pop(na_class);
 
@@ -2118,9 +2063,6 @@ na_cci_cancel(
             na_cci_op_id_t *tmp = NULL;
 
             na_cci_addr = na_cci_op_id->info.recv_expected.na_cci_addr;
-
-            /* we can't decref in handle_recv_expected() */
-            op_id_decref(na_cci_op_id);
 
             HG_QUEUE_FOREACH (tmp, &na_cci_addr->rxs, entry) {
                 if (tmp == na_cci_op_id) {
