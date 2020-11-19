@@ -24,7 +24,7 @@ typedef int32_t sender_id_t;
 
 #define PRIdSENDER PRId32
 
-#define SENDER_ID_NIL ((sender_id_t)-1)
+#define sender_id_nil ((sender_id_t)-1)
 
 struct _wiring;
 typedef struct _wiring wiring_t;
@@ -39,6 +39,8 @@ struct _wiring {
 typedef struct _wire_id {
     sender_id_t id;
 } wire_id_t;
+
+#define wire_id_nil (wire_id_t){.id = sender_id_nil}
 
 typedef enum {
   wire_ev_estd = 0
@@ -62,7 +64,7 @@ sender_id_t wire_get_sender_id(wiring_t *, wire_id_t);
 static inline bool
 wire_id_is_valid(wire_id_t wid)
 {
-    return wid.id != SENDER_ID_NIL;
+    return wid.id != sender_id_nil;
 }
 
 #endif /* _WIRES_H_ */

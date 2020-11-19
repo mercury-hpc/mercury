@@ -113,7 +113,7 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
         } else if (request != UCS_OK)
             ucp_request_free(request);
     }
-    w->id = SENDER_ID_NIL;
+    w->id = sender_id_nil;
     w->msglen = 0;
     wiring_expiration_remove(st, w);
     wiring_wakeup_remove(st, w);
@@ -444,7 +444,7 @@ sender_id_t
 wire_get_sender_id(wiring_t *wiring, wire_id_t wid)
 {
     if (!wire_is_connected(wiring, wid))
-        return SENDER_ID_NIL;
+        return sender_id_nil;
 
     return wiring->storage->wire[wid.id].id;
 }
@@ -525,14 +525,14 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size)
             , .tlink = {{.prev = i, .next = i, .due = 0},
                         {.prev = i, .next = i, .due = 0}}
             , .ep = NULL
-            , .id = SENDER_ID_NIL};
+            , .id = sender_id_nil};
     }
 
-    st->wire[nwires - 1].next_free = SENDER_ID_NIL;
+    st->wire[nwires - 1].next_free = sender_id_nil;
     st->first_free = 0;
 
     for (which = 0; which < timo_nlinks; which++)
-        st->thead[which].first = st->thead[which].last = SENDER_ID_NIL;
+        st->thead[which].first = st->thead[which].last = sender_id_nil;
 
     st->rxpool = rxpool_create(worker, next_buflen, request_size,
         TAG_CHNL_WIREUP, TAG_CHNL_MASK, 3);
@@ -586,7 +586,7 @@ wiring_enlarge(wstorage_t *st)
             , .tlink = {{.prev = i, .next = i, .due = 0},
                         {.prev = i, .next = i, .due = 0}}
             , .ep = NULL
-            , .id = SENDER_ID_NIL};
+            , .id = sender_id_nil};
     }
     st->wire[nwires - 1].next_free = st->first_free;
     st->first_free = st->nwires;
@@ -648,11 +648,11 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
     if ((msg = zalloc(msglen)) == NULL)
         return NULL;
 
-    if ((id = wiring_free_get(st)) == SENDER_ID_NIL) {
+    if ((id = wiring_free_get(st)) == sender_id_nil) {
         if ((st = wiring_enlarge(st)) == NULL)
             goto free_msg;
         wiring->storage = st;
-        if ((id = wiring_free_get(st)) == SENDER_ID_NIL)
+        if ((id = wiring_free_get(st)) == sender_id_nil)
             goto free_msg;
     }
 
@@ -737,13 +737,13 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     ucs_status_t status;
 
     if ((msg = zalloc(msglen)) == NULL)
-        return (wire_id_t){.id = SENDER_ID_NIL};
+        return (wire_id_t){.id = sender_id_nil};
 
-    if ((id = wiring_free_get(st)) == SENDER_ID_NIL) {
+    if ((id = wiring_free_get(st)) == sender_id_nil) {
         if ((st = wiring_enlarge(st)) == NULL)
             goto free_msg;
         wiring->storage = st;
-        if ((id = wiring_free_get(st)) == SENDER_ID_NIL)
+        if ((id = wiring_free_get(st)) == sender_id_nil)
             goto free_msg;
     }
 
@@ -757,7 +757,7 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
         warnx("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
         goto free_wire;
     }
-    *w = (wire_t){.ep = ep, .id = SENDER_ID_NIL,
+    *w = (wire_t){.ep = ep, .id = sender_id_nil,
         .state = &state[WIRE_S_INITIAL], .msg = msg, .msglen = msglen,
         .cb = cb, .cb_arg = cb_arg};
 
@@ -769,10 +769,10 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     return (wire_id_t){.id = id};
 free_msg:
     free(msg);
-    return (wire_id_t){.id = SENDER_ID_NIL};
+    return (wire_id_t){.id = sender_id_nil};
 free_wire:
     wiring_release_wire(wiring, w);
-    return (wire_id_t){.id = SENDER_ID_NIL};
+    return (wire_id_t){.id = sender_id_nil};
 }
 
 static void

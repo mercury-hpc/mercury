@@ -56,11 +56,11 @@ wiring_timeout_put(wstorage_t *storage, wire_t *w, int which,
     timeout_head_t *head = &storage->thead[which];
 
     link->due = expiration;
-    link->next = SENDER_ID_NIL;
+    link->next = sender_id_nil;
     link->prev = head->last;
 
-    if (head->last == SENDER_ID_NIL) {
-        assert(head->first == SENDER_ID_NIL);
+    if (head->last == sender_id_nil) {
+        assert(head->first == sender_id_nil);
         head->first = id;
     } else {
         timeout_link_t *lastlink =
@@ -77,7 +77,7 @@ wiring_timeout_peek(wstorage_t *storage, int which)
     sender_id_t id;
     timeout_head_t *head = &storage->thead[which];
 
-    if ((id = head->first) == SENDER_ID_NIL)
+    if ((id = head->first) == sender_id_nil)
         return NULL;
 
     assert(0 <= id && id < storage->nwires);
@@ -93,7 +93,7 @@ wiring_timeout_get(wstorage_t *storage, int which)
     timeout_head_t *head = &storage->thead[which];
     timeout_link_t *link;
 
-    if ((id = head->first) == SENDER_ID_NIL)
+    if ((id = head->first) == sender_id_nil)
         return NULL;
 
     w = &storage->wire[id];
@@ -102,15 +102,14 @@ wiring_timeout_get(wstorage_t *storage, int which)
 
     assert(link->next != id && link->prev != id);
 
-    assert((head->first == SENDER_ID_NIL) ==
-           (id == head->last));
+    assert((head->first == sender_id_nil) == (id == head->last));
 
-    if (head->first == SENDER_ID_NIL)
-        head->last = SENDER_ID_NIL;
+    if (head->first == sender_id_nil)
+        head->last = sender_id_nil;
     else {
         timeout_link_t *lastlink =
             &storage->wire[head->first].tlink[which];
-        lastlink->prev = SENDER_ID_NIL;
+        lastlink->prev = sender_id_nil;
     }
 
     link->next = link->prev = id;
@@ -131,14 +130,14 @@ wiring_timeout_remove(wstorage_t *storage, wire_t *w, int which)
     if (link->next == id)
         return;
 
-    if (link->next == SENDER_ID_NIL) {
+    if (link->next == sender_id_nil) {
         assert(head->last == id);
         head->last = link->prev;
     } else {
         storage->wire[link->next].tlink[which].prev = link->prev;
     }
 
-    if (link->prev == SENDER_ID_NIL) {
+    if (link->prev == sender_id_nil) {
         assert(head->first == id);
         head->first = link->next;
     } else {
@@ -204,15 +203,15 @@ wiring_free_get(wstorage_t *storage)
     sender_id_t id;
     int which;
 
-    if ((id = storage->first_free) == SENDER_ID_NIL)
-        return SENDER_ID_NIL;
+    if ((id = storage->first_free) == sender_id_nil)
+        return sender_id_nil;
     w = &storage->wire[id];
     for (which = 0; which < timo_nlinks; which++) {
         timeout_link_t *link = &w->tlink[which];
         assert(link->next == id && link->prev == id);
     }
     storage->first_free = w->next_free;
-    w->next_free = SENDER_ID_NIL;
+    w->next_free = sender_id_nil;
 
     return id;
 }
@@ -220,7 +219,7 @@ wiring_free_get(wstorage_t *storage)
 static inline void
 wiring_free_put(wstorage_t *storage, sender_id_t id)
 {
-    assert(id != SENDER_ID_NIL);
+    assert(id != sender_id_nil);
 
     storage->wire[id].next_free = storage->first_free;
     storage->first_free = id;
