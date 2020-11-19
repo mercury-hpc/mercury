@@ -62,7 +62,7 @@ const char *wire_event_string(wire_event_t);
 sender_id_t wire_get_sender_id(wiring_t *, wire_id_t);
 
 static inline bool
-wire_id_is_valid(wire_id_t wid)
+wire_is_valid(wire_id_t wid)
 {
     return wid.id != sender_id_nil;
 }
