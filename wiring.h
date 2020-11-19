@@ -29,13 +29,22 @@ typedef int32_t sender_id_t;
 struct _wiring;
 typedef struct _wiring wiring_t;
 
+struct _wstorage;
+typedef struct _wstorage wstorage_t;
+
+struct _wiring {
+    wstorage_t *storage;
+};
+
 typedef struct _wire_id {
     sender_id_t id;
 } wire_id_t;
 
 wiring_t *wiring_create(ucp_worker_h, size_t);
+bool wiring_init(wiring_t *, ucp_worker_h, size_t);
 bool wireup_once(wiring_t *);
 void wiring_destroy(wiring_t *, bool);
+void wiring_teardown(wiring_t *, bool);
 wire_id_t wireup_start(wiring_t *, ucp_address_t *, size_t,
     ucp_address_t *, size_t);
 bool wireup_stop(wiring_t *, wire_id_t, bool);

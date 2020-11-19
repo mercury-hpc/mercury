@@ -383,12 +383,12 @@ wireup_last_send_callback(void *request, ucs_status_t status, void *user_data)
     free(msg);
 }
 
-/* Release all resources belonging to `wiring` and free `wiring` itself.
- * If `orderly` is true, then alert our peers that we are discarding all
- * of our wires so that they can clean up their local state.
+/* Release all resources belonging to `wiring`.  If `orderly` is true,
+ * then alert our peers that we are discarding all of our wires so that
+ * they can clean up their local state.
  */
 void
-wiring_destroy(wiring_t *wiring, bool orderly)
+wiring_teardown(wiring_t *wiring, bool orderly)
 {
     wstorage_t *st = wiring->storage;
     size_t i;
@@ -400,6 +400,16 @@ wiring_destroy(wiring_t *wiring, bool orderly)
         wireup_stop_internal(wiring, &st->wire[i], orderly);
 
     free(st);
+}
+
+/* Release all resources belonging to `wiring` and free `wiring` itself.
+ * If `orderly` is true, then alert our peers that we are discarding all
+ * of our wires so that they can clean up their local state.
+ */
+void
+wiring_destroy(wiring_t *wiring, bool orderly)
+{
+    wiring_teardown(wiring, orderly);
     free(wiring);
 }
 
@@ -456,23 +466,18 @@ out:
     wiring_release_wire(wiring, w);
 }
 
-wiring_t *
-wiring_create(ucp_worker_h worker, size_t request_size)
+bool
+wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size)
 {
-    wiring_t *wiring;
     wstorage_t *st;
     const size_t nwires = 1;
     int which;
     size_t i;
 
-    if ((wiring = malloc(sizeof(*wiring))) == NULL)
-        return NULL;
-
     st = zalloc(sizeof(*st) + sizeof(wire_t) * nwires);
-    if (st == NULL) {
-        free(wiring);
-        return NULL;
-    }
+    if (st == NULL)
+        return false;
+
     wiring->storage = st;
 
     st->nwires = nwires;
@@ -497,7 +502,23 @@ wiring_create(ucp_worker_h worker, size_t request_size)
         TAG_CHNL_WIREUP, TAG_CHNL_MASK, 3);
 
     if (st->rxpool == NULL) {
-        wiring_destroy(wiring, true);
+        wiring_teardown(wiring, true);
+        return false;
+    }
+
+    return true;
+}
+
+wiring_t *
+wiring_create(ucp_worker_h worker, size_t request_size)
+{
+    wiring_t *wiring;
+
+    if ((wiring = malloc(sizeof(*wiring))) == NULL)
+        return NULL;
+
+    if (!wiring_init(wiring, worker, request_size)) {
+        free(wiring);
         return NULL;
     }
 
