@@ -40,15 +40,24 @@ typedef struct _wire_id {
     sender_id_t id;
 } wire_id_t;
 
+typedef enum {
+  wire_ev_estd = 0
+, wire_ev_died
+} wire_event_t;
+
+typedef bool (wire_event_cb_t)(wire_event_t, void *);
+
 wiring_t *wiring_create(ucp_worker_h, size_t);
 bool wiring_init(wiring_t *, ucp_worker_h, size_t);
 bool wireup_once(wiring_t *);
 void wiring_destroy(wiring_t *, bool);
 void wiring_teardown(wiring_t *, bool);
 wire_id_t wireup_start(wiring_t *, ucp_address_t *, size_t,
-    ucp_address_t *, size_t);
+    ucp_address_t *, size_t, wire_event_cb_t, void *);
 bool wireup_stop(wiring_t *, wire_id_t, bool);
 void wireup_app_tag(wiring_t *, uint64_t *, uint64_t *);
+const char *wire_event_string(wire_event_t);
+sender_id_t wire_get_sender_id(wiring_t *, wire_id_t);
 
 static inline bool
 wire_id_is_valid(wire_id_t wid)

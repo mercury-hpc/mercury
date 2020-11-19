@@ -126,12 +126,25 @@ wireup_transition(wiring_t *wiring, wire_t *w,
 {
     wstorage_t *st = wiring->storage;
     const wire_state_t *ostate;
+    bool reset_cb;
 
     ostate = w->state;
     w->state = nstate;
 
     printf("%s: wire %td state change %s -> %s\n",
         __func__, w - &st->wire[0], ostate->descr, nstate->descr);
+
+    if (w->cb == NULL || ostate == nstate)
+        reset_cb = false; // no callback or no state change: do nothing
+    else if (nstate == &state[WIRE_S_DEAD])
+        reset_cb = !(*w->cb)(wire_ev_died, w->cb_arg);
+    else if (nstate == &state[WIRE_S_LIVE])
+        reset_cb = !(*w->cb)(wire_ev_estd, w->cb_arg);
+
+    if (reset_cb) {
+        w->cb = NULL;
+        w->cb_arg = NULL;
+    }
 }
 
 static void
@@ -413,6 +426,29 @@ wiring_destroy(wiring_t *wiring, bool orderly)
     free(wiring);
 }
 
+static inline bool
+wire_is_connected(wiring_t *wiring, wire_id_t wid)
+{
+    wstorage_t *st = wiring->storage;
+    wire_t *w;
+
+    if (wid.id < 0 || st->nwires <= wid.id)
+        return false;
+
+    w = &st->wire[wid.id];
+
+    return w->state == &state[WIRE_S_LIVE];
+}
+
+sender_id_t
+wire_get_sender_id(wiring_t *wiring, wire_id_t wid)
+{
+    if (!wire_is_connected(wiring, wid))
+        return SENDER_ID_NIL;
+
+    return wiring->storage->wire[wid.id].id;
+}
+
 bool
 wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
 {
@@ -684,7 +720,7 @@ wireup_send(wire_t *w)
  */
 wire_id_t
 wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
-    ucp_address_t *raddr, size_t raddrlen)
+    ucp_address_t *raddr, size_t raddrlen, wire_event_cb_t *cb, void *cb_arg)
 {
     ucp_ep_params_t ep_params = {
       .field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS |
@@ -722,7 +758,8 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
         goto free_wire;
     }
     *w = (wire_t){.ep = ep, .id = SENDER_ID_NIL,
-        .state = &state[WIRE_S_INITIAL], .msg = msg, .msglen = msglen};
+        .state = &state[WIRE_S_INITIAL], .msg = msg, .msglen = msglen,
+        .cb = cb, .cb_arg = cb_arg};
 
     wiring_expiration_put(st, w, getnanos() + timeout_interval);
 
@@ -853,4 +890,17 @@ wireup_app_tag(wiring_t *wiring, uint64_t *atagp, uint64_t *maskp)
         *atagp = TAG_CHNL_APP;
     if (maskp != NULL)
         *maskp = TAG_CHNL_MASK;
+}
+
+const char *
+wire_event_string(wire_event_t ev)
+{
+    switch (ev) {
+    case wire_ev_estd:
+        return "estd";
+    case wire_ev_died:
+        return "died";
+    default:
+        return "<unknown>";
+    }
 }

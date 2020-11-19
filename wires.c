@@ -35,11 +35,19 @@ usage(const char *_progname)
 }
 
 static bool
+event_cb(wire_event_t ev, void *arg)
+{
+    printf("wire event '%s'\n", wire_event_string(ev));
+    return true;
+}
+
+static bool
 run_client(wiring_t *wiring, ucp_worker_h worker,
     ucp_address_t *laddr, size_t laddrlen,
     ucp_address_t *raddr, size_t raddrlen)
 {
-    wire_id_t id = wireup_start(wiring, laddr, laddrlen, raddr, raddrlen);
+    wire_id_t id = wireup_start(wiring, laddr, laddrlen, raddr, raddrlen,
+        event_cb, NULL);
     return wire_id_is_valid(id);
 }
 

@@ -25,20 +25,18 @@ enum {
 };
 
 struct _wire {
-    sender_id_t next_free;
     timeout_link_t tlink[timo_nlinks];
-    sender_id_t id;     // Sender ID assigned by remote
-    ucp_ep_h ep;        // Endpoint connected to remote
     const wire_state_t *state;
-    size_t msglen;
+    ucp_ep_h ep;        // Endpoint connected to remote
     wireup_msg_t *msg;  /* In initial state, the request to be
                          * (re)transmitted.  In all other states,
                          * NULL.
                          */
-};
-
-struct _wiring {
-    wstorage_t *storage;
+    size_t msglen;
+    sender_id_t next_free;
+    sender_id_t id;     // Sender ID assigned by remote
+    wire_event_cb_t *cb;
+    void *cb_arg;
 };
 
 struct _wstorage {
@@ -226,12 +224,6 @@ wiring_free_put(wstorage_t *storage, sender_id_t id)
 
     storage->wire[id].next_free = storage->first_free;
     storage->first_free = id;
-}
-
-static inline bool
-wire_is_connected(const wire_t *w)
-{
-    return w->id != SENDER_ID_NIL;
 }
 
 #endif /* _WIRING_IMPL_H_ */
