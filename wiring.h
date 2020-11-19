@@ -36,6 +36,12 @@ struct _wiring {
     wstorage_t *storage;
 };
 
+/* TBD A wire ID can embed a generation
+ * number to guard against wire
+ * reassignment.  OR, add a "reclaimed"
+ * state after "dead" to the wire state machine?
+ * "Dead" wires will not be reused.
+ */
 typedef struct _wire_id {
     sender_id_t id;
 } wire_id_t;
