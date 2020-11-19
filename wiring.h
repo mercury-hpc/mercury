@@ -16,9 +16,10 @@
 
 #include <ucp/api/ucp.h>
 
+#include "wiring_compat.h"
 #include "wireup.h"
 
-typedef int32_t sender_id_t;
+typedef int32_t wiring_atomic sender_id_t;
 
 #define SENDER_ID_MAX INT32_MAX
 
