@@ -35,9 +35,9 @@ usage(const char *_progname)
 }
 
 static bool
-event_cb(wire_event_t ev, void *arg)
+event_cb(wire_event_info_t evinfo, void *arg)
 {
-    printf("wire event '%s'\n", wire_event_string(ev));
+    printf("wire event '%s'\n", wire_event_string(evinfo.event));
     return true;
 }
 

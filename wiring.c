@@ -134,12 +134,21 @@ wireup_transition(wiring_t *wiring, wire_t *w,
     printf("%s: wire %td state change %s -> %s\n",
         __func__, w - &st->wire[0], ostate->descr, nstate->descr);
 
-    if (w->cb == NULL || ostate == nstate)
+    if (w->cb == NULL || ostate == nstate) {
         reset_cb = false; // no callback or no state change: do nothing
-    else if (nstate == &state[WIRE_S_DEAD])
-        reset_cb = !(*w->cb)(wire_ev_died, w->cb_arg);
-    else if (nstate == &state[WIRE_S_LIVE])
-        reset_cb = !(*w->cb)(wire_ev_estd, w->cb_arg);
+    } else if (nstate == &state[WIRE_S_DEAD]) {
+        reset_cb = !(*w->cb)((wire_event_info_t){
+            .event = wire_ev_died
+          , .ep = NULL
+          , .sender_id = sender_id_nil
+        }, w->cb_arg);
+    } else if (nstate == &state[WIRE_S_LIVE]) {
+        reset_cb = !(*w->cb)((wire_event_info_t){
+            .event = wire_ev_estd
+          , .ep = w->ep
+          , .sender_id = w->id
+        }, w->cb_arg);
+    }
 
     if (reset_cb) {
         w->cb = NULL;
@@ -720,7 +729,7 @@ wireup_send(wire_t *w)
  */
 wire_id_t
 wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
-    ucp_address_t *raddr, size_t raddrlen, wire_event_cb_t *cb, void *cb_arg)
+    ucp_address_t *raddr, size_t raddrlen, wire_event_cb_t cb, void *cb_arg)
 {
     ucp_ep_params_t ep_params = {
       .field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS |

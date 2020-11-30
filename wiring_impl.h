@@ -35,7 +35,7 @@ struct _wire {
     size_t msglen;
     sender_id_t next_free;
     sender_id_t id;     // Sender ID assigned by remote
-    wire_event_cb_t *cb;
+    wire_event_cb_t cb;
     void *cb_arg;
 };
 

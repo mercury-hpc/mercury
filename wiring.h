@@ -54,7 +54,13 @@ typedef enum {
 , wire_ev_died
 } wire_event_t;
 
-typedef bool (wire_event_cb_t)(wire_event_t, void *);
+typedef struct _wire_event_info {
+    wire_event_t event;
+    ucp_ep_h ep;
+    sender_id_t sender_id;
+} wire_event_info_t;
+
+typedef bool (*wire_event_cb_t)(wire_event_info_t, void *);
 
 wiring_t *wiring_create(ucp_worker_h, size_t);
 bool wiring_init(wiring_t *, ucp_worker_h, size_t);
