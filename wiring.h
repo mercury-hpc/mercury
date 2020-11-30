@@ -33,8 +33,20 @@ typedef struct _wiring wiring_t;
 struct _wstorage;
 typedef struct _wstorage wstorage_t;
 
+typedef struct _wiring_lock_bundle {
+    void (*lock)(wiring_t *, void *);
+    void (*unlock)(wiring_t *, void *);
+    bool (*assert_locked)(wiring_t *, void *);
+    void *arg;
+} wiring_lock_bundle_t;
+
+struct _rxpool;
+typedef struct _rxpool rxpool_t;
+
 struct _wiring {
+    rxpool_t *rxpool;
     wstorage_t *storage;
+    wiring_lock_bundle_t lkb;
 };
 
 /* TBD A wire ID can embed a generation
@@ -62,8 +74,9 @@ typedef struct _wire_event_info {
 
 typedef bool (*wire_event_cb_t)(wire_event_info_t, void *);
 
-wiring_t *wiring_create(ucp_worker_h, size_t);
-bool wiring_init(wiring_t *, ucp_worker_h, size_t);
+wiring_t *wiring_create(ucp_worker_h, size_t, const wiring_lock_bundle_t *);
+bool wiring_init(wiring_t *, ucp_worker_h, size_t,
+    const wiring_lock_bundle_t *);
 bool wireup_once(wiring_t *);
 void wiring_destroy(wiring_t *, bool);
 void wiring_teardown(wiring_t *, bool);

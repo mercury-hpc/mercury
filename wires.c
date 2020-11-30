@@ -132,7 +132,9 @@ main(int argc, char **argv)
     }
     printf("\n");
 
-    if ((wiring = wiring_create(worker, context_attrs.request_size)) == NULL)
+    wiring = wiring_create(worker, context_attrs.request_size, NULL);
+
+    if (wiring == NULL)
         errx(EXIT_FAILURE, "%s: could not create wiring", __func__);
 
     if (raddr != NULL) {      /* * * client mode * * */

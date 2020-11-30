@@ -40,7 +40,6 @@ struct _wire {
 };
 
 struct _wstorage {
-    rxpool_t *rxpool;
     sender_id_t first_free;
     timeout_head_t thead[timo_nlinks];
     size_t nwires;

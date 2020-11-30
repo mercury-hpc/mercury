@@ -18,6 +18,11 @@ struct _wire_state {
     const char *descr;
 };
 
+#define wiring_assert_locked(_wiring)                       \
+do {                                                        \
+    wiring_assert_locked_impl(wiring, __FILE__, __LINE__);  \
+} while (0)
+
 enum {
   WIRE_S_INITIAL
 , WIRE_S_LIVE
@@ -50,6 +55,7 @@ static const wire_state_t *send_keepalive(wiring_t *, wire_t *);
 static const wire_state_t *retry(wiring_t *, wire_t *);
 static const wire_state_t *start_life(wiring_t *, wire_t *,
     const wireup_msg_t *);
+static void wiring_assert_locked_impl(wiring_t *, const char *, int);
 
 wire_state_t state[] = {
   [WIRE_S_INITIAL] = {.expire = retry,
@@ -64,6 +70,13 @@ wire_state_t state[] = {
                    .wakeup = ignore_wakeup,
                    .receive = reject_msg,
                    .descr = "dead"}
+};
+
+static const wiring_lock_bundle_t default_lkb = {
+  .lock = NULL
+, .unlock = NULL
+, .assert_locked = NULL
+, .arg = NULL
 };
 
 static void *
@@ -128,6 +141,8 @@ wireup_transition(wiring_t *wiring, wire_t *w,
     const wire_state_t *ostate;
     bool reset_cb;
 
+    wiring_assert_locked(wiring);
+
     ostate = w->state;
     w->state = nstate;
 
@@ -189,6 +204,8 @@ wireup_wakeup_transition(wiring_t *wiring, uint64_t now)
     wstorage_t *st = wiring->storage;
     wire_t *w;
 
+    wiring_assert_locked(wiring);
+
     while ((w = wiring_wakeup_peek(st)) != NULL) {
         if (w->tlink[timo_wakeup].due > now)
             break;
@@ -203,6 +220,8 @@ wireup_expire_transition(wiring_t *wiring, uint64_t now)
 {
     wstorage_t *st = wiring->storage;
     wire_t *w;
+
+    wiring_assert_locked(wiring);
 
     while ((w = wiring_expiration_peek(st)) != NULL) {
         if (w->tlink[timo_expire].due > now)
@@ -415,8 +434,8 @@ wiring_teardown(wiring_t *wiring, bool orderly)
     wstorage_t *st = wiring->storage;
     size_t i;
 
-    if (st->rxpool != NULL)
-        rxpool_destroy(st->rxpool);
+    if (wiring->rxpool != NULL)
+        rxpool_destroy(wiring->rxpool);
 
     for (i = 0; i < st->nwires; i++)
         wireup_stop_internal(wiring, &st->wire[i], orderly);
@@ -512,12 +531,15 @@ out:
 }
 
 bool
-wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size)
+wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
+    const wiring_lock_bundle_t *lkb)
 {
     wstorage_t *st;
     const size_t nwires = 1;
     int which;
     size_t i;
+
+    wiring->lkb = (lkb != NULL) ? *lkb : default_lkb;
 
     st = zalloc(sizeof(*st) + sizeof(wire_t) * nwires);
     if (st == NULL)
@@ -543,10 +565,10 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size)
     for (which = 0; which < timo_nlinks; which++)
         st->thead[which].first = st->thead[which].last = sender_id_nil;
 
-    st->rxpool = rxpool_create(worker, next_buflen, request_size,
+    wiring->rxpool = rxpool_create(worker, next_buflen, request_size,
         TAG_CHNL_WIREUP, TAG_CHNL_MASK, 3);
 
-    if (st->rxpool == NULL) {
+    if (wiring->rxpool == NULL) {
         wiring_teardown(wiring, true);
         return false;
     }
@@ -555,14 +577,15 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size)
 }
 
 wiring_t *
-wiring_create(ucp_worker_h worker, size_t request_size)
+wiring_create(ucp_worker_h worker, size_t request_size,
+    const wiring_lock_bundle_t *lkb)
 {
     wiring_t *wiring;
 
     if ((wiring = malloc(sizeof(*wiring))) == NULL)
         return NULL;
 
-    if (!wiring_init(wiring, worker, request_size)) {
+    if (!wiring_init(wiring, worker, request_size, lkb)) {
         free(wiring);
         return NULL;
     }
@@ -654,6 +677,8 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
     const size_t msglen = sizeof(*msg);
     ucs_status_t status;
 
+    wiring_assert_locked(wiring);
+
     if ((msg = zalloc(msglen)) == NULL)
         return NULL;
 
@@ -669,7 +694,7 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
 
     *msg = (wireup_msg_t){.op = OP_ACK, .sender_id = id, .addrlen = 0};
 
-    status = ucp_ep_create(st->rxpool->worker, &ep_params, &ep);
+    status = ucp_ep_create(wiring->rxpool->worker, &ep_params, &ep);
     if (status != UCS_OK) {
         warnx("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
         goto free_wire;
@@ -737,16 +762,26 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     , .address = raddr
     , .err_mode = UCP_ERR_HANDLING_MODE_NONE
     };
-    wstorage_t *st = wiring->storage;
     wireup_msg_t *msg;
     wire_t *w;
     ucp_ep_h ep;
     sender_id_t id;
+    wstorage_t *st;
     const size_t msglen = sizeof(*msg) + laddrlen;
     ucs_status_t status;
 
     if ((msg = zalloc(msglen)) == NULL)
         return (wire_id_t){.id = sender_id_nil};
+
+    status = ucp_ep_create(wiring->rxpool->worker, &ep_params, &ep);
+    if (status != UCS_OK) {
+        warnx("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
+        goto free_msg;
+    }
+
+    wiring_lock(wiring);
+
+    st = wiring->storage;   // storage could change if we don't hold the lock
 
     if ((id = wiring_free_get(st)) == sender_id_nil) {
         if ((st = wiring_enlarge(st)) == NULL)
@@ -761,11 +796,6 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     *msg = (wireup_msg_t){.op = OP_REQ, .sender_id = id, .addrlen = laddrlen};
     memcpy(&msg->addr[0], laddr, laddrlen);
 
-    status = ucp_ep_create(st->rxpool->worker, &ep_params, &ep);
-    if (status != UCS_OK) {
-        warnx("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
-        goto free_wire;
-    }
     *w = (wire_t){.ep = ep, .id = sender_id_nil,
         .state = &state[WIRE_S_INITIAL], .msg = msg, .msglen = msglen,
         .cb = cb, .cb_arg = cb_arg};
@@ -775,12 +805,15 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     if (!wireup_send(w))
         goto free_wire;
 
+    wiring_unlock(wiring);
     return (wire_id_t){.id = id};
 free_msg:
     free(msg);
     return (wire_id_t){.id = sender_id_nil};
 free_wire:
+    wiring_assert_locked(wiring);
     wiring_release_wire(wiring, w);
+    wiring_unlock(wiring);
     return (wire_id_t){.id = sender_id_nil};
 }
 
@@ -859,27 +892,33 @@ wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
 bool
 wireup_once(wiring_t *wiring)
 {
-    wstorage_t * const st = wiring->storage;
-    rxpool_t *rxpool = st->rxpool;
+    rxpool_t *rxpool = wiring->rxpool;
     rxdesc_t *rdesc;
     uint64_t now = getnanos();
+
+    wiring_lock(wiring);
 
     wireup_expire_transition(wiring, now);
     wireup_wakeup_transition(wiring, now);
 
-    if ((rdesc = rxpool_next(rxpool)) == NULL)
+    if ((rdesc = rxpool_next(rxpool)) == NULL) {
+        wiring_unlock(wiring);
         return true;
+    }
 
-    if (rdesc->status == UCS_OK) {
-        printf("received %zu-byte message tagged %" PRIu64
-               ", processing...\n", rdesc->rxlen, rdesc->sender_tag);
-        wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf, rdesc->rxlen);
-    } else {
+    if (rdesc->status != UCS_OK) {
         printf("receive error, %s, exiting.\n",
             ucs_status_string(rdesc->status));
+        wiring_unlock(wiring);
         return false;
     }
+
+    printf("received %zu-byte message tagged %" PRIu64
+           ", processing...\n", rdesc->rxlen, rdesc->sender_tag);
+    wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf, rdesc->rxlen);
+
     rxdesc_release(rxpool, rdesc);
+    wiring_unlock(wiring);
     return true;
 }
 
