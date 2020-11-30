@@ -731,7 +731,7 @@ wire_id_t
 wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     ucp_address_t *raddr, size_t raddrlen, wire_event_cb_t cb, void *cb_arg)
 {
-    ucp_ep_params_t ep_params = {
+    const ucp_ep_params_t ep_params = {
       .field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS |
                     UCP_EP_PARAM_FIELD_ERR_HANDLER
     , .address = raddr
