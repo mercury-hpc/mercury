@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <err.h>
+#include <errno.h>
 #include <inttypes.h>   /* PRIx8, etc. */
 #include <libgen.h>     /* basename */
+#include <pthread.h>    /* pthread_mutex_t */
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,6 +53,39 @@ run_client(wiring_t *wiring, ucp_worker_h worker,
     return wire_is_valid(id);
 }
 
+static void
+custom_lock(wiring_t *wiring, void *lk)
+{
+    pthread_mutex_t *mtx = lk;
+
+    const int rc = pthread_mutex_lock(mtx);
+    assert(rc == 0);
+}
+
+static void
+custom_unlock(wiring_t *wiring, void *lk)
+{
+    pthread_mutex_t *mtx = lk;
+
+    const int rc = pthread_mutex_unlock(mtx);
+    assert(rc == 0);
+}
+
+static bool
+custom_assert_locked(wiring_t *wiring, void *lk)
+{
+    pthread_mutex_t *mtx = lk;
+    const int rc = pthread_mutex_trylock(mtx);
+
+    if (rc == EBUSY)
+        return true;
+    if (rc == 0) {
+        pthread_mutex_unlock(mtx);
+        return false;
+    }
+    abort();
+}
+
 int
 main(int argc, char **argv)
 {
@@ -75,6 +110,13 @@ main(int argc, char **argv)
     size_t i, laddrlen, raddrlen;
     ucs_status_t status;
     int rc = EXIT_SUCCESS;
+    pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+    wiring_lock_bundle_t lkb = {
+      .arg = &mtx
+    , .lock = custom_lock
+    , .unlock = custom_unlock
+    , .assert_locked = custom_assert_locked
+    };
 
     if (sigemptyset(&sa.sa_mask) == -1)
         err(EXIT_FAILURE, "%s: sigemptyset", __func__);
@@ -132,7 +174,7 @@ main(int argc, char **argv)
     }
     printf("\n");
 
-    wiring = wiring_create(worker, context_attrs.request_size, NULL);
+    wiring = wiring_create(worker, context_attrs.request_size, &lkb);
 
     if (wiring == NULL)
         errx(EXIT_FAILURE, "%s: could not create wiring", __func__);

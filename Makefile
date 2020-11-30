@@ -13,7 +13,7 @@ wires: wires.c rxpool.c util.c wiring.c $(INCS)
 	gcc -fsanitize=address -fsanitize=pointer-compare \
 	    -fsanitize=pointer-subtract -g -O0 -Wall -pedantic $(STANDARD) \
 	    -Werror -D_POSIX_C_SOURCE=200809L $(UCX_CONFIG) \
-	    -o wires wires.c rxpool.c util.c wiring.c
+	    -o wires wires.c rxpool.c util.c wiring.c -lpthread
 
 clean:
 	rm -f itme wires
