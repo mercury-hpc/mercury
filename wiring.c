@@ -749,6 +749,34 @@ wireup_send(wire_t *w)
     return true;
 }
 
+static void
+wiring_lock(wiring_t *wiring)
+{
+    if (wiring->lkb.lock == NULL)
+        return;
+    (*wiring->lkb.lock)(wiring, wiring->lkb.arg);
+}
+
+static void
+wiring_unlock(wiring_t *wiring)
+{
+    if (wiring->lkb.unlock == NULL)
+        return;
+    (*wiring->lkb.unlock)(wiring, wiring->lkb.arg);
+}
+
+static void
+wiring_assert_locked_impl(wiring_t *wiring, const char *filename, int lineno)
+{
+    if (wiring->lkb.assert_locked == NULL)
+        return;
+    if ((*wiring->lkb.assert_locked)(wiring, wiring->lkb.arg))
+        return;
+    fprintf(stderr, "%s.%d: wiring %p is unlocked, aborting.\n",
+        filename, lineno, (void *)wiring);
+    abort();
+}
+
 /* Initiate wireup: create a wire, configure an endpoint for `raddr`, send
  * a message to the endpoint telling our wire's Sender ID and our address.
  */
