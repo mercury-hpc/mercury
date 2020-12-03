@@ -15,4 +15,10 @@
 #define wiring_atomic _Atomic
 #endif
 
+#if defined(__GNUC__) && (__GNUC__ >= 4)
+#    define wiring_unused __attribute__((unused))
+#else
+#    define wiring_unused
+#endif
+
 #endif /* _WIRING_COMPAT_H */
