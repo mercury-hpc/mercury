@@ -79,7 +79,7 @@ wiring_timeout_peek(wstorage_t *storage, int which)
     if ((id = head->first) == sender_id_nil)
         return NULL;
 
-    assert(0 <= id && id < storage->nwires);
+    assert(0 <= id && (size_t)id < storage->nwires);
 
     return &storage->wire[id];
 }
@@ -122,7 +122,7 @@ wiring_timeout_remove(wstorage_t *storage, wire_t *w, int which)
     timeout_head_t *head = &storage->thead[which];
     timeout_link_t *link = &w->tlink[which];
 
-    assert(0 <= id && id < storage->nwires);
+    assert(0 <= id && (size_t)id < storage->nwires);
 
     assert((link->next == id) == (link->prev == id));
 
