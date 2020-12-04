@@ -55,7 +55,15 @@ static const wire_state_t *send_keepalive(wiring_t *, wire_t *);
 static const wire_state_t *retry(wiring_t *, wire_t *);
 static const wire_state_t *start_life(wiring_t *, wire_t *,
     const wireup_msg_t *);
+static void wiring_lock(wiring_t *);
+static void wiring_unlock(wiring_t *);
+void wiring_assert_locked(wiring_t *);
 static void wiring_assert_locked_impl(wiring_t *, const char *, int);
+
+#define wiring_assert_locked(_wiring)                       \
+do {                                                        \
+    wiring_assert_locked_impl(wiring, __FILE__, __LINE__);  \
+} while (0)
 
 wire_state_t state[] = {
   [WIRE_S_INITIAL] = {.expire = retry,
@@ -109,7 +117,7 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
     wireup_msg_t *msg;
     ucp_ep_h ep;
 
-    assert(id < st->nwires);
+    wiring_assert_locked(wiring);
 
     if ((msg = w->msg) != NULL) {
         w->msg = NULL;
@@ -433,14 +441,18 @@ wireup_last_send_callback(void wiring_unused *request, ucs_status_t status,
 void
 wiring_teardown(wiring_t *wiring, bool orderly)
 {
-    wstorage_t *st = wiring->storage;
+    wstorage_t *st;
     size_t i;
 
+    wiring_lock(wiring);
+    st = wiring->storage;
     if (wiring->rxpool != NULL)
         rxpool_destroy(wiring->rxpool);
 
     for (i = 0; i < st->nwires; i++)
         wireup_stop_internal(wiring, &st->wire[i], orderly);
+
+    wiring_unlock(wiring);
 
     free(st);
 }
@@ -470,24 +482,44 @@ wire_is_connected(wiring_t *wiring, wire_id_t wid)
     return w->state == &state[WIRE_S_LIVE];
 }
 
-sender_id_t
+/* TBD lock? */
+void *
+wire_get_data(wiring_t *wiring, wire_id_t wid)
+{
+    if (!wire_is_connected(wiring, wid))
+        return wire_data_nil;
+    /* XXX TOCTOU race here.  Also, assoc can move between the
+     * time we load the pointer and the time we dereference it.
+     */
+    return wiring->assoc[wid.id];
+}
+
+/* TBD lock? */
+raw_sender_id_t
 wire_get_sender_id(wiring_t *wiring, wire_id_t wid)
 {
     if (!wire_is_connected(wiring, wid))
         return sender_id_nil;
-
+    /* XXX TOCTOU race here.  Also, assoc can move between the
+     * time we load the pointer and the time we dereference it.
+     */
     return wiring->storage->wire[wid.id].id;
 }
 
 bool
 wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
 {
+    wiring_lock(wiring);
+
     wstorage_t *st = wiring->storage;
 
-    if (wid.id < 0 || st->nwires <= wid.id)
+    if (wid.id < 0 || st->nwires <= (size_t)wid.id) {
+        wiring_unlock(wiring);
         return false;
+    }
 
     wireup_stop_internal(wiring, &st->wire[wid.id], orderly);
+    wiring_unlock(wiring);
     return true;
 }
 
@@ -504,6 +536,8 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
     wstorage_t *st = wiring->storage;
     const ucp_tag_t tag = TAG_CHNL_WIREUP | SHIFTIN(w->id, TAG_ID_MASK);
     const sender_id_t id = w - &st->wire[0];
+
+    wiring_assert_locked(wiring);
 
     if (w->state == &state[WIRE_S_DEAD])
         goto out;
