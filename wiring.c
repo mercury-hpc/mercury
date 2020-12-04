@@ -513,20 +513,22 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
 
     *msg = (wireup_msg_t){.op = OP_STOP, .sender_id = id, .addrlen = 0};
 
-    tx_params = (ucp_request_param_t){
-      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
-    , .cb = {.send = wireup_last_send_callback}
-    , .user_data = msg
-    };
+    if (orderly) {
+        tx_params = (ucp_request_param_t){
+          .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
+        , .cb = {.send = wireup_last_send_callback}
+        , .user_data = msg
+        };
 
-    request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
+        request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
 
-    if (UCS_PTR_IS_ERR(request)) {
-        warnx("%s: ucp_tag_send_nbx: %s", __func__,
-            ucs_status_string(UCS_PTR_STATUS(request)));
-        free(msg);
-    } else if (request == UCS_OK)
-        free(msg);
+        if (UCS_PTR_IS_ERR(request)) {
+            warnx("%s: ucp_tag_send_nbx: %s", __func__,
+                ucs_status_string(UCS_PTR_STATUS(request)));
+            free(msg);
+        } else if (request == UCS_OK)
+            free(msg);
+    }
 
 out:
     wiring_release_wire(wiring, w);
