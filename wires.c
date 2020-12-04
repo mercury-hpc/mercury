@@ -54,27 +54,27 @@ run_client(wiring_t *wiring, ucp_worker_h wiring_unused worker,
 }
 
 static void
-custom_lock(wiring_t *wiring, void *lk)
+custom_lock(wiring_t wiring_unused *wiring, void *arg)
 {
-    pthread_mutex_t *mtx = lk;
+    pthread_mutex_t *mtx = arg;
 
     const int rc = pthread_mutex_lock(mtx);
     assert(rc == 0);
 }
 
 static void
-custom_unlock(wiring_t *wiring, void *lk)
+custom_unlock(wiring_t wiring_unused *wiring, void *arg)
 {
-    pthread_mutex_t *mtx = lk;
+    pthread_mutex_t *mtx = arg;
 
     const int rc = pthread_mutex_unlock(mtx);
     assert(rc == 0);
 }
 
 static bool
-custom_assert_locked(wiring_t *wiring, void *lk)
+custom_assert_locked(wiring_t wiring_unused *wiring, void *arg)
 {
-    pthread_mutex_t *mtx = lk;
+    pthread_mutex_t *mtx = arg;
     const int rc = pthread_mutex_trylock(mtx);
 
     if (rc == EBUSY)
