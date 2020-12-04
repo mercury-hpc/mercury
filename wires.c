@@ -21,7 +21,7 @@
 static sig_atomic_t go = 1;
  
 static void
-handle_intr(int signo)
+handle_intr(int wiring_unused signo)
 {
     go = 0;
 }
@@ -37,14 +37,14 @@ usage(const char *_progname)
 }
 
 static bool
-event_cb(wire_event_info_t evinfo, void *arg)
+event_cb(wire_event_info_t evinfo, void wiring_unused *arg)
 {
     printf("wire event '%s'\n", wire_event_string(evinfo.event));
     return true;
 }
 
 static bool
-run_client(wiring_t *wiring, ucp_worker_h worker,
+run_client(wiring_t *wiring, ucp_worker_h wiring_unused worker,
     ucp_address_t *laddr, size_t laddrlen,
     ucp_address_t *raddr, size_t raddrlen)
 {

@@ -405,7 +405,8 @@ destroy(wiring_t *wiring, wire_t *w)
 }
 
 static void
-wireup_send_callback(void *request, ucs_status_t status, void *user_data)
+wireup_send_callback(void wiring_unused *request, ucs_status_t status,
+    void *user_data)
 {
     wireup_msg_t *msg = user_data;
 
@@ -414,7 +415,8 @@ wireup_send_callback(void *request, ucs_status_t status, void *user_data)
 }
 
 static void
-wireup_last_send_callback(void *request, ucs_status_t status, void *user_data)
+wireup_last_send_callback(void wiring_unused *request, ucs_status_t status,
+    void *user_data)
 {
     wireup_msg_t *msg = user_data;
 
@@ -658,7 +660,7 @@ wireup_op_string(wireup_op_t op)
 /* Answer a request. */
 wire_t *
 wireup_respond(wiring_t *wiring, sender_id_t rid,
-    ucp_address_t *raddr, size_t raddrlen)
+    const ucp_address_t *raddr, size_t wiring_unused raddrlen)
 {
     ucp_ep_params_t ep_params = {
       .field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS |
@@ -906,7 +908,7 @@ wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
     }
 
     w = wireup_respond(wiring, msg->sender_id,
-       (void *)&msg->addr[0], msg->addrlen);
+       (const void *)&msg->addr[0], msg->addrlen);
 
     if (w == NULL) {
         warnx("%s: failed to prepare & send wireup response", __func__);
@@ -960,7 +962,7 @@ wireup_once(wiring_t *wiring)
  * If either pointer is NULL, don't try to write through it.
  */
 void
-wireup_app_tag(wiring_t *wiring, uint64_t *atagp, uint64_t *maskp)
+wireup_app_tag(wiring_t wiring_unused *wiring, uint64_t *atagp, uint64_t *maskp)
 {
     if (atagp != NULL)
         *atagp = TAG_CHNL_APP;
