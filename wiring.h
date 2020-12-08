@@ -44,9 +44,12 @@ struct _rxpool;
 typedef struct _rxpool rxpool_t;
 
 struct _wiring {
+    wiring_lock_bundle_t lkb;
     rxpool_t *rxpool;
     wstorage_t *storage;
-    wiring_lock_bundle_t lkb;
+    void **assoc;   /* assoc[i] is a pointer to wire i's optional
+                     * "associated data"
+                     */
 };
 
 /* TBD A wire ID can embed a generation
@@ -81,11 +84,14 @@ bool wireup_once(wiring_t *);
 void wiring_destroy(wiring_t *, bool);
 void wiring_teardown(wiring_t *, bool);
 wire_id_t wireup_start(wiring_t *, ucp_address_t *, size_t,
-    ucp_address_t *, size_t, wire_event_cb_t, void *);
+    ucp_address_t *, size_t, wire_event_cb_t, void *, void *);
 bool wireup_stop(wiring_t *, wire_id_t, bool);
 void wireup_app_tag(wiring_t *, uint64_t *, uint64_t *);
 const char *wire_event_string(wire_event_t);
 sender_id_t wire_get_sender_id(wiring_t *, wire_id_t);
+void *wire_get_data(wiring_t *, wire_id_t);
+
+extern void * const wire_data_nil;
 
 static inline bool
 wire_is_valid(wire_id_t wid)

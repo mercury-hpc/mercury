@@ -49,7 +49,7 @@ run_client(wiring_t *wiring, ucp_worker_h wiring_unused worker,
     ucp_address_t *raddr, size_t raddrlen)
 {
     wire_id_t id = wireup_start(wiring, laddr, laddrlen, raddr, raddrlen,
-        event_cb, NULL);
+        event_cb, NULL, NULL);
     return wire_is_valid(id);
 }
 

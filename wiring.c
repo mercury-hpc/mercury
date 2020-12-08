@@ -24,6 +24,9 @@ enum {
 , WIRE_S_DEAD
 };
 
+static char wire_no_data;
+void * const wire_data_nil = &wire_no_data;
+
 static const ucp_tag_t wireup_start_tag = TAG_CHNL_WIREUP | TAG_ID_MASK;
 
 static const uint64_t keepalive_interval = 1000000000;  // 1 second
@@ -37,7 +40,7 @@ static void wireup_stop_internal(wiring_t *, wire_t *, bool);
 static void wireup_send_callback(void *, ucs_status_t, void *);
 static void wireup_last_send_callback(void *, ucs_status_t, void *);
 
-static wstorage_t *wiring_enlarge(wstorage_t *);
+static wstorage_t *wiring_enlarge(wiring_t *);
 static bool wireup_send(wire_t *);
 static const wire_state_t *continue_life(wiring_t *, wire_t *,
     const wireup_msg_t *);
@@ -114,6 +117,9 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
 
     wiring_assert_locked(wiring);
 
+    assert(0 <= id && (size_t)id < st->nwires);
+
+    wiring->assoc[id] = NULL;
     if ((msg = w->msg) != NULL) {
         w->msg = NULL;
         free(msg);
@@ -627,8 +633,10 @@ wiring_create(ucp_worker_h worker, size_t request_size,
 }
 
 static wstorage_t *
-wiring_enlarge(wstorage_t *st)
+wiring_enlarge(wiring_t *wiring)
 {
+    void **assoc = wiring->assoc;
+    wstorage_t *st = wiring->storage;
     const size_t hdrsize = sizeof(wstorage_t),
                  osize = hdrsize + st->nwires * sizeof(wire_t);
     const size_t proto_nsize = twice_or_max(osize) - hdrsize;
@@ -640,11 +648,13 @@ wiring_enlarge(wstorage_t *st)
         return NULL;
 
     st = realloc(st, nsize);
+    assoc = realloc(assoc, nwires * sizeof(*assoc));
 
-    if (st == NULL)
+    if (st == NULL || assoc == NULL)
         return NULL;
 
     for (i = st->nwires; i < nwires; i++) {
+        assoc[i] = NULL;
         st->wire[i] = (wire_t){
               .next_free = i + 1
             , .state = &state[WIRE_S_DEAD]
@@ -656,6 +666,9 @@ wiring_enlarge(wstorage_t *st)
     st->wire[nwires - 1].next_free = st->first_free;
     st->first_free = st->nwires;
     st->nwires = nwires;
+
+    wiring->assoc = assoc;
+    wiring->storage = st;
 
     return st;
 }
@@ -716,9 +729,8 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
         return NULL;
 
     if ((id = wiring_free_get(st)) == sender_id_nil) {
-        if ((st = wiring_enlarge(st)) == NULL)
+        if ((st = wiring_enlarge(wiring)) == NULL)
             goto free_msg;
-        wiring->storage = st;
         if ((id = wiring_free_get(st)) == sender_id_nil)
             goto free_msg;
     }
@@ -811,11 +823,19 @@ wiring_assert_locked_impl(wiring_t *wiring, const char *filename, int lineno)
 }
 
 /* Initiate wireup: create a wire, configure an endpoint for `raddr`, send
- * a message to the endpoint telling our wire's Sender ID and our address.
+ * a message to the endpoint telling our wire's Sender ID and our address,
+ * `laddr`.
+ *
+ * If non-NULL, `cb` is called with the argument `cb_arg` whenever the
+ * new wire changes state (dead -> established, established -> dead).
+ * Calls to `cb` are serialized by `wireup_once()`.
+ *
+ * The pointer `data` wire's associated `data`
  */
 wire_id_t
 wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
-    ucp_address_t *raddr, size_t raddrlen, wire_event_cb_t cb, void *cb_arg)
+    ucp_address_t *raddr, size_t wiring_unused raddrlen,
+    wire_event_cb_t cb, void *cb_arg, void *data)
 {
     const ucp_ep_params_t ep_params = {
       .field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS |
@@ -845,9 +865,8 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     st = wiring->storage;   // storage could change if we don't hold the lock
 
     if ((id = wiring_free_get(st)) == sender_id_nil) {
-        if ((st = wiring_enlarge(st)) == NULL)
+        if ((st = wiring_enlarge(wiring)) == NULL)
             goto free_msg;
-        wiring->storage = st;
         if ((id = wiring_free_get(st)) == sender_id_nil)
             goto free_msg;
     }
@@ -857,6 +876,7 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     *msg = (wireup_msg_t){.op = OP_REQ, .sender_id = id, .addrlen = laddrlen};
     memcpy(&msg->addr[0], laddr, laddrlen);
 
+    wiring->assoc[id] = data;
     *w = (wire_t){.ep = ep, .id = sender_id_nil,
         .state = &state[WIRE_S_INITIAL], .msg = msg, .msglen = msglen,
         .cb = cb, .cb_arg = cb_arg};
