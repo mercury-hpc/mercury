@@ -305,7 +305,7 @@ continue_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
         return w->state;
     }
 
-    if (msg->sender_id != w->id) {
+    if (msg->sender_id != (uint32_t)w->id) {
         warnx("%s: sender ID %" PRIu32 " mismatches assignment %" PRIdSENDER
             " for wire %" PRIdSENDER, __func__, msg->sender_id, w->id, id);
         wiring_release_wire(wiring, w);
@@ -474,7 +474,7 @@ wire_is_connected(wiring_t *wiring, wire_id_t wid)
     wstorage_t *st = wiring->storage;
     wire_t *w;
 
-    if (wid.id < 0 || st->nwires <= wid.id)
+    if (wid.id < 0 || st->nwires <= (size_t)wid.id)
         return false;
 
     w = &st->wire[wid.id];
