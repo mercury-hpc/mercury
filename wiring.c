@@ -18,11 +18,6 @@ struct _wire_state {
     const char *descr;
 };
 
-#define wiring_assert_locked(_wiring)                       \
-do {                                                        \
-    wiring_assert_locked_impl(wiring, __FILE__, __LINE__);  \
-} while (0)
-
 enum {
   WIRE_S_INITIAL
 , WIRE_S_LIVE
