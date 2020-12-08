@@ -495,7 +495,7 @@ wire_get_data(wiring_t *wiring, wire_id_t wid)
 }
 
 /* TBD lock? */
-raw_sender_id_t
+sender_id_t
 wire_get_sender_id(wiring_t *wiring, wire_id_t wid)
 {
     if (!wire_is_connected(wiring, wid))

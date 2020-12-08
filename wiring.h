@@ -19,7 +19,7 @@
 #include "wiring_compat.h"
 #include "wireup.h"
 
-typedef int32_t wiring_atomic sender_id_t;
+typedef int32_t sender_id_t;
 
 #define SENDER_ID_MAX INT32_MAX
 
@@ -56,7 +56,7 @@ struct _wiring {
  * "Dead" wires will not be reused.
  */
 typedef struct _wire_id {
-    sender_id_t id;
+    sender_id_t wiring_atomic id;
 } wire_id_t;
 
 #define wire_id_nil (wire_id_t){.id = sender_id_nil}
