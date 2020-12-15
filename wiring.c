@@ -1027,7 +1027,7 @@ wireup_once(wiring_t *wiring)
  * for the application program.  For each application message tag,
  * `tag`, `tag & *maskp` must equal `*atagp`.
  *
- * All bits in the mask are consecutive.  They bits include either the
+ * All bits in the mask are consecutive.  The bits include either the
  * most-significant bit or the least-significant bit.
  *
  * If either pointer is NULL, don't try to write through it.
