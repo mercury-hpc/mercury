@@ -49,6 +49,12 @@ struct na_cb_completion_data {
 #    define NA_UNUSED
 #endif
 
+#ifdef NDEBUG
+#define NA_DEBUG_USED NA_UNUSED
+#else
+#define NA_DEBUG_USED
+#endif
+
 /**
  * container_of - cast a member of a structure out to the containing structure
  * \ptr:        the pointer to the member.
