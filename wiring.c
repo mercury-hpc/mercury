@@ -443,6 +443,7 @@ void
 wiring_teardown(wiring_t *wiring, bool orderly)
 {
     wstorage_t *st;
+    void **assoc = wiring->assoc;
     size_t i;
 
     wiring_lock(wiring);
@@ -456,6 +457,7 @@ wiring_teardown(wiring_t *wiring, bool orderly)
     wiring_unlock(wiring);
 
     free(st);
+    free(assoc);
 }
 
 /* Release all resources belonging to `wiring` and free `wiring` itself.
@@ -577,6 +579,7 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
     const size_t nwires = 1;
     int which;
     size_t i;
+    void **assoc;
 
     wiring->lkb = (lkb != NULL) ? *lkb : default_lkb;
 
@@ -584,7 +587,13 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
     if (st == NULL)
         return false;
 
+    assoc = zalloc(sizeof(*assoc) * nwires);
+    if (assoc == NULL) {
+        free(st);
+        return false;
+    }
     wiring->storage = st;
+    wiring->assoc = assoc;
 
     st->nwires = nwires;
 
