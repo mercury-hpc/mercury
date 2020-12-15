@@ -573,7 +573,8 @@ out:
 
 bool
 wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
-    const wiring_lock_bundle_t *lkb)
+    const wiring_lock_bundle_t *lkb,
+    wire_accept_cb_t accept_cb, void *accept_cb_arg)
 {
     wstorage_t *st;
     const size_t nwires = 1;
@@ -582,6 +583,8 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
     void **assoc;
 
     wiring->lkb = (lkb != NULL) ? *lkb : default_lkb;
+    wiring->accept_cb = accept_cb;
+    wiring->accept_cb_arg = accept_cb_arg;
 
     st = zalloc(sizeof(*st) + sizeof(wire_t) * nwires);
     if (st == NULL)
@@ -626,14 +629,16 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
 
 wiring_t *
 wiring_create(ucp_worker_h worker, size_t request_size,
-    const wiring_lock_bundle_t *lkb)
+    const wiring_lock_bundle_t *lkb,
+    wire_accept_cb_t accept_cb, void *accept_cb_arg)
 {
     wiring_t *wiring;
 
     if ((wiring = malloc(sizeof(*wiring))) == NULL)
         return NULL;
 
-    if (!wiring_init(wiring, worker, request_size, lkb)) {
+    if (!wiring_init(wiring, worker, request_size, lkb,
+                     accept_cb, accept_cb_arg)) {
         free(wiring);
         return NULL;
     }
@@ -772,6 +777,12 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
     } else if (request == UCS_OK)
         free(msg);
 
+    if (wiring->accept_cb != NULL) {
+        const wire_accept_info_t info =
+            {.addr = raddr, .addrlen = raddrlen, .wire_id = {.id = id},
+             .sender_id = rid, .ep = ep};
+        wiring->assoc[id] = (*wiring->accept_cb)(info, wiring->accept_cb_arg);
+    }
     return w;
 free_wire:
     wiring_free_put(st, id);

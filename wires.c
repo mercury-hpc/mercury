@@ -174,7 +174,8 @@ main(int argc, char **argv)
     }
     printf("\n");
 
-    wiring = wiring_create(worker, context_attrs.request_size, &lkb);
+    wiring = wiring_create(worker, context_attrs.request_size, &lkb, NULL,
+        NULL);
 
     if (wiring == NULL)
         errx(EXIT_FAILURE, "%s: could not create wiring", __func__);

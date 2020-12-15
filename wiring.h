@@ -43,15 +43,6 @@ typedef struct _wiring_lock_bundle {
 struct _rxpool;
 typedef struct _rxpool rxpool_t;
 
-struct _wiring {
-    wiring_lock_bundle_t lkb;
-    rxpool_t *rxpool;
-    wstorage_t *storage;
-    void **assoc;   /* assoc[i] is a pointer to wire i's optional
-                     * "associated data"
-                     */
-};
-
 /* TBD A wire ID can embed a generation
  * number to guard against wire
  * reassignment.  OR, add a "reclaimed"
@@ -61,8 +52,6 @@ struct _wiring {
 typedef struct _wire_id {
     sender_id_t wiring_atomic id;
 } wire_id_t;
-
-#define wire_id_nil (wire_id_t){.id = sender_id_nil}
 
 typedef enum {
   wire_ev_estd = 0
@@ -75,11 +64,37 @@ typedef struct _wire_event_info {
     sender_id_t sender_id;
 } wire_event_info_t;
 
+typedef struct _wire_accept_info {
+    const ucp_address_t *addr;
+    size_t addrlen;
+    wire_id_t wire_id;
+    sender_id_t sender_id;
+    ucp_ep_h ep;
+} wire_accept_info_t;
+
+/* Indication of a new wire accepted from a remote peer. */
+typedef void *(*wire_accept_cb_t)(wire_accept_info_t, void *);
+
+/* Indication of a wire established or a wire that died. */
 typedef bool (*wire_event_cb_t)(wire_event_info_t, void *);
 
-wiring_t *wiring_create(ucp_worker_h, size_t, const wiring_lock_bundle_t *);
+struct _wiring {
+    wiring_lock_bundle_t lkb;
+    wire_accept_cb_t accept_cb;
+    void *accept_cb_arg;
+    rxpool_t *rxpool;
+    wstorage_t *storage;
+    void **assoc;   /* assoc[i] is a pointer to wire i's optional
+                     * "associated data"
+                     */
+};
+
+#define wire_id_nil (wire_id_t){.id = sender_id_nil}
+
+wiring_t *wiring_create(ucp_worker_h, size_t, const wiring_lock_bundle_t *,
+    wire_accept_cb_t, void *);
 bool wiring_init(wiring_t *, ucp_worker_h, size_t,
-    const wiring_lock_bundle_t *);
+    const wiring_lock_bundle_t *, wire_accept_cb_t, void *);
 int wireup_once(wiring_t *);
 void wiring_destroy(wiring_t *, bool);
 void wiring_teardown(wiring_t *, bool);
