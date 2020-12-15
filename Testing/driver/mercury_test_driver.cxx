@@ -250,7 +250,7 @@ HGTestDriver::StartServer(mercury_sysProcess *server, const char *name,
         }
     }
     if (foundWaiting) {
-        cerr << "HGTestDriver: " << name << " sucessfully started.\n";
+        cerr << "HGTestDriver: " << name << " successfully started.\n";
         return 1;
     } else {
         cerr << "HGTestDriver: " << name << " never started.\n";
@@ -271,7 +271,7 @@ HGTestDriver::StartClient(mercury_sysProcess *client, const char *name)
     mercury_sysProcess_Execute(client);
     if (mercury_sysProcess_GetState(client)
         == mercury_sysProcess_State_Executing) {
-        cerr << "HGTestDriver: " << name << " sucessfully started.\n";
+        cerr << "HGTestDriver: " << name << " successfully started.\n";
         return 1;
     } else {
         this->ReportStatus(client, name);
