@@ -706,7 +706,7 @@ wireup_op_string(wireup_op_t op)
     case OP_STOP:
         return "stop";
     default:
-        return "<unknown>";
+        return "unknown";
     }
 }
 
@@ -1039,6 +1039,6 @@ wire_event_string(wire_event_t ev)
     case wire_ev_died:
         return "died";
     default:
-        return "<unknown>";
+        return "unknown";
     }
 }
