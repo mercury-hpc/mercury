@@ -80,7 +80,7 @@ typedef bool (*wire_event_cb_t)(wire_event_info_t, void *);
 wiring_t *wiring_create(ucp_worker_h, size_t, const wiring_lock_bundle_t *);
 bool wiring_init(wiring_t *, ucp_worker_h, size_t,
     const wiring_lock_bundle_t *);
-bool wireup_once(wiring_t *);
+int wireup_once(wiring_t *);
 void wiring_destroy(wiring_t *, bool);
 void wiring_teardown(wiring_t *, bool);
 wire_id_t wireup_start(wiring_t *, ucp_address_t *, size_t,

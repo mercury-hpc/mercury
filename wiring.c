@@ -979,7 +979,7 @@ wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
         w - &wiring->storage->wire[0], w->id);
 }
 
-bool
+int
 wireup_once(wiring_t *wiring)
 {
     rxpool_t *rxpool = wiring->rxpool;
@@ -993,14 +993,14 @@ wireup_once(wiring_t *wiring)
 
     if ((rdesc = rxpool_next(rxpool)) == NULL) {
         wiring_unlock(wiring);
-        return true;
+        return 0;
     }
 
     if (rdesc->status != UCS_OK) {
         printf("receive error, %s, exiting.\n",
             ucs_status_string(rdesc->status));
         wiring_unlock(wiring);
-        return false;
+        return -1;
     }
 
     printf("received %zu-byte message tagged %" PRIu64
@@ -1009,7 +1009,7 @@ wireup_once(wiring_t *wiring)
 
     rxdesc_release(rxpool, rdesc);
     wiring_unlock(wiring);
-    return true;
+    return 1;
 }
 
 /* Store at `maskp` and `atagp` the mask and tag that wireup reserves

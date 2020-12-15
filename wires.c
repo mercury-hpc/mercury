@@ -196,8 +196,17 @@ main(int argc, char **argv)
     if (sigaction(SIGINT, &sa, &osa) == -1)
         err(EXIT_FAILURE, "%s.%d: sigaction", __func__, __LINE__);
 
-    while (wireup_once(wiring) && go)
-            ucp_worker_progress(worker);
+    while (go) {
+        int ret;
+
+        while ((ret = wireup_once(wiring)) > 0)
+            ;
+
+        if (ret < 0)
+            break;
+
+        ucp_worker_progress(worker);
+    }
 
     if (sigaction(SIGINT, &osa, NULL) == -1)
         err(EXIT_FAILURE, "%s.%d: sigaction", __func__, __LINE__);
