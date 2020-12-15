@@ -53,7 +53,7 @@ struct na_test_info {
 /* Public Macros */
 /*****************/
 
-#define NA_TEST_MAX_ADDR_NAME 256
+#define NA_TEST_MAX_ADDR_NAME 2048
 
 /*********************/
 /* Public Prototypes */
