@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -34,7 +34,6 @@ struct na_test_info {
     na_bool_t listen;        /* Listen */
     na_bool_t mpi_static;    /* MPI static comm */
     na_bool_t self_send;     /* Self send */
-    na_bool_t auth;          /* Auth service */
     char *key;               /* Auth key */
     int loop;                /* Number of loops */
     na_bool_t busy_wait;     /* Busy wait */

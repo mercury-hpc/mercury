@@ -130,12 +130,6 @@ else()
   set(MERCURY_UTIL_LIBTYPE STATIC)
 endif()
 
-if(MERCURY_ENABLE_VERBOSE_ERROR)
-  set(HG_UTIL_HAS_VERBOSE_ERROR 1)
-else()
-  set(HG_UTIL_HAS_VERBOSE_ERROR 0)
-endif()
-
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_config.h.in
   ${CMAKE_CURRENT_BINARY_DIR}/mercury_util_config.h
@@ -158,7 +152,7 @@ set(MERCURY_UTIL_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_pool.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.c
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util_error.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util.c
 )
 
 #----------------------------------------------------------------------------
@@ -226,7 +220,8 @@ set(MERCURY_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_rwlock.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_thread_spin.h
   ${CMAKE_CURRENT_SOURCE_DIR}/mercury_time.h
-)
+  ${CMAKE_CURRENT_SOURCE_DIR}/mercury_util.h
+  )
 
 #-----------------------------------------------------------------------------
 # Add file(s) to CMake Install

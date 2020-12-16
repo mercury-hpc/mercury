@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -27,9 +27,9 @@ typedef struct hg_request_class hg_request_class_t; /* Opaque request class */
 typedef struct hg_request hg_request_t;             /* Opaque request object */
 
 struct hg_request {
+    hg_request_class_t *request_class;
     void *data;
     hg_atomic_int32_t completed;
-    hg_request_class_t *request_class;
 };
 
 /**
@@ -82,7 +82,7 @@ hg_request_init(hg_request_progress_func_t progress,
  * \param request_class [IN]    pointer to request class
  * \param arg [IN/OUT]          pointer to init args
  */
-HG_UTIL_PUBLIC int
+HG_UTIL_PUBLIC void
 hg_request_finalize(hg_request_class_t *request_class, void **arg);
 
 /**
@@ -102,20 +102,16 @@ hg_request_create(hg_request_class_t *request_class);
  * Destroy the request, freeing the resources.
  *
  * \param request [IN/OUT]      pointer to request
- *
- * \return Non-negative on success or negative on failure
  */
-HG_UTIL_PUBLIC int
+HG_UTIL_PUBLIC void
 hg_request_destroy(hg_request_t *request);
 
 /**
  * Reset an existing request so that it can be safely re-used.
  *
  * \param request [IN/OUT]      pointer to request
- *
- * \return Pointer to request or NULL in case of failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_request_reset(hg_request_t *request);
 
 /**
@@ -123,10 +119,8 @@ hg_request_reset(hg_request_t *request);
  * after a call to trigger)
  *
  * \param request [IN/OUT]      pointer to request
- *
- * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_request_complete(hg_request_t *request);
 
 /**
@@ -161,10 +155,8 @@ hg_request_waitall(int count, hg_request_t *request[], unsigned int timeout,
  *
  * \param request [IN/OUT]      pointer to request
  * \param data [IN]             pointer to data
- *
- * \return Non-negative on success or negative on failure
  */
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_request_set_data(hg_request_t *request, void *data);
 
 /**
@@ -177,33 +169,18 @@ hg_request_set_data(hg_request_t *request, void *data);
 static HG_UTIL_INLINE void *
 hg_request_get_data(hg_request_t *request);
 
-/**
- * Cancel the request.
- *
- * \param request [IN]          request object
- *
- * \return Non-negative on success or negative on failure
- *
-HG_UTIL_PUBLIC int
-hg_request_cancel(hg_request_t *request);
- */
-
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_request_reset(hg_request_t *request)
 {
     hg_atomic_set32(&request->completed, HG_UTIL_FALSE);
-
-    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_request_complete(hg_request_t *request)
 {
-    hg_atomic_incr32(&request->completed);
-
-    return HG_UTIL_SUCCESS;
+    hg_atomic_set32(&request->completed, HG_UTIL_TRUE);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -220,12 +197,10 @@ hg_request_waitall(int count, hg_request_t *request[], unsigned int timeout,
 }
 
 /*---------------------------------------------------------------------------*/
-static HG_UTIL_INLINE int
+static HG_UTIL_INLINE void
 hg_request_set_data(hg_request_t *request, void *data)
 {
     request->data = data;
-
-    return HG_UTIL_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/

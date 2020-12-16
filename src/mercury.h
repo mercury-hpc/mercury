@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -107,6 +107,15 @@ HG_Finalize(hg_class_t *hg_class);
  */
 HG_PUBLIC void
 HG_Cleanup(void);
+
+/**
+ * Set the log level for HG. That setting is valid for all HG classes.
+ *
+ * \param level [IN]            level string, valid values are:
+ *                                "none", "error", "warning", "debug"
+ */
+HG_PUBLIC void
+HG_Set_log_level(const char *level);
 
 /**
  * Obtain the name of the given class.

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -136,9 +136,8 @@ extern "C" {
  * \param context [IN/OUT]              pointer to context of execution
  * \param na_cb_completion_data [IN]    pointer to completion data
  *
- * \return NA_SUCCESS or corresponding NA error code (failure is not an option)
  */
-NA_PRIVATE na_return_t
+NA_PRIVATE void
 na_cb_completion_add(
     na_context_t *context, struct na_cb_completion_data *na_cb_completion_data);
 

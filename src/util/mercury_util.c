@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -8,6 +8,8 @@
  * found at the root of the source code distribution tree.
  */
 
+#include "mercury_util.h"
+
 #include "mercury_util_error.h"
 
 /*******************/
@@ -15,6 +17,12 @@
 /*******************/
 
 /* Default error log mask */
-#ifdef HG_UTIL_HAS_VERBOSE_ERROR
-unsigned int HG_UTIL_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
-#endif
+enum hg_log_type HG_UTIL_LOG_MASK = HG_LOG_TYPE_NONE;
+
+/*---------------------------------------------------------------------------*/
+void
+HG_Util_set_log_level(const char *level)
+{
+    /* Set log level */
+    HG_UTIL_LOG_MASK = hg_log_name_to_type(level);
+}

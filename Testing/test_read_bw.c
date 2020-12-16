@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -30,10 +30,8 @@
 #define LARGE_SKIP 10
 #define LARGE_SIZE 8192
 
-#define NDIGITS      2
-#define NWIDTH       20
-#define MAX_MSG_SIZE (HG_TEST_BUFFER_SIZE * 1024 * 1024)
-#define MAX_HANDLES  (HG_TEST_MAX_HANDLES)
+#define NDIGITS 2
+#define NWIDTH  20
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -247,13 +245,14 @@ main(int argc, char *argv[])
     HG_TEST_CHECK_ERROR(
         hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE, "HG_Test_init() failed");
 
-    for (nhandles = 1; nhandles <= MAX_HANDLES; nhandles *= 2) {
+    for (nhandles = 1; nhandles <= hg_test_info.handle_max; nhandles *= 2) {
         if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
             fprintf(stdout, "# %s v%s\n", BENCHMARK_NAME, VERSION_NAME);
             fprintf(stdout,
-                "# Loop %d times from size %d to %d byte(s) with "
+                "# Loop %d times from size %d to %zu byte(s) with "
                 "%u handle(s)\n",
-                hg_test_info.na_test_info.loop, 1, MAX_MSG_SIZE, nhandles);
+                hg_test_info.na_test_info.loop, 1, hg_test_info.buf_size_max,
+                nhandles);
 #ifdef HG_TEST_HAS_VERIFY_DATA
             fprintf(
                 stdout, "# WARNING verifying data, output will be slower\n");
@@ -263,7 +262,7 @@ main(int argc, char *argv[])
             fflush(stdout);
         }
 
-        for (size = 1; size <= MAX_MSG_SIZE; size *= 2) {
+        for (size = 1; size <= hg_test_info.buf_size_max; size *= 2) {
             hg_ret = measure_bulk_transfer(&hg_test_info, size, nhandles);
             HG_TEST_CHECK_ERROR(hg_ret != HG_SUCCESS, done, ret, EXIT_FAILURE,
                 "measure_bulk_transfer() failed");

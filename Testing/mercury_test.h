@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -46,14 +46,16 @@ struct hg_test_info {
     hg_request_class_t *request_class;
     hg_addr_t target_addr;
     hg_bulk_t bulk_handle;
-    hg_bool_t auth;
+    hg_size_t buf_size_max;
 #ifdef HG_TEST_HAS_CRAY_DRC
     uint32_t credential;
     uint32_t wlm_id;
     drc_info_handle_t credential_info;
     uint32_t cookie;
 #endif
+    unsigned int handle_max;
     unsigned int thread_count;
+    hg_bool_t auth;
     hg_bool_t auto_sm;
 };
 
@@ -66,35 +68,23 @@ struct hg_test_context_info {
 /*****************/
 
 /* Default error macro */
-#ifdef HG_HAS_VERBOSE_ERROR
-#    include <mercury_log.h>
-#    define HG_TEST_LOG_MASK hg_test_log_mask
+#include <mercury_log.h>
+#define HG_TEST_LOG_MASK hg_test_log_mask
 /* Log mask will be initialized in init routine */
-extern unsigned int HG_TEST_LOG_MASK;
-#    define HG_TEST_LOG_MODULE_NAME "HG Test"
-#    define HG_TEST_LOG_ERROR(...)                                             \
-        do {                                                                   \
-            if (HG_TEST_LOG_MASK & HG_LOG_TYPE_ERROR)                          \
-                HG_LOG_WRITE_ERROR(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);      \
-        } while (0)
-#    ifdef HG_HAS_DEBUG
-#        define HG_TEST_LOG_DEBUG(...)                                         \
-            do {                                                               \
-                if (HG_TEST_LOG_MASK & HG_LOG_TYPE_DEBUG)                      \
-                    HG_LOG_WRITE_DEBUG(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);  \
-            } while (0)
-#    else
-#        define HG_TEST_LOG_DEBUG(...) (void) 0
-#    endif
-#    define HG_TEST_LOG_WARNING(...)                                           \
-        do {                                                                   \
-            if (HG_TEST_LOG_MASK & HG_LOG_TYPE_WARNING)                        \
-                HG_LOG_WRITE_WARNING(HG_TEST_LOG_MODULE_NAME, __VA_ARGS__);    \
-        } while (0)
+extern enum hg_log_type HG_TEST_LOG_MASK;
+#define HG_TEST_LOG_MODULE_NAME "HG Test"
+#define HG_TEST_LOG_ERROR(...)                                                 \
+    HG_LOG_WRITE(HG_TEST_LOG_MASK, HG_LOG_TYPE_ERROR, HG_TEST_LOG_MODULE_NAME, \
+        __VA_ARGS__)
+#define HG_TEST_LOG_WARNING(...)                                               \
+    HG_LOG_WRITE(HG_TEST_LOG_MASK, HG_LOG_TYPE_WARNING,                        \
+        HG_TEST_LOG_MODULE_NAME, __VA_ARGS__)
+#ifdef HG_HAS_DEBUG
+#    define HG_TEST_LOG_DEBUG(...)                                             \
+        HG_LOG_WRITE(HG_TEST_LOG_MASK, HG_LOG_TYPE_DEBUG,                      \
+            HG_TEST_LOG_MODULE_NAME, __VA_ARGS__)
 #else
-#    define HG_TEST_LOG_ERROR(...)   (void) 0
-#    define HG_TEST_LOG_DEBUG(...)   (void) 0
-#    define HG_TEST_LOG_WARNING(...) (void) 0
+#    define HG_TEST_LOG_DEBUG(...) (void) 0
 #endif
 
 /* Branch predictor hints */

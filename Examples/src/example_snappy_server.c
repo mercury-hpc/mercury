@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -18,7 +18,7 @@
 int
 main(void)
 {
-    const char *na_info_string = NULL;
+    const char *info_string = NULL;
 
     char self_addr_string[PATH_MAX];
     hg_addr_t self_addr;
@@ -34,23 +34,26 @@ main(void)
 
     HG_Version_get(&major, &minor, &patch);
 
-    printf("Server running mercury version %u.%u-%u\n",
-        major, minor, patch);
+    printf("Server running mercury version %u.%u.%u\n", major, minor, patch);
 
     /* Get info string */
     /* bmi+tcp://localhost:port */
-    na_info_string = getenv(HG_PORT_NAME);
-    if (!na_info_string) {
-        fprintf(stderr, HG_PORT_NAME " environment variable must be set, e.g.:\nMERCURY_PORT_NAME=\"tcp://127.0.0.1:22222\"\n");
+    info_string = getenv("HG_PORT_NAME");
+    if (!info_string) {
+        fprintf(stderr, "HG_PORT_NAME environment variable must be set, "
+                        "e.g.:\nHG_PORT_NAME=\"tcp://127.0.0.1:22222\"\n");
         exit(0);
     }
 
+    HG_Set_log_level("warning");
+
     /* Initialize Mercury with the desired network abstraction class */
-    hg_class = HG_Init(na_info_string, NA_TRUE);
+    hg_class = HG_Init(info_string, HG_TRUE);
 
     /* Get self addr to tell client about */
     HG_Addr_self(hg_class, &self_addr);
-    HG_Addr_to_string(hg_class, self_addr_string, &self_addr_string_size, self_addr);
+    HG_Addr_to_string(
+        hg_class, self_addr_string, &self_addr_string_size, self_addr);
     HG_Addr_free(hg_class, self_addr);
     printf("Server address is: %s\n", self_addr_string);
 
@@ -58,7 +61,7 @@ main(void)
     na_config = fopen(TEMP_DIRECTORY CONFIG_FILE_NAME, "w+");
     if (!na_config) {
         fprintf(stderr, "Could not open config file from: %s\n",
-                TEMP_DIRECTORY CONFIG_FILE_NAME);
+            TEMP_DIRECTORY CONFIG_FILE_NAME);
         exit(0);
     }
     fprintf(na_config, "%s\n", self_addr_string);
@@ -74,12 +77,13 @@ main(void)
     do {
         unsigned int actual_count = 0;
         do {
-            hg_ret = HG_Trigger(hg_context, 0 /* timeout */,
-                    1 /* max count */, &actual_count);
+            hg_ret = HG_Trigger(
+                hg_context, 0 /* timeout */, 1 /* max count */, &actual_count);
         } while ((hg_ret == HG_SUCCESS) && actual_count);
 
         /* Do not try to make progress anymore if we're done */
-        if (snappy_compress_done_target_g) break;
+        if (snappy_compress_done_target_g)
+            break;
 
         hg_ret = HG_Progress(hg_context, HG_MAX_IDLE_TIME);
 
@@ -91,4 +95,3 @@ main(void)
 
     return EXIT_SUCCESS;
 }
-

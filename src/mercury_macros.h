@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -12,6 +12,7 @@
 #define MERCURY_MACROS_H
 
 #include "mercury.h"
+#include "mercury_bulk.h"
 #include "mercury_proc.h"
 #include "mercury_proc_bulk.h"
 

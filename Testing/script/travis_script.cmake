@@ -70,6 +70,9 @@ list(APPEND CTEST_UPDATE_NOTES_FILES "${CMAKE_CURRENT_LIST_FILE}")
 # Number of jobs to build and keep going if some targets can't be made
 set(CTEST_BUILD_FLAGS "-k -j4")
 
+# Default num proc
+set(MAX_NUMPROCS "4")
+
 # Build shared libraries
 set(mercury_build_shared ON)
 set(MERCURY_BUILD_STATIC_LIBRARIES $ENV{MERCURY_BUILD_STATIC_LIBRARIES})
@@ -117,6 +120,9 @@ if(MERCURY_DO_MEMCHECK OR MERCURY_MEMORYCHECK_TYPE)
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
     # Must add verbosity / Error in build if no memory output file is produced
     set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
+
+    # Set num proc to 1 to speed up CI
+    set(MAX_NUMPROCS "1")
   endif()
 
   # Asan
@@ -187,7 +193,6 @@ MERCURY_ENABLE_COVERAGE:BOOL=${dashboard_do_coverage}
 MERCURY_ENABLE_DEBUG:BOOL=${enable_debug}
 MERCURY_USE_BOOST_PP:BOOL=OFF
 MERCURY_USE_CHECKSUMS:BOOL=${USE_CHECKSUMS}
-MERCURY_USE_SELF_FORWARD:BOOL=ON
 MERCURY_USE_XDR:BOOL=OFF
 NA_USE_BMI:BOOL=${USE_BMI}
 BMI_INCLUDE_DIR:PATH=$ENV{HOME}/install/include
@@ -197,11 +202,10 @@ NA_USE_CCI:BOOL=OFF
 NA_USE_SM:BOOL=${USE_SM}
 NA_USE_OFI:BOOL=ON
 NA_OFI_TESTING_PROTOCOL:STRING=sockets;tcp
-MPIEXEC_MAX_NUMPROCS:STRING=4
+MPIEXEC_MAX_NUMPROCS:STRING=${MAX_NUMPROCS}
 
 MERCURY_TESTING_ENABLE_PARALLEL:BOOL=${USE_MPI}
 MERCURY_TESTING_INIT_COMMAND:STRING=killall -9 ${PROC_NAME_OPT} hg_test_server;
-MERCURY_TESTING_CORESIDENT:BOOL=ON
 ")
 
 include(${CTEST_SOURCE_DIRECTORY}/Testing/script/mercury_common.cmake)

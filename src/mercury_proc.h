@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -59,7 +59,8 @@ typedef enum { HG_CRC16, HG_CRC32, HG_CRC64, HG_NOHASH } hg_proc_hash_t;
 /**
  * Operation flags.
  */
-#define HG_PROC_SM (1 << 0)
+#define HG_PROC_SM         (1 << 0)
+#define HG_PROC_BULK_EAGER (1 << 1)
 
 /* Branch predictor hints */
 #ifndef _WIN32

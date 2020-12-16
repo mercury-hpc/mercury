@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -134,8 +134,5 @@ typedef hg_util_uint64_t hg_util_ptr_t;
 
 /* Define if has <time.h> */
 #cmakedefine HG_UTIL_HAS_TIME_H
-
-/* Define if has verbose error */
-#cmakedefine HG_UTIL_HAS_VERBOSE_ERROR
 
 #endif /* MERCURY_UTIL_CONFIG_H */

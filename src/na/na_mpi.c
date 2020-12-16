@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -143,7 +143,6 @@ struct na_mpi_op_id {
     na_cb_type_t type;
     na_cb_t callback; /* Callback */
     void *arg;
-    hg_atomic_int32_t ref_count; /* Ref count */
     hg_atomic_int32_t completed; /* Operation completed */
     na_bool_t canceled;          /* Operation canceled */
     union {
@@ -1083,7 +1082,7 @@ na_mpi_op_create(na_class_t NA_UNUSED *na_class)
         goto done;
     }
     memset(na_mpi_op_id, 0, sizeof(struct na_mpi_op_id));
-    hg_atomic_init32(&na_mpi_op_id->ref_count, 1);
+
     /* Completed by default */
     hg_atomic_init32(&na_mpi_op_id->completed, 1);
 
@@ -1095,17 +1094,9 @@ done:
 static na_return_t
 na_mpi_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *op_id)
 {
-    struct na_mpi_op_id *na_mpi_op_id = (struct na_mpi_op_id *) op_id;
-    na_return_t ret = NA_SUCCESS;
+    free((struct na_mpi_op_id *) op_id);
 
-    if (hg_atomic_decr32(&na_mpi_op_id->ref_count)) {
-        /* Cannot free yet */
-        goto done;
-    }
-    free(na_mpi_op_id);
-
-done:
-    return ret;
+    return NA_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1366,7 +1357,6 @@ na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     int mpi_ret;
 
     na_mpi_op_id = (struct na_mpi_op_id *) op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_SEND_UNEXPECTED;
     na_mpi_op_id->callback = callback;
@@ -1391,7 +1381,7 @@ na_mpi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1407,7 +1397,6 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
     /* Allocate na_op_id */
     na_mpi_op_id = (struct na_mpi_op_id *) op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_RECV_UNEXPECTED;
     na_mpi_op_id->callback = callback;
@@ -1440,7 +1429,7 @@ na_mpi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1461,7 +1450,6 @@ na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 
     /* Allocate op_id */
     na_mpi_op_id = (struct na_mpi_op_id *) op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_SEND_EXPECTED;
     na_mpi_op_id->callback = callback;
@@ -1486,7 +1474,7 @@ na_mpi_msg_send_expected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1507,7 +1495,6 @@ na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 
     /* Allocate op_id */
     na_mpi_op_id = (struct na_mpi_op_id *) op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_RECV_EXPECTED;
     na_mpi_op_id->callback = callback;
@@ -1534,7 +1521,7 @@ na_mpi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
 
 done:
     if (ret != NA_SUCCESS) {
-        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1695,7 +1682,6 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     na_mpi_op_id = (struct na_mpi_op_id *) op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_PUT;
     na_mpi_op_id->callback = callback;
@@ -1751,7 +1737,7 @@ na_mpi_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_rma_info);
-        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -1793,7 +1779,6 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 
     na_mpi_op_id = (struct na_mpi_op_id *) op_id;
-    hg_atomic_incr32(&na_mpi_op_id->ref_count);
     na_mpi_op_id->context = context;
     na_mpi_op_id->type = NA_CB_GET;
     na_mpi_op_id->callback = callback;
@@ -1849,7 +1834,7 @@ na_mpi_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_rma_info);
-        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -2118,7 +2103,7 @@ na_mpi_progress_unexpected_rma(na_class_t *na_class, na_context_t *context,
 done:
     if (ret != NA_SUCCESS) {
         free(na_mpi_rma_info);
-        na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
+        hg_atomic_set32(&na_mpi_op_id->completed, 1);
     }
     return ret;
 }
@@ -2226,7 +2211,7 @@ na_mpi_progress_expected(na_class_t *na_class, na_context_t NA_UNUSED *context,
 
             free(*rma_info);
             *rma_info = NULL;
-            na_mpi_release(na_mpi_op_id);
+            na_mpi_op_destroy(na_class, (na_op_id_t *) na_mpi_op_id);
         } else {
             if (!complete_op_id) {
                 na_mpi_op_id = HG_LIST_NEXT(na_mpi_op_id, entry);
@@ -2360,12 +2345,7 @@ na_mpi_complete(struct na_mpi_op_id *na_mpi_op_id)
     na_mpi_op_id->completion_data.plugin_callback = na_mpi_release;
     na_mpi_op_id->completion_data.plugin_callback_args = na_mpi_op_id;
 
-    ret = na_cb_completion_add(
-        na_mpi_op_id->context, &na_mpi_op_id->completion_data);
-    if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not add callback to completion queue");
-        goto done;
-    }
+    na_cb_completion_add(na_mpi_op_id->context, &na_mpi_op_id->completion_data);
 
 done:
     return ret;
@@ -2380,7 +2360,6 @@ na_mpi_release(void *arg)
     if (na_mpi_op_id && !hg_atomic_get32(&na_mpi_op_id->completed)) {
         NA_LOG_WARNING("Releasing resources from an uncompleted operation");
     }
-    na_mpi_op_destroy(NULL, (na_op_id_t *) na_mpi_op_id);
 }
 
 /*---------------------------------------------------------------------------*/

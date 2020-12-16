@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -14,6 +14,8 @@
 #ifdef NA_HAS_MPI
 #    include "na_mpi.h"
 #endif
+
+#include "mercury_util.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -72,16 +74,14 @@ extern const char *na_test_short_opt_g;
 extern const struct na_test_opt na_test_opt_g[];
 
 /* Default error log mask */
-#ifdef NA_HAS_VERBOSE_ERROR
-unsigned int NA_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
-#endif
+enum hg_log_type NA_LOG_MASK = HG_LOG_TYPE_NONE;
 
 /*---------------------------------------------------------------------------*/
 void
 na_test_usage(const char *execname)
 {
     printf("usage: %s [OPTIONS]\n", execname);
-    printf("    OPTIONS\n");
+    printf("    NA OPTIONS\n");
     printf("    -h, --help          Print a usage message and exit\n");
     printf("    -c, --comm          Select NA plugin\n"
            "                        NA plugins: bmi, mpi, cci, etc\n");
@@ -94,7 +94,6 @@ na_test_usage(const char *execname)
            "                        Default: any\n");
     printf("    -L, --listen        Listen for incoming messages\n");
     printf("    -S, --self_send     Send to self\n");
-    printf("    -a, --auth          Run auth key service\n");
     printf("    -k, --key           Pass auth key\n");
     printf("    -l, --loop          Number of loops (default: 1)\n");
     printf("    -b, --busy          Busy wait\n");
@@ -134,7 +133,7 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
             case 'H': /* hostname */
                 na_test_info->hostname = strdup(na_test_opt_arg_g);
                 break;
-            case 'P': /* hostname */
+            case 'P': /* port */
                 na_test_info->port = atoi(na_test_opt_arg_g);
                 break;
             case 'L': /* listen */
@@ -148,9 +147,6 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 break;
             case 'S': /* self */
                 na_test_info->self_send = NA_TRUE;
-                break;
-            case 'a': /* auth service */
-                na_test_info->auth = NA_TRUE;
                 break;
             case 'k': /* key */
                 na_test_info->key = strdup(na_test_opt_arg_g);
@@ -314,6 +310,7 @@ na_test_gen_config(struct na_test_info *na_test_info)
     } else if ((strcmp("tcp", na_test_info->protocol) == 0) ||
                (strcmp("verbs;ofi_rxm", na_test_info->protocol) == 0) ||
                (strcmp("verbs", na_test_info->protocol) == 0) ||
+               (strcmp("psm", na_test_info->protocol) == 0) ||
                (strcmp("psm2", na_test_info->protocol) == 0) ||
                (strcmp("sockets", na_test_info->protocol) == 0)) {
         if (!na_test_info->hostname) {
@@ -389,6 +386,15 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     char *info_string = NULL;
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
+    const char *log_level = getenv("HG_TEST_LOG_LEVEL");
+
+    /* Set log level */
+    if (!log_level)
+        log_level = "warning";
+
+    NA_LOG_MASK = hg_log_name_to_type(log_level);
+    NA_Set_log_level(log_level);
+    HG_Util_set_log_level(log_level);
 
     na_test_parse_options(argc, argv, na_test_info);
 

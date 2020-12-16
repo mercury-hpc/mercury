@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -17,7 +17,8 @@
 /* Local Macros */
 /****************/
 
-#define NINFLIGHT (HG_TEST_MAX_HANDLES)
+/* Do not use HG_TEST_MAX_HANDLES for that and keep it fixed */
+#define NINFLIGHT (16)
 
 /************************************/
 /* Local Type and Struct Definition */

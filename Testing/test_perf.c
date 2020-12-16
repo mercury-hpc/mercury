@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -497,10 +497,11 @@ int
 main(int argc, char *argv[])
 {
     struct hg_test_info hg_test_info = {0};
-    size_t size_small = 1024; /* Use small values for eager message */
-    size_t size_big = (1024 * 1024 * HG_TEST_BUFFER_SIZE);
+    size_t size_small = 256; /* Use small values for eager message */
+    size_t size_big;
 
     HG_Test_init(argc, argv, &hg_test_info);
+    size_big = hg_test_info.buf_size_max;
 
     if (hg_test_info.na_test_info.mpi_comm_rank == 0) {
         printf("###############################################################"

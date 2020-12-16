@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -14,35 +14,23 @@
 #include "na_config.h"
 
 /* Default error macro */
-#ifdef NA_HAS_VERBOSE_ERROR
-#    include <mercury_log.h>
-#    define NA_LOG_MASK na_log_mask
+#include <mercury_log.h>
+#define NA_LOG_MASK na_log_mask
 /* Log mask will be initialized in init routine */
-extern NA_PRIVATE unsigned int NA_LOG_MASK;
-#    define NA_LOG_MODULE_NAME "NA"
-#    define NA_LOG_ERROR(...)                                                  \
-        do {                                                                   \
-            if (NA_LOG_MASK & HG_LOG_TYPE_ERROR)                               \
-                HG_LOG_WRITE_ERROR(NA_LOG_MODULE_NAME, __VA_ARGS__);           \
-        } while (0)
-#    ifdef NA_HAS_DEBUG
-#        define NA_LOG_DEBUG(...)                                              \
-            do {                                                               \
-                if (NA_LOG_MASK & HG_LOG_TYPE_DEBUG)                           \
-                    HG_LOG_WRITE_DEBUG(NA_LOG_MODULE_NAME, __VA_ARGS__);       \
-            } while (0)
-#    else
-#        define NA_LOG_DEBUG(...) (void) 0
-#    endif
-#    define NA_LOG_WARNING(...)                                                \
-        do {                                                                   \
-            if (NA_LOG_MASK & HG_LOG_TYPE_WARNING)                             \
-                HG_LOG_WRITE_WARNING(NA_LOG_MODULE_NAME, __VA_ARGS__);         \
-        } while (0)
+extern NA_PRIVATE enum hg_log_type NA_LOG_MASK;
+#define NA_LOG_MODULE_NAME "NA"
+#define NA_LOG_ERROR(...)                                                      \
+    HG_LOG_WRITE(                                                              \
+        NA_LOG_MASK, HG_LOG_TYPE_ERROR, NA_LOG_MODULE_NAME, __VA_ARGS__)
+#define NA_LOG_WARNING(...)                                                    \
+    HG_LOG_WRITE(                                                              \
+        NA_LOG_MASK, HG_LOG_TYPE_WARNING, NA_LOG_MODULE_NAME, __VA_ARGS__)
+#ifdef NA_HAS_DEBUG
+#    define NA_LOG_DEBUG(...)                                                  \
+        HG_LOG_WRITE(                                                          \
+            NA_LOG_MASK, HG_LOG_TYPE_DEBUG, NA_LOG_MODULE_NAME, __VA_ARGS__)
 #else
-#    define NA_LOG_ERROR(...)   (void) 0
-#    define NA_LOG_DEBUG(...)   (void) 0
-#    define NA_LOG_WARNING(...) (void) 0
+#    define NA_LOG_DEBUG(...) (void) 0
 #endif
 
 /* Branch predictor hints */

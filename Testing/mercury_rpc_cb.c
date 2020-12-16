@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -597,6 +597,17 @@ done:
 }
 
 /*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_killed_rpc, handle)
+{
+    (void) handle;
+
+    /* Simulate server segv */
+    exit(0);
+
+    return HG_SUCCESS;
+}
+
+/*---------------------------------------------------------------------------*/
 HG_TEST_RPC_CB(hg_test_perf_rpc, handle)
 {
     hg_return_t ret = HG_SUCCESS;
@@ -907,6 +918,8 @@ HG_TEST_THREAD_CB(hg_test_cancel_rpc)
 
 HG_TEST_THREAD_CB(hg_test_bulk_write)
 HG_TEST_THREAD_CB(hg_test_bulk_bind_write)
+
+HG_TEST_THREAD_CB(hg_test_killed_rpc)
 
 HG_TEST_THREAD_CB(hg_test_perf_rpc)
 HG_TEST_THREAD_CB(hg_test_perf_rpc_lat)

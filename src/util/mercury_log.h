@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -15,10 +15,29 @@
 
 #include <stdio.h>
 
-#define HG_LOG_TYPE_NONE    0
-#define HG_LOG_TYPE_DEBUG   0x01
-#define HG_LOG_TYPE_WARNING 0x02
-#define HG_LOG_TYPE_ERROR   0x04
+/*************************************/
+/* Public Type and Struct Definition */
+/*************************************/
+
+/* Available log types, additional log types should be added to that list by
+ * order of verbosity. Format is:
+ * - enum type
+ * - type name
+ */
+#define HG_LOG_TYPES                                                           \
+    X(HG_LOG_TYPE_NONE, "")           /*!< no log */                           \
+    X(HG_LOG_TYPE_ERROR, "error")     /*!< error log type */                   \
+    X(HG_LOG_TYPE_WARNING, "warning") /*!< warning log type */                 \
+    X(HG_LOG_TYPE_DEBUG, "debug")     /*!< debug log type */                   \
+    X(HG_LOG_TYPE_MAX, "")
+
+#define X(a, b) a,
+enum hg_log_type { HG_LOG_TYPES };
+#undef X
+
+/*****************/
+/* Public Macros */
+/*****************/
 
 /* For compatibility */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ < 199901L)
@@ -31,25 +50,31 @@
 #    define __func__ __FUNCTION__
 #endif
 
-#define HG_LOG_WRITE_ERROR(HG_LOG_MODULE_NAME, ...)                            \
+/* Log macro */
+#define HG_LOG_WRITE(log_mask, log_type, module_name, ...)                     \
     do {                                                                       \
-        hg_log_write(HG_LOG_TYPE_ERROR, HG_LOG_MODULE_NAME, __FILE__,          \
-            __LINE__, __func__, __VA_ARGS__);                                  \
+        if (log_mask >= log_type)                                              \
+            hg_log_write(log_type, module_name, __FILE__, __LINE__, __func__,  \
+                __VA_ARGS__);                                                  \
     } while (0)
-#define HG_LOG_WRITE_DEBUG(HG_LOG_MODULE_NAME, ...)                            \
-    do {                                                                       \
-        hg_log_write(HG_LOG_TYPE_DEBUG, HG_LOG_MODULE_NAME, __FILE__,          \
-            __LINE__, __func__, __VA_ARGS__);                                  \
-    } while (0)
-#define HG_LOG_WRITE_WARNING(HG_LOG_MODULE_NAME, ...)                          \
-    do {                                                                       \
-        hg_log_write(HG_LOG_TYPE_WARNING, HG_LOG_MODULE_NAME, __FILE__,        \
-            __LINE__, __func__, __VA_ARGS__);                                  \
-    } while (0)
+
+/*********************/
+/* Public Prototypes */
+/*********************/
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * Get the log type from the log name string.
+ *
+ * \param log_name [IN]         null terminated string
+ *
+ * \return log type enum value
+ */
+HG_UTIL_PUBLIC enum hg_log_type
+hg_log_name_to_type(const char *log_name);
 
 /**
  * Set the logging function.
@@ -60,12 +85,12 @@ HG_UTIL_PUBLIC void
 hg_log_set_func(int (*log_func)(FILE *stream, const char *format, ...));
 
 /**
- * Set the stream for debug output.
+ * Set the stream for error output.
  *
  * \param stream [IN/OUT]       pointer to stream
  */
 HG_UTIL_PUBLIC void
-hg_log_set_stream_debug(FILE *stream);
+hg_log_set_stream_error(FILE *stream);
 
 /**
  * Set the stream for warning output.
@@ -76,12 +101,12 @@ HG_UTIL_PUBLIC void
 hg_log_set_stream_warning(FILE *stream);
 
 /**
- * Set the stream for error output.
+ * Set the stream for debug output.
  *
  * \param stream [IN/OUT]       pointer to stream
  */
 HG_UTIL_PUBLIC void
-hg_log_set_stream_error(FILE *stream);
+hg_log_set_stream_debug(FILE *stream);
 
 /**
  * Write log.
@@ -94,7 +119,7 @@ hg_log_set_stream_error(FILE *stream);
  * \param format [IN]           string format
  */
 HG_UTIL_PUBLIC void
-hg_log_write(unsigned int log_type, const char *module, const char *file,
+hg_log_write(enum hg_log_type log_type, const char *module, const char *file,
     unsigned int line, const char *func, const char *format, ...);
 
 #ifdef __cplusplus

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -17,18 +17,31 @@
 
 int na_test_opt_ind_g = 1;            /* token pointer */
 const char *na_test_opt_arg_g = NULL; /* flag argument (or value) */
-const char *na_test_short_opt_g = "hc:d:p:H:P:LsSak:l:t:bmC:V";
+const char *na_test_short_opt_g = "hc:d:p:H:P:LsSk:l:bC:Vaz:x:mt:";
+/* clang-format off */
 const struct na_test_opt na_test_opt_g[] = {
-    {"help", no_arg, 'h'}, {"comm", require_arg, 'c'},
-    {"domain", require_arg, 'd'}, {"protocol", require_arg, 'p'},
-    {"hostname", require_arg, 'H'}, {"port", require_arg, 'P'},
-    {"listen", no_arg, 'L'}, {"mpi_static", no_arg, 's'},
-    {"self_send", no_arg, 'S'}, {"auth", no_arg, 'a'},
-    {"key", require_arg, 'k'}, {"loop", require_arg, 'l'},
-    {"threads", require_arg, 't'}, {"busy", no_arg, 'b'},
-    {"memory", no_arg, 'm'}, {"contexts", require_arg, 'C'},
-    {"verbose", no_arg, 'V'}, {NULL, 0, '\0'} /* Must add this at the end */
+    {"help", no_arg, 'h'},
+    {"comm", require_arg, 'c'},
+    {"domain", require_arg, 'd'},
+    {"protocol", require_arg, 'p'},
+    {"hostname", require_arg, 'H'},
+    {"port", require_arg, 'P'},
+    {"listen", no_arg, 'L'},
+    {"mpi_static", no_arg, 's'},
+    {"self_send", no_arg, 'S'},
+    {"key", require_arg, 'k'},
+    {"loop", require_arg, 'l'},
+    {"busy", no_arg, 'b'},
+    {"contexts", require_arg, 'C'},
+    {"verbose", no_arg, 'V'},
+    {"auth", no_arg, 'a'},
+    {"buf_size", require_arg, 'z'},
+    {"handle", require_arg, 'x'},
+    {"memory", no_arg, 'm'},
+    {"threads", require_arg, 't'},
+    {NULL, 0, '\0'} /* Must add this at the end */
 };
+/* clang-format on */
 
 int
 na_test_getopt(

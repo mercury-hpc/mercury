@@ -94,40 +94,6 @@ if(MERCURY_USE_CHECKSUMS)
   endif()
 endif()
 
-# Coresident RPC
-option(MERCURY_USE_SELF_FORWARD "Execute RPC call locally and bypass NA layer when using NA self address." OFF)
-if(MERCURY_USE_SELF_FORWARD)
-  set(HG_HAS_SELF_FORWARD 1)
-endif()
-set(MERCURY_USE_SELF_FORWARD PARENT_SCOPE)
-
-# Eager bulk transfer
-option(MERCURY_USE_EAGER_BULK "Encode bulk data with RPC when bulk region described is small." ON)
-if(MERCURY_USE_EAGER_BULK)
-  set(HG_HAS_EAGER_BULK 1)
-endif()
-
-# Post limit
-option(MERCURY_ENABLE_POST_LIMIT "Limit number of handles posted by listeners." ON)
-if(MERCURY_ENABLE_POST_LIMIT)
-  set(HG_HAS_POST_LIMIT 1)
-endif()
-mark_as_advanced(MERCURY_ENABLE_POST_LIMIT)
-set(MERCURY_POST_LIMIT "256" CACHE STRING "Number of handles posted.")
-mark_as_advanced(MERCURY_POST_LIMIT)
-
-# Transparent shared-memory routing
-option(MERCURY_USE_SM_ROUTING
-  "Enable routing of local communication through shared-memory (requires SM)."
-  OFF)
-if(MERCURY_USE_SM_ROUTING)
-  if(NOT NA_USE_SM)
-    # Always force SM if NA_USE_SM is turned OFF
-    set(NA_USE_SM "ON" CACHE BOOL "Use shared-memory plugin." FORCE)
-  endif()
-  set(HG_HAS_SM_ROUTING 1)
-endif()
-
 # Collect statistics
 option(MERCURY_ENABLE_STATS "Enable collection of stats that can be printed at exit." OFF)
 if(MERCURY_ENABLE_STATS)

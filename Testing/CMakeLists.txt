@@ -1,16 +1,6 @@
 #------------------------------------------------------------------------------
 # Set up test options
 #------------------------------------------------------------------------------
-set(MERCURY_TESTING_BUFFER_SIZE "16" CACHE STRING
-  "Total buffer size (in MB) used for testing.")
-set(HG_TEST_BUFFER_SIZE ${MERCURY_TESTING_BUFFER_SIZE})
-mark_as_advanced(MERCURY_TESTING_BUFFER_SIZE)
-
-set(MERCURY_TESTING_MAX_HANDLES "16" CACHE STRING
-  "Max number of concurrent handles used for testing.")
-set(HG_TEST_MAX_HANDLES ${MERCURY_TESTING_MAX_HANDLES})
-mark_as_advanced(MERCURY_TESTING_MAX_HANDLES)
-
 option(MERCURY_TESTING_USE_THREAD_POOL "Run tests using thread pool." ON)
 if(MERCURY_TESTING_USE_THREAD_POOL)
   set(HG_TEST_HAS_THREAD_POOL 1)
@@ -54,14 +44,6 @@ set(MERCURY_TESTING_TEMP_DIRECTORY "." CACHE PATH
   "Location to use for temp data (default is current directory).")
 set(HG_TEST_TEMP_DIRECTORY ${MERCURY_TESTING_TEMP_DIRECTORY})
 mark_as_advanced(MERCURY_TESTING_TEMP_DIRECTORY)
-
-if(MERCURY_USE_SELF_FORWARD)
-  option(MERCURY_TESTING_CORESIDENT "Enable testing of coresident mode." OFF)
-else()
-  set(MERCURY_TESTING_CORESIDENT "OFF" CACHE BOOL
-    "Enable testing of coresident mode." FORCE)
-endif()
-mark_as_advanced(MERCURY_TESTING_CORESIDENT)
 
 set(HG_TEST_FAIL_REGULAR_EXPRESSION "[^a-z]Error;ERROR;Failed")
 
@@ -117,6 +99,12 @@ if(NA_USE_SM)
   mark_as_advanced(NA_NA_TESTING_PROTOCOL)
 endif()
 
+# List of plugins that support forward to self
+# set(NA_TESTING_SELF "sm;ofi")
+
+# List of progress modes to test
+set(NA_TESTING_NO_BLOCK "true;false")
+
 # Detect <sys/prctl.h>
 check_include_files("sys/prctl.h" HG_TEST_HAS_SYSPRCTL_H)
 
@@ -162,7 +150,7 @@ function(build_mercury_test test_name)
   endif()
 endfunction()
 
-macro(add_mercury_test_comm test_name comm protocol busy serial)
+macro(add_mercury_test test_name comm protocol busy parallel self scalable)
   # Set full test name
   set(full_test_name ${test_name})
   set(opt_names ${comm} ${protocol})
@@ -172,91 +160,153 @@ macro(add_mercury_test_comm test_name comm protocol busy serial)
   if(${busy})
     set(full_test_name ${full_test_name}_busy)
   endif()
+  if(${self})
+    set(full_test_name ${full_test_name}_self)
+  endif()
+  if(${scalable})
+    set(full_test_name ${full_test_name}_scalable)
+  endif()
 
   # Set test arguments
   set(test_args --comm ${comm} --protocol ${protocol})
   if(${busy})
     set(test_args ${test_args} --busy)
   endif()
-  if(${serial})
+  if(NOT ${parallel})
     set(numprocs 1)
   else()
     set(numprocs ${MPIEXEC_MAX_NUMPROCS})
   endif()
-
-  # Static client/server test
-  if(${comm} STREQUAL "mpi" AND ${protocol} STREQUAL "static")
-    set(static_test_args ${test_args} --mpi_static)
-    add_test(NAME "mercury_${full_test_name}"
-      COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
-      ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_server> ${MPIEXEC_POSTFLAGS}
-      ${static_test_args} : ${MPIEXEC_NUMPROC_FLAG} ${numprocs}
-      ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${static_test_args}
-    )
-    set_tests_properties("mercury_${full_test_name}" PROPERTIES
-      FAIL_REGULAR_EXPRESSION ${HG_TEST_FAIL_REGULAR_EXPRESSION}
-    )
-  else()
-    set(driver_args --server $<TARGET_FILE:hg_test_server>       ${test_args}
-                    --client $<TARGET_FILE:hg_test_${test_name}> ${test_args})
-    if(${serial})
-      set(driver_args ${driver_args} --serial)
-    endif()
-    # Dynamic client/server test
-    add_test(NAME "mercury_${full_test_name}"
-      COMMAND $<TARGET_FILE:mercury_test_driver>
-      ${driver_args}
-    )
+  if(${self})
+    set(test_args ${test_args} --self_send)
+  endif()
+  if(${scalable})
+    set(test_args ${test_args} -C 2)
   endif()
 
-  # Coresident test (disable for BMI and MPI)
-  if(MERCURY_TESTING_CORESIDENT AND
-    (NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi") OR (${test_name} STREQUAL "cancel"))))
-    set(self_test_name ${full_test_name}_self)
-    set(self_test_args ${test_args} --self_send)
-    if(MERCURY_TESTING_ENABLE_PARALLEL)
-      add_test(NAME "mercury_${self_test_name}"
-        COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${numprocs}
-        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${MPIEXEC_POSTFLAGS}
-        ${self_test_args}
+  if(NOT ${self})
+    # Static client/server test (MPI only)
+    if(${comm} STREQUAL "mpi" AND ${protocol} STREQUAL "static")
+      set(static_test_args ${test_args} --mpi_static)
+      # NB. always parallel
+      add_test(NAME "mercury_${full_test_name}"
+        COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 1
+        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_server> ${MPIEXEC_POSTFLAGS}
+        ${static_test_args} : ${MPIEXEC_NUMPROC_FLAG} ${numprocs}
+        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${static_test_args}
       )
-      set_tests_properties("mercury_${self_test_name}" PROPERTIES
+      set_tests_properties("mercury_${full_test_name}" PROPERTIES
         FAIL_REGULAR_EXPRESSION ${HG_TEST_FAIL_REGULAR_EXPRESSION}
       )
     else()
-      add_test(NAME "mercury_${cores_test_name}"
-        COMMAND $<TARGET_FILE:hg_test_${test_name}> ${self_test_args}
+      # Dynamic client/server test
+      set(driver_args --server $<TARGET_FILE:hg_test_server>       ${test_args}
+                      --client $<TARGET_FILE:hg_test_${test_name}> ${test_args})
+      if(NOT ${parallel})
+        set(driver_args ${driver_args} --serial)
+      endif()
+      add_test(NAME "mercury_${full_test_name}"
+        COMMAND $<TARGET_FILE:mercury_test_driver>
+        ${driver_args}
       )
-      set_tests_properties("mercury_${cores_test_name}" PROPERTIES
+    endif()
+  else()
+    # Test without server
+    if(NOT ${parallel})
+      add_test(NAME "mercury_${full_test_name}"
+      COMMAND $<TARGET_FILE:hg_test_${test_name}> ${test_args}
+      )
+      set_tests_properties("mercury_${full_test_name}" PROPERTIES
+        FAIL_REGULAR_EXPRESSION ${HG_TEST_FAIL_REGULAR_EXPRESSION}
+      )
+    else()
+      add_test(NAME "mercury_${full_test_name}"
+        COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${numprocs}
+        ${MPIEXEC_PREFLAGS} $<TARGET_FILE:hg_test_${test_name}> ${MPIEXEC_POSTFLAGS}
+        ${test_args}
+      )
+      set_tests_properties("mercury_${full_test_name}" PROPERTIES
         FAIL_REGULAR_EXPRESSION ${HG_TEST_FAIL_REGULAR_EXPRESSION}
       )
     endif()
   endif()
-
-  # Scalable endpoint test
-  if(MERCURY_TESTING_USE_THREAD_POOL AND ${comm} STREQUAL "ofi" AND
-    (NOT ((${protocol} STREQUAL "tcp") OR (${protocol} STREQUAL "verbs"))))
-    set(scalable_test_name ${full_test_name}_scalable)
-    set(scalable_test_args ${test_args} -C 2)
-    set(driver_args --server $<TARGET_FILE:hg_test_server>       ${scalable_test_args}
-                    --client $<TARGET_FILE:hg_test_${test_name}> ${scalable_test_args})
-    if(${serial})
-      set(driver_args ${driver_args} --serial)
-    endif()
-    add_test(NAME "mercury_${scalable_test_name}"
-      COMMAND $<TARGET_FILE:mercury_test_driver>
-      ${driver_args}
-    )
-  endif()
 endmacro()
 
-function(add_mercury_test test_name serial)
+macro(add_mercury_test_standalone test_name)
+  add_test(NAME mercury_${test_name} COMMAND $<TARGET_FILE:hg_test_${test_name}>)
+endmacro()
+
+# Loop over all combinations
+function(add_mercury_test_comm test_name comm protocols progress_modes serial self)
+#  message("name=${test_name} comm=${comm} protocols=${protocols} progress_modes=${progress_modes} serial=${serial} self=${self}")
+  foreach(protocol ${protocols})
+    foreach(busy ${progress_modes})
+      add_mercury_test(${test_name}
+        ${comm} ${protocol} ${busy} ${serial} ${self} false)
+    endforeach()
+  endforeach()
+endfunction()
+
+function(add_mercury_test_comm_scalable test_name comm protocols progress_modes serial)
+  foreach(protocol ${protocols})
+    foreach(busy ${progress_modes})
+      # Restrict to OFI for now
+      if(${comm} STREQUAL "ofi" AND
+        (NOT ((${protocol} STREQUAL "tcp") OR (${protocol} STREQUAL "verbs"))))
+          add_mercury_test(${test_name}
+            ${comm} ${protocol} ${busy} ${serial} false true)
+      endif()
+    endforeach()
+  endforeach()
+endfunction()
+
+function(add_mercury_test_comm_all test_name)
   foreach(comm ${NA_PLUGINS})
     string(TOUPPER ${comm} upper_comm)
-    foreach(protocol ${NA_${upper_comm}_TESTING_PROTOCOL})
-      add_mercury_test_comm(${test_name} ${comm} ${protocol} false ${serial})
-      add_mercury_test_comm(${test_name} ${comm} ${protocol} true ${serial})
-    endforeach()
+    # Forward to remote server
+    add_mercury_test_comm(${test_name} ${comm}
+      "${NA_${upper_comm}_TESTING_PROTOCOL}"
+      "${NA_TESTING_NO_BLOCK}" ${MERCURY_TESTING_ENABLE_PARALLEL} false)
+    # Forward to self
+    if(NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi")))
+      add_mercury_test_comm(${test_name} ${comm}
+        "${NA_${upper_comm}_TESTING_PROTOCOL}"
+        "${NA_TESTING_NO_BLOCK}" ${MERCURY_TESTING_ENABLE_PARALLEL} true)
+    endif()
+    # Scalable test
+    if(MERCURY_TESTING_USE_THREAD_POOL)
+      add_mercury_test_comm_scalable(${test_name} ${comm}
+        "${NA_${upper_comm}_TESTING_PROTOCOL}"
+        "${NA_TESTING_NO_BLOCK}" ${MERCURY_TESTING_ENABLE_PARALLEL} true)
+    endif()
+  endforeach()
+endfunction()
+
+function(add_mercury_test_comm_all_serial test_name)
+  foreach(comm ${NA_PLUGINS})
+    string(TOUPPER ${comm} upper_comm)
+    # Forward to remote server
+    add_mercury_test_comm(${test_name} ${comm}
+      "${NA_${upper_comm}_TESTING_PROTOCOL}"
+      "${NA_TESTING_NO_BLOCK}" false false)
+    # Forward to self
+    if(NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi")))
+      add_mercury_test_comm(${test_name} ${comm}
+        "${NA_${upper_comm}_TESTING_PROTOCOL}"
+        "${NA_TESTING_NO_BLOCK}" false true)
+    endif()
+  endforeach()
+endfunction()
+
+function(add_mercury_test_comm_all_serial_remote test_name)
+  foreach(comm ${NA_PLUGINS})
+    string(TOUPPER ${comm} upper_comm)
+    # Forward to remote server
+    if(NOT ((${comm} STREQUAL "bmi") OR (${comm} STREQUAL "mpi")))
+      add_mercury_test_comm(${test_name} ${comm}
+        "${NA_${upper_comm}_TESTING_PROTOCOL}"
+        "${NA_TESTING_NO_BLOCK}" false false)
+    endif()
   endforeach()
 endfunction()
 
@@ -306,32 +356,32 @@ endif()
 build_mercury_test(server)
 
 # List of tests
-set(MERCURY_TESTS
-  rpc
-  bulk
-)
+build_mercury_test(rpc)
+build_mercury_test(bulk)
+
 build_mercury_test(lookup)
 build_mercury_test(proc)
 
-# List of serial tests
-set(MERCURY_SERIAL_TESTS
-  rpc_lat
-  write_bw
-  read_bw
-)
+build_mercury_test(perf)
+build_mercury_test(rpc_lat)
+build_mercury_test(write_bw)
+build_mercury_test(read_bw)
+
+build_mercury_test(kill)
 
 # Cray DRC test
 if(NA_OFI_TESTING_USE_CRAY_DRC)
   build_mercury_test(drc_auth)
 endif()
 
-# Build tests and add them to ctest
-foreach(test ${MERCURY_TESTS})
-  build_mercury_test(${test})
-  add_mercury_test(${test} false)
-endforeach()
+add_mercury_test_standalone(proc)
 
-foreach(test ${MERCURY_SERIAL_TESTS})
-  build_mercury_test(${test})
-#  add_mercury_test(${test} true)
-endforeach()
+add_mercury_test_comm_all(rpc)
+add_mercury_test_comm_all(bulk)
+
+add_mercury_test_comm_all_serial(rpc_lat)
+add_mercury_test_comm_all_serial(write_bw)
+add_mercury_test_comm_all_serial(read_bw)
+
+add_mercury_test_comm_all_serial_remote(kill)
+

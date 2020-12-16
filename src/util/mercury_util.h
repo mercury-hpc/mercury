@@ -8,10 +8,10 @@
  * found at the root of the source code distribution tree.
  */
 
-#ifndef MERCURY_PROC_BULK_H
-#define MERCURY_PROC_BULK_H
+#ifndef MERCURY_UTIL_LOG_H
+#define MERCURY_UTIL_LOG_H
 
-#include "mercury_proc.h"
+#include "mercury_util_config.h"
 
 /*************************************/
 /* Public Type and Struct Definition */
@@ -30,18 +30,16 @@ extern "C" {
 #endif
 
 /**
- * Generic processing routine.
+ * Set the log level for HG util. That setting is valid for all HG classes.
  *
- * \param proc [IN/OUT]         abstract processor object
- * \param handle [IN/OUT]       pointer to bulk handle
- *
- * \return HG_SUCCESS or corresponding HG error code
+ * \param level [IN]            level string, valid values are:
+ *                                "none", "error", "warning", "debug"
  */
-HG_PUBLIC hg_return_t
-hg_proc_hg_bulk_t(hg_proc_t proc, void *data);
+HG_UTIL_PUBLIC void
+HG_Util_set_log_level(const char *level);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* MERCURY_PROC_BULK_H */
+#endif /* MERCURY_UTIL_LOG_H */

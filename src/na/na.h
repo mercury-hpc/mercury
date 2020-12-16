@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -82,6 +82,15 @@ NA_Finalize(na_class_t *na_class);
  */
 NA_PUBLIC void
 NA_Cleanup(void);
+
+/**
+ * Set the log level for NA. That setting is valid for all NA classes.
+ *
+ * \param level [IN]            level string, valid values are:
+ *                                "none", "error", "warning", "debug"
+ */
+NA_PUBLIC void
+NA_Set_log_level(const char *level);
 
 /**
  * Return the name of the NA class.

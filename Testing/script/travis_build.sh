@@ -12,7 +12,7 @@ if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
   OFI_EXTRA_FLAGS="--enable-debug"
 fi
 #OFI_PR=
-OFI_VERSION=1.11.1rc1
+OFI_VERSION=1.11.1
 PREFIX=$HOME/install
 
 set -e

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -118,9 +118,7 @@ static const char *const na_return_name[] = {NA_RETURN_VALUES};
 #undef X
 
 /* Default error log mask */
-#ifdef NA_HAS_VERBOSE_ERROR
-unsigned int NA_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
-#endif
+enum hg_log_type NA_LOG_MASK = HG_LOG_TYPE_NONE;
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
@@ -234,20 +232,15 @@ NA_Initialize_opt(const char *info_string, na_bool_t listen,
     const unsigned int plugin_count =
         sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
     na_bool_t plugin_found = NA_FALSE;
-#ifdef NA_HAS_VERBOSE_ERROR
-    const char *log_level = NULL;
-#endif
     na_return_t ret = NA_SUCCESS;
+    const char *log_level = getenv("HG_NA_LOG_LEVEL");
+
+    /* Set log level */
+    if (log_level)
+        NA_LOG_MASK = hg_log_name_to_type(log_level);
 
     NA_CHECK_ERROR(
         info_string == NULL, error, ret, NA_INVALID_ARG, "NULL info string");
-
-#ifdef NA_HAS_VERBOSE_ERROR
-    /* Set log level */
-    log_level = getenv("HG_NA_LOG_LEVEL");
-    if (log_level && (strcmp(log_level, "debug") == 0))
-        NA_LOG_MASK |= HG_LOG_TYPE_DEBUG;
-#endif
 
     na_private_class =
         (struct na_private_class *) malloc(sizeof(struct na_private_class));
@@ -372,14 +365,11 @@ NA_Cleanup(void)
     unsigned int plugin_count =
         sizeof(na_class_table) / sizeof(na_class_table[0]) - 1;
     unsigned int i;
-#ifdef NA_HAS_VERBOSE_ERROR
-    const char *log_level = NULL;
+    const char *log_level = getenv("HG_NA_LOG_LEVEL");
 
     /* Set log level */
-    log_level = getenv("HG_NA_LOG_LEVEL");
-    if (log_level && (strcmp(log_level, "debug") == 0))
-        NA_LOG_MASK |= HG_LOG_TYPE_DEBUG;
-#endif
+    if (log_level)
+        NA_LOG_MASK = hg_log_name_to_type(log_level);
 
     for (i = 0; i < plugin_count; i++) {
         if (!na_class_table[i]->cleanup)
@@ -387,6 +377,14 @@ NA_Cleanup(void)
 
         na_class_table[i]->cleanup();
     }
+}
+
+/*---------------------------------------------------------------------------*/
+void
+NA_Set_log_level(const char *level)
+{
+    /* Set log level */
+    NA_LOG_MASK = hg_log_name_to_type(level);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1209,22 +1207,23 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
     NA_CHECK_ERROR(context == NULL, done, ret, NA_INVALID_ARG, "NULL context");
 
     while (count < max_count) {
-        struct na_cb_completion_data *completion_data = NULL;
+        struct na_cb_completion_data *completion_data_ptr = NULL;
+        struct na_cb_completion_data completion_data;
 
-        completion_data =
+        completion_data_ptr =
             hg_atomic_queue_pop_mc(na_private_context->completion_queue);
-        if (!completion_data) {
+        if (!completion_data_ptr) {
             /* Check backfill queue */
             if (hg_atomic_get32(&na_private_context->backfill_queue_count)) {
                 hg_thread_mutex_lock(
                     &na_private_context->completion_queue_mutex);
-                completion_data =
+                completion_data_ptr =
                     HG_QUEUE_FIRST(&na_private_context->backfill_queue);
                 HG_QUEUE_POP_HEAD(&na_private_context->backfill_queue, entry);
                 hg_atomic_decr32(&na_private_context->backfill_queue_count);
                 hg_thread_mutex_unlock(
                     &na_private_context->completion_queue_mutex);
-                if (!completion_data)
+                if (!completion_data_ptr)
                     continue; /* Give another chance to grab it */
             } else {
                 hg_time_t t1, t2;
@@ -1252,7 +1251,8 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
                     if (hg_thread_cond_timedwait(
                             &na_private_context->completion_queue_cond,
                             &na_private_context->completion_queue_mutex,
-                            timeout) != HG_UTIL_SUCCESS) {
+                            (unsigned int) (remaining * 1000.0)) !=
+                        HG_UTIL_SUCCESS) {
                         /* Timeout occurred so leave */
                         ret = NA_TIMEOUT;
                         break;
@@ -1271,26 +1271,27 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
         }
 
         /* Completion data should be valid */
-        NA_CHECK_ERROR(completion_data == NULL, done, ret, NA_INVALID_ARG,
+        NA_CHECK_ERROR(completion_data_ptr == NULL, done, ret, NA_INVALID_ARG,
             "NULL completion data");
+        completion_data = *completion_data_ptr;
+
+        /* Execute plugin callback (free resources etc) first since actual
+         * callback will notify user that operation has completed.
+         * NB. If the NA operation ID is reused by the plugin for another
+         * operation we must be careful that resources are released BEFORE that
+         * operation ID gets re-used.
+         */
+        if (completion_data.plugin_callback)
+            completion_data.plugin_callback(
+                completion_data.plugin_callback_args);
 
         /* Execute callback */
-        if (completion_data->callback) {
+        if (completion_data.callback) {
             int cb_ret =
-                completion_data->callback(&completion_data->callback_info);
+                completion_data.callback(&completion_data.callback_info);
             if (callback_ret)
                 callback_ret[count] = cb_ret;
         }
-
-        /* Execute plugin callback (free resources etc)
-         * NB. If the NA operation ID is reused by the plugin for another
-         * operation we must be careful that resources are released BEFORE
-         * that operation ID gets re-used. This is currently not protected
-         * and left upon the plugin implementation.
-         */
-        if (completion_data->plugin_callback)
-            completion_data->plugin_callback(
-                completion_data->plugin_callback_args);
 
         count++;
     }
@@ -1333,13 +1334,12 @@ NA_Error_to_string(na_return_t errnum)
 }
 
 /*---------------------------------------------------------------------------*/
-na_return_t
+void
 na_cb_completion_add(
     na_context_t *context, struct na_cb_completion_data *na_cb_completion_data)
 {
     struct na_private_context *na_private_context =
         (struct na_private_context *) context;
-    na_return_t ret = NA_SUCCESS;
 
     if (hg_atomic_queue_push(na_private_context->completion_queue,
             na_cb_completion_data) != HG_UTIL_SUCCESS) {
@@ -1358,6 +1358,4 @@ na_cb_completion_add(
         hg_thread_cond_signal(&na_private_context->completion_queue_cond);
         hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
     }
-
-    return ret;
 }

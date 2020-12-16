@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -26,10 +26,11 @@
 /* Local Macros */
 /****************/
 
-#define HG_POST_LIMIT_DEFAULT (256)
-
 #define HG_CONTEXT_CLASS(context)                                              \
-    ((struct hg_private_class *) (context->hg_class))
+    ((struct hg_private_class *) ((context)->hg_class))
+
+#define HG_HANDLE_CLASS(handle)                                                \
+    ((struct hg_private_class *) ((handle)->info.hg_class))
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -41,6 +42,7 @@ struct hg_private_class {
     hg_return_t (*handle_create)(hg_handle_t, void *); /* handle_create */
     void *handle_create_arg;                           /* handle_create arg */
     hg_thread_spin_t register_lock;                    /* Register lock */
+    hg_bool_t bulk_eager;                              /* Eager bulk proc */
 };
 
 /* Info for function map */
@@ -204,9 +206,7 @@ static const char *const hg_return_name[] = {HG_RETURN_VALUES};
 #undef X
 
 /* Default error log mask */
-#ifdef HG_HAS_VERBOSE_ERROR
-unsigned int HG_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
-#endif
+enum hg_log_type HG_LOG_MASK = HG_LOG_TYPE_NONE;
 
 /*---------------------------------------------------------------------------*/
 /**
@@ -524,6 +524,7 @@ hg_set_struct(struct hg_private_handle *hg_handle,
 {
     hg_proc_t proc = HG_PROC_NULL;
     hg_proc_cb_t proc_cb = NULL;
+    hg_uint8_t proc_flags = 0;
     void *buf, **extra_buf;
     hg_size_t buf_size, *extra_buf_size;
     hg_bulk_t *extra_bulk;
@@ -596,12 +597,19 @@ hg_set_struct(struct hg_private_handle *hg_handle,
     ret = hg_proc_reset(proc, buf, buf_size, HG_ENCODE);
     HG_CHECK_HG_ERROR(done, ret, "Could not reset proc");
 
-#ifdef HG_HAS_SM_ROUTING
+#ifdef NA_HAS_SM
     /* Determine if we need special handling for SM */
     if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
         NA_ADDR_NULL)
-        hg_proc_set_flags(proc, HG_PROC_SM);
+        proc_flags |= HG_PROC_SM;
 #endif
+
+    /* Attempt to use eager bulk transfers when appropriate */
+    if (HG_HANDLE_CLASS(&hg_handle->handle)->bulk_eager &&
+        !HG_Core_addr_is_self(hg_handle->handle.core_handle->info.addr))
+        proc_flags |= HG_PROC_BULK_EAGER;
+
+    hg_proc_set_flags(proc, proc_flags);
 
     /* Encode parameters */
     ret = proc_cb(proc, struct_ptr);
@@ -647,12 +655,22 @@ hg_set_struct(struct hg_private_handle *hg_handle,
         ret = hg_proc_reset(proc, buf, buf_size, HG_ENCODE);
         HG_CHECK_HG_ERROR(done, ret, "Could not reset proc");
 
-#ifdef HG_HAS_SM_ROUTING
+        /* Reset proc flags */
+        proc_flags = 0;
+
+#ifdef NA_HAS_SM
         /* Determine if we need special handling for SM */
         if (HG_Core_addr_get_na_sm(hg_handle->handle.core_handle->info.addr) !=
             NA_ADDR_NULL)
-            hg_proc_set_flags(proc, HG_PROC_SM);
+            proc_flags |= HG_PROC_SM;
 #endif
+
+        /* Attempt to use eager bulk transfers when appropriate */
+        if (HG_HANDLE_CLASS(&hg_handle->handle)->bulk_eager &&
+            !HG_Core_addr_is_self(hg_handle->handle.core_handle->info.addr))
+            proc_flags |= HG_PROC_BULK_EAGER;
+
+        hg_proc_set_flags(proc, proc_flags);
 
         /* Encode extra_bulk_handle, we can do that safely here because
          * the user payload has been copied so we don't have to worry
@@ -962,14 +980,11 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
     const struct hg_init_info *hg_init_info)
 {
     struct hg_private_class *hg_class = NULL;
-#ifdef HG_HAS_VERBOSE_ERROR
-    const char *log_level = NULL;
+    const char *log_level = getenv("HG_LOG_LEVEL");
 
     /* Set log level */
-    log_level = getenv("HG_LOG_LEVEL");
-    if (log_level && (strcmp(log_level, "debug") == 0))
-        HG_LOG_MASK |= HG_LOG_TYPE_DEBUG;
-#endif
+    if (log_level)
+        HG_LOG_MASK = hg_log_name_to_type(log_level);
 
     /* Make sure error return codes match */
     assert(HG_CANCELED == (hg_return_t) NA_CANCELED);
@@ -980,6 +995,13 @@ HG_Init_opt(const char *na_info_string, hg_bool_t na_listen,
 
     memset(hg_class, 0, sizeof(struct hg_private_class));
     hg_thread_spin_init(&hg_class->register_lock);
+
+    /* Save bulk eager information */
+    if (hg_init_info) {
+        hg_class->bulk_eager = !hg_init_info->no_bulk_eager;
+    } else {
+        hg_class->bulk_eager = HG_TRUE;
+    }
 
     hg_class->hg_class.core_class =
         HG_Core_init_opt(na_info_string, na_listen, hg_init_info);
@@ -1026,6 +1048,14 @@ HG_Cleanup(void)
 }
 
 /*---------------------------------------------------------------------------*/
+void
+HG_Set_log_level(const char *level)
+{
+    /* Set log level */
+    HG_LOG_MASK = hg_log_name_to_type(level);
+}
+
+/*---------------------------------------------------------------------------*/
 hg_return_t
 HG_Class_set_handle_create_callback(hg_class_t *hg_class,
     hg_return_t (*callback)(hg_handle_t, void *), void *arg)
@@ -1056,12 +1086,6 @@ hg_context_t *
 HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 {
     struct hg_context *hg_context = NULL;
-#ifdef HG_POST_LIMIT
-    unsigned int request_count =
-        (HG_POST_LIMIT > 0) ? HG_POST_LIMIT : HG_POST_LIMIT_DEFAULT;
-#else
-    unsigned int request_count = HG_POST_LIMIT_DEFAULT;
-#endif
 
     HG_CHECK_ERROR_NORET(hg_class == NULL, error, "NULL HG class");
 
@@ -1082,9 +1106,7 @@ HG_Context_create_id(hg_class_t *hg_class, hg_uint8_t id)
 
     /* If we are listening, start posting requests */
     if (HG_Core_class_is_listening(hg_class->core_class)) {
-        /* TODO for SM make sure request count is at least 64? */
-        hg_return_t ret =
-            HG_Core_context_post(hg_context->core_context, request_count);
+        hg_return_t ret = HG_Core_context_post(hg_context->core_context);
         HG_CHECK_HG_ERROR(error, ret, "Could not post context requests (%s)",
             HG_Error_to_string(ret));
     }

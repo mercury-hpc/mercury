@@ -233,15 +233,10 @@ else()
   set(NA_LIBTYPE STATIC)
 endif()
 
-if(MERCURY_ENABLE_VERBOSE_ERROR)
-  set(NA_HAS_VERBOSE_ERROR 1)
-  if(MERCURY_ENABLE_DEBUG)
-    set(NA_HAS_DEBUG 1)
-  else()
-    set(NA_HAS_DEBUG 0)
-  endif()
+if(MERCURY_ENABLE_DEBUG)
+  set(NA_HAS_DEBUG 1)
 else()
-  set(NA_HAS_VERBOSE_ERROR 0)
+  set(NA_HAS_DEBUG 0)
 endif()
 
 configure_file(

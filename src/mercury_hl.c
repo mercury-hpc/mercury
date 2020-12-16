@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -16,6 +16,9 @@
 /****************/
 /* Local Macros */
 /****************/
+
+/* Environment variable names (to be removed) */
+#define HG_PORT_NAME "MERCURY_PORT_NAME"
 
 /************************************/
 /* Local Type and Struct Definition */
@@ -60,9 +63,7 @@ hg_request_class_t *HG_REQUEST_CLASS_DEFAULT = NULL;
 static hg_bool_t hg_atexit_g = HG_FALSE;
 
 /* Default error log mask */
-#ifdef HG_HAS_VERBOSE_ERROR
-unsigned int HG_LOG_MASK = HG_LOG_TYPE_ERROR | HG_LOG_TYPE_WARNING;
-#endif
+enum hg_log_type HG_LOG_MASK = HG_LOG_TYPE_NONE;
 
 /*---------------------------------------------------------------------------*/
 static int
@@ -140,6 +141,9 @@ hg_return_t
 HG_Hl_init(const char *na_info_string, hg_bool_t na_listen)
 {
     hg_return_t ret = HG_SUCCESS;
+
+    /* Set log level */
+    HG_LOG_MASK = hg_log_name_to_type(getenv("HG_LOG_LEVEL"));
 
     /* First register finalize function if not set */
     if (!hg_atexit_g) {

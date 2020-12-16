@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Argonne National Laboratory, Department of Energy,
+ * Copyright (C) 2013-2020 Argonne National Laboratory, Department of Energy,
  *                    UChicago Argonne, LLC and The HDF Group.
  * All rights reserved.
  *
@@ -357,6 +357,17 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
     HG_UTIL_CHECK_ERROR(nfds == -1 && errno != EINTR, done, ret, HG_UTIL_FAIL,
         "epoll_wait() failed (%s)", strerror(errno));
 
+    /* Handle signal interrupts */
+    if (unlikely(errno == EINTR)) {
+        events[0].events |= HG_POLLINTR;
+        *actual_events = 1;
+
+        /* Reset errno */
+        errno = 0;
+
+        return HG_UTIL_SUCCESS;
+    }
+
     for (i = 0; i < nfds; ++i) {
         events[i].events = 0;
         events[i].data.u64 = (hg_util_uint64_t) poll_set->events[i].data.u64;
@@ -400,6 +411,14 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
     HG_UTIL_CHECK_ERROR(nfds == -1 && errno != EINTR, done, ret, HG_UTIL_FAIL,
         "kevent() failed (%s)", strerror(errno));
 
+    /* Handle signal interrupts */
+    if (unlikely(errno == EINTR)) {
+        events[0].events |= HG_POLLINTR;
+        *actual_events = 1;
+
+        return HG_UTIL_SUCCESS;
+    }
+
     for (i = 0; i < nfds; ++i) {
         events[i].events = 0;
         events[i].data.ptr = (hg_util_uint64_t) poll_set->events[i].udata;
@@ -442,6 +461,14 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
     HG_UTIL_CHECK_ERROR(nfds == -1 && errno != EINTR, unlock, ret, HG_UTIL_FAIL,
         "poll() failed (%s)", strerror(errno));
 
+    /* Handle signal interrupts */
+    if (unlikely(errno == EINTR)) {
+        events[0].events |= HG_POLLINTR;
+        *actual_events = 1;
+
+        return HG_UTIL_SUCCESS;
+    }
+
     nfds = (int) MIN(max_poll_events, nfds);
 
     /* An event on one of the fds has occurred. */
@@ -479,8 +506,7 @@ hg_poll_wait(hg_poll_set_t *poll_set, unsigned int timeout,
     }
 #endif
 
-    if (actual_events)
-        *actual_events = (unsigned int) nfds;
+    *actual_events = (unsigned int) nfds;
 
 done:
     return ret;
