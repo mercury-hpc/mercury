@@ -127,4 +127,7 @@ typedef na_uint64_t na_ptr_t;
 #cmakedefine NA_SM_SHM_PREFIX "@NA_SM_SHM_PREFIX@"
 #cmakedefine NA_SM_TMP_DIRECTORY "@NA_SM_TMP_DIRECTORY@"
 
+/* UCX */
+#cmakedefine NA_HAS_UCX
+
 #endif /* NA_CONFIG_H */

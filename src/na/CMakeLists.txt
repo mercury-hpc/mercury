@@ -156,6 +156,23 @@ if(NA_USE_OFI)
   )
 endif()
 
+# UCX
+option(NA_USE_UCX "Use UCX plugin." OFF)
+if(NA_USE_UCX)
+  find_package(UCX 1.9 REQUIRED)
+  message(STATUS "UCX include directory: ${UCX_INCLUDE_DIR}")
+  set(NA_PLUGINS ${NA_PLUGINS} ucx)
+  set(NA_HAS_UCX 1)
+  set(NA_INT_INCLUDE_DEPENDENCIES
+    ${NA_INT_INCLUDE_DEPENDENCIES}
+    ${UCX_INCLUDE_DIR}
+  )
+  set(NA_EXT_LIB_DEPENDENCIES
+    ${NA_EXT_LIB_DEPENDENCIES}
+    ${UCX_LIBRARIES}
+  )
+endif()
+
 # SM
 option(NA_USE_SM "Use shared-memory plugin." ON)
 if(NA_USE_SM)
@@ -265,6 +282,16 @@ if(NA_USE_OFI)
   set(NA_SRCS
     ${NA_SRCS}
     ${CMAKE_CURRENT_SOURCE_DIR}/na_ofi.c
+  )
+endif()
+
+if(NA_USE_UCX)
+  set(NA_SRCS
+    ${NA_SRCS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/na_ucx.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/rxpool.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/util.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/wiring.c
   )
 endif()
 
