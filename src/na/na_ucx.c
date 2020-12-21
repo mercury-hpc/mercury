@@ -1314,7 +1314,7 @@ tagged_send(na_ucx_context_t *ctx, const void *buf, na_size_t buf_size,
         na_cb_type_string(op_id->completion_data.callback_info.type), buf,
         buf_size, tag, op_id);
 
-    assert(buf_size > sizeof(sender_id));
+    assert(buf_size >= sizeof(sender_id));
 
     // XXX use standard endianness
     memcpy((void *)(uintptr_t)buf, &sender_id, sizeof(sender_id));
