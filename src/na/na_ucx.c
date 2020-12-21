@@ -376,7 +376,7 @@ memdup(const void *buf, size_t buflen)
     return memcpy(nbuf, buf, buflen);
 }
 
-static const char *
+static NA_DEBUG_USED const char *
 na_cb_type_string(na_cb_type_t ty)
 {
     switch (ty) {
@@ -459,7 +459,8 @@ address_wire_write_begin(address_wire_t *cache)
 static inline void
 address_wire_write_end(address_wire_aseq_t aseq)
 {
-    const hg_util_int32_t exit_mutcnt = hg_atomic_incr32(&aseq.cache->mutcnt);
+    const hg_util_int32_t NA_DEBUG_USED exit_mutcnt =
+        hg_atomic_incr32(&aseq.cache->mutcnt);
     assert(exit_mutcnt == aseq.enter_mutcnt + 1);
 }
 
@@ -498,7 +499,7 @@ static void
 na_ucx_wiring_lock(wiring_t NA_UNUSED *wiring, void *arg)
 {
     hg_thread_mutex_t *mtx = arg;
-    const int rc = hg_thread_mutex_lock(mtx);
+    const int NA_DEBUG_USED rc = hg_thread_mutex_lock(mtx);
 
     assert(rc == HG_UTIL_SUCCESS);
 }
@@ -507,7 +508,7 @@ static void
 na_ucx_wiring_unlock(wiring_t NA_UNUSED *wiring, void *arg)
 {
     hg_thread_mutex_t *mtx = arg;
-    const int rc = hg_thread_mutex_unlock(mtx);
+    const int NA_DEBUG_USED rc = hg_thread_mutex_unlock(mtx);
 
     assert(rc == HG_UTIL_SUCCESS);
 }
@@ -1608,7 +1609,8 @@ na_ucx_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *ctx,
     na_uint8_t NA_UNUSED source_id, na_tag_t proto_tag, na_op_id_t *op_id)
 {
     na_ucx_context_t *nuctx = ctx->plugin_context;
-    const na_tag_t maxtag = MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->tagmask));
+    const na_tag_t NA_DEBUG_USED maxtag =
+        MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->tagmask));
 
     assert(proto_tag <= maxtag);
 
@@ -1812,7 +1814,7 @@ na_ucx_copy(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
     , .user_data = op_id
     };
     ucp_ep_h ep;
-    na_ucx_context_t *nuctx;
+    na_ucx_context_t NA_DEBUG_USED *nuctx;
     address_wire_t *cache = &remote_addr->wire_cache;
     ucs_status_ptr_t request;
     unpacked_rkey_t *unpacked = &remote_mh->handle.unpacked_remote;
