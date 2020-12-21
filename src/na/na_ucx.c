@@ -1709,7 +1709,7 @@ na_ucx_mem_handle_get_serialize_size(na_class_t *na_class, na_mem_handle_t mh)
 
     status = ucp_rkey_pack(nuclass->uctx, mh->handle.local.mh, &ptr, &size);
     if (status != UCS_OK)
-        return 0;       // ok for error?
+        return 0;   // ok for error?
     ucp_rkey_buffer_release(ptr);
 
     return size;
@@ -1733,7 +1733,7 @@ na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf, na_size_t buf_size
 
     status = ucp_rkey_pack(nuclass->uctx, mh->handle.local.mh, &rkey, &size);
     if (status != UCS_OK)
-        return NA_PROTOCOL_ERROR;       // ok for error?
+        return NA_PROTOCOL_ERROR;   // ok for error?
 
     if (buf_size < size)
         return NA_OVERFLOW;
