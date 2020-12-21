@@ -1148,7 +1148,6 @@ recv_callback(void NA_UNUSED *request, ucs_status_t status,
         &cbinfo->info.recv_unexpected;
     const op_status_t expected_status =
         (status == UCS_ERR_CANCELED) ? op_s_canceled : op_s_underway;
-    int rc;
 
     NA_LOG_DEBUG("op id %p ucx status %s",
         (void *)op_id, ucs_status_string(status));
@@ -1189,14 +1188,8 @@ recv_callback(void NA_UNUSED *request, ucs_status_t status,
         cbinfo->ret = NA_PROTOCOL_ERROR;
     }
 
-    rc = na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
-
-    if (rc != NA_SUCCESS) {
-        NA_LOG_ERROR("could not enqueue completion for op id %p",
-            (void *)op_id);
-    } else {
-        NA_LOG_DEBUG("enqueued completion for op id %p", (void *)op_id);
-    }
+    na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
+    NA_LOG_DEBUG("enqueued completion for op id %p", (void *)op_id);
 }
 
 static void
@@ -1205,7 +1198,6 @@ send_callback(void NA_UNUSED *request, ucs_status_t status,
 {
     na_op_id_t *op_id = user_data;
     struct na_cb_info *cbinfo = &op_id->completion_data.callback_info;
-    int rc;
     const op_status_t expected_status =
         (status == UCS_ERR_CANCELED) ? op_s_canceled : op_s_underway;
 
@@ -1226,12 +1218,9 @@ send_callback(void NA_UNUSED *request, ucs_status_t status,
     else
         cbinfo->ret = NA_PROTOCOL_ERROR;
 
-    rc = na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
+    na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
 
-    if (rc != NA_SUCCESS) {
-        NA_LOG_ERROR("could not enqueue completion for op id %p",
-            (void *)op_id);
-    }
+    NA_LOG_DEBUG("enqueued completion for op id %p", (void *)op_id);
 }
 
 static na_return_t
@@ -1335,12 +1324,12 @@ tagged_send(na_ucx_context_t *ctx, const void *buf, na_size_t buf_size,
             ucs_status_string(UCS_PTR_STATUS(request)));
         hg_atomic_set32(&op_id->status, op_s_complete);
         op_id->completion_data.callback_info.ret = NA_PROTOCOL_ERROR;
-        return na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
+        na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
     } else if (request == UCS_OK) {
         // send was immediate: queue completion
         hg_atomic_set32(&op_id->status, op_s_complete);
         op_id->completion_data.callback_info.ret = NA_SUCCESS;
-        return na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
+        na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
     }
 
     return NA_SUCCESS;
@@ -1870,7 +1859,7 @@ na_ucx_copy(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
         // send was immediate: queue completion
         hg_atomic_set32(&op_id->status, op_s_complete);
         op_id->completion_data.callback_info.ret = NA_SUCCESS;
-        return na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
+        na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
     }
 
     return NA_SUCCESS;
