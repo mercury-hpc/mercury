@@ -406,7 +406,10 @@ zalloc(size_t size)
 static NA_INLINE void
 op_id_release(void *arg)
 {
-    free(arg);
+    na_op_id_t *op_id = arg;
+
+    if (hg_atomic_get32(&op_id->status) != op_s_complete)
+        NA_LOG_ERROR("releasing an uncompleted op");
 }
 
 static inline const na_ucx_class_t *
