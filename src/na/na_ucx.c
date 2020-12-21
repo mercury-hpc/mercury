@@ -1628,6 +1628,8 @@ na_ucx_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     if ((mh = zalloc(sizeof(*mh))) == NULL)
         return NA_NOMEM;
 
+    NA_LOG_DEBUG("memory handle %p", mh);
+
     hg_atomic_set32(&mh->kind, na_ucx_mem_local);
     mh->handle.local.buf = buf;
     status = ucp_mem_map(nuclass->uctx, &params, &mh->handle.local.mh);
@@ -1646,6 +1648,8 @@ na_ucx_mem_handle_free(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
 {
     const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
     ucs_status_t status;
+
+    NA_LOG_DEBUG("memory handle %p", mh);
 
     switch (hg_atomic_get32(&mh->kind)) {
     case na_ucx_mem_local:
@@ -1668,20 +1672,26 @@ na_ucx_mem_handle_get_max_segments(const na_class_t NA_UNUSED *na_class)
     return 1;
 }
 
+/* This is a no-op for UCP but we do check the arguments. */
 static na_return_t
 na_ucx_mem_register(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
 {
-    /* This is a no-op for UCP but we do check the arguments. */
-    const hg_util_int32_t kind = hg_atomic_get32(&mh->kind);
-    return (kind == na_ucx_mem_local) ? NA_SUCCESS : NA_INVALID_ARG;
+    NA_LOG_DEBUG("memory handle %p", mh);
+
+    if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local) {
+        NA_LOG_ERROR("%p is not a local handle", mh);
+        return NA_INVALID_ARG;
+    }
+    return NA_SUCCESS;
 }
 
+/* This is a no-op for UCP but we do check the arguments. */
 static na_return_t
 na_ucx_mem_deregister(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
 {
-    /* This is a no-op for UCP but we do check the arguments. */
-    const hg_util_int32_t kind = hg_atomic_get32(&mh->kind);
-    return (kind == na_ucx_mem_local) ? NA_SUCCESS : NA_INVALID_ARG;
+    NA_LOG_DEBUG("memory handle %p", mh);
+
+    return NA_SUCCESS;
 }
 
 static NA_INLINE na_size_t
@@ -1692,8 +1702,10 @@ na_ucx_mem_handle_get_serialize_size(na_class_t *na_class, na_mem_handle_t mh)
     void *ptr;
     size_t size;
 
-    if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local)
-        return NA_INVALID_ARG;
+    if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local) {
+        NA_LOG_ERROR("non-local memory handle %p cannot be serialized", mh);
+        return 0;   // ok for error?
+    }
 
     status = ucp_rkey_pack(nuclass->uctx, mh->handle.local.mh, &ptr, &size);
     if (status != UCS_OK)
@@ -1714,8 +1726,10 @@ na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf, na_size_t buf_size
     size_t size;
     ucs_status_t status;
 
-    if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local)
+    if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local) {
+        NA_LOG_ERROR("non-local memory handle %p cannot be serialized", mh);
         return NA_INVALID_ARG;
+    }
 
     status = ucp_rkey_pack(nuclass->uctx, mh->handle.local.mh, &rkey, &size);
     if (status != UCS_OK)
@@ -1740,6 +1754,8 @@ na_ucx_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
 
     if ((mh = zalloc(sizeof(*mh))) == NULL)
         return NA_NOMEM;
+
+    NA_LOG_DEBUG("memory handle %p", mh);
 
     if ((duplicate = memdup(buf, buf_size)) == NULL) {
         free(mh);
