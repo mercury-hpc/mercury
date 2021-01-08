@@ -29,8 +29,9 @@ void * const wire_data_nil = &wire_no_data;
 
 static const ucp_tag_t wireup_start_tag = TAG_CHNL_WIREUP | TAG_ID_MASK;
 
-static const uint64_t keepalive_interval = 1000000000;  // 1 second
-static const uint64_t timeout_interval = 2 * keepalive_interval;
+#define _KEEPALIVE_INTERVAL 1000000000
+static const uint64_t keepalive_interval = _KEEPALIVE_INTERVAL;  // 1 second
+static const uint64_t timeout_interval = 2 * _KEEPALIVE_INTERVAL;
 
 static uint64_t getnanos(void);
 
