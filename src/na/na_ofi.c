@@ -3018,9 +3018,14 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
                 hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED,
                 out, ret, NA_FAULT, "Operation ID was completed");
             NA_LOG_DEBUG("FI_ECANCELED event on operation ID %p", na_ofi_op_id);
-            NA_CHECK_ERROR(
+
+            /* When tearing down connections, it is possible that operations
+            will be canceled by libfabric itself.
+
+            NA_CHECK_WARNING(
                 !(hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELED),
-                out, ret, NA_FAULT, "Operation ID was not canceled");
+                "Operation ID was not canceled by user");
+            */
 
             /* Complete operation in canceled state */
             ret = na_ofi_complete(na_ofi_op_id);
