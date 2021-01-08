@@ -173,6 +173,8 @@ wireup_transition(wiring_t *wiring, wire_t *w,
           , .ep = w->ep
           , .sender_id = w->id
         }, w->cb_arg);
+    } else {
+        reset_cb = false;
     }
 
     if (reset_cb) {
