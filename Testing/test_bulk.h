@@ -24,8 +24,6 @@ MERCURY_GEN_PROC(bulk_write_in_t,
     ((hg_int32_t)(fildes))((hg_size_t)(transfer_size))((hg_size_t)(
         origin_offset))((hg_size_t)(target_offset))((hg_bulk_t)(bulk_handle)))
 MERCURY_GEN_PROC(bulk_write_out_t, ((hg_size_t)(ret)))
-MERCURY_GEN_PROC(
-    bulk_bind_write_out_t, ((hg_size_t)(ret))((hg_bulk_t)(bulk_handle)))
 #else
 /* Define bulk_write_in_t */
 typedef struct {
@@ -79,30 +77,6 @@ hg_proc_bulk_write_out_t(hg_proc_t proc, void *data)
     bulk_write_out_t *struct_data = (bulk_write_out_t *) data;
 
     ret = hg_proc_hg_size_t(proc, &struct_data->ret);
-    if (ret != HG_SUCCESS)
-        return ret;
-
-    return ret;
-}
-
-/* Define bulk_write_out_t */
-typedef struct {
-    hg_size_t ret;
-    hg_bulk_t bulk_handle;
-} bulk_bind_write_out_t;
-
-/* Define hg_proc_bulk_write_out_t */
-static HG_INLINE hg_return_t
-hg_proc_bulk_bind_write_out_t(hg_proc_t proc, void *data)
-{
-    hg_return_t ret = HG_SUCCESS;
-    bulk_bind_write_out_t *struct_data = (bulk_bind_write_out_t *) data;
-
-    ret = hg_proc_hg_size_t(proc, &struct_data->ret);
-    if (ret != HG_SUCCESS)
-        return ret;
-
-    ret = hg_proc_hg_bulk_t(proc, &struct_data->bulk_handle);
     if (ret != HG_SUCCESS)
         return ret;
 

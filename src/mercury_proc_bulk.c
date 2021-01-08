@@ -42,6 +42,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
             hg_uint8_t flags = 0;
             hg_bool_t use_eager = HG_FALSE;
 
+            HG_LOG_DEBUG("HG_ENCODE");
+
             /* If HG_BULK_NULL set 0 to buf_size */
             if (*bulk_ptr == HG_BULK_NULL) {
                 /* Encode zero size */
@@ -67,16 +69,20 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
                     (buf_size + sizeof(hg_uint64_t)))
                     use_eager = HG_TRUE;
             }
-            if (use_eager)
+            if (use_eager) {
+                HG_LOG_DEBUG("HG_BULK_EAGER flag set");
                 flags |= HG_BULK_EAGER;
-            else /* We must recompute the serialize size without eager flag */
+            } else /* We must recompute the serialize size without eager flag */
                 buf_size = HG_Bulk_get_serialize_size(*bulk_ptr, flags);
+
+            HG_LOG_DEBUG("Serialize size for bulk handle is %zu", buf_size);
 
             /* Encode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
             HG_CHECK_HG_ERROR(done, ret, "Could not encode serialize size");
 
             if (buf_size == hg_bulk_get_serialize_cached_size(*bulk_ptr)) {
+                HG_LOG_DEBUG("Using cached pointer to serialized handle");
                 void *cached_ptr = hg_bulk_get_serialize_cached_ptr(*bulk_ptr);
                 hg_proc_bytes(proc, cached_ptr, buf_size);
             } else {
@@ -89,6 +95,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
         }
         case HG_DECODE: {
             hg_class_t *hg_class = hg_proc_get_class(proc);
+
+            HG_LOG_DEBUG("HG_DECODE");
 
             /* Decode size */
             ret = hg_proc_uint64_t(proc, &buf_size);
@@ -105,11 +113,15 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
             HG_CHECK_HG_ERROR(done, ret, "Could not deserialize handle");
 
             /* Cache serialize ptr to buf */
+            HG_LOG_DEBUG("Caching pointer to serialized bulk handle (%p, %llu)",
+                buf, buf_size);
             hg_bulk_set_serialize_cached_ptr(*bulk_ptr, buf, buf_size);
             hg_proc_restore_ptr(proc, buf, buf_size);
             break;
         }
         case HG_FREE:
+            HG_LOG_DEBUG("HG_FREE");
+
             /* If bulk handle is HG_BULK_NULL, just return success */
             if (*bulk_ptr == HG_BULK_NULL)
                 break;

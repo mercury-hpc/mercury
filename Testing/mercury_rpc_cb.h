@@ -32,6 +32,8 @@ hg_return_t
 hg_test_bulk_write_cb(hg_handle_t handle);
 hg_return_t
 hg_test_bulk_bind_write_cb(hg_handle_t handle);
+hg_return_t
+hg_test_bulk_bind_forward_cb(hg_handle_t handle);
 
 /**
  * test_kill

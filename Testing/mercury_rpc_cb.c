@@ -90,6 +90,12 @@ struct hg_test_bulk_args {
     hg_size_t target_offset;
 };
 
+struct hg_test_bulk_fwd_args {
+    hg_handle_t handle;
+    hg_handle_t fwd_handle;
+    bulk_write_in_t in_struct;
+};
+
 /********************/
 /* Local Prototypes */
 /********************/
@@ -101,11 +107,16 @@ static hg_return_t
 hg_test_bulk_bind_transfer_cb(const struct hg_cb_info *hg_cb_info);
 
 static hg_return_t
+hg_test_bulk_bind_forward_fwd_cb(const struct hg_cb_info *hg_cb_info);
+
+static hg_return_t
 hg_test_perf_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info);
 
 /*******************/
 /* Local Variables */
 /*******************/
+
+extern hg_id_t hg_test_bulk_bind_write_id_g;
 
 // extern hg_id_t hg_test_nested2_id_g;
 // hg_addr_t *hg_addr_table;
@@ -470,6 +481,119 @@ error:
 }
 
 /*---------------------------------------------------------------------------*/
+HG_TEST_RPC_CB(hg_test_bulk_bind_forward, handle)
+{
+    const struct hg_info *hg_info = NULL;
+    struct hg_test_bulk_fwd_args *args = NULL;
+    hg_addr_t self_addr = HG_ADDR_NULL;
+    hg_return_t ret = HG_SUCCESS;
+
+    args = (struct hg_test_bulk_fwd_args *) malloc(
+        sizeof(struct hg_test_bulk_fwd_args));
+    HG_TEST_CHECK_ERROR(
+        args == NULL, error, ret, HG_NOMEM_ERROR, "Could not allocate args");
+    args->handle = handle;
+
+    /* Get info from handle */
+    hg_info = HG_Get_info(handle);
+
+    /* Get input parameters and data */
+    ret = HG_Get_input(handle, &args->in_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Get_input() failed (%s)", HG_Error_to_string(ret));
+
+    ret = HG_Addr_self(hg_info->hg_class, &self_addr);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Addr_self() failed (%s)", HG_Error_to_string(ret));
+
+    /* Forward to self */
+    HG_TEST_LOG_DEBUG("Forwarding RPC request to self");
+    ret = HG_Create(hg_info->context, self_addr, hg_test_bulk_bind_write_id_g,
+        &args->fwd_handle);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
+
+    ret = HG_Addr_free(hg_info->hg_class, self_addr);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Addr_free() failed (%s)", HG_Error_to_string(ret));
+    self_addr = HG_ADDR_NULL;
+
+    ret = HG_Forward(args->fwd_handle, hg_test_bulk_bind_forward_fwd_cb, args,
+        &args->in_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        error, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
+
+    return ret;
+
+error:
+    if (args && args->fwd_handle != HG_HANDLE_NULL) {
+        ret = HG_Destroy(args->fwd_handle);
+        HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Destroy() failed (%s)",
+            HG_Error_to_string(ret));
+    }
+    free(args);
+
+    if (self_addr != HG_ADDR_NULL) {
+        ret = HG_Addr_free(hg_info->hg_class, self_addr);
+        HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS,
+            "HG_Addr_free() failed (%s)", HG_Error_to_string(ret));
+    }
+
+    ret = HG_Destroy(handle);
+    HG_TEST_CHECK_ERROR_DONE(
+        ret != HG_SUCCESS, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static hg_return_t
+hg_test_bulk_bind_forward_fwd_cb(const struct hg_cb_info *hg_cb_info)
+{
+    struct hg_test_bulk_fwd_args *args =
+        (struct hg_test_bulk_fwd_args *) hg_cb_info->arg;
+    hg_return_t ret = HG_SUCCESS;
+    bulk_write_out_t out_struct;
+
+    HG_TEST_CHECK_ERROR_NORET(hg_cb_info->ret != HG_SUCCESS, done,
+        "Error in HG callback (%s)", HG_Error_to_string(hg_cb_info->ret));
+
+    ret = HG_Get_output(args->fwd_handle, &out_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Get_output() failed (%s)", HG_Error_to_string(ret));
+
+done:
+    HG_TEST_LOG_DEBUG("Forwarding RPC response back");
+
+    /* Send response back */
+    ret = HG_Respond(args->handle, NULL, NULL, &out_struct);
+    HG_TEST_CHECK_ERROR_DONE(
+        ret != HG_SUCCESS, "HG_Respond() failed (%s)", HG_Error_to_string(ret));
+
+    /* Free request */
+    ret = HG_Free_output(args->fwd_handle, &out_struct);
+    HG_TEST_CHECK_HG_ERROR(
+        done, ret, "HG_Free_output() failed (%s)", HG_Error_to_string(ret));
+
+    ret = HG_Destroy(args->fwd_handle);
+    HG_TEST_CHECK_ERROR_DONE(
+        ret != HG_SUCCESS, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
+
+    /* Free input */
+    ret = HG_Free_input(args->handle, &args->in_struct);
+    HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Free_input() failed (%s)",
+        HG_Error_to_string(ret));
+
+    ret = HG_Destroy(args->handle);
+    HG_TEST_CHECK_ERROR_DONE(
+        ret != HG_SUCCESS, "HG_Destroy() failed (%s)", HG_Error_to_string(ret));
+
+    free(args);
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
 static hg_return_t
 hg_test_bulk_transfer_cb(const struct hg_cb_info *hg_cb_info)
 {
@@ -542,7 +666,7 @@ hg_test_bulk_bind_transfer_cb(const struct hg_cb_info *hg_cb_info)
         .origin_offset = bulk_args->origin_offset,
         .target_offset = bulk_args->target_offset,
         .bulk_handle = origin_bulk_handle};
-    bulk_bind_write_out_t out_struct;
+    bulk_write_out_t out_struct;
     void *buf;
     size_t write_ret;
 
@@ -569,9 +693,6 @@ hg_test_bulk_bind_transfer_cb(const struct hg_cb_info *hg_cb_info)
     out_struct.ret = write_ret;
 
 done:
-    /* Try to send the bulk handle back */
-    out_struct.bulk_handle = origin_bulk_handle;
-
     /* Free block handle */
     ret = HG_Bulk_free(local_bulk_handle);
     HG_TEST_CHECK_ERROR_DONE(ret != HG_SUCCESS, "HG_Bulk_free() failed (%s)",
@@ -918,6 +1039,7 @@ HG_TEST_THREAD_CB(hg_test_cancel_rpc)
 
 HG_TEST_THREAD_CB(hg_test_bulk_write)
 HG_TEST_THREAD_CB(hg_test_bulk_bind_write)
+HG_TEST_THREAD_CB(hg_test_bulk_bind_forward)
 
 HG_TEST_THREAD_CB(hg_test_killed_rpc)
 
