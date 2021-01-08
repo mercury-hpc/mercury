@@ -21,4 +21,10 @@
 #    define wiring_unused
 #endif
 
+#ifdef NDEBUG
+#define wiring_debug_used wiring_unused
+#else
+#define wiring_debug_used
+#endif
+
 #endif /* _WIRING_COMPAT_H */

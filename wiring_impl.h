@@ -206,7 +206,7 @@ wiring_free_get(wstorage_t *storage)
         return sender_id_nil;
     w = &storage->wire[id];
     for (which = 0; which < timo_nlinks; which++) {
-        timeout_link_t *link = &w->tlink[which];
+        timeout_link_t * wiring_debug_used link = &w->tlink[which];
         assert(link->next == id && link->prev == id);
     }
     storage->first_free = w->next_free;
