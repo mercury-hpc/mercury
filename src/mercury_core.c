@@ -69,6 +69,7 @@
 #define HG_CORE_OP_CANCELED  (1 << 1)
 #define HG_CORE_OP_POSTED    (1 << 2)
 #define HG_CORE_OP_ERRORED   (1 << 3)
+#define HG_CORE_OP_QUEUED    (1 << 4)
 
 /* Encode type */
 #define HG_CORE_TYPE_ENCODE(label, ret, buf_ptr, buf_size_left, data, size)    \
@@ -2592,8 +2593,8 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
     hg_size_t header_size;
     hg_return_t ret = HG_SUCCESS;
 
-    /* Make sure any cancelation has been processed on this handle before
-     * re-using it */
+    /* Make sure any internal cancelation has been processed on this handle
+     * before re-using it */
     status = hg_atomic_get32(&hg_core_handle->status);
     while ((status & HG_CORE_OP_CANCELED) && !(status & HG_CORE_OP_COMPLETED)) {
         int cb_ret[HG_CORE_MAX_TRIGGER_COUNT] = {0};
@@ -2605,14 +2606,16 @@ hg_core_forward(struct hg_core_private_handle *hg_core_handle,
         HG_CHECK_ERROR(na_ret != NA_SUCCESS && na_ret != NA_TIMEOUT, done, ret,
             (hg_return_t) na_ret, "Could not trigger NA callback (%s)",
             NA_Error_to_string(na_ret));
+
+        status = hg_atomic_get32(&hg_core_handle->status);
     }
     HG_CHECK_ERROR(
-        !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED),
-        done, ret, HG_BUSY, "Attempting to use handle that was not completed");
+        !(status & HG_CORE_OP_COMPLETED) || (status & HG_CORE_OP_QUEUED), done,
+        ret, HG_BUSY, "Attempting to use handle that was not completed");
 
-    /* Make sure op ID is fully released before re-using it */
-    while (hg_atomic_cas32(&hg_core_handle->ref_count, 1, 2) != HG_UTIL_TRUE)
-        cpu_spinwait();
+    /* Increment ref_count on handle to allow for destroy to be pre-emptively
+     * called */
+    hg_atomic_incr32(&hg_core_handle->ref_count);
 
 #ifdef HG_HAS_COLLECT_STATS
     /* Increment counter */
@@ -3565,8 +3568,11 @@ hg_core_complete(hg_core_handle_t handle)
     hg_return_t ret = HG_SUCCESS;
     hg_util_int32_t status;
 
-    /* Mark op id as completed before checking for cancelation */
-    status = hg_atomic_or32(&hg_core_handle->status, HG_CORE_OP_COMPLETED);
+    /* Mark op id as completed before checking for cancelation, also mark the
+     * operation as queued to track when it will be released from the completion
+     * queue. */
+    status = hg_atomic_or32(
+        &hg_core_handle->status, HG_CORE_OP_COMPLETED | HG_CORE_OP_QUEUED);
 
     /* Check for current status before completing */
     if (status & HG_CORE_OP_CANCELED) {
@@ -4049,6 +4055,7 @@ hg_core_trigger_lookup_entry(struct hg_core_op_id *hg_core_op_id)
         hg_core_op_id->callback(&hg_core_cb_info);
     }
 
+    /* NB. OK to free after callback execution, op ID is not re-used */
     free(hg_core_op_id);
 
     return ret;
@@ -4059,6 +4066,8 @@ static hg_return_t
 hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
 {
     hg_return_t ret = HG_SUCCESS;
+
+    hg_atomic_and32(&hg_core_handle->status, ~HG_CORE_OP_QUEUED);
 
     if (hg_core_handle->op_type == HG_CORE_PROCESS) {
 
@@ -4126,7 +4135,9 @@ hg_core_trigger_entry(struct hg_core_private_handle *hg_core_handle)
                     "Invalid core operation type");
         }
 
-        /* Execute user callback */
+        /* Execute user callback.
+         * NB. The handle cannot be destroyed before the callback execution as
+         * the user may carry the handle in the callback. */
         if (hg_cb)
             hg_cb(&hg_core_cb_info);
     }
@@ -4894,16 +4905,16 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
     na_context_t *na_context;
     na_addr_t na_addr = NA_ADDR_NULL;
     hg_return_t ret = HG_SUCCESS;
+    hg_util_int32_t status;
 
     HG_CHECK_ERROR(hg_core_handle == NULL, done, ret, HG_INVALID_ARG,
         "NULL HG core handle");
 
     /* Not safe to reset unless in completed state */
+    status = hg_atomic_get32(&hg_core_handle->status);
     HG_CHECK_ERROR(
-        !(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_COMPLETED),
-        done, ret, HG_BUSY,
-        "Cannot reset HG core handle, still in use, refcount: %d",
-        hg_atomic_get32(&hg_core_handle->ref_count));
+        !(status & HG_CORE_OP_COMPLETED) || (status & HG_CORE_OP_QUEUED), done,
+        ret, HG_BUSY, "Cannot reset HG core handle, still in use");
 
     HG_LOG_DEBUG(
         "Resetting handle (%p) with ID=%llu, address (%p)", handle, id, addr);

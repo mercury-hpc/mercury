@@ -2475,7 +2475,8 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
     ret = hg_bulk_free(hg_bulk_op_id->callback_info.info.bulk.local_handle);
     HG_CHECK_HG_ERROR(done, ret, "Could not free local handle");
 
-    /* Release bulk op ID */
+    /* Release bulk op ID (can be released after callback execution since
+     * op IDs are managed internally) */
     ret = hg_bulk_op_destroy(hg_bulk_op_id);
     HG_CHECK_HG_ERROR(done, ret, "Could not destroy bulk op ID");
 
