@@ -1,9 +1,6 @@
 #!/bin/bash
 
 BMI_VERSION=master
-CMAKE_VERSION_MAJOR=3.19
-CMAKE_VERSION_MINOR=2
-MPI_VERSION=3.4
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Tsan' ]]; then
   OFI_CFLAGS="-O1 -g -fsanitize=thread"
   OFI_EXTRA_FLAGS="--enable-debug"
@@ -13,11 +10,11 @@ if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
 fi
 #OFI_PR=
 OFI_VERSION=1.11.2
-PREFIX=$HOME/install
+PREFIX=${RUNNER_TEMP}/${INSTALL_DIR}
 
 set -e
 
-if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
+if [[ ${RUNNER_OS} == 'Linux' ]]; then
   # BMI
   if [ -f "$PREFIX/bmi_version.txt" ]; then
     BMI_INSTALLED_VERSION=`cat $PREFIX/bmi_version.txt`;
@@ -25,38 +22,13 @@ if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
   if [ ! -f "$PREFIX/include/bmi.h" ] || [ "$BMI_INSTALLED_VERSION" != "${BMI_VERSION}" ]; then
     cd $HOME && wget --no-check-certificate http://xgitlab.cels.anl.gov/sds/bmi/-/archive/${BMI_VERSION}/bmi-${BMI_VERSION}.tar.bz2;
     tar -xjf bmi-${BMI_VERSION}.tar.bz2;
-    # if [[ $TRAVIS_OS_NAME == 'osx' ]]; then
+    # if [[ $OS_NAME == 'osx' ]]; then
     #    patch -p1 < ${TRAVIS_BUILD_DIR}/Testing/script/bmi_osx.patch
     # fi
     cd bmi-${BMI_VERSION} && ./prepare && ./configure --enable-shared --disable-static --enable-bmi-only --prefix=$PREFIX && make -j2 -s && make install;
     echo "${BMI_VERSION}" > $PREFIX/bmi_version.txt
   else
     echo "Using cached directory for BMI";
-  fi
-
-  # CMake
-  if [ -f "$PREFIX/cmake_version.txt" ]; then
-    CMAKE_INSTALLED_VERSION=`cat $PREFIX/cmake_version.txt`;
-  fi
-  if [ ! -f "$PREFIX/bin/cmake" ] || [ "$CMAKE_INSTALLED_VERSION" != "${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}" ]; then
-    cd $HOME && wget --no-check-certificate http://www.cmake.org/files/v${CMAKE_VERSION_MAJOR}/cmake-${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}-Linux-x86_64.tar.gz;
-    tar --strip-components=1 -xzC $PREFIX -f cmake-${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}-Linux-x86_64.tar.gz;
-    echo "${CMAKE_VERSION_MAJOR}.${CMAKE_VERSION_MINOR}" > $PREFIX/cmake_version.txt
-  else
-    echo "Using cached directory for CMake";
-  fi
-
-  # MPI
-  if [ -f "$PREFIX/mpi_version.txt" ]; then
-    MPI_INSTALLED_VERSION=`cat $PREFIX/mpi_version.txt`;
-  fi
-  if [ ! -f "$PREFIX/bin/mpicc" ] || [ "${MPI_INSTALLED_VERSION}" != "${MPI_VERSION}" ]; then
-    cd $HOME && wget http://www.mpich.org/static/downloads/${MPI_VERSION}/mpich-${MPI_VERSION}.tar.gz;
-    tar -xzf mpich-${MPI_VERSION}.tar.gz;
-    cd mpich-${MPI_VERSION} && ./configure --disable-fortran --prefix=$PREFIX && make -j2 -s && make install;
-    echo "${MPI_VERSION}" > $PREFIX/mpi_version.txt
-  else
-    echo "Using cached directory for MPI";
   fi
 
   # OFI
@@ -81,4 +53,3 @@ if [[ $TRAVIS_OS_NAME == 'linux' ]]; then
     echo "Using cached directory for OFI";
   fi
 fi
-
