@@ -2090,7 +2090,7 @@ na_ucx_msg_get_max_tag(const na_class_t *na_class)
 {
     const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
     const na_tag_t maxtag =
-        MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuclass->context.tagmask));
+        MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuclass->context.msg.tagmask));
 
     assert(maxtag >= 3);
 
