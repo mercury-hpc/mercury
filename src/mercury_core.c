@@ -2884,13 +2884,16 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
 
     /* More data on output requires an ack once it is processed */
     if (hg_core_handle->out_header.msg.response.flags & HG_CORE_MORE_DATA) {
+        na_size_t buf_size =
+            hg_core_handle->core_handle.na_out_header_offset +
+            sizeof(hg_uint8_t);
         hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
-            sizeof(hg_uint8_t), &hg_core_handle->ack_buf_plugin_data);
+            buf_size, &hg_core_handle->ack_buf_plugin_data);
         HG_CHECK_ERROR(hg_core_handle->ack_buf == NULL, error, ret, HG_NA_ERROR,
             "Could not allocate buffer for ack");
 
         na_ret = NA_Msg_init_expected(hg_core_handle->na_class,
-            hg_core_handle->ack_buf, sizeof(hg_uint8_t));
+            hg_core_handle->ack_buf, buf_size);
         HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
             "Could not initialize ack buffer (%s)", NA_Error_to_string(na_ret));
 
@@ -2900,7 +2903,7 @@ hg_core_respond_na(struct hg_core_private_handle *hg_core_handle)
         /* Pre-post recv (ack) if more data is expected */
         na_ret = NA_Msg_recv_expected(hg_core_handle->na_class,
             hg_core_handle->na_context, hg_core_recv_ack_cb, hg_core_handle,
-            hg_core_handle->ack_buf, sizeof(hg_uint8_t),
+            hg_core_handle->ack_buf, buf_size,
             hg_core_handle->ack_buf_plugin_data, hg_core_handle->na_addr,
             hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
             hg_core_handle->na_ack_op_id);
@@ -3316,25 +3319,26 @@ hg_core_send_ack(hg_core_handle_t handle)
         (struct hg_core_private_handle *) handle;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
+    na_size_t buf_size = handle->na_out_header_offset + sizeof(hg_uint8_t);
 
     /* Increment number of expected NA operations */
     hg_core_handle->na_op_count++;
 
     /* Allocate buffer for ack */
     hg_core_handle->ack_buf = NA_Msg_buf_alloc(hg_core_handle->na_class,
-        sizeof(hg_uint8_t), &hg_core_handle->ack_buf_plugin_data);
+        buf_size, &hg_core_handle->ack_buf_plugin_data);
     HG_CHECK_ERROR(hg_core_handle->ack_buf == NULL, error, ret, HG_NA_ERROR,
         "Could not allocate buffer for ack");
 
     na_ret = NA_Msg_init_expected(
-        hg_core_handle->na_class, hg_core_handle->ack_buf, sizeof(hg_uint8_t));
+        hg_core_handle->na_class, hg_core_handle->ack_buf, buf_size);
     HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
         "Could not initialize ack buffer (%s)", NA_Error_to_string(na_ret));
 
     /* Post expected send (ack) */
     na_ret = NA_Msg_send_expected(hg_core_handle->na_class,
         hg_core_handle->na_context, hg_core_send_ack_cb, hg_core_handle,
-        hg_core_handle->ack_buf, sizeof(hg_uint8_t),
+        hg_core_handle->ack_buf, buf_size,
         hg_core_handle->ack_buf_plugin_data, hg_core_handle->na_addr,
         hg_core_handle->core_handle.info.context_id, hg_core_handle->tag,
         hg_core_handle->na_ack_op_id);
