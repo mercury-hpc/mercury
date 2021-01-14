@@ -8,10 +8,11 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "mercury_test.h"
-
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#include "mercury_test.h"
 
 /****************/
 /* Local Macros */
@@ -155,7 +156,7 @@ hg_test_bulk_null(hg_class_t *hg_class, hg_context_t *context,
         bulk_write_in_struct.target_offset);
 
     /* Forward call to remote addr and get a new request */
-    HG_TEST_LOG_DEBUG("Forwarding call with op id: %u...", rpc_id);
+    HG_TEST_LOG_DEBUG("Forwarding call with op id: %" PRIu64 "...", rpc_id);
     forward_cb_args.request = request;
     forward_cb_args.expected_bytes = 0;
     forward_cb_args.ret = HG_SUCCESS;
@@ -259,7 +260,7 @@ hg_test_bulk_contig(hg_class_t *hg_class, hg_context_t *context,
         bulk_write_in_struct.target_offset);
 
     /* Forward call to remote addr and get a new request */
-    HG_TEST_LOG_DEBUG("Forwarding call with op id: %u...", rpc_id);
+    HG_TEST_LOG_DEBUG("Forwarding call with op id: %" PRIu64 "...", rpc_id);
     forward_cb_args.request = request;
     forward_cb_args.expected_bytes = transfer_size;
     forward_cb_args.ret = HG_SUCCESS;
@@ -358,7 +359,7 @@ hg_test_bulk_seg(hg_class_t *hg_class, hg_context_t *context,
 
     /* Forward call to remote addr and get a new request */
     HG_TEST_LOG_DEBUG(
-        "Forwarding call with op id: %u...", hg_test_bulk_write_id_g);
+        "Forwarding call with op id: %" PRIu64 "...", hg_test_bulk_write_id_g);
     forward_cb_args.request = request;
     forward_cb_args.expected_bytes = transfer_size;
     forward_cb_args.ret = HG_SUCCESS;
@@ -445,7 +446,7 @@ hg_test_bulk_small(hg_class_t *hg_class, hg_context_t *context,
 
     /* Forward call to remote addr and get a new request */
     HG_TEST_LOG_DEBUG(
-        "Forwarding call with op id: %u...", hg_test_bulk_write_id_g);
+        "Forwarding call with op id: %" PRIu64 "...", hg_test_bulk_write_id_g);
     forward_cb_args.request = request;
     forward_cb_args.expected_bytes = transfer_size;
     forward_cb_args.ret = HG_SUCCESS;
