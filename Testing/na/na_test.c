@@ -543,5 +543,8 @@ NA_Test_bcast(char *buf, int count, int root, struct na_test_info *na_test_info)
     MPI_Bcast(buf, count, MPI_BYTE, root, na_test_info->mpi_comm);
 #else
     (void) na_test_info;
+    (void) count;
+    (void) root;
+    (void) buf;
 #endif
 }
