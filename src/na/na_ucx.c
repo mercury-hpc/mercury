@@ -1179,6 +1179,9 @@ recv_callback(void NA_UNUSED *request, ucs_status_t status,
             (void *)op_id, ucs_status_string(status));
     }
 
+    assert(request == op_id->request);
+    op_id->request = NULL;
+
     if (status == UCS_OK) {
         na_ucx_context_t *nuctx = op_id->na_ctx->plugin_context;
         sender_id_t sender_id;
@@ -1271,6 +1274,9 @@ send_callback(void NA_UNUSED *request, ucs_status_t status,
             op_status_string(op_id->status));
     }
 
+    assert(request == op_id->request);
+    op_id->request = NULL;
+
     if (status == UCS_OK)
         cbinfo->ret = NA_SUCCESS;
     else if (status == UCS_ERR_CANCELED)
@@ -1350,8 +1356,12 @@ na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
     case NA_CB_SEND_UNEXPECTED:
     case NA_CB_SEND_EXPECTED:
     case NA_CB_RECV_EXPECTED:
-        if (hg_atomic_cas32(&op_id->status, op_s_underway, op_s_canceled))
+        if (hg_atomic_cas32(&op_id->status, op_s_underway, op_s_canceled)) {
+            /* UCP will still run the callback, which will reset
+             * `op_id->request`
+             */
             ucp_request_cancel(ctx->worker, op_id->request);
+        }
         return NA_SUCCESS;
     default:
         return NA_PROTOCOL_ERROR;
@@ -1547,6 +1557,7 @@ na_ucx_msg_send(na_context_t *context,
     op_id->info.tx.buf = buf;
     op_id->info.tx.buf_size = buf_size;
     op_id->info.tx.tag = tag;
+    op_id->request = NULL;
 
     /* Fast path: if the sender ID is established, and the cached context
      * matches the caller's context, then don't acquire the lock,
