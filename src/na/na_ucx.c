@@ -1472,7 +1472,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
     address_wire_aseq_t aseq;
     address_wire_t *cache = arg;
     na_op_id_t *op_id;
-    na_ucx_addr_t *owner = cache->owner; 
+    na_ucx_addr_t *owner = cache->owner;
 
     NA_LOG_DEBUG("enter cache %p", cache);
 
