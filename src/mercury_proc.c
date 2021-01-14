@@ -8,6 +8,8 @@
  * found at the root of the source code distribution tree.
  */
 
+#include <inttypes.h>
+
 #include "mercury_proc.h"
 #include "mercury_error.h"
 #include "mercury_mem.h"
@@ -430,7 +432,7 @@ hg_proc_checksum_verify(hg_proc_t proc, const void *hash, hg_size_t hash_size)
                 *(hg_uint32_t *) hg_proc->checksum_hash,
                 *(const hg_uint32_t *) hash);
         else if (hg_proc->checksum_size == sizeof(hg_uint64_t))
-            HG_LOG_ERROR("checksum 0x%016X does not match (expected 0x%016X!)",
+            HG_LOG_ERROR("checksum 0x%016" PRIx64 " does not match (expected 0x%016" PRIx64 "!)",
                 *(hg_uint64_t *) hg_proc->checksum_hash,
                 *(const hg_uint64_t *) hash);
         else
