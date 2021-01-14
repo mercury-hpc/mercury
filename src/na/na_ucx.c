@@ -1494,6 +1494,11 @@ wire_event_callback(wire_event_info_t info, void *arg)
 
     address_wire_write_end(aseq);
 
+    if (info.event == wire_ev_died) {
+        assert(HG_QUEUE_IS_EMPTY(&cache->deferrals));
+        goto release;
+    }
+
     NA_LOG_DEBUG("begin deferred xmits");
     /* TBD Hold the mutex for less time: move the deferred list to a local,
      * release the mutex, and then send all deferred messages.
@@ -1508,6 +1513,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
     HG_QUEUE_INIT(&cache->deferrals);
     NA_LOG_DEBUG("end deferred xmits");
 
+release:
     hg_thread_mutex_unlock(&owner->wire_lock);
     return true;
 }
