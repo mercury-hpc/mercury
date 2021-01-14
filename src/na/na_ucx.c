@@ -162,7 +162,7 @@ typedef struct _op_rxinfo {
 
 typedef struct _op_txinfo {
     const void *buf;
-    na_tag_t tag;
+    uint64_t tag;
     na_size_t buf_size;
     HG_QUEUE_ENTRY(na_op_id) link;
 } op_txinfo_t;
@@ -183,12 +183,26 @@ struct _na_ucx_context {
     ucp_worker_h worker;
     na_class_t *na_class;
     na_ucx_addr_t *self;
-    uint64_t tag, tagmask;  /* Tag space reserved for the application.
-                             * The wireup tag space is excluded.
-                             *
-                             * XXX make this per-class?
-                             * That's NA's expectation.
-                             */
+    /* (app.tag, app.tagmask) describes the tag space reserved for
+     * the application.  The wireup tag space is excluded.
+     *
+     * XXX make this per-class?
+     * That's NA's expectation.
+     *
+     * (exp.tag, msg.tagmask) describes the tag space reserved for
+     * expected messages, and (unexp.tag, msg.tagmask) describes the
+     * tag space reserved for unexpected messages.  Those spaces are
+     * independent of each other.  Both are subspaces of app.
+     */
+    struct {
+        uint64_t tag, tagmask;
+    } app;
+    struct {
+        uint64_t tag;
+    } exp, unexp;
+    struct {
+        uint64_t tagmask;
+    } msg;
     na_uint8_t id;
 };
 
@@ -611,6 +625,7 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
     };
     ucp_address_t *uaddr;
     na_ucx_addr_t *self;
+    uint64_t expflag;
     size_t uaddrlen;
     ucs_status_t status;
 
@@ -648,7 +663,16 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
             &nuclass->lkb, wire_accept_callback, nctx))
         goto cleanup_tbl;
 
-    wireup_app_tag(&nctx->wiring, &nctx->tag, &nctx->tagmask);
+    wireup_app_tag(&nctx->wiring, &nctx->app.tag, &nctx->app.tagmask);
+
+    /* Find the highest bit in the application tag space.  We will set it to
+     * indicate an expected message and clear it to indicate an unexpected
+     * message.
+     */
+    expflag = ~nctx->app.tagmask ^ (~nctx->app.tagmask >> 1);
+    nctx->msg.tagmask = nctx->app.tagmask | expflag;
+    nctx->exp.tag = nctx->app.tag | expflag;
+    nctx->unexp.tag = nctx->app.tag;
 
     ucp_worker_release_address(nctx->worker, uaddr);
     return NA_SUCCESS;
@@ -1193,11 +1217,11 @@ recv_callback(void NA_UNUSED *request, ucs_status_t status,
         source = wire_get_data(&nuctx->wiring, (wire_id_t){.id = sender_id});
         hg_atomic_incr32(&source->refcount);
 
-        assert((info->sender_tag & nuctx->tagmask) == nuctx->tag); 
+        assert((info->sender_tag & nuctx->app.tagmask) == nuctx->app.tag);
         *recv_unexpected = (struct na_cb_info_recv_unexpected){
           .actual_buf_size = (na_size_t)info->length
         , .source = source
-        , .tag = (na_tag_t)SHIFTOUT(info->sender_tag, ~nuctx->tagmask)};
+        , .tag = (na_tag_t)SHIFTOUT(info->sender_tag, ~nuctx->msg.tagmask)};
 
         NA_LOG_DEBUG("op id %p ucx tag %" PRIx64 " na tag %" PRIu32,
             (void *)op_id, info->sender_tag, recv_unexpected->tag);
@@ -1368,9 +1392,9 @@ na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
     }
 }
 
-static na_return_t
-tagged_send(na_ucx_context_t *ctx, const void *buf, na_size_t buf_size,
-    ucp_ep_h ep, sender_id_t sender_id, na_tag_t proto_tag,
+static void
+tagged_send(const void *buf, na_size_t buf_size,
+    ucp_ep_h ep, sender_id_t sender_id, uint64_t tag,
     na_op_id_t *op_id)
 {
     const ucp_request_param_t tx_params = {
@@ -1379,15 +1403,6 @@ tagged_send(na_ucx_context_t *ctx, const void *buf, na_size_t buf_size,
     , .user_data = op_id
     };
     ucs_status_ptr_t request;
-    ucp_tag_t tag;
-
-    assert(proto_tag <= SHIFTOUT_MASK(~ctx->tagmask));
-
-    tag = ctx->tag | SHIFTIN(proto_tag, ~ctx->tagmask);
-
-    NA_LOG_DEBUG("posting %s buf %p len %p tag %" PRIx64 " op %p",
-        na_cb_type_string(op_id->completion_data.callback_info.type), buf,
-        buf_size, tag, op_id);
 
     assert(buf_size >= sizeof(sender_id));
 
@@ -1449,8 +1464,6 @@ tagged_send(na_ucx_context_t *ctx, const void *buf, na_size_t buf_size,
         op_id->completion_data.callback_info.ret = NA_SUCCESS;
         na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
     }
-
-    return NA_SUCCESS;
 }
 
 static bool
@@ -1488,10 +1501,9 @@ wire_event_callback(wire_event_info_t info, void *arg)
     HG_QUEUE_FOREACH(op_id, &cache->deferrals, info.tx.link) {
         const void *buf = op_id->info.tx.buf;
         na_size_t buf_size = op_id->info.tx.buf_size;
-        na_tag_t tag = op_id->info.tx.tag;
+        uint64_t tag = op_id->info.tx.tag;
         NA_LOG_DEBUG("  op %p", op_id);
-        (void)tagged_send(cache->ctx, buf, buf_size, info.ep, info.sender_id,
-            tag, op_id);
+        tagged_send(buf, buf_size, info.ep, info.sender_id, tag, op_id);
     }
     HG_QUEUE_INIT(&cache->deferrals);
     NA_LOG_DEBUG("end deferred xmits");
@@ -1520,21 +1532,27 @@ address_wire_read_end(address_wire_aseq_t aseq)
 static na_return_t
 na_ucx_msg_send(na_context_t *context,
     na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
-    na_addr_t dest_addr, na_tag_t tag, na_cb_type_t cb_type, na_op_id_t *op_id)
+    na_addr_t dest_addr, na_tag_t proto_tag, na_cb_type_t cb_type,
+    na_op_id_t *op_id)
 {
-    na_ucx_context_t *ctx;
+    na_ucx_context_t *cached_ctx, * const nuctx = context->plugin_context;
     sender_id_t sender_id;
     na_return_t ret;
     address_wire_t *cache = &dest_addr->wire_cache;
     ucp_ep_h ep;
+    uint64_t tag;
+    const na_tag_t NA_DEBUG_USED maxtag =
+        MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->msg.tagmask));
 
-    NA_LOG_DEBUG("posting %s buf %p len %p tag %" PRIx64 " op %p",
-        na_cb_type_string(cb_type), buf, buf_size, tag, op_id);
+    assert(proto_tag <= maxtag);
+
+    NA_LOG_DEBUG("posting %s buf %p len %zu na tag %" PRIx32 " op %p",
+        na_cb_type_string(cb_type), buf, buf_size, proto_tag, op_id);
 
     for (;;) {
         const address_wire_aseq_t aseq = address_wire_read_begin(cache);
         sender_id = cache->sender_id;
-        ctx = cache->ctx;
+        cached_ctx = cache->ctx;
         /* XXX The endpoint mustn't be destroyed between the time we
          * load its pointer and the time we transmit on it, but the wireup 
          * state machine isn't synchronized with transmission.
@@ -1547,6 +1565,12 @@ na_ucx_msg_send(na_context_t *context,
         if (address_wire_read_end(aseq))
             break;
     }
+
+    tag = SHIFTIN(proto_tag, ~nuctx->msg.tagmask);
+    if (cb_type == NA_CB_SEND_EXPECTED)
+        tag |= nuctx->exp.tag;
+    else
+        tag |= nuctx->unexp.tag;
 
     /* TBD Assert expected status */
     op_id->status = op_s_underway;
@@ -1563,9 +1587,9 @@ na_ucx_msg_send(na_context_t *context,
      * matches the caller's context, then don't acquire the lock,
      * just send and return.
      */
-    if (ctx == context->plugin_context && sender_id != sender_id_nil) {
-        return tagged_send(ctx, buf, buf_size, ep, sender_id,
-            tag, op_id);
+    if (cached_ctx == context->plugin_context && sender_id != sender_id_nil) {
+        tagged_send(buf, buf_size, ep, sender_id, tag, op_id);
+        return NA_SUCCESS;
     }
 
     hg_thread_mutex_lock(&dest_addr->wire_lock);
@@ -1574,7 +1598,7 @@ na_ucx_msg_send(na_context_t *context,
      * once more.
      */
 
-    if ((ctx = cache->ctx) == NULL) {
+    if ((cached_ctx = cache->ctx) == NULL) {
         /* This thread can write to `cache->ctx` without conflicting
          * with any other thread: because the thread holds the lock,
          * no new wire-event callback will be established on `cache`.
@@ -1583,12 +1607,13 @@ na_ucx_msg_send(na_context_t *context,
          */
         const address_wire_aseq_t aseq = address_wire_write_begin(cache);
 
-        cache->ctx = ctx = context->plugin_context;
+        cache->ctx = cached_ctx = nuctx;
 
         NA_LOG_DEBUG("starting wireup, cache %p", cache);
 
-        cache->wire_id = wireup_start(&ctx->wiring,
-            (ucp_address_t *)&ctx->self->addr[0], ctx->self->addrlen,
+        cache->wire_id = wireup_start(&cached_ctx->wiring,
+            (ucp_address_t *)&cached_ctx->self->addr[0],
+            cached_ctx->self->addrlen,
             (ucp_address_t *)&dest_addr->addr[0], dest_addr->addrlen,
             wire_event_callback, cache, dest_addr);
 
@@ -1600,7 +1625,8 @@ na_ucx_msg_send(na_context_t *context,
             goto release;
         }
     } else if ((sender_id = cache->sender_id) != sender_id_nil) {
-        ret = tagged_send(ctx, buf, buf_size, ep, sender_id, tag, op_id);
+        tagged_send(buf, buf_size, ep, sender_id, tag, op_id);
+        ret = NA_SUCCESS;
         goto release;
     } else if (!wire_is_valid(cache->wire_id)) {
 
@@ -1608,8 +1634,9 @@ na_ucx_msg_send(na_context_t *context,
 
         NA_LOG_DEBUG("starting wireup, cache %p", cache);
 
-        cache->wire_id = wireup_start(&ctx->wiring,
-            (ucp_address_t *)&ctx->self->addr[0], ctx->self->addrlen,
+        cache->wire_id = wireup_start(&cached_ctx->wiring,
+            (ucp_address_t *)&cached_ctx->self->addr[0],
+            cached_ctx->self->addrlen,
             (ucp_address_t *)&dest_addr->addr[0], dest_addr->addrlen,
             wire_event_callback, cache, dest_addr);
 
@@ -1697,7 +1724,7 @@ na_ucx_msg_recv_unexpected(na_class_t NA_UNUSED *na_class, na_context_t *ctx,
     na_ucx_context_t *nuctx = ctx->plugin_context;
 
     return na_ucx_msg_recv(ctx, callback, arg, buf, buf_size,
-        nuctx->tag, nuctx->tagmask, NA_CB_RECV_UNEXPECTED, op_id);
+        nuctx->unexp.tag, nuctx->msg.tagmask, NA_CB_RECV_UNEXPECTED, op_id);
 }
 
 static na_return_t
@@ -1718,12 +1745,12 @@ na_ucx_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *ctx,
 {
     na_ucx_context_t *nuctx = ctx->plugin_context;
     const na_tag_t NA_DEBUG_USED maxtag =
-        MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->tagmask));
+        MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->msg.tagmask));
 
     assert(proto_tag <= maxtag);
 
     return na_ucx_msg_recv(ctx, callback, arg, buf, buf_size,
-        nuctx->tag | SHIFTIN(proto_tag, ~nuctx->tagmask), UINT64_MAX,
+        nuctx->exp.tag | SHIFTIN(proto_tag, ~nuctx->msg.tagmask), UINT64_MAX,
         NA_CB_RECV_EXPECTED, op_id);
 }
 
