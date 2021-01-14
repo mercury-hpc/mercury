@@ -132,6 +132,11 @@ typedef struct {
     ucp_rkey_h rkey;
 } unpacked_rkey_t;
 
+typedef struct _na_mem_handle_header {
+    uint64_t base_addr;
+    uint32_t paylen;
+} na_mem_handle_header_t;
+
 typedef struct {
     char *buf;
     size_t buflen;
@@ -1850,30 +1855,39 @@ na_ucx_mem_handle_get_serialize_size(na_class_t *na_class, na_mem_handle_t mh)
     const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
     ucs_status_t status;
     void *ptr;
-    size_t size;
+    const size_t hdrlen = sizeof(na_mem_handle_header_t);
+    size_t paylen;
 
     if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local) {
         NA_LOG_ERROR("non-local memory handle %p cannot be serialized", mh);
         return 0;   // ok for error?
     }
 
-    status = ucp_rkey_pack(nuclass->uctx, mh->handle.local.mh, &ptr, &size);
+    status = ucp_rkey_pack(nuclass->uctx, mh->handle.local.mh, &ptr, &paylen);
     if (status != UCS_OK)
         return 0;   // ok for error?
     ucp_rkey_buffer_release(ptr);
 
-    return size;
+    NA_LOG_DEBUG("memory handle %p header + payload length %zu", mh,
+        hdrlen + paylen);
+
+    return hdrlen + paylen;
 }
 
 static na_return_t
-na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf, na_size_t buf_size,
-    na_mem_handle_t mh)
+na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf,
+    na_size_t buf_size, na_mem_handle_t mh)
 {
     const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
     char *buf = _buf;
     void *rkey;
-    const uint64_t local_base_addr = (uint64_t)(void *)mh->handle.local.buf;
-    size_t size;
+    const size_t hdrlen = sizeof(na_mem_handle_header_t);
+    na_mem_handle_header_t hdr = {
+      // TBD convert to network endianness
+      .base_addr = (uint64_t)(void *)mh->handle.local.buf
+    , .paylen = 0
+    };
+    size_t paylen;
     ucs_status_t status;
 
     NA_LOG_DEBUG("memory handle %p", mh);
@@ -1883,15 +1897,22 @@ na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf, na_size_t buf_size
         return NA_INVALID_ARG;
     }
 
-    status = ucp_rkey_pack(nuclass->uctx, mh->handle.local.mh, &rkey, &size);
-    if (status != UCS_OK)
+    status = ucp_rkey_pack(nuclass->uctx, mh->handle.local.mh, &rkey, &paylen);
+    if (status != UCS_OK) {
+        NA_LOG_ERROR("ucp_rkey_pack failed %s", ucs_status_string(status));
         return NA_PROTOCOL_ERROR;   // ok for error?
+    }
 
-    if (buf_size < size)
+    NA_LOG_DEBUG("header + payload length %zu at %p", hdrlen + paylen, _buf);
+
+    if (buf_size < hdrlen + paylen) {
+        NA_LOG_ERROR("buffer too small, %zu bytes", buf_size);
         return NA_OVERFLOW;
+    }
 
-    memcpy(buf, &local_base_addr, sizeof(local_base_addr));
-    memcpy(buf + sizeof(local_base_addr), rkey, size);
+    hdr.paylen = paylen; // TBD convert to network endianness
+    memcpy(buf, &hdr, hdrlen);
+    memcpy(buf + hdrlen, rkey, paylen);
     ucp_rkey_buffer_release(rkey);
 
     return NA_SUCCESS;
@@ -1901,22 +1922,41 @@ static na_return_t
 na_ucx_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     na_mem_handle_t *mhp, const void *buf, na_size_t buf_size)
 {
+    na_mem_handle_header_t hdr;
     na_mem_handle_t mh;
     void *duplicate;
+    const size_t hdrlen = sizeof(na_mem_handle_header_t);
+    size_t paylen;
 
     if ((mh = zalloc(sizeof(*mh))) == NULL)
         return NA_NOMEM;
 
     NA_LOG_DEBUG("memory handle %p", mh);
 
-    if ((duplicate = memdup(buf, buf_size)) == NULL) {
+    if (buf_size < hdrlen) {
+        NA_LOG_ERROR("buffer is shorter than a header, %zu bytes", buf_size);
+        return NA_OVERFLOW;
+    }
+
+    memcpy(&hdr, buf, hdrlen);
+
+    paylen = hdr.paylen; // TBD convert from network endianness
+
+    NA_LOG_DEBUG("header + payload length %zu at %p", hdrlen + paylen, buf);
+
+    if (buf_size < hdrlen + paylen) {
+        NA_LOG_ERROR("buffer too short, %zu bytes", buf_size);
+        return NA_OVERFLOW;
+    }
+
+    if ((duplicate = memdup(buf, hdrlen + paylen)) == NULL) {
         free(mh);
         return NA_NOMEM;
     }
 
     hg_atomic_set32(&mh->kind, na_ucx_mem_packed_remote);
     mh->handle.packed_remote.buf = duplicate;
-    mh->handle.packed_remote.buflen = buf_size;
+    mh->handle.packed_remote.buflen = hdrlen + paylen;
 
     *mhp = mh;
     return NA_SUCCESS;
@@ -1925,6 +1965,7 @@ na_ucx_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
 static na_mem_handle_t
 resolve_mem_handle_locked(ucp_ep_h ep, na_mem_handle_t mh)
 {
+    na_mem_handle_header_t hdr;
     unpacked_rkey_t unpacked;
     packed_rkey_t *packed = &mh->handle.packed_remote;
     ucs_status_t status;
@@ -1934,13 +1975,16 @@ resolve_mem_handle_locked(ucp_ep_h ep, na_mem_handle_t mh)
     if (hg_atomic_get32(&mh->kind) != na_ucx_mem_packed_remote)
         return mh;
 
-    memcpy(&unpacked.remote_base_addr, packed->buf,
-        sizeof(unpacked.remote_base_addr));
+    memcpy(&hdr, packed->buf, sizeof(hdr));
 
-    status = ucp_ep_rkey_unpack(ep,
-        packed->buf + sizeof(unpacked.remote_base_addr), &unpacked.rkey);
-    if (status != UCS_OK)
+    status = ucp_ep_rkey_unpack(ep, packed->buf + sizeof(hdr), &unpacked.rkey);
+    if (status != UCS_OK) {
+        NA_LOG_ERROR("ucp_rkey_pack failed %s", ucs_status_string(status));
         return NULL;
+    }
+
+    // TBD convert from network endianness
+    unpacked.remote_base_addr = hdr.base_addr;
 
     free(packed->buf);
 
