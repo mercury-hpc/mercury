@@ -1209,6 +1209,7 @@ recv_callback(void NA_UNUSED *request, ucs_status_t status,
     if (status == UCS_OK) {
         na_ucx_context_t *nuctx = op_id->na_ctx->plugin_context;
         sender_id_t sender_id;
+        const void *buf = op_id->info.rx.buf;
         na_addr_t source;
 
         // XXX use standard endianness
