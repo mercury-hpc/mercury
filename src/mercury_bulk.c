@@ -8,6 +8,10 @@
  * found at the root of the source code distribution tree.
  */
 
+#include <inttypes.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "mercury_bulk.h"
 #include "mercury_bulk_proc.h"
 #include "mercury_core.h"
@@ -18,9 +22,6 @@
 #include "mercury_list.h"
 #include "mercury_thread_condition.h"
 #include "mercury_thread_spin.h"
-
-#include <stdlib.h>
-#include <string.h>
 
 /****************/
 /* Local Macros */
@@ -592,8 +593,8 @@ hg_bulk_create(hg_core_class_t *core_class, hg_uint32_t count, void **bufs,
                 ret, HG_OPNOTSUPPORTED,
                 "Registration of segments not supported with SM");
             HG_CHECK_ERROR(count > max_sm_segments, error, ret,
-                HG_OPNOTSUPPORTED, "SM class cannot register %zu segments",
-                count);
+                HG_OPNOTSUPPORTED,
+                "SM class cannot register %" PRIu32 " segments", count);
         }
 #endif
     }

@@ -2736,7 +2736,7 @@ na_sm_addr_event_recv(int sock, na_sm_cmd_hdr_t *cmd_hdr, int *tx_notify,
             goto done;
         } else
             NA_GOTO_ERROR(done, ret, na_sm_errno_to_na(errno),
-                "recvmsg() failed (% s)", strerror(errno));
+                "recvmsg() failed (%s)", strerror(errno));
     }
 
     *received = NA_TRUE;
@@ -3636,7 +3636,8 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
         "getrlimit() failed (%s)", strerror(errno));
 
     NA_LOG_DEBUG(
-        "RLIMIT_NOFILE is: %d, max %d", rlimit.rlim_cur, rlimit.rlim_max);
+        "RLIMIT_NOFILE is: %ju, max %ju",
+        (uintmax_t)rlimit.rlim_cur, (uintmax_t)rlimit.rlim_max);
 
     /* Initialize private data */
     na_class->plugin_class = malloc(sizeof(struct na_sm_class));
@@ -4061,7 +4062,7 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_bool_t rc;
 
     NA_CHECK_ERROR(buf_size > NA_SM_UNEXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds unexpected size, %d", buf_size);
+        "Exceeds unexpected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_ERROR(
@@ -4155,7 +4156,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_ERROR(buf_size > NA_SM_UNEXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds unexpected size, %d", buf_size);
+        "Exceeds unexpected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_ERROR(
@@ -4235,7 +4236,7 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_bool_t rc;
 
     NA_CHECK_ERROR(buf_size > NA_SM_EXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds expected size, %d", buf_size);
+        "Exceeds expected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_ERROR(
@@ -4330,7 +4331,7 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_ERROR(buf_size > NA_SM_EXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds expected size, %d", buf_size);
+        "Exceeds expected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_ERROR(
@@ -4678,7 +4679,7 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     if (unlikely(nwrite < 0)) {
         if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
             NA_GOTO_ERROR(error, ret, na_sm_errno_to_na(errno),
-                "process_vm_writev() failed (%s):\n",
+                "process_vm_writev() failed (%s):\n"
                 "Kernel Yama configuration does not allow cross-memory attach, "
                 "either run as root: \n"
                 "# /usr/sbin/sysctl kernel.yama.ptrace_scope=0\n"
@@ -4861,7 +4862,7 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     if (unlikely(nread < 0)) {
         if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
             NA_GOTO_ERROR(error, ret, na_sm_errno_to_na(errno),
-                "process_vm_readv() failed (%s):\n",
+                "process_vm_readv() failed (%s):\n"
                 "Kernel Yama configuration does not allow cross-memory attach, "
                 "either run as root: \n"
                 "# /usr/sbin/sysctl kernel.yama.ptrace_scope=0\n"

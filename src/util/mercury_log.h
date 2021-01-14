@@ -120,7 +120,7 @@ hg_log_set_stream_debug(FILE *stream);
  */
 HG_UTIL_PUBLIC void
 hg_log_write(enum hg_log_type log_type, const char *module, const char *file,
-    unsigned int line, const char *func, const char *format, ...);
+    unsigned int line, const char *func, const char *format, ...) HG_UTIL_PRINTF_LIKE(6, 7);
 
 #ifdef __cplusplus
 }

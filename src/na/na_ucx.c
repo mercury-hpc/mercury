@@ -737,7 +737,7 @@ na_ucx_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     }
 
     if ((status = ucp_config_read(NULL, NULL, &config)) != UCS_OK) {
-        NA_LOG_ERROR("ucp_config_read", ucs_status_string(status));
+        NA_LOG_ERROR("ucp_config_read: %s", ucs_status_string(status));
         ret = NA_PROTOCOL_ERROR;
         goto cleanup;
     }
@@ -749,7 +749,7 @@ na_ucx_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     ucp_config_release(config);
 
     if (status != UCS_OK) {
-        NA_LOG_ERROR("ucp_init: %s", __func__, ucs_status_string(status));
+        NA_LOG_ERROR("ucp_init: %s", ucs_status_string(status));
         ret = NA_PROTOCOL_ERROR;
         goto cleanup;
     }
@@ -758,8 +758,7 @@ na_ucx_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
     status = ucp_context_query(nuclass->uctx, &uctx_attrs);
 
     if (status != UCS_OK) {
-        NA_LOG_ERROR("ucp_context_query: %s", __func__,
-            ucs_status_string(status));
+        NA_LOG_ERROR("ucp_context_query: %s", ucs_status_string(status));
         ret = NA_PROTOCOL_ERROR;
         goto cleanup;
     }
@@ -1097,7 +1096,7 @@ na_ucx_addr_deserialize(na_class_t *na_class, na_addr_t *addrp, const void *buf,
 
     *addrp = na_ucx_addr_dedup(na_class, addr);
 
-    NA_LOG_DEBUG("exit buf %p addr %p", *addrp);
+    NA_LOG_DEBUG("exit buf %p addr %p", buf, *addrp);
 
     return NA_SUCCESS;
 }
@@ -1549,7 +1548,7 @@ na_ucx_msg_recv(na_context_t *ctx, na_cb_t callback, void *arg,
     ucp_worker_h worker = nuctx->worker;
     void *request;
 
-    NA_LOG_DEBUG("posting %s buf %p len %p tag %" PRIx64 " mask %" PRIx64
+    NA_LOG_DEBUG("posting %s buf %p len %zu tag %" PRIx64 " mask %" PRIx64
         " op %p",
         na_cb_type_string(cb_type), buf, buf_size, tag, tagmask, op_id);
 

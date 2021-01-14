@@ -8,6 +8,10 @@
  * found at the root of the source code distribution tree.
  */
 
+#include <inttypes.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "mercury_core.h"
 #include "mercury_private.h"
 
@@ -28,9 +32,6 @@
 #ifdef NA_HAS_SM
 #    include <na_sm.h>
 #endif
-
-#include <stdlib.h>
-#include <string.h>
 
 /****************/
 /* Local Macros */
@@ -3084,7 +3085,7 @@ hg_core_recv_input_cb(const struct na_cb_info *callback_info)
         hg_core_handle->in_buf_used =
             na_cb_info_recv_unexpected->actual_buf_size;
 
-        HG_LOG_DEBUG("Processing input for handle %p, tag=%u, buf_size=%d",
+        HG_LOG_DEBUG("Processing input for handle %p, tag=%u, buf_size=%zu",
             hg_core_handle, hg_core_handle->tag, hg_core_handle->in_buf_used);
 
         /* Process input information */
@@ -3140,7 +3141,8 @@ hg_core_process_input(
             : hg_core_no_respond_na;
 
     HG_LOG_DEBUG(
-        "Processed input for handle %p, ID=%llu, cookie=%d, no_response=%d",
+        "Processed input for handle %p, ID=%" PRIu64
+        ", cookie=%" PRIu8 ", no_response=%d",
         hg_core_handle, hg_core_handle->core_handle.info.id,
         hg_core_handle->cookie, hg_core_handle->no_response);
 
@@ -3274,7 +3276,7 @@ hg_core_process_output(struct hg_core_private_handle *hg_core_handle,
 
     /* Parse flags */
 
-    HG_LOG_DEBUG("Processed output for handle %p, ID=%llu, ret=%d",
+    HG_LOG_DEBUG("Processed output for handle %p, ID=%" PRIu64 ", ret=%d",
         hg_core_handle, hg_core_handle->core_handle.info.id,
         hg_core_handle->ret);
 
@@ -4817,7 +4819,8 @@ HG_Core_create(hg_core_context_t *context, hg_core_addr_t addr, hg_id_t id,
     HG_CHECK_ERROR(handle == NULL, done, ret, HG_INVALID_ARG,
         "NULL pointer to HG core handle");
 
-    HG_LOG_DEBUG("Creating new handle with ID=%llu, address=%p", id, addr);
+    HG_LOG_DEBUG("Creating new handle with ID=%" PRIu64 ", address=%p",
+        id, addr);
 
     /* Determine which NA class/context to use */
 #ifdef NA_HAS_SM
@@ -4905,8 +4908,8 @@ HG_Core_reset(hg_core_handle_t handle, hg_core_addr_t addr, hg_id_t id)
         "Cannot reset HG core handle, still in use, refcount: %d",
         hg_atomic_get32(&hg_core_handle->ref_count));
 
-    HG_LOG_DEBUG(
-        "Resetting handle (%p) with ID=%llu, address (%p)", handle, id, addr);
+    HG_LOG_DEBUG("Resetting handle (%p) with ID=%" PRIu64 ", address (%p)",
+        handle, id, addr);
 
     /* Determine which NA class/context to use */
 #ifdef NA_HAS_SM
