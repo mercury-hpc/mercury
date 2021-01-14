@@ -427,7 +427,7 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     hg_test_info->hg_class =
         HG_Init_opt(NULL, hg_test_info->na_test_info.listen, &hg_init_info);
     HG_TEST_CHECK_ERROR(hg_test_info->hg_class == NULL, done, ret, HG_FAULT,
-        "HG_Init_opt() failed (%s)");
+        "HG_Init_opt() failed");
 
     /* Attach test info to class */
     ret = HG_Class_set_data(hg_test_info->hg_class, hg_test_info, NULL);

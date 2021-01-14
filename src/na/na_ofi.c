@@ -178,8 +178,8 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 
 /* Unexpected size */
 #define NA_OFI_MSG_SIZE       (4096)
-#define NA_OFI_UNEXPECTED_TAG (0x100000000ULL)
-#define NA_OFI_TAG_MASK       (0x0FFFFFFFFULL)
+#define NA_OFI_UNEXPECTED_TAG ((uint64_t)0x100000000)
+#define NA_OFI_TAG_MASK       ((uint64_t)0x0FFFFFFFF)
 
 /* Number of CQ event provided for fi_cq_read() */
 #define NA_OFI_CQ_EVENT_NUM (16)
@@ -2137,7 +2137,7 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
     while (prov != NULL) {
         if (na_ofi_verify_provider(prov_type, domain_name, prov)) {
             NA_LOG_SUBSYS_DEBUG(cls,
-                "mode 0x%llx, fabric_attr -> prov_name: %s, name: %s; "
+                "mode 0x%" PRIx64 ", fabric_attr -> prov_name: %s, name: %s; "
                 "domain_attr -> name: %s, threading: %d.",
                 prov->mode, prov->fabric_attr->prov_name,
                 prov->fabric_attr->name, prov->domain_attr->name,
@@ -2229,7 +2229,7 @@ na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
     na_ofi_domain->context_max =
         MIN(na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
             na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
-    NA_LOG_SUBSYS_DEBUG(cls, "fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d",
+    NA_LOG_SUBSYS_DEBUG(cls, "fi_domain created, tx_ctx_cnt %zu, rx_ctx_cnt %zu",
         na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
         na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
 
@@ -3236,7 +3236,7 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
     /* Set RMA msg */
     NA_OFI_MSG_RMA_SET(fi_msg_rma, liov, riov, na_ofi_op_id);
 
-    NA_LOG_SUBSYS_DEBUG(rma, "Posting RMA op (op id=%p)", na_ofi_op_id);
+    NA_LOG_SUBSYS_DEBUG(rma, "Posting RMA op (op id=%p)", (void *)na_ofi_op_id);
 
     /* Post the OFI RMA operation */
     rc = fi_rma_op(ctx->fi_tx, &fi_msg_rma, fi_rma_flags);
@@ -3245,7 +3245,7 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
         else {
-            NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", na_ofi_op_id);
+            NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", (void *)na_ofi_op_id);
 
             /* Push op ID to retry queue */
             hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
@@ -3256,7 +3256,7 @@ na_ofi_rma(struct na_ofi_class *na_ofi_class, na_context_t *context,
         }
     } else
         NA_CHECK_SUBSYS_ERROR(rma, rc != 0, error, ret,
-            na_ofi_errno_to_na((int) -rc), "fi_rma_op() failed, rc: %d (%s)",
+            na_ofi_errno_to_na((int) -rc), "fi_rma_op() failed, rc: %zd (%s)",
             rc, fi_strerror((int) -rc));
 
 out:
@@ -3297,7 +3297,7 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
         goto out;
     }
     NA_CHECK_SUBSYS_ERROR(poll, rc != -FI_EAVAIL, out, ret,
-        na_ofi_errno_to_na((int) -rc), "fi_cq_readfrom() failed, rc: %d (%s)",
+        na_ofi_errno_to_na((int) -rc), "fi_cq_readfrom() failed, rc: %zd (%s)",
         rc, fi_strerror((int) -rc));
 
     memset(&cq_err, 0, sizeof(cq_err));
@@ -3309,7 +3309,7 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
     /* Read error entry */
     rc = fi_cq_readerr(cq_hdl, &cq_err, 0 /* flags */);
     NA_CHECK_SUBSYS_ERROR(poll, rc != 1, out, ret,
-        na_ofi_errno_to_na((int) -rc), "fi_cq_readerr() failed, rc: %d (%s)",
+        na_ofi_errno_to_na((int) -rc), "fi_cq_readerr() failed, rc: %zd (%s)",
         rc, fi_strerror((int) -rc));
 
     switch (cq_err.err) {
@@ -3327,7 +3327,7 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
                 hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_COMPLETED,
                 out, ret, NA_FAULT, "Operation ID was completed");
             NA_LOG_SUBSYS_DEBUG(
-                op, "FI_ECANCELED event on operation ID %p", na_ofi_op_id);
+                op, "FI_ECANCELED event on operation ID %p", (void *)na_ofi_op_id);
 
             /* When tearing down connections, it is possible that operations
             will be canceled by libfabric itself.
@@ -3368,7 +3368,7 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
                 NA_CHECK_SUBSYS_ERROR(op, na_ofi_op_id == NULL, out, ret,
                     NA_INVALID_ARG, "Invalid operation ID");
                 NA_LOG_SUBSYS_DEBUG(
-                    op, "error event on operation ID %p", na_ofi_op_id);
+                    op, "error event on operation ID %p", (void *)na_ofi_op_id);
 
                 NA_CHECK_SUBSYS_ERROR(op,
                     hg_atomic_get32(&na_ofi_op_id->status) &
@@ -3430,7 +3430,7 @@ na_ofi_cq_process_event(struct na_ofi_class *na_ofi_class,
         NA_CHECK_SUBSYS_NA_ERROR(rma, out, ret, "Could not process rma event");
     } else
         NA_GOTO_SUBSYS_ERROR(poll, out, ret, NA_PROTONOSUPPORT,
-            "Unsupported CQ event flags: 0x%x.", cq_event->flags);
+            "Unsupported CQ event flags: 0x%" PRIx64 ".", cq_event->flags);
 
     /* Complete operation */
     ret = na_ofi_complete(na_ofi_op_id, NA_SUCCESS);
@@ -3453,7 +3453,7 @@ na_ofi_cq_process_send_event(struct na_ofi_op_id *na_ofi_op_id)
         "Invalid cb_type %d, expected NA_CB_SEND_EXPECTED/UNEXPECTED", cb_type);
 
     NA_LOG_SUBSYS_DEBUG(
-        msg, "send msg completion event (op id=%p)", na_ofi_op_id);
+        msg, "send msg completion event (op id=%p)", (void *)na_ofi_op_id);
 
 out:
     return ret;
@@ -3473,7 +3473,7 @@ na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
         NA_INVALID_ARG, "Invalid cb_type %d, expected NA_CB_RECV_UNEXPECTED",
         cb_type);
     NA_CHECK_SUBSYS_ERROR(msg, (tag & ~NA_OFI_UNEXPECTED_TAG) > NA_OFI_MAX_TAG,
-        out, ret, NA_OVERFLOW, "Invalid tag value %llu", tag);
+        out, ret, NA_OVERFLOW, "Invalid tag value %" PRIu64, tag);
 
     /* Retrieve new address from pool to prevent allocation */
     ret = na_ofi_addr_pool_get(na_ofi_class, &na_ofi_addr);
@@ -3513,8 +3513,8 @@ na_ofi_cq_process_recv_unexpected_event(struct na_ofi_class *na_ofi_class,
     na_ofi_op_id->info.msg.actual_buf_size = len;
 
     NA_LOG_SUBSYS_DEBUG(msg,
-        "unexpected recv msg completion event with tag=%llu, len=%zu ",
-        "(op id=%p)", tag, len, na_ofi_op_id);
+        "unexpected recv msg completion event with tag=%" PRIu64 ", len=%zu ",
+        "(op id=%p)", tag, len, (void *)na_ofi_op_id);
 
 out:
     return ret;
@@ -3541,9 +3541,9 @@ na_ofi_cq_process_recv_expected_event(
     na_ofi_op_id->info.msg.actual_buf_size = len;
 
     NA_LOG_SUBSYS_DEBUG(msg,
-        "expected recv msg completion event with tag=%llu, len=%zu "
+        "expected recv msg completion event with tag=%" PRIu64 ", len=%zu "
         "(op id=%p)",
-        tag, len, na_ofi_op_id);
+        tag, len, (void *)na_ofi_op_id);
 
 out:
     return ret;
@@ -3560,7 +3560,7 @@ na_ofi_cq_process_rma_event(struct na_ofi_op_id *na_ofi_op_id)
         out, ret, NA_INVALID_ARG, "Invalid cb_type %d, expected NA_CB_PUT/GET",
         cb_type);
 
-    NA_LOG_SUBSYS_DEBUG(rma, "RMA completion event (op id=%p)", na_ofi_op_id);
+    NA_LOG_SUBSYS_DEBUG(rma, "RMA completion event (op id=%p)", (void *)na_ofi_op_id);
 
 out:
     return ret;
@@ -3583,7 +3583,7 @@ na_ofi_cq_process_retries(na_context_t *context)
         if (!na_ofi_op_id)
             break;
 
-        NA_LOG_SUBSYS_DEBUG(op, "Attempting to retry %p", na_ofi_op_id);
+        NA_LOG_SUBSYS_DEBUG(op, "Attempting to retry %p", (void *)na_ofi_op_id);
         NA_CHECK_SUBSYS_ERROR(op,
             hg_atomic_get32(&na_ofi_op_id->status) & NA_OFI_OP_CANCELED, error,
             ret, NA_FAULT, "Operation ID was canceled");
@@ -3652,7 +3652,7 @@ na_ofi_cq_process_retries(na_context_t *context)
         }
 
         if (unlikely(rc == -FI_EAGAIN)) {
-            NA_LOG_SUBSYS_DEBUG(op, "Re-pushing %p for retry", na_ofi_op_id);
+            NA_LOG_SUBSYS_DEBUG(op, "Re-pushing %p for retry", (void *)na_ofi_op_id);
 
             /* Re-push op ID to retry queue */
             HG_QUEUE_PUSH_TAIL(&NA_OFI_CONTEXT(context)->retry_op_queue->queue,
@@ -3664,7 +3664,7 @@ na_ofi_cq_process_retries(na_context_t *context)
         } else
             NA_CHECK_SUBSYS_ERROR(op, rc != 0, error, ret,
                 na_ofi_errno_to_na((int) -rc),
-                "retry operation of %d failed, rc: %d (%s)",
+                "retry operation of %d failed, rc: %zd (%s)",
                 na_ofi_op_id->completion_data.callback_info.type, rc,
                 fi_strerror((int) -rc));
 
@@ -3709,10 +3709,10 @@ na_ofi_complete(struct na_ofi_op_id *na_ofi_op_id, na_return_t cb_ret)
     if (status & NA_OFI_OP_CANCELED) {
         /* If it was canceled while being processed, set callback ret
          * accordingly */
-        NA_LOG_SUBSYS_DEBUG(op, "Operation ID %p is canceled", na_ofi_op_id);
+        NA_LOG_SUBSYS_DEBUG(op, "Operation ID %p is canceled", (void *)na_ofi_op_id);
     } else if (status & NA_OFI_OP_ERRORED) {
         /* If it was errored, set callback ret accordingly */
-        NA_LOG_SUBSYS_DEBUG(op, "Operation ID %p is errored", na_ofi_op_id);
+        NA_LOG_SUBSYS_DEBUG(op, "Operation ID %p is errored", (void *)na_ofi_op_id);
     }
 
     switch (callback_info->type) {
@@ -3820,8 +3820,9 @@ na_ofi_check_protocol(const char *protocol_name)
     while (prov != NULL) {
         NA_LOG_SUBSYS_DEBUG(cls,
             "fabric_attr - prov_name %s, name - %s, "
-            "domain_attr - name %s, mode: 0x%llx, domain_attr->mode 0x%llx, "
-            "caps: 0x%llx",
+            "domain_attr - name %s, mode: 0x%" PRIx64
+	    ", domain_attr->mode 0x%" PRIx64 ", "
+            "caps: 0x%" PRIx64,
             prov->fabric_attr->prov_name, prov->fabric_attr->name,
             prov->domain_attr->name, prov->mode, prov->domain_attr->mode,
             prov->caps);
@@ -4021,8 +4022,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     /* Set context limits */
     NA_CHECK_SUBSYS_ERROR(fatal, context_max > priv->domain->context_max, out,
         ret, NA_INVALID_ARG,
-        "Maximum number of requested contexts (%d) exceeds provider "
-        "limitation(% d) ",
+        "Maximum number of requested contexts (%" PRIu8 ") exceeds provider "
+        "limitation(%zu)",
         context_max, priv->domain->context_max);
     priv->context_max = context_max;
 
@@ -4760,8 +4761,8 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->info.msg.tag = tag;
 
     NA_LOG_SUBSYS_DEBUG(msg,
-        "Posting unexpected msg send with tag=%llu (op id=%p)",
-        tag | NA_OFI_UNEXPECTED_TAG, na_ofi_op_id);
+        "Posting unexpected msg send with tag=%" PRIu64 " (op id=%p)",
+        tag | NA_OFI_UNEXPECTED_TAG, (void *)na_ofi_op_id);
 
     /* Post the FI unexpected send request */
     rc = fi_tsend(ctx->fi_tx, buf, buf_size, na_ofi_op_id->info.msg.fi_mr,
@@ -4772,7 +4773,7 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
         else {
-            NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", na_ofi_op_id);
+            NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", (void *)na_ofi_op_id);
 
             /* Push op ID to retry queue */
             hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
@@ -4784,7 +4785,7 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     } else
         NA_CHECK_SUBSYS_ERROR(msg, rc != 0, error, ret,
             na_ofi_errno_to_na((int) -rc),
-            "fi_tsend() unexpected failed, rc: %d (%s)", rc,
+            "fi_tsend() unexpected failed, rc: %zd (%s)", rc,
             fi_strerror((int) -rc));
 
 out:
@@ -4830,7 +4831,7 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->info.msg.tag = 0;
 
     NA_LOG_SUBSYS_DEBUG(
-        msg, "Posting unexpected msg recv (op id=%p)", na_ofi_op_id);
+        msg, "Posting unexpected msg recv (op id=%p)", (void *)na_ofi_op_id);
 
     /* Post the FI unexpected recv request */
     rc = fi_trecv(ctx->fi_rx, buf, buf_size, na_ofi_op_id->info.msg.fi_mr,
@@ -4841,7 +4842,7 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
         else {
-            NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", na_ofi_op_id);
+            NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", (void *)na_ofi_op_id);
 
             /* Push op ID to retry queue */
             hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
@@ -4853,7 +4854,7 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     } else
         NA_CHECK_SUBSYS_ERROR(msg, rc != 0, error, ret,
             na_ofi_errno_to_na((int) -rc),
-            "fi_trecv() unexpected failed, rc: %d (%s)", rc,
+            "fi_trecv() unexpected failed, rc: %zd (%s)", rc,
             fi_strerror((int) -rc));
 
 out:
@@ -4903,8 +4904,8 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->info.msg.tag = tag;
 
     NA_LOG_SUBSYS_DEBUG(msg,
-        "Posting expected msg send with tag=%llu (op id=%p)", tag,
-        na_ofi_op_id);
+        "Posting expected msg send with tag=%" PRIu32 " (op id=%p)", tag,
+        (void *)na_ofi_op_id);
 
     /* Post the FI expected send request */
     rc = fi_tsend(ctx->fi_tx, buf, buf_size, na_ofi_op_id->info.msg.fi_mr,
@@ -4914,7 +4915,7 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
         else {
-            NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", na_ofi_op_id);
+            NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", (void *)na_ofi_op_id);
 
             /* Push op ID to retry queue */
             hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
@@ -4926,7 +4927,7 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     } else
         NA_CHECK_SUBSYS_ERROR(msg, rc != 0, error, ret,
             na_ofi_errno_to_na((int) -rc),
-            "fi_tsend() expected failed, rc: %d (%s)", rc,
+            "fi_tsend() expected failed, rc: %zd (%s)", rc,
             fi_strerror((int) -rc));
 
 out:
@@ -4976,8 +4977,8 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->info.msg.tag = tag;
 
     NA_LOG_SUBSYS_DEBUG(msg,
-        "Posting expected msg recv with tag=%llu (op id=%p)", tag,
-        na_ofi_op_id);
+        "Posting expected msg recv with tag=%" PRIu32 " (op id=%p)", tag,
+        (void *)na_ofi_op_id);
 
     /* Post the FI expected recv request */
     rc = fi_trecv(ctx->fi_rx, buf, buf_size, na_ofi_op_id->info.msg.fi_mr,
@@ -4987,7 +4988,7 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
             /* Do not attempt to retry */
             NA_GOTO_DONE(error, ret, NA_AGAIN);
         else {
-            NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", na_ofi_op_id);
+            NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", (void *)na_ofi_op_id);
 
             /* Push op ID to retry queue */
             hg_thread_mutex_lock(&ctx->retry_op_queue->mutex);
@@ -4999,7 +5000,7 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     } else
         NA_CHECK_SUBSYS_ERROR(msg, rc != 0, error, ret,
             na_ofi_errno_to_na((int) -rc),
-            "fi_trecv() expected failed, rc: %d (%s)", rc,
+            "fi_trecv() expected failed, rc: %zd (%s)", rc,
             fi_strerror((int) -rc));
 
 out:
@@ -5054,7 +5055,7 @@ na_ofi_mem_handle_create_segments(na_class_t *na_class,
     /* Check that we do not exceed IOV limit */
     NA_CHECK_SUBSYS_ERROR(fatal,
         segment_count > NA_OFI_CLASS(na_class)->iov_max, error, ret,
-        NA_INVALID_ARG, "Segment count exceeds provider limit (%d)",
+        NA_INVALID_ARG, "Segment count exceeds provider limit (%zu)",
         NA_OFI_CLASS(na_class)->iov_max);
 
     /* Allocate memory handle */
@@ -5500,7 +5501,7 @@ na_ofi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
     if ((status & NA_OFI_OP_COMPLETED) || (status & NA_OFI_OP_ERRORED))
         goto out;
 
-    NA_LOG_SUBSYS_DEBUG(op, "Canceling operation ID %p", na_ofi_op_id);
+    NA_LOG_SUBSYS_DEBUG(op, "Canceling operation ID %p", (void *)na_ofi_op_id);
 
     switch (na_ofi_op_id->completion_data.callback_info.type) {
         case NA_CB_RECV_UNEXPECTED:

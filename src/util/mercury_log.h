@@ -382,7 +382,7 @@ hg_log_outlet_register(struct hg_log_outlet *outlet);
 HG_UTIL_PUBLIC void
 hg_log_write(struct hg_log_outlet *outlet, enum hg_log_level log_level,
     const char *file, unsigned int line, const char *func, const char *format,
-    ...);
+    ...) HG_UTIL_PRINTF_LIKE(6, 7);
 
 /*********************/
 /* Public Variables */

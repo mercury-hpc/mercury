@@ -1302,7 +1302,7 @@ HG_Registered(hg_class_t *hg_class, hg_id_t id, hg_bool_t *flag)
     hg_thread_spin_lock(&private_class->register_lock);
     ret = HG_Core_registered(hg_class->core_class, id, flag);
     hg_thread_spin_unlock(&private_class->register_lock);
-    HG_CHECK_HG_ERROR(done, ret, "Could not check for registered RPC ID (s)",
+    HG_CHECK_HG_ERROR(done, ret, "Could not check for registered RPC ID (%s)",
         HG_Error_to_string(ret));
 
 done:

@@ -8,10 +8,11 @@
  * found at the root of the source code distribution tree.
  */
 
-#include "mercury_test.h"
-
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#include "mercury_test.h"
 
 /****************/
 /* Local Macros */
@@ -273,7 +274,7 @@ hg_test_rpc_null(
 
     /* Forward call to remote addr and get a new request */
     HG_TEST_LOG_DEBUG(
-        "Forwarding null RPC, op id: %u...", hg_test_rpc_null_id_g);
+        "Forwarding null RPC, op id: %" PRIu64 "...", hg_test_rpc_null_id_g);
     forward_cb_args.request = request;
 
 again:
@@ -325,7 +326,7 @@ hg_test_rpc(hg_context_t *context, hg_request_class_t *request_class,
     rpc_open_in_struct.handle = rpc_open_handle;
 
     /* Forward call to remote addr and get a new request */
-    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
+    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %" PRIu64 "...", rpc_id);
     forward_cb_args.request = request;
     forward_cb_args.rpc_handle = &rpc_open_handle;
 again:
@@ -399,7 +400,7 @@ hg_test_rpc_lookup(hg_context_t *context, hg_request_class_t *request_class,
         rpc_open_in_struct.handle = rpc_open_handle;
 
         /* Forward call to remote addr and get a new request */
-        HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
+        HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %" PRIu64 "...", rpc_id);
         forward_cb_args.request = request;
         forward_cb_args.rpc_handle = &rpc_open_handle;
         ret =
@@ -464,7 +465,7 @@ hg_test_rpc_reset(hg_context_t *context, hg_request_class_t *request_class,
     rpc_open_in_struct.handle = rpc_open_handle;
 
     /* Forward call to remote addr and get a new request */
-    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
+    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %" PRIu64 "...", rpc_id);
     forward_cb_args.request = request;
     forward_cb_args.rpc_handle = &rpc_open_handle;
     ret = HG_Forward(handle, callback, &forward_cb_args, &rpc_open_in_struct);
@@ -513,7 +514,7 @@ hg_test_rpc_mask(hg_context_t *context, hg_request_class_t *request_class,
     rpc_open_in_struct.handle = rpc_open_handle;
 
     /* Forward call to remote addr and get a new request */
-    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
+    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %" PRIu64 "...", rpc_id);
     forward_cb_args.request = request;
     forward_cb_args.rpc_handle = &rpc_open_handle;
     ret = HG_Forward(handle, callback, &forward_cb_args, &rpc_open_in_struct);
@@ -568,7 +569,7 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     rpc_open_in_struct.handle = rpc_open_handle1;
 
     /* Forward call to remote addr and get a new request */
-    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
+    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %" PRIu64 "...", rpc_id);
     forward_cb_args1.request = request1;
     forward_cb_args1.rpc_handle = &rpc_open_handle1;
     ret = HG_Forward(handle1, callback, &forward_cb_args1, &rpc_open_in_struct);
@@ -592,7 +593,7 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
     rpc_open_in_struct.handle = rpc_open_handle2;
 
     /* Forward call to remote addr and get a new request */
-    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %u...", rpc_id);
+    HG_TEST_LOG_DEBUG("Forwarding rpc_open, op id: %" PRIu64 "...", rpc_id);
     forward_cb_args2.request = request2;
     forward_cb_args2.rpc_handle = &rpc_open_handle2;
     ret = HG_Forward(handle2, callback, &forward_cb_args2, &rpc_open_in_struct);
@@ -631,7 +632,7 @@ hg_test_rpc_multiple(hg_context_t *context, hg_request_class_t *request_class,
         rpc_open_handle_m[i].cookie = i;
         rpc_open_in_struct.path = rpc_open_path;
         rpc_open_in_struct.handle = rpc_open_handle_m[i];
-        HG_TEST_LOG_DEBUG(" %d Forwarding rpc_open, op id: %u...", i, rpc_id);
+        HG_TEST_LOG_DEBUG(" %d Forwarding rpc_open, op id: %" PRIu64 "...", i, rpc_id);
         forward_cb_args_m[i].request = request_m[i];
         forward_cb_args_m[i].rpc_handle = &rpc_open_handle_m[i];
 again:
@@ -679,7 +680,7 @@ hg_test_overflow(hg_context_t *context, hg_request_class_t *request_class,
         done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
     /* Forward call to remote addr and get a new request */
-    HG_TEST_LOG_DEBUG("Forwarding RPC, op id: %u...", rpc_id);
+    HG_TEST_LOG_DEBUG("Forwarding RPC, op id: %" PRIu64 "...", rpc_id);
     ret = HG_Forward(handle, callback, request, NULL);
     HG_TEST_CHECK_HG_ERROR(
         done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
@@ -714,7 +715,7 @@ hg_test_cancel_rpc(hg_context_t *context, hg_request_class_t *request_class,
         done, ret, "HG_Create() failed (%s)", HG_Error_to_string(ret));
 
     /* Forward call to remote addr and get a new request */
-    HG_TEST_LOG_DEBUG("Forwarding RPC, op id: %u...", rpc_id);
+    HG_TEST_LOG_DEBUG("Forwarding RPC, op id: %" PRIu64 "...", rpc_id);
     ret = HG_Forward(handle, callback, request, NULL);
     HG_TEST_CHECK_HG_ERROR(
         done, ret, "HG_Forward() failed (%s)", HG_Error_to_string(ret));
