@@ -2872,7 +2872,7 @@ na_sm_addr_event_recv(int sock, na_sm_cmd_hdr_t *cmd_hdr, int *tx_notify,
             goto done;
         } else
             NA_GOTO_SUBSYS_ERROR(addr, done, ret, na_sm_errno_to_na(errno),
-                "recvmsg() failed (% s)", strerror(errno));
+                "recvmsg() failed (%s)", strerror(errno));
     }
 
     *received = NA_TRUE;
@@ -2969,7 +2969,7 @@ na_sm_op_retry(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id)
     struct na_sm_op_queue *retry_op_queue =
         &NA_SM_CLASS(na_class)->endpoint.retry_op_queue;
 
-    NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", na_sm_op_id);
+    NA_LOG_SUBSYS_DEBUG(op, "Pushing %p for retry", (void *)na_sm_op_id);
 
     /* Push op ID to retry queue */
     hg_thread_spin_lock(&retry_op_queue->lock);
@@ -3563,7 +3563,7 @@ na_sm_process_retries(
         if (!na_sm_op_id)
             break;
 
-        NA_LOG_SUBSYS_DEBUG(op, "Attempting to retry %p", na_sm_op_id);
+        NA_LOG_SUBSYS_DEBUG(op, "Attempting to retry %p", (void *)na_sm_op_id);
 
         /* Attempt to resolve address first */
         if (!(hg_atomic_get32(&na_sm_op_id->na_sm_addr->status) &
@@ -3662,7 +3662,7 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id, int notify)
     if (status & NA_SM_OP_CANCELED) {
         /* If it was canceled while being processed, set callback ret
          * accordingly */
-        NA_LOG_SUBSYS_DEBUG(op, "Operation ID %p was canceled", na_sm_op_id);
+        NA_LOG_SUBSYS_DEBUG(op, "Operation ID %p was canceled", (void *)na_sm_op_id);
         callback_info->ret = NA_CANCELED;
     } else
         callback_info->ret = NA_SUCCESS;
@@ -3791,7 +3791,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
         "getrlimit() failed (%s)", strerror(errno));
 
     NA_LOG_SUBSYS_DEBUG(
-        cls, "RLIMIT_NOFILE is: %d, max %d", rlimit.rlim_cur, rlimit.rlim_max);
+        cls, "RLIMIT_NOFILE is: %ju, max %ju", (uintmax_t)rlimit.rlim_cur, (uintmax_t)rlimit.rlim_max);
 
     /* Initialize private data */
     na_class->plugin_class = malloc(sizeof(struct na_sm_class));
@@ -4225,7 +4225,7 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_bool_t rc;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_UNEXPECTED_SIZE, done, ret,
-        NA_OVERFLOW, "Exceeds unexpected size, %d", buf_size);
+        NA_OVERFLOW, "Exceeds unexpected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
@@ -4329,7 +4329,7 @@ na_sm_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_UNEXPECTED_SIZE, done, ret,
-        NA_OVERFLOW, "Exceeds unexpected size, %d", buf_size);
+        NA_OVERFLOW, "Exceeds unexpected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
@@ -4410,7 +4410,7 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_bool_t rc;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_EXPECTED_SIZE, done, ret,
-        NA_OVERFLOW, "Exceeds expected size, %d", buf_size);
+        NA_OVERFLOW, "Exceeds expected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
@@ -4516,7 +4516,7 @@ na_sm_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
 
     NA_CHECK_SUBSYS_ERROR(msg, buf_size > NA_SM_EXPECTED_SIZE, done, ret,
-        NA_OVERFLOW, "Exceeds expected size, %d", buf_size);
+        NA_OVERFLOW, "Exceeds expected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_SUBSYS_ERROR(op, na_sm_op_id == NULL, done, ret, NA_INVALID_ARG,
@@ -4866,7 +4866,7 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     if (unlikely(nwrite < 0)) {
         if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
             NA_GOTO_SUBSYS_ERROR(fatal, error, ret, na_sm_errno_to_na(errno),
-                "process_vm_writev() failed (%s):\n",
+                "process_vm_writev() failed (%s):\n"
                 "Kernel Yama configuration does not allow cross-memory attach, "
                 "either run as root: \n"
                 "# /usr/sbin/sysctl kernel.yama.ptrace_scope=0\n"
@@ -5054,7 +5054,7 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     if (unlikely(nread < 0)) {
         if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
             NA_GOTO_SUBSYS_ERROR(fatal, error, ret, na_sm_errno_to_na(errno),
-                "process_vm_readv() failed (%s):\n",
+                "process_vm_readv() failed (%s):\n"
                 "Kernel Yama configuration does not allow cross-memory attach, "
                 "either run as root: \n"
                 "# /usr/sbin/sysctl kernel.yama.ptrace_scope=0\n"
@@ -5231,7 +5231,7 @@ na_sm_cancel(
         NA_SM_OP_COMPLETED)
         goto done;
 
-    NA_LOG_SUBSYS_DEBUG(op, "Canceling operation ID %p", na_sm_op_id);
+    NA_LOG_SUBSYS_DEBUG(op, "Canceling operation ID %p", (void *)na_sm_op_id);
 
     switch (na_sm_op_id->completion_data.callback_info.type) {
         case NA_CB_RECV_UNEXPECTED:
