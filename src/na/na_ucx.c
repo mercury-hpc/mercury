@@ -397,6 +397,24 @@ na_cb_type_string(na_cb_type_t ty)
     }
 }
 
+static inline const char *
+get_octet(const void *_buf, na_size_t buf_size, unsigned int idx)
+{
+#define NBUFS 128
+    static const char none[] = "--";
+    static char s[NBUFS][3];
+    static int next = 0;
+    const char *result = s[next];
+    const char *buf = _buf;
+
+    if (idx >= buf_size)
+        return none;
+    (void)snprintf(s[next], sizeof(s[0]), "%02" PRIx8, buf[idx]);
+
+    next = (next + 1) % NBUFS;
+    return result;
+}
+
 static void *
 zalloc(size_t size)
 {
@@ -1151,14 +1169,14 @@ recv_callback(void NA_UNUSED *request, ucs_status_t status,
     const op_status_t expected_status =
         (status == UCS_ERR_CANCELED) ? op_s_canceled : op_s_underway;
 
-    NA_LOG_DEBUG("op id %p ucx status %s",
-        (void *)op_id, ucs_status_string(status));
-
     if (!hg_atomic_cas32(&op_id->status, expected_status, op_s_complete)) {
         NA_LOG_ERROR("op id %p: expected status %s, found %s",
             (void *)op_id,
             op_status_string(expected_status),
             op_status_string(op_id->status));
+    } else {
+        NA_LOG_DEBUG("op id %p ucx status %s",
+            (void *)op_id, ucs_status_string(status));
     }
 
     if (status == UCS_OK) {
@@ -1180,6 +1198,46 @@ recv_callback(void NA_UNUSED *request, ucs_status_t status,
 
         NA_LOG_DEBUG("op id %p ucx tag %" PRIx64 " na tag %" PRIu32,
             (void *)op_id, info->sender_tag, recv_unexpected->tag);
+
+        NA_LOG_DEBUG("%zu rx bytes"
+                     " %s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s"
+                     ":%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s"
+                     ":%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s"
+                     ":%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s",
+            info->length,
+            get_octet(buf, info->length,  0), get_octet(buf, info->length,  1),
+            get_octet(buf, info->length,  2), get_octet(buf, info->length,  3),
+            get_octet(buf, info->length,  4), get_octet(buf, info->length,  5),
+            get_octet(buf, info->length,  6), get_octet(buf, info->length,  7),
+            get_octet(buf, info->length,  8), get_octet(buf, info->length,  9),
+            get_octet(buf, info->length, 10), get_octet(buf, info->length, 11),
+            get_octet(buf, info->length, 12), get_octet(buf, info->length, 13),
+            get_octet(buf, info->length, 14), get_octet(buf, info->length, 15),
+            get_octet(buf, info->length, 16), get_octet(buf, info->length, 17),
+            get_octet(buf, info->length, 18), get_octet(buf, info->length, 19),
+            get_octet(buf, info->length, 20), get_octet(buf, info->length, 21),
+            get_octet(buf, info->length, 22), get_octet(buf, info->length, 23),
+            get_octet(buf, info->length, 24), get_octet(buf, info->length, 25),
+            get_octet(buf, info->length, 26), get_octet(buf, info->length, 27),
+            get_octet(buf, info->length, 28), get_octet(buf, info->length, 29),
+            get_octet(buf, info->length, 30), get_octet(buf, info->length, 31),
+            get_octet(buf, info->length, 32), get_octet(buf, info->length, 33),
+            get_octet(buf, info->length, 34), get_octet(buf, info->length, 35),
+            get_octet(buf, info->length, 36), get_octet(buf, info->length, 37),
+            get_octet(buf, info->length, 38), get_octet(buf, info->length, 39),
+            get_octet(buf, info->length, 40), get_octet(buf, info->length, 41),
+            get_octet(buf, info->length, 42), get_octet(buf, info->length, 43),
+            get_octet(buf, info->length, 44), get_octet(buf, info->length, 45),
+            get_octet(buf, info->length, 46), get_octet(buf, info->length, 47),
+            get_octet(buf, info->length, 48), get_octet(buf, info->length, 49),
+            get_octet(buf, info->length, 50), get_octet(buf, info->length, 51),
+            get_octet(buf, info->length, 52), get_octet(buf, info->length, 53),
+            get_octet(buf, info->length, 54), get_octet(buf, info->length, 55),
+            get_octet(buf, info->length, 56), get_octet(buf, info->length, 57),
+            get_octet(buf, info->length, 58), get_octet(buf, info->length, 59),
+            get_octet(buf, info->length, 60), get_octet(buf, info->length, 61),
+            get_octet(buf, info->length, 62), get_octet(buf, info->length, 63));
+
         assert(recv_unexpected->source != NULL);
         cbinfo->ret = NA_SUCCESS;
     } else if (status == UCS_ERR_CANCELED) {
@@ -1232,7 +1290,9 @@ na_ucx_progress(na_class_t NA_UNUSED *na_class,
     na_ucx_context_t *nuctx = context->plugin_context;
     hg_time_t deadline, now;
 
+#if 0
     NA_LOG_DEBUG("enter timeout %ums", timeout_ms);
+#endif
 
     if (hg_time_get_current_ms(&now) < 0)
         return NA_AGAIN;    // TBD pick a different/better return code?
@@ -1244,12 +1304,16 @@ na_ucx_progress(na_class_t NA_UNUSED *na_class,
         bool progress = false;
 
         if (ucp_worker_progress(nuctx->worker) != 0) {
+#if 0
             NA_LOG_DEBUG("UCP made progress");
+#endif
             progress = true;
         }
 
         while ((ret = wireup_once(&nuctx->wiring)) > 0) {
+#if 0
             NA_LOG_DEBUG("wireup made progress");
+#endif
             progress = true;
         }
 
@@ -1267,7 +1331,9 @@ na_ucx_progress(na_class_t NA_UNUSED *na_class,
         }
     } while (hg_time_less(now, deadline));
 
+#if 0
     NA_LOG_DEBUG("timed out");
+#endif
     return NA_TIMEOUT;
 }
 
@@ -1317,6 +1383,46 @@ tagged_send(na_ucx_context_t *ctx, const void *buf, na_size_t buf_size,
 
     // XXX use standard endianness
     memcpy((void *)(uintptr_t)buf, &sender_id, sizeof(sender_id));
+
+    NA_LOG_DEBUG("posting %s buf %p len %zu tag %" PRIx64 " op %p"
+        " %s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s"
+        ":%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s"
+        ":%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s"
+        ":%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s",
+        na_cb_type_string(op_id->completion_data.callback_info.type), buf,
+        buf_size, tag, op_id,
+        get_octet(buf, buf_size,  0), get_octet(buf, buf_size,  1),
+        get_octet(buf, buf_size,  2), get_octet(buf, buf_size,  3),
+        get_octet(buf, buf_size,  4), get_octet(buf, buf_size,  5),
+        get_octet(buf, buf_size,  6), get_octet(buf, buf_size,  7),
+        get_octet(buf, buf_size,  8), get_octet(buf, buf_size,  9),
+        get_octet(buf, buf_size, 10), get_octet(buf, buf_size, 11),
+        get_octet(buf, buf_size, 12), get_octet(buf, buf_size, 13),
+        get_octet(buf, buf_size, 14), get_octet(buf, buf_size, 15),
+        get_octet(buf, buf_size, 16), get_octet(buf, buf_size, 17),
+        get_octet(buf, buf_size, 18), get_octet(buf, buf_size, 19),
+        get_octet(buf, buf_size, 20), get_octet(buf, buf_size, 21),
+        get_octet(buf, buf_size, 22), get_octet(buf, buf_size, 23),
+        get_octet(buf, buf_size, 24), get_octet(buf, buf_size, 25),
+        get_octet(buf, buf_size, 26), get_octet(buf, buf_size, 27),
+        get_octet(buf, buf_size, 28), get_octet(buf, buf_size, 29),
+        get_octet(buf, buf_size, 30), get_octet(buf, buf_size, 31),
+        get_octet(buf, buf_size, 32), get_octet(buf, buf_size, 33),
+        get_octet(buf, buf_size, 34), get_octet(buf, buf_size, 35),
+        get_octet(buf, buf_size, 36), get_octet(buf, buf_size, 37),
+        get_octet(buf, buf_size, 38), get_octet(buf, buf_size, 39),
+        get_octet(buf, buf_size, 40), get_octet(buf, buf_size, 41),
+        get_octet(buf, buf_size, 42), get_octet(buf, buf_size, 43),
+        get_octet(buf, buf_size, 44), get_octet(buf, buf_size, 45),
+        get_octet(buf, buf_size, 46), get_octet(buf, buf_size, 47),
+        get_octet(buf, buf_size, 48), get_octet(buf, buf_size, 49),
+        get_octet(buf, buf_size, 50), get_octet(buf, buf_size, 51),
+        get_octet(buf, buf_size, 52), get_octet(buf, buf_size, 53),
+        get_octet(buf, buf_size, 54), get_octet(buf, buf_size, 55),
+        get_octet(buf, buf_size, 56), get_octet(buf, buf_size, 57),
+        get_octet(buf, buf_size, 58), get_octet(buf, buf_size, 59),
+        get_octet(buf, buf_size, 60), get_octet(buf, buf_size, 61),
+        get_octet(buf, buf_size, 62), get_octet(buf, buf_size, 63));
 
     op_id->request = request =
         ucp_tag_send_nbx(ep, buf, buf_size, tag, &tx_params);
@@ -1725,6 +1831,8 @@ na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf, na_size_t buf_size
     size_t size;
     ucs_status_t status;
 
+    NA_LOG_DEBUG("memory handle %p", mh);
+
     if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local) {
         NA_LOG_ERROR("non-local memory handle %p cannot be serialized", mh);
         return NA_INVALID_ARG;
@@ -1775,6 +1883,8 @@ resolve_mem_handle_locked(ucp_ep_h ep, na_mem_handle_t mh)
     unpacked_rkey_t unpacked;
     packed_rkey_t *packed = &mh->handle.packed_remote;
     ucs_status_t status;
+
+    NA_LOG_DEBUG("memory handle %p", mh);
 
     if (hg_atomic_get32(&mh->kind) != na_ucx_mem_packed_remote)
         return mh;
