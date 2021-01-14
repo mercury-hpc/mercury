@@ -1556,17 +1556,18 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
         strstr(name, HG_CORE_ADDR_DELIMITER)) {
         char *lookup_names, *local_id_str;
         char *remote_name, *local_name;
+        char *(*tok)(char *str, const char *delim, char **saveptr) = strtok_r;
 
         strcpy(lookup_name, name);
 
         /* Get first part of address string with host ID */
-        strtok_r(lookup_name, HG_CORE_ADDR_DELIMITER, &lookup_names);
+        (*tok)(lookup_name, HG_CORE_ADDR_DELIMITER, &lookup_names);
 
         HG_CHECK_ERROR(strstr(name, HG_CORE_PROTO_DELIMITER) == NULL, error,
             ret, HG_PROTOCOL_ERROR, "Malformed address format");
 
         /* Get address SM host ID */
-        strtok_r(lookup_name, HG_CORE_PROTO_DELIMITER, &local_id_str);
+        (*tok)(lookup_name, HG_CORE_PROTO_DELIMITER, &local_id_str);
         na_ret =
             NA_SM_String_to_host_id(local_id_str + 2, &hg_core_addr->host_id);
         HG_CHECK_ERROR(na_ret != NA_SUCCESS, error, ret, (hg_return_t) na_ret,
@@ -1574,7 +1575,7 @@ hg_core_addr_lookup(struct hg_core_private_class *hg_core_class,
             NA_Error_to_string(na_ret));
 
         /* Separate remaining two parts */
-        strtok_r(lookup_names, HG_CORE_ADDR_DELIMITER, &remote_name);
+        (*tok)(lookup_names, HG_CORE_ADDR_DELIMITER, &remote_name);
         local_name = lookup_names;
 
         /* Compare IDs, if they match it's local address */
