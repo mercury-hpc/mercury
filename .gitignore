@@ -1,15 +1,4 @@
 build
-src/na/bits.h
-src/na/rxpool.c
-src/na/rxpool.h
-src/na/tag.h
-src/na/util.c
-src/na/util.h
-src/na/wireup.h
-src/na/wiring.c
-src/na/wiring_compat.h
-src/na/wiring.h
-src/na/wiring_impl.h
 **/.*.swp
 tags
 .vscode
