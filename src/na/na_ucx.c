@@ -21,9 +21,9 @@
 
 #include <ucp/api/ucp.h>
 
-#include "rxpool.h"
-#include "wiring.h"
-#include "bits.h"
+#include "wireup/rxpool.h"
+#include "wireup/wiring.h"
+#include "wireup/bits.h"
 
 /*
  * Local Macros
