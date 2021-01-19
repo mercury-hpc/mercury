@@ -1663,10 +1663,14 @@ na_ucx_msg_send(na_context_t *context,
 
     NA_LOG_DEBUG("deferring op %p", op_id);
 
+    op_id->status = op_s_deferred;
+
     HG_QUEUE_PUSH_TAIL(&cache->deferrals, op_id, info.tx.link);
 
     ret = NA_SUCCESS;
 release:
+    // TBD put the following comments into the right place or delete them.
+    //
     // if dest_addr has no wire ID, increase refcount on dest_addr by 1,
     //     start wireup with dest_addr as callback arg; set wire ID on
     //     dest_addr; enqueue op_id on dest_addr; in wireup callback,
@@ -2041,6 +2045,8 @@ na_ucx_copy(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
         if (address_wire_read_end(aseq))
             break;
     }
+
+    /* XXX Need to verify that `ep` cannot be NULL here. */
 
     assert(nuctx == ctx->plugin_context);
 
