@@ -159,6 +159,7 @@ typedef enum _op_status {
   op_s_complete = 0
 , op_s_underway
 , op_s_canceled
+, op_s_deferred
 } op_status_t;
 
 typedef struct _op_rxinfo {
@@ -377,6 +378,8 @@ op_status_string(op_status_t status)
         return "canceled";
     case op_s_complete:
         return "complete";
+    case op_s_deferred:
+        return "deferred";
     case op_s_underway:
         return "underway";
     default:
@@ -1383,14 +1386,32 @@ na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
     case NA_CB_PUT:
     case NA_CB_GET:
     case NA_CB_RECV_UNEXPECTED:
-    case NA_CB_SEND_UNEXPECTED:
-    case NA_CB_SEND_EXPECTED:
     case NA_CB_RECV_EXPECTED:
         if (hg_atomic_cas32(&op_id->status, op_s_underway, op_s_canceled)) {
             /* UCP will still run the callback, which will reset
              * `op_id->request`
              */
+            assert(op_id->request != NULL);
             ucp_request_cancel(ctx->worker, op_id->request);
+        } else {
+            hg_util_int32_t status = hg_atomic_get32(&op_id->status);
+            assert(status == op_s_canceled || status == op_s_complete);
+        }
+        return NA_SUCCESS;
+    case NA_CB_SEND_UNEXPECTED:
+    case NA_CB_SEND_EXPECTED:
+        if (hg_atomic_cas32(&op_id->status, op_s_underway, op_s_canceled)) {
+            /* UCP will still run the callback, which will reset
+             * `op_id->request`
+             */
+            assert(op_id->request != NULL);
+            ucp_request_cancel(ctx->worker, op_id->request);
+        } else if (hg_atomic_cas32(&op_id->status, op_s_deferred,
+                                   op_s_complete)) {
+            assert(op_id->request == NULL);
+        } else {
+            hg_util_int32_t status = hg_atomic_get32(&op_id->status);
+            assert(status == op_s_canceled || status == op_s_complete);
         }
         return NA_SUCCESS;
     default:
@@ -1514,7 +1535,13 @@ wire_event_callback(wire_event_info_t info, void *arg)
         na_size_t buf_size = op_id->info.tx.buf_size;
         uint64_t tag = op_id->info.tx.tag;
         NA_LOG_DEBUG("  op %p", op_id);
-        tagged_send(buf, buf_size, info.ep, info.sender_id, tag, op_id);
+        if (hg_atomic_cas32(&op_id->status, op_s_deferred, op_s_underway))
+            tagged_send(buf, buf_size, info.ep, info.sender_id, tag, op_id);
+        else if (hg_atomic_cas32(&op_id->status, op_s_canceled, op_s_complete)){
+            struct na_cb_info *cbinfo = &op_id->completion_data.callback_info;
+            cbinfo->ret = NA_CANCELED;
+            na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
+        }
     }
     HG_QUEUE_INIT(&cache->deferrals);
     NA_LOG_DEBUG("end deferred xmits");
@@ -1584,8 +1611,7 @@ na_ucx_msg_send(na_context_t *context,
     else
         tag |= nuctx->unexp.tag;
 
-    /* TBD Assert expected status */
-    op_id->status = op_s_underway;
+    /* TBD Assert expected op_id->status */
     op_id->na_ctx = context;
     op_id->completion_data.callback_info.type = cb_type;
     op_id->completion_data.callback = callback;
@@ -1600,6 +1626,7 @@ na_ucx_msg_send(na_context_t *context,
      * just send and return.
      */
     if (cached_ctx == context->plugin_context && sender_id != sender_id_nil) {
+        op_id->status = op_s_underway;
         tagged_send(buf, buf_size, ep, sender_id, tag, op_id);
         return NA_SUCCESS;
     }
@@ -1637,6 +1664,7 @@ na_ucx_msg_send(na_context_t *context,
             goto release;
         }
     } else if ((sender_id = cache->sender_id) != sender_id_nil) {
+        op_id->status = op_s_underway;
         tagged_send(buf, buf_size, ep, sender_id, tag, op_id);
         ret = NA_SUCCESS;
         goto release;
