@@ -141,7 +141,7 @@ typedef enum {
 /*****************/
 
 /* Max timeout */
-#define HG_MAX_IDLE_TIME (3600 * 1000)
+#define HG_MAX_IDLE_TIME (30 * 1000)
 
 /* HG size max */
 #define HG_SIZE_MAX (UINT64_MAX)
