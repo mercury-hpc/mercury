@@ -3680,7 +3680,7 @@ hg_core_progress(struct hg_core_private_context *context, unsigned int timeout)
             hg_thread_mutex_unlock(&context->completion_queue_notify_mutex);
         } else if (timeout && hg_core_poll_try_wait(context)) {
             /* This is the case for NA plugins that don't expose a fd */
-            poll_timeout = (unsigned int) (remaining * 1000.0);
+            poll_timeout = 0;
         }
 
         /* Only enter blocking wait if it is safe to */
