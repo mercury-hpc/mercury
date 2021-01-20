@@ -1,6 +1,9 @@
 #!/bin/bash
 
+# BMI
 BMI_VERSION=master
+
+# OFI
 if [[ $MERCURY_BUILD_CONFIGURATION == 'Tsan' ]]; then
   OFI_CFLAGS="-O1 -g -fsanitize=thread"
   OFI_EXTRA_FLAGS="--enable-debug"
@@ -10,6 +13,18 @@ if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
 fi
 #OFI_PR=
 OFI_VERSION=1.11.2
+
+# UCX
+if [[ $MERCURY_BUILD_CONFIGURATION == 'Tsan' ]]; then
+  UCX_CFLAGS="-O1 -g -fsanitize=thread"
+  UCX_EXTRA_FLAGS="--enable-debug"
+fi
+if [[ $MERCURY_BUILD_CONFIGURATION == 'Debug' ]]; then
+  UCX_EXTRA_FLAGS="--enable-debug"
+fi
+UCX_VERSION=1.9.0
+
+
 PREFIX=${RUNNER_TEMP}/${INSTALL_DIR}
 
 set -e
@@ -38,4 +53,10 @@ if [[ ${RUNNER_OS} == 'Linux' ]]; then
     ./autogen.sh;
   fi
   ./configure --prefix=$PREFIX --disable-usnic --disable-mrail --disable-rstream --disable-perf --disable-efa --disable-psm2 --disable-psm --disable-verbs --disable-shm --disable-static --disable-silent-rules ${OFI_EXTRA_FLAGS} CC="${CC}" CFLAGS="${OFI_CFLAGS}" && make -j2 -s && make install;
+
+  # UCX
+  cd $HOME && wget https://github.com/openucx/ucx/releases/download/v${UCX_VERSION}/ucx-${UCX_VERSION}.tar.gz
+  tar -xzf ucx-${UCX_VERSION}.tar.gz;
+  cd ucx-${UCX_VERSION};
+  ./configure --prefix=$PREFIX --enable-profiling --enable-frame-pointer --enable-stats --enable-memtrack --enable-fault-injection --enable-mt --disable-silent-rules ${UCX_EXTRA_FLAGS} CC="${CC}" CFLAGS="${UCX_CFLAGS}" && make -j2 -s && make install;
 fi
