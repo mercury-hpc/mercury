@@ -58,5 +58,5 @@ if [[ ${RUNNER_OS} == 'Linux' ]]; then
   cd $HOME && wget https://github.com/openucx/ucx/releases/download/v${UCX_VERSION}/ucx-${UCX_VERSION}.tar.gz
   tar -xzf ucx-${UCX_VERSION}.tar.gz;
   cd ucx-${UCX_VERSION};
-  ./configure --prefix=$PREFIX --enable-profiling --enable-frame-pointer --enable-stats --enable-memtrack --enable-fault-injection --enable-mt --disable-silent-rules ${UCX_EXTRA_FLAGS} CC="${CC}" CFLAGS="${UCX_CFLAGS}" && make -j2 -s && make install;
+  ./configure --prefix=$PREFIX --enable-profiling --enable-frame-pointer --enable-stats --enable-memtrack --enable-fault-injection --enable-mt --disable-numa --disable-silent-rules ${UCX_EXTRA_FLAGS} CC="${CC}" CFLAGS="${UCX_CFLAGS}" && make -j2 -s && make install;
 fi
