@@ -1040,18 +1040,23 @@ hg_bulk_serialize(
     desc_info.flags &= (~HG_BULK_ALLOC & 0xff);
 
     /* Add eager flag to descriptor */
-    if ((flags & HG_BULK_EAGER) && (desc_info.flags & HG_BULK_READ_ONLY))
+    if ((flags & HG_BULK_EAGER) && (desc_info.flags & HG_BULK_READ_ONLY)) {
+        HG_LOG_DEBUG("HG_BULK_EAGER flag set");
         desc_info.flags |= HG_BULK_EAGER;
-    else
+    } else
         desc_info.flags &= (~HG_BULK_EAGER & 0xff);
 
 #ifdef NA_HAS_SM
     /* Add SM flag */
-    if (flags & HG_BULK_SM)
+    if (flags & HG_BULK_SM) {
+        HG_LOG_DEBUG("HG_BULK_SM flag set");
         desc_info.flags |= HG_BULK_SM;
-    else
+    } else
         desc_info.flags &= (~HG_BULK_SM & 0xff);
 #endif
+
+    HG_LOG_DEBUG("Serializing bulk handle with %u segment(s), len is %zu bytes",
+        hg_bulk->desc.info.segment_count, hg_bulk->desc.info.len);
 
     /* Descriptor info */
     HG_BULK_ENCODE(done, ret, buf_ptr, buf_size_left, &desc_info,
@@ -1068,6 +1073,8 @@ hg_bulk_serialize(
         /* N.B. skip serialize size if no handle */
         if (hg_bulk->na_mem_descs.handles.s[0] != NA_MEM_HANDLE_NULL) {
             na_return_t na_ret;
+
+            HG_LOG_DEBUG("Serializing single NA memory handle");
 
             HG_BULK_ENCODE(done, ret, buf_ptr, buf_size_left,
                 &hg_bulk->na_mem_descs.serialize_sizes.s[0], na_size_t);
@@ -1102,6 +1109,9 @@ hg_bulk_serialize(
         }
 #endif
     } else {
+        HG_LOG_DEBUG("Serializing %u NA memory handle(s)",
+            hg_bulk->desc.info.segment_count);
+
         ret = hg_bulk_serialize_mem_descs(hg_bulk->na_class, &buf_ptr,
             &buf_size_left, &hg_bulk->na_mem_descs, segments,
             desc_info.segment_count);
@@ -1124,6 +1134,8 @@ hg_bulk_serialize(
     if (desc_info.flags & HG_BULK_BIND) {
         hg_size_t serialize_size;
         unsigned long addr_flags = 0;
+
+        HG_LOG_DEBUG("HG_BULK_BIND flag set, serializing address information");
 
 #ifdef NA_HAS_SM
         if (flags & HG_BULK_SM)
@@ -1151,6 +1163,8 @@ hg_bulk_serialize(
     if (desc_info.flags & HG_BULK_EAGER) {
         hg_uint32_t i;
 
+        HG_LOG_DEBUG("Serializing eager bulk data, %u segment(s)",
+            hg_bulk->desc.info.segment_count);
         for (i = 0; i < desc_info.segment_count; i++) {
             if (!segments[i].len)
                 continue;
@@ -1239,6 +1253,7 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_ptr,
 #ifdef NA_HAS_SM
     /* Use SM classes if requested */
     if (hg_bulk->desc.info.flags & HG_BULK_SM) {
+        HG_LOG_DEBUG("HG_BULK_SM flag is set");
         hg_bulk->na_sm_class = HG_Core_class_get_na_sm(core_class);
         HG_CHECK_ERROR(hg_bulk->na_sm_class == NULL, error, ret,
             HG_PROTOCOL_ERROR, "SM class is not set");
@@ -1325,7 +1340,8 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_ptr,
     if (hg_bulk->desc.info.flags & HG_BULK_BIND) {
         hg_size_t serialize_size;
 
-        HG_LOG_DEBUG("Deserializing address information");
+        HG_LOG_DEBUG(
+            "HG_BULK_BIND flag set, deserializing address information");
 
         HG_BULK_DECODE(
             error, ret, buf_ptr, buf_size_left, &serialize_size, hg_size_t);

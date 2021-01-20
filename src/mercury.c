@@ -1923,6 +1923,8 @@ HG_Forward(hg_handle_t handle, hg_cb_t callback, void *arg, void *in_struct)
 
     HG_CHECK_ERROR(
         handle == HG_HANDLE_NULL, done, ret, HG_INVALID_ARG, "NULL HG handle");
+    HG_CHECK_ERROR(handle->info.addr == HG_ADDR_NULL, done, ret, HG_INVALID_ARG,
+        "NULL target addr");
 
     /* Set callback data */
     private_handle->forward_cb = callback;

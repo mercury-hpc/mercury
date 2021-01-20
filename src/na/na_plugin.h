@@ -49,10 +49,11 @@ struct na_cb_completion_data {
 #    define NA_UNUSED
 #endif
 
+/* Remove warnings from variables that are only used for debug */
 #ifdef NDEBUG
-#define NA_DEBUG_USED NA_UNUSED
+#    define NA_DEBUG_USED NA_UNUSED
 #else
-#define NA_DEBUG_USED
+#    define NA_DEBUG_USED
 #endif
 
 /**

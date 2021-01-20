@@ -88,6 +88,7 @@ hg_id_t hg_test_cancel_rpc_id_g = 0;
 /* test_bulk */
 hg_id_t hg_test_bulk_write_id_g = 0;
 hg_id_t hg_test_bulk_bind_write_id_g = 0;
+hg_id_t hg_test_bulk_bind_forward_id_g = 0;
 
 /* test_kill */
 hg_id_t hg_test_killed_rpc_id_g = 0;
@@ -336,7 +337,10 @@ hg_test_register(hg_class_t *hg_class)
         bulk_write_in_t, bulk_write_out_t, hg_test_bulk_write_cb);
     hg_test_bulk_bind_write_id_g =
         MERCURY_REGISTER(hg_class, "hg_test_bulk_bind_write", bulk_write_in_t,
-            bulk_bind_write_out_t, hg_test_bulk_bind_write_cb);
+            bulk_write_out_t, hg_test_bulk_bind_write_cb);
+    hg_test_bulk_bind_forward_id_g =
+        MERCURY_REGISTER(hg_class, "hg_test_bulk_bind_forward", bulk_write_in_t,
+            bulk_write_out_t, hg_test_bulk_bind_forward_cb);
 
     /* test_kill */
     hg_test_killed_rpc_id_g = MERCURY_REGISTER(
