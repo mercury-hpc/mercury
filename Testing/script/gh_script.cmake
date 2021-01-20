@@ -23,6 +23,9 @@ endif()
 set(CTEST_SITE "GitHub Actions")
 
 # Site info
+if(NOT DEFINED BUILD_NAME)
+  set(BUILD_NAME "$ENV{GITHUB_WORKFLOW}")
+endif()
 if(NOT DEFINED OS_NAME)
   set(OS_NAME "$ENV{RUNNER_OS}")
 endif()
@@ -46,7 +49,11 @@ set(CTEST_BUILD_CONFIGURATION ${MERCURY_BUILD_CONFIGURATION})
 
 if(MERCURY_BUILD_CONFIGURATION MATCHES "Debug")
   set(enable_debug TRUE)
-  set(MERCURY_DO_COVERAGE TRUE)
+  if($ENV{CC} MATCHES "^gcc.*")
+    set(MERCURY_DO_COVERAGE TRUE)
+  else()
+    set(MERCURY_DO_COVERAGE FALSE)
+  endif()
 else()
   set(enable_debug FALSE)
   set(MERCURY_DO_COVERAGE FALSE)
@@ -162,7 +169,7 @@ else()
 endif()
 
 # Build name referenced in cdash
-set(CTEST_BUILD_NAME "gh-actions-${OS_NAME}-$ENV{CC}-${lower_mercury_build_configuration}-${BUILD_NUMBER}")
+set(CTEST_BUILD_NAME "${BUILD_NAME}-${OS_NAME}-$ENV{CC}-${lower_mercury_build_configuration}-${BUILD_NUMBER}")
 
 set(dashboard_binary_name mercury-${lower_mercury_build_configuration})
 if(NOT mercury_build_shared)
