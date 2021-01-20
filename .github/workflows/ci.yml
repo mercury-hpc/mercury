@@ -1,4 +1,4 @@
-name: Build and Test
+name: CI
 
 on:
   push:
@@ -35,7 +35,7 @@ jobs:
 
     - name: Check formatting (pull request)
       if: github.event_name == 'pull_request'
-      run: Testing/script/gh_format.sh ${{ github.base_ref }}
+      run: Testing/script/gh_format.sh origin/${{ github.base_ref }}
 
   linux:
     # The CMake configure and build commands are platform agnostic and should work equally
@@ -48,7 +48,15 @@ jobs:
       fail-fast: false
       matrix:
         build_type: [Debug, RelWithDebInfo, Release, Asan, Tsan, Ubsan]
-        compiler: [gcc]
+        compiler: [gcc, clang]
+        exclude:
+           # Exclude sanitizer builds with clang
+           - build_type: Asan
+             compiler: clang
+           - build_type: Tsan
+             compiler: clang
+           - build_type: Ubsan
+             compiler: clang
 
     env:
       # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
@@ -89,7 +97,7 @@ jobs:
       run: Testing/script/gh_ctest.sh test
 
     - name: Coverage (Debug build only)
-      if: matrix.build_type == 'Debug'
+      if: matrix.build_type == 'Debug' && matrix.compiler == 'gcc'
       run: Testing/script/gh_ctest.sh coverage
 
     - name: Address Sanitizer (Asan build only)
