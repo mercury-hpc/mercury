@@ -624,6 +624,24 @@ wire_accept_callback(wire_accept_info_t info, void *arg)
     return addr;
 }
 
+static void
+na_ucx_context_teardown(na_ucx_context_t *nctx, na_class_t *nacl)
+{
+    na_ucx_addr_t *self;
+
+    if ((self = nctx->self) == NULL)
+        return;
+
+    nctx->self = NULL;
+    (void)na_ucx_addr_free(nacl, self);
+
+    wiring_teardown(&nctx->wiring, false);
+
+    ucp_worker_destroy(nctx->worker);
+
+    return;
+}
+
 static na_return_t
 na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
 {
@@ -848,14 +866,16 @@ cleanup:
 }
 
 static na_return_t
-na_ucx_finalize(na_class_t *na_class)
+na_ucx_finalize(na_class_t *nacl)
 {
-    na_ucx_class_t *nuclass = na_ucx_class(na_class);
+    na_ucx_class_t *nuclass = na_ucx_class(nacl);
 
     if (nuclass == NULL)
         return NA_SUCCESS;
 
-    na_class->plugin_class = NULL;
+    na_ucx_context_teardown(&nuclass->context, nacl);
+
+    nacl->plugin_class = NULL;
     if (nuclass->uctx != NULL) {
         ucp_cleanup(nuclass->uctx);
         nuclass->uctx = NULL;
@@ -1841,12 +1861,15 @@ na_ucx_mem_handle_free(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
     switch (hg_atomic_get32(&mh->kind)) {
     case na_ucx_mem_local:
         status = ucp_mem_unmap(nuclass->uctx, mh->handle.local.mh);
+        free(mh);
         return (status == UCS_OK) ? NA_SUCCESS : NA_PROTOCOL_ERROR;
     case na_ucx_mem_unpacked_remote:
         ucp_rkey_destroy(mh->handle.unpacked_remote.rkey);
+        free(mh);
         return NA_SUCCESS;
     case na_ucx_mem_packed_remote:
         free(mh->handle.packed_remote.buf);
+        free(mh);
         return NA_SUCCESS;
     default:
         return NA_INVALID_ARG;
