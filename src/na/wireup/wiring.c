@@ -720,7 +720,7 @@ wireup_op_string(wireup_op_t op)
 }
 
 /* Answer a request. */
-wire_t *
+static wire_t *
 wireup_respond(wiring_t *wiring, sender_id_t rid,
     const ucp_address_t *raddr, size_t wiring_unused raddrlen)
 {
