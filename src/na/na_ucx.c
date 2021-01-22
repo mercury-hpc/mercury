@@ -946,7 +946,7 @@ na_ucx_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
             return NA_OVERFLOW;
         }
 
-        nempty -= rc;
+        nempty -= (size_t)rc;
         s += rc;
 
         delim = ":";
@@ -1112,7 +1112,7 @@ na_ucx_addr_serialize(na_class_t NA_UNUSED *na_class, void *buf,
         return NA_OVERFLOW;
     }
 
-    addrlen = addr->addrlen;
+    addrlen = (uint16_t)addr->addrlen;
     memcpy(buf, &addrlen, sizeof(addrlen));
     memcpy((char *)buf + sizeof(addrlen), &addr->addr[0], addrlen);
 
@@ -1237,7 +1237,7 @@ recv_callback(void NA_UNUSED *request, ucs_status_t status,
     if (status == UCS_OK) {
         na_ucx_context_t *nuctx = op_id->na_ctx->plugin_context;
         sender_id_t sender_id;
-        const void *buf = op_id->info.rx.buf;
+        const void * NA_DEBUG_USED buf = op_id->info.rx.buf;
         na_addr_t source;
 
         // XXX use standard endianness
@@ -1414,7 +1414,8 @@ na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
             assert(op_id->request != NULL);
             ucp_request_cancel(ctx->worker, op_id->request);
         } else {
-            hg_util_int32_t status = hg_atomic_get32(&op_id->status);
+            hg_util_int32_t NA_DEBUG_USED status =
+                hg_atomic_get32(&op_id->status);
             assert(status == op_s_canceled || status == op_s_complete);
         }
         return NA_SUCCESS;
@@ -1430,7 +1431,8 @@ na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
                                    op_s_complete)) {
             assert(op_id->request == NULL);
         } else {
-            hg_util_int32_t status = hg_atomic_get32(&op_id->status);
+            hg_util_int32_t NA_DEBUG_USED status =
+                hg_atomic_get32(&op_id->status);
             assert(status == op_s_canceled || status == op_s_complete);
         }
         return NA_SUCCESS;
@@ -1601,7 +1603,7 @@ na_ucx_msg_send(na_context_t *context,
     ucp_ep_h ep;
     uint64_t tag;
     const na_tag_t NA_DEBUG_USED maxtag =
-        MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->msg.tagmask));
+        (na_tag_t)MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->msg.tagmask));
 
     assert(proto_tag <= maxtag);
 
@@ -1679,7 +1681,7 @@ na_ucx_msg_send(na_context_t *context,
         address_wire_write_end(aseq);
 
         if (!wire_is_valid(cache->wire_id)) {
-            NA_LOG_ERROR("could not start wireup, cache %p", cache);
+            NA_LOG_ERROR("could not start wireup, cache %p", (void *)cache);
             ret = NA_NOMEM;
             goto release;
         }
@@ -1703,7 +1705,7 @@ na_ucx_msg_send(na_context_t *context,
         address_wire_write_end(aseq);
 
         if (!wire_is_valid(cache->wire_id)) {
-            NA_LOG_ERROR("could not start wireup, cache %p", cache);
+            NA_LOG_ERROR("could not start wireup, cache %p", (void *)cache);
             ret = NA_NOMEM;
             goto release;
         }
@@ -1809,7 +1811,7 @@ na_ucx_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *ctx,
 {
     na_ucx_context_t *nuctx = ctx->plugin_context;
     const na_tag_t NA_DEBUG_USED maxtag =
-        MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->msg.tagmask));
+        (na_tag_t)MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuctx->msg.tagmask));
 
     assert(proto_tag <= maxtag);
 
@@ -1889,7 +1891,7 @@ na_ucx_mem_register(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
     NA_LOG_DEBUG("memory handle %p", mh);
 
     if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local) {
-        NA_LOG_ERROR("%p is not a local handle", mh);
+        NA_LOG_ERROR("%p is not a local handle", (void *)mh);
         return NA_INVALID_ARG;
     }
     return NA_SUCCESS;
@@ -1897,7 +1899,7 @@ na_ucx_mem_register(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
 
 /* This is a no-op for UCP but we do check the arguments. */
 static na_return_t
-na_ucx_mem_deregister(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
+na_ucx_mem_deregister(na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mh)
 {
     NA_LOG_DEBUG("memory handle %p", mh);
 
@@ -1914,7 +1916,8 @@ na_ucx_mem_handle_get_serialize_size(na_class_t *na_class, na_mem_handle_t mh)
     size_t paylen;
 
     if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local) {
-        NA_LOG_ERROR("non-local memory handle %p cannot be serialized", mh);
+        NA_LOG_ERROR("non-local memory handle %p cannot be serialized",
+            (void *)mh);
         return 0;   // ok for error?
     }
 
@@ -1948,7 +1951,8 @@ na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf,
     NA_LOG_DEBUG("memory handle %p", mh);
 
     if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local) {
-        NA_LOG_ERROR("non-local memory handle %p cannot be serialized", mh);
+        NA_LOG_ERROR("non-local memory handle %p cannot be serialized",
+            (void *)mh);
         return NA_INVALID_ARG;
     }
 
@@ -1960,12 +1964,16 @@ na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf,
 
     NA_LOG_DEBUG("header + payload length %zu at %p", hdrlen + paylen, _buf);
 
+    if (UINT32_MAX < paylen) {
+        NA_LOG_ERROR("payload too big, %zu bytes", paylen);
+        return NA_OVERFLOW;
+    }
     if (buf_size < hdrlen + paylen) {
         NA_LOG_ERROR("buffer too small, %zu bytes", buf_size);
         return NA_OVERFLOW;
     }
 
-    hdr.paylen = paylen; // TBD convert to network endianness
+    hdr.paylen = (uint32_t)paylen; // TBD convert to network endianness
     memcpy(buf, &hdr, hdrlen);
     memcpy(buf + hdrlen, rkey, paylen);
     ucp_rkey_buffer_release(rkey);
@@ -2192,7 +2200,7 @@ na_ucx_msg_get_max_tag(const na_class_t *na_class)
 {
     const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
     const na_tag_t maxtag =
-        MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuclass->context.msg.tagmask));
+        (na_tag_t)MIN(NA_TAG_MAX, SHIFTOUT_MASK(~nuclass->context.msg.tagmask));
 
     assert(maxtag >= 3);
 
