@@ -875,6 +875,11 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     const size_t msglen = sizeof(*msg) + laddrlen;
     ucs_status_t status;
 
+    if (UINT16_MAX < laddrlen) {
+        warnx("%s: local address too long (%zu)", __func__, laddrlen);
+        return (wire_id_t){.id = sender_id_nil};
+    }
+
     if ((msg = zalloc(msglen)) == NULL)
         return (wire_id_t){.id = sender_id_nil};
 
@@ -897,7 +902,8 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
 
     w = &st->wire[id];
 
-    *msg = (wireup_msg_t){.op = OP_REQ, .sender_id = id, .addrlen = laddrlen};
+    *msg = (wireup_msg_t){.op = OP_REQ, .sender_id = (uint32_t)id,
+                          .addrlen = (uint16_t)laddrlen};
     memcpy(&msg->addr[0], laddr, laddrlen);
 
     wiring->assoc[id] = data;
@@ -982,7 +988,11 @@ wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
         return;
     }
 
-    w = wireup_respond(wiring, msg->sender_id,
+    if (SENDER_ID_MAX < msg->sender_id) {
+        warnx("%s: sender ID too large, dropping", __func__);
+        return;
+    }
+    w = wireup_respond(wiring, (sender_id_t)msg->sender_id,
        (const void *)&msg->addr[0], msg->addrlen);
 
     if (w == NULL) {
