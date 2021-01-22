@@ -8,6 +8,8 @@
  * found at the root of the source code distribution tree.
  */
 
+#include <inttypes.h>   /* PRIu64 */
+
 #include "mercury_proc_bulk.h"
 #include "mercury_bulk_proc.h"
 #include "mercury_error.h"
@@ -113,7 +115,8 @@ hg_proc_hg_bulk_t(hg_proc_t proc, void *data)
             HG_CHECK_HG_ERROR(done, ret, "Could not deserialize handle");
 
             /* Cache serialize ptr to buf */
-            HG_LOG_DEBUG("Caching pointer to serialized bulk handle (%p, %llu)",
+            HG_LOG_DEBUG(
+                "Caching pointer to serialized bulk handle (%p, %" PRIu64 ")",
                 buf, buf_size);
             hg_bulk_set_serialize_cached_ptr(*bulk_ptr, buf, buf_size);
             hg_proc_restore_ptr(proc, buf, buf_size);
