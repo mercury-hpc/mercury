@@ -555,7 +555,8 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
 
     if (orderly) {
         tx_params = (ucp_request_param_t){
-          .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
+          .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK
+                        | UCP_OP_ATTR_FIELD_USER_DATA
         , .cb = {.send = wireup_last_send_callback}
         , .user_data = msg
         };
