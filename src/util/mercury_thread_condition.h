@@ -161,15 +161,16 @@ hg_thread_cond_timedwait(
     clock_gettime(CLOCK_MONOTONIC_COARSE, &now);
 
     /* Get sec / nsec */
-    ld = ldiv(now.tv_nsec + timeout * 1000000L, 1000000L);
+    ld = ldiv(now.tv_nsec + timeout * 1000000L, 1000000000L);
+    abs_timeout.tv_nsec = ld.rem;
 #    elif defined(HG_UTIL_HAS_SYSTIME_H)
     gettimeofday(&now, NULL);
 
-    /* Get sec / nsec */
+    /* Get sec / usec */
     ld = ldiv(now.tv_usec + timeout * 1000L, 1000000L);
+    abs_timeout.tv_nsec = ld.rem * 1000L;
 #    endif
     abs_timeout.tv_sec = now.tv_sec + ld.quot;
-    abs_timeout.tv_nsec = ld.rem * 1000L;
 
     if (pthread_cond_timedwait(cond, mutex, &abs_timeout))
         return HG_UTIL_FAIL;
