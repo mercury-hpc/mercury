@@ -8,6 +8,8 @@
 
 #include <sys/param.h>  /* for MIN, MAX */
 
+#include "util.h"
+
 /* If `str` is the empty string, then store NULL at `bufp` and 0 at
  * `buflenp`, and return 0.
  *

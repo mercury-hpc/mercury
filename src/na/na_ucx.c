@@ -522,7 +522,7 @@ na_ucx_addr_hash(hg_hash_table_key_t key)
 
     /* Shift all bits out of `mix`, XOR into the hash code. */
     for (code = 0; mix != 0; mix /= shiftout)
-        code ^= (mix % shiftout);
+        code ^= (unsigned int)(mix % shiftout);
 
     return code;
 }
