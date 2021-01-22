@@ -112,7 +112,7 @@ static void
 wiring_release_wire(wiring_t *wiring, wire_t *w)
 {
     wstorage_t *st = wiring->storage;
-    sender_id_t id = w - &st->wire[0];
+    sender_id_t id = wire_index(st, w);
     wireup_msg_t *msg;
     ucp_ep_h ep;
 
@@ -248,7 +248,7 @@ static const wire_state_t *
 start_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 {
     wstorage_t *st = wiring->storage;
-    sender_id_t id = w - &st->wire[0];
+    sender_id_t id = wire_index(st, w);
 
     if (msg->sender_id > SENDER_ID_MAX) {
         warnx("%s: bad foreign sender ID %" PRId32 " for wire %" PRIdSENDER,
@@ -286,7 +286,7 @@ static const wire_state_t *
 continue_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 {
     wstorage_t *st = wiring->storage;
-    sender_id_t id = w - &st->wire[0];
+    sender_id_t id = wire_index(st, w);
 
     if (msg->sender_id > SENDER_ID_MAX) {
         warnx("%s: bad foreign sender ID %" PRId32 " for wire %" PRIdSENDER,
@@ -361,7 +361,7 @@ static const wire_state_t *
 ignore_wakeup(wiring_t *wiring, wire_t *w)
 {
     wstorage_t *st = wiring->storage;
-    sender_id_t id = w - &st->wire[0];
+    sender_id_t id = wire_index(st, w);
 
     warnx("%s: ignoring wakeup for wire %" PRIdSENDER, __func__, id);
 
@@ -372,7 +372,7 @@ static const wire_state_t *
 reject_expire(wiring_t *wiring, wire_t *w)
 {
     wstorage_t *st = wiring->storage;
-    sender_id_t id = w - &st->wire[0];
+    sender_id_t id = wire_index(st, w);
 
     warnx("%s: rejecting expiration for wire %" PRIdSENDER, __func__, id);
 
@@ -383,7 +383,7 @@ static const wire_state_t *
 reject_msg(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
 {
     wstorage_t *st = wiring->storage;
-    sender_id_t id = w - &st->wire[0];
+    sender_id_t id = wire_index(st, w);
 
     warnx("%s: rejecting message from %" PRIdSENDER " for wire %" PRIdSENDER,
         __func__, msg->sender_id, id);
@@ -395,7 +395,7 @@ static const wire_state_t *
 retry(wiring_t *wiring, wire_t *w)
 {
     wstorage_t *st = wiring->storage;
-    sender_id_t id = w - &st->wire[0];
+    sender_id_t id = wire_index(st, w);
 
     warnx("%s: retrying establishment of wire %" PRIdSENDER, __func__, id);
 

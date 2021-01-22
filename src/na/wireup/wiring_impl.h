@@ -46,11 +46,17 @@ struct _wstorage {
     wire_t wire[];
 };
 
+static inline sender_id_t
+wire_index(wstorage_t *storage, wire_t *w)
+{
+    return (sender_id_t)(w - &storage->wire[0]);
+}
+
 static inline void
 wiring_timeout_put(wstorage_t *storage, wire_t *w, int which,
     uint64_t expiration)
 {
-    sender_id_t id = w - &storage->wire[0];
+    sender_id_t id = wire_index(storage, w);
     timeout_link_t *link = &w->tlink[which];
     timeout_head_t *head = &storage->thead[which];
 
@@ -118,7 +124,7 @@ wiring_timeout_get(wstorage_t *storage, int which)
 static inline void
 wiring_timeout_remove(wstorage_t *storage, wire_t *w, int which)
 {
-    sender_id_t id = w - &storage->wire[0];
+    sender_id_t id = wire_index(storage, w);
     timeout_head_t *head = &storage->thead[which];
     timeout_link_t *link = &w->tlink[which];
 
