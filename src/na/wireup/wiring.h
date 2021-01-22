@@ -40,9 +40,6 @@ typedef struct _wiring_lock_bundle {
     void *arg;
 } wiring_lock_bundle_t;
 
-struct _rxpool;
-typedef struct _rxpool rxpool_t;
-
 /* TBD A wire ID can embed a generation
  * number to guard against wire
  * reassignment.  OR, add a "reclaimed"
