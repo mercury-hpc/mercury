@@ -330,7 +330,7 @@ send_keepalive(wiring_t *wiring, wire_t *w)
     wireup_msg_t *msg;
     ucs_status_ptr_t request;
     const ucp_tag_t tag = TAG_CHNL_WIREUP | SHIFTIN(w->id, TAG_ID_MASK);
-    const sender_id_t id = w - &st->wire[0];
+    const sender_id_t id = wire_index(st, w);
 
     if ((msg = zalloc(sizeof(*msg))) == NULL)
         return w->state;
@@ -541,7 +541,7 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
     ucs_status_ptr_t request;
     wstorage_t *st = wiring->storage;
     const ucp_tag_t tag = TAG_CHNL_WIREUP | SHIFTIN(w->id, TAG_ID_MASK);
-    const sender_id_t id = w - &st->wire[0];
+    const sender_id_t id = wire_index(st, w);
 
     wiring_assert_locked(wiring);
 
