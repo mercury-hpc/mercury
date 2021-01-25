@@ -7,7 +7,7 @@
 #define _WIRES_H_
 
 #include <assert.h>
-#include <inttypes.h>   /* PRId32 */
+#include <inttypes.h>   /* PRIu32 */
 #include <stdbool.h>
 #include <stdint.h>     /* int32_t */
 #include <unistd.h>     /* size_t, SIZE_MAX */
@@ -19,13 +19,13 @@
 #include "wiring_compat.h"
 #include "wireup.h"
 
-typedef int32_t sender_id_t;
+typedef uint32_t sender_id_t;
 
-#define SENDER_ID_MAX INT32_MAX
+#define SENDER_ID_MAX UINT32_MAX
 
-#define PRIdSENDER PRId32
+#define PRIuSENDER PRIu32
 
-#define sender_id_nil ((sender_id_t)-1)
+#define sender_id_nil SENDER_ID_MAX
 
 struct _wiring;
 typedef struct _wiring wiring_t;

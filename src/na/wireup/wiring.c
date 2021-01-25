@@ -118,7 +118,7 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
 
     wiring_assert_locked(wiring);
 
-    assert(0 <= id && (size_t)id < st->nwires);
+    assert(0 <= id && id < st->nwires);
 
     wiring->assoc[id] = NULL;
     if ((msg = w->msg) != NULL) {
@@ -204,7 +204,7 @@ wireup_msg_transition(wiring_t *wiring, const ucp_tag_t sender_tag,
     id = (sender_id_t)proto_id;
     w = &st->wire[id];
 
-    printf("%s: wire %" PRIdSENDER " %s message\n",
+    printf("%s: wire %" PRIuSENDER " %s message\n",
         __func__, id, wireup_op_string(msg->op));
 
     wireup_transition(wiring, w, (*w->state->receive)(wiring, w, msg));
@@ -251,7 +251,7 @@ start_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     sender_id_t id = wire_index(st, w);
 
     if (msg->sender_id > SENDER_ID_MAX) {
-        warnx("%s: bad foreign sender ID %" PRId32 " for wire %" PRIdSENDER,
+        warnx("%s: bad foreign sender ID %" PRIu32 " for wire %" PRIuSENDER,
             __func__, msg->sender_id, id);
         return w->state;
     }
@@ -260,13 +260,13 @@ start_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
         wiring_release_wire(wiring, w);
         return &state[WIRE_S_DEAD];
     } else if (msg->op != OP_ACK) {
-        warnx("%s: unexpected opcode %" PRIu16 " for wire %" PRIdSENDER,
+        warnx("%s: unexpected opcode %" PRIu16 " for wire %" PRIuSENDER,
             __func__, msg->op, id);
         return w->state;
     }
 
     if (msg->addrlen != 0) {
-        warnx("%s: unexpected addr. len. %" PRIu16 " for wire %" PRIdSENDER,
+        warnx("%s: unexpected addr. len. %" PRIu16 " for wire %" PRIuSENDER,
             __func__, msg->addrlen, id);
         return w->state;
     }
@@ -289,7 +289,7 @@ continue_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     sender_id_t id = wire_index(st, w);
 
     if (msg->sender_id > SENDER_ID_MAX) {
-        warnx("%s: bad foreign sender ID %" PRId32 " for wire %" PRIdSENDER,
+        warnx("%s: bad foreign sender ID %" PRIu32 " for wire %" PRIuSENDER,
             __func__, msg->sender_id, id);
         return w->state;
     }
@@ -298,20 +298,20 @@ continue_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
         wiring_release_wire(wiring, w);
         return &state[WIRE_S_DEAD];
     } else if (msg->op != OP_KEEPALIVE) {
-        warnx("%s: unexpected opcode %" PRIu16 " for wire %" PRIdSENDER,
+        warnx("%s: unexpected opcode %" PRIu16 " for wire %" PRIuSENDER,
             __func__, msg->op, id);
         return w->state;
     }
 
     if (msg->addrlen != 0) {
-        warnx("%s: unexpected addr. len. %" PRIu16 " for wire %" PRIdSENDER,
+        warnx("%s: unexpected addr. len. %" PRIu16 " for wire %" PRIuSENDER,
             __func__, msg->addrlen, id);
         return w->state;
     }
 
     if (msg->sender_id != (uint32_t)w->id) {
-        warnx("%s: sender ID %" PRIu32 " mismatches assignment %" PRIdSENDER
-            " for wire %" PRIdSENDER, __func__, msg->sender_id, w->id, id);
+        warnx("%s: sender ID %" PRIu32 " mismatches assignment %" PRIuSENDER
+            " for wire %" PRIuSENDER, __func__, msg->sender_id, w->id, id);
         wiring_release_wire(wiring, w);
         return &state[WIRE_S_DEAD];
     }
@@ -363,7 +363,7 @@ ignore_wakeup(wiring_t *wiring, wire_t *w)
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
 
-    warnx("%s: ignoring wakeup for wire %" PRIdSENDER, __func__, id);
+    warnx("%s: ignoring wakeup for wire %" PRIuSENDER, __func__, id);
 
     return w->state;
 }
@@ -374,7 +374,7 @@ reject_expire(wiring_t *wiring, wire_t *w)
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
 
-    warnx("%s: rejecting expiration for wire %" PRIdSENDER, __func__, id);
+    warnx("%s: rejecting expiration for wire %" PRIuSENDER, __func__, id);
 
     return &state[WIRE_S_DEAD];
 }
@@ -385,7 +385,7 @@ reject_msg(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
 
-    warnx("%s: rejecting message from %" PRIdSENDER " for wire %" PRIdSENDER,
+    warnx("%s: rejecting message from %" PRIuSENDER " for wire %" PRIuSENDER,
         __func__, msg->sender_id, id);
 
     return &state[WIRE_S_DEAD];
@@ -397,7 +397,7 @@ retry(wiring_t *wiring, wire_t *w)
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
 
-    warnx("%s: retrying establishment of wire %" PRIdSENDER, __func__, id);
+    warnx("%s: retrying establishment of wire %" PRIuSENDER, __func__, id);
 
     if (!wireup_send(w)) {
         wiring_release_wire(wiring, w);
@@ -480,7 +480,7 @@ wire_is_connected(wiring_t *wiring, wire_id_t wid)
     wstorage_t *st = wiring->storage;
     wire_t *w;
 
-    if (wid.id < 0 || st->nwires <= (size_t)wid.id)
+    if (wid.id == sender_id_nil || st->nwires <= wid.id)
         return false;
 
     w = &st->wire[wid.id];
@@ -519,7 +519,7 @@ wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
 
     wstorage_t *st = wiring->storage;
 
-    if (wid.id < 0 || st->nwires <= (size_t)wid.id) {
+    if (wid.id == sender_id_nil || st->nwires <= wid.id) {
         wiring_unlock(wiring);
         return false;
     }
@@ -583,7 +583,7 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
     wstorage_t *st;
     const size_t nwires = 1;
     int which;
-    size_t i;
+    sender_id_t i;
     void **assoc;
 
     wiring->lkb = (lkb != NULL) ? *lkb : default_lkb;
@@ -658,9 +658,10 @@ wiring_enlarge(wiring_t *wiring)
     const size_t hdrsize = sizeof(wstorage_t),
                  osize = hdrsize + st->nwires * sizeof(wire_t);
     const size_t proto_nsize = twice_or_max(osize) - hdrsize;
-    const size_t nwires = (proto_nsize - hdrsize) / sizeof(wire_t);
+    const sender_id_t nwires = (sender_id_t)MIN(SENDER_ID_MAX,
+                                   (proto_nsize - hdrsize) / sizeof(wire_t));
     const size_t nsize = hdrsize + nwires * sizeof(wire_t);
-    size_t i;
+    sender_id_t i;
 
     if (nsize <= osize)
         return NULL;
@@ -1000,7 +1001,7 @@ wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
         return;
     }
 
-    printf("%s: my sender id %td, remote sender id %" PRIdSENDER "\n", __func__,
+    printf("%s: my sender id %td, remote sender id %" PRIuSENDER "\n", __func__,
         w - &wiring->storage->wire[0], w->id);
 }
 
