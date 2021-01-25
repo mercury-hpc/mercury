@@ -13,7 +13,6 @@
 
 #include "mercury_test_config.h"
 #include "na.h"
-#include "na_error.h"
 
 #ifdef HG_TEST_HAS_PARALLEL
 #    include <mpi.h>
@@ -52,6 +51,109 @@ struct na_test_info {
 /*****************/
 /* Public Macros */
 /*****************/
+
+/* Default error macro */
+#include <mercury_log.h>
+#define NA_TEST_LOG_MASK na_test_log_mask
+/* Log mask will be initialized in init routine */
+extern enum hg_log_type NA_TEST_LOG_MASK;
+#define NA_TEST_LOG_MODULE_NAME "NA Test"
+#define NA_TEST_LOG_ERROR(...)                                                 \
+    HG_LOG_WRITE(NA_TEST_LOG_MASK, HG_LOG_TYPE_ERROR, NA_TEST_LOG_MODULE_NAME, \
+        __VA_ARGS__)
+#define NA_TEST_LOG_WARNING(...)                                               \
+    HG_LOG_WRITE(NA_TEST_LOG_MASK, HG_LOG_TYPE_WARNING,                        \
+        NA_TEST_LOG_MODULE_NAME, __VA_ARGS__)
+#ifdef HG_HAS_DEBUG
+#    define NA_TEST_LOG_DEBUG(...)                                             \
+        HG_LOG_WRITE(NA_TEST_LOG_MASK, HG_LOG_TYPE_DEBUG,                      \
+            NA_TEST_LOG_MODULE_NAME, __VA_ARGS__)
+#else
+#    define NA_TEST_LOG_DEBUG(...) (void) 0
+#endif
+
+/* Branch predictor hints */
+#ifndef _WIN32
+#    define likely(x)   __builtin_expect(!!(x), 1)
+#    define unlikely(x) __builtin_expect(!!(x), 0)
+#else
+#    define likely(x)   (x)
+#    define unlikely(x) (x)
+#endif
+
+/* Error macros */
+#define NA_TEST_GOTO_DONE(label, ret, ret_val)                                 \
+    do {                                                                       \
+        ret = ret_val;                                                         \
+        goto label;                                                            \
+    } while (0)
+
+#define NA_TEST_GOTO_ERROR(label, ret, err_val, ...)                           \
+    do {                                                                       \
+        HG_LOG_ERROR(__VA_ARGS__);                                             \
+        ret = err_val;                                                         \
+        goto label;                                                            \
+    } while (0)
+
+/* Check for hg_ret value and goto label */
+#define NA_TEST_CHECK_HG_ERROR(label, hg_ret, ...)                             \
+    do {                                                                       \
+        if (unlikely(hg_ret != HG_SUCCESS)) {                                  \
+            NA_TEST_LOG_ERROR(__VA_ARGS__);                                    \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
+
+/* Check for cond, set ret to err_val and goto label */
+#define NA_TEST_CHECK_ERROR(cond, label, ret, err_val, ...)                    \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            NA_TEST_LOG_ERROR(__VA_ARGS__);                                    \
+            ret = err_val;                                                     \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
+
+#define NA_TEST_CHECK_ERROR_NORET(cond, label, ...)                            \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            NA_TEST_LOG_ERROR(__VA_ARGS__);                                    \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
+
+#define NA_TEST_CHECK_ERROR_DONE(cond, ...)                                    \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            NA_TEST_LOG_ERROR(__VA_ARGS__);                                    \
+        }                                                                      \
+    } while (0)
+
+/* Check for cond and print warning */
+#define NA_TEST_CHECK_WARNING(cond, ...)                                       \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            NA_TEST_LOG_WARNING(__VA_ARGS__);                                  \
+        }                                                                      \
+    } while (0)
+
+#define NA_TEST(x)                                                             \
+    do {                                                                       \
+        printf("Testing %-62s", x);                                            \
+        fflush(stdout);                                                        \
+    } while (0)
+
+#define NA_PASSED()                                                            \
+    do {                                                                       \
+        puts(" PASSED");                                                       \
+        fflush(stdout);                                                        \
+    } while (0)
+
+#define NA_FAILED()                                                            \
+    do {                                                                       \
+        puts("*FAILED*");                                                      \
+        fflush(stdout);                                                        \
+    } while (0)
 
 #define NA_TEST_MAX_ADDR_NAME 2048
 
