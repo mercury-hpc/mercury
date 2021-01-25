@@ -143,7 +143,7 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
         na_cb_info->info.recv_unexpected.tag,
         na_test_source_recv_arg->send_op_id);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR(
+        NA_TEST_LOG_ERROR(
             "NA_Msg_send_expected() failed (%s)", NA_Error_to_string(ret));
     }
 
@@ -212,7 +212,7 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
             &na_test_source_recv_arg, recv_buf, unexpected_size, recv_buf_data,
             recv_op_id);
         if (ret != NA_SUCCESS) {
-            NA_LOG_ERROR("NA_Msg_recv_unexpected() failed (%s)",
+            NA_TEST_LOG_ERROR("NA_Msg_recv_unexpected() failed (%s)",
                 NA_Error_to_string(ret));
             goto done;
         }
