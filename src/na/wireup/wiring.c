@@ -700,7 +700,7 @@ getnanos(void)
     if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1)
         err(EXIT_FAILURE, "%s: clock_gettime", __func__);
 
-    return ts.tv_sec * (uint64_t)1000000000 + ts.tv_nsec;
+    return (uint64_t)ts.tv_sec * 1000000000 + (uint64_t)ts.tv_nsec;
 }
 
 const char *
