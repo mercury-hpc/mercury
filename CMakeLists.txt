@@ -143,7 +143,7 @@ endif()
 
 if(NOT CMAKE_C_FLAGS AND CMAKE_COMPILER_IS_GNUCC)
   message(STATUS "GCC detected, setting additional flags")
-  set(CMAKE_C_FLAGS "-Wall -Wextra -Winline -Wcast-qual -std=gnu99 -Wshadow -Werror -Wno-error=inline" CACHE STRING "Flags used by the compiler during all build types." FORCE)
+  set(CMAKE_C_FLAGS "-Wall -Wextra -Wundef -Wcast-qual -Wconversion -Wmissing-prototypes -pedantic -Wpointer-arith -Wformat=2 -std=gnu99 -Wshadow -Werror -Wno-error=inline" CACHE STRING "Flags used by the compiler during all build types." FORCE)
 endif()
 
 # Detect Asan/Tsan/Ubsan compiler flags
