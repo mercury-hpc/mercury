@@ -903,7 +903,7 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
 
     w = &st->wire[id];
 
-    *msg = (wireup_msg_t){.op = OP_REQ, .sender_id = (uint32_t)id,
+    *msg = (wireup_msg_t){.op = OP_REQ, .sender_id = id,
                           .addrlen = (uint16_t)laddrlen};
     memcpy(&msg->addr[0], laddr, laddrlen);
 
