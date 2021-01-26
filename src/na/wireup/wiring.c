@@ -192,7 +192,7 @@ wireup_msg_transition(wiring_t *wiring, const ucp_tag_t sender_tag,
     const uint64_t proto_id = TAG_GET_ID(sender_tag);
     sender_id_t id;
 
-    if (proto_id > SENDER_ID_MAX) {
+    if (proto_id >= SENDER_ID_MAX) {
         warnx("%s: illegal sender ID %" PRIu64, __func__, proto_id);
         return;
     }
@@ -250,7 +250,7 @@ start_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
 
-    if (msg->sender_id > SENDER_ID_MAX) {
+    if (msg->sender_id >= SENDER_ID_MAX) {
         warnx("%s: bad foreign sender ID %" PRIu32 " for wire %" PRIuSENDER,
             __func__, msg->sender_id, id);
         return w->state;
@@ -288,7 +288,7 @@ continue_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
 
-    if (msg->sender_id > SENDER_ID_MAX) {
+    if (msg->sender_id >= SENDER_ID_MAX) {
         warnx("%s: bad foreign sender ID %" PRIu32 " for wire %" PRIuSENDER,
             __func__, msg->sender_id, id);
         return w->state;
@@ -658,7 +658,7 @@ wiring_enlarge(wiring_t *wiring)
     const size_t hdrsize = sizeof(wstorage_t),
                  osize = hdrsize + st->nwires * sizeof(wire_t);
     const size_t proto_nsize = twice_or_max(osize) - hdrsize;
-    const sender_id_t nwires = (sender_id_t)MIN(SENDER_ID_MAX,
+    const sender_id_t nwires = (sender_id_t)MIN(SENDER_ID_MAX - 1,
                                    (proto_nsize - hdrsize) / sizeof(wire_t));
     const size_t nsize = hdrsize + nwires * sizeof(wire_t);
     sender_id_t i;
@@ -989,7 +989,7 @@ wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
         return;
     }
 
-    if (SENDER_ID_MAX < msg->sender_id) {
+    if (SENDER_ID_MAX <= msg->sender_id) {
         warnx("%s: sender ID too large, dropping", __func__);
         return;
     }
