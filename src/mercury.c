@@ -404,6 +404,7 @@ hg_core_addr_lookup_cb(const struct hg_core_cb_info *callback_info)
     if (hg_op_id->callback)
         hg_op_id->callback(&hg_cb_info);
 
+    /* NB. OK to free after callback execution, op ID is not re-used */
     free(hg_op_id);
 
     return ret;

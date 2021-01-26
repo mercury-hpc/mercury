@@ -34,6 +34,7 @@
 #define HG_BULK_ALLOC (1 << 4) /* memory is allocated */
 #define HG_BULK_BIND  (1 << 5) /* address is bound to segment */
 #define HG_BULK_REGV  (1 << 6) /* single registration for multiple segments */
+#define HG_BULK_VIRT  (1 << 7) /* addresses are virtual */
 
 /* Op ID status bits */
 #define HG_BULK_OP_COMPLETED (1 << 0)
@@ -991,7 +992,8 @@ hg_bulk_get_serialize_size(struct hg_bulk *hg_bulk, hg_uint8_t flags)
 
     /* Eager mode (in eager mode, the actual data will be copied) */
     if ((flags & HG_BULK_EAGER) &&
-        (hg_bulk->desc.info.flags & HG_BULK_READ_ONLY))
+        (hg_bulk->desc.info.flags & HG_BULK_READ_ONLY) &&
+        !(hg_bulk->desc.info.flags & HG_BULK_VIRT))
         ret += hg_bulk->desc.info.len;
 
     return ret;
@@ -1040,7 +1042,8 @@ hg_bulk_serialize(
     desc_info.flags &= (~HG_BULK_ALLOC & 0xff);
 
     /* Add eager flag to descriptor */
-    if ((flags & HG_BULK_EAGER) && (desc_info.flags & HG_BULK_READ_ONLY)) {
+    if ((flags & HG_BULK_EAGER) && (desc_info.flags & HG_BULK_READ_ONLY) &&
+        !(hg_bulk->desc.info.flags & HG_BULK_VIRT)) {
         HG_LOG_DEBUG("HG_BULK_EAGER flag set");
         desc_info.flags |= HG_BULK_EAGER;
     } else
@@ -1377,7 +1380,9 @@ hg_bulk_deserialize(hg_core_class_t *core_class, struct hg_bulk **hg_bulk_ptr,
             HG_BULK_DECODE_ARRAY(error, ret, buf_ptr, buf_size_left,
                 (void *) segments[i].base, char, segments[i].len);
         }
-    }
+    } else
+        /* Addresses are virtual and do not point to physical memory */
+        hg_bulk->desc.info.flags |= HG_BULK_VIRT;
 
     HG_CHECK_WARNING(buf_size_left != 0,
         "Buffer size left for decoding bulk handle is not zero");
@@ -2471,7 +2476,8 @@ hg_bulk_trigger_entry(struct hg_bulk_op_id *hg_bulk_op_id)
     ret = hg_bulk_free(hg_bulk_op_id->callback_info.info.bulk.local_handle);
     HG_CHECK_HG_ERROR(done, ret, "Could not free local handle");
 
-    /* Release bulk op ID */
+    /* Release bulk op ID (can be released after callback execution since
+     * op IDs are managed internally) */
     ret = hg_bulk_op_destroy(hg_bulk_op_id);
     HG_CHECK_HG_ERROR(done, ret, "Could not destroy bulk op ID");
 
