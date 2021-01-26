@@ -581,7 +581,7 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
     wire_accept_cb_t accept_cb, void *accept_cb_arg)
 {
     wstorage_t *st;
-    const size_t nwires = 1;
+    const sender_id_t nwires = 1;
     int which;
     sender_id_t i;
     void **assoc;
