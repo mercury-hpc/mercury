@@ -214,9 +214,9 @@ main(int argc, char **argv)
     }
     printf("\n");
 
-    if (remote_addr != NULL) {      /* * * client mode * * */
+    if (remote_addr != NULL) {
         run_client(worker, remote_addr);
-    } else {                        /* * * server mode * * */
+    } else {
         run_server(worker, truncate_recv);
     }
 
