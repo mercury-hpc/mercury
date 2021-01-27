@@ -5,7 +5,7 @@
 
 set(CTEST_PROJECT_NAME "MERCURY")
 
-if(NOT dashboard_git_url)
+if(NOT DEFINED dashboard_git_url)
   set(dashboard_git_url "https://github.com/mercury-hpc/mercury.git")
 endif()
 
@@ -69,7 +69,7 @@ if(MERCURY_BUILD_CONFIGURATION MATCHES "Ubsan")
 endif()
 
 # MERCURY_DASHBOARD_MODEL=Experimental | Nightly | Continuous
-if(NOT dashboard_model)
+if(NOT DEFINED dashboard_model)
   set(MERCURY_DASHBOARD_MODEL "$ENV{MERCURY_DASHBOARD_MODEL}")
   if(NOT MERCURY_DASHBOARD_MODEL)
     set(MERCURY_DASHBOARD_MODEL "Experimental")
@@ -92,14 +92,16 @@ set(CTEST_BUILD_FLAGS "-k -j4")
 set(MAX_NUMPROCS "4")
 
 # Build shared libraries
-set(MERCURY_BUILD_STATIC_LIBRARIES $ENV{MERCURY_BUILD_STATIC_LIBRARIES})
-if(MERCURY_BUILD_STATIC_LIBRARIES)
-  message("Building static libraries")
-  set(mercury_build_shared OFF)
-else()
-  set(mercury_build_shared ON)
+if(NOT DEFINED build_shared_libs)
+  set(MERCURY_BUILD_STATIC $ENV{MERCURY_BUILD_STATIC_LIBRARIES})
+  if(NOT MERCURY_BUILD_STATIC)
+    set(MERCURY_BUILD_SHARED ON)
+  else()
+    message("Building static libraries")
+    set(MERCURY_BUILD_SHARED OFF)
+  endif()
+  set(build_shared_libs ${MERCURY_BUILD_SHARED})
 endif()
-
 set(CTEST_CMAKE_GENERATOR "Unix Makefiles")
 
 # Optional coverage options
@@ -124,9 +126,6 @@ endif()
 if(MERCURY_MEMORYCHECK_TYPE)
   message("Enabling memcheck")
 
-  if(NOT MERCURY_MEMORYCHECK_TYPE)
-    set(MERCURY_MEMORYCHECK_TYPE "Valgrind")
-  endif()
   set(CTEST_MEMORYCHECK_TYPE ${MERCURY_MEMORYCHECK_TYPE})
 
   # Valgrind
@@ -169,12 +168,13 @@ else()
 endif()
 
 # Build name referenced in cdash
+if(NOT build_shared_libs)
+  set(lower_mercury_build_configuration ${lower_mercury_build_configuration}-static)
+endif()
+
 set(CTEST_BUILD_NAME "${BUILD_NAME}-${OS_NAME}-$ENV{CC}-${lower_mercury_build_configuration}-${BUILD_NUMBER}")
 
 set(dashboard_binary_name mercury-${lower_mercury_build_configuration})
-if(NOT mercury_build_shared)
-  set(dashboard_binary_name ${dashboard_binary_name}-static)
-endif()
 
 # OS specific options
 if(APPLE)
@@ -205,7 +205,7 @@ set(dashboard_cache "
 CMAKE_C_FLAGS:STRING=${MERCURY_C_FLAGS}
 CMAKE_CXX_FLAGS:STRING=${MERCURY_CXX_FLAGS}
 
-BUILD_SHARED_LIBS:BOOL=${mercury_build_shared}
+BUILD_SHARED_LIBS:BOOL=${build_shared_libs}
 BUILD_TESTING:BOOL=ON
 
 MEMORYCHECK_COMMAND:FILEPATH=${CTEST_MEMORYCHECK_COMMAND}

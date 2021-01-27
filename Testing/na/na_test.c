@@ -73,8 +73,8 @@ extern const char *na_test_opt_arg_g; /* flag argument (or value) */
 extern const char *na_test_short_opt_g;
 extern const struct na_test_opt na_test_opt_g[];
 
-/* Default error log mask */
-enum hg_log_type NA_LOG_MASK = HG_LOG_TYPE_NONE;
+/* Default log mask */
+enum hg_log_type NA_TEST_LOG_MASK = HG_LOG_TYPE_NONE;
 
 /*---------------------------------------------------------------------------*/
 void
@@ -190,19 +190,19 @@ na_test_mpi_init(struct na_test_info *na_test_info)
 
     MPI_Initialized(&mpi_initialized);
     if (mpi_initialized) {
-        NA_LOG_WARNING("MPI was already initialized");
+        NA_TEST_LOG_WARNING("MPI was already initialized");
         goto done;
     }
     MPI_Finalized(&mpi_finalized);
     if (mpi_finalized) {
-        NA_LOG_ERROR("MPI was already finalized");
+        NA_TEST_LOG_ERROR("MPI was already finalized");
         goto done;
     }
 
 #    ifdef NA_MPI_HAS_GNI_SETUP
     /* Setup GNI job before initializing MPI */
     if (NA_MPI_Gni_job_setup() != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not setup GNI job");
+        NA_TEST_LOG_ERROR("Could not setup GNI job");
         return;
     }
 #    endif
@@ -211,7 +211,7 @@ na_test_mpi_init(struct na_test_info *na_test_info)
 
         MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
         if (provided != MPI_THREAD_MULTIPLE) {
-            NA_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set");
+            NA_TEST_LOG_ERROR("MPI_THREAD_MULTIPLE cannot be set");
         }
 
         /* Only if we do static MPMD MPI */
@@ -227,7 +227,7 @@ na_test_mpi_init(struct na_test_info *na_test_info)
             mpi_ret = MPI_Comm_split(
                 MPI_COMM_WORLD, color, global_rank, &na_test_info->mpi_comm);
             if (mpi_ret != MPI_SUCCESS) {
-                NA_LOG_ERROR("Could not split communicator");
+                NA_TEST_LOG_ERROR("Could not split communicator");
             }
 #    ifdef NA_HAS_MPI
             /* Set init comm that will be used to setup NA MPI */
@@ -269,7 +269,7 @@ na_test_gen_config(struct na_test_info *na_test_info)
 
     info_string = (char *) malloc(sizeof(char) * NA_TEST_MAX_ADDR_NAME);
     if (!info_string) {
-        NA_LOG_ERROR("Could not allocate info string");
+        NA_TEST_LOG_ERROR("Could not allocate info string");
         ret = NA_NOMEM;
         goto done;
     }
@@ -298,7 +298,7 @@ na_test_gen_config(struct na_test_info *na_test_info)
         /* Enable CMA on systems with YAMA */
         if ((yama_val != '0') &&
             prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0) < 0) {
-            NA_LOG_ERROR("Could not set ptracer\n");
+            NA_TEST_LOG_ERROR("Could not set ptracer\n");
             exit(1);
         }
 #endif
@@ -328,7 +328,7 @@ na_test_gen_config(struct na_test_info *na_test_info)
         sprintf(info_string_ptr, "%s:%d", na_test_info->hostname,
             na_test_info->port + na_test_info->mpi_comm_rank);
     } else {
-        NA_LOG_ERROR("Unknown protocol: %s", na_test_info->protocol);
+        NA_TEST_LOG_ERROR("Unknown protocol: %s", na_test_info->protocol);
         ret = NA_INVALID_ARG;
         goto done;
     }
@@ -349,7 +349,7 @@ na_test_set_config(const char *addr_name)
 
     config = fopen(HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "w+");
     if (!config) {
-        NA_LOG_ERROR("Could not open config file from: %s",
+        NA_TEST_LOG_ERROR("Could not open config file from: %s",
             HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
         exit(1);
     }
@@ -365,12 +365,12 @@ na_test_get_config(char *addr_name, na_size_t len)
 
     config = fopen(HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME, "r");
     if (!config) {
-        NA_LOG_ERROR("Could not open config file from: %s",
+        NA_TEST_LOG_ERROR("Could not open config file from: %s",
             HG_TEST_TEMP_DIRECTORY HG_TEST_CONFIG_FILE_NAME);
         exit(1);
     }
     if (fgets(addr_name, (int) len, config) == NULL) {
-        NA_LOG_ERROR("Could not retrieve config name");
+        NA_TEST_LOG_ERROR("Could not retrieve config name");
         fclose(config);
         exit(1);
     }
@@ -386,13 +386,13 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     char *info_string = NULL;
     struct na_init_info na_init_info = NA_INIT_INFO_INITIALIZER;
     na_return_t ret = NA_SUCCESS;
-    const char *log_level = getenv("HG_TEST_LOG_LEVEL");
+    const char *log_level = getenv("NA_TEST_LOG_LEVEL");
 
     /* Set log level */
     if (!log_level)
         log_level = "warning";
 
-    NA_LOG_MASK = hg_log_name_to_type(log_level);
+    NA_TEST_LOG_MASK = hg_log_name_to_type(log_level);
     NA_Set_log_level(log_level);
     HG_Util_set_log_level(log_level);
 
@@ -412,7 +412,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     /* Generate NA init string and get config options */
     info_string = na_test_gen_config(na_test_info);
     if (!info_string) {
-        NA_LOG_ERROR("Could not generate config string");
+        NA_TEST_LOG_ERROR("Could not generate config string");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -432,7 +432,7 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     na_test_info->na_class =
         NA_Initialize_opt(info_string, na_test_info->listen, &na_init_info);
     if (!na_test_info->na_class) {
-        NA_LOG_ERROR("Could not initialize NA");
+        NA_TEST_LOG_ERROR("Could not initialize NA");
         ret = NA_PROTOCOL_ERROR;
         goto done;
     }
@@ -447,13 +447,13 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
             /* TODO only rank 0 */
             nret = NA_Addr_self(na_test_info->na_class, &self_addr);
             if (nret != NA_SUCCESS) {
-                NA_LOG_ERROR("Could not get self addr");
+                NA_TEST_LOG_ERROR("Could not get self addr");
             }
 
             nret = NA_Addr_to_string(na_test_info->na_class, addr_string,
                 &addr_string_len, self_addr);
             if (nret != NA_SUCCESS) {
-                NA_LOG_ERROR("Could not convert addr to string");
+                NA_TEST_LOG_ERROR("Could not convert addr to string");
             }
             NA_Addr_free(na_test_info->na_class, self_addr);
 
@@ -507,7 +507,7 @@ NA_Test_finalize(struct na_test_info *na_test_info)
 
     ret = NA_Finalize(na_test_info->na_class);
     if (ret != NA_SUCCESS) {
-        NA_LOG_ERROR("Could not finalize NA interface");
+        NA_TEST_LOG_ERROR("Could not finalize NA interface");
         goto done;
     }
     free(na_test_info->target_name);

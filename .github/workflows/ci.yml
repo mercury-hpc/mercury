@@ -50,6 +50,11 @@ jobs:
       matrix:
         build_type: [Debug, RelWithDebInfo, Release, Asan, Tsan, Ubsan]
         compiler: [gcc, clang]
+        libs: [shared]
+        include:
+           - build_type: Debug
+             compiler: gcc
+             libs: static
         exclude:
            # Exclude sanitizer builds with clang
            - build_type: Asan
@@ -62,6 +67,7 @@ jobs:
     env:
       # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
       MERCURY_BUILD_CONFIGURATION: ${{ matrix.build_type }}
+      MERCURY_LIBS: ${{ matrix.libs }}
       CC: ${{ matrix.compiler }}
       INSTALL_DIR: install
 

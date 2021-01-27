@@ -18,6 +18,18 @@ else
   DASHBOARD_MODEL="Experimental"
 fi
 
+if [[ ${GITHUB_REPOSITORY} == 'mercury-hpc/mercury' ]]; then
+  DASHBOARD_SUBMIT=TRUE
+else
+  DASHBOARD_SUBMIT=FALSE
+fi
+
+if [[ ${MERCURY_LIBS} == 'static' ]]; then
+  BUILD_SHARED=FALSE
+else
+  BUILD_SHARED=TRUE
+fi
+
 export COV=`which gcov`
 
 export DEPS_PREFIX=${RUNNER_TEMP}/${INSTALL_DIR}
@@ -28,5 +40,7 @@ export PKG_CONFIG_PATH=$DEPS_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH
 $CTEST -VV --output-on-failure                        \
   -Ddashboard_full=FALSE -Ddashboard_do_${STEP}=TRUE  \
   -Ddashboard_model=${DASHBOARD_MODEL}                \
+  -Dbuild_shared_libs=${BUILD_SHARED}                 \
+  -Ddashboard_do_submit=${DASHBOARD_SUBMIT}           \
   -Ddashboard_allow_errors=TRUE                       \
   -S $CTEST_SCRIPT
