@@ -58,8 +58,7 @@ struct na_private_context {
     struct hg_atomic_queue *completion_queue; /* Default completion queue */
     na_class_t *na_class;                     /* Pointer to NA class */
     hg_atomic_int32_t
-        backfill_queue_count;          /* Number of entries in backfill queue */
-    hg_atomic_int32_t trigger_waiting; /* Polling/waiting in trigger */
+        backfill_queue_count; /* Number of entries in backfill queue */
 #ifdef NA_HAS_MULTI_PROGRESS
     hg_atomic_int32_t progressing; /* Progressing count */
 #endif
@@ -426,7 +425,6 @@ NA_Context_create_id(na_class_t *na_class, na_uint8_t id)
     /* Initialize completion queue mutex/cond */
     hg_thread_mutex_init(&na_private_context->completion_queue_mutex);
     hg_thread_cond_init(&na_private_context->completion_queue_cond);
-    hg_atomic_init32(&na_private_context->trigger_waiting, 0);
 
 #ifdef NA_HAS_MULTI_PROGRESS
     /* Initialize progress mutex/cond */
@@ -1237,27 +1235,25 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
 
                 hg_time_get_current_ms(&t1);
 
-                hg_atomic_incr32(&na_private_context->trigger_waiting);
                 hg_thread_mutex_lock(
                     &na_private_context->completion_queue_mutex);
-                /* Otherwise wait timeout ms */
-                while (hg_atomic_queue_is_empty(
-                           na_private_context->completion_queue) &&
-                       !hg_atomic_get32(
-                           &na_private_context->backfill_queue_count)) {
-                    if (hg_thread_cond_timedwait(
-                            &na_private_context->completion_queue_cond,
-                            &na_private_context->completion_queue_mutex,
-                            (unsigned int) (remaining * 1000.0)) !=
-                        HG_UTIL_SUCCESS) {
-                        /* Timeout occurred so leave */
-                        ret = NA_TIMEOUT;
-                        break;
-                    }
+
+                /* Otherwise wait remaining ms */
+                if (hg_atomic_queue_is_empty(
+                        na_private_context->completion_queue) &&
+                    !hg_atomic_get32(
+                        &na_private_context->backfill_queue_count) &&
+                    (hg_thread_cond_timedwait(
+                         &na_private_context->completion_queue_cond,
+                         &na_private_context->completion_queue_mutex,
+                         (unsigned int) (remaining * 1000.0)) !=
+                        HG_UTIL_SUCCESS)) {
+                    /* Timeout occurred so leave */
+                    ret = NA_TIMEOUT;
                 }
+
                 hg_thread_mutex_unlock(
                     &na_private_context->completion_queue_mutex);
-                hg_atomic_decr32(&na_private_context->trigger_waiting);
                 if (ret == NA_TIMEOUT)
                     break;
 
@@ -1348,11 +1344,9 @@ na_cb_completion_add(
         hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
     }
 
-    if (hg_atomic_get32(&na_private_context->trigger_waiting)) {
-        hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
-        /* Callback is pushed to the completion queue when something completes
-         * so wake up anyone waiting in the trigger */
-        hg_thread_cond_signal(&na_private_context->completion_queue_cond);
-        hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
-    }
+    /* Callback is pushed to the completion queue when something completes
+     * so wake up anyone waiting in the trigger */
+    hg_thread_mutex_lock(&na_private_context->completion_queue_mutex);
+    hg_thread_cond_signal(&na_private_context->completion_queue_cond);
+    hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
 }
