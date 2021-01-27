@@ -1206,7 +1206,7 @@ na_ucx_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *id)
 }
 
 static void
-recv_callback(void NA_UNUSED *request, ucs_status_t status,
+recv_callback(void *request, ucs_status_t status,
     const ucp_tag_recv_info_t *info, void *user_data)
 {
     static const struct na_cb_info_recv_unexpected recv_unexpected_errinfo = {
@@ -1233,6 +1233,7 @@ recv_callback(void NA_UNUSED *request, ucs_status_t status,
 
     assert(request == op_id->request);
     op_id->request = NULL;
+    ucp_request_free(request);
 
     if (status == UCS_OK) {
         na_ucx_context_t *nuctx = op_id->na_ctx->plugin_context;
@@ -1309,8 +1310,7 @@ recv_callback(void NA_UNUSED *request, ucs_status_t status,
 }
 
 static void
-send_callback(void NA_UNUSED *request, ucs_status_t status,
-    void *user_data)
+send_callback(void *request, ucs_status_t status, void *user_data)
 {
     na_op_id_t *op_id = user_data;
     struct na_cb_info *cbinfo = &op_id->completion_data.callback_info;
@@ -1329,6 +1329,7 @@ send_callback(void NA_UNUSED *request, ucs_status_t status,
 
     assert(request == op_id->request);
     op_id->request = NULL;
+    ucp_request_free(request);
 
     if (status == UCS_OK)
         cbinfo->ret = NA_SUCCESS;
