@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <inttypes.h>   /* for PRIx8, etc. */
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>     /* size_t */
 #include <stdio.h>      /* sscanf */
@@ -73,4 +74,26 @@ size_t
 twice_or_max(size_t x)
 {
     return x + MIN(SIZE_MAX - x, x);
+}
+
+void
+dbgf(const char *fmt, ...)
+{
+    static int state = 0;   // 0: uninitialized, -1: don't print, 1: do print
+    va_list ap;
+
+    if (state == 0) {
+        const char *val = getenv("WIREUP_DEBUG");
+        if (val != NULL && strcmp(val, "on") == 0)
+            state = 1;
+        else
+            state = -1;
+    }
+
+    if (state < 0)
+        return;
+
+    va_start(ap, fmt);
+    (void)vfprintf(stderr, fmt, ap);
+    va_end(ap);
 }

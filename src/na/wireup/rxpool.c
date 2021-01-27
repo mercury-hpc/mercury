@@ -191,7 +191,7 @@ rxdesc_setup(rxpool_t *rxpool, void *buf, size_t buflen, rxdesc_t *desc)
     desc->buflen = buflen;
     desc->ucx_owns = true;
 
-    printf("%s: initialized desc %p buf %p buflen %zu\n", __func__,
+    dbgf("%s: initialized desc %p buf %p buflen %zu\n", __func__,
        (void *)desc, desc->buf, desc->buflen);
     request = ucp_tag_recv_nbx(worker, buf, buflen, rxpool->tag,
         rxpool->tag_mask, &recv_params);
@@ -212,7 +212,7 @@ rxpool_teardown(rxpool_t *rxpool)
 
     /* Release UCP resources held by each descriptor.  Free buffers. */
     TAILQ_FOREACH(desc, &rxpool->alldesc, linkall) {
-        printf("%s: cancelling desc %p\n", __func__, (void *)desc);
+        dbgf("%s: cancelling desc %p\n", __func__, (void *)desc);
         if (desc->ucx_owns)
             ucp_request_cancel(worker, desc);
     }
@@ -225,7 +225,7 @@ rxpool_teardown(rxpool_t *rxpool)
                 ucp_worker_progress(worker);
         }
 
-        printf("%s: freeing desc %p\n", __func__, (void *)desc);
+        dbgf("%s: freeing desc %p\n", __func__, (void *)desc);
 
         if ((buf = desc->buf) != NULL) {
             desc->buf = NULL;
@@ -287,7 +287,7 @@ rxpool_buflen_step(rxpool_t *rxpool, rxdesc_t *head)
     if (nbuflen == buflen)
         return nbuflen;
 
-    printf("increasing buffer length %zu -> %zu bytes.\n", buflen, nbuflen);
+    dbgf("increasing buffer length %zu -> %zu bytes.\n", buflen, nbuflen);
 
     /* Cancel the rest so that we enlarge them in the following
      * rxpool_next() calls.
@@ -299,7 +299,7 @@ rxpool_buflen_step(rxpool_t *rxpool, rxdesc_t *head)
             continue;
         if (desc->buflen >= nbuflen)
             continue;
-        printf("%s: cancelling short desc %p\n", __func__, (void *)desc);
+        dbgf("%s: cancelling short desc %p\n", __func__, (void *)desc);
         ucp_request_cancel(rxpool->worker, desc);
     }
 
@@ -317,7 +317,7 @@ rxpool_next_slow(rxpool_t *rxpool, rxdesc_t *head)
         size_t buflen = head->buflen;
         void * const buf = head->buf, *nbuf;
 
-        printf("%s: rx desc %p %s, buflen %zu\n", __func__, (void *)head,
+        dbgf("%s: rx desc %p %s, buflen %zu\n", __func__, (void *)head,
            (head->status == UCS_ERR_CANCELED) ? "cancelled" : "truncated",
            head->buflen);
 

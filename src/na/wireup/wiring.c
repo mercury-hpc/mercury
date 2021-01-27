@@ -131,7 +131,7 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
         w->ep = NULL;
         request = ucp_ep_close_nb(ep, UCP_EP_CLOSE_MODE_FLUSH);
         if (UCS_PTR_IS_ERR(request)) {
-            warnx("%s: ucp_ep_close_nb: %s", __func__,
+            dbgf("%s: ucp_ep_close_nb: %s", __func__,
                 ucs_status_string(UCS_PTR_STATUS(request)));
         } else if (request != UCS_OK)
             ucp_request_free(request);
@@ -156,7 +156,7 @@ wireup_transition(wiring_t *wiring, wire_t *w,
     ostate = w->state;
     w->state = nstate;
 
-    printf("%s: wire %td state change %s -> %s\n",
+    dbgf("%s: wire %td state change %s -> %s\n",
         __func__, w - &st->wire[0], ostate->descr, nstate->descr);
 
     if (w->cb == NULL || ostate == nstate) {
@@ -193,18 +193,18 @@ wireup_msg_transition(wiring_t *wiring, const ucp_tag_t sender_tag,
     sender_id_t id;
 
     if (proto_id >= SENDER_ID_MAX) {
-        warnx("%s: illegal sender ID %" PRIu64, __func__, proto_id);
+        dbgf("%s: illegal sender ID %" PRIu64, __func__, proto_id);
         return;
     }
     if (proto_id >= st->nwires) {
-        warnx("%s: out of bounds sender ID %" PRIu64, __func__, proto_id);
+        dbgf("%s: out of bounds sender ID %" PRIu64, __func__, proto_id);
         return;
     }
 
     id = (sender_id_t)proto_id;
     w = &st->wire[id];
 
-    printf("%s: wire %" PRIuSENDER " %s message\n",
+    dbgf("%s: wire %" PRIuSENDER " %s message\n",
         __func__, id, wireup_op_string(msg->op));
 
     wireup_transition(wiring, w, (*w->state->receive)(wiring, w, msg));
@@ -222,7 +222,7 @@ wireup_wakeup_transition(wiring_t *wiring, uint64_t now)
         if (w->tlink[timo_wakeup].due > now)
             break;
         wiring_wakeup_remove(st, w);
-        printf("%s: wire %td woke\n", __func__, w - &st->wire[0]);
+        dbgf("%s: wire %td woke\n", __func__, w - &st->wire[0]);
         wireup_transition(wiring, w, (*w->state->wakeup)(wiring, w));
     }
 }
@@ -239,7 +239,7 @@ wireup_expire_transition(wiring_t *wiring, uint64_t now)
         if (w->tlink[timo_expire].due > now)
             break;
         wiring_expiration_remove(st, w);
-        printf("%s: wire %td expired\n", __func__, w - &st->wire[0]);
+        dbgf("%s: wire %td expired\n", __func__, w - &st->wire[0]);
         wireup_transition(wiring, w, (*w->state->expire)(wiring, w));
     }
 }
@@ -251,7 +251,7 @@ start_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     sender_id_t id = wire_index(st, w);
 
     if (msg->sender_id >= SENDER_ID_MAX) {
-        warnx("%s: bad foreign sender ID %" PRIu32 " for wire %" PRIuSENDER,
+        dbgf("%s: bad foreign sender ID %" PRIu32 " for wire %" PRIuSENDER,
             __func__, msg->sender_id, id);
         return w->state;
     }
@@ -260,13 +260,13 @@ start_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
         wiring_release_wire(wiring, w);
         return &state[WIRE_S_DEAD];
     } else if (msg->op != OP_ACK) {
-        warnx("%s: unexpected opcode %" PRIu16 " for wire %" PRIuSENDER,
+        dbgf("%s: unexpected opcode %" PRIu16 " for wire %" PRIuSENDER,
             __func__, msg->op, id);
         return w->state;
     }
 
     if (msg->addrlen != 0) {
-        warnx("%s: unexpected addr. len. %" PRIu16 " for wire %" PRIuSENDER,
+        dbgf("%s: unexpected addr. len. %" PRIu16 " for wire %" PRIuSENDER,
             __func__, msg->addrlen, id);
         return w->state;
     }
@@ -289,7 +289,7 @@ continue_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     sender_id_t id = wire_index(st, w);
 
     if (msg->sender_id >= SENDER_ID_MAX) {
-        warnx("%s: bad foreign sender ID %" PRIu32 " for wire %" PRIuSENDER,
+        dbgf("%s: bad foreign sender ID %" PRIu32 " for wire %" PRIuSENDER,
             __func__, msg->sender_id, id);
         return w->state;
     }
@@ -298,19 +298,19 @@ continue_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
         wiring_release_wire(wiring, w);
         return &state[WIRE_S_DEAD];
     } else if (msg->op != OP_KEEPALIVE) {
-        warnx("%s: unexpected opcode %" PRIu16 " for wire %" PRIuSENDER,
+        dbgf("%s: unexpected opcode %" PRIu16 " for wire %" PRIuSENDER,
             __func__, msg->op, id);
         return w->state;
     }
 
     if (msg->addrlen != 0) {
-        warnx("%s: unexpected addr. len. %" PRIu16 " for wire %" PRIuSENDER,
+        dbgf("%s: unexpected addr. len. %" PRIu16 " for wire %" PRIuSENDER,
             __func__, msg->addrlen, id);
         return w->state;
     }
 
     if (msg->sender_id != (uint32_t)w->id) {
-        warnx("%s: sender ID %" PRIu32 " mismatches assignment %" PRIuSENDER
+        dbgf("%s: sender ID %" PRIu32 " mismatches assignment %" PRIuSENDER
             " for wire %" PRIuSENDER, __func__, msg->sender_id, w->id, id);
         wiring_release_wire(wiring, w);
         return &state[WIRE_S_DEAD];
@@ -346,7 +346,7 @@ send_keepalive(wiring_t *wiring, wire_t *w)
     request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
-        warnx("%s: ucp_tag_send_nbx: %s", __func__,
+        dbgf("%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
         free(msg);
     } else if (request == UCS_OK)
@@ -363,7 +363,7 @@ ignore_wakeup(wiring_t *wiring, wire_t *w)
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
 
-    warnx("%s: ignoring wakeup for wire %" PRIuSENDER, __func__, id);
+    dbgf("%s: ignoring wakeup for wire %" PRIuSENDER, __func__, id);
 
     return w->state;
 }
@@ -374,7 +374,7 @@ reject_expire(wiring_t *wiring, wire_t *w)
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
 
-    warnx("%s: rejecting expiration for wire %" PRIuSENDER, __func__, id);
+    dbgf("%s: rejecting expiration for wire %" PRIuSENDER, __func__, id);
 
     return &state[WIRE_S_DEAD];
 }
@@ -385,7 +385,7 @@ reject_msg(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
 
-    warnx("%s: rejecting message from %" PRIuSENDER " for wire %" PRIuSENDER,
+    dbgf("%s: rejecting message from %" PRIuSENDER " for wire %" PRIuSENDER,
         __func__, msg->sender_id, id);
 
     return &state[WIRE_S_DEAD];
@@ -397,7 +397,7 @@ retry(wiring_t *wiring, wire_t *w)
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
 
-    warnx("%s: retrying establishment of wire %" PRIuSENDER, __func__, id);
+    dbgf("%s: retrying establishment of wire %" PRIuSENDER, __func__, id);
 
     if (!wireup_send(w)) {
         wiring_release_wire(wiring, w);
@@ -422,7 +422,7 @@ wireup_send_callback(void wiring_unused *request, ucs_status_t status,
 {
     wireup_msg_t *msg = user_data;
 
-    printf("%s: sent id %" PRIu32 " addr. len. %" PRIu16 " status %s\n",
+    dbgf("%s: sent id %" PRIu32 " addr. len. %" PRIu16 " status %s\n",
         __func__, msg->sender_id, msg->addrlen, ucs_status_string(status));
 }
 
@@ -432,7 +432,7 @@ wireup_last_send_callback(void wiring_unused *request, ucs_status_t status,
 {
     wireup_msg_t *msg = user_data;
 
-    printf("%s: sent id %" PRIu32 " addr. len. %" PRIu16 " status %s\n",
+    dbgf("%s: sent id %" PRIu32 " addr. len. %" PRIu16 " status %s\n",
         __func__, msg->sender_id, msg->addrlen, ucs_status_string(status));
 
     free(msg);
@@ -564,7 +564,7 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
         request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
 
         if (UCS_PTR_IS_ERR(request)) {
-            warnx("%s: ucp_tag_send_nbx: %s", __func__,
+            dbgf("%s: ucp_tag_send_nbx: %s", __func__,
                 ucs_status_string(UCS_PTR_STATUS(request)));
             free(msg);
         } else if (request == UCS_OK)
@@ -760,7 +760,7 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
 
     status = ucp_ep_create(wiring->rxpool->worker, &ep_params, &ep);
     if (status != UCS_OK) {
-        warnx("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
+        dbgf("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
         goto free_wire;
     }
     *w = (wire_t){.ep = ep, .id = rid, .state = &state[WIRE_S_LIVE]};
@@ -776,7 +776,7 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
     request = ucp_tag_send_nbx(ep, msg, msglen, tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
-        warnx("%s: ucp_tag_send_nbx: %s", __func__,
+        dbgf("%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
         goto free_wire;
     } else if (request == UCS_OK)
@@ -812,7 +812,7 @@ wireup_send(wire_t *w)
     request = ucp_tag_send_nbx(ep, msg, msglen, wireup_start_tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
-        warnx("%s: ucp_tag_send_nbx: %s", __func__,
+        dbgf("%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
         return false;
     }
@@ -877,7 +877,7 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     ucs_status_t status;
 
     if (UINT16_MAX < laddrlen) {
-        warnx("%s: local address too long (%zu)", __func__, laddrlen);
+        dbgf("%s: local address too long (%zu)", __func__, laddrlen);
         return (wire_id_t){.id = sender_id_nil};
     }
 
@@ -886,7 +886,7 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
 
     status = ucp_ep_create(wiring->rxpool->worker, &ep_params, &ep);
     if (status != UCS_OK) {
-        warnx("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
+        dbgf("%s: ucp_ep_create: %s", __func__, ucs_status_string(status));
         goto free_msg;
     }
 
@@ -940,7 +940,7 @@ wireup_rx_msg(wiring_t * const wiring, const ucp_tag_t sender_tag,
     assert((sender_tag & TAG_CHNL_MASK) == TAG_CHNL_WIREUP);
 
     if (buflen < hdrlen) {
-        warnx("%s: dropping %zu-byte message, shorter than header\n", __func__,
+        dbgf("%s: dropping %zu-byte message, shorter than header\n", __func__,
             buflen);
         return;
     }
@@ -955,13 +955,13 @@ wireup_rx_msg(wiring_t * const wiring, const ucp_tag_t sender_tag,
         op = msg->op;
         break;
     default:
-        warnx("%s: unexpected opcode %" PRIu16 ", dropping\n", __func__,
+        dbgf("%s: unexpected opcode %" PRIu16 ", dropping\n", __func__,
             msg->op);
         return;
     }
 
     if (buflen < offsetof(wireup_msg_t, addr[0]) + msg->addrlen) {
-        warnx("%s: %zu-byte message, address truncated, dropping\n",
+        dbgf("%s: %zu-byte message, address truncated, dropping\n",
             __func__, buflen);
         return;
     }
@@ -985,23 +985,23 @@ wireup_rx_req(wiring_t *wiring, const wireup_msg_t *msg)
 
     /* XXX In principle, can't the empty string be a valid address? */
     if (msg->addrlen == 0) {
-        warnx("%s: empty address, dropping", __func__);
+        dbgf("%s: empty address, dropping", __func__);
         return;
     }
 
     if (SENDER_ID_MAX <= msg->sender_id) {
-        warnx("%s: sender ID too large, dropping", __func__);
+        dbgf("%s: sender ID too large, dropping", __func__);
         return;
     }
     w = wireup_respond(wiring, (sender_id_t)msg->sender_id,
        (const void *)&msg->addr[0], msg->addrlen);
 
     if (w == NULL) {
-        warnx("%s: failed to prepare & send wireup response", __func__);
+        dbgf("%s: failed to prepare & send wireup response", __func__);
         return;
     }
 
-    printf("%s: my sender id %td, remote sender id %" PRIuSENDER "\n", __func__,
+    dbgf("%s: my sender id %td, remote sender id %" PRIuSENDER "\n", __func__,
         w - &wiring->storage->wire[0], w->id);
 }
 
@@ -1023,14 +1023,13 @@ wireup_once(wiring_t *wiring)
     }
 
     if (rdesc->status != UCS_OK) {
-        printf("receive error, %s, exiting.\n",
-            ucs_status_string(rdesc->status));
+        dbgf("receive error, %s, exiting.\n", ucs_status_string(rdesc->status));
         wiring_unlock(wiring);
         return -1;
     }
 
-    printf("received %zu-byte message tagged %" PRIu64
-           ", processing...\n", rdesc->rxlen, rdesc->sender_tag);
+    dbgf("received %zu-byte message tagged %" PRIu64 ", processing...\n",
+        rdesc->rxlen, rdesc->sender_tag);
     wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf, rdesc->rxlen);
 
     rxdesc_release(rxpool, rdesc);
