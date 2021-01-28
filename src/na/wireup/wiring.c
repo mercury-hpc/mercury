@@ -118,7 +118,7 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
 
     wiring_assert_locked(wiring);
 
-    assert(0 <= id && id < st->nwires);
+    assert(id < st->nwires);
 
     wiring->assoc[id] = NULL;
     if ((msg = w->msg) != NULL) {
