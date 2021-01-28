@@ -398,7 +398,7 @@ memdup(const void *buf, size_t buflen)
     return memcpy(nbuf, buf, buflen);
 }
 
-static NA_DEBUG_USED const char *
+static NA_DEBUG_LOG_USED const char *
 na_cb_type_string(na_cb_type_t ty)
 {
     switch (ty) {
@@ -1238,7 +1238,7 @@ recv_callback(void *request, ucs_status_t status,
     if (status == UCS_OK) {
         na_ucx_context_t *nuctx = op_id->na_ctx->plugin_context;
         sender_id_t sender_id;
-        const void * NA_DEBUG_USED buf = op_id->info.rx.buf;
+        const void * NA_DEBUG_LOG_USED buf = op_id->info.rx.buf;
         na_addr_t source;
 
         // XXX use standard endianness
