@@ -174,6 +174,7 @@ bulk_write(int fildes, const void *buf, size_t offset, size_t start_value,
     (void) fildes;
     (void) buf;
     (void) offset;
+    (void) start_value;
     (void) verbose;
 #endif
 
