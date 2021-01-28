@@ -1691,7 +1691,7 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
     int bmi_ret;
 
     NA_CHECK_ERROR(buf_size > NA_BMI_UNEXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds unexpected size, %d", buf_size);
+        "Exceeds unexpected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
@@ -1819,7 +1819,7 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     int bmi_ret;
 
     NA_CHECK_ERROR(buf_size > NA_BMI_EXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds expected size, %d", buf_size);
+        "Exceeds expected size, %zu", buf_size);
 
     /* Check op_id */
     NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
