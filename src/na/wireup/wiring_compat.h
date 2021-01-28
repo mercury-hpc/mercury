@@ -7,7 +7,7 @@
 #if __STDC_VERSION__ < 201112L
     // not a C11 compiler
 #   define wiring_atomic
-#elif __STDC_NO_ATOMICS__
+#elif defined(__STDC_NO_ATOMICS__) && __STDC_NO_ATOMICS__ != 0
     // C11 compiler without atomics
 #   define wiring_atomic
 #else
