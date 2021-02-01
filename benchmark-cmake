@@ -1,9 +1,21 @@
 #!/bin/sh
 
+if [ $(hostname) = "jelly" ]
+then
+	BMI_OPTS="-DBMI_INCLUDE_DIR=$HOME/wrk/bmi/install/include"
+	BMI_OPTS="${BMI_OPTS} -DBMI_LIBRARY=$HOME/wrk/bmi/install/lib/libbmi.so"
+	BMI_OPTS="${BMI_OPTS} -DNA_USE_BMI=on"
+else
+	OPA_OPTS="-DMERCURY_USE_OPA=off"
+	CC_OPTS="-DCMAKE_C_COMPILER=gcc"	# don't use `cc`, it could
+						# be anything
+fi
+
 cmake	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	-DBUILD_TESTING=on \
 	-DBUILD_SHARED_LIBS=on \
 	-DMERCURY_ENABLE_DEBUG=off -DMERCURY_TESTING_USE_THREAD_POOL=off \
-	-DBMI_INCLUDE_DIR=$HOME/wrk/bmi/install/include \
-	-DBMI_LIBRARY=$HOME/wrk/bmi/install/lib/libbmi.so \
-	-DMERCURY_TESTING_VERIFY_DATA=off -DNA_USE_BMI=on -DNA_USE_UCX=on ..
+	${BMI_OPTS:-} \
+	${CC_OPTS:-} \
+	${OPA_OPTS:-} \
+	-DMERCURY_TESTING_VERIFY_DATA=off -DNA_USE_UCX=on ..
