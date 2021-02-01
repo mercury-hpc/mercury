@@ -1,0 +1,9 @@
+#!/bin/sh
+
+cmake	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+	-DBUILD_TESTING=on \
+	-DBUILD_SHARED_LIBS=on \
+	-DMERCURY_ENABLE_DEBUG=off -DMERCURY_TESTING_USE_THREAD_POOL=off \
+	-DBMI_INCLUDE_DIR=$HOME/wrk/bmi/install/include \
+	-DBMI_LIBRARY=$HOME/wrk/bmi/install/lib/libbmi.so \
+	-DMERCURY_TESTING_VERIFY_DATA=off -DNA_USE_BMI=on -DNA_USE_UCX=on ..
