@@ -155,7 +155,7 @@ extern enum hg_log_type NA_TEST_LOG_MASK;
         fflush(stdout);                                                        \
     } while (0)
 
-#define NA_TEST_MAX_ADDR_NAME 2048
+#define NA_TEST_MAX_ADDR_NAME 4096
 
 /*********************/
 /* Public Prototypes */
