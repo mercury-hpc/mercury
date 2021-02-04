@@ -1,31 +1,46 @@
 #!/bin/sh
 
+prog=$(basename $0)
+personality=${prog%%-cmake}
+
 if [ $(hostname) = "jelly" ]
 then
-	BMI_OPTS="-DBMI_INCLUDE_DIR=$HOME/wrk/bmi/install/include"
-	BMI_OPTS="${BMI_OPTS} -DBMI_LIBRARY=$HOME/wrk/bmi/install/lib/libbmi.so"
-	BMI_OPTS="${BMI_OPTS} -DNA_USE_BMI=on"
+	bmi_opts="-DBMI_INCLUDE_DIR=$HOME/wrk/bmi/install/include"
+	bmi_opts="${bmi_opts} -DBMI_LIBRARY=$HOME/wrk/bmi/install/lib/libbmi.so"
+	bmi_opts="${bmi_opts} -DNA_USE_BMI=on"
 else
-	OPA_OPTS="-DMERCURY_USE_OPA=off"
-	CC_OPTS="-DCMAKE_C_COMPILER=gcc"	# don't use `cc`, it could
-						# be anything
+	opa_opts="-DMERCURY_USE_OPA=off"
+	cc_opts="-DCMAKE_C_COMPILER=gcc"	# don't use `cc`, it may not
+						# be GCC-compatible
 fi
 
 if [ $(hostname) = "summit.olcf.ornl.gov" ]
 then
-	OFI_OPTS="-DOFI_INCLUDE_DIR=$HOME/na-ucx/libfabric/install/include"
-	OFI_OPTS="${OFI_OPTS} OFI_LIBRARY=$HOME/na-ucx/libfabric/install/lib"
+	ofi_opts="-DOFI_INCLUDE_DIR=$HOME/na-ucx/libfabric/install/include"
+	ofi_opts="${ofi_opts} OFI_LIBRARY=$HOME/na-ucx/libfabric/install/lib"
+	ofi_opts="${ofi_opts} -DNA_USE_OFI=on"
 fi
+
+case $personality in
+benchmark)
+	personality_opts=$(cat<<EOPTS
+-DMERCURY_ENABLE_DEBUG=off
+-DMERCURY_TESTING_USE_THREAD_POOL=off
+-DMERCURY_TESTING_VERIFY_DATA=off
+-DMERCURY_USE_CHECKSUMS=off
+EOPTS
+)
+	;;
+*)
+	;;
+esac
 
 cmake	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	-DBUILD_TESTING=on \
 	-DBUILD_SHARED_LIBS=on \
-	-DMERCURY_ENABLE_DEBUG=off \
-	-DMERCURY_TESTING_USE_THREAD_POOL=off \
-	-DMERCURY_USE_CHECKSUMS=off \
-	${BMI_OPTS:-} \
-	${CC_OPTS:-} \
-	${OPA_OPTS:-} \
-	-DMERCURY_TESTING_VERIFY_DATA=off \
-	-DNA_USE_OFI=on \
+	${bmi_opts:-} \
+	${cc_opts:-} \
+	${ofi_opts:-} \
+	${opa_opts:-} \
+	${personality_opts:-} \
 	-DNA_USE_UCX=on ..
