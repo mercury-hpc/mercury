@@ -193,9 +193,6 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, struct hg_poll_event *event)
 #endif
     int ret = HG_UTIL_SUCCESS;
 
-    HG_UTIL_CHECK_ERROR(fd <= STDERR_FILENO, done, ret, HG_UTIL_FAIL,
-        "fd is not valid (%d)", fd);
-
 #if defined(_WIN32)
     /* TODO */
 #elif defined(HG_UTIL_HAS_SYSEPOLL_H)
@@ -289,9 +286,6 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
     int i, found = -1;
 #endif
     int ret = HG_UTIL_SUCCESS;
-
-    HG_UTIL_CHECK_ERROR(fd <= STDERR_FILENO, done, ret, HG_UTIL_FAIL,
-        "fd is not valid (%d)", fd);
 
 #if defined(_WIN32)
     /* TODO */
