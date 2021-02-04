@@ -1127,7 +1127,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
         event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_NA;
         rc = hg_poll_add(context->poll_set, na_poll_fd, &event);
         HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
-            "hg_poll_add() failed");
+            "hg_poll_add() failed (na_poll_fd=%d)", na_poll_fd);
 
 #ifdef NA_HAS_SM
         if (context->core_context.na_sm_context) {
@@ -1139,7 +1139,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
             event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_SM;
             rc = hg_poll_add(context->poll_set, na_poll_fd, &event);
             HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
-                "hg_poll_add() failed");
+                "hg_poll_add() failed (na_poll_fd=%d)", na_poll_fd);
         }
 #endif
 
@@ -1154,7 +1154,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
             rc = hg_poll_add(
                 context->poll_set, context->completion_queue_notify, &event);
             HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
-                "hg_poll_add() failed");
+                "hg_poll_add() failed (na_poll_fd=%d)", na_poll_fd);
         }
     }
 
