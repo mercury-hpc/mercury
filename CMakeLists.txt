@@ -144,6 +144,9 @@ endif()
 if(NOT CMAKE_C_FLAGS AND CMAKE_COMPILER_IS_GNUCC)
   message(STATUS "GCC detected, setting additional flags")
   set(CMAKE_C_FLAGS "-Wall -Wextra -Wshadow -Wundef -Wcast-qual -Wconversion -Wmissing-prototypes -pedantic -Wpointer-arith -Wformat=2 -std=gnu11 -Werror -Wno-error=inline" CACHE STRING "Flags used by the compiler during all build types." FORCE)
+  # -Werror often breaks CMake feature detection, so turn it off when
+  # CMake builds things
+  set(CMAKE_REQUIRED_FLAGS "-Wno-error")
 endif()
 
 # Detect Asan/Tsan/Ubsan compiler flags
