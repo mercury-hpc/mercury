@@ -11,6 +11,12 @@ else
 						# be anything
 fi
 
+if [ $(hostname) = "summit.olcf.ornl.gov" ]
+then
+	OFI_OPTS="-DOFI_INCLUDE_DIR=$HOME/na-ucx/libfabric/install/include"
+	OFI_OPTS="${OFI_OPTS} OFI_LIBRARY=$HOME/na-ucx/libfabric/install/lib"
+fi
+
 cmake	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	-DBUILD_TESTING=on \
 	-DBUILD_SHARED_LIBS=on \
@@ -20,4 +26,6 @@ cmake	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	${BMI_OPTS:-} \
 	${CC_OPTS:-} \
 	${OPA_OPTS:-} \
-	-DMERCURY_TESTING_VERIFY_DATA=off -DNA_USE_UCX=on ..
+	-DMERCURY_TESTING_VERIFY_DATA=off \
+	-DNA_USE_OFI=on \
+	-DNA_USE_UCX=on ..
