@@ -2001,8 +2001,8 @@ na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
                 na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
         NA_CHECK_ERROR(priv->context_max > min_ctx_cnt, error, ret,
             NA_INVALID_ARG,
-            "Maximum number of requested contexts (%d) exceeds provider "
-            "limitation (%d)",
+            "Maximum number of requested contexts (%" PRIu8
+	    ") exceeds provider limitation (%zu)",
             priv->context_max, min_ctx_cnt);
         NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d",
             na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
@@ -2950,7 +2950,7 @@ na_ofi_rma(na_class_t *na_class, na_context_t *context, na_cb_type_t cb_type,
         }
     } else
         NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
-            "fi_rma_op() failed, rc: %d (%s)", rc, fi_strerror((int) -rc));
+            "fi_rma_op() failed, rc: %zd (%s)", rc, fi_strerror((int) -rc));
 
 out:
     return ret;
@@ -2990,7 +2990,7 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
         goto out;
     }
     NA_CHECK_ERROR(rc != -FI_EAVAIL, out, ret, NA_PROTOCOL_ERROR,
-        "fi_cq_readfrom() failed, rc: %d (%s)", rc, fi_strerror((int) -rc));
+        "fi_cq_readfrom() failed, rc: %zd (%s)", rc, fi_strerror((int) -rc));
 
     memset(&cq_err, 0, sizeof(cq_err));
 
@@ -3001,7 +3001,7 @@ na_ofi_cq_read(na_context_t *context, size_t max_count,
     /* Read error entry */
     rc = fi_cq_readerr(cq_hdl, &cq_err, 0 /* flags */);
     NA_CHECK_ERROR(rc != 1, out, ret, NA_PROTOCOL_ERROR,
-        "fi_cq_readerr() failed, rc: %d (%s)", rc, fi_strerror((int) -rc));
+        "fi_cq_readerr() failed, rc: %zd (%s)", rc, fi_strerror((int) -rc));
 
     switch (cq_err.err) {
         case FI_ECANCELED: {
@@ -3113,7 +3113,7 @@ na_ofi_cq_process_event(na_class_t *na_class,
         NA_CHECK_NA_ERROR(out, ret, "Could not process rma event");
     } else
         NA_GOTO_ERROR(out, ret, NA_PROTONOSUPPORT,
-            "Unsupported CQ event flags: 0x%x.", cq_event->flags);
+            "Unsupported CQ event flags: 0x%" PRIx64 ".", cq_event->flags);
 
     /* Complete operation */
     ret = na_ofi_complete(na_ofi_op_id);
@@ -3155,7 +3155,7 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
     NA_CHECK_ERROR(cb_type != NA_CB_RECV_UNEXPECTED, out, ret, NA_INVALID_ARG,
         "Invalid cb_type %d, expected NA_CB_RECV_UNEXPECTED", cb_type);
     NA_CHECK_ERROR((tag & ~NA_OFI_UNEXPECTED_TAG) > NA_OFI_MAX_TAG, out, ret,
-        NA_OVERFLOW, "Invalid tag value %llu", tag);
+        NA_OVERFLOW, "Invalid tag value %" PRIu64, tag);
 
     /* Allocate new address */
     na_ofi_addr = na_ofi_addr_alloc(domain);
@@ -3337,7 +3337,7 @@ na_ofi_cq_process_retries(na_context_t *context)
             break;
         } else
             NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
-                "retry operation of %d failed, rc: %d (%s)",
+                "retry operation of %d failed, rc: %zd (%s)",
                 na_ofi_op_id->completion_data.callback_info.type, rc,
                 fi_strerror((int) -rc));
 
@@ -4382,7 +4382,7 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         }
     } else
         NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
-            "fi_tsend() unexpected failed, rc: %d (%s)", rc,
+            "fi_tsend() unexpected failed, rc: %zd (%s)", rc,
             fi_strerror((int) -rc));
 
 out:
@@ -4449,7 +4449,7 @@ na_ofi_msg_recv_unexpected(na_class_t *na_class, na_context_t *context,
         }
     } else
         NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
-            "fi_trecv() unexpected failed, rc: %d (%s)", rc,
+            "fi_trecv() unexpected failed, rc: %zd (%s)", rc,
             fi_strerror((int) -rc));
 
 out:
@@ -4520,7 +4520,7 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
         }
     } else
         NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
-            "fi_tsend() expected failed, rc: %d (%s)", rc,
+            "fi_tsend() expected failed, rc: %zd (%s)", rc,
             fi_strerror((int) -rc));
 
 out:
@@ -4591,7 +4591,7 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
         }
     } else
         NA_CHECK_ERROR(rc != 0, error, ret, NA_PROTOCOL_ERROR,
-            "fi_trecv() expected failed, rc: %d (%s)", rc,
+            "fi_trecv() expected failed, rc: %zd (%s)", rc,
             fi_strerror((int) -rc));
 
 out:
@@ -4645,7 +4645,7 @@ na_ofi_mem_handle_create_segments(na_class_t *na_class,
 
     /* Check that we do not exceed IOV limit */
     NA_CHECK_ERROR(segment_count > NA_OFI_CLASS(na_class)->iov_max, error, ret,
-        NA_INVALID_ARG, "Segment count exceeds provider limit (%d)",
+        NA_INVALID_ARG, "Segment count exceeds provider limit (%zu)",
         NA_OFI_CLASS(na_class)->iov_max);
 
     /* Allocate memory handle */
