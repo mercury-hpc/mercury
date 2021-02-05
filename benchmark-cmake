@@ -32,6 +32,7 @@ EOPTS
 )
 	;;
 *)
+	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
 	;;
 esac
 
