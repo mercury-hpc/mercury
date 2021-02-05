@@ -173,8 +173,8 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 
 /* Unexpected size */
 #define NA_OFI_UNEXPECTED_SIZE (4096)
-#define NA_OFI_UNEXPECTED_TAG  (0x100000000ULL)
-#define NA_OFI_TAG_MASK        (0x0FFFFFFFFULL)
+#define NA_OFI_UNEXPECTED_TAG  ((uint64_t)0x100000000)
+#define NA_OFI_TAG_MASK        ((uint64_t)0x0FFFFFFFF)
 
 /* Number of CQ event provided for fi_cq_read() */
 #define NA_OFI_CQ_EVENT_NUM (16)
