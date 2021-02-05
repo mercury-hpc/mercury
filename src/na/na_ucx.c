@@ -1429,7 +1429,7 @@ na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
             assert(op_id->request != NULL);
             ucp_request_cancel(ctx->worker, op_id->request);
         } else if (hg_atomic_cas32(&op_id->status, op_s_deferred,
-                                   op_s_complete)) {
+                                   op_s_canceled)) {
             assert(op_id->request == NULL);
         } else {
             hg_util_int32_t NA_DEBUG_USED status =
