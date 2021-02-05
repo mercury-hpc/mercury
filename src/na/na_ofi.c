@@ -1909,7 +1909,8 @@ na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
     prov = providers;
     while (prov != NULL) {
         if (na_ofi_verify_provider(prov_type, domain_name, prov)) {
-            NA_LOG_DEBUG("mode 0x%llx, fabric_attr -> prov_name: %s, name: %s; "
+            NA_LOG_DEBUG("mode 0x%" PRIx64
+                         ", fabric_attr -> prov_name: %s, name: %s; "
                          "domain_attr -> name: %s, threading: %d.",
                 prov->mode, prov->fabric_attr->prov_name,
                 prov->fabric_attr->name, prov->domain_attr->name,
@@ -2004,7 +2005,7 @@ na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
             "Maximum number of requested contexts (%" PRIu8
 	    ") exceeds provider limitation (%zu)",
             priv->context_max, min_ctx_cnt);
-        NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d",
+        NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %zu, rx_ctx_cnt %zu",
             na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
             na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
     }
@@ -3192,8 +3193,8 @@ na_ofi_cq_process_recv_unexpected_event(na_class_t *na_class,
     na_ofi_op_id->info.msg.tag = tag & NA_OFI_TAG_MASK;
     na_ofi_op_id->info.msg.actual_buf_size = len;
 
-    NA_LOG_DEBUG("unexpected recv msg completion event with tag=%llu, len=%zu ",
-        "(op id=%p)", tag, len, na_ofi_op_id);
+    NA_LOG_DEBUG("unexpected recv msg completion event with tag=%" PRIu64
+        ", len=%zu (op id=%p)", tag, len, (void *)na_ofi_op_id);
 
 out:
     return ret;
@@ -3218,9 +3219,8 @@ na_ofi_cq_process_recv_expected_event(
 
     na_ofi_op_id->info.msg.actual_buf_size = len;
 
-    NA_LOG_DEBUG("expected recv msg completion event with tag=%llu, len=%zu "
-                 "(op id=%p)",
-        tag, len, na_ofi_op_id);
+    NA_LOG_DEBUG("expected recv msg completion event with tag=%" PRIu64
+        ", len=%zu (op id=%p)", tag, len, (void *)na_ofi_op_id);
 
 out:
     return ret;
@@ -3485,8 +3485,9 @@ na_ofi_check_protocol(const char *protocol_name)
     while (prov != NULL) {
         NA_LOG_DEBUG(
             "fabric_attr - prov_name %s, name - %s, "
-            "domain_attr - name %s, mode: 0x%llx, domain_attr->mode 0x%llx, "
-            "caps: 0x%llx",
+            "domain_attr - name %s, mode: 0x%" PRIx64
+	    ", domain_attr->mode 0x%" PRIx64 ", "
+            "caps: 0x%" PRIx64,
             prov->fabric_attr->prov_name, prov->fabric_attr->name,
             prov->domain_attr->name, prov->mode, prov->domain_attr->mode,
             prov->caps);
@@ -4361,8 +4362,8 @@ na_ofi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->info.msg.fi_mr = plugin_data;
     na_ofi_op_id->info.msg.tag = tag;
 
-    NA_LOG_DEBUG("Posting unexpected msg send with tag=%llu (op id=%p)",
-        tag | NA_OFI_UNEXPECTED_TAG, na_ofi_op_id);
+    NA_LOG_DEBUG("Posting unexpected msg send with tag=%" PRIu64 " (op id=%p)",
+        tag | NA_OFI_UNEXPECTED_TAG, (void *)na_ofi_op_id);
 
     /* Post the FI unexpected send request */
     rc = fi_tsend(ctx->fi_tx, buf, buf_size, na_ofi_op_id->info.msg.fi_mr,
@@ -4501,8 +4502,8 @@ na_ofi_msg_send_expected(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->info.msg.fi_mr = plugin_data;
     na_ofi_op_id->info.msg.tag = tag;
 
-    NA_LOG_DEBUG("Posting expected msg send with tag=%llu (op id=%p)", tag,
-        na_ofi_op_id);
+    NA_LOG_DEBUG("Posting expected msg send with tag=%" PRIu32 " (op id=%p)",
+        tag, (void *)na_ofi_op_id);
 
     /* Post the FI expected send request */
     rc = fi_tsend(ctx->fi_tx, buf, buf_size, na_ofi_op_id->info.msg.fi_mr,
@@ -4572,8 +4573,8 @@ na_ofi_msg_recv_expected(na_class_t *na_class, na_context_t *context,
     na_ofi_op_id->info.msg.fi_mr = plugin_data;
     na_ofi_op_id->info.msg.tag = tag;
 
-    NA_LOG_DEBUG("Posting expected msg recv with tag=%llu (op id=%p)", tag,
-        na_ofi_op_id);
+    NA_LOG_DEBUG("Posting expected msg recv with tag=%" PRIu32 " (op id=%p)",
+        tag, (void *)na_ofi_op_id);
 
     /* Post the FI expected recv request */
     rc = fi_trecv(ctx->fi_rx, buf, buf_size, na_ofi_op_id->info.msg.fi_mr,
