@@ -68,6 +68,13 @@ if(HG_UTIL_HAS_TIME_H)
   unset(CMAKE_EXTRA_INCLUDE_FILES)
 endif()
 
+# Debug
+if(MERCURY_ENABLE_DEBUG)
+  set(HG_UTIL_HAS_DEBUG 1)
+else()
+  set(HG_UTIL_HAS_DEBUG 0)
+endif()
+
 # Detect <sys/time.h>
 check_include_files("sys/time.h" HG_UTIL_HAS_SYSTIME_H)
 
