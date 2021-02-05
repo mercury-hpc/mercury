@@ -1722,7 +1722,7 @@ na_ucx_msg_send(na_context_t *context,
 
     NA_LOG_DEBUG("deferring op %p", (void *)op_id);
 
-    op_id->status = op_s_deferred;
+    hg_atomic_set32(&op_id->status, op_s_deferred);
 
     HG_QUEUE_PUSH_TAIL(&cache->deferrals, op_id, info.tx.link);
 
