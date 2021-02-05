@@ -96,6 +96,9 @@ typedef hg_util_uint64_t hg_util_ptr_t;
 /* Define if has CLOCK_MONOTONIC_COARSE */
 #cmakedefine HG_UTIL_HAS_CLOCK_MONOTONIC_COARSE
 
+/* Define is has debug */
+#cmakedefine HG_UTIL_HAS_DEBUG
+
 /* Define if has eventfd_t type */
 #cmakedefine HG_UTIL_HAS_EVENTFD_T
 
