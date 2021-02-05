@@ -14,7 +14,7 @@ else
 						# be GCC-compatible
 fi
 
-if [ $(hostname) = "summit.olcf.ornl.gov" ]
+if [ $(hostname -d) = "summit.olcf.ornl.gov" ]
 then
 	ofi_opts="-DOFI_INCLUDE_DIR=$HOME/na-ucx/libfabric/install/include"
 	ofi_opts="${ofi_opts} OFI_LIBRARY=$HOME/na-ucx/libfabric/install/lib"
