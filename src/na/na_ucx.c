@@ -1526,33 +1526,32 @@ wire_event_callback(wire_event_info_t info, void *arg)
 
     NA_LOG_DEBUG("enter cache %p", (void *)cache);
 
-    hg_thread_mutex_lock(&owner->wire_lock);
-    aseq = address_wire_write_begin(cache);
-
     assert(info.event == wire_ev_estd || info.event == wire_ev_died);
 
-    if (info.event == wire_ev_estd) {
-        NA_LOG_DEBUG("established");
-        cache->ep = info.ep;
-        cache->sender_id = info.sender_id;
-    } else if (info.event == wire_ev_died) {
+    hg_thread_mutex_lock(&owner->wire_lock);
+
+    if (info.event == wire_ev_died) {
         NA_LOG_DEBUG("died");
+
+        aseq = address_wire_write_begin(cache);
         cache->sender_id = sender_id_nil;
         cache->wire_id = wire_id_nil;
         cache->ep = NULL;
-    }
+        address_wire_write_end(aseq);
 
-    address_wire_write_end(aseq);
-
-    if (info.event == wire_ev_died) {
         assert(HG_QUEUE_IS_EMPTY(&cache->deferrals));
+
         goto release;
     }
 
-    NA_LOG_DEBUG("begin deferred xmits");
-    /* TBD Hold the mutex for less time: move the deferred list to a local,
-     * release the mutex, and then send all deferred messages.
+    NA_LOG_DEBUG("established");
+
+    /* Transmit deferred messages before saving the sender ID so that
+     * a new transmission cannot slip out before the deferred ones.
+     * New transmissions will find that the sender ID is nil and wait
+     * for us to release `wire_lock`.
      */
+    NA_LOG_DEBUG("begin deferred xmits");
     HG_QUEUE_FOREACH(op_id, &cache->deferrals, info.tx.link) {
         const void *buf = op_id->info.tx.buf;
         na_size_t buf_size = op_id->info.tx.buf_size;
@@ -1564,10 +1563,19 @@ wire_event_callback(wire_event_info_t info, void *arg)
             struct na_cb_info *cbinfo = &op_id->completion_data.callback_info;
             cbinfo->ret = NA_CANCELED;
             na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
+        } else {
+            NA_LOG_ERROR(
+                "op id %p: expected status deferred or canceled, found %s",
+                (void *)op_id, op_status_string(op_id->status));
         }
     }
     HG_QUEUE_INIT(&cache->deferrals);
     NA_LOG_DEBUG("end deferred xmits");
+
+    aseq = address_wire_write_begin(cache);
+    cache->ep = info.ep;
+    cache->sender_id = info.sender_id;
+    address_wire_write_end(aseq);
 
 release:
     hg_thread_mutex_unlock(&owner->wire_lock);
