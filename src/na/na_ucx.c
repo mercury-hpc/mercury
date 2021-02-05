@@ -619,7 +619,7 @@ wire_accept_callback(wire_accept_info_t info, void *arg)
         hg_thread_mutex_unlock(&addr->wire_lock);
     }
 
-    NA_LOG_DEBUG("exit arg %p addr %p", arg, addr);
+    NA_LOG_DEBUG("exit arg %p addr %p", arg, (void *)addr);
 
     return addr;
 }
@@ -1010,7 +1010,7 @@ out:
     addr->addrlen = buflen;
     *addrp = na_ucx_addr_dedup(na_class, addr);
 
-    NA_LOG_DEBUG("exit lookup %s, %p", name, *addrp);
+    NA_LOG_DEBUG("exit lookup %s, %p", name, (void *)*addrp);
 
     return NA_SUCCESS;
 }
@@ -1166,7 +1166,7 @@ na_ucx_addr_deserialize(na_class_t *na_class, na_addr_t *addrp, const void *buf,
 
     *addrp = na_ucx_addr_dedup(na_class, addr);
 
-    NA_LOG_DEBUG("exit buf %p addr %p", buf, *addrp);
+    NA_LOG_DEBUG("exit buf %p addr %p", buf, (void *)*addrp);
 
     return NA_SUCCESS;
 }
@@ -1465,7 +1465,7 @@ tagged_send(const void *buf, na_size_t buf_size,
         ":%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s"
         ":%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s",
         na_cb_type_string(op_id->completion_data.callback_info.type), buf,
-        buf_size, tag, op_id,
+        buf_size, tag, (void *)op_id,
         get_octet(buf, buf_size,  0), get_octet(buf, buf_size,  1),
         get_octet(buf, buf_size,  2), get_octet(buf, buf_size,  3),
         get_octet(buf, buf_size,  4), get_octet(buf, buf_size,  5),
@@ -1524,7 +1524,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
     na_op_id_t *op_id;
     na_ucx_addr_t *owner = cache->owner;
 
-    NA_LOG_DEBUG("enter cache %p", cache);
+    NA_LOG_DEBUG("enter cache %p", (void *)cache);
 
     hg_thread_mutex_lock(&owner->wire_lock);
     aseq = address_wire_write_begin(cache);
@@ -1557,7 +1557,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
         const void *buf = op_id->info.tx.buf;
         na_size_t buf_size = op_id->info.tx.buf_size;
         uint64_t tag = op_id->info.tx.tag;
-        NA_LOG_DEBUG("  op %p", op_id);
+        NA_LOG_DEBUG("  op %p", (void *)op_id);
         if (hg_atomic_cas32(&op_id->status, op_s_deferred, op_s_underway))
             tagged_send(buf, buf_size, info.ep, info.sender_id, tag, op_id);
         else if (hg_atomic_cas32(&op_id->status, op_s_canceled, op_s_complete)){
@@ -1609,7 +1609,7 @@ na_ucx_msg_send(na_context_t *context,
     assert(proto_tag <= maxtag);
 
     NA_LOG_DEBUG("posting %s buf %p len %zu na tag %" PRIx32 " op %p",
-        na_cb_type_string(cb_type), buf, buf_size, proto_tag, op_id);
+        na_cb_type_string(cb_type), buf, buf_size, proto_tag, (void *)op_id);
 
     for (;;) {
         const address_wire_aseq_t aseq = address_wire_read_begin(cache);
@@ -1671,7 +1671,7 @@ na_ucx_msg_send(na_context_t *context,
 
         cache->ctx = cached_ctx = nuctx;
 
-        NA_LOG_DEBUG("starting wireup, cache %p", cache);
+        NA_LOG_DEBUG("starting wireup, cache %p", (void *)cache);
 
         cache->wire_id = wireup_start(&cached_ctx->wiring,
             (ucp_address_t *)&cached_ctx->self->addr[0],
@@ -1695,7 +1695,7 @@ na_ucx_msg_send(na_context_t *context,
 
         const address_wire_aseq_t aseq = address_wire_write_begin(cache);
 
-        NA_LOG_DEBUG("starting wireup, cache %p", cache);
+        NA_LOG_DEBUG("starting wireup, cache %p", (void *)cache);
 
         cache->wire_id = wireup_start(&cached_ctx->wiring,
             (ucp_address_t *)&cached_ctx->self->addr[0],
@@ -1712,7 +1712,7 @@ na_ucx_msg_send(na_context_t *context,
         }
     }
 
-    NA_LOG_DEBUG("deferring op %p", op_id);
+    NA_LOG_DEBUG("deferring op %p", (void *)op_id);
 
     op_id->status = op_s_deferred;
 
@@ -1761,7 +1761,7 @@ na_ucx_msg_recv(na_context_t *ctx, na_cb_t callback, void *arg,
 
     NA_LOG_DEBUG("posting %s buf %p len %zu tag %" PRIx64 " mask %" PRIx64
         " op %p",
-        na_cb_type_string(cb_type), buf, buf_size, tag, tagmask, op_id);
+        na_cb_type_string(cb_type), buf, buf_size, tag, tagmask, (void *)op_id);
 
     /* TBD Assert expected status */
     op_id->status = op_s_underway;
@@ -1838,7 +1838,7 @@ na_ucx_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
     if ((mh = zalloc(sizeof(*mh))) == NULL)
         return NA_NOMEM;
 
-    NA_LOG_DEBUG("memory handle %p", mh);
+    NA_LOG_DEBUG("memory handle %p", (void *)mh);
 
     hg_atomic_set32(&mh->kind, na_ucx_mem_local);
     mh->handle.local.buf = buf;
@@ -1859,7 +1859,7 @@ na_ucx_mem_handle_free(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
     const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
     ucs_status_t status;
 
-    NA_LOG_DEBUG("memory handle %p", mh);
+    NA_LOG_DEBUG("memory handle %p", (void *)mh);
 
     switch (hg_atomic_get32(&mh->kind)) {
     case na_ucx_mem_local:
@@ -1889,7 +1889,7 @@ na_ucx_mem_handle_get_max_segments(const na_class_t NA_UNUSED *na_class)
 static na_return_t
 na_ucx_mem_register(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
 {
-    NA_LOG_DEBUG("memory handle %p", mh);
+    NA_LOG_DEBUG("memory handle %p", (void *)mh);
 
     if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local) {
         NA_LOG_ERROR("%p is not a local handle", (void *)mh);
@@ -1902,7 +1902,7 @@ na_ucx_mem_register(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
 static na_return_t
 na_ucx_mem_deregister(na_class_t NA_UNUSED *na_class, na_mem_handle_t NA_UNUSED mh)
 {
-    NA_LOG_DEBUG("memory handle %p", mh);
+    NA_LOG_DEBUG("memory handle %p", (void *)mh);
 
     return NA_SUCCESS;
 }
@@ -1927,7 +1927,7 @@ na_ucx_mem_handle_get_serialize_size(na_class_t *na_class, na_mem_handle_t mh)
         return 0;   // ok for error?
     ucp_rkey_buffer_release(ptr);
 
-    NA_LOG_DEBUG("memory handle %p header + payload length %zu", mh,
+    NA_LOG_DEBUG("memory handle %p header + payload length %zu", (void *)mh,
         hdrlen + paylen);
 
     return hdrlen + paylen;
@@ -1949,7 +1949,7 @@ na_ucx_mem_handle_serialize(na_class_t *na_class, void *_buf,
     size_t paylen;
     ucs_status_t status;
 
-    NA_LOG_DEBUG("memory handle %p", mh);
+    NA_LOG_DEBUG("memory handle %p", (void *)mh);
 
     if (hg_atomic_get32(&mh->kind) != na_ucx_mem_local) {
         NA_LOG_ERROR("non-local memory handle %p cannot be serialized",
@@ -1995,7 +1995,7 @@ na_ucx_mem_handle_deserialize(na_class_t NA_UNUSED *na_class,
     if ((mh = zalloc(sizeof(*mh))) == NULL)
         return NA_NOMEM;
 
-    NA_LOG_DEBUG("memory handle %p", mh);
+    NA_LOG_DEBUG("memory handle %p", (void *)mh);
 
     if (buf_size < hdrlen) {
         NA_LOG_ERROR("buffer is shorter than a header, %zu bytes", buf_size);
@@ -2034,7 +2034,7 @@ resolve_mem_handle_locked(ucp_ep_h ep, na_mem_handle_t mh)
     packed_rkey_t *packed = &mh->handle.packed_remote;
     ucs_status_t status;
 
-    NA_LOG_DEBUG("memory handle %p", mh);
+    NA_LOG_DEBUG("memory handle %p", (void *)mh);
 
     if (hg_atomic_get32(&mh->kind) != na_ucx_mem_packed_remote)
         return mh;
@@ -2090,7 +2090,7 @@ na_ucx_copy(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
     unpacked_rkey_t *unpacked = &remote_mh->handle.unpacked_remote;
 
     NA_LOG_DEBUG("%s len %zu op %p",
-        put ? "putting" : "getting", length, op_id);
+        put ? "putting" : "getting", length, (void *)op_id);
 
     if (hg_atomic_get32(&local_mh->kind) != na_ucx_mem_local ||
         hg_atomic_get32(&remote_mh->kind) == na_ucx_mem_local) {

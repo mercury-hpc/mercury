@@ -2833,7 +2833,7 @@ na_sm_op_retry(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id)
     struct na_sm_op_queue *retry_op_queue =
         &NA_SM_CLASS(na_class)->endpoint.retry_op_queue;
 
-    NA_LOG_DEBUG("Pushing %p for retry", na_sm_op_id);
+    NA_LOG_DEBUG("Pushing %p for retry", (void *)na_sm_op_id);
 
     /* Push op ID to retry queue */
     hg_thread_spin_lock(&retry_op_queue->lock);
@@ -3418,7 +3418,7 @@ na_sm_process_retries(
         if (!na_sm_op_id)
             break;
 
-        NA_LOG_DEBUG("Attempting to retry %p", na_sm_op_id);
+        NA_LOG_DEBUG("Attempting to retry %p", (void *)na_sm_op_id);
 
         /* Attempt to resolve address first */
         if (!(hg_atomic_get32(&na_sm_op_id->na_sm_addr->status) &
@@ -3508,7 +3508,7 @@ na_sm_complete(struct na_sm_op_id *na_sm_op_id, int notify)
     if (status & NA_SM_OP_CANCELED) {
         /* If it was canceled while being processed, set callback ret
          * accordingly */
-        NA_LOG_DEBUG("Operation ID %p was canceled", na_sm_op_id);
+        NA_LOG_DEBUG("Operation ID %p was canceled", (void *)na_sm_op_id);
         callback_info->ret = NA_CANCELED;
     } else
         callback_info->ret = NA_SUCCESS;
@@ -5034,7 +5034,7 @@ na_sm_cancel(
         NA_SM_OP_COMPLETED)
         goto done;
 
-    NA_LOG_DEBUG("Canceling operation ID %p", na_sm_op_id);
+    NA_LOG_DEBUG("Canceling operation ID %p", (void *)na_sm_op_id);
 
     switch (na_sm_op_id->completion_data.callback_info.type) {
         case NA_CB_RECV_UNEXPECTED:
