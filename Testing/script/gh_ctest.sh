@@ -43,6 +43,8 @@ export PATH=$DEPS_PREFIX/bin:$PATH
 export LD_LIBRARY_PATH=$DEPS_PREFIX/lib:$DEPS_PREFIX/lib64:$LD_LIBRARY_PATH
 export PKG_CONFIG_PATH=$DEPS_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH
 
+export PSM_DEVICES="self,shm"
+
 $CTEST -VV --output-on-failure                        \
   -Ddashboard_full=FALSE -Ddashboard_do_${STEP}=TRUE  \
   -Ddashboard_model=${DASHBOARD_MODEL}                \
