@@ -1498,20 +1498,23 @@ tagged_send(const void *buf, na_size_t buf_size,
         get_octet(buf, buf_size, 60), get_octet(buf, buf_size, 61),
         get_octet(buf, buf_size, 62), get_octet(buf, buf_size, 63));
 
-    op_id->request = request =
-        ucp_tag_send_nbx(ep, buf, buf_size, tag, &tx_params);
+    request = ucp_tag_send_nbx(ep, buf, buf_size, tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
         NA_LOG_ERROR("ucp_tag_send_nbx: %s",
             ucs_status_string(UCS_PTR_STATUS(request)));
         hg_atomic_set32(&op_id->status, op_s_complete);
+        op_id->request = NULL;
         op_id->completion_data.callback_info.ret = NA_PROTOCOL_ERROR;
         na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
     } else if (request == UCS_OK) {
         // send was immediate: queue completion
         hg_atomic_set32(&op_id->status, op_s_complete);
+        op_id->request = NULL;
         op_id->completion_data.callback_info.ret = NA_SUCCESS;
         na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
+    } else {
+        op_id->request = request;
     }
 }
 
@@ -1778,13 +1781,17 @@ na_ucx_msg_recv(na_context_t *ctx, na_cb_t callback, void *arg,
     op_id->completion_data.callback = callback;
     op_id->completion_data.callback_info.arg = arg;
 
-    op_id->request = request =
+    request =
         ucp_tag_recv_nbx(worker, buf, buf_size, tag, tagmask, &recv_params);
 
     if (UCS_PTR_IS_ERR(request)) {
         NA_LOG_ERROR("ucp_tag_recv_nbx: %s",
             ucs_status_string(UCS_PTR_STATUS(request)));
+        op_id->status = op_s_complete;
+        op_id->request = NULL;
         return NA_PROTOCOL_ERROR;
+    } else {
+        op_id->request = request;
     }
 
     return NA_SUCCESS;
@@ -2138,7 +2145,6 @@ na_ucx_copy(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
             unpacked->remote_base_addr + remote_offset, unpacked->rkey,
             &params);
     }
-    op_id->request = request;
 
     if (UCS_PTR_IS_ERR(request)) {
         NA_LOG_ERROR("ucp_put_nbx: %s",
@@ -2150,6 +2156,8 @@ na_ucx_copy(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
         hg_atomic_set32(&op_id->status, op_s_complete);
         op_id->completion_data.callback_info.ret = NA_SUCCESS;
         na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
+    } else {
+        op_id->request = request;
     }
 
     return NA_SUCCESS;
