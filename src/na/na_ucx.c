@@ -1321,8 +1321,9 @@ send_callback(void *request, ucs_status_t status, void *user_data)
         (void *)op_id, ucs_status_string(status));
 
     if (!hg_atomic_cas32(&op_id->status, expected_status, op_s_complete)) {
-        NA_LOG_ERROR("op id %p: expected status %s, found %s",
+        NA_LOG_ERROR("op id %p: %s expected status %s, found %s",
             (void *)op_id,
+	    na_cb_type_string(op_id->completion_data.callback_info.type),
             op_status_string(expected_status),
             op_status_string(op_id->status));
     }
