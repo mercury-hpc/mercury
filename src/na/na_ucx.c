@@ -1444,8 +1444,7 @@ na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
 
 static void
 tagged_send(const void *buf, na_size_t buf_size,
-    ucp_ep_h ep, sender_id_t sender_id, uint64_t tag,
-    na_op_id_t *op_id)
+    ucp_ep_h ep, sender_id_t sender_id, uint64_t tag, na_op_id_t *op_id)
 {
     const ucp_request_param_t tx_params = {
       .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
