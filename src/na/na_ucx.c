@@ -2086,7 +2086,7 @@ resolve_mem_handle(ucp_ep_h ep, na_mem_handle_t mh)
 }
 
 static na_return_t
-na_ucx_copy(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
+na_ucx_copy(na_context_t *ctx, na_cb_t callback,
     void *arg, na_mem_handle_t local_mh, na_offset_t local_offset,
     na_mem_handle_t remote_mh, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED remote_id,
@@ -2149,7 +2149,7 @@ na_ucx_copy(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
     if (UCS_PTR_IS_ERR(request)) {
         NA_LOG_ERROR("ucp_put_nbx: %s",
             ucs_status_string(UCS_PTR_STATUS(request)));
-        na_ucx_op_destroy(na_class, op_id);
+        hg_atomic_set32(&op_id->status, op_s_complete);
         return NA_PROTOCOL_ERROR;
     } else if (request == UCS_OK) {
         // send was immediate: queue completion
@@ -2164,24 +2164,24 @@ na_ucx_copy(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
 }
 
 static na_return_t
-na_ucx_put(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
+na_ucx_put(na_class_t NA_UNUSED *na_class, na_context_t *ctx, na_cb_t callback,
     void *arg, na_mem_handle_t local_mh, na_offset_t local_offset,
     na_mem_handle_t remote_mh, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t *op_id)
 {
-    return na_ucx_copy(na_class, ctx, callback, arg, local_mh, local_offset,
+    return na_ucx_copy(ctx, callback, arg, local_mh, local_offset,
         remote_mh, remote_offset, length, remote_addr, remote_id, op_id, true);
 }
 
 static na_return_t
-na_ucx_get(na_class_t *na_class, na_context_t *ctx, na_cb_t callback,
+na_ucx_get(na_class_t NA_UNUSED *na_class, na_context_t *ctx, na_cb_t callback,
     void *arg, na_mem_handle_t local_mh, na_offset_t local_offset,
     na_mem_handle_t remote_mh, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_uint8_t remote_id,
     na_op_id_t *op_id)
 {
-    return na_ucx_copy(na_class, ctx, callback, arg, local_mh, local_offset,
+    return na_ucx_copy(ctx, callback, arg, local_mh, local_offset,
         remote_mh, remote_offset, length, remote_addr, remote_id, op_id, false);
 }
 
