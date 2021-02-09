@@ -71,6 +71,7 @@
 #include <inttypes.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -5059,6 +5060,11 @@ na_ofi_progress(
             remaining -= hg_time_diff(t2, t1);
         }
     } while ((int) (remaining * 1000.0) > 0);
+
+    /* PSM2 is a user-level interface, to prevent busy-spin and allow
+     * other threads to be scheduled, we need to yield here. */
+    if (NA_OFI_CLASS(na_class)->domain->prov_type == NA_OFI_PROV_PSM2)
+        sched_yield();
 
     return NA_TIMEOUT;
 
