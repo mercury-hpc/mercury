@@ -2113,12 +2113,12 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
     void *arg, na_mem_handle_t local_mh, na_offset_t local_offset,
     na_mem_handle_t remote_mh, na_offset_t remote_offset,
     na_size_t length, na_addr_t remote_addr, na_uint8_t NA_UNUSED remote_id,
-    na_op_id_t *op_id, bool put)
+    na_op_id_t *op, bool put)
 {
     const ucp_request_param_t params = {
       .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
     , .cb = {.send = send_callback}
-    , .user_data = op_id
+    , .user_data = op
     };
     ucp_ep_h ep;
     na_ucx_context_t NA_DEBUG_USED *nuctx;
@@ -2127,7 +2127,7 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
     unpacked_rkey_t *unpacked = &remote_mh->handle.unpacked_remote;
 
     NA_LOG_DEBUG("%s len %zu op %p",
-        put ? "putting" : "getting", length, (void *)op_id);
+        put ? "putting" : "getting", length, (void *)op);
 
     if (hg_atomic_get32(&local_mh->kind) != na_ucx_mem_local ||
         hg_atomic_get32(&remote_mh->kind) == na_ucx_mem_local) {
@@ -2151,11 +2151,11 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
         return NA_PROTOCOL_ERROR;
 
     /* TBD: verify original status */
-    op_id->status = op_s_underway;
-    op_id->na_ctx = ctx;
-    op_id->completion_data.callback_info.type = put ? NA_CB_PUT : NA_CB_GET;
-    op_id->completion_data.callback = callback;
-    op_id->completion_data.callback_info.arg = arg;
+    op->status = op_s_underway;
+    op->na_ctx = ctx;
+    op->completion_data.callback_info.type = put ? NA_CB_PUT : NA_CB_GET;
+    op->completion_data.callback = callback;
+    op->completion_data.callback_info.arg = arg;
 
     if (put) {
         request = ucp_put_nbx(
@@ -2172,15 +2172,21 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
     if (UCS_PTR_IS_ERR(request)) {
         NA_LOG_ERROR("ucp_put_nbx: %s",
             ucs_status_string(UCS_PTR_STATUS(request)));
-        hg_atomic_set32(&op_id->status, op_s_complete);
+        hlog_fast(op_life, "%s: failed %s op %p", __func__, put ? "put" : "get",
+            (void *)op);
+        hg_atomic_set32(&op->status, op_s_complete);
         return NA_PROTOCOL_ERROR;
     } else if (request == UCS_OK) {
         // send was immediate: queue completion
-        hg_atomic_set32(&op_id->status, op_s_complete);
-        op_id->completion_data.callback_info.ret = NA_SUCCESS;
-        na_cb_completion_add(op_id->na_ctx, &op_id->completion_data);
+        hlog_fast(op_life, "%s: completed %s op %p", __func__,
+            put ? "put" : "get", (void *)op);
+        hg_atomic_set32(&op->status, op_s_complete);
+        op->completion_data.callback_info.ret = NA_SUCCESS;
+        na_cb_completion_add(op->na_ctx, &op->completion_data);
     } else {
-        op_id->request = request;
+        hlog_fast(op_life, "%s: posted %s op %p", __func__, put ? "put" : "get",
+            (void *)op);
+        op->request = request;
     }
 
     return NA_SUCCESS;
