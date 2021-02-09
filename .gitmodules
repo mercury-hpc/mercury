@@ -7,3 +7,6 @@
 [submodule "src/boost"]
 	path = src/boost
 	url = https://github.com/mercury-hpc/preprocessor.git
+[submodule "hlog"]
+	path = src/hlog
+	url = https://github.com/gnuoyd/hlog.git

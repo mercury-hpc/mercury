@@ -283,6 +283,7 @@ endif()
 if(NA_USE_UCX)
   set(NA_SRCS
     ${NA_SRCS}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../hlog/src/hlog.c
     ${CMAKE_CURRENT_SOURCE_DIR}/na_ucx.c
     ${CMAKE_CURRENT_SOURCE_DIR}/wireup/rxpool.c
     ${CMAKE_CURRENT_SOURCE_DIR}/wireup/util.c
