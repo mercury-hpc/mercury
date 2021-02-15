@@ -6,6 +6,7 @@
  * found at the root of the source code distribution tree.
  */
 
+#include <stdalign.h>
 #include <string.h> /* memcmp */
 
 #include "na_plugin.h"
@@ -178,8 +179,7 @@ typedef struct _op_txinfo {
 } op_txinfo_t;
 
 struct na_op_id {
-    struct na_cb_completion_data completion_data; /* Completion data    */
-    ucs_status_ptr_t request;
+    struct na_cb_completion_data completion_data;
     na_context_t *na_ctx;
     hg_atomic_int32_t status;
     union {
@@ -245,7 +245,6 @@ static na_return_t na_ucx_initialize(na_class_t *, const struct na_info *,
     na_bool_t);
 static na_return_t na_ucx_finalize(na_class_t *);
 static na_return_t na_ucx_context_create(na_class_t *, void **, na_uint8_t);
-static na_return_t na_ucx_op_destroy_impl(na_op_id_t *);
 static na_return_t na_ucx_context_destroy(na_class_t *, void *);
 static na_return_t na_ucx_addr_to_string(na_class_t *, char *, na_size_t *,
     na_addr_t);
@@ -1175,12 +1174,52 @@ na_ucx_addr_deserialize(na_class_t *na_class, na_addr_t *addrp, const void *buf,
     return NA_SUCCESS;
 }
 
+/* XXX header_alloc and header_free are copies of functions in
+ * XXX src/na/wireup/rxpool.c.  There should be one shared copy.
+ *
+ * Allocate a buffer with a `size`-bytes, `alignment`-aligned payload
+ * preceded by a `header_size` header, padding the allocation with up
+ * to `alignment - 1` bytes to ensure that the payload is properly aligned.
+ *
+ * If `alignment` is 0, do not try to align the payload.  It's ok if
+ * `size` is 0, however, `header_alloc` is undefined if both `header_size`
+ * and `size` are 0.
+ *
+ * Return a pointer to the payload or set errno and return NULL
+ * on error.  Possible `errno` values correspond with malloc(3).
+ */
+static void *
+header_alloc(size_t header_size, size_t alignment, size_t size)
+{
+    const size_t pad = (alignment == 0 || header_size % alignment == 0)
+                        ? 0
+                        : alignment - header_size % alignment;
+
+    return (char *)malloc(header_size + pad + size) + header_size + pad;
+}
+
+/* Free the buffer `buf` that was returned previously by a call
+ * to `header_alloc(header_size, alignment, ...)`.
+ */
+static void
+header_free(size_t header_size, size_t alignment, void *buf)
+{
+    const size_t pad = (alignment == 0 || header_size % alignment == 0)
+                        ? 0
+                        : alignment - header_size % alignment;
+
+    free((char *)buf - header_size - pad);
+}
+
 static na_op_id_t *
 na_ucx_op_create(na_class_t NA_UNUSED *na_class)
 {
+    const na_ucx_class_t *nucl = na_ucx_class_const(na_class);
     na_op_id_t *id;
 
-    if ((id = zalloc(sizeof(*id))) == NULL) {
+    id = header_alloc(nucl->request_size, alignof(*id), sizeof(*id));
+
+    if (id == NULL) {
         NA_LOG_ERROR("Could not allocate NA OFI operation ID");
         return NULL;
     }
@@ -1196,17 +1235,11 @@ na_ucx_op_create(na_class_t NA_UNUSED *na_class)
 }
 
 static na_return_t
-na_ucx_op_destroy_impl(na_op_id_t *id)
-{
-    free(id);
-
-    return NA_SUCCESS;
-}
-
-static na_return_t
 na_ucx_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *id)
 {
-    na_ucx_op_destroy_impl(id);
+    const na_ucx_class_t *nucl = na_ucx_class_const(na_class);
+
+    header_free(nucl->request_size, alignof(*id), id);
 
     hlog_fast(op_life, "%s: destroyed op %p", __func__, (void *)id);
 
@@ -1215,14 +1248,14 @@ na_ucx_op_destroy(na_class_t NA_UNUSED *na_class, na_op_id_t *id)
 
 static void
 recv_callback(void *request, ucs_status_t status,
-    const ucp_tag_recv_info_t *info, void *user_data)
+    const ucp_tag_recv_info_t *info, void NA_UNUSED *user_data)
 {
     static const struct na_cb_info_recv_unexpected recv_unexpected_errinfo = {
       .actual_buf_size = 0
     , .source = NA_ADDR_NULL
     , .tag = 0
     };
-    na_op_id_t *op = user_data;
+    na_op_id_t *op = request;
     struct na_cb_info *cbinfo = &op->completion_data.callback_info;
     struct na_cb_info_recv_unexpected *recv_unexpected =
         &cbinfo->info.recv_unexpected;
@@ -1240,10 +1273,6 @@ recv_callback(void *request, ucs_status_t status,
         NA_LOG_DEBUG("op id %p ucx status %s",
             (void *)op, ucs_status_string(status));
     }
-
-    assert(request == op->request);
-    op->request = NULL;
-    ucp_request_free(request);
 
     if (status == UCS_OK) {
         na_ucx_context_t *nuctx = op->na_ctx->plugin_context;
@@ -1320,9 +1349,9 @@ recv_callback(void *request, ucs_status_t status,
 }
 
 static void
-send_callback(void *request, ucs_status_t status, void *user_data)
+send_callback(void *request, ucs_status_t status, void NA_UNUSED *user_data)
 {
-    na_op_id_t *op = user_data;
+    na_op_id_t *op = request;
     struct na_cb_info *cbinfo = &op->completion_data.callback_info;
     const op_status_t expected_status =
         (status == UCS_ERR_CANCELED) ? op_s_canceled : op_s_underway;
@@ -1339,10 +1368,6 @@ send_callback(void *request, ucs_status_t status, void *user_data)
             op_status_string(expected_status),
             op_status_string(op->status));
     }
-
-    assert(request == op->request);
-    op->request = NULL;
-    ucp_request_free(request);
 
     if (status == UCS_OK)
         cbinfo->ret = NA_SUCCESS;
@@ -1424,29 +1449,23 @@ na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
     case NA_CB_RECV_UNEXPECTED:
     case NA_CB_RECV_EXPECTED:
         if (hg_atomic_cas32(&op->status, op_s_underway, op_s_canceled)) {
-            /* UCP will still run the callback, which will reset
-             * `op->request`
-             */
-            assert(op->request != NULL);
-            ucp_request_cancel(ctx->worker, op->request);
+            /* UCP will still run the callback */
+            ucp_request_cancel(ctx->worker, op);
         } else {
             hg_util_int32_t NA_DEBUG_USED status = hg_atomic_get32(&op->status);
-            assert(status == op_s_canceled || status == op_s_complete);
+            hlog_assert(status == op_s_canceled || status == op_s_complete);
         }
         return NA_SUCCESS;
     case NA_CB_SEND_UNEXPECTED:
     case NA_CB_SEND_EXPECTED:
         if (hg_atomic_cas32(&op->status, op_s_underway, op_s_canceled)) {
-            /* UCP will still run the callback, which will reset
-             * `op->request`
-             */
-            assert(op->request != NULL);
-            ucp_request_cancel(ctx->worker, op->request);
+            /* UCP will still run the callback */
+            ucp_request_cancel(ctx->worker, op);
         } else if (hg_atomic_cas32(&op->status, op_s_deferred, op_s_canceled)) {
-            assert(op->request == NULL);
+            ;   // do nothing
         } else {
             hg_util_int32_t NA_DEBUG_USED status = hg_atomic_get32(&op->status);
-            assert(status == op_s_canceled || status == op_s_complete);
+            hlog_assert(status == op_s_canceled || status == op_s_complete);
         }
         return NA_SUCCESS;
     default:
@@ -1459,9 +1478,9 @@ tagged_send(const void *buf, na_size_t buf_size,
     ucp_ep_h ep, sender_id_t sender_id, uint64_t tag, na_op_id_t *op)
 {
     const ucp_request_param_t tx_params = {
-      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
+      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_REQUEST
     , .cb = {.send = send_callback}
-    , .user_data = op
+    , .request = (void *)op
     };
     ucs_status_ptr_t request;
 
@@ -1517,19 +1536,16 @@ tagged_send(const void *buf, na_size_t buf_size,
             ucs_status_string(UCS_PTR_STATUS(request)));
         hlog_fast(op_life, "%s: failed op %p", __func__, (void *)op);
         hg_atomic_set32(&op->status, op_s_complete);
-        op->request = NULL;
         op->completion_data.callback_info.ret = NA_PROTOCOL_ERROR;
         na_cb_completion_add(op->na_ctx, &op->completion_data);
     } else if (request == UCS_OK) {
         // send was immediate: queue completion
         hlog_fast(op_life, "%s: completed op %p", __func__, (void *)op);
         hg_atomic_set32(&op->status, op_s_complete);
-        op->request = NULL;
         op->completion_data.callback_info.ret = NA_SUCCESS;
         na_cb_completion_add(op->na_ctx, &op->completion_data);
     } else {
         hlog_fast(op_life, "%s: posted op %p", __func__, (void *)op);
-        op->request = request;
     }
 }
 
@@ -1673,7 +1689,6 @@ na_ucx_msg_send(na_context_t *context,
     op_id->info.tx.buf = buf;
     op_id->info.tx.buf_size = buf_size;
     op_id->info.tx.tag = tag;
-    op_id->request = NULL;
 
     /* Fast path: if the sender ID is established, and the cached context
      * matches the caller's context, then don't acquire the lock,
@@ -1783,9 +1798,9 @@ na_ucx_msg_recv(na_context_t *ctx, na_cb_t callback, void *arg,
     na_ucx_context_t *nuctx = ctx->plugin_context;
     const ucp_request_param_t recv_params = {
       .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK |
-                      UCP_OP_ATTR_FIELD_USER_DATA
+                      UCP_OP_ATTR_FIELD_REQUEST
     , .cb = {.recv = recv_callback}
-    , .user_data = op
+    , .request = op
     };
     ucp_worker_h worker = nuctx->worker;
     void *request;
@@ -1810,11 +1825,9 @@ na_ucx_msg_recv(na_context_t *ctx, na_cb_t callback, void *arg,
             ucs_status_string(UCS_PTR_STATUS(request)));
         hlog_fast(op_life, "%s: failed op %p", __func__, (void *)op);
         op->status = op_s_complete;
-        op->request = NULL;
         return NA_PROTOCOL_ERROR;
     } else {
         hlog_fast(op_life, "%s: posted op %p", __func__, (void *)op);
-        op->request = request;
     }
 
     return NA_SUCCESS;
@@ -2116,9 +2129,9 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
     na_op_id_t *op, bool put)
 {
     const ucp_request_param_t params = {
-      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
+      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_REQUEST
     , .cb = {.send = send_callback}
-    , .user_data = op
+    , .request = op
     };
     ucp_ep_h ep;
     na_ucx_context_t NA_DEBUG_USED *nuctx;
@@ -2186,7 +2199,6 @@ na_ucx_copy(na_context_t *ctx, na_cb_t callback,
     } else {
         hlog_fast(op_life, "%s: posted %s op %p", __func__, put ? "put" : "get",
             (void *)op);
-        op->request = request;
     }
 
     return NA_SUCCESS;
