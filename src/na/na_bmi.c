@@ -750,7 +750,8 @@ na_bmi_progress_expected(
         NA_CHECK_ERROR(
             hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_COMPLETED, done,
             ret, NA_FAULT, "Operation ID was completed");
-        NA_LOG_DEBUG("BMI_ECANCEL event on operation ID %p", na_bmi_op_id);
+        NA_LOG_DEBUG("BMI_ECANCEL event on operation ID %p",
+            (void *)na_bmi_op_id);
         NA_CHECK_ERROR(
             !(hg_atomic_get32(&na_bmi_op_id->status) & NA_BMI_OP_CANCELED),
             done, ret, NA_FAULT, "Operation ID was not canceled");
@@ -1049,7 +1050,7 @@ na_bmi_complete(struct na_bmi_op_id *na_bmi_op_id)
     if (status & NA_BMI_OP_CANCELED) {
         /* If it was canceled while being processed, set callback ret
          * accordingly */
-        NA_LOG_DEBUG("Operation ID %p was canceled", na_bmi_op_id);
+        NA_LOG_DEBUG("Operation ID %p was canceled", (void *)na_bmi_op_id);
         callback_info->ret = NA_CANCELED;
     } else
         callback_info->ret = NA_SUCCESS;
@@ -2319,7 +2320,7 @@ na_bmi_cancel(na_class_t *na_class, na_context_t *context, na_op_id_t *op_id)
     if ((status & NA_BMI_OP_COMPLETED) || (status & NA_BMI_OP_ERRORED))
         goto done;
 
-    NA_LOG_DEBUG("Canceling operation ID %p", na_bmi_op_id);
+    NA_LOG_DEBUG("Canceling operation ID %p", (void *)na_bmi_op_id);
 
     switch (na_bmi_op_id->completion_data.callback_info.type) {
         case NA_CB_SEND_UNEXPECTED:
