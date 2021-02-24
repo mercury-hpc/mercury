@@ -13,12 +13,6 @@
 
 #include "mercury_hash_table.h"
 #include "mercury_time.h"
-#if 0
-#include "mercury_list.h"
-#include "mercury_mem.h"
-#include "mercury_thread_rwlock.h"
-#include "mercury_thread_spin.h"
-#endif
 
 #include <ucp/api/ucp.h>
 
