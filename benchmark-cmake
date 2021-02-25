@@ -2,6 +2,10 @@
 
 prog=$(basename $0)
 personality=${prog%%-cmake}
+build_type=RelWithDebInfo
+
+cc_opts="-DCMAKE_C_COMPILER=gcc"	# don't use `cc`, it may not
+					# be GCC-compatible
 
 if [ $(hostname) = "jelly" ]
 then
@@ -10,8 +14,6 @@ then
 	bmi_opts="${bmi_opts} -DNA_USE_BMI=on"
 else
 	opa_opts="-DMERCURY_USE_OPA=off"
-	cc_opts="-DCMAKE_C_COMPILER=gcc"	# don't use `cc`, it may not
-						# be GCC-compatible
 fi
 
 if [ $(hostname -d) = "summit.olcf.ornl.gov" ]
@@ -22,6 +24,10 @@ then
 fi
 
 case $personality in
+asan)
+	build_type=Asan
+	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
+	;;
 benchmark)
 	personality_opts=$(cat<<EOPTS
 -DMERCURY_ENABLE_DEBUG=off
@@ -36,7 +42,7 @@ EOPTS
 	;;
 esac
 
-cmake	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+cmake	-DCMAKE_BUILD_TYPE=${build_type} \
 	-DBUILD_TESTING=on \
 	-DBUILD_SHARED_LIBS=on \
 	${bmi_opts:-} \
