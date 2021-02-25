@@ -84,6 +84,7 @@ struct _wiring {
     void **assoc;   /* assoc[i] is a pointer to wire i's optional
                      * "associated data"
                      */
+    ucp_worker_h worker;
 };
 
 #define wire_id_nil (wire_id_t){.id = sender_id_nil}

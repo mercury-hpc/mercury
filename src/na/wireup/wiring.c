@@ -37,7 +37,7 @@ static uint64_t getnanos(void);
 
 static void wireup_rx_req(wiring_t *, const wireup_msg_t *);
 
-static void wireup_stop_internal(wiring_t *, wire_t *, bool);
+static void wireup_stop_internal(wiring_t *, wire_t *, void **);
 static void wireup_send_callback(void *, ucs_status_t, void *);
 static void wireup_last_send_callback(void *, ucs_status_t, void *);
 
@@ -445,6 +445,7 @@ wireup_last_send_callback(void wiring_unused *request, ucs_status_t status,
 void
 wiring_teardown(wiring_t *wiring, bool orderly)
 {
+    void *request;
     wstorage_t *st;
     void **assoc = wiring->assoc;
     size_t i;
@@ -454,8 +455,16 @@ wiring_teardown(wiring_t *wiring, bool orderly)
     if (wiring->rxpool != NULL)
         rxpool_destroy(wiring->rxpool);
 
-    for (i = 0; i < st->nwires; i++)
-        wireup_stop_internal(wiring, &st->wire[i], orderly);
+    for (i = 0; i < st->nwires; i++) {
+        request = NULL;
+        wireup_stop_internal(wiring, &st->wire[i], orderly ? &request : NULL);
+        if (request == NULL)
+            continue;
+        do {
+            (void)ucp_worker_progress(wiring->worker);
+        } while (ucp_request_check_status(request) == UCS_INPROGRESS);
+        ucp_request_release(request);
+    }
 
     wiring_unlock(wiring);
 
@@ -515,6 +524,7 @@ wire_get_sender_id(wiring_t *wiring, wire_id_t wid)
 bool
 wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
 {
+    void *request;
     wiring_lock(wiring);
 
     wstorage_t *st = wiring->storage;
@@ -524,7 +534,7 @@ wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
         return false;
     }
 
-    wireup_stop_internal(wiring, &st->wire[wid.id], orderly);
+    wireup_stop_internal(wiring, &st->wire[wid.id], orderly ? &request : NULL);
     wiring_unlock(wiring);
     return true;
 }
@@ -534,7 +544,7 @@ wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
  * so that it can release its wire.
  */
 static void
-wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
+wireup_stop_internal(wiring_t *wiring, wire_t *w, void **requestp)
 {
     ucp_request_param_t tx_params;
     wireup_msg_t *msg;
@@ -553,7 +563,7 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
 
     *msg = (wireup_msg_t){.op = OP_STOP, .sender_id = id, .addrlen = 0};
 
-    if (orderly) {
+    if (requestp != NULL) {
         tx_params = (ucp_request_param_t){
           .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK
                         | UCP_OP_ATTR_FIELD_USER_DATA
@@ -567,8 +577,13 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
             dbgf("%s: ucp_tag_send_nbx: %s", __func__,
                 ucs_status_string(UCS_PTR_STATUS(request)));
             free(msg);
-        } else if (request == UCS_OK)
+            *requestp = NULL;
+        } else if (request == UCS_OK) {
             free(msg);
+            *requestp = NULL;
+        } else {
+            *requestp = request;
+        }
     }
 
 out:
@@ -589,6 +604,7 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
     wiring->lkb = (lkb != NULL) ? *lkb : default_lkb;
     wiring->accept_cb = accept_cb;
     wiring->accept_cb_arg = accept_cb_arg;
+    wiring->worker = worker;
 
     st = zalloc(sizeof(*st) + sizeof(wire_t) * nwires);
     if (st == NULL)
