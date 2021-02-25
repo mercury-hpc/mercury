@@ -998,7 +998,7 @@ na_ucx_addr_lookup(na_class_t *na_class, const char * const name,
         goto out;
     } else if (rc != 1) {
         NA_LOG_ERROR("parse error at '%s'", &name[i]);
-        free(buf);
+        free(addr);
         return NA_INVALID_ARG;
     }
 
@@ -1010,7 +1010,7 @@ na_ucx_addr_lookup(na_class_t *na_class, const char * const name,
 
     if (rc != EOF || name[i] != '\0') {
         NA_LOG_ERROR("residual characters '%s'", &name[i]);
-        free(buf);
+        free(addr);
         return NA_INVALID_ARG;
     }
 
