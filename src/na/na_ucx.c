@@ -1472,7 +1472,9 @@ na_ucx_cancel(na_class_t NA_UNUSED *na_class, na_context_t *context,
         }
         return NA_SUCCESS;
     default:
-        return NA_PROTOCOL_ERROR;
+        return (hg_atomic_get32(&op->status) == op_s_complete)
+            ? NA_SUCCESS
+            : NA_INVALID_ARG;  // error return follows OFI plugin
     }
 }
 
