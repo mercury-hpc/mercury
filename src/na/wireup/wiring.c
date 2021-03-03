@@ -801,7 +801,8 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
         const wire_accept_info_t info =
             {.addr = raddr, .addrlen = raddrlen, .wire_id = {.id = id},
              .sender_id = rid, .ep = ep};
-        wiring->assoc[id] = (*wiring->accept_cb)(info, wiring->accept_cb_arg);
+        wiring->assoc[id] = (*wiring->accept_cb)(info, wiring->accept_cb_arg,
+            &w->cb, &w->cb_arg);
     }
     return w;
 free_wire:

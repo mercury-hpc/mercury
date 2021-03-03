@@ -579,7 +579,8 @@ na_ucx_wiring_assert_locked(wiring_t NA_UNUSED *wiring, void *arg)
 }
 
 static void *
-wire_accept_callback(wire_accept_info_t info, void *arg)
+wire_accept_callback(wire_accept_info_t info, void *arg,
+    wire_event_cb_t *cbp, void **argp)
 {
     na_ucx_context_t *nuctx = arg;
     na_ucx_addr_t *taddr, *addr;
@@ -627,6 +628,9 @@ wire_accept_callback(wire_accept_info_t info, void *arg)
 
         address_wire_write_end(aseq);
         hg_thread_mutex_unlock(&addr->wire_lock);
+    } else {
+        *cbp = wire_event_callback;
+        *argp = &addr->wire_cache;
     }
 
     hlog_fast(wire_life, "%s: exit arg %p addr %p",

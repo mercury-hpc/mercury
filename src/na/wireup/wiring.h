@@ -69,11 +69,12 @@ typedef struct _wire_accept_info {
     ucp_ep_h ep;
 } wire_accept_info_t;
 
-/* Indication of a new wire accepted from a remote peer. */
-typedef void *(*wire_accept_cb_t)(wire_accept_info_t, void *);
-
 /* Indication of a wire established or a wire that died. */
 typedef bool (*wire_event_cb_t)(wire_event_info_t, void *);
+
+/* Indication of a new wire accepted from a remote peer. */
+typedef void *(*wire_accept_cb_t)(wire_accept_info_t, void *,
+    wire_event_cb_t *, void **);
 
 struct _wiring {
     wiring_lock_bundle_t lkb;
