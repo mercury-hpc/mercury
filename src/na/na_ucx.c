@@ -30,7 +30,10 @@
                                      * this size
                                      */
 
-HLOG_OUTLET_SHORT_DEFN(addr, all);
+HLOG_OUTLET_SHORT_DEFN(ctx, all);
+HLOG_OUTLET_SHORT_DEFN(nacl, all);
+HLOG_OUTLET_SHORT_DEFN(addr_noisy, all);
+HLOG_OUTLET_SHORT_DEFN(addr, addr_noisy);
 HLOG_OUTLET_SHORT_DEFN(memh, all);
 HLOG_OUTLET_SHORT_DEFN(op_life_noisy, all);
 HLOG_OUTLET_SHORT_DEFN(op_life, op_life_noisy);
@@ -604,7 +607,7 @@ wire_accept_callback(wire_accept_info_t info, void *arg,
           , .deferrals = HG_QUEUE_HEAD_INITIALIZER(taddr->wire_cache.deferrals)
         }
       , .wire_lock = (hg_thread_mutex_t)HG_THREAD_MUTEX_INITIALIZER
-      , .refcount = 1
+      , .refcount = 1   // the wire has a reference
       , .addrlen = info.addrlen
     };
     memcpy(&taddr->addr[0], info.addr, info.addrlen);
@@ -799,6 +802,8 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
     }
 #endif
 
+    hlog_fast(nacl, "%s: enter nacl %p", __func__, (void *)nacl);
+
     nuclass = malloc(sizeof(*nuclass));
 
     if (nuclass == NULL) {
@@ -885,6 +890,8 @@ na_ucx_finalize(na_class_t *nacl)
 {
     na_ucx_class_t *nuclass = na_ucx_class(nacl);
 
+    hlog_fast(nacl, "%s: enter nacl %p", __func__, (void *)nacl);
+
     if (nuclass == NULL)
         return NA_SUCCESS;
 
@@ -917,6 +924,8 @@ na_ucx_context_create(na_class_t *na_class, void **context, na_uint8_t id)
 
     *context = ctx;
 
+    hlog_fast(ctx, "%s: exit context %p", __func__, *context);
+
     return NA_SUCCESS;
 }
 
@@ -924,6 +933,8 @@ static na_return_t
 na_ucx_context_destroy(na_class_t *na_class, void *context)
 {
     na_ucx_class_t *nuclass = na_ucx_class(na_class);
+
+    hlog_fast(ctx, "%s: enter context %p", __func__, (void *)context);
 
     if (context != &nuclass->context ||
         !hg_atomic_cas32(&nuclass->ncontexts, 1, 0))
@@ -1025,7 +1036,8 @@ out:
     addr->addrlen = buflen;
     *addrp = na_ucx_addr_dedup(na_class, addr);
 
-    hlog_fast(addr, "exit lookup %s, %p", name, (void *)*addrp);
+    hlog_fast(addr, "exit lookup %s, %p, refs %" PRId32, name,
+        (void *)*addrp, (*addrp)->refcount);
 
     return NA_SUCCESS;
 }
@@ -1037,6 +1049,28 @@ na_ucx_addr_cmp(
     return addr1 == addr2;
 }
 
+static NA_INLINE hg_util_int32_t
+addr_decref(na_ucx_addr_t *addr, const char *reason)
+{
+    const hg_util_int32_t count = hg_atomic_decr32(&addr->refcount);
+
+    hlog_fast(addr_noisy, "%s: addr %p new refs %" PRId32 " for %s", __func__,
+        (void *)addr, count, reason);
+
+    return count;
+}
+
+static NA_INLINE hg_util_int32_t
+addr_incref(na_ucx_addr_t *addr, const char *reason)
+{
+    const hg_util_int32_t count = hg_atomic_incr32(&addr->refcount);
+
+    hlog_fast(addr_noisy, "%s: addr %p new refs %" PRId32 " for %s", __func__,
+        (void *)addr, count, reason);
+
+    return count;
+}
+
 static NA_INLINE na_return_t
 na_ucx_addr_dup(
     na_class_t NA_UNUSED *na_class, na_addr_t _addr, na_addr_t *new_addr)
@@ -1045,7 +1079,7 @@ na_ucx_addr_dup(
 
     hlog_fast(addr, "duplicating addr %p", (void *)_addr);
 
-    hg_atomic_incr32(&addr->refcount);
+    addr_incref(addr, __func__);
     *new_addr = _addr;
     return NA_SUCCESS;
 }
@@ -1060,7 +1094,7 @@ na_ucx_addr_free(na_class_t *na_class, na_addr_t _addr)
 
     hlog_fast(addr, "freeing addr %p", (void *)_addr);
 
-    if (hg_atomic_decr32(&addr->refcount) > 0)
+    if (addr_decref(addr, __func__) > 0)
         return NA_SUCCESS; // more references remain, so don't free
 
     hlog_fast(addr, "destroying addr %p", (void *)_addr);
@@ -1295,8 +1329,12 @@ recv_callback(void *request, ucs_status_t status,
         // XXX use standard endianness
         memcpy(&sender_id, op->info.rx.buf, sizeof(sender_id));
 
-        source = wire_get_data(&nuctx->wiring, (wire_id_t){.id = sender_id});
-        hg_atomic_incr32(&source->refcount);
+        if (cbinfo->type == NA_CB_RECV_UNEXPECTED) {
+            source = wire_get_data(&nuctx->wiring,
+                                   (wire_id_t){.id = sender_id});
+            addr_incref(source, "sender address");
+        } else
+            source = NULL;
 
         assert((info->sender_tag & nuctx->app.tagmask) == nuctx->app.tag);
         *recv_unexpected = (struct na_cb_info_recv_unexpected){
@@ -1348,7 +1386,6 @@ recv_callback(void *request, ucs_status_t status,
             get_octet(buf, info->length, 60), get_octet(buf, info->length, 61),
             get_octet(buf, info->length, 62), get_octet(buf, info->length, 63));
 
-        assert(recv_unexpected->source != NULL);
         cbinfo->ret = NA_SUCCESS;
     } else if (status == UCS_ERR_CANCELED) {
         *recv_unexpected = recv_unexpected_errinfo;
@@ -1585,6 +1622,13 @@ wire_event_callback(wire_event_info_t info, void *arg)
 
         assert(HG_QUEUE_IS_EMPTY(&cache->deferrals));
 
+        /* This address is not taking part in wireup any longer,
+         * so decrease the reference count that we increased when
+         * either the local host initiated wireup or the local host
+         * accepted the remote's wireup request.
+         */
+        (void)na_ucx_addr_free(cache->ctx->na_class, owner);
+
         goto release;
     }
 
@@ -1731,6 +1775,8 @@ na_ucx_msg_send(na_context_t *context,
 
         hlog_fast(tx, "%s: starting wireup, cache %p", __func__, (void *)cache);
 
+        addr_incref(cache->owner, "wireup");
+
         cache->wire_id = wireup_start(&cached_ctx->wiring,
             (ucp_address_t *)&cached_ctx->self->addr[0],
             cached_ctx->self->addrlen,
@@ -1741,6 +1787,7 @@ na_ucx_msg_send(na_context_t *context,
 
         if (!wire_is_valid(cache->wire_id)) {
             NA_LOG_ERROR("could not start wireup, cache %p", (void *)cache);
+            addr_decref(cache->owner, "wireup failure");
             ret = NA_NOMEM;
             goto release;
         }
@@ -1755,6 +1802,8 @@ na_ucx_msg_send(na_context_t *context,
 
         hlog_fast(tx, "%s: starting wireup, cache %p", __func__, (void *)cache);
 
+        addr_incref(cache->owner, "wireup");
+
         cache->wire_id = wireup_start(&cached_ctx->wiring,
             (ucp_address_t *)&cached_ctx->self->addr[0],
             cached_ctx->self->addrlen,
@@ -1765,6 +1814,7 @@ na_ucx_msg_send(na_context_t *context,
 
         if (!wire_is_valid(cache->wire_id)) {
             NA_LOG_ERROR("could not start wireup, cache %p", (void *)cache);
+            addr_decref(cache->owner, "wireup failure");
             ret = NA_NOMEM;
             goto release;
         }
