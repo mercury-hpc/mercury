@@ -557,32 +557,35 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, void **requestp)
     if (w->state == &state[WIRE_S_DEAD])
         goto out;
 
+    wireup_transition(wiring, w, &state[WIRE_S_DEAD]);
+
+    if (requestp == NULL)
+        goto out;
+
     if ((msg = zalloc(sizeof(*msg))) == NULL)
         goto out;
 
     *msg = (wireup_msg_t){.op = OP_STOP, .sender_id = id, .addrlen = 0};
 
-    if (requestp != NULL) {
-        tx_params = (ucp_request_param_t){
-          .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK
-                        | UCP_OP_ATTR_FIELD_USER_DATA
-        , .cb = {.send = wireup_last_send_callback}
-        , .user_data = msg
-        };
+    tx_params = (ucp_request_param_t){
+      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK
+                    | UCP_OP_ATTR_FIELD_USER_DATA
+    , .cb = {.send = wireup_last_send_callback}
+    , .user_data = msg
+    };
 
-        request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
+    request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
 
-        if (UCS_PTR_IS_ERR(request)) {
-            dbgf("%s: ucp_tag_send_nbx: %s", __func__,
-                ucs_status_string(UCS_PTR_STATUS(request)));
-            free(msg);
-            *requestp = NULL;
-        } else if (request == UCS_OK) {
-            free(msg);
-            *requestp = NULL;
-        } else {
-            *requestp = request;
-        }
+    if (UCS_PTR_IS_ERR(request)) {
+        dbgf("%s: ucp_tag_send_nbx: %s", __func__,
+            ucs_status_string(UCS_PTR_STATUS(request)));
+        free(msg);
+        *requestp = NULL;
+    } else if (request == UCS_OK) {
+        free(msg);
+        *requestp = NULL;
+    } else {
+        *requestp = request;
     }
 
 out:
