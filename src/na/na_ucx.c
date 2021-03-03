@@ -767,7 +767,7 @@ na_ucx_check_protocol(const char NA_UNUSED *protocol_name)
 }
 
 static na_return_t
-na_ucx_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
+na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
     na_bool_t NA_UNUSED listen)
 {
     ucp_context_attr_t uctx_attrs;
@@ -804,7 +804,7 @@ na_ucx_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
 
     *nuclass = (na_ucx_class_t){.uctx = NULL, .addr_tbl = NULL};
 
-    na_class->plugin_class = nuclass;
+    nacl->plugin_class = nuclass;
 
     nuclass->addr_tbl = hg_hash_table_new(na_ucx_addr_hash, na_ucx_addr_equal);
 
@@ -864,7 +864,7 @@ na_ucx_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
         goto cleanup;
     }
 
-    assert(nuclass == na_ucx_class(na_class));
+    assert(nuclass == na_ucx_class(nacl));
 #if 0
     nuclass->no_wait = no_wait;
     nuclass->context_max = context_max;
@@ -872,7 +872,7 @@ na_ucx_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
 #endif
     return NA_SUCCESS;
 cleanup:
-    na_ucx_finalize(na_class);
+    na_ucx_finalize(nacl);
     return ret;
 }
 
