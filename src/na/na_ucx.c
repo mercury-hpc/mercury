@@ -242,7 +242,6 @@ typedef struct _na_ucx_header {
  * Plugin callbacks
  */
 
-static na_return_t na_ucx_finalize(na_class_t *);
 static na_return_t na_ucx_addr_dup(na_class_t *, na_addr_t, na_addr_t *);
 static na_addr_t na_ucx_addr_dedup(na_class_t *, na_addr_t);
 static na_bool_t na_ucx_check_protocol(const char *);
@@ -313,6 +312,8 @@ static na_return_t na_ucx_cancel(na_class_t *, na_context_t *, na_op_id_t *);
 static NA_INLINE na_size_t na_ucx_msg_get_header_size(const na_class_t *);
 static NA_INLINE na_size_t na_ucx_msg_get_max_size(const na_class_t *);
 static NA_INLINE na_tag_t na_ucx_msg_get_max_tag(const na_class_t *);
+
+static bool wire_event_callback(wire_event_info_t, void *);
 
 /*
  * Local Variables

@@ -144,8 +144,7 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
 }
 
 static void
-wireup_transition(wiring_t *wiring, wire_t *w,
-    const wire_state_t *nstate)
+wireup_transition(wiring_t *wiring, wire_t *w, const wire_state_t *nstate)
 {
     wstorage_t *st = wiring->storage;
     const wire_state_t *ostate;
