@@ -63,14 +63,14 @@ typedef struct _address_wire {
                              * Reads are synchronized by `mutcnt`.
                              *
                              * Writes are synchronized both by
-                             * `owner->wire_lock` and by `mutcnt`.
+                             * the wiring lock and by `mutcnt`.
                              */
     wire_id_t wire_id;      /* If `wire_is_valid(wire_id)`, identity of
                              * `owner`'s session in the wireup protocol.
                              * if `!wire_is_valid(wire_id)`, wireup has not
                              * begun.
                              *
-                             * Writes are synchronized by `owner->wire_lock`.
+                             * Writes are synchronized by the wiring lock.
                              */
     sender_id_t wiring_atomic sender_id;
                             /* If equal to `sender_id_nil`, then wireup either
@@ -128,7 +128,6 @@ typedef struct _address_wire_aseq {
 
 struct na_addr {
     address_wire_t wire_cache;
-    hg_thread_mutex_t wire_lock;
     hg_atomic_int32_t refcount;
     size_t addrlen;         /* Native address len */
     uint8_t addr[];         /* Native address */
@@ -606,7 +605,6 @@ wire_accept_callback(wire_accept_info_t info, void *arg,
           , .mutcnt = 0
           , .deferrals = HG_QUEUE_HEAD_INITIALIZER(taddr->wire_cache.deferrals)
         }
-      , .wire_lock = (hg_thread_mutex_t)HG_THREAD_MUTEX_INITIALIZER
       , .refcount = 1   // the wire has a reference
       , .addrlen = info.addrlen
     };
@@ -621,7 +619,7 @@ wire_accept_callback(wire_accept_info_t info, void *arg,
         address_wire_aseq_t aseq;
         address_wire_t *cache = &addr->wire_cache;
 
-        hg_thread_mutex_lock(&addr->wire_lock);
+        wiring_assert_locked(&nuctx->wiring);
         aseq = address_wire_write_begin(cache);
 
         /* TBD assert prior values are nil? */
@@ -630,7 +628,6 @@ wire_accept_callback(wire_accept_info_t info, void *arg,
         cache->ep = info.ep;
 
         address_wire_write_end(aseq);
-        hg_thread_mutex_unlock(&addr->wire_lock);
     } else {
         *cbp = wire_event_callback;
         *argp = &addr->wire_cache;
@@ -653,7 +650,9 @@ na_ucx_context_teardown(na_ucx_context_t *nctx, na_class_t *nacl)
     nctx->self = NULL;
     (void)na_ucx_addr_free(nacl, self);
 
+    wiring_lock(&nctx->wiring);
     wiring_teardown(&nctx->wiring, false);
+    wiring_unlock(&nctx->wiring);
 
     ucp_worker_destroy(nctx->worker);
 
@@ -689,7 +688,6 @@ na_ucx_context_init(na_ucx_context_t *nctx, na_ucx_class_t *nuclass)
 
     address_wire_init(&self->wire_cache, self, nctx);
 
-    self->wire_lock = (hg_thread_mutex_t)HG_THREAD_MUTEX_INITIALIZER;
     self->refcount = 1;
     self->addrlen = uaddrlen;
 
@@ -1003,7 +1001,6 @@ na_ucx_addr_lookup(na_class_t *na_class, const char * const name,
 
     address_wire_init(&addr->wire_cache, addr, NULL);
 
-    addr->wire_lock = (hg_thread_mutex_t)HG_THREAD_MUTEX_INITIALIZER;
     addr->refcount = 1;
     addr->addrlen = 0;
 
@@ -1105,8 +1102,11 @@ na_ucx_addr_free(na_class_t *na_class, na_addr_t _addr)
 
     assert(found);
 
-    if (wire_is_valid(addr->wire_cache.wire_id))
+    if (wire_is_valid(addr->wire_cache.wire_id)) {
+        wiring_lock(wiring);
         wireup_stop(wiring, addr->wire_cache.wire_id, true);
+        wiring_unlock(wiring);
+    }
 
     free(addr);
     return NA_SUCCESS;
@@ -1207,7 +1207,6 @@ na_ucx_addr_deserialize(na_class_t *na_class, na_addr_t *addrp, const void *buf,
           , .mutcnt = 0
           , .deferrals = HG_QUEUE_HEAD_INITIALIZER(addr->wire_cache.deferrals)
         }
-      , .wire_lock = (hg_thread_mutex_t)HG_THREAD_MUTEX_INITIALIZER
       , .refcount = 1
       , .addrlen = addrlen
     };
@@ -1457,10 +1456,12 @@ na_ucx_progress(na_class_t NA_UNUSED *na_class,
             progress = true;
         }
 
+        wiring_lock(&nuctx->wiring);
         while ((ret = wireup_once(&nuctx->wiring)) > 0) {
             hlog_fast(progress, "%s: wireup made progress", __func__);
             progress = true;
         }
+        wiring_unlock(&nuctx->wiring);
 
         if (ret < 0) {
             NA_LOG_ERROR("wireup failed");
@@ -1609,7 +1610,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
 
     assert(info.event == wire_ev_estd || info.event == wire_ev_died);
 
-    hg_thread_mutex_lock(&owner->wire_lock);
+    wiring_assert_locked(&cache->ctx->wiring);
 
     if (info.event == wire_ev_died) {
         hlog_fast(wire_life, "%s: died", __func__);
@@ -1637,7 +1638,7 @@ wire_event_callback(wire_event_info_t info, void *arg)
     /* Transmit deferred messages before saving the sender ID so that
      * a new transmission cannot slip out before the deferred ones.
      * New transmissions will find that the sender ID is nil and wait
-     * for us to release `wire_lock`.
+     * for us to release the wiring lock.
      */
     hlog_fast(op_life, "%s: begin deferred xmits", __func__);
     HG_QUEUE_FOREACH(op, &cache->deferrals, info.tx.link) {
@@ -1672,7 +1673,6 @@ wire_event_callback(wire_event_info_t info, void *arg)
     address_wire_write_end(aseq);
 
 release:
-    hg_thread_mutex_unlock(&owner->wire_lock);
     return true;
 }
 
@@ -1756,7 +1756,7 @@ na_ucx_msg_send(na_context_t *context,
         return NA_SUCCESS;
     }
 
-    hg_thread_mutex_lock(&dest_addr->wire_lock);
+    wiring_lock(&nuctx->wiring);
 
     /* Since we last checked, sender_id or ctx may have been set.  Check
      * once more.
@@ -1837,7 +1837,7 @@ release:
     //     to stop callbacks.
     // if dest_addr has wire ID but no sender ID, enqueue op_id on dest_addr.
     // if dest_addr has sender ID, put it into the header and send the message.
-    hg_thread_mutex_unlock(&dest_addr->wire_lock);
+    wiring_unlock(&nuctx->wiring);
     return ret;
 }
 

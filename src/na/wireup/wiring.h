@@ -105,6 +105,15 @@ const char *wire_event_string(wire_event_t);
 sender_id_t wire_get_sender_id(wiring_t *, wire_id_t);
 void *wire_get_data(wiring_t *, wire_id_t);
 
+void wiring_lock(wiring_t *);
+void wiring_unlock(wiring_t *);
+void wiring_assert_locked_impl(wiring_t *, const char *, int);
+
+#define wiring_assert_locked(_wiring)                       \
+do {                                                        \
+    wiring_assert_locked_impl(_wiring, __FILE__, __LINE__); \
+} while (0)
+
 extern void * const wire_data_nil;
 
 static inline bool

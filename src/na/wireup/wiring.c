@@ -54,15 +54,6 @@ static const wire_state_t *send_keepalive(wiring_t *, wire_t *);
 static const wire_state_t *retry(wiring_t *, wire_t *);
 static const wire_state_t *start_life(wiring_t *, wire_t *,
     const wireup_msg_t *);
-static void wiring_lock(wiring_t *);
-static void wiring_unlock(wiring_t *);
-void wiring_assert_locked(wiring_t *);
-static void wiring_assert_locked_impl(wiring_t *, const char *, int);
-
-#define wiring_assert_locked(_wiring)                       \
-do {                                                        \
-    wiring_assert_locked_impl(wiring, __FILE__, __LINE__);  \
-} while (0)
 
 wire_state_t state[] = {
   [WIRE_S_INITIAL] = {.expire = retry,
@@ -449,7 +440,7 @@ wiring_teardown(wiring_t *wiring, bool orderly)
     void **assoc = wiring->assoc;
     size_t i;
 
-    wiring_lock(wiring);
+    wiring_assert_locked(wiring);
     st = wiring->storage;
     if (wiring->rxpool != NULL)
         rxpool_destroy(wiring->rxpool);
@@ -464,8 +455,6 @@ wiring_teardown(wiring_t *wiring, bool orderly)
         } while (ucp_request_check_status(request) == UCS_INPROGRESS);
         ucp_request_release(request);
     }
-
-    wiring_unlock(wiring);
 
     free(st);
     free(assoc);
@@ -524,17 +513,15 @@ bool
 wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
 {
     void *request;
-    wiring_lock(wiring);
+    wiring_assert_locked(wiring);
 
     wstorage_t *st = wiring->storage;
 
     if (wid.id == sender_id_nil || st->nwires <= wid.id) {
-        wiring_unlock(wiring);
         return false;
     }
 
     wireup_stop_internal(wiring, &st->wire[wid.id], orderly ? &request : NULL);
-    wiring_unlock(wiring);
     return true;
 }
 
@@ -838,7 +825,7 @@ wireup_send(wire_t *w)
     return true;
 }
 
-static void
+void
 wiring_lock(wiring_t *wiring)
 {
     if (wiring->lkb.lock == NULL)
@@ -846,7 +833,7 @@ wiring_lock(wiring_t *wiring)
     (*wiring->lkb.lock)(wiring, wiring->lkb.arg);
 }
 
-static void
+void
 wiring_unlock(wiring_t *wiring)
 {
     if (wiring->lkb.unlock == NULL)
@@ -854,7 +841,7 @@ wiring_unlock(wiring_t *wiring)
     (*wiring->lkb.unlock)(wiring, wiring->lkb.arg);
 }
 
-static void
+void
 wiring_assert_locked_impl(wiring_t *wiring, const char *filename, int lineno)
 {
     if (wiring->lkb.assert_locked == NULL)
@@ -909,7 +896,7 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
         goto free_msg;
     }
 
-    wiring_lock(wiring);
+    wiring_assert_locked(wiring);
 
     st = wiring->storage;   // storage could change if we don't hold the lock
 
@@ -936,7 +923,6 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
     if (!wireup_send(w))
         goto free_wire;
 
-    wiring_unlock(wiring);
     return (wire_id_t){.id = id};
 free_msg:
     free(msg);
@@ -944,7 +930,6 @@ free_msg:
 free_wire:
     wiring_assert_locked(wiring);
     wiring_release_wire(wiring, w);
-    wiring_unlock(wiring);
     return (wire_id_t){.id = sender_id_nil};
 }
 
@@ -1031,19 +1016,17 @@ wireup_once(wiring_t *wiring)
     rxdesc_t *rdesc;
     uint64_t now = getnanos();
 
-    wiring_lock(wiring);
+    wiring_assert_locked(wiring);
 
     wireup_expire_transition(wiring, now);
     wireup_wakeup_transition(wiring, now);
 
     if ((rdesc = rxpool_next(rxpool)) == NULL) {
-        wiring_unlock(wiring);
         return 0;
     }
 
     if (rdesc->status != UCS_OK) {
         dbgf("receive error, %s, exiting.\n", ucs_status_string(rdesc->status));
-        wiring_unlock(wiring);
         return -1;
     }
 
@@ -1052,7 +1035,6 @@ wireup_once(wiring_t *wiring)
     wireup_rx_msg(wiring, rdesc->sender_tag, rdesc->buf, rdesc->rxlen);
 
     rxdesc_release(rxpool, rdesc);
-    wiring_unlock(wiring);
     return 1;
 }
 
