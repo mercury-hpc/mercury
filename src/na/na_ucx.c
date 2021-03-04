@@ -1331,6 +1331,7 @@ recv_callback(void *request, ucs_status_t status,
         if (cbinfo->type == NA_CB_RECV_UNEXPECTED) {
             source = wire_get_data(&nuctx->wiring,
                                    (wire_id_t){.id = sender_id});
+            assert(source != wire_data_nil);
             addr_incref(source, "sender address");
         } else
             source = NULL;
