@@ -1128,7 +1128,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
         event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_NA;
         rc = hg_poll_add(context->poll_set, na_poll_fd, &event);
         HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
-            "hg_poll_add() failed");
+            "hg_poll_add() failed (na_poll_fd=%d)", na_poll_fd);
 
 #ifdef NA_HAS_SM
         if (context->core_context.na_sm_context) {
@@ -1140,7 +1140,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
             event.data.u32 = (hg_util_uint32_t) HG_CORE_POLL_SM;
             rc = hg_poll_add(context->poll_set, na_poll_fd, &event);
             HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
-                "hg_poll_add() failed");
+                "hg_poll_add() failed (na_poll_fd=%d)", na_poll_fd);
         }
 #endif
 
@@ -1155,7 +1155,7 @@ hg_core_context_create(hg_core_class_t *hg_core_class, hg_uint8_t id,
             rc = hg_poll_add(
                 context->poll_set, context->completion_queue_notify, &event);
             HG_CHECK_ERROR(rc != HG_UTIL_SUCCESS, error, ret, HG_NOMEM,
-                "hg_poll_add() failed");
+                "hg_poll_add() failed (na_poll_fd=%d)", na_poll_fd);
         }
     }
 
@@ -3683,7 +3683,8 @@ hg_core_progress(struct hg_core_private_context *context, unsigned int timeout)
                 hg_atomic_set32(&context->completion_queue_must_notify, 1);
             }
             hg_thread_mutex_unlock(&context->completion_queue_notify_mutex);
-        } else if (timeout && hg_core_poll_try_wait(context)) {
+        } else if (!HG_CORE_CONTEXT_CLASS(context)->loopback && timeout &&
+                   hg_core_poll_try_wait(context)) {
             /* This is the case for NA plugins that don't expose a fd */
             poll_timeout = 0;
         }
