@@ -24,6 +24,10 @@ then
 fi
 
 case $personality in
+tsan)
+	build_type=Tsan
+	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
+	;;
 asan)
 	build_type=Asan
 	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
