@@ -105,20 +105,19 @@ hg_request_destroy(hg_request_t *request)
 
 /*---------------------------------------------------------------------------*/
 int
-hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
+hg_request_wait(hg_request_t *request, unsigned int timeout_ms,
+    unsigned int *flag)
 {
-    double remaining =
-        timeout / 1000.0; /* Convert timeout in ms into seconds */
+    hg_time_t deadline, now, remaining = hg_time_from_ms(timeout_ms);
     hg_util_int32_t completed = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
+
+    hg_time_get_current_ms(&now);
+    deadline = hg_time_add(now, remaining);
 
     do {
         unsigned int trigger_flag = 0;
         int trigger_ret;
-        hg_time_t t1, t2;
-
-        if (timeout)
-            hg_time_get_current_ms(&t1);
 
         do {
             trigger_ret = request->request_class->trigger_func(
@@ -128,39 +127,32 @@ hg_request_wait(hg_request_t *request, unsigned int timeout, unsigned int *flag)
         if ((completed = hg_atomic_get32(&request->completed)) == HG_UTIL_TRUE)
             break;
 
-        /* Make sure that timeout of 0 enters progress */
-        if (timeout && ((int) (remaining * 1000.0) <= 0))
-            break;
-
         hg_thread_mutex_lock(&request->request_class->progress_mutex);
         if (request->request_class->progressing) {
             if (hg_thread_cond_timedwait(&request->request_class->progress_cond,
                     &request->request_class->progress_mutex,
-                    (unsigned int) (remaining * 1000.0)) != HG_UTIL_SUCCESS) {
+                    hg_time_to_ms(remaining)) != HG_UTIL_SUCCESS) {
                 /* Timeout occurred so leave */
                 break;
             }
-            hg_time_get_current_ms(&t2);
-            remaining -= hg_time_diff(t2, t1);
             /* Continue as request may have completed in the meantime */
-            continue;
+            goto next;
         }
         request->request_class->progressing = HG_UTIL_TRUE;
         hg_thread_mutex_unlock(&request->request_class->progress_mutex);
 
         request->request_class->progress_func(
-            (unsigned int) (remaining * 1000.0), request->request_class->arg);
+            hg_time_to_ms(remaining), request->request_class->arg);
 
         hg_thread_mutex_lock(&request->request_class->progress_mutex);
         request->request_class->progressing = HG_UTIL_FALSE;
         hg_thread_cond_broadcast(&request->request_class->progress_cond);
         hg_thread_mutex_unlock(&request->request_class->progress_mutex);
 
-        if (timeout) {
-            hg_time_get_current_ms(&t2);
-            remaining -= hg_time_diff(t2, t1);
-        }
-    } while ((int) (remaining * 1000.0) > 0);
+next:
+        hg_time_get_current(&now);
+        remaining = hg_time_subtract(deadline, now);
+    } while (hg_time_less(now, deadline));
 
     if (flag)
         *flag = (unsigned int) completed;
