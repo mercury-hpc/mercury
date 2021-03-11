@@ -108,6 +108,16 @@ static HG_UTIL_INLINE hg_time_t
 hg_time_from_ms(unsigned int ms);
 
 /**
+ * Convert hg_time_t to (integer) milliseconds.
+ *
+ * \param tv [IN]                time structure
+ *
+ * \return Time in milliseconds
+ */
+static HG_UTIL_INLINE unsigned int
+hg_time_to_ms(hg_time_t tv);
+
+/**
  * Compare time values.
  *
  * \param in1 [IN]              time structure
@@ -321,6 +331,16 @@ hg_time_to_double(hg_time_t tv)
     return (double) tv.tv_sec + (double) (tv.tv_nsec) * 0.000000001;
 #else
     return (double) tv.tv_sec + (double) (tv.tv_usec) * 0.000001;
+#endif
+}
+
+static HG_UTIL_INLINE unsigned int
+hg_time_to_ms(hg_time_t tv)
+{
+#if defined(HG_UTIL_HAS_TIME_H) && defined(HG_UTIL_HAS_CLOCK_GETTIME)
+    return (unsigned int) (tv.tv_sec * 1000 + tv.tv_nsec / (1000 * 1000));
+#else
+    return (unsigned int) (tv.tv_sec * 1000 +.tv_usec / 1000);
 #endif
 }
 
