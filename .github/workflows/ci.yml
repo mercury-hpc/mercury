@@ -76,9 +76,6 @@ jobs:
         ref: ${{ github.event.pull_request.head.sha }}
         submodules: true
 
-    - name: Install package dependencies
-      run: sudo apt-get install -y mpich
-
     - name: Restore cached dependencies
       uses: actions/cache@v2
       id: cache-deps
