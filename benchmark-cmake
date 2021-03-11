@@ -6,6 +6,11 @@ build_type=RelWithDebInfo
 
 cc_opts="-DCMAKE_C_COMPILER=gcc"	# don't use `cc`, it may not
 					# be GCC-compatible
+cc_opts="${cc_opts} -DCMAKE_C_FLAGS_DEBUG=\"-g -O2\""
+
+benchmark_opts="-DMERCURY_TESTING_USE_THREAD_POOL=off"
+benchmark_opts="${benchmark_opts} -DMERCURY_TESTING_VERIFY_DATA=off"
+benchmark_opts="${benchmark_opts} -DMERCURY_USE_CHECKSUMS=off"
 
 if [ $(hostname) = "jelly" ]
 then
@@ -32,14 +37,11 @@ asan)
 	build_type=Asan
 	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
 	;;
+debug-benchmark)
+	personality_opts="${benchmark_opts} -DMERCURY_ENABLE_DEBUG=on"
+	;;
 benchmark)
-	personality_opts=$(cat<<EOPTS
--DMERCURY_ENABLE_DEBUG=off
--DMERCURY_TESTING_USE_THREAD_POOL=off
--DMERCURY_TESTING_VERIFY_DATA=off
--DMERCURY_USE_CHECKSUMS=off
-EOPTS
-)
+	personality_opts="${benchmark_opts} -DMERCURY_ENABLE_DEBUG=off"
 	;;
 *)
 	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
