@@ -13,6 +13,9 @@
 #include "mercury_mem.h"
 #include "mercury_time.h"
 
+#include "../hlog/src/hlog.h"
+
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -88,6 +91,8 @@ na_info_free(struct na_info *na_info);
 /*******************/
 /* Local Variables */
 /*******************/
+
+HLOG_OUTLET_SHORT_DEFN(na_completions, all);
 
 /* NA plugin class table */
 static const struct na_class_ops *const na_class_table[] = {
@@ -1205,6 +1210,7 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
     NA_CHECK_ERROR(context == NULL, done, ret, NA_INVALID_ARG, "NULL context");
 
     while (count < max_count) {
+        const char *which = "normal";
         struct na_cb_completion_data *completion_data_ptr = NULL;
         struct na_cb_completion_data completion_data;
 
@@ -1223,6 +1229,7 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
                     &na_private_context->completion_queue_mutex);
                 if (!completion_data_ptr)
                     continue; /* Give another chance to grab it */
+                which = "backfill";
             } else {
                 hg_time_t t1, t2;
 
@@ -1266,10 +1273,22 @@ NA_Trigger(na_context_t *context, unsigned int timeout, unsigned int max_count,
             }
         }
 
+
+        hlog_fast(na_completions,
+            "%s: removed completion %p from context %p %s queue", __func__,
+            (void *)completion_data_ptr, (void *)context, which);
+
         /* Completion data should be valid */
         NA_CHECK_ERROR(completion_data_ptr == NULL, done, ret, NA_INVALID_ARG,
             "NULL completion data");
         completion_data = *completion_data_ptr;
+
+        hlog_fast(na_completions,
+            "%s: completion %p plugin callback %" PRIxPTR
+            " user callback %" PRIxPTR, __func__,
+            (void *)completion_data_ptr,
+            (uintptr_t)completion_data.plugin_callback,
+            (uintptr_t)completion_data.callback);
 
         /* Execute plugin callback (free resources etc) first since actual
          * callback will notify user that operation has completed.
@@ -1334,6 +1353,7 @@ void
 na_cb_completion_add(
     na_context_t *context, struct na_cb_completion_data *na_cb_completion_data)
 {
+    const char *which;
     struct na_private_context *na_private_context =
         (struct na_private_context *) context;
 
@@ -1345,7 +1365,15 @@ na_cb_completion_add(
             &na_private_context->backfill_queue, na_cb_completion_data, entry);
         hg_atomic_incr32(&na_private_context->backfill_queue_count);
         hg_thread_mutex_unlock(&na_private_context->completion_queue_mutex);
+
+        which = "backfill";
+    } else {
+        which = "normal";
     }
+
+    hlog_fast(na_completions,
+        "%s: added completion %p to context %p %s queue", __func__,
+        (void *)na_cb_completion_data, (void *)context, which);
 
     /* Callback is pushed to the completion queue when something completes
      * so wake up anyone waiting in the trigger */
