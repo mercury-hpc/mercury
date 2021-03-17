@@ -1711,9 +1711,10 @@ na_ucx_msg_send(na_context_t *context,
 
     assert(proto_tag <= maxtag);
 
-    hlog_fast(tx, "%s: posting %s buf %p len %zu na tag %" PRIx32 " op %p",
+    hlog_fast(tx, "%s: posting %s buf %p len %zu na tag %" PRIx32
+        " op %p arg %p",
         __func__, na_cb_type_string(cb_type), buf, buf_size, proto_tag,
-        (void *)op_id);
+        (void *)op_id, arg);
 
     for (;;) {
         const address_wire_aseq_t aseq = address_wire_read_begin(cache);
@@ -1869,9 +1870,10 @@ na_ucx_msg_recv(na_context_t *ctx, na_cb_t callback, void *arg,
     void *request;
 
     hlog_fast(rx,
-        "%s: posting %s buf %p len %zu tag %" PRIx64 " mask %" PRIx64 " op %p",
+        "%s: posting %s buf %p len %zu tag %" PRIx64 " mask %" PRIx64
+        " op %p arg %p",
         __func__, na_cb_type_string(cb_type), buf, buf_size, tag, tagmask,
-        (void *)op);
+        (void *)op, arg);
 
     /* TBD Assert expected status */
     op->status = op_s_underway;
