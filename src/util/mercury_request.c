@@ -14,6 +14,8 @@
 #include "mercury_time.h"
 #include "mercury_util_error.h"
 
+#include "../hlog/src/hlog.h"
+
 #include <stdlib.h>
 
 /****************/
@@ -40,6 +42,8 @@ struct hg_request_class {
 /*******************/
 /* Local Variables */
 /*******************/
+
+HLOG_OUTLET_SHORT_DEFN(reqwait, all);
 
 /*---------------------------------------------------------------------------*/
 hg_request_class_t *
@@ -112,6 +116,7 @@ hg_request_wait(hg_request_t *request, unsigned int timeout_ms,
     hg_util_int32_t completed = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
 
+    hlog_fast(reqwait, "%s: enter %p", __func__, (void *)request);
     hg_time_get_current_ms(&now);
     deadline = hg_time_add(now, remaining);
 
@@ -156,6 +161,8 @@ next:
 
     if (flag)
         *flag = (unsigned int) completed;
+
+    hlog_fast(reqwait, "%s: exit %p", __func__, (void *)request);
 
     return ret;
 }
