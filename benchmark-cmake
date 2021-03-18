@@ -6,11 +6,14 @@ build_type=RelWithDebInfo
 
 cc_opts="-DCMAKE_C_COMPILER=gcc"	# don't use `cc`, it may not
 					# be GCC-compatible
+
 cc_opts="${cc_opts} -DCMAKE_C_FLAGS_DEBUG=\"-g -O2\""
 
 benchmark_opts="-DMERCURY_TESTING_USE_THREAD_POOL=off"
 benchmark_opts="${benchmark_opts} -DMERCURY_TESTING_VERIFY_DATA=off"
 benchmark_opts="${benchmark_opts} -DMERCURY_USE_CHECKSUMS=off"
+
+opa_opts="-DMERCURY_USE_OPA=off"
 
 if [ $(hostname) = "jelly" ]
 then
@@ -18,7 +21,7 @@ then
 	bmi_opts="${bmi_opts} -DBMI_LIBRARY=$HOME/wrk/bmi/install/lib/libbmi.so"
 	bmi_opts="${bmi_opts} -DNA_USE_BMI=on"
 else
-	opa_opts="-DMERCURY_USE_OPA=off"
+	:
 fi
 
 if [ $(hostname -d) = "summit.olcf.ornl.gov" ]
@@ -29,10 +32,6 @@ then
 fi
 
 case $personality in
-tsan)
-	build_type=Tsan
-	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
-	;;
 asan)
 	build_type=Asan
 	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
@@ -42,6 +41,14 @@ debug-benchmark)
 	;;
 benchmark)
 	personality_opts="${benchmark_opts} -DMERCURY_ENABLE_DEBUG=off"
+	;;
+tsan)
+	build_type=Tsan
+	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
+	;;
+ubsan)
+	build_type=Ubsan
+	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
 	;;
 *)
 	personality_opts="-DMERCURY_ENABLE_DEBUG=on"
