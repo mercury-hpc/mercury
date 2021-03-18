@@ -88,7 +88,7 @@ run_client(ucp_worker_h worker, ucp_address_t *server_addr)
     } else if (UCS_PTR_IS_PTR(request)) {
         while (!reply_ctx.completed)
             ucp_worker_progress(worker);
-        ucp_request_release(request);
+        ucp_request_free(request);
         printf("send succeeded, exiting.\n");
     } else if (request == UCS_OK)
         printf("send succeeded, exiting.\n");
@@ -122,7 +122,7 @@ run_server(ucp_worker_h worker, bool truncate_recv)
     } else if (UCS_PTR_IS_PTR(request)) {
         while (!reply_ctx.completed)
             ucp_worker_progress(worker);
-        ucp_request_release(request);
+        ucp_request_free(request);
         printf("sender tag %" PRIu64 "\n", reply_ctx.sender_tag);
         if (reply_ctx.status != UCS_OK) {
             printf("receive error, %s, exiting.\n",

@@ -453,7 +453,7 @@ wiring_teardown(wiring_t *wiring, bool orderly)
         do {
             (void)ucp_worker_progress(wiring->worker);
         } while (ucp_request_check_status(request) == UCS_INPROGRESS);
-        ucp_request_release(request);
+        ucp_request_free(request);
     }
 
     free(st);
