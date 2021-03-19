@@ -68,8 +68,7 @@ wiring_timeout_put(wstorage_t *storage, wire_t *w, int which,
         assert(head->first == sender_id_nil);
         head->first = id;
     } else {
-        timeout_link_t *lastlink =
-            &storage->wire[head->last].tlink[which];
+        timeout_link_t *lastlink = &storage->wire[head->last].tlink[which];
         assert(lastlink->due <= expiration);
         lastlink->next = id;
     }
