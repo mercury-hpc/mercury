@@ -322,6 +322,8 @@ send_keepalive(wiring_t *wiring, wire_t *w)
     const ucp_tag_t tag = TAG_CHNL_WIREUP | SHIFTIN(w->id, TAG_ID_MASK);
     const sender_id_t id = wire_index(st, w);
 
+    wiring_assert_locked(wiring);
+
     if ((msg = zalloc(sizeof(*msg))) == NULL)
         return w->state;
 
@@ -386,6 +388,8 @@ retry(wiring_t *wiring, wire_t *w)
 {
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
+
+    wiring_assert_locked(wiring);
 
     dbgf("%s: retrying establishment of wire %" PRIuSENDER, __func__, id);
 
