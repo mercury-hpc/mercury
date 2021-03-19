@@ -17,4 +17,7 @@ int colon_separated_octets_to_bytes(const char *, uint8_t **, size_t *);
 
 size_t twice_or_max(size_t);
 
+void *header_alloc(size_t, size_t, size_t);
+void header_free(size_t, size_t, void *);
+
 #endif /* _UTIL_H_ */

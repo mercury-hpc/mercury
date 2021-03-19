@@ -97,3 +97,37 @@ dbgf(const char *fmt, ...)
     (void)vfprintf(stderr, fmt, ap);
     va_end(ap);
 }
+
+/* Allocate a buffer with a `size`-bytes, `alignment`-aligned payload
+ * preceded by a `header_size` header, padding the allocation with up
+ * to `alignment - 1` bytes to ensure that the payload is properly aligned.
+ *
+ * If `alignment` is 0, do not try to align the payload.  It's ok if
+ * `size` is 0, however, `header_alloc` is undefined if both `header_size`
+ * and `size` are 0.
+ *
+ * Return a pointer to the payload or set errno and return NULL
+ * on error.  Possible `errno` values correspond with malloc(3).
+ */
+void *
+header_alloc(size_t header_size, size_t alignment, size_t size)
+{
+    const size_t pad = (alignment == 0 || header_size % alignment == 0)
+                        ? 0
+                        : alignment - header_size % alignment;
+
+    return (char *)malloc(header_size + pad + size) + header_size + pad;
+}
+
+/* Free the buffer `buf` that was returned previously by a call
+ * to `header_alloc(header_size, alignment, ...)`.
+ */
+void
+header_free(size_t header_size, size_t alignment, void *buf)
+{
+    const size_t pad = (alignment == 0 || header_size % alignment == 0)
+                        ? 0
+                        : alignment - header_size % alignment;
+
+    free((char *)buf - header_size - pad);
+}
