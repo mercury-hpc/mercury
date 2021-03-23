@@ -76,6 +76,13 @@ typedef bool (*wire_event_cb_t)(wire_event_info_t, void *);
 typedef void *(*wire_accept_cb_t)(wire_accept_info_t, void *,
     wire_event_cb_t *, void **);
 
+struct wiring_request;
+typedef struct wiring_request wiring_request_t;
+
+typedef struct wiring_request {
+    wiring_request_t *next;
+} wiring_request_t;
+
 struct _wiring {
     wiring_lock_bundle_t lkb;
     wire_accept_cb_t accept_cb;
@@ -86,6 +93,11 @@ struct _wiring {
                      * "associated data"
                      */
     ucp_worker_h worker;
+    size_t request_size;
+    /* wiring_request_t queues are protected by the wiring_t lock, lkb. */
+    wiring_request_t *req_outst_head;    // ucp_request_t's outstanding
+    wiring_request_t **req_outst_tailp;  // ucp_request_ts outstanding
+    wiring_request_t *req_free_head;     // ucp_request_t free list
 };
 
 #define wire_id_nil (wire_id_t){.id = sender_id_nil}

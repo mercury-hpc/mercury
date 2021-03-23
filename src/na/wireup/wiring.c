@@ -1,5 +1,6 @@
 #include <err.h>
 #include <inttypes.h> /* PRIu32 */
+#include <stdalign.h>
 #include <stdlib.h> /* calloc, malloc */
 #include <string.h> /* memcpy */
 #include <time.h> /* clock_gettime(2) */
@@ -37,12 +38,12 @@ static uint64_t getnanos(void);
 
 static void wireup_rx_req(wiring_t *, const wireup_msg_t *);
 
-static void wireup_stop_internal(wiring_t *, wire_t *, void **);
+static void wireup_stop_internal(wiring_t *, wire_t *, bool);
 static void wireup_send_callback(void *, ucs_status_t, void *);
 static void wireup_last_send_callback(void *, ucs_status_t, void *);
 
 static wstorage_t *wiring_enlarge(wiring_t *);
-static bool wireup_send(wire_t *);
+static bool wireup_send(wiring_t *, wire_t *);
 static const wire_state_t *continue_life(wiring_t *, wire_t *,
     const wireup_msg_t *);
 static const wire_state_t *destroy(wiring_t *, wire_t *);
@@ -54,6 +55,12 @@ static const wire_state_t *send_keepalive(wiring_t *, wire_t *);
 static const wire_state_t *retry(wiring_t *, wire_t *);
 static const wire_state_t *start_life(wiring_t *, wire_t *,
     const wireup_msg_t *);
+
+static void *wiring_free_request_get(wiring_t *);
+static void wiring_outst_request_put(wiring_t *, wiring_request_t *);
+static void wiring_free_request_put(wiring_t *, wiring_request_t *);
+static bool wiring_requests_check_status(wiring_t *);
+static void wiring_requests_discard(wiring_t *);
 
 wire_state_t state[] = {
   [WIRE_S_INITIAL] = {.expire = retry,
@@ -330,19 +337,31 @@ send_keepalive(wiring_t *wiring, wire_t *w)
     *msg = (wireup_msg_t){.op = OP_KEEPALIVE, .sender_id = id, .addrlen = 0};
 
     tx_params = (ucp_request_param_t){
-      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
+      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK
+                    | UCP_OP_ATTR_FIELD_USER_DATA
+                    | UCP_OP_ATTR_FIELD_REQUEST
     , .cb = {.send = wireup_last_send_callback}
     , .user_data = msg
+    , .request = wiring_free_request_get(wiring)
     };
 
+    if (tx_params.request == NULL)
+        return w->state;
+
+    /* SSS */
     request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
         dbgf("%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
+        wiring_free_request_put(wiring, tx_params.request);
         free(msg);
-    } else if (request == UCS_OK)
+    } else if (request == UCS_OK) {
+        wiring_free_request_put(wiring, tx_params.request);
         free(msg);
+    } else {
+        wiring_outst_request_put(wiring, tx_params.request);
+    }
 
     wiring_wakeup_put(st, w, getnanos() + keepalive_interval);
 
@@ -393,7 +412,7 @@ retry(wiring_t *wiring, wire_t *w)
 
     dbgf("%s: retrying establishment of wire %" PRIuSENDER, __func__, id);
 
-    if (!wireup_send(w)) {
+    if (!wireup_send(wiring, w)) {
         wiring_release_wire(wiring, w);
         return &state[WIRE_S_DEAD];
     }
@@ -439,7 +458,6 @@ wireup_last_send_callback(void wiring_unused *request, ucs_status_t status,
 void
 wiring_teardown(wiring_t *wiring, bool orderly)
 {
-    void *request;
     wstorage_t *st;
     void **assoc = wiring->assoc;
     size_t i;
@@ -449,16 +467,13 @@ wiring_teardown(wiring_t *wiring, bool orderly)
     if (wiring->rxpool != NULL)
         rxpool_destroy(wiring->rxpool);
 
-    for (i = 0; i < st->nwires; i++) {
-        request = NULL;
-        wireup_stop_internal(wiring, &st->wire[i], orderly ? &request : NULL);
-        if (request == NULL)
-            continue;
-        do {
-            (void)ucp_worker_progress(wiring->worker);
-        } while (ucp_request_check_status(request) == UCS_INPROGRESS);
-        ucp_request_free(request);
-    }
+    for (i = 0; i < st->nwires; i++)
+        wireup_stop_internal(wiring, &st->wire[i], orderly);
+
+    while (wiring_requests_check_status(wiring) == UCS_INPROGRESS)
+        (void)ucp_worker_progress(wiring->worker);
+
+    wiring_requests_discard(wiring);
 
     free(st);
     free(assoc);
@@ -516,7 +531,6 @@ wire_get_sender_id(wiring_t *wiring, wire_id_t wid)
 bool
 wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
 {
-    void *request;
     wiring_assert_locked(wiring);
 
     wstorage_t *st = wiring->storage;
@@ -525,8 +539,54 @@ wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
         return false;
     }
 
-    wireup_stop_internal(wiring, &st->wire[wid.id], orderly ? &request : NULL);
+    wireup_stop_internal(wiring, &st->wire[wid.id], orderly);
     return true;
+}
+
+static void
+wiring_requests_discard(wiring_t *wiring)
+{
+    wiring_request_t *req;
+
+    while ((req = wiring->req_free_head) != NULL) {
+        wiring->req_free_head = req->next;
+        header_free(wiring->request_size, alignof(*req), req);
+    }
+
+    assert(wiring->req_outst_head == NULL);
+    assert(wiring->req_outst_tailp == &wiring->req_outst_head);
+}
+
+static void *
+wiring_free_request_get(wiring_t *wiring)
+{
+    wiring_request_t *req;
+
+    wiring_assert_locked(wiring);
+
+    if ((req = wiring->req_free_head) != NULL) {
+        wiring->req_free_head = req->next;
+    } else if ((req = header_alloc(wiring->request_size, alignof(*req),
+                                   sizeof(*req))) == NULL) {
+        return NULL;
+    }
+
+    return req;
+}
+
+static void
+wiring_outst_request_put(wiring_t *wiring, wiring_request_t *req)
+{
+    req->next = NULL;
+    *wiring->req_outst_tailp = req;
+    wiring->req_outst_tailp = &req->next;
+}
+
+static void
+wiring_free_request_put(wiring_t *wiring, wiring_request_t *req)
+{
+    req->next = wiring->req_free_head;
+    wiring->req_free_head = req;
 }
 
 /* Move the state machine on wire `w` to DEAD state and release its
@@ -534,11 +594,11 @@ wireup_stop(wiring_t *wiring, wire_id_t wid, bool orderly)
  * so that it can release its wire.
  */
 static void
-wireup_stop_internal(wiring_t *wiring, wire_t *w, void **requestp)
+wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
 {
     ucp_request_param_t tx_params;
     wireup_msg_t *msg;
-    ucs_status_ptr_t request;
+    void *request;
     wstorage_t *st = wiring->storage;
     const ucp_tag_t tag = TAG_CHNL_WIREUP | SHIFTIN(w->id, TAG_ID_MASK);
     const sender_id_t id = wire_index(st, w);
@@ -550,7 +610,7 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, void **requestp)
 
     wireup_transition(wiring, w, &state[WIRE_S_DEAD]);
 
-    if (requestp == NULL)
+    if (!orderly)
         goto out;
 
     if ((msg = zalloc(sizeof(*msg))) == NULL)
@@ -561,26 +621,58 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, void **requestp)
     tx_params = (ucp_request_param_t){
       .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK
                     | UCP_OP_ATTR_FIELD_USER_DATA
+                    | UCP_OP_ATTR_FIELD_REQUEST
     , .cb = {.send = wireup_last_send_callback}
     , .user_data = msg
+    , .request = wiring_free_request_get(wiring)
     };
 
+    if (tx_params.request == NULL) {
+        free(msg);
+        goto out;
+    }
+
+    /* SSS */
     request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
         dbgf("%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
         free(msg);
-        *requestp = NULL;
+        wiring_free_request_put(wiring, tx_params.request);
     } else if (request == UCS_OK) {
         free(msg);
-        *requestp = NULL;
+        wiring_free_request_put(wiring, tx_params.request);
     } else {
-        *requestp = request;
+        wiring_outst_request_put(wiring, tx_params.request);
     }
 
 out:
     wiring_release_wire(wiring, w);
+}
+
+/* Check the head of the outstanding requests list.  Move completed
+ * requests from the head of the outstanding list to the free list.
+ * Return true if there are any requests outstanding.  Otherwise, return
+ * false.
+ */
+static bool
+wiring_requests_check_status(wiring_t *wiring)
+{
+    wiring_request_t *req;
+
+    while ((req = wiring->req_outst_head) != NULL) {
+        if (ucp_request_check_status(req) == UCS_INPROGRESS)
+            return true;
+
+        wiring->req_outst_head = req->next;
+        if (wiring->req_outst_tailp == &req->next)
+            wiring->req_outst_tailp = &wiring->req_outst_head;
+
+        wiring_free_request_put(wiring, req);
+    }
+
+    return false;
 }
 
 bool
@@ -598,6 +690,9 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
     wiring->accept_cb = accept_cb;
     wiring->accept_cb_arg = accept_cb_arg;
     wiring->worker = worker;
+    wiring->request_size = request_size;
+    wiring->req_free_head = wiring->req_outst_head = NULL;
+    wiring->req_outst_tailp = &wiring->req_outst_head;
 
     st = zalloc(sizeof(*st) + sizeof(wire_t) * nwires);
     if (st == NULL)
@@ -778,18 +873,31 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
     wiring_wakeup_put(st, w, getnanos() + keepalive_interval);
 
     tx_params = (ucp_request_param_t){
-      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
+      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK
+                    | UCP_OP_ATTR_FIELD_USER_DATA
+                    | UCP_OP_ATTR_FIELD_REQUEST
     , .cb = {.send = wireup_last_send_callback}
     , .user_data = msg
+    , .request = wiring_free_request_get(wiring)
     };
+
+    if (tx_params.request == NULL)
+        goto free_wire;
+
+    /* SSS */
     request = ucp_tag_send_nbx(ep, msg, msglen, tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
         dbgf("%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
+        wiring_free_request_put(wiring, tx_params.request);
         goto free_wire;
-    } else if (request == UCS_OK)
+    } else if (request == UCS_OK) {
+        wiring_free_request_put(wiring, tx_params.request);
         free(msg);
+    } else {
+        wiring_outst_request_put(wiring, tx_params.request);
+    }
 
     if (wiring->accept_cb != NULL) {
         const wire_accept_info_t info =
@@ -807,24 +915,39 @@ free_msg:
 }
 
 static bool
-wireup_send(wire_t *w)
+wireup_send(wiring_t *wiring, wire_t *w)
 {
     ucp_ep_h ep = w->ep;
     wireup_msg_t *msg = w->msg;
     ucs_status_ptr_t request;
     size_t msglen = w->msglen;
 
+    wiring_assert_locked(wiring);
+
     ucp_request_param_t tx_params = {
-      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_USER_DATA
+      .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK
+                    | UCP_OP_ATTR_FIELD_USER_DATA
+                    | UCP_OP_ATTR_FIELD_REQUEST
     , .cb = {.send = wireup_send_callback}
     , .user_data = msg
+    , .request = wiring_free_request_get(wiring)
     };
+
+    if (tx_params.request == NULL)
+        return false;
+
+    /* SSS */
     request = ucp_tag_send_nbx(ep, msg, msglen, wireup_start_tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
         dbgf("%s: ucp_tag_send_nbx: %s", __func__,
             ucs_status_string(UCS_PTR_STATUS(request)));
+        wiring_free_request_put(wiring, tx_params.request);
         return false;
+    } else if (request == UCS_OK) {
+        wiring_free_request_put(wiring, tx_params.request);
+    } else {
+        wiring_outst_request_put(wiring, tx_params.request);
     }
     return true;
 }
@@ -924,7 +1047,7 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
 
     wiring_expiration_put(st, w, getnanos() + timeout_interval);
 
-    if (!wireup_send(w))
+    if (!wireup_send(wiring, w))
         goto free_wire;
 
     return (wire_id_t){.id = id};
