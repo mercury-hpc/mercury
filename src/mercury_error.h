@@ -19,20 +19,10 @@
 
 /* Default error macro */
 #include <mercury_log.h>
-#define HG_LOG_MASK hg_log_mask
-/* Log mask will be initialized in init routine */
-extern HG_PRIVATE enum hg_log_type HG_LOG_MASK;
-#define HG_LOG_MODULE_NAME "HG"
-#define HG_LOG_ERROR(...)                                                      \
-    HG_LOG_WRITE(                                                              \
-        HG_LOG_MASK, HG_LOG_TYPE_ERROR, HG_LOG_MODULE_NAME, __VA_ARGS__)
-#define HG_LOG_WARNING(...)                                                    \
-    HG_LOG_WRITE(                                                              \
-        HG_LOG_MASK, HG_LOG_TYPE_WARNING, HG_LOG_MODULE_NAME, __VA_ARGS__)
+#define HG_LOG_ERROR(...)   HG_LOG_WRITE(hg, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
+#define HG_LOG_WARNING(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #ifdef HG_HAS_DEBUG
-#    define HG_LOG_DEBUG(...)                                                  \
-        HG_LOG_WRITE(                                                          \
-            HG_LOG_MASK, HG_LOG_TYPE_DEBUG, HG_LOG_MODULE_NAME, __VA_ARGS__)
+#    define HG_LOG_DEBUG(...) HG_LOG_WRITE(hg, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #else
 #    define HG_LOG_DEBUG(...) (void) 0
 #endif

@@ -110,6 +110,7 @@ hg_poll_create(void)
     HG_UTIL_CHECK_ERROR_NORET(
         !hg_poll_set->events, error, "malloc() failed (%s)", strerror(errno));
 #endif
+    HG_UTIL_LOG_DEBUG("Created new poll set, fd=%d", hg_poll_set->fd);
 
     return hg_poll_set;
 
@@ -134,6 +135,8 @@ hg_poll_destroy(hg_poll_set_t *poll_set)
 
     HG_UTIL_CHECK_ERROR(
         poll_set->nfds > 0, done, ret, HG_UTIL_FAIL, "Poll set non empty");
+
+    HG_UTIL_LOG_DEBUG("Destroying poll set, fd=%d", poll_set->fd);
 
 #if defined(_WIN32)
     /* TODO */
@@ -192,6 +195,8 @@ hg_poll_add(hg_poll_set_t *poll_set, int fd, struct hg_poll_event *event)
     short int poll_flags = 0;
 #endif
     int ret = HG_UTIL_SUCCESS;
+
+    HG_UTIL_LOG_DEBUG("Adding fd=%d to poll set (fd=%d)", fd, poll_set->fd);
 
 #if defined(_WIN32)
     /* TODO */
@@ -286,6 +291,8 @@ hg_poll_remove(hg_poll_set_t *poll_set, int fd)
     int i, found = -1;
 #endif
     int ret = HG_UTIL_SUCCESS;
+
+    HG_UTIL_LOG_DEBUG("Removing fd=%d from poll set (fd=%d)", fd, poll_set->fd);
 
 #if defined(_WIN32)
     /* TODO */

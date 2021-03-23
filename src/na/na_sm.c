@@ -3619,7 +3619,7 @@ na_sm_initialize(na_class_t *na_class, const struct na_info NA_UNUSED *na_info,
 
     /* Generate new SM ID */
     id = (unsigned int) hg_atomic_incr32(&sm_id_g) - 1;
-    NA_CHECK_ERROR(id > UINT8_MAX, error, ret, NA_OVERFLOW,
+    NA_CHECK_SUBSYS_ERROR(fatal, id > UINT8_MAX, error, ret, NA_OVERFLOW,
         "Reached maximum number of SM instances for this process");
 
     /* Get username */
@@ -4405,8 +4405,8 @@ na_sm_mem_handle_create_segments(na_class_t *na_class,
     NA_CHECK_WARNING(segment_count == 1, "Segment count is 1");
 
     /* Check that we do not exceed IOV_MAX */
-    NA_CHECK_ERROR(segment_count > NA_SM_CLASS(na_class)->iov_max, error, ret,
-        NA_INVALID_ARG, "Segment count exceeds IOV_MAX limit (%zu)",
+    NA_CHECK_SUBSYS_ERROR(fatal, segment_count > NA_SM_CLASS(na_class)->iov_max,
+        error, ret, NA_INVALID_ARG, "Segment count exceeds IOV_MAX limit (%zu)",
         NA_SM_CLASS(na_class)->iov_max);
 
     /* Allocate memory handle */
@@ -4677,7 +4677,7 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         process_vm_writev(na_sm_addr->pid, liov, liovcnt, riov, riovcnt, 0);
     if (unlikely(nwrite < 0)) {
         if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
-            NA_GOTO_ERROR(error, ret, na_sm_errno_to_na(errno),
+            NA_GOTO_SUBSYS_ERROR(fatal, error, ret, na_sm_errno_to_na(errno),
                 "process_vm_writev() failed (%s):\n",
                 "Kernel Yama configuration does not allow cross-memory attach, "
                 "either run as root: \n"
@@ -4696,13 +4696,14 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         "Wrote %ld bytes, was expecting %lu bytes", nwrite, length);
 #elif defined(__APPLE__)
     kret = task_for_pid(mach_task_self(), na_sm_addr->pid, &remote_task);
-    NA_CHECK_ERROR(kret != KERN_SUCCESS, error, ret, NA_PERMISSION,
+    NA_CHECK_SUBSYS_ERROR(fatal, kret != KERN_SUCCESS, error, ret,
+        NA_PERMISSION,
         "task_for_pid() failed (%s)\n"
         "Permission must be set to access remote memory, please refer to the "
         "documentation for instructions.",
         mach_error_string(kret));
-    NA_CHECK_ERROR(liovcnt > 1 || riovcnt > 1, error, ret, NA_OPNOTSUPPORTED,
-        "Non-contiguous transfers are not supported");
+    NA_CHECK_SUBSYS_ERROR(fatal, liovcnt > 1 || riovcnt > 1, error, ret,
+        NA_OPNOTSUPPORTED, "Non-contiguous transfers are not supported");
 
     kret = mach_vm_write(remote_task, (mach_vm_address_t) riov[0].iov_base,
         (mach_vm_address_t) liov[0].iov_base, (mach_msg_type_number_t) length);
@@ -4861,7 +4862,7 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     nread = process_vm_readv(na_sm_addr->pid, liov, liovcnt, riov, riovcnt, 0);
     if (unlikely(nread < 0)) {
         if ((errno == EPERM) && na_sm_get_ptrace_scope_value()) {
-            NA_GOTO_ERROR(error, ret, na_sm_errno_to_na(errno),
+            NA_GOTO_SUBSYS_ERROR(fatal, error, ret, na_sm_errno_to_na(errno),
                 "process_vm_readv() failed (%s):\n",
                 "Kernel Yama configuration does not allow cross-memory attach, "
                 "either run as root: \n"
@@ -4878,13 +4879,14 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
     }
 #elif defined(__APPLE__)
     kret = task_for_pid(mach_task_self(), na_sm_addr->pid, &remote_task);
-    NA_CHECK_ERROR(kret != KERN_SUCCESS, error, ret, NA_PERMISSION,
+    NA_CHECK_SUBSYS_ERROR(fatal, kret != KERN_SUCCESS, error, ret,
+        NA_PERMISSION,
         "task_for_pid() failed (%s)\n"
         "Permission must be set to access remote memory, please refer to the "
         "documentation for instructions.",
         mach_error_string(kret));
-    NA_CHECK_ERROR(liovcnt > 1 || riovcnt > 1, error, ret, NA_OPNOTSUPPORTED,
-        "Non-contiguous transfers are not supported");
+    NA_CHECK_SUBSYS_ERROR(fatal, liovcnt > 1 || riovcnt > 1, error, ret,
+        NA_OPNOTSUPPORTED, "Non-contiguous transfers are not supported");
 
     kret = mach_vm_read_overwrite(remote_task,
         (mach_vm_address_t) riov[0].iov_base, length,
