@@ -12,17 +12,28 @@
 
 #include "mercury_util_error.h"
 
+#include <stdlib.h>
+#include <string.h>
+
+/****************/
+/* Local Macros */
+/****************/
+
+/* Name of this subsystem */
+#define HG_UTIL_SUBSYS_NAME        hg_util
+#define HG_UTIL_SUBSYS_NAME_STRING HG_UTIL_STRINGIFY(HG_UTIL_SUBSYS_NAME)
+
 /*******************/
 /* Local Variables */
 /*******************/
 
 /* Default error log mask */
-enum hg_log_type HG_UTIL_LOG_MASK = HG_LOG_TYPE_NONE;
+HG_LOG_SUBSYS_DECL_REGISTER(HG_UTIL_SUBSYS_NAME, hg);
 
 /*---------------------------------------------------------------------------*/
 void
 HG_Util_set_log_level(const char *level)
 {
-    /* Set log level */
-    HG_UTIL_LOG_MASK = hg_log_name_to_type(level);
+    hg_log_set_subsys_level(
+        HG_UTIL_SUBSYS_NAME_STRING, hg_log_name_to_level(level));
 }

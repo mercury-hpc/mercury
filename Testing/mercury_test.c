@@ -70,8 +70,8 @@ hg_test_register(hg_class_t *hg_class);
 /* Local Variables */
 /*******************/
 
-/* Default log mask */
-enum hg_log_type HG_TEST_LOG_MASK = HG_LOG_TYPE_NONE;
+/* Default log outlets */
+HG_LOG_SUBSYS_DECL_REGISTER(hg_test, hg);
 
 extern int na_test_opt_ind_g;         /* token pointer */
 extern const char *na_test_opt_arg_g; /* flag argument (or value) */
@@ -379,15 +379,6 @@ HG_Test_init(int argc, char *argv[], struct hg_test_info *hg_test_info)
     struct hg_test_context_info *hg_test_context_info;
     hg_return_t ret = HG_SUCCESS;
     na_return_t na_ret;
-    const char *log_level = getenv("HG_TEST_LOG_LEVEL");
-
-    /* Set log level */
-    if (!log_level)
-        log_level = "warning";
-
-    HG_TEST_LOG_MASK = hg_log_name_to_type(log_level);
-    HG_Set_log_level(log_level);
-    HG_Util_set_log_level(log_level);
 
     /* Get HG test options */
     hg_test_parse_options(argc, argv, hg_test_info);

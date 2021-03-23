@@ -12,13 +12,26 @@
 
 #include <ctype.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 
 /****************/
 /* Local Macros */
 /****************/
 
-#define HG_LOG_MAX_BUF 256
+/* Make sure it executes first */
+#ifndef HG_UTIL_CONSTRUCTOR_1
+#    define HG_UTIL_CONSTRUCTOR_1 __attribute__((constructor(101)))
+#endif
+
+/* Max number of subsystems that can be tracked */
+#define HG_LOG_SUBSYS_MAX (16)
+
+/* Max length of subsystem name (without trailing \0) */
+#define HG_LOG_SUBSYS_NAME_MAX (16)
+
+/* Log buffer size */
+#define HG_LOG_BUF_MAX (256)
 
 #ifdef HG_UTIL_HAS_LOG_COLOR
 #    define HG_LOG_ESC     "\033"
@@ -33,51 +46,286 @@
 #    define HG_LOG_CYAN    "36m"
 #endif
 
+/********************/
+/* Local Prototypes */
+/********************/
+
+/* Init logs */
+static void
+hg_log_init(void) HG_UTIL_CONSTRUCTOR_1;
+
+/* Init log level */
+static void
+hg_log_init_level(void);
+
+/* Init log subsys */
+static void
+hg_log_init_subsys(void);
+
+/* Reset all log levels */
+static void
+hg_log_outlet_reset_all(void);
+
+/* Is log active */
+static int
+hg_log_outlet_active(const char *name);
+
+/* Update log level of outlet */
+static void
+hg_log_outlet_update_level(struct hg_log_outlet *hg_log_outlet);
+
+/* Update level of all outlets */
+static void
+hg_log_outlet_update_all(void);
+
 /*******************/
 /* Local Variables */
 /*******************/
 
+/* Default log outlet */
+HG_LOG_OUTLET_DECL(hg) = HG_LOG_OUTLET_INITIALIZER(hg, HG_LOG_OFF, NULL, NULL);
+
+/* List of all registered outlets */
+static HG_QUEUE_HEAD(hg_log_outlet)
+    hg_log_outlets_g = HG_QUEUE_HEAD_INITIALIZER(hg_log_outlets_g);
+
+/* Default 'printf' log function */
 static int (*hg_log_func_g)(FILE *stream, const char *format, ...) = fprintf;
 
-/* Log type string table */
-#define X(a, b) b,
-static const char *const hg_log_type_name[] = {HG_LOG_TYPES};
+/* Default log level */
+static enum hg_log_level hg_log_level_g = HG_LOG_LEVEL_ERROR;
+
+/* Default log subsystems */
+static char hg_log_subsys_g[HG_LOG_SUBSYS_MAX][HG_LOG_SUBSYS_NAME_MAX + 1] = {
+    {"\0"}};
+
+/* Log level string table */
+#define X(a, b, c) b,
+static const char *const hg_log_level_name_g[] = {HG_LOG_LEVELS};
 #undef X
 
 /* Standard log streams */
-static FILE **const hg_log_std_streams[] = {NULL, &stderr, &stdout, &stdout};
-
-/* Log streams */
-static FILE *hg_log_streams[] = {NULL, NULL, NULL, NULL};
+#define X(a, b, c) c,
+static FILE **const hg_log_std_streams_g[] = {HG_LOG_LEVELS};
+#undef X
+static FILE *hg_log_streams_g[HG_LOG_LEVEL_MAX] = {NULL};
 
 /* Log colors */
 #ifdef HG_UTIL_HAS_LOG_COLOR
-static const char *const hg_log_colors[] = {
-    "", HG_LOG_RED, HG_LOG_MAGENTA, HG_LOG_BLUE};
+static const char *const hg_log_colors_g[] = {
+    "", HG_LOG_RED, HG_LOG_MAGENTA, HG_LOG_BLUE, HG_LOG_BLUE, ""};
 #endif
 
 /*---------------------------------------------------------------------------*/
-enum hg_log_type
-hg_log_name_to_type(const char *log_name)
+static void
+hg_log_init(void)
 {
-    enum hg_log_type t = 0;
-    char log_name_low[8], *q;
-    const char *p;
+    hg_log_init_level();
+    hg_log_init_subsys();
+
+    /* Register top outlet */
+    hg_log_outlet_register(&HG_LOG_OUTLET(hg));
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_log_init_level(void)
+{
+    const char *log_level = getenv("HG_LOG_LEVEL");
+
+    /* Override default log level */
+    if (log_level == NULL)
+        return;
+
+    hg_log_set_level(hg_log_name_to_level(log_level));
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_log_init_subsys(void)
+{
+    const char *log_subsys = getenv("HG_LOG_SUBSYS");
+
+    if (log_subsys == NULL)
+        return;
+
+    // fprintf(stderr, "subsys: %s\n", log_subsys);
+    hg_log_set_subsys(log_subsys);
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_log_outlet_reset_all(void)
+{
+    struct hg_log_outlet *outlet;
     int i;
 
-    if (!log_name)
-        return HG_LOG_TYPE_NONE;
+    /* Reset levels */
+    HG_QUEUE_FOREACH (outlet, &hg_log_outlets_g, entry)
+        outlet->level = HG_LOG_LEVEL_NONE;
 
-    /* Make sure string is lower case */
-    for (i = 0, p = log_name, q = log_name_low; *p != '\0' && i < 8;
-         p++, q++, i++)
-        *q = (char) tolower((unsigned char) *p);
-    *q = '\0';
+    /* Reset subsys */
+    for (i = 0; i < HG_LOG_SUBSYS_MAX; i++)
+        strcpy(hg_log_subsys_g[i], "\0");
+}
 
-    while (strcmp(hg_log_type_name[t], log_name) && t != HG_LOG_TYPE_MAX)
-        t++;
+/*---------------------------------------------------------------------------*/
+static int
+hg_log_outlet_active(const char *name)
+{
+    int i = 0;
 
-    return ((t == HG_LOG_TYPE_MAX) ? HG_LOG_TYPE_NONE : t);
+    while (hg_log_subsys_g[i][0] != '\0' && i < HG_LOG_SUBSYS_MAX) {
+        /* Force a subsystem to be inactive */
+        if ((hg_log_subsys_g[i][0] == '~') &&
+            (strcmp(&hg_log_subsys_g[i][1], name) == 0))
+            return -1;
+
+        if (strcmp(hg_log_subsys_g[i], name) == 0) {
+            return 1;
+        }
+        i++;
+    }
+    return 0;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_log_outlet_update_level(struct hg_log_outlet *hg_log_outlet)
+{
+    int active = hg_log_outlet_active(hg_log_outlet->name);
+
+    if (active > 0 || hg_log_outlet->state == HG_LOG_ON)
+        hg_log_outlet->level = hg_log_level_g;
+    else if (!(active < 0) && hg_log_outlet->state == HG_LOG_PASS &&
+             hg_log_outlet->parent)
+        hg_log_outlet->level = hg_log_outlet->parent->level;
+    else
+        hg_log_outlet->level = HG_LOG_LEVEL_NONE;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+hg_log_outlet_update_all(void)
+{
+    struct hg_log_outlet *hg_log_outlet;
+
+    HG_QUEUE_FOREACH (hg_log_outlet, &hg_log_outlets_g, entry)
+        hg_log_outlet_update_level(hg_log_outlet);
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_log_set_level(enum hg_log_level log_level)
+{
+    hg_log_level_g = log_level;
+
+    hg_log_outlet_update_all();
+}
+
+/*---------------------------------------------------------------------------*/
+enum hg_log_level
+hg_log_get_level(void)
+{
+    return hg_log_level_g;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_log_set_subsys(const char *log_subsys)
+{
+    char *subsys, *current, *next;
+    int i = 0;
+
+    subsys = strdup(log_subsys);
+    if (!subsys)
+        return;
+
+    current = subsys;
+
+    /* Reset all */
+    hg_log_outlet_reset_all();
+
+    /* Enable each of the subsys */
+    while (strtok_r(current, ",", &next) && i < HG_LOG_SUBSYS_MAX) {
+        strncpy(hg_log_subsys_g[i], current, HG_LOG_SUBSYS_NAME_MAX);
+        current = next;
+        i++;
+    }
+
+    /* Update outlets */
+    hg_log_outlet_update_all();
+
+    free(subsys);
+}
+
+/*---------------------------------------------------------------------------*/
+const char *
+hg_log_get_subsys(void)
+{
+    static char log_subsys[HG_LOG_SUBSYS_MAX * (HG_LOG_SUBSYS_NAME_MAX + 2)] =
+        "\0";
+    char *p = log_subsys;
+    int i = 0;
+
+    while (hg_log_subsys_g[i][0] != '\0' && i < HG_LOG_SUBSYS_MAX) {
+        strcpy(p, hg_log_subsys_g[i]);
+        p += strlen(hg_log_subsys_g[i]);
+        *p = ',';
+        p++;
+        i++;
+    }
+    if (i > 0)
+        *(p - 1) = '\0';
+
+    return (const char *) log_subsys;
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_log_set_subsys_level(const char *subsys, enum hg_log_level log_level)
+{
+    const char *log_subsys = hg_log_get_subsys();
+    char *new_subsys = NULL;
+    const char *new_subsys_ptr;
+
+    if (strcmp(log_subsys, "") != 0) {
+        new_subsys = malloc(strlen(log_subsys) + strlen(subsys) + 2);
+        if (!new_subsys)
+            return;
+        strcpy(new_subsys, log_subsys);
+        strcat(new_subsys, ",");
+        strcat(new_subsys, subsys);
+        new_subsys_ptr = new_subsys;
+    } else
+        new_subsys_ptr = subsys;
+
+    hg_log_set_level(log_level);
+    hg_log_set_subsys(new_subsys_ptr);
+
+    free(new_subsys);
+}
+
+/*---------------------------------------------------------------------------*/
+enum hg_log_level
+hg_log_name_to_level(const char *log_level)
+{
+    enum hg_log_level l = 0;
+
+    if (!log_level)
+        return HG_LOG_LEVEL_NONE;
+
+    while (strcasecmp(hg_log_level_name_g[l], log_level) != 0 &&
+           l != HG_LOG_LEVEL_MAX)
+        l++;
+
+    if (l == HG_LOG_LEVEL_MAX) {
+        fprintf(stderr,
+            "Warning: invalid log level was passed, defaulting to none\n");
+        return HG_LOG_LEVEL_NONE;
+    }
+
+    return l;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -91,62 +339,90 @@ hg_log_set_func(int (*log_func)(FILE *stream, const char *format, ...))
 void
 hg_log_set_stream_debug(FILE *stream)
 {
-    hg_log_streams[HG_LOG_TYPE_DEBUG] = stream;
+    hg_log_streams_g[HG_LOG_LEVEL_DEBUG] = stream;
 }
 
 /*---------------------------------------------------------------------------*/
 void
 hg_log_set_stream_warning(FILE *stream)
 {
-    hg_log_streams[HG_LOG_TYPE_WARNING] = stream;
+    hg_log_streams_g[HG_LOG_LEVEL_WARNING] = stream;
 }
 
 /*---------------------------------------------------------------------------*/
 void
 hg_log_set_stream_error(FILE *stream)
 {
-    hg_log_streams[HG_LOG_TYPE_ERROR] = stream;
+    hg_log_streams_g[HG_LOG_LEVEL_ERROR] = stream;
 }
 
 /*---------------------------------------------------------------------------*/
 void
-hg_log_write(enum hg_log_type log_type, const char *module, const char *file,
-    unsigned int line, const char *func, const char *format, ...)
+hg_log_outlet_register(struct hg_log_outlet *hg_log_outlet)
 {
-    char buf[HG_LOG_MAX_BUF];
+    hg_log_outlet_update_level(hg_log_outlet);
+
+    /* Inherit debug log if not set and parent has one */
+    if (!hg_log_outlet->debug_log && hg_log_outlet->parent &&
+        hg_log_outlet->parent->debug_log)
+        hg_log_outlet->debug_log = hg_log_outlet->parent->debug_log;
+
+    HG_QUEUE_PUSH_TAIL(&hg_log_outlets_g, hg_log_outlet, entry);
+}
+
+/*---------------------------------------------------------------------------*/
+void
+hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
+    const char *file, unsigned int line, const char *func, const char *format,
+    ...)
+{
+    char buf[HG_LOG_BUF_MAX];
     FILE *stream = NULL;
-    const char *msg_type = NULL;
+    const char *level_name = NULL;
 #ifdef HG_UTIL_HAS_LOG_COLOR
-    const char *color = "";
+    const char *color = hg_log_colors_g[log_level];
 #endif
+    hg_time_t tv;
     va_list ap;
 
-    if (!(log_type > HG_LOG_TYPE_NONE && log_type < HG_LOG_TYPE_MAX))
+    if (!(log_level > HG_LOG_LEVEL_NONE && log_level < HG_LOG_LEVEL_MAX))
         return;
 
-    msg_type = hg_log_type_name[log_type];
-    stream = hg_log_streams[log_type] ? hg_log_streams[log_type]
-                                      : *hg_log_std_streams[log_type];
+    hg_time_get_current(&tv);
+    level_name = hg_log_level_name_g[log_level];
+    stream = hg_log_streams_g[log_level] ? hg_log_streams_g[log_level]
+                                         : *hg_log_std_streams_g[log_level];
 #ifdef HG_UTIL_HAS_LOG_COLOR
-    color = hg_log_colors[log_type];
+    color = hg_log_colors_g[log_level];
 #endif
 
     va_start(ap, format);
-    vsnprintf(buf, HG_LOG_MAX_BUF, format, ap);
+    vsnprintf(buf, HG_LOG_BUF_MAX, format, ap);
     va_end(ap);
 
-/* Print using logging function */
 #ifdef HG_UTIL_HAS_LOG_COLOR
+    /* Print using logging function */
     hg_log_func_g(stream,
-        "# %s%s[%s -- %s%s%s%s%s -- %s:%d]%s\n"
-        "##    %s%s%s()%s: %s\n",
-        HG_LOG_REG, color, module, HG_LOG_BOLD, color, msg_type, HG_LOG_REG,
-        color, file, line, HG_LOG_RESET, HG_LOG_REG, HG_LOG_YELLOW, func,
-        HG_LOG_RESET, buf);
+        "# %s%s[%lf] %s%s%s->%s%s: %s%s[%s]%s%s %s:%d %s\n"
+        "## %s%s%s()%s: %s%s%s%s\n",
+        HG_LOG_REG, HG_LOG_GREEN, hg_time_to_double(tv), HG_LOG_REG,
+        HG_LOG_YELLOW, "mercury", hg_log_outlet->name, HG_LOG_RESET,
+        HG_LOG_BOLD, color, level_name, HG_LOG_REG, color, file, line,
+        HG_LOG_RESET, HG_LOG_REG, HG_LOG_YELLOW, func, HG_LOG_RESET, HG_LOG_REG,
+        log_level != HG_LOG_LEVEL_DEBUG ? color : HG_LOG_RESET, buf,
+        HG_LOG_RESET);
 #else
+    /* Print using logging function */
     hg_log_func_g(stream,
-        "# %s -- %s -- %s:%d\n"
+        "# [%lf] %s: [%s] %s:%d\n"
         " # %s(): %s\n",
-        module, msg_type, file, line, func, buf);
+        hg_time_to_double(tv), hg_log_outlet->name, level_name, file, line,
+        func, buf);
 #endif
+
+    if (log_level == HG_LOG_LEVEL_ERROR && hg_log_outlet->debug_log &&
+        hg_log_outlet->level >= HG_LOG_LEVEL_MIN_DEBUG) {
+        hg_dlog_dump(hg_log_outlet->debug_log, hg_log_func_g, stream, 0);
+        hg_dlog_resetlog(hg_log_outlet->debug_log);
+    }
 }
