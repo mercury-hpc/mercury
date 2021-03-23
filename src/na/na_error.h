@@ -13,24 +13,38 @@
 
 #include "na_config.h"
 
-/* Default error macro */
 #include <mercury_log.h>
-#define NA_LOG_MASK na_log_mask
-/* Log mask will be initialized in init routine */
-extern NA_PRIVATE enum hg_log_type NA_LOG_MASK;
-#define NA_LOG_MODULE_NAME "NA"
-#define NA_LOG_ERROR(...)                                                      \
-    HG_LOG_WRITE(                                                              \
-        NA_LOG_MASK, HG_LOG_TYPE_ERROR, NA_LOG_MODULE_NAME, __VA_ARGS__)
-#define NA_LOG_WARNING(...)                                                    \
-    HG_LOG_WRITE(                                                              \
-        NA_LOG_MASK, HG_LOG_TYPE_WARNING, NA_LOG_MODULE_NAME, __VA_ARGS__)
+
+/* Default log outlet */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(na);
+
+/* Fatal log outlet always 'on' by default */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(fatal);
+
+/* Specific outlets */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(cls);  /* Class */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(ctx);  /* Context */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(op);   /* Operations */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(addr); /* Addresses */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(msg);  /* Messages */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(mem);  /* Memory */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(rma);  /* RMA */
+extern NA_PRIVATE HG_LOG_OUTLET_DECL(poll); /* Progress */
+
+/* Base log macros */
+#define NA_LOG_ERROR(...) HG_LOG_WRITE(na, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
+#define NA_LOG_SUBSYS_ERROR(subsys, ...)                                       \
+    HG_LOG_WRITE(subsys, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
+#define NA_LOG_WARNING(...) HG_LOG_WRITE(na, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
+#define NA_LOG_SUBSYS_WARNING(subsys, ...)                                     \
+    HG_LOG_WRITE(subsys, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #ifdef NA_HAS_DEBUG
-#    define NA_LOG_DEBUG(...)                                                  \
-        HG_LOG_WRITE(                                                          \
-            NA_LOG_MASK, HG_LOG_TYPE_DEBUG, NA_LOG_MODULE_NAME, __VA_ARGS__)
+#    define NA_LOG_DEBUG(...) HG_LOG_WRITE_DEBUG(na, __VA_ARGS__)
+#    define NA_LOG_SUBSYS_DEBUG(subsys, ...)                                   \
+        HG_LOG_WRITE_DEBUG(subsys, __VA_ARGS__)
 #else
-#    define NA_LOG_DEBUG(...) (void) 0
+#    define NA_LOG_DEBUG(...)        (void) 0
+#    define NA_LOG_SUBSYS_DEBUG(...) (void) 0
 #endif
 
 /* Branch predictor hints */
@@ -43,12 +57,15 @@ extern NA_PRIVATE enum hg_log_type NA_LOG_MASK;
 #endif
 
 /* Error macros */
+
+/* NA_GOTO_DONE: goto label wrapper and set return value */
 #define NA_GOTO_DONE(label, ret, ret_val)                                      \
     do {                                                                       \
         ret = ret_val;                                                         \
         goto label;                                                            \
     } while (0)
 
+/* NA_GOTO_ERROR: goto label wrapper and set return value / log error */
 #define NA_GOTO_ERROR(label, ret, err_val, ...)                                \
     do {                                                                       \
         NA_LOG_ERROR(__VA_ARGS__);                                             \
@@ -56,7 +73,15 @@ extern NA_PRIVATE enum hg_log_type NA_LOG_MASK;
         goto label;                                                            \
     } while (0)
 
-/* Check for na_ret value and goto label */
+/* NA_GOTO_ERROR: goto label wrapper and set return value / log subsys error */
+#define NA_GOTO_SUBSYS_ERROR(subsys, label, ret, err_val, ...)                 \
+    do {                                                                       \
+        NA_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                              \
+        ret = err_val;                                                         \
+        goto label;                                                            \
+    } while (0)
+
+/* NA_CHECK_NA_ERROR: NA type error check */
 #define NA_CHECK_NA_ERROR(label, na_ret, ...)                                  \
     do {                                                                       \
         if (unlikely(na_ret != NA_SUCCESS)) {                                  \
@@ -65,7 +90,16 @@ extern NA_PRIVATE enum hg_log_type NA_LOG_MASK;
         }                                                                      \
     } while (0)
 
-/* Check for cond, set ret to err_val and goto label */
+/* NA_CHECK_SUBSYS_NA_ERROR: subsys NA type error check */
+#define NA_CHECK_SUBSYS_NA_ERROR(subsys, label, na_ret, ...)                   \
+    do {                                                                       \
+        if (unlikely(na_ret != NA_SUCCESS)) {                                  \
+            NA_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                          \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
+
+/* NA_CHECK_ERROR: error check on cond */
 #define NA_CHECK_ERROR(cond, label, ret, err_val, ...)                         \
     do {                                                                       \
         if (unlikely(cond)) {                                                  \
@@ -75,6 +109,17 @@ extern NA_PRIVATE enum hg_log_type NA_LOG_MASK;
         }                                                                      \
     } while (0)
 
+/* NA_CHECK_SUBSYS_ERROR: subsys error check on cond */
+#define NA_CHECK_SUBSYS_ERROR(subsys, cond, label, ret, err_val, ...)          \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            NA_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                          \
+            ret = err_val;                                                     \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
+
+/* NA_CHECK_ERROR_NORET: error check / no return values */
 #define NA_CHECK_ERROR_NORET(cond, label, ...)                                 \
     do {                                                                       \
         if (unlikely(cond)) {                                                  \
@@ -83,6 +128,16 @@ extern NA_PRIVATE enum hg_log_type NA_LOG_MASK;
         }                                                                      \
     } while (0)
 
+/* NA_CHECK_SUBSYS_ERROR_NORET: subsys error check / no return values */
+#define NA_CHECK_SUBSYS_ERROR_NORET(subsys, cond, label, ...)                  \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            NA_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                          \
+            goto label;                                                        \
+        }                                                                      \
+    } while (0)
+
+/* NA_CHECK_ERROR_DONE: error check after clean up / done labels */
 #define NA_CHECK_ERROR_DONE(cond, ...)                                         \
     do {                                                                       \
         if (unlikely(cond)) {                                                  \
@@ -90,11 +145,27 @@ extern NA_PRIVATE enum hg_log_type NA_LOG_MASK;
         }                                                                      \
     } while (0)
 
-/* Check for cond and print warning */
+/* NA_CHECK_SUBSYS_ERROR_DONE: subsys error check after clean up labels */
+#define NA_CHECK_SUBSYS_ERROR_DONE(subsys, cond, ...)                          \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            NA_LOG_SUBSYS_ERROR(subsys, __VA_ARGS__);                          \
+        }                                                                      \
+    } while (0)
+
+/* NA_CHECK_WARNING: warning check on cond */
 #define NA_CHECK_WARNING(cond, ...)                                            \
     do {                                                                       \
         if (unlikely(cond)) {                                                  \
             NA_LOG_WARNING(__VA_ARGS__);                                       \
+        }                                                                      \
+    } while (0)
+
+/* NA_CHECK_SUBSYS_WARNING: subsys warning check on cond */
+#define NA_CHECK_SUBSYS_WARNING(subsys, cond, ...)                             \
+    do {                                                                       \
+        if (unlikely(cond)) {                                                  \
+            NA_LOG_SUBSYS_WARNING(subsys, __VA_ARGS__);                        \
         }                                                                      \
     } while (0)
 

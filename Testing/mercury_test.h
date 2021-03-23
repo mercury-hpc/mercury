@@ -69,20 +69,14 @@ struct hg_test_context_info {
 
 /* Default error macro */
 #include <mercury_log.h>
-#define HG_TEST_LOG_MASK hg_test_log_mask
-/* Log mask will be initialized in init routine */
-extern enum hg_log_type HG_TEST_LOG_MASK;
-#define HG_TEST_LOG_MODULE_NAME "HG Test"
+extern HG_PRIVATE HG_LOG_OUTLET_DECL(hg_test);
 #define HG_TEST_LOG_ERROR(...)                                                 \
-    HG_LOG_WRITE(HG_TEST_LOG_MASK, HG_LOG_TYPE_ERROR, HG_TEST_LOG_MODULE_NAME, \
-        __VA_ARGS__)
+    HG_LOG_WRITE(hg_test, HG_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define HG_TEST_LOG_WARNING(...)                                               \
-    HG_LOG_WRITE(HG_TEST_LOG_MASK, HG_LOG_TYPE_WARNING,                        \
-        HG_TEST_LOG_MODULE_NAME, __VA_ARGS__)
+    HG_LOG_WRITE(hg_test, HG_LOG_LEVEL_WARNING, __VA_ARGS__)
 #ifdef HG_HAS_DEBUG
 #    define HG_TEST_LOG_DEBUG(...)                                             \
-        HG_LOG_WRITE(HG_TEST_LOG_MASK, HG_LOG_TYPE_DEBUG,                      \
-            HG_TEST_LOG_MODULE_NAME, __VA_ARGS__)
+        HG_LOG_WRITE(hg_test, HG_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #else
 #    define HG_TEST_LOG_DEBUG(...) (void) 0
 #endif

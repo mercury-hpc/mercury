@@ -62,9 +62,6 @@ hg_request_class_t *HG_REQUEST_CLASS_DEFAULT = NULL;
 /* For convenience, register HG_Hl_finalize() */
 static hg_bool_t hg_atexit_g = HG_FALSE;
 
-/* Default error log mask */
-enum hg_log_type HG_LOG_MASK = HG_LOG_TYPE_NONE;
-
 /*---------------------------------------------------------------------------*/
 static int
 hg_hl_request_progress(unsigned int timeout, void *arg)
@@ -141,9 +138,6 @@ hg_return_t
 HG_Hl_init(const char *na_info_string, hg_bool_t na_listen)
 {
     hg_return_t ret = HG_SUCCESS;
-
-    /* Set log level */
-    HG_LOG_MASK = hg_log_name_to_type(getenv("HG_LOG_LEVEL"));
 
     /* First register finalize function if not set */
     if (!hg_atexit_g) {

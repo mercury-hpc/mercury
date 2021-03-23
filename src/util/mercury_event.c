@@ -43,6 +43,7 @@ hg_event_create(void)
 #else
 
 #endif
+    HG_UTIL_LOG_DEBUG("Created event fd=%d", fd);
 
 done:
     return fd;
@@ -67,6 +68,8 @@ hg_event_destroy(int fd)
     HG_UTIL_CHECK_ERROR(rc == -1, done, ret, HG_UTIL_FAIL,
         "close() failed (%s)", strerror(errno));
 #endif
+    HG_UTIL_LOG_DEBUG("Destroyed event fd=%d", fd);
+
 done:
     return ret;
 }
