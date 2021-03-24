@@ -4710,12 +4710,7 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         "mach_vm_write() failed (%s)", mach_error_string(kret));
 #endif
 
-    /* Immediate completion */
-    ret = na_sm_complete(
-        na_sm_op_id, NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
-    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
-
-done:
+    /* Free before adding to completion queue */
     if (liovcnt > NA_SM_IOV_STATIC_MAX &&
         (length != na_sm_mem_handle_local->info.len))
         free(local_trans_iov.d);
@@ -4723,6 +4718,12 @@ done:
         (length != na_sm_mem_handle_remote->info.len))
         free(remote_trans_iov.d);
 
+    /* Immediate completion */
+    ret = na_sm_complete(
+        na_sm_op_id, NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
+    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
+
+done:
     return ret;
 
 error:
@@ -4896,12 +4897,7 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         "Read %ld bytes, was expecting %lu bytes", nread, length);
 #endif
 
-    /* Immediate completion */
-    ret = na_sm_complete(
-        na_sm_op_id, NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
-    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
-
-done:
+    /* Free before adding to completion queue */
     if (liovcnt > NA_SM_IOV_STATIC_MAX &&
         (length != na_sm_mem_handle_local->info.len))
         free(local_trans_iov.d);
@@ -4909,6 +4905,12 @@ done:
         (length != na_sm_mem_handle_remote->info.len))
         free(remote_trans_iov.d);
 
+    /* Immediate completion */
+    ret = na_sm_complete(
+        na_sm_op_id, NA_SM_CLASS(na_class)->endpoint.source_addr->tx_notify);
+    NA_CHECK_NA_ERROR(error, ret, "Could not complete operation");
+
+done:
     return ret;
 
 error:
