@@ -348,7 +348,6 @@ send_keepalive(wiring_t *wiring, wire_t *w)
     if (tx_params.request == NULL)
         return w->state;
 
-    /* SSS */
     request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
@@ -632,7 +631,6 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
         goto out;
     }
 
-    /* SSS */
     request = ucp_tag_send_nbx(w->ep, msg, sizeof(*msg), tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
@@ -884,7 +882,6 @@ wireup_respond(wiring_t *wiring, sender_id_t rid,
     if (tx_params.request == NULL)
         goto free_wire;
 
-    /* SSS */
     request = ucp_tag_send_nbx(ep, msg, msglen, tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
@@ -936,7 +933,6 @@ wireup_send(wiring_t *wiring, wire_t *w)
     if (tx_params.request == NULL)
         return false;
 
-    /* SSS */
     request = ucp_tag_send_nbx(ep, msg, msglen, wireup_start_tag, &tx_params);
 
     if (UCS_PTR_IS_ERR(request)) {
