@@ -114,7 +114,3 @@ jobs:
     - name: Undefined Behavior Sanitizer (Ubsan build only)
       if: matrix.build_type == 'Ubsan'
       run: Testing/script/gh_ctest.sh memcheck
-  
-    - name: Done
-      if: ${{ always() }}
-      run: Testing/script/gh_ctest.sh done

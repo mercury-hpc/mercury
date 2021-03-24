@@ -68,6 +68,14 @@ if(MERCURY_BUILD_CONFIGURATION MATCHES "Ubsan")
   set(MERCURY_MEMORYCHECK_TYPE "UndefinedBehaviorSanitizer")
 endif()
 
+# Disable sockets with Tsan and Debug builds (OFI issues)
+if(MERCURY_BUILD_CONFIGURATION MATCHES "Tsan"
+   OR MERCURY_BUILD_CONFIGURATION MATCHES "Debug")
+  set(OFI_PROTOCOLS "tcp")
+else()
+  set(OFI_PROTOCOLS "sockets;tcp")
+endif()
+
 # MERCURY_DASHBOARD_MODEL=Experimental | Nightly | Continuous
 if(NOT DEFINED dashboard_model)
   set(MERCURY_DASHBOARD_MODEL "$ENV{MERCURY_DASHBOARD_MODEL}")
@@ -120,10 +128,13 @@ if(MERCURY_DO_COVERAGE)
   if(NOT DEFINED dashboard_full OR dashboard_full)
     set(dashboard_do_coverage TRUE)
   endif()
+  if(dashboard_do_coverage)
+    set(dashboard_do_done TRUE)
+  endif()
 endif()
 
 # Optional memcheck options
-if(MERCURY_MEMORYCHECK_TYPE)
+if(DEFINED MERCURY_MEMORYCHECK_TYPE)
   message("Enabling memcheck")
 
   set(CTEST_MEMORYCHECK_TYPE ${MERCURY_MEMORYCHECK_TYPE})
@@ -163,8 +174,16 @@ if(MERCURY_MEMORYCHECK_TYPE)
   if(NOT DEFINED dashboard_full OR dashboard_full)
     set(dashboard_do_memcheck TRUE)
   endif()
+  if(dashboard_do_memcheck)
+    set(dashboard_do_done TRUE)
+  endif()
 else()
   set(USE_CHECKSUMS ON)
+endif()
+
+# Complete dashboard by default
+if(NOT DEFINED MERCURY_MEMORYCHECK_TYPE AND NOT MERCURY_DO_COVERAGE AND dashboard_do_test)
+  set(dashboard_do_done TRUE)
 endif()
 
 # Build name referenced in cdash
@@ -222,7 +241,7 @@ NA_USE_MPI:BOOL=${USE_MPI}
 NA_USE_CCI:BOOL=OFF
 NA_USE_SM:BOOL=${USE_SM}
 NA_USE_OFI:BOOL=ON
-NA_OFI_TESTING_PROTOCOL:STRING=sockets;tcp
+NA_OFI_TESTING_PROTOCOL:STRING=${OFI_PROTOCOLS}
 MPIEXEC_MAX_NUMPROCS:STRING=${MAX_NUMPROCS}
 
 MERCURY_TESTING_ENABLE_PARALLEL:BOOL=${USE_MPI}
