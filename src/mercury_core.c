@@ -2826,6 +2826,9 @@ error:
     if (!(hg_atomic_get32(&hg_core_handle->status) & HG_CORE_OP_CANCELED))
         hg_atomic_set32(&hg_core_handle->status, HG_CORE_OP_COMPLETED);
 
+    /* Decrement refcount on handle */
+    hg_atomic_decr32(&hg_core_handle->ref_count);
+
     return ret;
 }
 
