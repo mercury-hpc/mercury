@@ -1227,8 +1227,10 @@ hg_core_context_destroy(struct hg_core_private_context *context)
         !empty, done, ret, HG_BUSY, "Completion queue should be empty");
 
     /* Destroy pool of bulk op IDs */
-    ret = hg_bulk_op_pool_destroy(context->hg_bulk_op_pool);
-    HG_CHECK_HG_ERROR(done, ret, "Could not destroy bulk op pool");
+    if (context->hg_bulk_op_pool) {
+        ret = hg_bulk_op_pool_destroy(context->hg_bulk_op_pool);
+        HG_CHECK_HG_ERROR(done, ret, "Could not destroy bulk op pool");
+    }
 
     /* Stop listening for events */
     if (context->completion_queue_notify > 0) {
