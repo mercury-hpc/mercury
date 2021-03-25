@@ -663,6 +663,8 @@ na_ofi_addr_addref(struct na_ofi_addr *na_ofi_addr);
 static NA_INLINE void
 na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr);
 
+#ifdef NA_OFI_HAS_MEM_POOL
+
 /**
  * Create memory pool.
  */
@@ -678,18 +680,6 @@ na_ofi_mem_pool_destroy(
     na_class_t *na_class, struct na_ofi_mem_pool *na_ofi_mem_pool);
 
 /**
- * Allocate memory for transfers.
- */
-static NA_INLINE void *
-na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl);
-
-/**
- * Free memory.
- */
-static NA_INLINE void
-na_ofi_mem_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl);
-
-/**
  * Allocate memory pool and register memory.
  */
 static void *
@@ -702,6 +692,20 @@ na_ofi_mem_pool_alloc(
 static void
 na_ofi_mem_pool_free(
     na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl);
+
+#endif
+
+/**
+ * Allocate memory for transfers.
+ */
+static NA_INLINE void *
+na_ofi_mem_alloc(na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl);
+
+/**
+ * Free memory.
+ */
+static NA_INLINE void
+na_ofi_mem_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl);
 
 /**
  * Get IOV index and offset pair from an absolute offset.
@@ -2554,6 +2558,7 @@ na_ofi_addr_decref(struct na_ofi_addr *na_ofi_addr)
     free(na_ofi_addr);
 }
 
+#ifdef NA_OFI_HAS_MEM_POOL
 /*---------------------------------------------------------------------------*/
 static struct na_ofi_mem_pool *
 na_ofi_mem_pool_create(
@@ -2596,6 +2601,89 @@ na_ofi_mem_pool_destroy(
     na_ofi_mem_free(na_class, na_ofi_mem_pool, na_ofi_mem_pool->mr_hdl);
     hg_thread_spin_destroy(&na_ofi_mem_pool->node_list_lock);
 }
+
+/*---------------------------------------------------------------------------*/
+static void *
+na_ofi_mem_pool_alloc(
+    na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
+{
+    struct na_ofi_mem_pool *na_ofi_mem_pool;
+    struct na_ofi_mem_node *na_ofi_mem_node;
+    void *mem_ptr = NULL;
+    na_bool_t found = NA_FALSE;
+
+retry:
+    /* Check whether we can get a block from one of the pools */
+    hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
+    HG_QUEUE_FOREACH (
+        na_ofi_mem_pool, &NA_OFI_CLASS(na_class)->buf_pool, entry) {
+        hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
+        found = !HG_QUEUE_IS_EMPTY(&na_ofi_mem_pool->node_list);
+        hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
+        if (found)
+            break;
+    }
+    hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
+
+    /* If not, allocate and register a new pool */
+    if (!found) {
+        na_ofi_mem_pool = na_ofi_mem_pool_create(na_class,
+            na_ofi_msg_get_max_unexpected_size(na_class),
+            NA_OFI_MEM_BLOCK_COUNT);
+        NA_CHECK_ERROR(na_ofi_mem_pool == NULL, out, mem_ptr, NULL,
+            "Could not create new pool");
+        hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
+        HG_QUEUE_PUSH_TAIL(
+            &NA_OFI_CLASS(na_class)->buf_pool, na_ofi_mem_pool, entry);
+        hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
+    }
+
+    NA_CHECK_ERROR(size > na_ofi_mem_pool->block_size, out, mem_ptr, NULL,
+        "Block size is too small for requested size");
+
+    /* Pick a node from one of the available pools */
+    hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
+    na_ofi_mem_node = HG_QUEUE_FIRST(&na_ofi_mem_pool->node_list);
+    if (!na_ofi_mem_node) {
+        hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
+        goto retry;
+    }
+    HG_QUEUE_POP_HEAD(&na_ofi_mem_pool->node_list, entry);
+    hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
+    mem_ptr = &na_ofi_mem_node->block;
+    *mr_hdl = na_ofi_mem_pool->mr_hdl;
+
+out:
+    return mem_ptr;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+na_ofi_mem_pool_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
+{
+    struct na_ofi_mem_pool *na_ofi_mem_pool;
+    struct na_ofi_mem_node *na_ofi_mem_node =
+        container_of(mem_ptr, struct na_ofi_mem_node, block);
+
+    /* Put the node back to the pool */
+    hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
+    HG_QUEUE_FOREACH (
+        na_ofi_mem_pool, &NA_OFI_CLASS(na_class)->buf_pool, entry) {
+        /* If MR handle is NULL, it does not really matter which pool we push
+         * the node back to.
+         */
+        if (na_ofi_mem_pool->mr_hdl == mr_hdl) {
+            hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
+            HG_QUEUE_PUSH_TAIL(
+                &na_ofi_mem_pool->node_list, na_ofi_mem_node, entry);
+            hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
+            break;
+        }
+    }
+    hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
+}
+
+#endif
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE void *
@@ -2648,85 +2736,6 @@ na_ofi_mem_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
 out:
     hg_mem_aligned_free(mem_ptr);
     return;
-}
-
-/*---------------------------------------------------------------------------*/
-static void *
-na_ofi_mem_pool_alloc(
-    na_class_t *na_class, na_size_t size, struct fid_mr **mr_hdl)
-{
-    struct na_ofi_mem_pool *na_ofi_mem_pool;
-    struct na_ofi_mem_node *na_ofi_mem_node;
-    void *mem_ptr = NULL;
-    na_bool_t found = NA_FALSE;
-
-retry:
-    /* Check whether we can get a block from one of the pools */
-    hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
-    HG_QUEUE_FOREACH (
-        na_ofi_mem_pool, &NA_OFI_CLASS(na_class)->buf_pool, entry) {
-        hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
-        found = !HG_QUEUE_IS_EMPTY(&na_ofi_mem_pool->node_list);
-        hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
-        if (found)
-            break;
-    }
-    hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
-
-    /* If not, allocate and register a new pool */
-    if (!found) {
-        na_ofi_mem_pool = na_ofi_mem_pool_create(na_class,
-            na_ofi_msg_get_max_unexpected_size(na_class),
-            NA_OFI_MEM_BLOCK_COUNT);
-        hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
-        HG_QUEUE_PUSH_TAIL(
-            &NA_OFI_CLASS(na_class)->buf_pool, na_ofi_mem_pool, entry);
-        hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
-    }
-
-    NA_CHECK_ERROR(size > na_ofi_mem_pool->block_size, out, mem_ptr, NULL,
-        "Block size is too small for requested size");
-
-    /* Pick a node from one of the available pools */
-    hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
-    na_ofi_mem_node = HG_QUEUE_FIRST(&na_ofi_mem_pool->node_list);
-    if (!na_ofi_mem_node) {
-        hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
-        goto retry;
-    }
-    HG_QUEUE_POP_HEAD(&na_ofi_mem_pool->node_list, entry);
-    hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
-    mem_ptr = &na_ofi_mem_node->block;
-    *mr_hdl = na_ofi_mem_pool->mr_hdl;
-
-out:
-    return mem_ptr;
-}
-
-/*---------------------------------------------------------------------------*/
-static void
-na_ofi_mem_pool_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl)
-{
-    struct na_ofi_mem_pool *na_ofi_mem_pool;
-    struct na_ofi_mem_node *na_ofi_mem_node =
-        container_of(mem_ptr, struct na_ofi_mem_node, block);
-
-    /* Put the node back to the pool */
-    hg_thread_spin_lock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
-    HG_QUEUE_FOREACH (
-        na_ofi_mem_pool, &NA_OFI_CLASS(na_class)->buf_pool, entry) {
-        /* If MR handle is NULL, it does not really matter which pool we push
-         * the node back to.
-         */
-        if (na_ofi_mem_pool->mr_hdl == mr_hdl) {
-            hg_thread_spin_lock(&na_ofi_mem_pool->node_list_lock);
-            HG_QUEUE_PUSH_TAIL(
-                &na_ofi_mem_pool->node_list, na_ofi_mem_node, entry);
-            hg_thread_spin_unlock(&na_ofi_mem_pool->node_list_lock);
-            break;
-        }
-    }
-    hg_thread_spin_unlock(&NA_OFI_CLASS(na_class)->buf_pool_lock);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -3520,6 +3529,9 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     na_bool_t no_wait = NA_FALSE, no_retry = NA_FALSE;
     na_uint8_t context_max = 1; /* Default */
     const char *auth_key = NULL;
+#ifdef NA_OFI_HAS_MEM_POOL
+    struct na_ofi_mem_pool *na_ofi_mem_pool = NULL;
+#endif
     na_return_t ret = NA_SUCCESS;
     enum na_ofi_prov_type prov_type;
 
@@ -3656,6 +3668,17 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     NA_CHECK_NA_ERROR(out, ret, "Could not open domain for %s, %s",
         na_ofi_prov_name[prov_type], domain_name_ptr);
 
+#ifdef NA_OFI_HAS_MEM_POOL
+    /* Register initial mempool */
+    na_ofi_mem_pool = na_ofi_mem_pool_create(na_class,
+        na_ofi_msg_get_max_unexpected_size(na_class), NA_OFI_MEM_BLOCK_COUNT);
+    NA_CHECK_ERROR(na_ofi_mem_pool == NULL, out, ret, NA_NOMEM,
+        "Could create memory pool with %d blocks", NA_OFI_MEM_BLOCK_COUNT);
+    hg_thread_spin_lock(&priv->buf_pool_lock);
+    HG_QUEUE_PUSH_TAIL(&priv->buf_pool, na_ofi_mem_pool, entry);
+    hg_thread_spin_unlock(&priv->buf_pool_lock);
+#endif
+
     /* Cache IOV max */
     priv->iov_max = priv->domain->fi_prov->domain_attr->mr_iov_limit;
 
@@ -3698,6 +3721,7 @@ na_ofi_finalize(na_class_t *na_class)
         priv->endpoint = NULL;
     }
 
+#ifdef NA_OFI_HAS_MEM_POOL
     /* Free memory pool (must be done before trying to close the domain as
      * the pool is holding memory handles) */
     while (!HG_QUEUE_IS_EMPTY(&priv->buf_pool)) {
@@ -3707,6 +3731,7 @@ na_ofi_finalize(na_class_t *na_class)
 
         na_ofi_mem_pool_destroy(na_class, na_ofi_mem_pool);
     }
+#endif
     hg_thread_spin_destroy(&NA_OFI_CLASS(na_class)->buf_pool_lock);
 
     /* Close domain */
