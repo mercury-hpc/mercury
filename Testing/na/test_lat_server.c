@@ -113,6 +113,7 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
     na_return_t ret;
 
     na_test_source_recv_arg->tag = na_cb_info->info.recv_unexpected.tag;
+
 #ifdef HG_TEST_HAS_VERIFY_DATA
     if (na_test_source_recv_arg->tag != NA_TEST_TAG_DONE) {
         /* Check recv buf */
