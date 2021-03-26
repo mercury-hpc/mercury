@@ -655,7 +655,9 @@ na_ucx_context_teardown(na_ucx_context_t *nctx, na_class_t *nacl)
     wiring_teardown(&nctx->wiring, false);
     wiring_unlock(&nctx->wiring);
 
+    assert(nctx->worker != NULL);
     ucp_worker_destroy(nctx->worker);
+    nctx->worker = NULL;
 
     return;
 }
