@@ -827,9 +827,9 @@ static wire_t *
 wireup_respond(wiring_t *wiring, sender_id_t rid,
     const ucp_address_t *raddr, size_t wiring_unused raddrlen)
 {
-    ucp_ep_params_t ep_params = {
+    const ucp_ep_params_t ep_params = {
       .field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS |
-                    UCP_EP_PARAM_FIELD_ERR_HANDLER
+                    UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE
     , .address = raddr
     , .err_mode = UCP_ERR_HANDLING_MODE_NONE
     };
@@ -993,7 +993,7 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
 {
     const ucp_ep_params_t ep_params = {
       .field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS |
-                    UCP_EP_PARAM_FIELD_ERR_HANDLER
+                    UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE
     , .address = raddr
     , .err_mode = UCP_ERR_HANDLING_MODE_NONE
     };
