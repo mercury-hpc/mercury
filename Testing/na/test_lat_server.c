@@ -38,9 +38,11 @@ struct na_test_source_recv_arg {
     void *send_buf;
     void *send_buf_data;
     na_tag_t tag;
-    na_op_id_t *send_op_id;
+    na_op_id_t *recv_op_id, *send_op_id;
     hg_request_t *request;
     struct na_test_lat_info *na_test_lat_info;
+    na_size_t unexpected_size;
+    void *recv_buf_data;
 };
 
 /********************/
@@ -133,6 +135,19 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
         }
     }
 #endif
+    if (na_test_source_recv_arg->tag != NA_TEST_TAG_DONE) {
+        ret = NA_Msg_recv_unexpected(na_test_lat_info->na_class,
+            na_test_lat_info->context, na_test_recv_unexpected_cb,
+            na_test_source_recv_arg, na_test_source_recv_arg->recv_buf,
+            na_test_source_recv_arg->unexpected_size,
+            na_test_source_recv_arg->recv_buf_data,
+            na_test_source_recv_arg->recv_op_id);
+        if (ret != NA_SUCCESS) {
+            NA_TEST_LOG_ERROR("NA_Msg_recv_unexpected() failed (%s)",
+                NA_Error_to_string(ret));
+            goto done;
+        }
+    }
 
     /* Post send */
     ret = NA_Msg_send_expected(na_test_lat_info->na_class,
@@ -148,6 +163,7 @@ na_test_recv_unexpected_cb(const struct na_cb_info *na_cb_info)
             "NA_Msg_send_expected() failed (%s)", NA_Error_to_string(ret));
     }
 
+done:
     NA_Addr_free(
         na_test_lat_info->na_class, na_cb_info->info.recv_unexpected.source);
 
@@ -203,21 +219,24 @@ na_test_loop_latency(struct na_test_lat_info *na_test_lat_info)
     na_test_source_recv_arg.recv_buf = recv_buf;
     na_test_source_recv_arg.send_buf = send_buf;
     na_test_source_recv_arg.send_buf_data = send_buf_data;
+    na_test_source_recv_arg.recv_op_id = recv_op_id;
     na_test_source_recv_arg.send_op_id = send_op_id;
     na_test_source_recv_arg.na_test_lat_info = na_test_lat_info;
+    na_test_source_recv_arg.unexpected_size = unexpected_size;
+    na_test_source_recv_arg.recv_buf_data = recv_buf_data;
+
+    /* Post recv */
+    ret = NA_Msg_recv_unexpected(na_test_lat_info->na_class,
+        na_test_lat_info->context, na_test_recv_unexpected_cb,
+        &na_test_source_recv_arg, recv_buf, unexpected_size, recv_buf_data,
+        recv_op_id);
+    if (ret != NA_SUCCESS) {
+        NA_TEST_LOG_ERROR("NA_Msg_recv_unexpected() failed (%s)",
+            NA_Error_to_string(ret));
+        goto done;
+    }
 
     while (na_test_source_recv_arg.tag != NA_TEST_TAG_DONE) {
-        /* Post recv */
-        ret = NA_Msg_recv_unexpected(na_test_lat_info->na_class,
-            na_test_lat_info->context, na_test_recv_unexpected_cb,
-            &na_test_source_recv_arg, recv_buf, unexpected_size, recv_buf_data,
-            recv_op_id);
-        if (ret != NA_SUCCESS) {
-            NA_TEST_LOG_ERROR("NA_Msg_recv_unexpected() failed (%s)",
-                NA_Error_to_string(ret));
-            goto done;
-        }
-
         hg_request_wait(send_request, NA_MAX_IDLE_TIME, NULL);
         hg_request_reset(send_request);
     }
