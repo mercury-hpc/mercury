@@ -198,7 +198,7 @@ again:
         /* At this point we have received everything so work out the bandwidth
          */
         if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-            fprintf(stdout, "%-*d%*.*f%*.*f\r", 10, (int) nbytes, NWIDTH,
+            fprintf(stdout, "%-*d%*.*f%*.*f\n", 10, (int) nbytes, NWIDTH,
                 NDIGITS, read_bandwidth, NWIDTH, NDIGITS, read_rate);
 #endif
     }

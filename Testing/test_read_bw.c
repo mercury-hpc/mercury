@@ -183,7 +183,7 @@ measure_bulk_transfer(
         /* At this point we have received everything so work out the bandwidth
          */
         if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-            fprintf(stdout, "%-*d%*.*f\r", 10, (int) nbytes, NWIDTH, NDIGITS,
+            fprintf(stdout, "%-*d%*.*f\n", 10, (int) nbytes, NWIDTH, NDIGITS,
                 read_bandwidth);
 #endif
 #ifdef HG_TEST_HAS_VERIFY_DATA

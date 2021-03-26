@@ -147,7 +147,7 @@ measure_rpc1(struct hg_test_info *hg_test_info)
         /* At this point we have received everything so work out the bandwidth
          */
         if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
-            printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\r", NWIDTH, NDIGITS,
+            printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\n", NWIDTH, NDIGITS,
                 part_time_read, NWIDTH, NDIGITS, min_time_read, NWIDTH, NDIGITS,
                 max_time_read, NWIDTH, NDIGITS, calls_per_sec, NWIDTH, NDIGITS,
                 min_calls_per_sec, NWIDTH, NDIGITS, max_calls_per_sec);
@@ -277,7 +277,7 @@ measure_rpc2(struct hg_test_info *hg_test_info)
         /* At this point we have received everything so work out the bandwidth
          */
         if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
-            printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\r", NWIDTH, NDIGITS,
+            printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\n", NWIDTH, NDIGITS,
                 part_time_read, NWIDTH, NDIGITS, min_time_read, NWIDTH, NDIGITS,
                 max_time_read, NWIDTH, NDIGITS, calls_per_sec, NWIDTH, NDIGITS,
                 min_calls_per_sec, NWIDTH, NDIGITS, max_calls_per_sec);
@@ -453,7 +453,7 @@ measure_bulk_transfer(
         /* At this point we have received everything so work out the bandwidth
          */
         if (hg_test_info->na_test_info.mpi_comm_rank == 0) {
-            printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\r", NWIDTH, NDIGITS,
+            printf("%*.*f%*.*f%*.*f%*.*g%*.*g%*.*g\n", NWIDTH, NDIGITS,
                 part_time_read, NWIDTH, NDIGITS, min_time_read, NWIDTH, NDIGITS,
                 max_time_read, NWIDTH, NDIGITS, read_bandwidth, NWIDTH, NDIGITS,
                 min_read_bandwidth, NWIDTH, NDIGITS, max_read_bandwidth);

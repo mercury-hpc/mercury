@@ -191,7 +191,7 @@ again:
             (double) (nhandles * (avg_iter + 1) *
                       (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
         if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-            fprintf(stdout, "%-*d%*.*f%*d\r", 10, (int) total_size, NWIDTH,
+            fprintf(stdout, "%-*d%*.*f%*d\n", 10, (int) total_size, NWIDTH,
                 NDIGITS, (read_lat), NWIDTH, (int) (1.0e6 / read_lat));
 #endif
     }
@@ -201,7 +201,7 @@ again:
         (double) (nhandles * loop *
                   (unsigned int) hg_test_info->na_test_info.mpi_comm_size);
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
-        fprintf(stdout, "%-*d%*.*f%*d\r", 10, (int) total_size, NWIDTH, NDIGITS,
+        fprintf(stdout, "%-*d%*.*f%*d\n", 10, (int) total_size, NWIDTH, NDIGITS,
             (read_lat), NWIDTH, (int) (1.0e6 / read_lat));
 #endif
     if (hg_test_info->na_test_info.mpi_comm_rank == 0)
