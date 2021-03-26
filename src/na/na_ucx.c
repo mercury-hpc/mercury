@@ -1493,7 +1493,7 @@ tagged_send(const void *buf, na_size_t buf_size,
     const ucp_request_param_t tx_params = {
       .op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK | UCP_OP_ATTR_FIELD_REQUEST
     , .cb = {.send = send_callback}
-    , .request = (void *)op
+    , .request = op
     };
     ucs_status_ptr_t request;
 
