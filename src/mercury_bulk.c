@@ -204,6 +204,7 @@ struct hg_bulk_op_id {
     hg_atomic_int32_t status;             /* Operation status */
     hg_atomic_int32_t op_completed_count; /* Number of operations completed */
     hg_atomic_int32_t ref_count;          /* Refcount */
+    hg_return_t err_ret;                  /* Return value if errored status */
     hg_uint32_t op_count;                 /* Number of ongoing operations */
     hg_bool_t reuse;                      /* Re-use op ID once ref_count is 0 */
 };
@@ -1927,6 +1928,7 @@ hg_bulk_transfer(hg_core_context_t *core_context, hg_cb_t callback, void *arg,
 
     /* Reset status */
     hg_atomic_set32(&hg_bulk_op_id->status, 0);
+    hg_bulk_op_id->err_ret = HG_SUCCESS;
 
     /* Expected op count */
     hg_bulk_op_id->op_count = (size > 0) ? 1 : 0; /* Default */
@@ -2360,6 +2362,8 @@ hg_bulk_transfer_cb(const struct na_cb_info *callback_info)
 
         /* Mark handle as errored */
         hg_atomic_or32(&hg_bulk_op_id->status, HG_BULK_OP_ERRORED);
+        if (hg_bulk_op_id->err_ret == HG_SUCCESS)
+            hg_bulk_op_id->err_ret = (hg_return_t) callback_info->ret;
     }
 
     /* When all NA transfers that correspond to bulk operation complete
@@ -2397,7 +2401,7 @@ hg_bulk_complete(struct hg_bulk_op_id *hg_bulk_op_id, hg_bool_t self_notify)
     } else if (status & HG_BULK_OP_ERRORED) {
         /* If it was errored, set callback ret accordingly */
         HG_LOG_DEBUG("Operation ID %p is errored", hg_bulk_op_id);
-        callback_info->ret = HG_PROTOCOL_ERROR;
+        callback_info->ret = hg_bulk_op_id->err_ret;
     } else
         callback_info->ret = HG_SUCCESS;
 

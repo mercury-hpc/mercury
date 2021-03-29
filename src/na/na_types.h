@@ -65,6 +65,7 @@ struct na_segment {
     X(NA_OPNOTSUPPORTED) /*!< operation not supported on endpoint */           \
     X(NA_ADDRINUSE)      /*!< address already in use */                        \
     X(NA_ADDRNOTAVAIL)   /*!< cannot assign requested address */               \
+    X(NA_HOSTUNREACH)    /*!< cannot reach host during operation */            \
     X(NA_TIMEOUT)        /*!< operation reached timeout */                     \
     X(NA_CANCELED)       /*!< operation canceled */                            \
     X(NA_RETURN_MAX)
