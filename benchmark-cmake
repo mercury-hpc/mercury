@@ -4,11 +4,6 @@ prog=$(basename $0)
 personality=${prog%%-cmake}
 build_type=RelWithDebInfo
 
-cc_opts="-DCMAKE_C_COMPILER=gcc"	# don't use `cc`, it may not
-					# be GCC-compatible
-
-cc_opts="${cc_opts} -DCMAKE_C_FLAGS_DEBUG=\"-g -O2\""
-
 benchmark_opts="-DMERCURY_TESTING_USE_THREAD_POOL=off"
 benchmark_opts="${benchmark_opts} -DMERCURY_TESTING_VERIFY_DATA=off"
 benchmark_opts="${benchmark_opts} -DMERCURY_USE_CHECKSUMS=off"
@@ -55,11 +50,14 @@ ubsan)
 	;;
 esac
 
+# Don't use `cc`, it may not be GCC-compatible
 cmake	-DCMAKE_BUILD_TYPE=${build_type} \
 	-DBUILD_TESTING=on \
 	-DBUILD_SHARED_LIBS=on \
 	${bmi_opts:-} \
-	${cc_opts:-} \
+	-DCMAKE_C_COMPILER=gcc \
+	-DCMAKE_C_FLAGS_DEBUG="-g -O2" \
+	-DCMAKE_C_FLAGS_RELWITHDEBINFO="-g -O3 -DNDEBUG" \
 	${ofi_opts:-} \
 	${opa_opts:-} \
 	${personality_opts:-} \
