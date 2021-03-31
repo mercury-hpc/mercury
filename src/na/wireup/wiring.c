@@ -133,15 +133,36 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
     }
     if ((ep = w->ep) != NULL) {
         void *request;
+        ucp_request_param_t close_params = {
+          .op_attr_mask = UCP_OP_ATTR_FIELD_FLAGS | UCP_OP_ATTR_FIELD_REQUEST
+        , .flags = 0 // UCP_EP_CLOSE_FLAG_FORCE
+        , .request = wiring_free_request_get(wiring)
+        };
+
+        if (close_params.request == NULL)
+            goto out;
 
         w->ep = NULL;
-        request = ucp_ep_close_nb(ep, UCP_EP_CLOSE_MODE_FLUSH);
+        request = ucp_ep_close_nbx(ep, &close_params);
+
         if (UCS_PTR_IS_ERR(request)) {
-            dbgf("%s: ucp_ep_close_nb: %s", __func__,
+            hlog_fast(wireup_ep, "%s: ucp_ep_close_nbx: %s", __func__,
                 ucs_status_string(UCS_PTR_STATUS(request)));
-        } else if (request != UCS_OK)
-            ucp_request_free(request);
+            wiring_free_request_put(wiring, close_params.request);
+        } else if (request == UCS_OK) {
+            wiring_free_request_put(wiring, close_params.request);
+            hlog_fast(wireup_ep,
+                "%s: no outstanding EP close request", __func__);
+        } else {
+            /* XXX Drop the outstanding request on the floor for now. */
+#if 0
+            wiring_outst_request_put(wiring, close_params.request);
+#endif
+            hlog_fast(wireup_ep, "%s: outstanding EP close request %p",
+                __func__, (void *)request);
+        }
     }
+out:
     w->id = sender_id_nil;
     w->msglen = 0;
     wiring_expiration_remove(st, w);
