@@ -514,7 +514,7 @@ wiring_teardown(wiring_t *wiring, bool orderly)
     for (i = 0; i < st->nwires; i++)
         wireup_stop_internal(wiring, &st->wire[i], orderly);
 
-    while (wiring_requests_check_status(wiring) == UCS_INPROGRESS)
+    while (wiring_requests_check_status(wiring))
         (void)ucp_worker_progress(wiring->worker);
 
     wiring_requests_discard(wiring);
