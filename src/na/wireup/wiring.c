@@ -154,10 +154,7 @@ wiring_release_wire(wiring_t *wiring, wire_t *w)
             hlog_fast(wireup_ep,
                 "%s: no outstanding EP close request", __func__);
         } else {
-            /* XXX Drop the outstanding request on the floor for now. */
-#if 0
             wiring_outst_request_put(wiring, close_params.request);
-#endif
             hlog_fast(wireup_ep, "%s: outstanding EP close request %p",
                 __func__, (void *)request);
         }
