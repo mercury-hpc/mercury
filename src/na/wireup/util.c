@@ -76,28 +76,6 @@ twice_or_max(size_t x)
     return x + MIN(SIZE_MAX - x, x);
 }
 
-void
-dbgf(const char *fmt, ...)
-{
-    static int state = 0;   // 0: uninitialized, -1: don't print, 1: do print
-    va_list ap;
-
-    if (state == 0) {
-        const char *val = getenv("WIREUP_DEBUG");
-        if (val != NULL && strcmp(val, "on") == 0)
-            state = 1;
-        else
-            state = -1;
-    }
-
-    if (state < 0)
-        return;
-
-    va_start(ap, fmt);
-    (void)vfprintf(stderr, fmt, ap);
-    va_end(ap);
-}
-
 /* Allocate a buffer with a `size`-bytes, `alignment`-aligned payload
  * preceded by a `header_size` header, padding the allocation with up
  * to `alignment - 1` bytes to ensure that the payload is properly aligned.

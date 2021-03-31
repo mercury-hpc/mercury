@@ -6,8 +6,11 @@
 
 #include <ucp/api/ucp.h>
 
+#include "../../hlog/src/hlog.h"
 #include "rxpool.h"
 #include "util.h"
+
+HLOG_OUTLET_SHORT_DEFN(rxpool, all);
 
 static rxdesc_t *rxpool_next_slow(rxpool_t *, rxdesc_t *);
 
@@ -157,7 +160,7 @@ rxdesc_setup(rxpool_t *rxpool, void *buf, size_t buflen, rxdesc_t *desc)
     desc->buflen = buflen;
     desc->ucx_owns = true;
 
-    dbgf("%s: initialized desc %p buf %p buflen %zu\n", __func__,
+    hlog_fast(rxpool, "%s: initialized desc %p buf %p buflen %zu", __func__,
        (void *)desc, desc->buf, desc->buflen);
     request = ucp_tag_recv_nbx(worker, buf, buflen, rxpool->tag,
         rxpool->tag_mask, &recv_params);
@@ -178,7 +181,7 @@ rxpool_teardown(rxpool_t *rxpool)
 
     /* Release UCP resources held by each descriptor.  Free buffers. */
     TAILQ_FOREACH(desc, &rxpool->alldesc, linkall) {
-        dbgf("%s: cancelling desc %p\n", __func__, (void *)desc);
+        hlog_fast(rxpool, "%s: cancelling desc %p", __func__, (void *)desc);
         if (desc->ucx_owns)
             ucp_request_cancel(worker, desc);
     }
@@ -191,7 +194,7 @@ rxpool_teardown(rxpool_t *rxpool)
                 ucp_worker_progress(worker);
         }
 
-        dbgf("%s: freeing desc %p\n", __func__, (void *)desc);
+        hlog_fast(rxpool, "%s: freeing desc %p", __func__, (void *)desc);
 
         if ((buf = desc->buf) != NULL) {
             desc->buf = NULL;
@@ -253,7 +256,8 @@ rxpool_buflen_step(rxpool_t *rxpool, rxdesc_t *head)
     if (nbuflen == buflen)
         return nbuflen;
 
-    dbgf("increasing buffer length %zu -> %zu bytes.\n", buflen, nbuflen);
+    hlog_fast(rxpool, "increasing buffer length %zu -> %zu bytes.",
+        buflen, nbuflen);
 
     /* Cancel the rest so that we enlarge them in the following
      * rxpool_next() calls.
@@ -265,7 +269,8 @@ rxpool_buflen_step(rxpool_t *rxpool, rxdesc_t *head)
             continue;
         if (desc->buflen >= nbuflen)
             continue;
-        dbgf("%s: cancelling short desc %p\n", __func__, (void *)desc);
+        hlog_fast(rxpool, "%s: cancelling short desc %p",
+            __func__, (void *)desc);
         ucp_request_cancel(rxpool->worker, desc);
     }
 
@@ -283,7 +288,8 @@ rxpool_next_slow(rxpool_t *rxpool, rxdesc_t *head)
         size_t buflen = head->buflen;
         void * const buf = head->buf, *nbuf;
 
-        dbgf("%s: rx desc %p %s, buflen %zu\n", __func__, (void *)head,
+        hlog_fast(rxpool, "%s: rx desc %p %s, buflen %zu",
+            __func__, (void *)head,
            (head->status == UCS_ERR_CANCELED) ? "cancelled" : "truncated",
            head->buflen);
 
