@@ -37,21 +37,21 @@ jobs:
       if: github.event_name == 'pull_request'
       run: Testing/script/gh_format.sh origin/${{ github.base_ref }}
 
-  linux:
+  build-and-test:
     # The CMake configure and build commands are platform agnostic and should work equally
     # well on Windows or Mac.  You can convert this to a matrix build if you need
     # cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-    runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         build_type: [Debug, RelWithDebInfo, Release, Asan, Tsan, Ubsan]
         compiler: [gcc, clang]
         libs: [shared]
         include:
-           - build_type: Debug
+           - os: ubuntu-latest
+             build_type: Debug
              compiler: gcc
              libs: static
         exclude:
@@ -62,6 +62,10 @@ jobs:
              compiler: clang
            - build_type: Ubsan
              compiler: clang
+           - os: macos-latest
+             compiler: gcc
+
+    runs-on: ${{ matrix.os }}
 
     env:
       # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
@@ -75,6 +79,9 @@ jobs:
       with:
         ref: ${{ github.event.pull_request.head.sha }}
         submodules: true
+
+    - name: Install package dependencies
+      run: Testing/script/gh_install_pkg_deps_${{ runner.os }}.sh
 
     - name: Restore cached dependencies
       uses: actions/cache@v2
@@ -114,3 +121,4 @@ jobs:
     - name: Undefined Behavior Sanitizer (Ubsan build only)
       if: matrix.build_type == 'Ubsan'
       run: Testing/script/gh_ctest.sh memcheck
+
