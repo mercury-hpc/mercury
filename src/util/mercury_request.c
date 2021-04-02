@@ -112,12 +112,14 @@ int
 hg_request_wait(hg_request_t *request, unsigned int timeout_ms,
     unsigned int *flag)
 {
-    hg_time_t deadline, now, remaining = hg_time_from_ms(timeout_ms);
+    hg_time_t deadline, remaining = hg_time_from_ms(timeout_ms);
+    hg_time_t now = hg_time_from_ms(0);
     hg_util_int32_t completed = HG_UTIL_FALSE;
     int ret = HG_UTIL_SUCCESS;
 
     hlog_fast(reqwait, "%s: enter %p", __func__, (void *)request);
-    hg_time_get_current_ms(&now);
+    if (timeout_ms != 0)
+        hg_time_get_current(&now);
     deadline = hg_time_add(now, remaining);
 
     do {
@@ -155,7 +157,8 @@ hg_request_wait(hg_request_t *request, unsigned int timeout_ms,
         hg_thread_mutex_unlock(&request->request_class->progress_mutex);
 
 next:
-        hg_time_get_current(&now);
+        if (timeout_ms != 0)
+            hg_time_get_current(&now);
         remaining = hg_time_subtract(deadline, now);
     } while (hg_time_less(now, deadline));
 
