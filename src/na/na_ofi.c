@@ -3749,8 +3749,10 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
             if (na_ofi_sin_addr && ifa_name) {
                 src_addr = na_ofi_sin_addr;
                 src_addrlen = sizeof(*na_ofi_sin_addr);
-                if (!domain_name_ptr) {
-                    /* Attempt to pass domain name as ifa_name if not set */
+
+                /* Attempt to pass domain name as ifa_name if not set for
+                 * providers that use ifa_name as domain name */
+                if (!domain_name_ptr && (prov_type != NA_OFI_PROV_VERBS)) {
                     strncpy(domain_name, ifa_name, NA_OFI_MAX_URI_LEN - 1);
                     domain_name_ptr = domain_name;
                 }
