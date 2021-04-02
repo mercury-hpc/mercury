@@ -275,7 +275,7 @@ function(add_mercury_test_comm_all test_name)
         "${NA_TESTING_NO_BLOCK}" ${MERCURY_TESTING_ENABLE_PARALLEL} true false)
     endif()
     # Scalable test
-    if(MERCURY_TESTING_USE_THREAD_POOL)
+    if(MERCURY_TESTING_USE_THREAD_POOL AND NOT APPLE)
       add_mercury_test_comm_scalable(${test_name} ${comm}
         "${NA_${upper_comm}_TESTING_PROTOCOL}"
         "${NA_TESTING_NO_BLOCK}" ${MERCURY_TESTING_ENABLE_PARALLEL} true)
