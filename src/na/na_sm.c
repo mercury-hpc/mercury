@@ -700,7 +700,7 @@ na_sm_op_retry(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id);
 static NA_INLINE void
 na_sm_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
     na_offset_t offset, unsigned long *iov_start_index,
-    unsigned long *iov_start_offset);
+    na_offset_t *iov_start_offset);
 
 /**
  * Get IOV count for a given length.
@@ -2846,7 +2846,7 @@ na_sm_op_retry(na_class_t *na_class, struct na_sm_op_id *na_sm_op_id)
 static NA_INLINE void
 na_sm_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
     na_offset_t offset, unsigned long *iov_start_index,
-    unsigned long *iov_start_offset)
+    na_offset_t *iov_start_offset)
 {
     na_offset_t new_iov_offset = offset, next_offset = 0;
     unsigned long i, new_iov_start_index = 0;
