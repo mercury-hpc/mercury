@@ -68,12 +68,17 @@ if(MERCURY_BUILD_CONFIGURATION MATCHES "Ubsan")
   set(MERCURY_MEMORYCHECK_TYPE "UndefinedBehaviorSanitizer")
 endif()
 
-# Disable sockets with Tsan and Debug builds (OFI issues)
-if(MERCURY_BUILD_CONFIGURATION MATCHES "Tsan"
-   OR MERCURY_BUILD_CONFIGURATION MATCHES "Debug")
-  set(OFI_PROTOCOLS "tcp")
+# Only sockets supported on macOS
+if(APPLE)
+  set(OFI_PROTOCOLS "sockets")
 else()
-  set(OFI_PROTOCOLS "sockets;tcp")
+  # Disable sockets with Tsan and Debug builds (OFI issues)
+  if(MERCURY_BUILD_CONFIGURATION MATCHES "Tsan"
+    OR MERCURY_BUILD_CONFIGURATION MATCHES "Debug")
+    set(OFI_PROTOCOLS "tcp")
+  else()
+    set(OFI_PROTOCOLS "sockets;tcp")
+  endif()
 endif()
 
 # MERCURY_DASHBOARD_MODEL=Experimental | Nightly | Continuous

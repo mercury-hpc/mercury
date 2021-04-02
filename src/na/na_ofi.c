@@ -3639,6 +3639,13 @@ na_ofi_check_protocol(const char *protocol_name)
     NA_CHECK_ERROR(type == NA_OFI_PROV_NULL, out, ret, NA_PROTONOSUPPORT,
         "Protocol %s not supported", protocol_name);
 
+/* Only the sockets provider is currently supported on macOS */
+#ifdef __APPLE__
+    NA_CHECK_ERROR(type == NA_OFI_PROV_TCP, out, ret, NA_PROTONOSUPPORT,
+        "Protocol \"tcp\" not supported on macOS, please use \"sockets\" "
+        "instead");
+#endif
+
     /* Get info from provider */
     ret = na_ofi_getinfo(type, &providers, protocol_name);
     NA_CHECK_NA_ERROR(out, ret, "na_ofi_getinfo() failed");
