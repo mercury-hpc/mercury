@@ -55,7 +55,7 @@ cmake	-DCMAKE_BUILD_TYPE=${build_type} \
 	-DBUILD_TESTING=on \
 	-DBUILD_SHARED_LIBS=on \
 	${bmi_opts:-} \
-	-DCMAKE_C_COMPILER=gcc \
+	-DCMAKE_C_COMPILER=${CC:-gcc} \
 	-DCMAKE_C_FLAGS_DEBUG="-g -O2" \
 	-DCMAKE_C_FLAGS_RELWITHDEBINFO="-g -O3 -DNDEBUG" \
 	${ofi_opts:-} \
