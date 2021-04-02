@@ -263,6 +263,11 @@ struct na_ofi_sin_addr {
     struct sockaddr_in sin;
 };
 
+/* SIN6 address */
+struct na_ofi_sin6_addr {
+    struct sockaddr_in6 sin6;
+};
+
 /* PSM address */
 struct na_ofi_psm_addr {
     na_uint64_t addr0;
@@ -505,6 +510,8 @@ na_ofi_str_to_addr(
 static na_return_t
 na_ofi_str_to_sin(const char *str, void **addr, na_size_t *len);
 static na_return_t
+na_ofi_str_to_sin6(const char *str, void **addr, na_size_t *len);
+static na_return_t
 na_ofi_str_to_psm(const char *str, void **addr, na_size_t *len);
 static na_return_t
 na_ofi_str_to_psm2(const char *str, void **addr, na_size_t *len);
@@ -518,6 +525,8 @@ static NA_INLINE na_uint64_t
 na_ofi_addr_to_key(na_uint32_t addr_format, const void *addr, na_size_t len);
 static NA_INLINE na_uint64_t
 na_ofi_sin_to_key(const struct na_ofi_sin_addr *addr);
+static NA_INLINE na_uint64_t
+na_ofi_sin6_to_key(const struct na_ofi_sin6_addr *addr);
 static NA_INLINE na_uint64_t
 na_ofi_psm_to_key(const struct na_ofi_psm_addr *addr);
 static NA_INLINE na_uint64_t
@@ -1186,6 +1195,8 @@ na_ofi_prov_addr_size(na_uint32_t addr_format)
     switch (addr_format) {
         case FI_SOCKADDR_IN:
             return sizeof(struct na_ofi_sin_addr);
+        case FI_SOCKADDR_IN6:
+            return sizeof(struct na_ofi_sin6_addr);
         case FI_ADDR_PSMX:
             return sizeof(struct na_ofi_psm_addr);
         case FI_ADDR_PSMX2:
@@ -1256,6 +1267,8 @@ na_ofi_str_to_addr(
     switch (addr_format) {
         case FI_SOCKADDR_IN:
             return na_ofi_str_to_sin(str, addr, len);
+        case FI_SOCKADDR_IN6:
+            return na_ofi_str_to_sin6(str, addr, len);
         case FI_ADDR_PSMX:
             return na_ofi_str_to_psm(str, addr, len);
         case FI_ADDR_PSMX2:
@@ -1304,6 +1317,45 @@ na_ofi_str_to_sin(const char *str, void **addr, na_size_t *len)
 
 error:
     free(sin_addr);
+    return ret;
+}
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_str_to_sin6(const char *str, void **addr, na_size_t *len)
+{
+    struct na_ofi_sin6_addr *sin6_addr;
+    char ip[64];
+    na_return_t ret = NA_SUCCESS;
+
+    *len = sizeof(*sin6_addr);
+    sin6_addr = calloc(1, *len);
+    NA_CHECK_ERROR(sin6_addr == NULL, error, ret, NA_NOMEM,
+        "Could not allocate sin address");
+
+    sin6_addr->sin6.sin6_family = AF_INET6;
+    if (sscanf(str, "%*[^:]://:%" SCNu16, &sin6_addr->sin6.sin6_port) == 1) {
+        /* nothing */
+    } else if ((sscanf(str, "%*[^:]://%63[^:]:%" SCNu16, ip,
+                    &sin6_addr->sin6.sin6_port) == 2) ||
+               (sscanf(str, "%*[^:]://%63[^:/]", ip) == 1)) {
+        int rc;
+
+        ip[sizeof(ip) - 1] = '\0';
+        rc = inet_pton(AF_INET6, ip, &sin6_addr->sin6.sin6_addr);
+        NA_CHECK_ERROR(rc != 1, error, ret, NA_PROTONOSUPPORT,
+            "Unable to convert IPv6 address: %s\n", ip);
+    } else
+        NA_GOTO_ERROR(
+            error, ret, NA_PROTONOSUPPORT, "Malformed FI_ADDR_STR: %s\n", str);
+
+    sin6_addr->sin6.sin6_port = htons(sin6_addr->sin6.sin6_port);
+    *addr = sin6_addr;
+
+    return ret;
+
+error:
+    free(sin6_addr);
     return ret;
 }
 
@@ -1415,6 +1467,11 @@ na_ofi_addr_to_key(na_uint32_t addr_format, const void *addr, na_size_t len)
                 "Addr len (%zu) does not match for FI_SOCKADDR_IN (%zu)", len,
                 sizeof(struct na_ofi_sin_addr));
             return na_ofi_sin_to_key((const struct na_ofi_sin_addr *) addr);
+        case FI_SOCKADDR_IN6:
+            NA_CHECK_ERROR_NORET(len != sizeof(struct na_ofi_sin6_addr), out,
+                "Addr len (%zu) does not match for FI_SOCKADDR_IN6 (%zu)", len,
+                sizeof(struct na_ofi_sin6_addr));
+            return na_ofi_sin6_to_key((const struct na_ofi_sin6_addr *) addr);
         case FI_ADDR_PSMX:
             NA_CHECK_ERROR_NORET(len != sizeof(struct na_ofi_psm_addr), out,
                 "Addr len (%zu) does not match for FI_ADDR_PSMX (%zu)", len,
@@ -1445,6 +1502,14 @@ na_ofi_sin_to_key(const struct na_ofi_sin_addr *addr)
 {
     return (
         ((na_uint64_t) addr->sin.sin_addr.s_addr) << 32 | addr->sin.sin_port);
+}
+
+/*---------------------------------------------------------------------------*/
+static NA_INLINE na_uint64_t
+na_ofi_sin6_to_key(const struct na_ofi_sin6_addr *addr)
+{
+    return (((na_uint64_t) addr->sin6.sin6_addr.s6_addr) << 32 |
+            addr->sin6.sin6_port);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1915,6 +1980,10 @@ na_ofi_verify_provider(enum na_ofi_prov_type prov_type, const char *domain_name,
 {
     /* Does not match provider name */
     if (strcmp(na_ofi_prov_name[prov_type], fi_info->fabric_attr->prov_name))
+        return NA_FALSE;
+
+    /* Domain must match expected address format */
+    if (fi_info->addr_format != na_ofi_prov_addr_format[prov_type])
         return NA_FALSE;
 
     /* for some providers the provider name is ambiguous and we must check
