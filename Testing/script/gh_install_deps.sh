@@ -32,6 +32,7 @@ if [ -z "$OFI_PR" ]; then
   cd libfabric-${OFI_VERSION};
   #wget https://github.com/ofiwg/libfabric/pull/6509.patch
   #patch -p1 < 6509.patch
+  patch -p1 < ${GITHUB_WORKSPACE}/Testing/script/ofi_socket_assert.patch
 else
   git clone https://github.com/ofiwg/libfabric.git libfabric-${OFI_VERSION};
   cd libfabric-${OFI_VERSION};
