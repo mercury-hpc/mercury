@@ -568,7 +568,7 @@ na_ofi_addr_ht_remove(
  */
 static na_return_t
 na_ofi_av_lookup(struct na_ofi_domain *na_ofi_domain, fi_addr_t fi_addr,
-    void **addr_ptr, size_t *addrlen_ptr);
+    void **addr_ptr, na_size_t *addrlen_ptr);
 
 /**
  * Get info caps from providers and return matching providers.
@@ -728,7 +728,7 @@ na_ofi_mem_free(na_class_t *na_class, void *mem_ptr, struct fid_mr *mr_hdl);
 static NA_INLINE void
 na_ofi_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
     na_offset_t offset, unsigned long *iov_start_index,
-    unsigned long *iov_start_offset);
+    na_offset_t *iov_start_offset);
 
 /**
  * Get IOV count for a given length.
@@ -1668,7 +1668,7 @@ unlock:
 /*---------------------------------------------------------------------------*/
 static na_return_t
 na_ofi_av_lookup(struct na_ofi_domain *na_ofi_domain, fi_addr_t fi_addr,
-    void **addr_ptr, size_t *addrlen_ptr)
+    void **addr_ptr, na_size_t *addrlen_ptr)
 {
     void *addr = NULL;
     size_t addrlen = na_ofi_domain->fi_prov->src_addrlen;
@@ -1694,7 +1694,7 @@ retry:
         "fi_av_lookup() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
     *addr_ptr = addr;
-    *addrlen_ptr = addrlen;
+    *addrlen_ptr = (na_size_t) addrlen;
 
     return ret;
 
@@ -2893,7 +2893,7 @@ out:
 static NA_INLINE void
 na_ofi_iov_get_index_offset(const struct iovec *iov, unsigned long iovcnt,
     na_offset_t offset, unsigned long *iov_start_index,
-    unsigned long *iov_start_offset)
+    na_offset_t *iov_start_offset)
 {
     na_offset_t new_iov_offset = offset, next_offset = 0;
     unsigned long i, new_iov_start_index = 0;
