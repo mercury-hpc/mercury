@@ -295,15 +295,11 @@ static na_return_t na_ucx_mem_handle_serialize(na_class_t *, void *,
     na_size_t, na_mem_handle_t);
 static na_return_t na_ucx_mem_handle_deserialize(na_class_t *,
     na_mem_handle_t *, const void *, na_size_t);
-static na_return_t
-na_ucx_put(na_class_t *, na_context_t *, na_cb_t,
-    void *, na_mem_handle_t, na_offset_t,
-    na_mem_handle_t, na_offset_t,
+static na_return_t na_ucx_put(na_class_t *, na_context_t *, na_cb_t, void *,
+    na_mem_handle_t, na_offset_t, na_mem_handle_t, na_offset_t,
     na_size_t, na_addr_t, na_uint8_t, na_op_id_t *);
-static na_return_t
-na_ucx_get(na_class_t *, na_context_t *, na_cb_t,
-    void *, na_mem_handle_t, na_offset_t,
-    na_mem_handle_t, na_offset_t,
+static na_return_t na_ucx_get(na_class_t *, na_context_t *, na_cb_t, void *,
+    na_mem_handle_t, na_offset_t, na_mem_handle_t, na_offset_t,
     na_size_t, na_addr_t, na_uint8_t, na_op_id_t *);
 #if 0
 static NA_INLINE int na_ucx_poll_get_fd(na_class_t *, na_context_t *);
