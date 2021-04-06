@@ -165,6 +165,9 @@ struct na_mpi_class {
                                           dynamic connection */
     MPI_Comm intra_comm;               /* MPI intra-communicator */
 
+    na_size_t unexpected_size_max; /* Max unexpected size */
+    na_size_t expected_size_max;   /* Max expected size */
+
     hg_thread_t accept_thread;      /* Thread for accepting new connections */
     hg_thread_mutex_t accept_mutex; /* Mutex */
     hg_thread_cond_t accept_cond;   /* Cond */
@@ -889,6 +892,16 @@ na_mpi_initialize(
     use_static_inter_comm = (na_bool_t)(flags & MPI_INIT_STATIC);
     NA_MPI_CLASS(na_class)->use_static_inter_comm = use_static_inter_comm;
 
+    /* Set msg size limits */
+    NA_MPI_CLASS(na_class)->unexpected_size_max =
+        (na_info->na_init_info && na_info->na_init_info->max_unexpected_size)
+            ? na_info->na_init_info->max_unexpected_size
+            : NA_MPI_UNEXPECTED_SIZE;
+    NA_MPI_CLASS(na_class)->expected_size_max =
+        (na_info->na_init_info && na_info->na_init_info->max_expected_size)
+            ? na_info->na_init_info->max_expected_size
+            : NA_MPI_EXPECTED_SIZE;
+
     /* Initialize MPI */
     mpi_ret = MPI_Initialized(&mpi_ext_initialized);
     if (mpi_ret != MPI_SUCCESS) {
@@ -1317,20 +1330,16 @@ na_mpi_addr_to_string(
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_mpi_msg_get_max_unexpected_size(const na_class_t NA_UNUSED *na_class)
+na_mpi_msg_get_max_unexpected_size(const na_class_t *na_class)
 {
-    na_size_t max_unexpected_size = NA_MPI_UNEXPECTED_SIZE;
-
-    return max_unexpected_size;
+    return NA_MPI_CLASS(na_class)->unexpected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_mpi_msg_get_max_expected_size(const na_class_t NA_UNUSED *na_class)
+na_mpi_msg_get_max_expected_size(const na_class_t *na_class)
 {
-    na_size_t max_expected_size = NA_MPI_EXPECTED_SIZE;
-
-    return max_expected_size;
+    return NA_MPI_CLASS(na_class)->expected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/

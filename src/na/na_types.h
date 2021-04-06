@@ -31,10 +31,12 @@ typedef na_uint64_t na_offset_t;               /* Offset */
 
 /* Init info */
 struct na_init_info {
-    const char *ip_subnet;     /* Preferred IP subnet */
-    const char *auth_key;      /* Authorization key */
-    na_uint32_t progress_mode; /* Progress mode */
-    na_uint8_t max_contexts;   /* Max contexts */
+    const char *ip_subnet;         /* Preferred IP subnet */
+    const char *auth_key;          /* Authorization key */
+    na_size_t max_unexpected_size; /* Max unexpected size hint */
+    na_size_t max_expected_size;   /* Max expected size hint */
+    na_uint32_t progress_mode;     /* Progress mode */
+    na_uint8_t max_contexts;       /* Max contexts */
 };
 
 /* Segment */
@@ -136,7 +138,7 @@ typedef int (*na_cb_t)(const struct na_cb_info *callback_info);
 /* NA init info initializer */
 #define NA_INIT_INFO_INITIALIZER                                               \
     {                                                                          \
-        NULL, NULL, 0, 1                                                       \
+        NULL, NULL, 0, 0, 0, 1                                                 \
     }
 
 #endif /* NA_TYPES_H */

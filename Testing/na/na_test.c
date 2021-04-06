@@ -161,6 +161,9 @@ na_test_parse_options(int argc, char *argv[], struct na_test_info *na_test_info)
                 na_test_info->max_contexts =
                     (na_uint8_t) atoi(na_test_opt_arg_g);
                 break;
+            case 'Z': /* msg size */
+                na_test_info->max_msg_size = atoi(na_test_opt_arg_g);
+                break;
             case 'V': /* verbose */
                 na_test_info->verbose = NA_TRUE;
                 break;
@@ -427,6 +430,8 @@ NA_Test_init(int argc, char *argv[], struct na_test_info *na_test_info)
     }
     na_init_info.auth_key = na_test_info->key;
     na_init_info.max_contexts = na_test_info->max_contexts;
+    na_init_info.max_unexpected_size = (na_size_t) na_test_info->max_msg_size;
+    na_init_info.max_expected_size = (na_size_t) na_test_info->max_msg_size;
 
     printf("# Using info string: %s\n", info_string);
     na_test_info->na_class =

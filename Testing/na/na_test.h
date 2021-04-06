@@ -37,6 +37,7 @@ struct na_test_info {
     int loop;                /* Number of loops */
     na_bool_t busy_wait;     /* Busy wait */
     na_uint8_t max_contexts; /* Max contexts */
+    int max_msg_size;        /* Max msg size */
     na_bool_t verbose;       /* Verbose mode */
     int max_number_of_peers; /* Max number of peers */
 #ifdef HG_TEST_HAS_PARALLEL

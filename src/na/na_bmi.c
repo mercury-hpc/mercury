@@ -182,6 +182,8 @@ struct na_bmi_class {
     char *protocol_name;                        /* Protocol used */
     char *listen_addr;                          /* Listen addr */
     struct na_bmi_addr *src_addr;               /* Source address */
+    na_size_t unexpected_size_max;              /* Max unexpected size */
+    na_size_t expected_size_max;                /* Max expected size */
     int port;                                   /* Port used */
     hg_atomic_int32_t rma_tag;                  /* Atomic RMA tag value */
 };
@@ -1197,6 +1199,16 @@ na_bmi_initialize(
     /* Initialize mutex/cond */
     hg_thread_mutex_init(&NA_BMI_CLASS(na_class)->test_unexpected_mutex);
 
+    /* Set msg size limits */
+    NA_BMI_CLASS(na_class)->unexpected_size_max =
+        (na_info->na_init_info && na_info->na_init_info->max_unexpected_size)
+            ? na_info->na_init_info->max_unexpected_size
+            : NA_BMI_UNEXPECTED_SIZE;
+    NA_BMI_CLASS(na_class)->expected_size_max =
+        (na_info->na_init_info && na_info->na_init_info->max_expected_size)
+            ? na_info->na_init_info->max_expected_size
+            : NA_BMI_EXPECTED_SIZE;
+
     /* Preallocate addresses */
     for (i = 0; i < NA_BMI_ADDR_PREALLOC; i++) {
         struct na_bmi_addr *na_bmi_addr = NULL;
@@ -1659,16 +1671,16 @@ done:
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_bmi_msg_get_max_unexpected_size(const na_class_t NA_UNUSED *na_class)
+na_bmi_msg_get_max_unexpected_size(const na_class_t *na_class)
 {
-    return NA_BMI_UNEXPECTED_SIZE;
+    return NA_BMI_CLASS(na_class)->unexpected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
 static na_size_t
-na_bmi_msg_get_max_expected_size(const na_class_t NA_UNUSED *na_class)
+na_bmi_msg_get_max_expected_size(const na_class_t *na_class)
 {
-    return NA_BMI_EXPECTED_SIZE;
+    return NA_BMI_CLASS(na_class)->expected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1680,9 +1692,9 @@ na_bmi_msg_get_max_tag(const na_class_t NA_UNUSED *na_class)
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
-    na_context_t *context, na_cb_t callback, void *arg, const void *buf,
-    na_size_t buf_size, void NA_UNUSED *plugin_data, na_addr_t dest_addr,
+na_bmi_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
+    na_cb_t callback, void *arg, const void *buf, na_size_t buf_size,
+    void NA_UNUSED *plugin_data, na_addr_t dest_addr,
     na_uint8_t NA_UNUSED dest_id, na_tag_t tag, na_op_id_t *op_id)
 {
     struct na_bmi_op_id *na_bmi_op_id = (struct na_bmi_op_id *) op_id;
@@ -1690,8 +1702,8 @@ na_bmi_msg_send_unexpected(na_class_t NA_UNUSED *na_class,
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    NA_CHECK_ERROR(buf_size > NA_BMI_UNEXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds unexpected size, %d", buf_size);
+    NA_CHECK_ERROR(buf_size > NA_BMI_CLASS(na_class)->unexpected_size_max, done,
+        ret, NA_OVERFLOW, "Exceeds unexpected size, %d", buf_size);
 
     /* Check op_id */
     NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
@@ -1818,8 +1830,8 @@ na_bmi_msg_send_expected(na_class_t NA_UNUSED *na_class, na_context_t *context,
     na_return_t ret = NA_SUCCESS;
     int bmi_ret;
 
-    NA_CHECK_ERROR(buf_size > NA_BMI_EXPECTED_SIZE, done, ret, NA_OVERFLOW,
-        "Exceeds expected size, %d", buf_size);
+    NA_CHECK_ERROR(buf_size > NA_BMI_CLASS(na_class)->expected_size_max, done,
+        ret, NA_OVERFLOW, "Exceeds expected size, %d", buf_size);
 
     /* Check op_id */
     NA_CHECK_ERROR(na_bmi_op_id == NULL, done, ret, NA_INVALID_ARG,
