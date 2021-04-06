@@ -1724,8 +1724,10 @@ na_ucx_msg_send(na_context_t *context,
 
     /* Since we last checked, sender_id or ctx may have been set.  Check
      * once more.
+     *
+     * TBD handle cache->ctx that is equal to neither NULL nor
+     * context->plugin_context.
      */
-
     if ((cached_ctx = cache->ctx) == NULL) {
         /* This thread can write to `cache->ctx` without conflicting
          * with any other thread: because the thread holds the lock,
