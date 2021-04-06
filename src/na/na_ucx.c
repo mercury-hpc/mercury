@@ -1398,7 +1398,7 @@ send_callback(void *request, ucs_status_t status, void NA_UNUSED *user_data)
 
 static na_return_t
 na_ucx_progress(na_class_t NA_UNUSED *na_class,
-    na_context_t NA_UNUSED *context, unsigned int timeout_ms)
+    na_context_t *context, unsigned int timeout_ms)
 {
     na_ucx_context_t *nuctx = context->plugin_context;
     hg_time_t deadline, now;
@@ -1900,7 +1900,7 @@ na_ucx_msg_recv_expected(na_class_t NA_UNUSED *na_class, na_context_t *ctx,
 }
 
 static na_return_t
-na_ucx_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
+na_ucx_mem_handle_create(na_class_t *na_class, void *buf,
     na_size_t buf_size, unsigned long NA_UNUSED flags, na_mem_handle_t *mhp)
 {
     const ucp_mem_map_params_t params = {
@@ -1932,7 +1932,7 @@ na_ucx_mem_handle_create(na_class_t NA_UNUSED *na_class, void *buf,
 }
 
 static na_return_t
-na_ucx_mem_handle_free(na_class_t NA_UNUSED *na_class, na_mem_handle_t mh)
+na_ucx_mem_handle_free(na_class_t *na_class, na_mem_handle_t mh)
 {
     const na_ucx_class_t *nuclass = na_ucx_class_const(na_class);
     ucs_status_t status;
