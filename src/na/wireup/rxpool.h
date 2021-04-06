@@ -1,5 +1,5 @@
-#ifndef _RING_H_
-#define _RING_H_
+#ifndef WIREUP_RXPOOL_H
+#define WIREUP_RXPOOL_H
 
 #include <stdbool.h>
 
@@ -56,4 +56,4 @@ void rxpool_teardown(rxpool_t *);
 void rxpool_destroy(rxpool_t *);
 void rxdesc_release(rxpool_t *, rxdesc_t *);
 
-#endif /* _RING_H_ */
+#endif /* WIREUP_RXPOOL_H */
