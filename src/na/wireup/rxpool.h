@@ -9,13 +9,13 @@
 
 typedef size_t (*rxpool_next_buflen_t)(size_t);
 
-struct _rxpool;
-typedef struct _rxpool rxpool_t;
+struct rxpool;
+typedef struct rxpool rxpool_t;
 
-struct _rxdesc;
-typedef struct _rxdesc rxdesc_t;
+struct rxdesc;
+typedef struct rxdesc rxdesc_t;
 
-struct _rxdesc {
+struct rxdesc {
     /* fields set at setup */
     void *buf;
     size_t buflen;
@@ -25,18 +25,18 @@ struct _rxdesc {
     ucs_status_t status;
     /* fields shared by setup and callback */
     rxdesc_t *fifonext;
-    TAILQ_ENTRY(_rxdesc) linkall;
+    TAILQ_ENTRY(rxdesc) linkall;
     bool ucx_owns;
 };
 
-typedef struct _rxdesc_fifo {
+typedef struct rxdesc_fifo {
     pthread_mutex_t mtx;
     rxdesc_t *head, **tailp;
 } rxdesc_fifo_t;
 
-typedef TAILQ_HEAD(_rxdesc_list, _rxdesc) rxdesc_list_t;
+typedef TAILQ_HEAD(_rxdesc_list, rxdesc) rxdesc_list_t;
 
-struct _rxpool {
+struct rxpool {
     ucp_tag_t tag, tag_mask;
     ucp_worker_h worker;
     size_t request_size;
