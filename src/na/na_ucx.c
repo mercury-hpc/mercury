@@ -60,7 +60,7 @@ typedef struct _address_wire {
     na_ucx_context_t * wiring_atomic ctx;
                             /* `sender_id`, if not nil, is for use only
                              * with context `ctx`.
-                             * 
+                             *
                              * Reads are synchronized by `mutcnt`.
                              *
                              * Writes are synchronized both by
@@ -232,7 +232,7 @@ typedef struct _na_ucx_class {
                                  * identifier ("request").
                                  */
     /* TBD synchronize access using a readers-writer lock like ofi */
-    hg_hash_table_t *addr_tbl;  /* All addresses, deduplicated. */ 
+    hg_hash_table_t *addr_tbl;  /* All addresses, deduplicated. */
     na_ucx_context_t context;   /* The solitary context. */
     hg_atomic_int32_t ncontexts;/* Always 1, for now. */
 } na_ucx_class_t;
@@ -828,7 +828,7 @@ na_ucx_initialize(na_class_t *nacl, const struct na_info NA_UNUSED *na_info,
     }
 
     // TBD create a rxpool_ucp_init() that augments global_params with
-    // the necessary request_size? 
+    // the necessary request_size?
     status = ucp_init(&global_params, config, &nuclass->uctx);
 
     ucp_config_release(config);
@@ -1683,7 +1683,7 @@ na_ucx_msg_send(na_context_t *context,
         sender_id = cache->sender_id;
         cached_ctx = cache->ctx;
         /* XXX The endpoint mustn't be destroyed between the time we
-         * load its pointer and the time we transmit on it, but the wireup 
+         * load its pointer and the time we transmit on it, but the wireup
          * state machine isn't synchronized with transmission.
          *
          * Wireup probably should not
