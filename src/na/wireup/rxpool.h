@@ -7,12 +7,6 @@
 
 #include <ucp/api/ucp.h>
 
-typedef struct _txdesc {
-    void *request;
-    ucs_status_t status;
-    bool completed;
-} txdesc_t;
-
 typedef size_t (*rxpool_next_buflen_t)(size_t);
 
 struct _rxpool;
