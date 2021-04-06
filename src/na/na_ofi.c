@@ -173,9 +173,9 @@ static unsigned long const na_ofi_prov_flags[] = {NA_OFI_PROV_TYPES};
 #define NA_OFI_MAX_TAG UINT32_MAX
 
 /* Unexpected size */
-#define NA_OFI_UNEXPECTED_SIZE (4096)
-#define NA_OFI_UNEXPECTED_TAG  (0x100000000ULL)
-#define NA_OFI_TAG_MASK        (0x0FFFFFFFFULL)
+#define NA_OFI_MSG_SIZE       (4096)
+#define NA_OFI_UNEXPECTED_TAG (0x100000000ULL)
+#define NA_OFI_TAG_MASK       (0x0FFFFFFFFULL)
 
 /* Number of CQ event provided for fi_cq_read() */
 #define NA_OFI_CQ_EVENT_NUM (16)
@@ -409,7 +409,10 @@ struct na_ofi_domain {
     struct fid_av *fi_av;            /* Address vector handle    */
     hg_hash_table_t *addr_ht;        /* Address hash_table       */
     char *prov_name;                 /* Provider name            */
+    na_size_t context_max;           /* Max contexts available   */
+    na_size_t eager_msg_size_max;    /* Max eager msg size       */
     enum na_ofi_prov_type prov_type; /* Provider type            */
+    na_bool_t no_wait;               /* Wait disabled on domain  */
     hg_atomic_int32_t mr_reg_count;  /* Number of MR registered  */
     hg_atomic_int32_t refcount;      /* Refcount of this domain  */
 };
@@ -442,6 +445,8 @@ struct na_ofi_class {
     struct na_ofi_domain *domain;            /* Domain pointer           */
     struct na_ofi_endpoint *endpoint;        /* Endpoint pointer         */
     hg_thread_spin_t buf_pool_lock;          /* Buf pool lock            */
+    na_size_t unexpected_size_max;           /* Max unexpected size      */
+    na_size_t expected_size_max;             /* Max expected size        */
     na_size_t iov_max;                       /* Max number of IOVs       */
     na_uint8_t contexts;                     /* Number of context        */
     na_uint8_t context_max;                  /* Max number of contexts   */
@@ -598,14 +603,21 @@ na_ofi_verify_provider(enum na_ofi_prov_type prov_type, const char *domain_name,
 static na_return_t
 na_ofi_gni_set_domain_op_value(
     struct na_ofi_domain *na_ofi_domain, int op, void *value);
+
+/**
+ * Optional domain get op value for GNI provider.
+ */
+static na_return_t
+na_ofi_gni_get_domain_op_value(
+    struct na_ofi_domain *na_ofi_domain, int op, void *value);
 #endif
 
 /**
  * Open domain.
  */
 static na_return_t
-na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
-    const char *domain_name, const char *auth_key,
+na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
+    const char *auth_key, na_bool_t no_wait,
     struct na_ofi_domain **na_ofi_domain_p);
 
 /**
@@ -646,7 +658,9 @@ na_ofi_endpoint_close(struct na_ofi_endpoint *na_ofi_endpoint);
  * Get EP address.
  */
 static na_return_t
-na_ofi_get_ep_addr(na_class_t *na_class, struct na_ofi_addr **na_ofi_addr_ptr);
+na_ofi_get_ep_addr(struct na_ofi_domain *na_ofi_domain,
+    struct na_ofi_endpoint *na_ofi_endpoint,
+    struct na_ofi_addr **na_ofi_addr_ptr);
 
 /**
  * Get EP URI.
@@ -658,7 +672,8 @@ na_ofi_get_ep_addr(na_class_t *na_class, struct na_ofi_addr **na_ofi_addr_ptr);
  * gni://fi_addr_gni://0001:0x00000020:0x000056ce:02:0x000000:0x33f20000:00
  */
 static na_return_t
-na_ofi_get_uri(na_class_t *na_class, const void *addr, char **uri_ptr);
+na_ofi_get_uri(
+    struct na_ofi_domain *na_ofi_domain, const void *addr, char **uri_ptr);
 
 /**
  * Allocate address.
@@ -2021,15 +2036,36 @@ na_ofi_gni_set_domain_op_value(
 out:
     return ret;
 }
+
+/*---------------------------------------------------------------------------*/
+static na_return_t
+na_ofi_gni_get_domain_op_value(
+    struct na_ofi_domain *na_ofi_domain, int op, void *value)
+{
+    struct fi_gni_ops_domain *gni_domain_ops;
+    na_return_t ret = NA_SUCCESS;
+    int rc;
+
+    rc = fi_open_ops(&na_ofi_domain->fi_domain->fid, FI_GNI_DOMAIN_OPS_1, 0,
+        (void **) &gni_domain_ops, NULL);
+    NA_CHECK_ERROR(rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+        "fi_open_ops() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+
+    rc = gni_domain_ops->get_val(&na_ofi_domain->fi_domain->fid, op, value);
+    NA_CHECK_ERROR(rc != 0, out, ret, na_ofi_errno_to_na(-rc),
+        "gni_domain_ops->get_val() failed, rc: %d (%s)", rc, fi_strerror(-rc));
+
+out:
+    return ret;
+}
 #endif
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
-    const char *domain_name, const char *auth_key,
+na_ofi_domain_open(enum na_ofi_prov_type prov_type, const char *domain_name,
+    const char *auth_key, na_bool_t no_wait,
     struct na_ofi_domain **na_ofi_domain_p)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
     struct na_ofi_domain *na_ofi_domain;
     struct fi_av_attr av_attr = {0};
     struct fi_info *prov, *providers = NULL;
@@ -2126,11 +2162,11 @@ na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
 #endif
 
     /* Force no wait if do not support FI_WAIT_FD/FI_WAIT_SET */
-    if (!(na_ofi_prov_flags[prov_type] & (NA_OFI_WAIT_SET | NA_OFI_WAIT_FD)))
-        priv->no_wait = NA_TRUE;
+    if (no_wait ||
+        !(na_ofi_prov_flags[prov_type] & (NA_OFI_WAIT_SET | NA_OFI_WAIT_FD))) {
+        na_ofi_domain->no_wait = NA_TRUE;
 
-    /* Force manual progress if no wait is set */
-    if (priv->no_wait) {
+        /* Force manual progress if no wait is set */
         na_ofi_domain->fi_prov->domain_attr->control_progress =
             FI_PROGRESS_MANUAL;
         na_ofi_domain->fi_prov->domain_attr->data_progress = FI_PROGRESS_MANUAL;
@@ -2152,19 +2188,13 @@ na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
     NA_CHECK_ERROR(rc != 0, error, ret, na_ofi_errno_to_na(-rc),
         "fi_domain() failed, rc: %d (%s)", rc, fi_strerror(-rc));
 
-    if (priv->context_max > 1) {
-        size_t min_ctx_cnt =
-            MIN(na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
-                na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
-        NA_CHECK_ERROR(priv->context_max > min_ctx_cnt, error, ret,
-            NA_INVALID_ARG,
-            "Maximum number of requested contexts (%d) exceeds provider "
-            "limitation (%d)",
-            priv->context_max, min_ctx_cnt);
-        NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d",
-            na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
+    /* Cache max number of contexts */
+    na_ofi_domain->context_max =
+        MIN(na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
             na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
-    }
+    NA_LOG_DEBUG("fi_domain created, tx_ctx_cnt %d, rx_ctx_cnt %d",
+        na_ofi_domain->fi_prov->domain_attr->tx_ctx_cnt,
+        na_ofi_domain->fi_prov->domain_attr->rx_ctx_cnt);
 
 #ifdef NA_OFI_HAS_EXT_GNI_H
     if (na_ofi_domain->prov_type == NA_OFI_PROV_GNI) {
@@ -2192,6 +2222,12 @@ na_ofi_domain_open(na_class_t *na_class, enum na_ofi_prov_type prov_type,
             na_ofi_domain, GNI_MR_CACHE_LAZY_DEREG, &enable);
         NA_CHECK_NA_ERROR(error, ret,
             "Could not set domain op value for GNI_MR_CACHE_LAZY_DEREG");
+
+        /* Get mbox max msg size */
+        ret = na_ofi_gni_get_domain_op_value(na_ofi_domain,
+            GNI_MBOX_MSG_MAX_SIZE, &na_ofi_domain->eager_msg_size_max);
+        NA_CHECK_NA_ERROR(error, ret,
+            "Could not get domain op value for GNI_MBOX_MSG_MAX_SIZE");
     }
 #endif
 
@@ -2566,11 +2602,10 @@ out:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_get_ep_addr(na_class_t *na_class, struct na_ofi_addr **na_ofi_addr_ptr)
+na_ofi_get_ep_addr(struct na_ofi_domain *na_ofi_domain,
+    struct na_ofi_endpoint *na_ofi_endpoint,
+    struct na_ofi_addr **na_ofi_addr_ptr)
 {
-    struct na_ofi_class *priv = NA_OFI_CLASS(na_class);
-    struct na_ofi_domain *na_ofi_domain = priv->domain;
-    struct na_ofi_endpoint *na_ofi_endpoint = priv->endpoint;
     struct na_ofi_addr *na_ofi_addr = NULL;
     void *addr = NULL;
     size_t addrlen = na_ofi_domain->fi_prov->src_addrlen;
@@ -2578,7 +2613,7 @@ na_ofi_get_ep_addr(na_class_t *na_class, struct na_ofi_addr **na_ofi_addr_ptr)
     na_return_t ret = NA_SUCCESS;
     int rc;
 
-    na_ofi_addr = na_ofi_addr_alloc(priv->domain);
+    na_ofi_addr = na_ofi_addr_alloc(na_ofi_domain);
     NA_CHECK_ERROR(na_ofi_addr == NULL, error, ret, NA_NOMEM,
         "Could not allocate NA OFI addr");
 
@@ -2601,7 +2636,7 @@ retry:
     na_ofi_addr->addrlen = addrlen;
 
     /* Get URI from address */
-    ret = na_ofi_get_uri(na_class, na_ofi_addr->addr, &na_ofi_addr->uri);
+    ret = na_ofi_get_uri(na_ofi_domain, na_ofi_addr->addr, &na_ofi_addr->uri);
     NA_CHECK_NA_ERROR(error, ret, "Could not get URI from endpoint address");
 
     /* TODO check address size */
@@ -2618,9 +2653,9 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static na_return_t
-na_ofi_get_uri(na_class_t *na_class, const void *addr, char **uri_ptr)
+na_ofi_get_uri(
+    struct na_ofi_domain *na_ofi_domain, const void *addr, char **uri_ptr)
 {
-    struct na_ofi_domain *na_ofi_domain = NA_OFI_CLASS(na_class)->domain;
     char addr_str[NA_OFI_MAX_URI_LEN] = {'\0'},
          fi_addr_str[NA_OFI_MAX_URI_LEN] = {'\0'}, *fi_addr_str_ptr,
          *uri = NULL;
@@ -3690,6 +3725,9 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     na_bool_t no_wait = NA_FALSE, no_retry = NA_FALSE;
     na_uint8_t context_max = 1; /* Default */
     const char *auth_key = NULL;
+    na_size_t msg_size_max = 0;
+    na_size_t unexpected_size_max = 0;
+    na_size_t expected_size_max = 0;
 #ifdef NA_OFI_HAS_MEM_POOL
     struct na_ofi_mem_pool *na_ofi_mem_pool = NULL;
 #endif
@@ -3801,9 +3839,15 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         if (na_info->na_init_info->progress_mode & NA_NO_RETRY)
             no_retry = NA_TRUE;
         /* Max contexts */
-        context_max = na_info->na_init_info->max_contexts;
+        if (na_info->na_init_info->max_contexts)
+            context_max = na_info->na_init_info->max_contexts;
         /* Auth key */
         auth_key = na_info->na_init_info->auth_key;
+        /* Sizes */
+        if (na_info->na_init_info->max_unexpected_size)
+            unexpected_size_max = na_info->na_init_info->max_unexpected_size;
+        if (na_info->na_init_info->max_expected_size)
+            expected_size_max = na_info->na_init_info->max_expected_size;
     }
 
     /* Create private data */
@@ -3813,10 +3857,7 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         "Could not allocate NA private data class");
     memset(na_class->plugin_class, 0, sizeof(struct na_ofi_class));
     priv = NA_OFI_CLASS(na_class);
-    priv->no_wait = no_wait;
     priv->no_retry = no_retry;
-    priv->context_max = context_max;
-    priv->contexts = 0;
 
     /* Initialize queue / mutex */
     hg_thread_mutex_init(&priv->mutex);
@@ -3825,11 +3866,34 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
     hg_thread_spin_init(&priv->buf_pool_lock);
     HG_QUEUE_INIT(&priv->buf_pool);
 
-    /* Create domain */
+    /* Create/Open domain */
     ret = na_ofi_domain_open(
-        na_class, prov_type, domain_name_ptr, auth_key, &priv->domain);
+        prov_type, domain_name_ptr, auth_key, no_wait, &priv->domain);
     NA_CHECK_NA_ERROR(out, ret, "Could not open domain for %s, %s",
         na_ofi_prov_name[prov_type], domain_name_ptr);
+
+    /* Make sure that domain is configured as no_wait */
+    NA_CHECK_WARNING(no_wait != priv->domain->no_wait,
+        "Requested no_wait=%d, domain no_wait=%d", no_wait,
+        priv->domain->no_wait);
+    priv->no_wait = no_wait;
+
+    /* Set context limits */
+    NA_CHECK_ERROR(context_max > priv->domain->context_max, out, ret,
+        NA_INVALID_ARG,
+        "Maximum number of requested contexts (%d) exceeds provider "
+        "limitation(% d) ",
+        context_max, priv->domain->context_max);
+    priv->context_max = context_max;
+
+    /* Set msg size limits */
+    msg_size_max = priv->domain->eager_msg_size_max
+                       ? priv->domain->eager_msg_size_max
+                       : NA_OFI_MSG_SIZE;
+    priv->unexpected_size_max =
+        unexpected_size_max ? unexpected_size_max : msg_size_max;
+    priv->expected_size_max =
+        expected_size_max ? expected_size_max : msg_size_max;
 
 #ifdef NA_OFI_HAS_MEM_POOL
     /* Register initial mempool */
@@ -3852,7 +3916,8 @@ na_ofi_initialize(na_class_t *na_class, const struct na_info *na_info,
         out, ret, "Could not create endpoint for %s", resolve_name);
 
     /* Get address from endpoint */
-    ret = na_ofi_get_ep_addr(na_class, &priv->endpoint->src_addr);
+    ret = na_ofi_get_ep_addr(
+        priv->domain, priv->endpoint, &priv->endpoint->src_addr);
     NA_CHECK_NA_ERROR(out, ret, "Could not get address from endpoint");
 
 out:
@@ -4281,7 +4346,8 @@ na_ofi_addr_to_string(na_class_t NA_UNUSED *na_class, char *buf,
             NA_CHECK_NA_ERROR(out, ret, "Could not get addr from AV");
         }
 
-        ret = na_ofi_get_uri(na_class, na_ofi_addr->addr, &na_ofi_addr->uri);
+        ret = na_ofi_get_uri(
+            na_ofi_addr->domain, na_ofi_addr->addr, &na_ofi_addr->uri);
         NA_CHECK_NA_ERROR(out, ret, "Could not get URI for address");
     }
 
@@ -4399,38 +4465,16 @@ error:
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_size_t
-na_ofi_msg_get_max_unexpected_size(const na_class_t NA_UNUSED *na_class)
+na_ofi_msg_get_max_unexpected_size(const na_class_t *na_class)
 {
-    na_size_t max_unexpected_size = NA_OFI_UNEXPECTED_SIZE;
-#ifdef NA_OFI_HAS_EXT_GNI_H
-    struct na_ofi_domain *domain = NA_OFI_CLASS(na_class)->domain;
-
-    if (domain->prov_type == NA_OFI_PROV_GNI) {
-        struct fi_gni_ops_domain *gni_domain_ops;
-        int rc;
-
-        rc = fi_open_ops(&domain->fi_domain->fid, FI_GNI_DOMAIN_OPS_1, 0,
-            (void **) &gni_domain_ops, NULL);
-        NA_CHECK_ERROR(rc != 0, out, max_unexpected_size, 0,
-            "fi_open_ops() failed, rc: %d (%s)", rc, fi_strerror(-rc));
-
-        rc = gni_domain_ops->get_val(&domain->fi_domain->fid,
-            GNI_MBOX_MSG_MAX_SIZE, &max_unexpected_size);
-        NA_CHECK_ERROR(rc != 0, out, max_unexpected_size, 0,
-            "gni_domain_ops->get_val() failed, rc: %d (%s)", rc,
-            fi_strerror(-rc));
-    }
-
-out:
-#endif
-    return max_unexpected_size;
+    return NA_OFI_CLASS(na_class)->unexpected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
 static NA_INLINE na_size_t
-na_ofi_msg_get_max_expected_size(const na_class_t NA_UNUSED *na_class)
+na_ofi_msg_get_max_expected_size(const na_class_t *na_class)
 {
-    return na_ofi_msg_get_max_unexpected_size(na_class);
+    return NA_OFI_CLASS(na_class)->expected_size_max;
 }
 
 /*---------------------------------------------------------------------------*/
