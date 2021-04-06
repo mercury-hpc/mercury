@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <err.h>
+#include <limits.h> /* UINT_MAX */
 #include <pthread.h>
 #include <stdalign.h> /* alignof */
+#include <stdint.h> /* SIZE_MAX */
 #include <stdlib.h> /* malloc */
 
 #include <ucp/api/ucp.h>
@@ -13,55 +15,6 @@
 HLOG_OUTLET_SHORT_DEFN(rxpool, all);
 
 static rxdesc_t *rxpool_next_slow(rxpool_t *, rxdesc_t *);
-
-static void
-rxdesc_fifo_init(rxdesc_fifo_t *fifo)
-{
-    (void)pthread_mutex_init(&fifo->mtx, NULL);
-    fifo->head = NULL;
-    fifo->tailp = &fifo->head;
-}
-
-static void
-rxdesc_fifo_put(rxdesc_fifo_t *fifo, rxdesc_t *desc)
-{
-    (void)pthread_mutex_lock(&fifo->mtx);
-    desc->fifonext = NULL;
-    *fifo->tailp = desc;
-    fifo->tailp = &desc->fifonext;
-    (void)pthread_mutex_unlock(&fifo->mtx);
-}
-
-static rxdesc_t *
-rxdesc_fifo_get_locked(rxdesc_fifo_t *fifo)
-{
-    rxdesc_t *desc;
-
-    desc = fifo->head;
-    if (desc == NULL) {
-        assert(fifo->tailp == &fifo->head);
-        return NULL;
-    }
-
-    if ((fifo->head = desc->fifonext) != NULL)
-        return desc;
-
-    assert(fifo->tailp == &desc->fifonext);
-    fifo->tailp = &fifo->head;
-
-    return desc;
-}
-
-static rxdesc_t *
-rxdesc_fifo_get(rxdesc_fifo_t *fifo)
-{
-    rxdesc_t *desc;
-
-    (void)pthread_mutex_lock(&fifo->mtx);
-    desc = rxdesc_fifo_get_locked(fifo);
-    (void)pthread_mutex_unlock(&fifo->mtx);
-    return desc;
-}
 
 static void
 rxdesc_callback(void *request, ucs_status_t status,
@@ -83,7 +36,7 @@ rxdesc_callback(void *request, ucs_status_t status,
         break;
     }
 
-    rxdesc_fifo_put(&rxpool->complete, desc);
+    hg_atomic_queue_push(rxpool->complete, desc);
 }
 
 rxpool_t *
@@ -96,22 +49,46 @@ rxpool_create(ucp_worker_h worker, rxpool_next_buflen_t next_buflen,
     if (rxpool == NULL)
         return NULL;
 
-    rxpool_init(rxpool, worker, next_buflen, request_size, tag, tag_mask,
+    return rxpool_init(rxpool, worker, next_buflen, request_size, tag, tag_mask,
         nelts);
-    return rxpool;
 }
 
-void
+static size_t
+roundup_to_power_of_2(size_t x)
+{
+    size_t y = 1;
+
+    while (y < x && SIZE_MAX - y >= y)
+        y += y;
+
+    if (y < x)
+        return 0;
+
+    return y;
+}
+
+rxpool_t *
 rxpool_init(rxpool_t *rxpool, ucp_worker_h worker,
     rxpool_next_buflen_t next_buflen, size_t request_size,
     ucp_tag_t tag, ucp_tag_t tag_mask, size_t nelts)
 {
     size_t i;
     const size_t buflen = (*next_buflen)(0);
+    const size_t qlen = roundup_to_power_of_2(nelts);
     assert(buflen > 0);
 
     TAILQ_INIT(&rxpool->alldesc);
-    rxdesc_fifo_init(&rxpool->complete);
+
+    if (qlen == 0) {
+        // TBD log error
+        return NULL;
+    }
+
+    rxpool->complete = hg_atomic_queue_alloc((unsigned int)qlen);
+    if (rxpool->complete == NULL) {
+        // TBD log error
+        return NULL;
+    }
 
     rxpool->next_buflen = next_buflen;
     rxpool->initbuflen = buflen;
@@ -127,19 +104,24 @@ rxpool_init(rxpool_t *rxpool, ucp_worker_h worker,
         rxdesc_t *rdesc;
         void *buf;
 
-        if ((buf = malloc(buflen)) == NULL)
-            err(EXIT_FAILURE, "%s: malloc", __func__);
+        if ((buf = malloc(buflen)) == NULL) {
+            // err(EXIT_FAILURE, "%s: malloc", __func__);
+            return NULL;
+        }
 
         rdesc = header_alloc(request_size,
                               alignof(rxdesc_t), sizeof(rxdesc_t));
 
-        if (rdesc == NULL)
-            err(EXIT_FAILURE, "%s: header_alloc", __func__);
+        if (rdesc == NULL) {
+            // err(EXIT_FAILURE, "%s: header_alloc", __func__);
+            return NULL;
+        }
 
         TAILQ_INSERT_HEAD(&rxpool->alldesc, rdesc, linkall);
 
         rxdesc_setup(rxpool, buf, buflen, rdesc);
     }
+    return rxpool;
 }
 
 void
@@ -223,7 +205,7 @@ rxpool_destroy(rxpool_t *rxpool)
 rxdesc_t *
 rxpool_next(rxpool_t *rxpool)
 {
-    rxdesc_t *rdesc = rxdesc_fifo_get(&rxpool->complete);
+    rxdesc_t *rdesc = hg_atomic_queue_pop_sc(rxpool->complete);
 
     if (rdesc == NULL)
         return NULL;
@@ -311,7 +293,7 @@ rxpool_next_slow(rxpool_t *rxpool, rxdesc_t *head)
 
         rxdesc_setup(rxpool, nbuf, nbuflen, head);
         free(buf);
-    } while ((head = rxdesc_fifo_get(&rxpool->complete)) != NULL &&
+    } while ((head = hg_atomic_queue_pop_sc(rxpool->complete)) != NULL &&
              (head->status == UCS_ERR_MESSAGE_TRUNCATED ||
               head->status == UCS_ERR_CANCELED));
 

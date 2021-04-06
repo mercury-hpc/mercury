@@ -7,6 +7,8 @@
 
 #include <ucp/api/ucp.h>
 
+#include "mercury_atomic_queue.h"
+
 typedef size_t (*rxpool_next_buflen_t)(size_t);
 
 struct rxpool;
@@ -43,14 +45,14 @@ struct rxpool {
     size_t initbuflen;
     rxpool_next_buflen_t next_buflen;
     rxdesc_list_t alldesc;
-    rxdesc_fifo_t complete;
+    struct hg_atomic_queue *complete;
 };
 
 rxdesc_t *rxpool_next(rxpool_t *);
 void rxdesc_setup(rxpool_t *, void *, size_t, rxdesc_t *);
 rxpool_t *rxpool_create(ucp_worker_h, rxpool_next_buflen_t, size_t, ucp_tag_t,
     ucp_tag_t, size_t);
-void rxpool_init(rxpool_t *, ucp_worker_h, rxpool_next_buflen_t, size_t,
+rxpool_t *rxpool_init(rxpool_t *, ucp_worker_h, rxpool_next_buflen_t, size_t,
     ucp_tag_t, ucp_tag_t, size_t);
 void rxpool_teardown(rxpool_t *);
 void rxpool_destroy(rxpool_t *);
