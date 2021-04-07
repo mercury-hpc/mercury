@@ -1690,6 +1690,9 @@ na_ucx_msg_send(na_context_t *context,
          * Wireup probably should not
          * release an endpoint until an explicit wireup_stop() is performed.
          * I can introduce a state between "dead" and "reclaimed".
+         *
+         * Alternatively, defer releasing the endpoint until an "epoch" has
+         * passed.
          */
         ep = cache->ep;
         if (address_wire_read_end(aseq))
