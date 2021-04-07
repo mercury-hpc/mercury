@@ -1227,7 +1227,7 @@ na_ucx_op_create(na_class_t NA_UNUSED *na_class)
     id = header_alloc(nucl->request_size, alignof(*id), sizeof(*id));
 
     if (id == NULL) {
-        NA_LOG_ERROR("Could not allocate NA OFI operation ID");
+        NA_LOG_ERROR("Could not allocate NA UCX operation ID");
         return NULL;
     }
 
