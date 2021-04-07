@@ -8,8 +8,6 @@ benchmark_opts="-DMERCURY_TESTING_USE_THREAD_POOL=off"
 benchmark_opts="${benchmark_opts} -DMERCURY_TESTING_VERIFY_DATA=off"
 benchmark_opts="${benchmark_opts} -DMERCURY_USE_CHECKSUMS=off"
 
-opa_opts="-DMERCURY_USE_OPA=off"
-
 if [ $(hostname) = "jelly" ]
 then
 	bmi_opts="-DBMI_INCLUDE_DIR=$HOME/wrk/bmi/install/include"
@@ -59,6 +57,6 @@ cmake	-DCMAKE_BUILD_TYPE=${build_type} \
 	-DCMAKE_C_FLAGS_DEBUG="-g -O2" \
 	-DCMAKE_C_FLAGS_RELWITHDEBINFO="-g -O3 -DNDEBUG" \
 	${ofi_opts:-} \
-	${opa_opts:-} \
+	-DMERCURY_USE_OPA=off \
 	${personality_opts:-} \
 	-DNA_USE_UCX=on ..
