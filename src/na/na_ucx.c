@@ -1299,6 +1299,7 @@ recv_callback(void *request, ucs_status_t status,
             source = NULL;
 
         assert((info->sender_tag & nuctx->app.tagmask) == nuctx->app.tag);
+
         *recv_unexpected = (struct na_cb_info_recv_unexpected){
           .actual_buf_size = (na_size_t)info->length
         , .source = source
