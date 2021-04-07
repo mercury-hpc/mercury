@@ -457,7 +457,7 @@ op_id_release(void *arg)
     na_op_id_t *op_id = arg;
 
     if (hg_atomic_get32(&op_id->status) != op_s_complete)
-        NA_LOG_ERROR("releasing an uncompleted op");
+        NA_LOG_ERROR("releasing an incomplete op");
 }
 
 static inline const na_ucx_class_t *
