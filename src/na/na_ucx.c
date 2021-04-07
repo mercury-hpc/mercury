@@ -1402,11 +1402,11 @@ na_ucx_progress(na_class_t NA_UNUSED *na_class,
     na_context_t *context, unsigned int timeout_ms)
 {
     na_ucx_context_t *nuctx = context->plugin_context;
-    hg_time_t deadline, now;
+    hg_time_t deadline, now = hg_time_from_ms(0);
 
     hlog_fast(progress, "%s: enter timeout %ums", __func__, timeout_ms);
 
-    if (hg_time_get_current_ms(&now) < 0)
+    if (timeout_ms != 0 && hg_time_get_current_ms(&now) < 0)
         return NA_AGAIN;    // TBD pick a different/better return code?
 
     deadline = hg_time_add(now, hg_time_from_ms(timeout_ms));
@@ -1435,7 +1435,7 @@ na_ucx_progress(na_class_t NA_UNUSED *na_class,
         if (progress)
             return NA_SUCCESS;
 
-        if (hg_time_get_current_ms(&now) < 0) {
+        if (timeout_ms != 0 && hg_time_get_current_ms(&now) < 0) {
             NA_LOG_ERROR("could not get current time");
             return NA_AGAIN;    // TBD pick a different/better return code?
         }
