@@ -101,9 +101,6 @@ set(CTEST_UPDATE_VERSION_ONLY TRUE)
 # Number of jobs to build and keep going if some targets can't be made
 set(CTEST_BUILD_FLAGS "-k -j4")
 
-# Default num proc for MPI testing
-set(MAX_NUMPROCS "4")
-
 # Build shared libraries
 if(NOT DEFINED build_shared_libs)
   set(MERCURY_BUILD_STATIC $ENV{MERCURY_BUILD_STATIC_LIBRARIES})
@@ -155,9 +152,6 @@ if(DEFINED MERCURY_MEMORYCHECK_TYPE)
   if(${MERCURY_MEMORYCHECK_TYPE} MATCHES "ThreadSanitizer")
     # Must add verbosity / Error in build if no memory output file is produced
     set(CTEST_MEMORYCHECK_SANITIZER_OPTIONS "verbosity=1")
-
-    # Set num proc to 1 to speed up CI
-    set(MAX_NUMPROCS "1")
   endif()
 
   # Asan
@@ -247,7 +241,6 @@ NA_USE_CCI:BOOL=OFF
 NA_USE_SM:BOOL=${USE_SM}
 NA_USE_OFI:BOOL=ON
 NA_OFI_TESTING_PROTOCOL:STRING=${OFI_PROTOCOLS}
-MPIEXEC_MAX_NUMPROCS:STRING=${MAX_NUMPROCS}
 
 MERCURY_TESTING_ENABLE_PARALLEL:BOOL=${USE_MPI}
 MERCURY_TESTING_INIT_COMMAND:STRING=killall -9 ${PROC_NAME_OPT} hg_test_server;
