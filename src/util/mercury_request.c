@@ -134,29 +134,9 @@ hg_request_wait(hg_request_t *request, unsigned int timeout_ms,
         if ((completed = hg_atomic_get32(&request->completed)) == HG_UTIL_TRUE)
             break;
 
-        hg_thread_mutex_lock(&request->request_class->progress_mutex);
-        if (request->request_class->progressing) {
-            if (hg_thread_cond_timedwait(&request->request_class->progress_cond,
-                    &request->request_class->progress_mutex,
-                    hg_time_to_ms(remaining)) != HG_UTIL_SUCCESS) {
-                /* Timeout occurred so leave */
-                break;
-            }
-            /* Continue as request may have completed in the meantime */
-            goto next;
-        }
-        request->request_class->progressing = HG_UTIL_TRUE;
-        hg_thread_mutex_unlock(&request->request_class->progress_mutex);
-
         request->request_class->progress_func(
             hg_time_to_ms(remaining), request->request_class->arg);
 
-        hg_thread_mutex_lock(&request->request_class->progress_mutex);
-        request->request_class->progressing = HG_UTIL_FALSE;
-        hg_thread_cond_broadcast(&request->request_class->progress_cond);
-        hg_thread_mutex_unlock(&request->request_class->progress_mutex);
-
-next:
         if (timeout_ms != 0)
             hg_time_get_current(&now);
         remaining = hg_time_subtract(deadline, now);
