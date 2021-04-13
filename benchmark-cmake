@@ -56,6 +56,7 @@ cmake	-DCMAKE_BUILD_TYPE=${build_type} \
 	-DCMAKE_C_COMPILER=${CC:-gcc} \
 	-DCMAKE_C_FLAGS_DEBUG="-g -O2" \
 	-DCMAKE_C_FLAGS_RELWITHDEBINFO="-g -O3 -DNDEBUG" \
+	-DNA_ALLOW_MULTI_PROGRESS=off \
 	${ofi_opts:-} \
 	-DMERCURY_USE_OPA=off \
 	${personality_opts:-} \
