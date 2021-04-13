@@ -83,6 +83,87 @@ typedef struct wiring_request {
     wiring_request_t *next;
 } wiring_request_t;
 
+#if 0
+typedef struct wiring_garbage_bin {
+    uint64_t times_locked;
+    uint64_t times_unlocked;
+    enum {
+      wiring_garbage_empty = 0
+    , wiring_garbage_tables
+    , wiring_garbage_wires
+    , wiring_garbage_both
+    } content;
+    struct {
+        sender_id_t first_free;
+        uint32_t nfreed;
+    } wires;
+    struct {
+        void **assoc;
+        wstorage_t *storage;
+    } table;
+} wiring_garbage_bin_t;
+
+typedef struct wiring_garbage_schedule {
+    /* readers consume the bins, writers produce them. */
+    uint64_t consumer, producer;
+    /* The wire_t storage and the associated-data table will
+     * not be reallocated more than 64 times during a program's
+     * lifetime, because their size doubles at each reallocation
+     * and we do not expect for 2^64 bytes to be available for
+     * either.  So 64 bins should be enough to hold all of the
+     * garbage related to those reallocations.
+     *
+     * TBD mention endpoint garbage collection
+     */
+    wiring_garbage_bin_t bin[128];
+} wiring_garbage_schedule_t;
+
+static void
+wiring_garbage_init(wiring_garbage_schedule_t *sched)
+{
+    int i;
+    for (i = 0; i < NELTS(sched->bin); i++) {
+        sched->bin[i] = (wiring_garbage_bin_t){
+          .times_locked = 0
+        , .times_unlocked = 0
+        , .wires = {.first_free = sender_id_nil, .nfreed = 0}
+        , .table = {.assoc = NULL, .storage = NULL}
+        };
+    }
+    sched->consumer = sched->producer = 0;
+}
+
+static inline wiring_garbage_bin_t *
+wiring_read_lock(wiring_t *wiring)
+{
+    wiring_garbage_schedule_t *sched = &wiring->garbage_sched;
+
+}
+
+/* Callers are responsible for serializing wiring_read_lock() and
+ * wiring_read_unlock() calls.
+ *
+ * The expectation is that each na_context_t belongs to one
+ * thread, and only na_context_t "methods" call _lock/_unlock.
+ */
+static inline void
+wiring_read_unlock(wiring_t *wiring, wiring_garbage_bin_t *bin)
+{
+    ++bin->times_unlocked;
+
+    assert(bin->times_unlocked <= bin->times_locked);
+
+    if (bin->times_unlocked != bin->times_locked)
+        return;
+
+    if (bin->wires.nfreed == 0 && bin->table.storage == NULL)
+        return;
+
+    
+}
+
+#endif
+
 struct _wiring {
     wiring_lock_bundle_t lkb;
     wire_accept_cb_t accept_cb;
