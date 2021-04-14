@@ -3830,10 +3830,10 @@ na_sm_addr_lookup(na_class_t *na_class, const char *name, na_addr_t *addr)
     } else {
         NA_LOG_DEBUG(
             "Addess was found (key=%lu)", (long unsigned int) addr_key);
-    }
 
-    /* Increment refcount */
-    hg_atomic_incr32(&na_sm_addr->ref_count);
+        /* Increment refcount */
+        hg_atomic_incr32(&na_sm_addr->ref_count);
+    }
 
     *addr = (na_addr_t) na_sm_addr;
 
