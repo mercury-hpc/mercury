@@ -31,6 +31,7 @@ HLOG_OUTLET_SHORT_DEFN(wireup, wireup_noisy);
 HLOG_OUTLET_SHORT_DEFN(wireup_rx, wireup_noisy);
 HLOG_OUTLET_SHORT_DEFN(wireup_tx, wireup_noisy);
 HLOG_OUTLET_SHORT_DEFN(wireup_ep, wireup_noisy);
+HLOG_OUTLET_SHORT_DEFN(wireup_req, wireup_noisy);
 HLOG_OUTLET_SHORT_DEFN(wire_state, wireup);
 
 static char wire_no_data;
@@ -702,14 +703,20 @@ wiring_requests_check_status(wiring_t *wiring)
     wiring_request_t *req;
 
     while ((req = wiring->req_outst_head) != NULL) {
-        if (ucp_request_check_status(req) == UCS_INPROGRESS)
+        if (ucp_request_check_status(req) == UCS_INPROGRESS) {
+            hlog_fast(wireup_req, "%s: request %p in-progress", __func__,
+                (void *)req);
             return true;
+        }
 
         wiring->req_outst_head = req->next;
         if (wiring->req_outst_tailp == &req->next)
             wiring->req_outst_tailp = &wiring->req_outst_head;
 
         wiring_free_request_put(wiring, req);
+
+        hlog_fast(wireup_req, "%s: reclaimed request %p", __func__,
+            (void *)req);
     }
 
     return false;
@@ -1192,6 +1199,9 @@ wireup_once(wiring_t *wiring)
 
     wireup_expire_transition(wiring, now);
     wireup_wakeup_transition(wiring, now);
+
+    /* Reclaim requests for any transmissions / endpoint closures. */
+    (void)wiring_requests_check_status(wiring);
 
     if ((rdesc = rxpool_next(rxpool)) == NULL)
         return 0;
