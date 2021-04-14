@@ -652,7 +652,7 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
 
     wiring_assert_locked(wiring);
 
-    if (w->state == &state[WIRE_S_CLOSING])
+    if (w->state == &state[WIRE_S_CLOSING] || w->state == &state[WIRE_S_FREE])
         goto out;
 
     wireup_transition(wiring, w, &state[WIRE_S_CLOSING]);
