@@ -23,7 +23,8 @@ struct _wire_state {
 enum {
   WIRE_S_INITIAL
 , WIRE_S_LIVE
-, WIRE_S_DEAD
+, WIRE_S_CLOSING
+, WIRE_S_FREE
 };
 
 HLOG_OUTLET_SHORT_DEFN(wireup_noisy, all);
@@ -80,10 +81,14 @@ static wire_state_t state[] = {
                    .wakeup = send_keepalive,
                    .receive = continue_life,
                    .descr = "live"}
-, [WIRE_S_DEAD] = {.expire = reject_expire,
+, [WIRE_S_CLOSING] = {.expire = reject_expire,
+                      .wakeup = ignore_wakeup,
+                      .receive = reject_msg,
+                      .descr = "closing"}
+, [WIRE_S_FREE] = {.expire = reject_expire,
                    .wakeup = ignore_wakeup,
                    .receive = reject_msg,
-                   .descr = "dead"}
+                   .descr = "free"}
 };
 
 static const wiring_lock_bundle_t default_lkb = {
@@ -116,7 +121,7 @@ next_buflen(size_t buflen)
 }
 
 static void
-wiring_release_wire(wiring_t *wiring, wire_t *w)
+wiring_close_wire(wiring_t *wiring, wire_t *w)
 {
     wstorage_t *st = wiring->storage;
     sender_id_t id = wire_index(st, w);
@@ -185,7 +190,7 @@ wireup_transition(wiring_t *wiring, wire_t *w, const wire_state_t *nstate)
 
     if (w->cb == NULL || ostate == nstate) {
         reset_cb = false; // no callback or no state change: do nothing
-    } else if (nstate == &state[WIRE_S_DEAD]) {
+    } else if (nstate == &state[WIRE_S_CLOSING]) {
         reset_cb = !(*w->cb)((wire_event_info_t){
             .event = wire_ev_died
           , .ep = NULL
@@ -285,8 +290,8 @@ start_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     }
 
     if (msg->op == OP_STOP) {
-        wiring_release_wire(wiring, w);
-        return &state[WIRE_S_DEAD];
+        wiring_close_wire(wiring, w);
+        return &state[WIRE_S_CLOSING];
     } else if (msg->op != OP_ACK) {
         hlog_fast(wireup_rx,
             "%s: unexpected opcode %" PRIu16 " for wire %" PRIuSENDER,
@@ -326,8 +331,8 @@ continue_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
     }
 
     if (msg->op == OP_STOP) {
-        wiring_release_wire(wiring, w);
-        return &state[WIRE_S_DEAD];
+        wiring_close_wire(wiring, w);
+        return &state[WIRE_S_CLOSING];
     } else if (msg->op != OP_KEEPALIVE) {
         hlog_fast(wireup_rx,
             "%s: unexpected opcode %" PRIu16 " for wire %" PRIuSENDER,
@@ -346,8 +351,8 @@ continue_life(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
         hlog_fast(wireup_rx,
             "%s: sender ID %" PRIu32 " mismatches assignment %" PRIuSENDER
             " for wire %" PRIuSENDER, __func__, msg->sender_id, w->id, id);
-        wiring_release_wire(wiring, w);
-        return &state[WIRE_S_DEAD];
+        wiring_close_wire(wiring, w);
+        return &state[WIRE_S_CLOSING];
     }
 
     wiring_expiration_remove(st, w);
@@ -425,7 +430,7 @@ reject_expire(wiring_t *wiring, wire_t *w)
     hlog_fast(wire_state, "%s: rejecting expiration for wire %" PRIuSENDER,
         __func__, id);
 
-    return &state[WIRE_S_DEAD];
+    return &state[WIRE_S_CLOSING];
 }
 
 static const wire_state_t *
@@ -438,7 +443,7 @@ reject_msg(wiring_t *wiring, wire_t *w, const wireup_msg_t *msg)
         "%s: rejecting message from %" PRIuSENDER " for wire %" PRIuSENDER,
         __func__, msg->sender_id, id);
 
-    return &state[WIRE_S_DEAD];
+    return &state[WIRE_S_CLOSING];
 }
 
 static const wire_state_t *
@@ -453,8 +458,8 @@ retry(wiring_t *wiring, wire_t *w)
         __func__, id);
 
     if (!wireup_send(wiring, w)) {
-        wiring_release_wire(wiring, w);
-        return &state[WIRE_S_DEAD];
+        wiring_close_wire(wiring, w);
+        return &state[WIRE_S_CLOSING];
     }
 
     wiring_expiration_put(st, w, getnanos() + timeout_interval);
@@ -465,8 +470,8 @@ retry(wiring_t *wiring, wire_t *w)
 static const wire_state_t *
 destroy(wiring_t *wiring, wire_t *w)
 {
-    wiring_release_wire(wiring, w);
-    return &state[WIRE_S_DEAD];
+    wiring_close_wire(wiring, w);
+    return &state[WIRE_S_CLOSING];
 }
 
 static void
@@ -631,7 +636,7 @@ wiring_free_request_put(wiring_t *wiring, wiring_request_t *req)
     wiring->req_free_head = req;
 }
 
-/* Move the state machine on wire `w` to DEAD state and release its
+/* Move the state machine on wire `w` to CLOSING state and release its
  * resources.  If `orderly` is true, then send a STOP message to the peer
  * so that it can release its wire.
  */
@@ -647,10 +652,10 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
 
     wiring_assert_locked(wiring);
 
-    if (w->state == &state[WIRE_S_DEAD])
+    if (w->state == &state[WIRE_S_CLOSING])
         goto out;
 
-    wireup_transition(wiring, w, &state[WIRE_S_DEAD]);
+    wireup_transition(wiring, w, &state[WIRE_S_CLOSING]);
 
     if (!orderly)
         goto out;
@@ -689,7 +694,7 @@ wireup_stop_internal(wiring_t *wiring, wire_t *w, bool orderly)
     }
 
 out:
-    wiring_release_wire(wiring, w);
+    wiring_close_wire(wiring, w);
 }
 
 /* Check the head of the outstanding requests list.  Move completed
@@ -758,7 +763,7 @@ wiring_init(wiring_t *wiring, ucp_worker_h worker, size_t request_size,
     for (i = 0; i < nwires; i++) {
         st->wire[i] = (wire_t){
               .next_free = i + 1
-            , .state = &state[WIRE_S_DEAD]
+            , .state = &state[WIRE_S_FREE]
             , .tlink = {{.prev = i, .next = i, .due = 0},
                         {.prev = i, .next = i, .due = 0}}
             , .ep = NULL
@@ -827,7 +832,7 @@ wiring_enlarge(wiring_t *wiring)
         assoc[i] = NULL;
         st->wire[i] = (wire_t){
               .next_free = i + 1
-            , .state = &state[WIRE_S_DEAD]
+            , .state = &state[WIRE_S_FREE]
             , .tlink = {{.prev = i, .next = i, .due = 0},
                         {.prev = i, .next = i, .due = 0}}
             , .ep = NULL
@@ -1095,16 +1100,16 @@ wireup_start(wiring_t * const wiring, ucp_address_t *laddr, size_t laddrlen,
 
     wiring_expiration_put(st, w, getnanos() + timeout_interval);
 
-    if (!wireup_send(wiring, w))
-        goto free_wire;
+    if (!wireup_send(wiring, w)) {
+        wiring_assert_locked(wiring);
+        w->state = &state[WIRE_S_CLOSING];
+        wiring_close_wire(wiring, w);
+        return (wire_id_t){.id = sender_id_nil};
+    }
 
     return (wire_id_t){.id = id};
 free_msg:
     free(msg);
-    return (wire_id_t){.id = sender_id_nil};
-free_wire:
-    wiring_assert_locked(wiring);
-    wiring_release_wire(wiring, w);
     return (wire_id_t){.id = sender_id_nil};
 }
 
