@@ -71,7 +71,7 @@ static void wiring_free_request_put(wiring_t *, wiring_request_t *);
 static bool wiring_requests_check_status(wiring_t *);
 static void wiring_requests_discard(wiring_t *);
 
-wire_state_t state[] = {
+static wire_state_t state[] = {
   [WIRE_S_INITIAL] = {.expire = retry,
                       .wakeup = ignore_wakeup,
                       .receive = start_life,
