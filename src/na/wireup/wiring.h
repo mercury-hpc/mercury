@@ -108,7 +108,7 @@ typedef struct wiring_garbage_schedule {
     uint64_t consumer, producer;
     /* The wire_t storage and the associated-data table will
      * not be reallocated more than 64 times during a program's
-     * lifetime, because their size doubles at each reallocation
+     * lifetime, because the size of each doubles with each reallocation
      * and we do not expect for 2^64 bytes to be available for
      * either.  So 64 bins should be enough to hold all of the
      * garbage related to those reallocations.
@@ -159,7 +159,8 @@ wiring_read_unlock(wiring_t *wiring, wiring_garbage_bin_t *bin)
     if (bin->wires.nfreed == 0 && bin->table.storage == NULL)
         return;
 
-    
+    if (bin->table.storage != NULL) {
+    }
 }
 
 #endif
