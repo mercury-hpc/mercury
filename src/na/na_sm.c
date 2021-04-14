@@ -3861,7 +3861,8 @@ na_sm_addr_free(na_class_t *na_class, na_addr_t addr)
 
     /* Remove address from list of addresses to poll */
     hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
-    HG_LIST_REMOVE(na_sm_addr, entry);
+    if (na_sm_addr->entry.next || na_sm_addr->entry.prev)
+        HG_LIST_REMOVE(na_sm_addr, entry);
     hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
 
     ret = na_sm_addr_destroy(
