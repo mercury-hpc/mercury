@@ -57,67 +57,72 @@ typedef struct _na_ucx_context na_ucx_context_t;
 typedef struct na_addr na_ucx_addr_t;
 
 typedef struct _address_wire {
+    /* `sender_id`, if not nil, is for use only
+     * with context `ctx`.
+     *
+     * Reads are synchronized by `mutcnt`.
+     *
+     * Writes are synchronized both by
+     * the wiring lock and by `mutcnt`.
+     */
     na_ucx_context_t * wiring_atomic ctx;
-                            /* `sender_id`, if not nil, is for use only
-                             * with context `ctx`.
-                             *
-                             * Reads are synchronized by `mutcnt`.
-                             *
-                             * Writes are synchronized both by
-                             * the wiring lock and by `mutcnt`.
-                             */
-    wire_id_t wire_id;      /* If `wire_is_valid(wire_id)`, identity of
-                             * `owner`'s session in the wireup protocol.
-                             * if `!wire_is_valid(wire_id)`, wireup has not
-                             * begun.
-                             *
-                             * Writes are synchronized by the wiring lock.
-                             */
+    /* If `wire_is_valid(wire_id)`, identity of
+     * `owner`'s session in the wireup protocol.
+     * if `!wire_is_valid(wire_id)`, wireup has not
+     * begun.
+     *
+     * Writes are synchronized by the wiring lock.
+     */
+    wire_id_t wire_id;
+    /* If `sender_id` is equal to `sender_id_nil`,
+     * then wireup either has not begun, or has not
+     * completed.
+     *
+     * Otherwise, wireup has completed, and
+     * `sender_id` is the "return address"
+     * to embed in messages to the `owner` addressee.
+     *
+     * Reads and writes are synchronized by
+     * `mutcnt`.
+     */
     sender_id_t wiring_atomic sender_id;
-                            /* If equal to `sender_id_nil`, then wireup either
-                             * has not begun, or has not completed.
-                             *
-                             * Otherwise, wireup has completed, and
-                             * `sender_id` is the "return address"
-                             * to embed in messages to the `owner` addressee.
-                             *
-                             * Reads and writes are synchronized by
-                             * `mutcnt`.
-                             */
-    ucp_ep_h wiring_atomic ep;            /* After wireup has completed
-                             * (`sender_id != sender_id_nil`), `ep` is
-                             * connected to the `owner` addressee.
-                             *
-                             * Reads and writes are synchronized by
-                             * `mutcnt`.
-                             */
-    na_ucx_addr_t *owner;   /* Pointer to the address that owns this
-                             * wire cache; constant for the cache's lifetime.
-                             */
-    hg_atomic_int32_t mutcnt;   /* Mutation count: starts at 0.  The wireup
-                                 * event callback is the only writer, and
-                                 * callbacks are serialized by the wireup
-                                 * procedure.
-                                 *
-                                 * The callback increases `mutcnt` by one
-                                 * before it modifies `sender_id` and `ep`.
-                                 * When it has finished its modifications,
-                                 * it increases `mutcnt` by one more.  Thus
-                                 * `mutcnt` is odd while `sender_id` and `ep`
-                                 * are unstable, and even while they are
-                                 * stable.
-                                 *
-                                 * A reader, such as na_ucx_msg_send_unexpected,
-                                 * should start by polling `mutcnt` until it is
-                                 * even, then read `sender_id` and `ep`, then
-                                 * re-read `mutcnt`.  If `mutcnt` has changed
-                                 * between the first read and the second, then
-                                 * the reader should restart at polling
-                                 * `mutcnt`.  When a reader completes the
-                                 * read sequence with `mutcnt` unchanged from
-                                 * beginning to end, it has a consistent pair
-                                 * of `sender_id` and `ep`.
-                                 */
+    /* After wireup has completed
+     * (`sender_id != sender_id_nil`), `ep` is
+     * connected to the `owner` addressee.
+     *
+     * Reads and writes are synchronized by
+     * `mutcnt`.
+     */
+    ucp_ep_h wiring_atomic ep;
+    /* Pointer to the address that owns this
+     * wire cache; constant for the cache's lifetime.
+     */
+    na_ucx_addr_t *owner;
+    /* Mutation count: starts at 0.  The wireup
+     * event callback is the only writer, and
+     * callbacks are serialized by the wireup
+     * procedure.
+     *
+     * The callback increases `mutcnt` by one
+     * before it modifies `sender_id` and `ep`.
+     * When it has finished its modifications,
+     * it increases `mutcnt` by one more.  Thus
+     * `mutcnt` is odd while `sender_id` and `ep`
+     * are unstable, and even while they are
+     * stable.
+     *
+     * A reader, such as na_ucx_msg_send_unexpected,
+     * should start by polling `mutcnt` until it is
+     * even, then read `sender_id` and `ep`, then
+     * re-read `mutcnt`.  If `mutcnt` has changed
+     * between the first read and the second, then
+     * the reader should restart at polling
+     * `mutcnt`.  When a reader completes the
+     * read sequence with `mutcnt` unchanged from
+     * beginning to end, it has a consistent pair
+     * of `sender_id` and `ep`.
+     */
+    hg_atomic_int32_t mutcnt;
     // TBD circular list linkage
     HG_QUEUE_HEAD(na_op_id) deferrals;
 } address_wire_t;
