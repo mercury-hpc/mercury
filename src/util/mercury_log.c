@@ -414,10 +414,10 @@ hg_log_write(struct hg_log_outlet *hg_log_outlet, enum hg_log_level log_level,
 #else
     /* Print using logging function */
     hg_log_func_g(stream,
-        "# [%lf] %s: [%s] %s:%d\n"
+        "# [%lf] %s->%s: [%s] %s:%d\n"
         " # %s(): %s\n",
-        hg_time_to_double(tv), hg_log_outlet->name, level_name, file, line,
-        func, buf);
+        hg_time_to_double(tv), "mercury", hg_log_outlet->name, level_name, file,
+        line, func, buf);
 #endif
 
     if (log_level == HG_LOG_LEVEL_ERROR && hg_log_outlet->debug_log &&
