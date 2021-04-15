@@ -1937,8 +1937,9 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 {
     struct na_sm_region *shared_region = NULL;
     na_uint8_t queue_pair_idx = 0;
-    na_bool_t queue_pair_reserved = NA_FALSE, sock_registered = NA_FALSE;
-    int tx_notify = -1;
+    na_bool_t queue_pair_reserved = NA_FALSE, sock_registered = NA_FALSE,
+              tx_notify_registered = NA_FALSE;
+    int tx_notify = -1, rx_notify = -1;
     na_return_t ret = NA_SUCCESS, err_ret;
 
     /* Save listen state */
@@ -2016,6 +2017,12 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
         NA_CHECK_SUBSYS_ERROR(cls, tx_notify == -1, error, ret,
             na_sm_errno_to_na(errno), "hg_event_create() failed");
         hg_atomic_incr32(&na_sm_endpoint->nofile);
+
+        /* Create local rx signaling event */
+        rx_notify = hg_event_create();
+        NA_CHECK_SUBSYS_ERROR(cls, rx_notify == -1, error, ret,
+            na_sm_errno_to_na(errno), "hg_event_create() failed");
+        hg_atomic_incr32(&na_sm_endpoint->nofile);
     } else {
         na_sm_endpoint->sock = -1;
     }
@@ -2031,11 +2038,12 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
 
         na_sm_endpoint->source_addr->tx_queue =
             &shared_region->queue_pairs[queue_pair_idx].tx_queue;
+        /* Tx = Rx for loopback */
         na_sm_endpoint->source_addr->rx_queue =
-            &shared_region->queue_pairs[queue_pair_idx].rx_queue;
+            na_sm_endpoint->source_addr->tx_queue;
     }
 
-    /* Add source tx notify to poll set for local notifications */
+    /* Add source tx/rx notify to poll set for local notifications */
     if (!no_wait) {
         na_sm_endpoint->source_addr->tx_notify = tx_notify;
         na_sm_endpoint->source_addr->tx_poll_type = NA_SM_POLL_TX_NOTIFY;
@@ -2045,6 +2053,26 @@ na_sm_endpoint_open(struct na_sm_endpoint *na_sm_endpoint, const char *username,
             &na_sm_endpoint->source_addr->tx_poll_type);
         NA_CHECK_SUBSYS_NA_ERROR(
             cls, error, ret, "Could not add tx notify to poll set");
+        tx_notify_registered = NA_TRUE;
+
+        na_sm_endpoint->source_addr->rx_notify = rx_notify;
+        na_sm_endpoint->source_addr->rx_poll_type = NA_SM_POLL_RX_NOTIFY;
+        NA_LOG_SUBSYS_DEBUG(
+            cls, "Registering rx notify %d for polling", rx_notify);
+        ret = na_sm_poll_register(na_sm_endpoint->poll_set, rx_notify,
+            &na_sm_endpoint->source_addr->rx_poll_type);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            cls, error, ret, "Could not add rx notify to poll set");
+    }
+
+    hg_atomic_or32(&na_sm_endpoint->source_addr->status, NA_SM_ADDR_RESOLVED);
+
+    if (listen) {
+        /* Add address to list of addresses to poll */
+        hg_thread_spin_lock(&na_sm_endpoint->poll_addr_list.lock);
+        HG_LIST_INSERT_HEAD(&na_sm_endpoint->poll_addr_list.list,
+            na_sm_endpoint->source_addr, entry);
+        hg_thread_spin_unlock(&na_sm_endpoint->poll_addr_list.lock);
     }
 
     return ret;
@@ -2053,6 +2081,16 @@ error:
     if (na_sm_endpoint->source_addr)
         free(na_sm_endpoint->source_addr);
     if (tx_notify > 0) {
+        if (tx_notify_registered) {
+            err_ret =
+                na_sm_poll_deregister(na_sm_endpoint->poll_set, tx_notify);
+            NA_CHECK_SUBSYS_ERROR_DONE(
+                cls, err_ret != NA_SUCCESS, "na_sm_poll_deregister() failed");
+        }
+        hg_event_destroy(tx_notify);
+        hg_atomic_decr32(&na_sm_endpoint->nofile);
+    }
+    if (rx_notify > 0) {
         hg_event_destroy(tx_notify);
         hg_atomic_decr32(&na_sm_endpoint->nofile);
     }
@@ -2177,6 +2215,19 @@ na_sm_endpoint_close(
                 cls, done, ret, "na_sm_poll_deregister() failed");
 
             rc = hg_event_destroy(source_addr->tx_notify);
+            NA_CHECK_SUBSYS_ERROR(cls, rc != HG_UTIL_SUCCESS, done, ret,
+                na_sm_errno_to_na(errno), "hg_event_destroy() failed");
+            hg_atomic_decr32(&na_sm_endpoint->nofile);
+        }
+        if (source_addr->rx_notify > 0) {
+            int rc;
+
+            ret = na_sm_poll_deregister(
+                na_sm_endpoint->poll_set, source_addr->rx_notify);
+            NA_CHECK_SUBSYS_NA_ERROR(
+                cls, done, ret, "na_sm_poll_deregister() failed");
+
+            rc = hg_event_destroy(source_addr->rx_notify);
             NA_CHECK_SUBSYS_ERROR(cls, rc != HG_UTIL_SUCCESS, done, ret,
                 na_sm_errno_to_na(errno), "hg_event_destroy() failed");
             hg_atomic_decr32(&na_sm_endpoint->nofile);
@@ -3514,7 +3565,12 @@ na_sm_process_retries(
             msg, rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
 
         /* Notify remote if notifications are enabled */
-        if (na_sm_op_id->na_sm_addr->tx_notify > 0) {
+        if (na_sm_op_id->na_sm_addr == na_sm_endpoint->source_addr &&
+            na_sm_op_id->na_sm_addr->rx_notify > 0) {
+            ret = hg_event_set(na_sm_op_id->na_sm_addr->rx_notify);
+            NA_CHECK_SUBSYS_NA_ERROR(
+                msg, error, ret, "Could not send completion notification");
+        } else if (na_sm_op_id->na_sm_addr->tx_notify > 0) {
             ret = na_sm_event_set(na_sm_op_id->na_sm_addr->tx_notify);
             NA_CHECK_SUBSYS_NA_ERROR(
                 msg, error, ret, "Could not send completion notification");
@@ -4173,7 +4229,12 @@ na_sm_msg_send_unexpected(na_class_t *na_class, na_context_t *context,
         msg, rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
 
     /* Notify remote if notifications are enabled */
-    if (na_sm_addr->tx_notify > 0) {
+    if (na_sm_addr == NA_SM_CLASS(na_class)->endpoint.source_addr &&
+        na_sm_addr->rx_notify > 0) {
+        ret = hg_event_set(na_sm_addr->rx_notify);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            msg, error, ret, "Could not send completion notification");
+    } else if (na_sm_addr->tx_notify > 0) {
         ret = na_sm_event_set(na_sm_addr->tx_notify);
         NA_CHECK_SUBSYS_NA_ERROR(
             msg, error, ret, "Could not send completion notification");
@@ -4351,7 +4412,12 @@ na_sm_msg_send_expected(na_class_t *na_class, na_context_t *context,
         msg, rc == NA_FALSE, error, ret, NA_AGAIN, "Full queue");
 
     /* Notify remote if notifications are enabled */
-    if (na_sm_addr->tx_notify > 0) {
+    if (na_sm_addr == NA_SM_CLASS(na_class)->endpoint.source_addr &&
+        na_sm_addr->rx_notify > 0) {
+        ret = hg_event_set(na_sm_addr->rx_notify);
+        NA_CHECK_SUBSYS_NA_ERROR(
+            msg, error, ret, "Could not send completion notification");
+    } else if (na_sm_addr->tx_notify > 0) {
         ret = na_sm_event_set(na_sm_addr->tx_notify);
         NA_CHECK_SUBSYS_NA_ERROR(
             msg, error, ret, "Could not send completion notification");
@@ -4730,6 +4796,8 @@ na_sm_put(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         riovcnt = remote_iovcnt;
     }
 
+    NA_LOG_SUBSYS_DEBUG(rma, "Posting put op (op id=%p)", na_sm_op_id);
+
 #if defined(NA_SM_HAS_CMA)
     nwrite =
         process_vm_writev(na_sm_addr->pid, liov, liovcnt, riov, riovcnt, 0);
@@ -4916,6 +4984,8 @@ na_sm_get(na_class_t *na_class, na_context_t *context, na_cb_t callback,
         riov = remote_iov;
         riovcnt = remote_iovcnt;
     }
+
+    NA_LOG_SUBSYS_DEBUG(rma, "Posting get op (op id=%p)", na_sm_op_id);
 
 #if defined(NA_SM_HAS_CMA)
     nread = process_vm_readv(na_sm_addr->pid, liov, liovcnt, riov, riovcnt, 0);
