@@ -2401,11 +2401,21 @@ na_sm_addr_destroy(struct na_sm_endpoint *na_sm_endpoint, const char *username,
     struct na_sm_addr *na_sm_addr)
 {
     na_return_t ret = NA_SUCCESS;
+    na_uint64_t addr_key;
+    int rc;
 
     if (na_sm_addr->shared_region) {
         ret = na_sm_addr_release(na_sm_endpoint, username, na_sm_addr);
         NA_CHECK_NA_ERROR(done, ret, "Could not release NA SM addr");
     }
+
+    addr_key = na_sm_addr_to_key(na_sm_addr->pid, na_sm_addr->id);
+
+    hg_thread_rwlock_wrlock(&na_sm_endpoint->addr_map.lock);
+    rc = hg_hash_table_remove(
+        na_sm_endpoint->addr_map.map, (hg_hash_table_key_t) &addr_key);
+    NA_CHECK_ERROR_DONE(rc == 0, "Could not remove key");
+    hg_thread_rwlock_release_wrlock(&na_sm_endpoint->addr_map.lock);
 
     free(na_sm_addr);
 
